@@ -779,7 +779,10 @@ function loadAudio(force=false){
   }).catch(error=>{audioView=null;status.textContent=`Audio devices unavailable · ${error.message}`;}).finally(()=>{audioLoading=null;audioRender();});
   return audioLoading;
 }
-addEventListener('profile-fields',()=>{audioRender();const revision=profileData?JSON.stringify([profileData.boot_id,profileData.revision]):null,changed=revision!==audioRevision;audioRevision=revision;if(!drawer.hidden)loadAudio(changed);});
+// A status refresh re-renders only; the listing is read again only for a new saved revision
+// (a save) or Reload saved settings, so an open drawer adds no periodic traffic (Thin budget).
+addEventListener('profile-fields',()=>{audioRender();const revision=profileData?JSON.stringify([profileData.boot_id,profileData.revision]):null,changed=audioRevision!==null&&revision!==audioRevision;audioRevision=revision;if(changed&&!drawer.hidden)loadAudio(true);});
+document.querySelector('#settings-reload').addEventListener('click',()=>{if(!drawer.hidden)loadAudio(true);});
 new MutationObserver(()=>{if(!drawer.hidden)loadAudio();}).observe(drawer,{attributes:true,attributeFilter:['hidden']});
 document.getElementById('audio-use-radio').addEventListener('click',()=>{
   const [input,output]=audioRadio();
