@@ -38,7 +38,7 @@ const RECEIPTS: usize = 16;
 const IMPORT_IDLE: Duration = Duration::from_secs(60);
 
 /// Supported LogRecord fields in WSJT-X to_adif order (contact id follows them).
-pub const FIELDS: [&str; 24] = [
+pub const FIELDS: [&str; 31] = [
     "call",
     "gridsquare",
     "mode",
@@ -64,6 +64,15 @@ pub const FIELDS: [&str; 24] = [
     "class",
     "arrl_sect",
     "state",
+    // QSO confirmation (#10, operator 2026-11-04, ADIF 3.1 QSL Rcvd / QSL Via): kept by
+    // UpdateLogbook and only ever upgraded to a confirmation, never removed.
+    "lotw_qsl_rcvd",
+    "lotw_qslrdate",
+    "qsl_rcvd",
+    "qslrdate",
+    "qsl_rcvd_via",
+    "eqsl_qsl_rcvd",
+    "eqsl_qslrdate",
 ];
 const CALL: usize = 0;
 const GRID: usize = 1;
@@ -75,6 +84,14 @@ const QSO_DATE_OFF: usize = 8;
 const TIME_OFF: usize = 9;
 const BAND: usize = 10;
 const FREQ: usize = 11;
+/// The contest fields are FIELDS[CONTEST..CONFIRMATION].
+const CONTEST: usize = 16;
+/// The confirmation fields are FIELDS[CONFIRMATION..]; the LogRecord fields before them.
+const CONFIRMATION: usize = 24;
+/// #10 confirmation channels (LoTW, paper QSL, eQSL): received status, received date and
+/// received via indexes.
+const CHANNELS: [(usize, usize, Option<usize>); 3] =
+    [(24, 25, None), (26, 27, Some(28)), (29, 30, None)];
 
 /// ADIF 3.1.8 band enumeration with inclusive limits in Hz.
 const BANDS: [(&str, u64, u64); 33] = [
@@ -122,7 +139,7 @@ pub struct Unknown {
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Record {
     pub contact_id: String,
-    pub values: [Option<String>; 24],
+    pub values: [Option<String>; 31],
     /// APP_WSTXRUST_SOURCE: the program a record added by UpdateLogbook came from.
     pub source: Option<String>,
     pub unknown: Vec<Unknown>,
@@ -139,6 +156,43 @@ impl Record {
             .position(|f| *f == name)
             .expect("supported field");
         self.values[index] = Some(value);
+    }
+    /// #10 QSO confirmation: LOTW_QSL_RCVD, QSL_RCVD or EQSL_QSL_RCVD is Y or V
+    /// (ADIF 3.1 QSL Rcvd: Y yes, V verified; N, R, I and absent are not confirmed).
+    pub fn confirmed(&self) -> bool {
+        CHANNELS
+            .iter()
+            .any(|(status, _, _)| self.values[*status].as_deref().is_some_and(confirmation))
+    }
+    /// #10 UpdateLogbook upgrade: each channel that `other` confirms and this record does
+    /// not takes `other`'s status and, where `other` has them, its date and via. Nothing
+    /// else changes and a confirmation is never removed. Whether anything changed.
+    fn upgrade_confirmation(&mut self, other: &Record) -> bool {
+        let mut changed = false;
+        for (status, date, via) in CHANNELS {
+            if !self.upgrades(other, status) {
+                continue;
+            }
+            self.values[status] = other.values[status].clone();
+            for i in std::iter::once(date).chain(via) {
+                if other.values[i].is_some() {
+                    self.values[i] = other.values[i].clone();
+                }
+            }
+            changed = true;
+        }
+        changed
+    }
+    /// Whether `other` confirms the channel of this status index and this record does not.
+    fn upgrades(&self, other: &Record, status: usize) -> bool {
+        other.values[status].as_deref().is_some_and(confirmation)
+            && !self.values[status].as_deref().is_some_and(confirmation)
+    }
+    /// Whether upgrade_confirmation with `other` would change this record.
+    fn upgradable_by(&self, other: &Record) -> bool {
+        CHANNELS
+            .iter()
+            .any(|(status, _, _)| self.upgrades(other, *status))
     }
     fn effective_mode(&self) -> String {
         let mode = self.values[MODE]
@@ -195,7 +249,8 @@ impl Record {
         let mut object = serde_json::Map::new();
         object.insert("index".into(), json!(index));
         object.insert("contact_id".into(), json!(self.contact_id));
-        for (name, value) in FIELDS.iter().zip(&self.values) {
+        // ContactHistory shows the LogRecord fields, not the confirmation fields (#10).
+        for (name, value) in FIELDS.iter().zip(&self.values).take(CONFIRMATION) {
             object.insert((*name).into(), json!(value));
         }
         object.insert("unknown_field_count".into(), json!(self.unknown.len()));
@@ -342,6 +397,10 @@ fn token(value: &str) -> bool {
 fn printable(value: &str) -> bool {
     value.bytes().all(|b| (0x20..=0x7e).contains(&b))
 }
+/// ADIF 3.1 QSL Rcvd value that is a confirmation (Y or V, case-insensitive).
+fn confirmation(value: &str) -> bool {
+    value.eq_ignore_ascii_case("Y") || value.eq_ignore_ascii_case("V")
+}
 /// Report rendering of WstxContact::ReportRange, "%+2.2d" in -50..+49, or an RTTY
 /// Roundup 5n9 RST (#24 S2b, LogRecord).
 pub fn valid_report(value: &str) -> bool {
@@ -377,6 +436,14 @@ fn valid_import_value(index: usize, value: &str) -> bool {
         "time_on" | "time_off" => valid_time(value, false),
         "band" => valid_band(value),
         "freq" | "tx_pwr" => positive_decimal(value),
+        // ADIF 3.1 QSL Rcvd enumeration, Date and QSL Via enumeration (case-insensitive).
+        "lotw_qsl_rcvd" | "qsl_rcvd" | "eqsl_qsl_rcvd" => ["Y", "N", "R", "I", "V"]
+            .iter()
+            .any(|e| e.eq_ignore_ascii_case(value)),
+        "lotw_qslrdate" | "qslrdate" | "eqsl_qslrdate" => valid_date(value),
+        "qsl_rcvd_via" => ["B", "D", "E", "M"]
+            .iter()
+            .any(|e| e.eq_ignore_ascii_case(value)),
         _ => true,
     }
 }
@@ -560,6 +627,16 @@ fn interpret(index: usize, raw: Vec<RawField>) -> Result<Record, Fault> {
             ));
         }
         if let Some(i) = supported {
+            // A confirmation field that a log written before #10 kept verbatim (the former
+            // ImportAdi) and that is invalid or repeated stays an unknown field, so such a
+            // log stays readable.
+            if i >= CONFIRMATION
+                && (record.values[i].is_some()
+                    || !value.is_empty() && !valid_import_value(i, &value))
+            {
+                record.unknown.push(Unknown { name, kind, value });
+                continue;
+            }
             if record.values[i].is_some() {
                 return Err(Fault::new("malformed", Some(index), Some(&lname)));
             }
@@ -639,7 +716,9 @@ fn interpret_update(raw: Vec<RawField>) -> Result<(Record, Vec<FieldFault>), Fie
                 // UpdateLogbook keeps only contest values SaveContact would accept (#10,
                 // 2026-11-04); the stored-log reading stays as before.
                 Some(i) => {
-                    valid_import_value(i, &v) && (i < 16 || valid_contest_value(FIELDS[i], &v))
+                    valid_import_value(i, &v)
+                        && (!(CONTEST..CONFIRMATION).contains(&i)
+                            || valid_contest_value(FIELDS[i], &v))
                 }
                 None if lname == SOURCE_FIELD => token(&v),
                 None => crate::profile::valid_uuid(&v.to_ascii_lowercase()),
@@ -666,9 +745,10 @@ fn interpret_update(raw: Vec<RawField>) -> Result<(Record, Vec<FieldFault>), Fie
     Ok((record, dropped))
 }
 
-/// First differing supported field of two records with the same contact id.
+/// First differing LogRecord field of two records with the same contact id (the
+/// confirmation fields are not compared: only UpdateLogbook sets them).
 fn first_difference(a: &Record, b: &Record) -> Option<&'static str> {
-    for (i, name) in FIELDS.iter().enumerate() {
+    for (i, name) in FIELDS.iter().enumerate().take(CONFIRMATION) {
         let (x, y) = match (a.values[i].as_deref(), b.values[i].as_deref()) {
             (None, None) => continue,
             (Some(x), Some(y)) => (x, y),
@@ -733,6 +813,8 @@ pub struct Group {
 pub struct Summary {
     pub added: usize,
     pub present: usize,
+    /// #10 present records whose confirmation this update upgraded.
+    pub confirmed: usize,
     pub skipped: usize,
     pub reasons: Vec<Group>,
     pub dropped: Vec<Group>,
@@ -775,7 +857,7 @@ impl Import {
         json!({"v":1,"id":self.id,"state":match self.state {
             ImportState::Receiving=>"receiving",ImportState::Completed=>"completed",ImportState::Failed=>"failed"},
             "received_bytes":self.received,"total_bytes":self.total,
-            "added":s.added,"present":s.present,"skipped":s.skipped,
+            "added":s.added,"present":s.present,"confirmed":s.confirmed,"skipped":s.skipped,
             "reasons":groups_json(&s.reasons),"dropped":groups_json(&s.dropped),
             "error":self.error.as_ref().map(Fault::json)})
     }
@@ -1082,7 +1164,20 @@ impl Logbook {
         result
     }
     fn append(&self, inner: &mut Inner, new: Vec<Record>, gate: Gate) -> Result<(), StoreError> {
+        self.update(inner, HashMap::new(), new, gate)
+    }
+    /// Replaces the stored records at the given indexes and appends `new`, in one publish.
+    fn update(
+        &self,
+        inner: &mut Inner,
+        changed: HashMap<usize, Record>,
+        new: Vec<Record>,
+        gate: Gate,
+    ) -> Result<(), StoreError> {
         let mut next = Vec::clone(&inner.records);
+        for (index, record) in changed {
+            next[index] = record;
+        }
         next.extend(new);
         self.publish(inner, &next, gate)?;
         inner.ids = next
@@ -1124,11 +1219,14 @@ impl Logbook {
             return Ok(LogOutcome::AlreadySaved);
         }
         let mut next = Vec::clone(&inner.records);
-        next[index] = Record {
+        let mut replaced = Record {
             unknown: next[index].unknown.clone(),
             source: next[index].source.clone(),
             ..record
         };
+        // #10 a confirmation is never removed: the stored confirmation fields stay.
+        replaced.values[CONFIRMATION..].clone_from_slice(&next[index].values[CONFIRMATION..]);
+        next[index] = replaced;
         self.publish(&inner, &next, gate)?;
         inner.records = Arc::new(next);
         inner.revision += 1;
@@ -1239,6 +1337,7 @@ impl Logbook {
                     grid: r.values[GRID].clone(),
                     band: r.effective_band(),
                     mode: Some(r.effective_mode()).filter(|m| !m.is_empty()),
+                    confirmed: r.confirmed(),
                 })
                 .collect();
             (inner.revision, logged)
@@ -1411,12 +1510,12 @@ impl Logbook {
                 import.error = Some(fault);
                 Err("import_failed")
             }
-            Ok((new, summary)) => {
+            Ok((new, changed, summary)) => {
                 import.summary = summary;
-                let appended = if new.is_empty() {
+                let appended = if new.is_empty() && changed.is_empty() {
                     Ok(())
                 } else {
-                    self.append(&mut inner, new, gate)
+                    self.update(&mut inner, changed, new, gate)
                 };
                 match appended {
                     Ok(()) => {
@@ -1426,6 +1525,7 @@ impl Logbook {
                     Err(e) => {
                         import.state = ImportState::Failed;
                         import.summary.added = 0;
+                        import.summary.confirmed = 0;
                         Err(match e {
                             StoreError::Unauthorized(_) => "unauthorized",
                             StoreError::Unavailable => "storage_unavailable",
@@ -1443,8 +1543,10 @@ impl Logbook {
     /// file), then each record skipped, already present or added. A record is present
     /// when its contact id is stored or added earlier from this file, or when a stored
     /// or earlier added record has the same consolidation key and a start at most
-    /// CONSOLIDATION_SECONDS away; the stored record wins and is never changed.
-    fn consolidate(&self, inner: &Inner, bytes: &[u8]) -> Result<(Vec<Record>, Summary), Fault> {
+    /// CONSOLIDATION_SECONDS away; that record wins, and only its confirmation is
+    /// upgraded (Record::upgrade_confirmation). Returns the records to add, the stored
+    /// records (by index) whose confirmation changed, and the summary.
+    fn consolidate(&self, inner: &Inner, bytes: &[u8]) -> Result<Consolidated, Fault> {
         let parsed = parse(
             bytes,
             &Limits {
@@ -1452,17 +1554,22 @@ impl Logbook {
             },
         )?;
         let source = parsed.program.unwrap_or_else(|| "ADIF".to_owned());
-        let mut ids: std::collections::HashSet<String> = inner.ids.keys().cloned().collect();
-        let mut starts: HashMap<(String, String, String), Vec<i64>> = HashMap::new();
-        for record in inner.records.iter() {
+        let mut ids: HashMap<String, Target> = inner
+            .ids
+            .iter()
+            .map(|(id, i)| (id.clone(), Target::Stored(*i)))
+            .collect();
+        let mut starts: HashMap<(String, String, String), Vec<(i64, Target)>> = HashMap::new();
+        for (i, record) in inner.records.iter().enumerate() {
             if let Some(start) = record.start_seconds() {
                 starts
                     .entry(record.consolidation_key())
                     .or_default()
-                    .push(start);
+                    .push((start, Target::Stored(i)));
             }
         }
-        let (mut new, mut summary) = (Vec::new(), Summary::default());
+        let (mut new, mut summary) = (Vec::<Record>::new(), Summary::default());
+        let mut changed: HashMap<usize, Record> = HashMap::new();
         for (index, raw) in parsed.records.into_iter().enumerate() {
             let (mut record, dropped) = match interpret_update(raw) {
                 Ok(read) => read,
@@ -1477,11 +1584,31 @@ impl Logbook {
             }
             let key = record.consolidation_key();
             let start = record.start_seconds();
-            let near = |s: &i64| start.is_some_and(|t| (s - t).abs() <= CONSOLIDATION_SECONDS);
-            if ids.contains(&record.contact_id)
-                || starts.get(&key).is_some_and(|s| s.iter().any(near))
-            {
+            let near = |s: &&(i64, Target)| {
+                start.is_some_and(|t| (s.0 - t).abs() <= CONSOLIDATION_SECONDS)
+            };
+            let present = ids.get(&record.contact_id).copied().or_else(|| {
+                starts
+                    .get(&key)
+                    .and_then(|s| s.iter().find(near))
+                    .map(|s| s.1)
+            });
+            if let Some(target) = present {
                 summary.present += 1;
+                let upgraded = match target {
+                    Target::Added(i) => new[i].upgrade_confirmation(&record),
+                    // A stored record is copied only when its confirmation changes.
+                    Target::Stored(i) => {
+                        let current = changed.get(&i).unwrap_or(&inner.records[i]);
+                        current.upgradable_by(&record) && {
+                            let mut next = current.clone();
+                            next.upgrade_confirmation(&record);
+                            changed.insert(i, next);
+                            true
+                        }
+                    }
+                };
+                summary.confirmed += usize::from(upgraded);
                 continue;
             }
             if record.contact_id.is_empty() {
@@ -1489,16 +1616,28 @@ impl Logbook {
                     .map_err(|_| Fault::new("malformed", Some(index), None))?;
             }
             record.source.get_or_insert_with(|| source.clone());
-            ids.insert(record.contact_id.clone());
+            let target = Target::Added(new.len());
+            ids.insert(record.contact_id.clone(), target);
             if let Some(start) = start {
-                starts.entry(key).or_default().push(start);
+                starts.entry(key).or_default().push((start, target));
             }
             new.push(record);
         }
         summary.added = new.len();
-        Ok((new, summary))
+        Ok((new, changed, summary))
     }
 }
+
+/// #10 the record a consolidated update record is present as: a stored one (its index) or
+/// one added earlier from the same file (its index among the added).
+#[derive(Clone, Copy)]
+enum Target {
+    Stored(usize),
+    Added(usize),
+}
+/// UpdateLogbook result before publication: records to add, stored records whose
+/// confirmation changed (by index), summary.
+type Consolidated = (Vec<Record>, HashMap<usize, Record>, Summary);
 
 /// Save-domain validation of a record to store (log_invalid_field with the key).
 pub fn validate_record(record: &Record, callsign: &str, locator: &str) -> Result<(), &'static str> {
@@ -1581,7 +1720,7 @@ pub fn validate_record(record: &Record, callsign: &str, locator: &str) -> Result
     }
     // Contest exchange fields (#24 S2b, LogRecord): STX/SRX 1-4 digits, the others at
     // most 32 printable characters without '<' and '>'.
-    for (i, name) in FIELDS.iter().enumerate().skip(16) {
+    for (i, name) in FIELDS.iter().enumerate().take(CONFIRMATION).skip(CONTEST) {
         let Some(value) = v(i) else { continue };
         if !valid_contest_value(name, value) {
             return Err(match *name {

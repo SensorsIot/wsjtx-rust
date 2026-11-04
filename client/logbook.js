@@ -65,7 +65,7 @@ document.addEventListener('keydown',event=>{if(event.key==='Enter'&&event.target
 async function sha256(bytes){return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');}
 const groups=list=>list.map(g=>`${g.count} ${g.code.replaceAll('_',' ')}${g.field?` ${g.field}`:''}`).join(', ');
 function updated(v){
-  if(v.state==='completed')return `Logbook updated: ${v.added} added, ${v.present} already present, ${v.skipped} skipped${v.reasons.length?` (${groups(v.reasons)})`:''}${v.dropped.length?` · fields left out: ${groups(v.dropped)}`:''}`;
+  if(v.state==='completed')return `Logbook updated: ${v.added} added, ${v.present} already present (${v.confirmed} confirmation${v.confirmed===1?'':'s'} updated), ${v.skipped} skipped${v.reasons.length?` (${groups(v.reasons)})`:''}${v.dropped.length?` · fields left out: ${groups(v.dropped)}`:''}`;
   const e=v.error;
   return `Logbook not updated · nothing was added · ${e?.code?.replaceAll('_',' ')??'storage unavailable'}${e&&e.record!==null&&e.record!==undefined?` in record ${e.record+1}`:''}${e?.field?` field ${e.field}`:''}`;
 }

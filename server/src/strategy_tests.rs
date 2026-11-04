@@ -359,6 +359,7 @@ fn tc_042_001_new_dxcc_continent_and_zones_ever_and_on_this_band_and_mode() {
         grid: None,
         band: band.map(Into::into),
         mode: Some(mode.into()),
+        confirmed: false,
     };
     let mut st = me();
     st.mode = "FT8".into();

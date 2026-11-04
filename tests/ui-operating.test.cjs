@@ -1763,8 +1763,10 @@ test('TC-011-002 Update logbook from ADIF in Settings consolidates a logger expo
   await page.locator('#log-import-status',{hasText:expected}).waitFor();
   assert.equal(await page.locator('#log-import-status').innerText(),expected);
  };
- await update('log4om.adi',good,'Logbook updated: 2 added, 0 already present, 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
- await update('log4om.adi',good,'Logbook updated: 0 added, 2 already present, 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
+ await update('log4om.adi',good,'Logbook updated: 2 added, 0 already present (0 confirmations updated), 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
+ await update('log4om.adi',good,'Logbook updated: 0 added, 2 already present (0 confirmations updated), 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
+ // #10 (2026-11-04) a rerun that confirms a present QSO upgrades only its confirmation.
+ await update('lotw.adi','<CALL:5>K1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20261031 <TIME_ON:6>123000 <LOTW_QSL_RCVD:1>Y <eor>\n','Logbook updated: 0 added, 1 already present (1 confirmation updated), 0 skipped');
  const bad='<call:5>N0NEW <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n<call:5>W1XYZ <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <eor\n';
  await update('bad.adi',bad,'Logbook not updated · nothing was added · malformed in record 2');
  await page.setViewportSize({width:360,height:800});
@@ -1779,7 +1781,7 @@ test('TC-011-002 Update logbook from ADIF in Settings consolidates a logger expo
  assert.equal(download.suggestedFilename(),'contacts.adi');
  const text=await fs.readFile(await download.path(),'utf8');
  assert.match(text,/^ADIF Export\n<adif_ver:5>3\.1\.8\n/);
- assert.match(text,/<call:5>K1ABC <mode:3>FT8 <qso_date:8>20261031 <time_on:6>123000 <band:3>20m <app_wstxrust_contact_id:36>[0-9a-f-]{36} <app_wstxrust_source:7>LOG4OM2 <eor>\n/);
+ assert.match(text,/<call:5>K1ABC <mode:3>FT8 <qso_date:8>20261031 <time_on:6>123000 <band:3>20m <lotw_qsl_rcvd:1>Y <app_wstxrust_contact_id:36>[0-9a-f-]{36} <app_wstxrust_source:7>LOG4OM2 <eor>\n/);
  assert.match(text,/<call:6>DL1ABC <mode:4>MFSK <submode:3>FT4 <qso_date:8>20261031 <time_on:6>123100 <band:3>40m <app_wstxrust_contact_id:36>[0-9a-f-]{36} <app_wstxrust_source:7>LOG4OM2 <eor>\n/);
  assert.doesNotMatch(text,/Jos|example|dxcc|name/i,'only the log fields are stored');
  assert.equal(text.match(/<eor>/g).length,2);
