@@ -2071,3 +2071,67 @@ test('suite stations own profile UUIDs in per-run station data', {timeout: 30000
   const app = await start(await profile('own', ownPort)); t.after(() => app.close());
   assert.equal((await request(`http://127.0.0.1:${ownPort}`)).body.profile_id, id);
 });
+
+// Proves CL-022-05, TC-022-008: the original 2026-10-29 freeze reproduction (an open page
+// whose transport cookie is lost while its WebSocket stays OPEN). The first protected read
+// that gets 401 makes the page stop claiming Connected within 2 s; the retained key then
+// proves again and the page reconnects with one OPEN socket, without a token, an enrollment
+// or a second session. Every status read is POST {"version":1} with the page's exact Origin.
+test('TC-022-008: lost transport cookie under an open WebSocket is shown, then recovered', {timeout: 45000}, async t => {
+  const {profiles} = await fixture(t, true), p = profiles[0];
+  const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
+  const page = await context.newPage(), counts = {session: 0, enroll: 0, proof: 0}, statusReads = [];
+  await page.addInitScript(() => {
+    const Native = window.WebSocket; window.__sockets = [];
+    window.WebSocket = class extends Native {constructor(...args) {super(...args); window.__sockets.push(this);}};
+  });
+  page.on('request', request => {
+    const url = request.url();
+    if (url.endsWith('/session')) counts.session++;
+    if (url.endsWith('/authorization/v1/enroll')) counts.enroll++;
+    if (url.endsWith('/authorization/v1/proof')) counts.proof++;
+    if (url.endsWith('/authorization/v1/status')) statusReads.push(request.allHeaders().then(headers => ({method: request.method(), body: request.postData(), origin: headers.origin})));
+  });
+  const refused = [];
+  page.on('response', response => {if (response.url().endsWith('/receive/selection') && response.status() === 401) refused.push(response.status());});
+  await page.goto(p.origin);
+  await page.locator('#login').waitFor({state: 'visible'});
+  await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click();
+  await connected(page);
+  const before = {...counts}, socketsBefore = await page.evaluate(() => window.__sockets.length);
+  assert.equal(await page.evaluate(() => window.__sockets.filter(s => s.readyState === WebSocket.OPEN).length), 1);
+  await page.evaluate(() => {
+    const c = document.querySelector('#connection'); window.__states = [];
+    new MutationObserver(() => window.__states.push({state: c.dataset.state, at: performance.now()}))
+      .observe(c, {attributes: true, childList: true, characterData: true, subtree: true});
+  });
+  const cookieName = `wstx_session_${p.document.profile_id}`;
+  await context.clearCookies({name: cookieName});
+  assert.equal((await context.cookies(p.origin)).some(c => c.name === cookieName), false);
+  // The WebSocket stays OPEN: the split health of the original freeze.
+  assert.equal(await page.evaluate(() => socket?.readyState === WebSocket.OPEN && connection.dataset.state === 'connected'), true);
+  // The protected read is refused with 401 on the wire; the client invalidates its
+  // authorization at once and drops that response as stale instead of presenting it.
+  const read = await page.evaluate(async () => {
+    try {const response = await window.stationAuthorization.fetch('/receive/selection'); return {status: response.status, at: performance.now()};}
+    catch (error) {return {error: String(error?.message), at: performance.now()};}
+  });
+  assert.equal(refused.length, 1, 'the lost transport is refused with 401');
+  assert.match(read.error ?? '', /stale/, 'the refused response is not presented');
+  const shown = await page.evaluate(at => window.__states.find(s => s.state !== 'connected' && s.at <= at + 2000) ?? null, read.at);
+  assert.notEqual(shown, null, 'the page stops claiming Connected within 2 s of the 401');
+  await page.waitForFunction(() => connection.dataset.state === 'connected' && socket?.readyState === WebSocket.OPEN &&
+    window.stationAuthorization.snapshot().ready, null, {timeout: 10000});
+  assert.equal(counts.session, before.session, 'no token resubmission');
+  assert.equal(counts.enroll, before.enroll, 'no new enrollment');
+  assert.ok(counts.proof > before.proof, 'recovered by a fresh retained-key proof');
+  assert.equal(await page.locator('#login').isVisible(), false, 'no token prompt');
+  assert.equal((await context.cookies(p.origin)).some(c => c.name === cookieName), true, 'a new transport cookie');
+  const sockets = await page.evaluate(() => window.__sockets.map(s => s.readyState));
+  assert.ok(sockets.length > socketsBefore, 'a new socket after recovery');
+  assert.equal(sockets.filter(s => s === 1).length, 1, 'exactly one OPEN socket');
+  assert.equal(sockets[socketsBefore - 1] >= 2, true, 'the socket of the lost transport is closed');
+  assert.equal(await page.evaluate(async () => (await window.stationAuthorization.fetch('/receive/selection')).status), 200);
+  assert.ok(statusReads.length > 0);
+  for (const read of await Promise.all(statusReads)) assert.deepEqual(read, {method: 'POST', body: '{"version":1}', origin: p.origin});
+});

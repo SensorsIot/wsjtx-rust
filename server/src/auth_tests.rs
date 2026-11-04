@@ -2312,3 +2312,67 @@ async fn profile_save_sets_my_call_for_the_hash_table() {
         Some("HB9BLA")
     );
 }
+
+// Proves: CL-022-05; TC-022-008. The read-only status request is exactly {"version":1}:
+// extra, duplicate, missing or wrongly typed fields 400, wrong media 415, 1025 bytes 413
+// (1024 padded bytes accepted), an unknown transport 401. None of them changes the
+// durable record or the current transport.
+#[tokio::test]
+async fn status_strict_request_bounds_have_zero_effects() {
+    let f = HttpFixture::new("https://localhost:8080");
+    let g = f.authorize().await;
+    let committed = std::fs::read(f.directory.join("authorization.json")).unwrap();
+    let post = |body: Vec<u8>, media: &'static str, cookie: String| {
+        let mut headers = f.headers(Some(&cookie));
+        headers.insert(header::CONTENT_TYPE, media.parse().unwrap());
+        f.request(
+            axum::http::Method::POST,
+            "/authorization/v1/status",
+            body,
+            headers,
+        )
+    };
+    for body in [
+        r#"{"version":1,"extra":1}"#,
+        r#"{"version":1,"version":1}"#,
+        r#"{}"#,
+        r#"{"version":"1"}"#,
+        r#"{"version":2}"#,
+    ] {
+        let reply = post(body.into(), "application/json", g.cookie.clone()).await;
+        assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{body}");
+    }
+    let reply = post(br#"{"version":1}"#.to_vec(), "text/plain", g.cookie.clone()).await;
+    assert_eq!(reply.status, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    let mut body = br#"{"version":1}"#.to_vec();
+    body.resize(1024, b' ');
+    let reply = post(body.clone(), "application/json", g.cookie.clone()).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    body.push(b' ');
+    let reply = post(body, "application/json", g.cookie.clone()).await;
+    assert_eq!(reply.status, StatusCode::PAYLOAD_TOO_LARGE);
+    let unknown = format!(
+        "{}={}",
+        g.cookie.split('=').next().unwrap(),
+        URL_SAFE_NO_PAD.encode([7u8; 32])
+    );
+    let reply = post(br#"{"version":1}"#.to_vec(), "application/json", unknown).await;
+    assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+    assert!(!reply.headers.contains_key(header::SET_COOKIE));
+    assert_eq!(
+        std::fs::read(f.directory.join("authorization.json")).unwrap(),
+        committed
+    );
+    let reply = post(
+        br#"{"version":1}"#.to_vec(),
+        "application/json",
+        g.cookie.clone(),
+    )
+    .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::OK,
+        "the current transport is kept"
+    );
+    assert!(!reply.headers.contains_key(header::SET_COOKIE));
+}
