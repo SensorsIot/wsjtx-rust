@@ -9,7 +9,7 @@ block('settings-startup','Receive at startup',document.querySelector('#settings-
 block('settings-startup-resume','Startup resume',document.querySelector('#settings-expert'),'<p id="startup-resume" class="op-muted" role="status">Startup resume unknown</p>');
 // #52 CL-052-01: off by default; read when Settings opens (at most every 30 s) or on Refresh, never polled.
 block('settings-window-diagnostics','Decode window diagnostics',document.querySelector('#settings-expert'),'<label class="op-check"><input type="checkbox" id="window-dump" disabled>Save FT8 decode windows</label><p id="window-diagnostics" class="op-muted" role="status">Window counters unknown</p><button type="button" id="window-diagnostics-refresh">Refresh</button><p class="op-muted">Keeps the last 20 FT8 prompt windows (12 kHz WAV and JSON) in the profile folder diagnostic-windows. Saved at once; it acts from the next window.</p>');
-block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station: Auto in the strategy element or an MCP client. Its state shows beside the strategy element; HALT and Esc end it. The Tx watchdog counts from your last action and is never reset by automation.</p>');
+block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station: Auto in the strategy element or an MCP client. Its state shows beside the strategy element; HALT ends it; Esc aborts the current QSO. The Tx watchdog counts from your last action and is never reset by automation.</p>');
 block('settings-transmit','Transmit',document.querySelector('#settings-radio'),'<label>Tx watchdog (minutes)<input id="watchdog-tx" type="number" min="1" max="99" step="1" disabled></label><label>Tune watchdog (seconds)<input id="watchdog-tune" type="number" min="1" max="300" step="1" disabled></label><p id="watchdog-result" class="op-muted" role="status"></p><p class="op-muted">Watchdogs apply at once, as in WSJT-X. Tx power is set on the transceiver; this station sends no power command. PTT is chosen under CAT.</p>');
 block('settings-log','Log',document.querySelector('#settings-logging'),'<p>Each completed QSO is logged at once, as in WSJT-X: saved in this station profile’s contacts.adi (ADIF) and sent to the UDP targets that select QSO Logged / Logged ADIF. There is no review step; Log QSO logs the current contact now.</p><button type="button" data-region="logbook">&#9776; Open Logbook</button>');
 // #10 logbook.js (loaded first) made Update logbook from ADIF; it belongs below the Log block.
@@ -22,11 +22,11 @@ const qsoButton=(id,label,title,extra='')=>`<button type="button" id="${id}" dis
 document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<p id="qso-heard" class="ct-line" hidden></p>
 <p id="qso-autoseq" class="op-warning ct-autoseq" role="status" hidden><span id="qso-autoseq-text"></span> <button type="button" id="qso-suggest" hidden></button> <button type="button" id="qso-autoseq-on" title="Turn Auto Seq on">Auto Seq on</button></p>
 <div id="qso-next" class="op-qso-next" hidden><span id="qso-next-label" class="op-eyebrow">&#9656; next:</span><strong id="contact-next">None</strong><span id="qso-countdown" class="op-muted"></span><div class="op-qso-progress" aria-hidden="true"><i id="qso-progress"></i></div></div>
-<div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx (Esc, Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>
+<div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx: emergency stop (Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>
 <p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable" hidden>Log QSO needs a running QSO.</p><p id="contact-result" class="op-muted" role="status"></p><p id="contact-logged" class="op-muted" role="status"></p>
 <div id="qso-area" class="ct-qso-area"><table id="qso-table" class="ct-qso-table" hidden><thead><tr><th scope="col">UTC</th><th scope="col" data-short="Dir">Direction</th><th scope="col" data-short="Exch">Exchange</th><th scope="col" title="How often the identical message repeated">Rep</th><th scope="col" title="Our measured SNR of the partner's latest decode at or before this line" data-short="Rx">Rx SNR</th><th scope="col" title="The partner's latest report on us at or before this line" data-short="Tx">Tx SNR</th></tr></thead><tbody id="qso-dialogue" class="ct-dialogue" aria-label="QSO dialogue" hidden></tbody><tbody id="qso-others" class="ct-others" aria-label="Stations calling me (double-click or Enter answers)"></tbody></table><p id="qso-others-none" class="op-muted ct-line" hidden></p></div>
 `);
-const confirmDialog=document.createElement('dialog');confirmDialog.id='op-confirm';confirmDialog.className='op-dialog';confirmDialog.innerHTML='<form method="dialog"><p id="op-confirm-text"></p><menu><button type="button" class="op-halt-small" id="op-confirm-halt" title="Halt Tx (Esc, Alt+H)">HALT</button><button value="cancel" type="submit">Cancel</button><button value="ok" type="submit" class="op-primary" id="op-confirm-ok">Continue</button></menu></form>';
+const confirmDialog=document.createElement('dialog');confirmDialog.id='op-confirm';confirmDialog.className='op-dialog';confirmDialog.innerHTML='<form method="dialog"><p id="op-confirm-text"></p><menu><button type="button" class="op-halt-small" id="op-confirm-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button><button value="cancel" type="submit">Cancel</button><button value="ok" type="submit" class="op-primary" id="op-confirm-ok">Continue</button></menu></form>';
 window.wstxConfirm=function(text,okLabel='Continue'){
   confirmDialog.querySelector('#op-confirm-text').textContent=text;confirmDialog.querySelector('#op-confirm-ok').textContent=okLabel;
   return new Promise(resolve=>{confirmDialog.returnValue='';confirmDialog.querySelector('#op-confirm-halt').disabled=halt.disabled;confirmDialog.addEventListener('close',()=>resolve(confirmDialog.returnValue==='ok'),{once:true});confirmDialog.showModal();confirmDialog.querySelector('#op-confirm-ok').focus();});
@@ -105,14 +105,20 @@ async function sendNow(action,params={},label=action){
   // A command that ended the QSO (Log QSO) leaves no accepted result in the idle pane.
   finally{sending=false;await load();if(before&&!running(snap?.contact)&&/: accepted$/.test(resultText.textContent))resultText.textContent='';}
 }
-// The keyboard halt itself (Esc, Alt+H) is sent by recording.js, which is loaded at
-// once; this client only shows its outcome and adds the Esc contact cancellation.
+// The keyboard halt itself (Alt+H) is sent by recording.js, which is loaded at once;
+// this client only shows its outcome.
 addEventListener('keyboard-halt',event=>{
   const h=event.detail?.reply?.halt_state;
   if(h)resultText.textContent=`Halt: ${h==='stopped'?'stopped (confirmed)':h==='idle'?'nothing was transmitting':'pending · not yet confirmed'}`;
-  const c=snap?.contact;
-  if(event.detail?.escape&&c&&!['idle','cancelled','completed'].includes(c.state))send('cancel',{},'Cancel contact');else load();
+  load();
 });
+// WstxContact::AbortQso (#39): Esc and the Abort QSO button stop the transmission now
+// and cancel the contact; the station is not halted. The server decides what stops.
+const abortButton=document.createElement('button');abortButton.type='button';abortButton.id='abort-qso';abortButton.className='op-abort';abortButton.textContent='Abort QSO';abortButton.title='Abort QSO (Esc): stop the transmission now and cancel the contact, without HALT';abortButton.disabled=true;
+document.querySelector('#halt-tx')?.after(abortButton);
+const abortable=()=>{const c=snap?.contact,t=snap?.transmit;return !!snap&&((c&&!['idle','cancelled','completed'].includes(c.state))||t?.arm_state==='armed'||!!tick?.transmitting);};
+function abortQso(){if(abortable())send('abort',{},'Abort QSO');}
+abortButton.addEventListener('click',abortQso);
 // ---------------------------------------------------------------- render
 const transmitting=c=>!!c&&!['idle','completed','cancelled'].includes(c.state);
 // #37 QsoPane: a running QSO is a contact with a partner in replying..signoff; a completed,
@@ -164,6 +170,7 @@ function render(){
   $('transmit-unavailable').textContent=!snap?'Transmission unavailable: contact state unknown.':t?.capability==='unavailable'?'Transmission unavailable: radio/authorization not ready.':'Transmission unavailable: this server does not offer transmit control.';
   const tune=$('contact-tune');tune.disabled=!capable;tune.setAttribute('aria-pressed',String(!!t?.tune));tune.textContent=t?.tune?`Tune on · ${snap.watchdog.tune_remaining_seconds} s`:'Tune';
   $('contact-cancel').disabled=!c||['idle','cancelled'].includes(c.state);
+  abortButton.disabled=!abortable();
   // Log QSO while a QSO runs (it also closes it); a finished contact is gone from the pane.
   // The reason stays the disabled button's description without taking a line.
   const log=$('contact-log');log.disabled=!qso;$('contact-unavailable').hidden=true;
@@ -534,11 +541,13 @@ $('window-dump').addEventListener('change',async event=>{
 // Log QSO: log the current contact now, without a form (DirectLog).
 async function logQso(){if(running(snap?.contact))await send('open_log',{},'Log QSO');}
 $('contact-log').addEventListener('click',logQso);
-// WstxOperatingLayout::KeyboardShortcuts (WSJT-X keys where the function exists). Esc and
+// WstxOperatingLayout::KeyboardShortcuts (WSJT-X keys where the function exists). Esc is Abort QSO;
+// Alt+H (the emergency halt) is sent by recording.js.
 const typing=target=>!!target?.closest?.('input:not([type=checkbox]):not([type=radio]):not([type=range]),textarea,select,[contenteditable=true]');
 function nudge(rx,tx,label){const s=snap?.settings;if(!s)return;send('set_frequency',{rx_hz:rx===null?null:Math.max(0,Math.min(3000,s.rx_hz+rx)),tx_hz:tx===null?null:s.tx_hz+tx},label);}
 addEventListener('keydown',event=>{
-  if(event.key==='Escape'){event.preventDefault();return;}
+  // Esc first closes an open dialog or menu; only otherwise it aborts the QSO.
+  if(event.key==='Escape'){if(event.defaultPrevented||document.querySelector('dialog[open]'))return;event.preventDefault();abortQso();return;}
   if(event.key==='F4'){event.preventDefault();if(snap?.contact&&!['idle','cancelled'].includes(snap.contact.state))send('cancel',{},'Clear DX');return;}
   if(event.key==='F11'||event.key==='F12'){
     event.preventDefault();const sign=event.key==='F11'?-1:1,ft4=tick?.period===7500;
@@ -598,7 +607,7 @@ menu.addEventListener('click',event=>{
   if(item.dataset.menu==='reply')replyRow(tr);else if(item.dataset.menu==='select')selectRow(tr);
   else if(item.dataset.menu==='rx'){const hz=Math.round(Number(tr.children[3].textContent));if(Number.isFinite(hz))send('set_frequency',{rx_hz:hz,tx_hz:null},'Rx frequency');}
 });
-menu.addEventListener('keydown',event=>{if(event.key==='Escape'){closeMenu();}});
+menu.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();closeMenu();}});
 document.addEventListener('pointerdown',event=>{if(!menu.hidden&&!menu.contains(event.target))closeMenu();},true);
 // WstxOperatingLayout::QsoPane Others (#37): at most two lines, newest first, from the latest
 // two published periods. While a QSO runs: other stations within ±50 Hz of my Rx frequency
@@ -1025,9 +1034,9 @@ autoButton.addEventListener('click',async()=>{
   if(runActive()){if(!strategyRun())return;try{await automationCommand('stop',{run_id:run.id});}catch(error){statusNode.textContent=`Auto stop refused · ${error.message}`;}return;}
   const s=active(),c=window.wstxContact?.snapshot(),mode=typeof live!=='undefined'?live?.job?.mode:null;
   if(!s||!c||!['ft8','ft4'].includes(mode)){statusNode.textContent='Auto needs a strategy and FT8/FT4 receive';return;}
-  // First use in this page session asks once; HALT and Esc stop Auto at any time.
+  // First use in this page session asks once; HALT stops Auto at any time.
   if(!autoConfirmed){
-    const ok=await window.wstxConfirm(`Auto transmits without asking: it answers only stations that match "${s.name}" (${{call:'Auto Call',cq:'Auto CQ',alternate:`Auto Call and Auto CQ, switching after ${s.switch_after} tries`}[s.auto_role]}). The Tx watchdog (${c.settings.tx_minutes} min) counts from your last action and is never reset by Auto. HALT or Esc stops it.`,'Start Auto');
+    const ok=await window.wstxConfirm(`Auto transmits without asking: it answers only stations that match "${s.name}" (${{call:'Auto Call',cq:'Auto CQ',alternate:`Auto Call and Auto CQ, switching after ${s.switch_after} tries`}[s.auto_role]}). The Tx watchdog (${c.settings.tx_minutes} min) counts from your last action and is never reset by Auto. HALT stops it; Esc aborts the current QSO.`,'Start Auto');
     if(!ok)return;autoConfirmed=true;
   }
   autoButton.disabled=true;
@@ -1191,7 +1200,7 @@ async function startPounce(call){
   if(!c||!['ft8','ft4'].includes(mode)){statusNode.textContent='Pounce needs FT8/FT4 receive';return;}
   // The page session's one confirmation, shared with Auto.
   if(!autoConfirmed){
-    const ok=await window.wstxConfirm(`Pounce transmits without asking: it answers ${call} when it calls CQ or ends a QSO with 73 on this band. The Tx watchdog (${c.settings.tx_minutes} min) counts from your last action and is never reset by automation. HALT or Esc stops it.`,'Pounce');
+    const ok=await window.wstxConfirm(`Pounce transmits without asking: it answers ${call} when it calls CQ or ends a QSO with 73 on this band. The Tx watchdog (${c.settings.tx_minutes} min) counts from your last action and is never reset by automation. HALT stops it; Esc aborts the current QSO.`,'Pounce');
     if(!ok)return;autoConfirmed=true;
   }
   try{
@@ -1212,7 +1221,7 @@ const NEW_KINDS=['new_call','new_grid','new_dxcc','new_continent','new_cq_zone',
 const fresh=kind=>NEW_KINDS.includes(kind)?{value:'ever'}:({message:{value:'cq'},continent:{values:['EU']},call:{values:['DL']},cq_target:{values:['DX']},band:{values:['40m']}}[kind]??{min:null,max:null});
 const newStrategy=name=>({name,rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3});
 const editor=document.createElement('dialog');editor.id='strategy-editor';editor.className='op-dialog op-strategy-editor';editor.setAttribute('aria-labelledby','strategy-editor-title');
-editor.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="strategy-editor-title">Strategies</h2><button type="button" class="op-halt-small" id="strategy-editor-halt" title="Halt Tx (Esc, Alt+H)">HALT</button></header>
+editor.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="strategy-editor-title">Strategies</h2><button type="button" class="op-halt-small" id="strategy-editor-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button></header>
 <div class="se-pick"><label>Edit<select id="se-which"></select></label><button type="button" id="se-new">New</button><button type="button" id="se-copy">Duplicate</button><button type="button" id="se-delete">Delete</button></div>
 <div id="se-body"></div>
 <section class="se-preview" aria-labelledby="se-preview-title"><h3 id="se-preview-title">Live preview · latest period</h3><p id="se-preview-status" class="op-muted" role="status"></p><div class="se-preview-wrap"><table><tbody id="se-preview"></tbody></table></div></section>

@@ -787,6 +787,8 @@ pub enum Command {
         replace: bool,
     },
     Cancel,
+    /// #39 Abort QSO (Esc): Cancel, and the current transmission stops now.
+    Abort,
     ChooseNext(Slot),
     EditMessage(Slot, String),
     SetReport(i32),
@@ -1157,6 +1159,7 @@ impl Engine {
         let capability = core
             .as_ref()
             .map_or(Capability::Unsupported, |c| c.view().capability);
+        let abort = matches!(command, Command::Abort);
         match command {
             Command::SelectRow { row, replace } => {
                 let Some(std) = row.standard.clone() else {
@@ -1289,8 +1292,14 @@ impl Engine {
                     ctx.mode(),
                 )?;
             }
-            Command::Cancel => {
-                Self::disarm(core.as_deref_mut(), DisarmCause::ContactCancelled);
+            Command::Cancel | Command::Abort => {
+                if abort {
+                    if let Some(core) = core.as_deref_mut() {
+                        core.abort(DisarmCause::ContactCancelled);
+                    }
+                } else {
+                    Self::disarm(core.as_deref_mut(), DisarmCause::ContactCancelled);
+                }
                 if let Some(c) = self.contact.as_mut() {
                     if c.state == State::Completed {
                         // A completed contact keeps its fields (Log QSO can re-log it);
@@ -1696,7 +1705,7 @@ impl Engine {
                         }
                         self.requests.remove(position);
                     }
-                    OutcomeKind::Halted => {
+                    OutcomeKind::Halted | OutcomeKind::Aborted => {
                         self.requests.remove(position);
                         self.pending = None;
                     }
@@ -1810,8 +1819,10 @@ impl Engine {
                         && let Some(core) = core.as_deref_mut()
                     {
                         let view = core.view();
+                        // Normal flow never halts (WstxTransmit::TransmitHaltUse): the
+                        // transmission on top of the partner's QSO stops by an abort.
                         if view.transmitting {
-                            core.halt();
+                            core.abort(DisarmCause::Operator);
                         } else if view.arm_state == ArmState::Armed {
                             core.disarm(DisarmCause::Operator);
                         }

@@ -414,3 +414,4 @@ main.op-app{--hl-lotw:rgba(153,0,0,.35);--hl-new_call_band:rgba(153,255,255,.2);
    the top-bar HALT shows whenever the QSO pane HALT is not fully on screen (contact.js). */
 body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #halt-tx{display:none}
 #contact-messages .ct-now{padding:1px 8px;min-height:0}
+.op-app .op-header-actions button.op-abort{background:#2e2a1c;border-color:#7a6a3a;color:#f0d79a;padding:8px 12px;font-weight:600}

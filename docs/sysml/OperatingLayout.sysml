@@ -323,8 +323,9 @@ attribute def ActivityOrdering {
              Persistent Halt stays reachable.
              A secondary region closes with its labelled close control (keyboard
              reachable) or a pointer action outside it, returning to operation and
-             restoring opener focus. Escape never closes a region: it is Halt Tx plus
-             contact cancellation (WstxContact::HaltTx, CL-010-03, #10 decision 5),
+             restoring opener focus. Escape never closes a region: it is Abort QSO
+             (WstxContact::AbortQso, #39 2026-11-04; earlier Halt Tx plus contact
+             cancellation, CL-010-03, #10 decision 5),
              replacing the earlier Escape-closes-region behaviour; existing TC-007-002
              tests asserting Escape-to-close must be updated with that implementation.
              No radio/QSO/strategy mutation or settings autosave from navigation. */
@@ -383,8 +384,9 @@ attribute def ActivityOrdering {
              order (station bar, toolbar, signal canvas, separator, band strip, cards);
              the signal area, its 0..3000 Hz span, palette, Speed/Sensitivity and split
              (CL-010-05, SplitGeometry) are unchanged.
-             Station bar: Halt Tx (always visible, Alt+H, Esc; disabled with reason on a
-             receive-only station, where Esc only cancels the contact) and a compact
+             Station bar: Halt Tx (always visible, Alt+H; disabled with reason on a
+             receive-only station), beside it Abort QSO (Esc, WstxContact::AbortQso,
+             enabled while a contact is in progress, armed or transmitting) and a compact
              transmit state with the last transmitted text, Tx watchdog remaining WD:nm
              or "Tx watchdog expired", visible in every region. Radio toolbar (its period
              and level slots): UTC clock, Tx progress v/15 with Transmitting label, Rx
@@ -478,7 +480,7 @@ attribute def ActivityOrdering {
              whenever it is not (a page such as Logbook or "?" or the Settings drawer covers
              the workspace, or the stacked QSO pane at most 75em wide or on a phone is scrolled
              out of view), the top-bar HALT is shown, so a pointer HALT is always on screen; both are the same action and enabled
-             state, and Esc / Alt+H halt everywhere. The exception chips
+             state, and Alt+H halts everywhere (Esc is Abort QSO). The exception chips
              that stood in the top bar are the ErrorField below the QSO pane since #37
              (operator 2026-11-03). A link that is connected shows no entry; the accessible
              status stays. There is no
@@ -1010,13 +1012,14 @@ attribute def ActivityOrdering {
              reconnecting keeps the full screen. */
     }
     action def KeyboardShortcuts {
-        doc /* WSJT-X keys 1:1 where the function exists: Esc and Alt+H halt (Esc also
-             cancels the contact, WstxContact::HaltTx); F1/F3/F5 and "?" open the overview;
+        doc /* WSJT-X keys 1:1 where the function exists: Alt+H halts (the emergency
+             stop, WstxContact::HaltTx); Esc aborts the QSO (WstxContact::AbortQso, #39
+             2026-11-04: transmission stopped now, contact cancelled, no halt); F1/F3/F5 and "?" open the overview;
              F2 Settings; F4 clears the DX call (contact cancel); Alt+1..Alt+6 choose the
              next message Tx1-Tx6 (Now is a fold-out button only); Alt+M receive start/stop; Alt+T Tune;
              Alt+Q Log QSO; F11/F12 Rx -/+1 Hz; Shift+F11/F12 Tx -/+60 Hz FT8 (90 Hz FT4);
              Ctrl+F11/F12 Rx and Tx -/+1 Hz. Letter and "?" keys are inactive while a text
-             field has focus; Esc and Alt+H always act. Alt+N (Enable Tx) has no function. */
+             field has focus; Esc and Alt+H always act (an open dialog or menu takes Esc first). Alt+N (Enable Tx) has no function. */
     }
     verification def operatingScreen009 {
         objective { verify WstxRequirements::'CL-010-16'; }

@@ -13,8 +13,8 @@ use std::sync::{
 };
 use wstx_rust::decoder::Mode;
 use wstx_rust::transmit::service::{
-    ArmState, AudioError, AudioPoll, Capability, Context, Core, DisarmCause, Hardware, Program,
-    PttError,
+    ArmState, AudioError, AudioPoll, Capability, Context, Core, DisarmCause, HaltState, Hardware,
+    OutcomeKind, Program, PttError,
 };
 use wstx_rust::transmit::{ClockState, Parity};
 
@@ -644,7 +644,7 @@ fn tx1_skip_report_override_and_manual_entry_follow_the_domains() {
 }
 
 #[test]
-fn partner_working_another_call_within_50_hz_halts_in_replying_and_skipped_report() {
+fn partner_working_another_call_within_50_hz_stops_in_replying_and_skipped_report() {
     for skipped in [false, true] {
         for (offset, stops) in [(50.0, true), (51.0, false)] {
             let mut s = station();
@@ -668,9 +668,77 @@ fn partner_working_another_call_within_50_hz_halts_in_replying_and_skipped_repor
             s.deliver(&[elsewhere]);
             assert_eq!(!s.armed(), stops, "offset {offset} skipped {skipped}");
             assert_eq!(!s.core.view().transmitting, stops);
+            // #39: the stop is an abort, never a halt (WstxTransmit::TransmitHaltUse).
+            assert_eq!(s.core.view().halt_state, HaltState::Idle, "no halt");
+            if stops {
+                assert_eq!(
+                    s.fake.0.keys.lock().unwrap().last().map(|k| k.1),
+                    Some(false),
+                    "PTT released now"
+                );
+            }
             assert_eq!(s.state(), expected, "the state is kept");
         }
     }
+}
+
+// Proves: TC-007-004 (#39 Abort QSO, WstxContact::AbortQso). Abort stops the transmission
+// now, cancels the contact and is no halt; the station stays ready for the next QSO.
+#[test]
+fn abort_stops_the_transmission_now_and_cancels_without_a_halt() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, None);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(1) + 3 * SECOND);
+    assert!(s.core.view().transmitting);
+    s.command(Command::Abort).unwrap();
+    let v = s.core.view();
+    assert_eq!(
+        (
+            v.transmitting,
+            v.arm_state,
+            v.last_disarm_cause,
+            v.halt_state
+        ),
+        (
+            false,
+            ArmState::Disarmed,
+            DisarmCause::ContactCancelled,
+            HaltState::Idle
+        ),
+        "stopped now, not halted"
+    );
+    assert_eq!(
+        s.fake.0.keys.lock().unwrap().last().map(|k| k.1),
+        Some(false),
+        "PTT released"
+    );
+    assert!(v.outcomes.iter().any(|o| o.kind == OutcomeKind::Aborted));
+    assert!(v.outcomes.iter().all(|o| o.kind != OutcomeKind::Halted));
+    let c = s.engine.contact.clone().unwrap();
+    assert_eq!((c.state, c.dx_call), (State::Cancelled, None));
+    assert!(s.engine.take_logs().is_empty(), "nothing logged");
+    // Ready: the next QSO arms and transmits.
+    let next = s.row(period(2), "CQ W1AW FN31", 1200.0, None);
+    s.command(Command::SelectRow {
+        row: next,
+        replace: true,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(3) + 3 * SECOND);
+    assert!(s.core.view().transmitting, "the station stays ready");
+    // Cancel (F4) instead lets a transmission on the air finish.
+    s.command(Command::Cancel).unwrap();
+    assert!(
+        s.core.view().transmitting,
+        "cancel lets the transmission finish"
+    );
 }
 
 #[test]

@@ -183,8 +183,8 @@ test('receive snapshot race preserves unknown mutation until a later read',{time
   await chip.filter({hasText:'Receive stopped'}).waitFor();
   assert.deepEqual(errors,[]);
 });
-// WstxContact::HaltTx D5 / OperatingLayout escapeClosesRegion=false: Escape halts and
-// aborts the contact but closes no panel or drawer; its Back/Close control returns.
+// WstxContact::AbortQso (#39) / OperatingLayout escapeClosesRegion=false: Escape aborts
+// the QSO but closes no panel or drawer; its Back/Close control returns.
 async function returnToOperation(page){
   const open=await page.locator('.op-secondary:not([hidden])').count();
   await page.keyboard.press('Escape');
@@ -824,7 +824,7 @@ test('TC-007-009 the Settings drawer has four sections holding every control mov
   await page.locator('#tab-radio').click();await page.locator('#audio-enumerate').click();
   await page.locator('#audio-inputs').filter({hasText:/\S/}).waitFor();
   assert.ok(requests.includes('GET /audio/devices'));assert.equal(requests.includes('PUT /profile'),false,'listing inputs is not an Apply');
-  await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'Esc halts and closes no panel');
+  await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'Esc closes no panel');
   await page.locator('#band-activity').click({position:{x:40,y:200}});assert.equal(await page.locator('#settings-drawer').isVisible(),false,'a pointer action outside closes the drawer');
   await page.keyboard.press('F2');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'F2 opens Settings');
   await page.locator('#settings-drawer .return-operate').click();
@@ -1345,10 +1345,9 @@ test('TC-007-002 in-page navigation preserves unsaved profile and selected recor
  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();assert.equal(await page.locator('#display-name').inputValue(),'Unsaved operator edit');
  await page.locator('#tab-expert').click();
  assert.equal(await page.locator('#recording-file').evaluate(el=>el.files[0].name),'selected-but-not-imported.wav');
- // Escape is the keyboard Halt Tx (WstxContact::HaltTx D5): until the contact snapshot
- // shows a receive-only station it sends the idempotent #9 halt, never anything else.
- assert.deepEqual(mutations.filter(m=>new URL(m.url).pathname!=='/transmit/halt'),[],'navigation does not save/import or issue station mutations');
- assert.ok(mutations.every(m=>m.method==='POST'),'only the keyboard halt POST');
+ // Escape is Abort QSO (WstxContact::AbortQso, #39): with no contact in progress it sends
+ // nothing, and it is never a halt.
+ assert.deepEqual(mutations,[],'navigation does not save/import or issue station mutations, and Esc sends no halt');
  assert.deepEqual(errors,[]);
 });
 

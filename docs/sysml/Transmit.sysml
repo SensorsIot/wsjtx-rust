@@ -516,7 +516,7 @@ package WstxTransmit {
              start, so a request that became stale is refused, never replayed. A
              request of another boot is refused at the wire (state_conflict). */
     }
-    enum def TransmitOutcomeKind { enum accepted; enum replaced; enum started; enum completed; enum halted; enum refused; enum failed; }
+    enum def TransmitOutcomeKind { enum accepted; enum replaced; enum started; enum completed; enum halted; enum refused; enum failed; enum aborted; }
     attribute def TransmitOutcome {
         attribute outcomeSequence : Integer;
         attribute requestSequence : Integer;
@@ -550,6 +550,23 @@ package WstxTransmit {
              HaltTransmit or the tune limit (WstxContact::TuneWatchdog, default 90 s,
              1..300 s) with PTT release. */
     }
+    action def AbortTransmission {
+        doc /* #39 (2026-11-04) Abort QSO: the contact consumer's immediate stop of the
+             current transmission or Tune: stop audio, release PTT with readback (on
+             failure PTT indeterminate, as for every release), report every pending or
+             current request as outcome aborted and disarm with the caller's cause. It is
+             not HaltTransmit: halt_state and the halt count are unchanged. */
+    }
+    attribute def TransmitHaltUse {
+        doc /* HALT is the operator's emergency stop only (operator decision #39,
+             2026-11-04): the browser HALT buttons and Alt+H, and the remote emergency
+             stops MCP wstx_transmit_halt and UDP Halt Tx. The station and its automation
+             never send HaltTransmit in normal flow: a completed contact and ending a run
+             disarm, the partner-works-other stop and Abort QSO use
+             AbortTransmission. */
+    }
+    dependency haltUseClause from TransmitHaltUse to WstxRequirements::'CL-010-03';
+    dependency abortClause from AbortTransmission to WstxRequirements::'CL-010-03';
     attribute def TransmitWatchdog {
         doc /* WstxContact::TxWatchdog enforced by the owner: limit 1..99 minutes (default
              6 at each start), counted only while armed, reset at Arm, on accepted
