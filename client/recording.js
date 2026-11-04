@@ -479,7 +479,7 @@ let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null;
 let lastReceiveReady=null;
 let activitySortProfile=null,activitySortField='value',activitySortDirection='desc';
-const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
+const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsUnread=()=>resultFailed||(!!resultView&&resultCursor<resultView.next_sequence)||(Number.isSafeInteger(live?.job?.next_sequence)&&live.job.next_sequence>resultCursor)||(!!live?.job?.latest_decode&&live.job.latest_decode.id!==resultView?.id);const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
 const receiveStatus=document.querySelector('#receive-status');
 function validPeriodTime(value,mode){
   return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(Date.parse(value)).toISOString().slice(0,19)===value.slice(0,19)&&(value.endsWith('.0000000Z')||(mode==='ft4'&&value.endsWith('.5000000Z')))&&Date.parse(value)%(mode==='ft8'?15000:7500)===0;
@@ -700,7 +700,10 @@ function validRecord(r){
 }const FLAG_NAMES=['new_call','new_call_band','new_grid','new_grid_band','new_dxcc','new_dxcc_band','new_continent','new_continent_band','new_cq_zone','new_cq_zone_band','new_itu_zone','new_itu_zone_band'];function validDxcc(d){return !!d&&typeof d==='object'&&!Array.isArray(d)&&Object.keys(d).every(k=>['name','cont','cq','itu','km'].includes(k))&&typeof d.name==='string'&&/^[\x20-\x7e]{1,40}$/.test(d.name)&&['AF','AN','AS','EU','NA','OC','SA'].includes(d.cont)&&Number.isInteger(d.cq)&&d.cq>=0&&d.cq<=40&&Number.isInteger(d.itu)&&d.itu>=0&&d.itu<=90&&(d.km===undefined||(Number.isInteger(d.km)&&d.km>=0&&d.km<=20038));}function validFlags(f){return !!f&&typeof f==='object'&&!Array.isArray(f)&&Object.keys(f).length>0&&Object.entries(f).every(([k,v])=>FLAG_NAMES.includes(k)&&v===true);}
 async function receiveResults(){
   if(resultPending||livePending||mutationPending||uncertainMutation||operatingReadPending||operatingBlocked()||refresh.disabled||connection.dataset.state!=='connected'||!live?.source||!['ft4','ft8'].includes(live.job?.mode))return;
-  const now=performance.now();if(now-lastResultStart<(resultsDue()?0:4000))return;
+  // #10 PushedStationState: Thin/Off read records of an announced or unread view at most once
+  // per 4 s; with nothing announced or pending they wait for receive.state (the station pushes
+  // each publication) and keep only a safety read at most once per 30 s.
+  const now=performance.now();if(now-lastResultStart<(resultsDue()?0:resultsUnread()?4000:30000))return;
   resultPending=true;lastResultStart=now;
   const context=liveIdentity(live),current=socket,cursor=resultCursor,revision=liveRevision,epoch=receiveMutationEpoch,authEpoch=authorization?.snapshot().epoch;
   const query=new URLSearchParams({source_id:live.source.id,job_id:live.job.id,generation:String(live.generation),cursor:String(cursor),limit:profileSelect.value==='thin'?'1':'16'});
