@@ -36,9 +36,9 @@ async function waitFor(predicate, label, timeout = 20000) {
   }
 }
 
-async function station(t, {name, native = true, discovery, granted = true}) {
-  // A native station without a loopback discovery port would listen on the LAN's UDP 4992.
-  assert.ok(!native || discovery, 'a native test station needs its loopback discovery port');
+async function station(t, {name, native = true, discovery, granted = true, radioAddress, registerPort}) {
+  // A native station without an address or loopback discovery port would listen on the LAN.
+  assert.ok(!native || discovery || (radioAddress && registerPort), 'a native test station needs loopback ports');
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wstx-flex-'));
   t.after(() => fs.rm(dir, {recursive: true, force: true}));
   const port = await browserPort();
@@ -48,12 +48,13 @@ async function station(t, {name, native = true, discovery, granted = true}) {
   const common = {profile_id: id, revision: 0, display_name: name, callsign: 'HB9BLA', locator: 'JN47AA', endpoint: {bind: `127.0.0.1:${port}`, origin},
     audio: {input_device: null, output_device: null}, control: {mode: 'disabled', endpoint: null, ptt: 'disabled'}};
   const document = native
-    ? {schema_version: 2, ...common, connection_type: 'native_flex', native: {client_id: clientId, rx_antenna: 'ANT1'}}
+    ? {schema_version: 2, ...common, connection_type: 'native_flex', native: {client_id: clientId, rx_antenna: 'ANT1', ...(radioAddress ? {radio_address: radioAddress} : {})}}
     : {schema_version: 1, ...common, connection_type: 'standard'};
   const text = JSON.stringify(document);
   await fs.writeFile(path.join(dir, 'profile.json'), text);
   const env = {WSTX_TLS_CERT: path.join(dir, 'cert.pem'), WSTX_TLS_KEY: path.join(dir, 'key.pem'), WSTX_TOKEN: token,
-    ...(discovery ? {WSTX_FLEX_DISCOVERY: `127.0.0.1:${discovery}`} : {})};
+    ...(discovery ? {WSTX_FLEX_DISCOVERY: `127.0.0.1:${discovery}`} : {}),
+    ...(registerPort ? {WSTX_FLEX_REGISTER_PORT: String(registerPort)} : {})};
   let app = await server(env, ['--profile', dir]);
   t.after(() => app.close());
   let cookie = '';
@@ -261,6 +262,23 @@ test('TC-023-001 another model on the admitted API connects, with its announced 
   const v = await state(s, 'ready');
   assert.equal(v.radio.model, 'FLEX-8400'); assert.equal(v.radio.serial, '0000-1111-6600-2222');
   assert.equal(v.radio.firmware, '4.1.3.39644');
+});
+
+test('TC-023-001 a saved address reaches a radio no announcement crosses, and the keep-alive holds its stream', {timeout: 60000}, async t => {
+  const emulator = await new FlexEmulator({silent: true, needRegister: true, model: 'FLEX-8400', serial: '0000-1111-6600-2222'}).start();
+  t.after(() => emulator.stop());
+  const s = await station(t, {name: 'Routed', radioAddress: `127.0.0.1:${emulator.port}`, registerPort: emulator.udpPort});
+  const v = await state(s, 'ready');
+  assert.equal(v.radio.serial, '0000-1111-6600-2222', 'the radio told us itself');
+  assert.equal(v.radio.model, 'FLEX-8400'); assert.equal(v.radio.firmware, '4.3.16.42034');
+  assert.equal(emulator.slicesOf(s.clientId).length, 1);
+  await waitFor(async () => (await s.flex()).packets.accepted > 50, 'the stream arrives only after the registration');
+  const client = [...emulator.clients.values()][0];
+  const own = emulator.registered.filter(r => r.port === client.udpPort);
+  assert.ok(own.length >= 1, 'registered from the port the stream goes to');
+  assert.doesNotMatch(emulator.log.map(e => e.command).join('\n'), /127\.0\.0\.1|\bip=/, 'no local address is ever told');
+  const before = own.length;
+  await waitFor(() => emulator.registered.filter(r => r.port === client.udpPort).length > before, 'the keep-alive repeats', 8000);
 });
 
 test('TC-023-001 the VITA measurement is reported and belongs to its session', {timeout: 60000}, async t => {

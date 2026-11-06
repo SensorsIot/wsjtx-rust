@@ -29,6 +29,9 @@ use std::{
 pub struct Intent {
     pub client_id: String,
     pub rx_antenna: String,
+    /// Where to connect when discovery cannot reach the radio (a routed path): a locator,
+    /// not an identity. Without it, discovery finds the next available radio.
+    pub radio_address: Option<SocketAddr>,
 }
 impl Intent {
     pub fn valid(&self) -> bool {
@@ -49,11 +52,14 @@ impl Intent {
 pub struct Config {
     /// Where discovery announcements are received (default 0.0.0.0:4992).
     pub discovery: SocketAddr,
+    /// The radio's UDP ports the keep-alive of a routed path goes to.
+    pub register_ports: [u16; 2],
 }
 impl Default for Config {
     fn default() -> Self {
         Self {
             discovery: SocketAddr::from(([0, 0, 0, 0], wire::DISCOVERY_PORT)),
+            register_ports: wire::REGISTER_PORTS,
         }
     }
 }
@@ -62,6 +68,7 @@ const STEP: Duration = Duration::from_secs(5);
 const DISCOVERY_WAIT: Duration = Duration::from_secs(3);
 const BACKOFF_MAX_MS: u64 = 4000;
 const MAX_TRACKED: usize = 64;
+const REGISTER_EVERY: Duration = Duration::from_secs(5);
 const UNKNOWN_GAP_100NS: u64 = 2_000_000;
 /// 10 ms at 48 kHz.
 const GROUP_FRAMES: usize = 480;
@@ -589,8 +596,16 @@ fn attempt(
         s.radio_code = None;
         s.retry_after_ms = None;
     });
-    let (found, address) = discover(shared, config)?;
-    let target = SocketAddr::new(address, found.port.unwrap_or(wire::CONTROL_PORT));
+    // A configured address skips discovery: nothing listens on the LAN then.
+    let (found, target) = match intent.radio_address {
+        Some(target) => (wire::Discovery::default(), target),
+        None => {
+            let (found, address) = discover(shared, config)?;
+            let port = found.port.unwrap_or(wire::CONTROL_PORT);
+            (found, SocketAddr::new(address, port))
+        }
+    };
+    let address = target.ip();
     if !shared.allowed() {
         return Err(Error::Unauthorized);
     }
@@ -624,6 +639,15 @@ fn attempt(
         }
     }
     radio.protocol = conn.version.map(|v| v.to_string());
+    // No announcement was heard on a routed path: the radio states its own facts.
+    if intent.radio_address.is_some()
+        && let Ok((0, reply)) = conn.request("info")
+    {
+        let info = wire::parse_info(&reply);
+        radio.serial = info.serial;
+        radio.model = info.model;
+        radio.firmware = info.firmware;
+    }
     shared.update(|s| s.radio = Some(radio.clone()));
     conn.expect_ok("sub client all")?;
     // Replies come in order, so the next reply also proves the client list has arrived,
@@ -656,7 +680,16 @@ fn attempt(
     let udp = bind_audio().map_err(|_| Error::TransportLost)?;
     let port = udp.local_addr().map_err(|_| Error::TransportLost)?.port();
     conn.udp = Some(udp);
+    // The radio takes the address from this connection, so a NAT rewriting it stays right;
+    // only the port is ever told.
     conn.expect_ok(&format!("client udpport {port}"))?;
+    if intent.radio_address.is_some() {
+        conn.register = Some((
+            config.register_ports.map(|p| SocketAddr::new(address, p)),
+            format!("client udp_register handle=0x{own:08X}"),
+        ));
+        conn.register_keepalive();
+    }
 
     let (code, message) = conn.request(&format!(
         "slice create rxant={} mode=DIGU",
@@ -748,6 +781,7 @@ fn attempt(
             return Err(Error::Unauthorized);
         }
         conn.pump()?;
+        conn.register_keepalive();
         conn.check_own()?;
         let facts = conn.slice_facts();
         shared.update(|s| {
@@ -908,6 +942,9 @@ struct Conn<'a> {
     own: Option<u32>,
     view: View,
     udp: Option<UdpSocket>,
+    /// A routed path: the datagram that opens and keeps open the way back for the stream.
+    register: Option<([SocketAddr; 2], String)>,
+    last_register: Option<Instant>,
     slice: Option<u32>,
     stream: Option<u32>,
     last_count: Option<u8>,
@@ -927,10 +964,28 @@ impl<'a> Conn<'a> {
             own: None,
             view: View::default(),
             udp: None,
+            register: None,
+            last_register: None,
             slice: None,
             stream: None,
             last_count: None,
             buffer: vec![0; wire::MAX_DATAGRAM + 1],
+        }
+    }
+    /// From the stream's own port, well inside a router's UDP tracking timeout.
+    fn register_keepalive(&mut self) {
+        let (Some(udp), Some((targets, text))) = (self.udp.as_ref(), self.register.as_ref()) else {
+            return;
+        };
+        if self
+            .last_register
+            .is_some_and(|at| at.elapsed() < REGISTER_EVERY)
+        {
+            return;
+        }
+        self.last_register = Some(Instant::now());
+        for target in targets {
+            let _ = udp.send_to(text.as_bytes(), target);
         }
     }
     fn pump(&mut self) -> Result<(), Error> {

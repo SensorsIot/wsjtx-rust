@@ -227,6 +227,13 @@ fn native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged() {
             .and_then(|d| d.validate().map(|_| d))
     };
     let native = accept(&native_document()).unwrap();
+    let mut located = native_document();
+    located["native"]["radio_address"] = "192.0.2.10:4992".into();
+    assert_eq!(
+        serde_json::to_value(accept(&located).unwrap()).unwrap(),
+        located,
+        "a saved address round-trips"
+    );
     assert_eq!(serde_json::to_value(&native).unwrap(), native_document());
     let standard = serde_json::to_value(independent_document()).unwrap();
     assert!(
@@ -259,6 +266,21 @@ fn native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged() {
         &|v| v["audio"]["input_device"] = "X".into(),
         "invalid_profile",
     );
+    with(
+        &|v| v["native"]["radio_address"] = serde_json::Value::Null,
+        "invalid_profile",
+    );
+    for bad in [
+        "radio.local:4992",
+        "192.0.2.10",
+        "192.0.2.10:0",
+        "[::1]:4992",
+    ] {
+        with(
+            &move |v| v["native"]["radio_address"] = bad.into(),
+            "invalid_profile",
+        );
+    }
     with(&|v| v["control"]["mode"] = "cat".into(), "invalid_profile");
     with(
         &|v| v["connection_type"] = "standard".into(),
@@ -300,11 +322,15 @@ fn native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged() {
 fn native_profile_creation_persists_intent_without_runtime_handles() {
     let directory = std::env::temp_dir().join(format!("wstx-native-{}", new_uuid().unwrap()));
     assert_eq!(
-        Store::create_native(&directory, "ant 1"),
+        Store::create_native(&directory, "ant 1", None),
         Err("invalid_runtime_configuration")
     );
     assert!(!directory.exists());
-    Store::create_native(&directory, "ANT1").unwrap();
+    assert_eq!(
+        Store::create_native(&directory, "ANT1", Some("radio.local:4992")),
+        Err("invalid_runtime_configuration")
+    );
+    Store::create_native(&directory, "ANT1", None).unwrap();
     let text = fs::read_to_string(directory.join("profile.json")).unwrap();
     let (mut store, _) = Store::open(&directory).unwrap();
     let native = store.document.native.clone().unwrap();

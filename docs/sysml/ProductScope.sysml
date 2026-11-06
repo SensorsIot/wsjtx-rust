@@ -255,8 +255,16 @@ package WstxProductScope {
              available_clients=0 gets no connection, and when only such radios are heard the
              result is capacity_clients; nothing heard is radio_not_found. The serial in an
              announcement is shown, never saved or compared. This inbound radio traffic is not
-             the WSJT-X UDP interface, which stays send-only (#40). A radio on a routed path,
-             which no announcement crosses, is therefore not reachable from this slice.
+             the WSJT-X UDP interface, which stays send-only (#40). A profile's radio_address
+             replaces discovery (nothing listens) and means that one radio, with no fallback: a
+             routed path carries no broadcast. A full radio there reports radio_refused, since no
+             announcement states capacity. Model, serial and firmware then come from the radio's
+             info reply, sent after the API check. The radio takes the client's address from the
+             control connection, so a NAT stays right and only the port is told (client udpport).
+             On that path the session sends client udp_register handle=<own handle> from the
+             stream's own UDP port to the radio's UDP ports 4991 and 4993, right after client
+             udpport and every 5 s, to open and keep open the way back through connection tracking
+             (WSTX_FLEX_REGISTER_PORT replaces both ports for tests).
              Control: TCP to the announced ip/port (default 4992), connect/step deadline 5 s,
              lines <= 4096 bytes incoming and <= 1024 outgoing, one outstanding command, reply
              codes hexadecimal. Only API protocol V1.4.0.0 is admitted; any other version
@@ -336,7 +344,7 @@ package WstxProductScope {
              another model or firmware speaking it connects and is displayed but not claimed as
              supported. The displayed model, serial and firmware are the announced ones.
              Profile: the connection type is chosen at creation (--create-native-flex-profile
-             <dir> <rx antenna>) and is read-only in the browser. Remaining: hardware/firmware,
+             <dir> <rx antenna> [<address:port>]) and is read-only in the browser. Remaining: hardware/firmware,
              24 kHz DAX, latency/timestamps, >= 4 usable slices, broadcast discovery and resource
              release on disconnect (TC-023-004/005); transmit (TC-023-006). */
     }

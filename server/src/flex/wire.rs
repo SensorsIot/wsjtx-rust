@@ -7,6 +7,8 @@
 /// Control TCP port and the discovery UDP port of the pinned API (both 4992).
 pub const CONTROL_PORT: u16 = 4992;
 pub const DISCOVERY_PORT: u16 = 4992;
+/// The radio's UDP ports a routed client sends its registration to.
+pub const REGISTER_PORTS: [u16; 2] = [4991, 4993];
 /// The only admitted API protocol version (`V1.4.0.0`).
 pub const SUPPORTED_PROTOCOL: ProtocolVersion = ProtocolVersion {
     major: 1,
@@ -384,6 +386,25 @@ pub struct Discovery {
     pub port: Option<u16>,
     pub available_clients: Option<u32>,
     pub available_slices: Option<u32>,
+}
+
+/// Radio facts from the reply to `info`: `model="FLEX-6600",chassis_serial="...",software_ver=...`.
+pub fn parse_info(reply: &str) -> Discovery {
+    let mut found = Discovery::default();
+    for pair in reply.split(',') {
+        let Some((key, value)) = pair.split_once('=') else {
+            continue;
+        };
+        let value = value.trim_matches('"');
+        let bounded = (!value.is_empty() && value.len() <= 64).then(|| value.to_owned());
+        match key {
+            "chassis_serial" => found.serial = bounded.unwrap_or_default(),
+            "model" => found.model = bounded,
+            "software_ver" => found.firmware = bounded,
+            _ => {}
+        }
+    }
+    found
 }
 
 pub fn parse_discovery(bytes: &[u8]) -> Result<Discovery, WireError> {

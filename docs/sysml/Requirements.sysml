@@ -247,7 +247,7 @@ package WstxRequirements {
     }
     dependency CL_013_02_to_FR_023 from 'CL-013-02' to 'FR-023';
     requirement 'CL-013-03' {
-        doc /* Each native FlexRadio profile MUST persist its receive intent: its own client identity and receive antenna, and no radio identity (operator decision 2026-11-06 on #22: the station uses whichever radio discovery finds available). On every connection/reconnection the system MUST reconcile that intent with authoritative discovery/status and current runtime handles. A changed/transient slice index MUST NOT redirect a station to another station's slice. Unresolvable associations MUST produce a visible unavailable/conflict state rather than guessing a replacement. */
+        doc /* Each native FlexRadio profile MUST persist its receive intent: its own client identity and receive antenna, and no radio identity (operator decision 2026-11-06 on #22: the station uses whichever radio discovery finds available). Where discovery cannot reach the radio, the profile may also save the radio's address (operator decision 2026-11-06 on #13): a locator for that one radio, not compared with anything. On every connection/reconnection the system MUST reconcile that intent with authoritative discovery/status and current runtime handles. A changed/transient slice index MUST NOT redirect a station to another station's slice. Unresolvable associations MUST produce a visible unavailable/conflict state rather than guessing a replacement. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/flex/session.rs; server/src/profile.rs";
     }
@@ -1770,7 +1770,10 @@ package WstxRequirements {
              the same vector bytes. Another model on the admitted API connects and its announced
              model, serial and firmware are shown. GET /native-flex reports the packet's timestamp
              kind and this host's clock minus its time, which a new session without own packets
-             shows as null. */
+             shows as null. A saved address connects with nothing announced and no discovery
+             listener; model, serial and firmware then come from the radio's info reply; the stream
+             arrives only after client udp_register from the stream's port, which repeats, and no
+             command names a local address. */
         attribute automation : AutomationState = AutomationState::implemented;
         attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
         objective {

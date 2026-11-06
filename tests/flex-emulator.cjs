@@ -52,6 +52,8 @@ class FlexEmulator {
     this.maxGui = options.maxGui ?? 4;
     this.announceClients = options.announceClients; // overrides available_clients
     this.silent = options.silent ?? false; // announces nothing
+    this.needRegister = options.needRegister ?? false; // sends a stream only to a registered source, as a NAT would
+    this.registered = []; // {text, port, at}
     this.ignoreTune = options.ignoreTune ?? false; // accepts slice tune, never reports it
     this.replyFirst = options.replyFirst ?? false; // answers sub client before its statuses
     this.daxStatusDelay = options.daxStatusDelay ?? 0; // ms until a DAX change takes effect
@@ -77,6 +79,8 @@ class FlexEmulator {
     this.port = this.server.address().port;
     this.udp = dgram.createSocket('udp4'); this.udp.bind(0, '127.0.0.1'); await once(this.udp, 'listening');
     // Another host on the network sending the station's own stream ID.
+    this.udp.on('message', (data, from) => this.registered.push({text: data.toString('latin1'), port: from.port, at: performance.now()}));
+    this.udpPort = this.udp.address().port;
     this.stranger = dgram.createSocket('udp4'); this.stranger.bind(0, '127.0.0.2'); await once(this.stranger, 'listening');
     this.stranger.unref();
     // Unreferenced: a failed test that never reaches stop() cannot keep node --test alive.
@@ -110,6 +114,7 @@ class FlexEmulator {
       for (const [id, s] of owned) {
         const client = this.clients.get(s.owner), slice = this.sliceOf(s);
         if (!client?.udpPort || !slice) continue;
+        if (this.needRegister && !this.registered.some(r => r.port === client.udpPort && r.text === `client udp_register handle=0x${hex(s.owner)}`)) continue;
         const sender = this.strangerOnly ? this.stranger : this.udp;
         sender.send(vita({type: 1, stream: id, packetClass: DAX48, count: s.count++, integer: 1, payload: daxPayload(128, slice.amplitude, s.phase)}), client.udpPort, '127.0.0.1');
         s.phase += 128;
@@ -178,6 +183,8 @@ class FlexEmulator {
       return;
     }
     if (text === 'client start_persistence off' || text === 'ping') return reply(0);
+    // The form of a real FLEX-6600's reply, recorded 2026-11-06.
+    if (text === 'info') return reply(0, `model="${this.model}",chassis_serial="${this.serial}",name="",callsign="TEST",gps="Not Present",num_slice=${this.maxSlices},num_tx=1,software_ver=4.3.16.42034,ip=127.0.0.1`);
     if (words[0] === 'client' && words[1] === 'gui' && words.length === 3) {
       if (this.guiCount() >= this.maxGui) return reply('50000005');
       client.gui = true; client.clientId = words[2];
