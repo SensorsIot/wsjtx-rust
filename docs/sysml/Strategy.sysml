@@ -23,7 +23,7 @@ package WstxStrategy {
             final 73.
          D4 An award strategy never calls CQ. It waits for the next opportunity and goes on
             after each QSO without a limit (no QSO or time limit; the WstxMcp run bounds
-            do not apply to it). The grant and every safety check still apply.
+            and the transport's 8 h do not apply to it). The grant and every safety check still apply.
          D5 Stations calling my callsign are always answered, independent of goal, region
             and SNR, and come first (CallerOfMyCall).
          D6 No skip: a station is never skipped after N calls. calls_per_station is the
@@ -63,6 +63,7 @@ package WstxStrategy {
             key is no longer required". Permission to redistribute or fetch automatically
             is therefore not established: no automatic refresh and no bundled copy until
             the operator rules on the terms. Everything works without a list.
+         D14 Built-in strategies (operator 6626205191 (5)): BuiltinStrategies.
          D13 Grids are a known-unknown: only 6,729 of the operator's 26,902 Log4OM QSOs carry
             a grid, so a missing grid is unknown, never new (GoalNeeded grid). */
 
@@ -186,7 +187,12 @@ package WstxStrategy {
              the records whose QSO_DATE lies in the window, inclusive; cached per (log
              revision, country table, first date, last date; today is its UTC date), at most 4
              windows, so it is not rebuilt per evaluation. A record without a date counts only
-             for all. */
+             for all. A rebuild takes about 100 ms with 26,902 QSOs (measured 2026-11-06, release
+             build, two station steps), so it never runs on the station step: the step uses the
+             last built set of the window at once, and a set missing or behind the log is
+             built on its own thread for a later step. A selection and POST /strategy/evaluate
+             (blocking threads) wait for the current set. With no set yet nothing is
+             needed in that step (no claim of needed). */
     }
     attribute def CallerOfMyCall {
         doc /* A decoded standard message with a resolved sender, addressed to my call, other
@@ -469,7 +475,8 @@ package WstxStrategy {
     attribute def ValueView {
         doc /* While a strategy is active the browser renders the station's verdicts in Band
              Activity: after a new publication event (never on a timer) it asks POST
-             /strategy/evaluate once for the shown sequences of the current live identity.
+             /strategy/evaluate once for the shown sequences of the current live identity; rows
+             arriving during an evaluation are asked for when it ends.
              A row with a rank has the existing strategy mark (colour stays per
              WstxOperatingLayout::BandActivityColours: only interesting stations); greyed rows
              are dimmed and struck through; other rows have no mark. With the sort on value (the
@@ -516,11 +523,16 @@ package WstxStrategy {
              the selection. Without a grant transport or transmit owner no run starts:
              the strategy stays selected and the snapshot's strategy_refusal names the reason
              (transmit_unavailable) until the next selection.
-             No bounds: max_contacts and max_run_minutes do not apply and read null. The
+             No bounds: max_contacts and max_run_minutes do not apply and read null. The run
+             checks the grant, not the transport of the selecting request: a page load, a
+             second tab or a 401 recovery (a new proof) and the transport's 8 h deadline do
+             not end it; a revoked grant or a safety edit does (authority_lost). The
              run ends only by a HALT, a selection, the grant (authority_lost), the Tx
              watchdog (tx_watchdog) or a refused command (transmit_refused, provider_error):
              the strategy stays selected with the stop reason shown, and only a new
-             selection (None, then the strategy) starts it again. HALT from any source (button,
+             selection (None, then the strategy) starts it again: an AutomationCommand start
+             of a configuration a strategy run left is refused 409 operator_required strategy,
+             from an MCP client and from the browser. HALT from any source (button,
              Alt+H, MCP, UDP) ends the run and sets active to None in the store, also with no
              run, at the next station step (revision + 1, in memory: active is never read
              from the file), pushed by strategy.state. Esc (Abort QSO) changes neither.
@@ -533,8 +545,9 @@ package WstxStrategy {
              #24 S2a); it selects nothing until the reason is gone.
              Waiting: on each fresh complete publication the list is the verdicts with a rank,
              not completed in this run and not given up by the operator
-             (ManualIntervention), one per call, in ValueOrder (no CQ is ever called). The call
-             the run left after calls_per_station is passed over when any other is listed.
+             (ManualIntervention), one per call, in ValueOrder (no CQ is ever called). A candidate the
+             run left after calls_per_station is passed over when any other is listed; a
+             caller never is (D5).
              The first is selected (select_row {replace false}) and armed (enable_tx); an RR73/73
              candidate keeps the previous Tx frequency (set_frequency). Nothing listed: it
              keeps waiting. A contact the run did not select: ManualIntervention.

@@ -26,7 +26,7 @@ pub(crate) struct Mcp {
     pub(crate) mcp: String,
     pub(crate) scope: authorization::WireScope,
     key: Option<ring::signature::EcdsaKeyPair>,
-    gid: String,
+    pub(crate) gid: String,
 }
 pub(crate) struct Reply {
     pub(crate) status: StatusCode,
@@ -396,6 +396,7 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
                     "ignore_calls":[],"session_ignore_minutes":30}}),
     );
     assert!(saved.is_ok());
+    f.state.logbook.worked_set().unwrap();
     // Modern discovery and the fixed WstxMcp::ToolCatalog.
     let d = f.modern("server/discover", json!({})).await;
     assert_eq!(d.status, StatusCode::OK);

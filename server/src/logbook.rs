@@ -961,6 +961,8 @@ pub struct Logbook {
     /// The table is held (not its address), so a later table can never match it.
     worked_set: Mutex<Option<WorkedCache>>,
     worked_windows: Mutex<Vec<WindowCache>>,
+    /// #39 the keys a background build is running for (WstxStrategy::WorkedWindow).
+    worked_building: Mutex<Vec<Option<(u32, u32)>>>,
     /// #10 the worked-before index for the records revision it was built from.
     worked_index: Mutex<Option<(u64, std::sync::Arc<WorkedIndex>)>>,
 }
@@ -1124,6 +1126,7 @@ impl Logbook {
             dxcc: Mutex::new(load_dxcc(&directory.join(crate::dxcc::FILE_NAME))),
             worked_set: Mutex::new(None),
             worked_windows: Mutex::new(Vec::new()),
+            worked_building: Mutex::new(Vec::new()),
             worked_index: Mutex::new(None),
         }
     }
@@ -1393,11 +1396,67 @@ impl Logbook {
             .worked_windows
             .lock()
             .unwrap_or_else(|p| p.into_inner());
+        cache.retain(|c| c.2 != (first, last));
         if cache.len() >= WORKED_WINDOWS {
             cache.remove(0);
         }
         cache.push((revision, table.cty.clone(), (first, last), worked.clone()));
         Ok(worked)
+    }
+    /// #39 WstxStrategy::WorkedWindow for the station step: the last built set of this window
+    /// (all time: None) at once, without building (a rebuild of the operator's log takes about
+    /// 100 ms, two station steps). A set that is missing or behind the log or the country
+    /// table is built on its own thread for a later step; None until the first is ready.
+    pub fn worked_latest(
+        self: &std::sync::Arc<Self>,
+        window: Option<(u32, u32)>,
+    ) -> Option<std::sync::Arc<crate::dxcc::Worked>> {
+        let (table, _) = self.dxcc();
+        let last = match window {
+            None => self
+                .worked_set
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone()
+                .map(|(r, t, w)| (r, t, w)),
+            Some(key) => self
+                .worked_windows
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .iter()
+                .find(|c| c.2 == key)
+                .map(|c| (c.0, c.1.clone(), c.3.clone())),
+        };
+        // A busy log (a save, an import) keeps the last set: the step never waits for it.
+        let revision = match self.inner.try_lock() {
+            Ok(inner) => Some(inner.revision),
+            Err(_) => None,
+        };
+        let current = revision.is_none_or(|revision| {
+            last.as_ref()
+                .is_some_and(|(r, t, _)| *r == revision && std::sync::Arc::ptr_eq(t, &table.cty))
+        });
+        if !current {
+            let mut building = self
+                .worked_building
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            if !building.contains(&window) {
+                building.push(window);
+                let log = self.clone();
+                std::thread::spawn(move || {
+                    let _ = match window {
+                        None => log.worked_set(),
+                        Some((first, last)) => log.worked_window(first, last),
+                    };
+                    log.worked_building
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .retain(|k| *k != window);
+                });
+            }
+        }
+        last.map(|(_, _, w)| w)
     }
     /// #55 the country table in use and whether an uploaded file was unreadable.
     pub fn dxcc(&self) -> (crate::dxcc::Table, bool) {

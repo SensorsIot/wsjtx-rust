@@ -2489,6 +2489,38 @@ test('TC-039-032 Built-in strategies are read-only in the editor and copy to a u
   assert.equal(reply.configuration.active,'DXCC slots');
   assert.equal(reply.configuration.strategies.some(s=>s.name==='DXCC slots'),false);
   assert.deepEqual(errors.filter(e=>!/400/.test(e)),[]);
+// Proves: CL-039-04; TC-039-006 review 6683200740 finding 5: rows published during an evaluation are
+// evaluated when it ends, without a timer. Station replies are hand-written fixtures.
+test('TC-039-006 Rows arriving during an evaluation are evaluated when it ends',{timeout:60000},async t=>{
+  let state,view,release;const evaluations=[];const held=new Promise(r=>{release=r;});
+  const period='2026-10-27T12:00:00.0000000Z';
+  const record=(sequence,text,from,hz,grid)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:{type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}},period_start_utc:period});
+  const records=[record(0,'CQ K1ABC FN42','K1ABC',1000,'FN42'),record(1,'CQ DL1XYZ JO62','DL1XYZ',1400,'JO62')];
+  const strategy={name:'CQ',class:'award',goals:['new_call'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:false,window:{kind:'all'}};
+  const publish=()=>{Object.assign(state.job,{first_sequence:0,next_sequence:records.length,available_count:records.length,latest_decode:{id:1,first_sequence:0,next_sequence:records.length,period_start_utc:period,complete:true}});};
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:2,configuration:{continent:null,active:'CQ',strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[]};
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:period,canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};publish();
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor);await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next:cursor+batch.length,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+    await p.route('**/strategy',route=>route.fulfill({json:view}));
+    await p.route('**/strategy/evaluate',async route=>{const b=JSON.parse(route.request().postData());evaluations.push(b);if(evaluations.length===1)await held;
+      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'CQ',my_continent:'EU',verdicts:Array.from({length:b.next_sequence},(_,i)=>({sequence:i,rank:i,grey:false}))}});});
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2,null,{timeout:25000});
+  for(let i=0;i<100&&!evaluations.length;i++)await page.waitForTimeout(50);
+  assert.equal(evaluations.length,1,'the first evaluation is held');
+  // A new row arrives while it is held.
+  records.push(record(2,'CQ G4ABC IO91','G4ABC',1800,'IO91'));publish();
+  await page.evaluate(s=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',data:{profile_id:s.profile_id,boot_id:s.boot_id,generation:s.generation}}}})),state);
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3,null,{timeout:15000});
+  assert.equal(evaluations.length,1,'one at a time');
+  release();
+  await page.waitForFunction(()=>document.querySelectorAll('#band-activity tr.ba-strategy').length===3,null,{timeout:10000});
+  assert.deepEqual(evaluations.map(b=>[b.first_sequence,b.next_sequence]),[[0,2],[0,3]]);
+  assert.deepEqual(errors,[]);
 });
 // Proves: CL-042-02; TC-042-003 Band Activity right-click Ignore / Stop ignoring and the
 // Settings > General ignore lists send exactly the requests written here; the station
