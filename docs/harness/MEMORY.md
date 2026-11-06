@@ -34,6 +34,9 @@ source; do not replace it with a user-level skill or update its pin without its 
   gate; merge main only after a conflict bounce, and the re-review reads only the
   resolution (`resolution_diff.py`); the reviewer posts its own verdict — an implementer
   never posts or relays one. Set `HARNESS_REPO` only inline on queue/lifecycle commands.
+- **Radio:** before any agent Tx, `.harness/deploy/radio-preflight.ps1 -Holder <run>` must
+  exit 0 (RF power, one live writer; `-Attended` for a short attended test;
+  [handoff](HB9BLA-HANDOFF.md#preserve-the-runtime)).
 - **Operator design rules** (recorded on the issues): clear client–server — the server
   pushes state over one WebSocket, HTTP only for commands and the reconnect snapshot, no
   client polling (#10); Band Activity colours only interesting stations (#50); CI-V

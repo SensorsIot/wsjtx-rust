@@ -19,9 +19,22 @@ verify their availability in the actual agent environment before starting work.
 
 - Station: **https://192.168.0.37:18081**, task `WSTX Rust Station HB9BLA`;
   receipt `%LOCALAPPDATA%\WstxRust\station\station-running.json`.
-- IC-7300: **COM3**, USB Audio CODEC; in use on **20 m FT8 (14.074 MHz USB-D)**, 1 W for
-  agent tests; **AGC SLOW** for FT8/FT4 (operator finding: it removes the AGC line between
-  periods). Read back before changes — CI-V reads first and writes only on a difference.
+- IC-7300: **COM3**, USB Audio CODEC; in use on **20 m FT8 (14.074 MHz USB-D)**; **AGC SLOW**
+  for FT8/FT4 (operator finding: it removes the AGC line between periods). Read back before
+  changes — CI-V reads first and writes only on a difference.
+- RF power is whatever the radio reads, not a fact of this page: agent Tx is authorized at
+  1 W (`.harness/deploy/radio-authorization.json`), and on 2026-11-06 the radio read `0026`
+  (about 10 W; #44). **Before keying, an agent runs
+  `.harness/deploy/radio-preflight.ps1 -Holder <run>` and keys only on exit 0, under its lease**
+  (`-Status`, `-Release`). It stops an idle station gracefully for the CI-V read, because the
+  station holds COM3, starts it again, and records the value; it writes nothing to the radio.
+  Above the authorization it refuses an unattended run; a short attended test adds `-Attended`
+  and is warned instead. A contact you did not start, seen while another run's lease is live,
+  is that run's. The station itself does not check this.
+- Real try before review ([CR process](../../harness/core/docs/CR-Process.md), step 2): a few
+  short transmissions on a development build need no prior review (operator 2026-11-06: "If
+  they are short, nobody will complain"). Long or unattended automatic running on the air
+  needs its safety review first.
   The camera microphone belongs to Dictate, not the radio.
 - Station log: `%LOCALAPPDATA%\WstxRust\station\profiles\ic7300\contacts.adi`, updated on
   2026-11-04 from the operator's Log4OM export (26,886 QSOs). A rerun of Update logbook
