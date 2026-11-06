@@ -414,7 +414,7 @@ test('TC-010-002 optional output is opt-in, bounded, paced and invalidated by ca
 // Proves: CL-006-03/04; TC-010-002, recording.state is pushed on change and the browser does not poll for it.
 test('TC-010-002 recording state and import progress are pushed on change, without recording.get or a timer read',{timeout:45000},async t=>{
   const f=await fixture(t),initial=await f.upload(wav(40));
-  const open=async()=>{const ws=new WebSocket(f.origin.replace('http','ws')+'/ws','wstx.v1',{origin:f.origin});await once(ws,'open');t.after(()=>ws.close());const log=[];ws.on('message',data=>{const value=JSON.parse(String(data));if(value.type==='recording.state')log.push({at:performance.now(),bytes:Buffer.byteLength(String(data)),value});});return {ws,log};};
+  const open=async()=>{const ws=new WebSocket(f.origin.replace('http','ws')+'/ws','wstx.v1',{origin:f.origin});await once(ws,'open');t.after(()=>ws.close());const log=[],profile=[];ws.on('message',data=>{const value=JSON.parse(String(data));if(value.type==='profile.state')profile.push(value.data);if(value.type==='recording.state')log.push({at:performance.now(),bytes:Buffer.byteLength(String(data)),value});});return {ws,log,profile};};
   const watcher=await open(),bare=await open();
   // Off is the quietest subscription and still receives it; a peer without one gets nothing.
   let pending=receive(watcher.ws);watcher.ws.send(JSON.stringify({v:1,type:'spectrum.off',id:1}));assert.equal((await pending).data.profile,'off');
@@ -423,6 +423,7 @@ test('TC-010-002 recording state and import progress are pushed on change, witho
   p.on('request',r=>{if(new URL(r.url()).pathname==='/recording')reads.push(r.method());});
   await p.goto(f.origin);await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});await p.waitForFunction(()=>snapshot?.recording);
   await sleep(1500);
+  assert.equal(watcher.profile.length,1,'one profile.state after the first subscription');assert.deepEqual(Object.keys(watcher.profile[0]).sort(),['boot_id','profile_id','revision']);assert.deepEqual(bare.profile,[],'a peer without a subscription gets no profile.state');
   assert.equal(watcher.log.length,1,'one recording.state after the first subscription');assert.ok(!('id' in watcher.log[0].value));
   assert.deepEqual(watcher.log[0].value.data,{generation:initial.generation,source_id:initial.recording.id,job_id:null,state:null,import:null});
   // Idle: no event and no read for longer than the old 2 s and 5 s timers.

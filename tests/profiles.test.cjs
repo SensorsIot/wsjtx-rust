@@ -1903,12 +1903,13 @@ test('TC-022-001 review regression: Refresh cannot reopen a pending save', {time
     const original = window.fetch; window.observedProfilePuts = 0;
     window.fetch = (...args) => {if (args[0] === '/profile' && args[1]?.method === 'PUT') window.observedProfilePuts++; return original(...args);};
   });
-  let releaseGet, releasePut, observedGet, observedPut, getHeld = false, putCount = 0;
+  let releaseGet, releasePut, observedGet, observedPut, getDone, getHeld = false, putCount = 0;
+  const gotDone = new Promise(r => {getDone = r;});
   const holdGet = new Promise(r => {releaseGet = r;}), holdPut = new Promise(r => {releasePut = r;});
   const gotGet = new Promise(r => {observedGet = r;}), gotPut = new Promise(r => {observedPut = r;});
   await page.route('**/profile', async route => {
     if (route.request().method() === 'GET' && !getHeld) {
-      getHeld = true; const response = await route.fetch(); observedGet(); await holdGet; await route.fulfill({response});
+      getHeld = true; const response = await route.fetch(); observedGet(); await holdGet; await route.fulfill({response}); getDone();
     } else if (route.request().method() === 'PUT') {
       putCount++; observedPut(); await holdPut; await route.continue();
     } else await route.continue();
@@ -1918,7 +1919,7 @@ test('TC-022-001 review regression: Refresh cannot reopen a pending save', {time
     const previousUpdate = await page.locator('#updated').textContent(); await refreshStatus(page); await page.waitForFunction(old => document.querySelector('#updated').textContent !== old, previousUpdate);
     await announceProfile(page); await gotGet;
     await page.locator('#settings-save').click(); await gotPut;
-    releaseGet(); await page.waitForTimeout(100);
+    releaseGet(); await gotDone; await page.evaluate(() => new Promise(requestAnimationFrame));
     const stayedDisabled = await page.locator('#settings-save').isDisabled();
     // requestSubmit also exercises the explicit submission guard, independently of
     // a disabled button. The observer counts real fetch invocations synchronously.
@@ -1933,11 +1934,12 @@ test('TC-022-001 review regression: Refresh cannot reopen a pending save', {time
 
   // Inverse completion order: a real revision-0 Refresh response arrives only after
   // the save and its own revision-1 GET have already been acknowledged/rendered.
-  const inverse = pages[1]; let releaseOld, observedOld, oldHeld = false;
+  const inverse = pages[1]; let releaseOld, observedOld, oldDone, oldHeld = false;
+  const oldFinished = new Promise(r => {oldDone = r;});
   const oldResponse = new Promise(r => {releaseOld = r;}), oldStarted = new Promise(r => {observedOld = r;});
   await inverse.route('**/profile', async route => {
     if (route.request().method() === 'GET' && !oldHeld) {
-      oldHeld = true; const response = await route.fetch(); observedOld(); await oldResponse; await route.fulfill({response});
+      oldHeld = true; const response = await route.fetch(); observedOld(); await oldResponse; await route.fulfill({response}); oldDone();
     } else await route.continue();
   });
   try {
@@ -1945,7 +1947,7 @@ test('TC-022-001 review regression: Refresh cannot reopen a pending save', {time
     await announceProfile(inverse); await oldStarted;
     await inverse.locator('#settings-save').click(); await inverse.locator('#settings-result').filter({hasText: 'Saved revision 1'}).waitFor();
     assert.equal(await inverse.locator('#profile-revision').textContent(), '1');
-    releaseOld(); await inverse.waitForTimeout(100);
+    releaseOld(); await oldFinished; await inverse.evaluate(() => new Promise(requestAnimationFrame));
     assert.equal(await inverse.locator('#profile-revision').textContent(), '1');
     assert.equal(await inverse.locator('#display-name').inputValue(), 'Acknowledged revision 1');
     assert.equal(await inverse.locator('#profile-name').textContent(), 'Acknowledged revision 1');
