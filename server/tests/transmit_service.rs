@@ -1625,3 +1625,96 @@ fn tx_level_applies_at_audio_start_and_live_only_in_tune() {
     renderer.fill(format, &mut out, 1);
     assert!((f32::from_le_bytes(out[..4].try_into().unwrap()) + 0.25).abs() < 1e-5);
 }
+
+/// Records when the transmit step asks for the meter read.
+#[derive(Clone)]
+struct Metered(Fake, Arc<Mutex<Vec<i64>>>);
+impl Hardware for Metered {
+    fn now_utc_ms(&self) -> i64 {
+        self.0.now_utc_ms()
+    }
+    fn clock(&self) -> ClockState {
+        self.0.clock()
+    }
+    fn context(&self) -> Context {
+        self.0.context()
+    }
+    fn ptt(&mut self, on: bool) -> Result<(), PttError> {
+        self.0.ptt(on)
+    }
+    fn open_audio(&mut self) -> Result<(), AudioError> {
+        self.0.open_audio()
+    }
+    fn play(&mut self, program: Program) -> Result<(), AudioError> {
+        self.0.play(program)
+    }
+    fn poll_audio(&mut self) -> AudioPoll {
+        self.0.poll_audio()
+    }
+    fn stop_audio(&mut self) {
+        self.0.stop_audio()
+    }
+    fn audio_stopper(&self) -> Arc<dyn Fn() + Send + Sync> {
+        self.0.audio_stopper()
+    }
+    fn meter_due(&mut self) {
+        self.1.lock().unwrap().push(self.0.now_utc_ms());
+    }
+}
+
+// Proves: CL-044-14; TC-044-017. Exactly one meter read per transmission, in the middle of
+// its audio; none for Tune.
+#[test]
+fn the_meter_read_is_due_once_in_the_middle_of_each_transmission() {
+    let f = Fake::new();
+    let due = Arc::new(Mutex::new(Vec::new()));
+    let mut core = Core::new(Metered(f.clone(), due.clone()));
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    let step = |core: &mut Core<Metered>, until: i64| {
+        let mut t = f.now_utc_ms();
+        while t <= until {
+            f.at(t);
+            core.tick();
+            t += 1;
+        }
+    };
+    // Audio starts at P + 500 and lasts 79 * 160 ms = 12 640 ms: the middle is P + 6 820.
+    step(&mut core, P + 6_819);
+    assert!(due.lock().unwrap().is_empty());
+    step(&mut core, P + 12_000);
+    assert_eq!(*due.lock().unwrap(), vec![P + 6_820]);
+    *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
+    f.at(P + 13_140);
+    core.tick();
+    assert_eq!(due.lock().unwrap().len(), 1, "exactly one");
+    // The next transmission has its own.
+    core.submit(request(2, P + 30_000, "CQ HB9BLA JN47"));
+    step(&mut core, P + 30_000 + 12_000);
+    assert_eq!(*due.lock().unwrap(), vec![P + 6_820, P + 36_820]);
+    *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
+    f.at(P + 43_140);
+    core.tick();
+    // Tune has none: its meters are read by the display.
+    core.set_tune(true, 1500).unwrap();
+    step(&mut core, P + 50_000);
+    assert_eq!(due.lock().unwrap().len(), 2);
+}
+
+// Proves: CL-044-14; TC-044-017 (b). A late start too short to read clear of its release
+// has no read: audio at about period + 11 200 ms leaves under 2 s of the 13 140 ms.
+#[test]
+fn a_late_start_with_under_two_seconds_of_audio_has_no_meter_read() {
+    let f = Fake::new();
+    let due = Arc::new(Mutex::new(Vec::new()));
+    let mut core = Core::new(Metered(f.clone(), due.clone()));
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    let mut t = P + 11_200;
+    while t <= P + 12_500 {
+        f.at(t);
+        core.tick();
+        t += 1;
+    }
+    assert!(due.lock().unwrap().is_empty());
+}

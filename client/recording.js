@@ -1143,7 +1143,7 @@ let txLevelState=null;
 const txLevelResults={stored:'stored',max_without_alc:'stored at the maximum, ALC did not rise',aborted:'aborted, level unchanged',no_alc:'this radio reports no ALC, set the level by hand',high_swr:'stopped: high SWR, check the antenna'};
 function validTxLevelEvent(d){
   const meter=v=>v===null||Number.isSafeInteger(v),m=d?.meters;
-  return operatingShape(d,'profile_id,boot_id,managed,level_db,stored,alc,assistant,result,meters,power_limit_pct')&&typeof d.managed==='boolean'&&Number.isSafeInteger(d.level_db)&&typeof d.stored==='boolean'&&['unknown','available','unavailable'].includes(d.alc)&&
+  return operatingShape(d,'profile_id,boot_id,managed,level_db,stored,alc,assistant,result,meters,power_limit_pct,warnings')&&Array.isArray(d.warnings)&&d.warnings.every(w=>typeof w==='string')&&typeof d.managed==='boolean'&&Number.isSafeInteger(d.level_db)&&typeof d.stored==='boolean'&&['unknown','available','unavailable'].includes(d.alc)&&
     typeof d.assistant==='boolean'&&(d.result===null||typeof d.result==='string')&&(d.power_limit_pct===null||Number.isSafeInteger(d.power_limit_pct))&&(m===null||operatingShape(m,'alc,po_pct,swr_x10')&&meter(m.alc)&&meter(m.po_pct)&&meter(m.swr_x10));
 }
 function txLevelShow(){
@@ -1168,7 +1168,9 @@ async function txLevelCommand(params){
 document.getElementById('tx-level-set').addEventListener('click',()=>txLevelCommand({action:'set_level',tx_offset_hz:Number(document.querySelector('#tx-offset')?.value)||1500}));
 document.getElementById('tx-level-slider').addEventListener('change',event=>txLevelCommand({action:'manual',level_db:Number(event.target.value)}));
 addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='radio.tx_level'||!validTxLevelEvent(message.data))return;
-  if(profileData&&(message.data.profile_id!==profileData.profile_id||message.data.boot_id!==profileData.boot_id))return;txLevelState=message.data;txLevelShow();});
+  if(profileData&&(message.data.profile_id!==profileData.profile_id||message.data.boot_id!==profileData.boot_id))return;txLevelState=message.data;txLevelShow();window.wstxChipsShow?.();});
+// CL-044-14 the persistent Tx trouble the server reports, for the error field.
+window.wstxTxWarnings=()=>txLevelState?.warnings??[];
 addEventListener('station-ready',()=>{if(txLevelState&&txLevelState.boot_id!==profileData?.boot_id)txLevelState=null;txLevelShow();});
 for(const type of ['input','change'])serverForm.addEventListener(type,txLevelShow);
 txLevelShow();

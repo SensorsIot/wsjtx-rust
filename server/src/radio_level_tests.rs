@@ -454,7 +454,8 @@ fn tune_meters_are_read_once_a_second_and_pushed_as_one_event() {
             "power_limit_pct",
             "profile_id",
             "result",
-            "stored"
+            "stored",
+            "warnings"
         ]
     );
     assert_eq!(
@@ -486,8 +487,9 @@ fn tune_meters_are_read_once_a_second_and_pushed_as_one_event() {
     tick(recording, settings, now + Duration::from_millis(900));
     std::thread::sleep(Duration::from_millis(30));
     assert_eq!(meter_frames(&r).len(), 3);
-    tick(recording, settings, now + Duration::from_millis(1000));
+    // A tick while the first read is still finishing passes; the next one reads.
     while meter_frames(&r).len() < 6 {
+        tick(recording, settings, now + Duration::from_millis(1000));
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(1));
     }
@@ -619,4 +621,216 @@ fn set_level_that_cannot_be_stored_leaves_the_prior_level() {
     });
     assert_eq!(f.bench.levels.lock().unwrap().last(), Some(&0));
     service.with(|c| c.set_tune(false, 0).unwrap());
+}
+
+// TC-044-017 (a)
+#[test]
+fn monitor_decides_one_bounded_step_and_warns_only_when_persistent() {
+    let m = |alc: Option<u16>, po: u16, swr: u16| Meters {
+        alc,
+        po: Some(po),
+        swr: Some(swr),
+    };
+    let step =
+        |level, meters: &Meters, limit| monitor_step(level, meters, limit, &mut Counts::default());
+    // 0143 is 50 % Po. In the window: nothing.
+    assert_eq!(step(-10, &m(Some(10), 143, 0), Some(50)).level_db, -10);
+    // ALC too high: one down, at the floor it stays.
+    assert_eq!(step(-10, &m(Some(60), 143, 0), Some(50)).level_db, -11);
+    assert_eq!(step(-10, &m(Some(59), 143, 0), Some(50)).level_db, -10);
+    assert_eq!(step(-40, &m(Some(60), 143, 0), None).level_db, -40);
+    // ALC zero and power low (below 80 % of the profile power): one up, never past 0 dB.
+    assert_eq!(step(-10, &m(Some(0), 143, 0), Some(63)).level_db, -9);
+    assert_eq!(step(-10, &m(Some(0), 143, 0), Some(62)).level_db, -10);
+    assert_eq!(step(0, &m(Some(0), 143, 0), Some(100)).level_db, 0);
+    // ALC not zero, or no profile power: no step up.
+    assert_eq!(step(-10, &m(Some(1), 0, 0), Some(50)).level_db, -10);
+    assert_eq!(step(-10, &m(Some(0), 0, 0), None).level_db, -10);
+    // Above the profile power: one down.
+    assert_eq!(step(-10, &m(Some(0), 143, 0), Some(49)).level_db, -11);
+    // A radio without ALC is never stepped up.
+    assert_eq!(step(-10, &m(None, 0, 0), Some(50)).level_db, -10);
+    // SWR 3.0 is the clear fault, 2.0 only counts.
+    assert!(step(-10, &m(Some(0), 143, 120), None).fault);
+    assert!(!step(-10, &m(Some(0), 143, 119), None).fault);
+    // Persistent means three transmissions in a row; one good reading clears it.
+    let mut counts = Counts::default();
+    for expected in [vec![], vec![], vec!["swr_high"]] {
+        let v = monitor_step(-10, &m(Some(0), 143, 80), None, &mut counts);
+        assert_eq!(v.warnings, expected);
+    }
+    assert!(
+        monitor_step(-10, &m(Some(0), 143, 0), None, &mut counts)
+            .warnings
+            .is_empty()
+    );
+    let mut counts = Counts::default();
+    for _ in 0..2 {
+        monitor_step(-10, &m(Some(60), 143, 0), None, &mut counts);
+    }
+    assert_eq!(
+        monitor_step(-10, &m(Some(60), 143, 0), None, &mut counts).warnings,
+        ["alc_high"]
+    );
+    // Low Po warns below half the profile power: 0143 is 50 %.
+    let mut counts = Counts::default();
+    for _ in 0..2 {
+        monitor_step(-10, &m(Some(0), 143, 0), Some(101), &mut counts);
+    }
+    assert_eq!(
+        monitor_step(-10, &m(Some(0), 143, 0), Some(101), &mut counts).warnings,
+        ["po_low"]
+    );
+}
+
+/// Starts the burst of one transmission and waits for its reading to be judged.
+fn one_transmission(f: &Fixture, r: &Arc<Mutex<Ic7300>>) {
+    let before = meter_frames(r).len();
+    on_meter_due(&f.state).unwrap().join().unwrap();
+    assert_eq!(meter_frames(r).len(), before + 3, "one burst");
+}
+
+// TC-044-017 (c, d)
+#[test]
+fn one_burst_corrects_for_the_next_transmission_only_and_warns_when_persistent() {
+    let (f, r) = station(radio(fixed([0, 0x60])));
+    let recording = &f.state.recording;
+    recording.tx_level.update(|i| i.level_db = -10);
+    // No hold, no transmission: refused without a byte and nothing judged.
+    on_meter_due(&f.state).unwrap().join().unwrap();
+    assert!(r.lock().unwrap().writes.is_empty());
+    assert_eq!(recording.tx_level.level_db(), -10);
+    hold(&f);
+    r.lock().unwrap().writes.clear();
+    one_transmission(&f, &r);
+    assert_eq!(
+        r.lock().unwrap().writes,
+        vec![READ_ALC.to_vec(), READ_PO.to_vec(), READ_SWR.to_vec()],
+        "one burst, nothing else"
+    );
+    assert_eq!(recording.tx_level.level_db(), -11);
+    assert_eq!(stored(&f), Some(json!({"schema_version":1,"level_db":-11})));
+    assert!(
+        f.bench.levels.lock().unwrap().is_empty(),
+        "nothing reaches the running audio"
+    );
+    assert!(recording.tx_level.warnings().is_empty());
+    one_transmission(&f, &r);
+    assert!(recording.tx_level.warnings().is_empty());
+    one_transmission(&f, &r);
+    assert_eq!(recording.tx_level.warnings(), ["alc_high"]);
+    assert_eq!(recording.tx_level.level_db(), -13);
+    let v: Value = serde_json::from_str(&event(recording).1).unwrap();
+    assert_eq!(v["data"]["warnings"], json!(["alc_high"]));
+    // A good transmission clears the entry and the level stays.
+    r.lock().unwrap().alc = fixed([0, 0x10]);
+    one_transmission(&f, &r);
+    assert!(recording.tx_level.warnings().is_empty());
+    assert_eq!(recording.tx_level.level_db(), -13);
+    // Nothing but reads and the test's own key in all of this.
+    assert!(r.lock().unwrap().writes.iter().all(|w| w[4] == 0x15));
+}
+
+// TC-044-017 (e)
+#[test]
+fn a_clear_swr_fault_stops_transmitting_and_keeps_automation_off() {
+    let (f, r) = station(radio(fixed([0, 0])));
+    let recording = &f.state.recording;
+    let service = &recording.transmit.get().unwrap().service;
+    service.with(|c| {
+        c.arm(3).unwrap();
+        c.activity();
+    });
+    assert!(!service.with(|c| c.watchdog_spent()));
+    hold(&f);
+    r.lock().unwrap().swr = [0x01, 0x20];
+    let halts = service.halt_requests();
+    one_transmission(&f, &r);
+    assert_eq!(service.halt_requests(), halts + 1);
+    let view = service.view();
+    assert_eq!(view.arm_state, ArmState::Disarmed);
+    assert_eq!(view.last_disarm_cause, DisarmCause::Halt);
+    assert!(
+        service.with(|c| c.watchdog_spent()),
+        "automation may not arm again"
+    );
+    assert!(recording.tx_level.swr_fault());
+    let v: Value = serde_json::from_str(&event(recording).1).unwrap();
+    assert_eq!(v["data"]["warnings"], json!(["swr_fault"]));
+    // The operator arms again and a clear reading ends the entry.
+    service.with(|c| c.arm(3).unwrap());
+    r.lock().unwrap().swr = [0, 0x10];
+    one_transmission(&f, &r);
+    assert!(!recording.tx_level.swr_fault());
+    assert_eq!(service.view().arm_state, ArmState::Armed);
+    service.with(|c| c.disarm(DisarmCause::Operator));
+}
+
+// TC-044-017 (f)
+#[test]
+fn nothing_is_read_for_a_transmission_while_set_level_runs() {
+    let (f, r) = station(radio(fixed([0, 0])));
+    f.state.recording.tx_level.update(|i| i.assistant = true);
+    hold(&f);
+    r.lock().unwrap().writes.clear();
+    assert!(on_meter_due(&f.state).is_none());
+    assert!(r.lock().unwrap().writes.is_empty());
+}
+
+// TC-044-017 (g): startup connects the transmit step's call to the burst.
+#[test]
+fn startup_connects_the_meter_call_to_one_burst() {
+    let (f, r) = station(radio(fixed([0, 0x10])));
+    startup(&f.state);
+    hold(&f);
+    r.lock().unwrap().writes.clear();
+    let sink = f.state.recording.transmit.get().unwrap().meter_sink();
+    sink.expect("startup installs the sink")();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while meter_frames(&r).len() < 3 {
+        assert!(Instant::now() < deadline, "no burst");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+// TC-044-017 (h): a level that cannot be stored is not applied.
+#[test]
+fn a_correction_that_cannot_be_stored_leaves_the_level() {
+    let (f, r) = station(radio(fixed([0, 0x60])));
+    let recording = &f.state.recording;
+    let service = &recording.transmit.get().unwrap().service;
+    recording.tx_level.update(|i| i.level_db = -10);
+    service.with(|c| c.set_tx_level(-10));
+    std::fs::create_dir(f.dir.join(LEVEL_FILE)).unwrap();
+    hold(&f);
+    one_transmission(&f, &r);
+    assert_eq!(recording.tx_level.level_db(), -10);
+    let v: Value = serde_json::from_str(&event(recording).1).unwrap();
+    assert_eq!(v["data"]["stored"], json!(false));
+    service.with(|c| {
+        c.arm(3).unwrap();
+        c.set_tune(true, 1500).unwrap();
+    });
+    assert_eq!(f.bench.levels.lock().unwrap().last(), Some(&-10));
+    service.with(|c| c.set_tune(false, 0).unwrap());
+}
+
+// TC-044-017 (e): a reading without SWR does not clear the fault.
+#[test]
+fn a_reading_without_swr_keeps_the_fault_entry() {
+    let (f, r) = station(radio(fixed([0, 0])));
+    let recording = &f.state.recording;
+    hold(&f);
+    r.lock().unwrap().swr = [0x01, 0x20];
+    one_transmission(&f, &r);
+    assert!(recording.tx_level.swr_fault());
+    monitor(
+        &f.state,
+        &Meters {
+            alc: Some(0),
+            po: Some(143),
+            swr: None,
+        },
+    );
+    assert!(recording.tx_level.swr_fault());
 }

@@ -30,6 +30,8 @@ pub const PLAYBACK_SCALE: f32 = 0.5;
 /// #44 CL-044-12 the Tx level: digital attenuation below PLAYBACK_SCALE, in whole dB.
 pub const LEVEL_MIN_DB: i32 = -40;
 pub const LEVEL_MAX_DB: i32 = 0;
+/// #44 CL-044-14 a transmission with less audio left than this gets no meter read.
+pub const METER_MIN_REMAINING_MS: i64 = 2_000;
 /// The playback scale of a Tx level.
 pub fn level_scale(level_db: i32) -> f32 {
     PLAYBACK_SCALE * 10f32.powf(level_db.clamp(LEVEL_MIN_DB, LEVEL_MAX_DB) as f32 / 20.)
@@ -217,6 +219,9 @@ pub trait Hardware: Send {
     fn attach_abort(&mut self, abort: Arc<AtomicBool>) {
         let _ = abort;
     }
+    /// #44 CL-044-14 the middle of a transmission: exactly once per transmission, from the
+    /// transmit step. It must return at once; the meter read runs elsewhere.
+    fn meter_due(&mut self) {}
     /// #44 The Tx level the next `play` uses; a running Tune tone follows it at once.
     fn set_level_db(&mut self, level_db: i32) {
         let _ = level_db;
@@ -271,6 +276,8 @@ struct Job {
     audio_start_utc_ms: Option<i64>,
     /// Device-independent release deadline once audio started.
     release_by_mono_ms: Option<i64>,
+    /// #44 CL-044-14 when the one meter read of this transmission is due.
+    meter_at_mono_ms: Option<i64>,
 }
 struct Tune {
     hz: f64,
@@ -454,6 +461,10 @@ impl<H: Hardware> Core<H> {
         if self.tune.is_some() {
             self.hardware.set_level_db(self.level_db);
         }
+    }
+    /// #44 CL-044-14 after a clear fault only an operator action lets automation arm again.
+    pub fn require_operator(&mut self) {
+        self.operator_seen = false;
     }
     /// A cheap read for the CAT lifecycle's meter display.
     pub fn tune_on(&self) -> bool {
@@ -681,6 +692,7 @@ impl<H: Hardware> Core<H> {
                 keyed: false,
                 audio_start_utc_ms: None,
                 release_by_mono_ms: None,
+                meter_at_mono_ms: None,
             });
         }
         self.emit(sequence, OutcomeKind::Accepted)
@@ -987,11 +999,22 @@ impl<H: Hardware> Core<H> {
             let bound = period + release_bound_ms(mode) - now;
             if let Some(job) = &mut self.current {
                 job.audio_start_utc_ms = Some(now);
+                let start_mono = self.hardware.monotonic_ms();
                 job.release_by_mono_ms =
-                    Some(self.hardware.monotonic_ms() + (remaining + RELEASE_MARGIN_MS).min(bound));
+                    Some(start_mono + (remaining + RELEASE_MARGIN_MS).min(bound));
+                // A late start too short to read clear of its release has no read.
+                job.meter_at_mono_ms =
+                    (remaining >= METER_MIN_REMAINING_MS).then_some(start_mono + remaining / 2);
             }
             self.emit_full(sequence, OutcomeKind::Started, None, None, Some(now));
             return;
+        }
+        let mono = self.hardware.monotonic_ms();
+        if let Some(job) = &mut self.current
+            && job.meter_at_mono_ms.is_some_and(|at| mono >= at)
+        {
+            job.meter_at_mono_ms = None;
+            self.hardware.meter_due();
         }
         // The device is polled first, also at the deadline: a device that consumed every
         // sample completes normally however late its step ran (#49). Otherwise the
@@ -1023,6 +1046,7 @@ impl<H: Hardware> Core<H> {
                             keyed: false,
                             audio_start_utc_ms: None,
                             release_by_mono_ms: None,
+                            meter_at_mono_ms: None,
                         });
                     }
                 } else {
@@ -1388,6 +1412,9 @@ impl Hardware for Box<dyn Hardware> {
     }
     fn set_level_db(&mut self, level_db: i32) {
         (**self).set_level_db(level_db)
+    }
+    fn meter_due(&mut self) {
+        (**self).meter_due()
     }
     fn clock(&self) -> ClockState {
         (**self).clock()
