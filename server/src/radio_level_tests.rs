@@ -636,9 +636,9 @@ fn monitor_decides_one_bounded_step_and_warns_only_when_persistent() {
         |level, meters: &Meters, limit| monitor_step(level, meters, limit, &mut Counts::default());
     // 0143 is 50 % Po. In the window: nothing.
     assert_eq!(step(-10, &m(Some(10), 143, 0), Some(50)).level_db, -10);
-    // ALC too high: one down, at the floor it stays.
+    // ALC above the limit: one down, at the floor it stays.
+    assert_eq!(step(-10, &m(Some(11), 143, 0), Some(50)).level_db, -11);
     assert_eq!(step(-10, &m(Some(60), 143, 0), Some(50)).level_db, -11);
-    assert_eq!(step(-10, &m(Some(59), 143, 0), Some(50)).level_db, -10);
     assert_eq!(step(-40, &m(Some(60), 143, 0), None).level_db, -40);
     // ALC zero and power low (below 80 % of the profile power): one up, never past 0 dB.
     assert_eq!(step(-10, &m(Some(0), 143, 0), Some(63)).level_db, -9);
@@ -682,6 +682,107 @@ fn monitor_decides_one_bounded_step_and_warns_only_when_persistent() {
         monitor_step(-10, &m(Some(0), 143, 0), Some(101), &mut counts).warnings,
         ["po_low"]
     );
+}
+
+/// `transmissions` readings from a radio whose ALC follows the level, without a warning.
+fn settled_level(mut level: i32, transmissions: u8, alc: impl Fn(i32) -> u16) -> i32 {
+    let mut counts = Counts::default();
+    for _ in 0..transmissions {
+        let meters = Meters {
+            alc: Some(alc(level)),
+            po: Some(143),
+            swr: Some(0),
+        };
+        let verdict = monitor_step(level, &meters, Some(100), &mut counts);
+        assert!(verdict.warnings.is_empty(), "at {level}");
+        level = verdict.level_db;
+    }
+    level
+}
+
+// TC-044-017 (i): the level that reads 0 and the one above it that reads 11 do not alternate.
+#[test]
+fn alc_zero_and_above_the_limit_on_neighbouring_levels_settle_on_the_lower() {
+    let alc = |level| if level >= -9 { 11 } else { 0 };
+    // Po is low throughout, so ALC 0 asks for a step up.
+    assert_eq!(settled_level(-10, 1, alc), -9);
+    assert_eq!(settled_level(-10, 2, alc), -10);
+    assert_eq!(settled_level(-10, 40, alc), -10);
+    assert_eq!(settled_level(-9, 40, alc), -10);
+}
+
+// TC-044-017 (j): the live reading of 2026-11-06, ALC 31 at -9 dB and about 6 per dB: routine.
+#[test]
+fn the_live_alc_comes_down_to_the_limit_without_a_warning_and_stays() {
+    let alc = |level: i32| (31 + 6 * (level + 9)).max(0) as u16;
+    for (transmissions, level) in [(1, -10), (2, -11), (3, -12), (4, -13), (5, -13), (40, -13)] {
+        assert_eq!(settled_level(-9, transmissions, alc), level);
+    }
+}
+
+// TC-044-017 (k): Set level's stop and the correction agree on one radio (onset reads 7 at
+// -8 dB). Set level stores -9; low power takes it to the onset, a higher level comes back.
+#[test]
+fn set_levels_stop_and_the_correction_agree() {
+    let alc = |level: i32| {
+        if level <= -9 {
+            0
+        } else {
+            (7 + 6 * (level + 8)) as u16
+        }
+    };
+    let meters = |level| Meters {
+        alc: Some(alc(level)),
+        po: Some(143),
+        swr: Some(0),
+    };
+    assert_eq!(assistant_step(-9, &meters(-9), None), Step::Up(-8));
+    assert_eq!(
+        assistant_step(-8, &meters(-8), None),
+        Step::Done(-9, "stored")
+    );
+    assert_eq!(settled_level(-9, 40, alc), -8);
+    assert_eq!(settled_level(-7, 40, alc), -8);
+}
+
+// TC-044-017 (l): the ceiling holds until a changed profile power or a stored Set level.
+#[test]
+fn the_ceiling_ends_with_a_changed_profile_power_and_a_stored_set_level() {
+    let (f, r) = station(radio(fixed([0, 0x11])));
+    let recording = &f.state.recording;
+    let settings = |pct| {
+        Some(profile::Radio {
+            power_limit_pct: Some(pct),
+            ..profile::Radio::DEFAULT
+        })
+    };
+    tick(recording, settings(100), Instant::now());
+    recording.tx_level.update(|i| i.level_db = -10);
+    hold(&f);
+    let set_alc = |data| r.lock().unwrap().alc = fixed(data);
+    one_transmission(&f, &r);
+    assert_eq!(recording.tx_level.level_db(), -11);
+    set_alc([0, 0]);
+    one_transmission(&f, &r);
+    assert_eq!(recording.tx_level.level_db(), -11, "held below the ceiling");
+    // The same profile power keeps it, another one ends it.
+    tick(recording, settings(100), Instant::now());
+    one_transmission(&f, &r);
+    assert_eq!(recording.tx_level.level_db(), -11);
+    tick(recording, settings(90), Instant::now());
+    one_transmission(&f, &r);
+    assert_eq!(recording.tx_level.level_db(), -10);
+    set_alc([0, 0x11]);
+    one_transmission(&f, &r);
+    assert_eq!(recording.tx_level.level_db(), -11);
+    // Set level stores -10, the level that was lowered: a new measurement, a new ceiling.
+    rising(&f, &r, -9);
+    start_assistant(&f.state, 1500).unwrap();
+    assert_eq!(finished(&f), "stored");
+    assert_eq!(recording.tx_level.level_db(), -10);
+    set_alc([0, 0]);
+    one_transmission(&f, &r);
+    assert_eq!(recording.tx_level.level_db(), -9);
 }
 
 /// Starts the burst of one transmission and waits for its reading to be judged.
