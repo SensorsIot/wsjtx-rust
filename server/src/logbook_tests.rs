@@ -68,6 +68,13 @@ fn reviewed(id: &str, call: &str) -> Record {
             None,
             None,
             None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         ],
         source: None,
         unknown: Vec::new(),
@@ -355,7 +362,7 @@ fn update_reads_a_log4om_shaped_export_keeps_only_log_fields_and_marks_the_sourc
             "<call:5>K1ABC <gridsquare:6>FN42ab <mode:3>FT8 <rst_sent:3>-14 <rst_rcvd:3>-02 \
              <qso_date:8>20250218 <time_on:6>225630 <qso_date_off:8>20250218 <time_off:6>225900 \
              <band:3>30m <freq:9>10.138691 <station_callsign:6>HB9BLA <my_gridsquare:6>JN37vl \
-             <tx_pwr:3>100 <app_wstxrust_contact_id:36>{} <app_wstxrust_source:7>LOG4OM2 <eor>",
+             <tx_pwr:3>100 <qsl_rcvd:1>R <eqsl_qsl_rcvd:1>R <app_wstxrust_contact_id:36>{} <app_wstxrust_source:7>LOG4OM2 <eor>",
             id(lines[0])
         )
     );
@@ -651,6 +658,28 @@ fn update_of_twenty_seven_thousand_qsos_is_consolidated_and_worked_before_uses_t
     let started = Instant::now();
     assert_eq!(Logbook::open(&dir.0).total().unwrap(), 27_000);
     eprintln!("reopen {:?}", started.elapsed());
+    // #10 the rerun of the export with every QSO confirmed in LoTW upgrades all of them
+    // in one replace, and the worked set includes the confirmation.
+    let confirmed = file.replace(
+        " <eor>\n",
+        " <LOTW_QSL_RCVD:1>Y <LOTW_QSLRDATE:8>20250301 <eor>\n",
+    );
+    let started = Instant::now();
+    let (result, _) = import(&log, confirmed.as_bytes());
+    eprintln!(
+        "27000 QSOs rerun with confirmations {:?}",
+        started.elapsed()
+    );
+    let result = result.unwrap();
+    assert_eq!(summary(&result), (json!(0), json!(27_000), json!(0)));
+    assert_eq!(result["confirmed"], json!(27_000));
+    let started = Instant::now();
+    let w = log.worked_set().unwrap();
+    let (table, _) = log.dxcc();
+    let usa = table.lookup("K000001").unwrap();
+    let standing = w.entity_standing(crate::dxcc::Category::Dxcc, &usa, Some("20m"), Some("FT4"));
+    eprintln!("worked set with confirmation {:?}", started.elapsed());
+    assert!(standing.worked && standing.confirmed);
 }
 
 // Proves: CL-010-04; TC-011-002 import retry identity and integrity check.
@@ -1182,4 +1211,262 @@ fn export_streams_the_log_in_bounded_chunks_from_a_snapshot_without_the_lock() {
         301
     );
     assert!(next.contains("<call:5>W1XYZ "));
+}
+
+// ------------------------------------------------------------------ #10 confirmation
+/// Synthetic confirmation fixtures (no real log data): ADIF 3.1 QSL Rcvd fields as a
+/// logger such as Log4OM 2 exports them.
+const CONFIRM_HEADER: &str = "Log4OM 2 test export\n<ADIF_VER:5>3.1.0 <PROGRAMID:7>LOG4OM2 <eoh>\n";
+
+// Proves: CL-010-04; TC-011-002 #10 (2026-11-04) UpdateLogbook keeps LOTW_QSL_RCVD,
+// QSL_RCVD, EQSL_QSL_RCVD with their dates and QSL_RCVD_VIA, drops invalid ones, and the
+// export carries them (export then update changes nothing); ContactHistory is unchanged.
+#[test]
+fn update_keeps_each_confirmation_field_and_the_export_round_trips_them() {
+    let dir = Dir::new();
+    let log = Logbook::open(&dir.0);
+    let file = format!(
+        "{CONFIRM_HEADER}<CALL:5>K1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20250218 <TIME_ON:6>225630 \
+         <LOTW_QSL_RCVD:1>Y <LOTW_QSLRDATE:8>20250301 <QSL_RCVD:1>V <QSLRDATE:8>20250402 \
+         <QSL_RCVD_VIA:1>D <EQSL_QSL_RCVD:1>n <EQSL_QSLRDATE:8>20250219 <QSL_SENT:1>Y <eor>\n\
+         <CALL:6>DL1ABC <BAND:3>40m <MODE:3>FT8 <QSO_DATE:8>20250219 <TIME_ON:4>1015 \
+         <LOTW_QSL_RCVD:1>X <QSLRDATE:8>20251301 <QSL_RCVD_VIA:1>Q <eor>\n"
+    );
+    let (result, view) = import(&log, file.as_bytes());
+    let result = result.unwrap();
+    assert_eq!(summary(&result), (json!(2), json!(0), json!(0)), "{result}");
+    assert_eq!(result["confirmed"], json!(0));
+    assert_eq!(
+        view["dropped"],
+        json!([
+            {"code":"invalid_value","field":"lotw_qsl_rcvd","count":1,"record":1},
+            {"code":"invalid_value","field":"qslrdate","count":1,"record":1},
+            {"code":"invalid_value","field":"qsl_rcvd_via","count":1,"record":1}
+        ])
+    );
+    let stored = String::from_utf8(dir.file().unwrap()).unwrap();
+    assert!(
+        stored.contains(
+            "<band:3>20m <lotw_qsl_rcvd:1>Y <lotw_qslrdate:8>20250301 <qsl_rcvd:1>V \
+             <qslrdate:8>20250402 <qsl_rcvd_via:1>D <eqsl_qsl_rcvd:1>n <eqsl_qslrdate:8>20250219 \
+             <app_wstxrust_contact_id:36>"
+        ),
+        "{stored}"
+    );
+    assert!(
+        !stored.to_ascii_lowercase().contains("qsl_sent"),
+        "{stored}"
+    );
+    assert!(
+        stored.contains("<band:3>40m <app_wstxrust_contact_id:36>"),
+        "{stored}"
+    );
+    // ContactHistory keeps its exact LogRecord keys.
+    let history = log.history(ID1, 0, 1).unwrap();
+    assert!(history["records"][0].get("lotw_qsl_rcvd").is_none());
+    assert_eq!(
+        Logbook::open(&dir.0).total().unwrap(),
+        2,
+        "the stored log reloads"
+    );
+    let records = parse_records(&dir.file().unwrap(), &limits()).unwrap();
+    assert!(records[0].confirmed() && !records[1].confirmed());
+    // Export then update: all present, nothing upgraded, the file untouched.
+    let before = dir.file().unwrap();
+    let exported = drain(log.export().unwrap()).concat();
+    assert!(exported.contains("<lotw_qsl_rcvd:1>Y <lotw_qslrdate:8>20250301"));
+    let (again, _) = import(&log, exported.as_bytes());
+    let again = again.unwrap();
+    assert_eq!(summary(&again), (json!(0), json!(2), json!(0)));
+    assert_eq!(again["confirmed"], json!(0));
+    assert_eq!(dir.file().unwrap(), before);
+}
+
+// Proves: CL-010-04; TC-011-002 #10 (2026-11-04) a rerun upgrades the confirmation of
+// records already present (N, R, I or absent to Y/V, with date and via), never removes or
+// downgrades one, leaves every other stored field, and the summary counts the upgrades.
+#[test]
+fn update_rerun_upgrades_confirmations_of_present_records_and_never_removes_one() {
+    let dir = Dir::new();
+    let log = Logbook::open(&dir.0);
+    // The station's own record K1ABC 20m FT8 2026-10-31 12:30:15 (grid FN42).
+    assert_eq!(
+        log.save(reviewed(ID1, "K1ABC"), GATE).unwrap(),
+        SaveOutcome::Saved
+    );
+    let first = format!(
+        "{CONFIRM_HEADER}<CALL:5>W1AAA <BAND:3>40m <MODE:3>FT8 <QSO_DATE:8>20250101 <TIME_ON:4>1000 <LOTW_QSL_RCVD:1>N <eor>\n\
+         <CALL:5>W2BBB <BAND:3>40m <MODE:3>FT8 <QSO_DATE:8>20250102 <TIME_ON:4>1000 <LOTW_QSL_RCVD:1>Y <LOTW_QSLRDATE:8>20250110 <eor>\n\
+         <CALL:5>W3CCC <BAND:3>40m <MODE:3>FT8 <QSO_DATE:8>20250103 <TIME_ON:4>1000 <QSL_RCVD:1>R <eor>\n"
+    );
+    let (result, _) = import(&log, first.as_bytes());
+    assert_eq!(summary(&result.unwrap()), (json!(3), json!(0), json!(0)));
+    let rerun = format!(
+        "{CONFIRM_HEADER}<CALL:5>K1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20261031 <TIME_ON:6>123045 <GRIDSQUARE:4>EM10 <RST_RCVD:3>+09 <LOTW_QSL_RCVD:1>Y <LOTW_QSLRDATE:8>20261102 <eor>\n\
+         <CALL:5>W1AAA <BAND:3>40m <MODE:3>FT8 <QSO_DATE:8>20250101 <TIME_ON:4>1001 <LOTW_QSL_RCVD:1>V <LOTW_QSLRDATE:8>20250201 <TX_PWR:2>50 <eor>\n\
+         <CALL:5>W2BBB <BAND:3>40m <MODE:3>FT8 <QSO_DATE:8>20250102 <TIME_ON:4>1000 <LOTW_QSL_RCVD:1>N <LOTW_QSLRDATE:8>20250301 <QSL_RCVD:1>I <eor>\n\
+         <CALL:5>W3CCC <BAND:3>40m <MODE:3>FT8 <QSO_DATE:8>20250103 <TIME_ON:4>1000 <QSL_RCVD:1>Y <QSLRDATE:8>20250120 <QSL_RCVD_VIA:1>B <eor>\n\
+         <CALL:5>W3CCC <BAND:3>40m <MODE:3>FT8 <QSO_DATE:8>20250103 <TIME_ON:4>1000 <EQSL_QSL_RCVD:1>Y <eor>\n\
+         <CALL:5>W4DDD <BAND:3>40m <MODE:3>FT8 <QSO_DATE:8>20250104 <TIME_ON:4>1000 <EQSL_QSL_RCVD:1>Y <eor>\n\
+         <CALL:5>W4DDD <BAND:3>40m <MODE:3>FT8 <QSO_DATE:8>20250104 <TIME_ON:4>1000 <LOTW_QSL_RCVD:1>Y <eor>\n"
+    );
+    let (result, view) = import(&log, rerun.as_bytes());
+    let result = result.unwrap();
+    // W4DDD is new (added); its repeat in the same file upgrades the added record.
+    assert_eq!(summary(&result), (json!(1), json!(6), json!(0)), "{result}");
+    assert_eq!(result["confirmed"], json!(5), "{result}");
+    assert_eq!(view["confirmed"], json!(5));
+    let records = parse_records(&dir.file().unwrap(), &limits()).unwrap();
+    let field = |r: &Record, name: &str| r.get(name).map(str::to_owned);
+    let some = |v: &str| Some(v.to_owned());
+    // The station record: only its confirmation changed; its grid, report and time won.
+    let mut expected = reviewed(ID1, "K1ABC");
+    expected.set("lotw_qsl_rcvd", "Y".into());
+    expected.set("lotw_qslrdate", "20261102".into());
+    assert_eq!(records[0], expected);
+    // N -> V with its date; the other fields of the stored record win (no TX_PWR).
+    assert_eq!(
+        ["lotw_qsl_rcvd", "lotw_qslrdate", "tx_pwr"].map(|n| field(&records[1], n)),
+        [some("V"), some("20250201"), None]
+    );
+    // Y is never downgraded to N and keeps its date; I adds no status either.
+    assert_eq!(
+        ["lotw_qsl_rcvd", "lotw_qslrdate", "qsl_rcvd"].map(|n| field(&records[2], n)),
+        [some("Y"), some("20250110"), None]
+    );
+    // R -> Y with date and via; the second record of the same QSO adds the eQSL channel.
+    assert_eq!(
+        ["qsl_rcvd", "qslrdate", "qsl_rcvd_via", "eqsl_qsl_rcvd"].map(|n| field(&records[3], n)),
+        [some("Y"), some("20250120"), some("B"), some("Y")]
+    );
+    assert_eq!(
+        ["eqsl_qsl_rcvd", "lotw_qsl_rcvd"].map(|n| field(&records[4], n)),
+        [some("Y"), some("Y")]
+    );
+    assert!(records.iter().all(Record::confirmed));
+    // Again: nothing to upgrade and the file stays as it is.
+    let after = dir.file().unwrap();
+    let (again, _) = import(&log, rerun.as_bytes());
+    let again = again.unwrap();
+    assert_eq!(summary(&again), (json!(0), json!(7), json!(0)));
+    assert_eq!(again["confirmed"], json!(0));
+    assert_eq!(dir.file().unwrap(), after);
+    // A file that says "not confirmed" removes no confirmation.
+    let unconfirm = format!(
+        "{CONFIRM_HEADER}<CALL:5>W1AAA <BAND:3>40m <MODE:3>FT8 <QSO_DATE:8>20250101 <TIME_ON:4>1000 <LOTW_QSL_RCVD:1>N <eor>\n"
+    );
+    assert_eq!(
+        import(&log, unconfirm.as_bytes()).0.unwrap()["confirmed"],
+        json!(0)
+    );
+    assert_eq!(dir.file().unwrap(), after);
+    // SaveContact of the same record is still already saved; DirectLog replacing the
+    // station record (Log QSO again) keeps its confirmation.
+    assert_eq!(
+        log.save(reviewed(ID1, "K1ABC"), GATE).unwrap(),
+        SaveOutcome::AlreadySaved
+    );
+    let mut changed = reviewed(ID1, "K1ABC");
+    changed.set("rst_rcvd", "-07".into());
+    assert_eq!(
+        log.put(changed.clone(), GATE).unwrap(),
+        LogOutcome::Replaced
+    );
+    let records = parse_records(&dir.file().unwrap(), &limits()).unwrap();
+    assert_eq!(field(&records[0], "lotw_qsl_rcvd"), some("Y"));
+    assert_eq!(log.put(changed, GATE).unwrap(), LogOutcome::AlreadySaved);
+}
+
+// Proves: CL-010-04; TC-011-002 #10 (2026-11-04) the award query layer: worked vs confirmed
+// per DXCC entity, entity x band and entity x band x mode from one lookup of the worked set
+// (needed = not worked or not confirmed), rebuilt when a rerun adds a confirmation.
+#[test]
+fn worked_set_reports_worked_and_confirmed_per_entity_band_and_mode() {
+    use crate::dxcc::{Category, Standing};
+    let dir = Dir::new();
+    let log = Logbook::open(&dir.0);
+    let file = format!(
+        "{CONFIRM_HEADER}<CALL:6>DL1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20250101 <TIME_ON:4>1000 <LOTW_QSL_RCVD:1>Y <eor>\n\
+         <CALL:6>DL2XYZ <BAND:3>40m <MODE:3>FT8 <QSO_DATE:8>20250102 <TIME_ON:4>1000 <LOTW_QSL_RCVD:1>N <eor>\n\
+         <CALL:6>DL3QRP <BAND:3>40m <MODE:4>MFSK <SUBMODE:3>FT4 <QSO_DATE:8>20250103 <TIME_ON:4>1000 <QSL_RCVD:1>V <eor>\n\
+         <CALL:5>F1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20250104 <TIME_ON:4>1000 <eor>\n"
+    );
+    import(&log, file.as_bytes()).0.unwrap();
+    let (table, _) = log.dxcc();
+    let germany = table.lookup("DL9ZZZ").unwrap();
+    let france = table.lookup("F9ZZZ").unwrap();
+    let japan = table.lookup("JA1ZZZ").unwrap();
+    let w = log.worked_set().unwrap();
+    let s = |r, band, mode| w.entity_standing(Category::Dxcc, r, band, mode);
+    let (yes, unconfirmed, no) = (
+        Standing {
+            worked: true,
+            confirmed: true,
+        },
+        Standing {
+            worked: true,
+            confirmed: false,
+        },
+        Standing {
+            worked: false,
+            confirmed: false,
+        },
+    );
+    assert_eq!(s(&germany, None, None), yes);
+    assert_eq!(s(&germany, Some("20M"), None), yes);
+    assert_eq!(
+        s(&germany, Some("40m"), None),
+        yes,
+        "DL3QRP 40m FT4 confirms 40m"
+    );
+    assert_eq!(s(&germany, Some("20m"), Some("ft8")), yes);
+    assert_eq!(s(&germany, Some("40m"), Some("FT8")), unconfirmed);
+    assert_eq!(s(&germany, Some("40m"), Some("FT4")), yes);
+    assert_eq!(s(&germany, Some("15m"), None), no);
+    assert_eq!(s(&france, None, None), unconfirmed);
+    assert_eq!(s(&france, Some("20m"), Some("FT8")), unconfirmed);
+    assert_eq!(s(&japan, None, None), no);
+    assert!(!yes.needed() && unconfirmed.needed() && no.needed());
+    // A rerun that confirms F1ABC rebuilds the worked set.
+    let confirm = format!(
+        "{CONFIRM_HEADER}<CALL:5>F1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20250104 <TIME_ON:4>1000 <EQSL_QSL_RCVD:1>Y <eor>\n"
+    );
+    assert_eq!(
+        import(&log, confirm.as_bytes()).0.unwrap()["confirmed"],
+        json!(1)
+    );
+    let w = log.worked_set().unwrap();
+    assert_eq!(
+        w.entity_standing(Category::Dxcc, &france, Some("20m"), Some("FT8")),
+        yes
+    );
+    assert_eq!(
+        w.entity_standing(Category::Dxcc, &germany, Some("40m"), Some("FT8")),
+        unconfirmed
+    );
+}
+
+// Proves: CL-010-04; TC-011-002 #10 a log written before #10 (the former ImportAdi kept
+// unknown fields verbatim) whose QSL fields are invalid or repeated stays readable: those
+// stay unknown fields; a valid one becomes the record's confirmation.
+#[test]
+fn stored_log_with_former_verbatim_qsl_fields_stays_readable() {
+    let dir = Dir::new();
+    let text = format!(
+        "header\n<eoh>\n<call:5>K1ABC <mode:3>FT8 <qso_date:8>20250101 <time_on:4>1000 <app_wstxrust_contact_id:36>{ID1} <QSL_RCVD:1>Y <QSL_RCVD:1>N <LOTW_QSL_RCVD:3>yes <eor>\n"
+    );
+    fs::write(dir.0.join(FILE_NAME), &text).unwrap();
+    let log = Logbook::open(&dir.0);
+    assert_eq!(log.total().unwrap(), 1);
+    let records = parse_records(text.as_bytes(), &limits()).unwrap();
+    assert_eq!(records[0].get("qsl_rcvd"), Some("Y"));
+    assert_eq!(records[0].get("lotw_qsl_rcvd"), None);
+    assert_eq!(
+        records[0]
+            .unknown
+            .iter()
+            .map(|u| u.name.as_str())
+            .collect::<Vec<_>>(),
+        ["QSL_RCVD", "LOTW_QSL_RCVD"]
+    );
 }

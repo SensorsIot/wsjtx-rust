@@ -342,7 +342,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
             "auto_seq",
             "call_first",
             "tx1_skip",
-            "tx_minutes",
+            "tx_calls",
             "tune_seconds",
             "rx_hz",
             "tx_hz",
@@ -354,17 +354,13 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     );
     assert_eq!(
         keys(&v["watchdog"]),
-        sorted(&[
-            "tx_remaining_minutes",
-            "tx_expired",
-            "tune_remaining_seconds"
-        ])
+        sorted(&["tx_remaining_calls", "tx_expired", "tune_remaining_seconds"])
     );
     assert_eq!(v["contact"], Value::Null);
     assert_eq!(v["log"], Value::Null, "#41: no review; nothing logged yet");
     assert_eq!(
         v["settings"],
-        json!({"auto_seq":true,"call_first":true,"tx1_skip":false,"tx_minutes":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":false,"parity":"odd","report":-15,"activity":"none","exchange":null,"serial":1})
+        json!({"auto_seq":true,"call_first":true,"tx1_skip":false,"tx_calls":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":false,"parity":"odd","report":-15,"activity":"none","exchange":null,"serial":1})
     );
     assert_eq!(v["transmit"]["capability"], "available");
     assert_eq!(v["transmit"]["arm_state"], "disarmed");
@@ -388,14 +384,14 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         "monotonic_ms":MAX_SAFE_TEST,"utc_ms":MAX_SAFE_TEST,
         "transmit":{"capability":"unavailable","arm_state":"disarmed","last_disarm_cause":"authority_changed","tune":false,
             "pending_sequence":MAX_SAFE_TEST,"last_text":long,"last_period_utc":MAX_SAFE_TEST,"halt_state":"pending","safety_revision":MAX_SAFE_TEST,"refusal":"clock_not_synchronized"},
-        "settings":{"auto_seq":true,"call_first":false,"tx1_skip":false,"tx_minutes":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50,"activity":"field_day","exchange":"32F WWA","serial":u32::MAX},
+        "settings":{"auto_seq":true,"call_first":false,"tx1_skip":false,"tx_calls":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50,"activity":"field_day","exchange":"32F WWA","serial":u32::MAX},
         "contact":{"id":f.id,"origin":"manual_entry","dx_call":"PJ4/PA3XYZABC","dx_grid":"JN47AA","report_sent":"-50","report_rcvd":"-50",
             "exchange_sent":"32F WWA","exchange_rcvd":"32F WWA","state":"roger_report","next_slot":"tx3","tx4":"rr73","messages":[long,long,long,long,long,long],
             "start_utc":"2026-10-31T23:59:59Z","end_utc":"2026-10-31T23:59:59Z","saved":false,"suggested_slot":"tx5",
             "last_rcvd":{"text":long,"snr":-50,"period_utc_ms":MAX_SAFE_TEST,"count":u32::MAX},
             "dialogue":dialogue},
         "log":{"contact_id":f.id,"call":"PJ4/PA3XYZABC","outcome":"unsaved","error":"storage_unavailable"},
-        "watchdog":{"tx_remaining_minutes":99,"tx_expired":true,"tune_remaining_seconds":300}});
+        "watchdog":{"tx_remaining_calls":99,"tx_expired":true,"tune_remaining_seconds":300}});
     let size = contact_http::admit(&max).unwrap().len();
     assert!(size <= contact_http::SNAPSHOT_BYTES_MAX, "{size}");
     let mut over = max.clone();
@@ -504,8 +500,8 @@ async fn contact_command_wire_is_strict_replays_receipts_and_checks_revisions() 
         (f.body(current, "set_frequency", json!({"rx_hz":null,"tx_hz":199})), "out_of_range", None),
         (f.body(current, "set_frequency", json!({"rx_hz":null,"tx_hz":2951})), "out_of_range", None),
         (f.body(current, "set_frequency", json!({"rx_hz":3001,"tx_hz":null})), "out_of_range", None),
-        (f.body(current, "set_watchdogs", json!({"tx_minutes":0,"tune_seconds":90})), "out_of_range", None),
-        (f.body(current, "set_watchdogs", json!({"tx_minutes":6,"tune_seconds":301})), "out_of_range", None),
+        (f.body(current, "set_watchdogs", json!({"tx_calls":0,"tune_seconds":90})), "out_of_range", None),
+        (f.body(current, "set_watchdogs", json!({"tx_calls":6,"tune_seconds":301})), "out_of_range", None),
         (f.body(current, "choose_next", json!({"slot":"tx7"})), "invalid_request", Some("slot")),
         (f.body(current, "choose_next", json!({"slot":"tx2"})), "no_contact", None),
         (f.body(current, "set_tx4", json!({"form":"r73"})), "invalid_request", Some("form")),
@@ -991,6 +987,46 @@ fn rx_level_is_round_10_log10_mean_square_in_16_bit_units() {
         sum += v * v;
     }
     assert!((65..=66).contains(&recording::rx_level_db(sum, 120_000)));
+}
+
+// Proves: CL-010-15; TC-007-005 (#10 pushed transmit state, unit subset). The
+// transmit.state revision follows the GET /transmit read view only: unchanged while the
+// view is unchanged (no time-driven step), one step per change, age_ms ignored; the event
+// has exactly its keys within 192 bytes.
+#[tokio::test]
+async fn transmit_state_revision_follows_the_read_view_only() {
+    let f = fixture("http://127.0.0.1:18077", true);
+    let r = &f.state.recording;
+    let first = transmit_http::state_revision(r).unwrap();
+    std::thread::sleep(Duration::from_millis(1100));
+    assert_eq!(transmit_http::state_revision(r), Some(first), "time alone");
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
+        "action":"set_watchdogs","tx_calls":7,"tune_seconds":90});
+    let (status, reply, _, _) = f.call("POST", "/transmit/command", Some(body)).await;
+    assert_eq!(status, StatusCode::OK, "{reply}");
+    let changed = transmit_http::state_revision(r).unwrap();
+    assert_eq!(changed, first + 1, "one step per change");
+    assert_eq!(transmit_http::state_revision(r), Some(changed));
+    let view = json!({"ptt":"released","clock_measurement":{"server":"a","offset_ms":3,"round_trip_ms":9,"age_ms":10}});
+    let mut older = view.clone();
+    older["clock_measurement"]["age_ms"] = json!(99_000);
+    assert_eq!(
+        transmit_http::view_digest(view.clone()),
+        transmit_http::view_digest(older)
+    );
+    let mut keyed = view.clone();
+    keyed["ptt"] = json!("keyed");
+    assert_ne!(
+        transmit_http::view_digest(view),
+        transmit_http::view_digest(keyed)
+    );
+    let event = transmit_http::state_event(r, MAX_SAFE_TEST);
+    assert!(event.len() <= 192, "{event}");
+    let event: Value = serde_json::from_str(&event).unwrap();
+    assert_eq!(
+        event,
+        json!({"v":1,"type":"transmit.state","data":{"profile_id":f.id,"boot_id":f.boot,"transmit_revision":MAX_SAFE_TEST}})
+    );
 }
 
 /// TC-007-001/003/004, TC-010-008/009, TC-050-004 in the real browser: launches

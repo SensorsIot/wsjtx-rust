@@ -551,17 +551,35 @@ package WstxTransmit {
              1..300 s) with PTT release. */
     }
     attribute def TransmitWatchdog {
-        doc /* WstxContact::TxWatchdog enforced by the owner: limit 1..99 minutes (default
-             6 at each start), counted only while armed, reset at Arm, on accepted
-             operating activity (every accepted transmit command; the contact consumer
-             reports its own) and at the start of a transmission whose text differs from
-             the last one. At expiry the owner halts and disarms (txWatchdog) and
-             reports tx_expired until the next Arm. */
+        doc /* WstxContact::TxWatchdog enforced by the owner (#39, 2026-11-04): limit
+             1..99 unanswered transmissions (default 6 at each start). Every transmission
+             whose audio starts adds one; an operator Arm, accepted operator activity
+             (every accepted browser transmit command; the contact consumer reports its
+             own) and an answer the contact consumer reports reset the count to 0; an
+             automatic arm keeps it. When a request would be keyed with the count at the
+             limit the owner disarms (txWatchdog) instead of keying, so PTT is never keyed
+             for it and no halt happens (HALT is the operator's emergency stop only), and reports tx_expired until the next Arm. */
     }
     attribute def TransmitWire {
         doc /* Selected-profile routes, existing authentication, exact Origin on mutations,
              JSON media rules, 1024-byte bodies and error envelope; identity-coded (not
-             in the compressed GET allowlist); no WebSocket or StatusReply change.
+             in the compressed GET allowlist); no StatusReply change. Pushed state
+             (WstxStationProtocol::PushedStationState, #10 2026-11-04): a versioned
+             WebSocket event exactly {v:1,type:"transmit.state",data:{profile_id,boot_id,
+             transmit_revision}}, at most 192 bytes, sent to each peer with a display
+             subscription when the transmit read view changes (every field of GET
+             /transmit except clock_measurement.age_ms; transmit_revision a station-wide
+             counter, safe integer, increasing at each such change), coalesced to at most
+             one per second per peer and sent within 1 s of a change, at the first contact
+             step of a subscribed peer as well. A browser of a transmit-configured profile
+             reads GET /transmit once per socket at its first transmit.state (or, with
+             none, 3-5 s after the socket is ready), on each later transmit.state whose
+             revision it has not read (one pending read, at most one queued), after its
+             own transmit or halt request, and otherwise at most once per 30 s as a safety
+             read; it runs no 1 s poll. Ages it shows (clock_measurement.age_ms) advance
+             locally from the read. HALT, PTT keying/release and the watchdogs are decided by the owner
+             and never wait for a browser read; the keyed/transmitting indication also
+             follows station.tick (one extra tick at each transmit start/stop).
              GET /transmit: exactly {v:1,profile_id,boot_id,transmit,ptt,transmitting,
              clock,clock_measurement,clock_source,clock_warning,watchdog,outcomes,startup_release} with transmit exactly the WstxContact read view
              without its safety_revision: {capability,arm_state,last_disarm_cause,tune,pending_sequence,last_text,
@@ -571,8 +589,8 @@ package WstxTransmit {
              ntp_air_disagree (AirClock),
              clock_measurement null before the first answer, else exactly the latest
              measurement {server,offset_ms,round_trip_ms,age_ms} (server as configured,
-             age at the read), watchdog exactly {tx_minutes,
-             tx_remaining_minutes,tx_expired,tune_seconds,tune_remaining_seconds} and
+             age at the read), watchdog exactly {tx_calls,
+             tx_remaining_calls,tx_expired,tune_seconds,tune_remaining_seconds} and
              outcomes the last 8 {outcome_sequence,request_sequence,kind,refusal,failure,
              audio_start_utc_ms} and startup_release the StartupSafetyRelease state;
              enum values snake_case.
@@ -580,7 +598,7 @@ package WstxTransmit {
              plus the action's parameters: arm {safety_revision}; disarm {};
              request {request_sequence,mode ft8|ft4,period_start_utc_ms,message_text,
              tx_offset_hz}; tune {enabled} or {enabled true,tx_offset_hz};
-             set_watchdogs {tx_minutes,tune_seconds}. 200 {v:1,profile_id,boot_id,
+             set_watchdogs {tx_calls,tune_seconds}. 200 {v:1,profile_id,boot_id,
              command_id,result}: result is the TransmitOutcome of a request, otherwise
              {accepted,refusal}. A retained command_id (last 16) with the identical body
              returns the same reply without effect, a different body is state_conflict;

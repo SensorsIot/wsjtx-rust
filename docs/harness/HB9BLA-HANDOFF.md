@@ -19,9 +19,18 @@ verify their availability in the actual agent environment before starting work.
 
 - Station: **https://192.168.0.37:18081**, task `WSTX Rust Station HB9BLA`;
   receipt `%LOCALAPPDATA%\WstxRust\station\station-running.json`.
-- IC-7300: **COM3**, USB Audio CODEC; last prepared for **FT4, 14.080 MHz USB-D,
-  FIL1 3000 Hz, both notch filters off, centred PBT**. Read back before changes.
+- IC-7300: **COM3**, USB Audio CODEC; in use on **40 m FT8 (7.074 MHz USB-D)**, 1 W for
+  agent tests; **AGC SLOW** for FT8/FT4 (operator finding: it removes the AGC line between
+  periods). Read back before changes — CI-V reads first and writes only on a difference.
   The camera microphone belongs to Dictate, not the radio.
+- Station log: `%LOCALAPPDATA%\WstxRust\station\profiles\ic7300\contacts.adi`, updated on
+  2026-11-04 from the operator's Log4OM export (26,886 QSOs). A rerun of Update logbook
+  with the same export adds nothing.
+- Install: build `resources\station-update\make_package.py <commit> <green gate log>` (a
+  merge-queue log under `.git\harness-parallel\queue\logs\` that shows the push), then
+  `station-update.ps1 -Manifest …`, then `.harness\deploy\station-probe.ps1 -Manifest …`;
+  afterwards `cr_state.py installed <commit> --since <previous>`. Check `/transmit` is
+  idle first; never install while the operator is in a QSO without asking.
 - Official WSJT-X **3.3.0-beta4** runs alongside ours as `WSTX-Comparison`,
   Rig=None, no CAT/PTT, Fast/AP-off. A connected Edge frontend runs here too.
 - Keep credentials private. Codex is signed in. Development secrets/SSH keys and
@@ -63,7 +72,17 @@ $env:WSTX_SIMULATOR_ORACLE_DIR = Join-Path (git rev-parse --show-toplevel) 'fixt
 ```
 
 Without these, a push that selects any suite whose `needs` in `.harness/suites.yaml`
-names a WSTX_* input is refused red.
+names a WSTX_* input is refused red. The merge-queue worker reads the same inputs from
+`queue.env` in `.harness/config.yaml`; run it as a background job from the main checkout:
+
+```bash
+HARNESS_REPO=D:/Github/wsjtx-rust python D:/Github/harness-mq/core/tools/merge_queue.py worker
+```
+
+`D:\Github\harness-mq` is a harness clone at the pinned (or newer reviewed) commit; keep it
+and the main checkout's `harness` submodule on the same commit. Agent builds use their own
+`CARGO_TARGET_DIR=C:/wstx-build/<worktree>` (never inside a worktree, never shared) and
+wait with `merge_queue.py busy --wait` before heavy local runs.
 
 Use this synchronization set, not stale `synchronization-inputs-final`/`-lf` caches.
 Evidence: `.git\migration-evidence\hardware-preparation\`; original design: sibling

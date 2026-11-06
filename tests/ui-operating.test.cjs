@@ -331,7 +331,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
 // expected sets below come from the model's decisions, not from the candidate markup.
 const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#operating-monitor','#contact-enable','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar','#rx-frequency','#region-server-settings','#region-expert'];
 const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#qso-halt','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#display-sensitivity','#display-speed','#qso-cq','#contact-tune','#qso-halt','#contact-log'];
-const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#detect-run','#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#audio-enumerate','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#udp-warning','#udp-save','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
+const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#detect-run','#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#udp-warning','#udp-save','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
 const healthyTexts=['#cat-status','#receive-status','#signal-status','#operating-radio','#operating-selection-status','#clock-detail'];
 async function inViewport(page,selector){return page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();return el.checkVisibility({visibilityProperty:true})&&r.width>1&&r.height>1&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;});}
 // checkVisibility also treats the content of a closed <details> fold-out as not shown.
@@ -339,8 +339,8 @@ async function shown(page,selector){return page.locator(selector).first().evalua
 function contactSnapshot(base,{contact=null,transmit={},settings={},log=null}={}){
   return {v:1,profile_id:base.profile_id,boot_id:base.boot_id,contact_revision:base.revision??3,snapshot_sequence:base.sequence??3,monotonic_ms:1000,utc_ms:Date.now(),log,
     transmit:{capability:'available',arm_state:'disarmed',last_disarm_cause:'startup',tune:false,pending_sequence:null,last_text:null,last_period_utc:null,halt_state:'idle',safety_revision:7,refusal:null,...transmit},
-    settings:{auto_seq:true,tx1_skip:false,tx_minutes:6,tune_seconds:90,rx_hz:1500,tx_hz:1500,hold_tx:false,parity:'even',report:-10,...settings},
-    contact,watchdog:{tx_remaining_minutes:6,tx_expired:false,tune_remaining_seconds:0}};
+    settings:{auto_seq:true,tx1_skip:false,tx_calls:6,tune_seconds:90,rx_hz:1500,tx_hz:1500,hold_tx:false,parity:'even',report:-10,...settings},
+    contact,watchdog:{tx_remaining_calls:6,tx_expired:false,tune_remaining_seconds:0}};
 }
 const partner=(state='replying',extra={})=>({id:crypto.randomUUID(),origin:'selected_row',dx_call:'K1ABC',dx_grid:'FN42',report_sent:'-12',report_rcvd:null,state,next_slot:'tx1',tx4:'rrr',messages:['K1ABC HB9BLA JN47','K1ABC HB9BLA -12','K1ABC HB9BLA R-12','K1ABC HB9BLA RRR','K1ABC HB9BLA 73','CQ HB9BLA JN47'],start_utc:null,end_utc:null,saved:false,...extra});
 // Records a page's contact commands and answers them like the station (202) without effects.
@@ -710,7 +710,7 @@ test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherw
   r=await tickAndRead(page,offset,true);
   assert.deepEqual([r.label,r.next],['▶ TX now:','K1ABC HB9BLA -05']);
   // Tune is a tone: "TX now: Tune" with the Tune time left, never a message.
-  transmit={arm_state:'armed',tune:true};watchdog={tx_remaining_minutes:6,tx_expired:false,tune_remaining_seconds:80};
+  transmit={arm_state:'armed',tune:true};watchdog={tx_remaining_calls:6,tx_expired:false,tune_remaining_seconds:80};
   await page.evaluate(()=>window.wstxContact.load());
   r=await tickAndRead(page,offset,true);
   assert.deepEqual([r.label,r.next,r.countdown],['▶ TX now:','Tune','80 s left']);
@@ -821,9 +821,8 @@ test('TC-007-009 the Settings drawer has four sections holding every control mov
     assert.equal(await inViewport(page,'#halt-tx'),true,'HALT stays reachable');
   }
   assert.equal(await page.locator('#settings-drawer #transmit-details #transmit-panel').count(),1,'the raw #9 transmit panel is an Expert section');
-  await page.locator('#tab-radio').click();await page.locator('#audio-enumerate').click();
-  await page.locator('#audio-inputs').filter({hasText:/\S/}).waitFor();
-  assert.ok(requests.includes('GET /audio/devices'));assert.equal(requests.includes('PUT /profile'),false,'listing inputs is not an Apply');
+  // #44 CL-044-08: opening the drawer lists the endpoints by name; listing is not an Apply.
+  assert.ok(requests.includes('GET /audio/endpoints'));assert.equal(requests.includes('GET /audio/devices'),false);assert.equal(requests.includes('PUT /profile'),false,'listing inputs is not an Apply');
   await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'Esc halts and closes no panel');
   await page.locator('#band-activity').click({position:{x:40,y:200}});assert.equal(await page.locator('#settings-drawer').isVisible(),false,'a pointer action outside closes the drawer');
   await page.keyboard.press('F2');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'F2 opens Settings');
@@ -846,7 +845,7 @@ test('TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fi
         radios:[{model:'IC-7300',id:'94',civ_address:'94',baud:19200,station_cat:true,unknown_model:false}],audio:null}],
       manual:['Yaesu','Kenwood','Elecraft'],supported_radios:1,audio_error:null,
       proposal:{port:'COM250',model:'IC-7300',civ_address:'94',baud:19200,control:{mode:'cat',endpoint:'icom7300://COM250?baud=19200&radio=94&controller=e0',ptt:'cat'},
-        audio:{input_device:capture,output_device:render,input_name:'Microphone (USB Audio CODEC )',output_name:'Speakers (USB Audio CODEC )'}},
+        audio:{input_device:capture,output_device:render,input_name:'Microphone (USB Audio CODEC)',output_name:'Speakers (USB Audio CODEC)'}},
       settings:{port:3,source:'probe',civ_baud:19200,error:null,items:[{item:'0078',name:'usb_send',value:1,label:'DTR',recommended:0,severity:'blocking',message:'USB SEND on DTR/RTS can key the transmitter.'},
         {item:'0067',name:'data_mod',value:3,label:'USB',recommended:3,severity:'ok',message:'DATA MOD takes transmit audio from USB.'}]}}});});
     await p.route('**/radio/settings/*',async route=>{const action=new URL(route.request().url()).pathname.split('/').pop(),body=JSON.parse(route.request().postData());radio.push([action,body]);
@@ -862,7 +861,10 @@ test('TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fi
   await page.locator('#detect-proposal:not([hidden])').waitFor();
   assert.deepEqual(radio,[['detect',{v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,keying_inhibit_confirmed:true}]]);
   const fields=await page.locator('#detect-fields').textContent();
-  for(const text of ['COM250','IC-7300','94h','19200','icom7300://COM250?baud=19200&radio=94&controller=e0','Microphone (USB Audio CODEC )',capture,'Speakers (USB Audio CODEC )',render])assert.ok(fields.includes(text),text);
+  for(const text of ['COM250','IC-7300','94h','19200','icom7300://COM250?baud=19200&radio=94&controller=e0','Microphone (USB Audio CODEC)','Speakers (USB Audio CODEC)'])assert.ok(fields.includes(text),text);
+  // CL-044-07/08: the endpoint IDs are not in the text, only in the hover titles.
+  assert.equal(fields.includes('{0.0.'),false,'no endpoint ID in the proposal text');
+  assert.deepEqual(await page.locator('#detect-fields dd[title]').evaluateAll(list=>list.map(dd=>dd.title)),[capture,render]);
   assert.match(await page.locator('#detect-items').textContent(),/0078 usb send: DTR · blocking/);
   assert.equal(await page.locator('#detect-ack').isChecked(),false,'the confirmation is asked again for the next detection');
   await page.locator('#detect-use').click();
@@ -1653,6 +1655,10 @@ test('TC-007-006 a page-announced period refetches its prefix instead of skippin
       return route.fulfill({json:{...emptyResults(state),next_sequence:19,available_count:19,next,more:next<19,records:batch,latest_decode:view}});
     });
   }});
+  // #10 PushedStationState: the station announces each publication with receive.state; the
+  // page then reads results once more, and that page announces the newer period.
+  await page.waitForFunction(()=>resultCursor===19&&!resultPending);
+  await page.evaluate(s=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',data:{profile_id:s.profile_id,boot_id:s.boot_id,generation:s.generation,source_id:s.source.id,job_id:s.job.id,state:'running'}}}})),state);
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===18);
   assert.ok(announced);assert.equal(await page.locator('tr[data-period=latest]').first().locator('td').nth(4).textContent(),'PAGE FIXTURE 1');
   assert.equal(await page.locator('tr[data-period=latest]').last().locator('td').nth(4).textContent(),'PAGE FIXTURE 18');assert.deepEqual(errors,[]);
@@ -1763,8 +1769,10 @@ test('TC-011-002 Update logbook from ADIF in Settings consolidates a logger expo
   await page.locator('#log-import-status',{hasText:expected}).waitFor();
   assert.equal(await page.locator('#log-import-status').innerText(),expected);
  };
- await update('log4om.adi',good,'Logbook updated: 2 added, 0 already present, 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
- await update('log4om.adi',good,'Logbook updated: 0 added, 2 already present, 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
+ await update('log4om.adi',good,'Logbook updated: 2 added, 0 already present (0 confirmations updated), 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
+ await update('log4om.adi',good,'Logbook updated: 0 added, 2 already present (0 confirmations updated), 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
+ // #10 (2026-11-04) a rerun that confirms a present QSO upgrades only its confirmation.
+ await update('lotw.adi','<CALL:5>K1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20261031 <TIME_ON:6>123000 <LOTW_QSL_RCVD:1>Y <eor>\n','Logbook updated: 0 added, 1 already present (1 confirmation updated), 0 skipped');
  const bad='<call:5>N0NEW <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n<call:5>W1XYZ <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <eor\n';
  await update('bad.adi',bad,'Logbook not updated · nothing was added · malformed in record 2');
  await page.setViewportSize({width:360,height:800});
@@ -1779,7 +1787,7 @@ test('TC-011-002 Update logbook from ADIF in Settings consolidates a logger expo
  assert.equal(download.suggestedFilename(),'contacts.adi');
  const text=await fs.readFile(await download.path(),'utf8');
  assert.match(text,/^ADIF Export\n<adif_ver:5>3\.1\.8\n/);
- assert.match(text,/<call:5>K1ABC <mode:3>FT8 <qso_date:8>20261031 <time_on:6>123000 <band:3>20m <app_wstxrust_contact_id:36>[0-9a-f-]{36} <app_wstxrust_source:7>LOG4OM2 <eor>\n/);
+ assert.match(text,/<call:5>K1ABC <mode:3>FT8 <qso_date:8>20261031 <time_on:6>123000 <band:3>20m <lotw_qsl_rcvd:1>Y <app_wstxrust_contact_id:36>[0-9a-f-]{36} <app_wstxrust_source:7>LOG4OM2 <eor>\n/);
  assert.match(text,/<call:6>DL1ABC <mode:4>MFSK <submode:3>FT4 <qso_date:8>20261031 <time_on:6>123100 <band:3>40m <app_wstxrust_contact_id:36>[0-9a-f-]{36} <app_wstxrust_source:7>LOG4OM2 <eor>\n/);
  assert.doesNotMatch(text,/Jos|example|dxcc|name/i,'only the log fields are stored');
  assert.equal(text.match(/<eor>/g).length,2);
@@ -2246,7 +2254,7 @@ test('TC-039-006 Highlight marks and sorts, the editor previews and saves, Auto 
   await page.locator('#strategy-editor button[value=cancel]').click();assert.equal(await page.locator('#strategy-editor').evaluate(d=>d.open),false);
   // Auto: the first use asks; Cancel sends nothing; Start sends configure then start.
   await page.locator('#strategy-auto').click();await page.locator('#op-confirm[open]').waitFor();
-  assert.match(await page.locator('#op-confirm-text').textContent(),/Auto transmits without asking: it answers only stations that match "DX first" \(Auto Call and Auto CQ, switching after 3 tries\)\. The Tx watchdog \(6 min\) counts from your last action and is never reset by Auto\. HALT or Esc stops it\./);
+  assert.match(await page.locator('#op-confirm-text').textContent(),/Auto transmits without asking: it answers only stations that match "DX first" \(Auto Call and Auto CQ, switching after 3 tries\)\. The Tx watchdog stops it after 6 unanswered calls; Auto never resets it\. HALT or Esc stops it\./);
   await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);assert.deepEqual(autos,[],'cancelled: no automation request');
   await page.locator('#strategy-auto').click();await page.locator('#op-confirm[open]').waitFor();await page.locator('#op-confirm-ok').click();
   for(let i=0;i<60&&autos.length<2;i++)await page.waitForTimeout(50);
@@ -2395,7 +2403,7 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
   await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
   assert.deepEqual(await items(),['Reply','Select','Set Rx here','Pounce K1ABC','Ignore K1ABC']);
   await page.locator('#ba-menu [data-menu=pounce]').click();await page.locator('#op-confirm[open]').waitFor();
-  assert.match(await page.locator('#op-confirm-text').textContent(),/^Pounce transmits without asking: it answers K1ABC when it calls CQ or ends a QSO with 73 on this band\. The Tx watchdog \(6 min\) counts from your last action and is never reset by automation\. HALT or Esc stops it\.$/);
+  assert.match(await page.locator('#op-confirm-text').textContent(),/^Pounce transmits without asking: it answers K1ABC when it calls CQ or ends a QSO with 73 on this band\. The Tx watchdog stops it after 6 unanswered calls; automation never resets it\. HALT or Esc stops it\.$/);
   await page.locator('#op-confirm-ok').click();
   for(let i=0;i<60&&autos.length<2;i++)await page.waitForTimeout(50);
   assert.deepEqual(autos.map(b=>[b.action,b.expected_policy_revision,b.expected_run_revision,b.mode,b.safety_revision]),[['configure',0,undefined,undefined,undefined],['start',1,0,'ft8',7]]);
@@ -3012,5 +3020,46 @@ test('TC-061-003 CQ retries a stale_revision refusal with the reloaded snapshot'
   stale=3;m=commands.length;await page.locator('#qso-cq').click();
   assert.deepEqual(await sent(m,3),[['enable_tx',true,4],['enable_tx',true,5],['enable_tx',true,6]]);
   await page.locator('#contact-result').filter({hasText:'CQ: refused · stale_revision'}).waitFor();
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-044-08; TC-044-007. GET /audio/endpoints is a route fixture (hand-written names and
+// labels), so no audio device is read; the endpoint IDs are fixture GUIDs.
+test('TC-044-007 the Audio section shows endpoint names, keeps IDs in hover and Expert, and saves the radio audio',{timeout:60000},async t=>{
+  const codecIn='{0.0.1.00000000}.{6b9f2c1e-1111-4222-8333-944444444444}',codecOut='{0.0.0.00000000}.{f4069c8a-1111-4222-8333-944444444444}';
+  const headsetA='{0.0.1.00000000}.{aaaaaaaa-0000-4000-8000-000000000000}',headsetB='{0.0.1.00000000}.{bbbbbbbb-0000-4000-8000-000000000000}';
+  const saved='{0.0.1.00000000}.{0a0a0a0a-0000-4000-8000-000000000000}',headset='Headset Microphone (Sennheiser Communication Audio)';
+  const requests=[];
+  const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:saved,beforeNavigate:async(p,_app,doc)=>{
+    p.on('request',r=>requests.push(`${r.method()} ${new URL(r.url()).pathname}`));
+    await p.route('**/audio/endpoints',route=>route.fulfill({json:{v:1,profile_id:doc.profile_id,boot_id:'fixture-boot',
+      inputs:[{id:codecIn,name:'Microphone (USB Audio CODEC)',label:'Microphone (USB Audio CODEC) \u2014 IC-7300',present:true,radio:'IC-7300'},
+        {id:headsetB,name:headset,label:headset+' #2',present:true,radio:null},{id:headsetA,name:headset,label:headset+' #1',present:true,radio:null},
+        {id:saved,name:'Microphone (Old radio)',label:'Microphone (Old radio) \u00b7 not present',present:false,radio:null}],
+      outputs:[{id:codecOut,name:'Speakers (USB Audio CODEC)',label:'Speakers (USB Audio CODEC) \u2014 IC-7300',present:true,radio:'IC-7300'}]}}));
+  }});
+  await page.waitForFunction(()=>!!window.wstxContact&&!!profileData,null,{timeout:30000});
+  await page.locator('#open-server-settings').click();await page.locator('#tab-radio').click();
+  await page.locator('#audio-input option[value="'+codecIn+'"]').waitFor({state:'attached'});
+  // One Audio section with both selects and the meter; no listing button, no free-text device field.
+  assert.equal(await page.locator('#settings-audio #audio-input').evaluate(el=>el.tagName),'SELECT');
+  assert.equal(await page.locator('#settings-audio #audio-output').evaluate(el=>el.tagName),'SELECT');
+  assert.equal(await page.locator('#settings-audio .op-input-meter').count(),1);
+  assert.equal(await page.locator('#audio-enumerate,#audio-inputs,#settings-audio input').count(),0);
+  const options=sel=>page.locator(sel+' option').evaluateAll(list=>list.map(o=>[o.textContent,o.title,o.disabled]));
+  assert.deepEqual(await options('#audio-input'),[['None','',false],['Microphone (USB Audio CODEC) \u2014 IC-7300',codecIn,false],[headset+' #2',headsetB,false],[headset+' #1',headsetA,false],['Microphone (Old radio) \u00b7 not present',saved,true]]);
+  assert.deepEqual(await options('#audio-output'),[['None','',false],['Speakers (USB Audio CODEC) \u2014 IC-7300',codecOut,false]]);
+  assert.equal(await page.locator('#audio-input').inputValue(),saved,'the missing saved input stays selected');
+  assert.equal((await page.locator('#settings-radio').innerText()).includes('{0.0.'),false,'no endpoint ID in the visible Radio text');
+  assert.match(await page.locator('#audio-recommend').innerText(),/Recommended: Microphone \(USB Audio CODEC\) \u2014 IC-7300 \/ Speakers \(USB Audio CODEC\) \u2014 IC-7300/);
+  assert.equal(await page.locator('#audio-id-input').textContent(),saved,'Expert shows the saved endpoint ID');
+  await page.locator('#tab-radio').click();
+  await page.selectOption('#audio-input',headsetB);await page.waitForTimeout(300);
+  assert.equal(requests.filter(r=>r==='PUT /profile').length,0,'choosing saves nothing');
+  await page.locator('#audio-use-radio').click();await page.locator('#settings-result').filter({hasText:/Saved revision/}).waitFor();
+  assert.equal(requests.filter(r=>r==='PUT /profile').length,1,'Use IC-7300 audio is one Apply');
+  assert.deepEqual((await (await fetch(app.origin+'/profile')).json()).settings.audio,{input_device:codecIn,output_device:codecOut});
+  await page.setViewportSize({width:360,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'the Audio section fits a phone');
+  await page.locator('#settings-audio').screenshot({path:'test-results/ui-operating/audio-section-mobile.png'});
   assert.deepEqual(errors,[]);
 });

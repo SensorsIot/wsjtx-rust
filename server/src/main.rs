@@ -336,6 +336,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 recording,
                 logbook,
             });
+            // CL-044-07: the saved audio endpoints' names, before the first /receive.
+            let named = state.clone();
+            tokio::task::spawn_blocking(move || radio_setup::startup_names(&named)).await?;
             // WstxContact: the station-wide contact step, whether or not a browser is connected.
             let contacts = state.clone();
             tokio::spawn(async move {
@@ -449,6 +452,7 @@ fn router(state: App) -> Router {
         .route("/profile", get(get_profile).put(put_profile))
         .route("/recording", get(recording_http::snapshot))
         .route("/audio/devices", get(receive_http::devices))
+        .route("/audio/endpoints", get(radio_setup::endpoints_route))
         .route("/receive", get(receive_http::snapshot))
         .route("/receive/start", post(receive_http::start).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/stop", post(receive_http::stop).layer(axum::extract::DefaultBodyLimit::max(1024)))
@@ -1062,6 +1066,8 @@ async fn connection(
     let mut contact_tick = interval(Duration::from_secs(1));
     contact_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut contact_seen: Option<u64> = None;
+    // WstxTransmit::TransmitWire transmit.state (pushed state, coalesced like contact.state).
+    let mut transmit_seen: Option<u64> = None;
     // WstxMcp::AutomationStateEvent: only after a change since boot (no event while unused).
     let mut automation_seen: Option<(u64, u64)> = Some((0, 0));
     // #42 WstxStrategy::Alert alert.state: only after a change since this peer subscribed.
@@ -1122,6 +1128,13 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(contact_http::state_event(r,revision).into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{contact_seen=Some(revision);if !flushed {optional_since=Some(Instant::now());continue;}},
+                        Err(_)=>break,
+                    }
+                }
+                if let Some(revision)=transmit_http::state_revision(r) && transmit_seen!=Some(revision) {
+                    match optional_write(&mut socket,Message::Text(transmit_http::state_event(r,revision).into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{transmit_seen=Some(revision);if !flushed {optional_since=Some(Instant::now());continue;}},
                         Err(_)=>break,
                     }
                 }

@@ -240,6 +240,26 @@ package WstxStationProtocol {
              audio or spectrum stream; explicit Thin/live/display extensions retain
              their own measured limits and do not inherit an unproved N-station claim. */
     }
+    attribute def PushedStationState {
+        attribute safetyReadMinimumMs : Integer = 30000;
+        doc /* Governing rule of the station-browser interface (operator decision #10,
+             2026-11-04): a client-server application. Each browser holds one wstx.v1
+             WebSocket; the station pushes typed state events on that socket when its
+             state changes (transmit/PTT, contact, decode records, selection/radio/band,
+             clock, UDP display, log changes), each throttled per peer by that peer's
+             display subscription (Detailed, Thin, Off), so an idle Off peer receives
+             almost nothing beyond heartbeat and station.tick. HTTP carries commands and
+             one snapshot read per state on (re)connect, after an announcement event (one
+             pending read per state and browser, as contact.state/GET /contact), and after
+             the browser's own mutation; a browser does not poll on a timer, except a
+             safety read of a pushed state no more often than once per
+             safetyReadMinimumMs. The browser holds the state (snapshot plus events) and
+             renders locally. Safety decisions (HALT, watchdog, PTT keying and release)
+             stay on the station and never wait for a browser read. Existing reads are
+             migrated in slices: first GET /transmit (WstxTransmit::TransmitWire
+             transmit.state), then receive results, operating selection, radio and
+             profile; until a read is migrated its existing cadence rules apply. */
+    }
     attribute def IndependentLinkAccounting {
         attribute payloadBytesPerSecond : Integer = 4000;
         attribute oneWayMs : Integer = 150;
@@ -266,6 +286,8 @@ package WstxStationProtocol {
     dependency securityPromise from SessionSecurity to WstxRequirements::'CL-003-07';
     dependency reconnectPromise from BrowserLinkLifecycle to WstxRequirements::'CL-003-04';
     dependency budgetPromise from ThinLinkBudget to WstxRequirements::'CL-003-05';
+    dependency pushedStatePromise from PushedStationState to WstxRequirements::'CL-003-05';
+    dependency pushedStateOwner from PushedStationState to WstxArchitecture::physicalStation::backend::stations::web;
     dependency bufferPromise from Limits to WstxRequirements::'CL-003-06';
     dependency exchangeVerification from ExchangeStatus to WstxRequirements::'TC-021-005';
     dependency browserVerification from BrowserSnapshotPolicy to WstxRequirements::'TC-021-006';
