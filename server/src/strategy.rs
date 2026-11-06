@@ -97,6 +97,35 @@ pub(crate) struct Strategy {
     pub treat_73_as_cq: bool,
     pub window: Window,
 }
+/// WstxStrategy::BuiltinStrategies: the one table (name, goal, DX only).
+const BUILTINS: [(&str, Goal, bool); 5] = [
+    ("New DXCC", Goal::Dxcc, false),
+    ("New DXCC on band", Goal::DxccBand, false),
+    ("DXCC slots", Goal::DxccSlot, false),
+    ("New calls", Goal::NewCall, false),
+    ("DX hunting", Goal::NewCall, true),
+];
+pub(crate) fn builtins() -> &'static [Strategy] {
+    static TABLE: std::sync::OnceLock<Vec<Strategy>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        BUILTINS
+            .iter()
+            .map(|(name, goal, dx)| Strategy {
+                name: (*name).to_owned(),
+                goals: vec![*goal],
+                needed: Needed::NotWorked,
+                region: if *dx { Region::Dx } else { Region::All },
+                min_snr_db: None,
+                calls_per_station: 3,
+                treat_73_as_cq: true,
+                window: Window::All,
+            })
+            .collect()
+    })
+}
+fn is_builtin(name: &str) -> bool {
+    builtins().iter().any(|b| b.name.eq_ignore_ascii_case(name))
+}
 /// WstxStrategy::StrategyConfiguration.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Config {
@@ -316,9 +345,10 @@ pub(crate) fn parse_config(v: &Value) -> Result<Config, Field> {
     let mut strategies: Vec<Strategy> = Vec::new();
     for (i, s) in list.iter().enumerate() {
         let s = strategy(s, &format!("strategies[{i}]"))?;
-        if strategies
-            .iter()
-            .any(|o| o.name.eq_ignore_ascii_case(&s.name))
+        if is_builtin(&s.name)
+            || strategies
+                .iter()
+                .any(|o| o.name.eq_ignore_ascii_case(&s.name))
         {
             return Err(bad(format!("strategies[{i}].name")));
         }
@@ -328,7 +358,10 @@ pub(crate) fn parse_config(v: &Value) -> Result<Config, Field> {
         Value::Null => None,
         a => Some(
             a.as_str()
-                .filter(|a| strategies.iter().any(|s| s.name == *a))
+                .filter(|a| {
+                    strategies.iter().any(|s| s.name == *a)
+                        || builtins().iter().any(|b| b.name == *a)
+                })
                 .ok_or(bad("active"))?
                 .to_owned(),
         ),
@@ -381,6 +414,14 @@ fn upgrade(old: &Value) -> Value {
     }
     v
 }
+/// A saved file from before the presets: a strategy with a built-in's name is dropped.
+fn without_builtin_names(configuration: &Value) -> Value {
+    let mut v = configuration.clone();
+    if let Some(list) = v["strategies"].as_array_mut() {
+        list.retain(|s| !s["name"].as_str().is_some_and(is_builtin));
+    }
+    v
+}
 impl Strategy {
     pub(crate) fn json(&self) -> Value {
         json!({"name":self.name,"class":"award",
@@ -408,7 +449,10 @@ impl Config {
     }
     pub(crate) fn active_strategy(&self) -> Option<&Strategy> {
         let name = self.active.as_deref()?;
-        self.strategies.iter().find(|s| s.name == name)
+        self.strategies
+            .iter()
+            .chain(builtins())
+            .find(|s| s.name == name)
     }
 }
 
@@ -987,7 +1031,7 @@ impl Owner {
                             && v["revision"].as_u64().is_some_and(|n| n <= MAX_SAFE);
                         let configuration = match v["schema_version"].as_u64() {
                             Some(1) => upgrade(&v["configuration"]),
-                            Some(2) => v["configuration"].clone(),
+                            Some(2) => without_builtin_names(&v["configuration"]),
                             _ => return None,
                         };
                         ok.then(|| parse_config(&configuration).ok())
@@ -1322,6 +1366,11 @@ impl Owner {
             "configuration_error":inner.error,"my_continent":mine,
             "derived_continent":call.as_deref().and_then(|c| dxcc.continent(c)),
             "session_ignore":session,"most_wanted":status,
+            "builtin_strategies":builtins().iter().map(|b| {
+                let mut v = b.json();
+                v["builtin"] = json!(true);
+                v
+            }).collect::<Vec<_>>(),
             "most_wanted_unreadable":unreadable,
             "most_wanted_attribution":crate::most_wanted::ATTRIBUTION})
     }
