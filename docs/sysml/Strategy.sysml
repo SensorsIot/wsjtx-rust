@@ -24,8 +24,8 @@ package WstxStrategy {
             and mode (NewEntity). DXCC and CQ/ITU zone list conditions and the rarest
             sort are not offered yet (CL-039-07).
          D3 Treat 73 as CQ: an RR73 or 73 that ends another station's QSO counts as
-            calling for message type cq, in Highlight and Auto; Auto then keeps my Tx
-            frequency (Hold Tx) so the answer never lands on the final 73.
+            calling for message type cq, in Highlight and Auto; Auto answers from its free
+            Tx slot (FreeTxSlot) so the answer never lands on the final 73.
          D4 Auto roles in the first version: Auto Call (answer the best matching CQ),
             Auto CQ (call CQ, answer the best caller) and Alternate (switch between them
             after switch_after consecutive tries without a contact).
@@ -207,9 +207,8 @@ package WstxStrategy {
              DirectedCqRule (MyContinent), or an RR73/73 to another call than mine (D3, always
              for a pounce), and whose sender is not ignored (IgnoreLists, both tiers; the
              ignore lists win). The first by sequence is
-             answered exactly as Auto Call answers (select_row {replace false}, after an
-             RR73/73 set_frequency keeping my Tx frequency (Hold Tx), enable_tx with the
-             run's safety revision), so the contact engine calls it in the next own period
+             answered exactly as Auto Call answers (select_row {replace false}, FreeTxSlot,
+             enable_tx with the run's safety revision), so the contact engine calls it in the next own period
              and Auto Seq runs the QSO; last_decision as for every run. Nothing from the
              call: the run keeps waiting (no try is counted, no stop).
              In the contact: completed stops completed (the pounce ends on success,
@@ -428,11 +427,10 @@ package WstxStrategy {
              the verdicts with a rank, cq-like (D3), not greyed (DirectedCqRule), a sane call (SaneCall), not ignored (IgnoreLists: no
              rank),
              not mine, not completed or skipped in this run, one per call, in display
-             order; the first is selected (select_row) and armed (enable_tx); an RR73/73
-             candidate keeps the previous Tx frequency (set_frequency). No candidate: one
-             try.
-             Auto CQ (waiting in role cq): enable_tx with no contact in progress (a new
-             own CQ, calling_cq). On each fresh partner-parity publication the callers are
+             order; the first is selected (select_row), Tx takes its free slot (FreeTxSlot)
+             and it is armed (enable_tx). No candidate: one try.
+             Auto CQ (waiting in role cq): FreeTxSlot, then enable_tx with no contact in
+             progress (a new own CQ, calling_cq). On each fresh partner-parity publication the callers are
              the messages to my call that are not RR73/73 (no tailender after their sign-
              off), from a sane, not ignored (IgnoreLists), not completed or skipped call, matching the strategy only
              when apply_to_callers, in display order (all rank 0 otherwise); the first is
@@ -445,6 +443,36 @@ package WstxStrategy {
              disarm and cancel the contact and count a try. All other WstxMcp stops
              (halted, context, authority, time, transmit stopped) are
              unchanged; a disarm by the Tx watchdog stops tx_watchdog. */
+    }
+    attribute def FreeTxSlot {
+        doc /* A strategy run or a pounce (not a plain MCP policy run, not manual operation)
+             calls from a free audio slot (operator decision 2026-11-04, #39). Decided once
+             per call, between QSOs: when Auto Call or a pounce has selected its candidate,
+             and when Auto CQ starts a new own CQ; never during a contact or a running CQ.
+             Occupied: every decoded record of the last 4 periods of my Tx parity (the
+             parity after the selection) that decoded anything, among the records of
+             complete publications; a period I transmitted in decodes nothing and is not
+             counted, so older periods are used rather than none. Fewer periods: those
+             there are. Auto Call and a pounce add the called station's frequency, which is
+             not on my parity.
+             Signal width, from the record's frequency_hz upwards: FT8 50 Hz, FT4 90 Hz,
+             mine alike. A slot is free when 50 Hz or more separate my signal from every
+             occupied signal, and my whole signal lies inside 300..2700 Hz within the Tx
+             range (FrequencyControls): FT8 slots 300..2650, FT4 300..2610.
+             Choice: the free slot nearest the current Tx, then the lowest, so a free
+             current Tx is kept and a new slot is chosen only when the current one has
+             become busy. The decision may instead be asked for the free slot nearest a list
+             of preferred frequencies, then nearest the current Tx, then the lowest.
+             No free slot: Tx keeps the current frequency, the call still goes out (no
+             refusal), and the status says so: the run's tx_slot {hz, free} (WstxMcp), and
+             "no free Tx slot" in the station bar's automation text.
+             Tx is moved with set_frequency only when it is not on the slot (with Hold Tx
+             off the selection has moved it to the station: it goes back). The Tx stays on
+             the slot for the whole QSO: answering a caller of my CQ never moves it, also
+             when the caller calls on my frequency, and the "may" of the operator's rule (Tx
+             to the partner's frequency once the QSO is established) is not taken, so
+             there is nothing to return from. The next decision starts from the Tx the
+             operator may have set meanwhile. */
     }
     calc def SaneCall {
         in call : String;
@@ -485,6 +513,9 @@ package WstxStrategy {
     dependency highlightClause from HighlightView to WstxRequirements::'CL-039-04';
     dependency editorClause from StrategyEditor to WstxRequirements::'CL-039-04';
     dependency autoClause from AutoStrategyRun to WstxRequirements::'CL-039-05';
+    dependency freeSlotClause from FreeTxSlot to WstxRequirements::'CL-039-09';
+    dependency freeSlotRun from AutoStrategyRun to FreeTxSlot;
+    dependency freeSlotPounce from Pounce to FreeTxSlot;
     dependency watchdogClause from WatchdogFromOperator to WstxRequirements::'CL-039-06';
     dependency automationPath from AutoStrategyRun to WstxMcp::OperatingAutomation;
     dependency watchdogOwner from WatchdogFromOperator to WstxContact::TxWatchdog;
