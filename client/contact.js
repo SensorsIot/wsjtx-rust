@@ -22,10 +22,15 @@ const qsoButton=(id,label,title,extra='')=>`<button type="button" id="${id}" dis
 document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<p id="qso-heard" class="ct-line" hidden></p>
 <p id="qso-autoseq" class="op-warning ct-autoseq" role="status" hidden><span id="qso-autoseq-text"></span> <button type="button" id="qso-suggest" hidden></button> <button type="button" id="qso-autoseq-on" title="Turn Auto Seq on">Auto Seq on</button></p>
 <div id="qso-next" class="op-qso-next" hidden><span id="qso-next-label" class="op-eyebrow">&#9656; next:</span><strong id="contact-next">None</strong><span id="qso-countdown" class="op-muted"></span><div class="op-qso-progress" aria-hidden="true"><i id="qso-progress"></i></div></div>
-<div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx (Esc, Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>
 <p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable" hidden>Log QSO needs a running QSO.</p><p id="contact-result" class="op-muted" role="status"></p><p id="contact-logged" class="op-muted" role="status"></p>
-<div id="qso-area" class="ct-qso-area"><table id="qso-table" class="ct-qso-table" hidden><thead><tr><th scope="col">UTC</th><th scope="col" data-short="Dir">Direction</th><th scope="col" data-short="Exch">Exchange</th><th scope="col" title="How often the identical message repeated">Rep</th><th scope="col" title="Our measured SNR of the partner's latest decode at or before this line" data-short="Rx">Rx SNR</th><th scope="col" title="The partner's latest report on us at or before this line" data-short="Tx">Tx SNR</th></tr></thead><tbody id="qso-dialogue" class="ct-dialogue" aria-label="QSO dialogue" hidden></tbody><tbody id="qso-others" class="ct-others" aria-label="Stations calling me (double-click or Enter answers)"></tbody></table><p id="qso-others-none" class="op-muted ct-line" hidden></p></div>
 `);
+// WstxOperatingLayout::QsoPane item 8 (#37, operator 2026-11-04): the pane has a fixed height so
+// the Control panel below it never moves. Its two sections have fixed heights and scroll inside:
+// QSO (the #60 dialogue table, kept at its newest row) and Calling me (every station calling my
+// call except the partner). The lines above them take the rest of the pane and scroll inside.
+focus.querySelector('.op-contact-body').insertAdjacentHTML('afterend',`<section id="qso-section" class="ct-section" aria-label="QSO dialogue"><div id="qso-area" class="ct-qso-area"><table id="qso-table" class="ct-qso-table" hidden><thead><tr><th scope="col">UTC</th><th scope="col" data-short="Dir">Direction</th><th scope="col" data-short="Exch">Exchange</th><th scope="col" title="How often the identical message repeated">Rep</th><th scope="col" title="Our measured SNR of the partner's latest decode at or before this line" data-short="Rx">Rx SNR</th><th scope="col" title="The partner's latest report on us at or before this line" data-short="Tx">Tx SNR</th></tr></thead><tbody id="qso-dialogue" class="ct-dialogue" aria-label="QSO dialogue"></tbody></table><p id="qso-none" class="op-muted ct-placeholder">No QSO</p></div></section>
+<section id="qso-calling" class="ct-section" aria-labelledby="calling-heading"><div id="calling-area" class="ct-calling-area"><table id="calling-table" class="ct-qso-table ct-calling-table"><thead><tr><th scope="col" id="calling-heading" title="Double-click a station to answer it (during a QSO: switch the contact to it)">Calling me</th><th scope="col">SNR</th><th scope="col">Grid</th><th scope="col">Country</th></tr></thead><tbody id="qso-others" class="ct-others" aria-label="Stations calling me (double-click or Enter answers)"></tbody></table><p id="qso-others-none" class="op-muted ct-placeholder">Nobody is calling</p></div></section>
+<div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx (Esc, Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>`);
 const confirmDialog=document.createElement('dialog');confirmDialog.id='op-confirm';confirmDialog.className='op-dialog';confirmDialog.innerHTML='<form method="dialog"><p id="op-confirm-text"></p><menu><button type="button" class="op-halt-small" id="op-confirm-halt" title="Halt Tx (Esc, Alt+H)">HALT</button><button value="cancel" type="submit">Cancel</button><button value="ok" type="submit" class="op-primary" id="op-confirm-ok">Continue</button></menu></form>';
 window.wstxConfirm=function(text,okLabel='Continue'){
   confirmDialog.querySelector('#op-confirm-text').textContent=text;confirmDialog.querySelector('#op-confirm-ok').textContent=okLabel;
@@ -36,8 +41,13 @@ confirmDialog.querySelector('#op-confirm-halt').addEventListener('click',()=>{co
 main.append(confirmDialog);
 document.querySelector('#band-activity').insertAdjacentHTML('afterbegin','<div id="strategy-element" class="op-strategy-bar" role="group" aria-label="Strategy"><span class="op-strategy-label">Strategy</span><select id="strategy-name" disabled aria-label="Strategy name" title="Strategies are loading"><option value="">None</option></select><button type="button" id="strategy-edit" disabled aria-label="Edit strategy" title="Strategies are loading">&#9998;</button><span class="op-segmented" role="group" aria-label="Strategy mode"><button type="button" id="strategy-highlight" disabled aria-pressed="false" title="Choose a strategy first">Highlight</button><button type="button" id="strategy-auto" disabled aria-pressed="false" title="Choose a strategy first">Auto</button></span><span id="station-automation" class="op-automation" role="status">Automation idle</span></div>');
 const slotsMarkup=['tx1','tx2','tx3','tx4','tx5','tx6'];
-focus.querySelector('.op-contact-body').insertAdjacentHTML('beforeend',`<details id="qso-more"><summary>Messages Tx1&ndash;Tx6 and activity</summary><div class="ct-dx"><label>Activity<select id="contact-activity" disabled><option value="none">None</option><option value="na_vhf">NA VHF</option><option value="ww_digi">WW Digi</option><option value="arrl_digi">ARRL Digi</option><option value="field_day">Field Day</option><option value="rtty">RTTY Roundup</option><option value="hound">Hound</option></select></label><label title="Field Day: class and section, e.g. 1A EMA. RTTY Roundup: state or province, or DX or # for a serial number">Exchange<input id="contact-exchange" maxlength="8" autocomplete="off" spellcheck="false" disabled></label><span id="contact-serial" class="op-muted"></span></div><ol id="contact-messages" class="ct-messages" aria-label="Standard messages Tx1 to Tx6">${slotsMarkup.map((s,i)=>`<li data-slot="${s}"><label class="ct-next"><input type="radio" name="contact-next" value="${s}" aria-label="Next message Tx${i+1}" disabled>Tx${i+1}</label><button type="button" class="ct-now" data-slot="${s}" aria-label="Send Tx${i+1} now" title="Send Tx${i+1} from the next own period (turns Enable Tx on)" disabled>Now</button><input class="ct-text" data-slot="${s}" maxlength="37" aria-label="Tx${i+1} message" autocomplete="off" spellcheck="false" disabled>${s==='tx1'?'<label class="op-check"><input type="checkbox" id="contact-tx1-skip" disabled>Skip Tx1</label>':''}${s==='tx4'?'<label class="op-check"><input type="checkbox" id="contact-rr73" disabled>RR73</label>':''}</li>`).join('')}</ol>
-<div class="op-frequency-fields ct-fields"><button type="button" id="contact-cancel" disabled>Cancel contact</button><span id="contact-watchdog" class="op-muted"></span></div></details>`);
+focus.querySelector('.op-contact-body').insertAdjacentHTML('beforeend',`<details id="qso-more"><summary title="Messages Tx1&ndash;Tx6 and activity" aria-label="Messages Tx1&ndash;Tx6 and activity">Tx1&ndash;Tx6</summary><div class="ct-more-body"><div class="ct-dx"><label>Activity<select id="contact-activity" disabled><option value="none">None</option><option value="na_vhf">NA VHF</option><option value="ww_digi">WW Digi</option><option value="arrl_digi">ARRL Digi</option><option value="field_day">Field Day</option><option value="rtty">RTTY Roundup</option><option value="hound">Hound</option></select></label><label title="Field Day: class and section, e.g. 1A EMA. RTTY Roundup: state or province, or DX or # for a serial number">Exchange<input id="contact-exchange" maxlength="8" autocomplete="off" spellcheck="false" disabled></label><span id="contact-serial" class="op-muted"></span></div><ol id="contact-messages" class="ct-messages" aria-label="Standard messages Tx1 to Tx6">${slotsMarkup.map((s,i)=>`<li data-slot="${s}"><label class="ct-next"><input type="radio" name="contact-next" value="${s}" aria-label="Next message Tx${i+1}" disabled>Tx${i+1}</label><button type="button" class="ct-now" data-slot="${s}" aria-label="Send Tx${i+1} now" title="Send Tx${i+1} from the next own period (turns Enable Tx on)" disabled>Now</button><input class="ct-text" data-slot="${s}" maxlength="37" aria-label="Tx${i+1} message" autocomplete="off" spellcheck="false" disabled>${s==='tx1'?'<label class="op-check"><input type="checkbox" id="contact-tx1-skip" disabled>Skip Tx1</label>':''}${s==='tx4'?'<label class="op-check"><input type="checkbox" id="contact-rr73" disabled>RR73</label>':''}</li>`).join('')}</ol>
+<div class="op-frequency-fields ct-fields"><button type="button" id="contact-cancel" disabled>Cancel contact</button><span id="contact-watchdog" class="op-muted"></span></div></div></details>`);
+// QsoPane item 8 (#37, 2026-11-04): the header holds the partner line and the badge, then the
+// partner's last message, the direct buttons and the Tx1-Tx6 fold-out, which opens over the pane
+// (it moves nothing). NEXT leads the message lines below it.
+{const head=focus.querySelector('.op-qso-head'),tools=document.createElement('div');tools.className='ct-head-tools';
+  tools.append(focus.querySelector('.op-qso-buttons'),$('qso-more'));head.append($('qso-heard'),tools);}
 // WstxOperatingLayout::LowerPanel (#37, operator 2026-11-03): one vertical column on the right,
 // the QSO pane, the Control panel and the error field, each the width of the QSO pane card.
 const qsoColumn=document.createElement('div');qsoColumn.id='qso-column';qsoColumn.className='op-qso-column';
@@ -146,7 +156,7 @@ function render(){
   focus.querySelector('.op-contact-badge').textContent=!snap?'Unavailable':armed?(tick?.transmitting?'Transmitting':'Tx on'):capable?'Ready':'Receive only';
   focus.dataset.armed=String(armed);
   for(const [i,slot] of slots.entries()){
-    const row=body.querySelector(`li[data-slot="${slot}"]`),text=row.querySelector('.ct-text'),radio=row.querySelector('input[type=radio]');
+    const row=focus.querySelector(`li[data-slot="${slot}"]`),text=row.querySelector('.ct-text'),radio=row.querySelector('input[type=radio]');
     const message=c?.messages?.[i]??null;setValue(text,message);text.disabled=!message&&!(slot==='tx5'&&c);radio.disabled=!message;radio.checked=c?.next_slot===slot;
     row.classList.toggle('ct-next-row',c?.next_slot===slot);
   }
@@ -162,7 +172,7 @@ function render(){
   // #37: no RR73/73 buttons; a fold-out Now is the manual override. Not on a finished contact:
   // there Enable Tx would start a new CQ.
   const finished=['completed','cancelled'].includes(c?.state);
-  for(const button of body.querySelectorAll('.ct-now'))button.disabled=!capable||finished||!c?.messages?.[slots.indexOf(button.dataset.slot)];
+  for(const button of focus.querySelectorAll('.ct-now'))button.disabled=!capable||finished||!c?.messages?.[slots.indexOf(button.dataset.slot)];
   for(const id of ['qso-cq','contact-tune'])if(capable)$(id).removeAttribute('aria-describedby');else $(id).setAttribute('aria-describedby','transmit-unavailable');
   $('transmit-unavailable').hidden=capable;
   $('transmit-unavailable').textContent=!snap?'Transmission unavailable: contact state unknown.':t?.capability==='unavailable'?'Transmission unavailable: radio/authorization not ready.':'Transmission unavailable: this server does not offer transmit control.';
@@ -190,7 +200,7 @@ function render(){
   logShow();
 }
 // #37 QsoPane item 7: the server-owned dialogue of the running QSO, oldest first, kept at
-// its newest line; it scrolls inside the card (#qso-area) and goes with the QSO.
+// its newest line; it scrolls inside its fixed-height section (#qso-area) and goes with the QSO.
 const hhmmss=ms=>Number.isFinite(ms)?new Date(ms).toISOString().slice(11,19):'--:--:--';
 // #60 QsoPane QSO table: UTC | Direction | Exchange | Rep | Rx SNR | Tx SNR. Direction is the two
 // calls as on the air, recipient first, with "◂" pointing to the recipient (a hashed call
@@ -214,7 +224,6 @@ function qsoRow(utc,text,rxSnr,txSnr,count){
   for(const cell of [utc,direction,exchange,count>1?`×${count}`:'',signedDb(rxSnr),signedDb(txSnr)]){const td=document.createElement('td');td.textContent=cell;tr.append(td);}
   return tr;
 }
-const qsoTableShow=()=>{$('qso-table').hidden=!$('qso-dialogue').children.length&&!othersList.children.length;};
 function dialogueShow(c){
   const list=$('qso-dialogue'),entries=Array.isArray(c?.dialogue)?c.dialogue:[];
   const key=JSON.stringify(entries);if(list.dataset.key===key)return;list.dataset.key=key;
@@ -223,7 +232,8 @@ function dialogueShow(c){
     if(e.dir==='rx'){if(typeof e.snr==='number')rxSnr=e.snr;txSnr=qsoReport(e.text)??txSnr;}
     const tr=qsoRow(hhmmss(e.period_utc_ms),e.text,rxSnr,txSnr,e.count);tr.dataset.dir=e.dir;return tr;
   }));
-  list.hidden=!entries.length;qsoTableShow();
+  // The section keeps its height: "No QSO" in place of an empty table.
+  $('qso-table').hidden=!entries.length;$('qso-none').hidden=!!entries.length;
   const area=$('qso-area');area.scrollTop=area.scrollHeight;
 }
 // #55 WstxDxcc: the partner's country and continent in the QSO pane header (first on its
@@ -329,8 +339,8 @@ async function nowMessage(slot){
   const label=`Now ${slot.toUpperCase()}`,r=await send('choose_next',{slot},label);if(!r||r.refused)return;
   if(snap?.transmit.arm_state!=='armed')arm(label);
 }
-body.querySelector('#contact-messages').addEventListener('click',event=>{const now=event.target.closest('.ct-now');if(now&&!now.disabled)nowMessage(now.dataset.slot);});
-body.querySelector('#contact-messages').addEventListener('change',event=>{
+focus.querySelector('#contact-messages').addEventListener('click',event=>{const now=event.target.closest('.ct-now');if(now&&!now.disabled)nowMessage(now.dataset.slot);});
+focus.querySelector('#contact-messages').addEventListener('change',event=>{
   const radio=event.target.closest('input[type=radio]');if(radio){send('choose_next',{slot:radio.value},`Next ${radio.value.toUpperCase()}`);return;}
   const text=event.target.closest('.ct-text');if(text)send('edit_message',{slot:text.dataset.slot,text:text.value},`Edit ${text.dataset.slot.toUpperCase()}`);
 });
@@ -563,9 +573,12 @@ function rowIdentity(row){
 }
 async function selectRow(tr){
   const row=rowIdentity(tr);if(!row)return null;
-  const text=tr.children[4]?.textContent??'';
   const reply=await send('select_row',{row,replace:false},'Select station');
-  if(reply?.refused==='contact_active')offerChange(()=>send('select_row',{row,replace:true},'Change contact'),text);
+  if(reply?.refused==='contact_active'){
+    // #37: only a row that can start a contact for me offers the change; a foreign QSO's row or a CQ directed elsewhere offers nothing.
+    if(tr.dataset.foreign||window.wstxCqNotForMe?.(tr)){changeTarget?.remove();changeTarget=null;resultText.textContent='';}
+    else offerChange(()=>send('select_row',{row,replace:true},'Change contact'),tr.dataset.sender);
+  }
   return reply;
 }
 // A double-click (or the Reply menu) is the explicit ChangeContact (#50, WSJT-X
@@ -576,8 +589,10 @@ async function selectRow(tr){
 async function sendExplicit(run){let reply=await run();for(let i=0;i<2&&reply?.refused==='stale_revision';i++)reply=await run();return reply;}
 async function replyRow(tr){
   const row=rowIdentity(tr);if(!row)return;
-  const reply=await sendExplicit(()=>send('select_row',{row,replace:true},'Reply'));
-  if(reply&&!reply.refused&&transmitCapable())await sendExplicit(()=>arm('Reply'));
+  // #37: a deliberate double-click on a foreign QSO's row calls its sender, and says so.
+  const label=tr.dataset.foreign?`Call ${tr.dataset.sender}`:'Reply';
+  const reply=await sendExplicit(()=>send('select_row',{row,replace:true},label));
+  if(reply&&!reply.refused&&transmitCapable())await sendExplicit(()=>arm(label));
 }
 let clickTimer=null;
 // The double-click is the row's second press (click count 2), not the dblclick event: the
@@ -602,10 +617,11 @@ menu.addEventListener('click',event=>{
 });
 menu.addEventListener('keydown',event=>{if(event.key==='Escape'){closeMenu();}});
 document.addEventListener('pointerdown',event=>{if(!menu.hidden&&!menu.contains(event.target))closeMenu();},true);
-// WstxOperatingLayout::QsoPane Others (#37): at most two lines, newest first, from the latest
-// two published periods. While a QSO runs: other stations within ±50 Hz of my Rx frequency
-// (QsoPaneCrowding) and stations calling me, marked ⚠; double-click switches the contact to
-// that station and replies. Otherwise the same rows are plain candidates; double-click answers.
+// WstxOperatingLayout::QsoPane Calling me (#37, operator 2026-11-04): every station calling my
+// call from the latest two published periods except the partner, one line per station (its
+// newest decode): call, SNR, grid and country. While a QSO runs a double-click switches the
+// contact to that station and replies (⚠ marks one within ±50 Hz of my Rx or Tx offset,
+// QsoPaneCrowding); otherwise a double-click answers.
 const myCall=()=>(profileData?.settings?.callsign??'').trim().toUpperCase();
 const othersList=$('qso-others');
 function recentRows(){
@@ -616,45 +632,58 @@ function recentRows(){
   if(previous&&previous.context===context&&Number.isFinite(latest)&&latest-Date.parse(previous.period??'')<=len)rows.push(...previous.rows.map(record=>({record,context})));
   return rows;
 }
-// #37 (operator 2026-11-02): only stations calling my call, oldest first below the dialogue;
-// during a QSO those other than the partner within ±50 Hz of my Rx or Tx offset
-// (QsoPaneCrowding), otherwise every caller on any frequency.
 const OTHER_LINES=8;
+// The caller as decoded: the word of the two calls that is not mine (a hashed call as "<...>").
+function callerText(record){
+  const my=myCall(),w=(record.text??'').trim().split(/\s+/),mine=x=>x===my||x===`<${my}>`;
+  return w.length>=2&&mine(w[0])&&isCall(w[1])?w[1]:w.length>=2&&mine(w[1])&&isCall(w[0])?w[0]:recordFrom(record.fields)??'';
+}
+// The compact caller tip: the #50 BandActivityHover rule of Band Activity; the line shows the country.
+function callerTip(record,w){
+  const worked=w?.status==='worked_this_band_and_mode'?`on ${w.on}`:w?.status==='worked_other_band_or_mode'?'on another band or mode':'';
+  return hoverReasons(activityHover(record),worked).join(' · ');
+}
 function othersShow(){
   const rx=snap?.settings?.rx_hz,tx=snap?.settings?.tx_hz,c=snap?.contact,qso=running(c),dx=qso?c.dx_call:lastPartner,my=myCall();
   const near=f=>[rx,tx].some(o=>typeof o==='number'&&f>=o-50&&f<=o+50);
-  const lines=!snap||!my?[]:recentRows().filter(({record})=>{
+  const newest=(snap&&my?recentRows():[]).filter(({record})=>{
     if(record.status!=='decoded')return false;
     // #24: addressed to me as in Band Activity (recordTo: also <MYCALL> and nonstandard i3=4).
     const from=recordFrom(record.fields),to=recordTo(record.fields);
-    if(to!==my||(dx&&from===dx))return false;
-    return !qso||near(record.frequency_hz);
-  }).sort((a,b)=>(b.record.period_start_utc??'').localeCompare(a.record.period_start_utc??'')||b.record.sequence-a.record.sequence).slice(0,OTHER_LINES).reverse();
-  const none=$('qso-others-none');none.hidden=!snap||lines.length>0;none.textContent=qso?'nobody else calling':'nobody calling';
+    return to===my&&!(dx&&from===dx);
+  }).sort((a,b)=>(b.record.period_start_utc??'').localeCompare(a.record.period_start_utc??'')||b.record.sequence-a.record.sequence);
+  // One line per station, its newest decode (an unresolved hashed call is its own line); oldest
+  // first, the newest at the bottom.
+  const seen=new Set(),lines=newest.filter(({record,context})=>{const from=recordFrom(record.fields),k=from?from.toUpperCase():`${context}/${record.sequence}`;if(seen.has(k))return false;seen.add(k);return true;}).slice(0,OTHER_LINES).reverse();
+  $('qso-others-none').hidden=!!lines.length;$('calling-table').hidden=!lines.length;
   // CL-010-13 (WstxOperatingLayout::QsoPane item 3): each caller carries the Band Activity
   // marks of its sender: the enabled new_* slot colours of its #55 flags (My call is not used,
   // every line calls me), the reasons and the worked-before status as text; worked before on
   // this band and mode adds no colour.
   const workedOf=record=>{const from=recordFrom(record.fields);return from?window.wstxWorkedOf?.(from.toUpperCase())??null:null;};
-  const key=JSON.stringify([qso,lines.map(l=>`${l.context}/${l.record.sequence}/${workedOf(l.record)?.status??''}`)]);
+  const key=JSON.stringify([qso,document.querySelector('#band-activity')?.dataset.hlOn??'',lines.map(l=>`${l.context}/${l.record.sequence}/${near(l.record.frequency_hz)}/${workedOf(l.record)?.status??''}`)]);
   if(othersList.dataset.key===key)return;othersList.dataset.key=key;
   othersList.replaceChildren(...lines.map(({record,context})=>{
-    const tr=qsoRow(`${hhmmss(Date.parse(record.period_start_utc??''))}${qso?' ⚠':''}`,record.text,record.snr_db,qsoReport(record.text),1);tr.tabIndex=0;tr.dataset.kind=qso?'warn':'candidate';
-    tr.dataset.row=JSON.stringify(rowOf(context,record.sequence));tr.dataset.text=record.text;
+    const warn=qso&&near(record.frequency_hz),grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value??'':'';
+    const tr=document.createElement('tr');
+    for(const cell of [`${callerText(record)}${warn?' ⚠':''}`,signedDb(record.snr_db),grid,record.dxcc?.name??'']){const td=document.createElement('td');td.textContent=cell;tr.append(td);}
+    tr.tabIndex=0;tr.dataset.kind=warn?'warn':'candidate';tr.dataset.qso=String(qso);
+    tr.dataset.row=JSON.stringify(rowOf(context,record.sequence));tr.dataset.text=record.text;tr.dataset.call=callerText(record);
     const hl=bandFlags.filter(k=>record.flags?.[k]===true),w=workedOf(record);if(hl.length)tr.dataset.hl=hl.join(' ');
     if(w)tr.dataset.worked=w.status;
-    const why=[...activityReasons(record),w?.status==='worked_this_band_and_mode'?`Worked before on ${w.on}`:w?.status==='worked_other_band_or_mode'?'Worked before on another band or mode':''].filter(Boolean);
-    if(why.length)tr.setAttribute('aria-description',why.join('; '));
-    tr.title=[...why,qso?'Double-click: switch the contact to this station and reply':'Double-click: answer this station'].join('\n');
+    // #50 BandActivityHover rule (operator 2026-11-04, "too much information"): only the colour
+    // reasons the line does not show, the strongest enabled one per kind, on one line.
+    const tip=callerTip(record,w);
+    if(tip){tr.title=tip;tr.setAttribute('aria-description',tip);}
     return tr;
-  }));qsoTableShow();
-  const area=$('qso-area');area.scrollTop=area.scrollHeight;
+  }));
+  const area=$('calling-area');area.scrollTop=area.scrollHeight;
 }
 function rowOf(context,sequence){const [,,source_id,job_id,generation]=context.split('/');return {source_id,job_id,generation:Number(generation),sequence};}
 async function answerOther(li){
-  const row=JSON.parse(li.dataset.row),qso=li.dataset.kind==='warn';
+  const row=JSON.parse(li.dataset.row),qso=li.dataset.qso==='true';
   const reply=await send('select_row',{row,replace:qso},qso?'Change contact':'Select station');
-  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitCapable())arm('Reply');}),li.dataset.text);return;}
+  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitCapable())arm('Reply');}),li.dataset.call);return;}
   if(reply&&!reply.refused&&transmitCapable())arm('Reply');
 }
 othersList.addEventListener('mousedown',event=>{const li=secondPress(event,'tr[data-row]');if(li)answerOther(li);});
@@ -663,7 +692,7 @@ if(activity)new MutationObserver(()=>{for(const tr of activity.querySelectorAll(
 document.addEventListener('wstx-worked',()=>othersShow());
 // The Band Activity colour choice (Settings > General > Display) applies to the callers too.
 const bandActivity=document.querySelector('#band-activity');
-if(bandActivity){const mirror=()=>{focus.dataset.hlOn=bandActivity.dataset.hlOn??'';};mirror();new MutationObserver(mirror).observe(bandActivity,{attributes:true,attributeFilter:['data-hl-on']});}
+if(bandActivity){const mirror=()=>{focus.dataset.hlOn=bandActivity.dataset.hlOn??'';othersShow();};mirror();new MutationObserver(mirror).observe(bandActivity,{attributes:true,attributeFilter:['data-hl-on']});}
 // WstxOperatingLayout::RxTxStrip: confirmed values only; 1 Hz steps, Shift 10 Hz.
 function setFrequency(key,value,label){if(!Number.isSafeInteger(value)||value<0){resultText.textContent='Frequency must be a whole number of Hz';return;}send('set_frequency',{rx_hz:key==='rx'?value:null,tx_hz:key==='tx'?value:null},label);}
 const confirmed=key=>snap?.settings?.[key==='rx'?'rx_hz':'tx_hz'];
@@ -983,6 +1012,14 @@ function decorate(){
   for(const tr of [...tbody.children]){if(tr.classList.contains('ba-divider')){flush();block=[];}else if(tr.dataset.sequence)block.push(tr);}
   flush();observer.takeRecords();reordering=false;
 }
+// #37: WstxStrategy::DirectedCqRule (addressed_to_me, server/src/strategy.rs) for a row the operator
+// clicks; the verdicts above exist only with Highlight on and an active strategy.
+window.wstxCqNotForMe=tr=>{
+  const target=tr.children[4]?.textContent.match(/^CQ (\S+) /)?.[1];if(!target||target===tr.dataset.sender)return false;
+  const mine=config()?.continent??view?.derived_continent??null;
+  if(['AF','AN','AS','EU','NA','OC','SA'].includes(target))return mine!==target;
+  return target==='DX'&&!(mine&&tr.dataset.continent&&mine!==tr.dataset.continent);
+};
 function wanted(){
   // The sequences shown for the current receive identity, evaluated once each.
   const id=identity();if(!highlightOn()||!id)return null;
@@ -1180,7 +1217,7 @@ if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){
 // WstxStrategy::Pounce: the station runs it as an automation run with pounce <call>; this
 // client only starts and stops it and shows it (QSO pane line, strategy element status).
 const pouncing=call=>runActive()&&run.pounce?.call===call;
-document.querySelector('#qso-heard')?.insertAdjacentHTML('afterend','<p id="qso-pounce" class="ct-line op-pounce" role="status" hidden><span id="qso-pounce-text"></span> <button type="button" id="qso-pounce-stop" title="Stop waiting for this station">Stop pounce</button></p>');
+document.querySelector('#contact-state')?.insertAdjacentHTML('afterend','<p id="qso-pounce" class="ct-line op-pounce" role="status" hidden><span id="qso-pounce-text"></span> <button type="button" id="qso-pounce-stop" title="Stop waiting for this station">Stop pounce</button></p>');
 const pounceLine=$('qso-pounce');
 function showPounce(){
   if(!pounceLine)return;const p=runActive()?run.pounce:null;pounceLine.hidden=!p;if(!p)return;

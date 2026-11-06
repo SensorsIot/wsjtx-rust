@@ -399,9 +399,10 @@ test('TC-007-008 Auto Seq off is shown on the QSO pane and an RR73 offers 73 nex
 // Proves: CL-010-16, CL-010-06; TC-007-009 the compact QSO pane (#37, operator decisions
 // 2026-11-02, items 1-10): the running QSO only, NEXT only while armed, "✓ Logged <call>"
 // for a few seconds, nothing of a finished contact, about half the height.
-// Proves: CL-050-05, CL-050-06; TC-050-005, TC-050-006 (c) (#37, operator 2026-11-02): the
-// Others are only stations calling my call, with time and SNR (⚠ during a QSO within
-// ±50 Hz of my Rx or Tx offset, every caller otherwise), below the QSO dialogue.
+// Proves: CL-050-05, CL-050-06; TC-050-005, TC-050-006 (c) (#37, operator 2026-11-02 and
+// 2026-11-04): Calling me lists only stations calling my call, every one but the partner, with
+// call, SNR, grid and country (⚠ during a QSO within ±50 Hz of my Rx or Tx offset), below the
+// QSO dialogue.
 test('TC-007-009 the compact QSO pane shows only the running QSO and clears when it ends',{timeout:60000},async t=>{
   let state,contact=null,transmit={},log=null,settings={},records=[];const commands=[],period='2026-10-27T12:00:15.0000000Z';
   const standard=(from,to)=>({type:'standard',to:{kind:to==='CQ'?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
@@ -429,12 +430,12 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   // Removed: the old dialogue history pane, LAST row and crowding badge.
   for(const selector of ['#rx-pane','#rx-pane-rows','#contact-last','#qso-crowd','#rx-pane-erase'])assert.equal(await page.locator(selector).count(),0,`${selector} is gone`);
 
-  // Idle: every station calling my call, on any frequency, oldest first, with its period
-  // start and SNR (no DT or Hz); no CQ, even near Rx.
+  // Idle: every station calling my call, on any frequency, oldest first, with its call, SNR and
+  // the grid of its message (no DT or Hz); no CQ, even near Rx.
   await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===5);
-  assert.deepEqual(await others(),[['candidate',['12:00:15','HB9BLA ◂ DL1ABC','JO31','','−8','']],['candidate',['12:00:15','HB9BLA ◂ IW9FRA','RR73','','+17','']],['candidate',['12:00:15','HB9BLA ◂ SV1DZB','KM18','','−8','']],
-    ['candidate',['12:00:15','HB9BLA ◂ EA8BIA','IL18','','0','']],['candidate',['12:00:15','HB9BLA ◂ F1PBZ','JN18','','−10','']]]);
-  assert.equal(await shown(page,'#qso-others-none'),false,'no "nobody calling" with callers');
+  assert.deepEqual(await others(),[['candidate',['DL1ABC','−8','FN42','']],['candidate',['IW9FRA','+17','FN42','']],['candidate',['SV1DZB','−8','FN42','']],
+    ['candidate',['EA8BIA','0','FN42','']],['candidate',['F1PBZ','−10','FN42','']]]);
+  assert.equal(await shown(page,'#qso-others-none'),false,'no "Nobody is calling" with callers');
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
   for(const selector of ['#qso-heard','#qso-next','#contact-state'])assert.equal(await shown(page,selector),false,`${selector} not shown idle`);
   assert.equal(await page.locator('#contact-log').isDisabled(),true,'no Log QSO without a running QSO');
@@ -452,7 +453,7 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
     entry(6,'rx','HB9BLA IW9FRA RR73',17),entry(7,'tx','IW9FRA HB9BLA 73'),entry(8,'rx','HB9BLA IW9FRA RR73',15),entry(9,'tx','IW9FRA HB9BLA 73'),entry(10,'rx','HB9BLA IW9FRA RR73',17,3)];
   const running=partner('signoff',{dx_call:'IW9FRA',dx_grid:'JM68',report_sent:'+10',report_rcvd:'+10',next_slot:'tx5',tx4:'rr73',messages:iw9fra,suggested_slot:null,last_rcvd:{text:'HB9BLA IW9FRA RR73',snr:17,period_utc_ms:Date.parse(period),count:3},dialogue});
   settings={tx_hz:2100};await show(running,{arm_state:'armed'});
-  await page.waitForFunction(()=>!document.querySelector('#qso-heard').hidden&&document.querySelector('#qso-others tr')?.dataset.kind==='warn'&&document.querySelectorAll('#qso-others tr').length===2);
+  await page.waitForFunction(()=>!document.querySelector('#qso-heard').hidden&&document.querySelectorAll('#qso-others tr[data-kind=warn]').length===2&&document.querySelectorAll('#qso-others tr').length===4);
   // Independent great-circle distance between the JN47AA and JM68 square centres (R 6371 km).
   const rad=Math.PI/180,[pa,pb]=[[47+1/48,8+1/24],[38.5,13]],km=Math.round(2*6371*Math.asin(Math.sqrt(Math.sin((pb[0]-pa[0])*rad/2)**2+Math.cos(pa[0]*rad)*Math.cos(pb[0]*rad)*Math.sin((pb[1]-pa[1])*rad/2)**2)));
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'IW9FRA · JM68');
@@ -461,58 +462,44 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   await page.locator('#rx-focus .op-contact-identity div > span').filter({hasText:'Italy'}).waitFor();
   assert.equal(await page.locator('#rx-focus .op-contact-identity div > span').textContent(),`Italy (EU) · ${km} km · sent +10 · rcvd +10`);
   assert.equal(await page.locator('#qso-heard').textContent(),'◂ HB9BLA IW9FRA RR73  +17 dB ×3');
-  assert.deepEqual(await others(),[['warn',['12:00:15 ⚠','HB9BLA ◂ SV1DZB','KM18','','−8','']],['warn',['12:00:15 ⚠','HB9BLA ◂ EA8BIA','IL18','','0','']]],'only callers within ±50 Hz of my Rx (1500) or Tx (2100), not the partner');
+  assert.deepEqual(await others(),[['candidate',['DL1ABC','−8','FN42','']],['warn',['SV1DZB ⚠','−8','FN42','']],['warn',['EA8BIA ⚠','0','FN42','']],['candidate',['F1PBZ','−10','FN42','']]],'every caller but the partner; ⚠ within ±50 Hz of my Rx (1500) or Tx (2100)');
   const lines=await page.locator('#qso-dialogue tr').evaluateAll(rows=>rows.map(tr=>[...tr.cells].map(td=>td.textContent)));
   // #60 (operator 2026-11-03): Rep in its own column; Rx/Tx SNR the latest received values on every row.
   assert.deepEqual([lines.length,lines[0],lines[1],lines[2],lines.at(-1)],[10,['11:58:15','IW9FRA ◂ HB9BLA','JN47','×2','',''],['11:58:30','HB9BLA ◂ IW9FRA','-05','','−5','−5'],['11:58:45','IW9FRA ◂ HB9BLA','R+10','','−5','−5'],['12:00:30','HB9BLA ◂ IW9FRA','RR73','×3','+17','−5']]);
-  // The QSO area scrolls inside the card, kept at its newest line, and grows nothing.
+  // The QSO section scrolls inside the card, kept at its newest line, and grows nothing.
   const area=await page.locator('#qso-area').evaluate(a=>({scrolls:a.scrollHeight>a.clientHeight,bottom:Math.abs(a.scrollTop+a.clientHeight-a.scrollHeight)<=2,overflow:getComputedStyle(a).overflowY}));
   assert.equal(area.overflow,'auto');assert.equal(area.bottom,true,`kept at the newest line ${JSON.stringify(area)}`);
   assert.equal(await shown(page,'#qso-next'),true,'NEXT while armed');
   assert.deepEqual([await page.locator('#qso-next .op-eyebrow').textContent(),await page.locator('#contact-next').textContent()],['▸ next:','IW9FRA HB9BLA 73']);
   assert.equal(await shown(page,'#contact-state'),false,'no status line without an exception');
   assert.equal(await page.locator('#contact-log').isEnabled(),true);
-  // Item 8: one fixed 1366x768 screen; the pane fits its content (nothing clipped) and
-  // takes about half the workspace height the earlier pane filled.
+  // Item 8: one fixed 1366x768 screen; nothing of the pane is clipped.
   const metrics=await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight}));
   assert.deepEqual(metrics,{x:false,y:false});
   const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
-  for(const selector of ['#qso-heard','#qso-others tr:last-child','#qso-next','#qso-cq','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible`);
+  for(const selector of ['#qso-heard','#qso-others tr:last-child','#qso-dialogue tr:last-child','#qso-next','#qso-cq','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible`);
   await page.screenshot({path:'test-results/ui-operating/qso-dialogue-1366x768.png'});
-  // Content height: the header plus the lines, the QSO area, buttons and fold-out of the pane body.
-  const heights=await page.evaluate(()=>{const box=s=>document.querySelector(s).getBoundingClientRect(),body=document.querySelector('#rx-focus .op-contact-body'),cs=getComputedStyle(body);
-    const kids=[...body.children].filter(e=>e.getClientRects().length&&getComputedStyle(e).display!=='none'),sum=list=>list.reduce((h,e)=>h+e.getBoundingClientRect().height,0);
-    const gaps=parseFloat(cs.rowGap||cs.gap||0)*(kids.length-1)+parseFloat(cs.paddingTop)+parseFloat(cs.paddingBottom);
-    const head=box('#rx-focus .op-qso-head').height,row=box('#qso-dialogue tr').height;
-    return {content:head+sum(kids)+gaps,withoutArea:head+sum(kids.filter(e=>e.id!=='qso-area'))+gaps-parseFloat(cs.rowGap||cs.gap||0),
-      area:box('#qso-area').height,row,pane:box('#rx-focus'),activity:box('#band-activity')};});
+  // Item 8 (#37, operator 2026-11-04): the pane has a fixed height with the QSO section (12
+  // rows, here all ten entries without scrolling) and Calling me; TC-037-003 proves that nothing
+  // below it moves. At 1920x1080 the height below the column stays free.
   await page.screenshot({path:'test-results/ui-operating/qso-pane-compact-1366x768.png'});
-  // The earlier pane needed about 380 px for this contact without the dialogue (at ad2f48bda it
-  // filled the 297 px workspace and still clipped the buttons, the result line and the fold-out).
-  assert.ok(heights.withoutArea<=250,`compact pane content ${heights.withoutArea} px without the QSO area`);
-  // Item 8 (#60, operator 2026-11-03, replacing option C): the pane is its content high at the
-  // top of its column, at 1366x768 at most 300 px; the QSO area shows the header row and at
-  // most 6 rows (12 entries here, scrolling inside).
-  assert.ok(heights.area<=7*heights.row+3,`QSO area ${heights.area} px for rows of ${heights.row} px`);
-  assert.ok(Math.abs(heights.pane.height-heights.content)<=3,`pane ${heights.pane.height} px, content ${heights.content} px`);
-  assert.ok(heights.pane.height<=300,`pane ${heights.pane.height} px at 1366x768`);
-  assert.ok(Math.abs(heights.pane.top-heights.activity.top)<=1,'top of its column');
-  // A taller screen: the area is header plus 6 rows, the pane stays content high and the
-  // height below it is free (future panels), no longer filled by the card.
+  const pane=await page.evaluate(()=>{const box=s=>document.querySelector(s).getBoundingClientRect();return {pane:box('#rx-focus'),activity:box('#band-activity')};});
+  assert.ok(Math.abs(pane.pane.top-pane.activity.top)<=1,'top of its column');
   await page.setViewportSize({width:1920,height:1080});
-  const tall=await page.evaluate(()=>{const box=s=>document.querySelector(s).getBoundingClientRect();return {area:box('#qso-area').height,row:box('#qso-dialogue tr').height,pane:box('#rx-focus'),activity:box('#band-activity')};});
-  assert.ok(Math.abs(tall.area-(7*tall.row+2))<=3,`QSO area ${tall.area} px is the header and 6 rows of ${tall.row} px`);
-  assert.ok(tall.pane.height<=340&&tall.activity.bottom-tall.pane.bottom>=100,`pane ${tall.pane.top}-${tall.pane.bottom}, Band Activity ${tall.activity.top}-${tall.activity.bottom}: free height below`);
+  const tall=await page.evaluate(()=>{const box=s=>document.querySelector(s).getBoundingClientRect();return {column:box('#error-field'),activity:box('#band-activity')};});
+  assert.ok(tall.activity.bottom-tall.column.bottom>=100,`error field ${tall.column.bottom}, Band Activity ${tall.activity.top}-${tall.activity.bottom}: free height below`);
   await page.screenshot({path:'test-results/ui-operating/qso-pane-compact-1920x1080.png'});
   await page.setViewportSize({width:1366,height:768});
-  // Item 3: double-click on a ⚠ line switches the contact to that station and replies.
-  m=commands.length;await page.locator('#qso-others tr').first().dblclick();await waitCommands(m+2);
+  // Item 3: during a QSO a double-click on a caller, ⚠ or not, switches the contact to that
+  // station and replies.
+  m=commands.length;await page.locator('#qso-others tr').nth(1).dblclick();await waitCommands(m+2);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',5,true],['enable_tx',true,undefined]]);
-  // Nobody else near my frequencies: one muted line says so.
+  m=commands.length;await page.locator('#qso-others tr').first().dblclick();await waitCommands(m+2);
+  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',2,true],['enable_tx',true,undefined]]);
+  // Nobody near my frequencies: the callers stay, none marked ⚠.
   settings={rx_hz:2800,tx_hz:2800};await show(running,{arm_state:'armed'});
-  await page.locator('#qso-others-none').filter({hasText:'nobody else calling'}).waitFor();
-  assert.deepEqual(await others(),[]);
-  settings={tx_hz:2100};await show(running,{arm_state:'armed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===2);
+  await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===4&&!document.querySelector('#qso-others tr[data-kind=warn]'));
+  settings={tx_hz:2100};await show(running,{arm_state:'armed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr[data-kind=warn]').length===2);
   // Not armed: no NEXT.
   await show(running,{arm_state:'disarmed'});await page.waitForFunction(()=>document.querySelector('#qso-next').hidden);
   // Auto Seq off (#11) stays visible in the compact pane.
@@ -538,8 +525,9 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   assert.equal(await page.locator('#contact-logged').textContent(),'✓ Logged IW9FRA');
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'No contact selected');
   for(const selector of ['#qso-heard','#qso-next','#contact-state'])assert.equal(await shown(page,selector),false,`${selector} gone after completion`);
-  assert.deepEqual(await others(),[['candidate',['12:00:15','HB9BLA ◂ DL1ABC','JO31','','−8','']],['candidate',['12:00:15','HB9BLA ◂ SV1DZB','KM18','','−8','']],['candidate',['12:00:15','HB9BLA ◂ EA8BIA','IL18','','0','']],['candidate',['12:00:15','HB9BLA ◂ F1PBZ','JN18','','−10','']]],'the finished partner is not a candidate');
-  assert.equal(await shown(page,'#qso-dialogue'),false,'the dialogue goes with the QSO');
+  assert.deepEqual(await others(),[['candidate',['DL1ABC','−8','FN42','']],['candidate',['SV1DZB','−8','FN42','']],['candidate',['EA8BIA','0','FN42','']],['candidate',['F1PBZ','−10','FN42','']]],'the finished partner is not a candidate');
+  assert.equal(await page.locator('#qso-dialogue tr').count(),0,'the dialogue goes with the QSO');
+  assert.equal(await shown(page,'#qso-none'),true,'"No QSO" in its place');
   assert.equal(await page.locator('#contact-log').isDisabled(),true,'a finished contact is not offered for Log QSO');
   m=commands.length;await page.locator('body').click({position:{x:5,y:5}});await page.keyboard.press('Alt+q');await page.waitForTimeout(400);
   assert.deepEqual(commands.slice(m),[],'nor by Alt+Q');
@@ -555,8 +543,9 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-060-01; TC-060-001 (#60, operator 2026-11-03): the QSO dialogue and the Others
-// are one table, UTC | Direction | Exchange | Rep | Rx SNR | Tx SNR; Direction is the two calls as on
+// Proves: CL-060-01; TC-060-001 (#60, operator 2026-11-03): the QSO dialogue is a table,
+// UTC | Direction | Exchange | Rep | Rx SNR | Tx SNR (the callers, formerly rows of it, are the
+// #37 Calling me section since 2026-11-04); Direction is the two calls as on
 // the air, recipient first, with "◂" pointing to the recipient; a CQ is "CQ <call>" with its
 // grid; free text is all Exchange; Rep is ×N; on every dialogue row Rx SNR (ours) and Tx SNR
 // (the partner's report on us) are the latest received values at or before it (2026-11-03).
@@ -581,10 +570,10 @@ test('TC-060-001 the QSO pane table shows UTC, Direction with the arrow to the r
   await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===4&&window.wstxContact?.snapshot(),null,{timeout:25000});
   const cells=selector=>page.locator(selector).evaluateAll(rows=>rows.map(tr=>[...tr.cells].map(td=>td.textContent)));
   assert.deepEqual((await cells('#qso-table thead tr'))[0],['UTC','Direction','Exchange','Rep','Rx SNR','Tx SNR']);
-  // Idle: every caller, a hashed call as decoded; a report is the Tx SNR.
-  assert.deepEqual(await cells('#qso-others tr'),[['12:00:15','HB9BLA ◂ DL1ABC','JO31','','−8',''],['12:00:15','HB9BLA ◂ <...>','RR73','','−12',''],
-    ['12:00:15','HB9BLA ◂ <PJ4/K1ABC>','-05','','−5','−5'],['12:00:15','HB9BLA ◂ EA8BIA','IL18','','0','']]);
-  assert.equal(await shown(page,'#qso-dialogue'),false,'no dialogue rows idle');
+  // Idle: every caller in Calling me, a hashed call as decoded.
+  assert.deepEqual(await cells('#qso-others tr'),[['DL1ABC','−8','JO31',''],['<...>','−12','JO31',''],['<PJ4/K1ABC>','−5','JO31',''],['EA8BIA','0','JO31','']]);
+  assert.equal(await page.locator('#qso-dialogue tr').count(),0,'no dialogue rows idle');
+  assert.equal(await shown(page,'#qso-table'),false,'"No QSO" instead of the table');
   // A running QSO with CT1BFP (the operator's #60 example), with my CQ before it, a repeated
   // 73 with my call hashed and unknown, and a free-text message.
   const p0=Date.parse('2026-11-03T22:51:00Z'),entry=(i,dir,text,snr=null,count=1)=>({dir,text,snr,period_utc_ms:p0+i*15000,count});
@@ -593,17 +582,18 @@ test('TC-060-001 the QSO pane table shows UTC, Direction with the arrow to the r
   contact=partner('signoff',{dx_call:'CT1BFP',dx_grid:'IM59',report_sent:'+08',report_rcvd:'-02',messages:['CT1BFP HB9BLA JN37','CT1BFP HB9BLA +08','CT1BFP HB9BLA R+08','CT1BFP HB9BLA RR73','CT1BFP HB9BLA 73','CQ HB9BLA JN37'],
     suggested_slot:null,last_rcvd:{text:'<...> CT1BFP 73',snr:9,period_utc_ms:p0+75000,count:2},dialogue});
   await page.evaluate(()=>window.wstxContact.load());
-  await page.waitForFunction(()=>document.querySelectorAll('#qso-dialogue tr').length===7&&document.querySelector('#qso-others tr')?.dataset.kind==='warn');
+  await page.waitForFunction(()=>document.querySelectorAll('#qso-dialogue tr').length===7&&document.querySelector('#qso-others tr[data-kind=warn]'));
   assert.deepEqual(await cells('#qso-dialogue tr'),[['22:51:00','CQ HB9BLA','JN37','','',''],['22:51:15','HB9BLA ◂ CT1BFP','IM59','','+8',''],['22:51:30','CT1BFP ◂ HB9BLA','+08','','+8',''],
     ['22:51:45','HB9BLA ◂ CT1BFP','R-02','','+7','−2'],['22:52:00','CT1BFP ◂ HB9BLA','RR73','','+7','−2'],['22:52:15','<...> ◂ CT1BFP','73','×2','+9','−2'],['22:52:30','','TNX 73 GL','','+9','−2']]);
-  // During the QSO the caller near my Rx is a ⚠ row below a thin separator, same columns.
-  assert.deepEqual(await cells('#qso-others tr'),[['12:00:15 ⚠','HB9BLA ◂ EA8BIA','IL18','','0','']]);
-  assert.equal(await page.locator('#qso-others tr td').first().evaluate(td=>getComputedStyle(td).borderTopWidth),'1px','separator above the callers');
+  // During the QSO the callers stay in Calling me, the one near my Rx marked ⚠; none is a row of
+  // the dialogue table.
+  assert.deepEqual(await cells('#qso-others tr'),[['DL1ABC','−8','JO31',''],['<...>','−12','JO31',''],['<PJ4/K1ABC>','−5','JO31',''],['EA8BIA ⚠','0','JO31','']]);
+  assert.equal(await page.locator('#qso-table #qso-others').count(),0,'the callers are not rows of the QSO table');
   assert.deepEqual(await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight})),{x:false,y:false},'one fixed screen at 1366x768');
-  // The header row stays visible while the area is kept at its newest row.
-  const headerShown=()=>page.evaluate(()=>{const a=document.querySelector('#qso-area').getBoundingClientRect(),h=document.querySelector('#qso-table th').getBoundingClientRect();return h.top>=a.top-1&&h.bottom<=a.bottom+1;});
-  assert.equal(await page.locator('#qso-area').evaluate(a=>a.scrollTop>0),true,'the area is scrolled to its newest row');
-  assert.equal(await headerShown(),true,'header row visible');
+  // The header row and the newest row are visible.
+  const inArea=selector=>page.evaluate(selector=>{const a=document.querySelector('#qso-area').getBoundingClientRect(),h=document.querySelector(selector).getBoundingClientRect();return h.top>=a.top-1&&h.bottom<=a.bottom+1;},selector);
+  assert.equal(await inArea('#qso-dialogue tr:last-child'),true,'the newest row is visible');
+  assert.equal(await inArea('#qso-table th'),true,'header row visible');
   await page.screenshot({path:'test-results/ui-operating/qso-table-1366x768.png'});
   await page.setViewportSize({width:360,height:800});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
@@ -697,7 +687,7 @@ test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherw
   await page.evaluate(()=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',data:{}}}})));
   await page.waitForTimeout(800);
   assert.deepEqual(await header(),['Calling CQ','Tx even (1st)']);
-  assert.equal(await page.locator('#qso-others-none').textContent(),'nobody calling');
+  assert.equal(await page.locator('#qso-others-none').textContent(),'Nobody is calling');
   assert.equal(await shown(page,'#qso-others-none'),true);
   const now=Date.now(),even=Math.ceil((now+30000)/30000)*30000+4000,offset=even-now;
   clock.offset=offset;let r=await tickAndRead(page,offset,true);
@@ -752,11 +742,14 @@ test('TC-007-009 one fixed operating screen at 1366x768 holds only the operating
   // #37 (operator 2026-11-03): one HALT on the screen, the QSO pane's.
   assert.deepEqual(await page.getByRole('button',{name:/^HALT$|^Halt Tx$/}).filter({visible:true}).evaluateAll(list=>list.map(b=>b.id)),['qso-halt'],'one HALT, in the QSO pane');
   await page.screenshot({path:'test-results/ui-operating/operating-screen-1366x768.png'});
-  // A pointer HALT is on screen without scrolling at every size (the stacked pane at 1024x768
-  // and 360 px is below the fold, so the top-bar HALT shows there).
+  // A pointer HALT is on screen without scrolling at every size (the stacked pane at 360 px is
+  // below the fold, so the top-bar HALT shows there).
   const haltOnScreen=async()=>page.waitForFunction(()=>[...document.querySelectorAll('#halt-tx,#qso-halt')].some(b=>{const r=b.getBoundingClientRect();return b.checkVisibility()&&r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth;}),null,{timeout:3000});
   for(const [width,height] of [[1024,768],[1366,768],[1920,1080]]){await page.setViewportSize({width,height});await haltOnScreen();}
-  await page.setViewportSize({width:1024,height:768});await page.waitForFunction(()=>document.querySelector('#halt-tx').checkVisibility(),null,{timeout:3000});
+  // At 1024x768 the stacked pane's header (with its HALT) is on screen below Band Activity since
+  // the #37 fixed-height pane (2026-11-04): the top-bar HALT shows exactly when it is not.
+  await page.setViewportSize({width:1024,height:768});
+  await page.waitForFunction(()=>{const q=document.querySelector('#qso-halt'),r=q.getBoundingClientRect(),full=q.checkVisibility()&&r.top>=0&&r.bottom<=innerHeight;return document.querySelector('#halt-tx').checkVisibility()===!full;},null,{timeout:3000});
   await page.setViewportSize({width:1366,height:768});await page.waitForFunction(()=>!document.querySelector('#halt-tx').checkVisibility(),null,{timeout:3000});
   await page.setViewportSize({width:360,height:800});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'a phone does not overflow horizontally');
@@ -1194,14 +1187,16 @@ async function waterfallMappingPass(page,commands,settings,label){
     await confirm(settings.rx_hz,c.tx_hz);assert.ok(Math.abs(await centre('txm')-to)<=1,`${label}: confirmed Tx line at the drop point`);}
   x=await axis();
   // The brackets: from the line over the occupied width to its right, in the line's colour.
-  const brackets=()=>page.evaluate(()=>['rx','txm'].map(key=>{const m=document.querySelector(`#waterfall-wrap .ct-${key}`),g=m.querySelector('.ct-goal');if(!g)return null;const r=g.getBoundingClientRect(),s=getComputedStyle(g);return {hz:Number(m.dataset.hz),left:r.left,right:r.right,top:r.top,height:r.height,colour:s.borderTopColor,visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0,pointer:s.pointerEvents};}));
+  const brackets=()=>page.evaluate(()=>['rx','txm'].map(key=>{const m=document.querySelector(`#waterfall-wrap .ct-${key}`),g=m.querySelector('.ct-goal');if(!g)return null;const r=g.getBoundingClientRect(),s=getComputedStyle(g);return {hz:Number(m.dataset.hz),left:r.left,right:r.right,top:r.top,height:r.height,colour:s.borderTopColor,visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0,pointer:s.pointerEvents,dragging:m.classList.contains('ct-dragging'),txMax:document.querySelector('#contact-tx').max};}));
   for(const [period,width] of [[15000,50],[7500,4*12000/576],[15000,50]]){
     await page.evaluate(period=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,test:true,message:{v:1,type:'station.tick',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,utc_ms:Date.now(),period_ms:period,transmitting:false,rx_level_db:null}}}})),period);
-    await page.waitForTimeout(50);
-    const got=await brackets();
+    // Bounded tolerance, cause not established: one gate (2026-11-06) read a bracket of the previous mode's
+    // width 50 ms after the tick. If it recurs, the message says whether the tick arrived and a line was held.
+    let got=await brackets();
+    for(let n=0;n<40&&!(got[0]&&Math.abs(got[0].right-x(got[0].hz+width))<=1);n++){await page.waitForTimeout(50);got=await brackets();}
     for(const [i,colour] of [[0,'rgb(48, 208, 80)'],[1,'rgb(255, 64, 64)']]){const b=got[i];
       assert.ok(b?.visible,`${label}: bracket ${i} shown (${JSON.stringify(b)})`);assert.equal(b.colour,colour);assert.equal(b.pointer,'none');
-      assert.ok(Math.abs(b.left-x(b.hz))<=1&&Math.abs(b.right-x(b.hz+width))<=1,`${label} ${period} ms: bracket ${b.left}-${b.right}, mapping ${x(b.hz)}-${x(b.hz+width)}`);
+      assert.ok(Math.abs(b.left-x(b.hz))<=1&&Math.abs(b.right-x(b.hz+width))<=1,`${label} ${period} ms: bracket ${b.left}-${b.right}, mapping ${x(b.hz)}-${x(b.hz+width)}, dragging ${b.dragging}, Tx max ${b.txMax}`);
       assert.ok(Math.abs(b.top-wf.y)<=1,`${label}: bracket at the top of the waterfall`);}
   }
   // A click inside a bracket still reaches the waterfall (within 1 px: a click's clientX is whole px).
@@ -1254,7 +1249,7 @@ test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Ac
   assert.deepEqual(await page.locator('tr[data-result-id] td[data-col=message]').evaluateAll(cells=>cells.map(c=>[c.dataset.ap??null,getComputedStyle(c,'::after').content])),[[null,'none'],['a1','" a1"']],'a-priori marker');
   // QSO pane (#37, operator 2026-11-02): a CQ near Rx (W1XYZ at 1480 Hz) is no QSO pane line;
   // nobody calls me yet.
-  await page.locator('#qso-others-none').filter({hasText:'nobody calling'}).waitFor();
+  await page.locator('#qso-others-none').filter({hasText:'Nobody is calling'}).waitFor();
   assert.deepEqual(await page.locator('#qso-others tr').allTextContents(),[]);
   // A new period keeps the previous one below a divider, newest first.
   records.push(record(2,'HB9BLA K1ABC -05','K1ABC',1010,period[1],'HB9BLA'));
@@ -1655,6 +1650,52 @@ test('TC-061-006 Tx rows are painted as Tx and level warnings show for receive p
   assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-061-05; TC-061-008 (#61, operator 2026-11-06). Scripted rows, computed from 0.2 s rows
+// at 10 px/s with y(s)=floor(s*10*H/C): a Tx period takes a 4 px band, the labels beyond it stay exact.
+test('TC-061-008 a Tx period is a thin band, the time axis stays exact and nothing turns pale',{timeout:45000},async t=>{
+  // A plot that holds the 20 s the bands below need at 10 px/s; at 1366x768 the default split leaves the room to the QSO pane (#37).
+  const {page,errors}=await liveDisplayFixture(t,{width:1366,height:1200});
+  await page.locator('#waterfall').evaluate(()=>{speed=1;updateSliders();paint();});
+  const rx=Array.from({length:1024},()=>60),tx=Array.from({length:1024},()=>118);
+  const [H,C]=await page.locator('#waterfall').evaluate(c=>[c.height,c.getBoundingClientRect().height]),y=s=>Math.floor(s*10*H/C);
+  const run=(from,count,options={})=>Array.from({length:count},(_,i)=>({sequence:from+i,levels:options.tx?tx:rx,...options}));
+  // The canvas column as [first row, kind] changes; the page is settled by the two frames of cell().
+  const column=async()=>{await cell(page,500);return page.evaluate(()=>{const c=document.querySelector('#waterfall'),d=c.getContext('2d').getImageData(Math.floor(c.width/2),0,1,c.height).data,bands=[];let kind='';
+    for(let y=0;y<c.height;y++){const k=[d[4*y],d[4*y+1],d[4*y+2]].join();const now=k==='90,20,30'?'tx':k==='96,96,96'?'grey':k==='0,0,12'?'empty':'rx';if(now!==kind){bands.push([y,now]);kind=now;}}return bands;});};
+  await liveFrames(page,run(0,60));
+  assert.deepEqual(await column(),[[0,'rx'],[y(12),'empty']],'12 s of receive rows at 10 px/s');
+  await liveFrames(page,run(60,1,{tx:true}));
+  assert.deepEqual(await column(),[[0,'tx'],[4,'rx'],[4+y(12),'empty']],'the first Tx row stands as the band');
+  // The rest of the Tx period, with two rows the station did not deliver, leaves the picture still.
+  await liveFrames(page,[...run(61,30,{tx:true}),...run(93,42,{tx:true})]);
+  assert.deepEqual(await column(),[[0,'tx'],[4,'rx'],[4+y(12),'empty']],'the picture holds still while transmitting');
+  await liveFrames(page,run(135,60));
+  const bands=await column();
+  assert.deepEqual(bands.slice(0,3),[[0,'rx'],[y(12),'tx'],[y(12)+4,'rx']],'the receive rows keep 10 px/s around one 4 px band');
+  assert.equal(bands.some(([,kind])=>kind==='grey'),false,'no grey stripe in the band');
+  const labels=await page.locator('#time-ruler span').evaluateAll(spans=>spans.map(s=>[s.textContent,s.style.top]));
+  assert.deepEqual(labels.slice(0,4),[['39.0s','0px'],['35.0s',`${y(4)}px`],['30.0s',`${y(9)}px`],['10.0s',`${y(14)+4}px`]],'T - t at 10 px/s, without the collapsed 15 s plus the 4 px band');
+  // The band's readout names the whole Tx run. At 750 Hz: the Rx and Tx lines stand at 1500 Hz.
+  const box=await page.locator('#waterfall').boundingBox(),x=box.x+box.width/4;await page.mouse.move(x,box.y+y(12)+2);
+  await page.waitForFunction(()=>/projected source 12\.0-27\.000 s/.test(document.querySelector('#bin-readout').textContent),null,{timeout:5000});
+  await page.mouse.move(0,0);
+  // Day theme: what the operator sees on the page, dark and not pale.
+  await page.evaluate(()=>{document.documentElement.dataset.theme='day';});
+  const shot=(await page.screenshot({clip:{x,y:box.y,width:1,height:box.height}})).toString('base64');
+  // A blank page decodes the PNG: the station page's content policy refuses a data: URL.
+  const blank=await page.context().newPage();
+  const band=await blank.evaluate(async ([png,row])=>{const image=await createImageBitmap(await(await fetch(`data:image/png;base64,${png}`)).blob()),c=new OffscreenCanvas(1,image.height),x=c.getContext('2d');x.drawImage(image,0,0);const d=x.getImageData(0,0,1,image.height).data;return [...d.slice(4*row,4*row+3)];},[shot,y(12)+2]);
+  await blank.close();
+  assert.ok(band[0]+band[1]+band[2]<300&&band[0]>band[1],`Day: the Tx band stays dark red, not pale: ${band}`);
+  await page.evaluate(()=>{document.documentElement.dataset.theme='dark';});
+  // The 7.5 s limit: 37 missing rows (7.4 s) stay in the band, 38 more (7.6 s) are a real gap.
+  await liveFrames(page,[...run(195,1,{tx:true}),...run(233,1,{tx:true})]);
+  assert.deepEqual((await column()).slice(0,2),[[0,'tx'],[4,'rx']],'a 7.4 s hole between Tx rows is in the band');
+  await liveFrames(page,run(272,1,{tx:true}));
+  assert.deepEqual((await column()).slice(0,2),[[0,'tx'],[4,'grey']],'a 7.6 s hole stays grey');
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-007-05; TC-004-004. A late window extends the period view in place (#47).
 test('TC-004-004 a correlated period view extended in place adds the late starter without an error or a reload',{timeout:35000},async t=>{
   let state,records,requested=[];
@@ -1918,16 +1959,18 @@ test('TC-011-003 QSO pane callers show worked-before status and only interesting
  await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr[data-worked]').length===3,null,{timeout:25000});
  const others=()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(tr=>[tr.dataset.text,tr.dataset.worked??null,tr.dataset.hl??null,getComputedStyle(tr.cells[1]).backgroundColor,tr.title,tr.getAttribute('aria-description')]));
  const [newCallBand,newCall,none]=['rgba(153, 255, 255, 0.2)','rgba(0, 255, 255, 0.24)','rgba(0, 0, 0, 0)'];
- const hint='Double-click: answer this station';
+ // #50 BandActivityHover rule (operator 2026-11-04, "too much information"): one line, only the
+ // enabled colour reasons, the strongest per kind; an uncoloured line has no tip.
  assert.deepEqual(await others(),[
-  ['HB9BLA K1ABC FN42','worked_this_band_and_mode',null,none,`Worked before on 20m FT8\n${hint}`,'Worked before on 20m FT8'],
-  ['HB9BLA W1XYZ FN31','not_worked','new_call new_call_band',newCall,`New call\nNew call on 20m\n${hint}`,'New call; New call on 20m'],
-  ['HB9BLA DL1ABC -10','worked_other_band_or_mode','new_call_band',newCallBand,`New call on 20m\nWorked before on another band or mode\n${hint}`,'New call on 20m; Worked before on another band or mode']],
+  ['HB9BLA K1ABC FN42','worked_this_band_and_mode',null,none,'',null],
+  ['HB9BLA W1XYZ FN31','not_worked','new_call new_call_band',newCall,'New call','New call'],
+  ['HB9BLA DL1ABC -10','worked_other_band_or_mode','new_call_band',newCallBand,'New on 20m (worked on another band or mode)','New on 20m (worked on another band or mode)']],
   'worked before on this band and mode has no colour; the status is text; My call is not a caller colour');
  // The Band Activity colour choice applies here too.
  await page.locator('#open-server-settings').click();
  await page.locator('#band-colours [data-hl-slot=new_call]').uncheck();await page.locator('#settings-drawer .return-operate').click();
  assert.deepEqual((await others()).map(r=>r[3]),[none,newCallBand,newCallBand],'with New call off, New call on band remains');
+ assert.deepEqual((await others()).map(r=>r[4]),['','New on 20m','New on 20m (worked on another band or mode)'],'the tip follows the Settings slots');
  await refreshStatus(page);await page.waitForTimeout(500);
  assert.equal(queries.length,1,'the callers add no worked-before query');
  assert.deepEqual(errors,[]);
@@ -2717,9 +2760,9 @@ async function cell(page,bin){
   await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   return page.evaluate(bin=>{const c=document.querySelector('#waterfall'),x=Math.floor((bin+.5)*c.width/1024);return [...c.getContext('2d').getImageData(x,0,1,1).data.slice(0,3)];},bin);
 }
-async function liveDisplayFixture(t){
+async function liveDisplayFixture(t,viewport={width:1366,height:768}){
   let receiving;
-  const f=await fixture(t,{width:1366,height:768},{beforeNavigate:async p=>{
+  const f=await fixture(t,viewport,{beforeNavigate:async p=>{
     await p.route('**/receive',async route=>{const json=await (await route.fetch()).json();if(!receiving)receiving=liveFixture(json);await route.fulfill({json:receiving});});
     await p.route('**/receive/results?*',route=>route.fulfill({json:emptyResults(receiving)}));
   }});
@@ -2731,7 +2774,7 @@ test('TC-054-002 fixed dBFS colours, Sensitivity as Zero, Range as Gain, Flatten
   const {page,errors,newJob}=await liveDisplayFixture(t);
   // Independent palette anchors (CL-006-03): t=0.1 -> (0,0,57), t=0.9 -> (255,105,0), t=0.3 -> (0,60,185), t=0.5 -> (0,220,240).
   const noise=40,carrier=80,levels=Array.from({length:1024},(_,k)=>k>=498&&k<=502?carrier:noise);
-  assert.deepEqual(await page.evaluate(()=>[document.querySelector('#display-sensitivity').value,document.querySelector('#display-range').value,document.querySelector('#display-speed').value,document.querySelector('#speed-value').textContent,document.querySelector('#spectrum').hidden,Math.abs(Math.round(document.querySelector('#signal').getBoundingClientRect().height)-Math.min(330,Number(document.querySelector('#splitter').getAttribute('aria-valuemax'))-200))<=8]),['0','50','1','10 px/s',true,true],'defaults: Zero 0, Gain 50 dB, 10 px/s, no spectrum line, 330 px or the available height less 400 px (#37 LowerPanel)');
+  assert.deepEqual(await page.evaluate(()=>[document.querySelector('#display-sensitivity').value,document.querySelector('#display-range').value,document.querySelector('#display-speed').value,document.querySelector('#speed-value').textContent,document.querySelector('#spectrum').hidden,Math.abs(Math.round(document.querySelector('#signal').getBoundingClientRect().height)-Math.min(330,Number(document.querySelector('#splitter').getAttribute('aria-valuemax'))-290))<=8]),['0','50','1','10 px/s',true,true],'defaults: Zero 0, Gain 50 dB, 10 px/s, no spectrum line, 330 px or the available height less 490 px (#37 LowerPanel, 2026-11-04)');
   await liveFrames(page,[{sequence:0,levels},{sequence:1,levels}]);
   assert.deepEqual([await cell(page,100),await cell(page,500)],[[0,0,57],[255,105,0]],'noise -80 dBFS and a -40 dBFS carrier on the fixed -85..-35 dBFS scale');
   assert.match(await page.locator('#level-legend').textContent(),/WF -85 to -35 dBFS/);
@@ -2795,13 +2838,14 @@ test('TC-024-004 Tx5 free text and <MYCALL> rows in the operating screen',{timeo
   const marks=await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.classList.contains('ba-tome')]));
   // #55 value order: the three rows to my call (also as <HB9BLA> and nonstandard) are value 1, first.
   assert.deepEqual(marks,[['<HB9BLA> PJ4/K1ABC',true],['HB9BLA <PJ4/K1ABC> -12',true],['<HB9BLA> K1ABC -12',true],['<...> PJ4/K1ABC',false]]);
-  // QsoPane Others (#24, the same mycall rule): an own CQ is idle, so every row to my call is
-  // listed, oldest first; the unresolved <...> row is not.
+  // QsoPane Calling me (#24, the same mycall rule): an own CQ is idle, so every station calling my
+  // call is listed, oldest first, one line per station (its newest row: PJ4/K1ABC sent twice); the
+  // unresolved <...> row is not.
   const others=()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(r=>r.dataset.text));
-  await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===3,null,{timeout:10000}).catch(()=>{});
-  assert.deepEqual(await others(),['<HB9BLA> PJ4/K1ABC','HB9BLA <PJ4/K1ABC> -12','<HB9BLA> K1ABC -12']);
-  // During a QSO with PJ4/K1ABC (Rx 1000, Tx 1300 Hz): its own nonstandard row at 1000 Hz is the
-  // partner's and the row at 1100 Hz is near neither offset, so only K1ABC's row at 1300 Hz stays.
+  await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===2,null,{timeout:10000}).catch(()=>{});
+  assert.deepEqual(await others(),['HB9BLA <PJ4/K1ABC> -12','<HB9BLA> K1ABC -12']);
+  // During a QSO with PJ4/K1ABC (Rx 1000, Tx 1300 Hz): its own rows are the partner's, so only
+  // K1ABC's row stays, ⚠ at 1300 Hz near my Tx.
   contact={...cq,origin:'selected_row',dx_call:'PJ4/K1ABC',state:'replying',next_slot:'tx1',messages:['<PJ4/K1ABC> HB9BLA','<PJ4/K1ABC> HB9BLA -12',null,null,null,'CQ HB9BLA JN47']};settings={rx_hz:1000,tx_hz:1300};
   await page.evaluate(()=>window.wstxContact.load());
   await page.waitForFunction(()=>document.querySelector('#qso-others tr')?.dataset.kind==='warn'||document.querySelectorAll('#qso-others tr').length===0,null,{timeout:10000});
@@ -3067,6 +3111,157 @@ test('TC-061-003 CQ retries a stale_revision refusal with the reloaded snapshot'
   stale=3;m=commands.length;await page.locator('#qso-cq').click();
   assert.deepEqual(await sent(m,3),[['enable_tx',true,4],['enable_tx',true,5],['enable_tx',true,6]]);
   await page.locator('#contact-result').filter({hasText:'CQ: refused · stale_revision'}).waitFor();
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-037-04; TC-037-003 (#37, operator 2026-11-04: "fixed in size that the things below it
+// do not move all the time up and down"; live finding 2026-11-04: dialogue rows in a 46 px area at
+// 1366x768, ~325 px Band Activity cards at 360 px). The QSO pane has a fixed height with two
+// sections, QSO (12 dialogue rows without scrolling on a laptop, kept at the newest row) and
+// Calling me (callers but not the partner: call, SNR, grid, country), each with a placeholder; the
+// Control panel top does not move when a QSO starts, rows or callers are added or the QSO ends;
+// at 360 px Band Activity shows compact rows, at least six on screen.
+test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Calling me section, and Band Activity has compact rows at 360 px',{timeout:90000},async t=>{
+  let state,contact=null,transmit={},records=[];const period='2026-10-27T12:00:15.0000000Z';
+  const fields=(to,from,grid)=>({type:'standard',to:{kind:to==='CQ'?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:grid?{kind:'grid',value:grid}:{kind:'report',value:-5}});
+  const record=(sequence,text,hz,snr,dxcc)=>{const [to,from,grid]=text.split(' ');return {sequence,start_frame:6000,frequency_hz:hz,snr_db:snr,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:fields(to,from,/^[A-R]{2}\d{2}$/.test(grid??'')?grid:null),period_start_utc:period,...(dxcc?{dxcc}:{})};};
+  const cqs=['CQ K1ABC FN42','CQ W1XYZ FN31','CQ YO3GNF KN34','CQ JA1XYZ PM95','CQ VK2ABC QF56','CQ ZS6ABC KG33','CQ PY2ABC GG66','CQ LU1ABC GF05','CQ OH2ABC KP20','CQ G4ABC IO91'].map((text,i)=>record(i,text,400+i*200,-10+i));
+  const callers=[record(10,'HB9BLA DL1ABC JO31',600,-8,{name:'Fed. Rep. of Germany',cont:'EU',cq:14,itu:28}),record(11,'HB9BLA IW9FRA JM68',1505,17,{name:'Sicily',cont:'EU',cq:15,itu:28}),record(12,'HB9BLA EA8BIA IL18',1520,0,{name:'Canary Islands',cont:'AF',cq:33,itu:36})];
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    records=[...cqs];
+    Object.assign(state.job,{first_sequence:0,next_sequence:records.length,available_count:records.length,latest_decode:{id:1,first_sequence:0,next_sequence:records.length,period_start_utc:period,complete:true}});
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact,transmit})}));
+    await contactCommands(p,[]);
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll("tr[data-period=latest]").length===10&&window.wstxContact?.snapshot(),null,{timeout:25000});
+  const show=async(next,tx={})=>{contact=next;transmit=tx;await page.evaluate(()=>window.wstxContact.load());};
+  // The same period gains the callers of my call (a later result page of the published view).
+  // #10 PushedStationState: the station announces the publication with receive.state.
+  const addCallers=async()=>{records=[...cqs,...callers];Object.assign(state.job,{next_sequence:records.length,available_count:records.length,latest_decode:{...state.job.latest_decode,id:2,next_sequence:records.length}});
+    await page.evaluate(s=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',data:{profile_id:s.profile_id,boot_id:s.boot_id,generation:s.generation,source_id:s.source.id,job_id:s.job.id,state:'running'}}}})),state);
+    await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===3,null,{timeout:15000});};
+  const p0=Date.parse('2026-10-27T11:58:00Z'),entry=(i,dir,text,snr=null)=>({dir,text,snr,period_utc_ms:p0+i*15000,count:1});
+  const dialogue=n=>Array.from({length:n},(_,i)=>i%2?entry(i,'rx',`HB9BLA IW9FRA ${['-05','R-07','RR73'][i%3]}`,-5-i):entry(i,'tx',`IW9FRA HB9BLA ${['JN37','+10','73'][i%3]}`));
+  const qso=n=>partner(n>8?'signoff':'report',{dx_call:'IW9FRA',dx_grid:'JM68',report_sent:'+10',report_rcvd:'-05',next_slot:'tx3',messages:['IW9FRA HB9BLA JN37','IW9FRA HB9BLA +10','IW9FRA HB9BLA R+10','IW9FRA HB9BLA RR73','IW9FRA HB9BLA 73','CQ HB9BLA JN37'],suggested_slot:null,
+    last_rcvd:{text:'HB9BLA IW9FRA -05',snr:-6,period_utc_ms:p0,count:1},dialogue:dialogue(n)});
+  // Positions in the content of the #controls scroller (the workspace), so a stacked page compares alike.
+  const geometry=()=>page.evaluate(()=>{const c=document.querySelector('#controls'),at=c.getBoundingClientRect().top,box=s=>{const r=document.querySelector(s).getBoundingClientRect();return {top:Math.round(r.top-at+c.scrollTop),height:Math.round(r.height)};};
+    return {pane:box('#rx-focus'),qso:box('#qso-area'),calling:box('#calling-area'),control:box('#qso-control').top};});
+  const steps=[],note=async name=>{steps.push([name,await geometry()]);};
+  const same=(list,label)=>{for(const [name,g] of list){const [,g0]=list[0];
+    assert.equal(g.control,g0.control,`${label}: Control panel top at "${name}" ${JSON.stringify(list)}`);assert.equal(g.pane.height,g0.pane.height,`${label}: pane height at "${name}"`);
+    assert.equal(g.qso.height,g0.qso.height,`${label}: QSO section at "${name}"`);assert.equal(g.calling.height,g0.calling.height,`${label}: Calling me at "${name}"`);}};
+  const fit=()=>page.locator('#qso-area').evaluate(a=>{const b=a.getBoundingClientRect(),rows=[...a.querySelectorAll('#qso-dialogue tr')].map(r=>r.getBoundingClientRect()),inside=r=>r.top>=b.top-1&&r.bottom<=b.bottom+1;
+    return {scrolls:a.scrollHeight>a.clientHeight+1,inside:rows.filter(inside).length,lastInside:inside(rows.at(-1)),onScreen:b.bottom<=innerHeight&&b.top>=0};});
+  const calling=()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(tr=>[...tr.cells].map(td=>td.textContent)));
+  // Idle without callers: both placeholders.
+  assert.equal(await page.locator('#qso-none').textContent(),'No QSO');assert.equal(await shown(page,'#qso-none'),true);
+  assert.equal(await page.locator('#qso-others-none').textContent(),'Nobody is calling');assert.equal(await shown(page,'#qso-others-none'),true);
+  await note('idle');
+  await page.screenshot({path:'test-results/ui-operating/qso-pane-fixed-idle-1366x768.png'});
+  // Callers added: call, SNR, grid and country, oldest first.
+  await addCallers();
+  assert.deepEqual(await calling(),[['DL1ABC','−8','JO31','Fed. Rep. of Germany'],['IW9FRA','+17','JM68','Sicily'],['EA8BIA','0','IL18','Canary Islands']]);
+  assert.deepEqual(await page.locator('#calling-table thead th').allTextContents(),['Calling me','SNR','Grid','Country']);
+  assert.equal(await shown(page,'#qso-others-none'),false);
+  await note('callers');
+  // The QSO starts with IW9FRA: one dialogue row; the partner is no longer a caller.
+  await show(qso(1),{arm_state:'armed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-dialogue tr').length===1&&document.querySelectorAll('#qso-others tr').length===2);
+  assert.equal(await shown(page,'#qso-none'),false,'no placeholder during a QSO');
+  assert.deepEqual((await calling()).map(r=>r[0]),['DL1ABC','EA8BIA ⚠'],'the partner is not calling me; EA8BIA is within 50 Hz of my Rx');
+  await note('qso 1 row');
+  // Twelve rows fit without scrolling.
+  await show(qso(12),{arm_state:'armed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-dialogue tr').length===12);
+  let f=await fit();assert.deepEqual(f,{scrolls:false,inside:12,lastInside:true,onScreen:true},'12 dialogue rows without scrolling at 1366x768');
+  await note('qso 12 rows');
+  await page.screenshot({path:'test-results/ui-operating/qso-pane-fixed-12rows-1366x768.png'});
+  // More rows scroll inside; the newest stays visible.
+  await show(qso(15),{arm_state:'armed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-dialogue tr').length===15);
+  f=await fit();assert.equal(f.scrolls,true);assert.equal(f.lastInside,true,'the newest row is visible');
+  await note('qso 15 rows');
+  // Not armed (no NEXT line) and the end of the QSO change nothing below the pane.
+  await show(qso(15),{arm_state:'disarmed'});await page.waitForFunction(()=>document.querySelector('#qso-next').hidden);
+  await note('disarmed');
+  await show({...qso(15),state:'completed',saved:true},{arm_state:'disarmed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-dialogue tr').length===0);
+  assert.equal(await shown(page,'#qso-none'),true,'No QSO again');
+  await note('completed');
+  same(steps,'1366x768');
+  assert.deepEqual(await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight})),{x:false,y:false},'one fixed screen at 1366x768');
+  for(const selector of ['#qso-control','#error-field','#qso-halt'])assert.equal(await page.locator(selector).evaluate(el=>el.getBoundingClientRect().bottom<=innerHeight),true,`${selector} on screen at 1366x768`);
+  // Calling me holds its header and five rows without scrolling.
+  const rowH=await page.locator('#qso-others tr').first().evaluate(r=>r.getBoundingClientRect().height);
+  assert.ok(steps[0][1].calling.height>=6*rowH-1,`Calling me ${steps[0][1].calling.height} px holds its header and 5 rows of ${rowH} px`);
+  // 1920x1080: the same, and 12 rows still fit.
+  await page.setViewportSize({width:1920,height:1080});
+  const wide=[];
+  for(const [name,n] of [['12 rows',12],['idle',0],['3 rows',3]]){
+    await show(n?qso(n):null,{arm_state:'armed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,n);wide.push([name,await geometry()]);
+    if(n===12){f=await fit();assert.deepEqual(f,{scrolls:false,inside:12,lastInside:true,onScreen:true},'12 rows at 1920x1080');await page.screenshot({path:'test-results/ui-operating/qso-pane-fixed-12rows-1920x1080.png'});}
+  }
+  same(wide,'1920x1080');
+  // 360x800: the sections stack with fixed heights; Band Activity rows are compact.
+  await page.setViewportSize({width:360,height:800});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight),true,'the page itself does not scroll at 360x800 (no blank viewport)');
+  // Scrolled to its first row, as an operator scrolls the stacked workspace to read Band Activity.
+  await page.evaluate(()=>document.querySelector('#band-activity tbody tr[data-sequence]').scrollIntoView({block:'start'}));
+  const visible=await page.evaluate(()=>{const wrap=document.querySelector('#band-activity .op-table-wrap').getBoundingClientRect(),c=document.querySelector('#controls').getBoundingClientRect();
+    const rows=[...document.querySelectorAll('#band-activity tbody tr[data-sequence]')].map(r=>r.getBoundingClientRect());
+    return {count:rows.filter(r=>r.top>=Math.max(wrap.top,c.top,0)-1&&r.bottom<=Math.min(wrap.bottom,c.bottom,innerHeight)+1).length,height:Math.round(rows[0].height)};});
+  await page.screenshot({path:'test-results/ui-operating/band-activity-compact-360x800.png'});
+  assert.ok(visible.count>=6,`at least six Band Activity rows on screen at 360 px ${JSON.stringify(visible)}`);
+  assert.ok(visible.height<=48,`a compact Band Activity row, ${visible.height} px`);
+  const phone=[];
+  for(const [name,n] of [['idle',0],['6 rows',6],['15 rows',15]]){await show(n?qso(n):null,{arm_state:n?'armed':'disarmed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,n);phone.push([name,await geometry()]);}
+  same(phone,'360x800');
+  f=await fit();assert.equal(f.lastInside,true,'the newest row is visible at 360 px');
+  await page.locator('#rx-focus').scrollIntoViewIfNeeded();
+  await page.screenshot({path:'test-results/ui-operating/qso-pane-fixed-360x800.png'});
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-037-05; TC-037-004 (#37, operator 2026-11-04: "Change contact to W4WFC DL1FRH JO30"
+// "makes no sense"): only a row that can start a contact for me offers the change, by its sender's call.
+test('TC-037-004 a contact change is offered only for a row that can start a contact for me',{timeout:60000},async t=>{
+  const period='2026-10-27T12:00:15.0000000Z',commands=[];
+  const records=[['CQ K1ABC FN42'],['QRZ W1XYZ FN31'],['HB9BLA DL1ABC JO31'],['W4WFC DL1FRH JO30'],['CQ EU G4ABC IO91','EU'],['CQ DX K2DX FN42','NA'],['CQ NA K3NA FN42','NA'],['CQ DX DL2DX JO31','EU']].map(([text,cont],sequence)=>{const w=text.split(' '),[from,grid]=w.slice(-2),to=w.slice(0,-2).join(' '),token=/^(CQ|QRZ)/.test(to);
+    return {sequence,...(cont?{dxcc:{name:'Fixture',cont,cq:1,itu:1}}:{}),start_frame:6000,frequency_hz:600+sequence*300,snr_db:-5,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,period_start_utc:period,
+      fields:{type:'standard',to:{kind:token?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}}};});
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    const state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    Object.assign(state.job,{first_sequence:0,next_sequence:records.length,available_count:records.length,latest_decode:{id:1,first_sequence:0,next_sequence:records.length,period_start_utc:period,complete:true}});
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor);await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next:cursor+batch.length,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:partner('replying',{dx_call:'IW9FRA',dx_grid:'JM68'}),transmit:{}})}));
+    await p.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());commands.push(b);
+      if(b.action==='select_row'&&!b.replace)await route.fulfill({status:409,json:{error:{code:'contact_active'}}});else await route.fulfill({status:202,json:{v:1,accepted:true}});});
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===8&&window.wstxContact?.snapshot()&&document.querySelector('#continent-derived')?.textContent.includes('EU'),null,{timeout:25000});
+  const row=text=>page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:text});
+  const change=page.locator('#contact-change'),result=page.locator('#contact-result');
+  const click=async text=>{const n=commands.length;await row(text).click();for(let i=0;i<60&&commands.length<n+1;i++)await page.waitForTimeout(50);assert.equal(commands.length,n+1,text);};
+  for(const [text,call] of [['CQ K1ABC FN42','K1ABC'],['QRZ W1XYZ FN31','W1XYZ'],['HB9BLA DL1ABC JO31','DL1ABC'],['CQ EU G4ABC IO91','G4ABC'],['CQ DX K2DX FN42','K2DX']]){
+    await click(text);await change.filter({hasText:`Change contact to ${call}`}).waitFor({timeout:5000});assert.equal(await change.textContent(),`Change contact to ${call}`);
+  }
+  // A row of a QSO between others or a CQ directed elsewhere: the earlier offer goes, no new one, no refusal text.
+  for(const text of ['CQ NA K3NA FN42','CQ DX DL2DX JO31','W4WFC DL1FRH JO30']){
+    await click(text);await change.waitFor({state:'detached',timeout:5000});
+    await page.waitForFunction(()=>document.querySelector('#contact-result').textContent==='',null,{timeout:5000});
+    await click('CQ K1ABC FN42');await change.waitFor({timeout:5000});
+  }
+  await click('W4WFC DL1FRH JO30');await change.waitFor({state:'detached',timeout:5000});
+  // A deliberate double-click calls the sender and names it.
+  const m=commands.length;await row('W4WFC DL1FRH JO30').dblclick();for(let i=0;i<60&&commands.length<m+2;i++)await page.waitForTimeout(50);
+  assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',3,true],['enable_tx',true,undefined]]);
+  await result.filter({hasText:'Call DL1FRH: accepted'}).waitFor({timeout:5000});
+  assert.equal(await change.count(),0);
   assert.deepEqual(errors,[]);
 });
 
