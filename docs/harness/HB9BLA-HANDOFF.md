@@ -31,8 +31,8 @@ verify their availability in the actual agent environment before starting work.
   Above the authorization it refuses an unattended run; a short attended test adds `-Attended`
   and is warned instead. A contact you did not start, seen while another run's lease is live,
   is that run's. The station itself does not check this.
-- Real try before review ([CR process](../../harness/core/docs/CR-Process.md), step 2): a few
-  short transmissions on a development build need no prior review (operator 2026-11-06: "If
+- Function test before review ([CR process](../../harness/core/docs/CR-Process.md), step 2): a
+  few short transmissions on a development build need no prior review (operator 2026-11-06: "If
   they are short, nobody will complain"). Long or unattended automatic running on the air
   needs its safety review first.
   The camera microphone belongs to Dictate, not the radio.

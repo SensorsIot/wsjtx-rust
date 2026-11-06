@@ -29,9 +29,10 @@ source; do not replace it with a user-level skill or update its pin without its 
   worker / status). Agents never `git push` in this project (the agent guard refuses it
   from CR worktrees); harness pin bumps are pushed by the coordinator from a worktree
   outside `.git/harness-parallel/worktrees`.
-- **CR rules in force:** hand in each reviewed slice at once; agents run fast checks only
-  (build, lint, changed tests, red-on-parent, SysML check) and leave the suites to the
-  gate; merge main only after a conflict bounce, and the re-review reads only the
+- **CR rules in force:** implement and test the function first (for real where it matters),
+  and only when it is OK have the review, to find undesired behaviour (operator 2026-11-06);
+  hand in each reviewed slice at once; agents run fast checks only (build, lint, changed tests,
+  red-on-parent, SysML check) plus that function test, and leave the suites to the gate; merge main only after a conflict bounce, and the re-review reads only the
   resolution (`resolution_diff.py`); the reviewer posts its own verdict — an implementer
   never posts or relays one. Set `HARNESS_REPO` only inline on queue/lifecycle commands.
 - **Radio:** before any agent Tx, `.harness/deploy/radio-preflight.ps1 -Holder <run>` must

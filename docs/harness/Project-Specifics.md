@@ -633,12 +633,16 @@ belong to test output and the implementing CR. Code/model correspondence and con
 1. Identify the current canonical contract, implemented baseline and affected owners.
 2. Define changed requirements and independent verification expectations in the canonical
    artifact. For SysML authority, update the model directly; do not edit archived Markdown.
-3. Obtain independent meaning/readiness review of behaviour, data, ownership, states,
-   timing, errors and test oracles before implementation. Unresolved decisions block the slice.
-4. Implement against the reviewed model and declared normative references. Verification
-   keeps independent expected values and does not generate its sole oracle from that code.
-5. Run the ordinary selected checks and independently review the exact candidate. Keep
-   test existence, actual execution, model readiness and live acceptance separate.
+3. Settle open decisions on behaviour, data, ownership, states, timing, errors and test
+   oracles with the operator; unresolved ones block the slice. A device or protocol whose
+   behaviour is unknown gets a throwaway experiment against the real thing first, findings on
+   the issue. A model-readiness review is held only on request.
+4. Implement against the model and declared normative references. Verification keeps
+   independent expected values and does not generate its sole oracle from that code.
+5. Test the function, for real where it matters (a few short transmissions need no prior
+   review; long or unattended on-air running waits for it). Only when the function is OK,
+   independently review the exact candidate to find undesired behaviour; then the gate.
+   Keep test existence, actual execution, model readiness and live acceptance separate.
 6. Before issue closure reconcile delivered functionality, durable cases and model/source
    bindings. Current issues retain approval, review, deployment and dated execution evidence.
 
