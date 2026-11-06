@@ -1097,6 +1097,7 @@ function detectShow(v){
   for(const i of v.settings?.items??[]){const li=document.createElement('li');li.dataset.severity=i.severity;li.textContent=`${i.item} ${i.name.replaceAll('_',' ')}: ${i.label??'unreadable'} · ${i.severity} · ${i.message}`;items.append(li);}
   if(v.settings?.error){const li=document.createElement('li');li.textContent=`Settings read stopped · ${v.settings.error}`;items.append(li);}
   detectEl('detect-settings').hidden=!v.settings;
+  if(v.proposal?.radio?.agc)detectRow(fields,'AGC',`${v.proposal.radio.agc} · recommended for FT8/FT4`);
 }
 detectEl('detect-run').addEventListener('click',async()=>{
   if(detectPending||!profileData||!detectEl('detect-ack').checked)return;
@@ -1128,6 +1129,35 @@ async function radioSettings(action){
 detectEl('radio-settings-apply').addEventListener('click',()=>radioSettings('apply'));
 detectEl('radio-settings-undo').addEventListener('click',()=>radioSettings('undo'));
 radioSetupShow();
+// #44 CL-044-11 AGC is a Radio/CAT setting the station manages: shown only for a radio
+// with a known CI-V AGC command, saved with Apply ⟳, applied by the station over CI-V
+// (read, write only when it differs, read back) when CAT connects and on each FT8/FT4
+// selection. The read-back arrives as the server's radio.agc event; nothing is polled.
+const agcRow=document.getElementById('control-agc-row');document.getElementById('server-fields-radio').insertBefore(agcRow,document.getElementById('server-fields-radio').querySelector('.op-apply-row'));
+agcRow.insertAdjacentHTML('afterend','<p id="cat-agc" class="op-muted" role="status" hidden></p>');
+let agcState=null;
+function validAgcEvent(d){
+  const agc=v=>v===null||['FAST','MID','SLOW'].includes(v);
+  return operatingShape(d,'profile_id,boot_id,target,connection_generation,value,result,trigger')&&agc(d.target)&&agc(d.value)&&
+    operatingNullable(d.connection_generation,operatingCounter)&&operatingNullable(d.result,v=>typeof v==='string'&&/^[a-z_]{1,32}$/.test(v))&&operatingNullable(d.trigger,v=>['connect','selection'].includes(v));
+}
+function agcShow(){
+  const managed=agcManaged(),out=document.getElementById('cat-agc'),v=agcState;
+  agcRow.hidden=!managed;out.hidden=!managed;if(!managed)return;
+  const saved=profileData?.settings.radio?.agc??document.getElementById('control-agc').value;
+  out.textContent=!v||!v.target?`Radio AGC ${saved} · set by the station when CAT connects and on each FT8/FT4 selection`:
+    v.result===null?`Radio AGC ${v.target} · not yet read from the radio`:
+    v.result==='unchanged'?`Radio AGC ${v.value} · read back, already as set`:
+    v.result==='written'?`Radio AGC ${v.value} · set to ${v.target} and read back`:
+    `Radio AGC ${v.target} not applied · ${v.result}${v.value?` · radio reports ${v.value}`:''}`;
+  out.dataset.result=v?.result??'none';
+}
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='radio.agc'||!validAgcEvent(message.data))return;
+  if(profileData&&(message.data.profile_id!==profileData.profile_id||message.data.boot_id!==profileData.boot_id))return;agcState=message.data;agcShow();});
+addEventListener('station-ready',()=>{if(agcState&&agcState.boot_id!==profileData?.boot_id)agcState=null;agcShow();});
+for(const type of ['input','change'])serverForm.addEventListener(type,agcShow);
+detectEl('detect-use').addEventListener('click',()=>{const agc=detectProposal?.radio?.agc;if(agc){const field=document.getElementById('control-agc');field.value=agc;field.dispatchEvent(new Event('change',{bubbles:true}));}agcShow();});
+agcShow();
 addEventListener('station-stale',catShow);
 // WstxTransmit::TransmitWire operator panel (#9 slice B). Active only for a profile with
 // CAT PTT; the browser renders server-confirmed transmit state and sends explicit

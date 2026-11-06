@@ -2192,7 +2192,8 @@ mod automatic_cat {
         ticks(&f, 40);
         assert_eq!(peer.lock().unwrap().opens, 3);
         assert_eq!(peer.lock().unwrap().writes.len(), writes);
-        let queries: [&[u8]; 5] = [&[3], &[4], &[0x1a, 6], &[0x1c, 0], &[0x0f]];
+        // CL-044-09: the AGC read is a query too; its set frame `16 12 xx` stays refused.
+        let queries: [&[u8]; 6] = [&[3], &[4], &[0x1a, 6], &[0x1c, 0], &[0x0f], &[0x16, 0x12]];
         for w in &peer.lock().unwrap().writes {
             assert!(
                 queries.contains(&&w[4..w.len() - 1]),
@@ -2258,7 +2259,8 @@ mod automatic_cat {
                 )
                 .await;
             assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE, "{stage}");
-            let queries: [&[u8]; 5] = [&[3], &[4], &[0x1a, 6], &[0x1c, 0], &[0x0f]];
+            // CL-044-09: the AGC read is a query too; its set frame `16 12 xx` stays refused.
+            let queries: [&[u8]; 6] = [&[3], &[4], &[0x1a, 6], &[0x1c, 0], &[0x0f], &[0x16, 0x12]];
             for w in &peer.lock().unwrap().writes {
                 assert!(
                     queries.contains(&&w[4..w.len() - 1]),

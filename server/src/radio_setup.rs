@@ -240,7 +240,7 @@ pub(crate) fn detect(state: &ProfileState) -> Result<Value, &'static str> {
                                 .setup(SetupCommand::Read(s2), Instant::now() + STEP)?
                             {
                                 SetupReply::Value(v) => Ok(v),
-                                SetupReply::Id(_) => Err(cat::Error::Protocol),
+                                _ => Err(cat::Error::Protocol),
                             }
                         });
                         settings = json!({"port":port.port,"source":"station_cat","civ_baud":s.snapshot.effective_baud,
@@ -319,6 +319,8 @@ pub(crate) fn detect(state: &ProfileState) -> Result<Value, &'static str> {
             };
             json!({"port":format!("COM{port}"),"model":"IC-7300","civ_address":hex(radio.address),"baud":radio.baud,
                 "control":{"mode":"cat","endpoint":format!("icom7300://COM{port}?baud={}&radio={:02x}&controller=e0",radio.baud,radio.address),"ptt":"cat"},
+                // CL-044-11 Detect radio recommends AGC SLOW for FT8/FT4 on the IC-7300.
+                "radio":{"agc":profile::Radio::DEFAULT.agc},
                 "audio":{"input_device":pick(input),"output_device":pick(output),"input_name":name(input),"output_name":name(output)}})
         }
         _ => Value::Null,
@@ -433,7 +435,7 @@ pub(crate) fn apply(state: &ProfileState, generation: u64) -> Result<Value, &'st
             .map_err(selection::radio_error)?
         {
             SetupReply::Value(v) => readings.push((s, v)),
-            SetupReply::Id(_) => return Err("radio_unavailable"),
+            _ => return Err("radio_unavailable"),
         }
     }
     let plan = setup::plan(&readings);
