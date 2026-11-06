@@ -3119,7 +3119,7 @@ test('TC-007-002 no arming path sends enable_tx while the transmit capability is
   assert.deepEqual(await sent(2),['select_row','select_row'],'a contact change from a Calling me line does not arm');
   await page.locator('tr[data-sequence="0"] td').nth(4).click({button:'right'});
   assert.equal(await page.locator('#ba-menu [data-menu=reply]').isDisabled(),true,'the menu offers no Reply');
-  await page.keyboard.press('Escape');commands.splice(0);
+  await page.locator('#activity-heading').click();await page.locator('#ba-menu').waitFor({state:'hidden'});
   contact=partner('replying',{suggested_slot:null});settings={auto_seq:false};revision++;await page.evaluate(()=>window.wstxContact.load());
   await page.waitForFunction(()=>window.wstxContact.snapshot().settings.auto_seq===false);
   assert.equal(await shown(page,'#qso-autoseq-on'),false,'Auto Seq on is not offered');
