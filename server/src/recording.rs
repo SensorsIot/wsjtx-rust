@@ -1977,7 +1977,7 @@ impl Recording {
             Some(
                 self.radio_actor()
                     .ok_or("radio_unavailable")?
-                    .reserve_transition()
+                    .reserve_transition(Instant::now() + selection::LEASE_WAIT)
                     .map_err(selection::radio_error)?,
             )
         } else {

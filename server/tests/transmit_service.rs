@@ -1397,7 +1397,9 @@ fn the_render_buffer_absorbs_render_delays_without_delaying_the_start_or_the_end
 #[test]
 fn a_halt_aborts_a_key_waiting_for_the_cat_owner_without_bytes() {
     let (actor, state) = radio();
-    let lease = actor.reserve_transition().unwrap();
+    let lease = actor
+        .reserve_transition(Instant::now() + Duration::from_secs(1))
+        .unwrap();
     let abort = Arc::new(AtomicBool::new(false));
     let (a, flag) = (actor.clone(), abort.clone());
     let waiter = std::thread::spawn(move || {

@@ -1953,7 +1953,9 @@ pub(crate) async fn commission_zero_native_io_case() {
     state.recording.fixture_radio(actor.clone());
     // Suppress the fixture Actor's independent periodic refresh; reserving this
     // existing lease executes no setup/setter and creates no maintenance owner.
-    let lease = actor.reserve_transition().unwrap();
+    let lease = actor
+        .reserve_transition(Instant::now() + Duration::from_secs(1))
+        .unwrap();
     let before = {
         let r = rig.lock().unwrap();
         (
