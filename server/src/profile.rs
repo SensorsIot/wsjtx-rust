@@ -294,9 +294,9 @@ impl Document {
                 endpoint: Some("\\".repeat(256)),
                 ptt: "disabled".into(),
             },
-            radio: Some(Radio {
-                agc: wstx_rust::radio_control::setup::Agc::Slow,
-            }),
+            // No `radio`: it needs a parsable endpoint (`manages_radio`), which holds no
+            // JSON-escaped byte, so a managed control is always the shorter of the two.
+            radio: None,
         });
         let body = representation(&maximum, "00000000-0000-4000-8000-000000000000", origin);
         let bytes = serde_json::to_vec(&body).map_err(|_| "invalid_profile")?;
