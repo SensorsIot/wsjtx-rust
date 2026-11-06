@@ -135,8 +135,9 @@ package WstxRequirements {
     }
     requirement 'FR-023' {
         doc /* Optional direct FlexRadio integration — phase 2 target
-             Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist intended radio/slice associations and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Phase-two target; not implemented. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+             Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist their receive intent (never a radio identity, slice index or handle) and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Receive and control at isolated level 2 are delivered (WstxProductScope::NativeFlexWireSubset); live hardware qualification TC-023-004/005 and transmit TC-023-006 remain open. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/session.rs; server/src/flex/wire.rs; server/src/flex_http.rs; server/src/profile.rs; client/recording.js";
     }
     requirement 'FR-024' {
         doc /* Contest, special-activity and DXpedition operation — phase three
@@ -227,7 +228,7 @@ package WstxRequirements {
     dependency CL_005_04_to_FR_021 from 'CL-005-04' to 'FR-021';
     dependency CL_005_04_to_FR_022 from 'CL-005-04' to 'FR-022';
     requirement 'CL-005-05' {
-        doc /* Standard audio with optional CAT/PTT remains the default. Audio and control selections MUST persist independently without claiming hardware availability. Native FlexRadio is reserved and refused in this phase. */
+        doc /* Standard audio with optional CAT/PTT remains the default. Audio and control selections MUST persist independently without claiming hardware availability. A schema-1 document naming native_flex stays refused; a native profile is a separate schema-2 document chosen at profile creation (FR-023, WstxProfiles::NativeProfileDocument). */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/profile.rs; client/app.js";
     }
@@ -235,34 +236,40 @@ package WstxRequirements {
     dependency CL_005_05_to_FR_022 from 'CL-005-05' to 'FR-022';
     requirement 'CL-013-01' {
         doc /* Phase 2 MUST offer direct native-network integration as an optional profile connection type for the selected radio control, status and sample-stream functions. When selected, that native path MUST NOT require the external SmartSDR desktop application, SmartSDR CAT or DAX applications to be installed/running as bridges. This restriction does not prohibit those tools as operator-selected infrastructure for the standard connection path. A Rust implementation may coordinate shared radio access internally without forcing one hardware GUI-client session per logical station server. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/session.rs; server/src/main.rs";
     }
     dependency CL_013_01_to_FR_023 from 'CL-013-01' to 'FR-023';
     requirement 'CL-013-02' {
         doc /* This independence concerns desktop applications. Compatible radio-side firmware and its API remain required; this specification does not promise a FlexRadio operating without its SmartSDR radio firmware or an unrestricted firmware compatibility range. Pin supported models, firmware/API versions and selected stream formats before implementation. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/wire.rs; server/src/flex/session.rs";
     }
     dependency CL_013_02_to_FR_023 from 'CL-013-02' to 'FR-023';
     requirement 'CL-013-03' {
-        doc /* Each native FlexRadio profile MUST persist its intended radio and slice association. On every connection/reconnection the system MUST reconcile that intent with authoritative discovery/status and current runtime handles. A changed/transient slice index MUST NOT redirect a station to another station's slice. Unresolvable associations MUST produce a visible unavailable/conflict state rather than guessing a replacement. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        doc /* Each native FlexRadio profile MUST persist its receive intent: its own client identity and receive antenna, and no radio identity (operator decision 2026-11-06 on #22: the station uses whichever radio discovery finds available). On every connection/reconnection the system MUST reconcile that intent with authoritative discovery/status and current runtime handles. A changed/transient slice index MUST NOT redirect a station to another station's slice. Unresolvable associations MUST produce a visible unavailable/conflict state rather than guessing a replacement. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/session.rs; server/src/profile.rs";
     }
     dependency CL_013_03_to_FR_023 from 'CL-013-03' to 'FR-023';
     requirement 'CL-013-04' {
         doc /* Control responses and received stream data MUST be routed to the associated station. Capacity shortages, occupied resources and incompatible API behavior MUST be reported without stealing another profile's slice or silently reducing the requested independence. Four-slice hardware validation requires a model/configuration that actually provides at least four usable slices. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/session.rs";
     }
     dependency CL_013_04_to_FR_023 from 'CL-013-04' to 'FR-023';
     requirement 'CL-013-05' {
         doc /* Shared-radio transmit, tuning and other constrained-resource authority MUST be coordinated under FR-008/FR-009 before those operations are enabled. Four station profiles do not confer simultaneous independent transmit authority. Reconnect/profile restoration MUST NOT replay an old transmit request or bypass the future ownership policy. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/session.rs; server/src/transmit_http.rs";
     }
     dependency CL_013_05_to_FR_008 from 'CL-013-05' to 'FR-008';
     dependency CL_013_05_to_FR_009 from 'CL-013-05' to 'FR-009';
     dependency CL_013_05_to_FR_023 from 'CL-013-05' to 'FR-023';
     requirement 'CL-013-06' {
         doc /* The native path MUST reuse the common browser, station-operation, DSP/modem and future MCP interfaces. The default standard connection remains usable without FlexRadio hardware or native-profile fields. A mixed set of instances MUST preserve each profile's selected path, configuration and routing independently. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/recording.rs; server/src/receive_http.rs; server/src/selection_http.rs; client/recording.js; client/contact.js";
     }
     dependency CL_013_06_to_FR_023 from 'CL-013-06' to 'FR-023';
     requirement 'CL-006-01' {
@@ -1546,7 +1553,7 @@ package WstxRequirements {
              With the target stopped, test missing file, truncated JSON, malformed UTF-8, duplicate/
              unknown/missing fields, invalid UUID, schema 0/2, port 0/65536 and a 16,385-byte file;
              an otherwise valid 16,384-byte file padded with whitespace is accepted. Also try
-             `native_flex` and require `unsupported_connection_type`, without an attempted radio
+             a schema-1 document naming `native_flex` and require `unsupported_connection_type`, without an attempted radio
              connection or a change to the standard profile's stored settings.
              Each invalid launch fails nonzero with the defined category and no listener or file rewrite;
              others remain usable. Restore the original bytes and restart successfully. During a
@@ -1736,8 +1743,30 @@ package WstxRequirements {
              **Expected results:** The Rust system connects directly to the emulated API without a
              desktop bridge. Each response/state update/stream reaches the intended station and no
              other station. Operations change only the associated emulated resource. The oracle uses
-             independently specified protocol fixtures, not packets generated by the code under test. */
-        attribute automation : AutomationState = AutomationState::planned;
+             independently specified protocol fixtures, not packets generated by the code under test.
+
+             **Level-2 realization:** tests/native-flex.test.cjs starts the independent loopback
+             emulator tests/flex-emulator.cjs (TCP command/status, unicast loopback discovery and
+             VITA-49 DAX float 48 kHz streams; no code shared with the candidate) and four real
+             station servers with disposable schema-2 HTTPS profiles. Each emulated slice carries
+             a 1 kHz tone of a slice-specific amplitude, and every eighth packet another client's
+             stream ID is sent at amplitude 0.95. Oracle: the emulator's own slice/stream/owner
+             records and command log. Each station owns exactly one slice and stream whose index
+             and ID its /native-flex snapshot repeats; its accepted channel-0 peak equals its own
+             slice amplitude within 1e-4 with foreign packets counted. Four concurrent band
+             selections through /receive/select tune only the selecting client's slice and return
+             control native/origin native_readback; the restarted live receive runs on device
+             native_flex with advancing source frames and a correlated UTC anchor within 2 s of the
+             test's own clock. Read first: repeating a selection whose slice already reports the
+             frequency sends no slice tune and no mode write (command log count unchanged); an
+             emulator that does not report the new frequency makes the selection fail visibly with
+             error timeout and leaves no native_readback origin. No slice command targets another
+             client's slice and no transmit, disconnect or persistence command is sent. Rust unit
+             tests check the pinned independent narrow48 vector field by field, its negative cases,
+             documented control lines and the 4096-byte line bound; the emulator encoder reproduces
+             the same vector bytes. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
         objective {
             verify 'CL-013-01';
             verify 'CL-013-04';
@@ -1750,15 +1779,32 @@ package WstxRequirements {
              **Promise:** FR-023; CL-013-03, CL-013-04, CL-013-05. **Level: 2 — Isolated automated tests.**
              **Where it runs:** Windows PC, disposable persisted profiles and a local radio emulator.
 
-             **Inputs/actions:** Save intended radio/slice associations, disconnect/restart the
+             **Inputs/actions:** Save the native receive intent, disconnect/restart the
              emulated radio and assign different runtime handles before reconnecting. Also present
              missing, ambiguous or occupied intended resources and stale status updates.
 
              **Expected results:** Each profile reconciles its intent with current authoritative
              resources; transient indices do not route it to another station. Unresolved intent is
              reported as unavailable/conflicting without stealing a resource, replaying transmit
-             requests or accepting stale handles as authority. */
-        attribute automation : AutomationState = AutomationState::planned;
+             requests or accepting stale handles as authority.
+
+             **Level-2 realization:** two native stations on the loopback emulator. The emulator is
+             stopped and restarted with new client handles, reversed slice indices, new stream IDs
+             and the old stream IDs replayed: each station reports transport_lost, then a new session
+             reaches ready on its own newly created slice (emulator owner record), the old stream
+             IDs are only counted as foreign, the accepted peak follows the new own slice, and a
+             receive job running before the restart stays the operator's running job and advances
+             again after a new source epoch, without an operator action. Occupied: an external
+             connected client carries station A's saved client identity; A shows
+             conflict/client_identity_in_use, sends no client gui and creates no slice while B is
+             ready, and recovers once the identity disappears. Ambiguous: a slice already attributed
+             to A's fresh handle yields conflict/ownership_ambiguous with no slice/stream command
+             from A. Missing: nothing is announced; both report radio_not_found with zero TCP
+             connections. Next available: of two emulators on one discovery port, the one announcing
+             available_clients=0 receives no connection and the station becomes ready on the other.
+             profile.json bytes stay unchanged and hold no radio identity (no serial key). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
         objective {
             verify 'CL-013-03';
             verify 'CL-013-04';
@@ -1784,8 +1830,24 @@ package WstxRequirements {
              policy. Four server instances never imply four independently authorized transmitters.
              Standard profiles continue through their selected audio/rig-control path without native
              FlexRadio settings; native profiles use the direct API. Both are presented through the
-             same browser and shared station-operation interfaces, with no cross-profile routing. */
-        attribute automation : AutomationState = AutomationState::planned;
+             same browser and shared station-operation interfaces, with no cross-profile routing.
+
+             **Level-2 realization:** emulator capacity two slices with three native stations: two
+             become ready, the third reports capacity_slices, and the two owners' slice records stay
+             identical. Announced available_clients=0 yields capacity_clients with zero connections;
+             API version 1.5.0.0 yields incompatible_api with zero commands. A schema-1 standard
+             station on the same PC returns 404 for /native-flex, control manual and the unchanged
+             audio_unconfigured receive refusal and never reaches the emulator, while the native
+             station reports control native and starts receive. Safety: on both, transmit capability
+             is unsupported, Enable Tx is refused with the same error, and HALT answers with the same
+             status and halt state; no transmit command reaches the radio. A native settings edit
+             naming an audio device or CAT control and Detect radio are refused without changing
+             profile.json. One real browser shows Standard and Native FlexRadio as read-only
+             connection types. The native status line and exception chip arrive only by the
+             radio.native WebSocket push: the page sends no /native-flex request, and stopping the
+             emulator changes the line without a request or reload. No page errors. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        attribute executable : String = "tests/native-flex.test.cjs";
         objective {
             verify 'CL-013-02';
             verify 'CL-013-04';

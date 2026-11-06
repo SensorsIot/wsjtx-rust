@@ -205,13 +205,13 @@ package WstxProductScope {
              instances; each workload names its limits and measurement layer. */
     }
     requirement NativeFlexBoundary {
-        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::target;
+        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::partial;
         doc /* Phase2 optional native radio path retains standard independent audio/CAT
              and browser/DSP/QSO/MCP boundaries, without external SmartSDR desktop,
              CAT or DAX bridges. Radio-side firmware/API support still matters. Audio
              and control may reference one managed session; ownership/sharing/lifetime,
              API/stream formats, capacity and leases remain implementation prerequisites.
-             Persist profile intent, physical radio identity and slice association;
+             Persist profile intent without a radio identity (#22, 2026-11-06);
              reconcile transient handles on connection, never guess another slice or
              replay transmit intent. One effective arbitration authority spans shared
              physical resources and transmission; an in-process mutex per station is
@@ -219,6 +219,85 @@ package WstxProductScope {
              lifetime cannot depend on one station whose stop must leave others usable.
              No fixed four-GUI-client or simultaneous independent transmitter promise. */
     }
+    requirement NativeFlexWireSubset {
+        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::partial;
+        doc /* FR-023 delivered receive/control subset and the defaults chosen where the
+             model left gaps (issue #13, level 2). Wire facts come from the SmartSDR TCP/IP
+             API wiki and the pinned FlexLib 4.3.16.42034 reference archive SHA-256
+             60978db51dac6ea781899dd80832ad4e7876ce96ed72532b57106376fc26463f, used as a
+             protocol reference only: no vendor code is translated, linked, run or
+             redistributed, and the station needs no .NET, SmartSDR, CAT or DAX program.
+             Placement: one station process is one GUI-class API client on its own TCP
+             session; the radio's client-scoped ownership of slices/streams is the shared
+             arbitration authority. The station changes only the one slice and stream it
+             created and confirmed under its current client handle and never sends client
+             disconnect, start_persistence on, load_from, tx, xmit or other transmit or
+             global commands. A common cross-process connector stays unimplemented; the
+             radio's GUI-client limit is therefore a visible capacity limit.
+             Discovery: passive listening on UDP 4992 shared with address reuse, never a
+             broadcast or any datagram sent (WSTX_FLEX_DISCOVERY may name another IPv4 bind
+             address, which the tests use with loopback); VITA type 3, OUI 0x001C2D, class
+             0xFFFF; 3 s per attempt. No radio identity is saved (#22): the station takes the
+             first announced radio with a free GUI client (next available); a radio announcing
+             available_clients=0 gets no connection, and when only such radios are heard the
+             result is capacity_clients; nothing heard is radio_not_found. The serial in an
+             announcement is shown, never saved or compared. This inbound radio traffic is not
+             the WSJT-X UDP interface, which stays send-only (#40).
+             Control: TCP to the announced ip/port (default 4992), connect/step deadline 5 s,
+             lines <= 4096 bytes incoming and <= 1024 outgoing, one outstanding command, reply
+             codes hexadecimal. Only API protocol V1.4.0.0 is admitted; any other version
+             refuses before the first command (incompatible_api). Firmware/model are displayed,
+             not qualified.
+             Session: sub client all, then refuse if the saved client identity is already
+             connected (client_identity_in_use, no takeover); client start_persistence off;
+             client gui <saved client identity>; sub slice all; sub dax all; any slice already
+             attributed to the fresh handle is ownership_ambiguous and untouched; client udpport
+             <own UDP port>; slice create rxant=<saved antenna> mode=DIGU (no frequency: the
+             radio's choice until the station operation tunes); success needs the slice status
+             with the own client handle; reply 50000001/50000003/5000001D is capacity_slices; a
+             different reported antenna releases the own slice (antenna_unavailable); DAX channel
+             = lowest of 1..8 unused by any visible slice (else capacity_dax); slice set dax;
+             stream create type=dax_rx; ready only with the stream status of the own handle and
+             channel.
+             Read first (CL-044 rule): a slice setting (mode, frequency, DAX channel) is compared
+             with the slice's current status and written only on a difference, then read back
+             from the radio's status for that slice; a read-back that does not arrive by the step
+             deadline fails the operation (timeout) and a band selection then keeps no
+             native_readback origin. Equal status sends no command.
+             Samples: only datagrams from the radio address with the own stream ID and packet
+             class 0x03E4 (stereo big-endian float32, 48 kHz) enter the existing native
+             queue/converter/epoch path, channel 0 only; other IDs are counted foreign, 24/96 kHz
+             and reduced-bandwidth classes are refused as invalid. The 4-bit packet count only
+             marks visible gaps as discontinuities. Timing: each packet carries its host arrival
+             time less its own duration, so the epoch is correlated to the system clock; network
+             and radio latency are not measured, VITA timestamps are not used until a live
+             qualification, and drift follows the same filtered clock tracking as an audio device.
+             Tuning: the station operation's band selection on the own slice (origin
+             native_readback).
+             Loss: closing the own TCP session is the only cleanup of a lost session; the radio's
+             release of a GUI client's resources on disconnect is assumed and must be confirmed
+             live. Retry backoff 1, 2, 4 s (cap 4 s), reset after ready. A receive job started on
+             the native input survives a lost session: its audio status shows unavailable, and the
+             new session's first packet opens a new source epoch (capture_loss). A new receive
+             start while the session is not ready is refused radio_unavailable, except that the
+             startup resume waits its bounded time like a CAT band resume.
+             Push: state, error, radio facts and own slice facts reach the client only as the
+             radio.native WebSocket event, sent once per peer as its snapshot and then on each
+             change, never for packet counters; the client sends no request for them. GET
+             /native-flex is the read-only snapshot with packet counters for diagnosis and tests,
+             404 for standard profiles; no request accepts a slice, stream or handle as authority.
+             Transmit: not offered (capability unsupported, TC-023-006 later and separately
+             approved). HALT, the Tx watchdog and Abort stay in the server's one transmit owner
+             with no native key path, so they answer as on an unconfigured standard station and
+             nothing can key the radio. CAT, Detect radio, radio settings and the Tx level do not
+             apply and are refused or inert; the standard path is unaffected and never opens a
+             native socket.
+             Profile: the connection type is chosen at creation (--create-native-flex-profile
+             <dir> <rx antenna>) and is read-only in the browser. Remaining: hardware/firmware,
+             24 kHz DAX, latency/timestamps, >= 4 usable slices, broadcast discovery and resource
+             release on disconnect (TC-023-004/005); transmit (TC-023-006). */
+    }
+    dependency nativeWireSubset from NativeFlexWireSubset to WstxRequirements::'FR-023';
     attribute def FixtureProvenance {
         attribute ft8Manifest : String = "fixtures/decoder/manifest.json";
         attribute ft4Manifest : String = "fixtures/decoder/ft4-manifest.json";

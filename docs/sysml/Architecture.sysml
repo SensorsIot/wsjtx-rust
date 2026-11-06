@@ -1649,8 +1649,8 @@ package WstxArchitecture {
     }
     part def RadioBinding {
         doc /* Persisted intent resolves the selected physical radio/resource at connection.
-             WstxProductScope::NativeFlexBoundary leaves native slice/handle schema
-             and actual radio capacity as implementation prerequisites. */
+             WstxProductScope::NativeFlexWireSubset settles native slice/handle reconciliation;
+             actual radio capacity is reported at runtime. */
         ref part radio : Radio :> physicalStation.radio;
     }
     part def RadioAudioAttachment {
@@ -1859,8 +1859,9 @@ package WstxArchitecture {
         port authorizedControl : ~RadioControl;
         doc /* Phase 1 radio-facing parts are independent audio and CAT adapters.
              Logical driver existence does not assert connected control or ready TX.
-             Native Flex remains planned in FR-023 and NativeFlexBoundary; no current
-             native session or combined backend is composed here. */
+             FR-023 native Flex runs as a per-station session behind these same audio
+             and control boundaries (WstxProductScope::NativeFlexWireSubset); it adds
+             no part, combined backend or common connector to this graph. */
         part audioAdapter : AudioDeviceAdapter;
         part catAdapter : RustRadioDriver;
         connection webOperations connect web.station to station.webOperations;
