@@ -2553,6 +2553,7 @@ test('TC-063-008 The contest prompt, colouring only, the callable list and Show 
   assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None']);
   assert.equal((await shown()).length,6);
   assert.deepEqual(evaluations,[]);
+  assert.deepEqual(contestReads,[],'no read of the profiles without a contest: a thin link pays for each');
   const message=text=>page.locator('#band-activity tr[data-sequence]',{hasText:text}).locator('td[data-col=message]');
   const none='rgba(0, 0, 0, 0)',background=text=>message(text).evaluate(e=>getComputedStyle(e).backgroundColor);
   assert.notEqual(await background('CQ WW K1ABC'),none,'the all-time colour without a contest');
@@ -2608,6 +2609,11 @@ test('TC-063-008 The contest prompt, colouring only, the callable list and Show 
   await page.locator('#strategy-contest').click();await page.locator('#contest-prompt[open]').waitFor();
   assert.equal(await page.inputValue('#cp-start'),'2026-08-29T12:00');
   await page.locator('#contest-prompt button[value=cancel]').click();
+  // A page load with a contest in force reads them once, for its name.
+  const beforeReload=contestReads.length;await page.reload();
+  await page.waitForFunction(()=>document.querySelector('#strategy-name option[value="contest:ww_digi"]')?.textContent==='WW Digi (contest)',null,{timeout:25000});
+  assert.equal(contestReads.length,beforeReload+1);
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===6,null,{timeout:25000});
   await page.selectOption('#strategy-name','');
   await page.waitForFunction(()=>document.querySelectorAll('#band-activity tr[data-sequence].ba-hidden').length===0);
   const last=puts.at(-1).configuration;assert.equal(last.active,null);assert.equal('contest' in last,false,'None drops the contest');

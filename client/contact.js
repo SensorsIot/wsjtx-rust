@@ -984,10 +984,12 @@ const config=()=>view?.configuration??null;
 const builtins=()=>view?.builtin_strategies??[];
 const active=()=>{const c=config();return [...(c?.strategies??[]),...builtins()].find(s=>s.name===c?.active)??null;};
 // #63 WstxContest: the contest in force and the profiles of GET /strategy/contests.
-let contests=[],contestSummary=null,showAll=false;
+let contests=[],contestsAsked=false,contestSummary=null,showAll=false;
 const selection=()=>config()?.contest??null;
 const selectedProfile=()=>contests.find(p=>p.id===selection()?.profile)??null;
+// Read only for the prompt or a contest in force: the profiles are several kB on a thin link.
 async function loadContests(){
+  contestsAsked=true;
   try{const r=await stationFetch('/strategy/contests',{cache:'no-store',signal:AbortSignal.timeout(10000)});const d=r.ok?await r.json():null;if(d?.v===1){contests=d.profiles;show();}}catch{}
   return contests;
 }
@@ -1033,11 +1035,12 @@ function show(){
   const c=config();
   const contest=selection(),contestValue=contest?`contest:${contest.profile}`:null;
   const options=[['','None'],...builtins().map(s=>[s.name,s.name]),...(c?.strategies??[]).map(s=>[s.name,s.name]),...(contest?[[contestValue,`${selectedProfile()?.name??contest.profile} (contest)`]]:[])];
-  const key=options.map(o=>o[0]).join('\n');
+  const key=options.map(o=>o.join('|')).join('\n');
   if(nameSelect.dataset.key!==key){nameSelect.dataset.key=key;nameSelect.replaceChildren(...options.map(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;return o;}));}
   // Always the station's: a HALT's None must show also while the selector has the focus.
   nameSelect.value=contestValue??c?.active??'';
-  contestButton.disabled=!c||!contests.length;contestButton.title=contests.length?'Choose a contest strategy and its period':'Contest strategies unavailable';
+  if(contest&&!contestsAsked)loadContests();
+  contestButton.disabled=!c;contestButton.title=c?'Choose a contest strategy and its period':'Contest strategies unavailable';
   if(window.wstxContestOn!==!!contest){window.wstxContestOn=!!contest;if(typeof bandColoursApply==='function')bandColoursApply();}
   showAllButton.hidden=!contest;showAllButton.setAttribute('aria-pressed',String(showAll));
   nameSelect.disabled=!c;nameSelect.title=c?'Selecting a strategy starts it; None stops it':(view?.configuration_error?`Saved strategies unreadable (${view.configuration_error}); the editor's Save replaces them`:'Strategies unavailable');
@@ -1334,7 +1337,7 @@ function contestFill(keep){
   $('cp-result').textContent='';
 }
 contestButton.addEventListener('click',async()=>{
-  await loadContests();if(!contests.length)return;
+  await loadContests();if(!contests.length){statusNode.textContent='Contest strategies unavailable';return;}
   const now=selection();
   $('cp-profile').replaceChildren(...contests.map(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name;return o;}));
   $('cp-profile').value=now?.profile??contests[0].id;contestFill(now);contestPrompt.showModal();
@@ -1443,7 +1446,7 @@ $('se-save').addEventListener('click',async()=>{
 });
 // Read once per socket (a status refresh on the same socket reads nothing: Thin link).
 let strategySocket=null;
-addEventListener('station-ready',event=>{if(event.detail===strategySocket&&(view||strategyMissing))return;strategySocket=event.detail;loadStrategy();loadContests();});
-if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){strategySocket=socket;loadStrategy();loadContests();}
+addEventListener('station-ready',event=>{if(event.detail===strategySocket&&(view||strategyMissing))return;strategySocket=event.detail;contestsAsked=false;loadStrategy();});
+if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){strategySocket=socket;loadStrategy();}
 show();
 })();
