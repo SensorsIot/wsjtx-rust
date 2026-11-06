@@ -1131,7 +1131,7 @@ impl<'a> Conn<'a> {
                     flags,
                 );
             }
-            for frame in samples.chunks_exact(2) {
+            for frame in samples.as_chunks::<2>().0 {
                 for _ in 0..2 {
                     sink.pending
                         .extend(frame.iter().flat_map(|v| v.to_le_bytes()));
