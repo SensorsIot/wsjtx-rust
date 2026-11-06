@@ -438,6 +438,8 @@ attribute def ActivityOrdering {
         // #43 CL-043-03: transmit refused while the air clock is unknown; NTP/air disagree.
         enum clockUnknown; enum clockDisagree;
         enum stationUpdated; enum stationDataRejected;
+        // #44 CL-044-14: persistent Tx trouble from the meter read of each transmission.
+        enum txAlcHigh; enum txPowerLow; enum txSwrHigh; enum txSwrFault;
     }
     enum def SettingsSection { enum general; enum radio; enum loggingReporting; enum expert; }
     enum def ChangeKind { enum operative; enum restart; }
@@ -574,15 +576,6 @@ attribute def ActivityOrdering {
              tip of BandActivityHover (#50 CL-050-08). Settings > General > Display lists the slots with their
              colours; the choice is per browser (browser storage). The #39 strategy Highlight is an
              accent (a left bar and the message text), never a row background.
-             UDP highlight (#40, CL-040-08, operator 2026-11-04): a Highlight Callsign from a UDP
-             target with accept_commands on (GridTracker, JTAlert; WstxUdp::InboundRules,
-             UdpDisplayEvent) marks a station of interest by definition: the row it matches
-             is coloured even when it matches no slot, and its colours win over every slot
-             (also mycall) and over the strategy accent's message colour; it sets the row
-             background (none when the highlight has no valid background, as WSJT-X clears
-             it) and, when given, the row text colour. A reset or removed highlight gives the
-             row its slot colour back. Highlights from a target without accept_commands never
-             reach the browser.
              Row scheme (operator 2026-11-04, refining 2026-11-03; BandActivityScheme): what a
              slot colours depends on the row's mark, in BandActivityRowMark order. */
     }
@@ -624,9 +617,6 @@ attribute def ActivityOrdering {
              The Settings > General > Display slot choice applies to every mark: with
              mycall off a callsMe row falls back to its new_* slots as a newWholeRow;
              without an enabled slot a newWholeRow or newSenderOnly row is plain.
-             An accepted UDP highlight (CL-040-08) wins over every slot colour of every
-             mark (it colours the whole row); on a partner row the partner marker (bar,
-             badge, bold, the place on top) stays and the UDP colours apply under it.
              The #39 strategy accent and value order stay as they are; the partner block
              is a period block of its own for the strategy order. The reason tip of a row:
              BandActivityHover. */
@@ -657,7 +647,7 @@ attribute def ActivityOrdering {
              worked-before status in parentheses ("(worked on another band or mode)" or "(worked
              on <band> <MODE>)", WstxContact::WorkedBeforeQuery answers, no further query). An
              overall flag implies its on-band flag, so the on-band text appears only without
-             it. Then "UDP highlight" for an accepted UDP highlight (CL-040-08) and the #39
+             it. Then the #39
              strategy verdict ("Strategy <name>: rule <n>" or "Directed CQ not addressed to my
              continent: never answered"). The reasons form one line joined by " · ", for
              example "New DXCC · New call", "New on 40m (worked on another band or mode)",
@@ -688,9 +678,6 @@ attribute def ActivityOrdering {
              A Tx period (the station's latest_decode transmitted marker, CL-061-04)
              shows one Tx marker row and no empty block; the receive period below it
              keeps its divider and stays when the next period arrives (CL-061-03).
-             An inbound UDP Clear of window 0 or 2 hides the rows below its floor, in the
-             latest and the kept period, until later decodes arrive (WstxUdp::UdpDisplayEvent
-             band_activity, #40 CL-040-08).
              After a page load only the latest period shows until the next one arrives. Within a period the ActivityOrdering applies (column
              header click). DXCC shows the shown name of the sender's entity
              (WstxContact::DecodedEntity dxcc; title: name, continent, CQ and ITU zone),
@@ -869,8 +856,6 @@ attribute def ActivityOrdering {
              e.g. "New DXCC · New call"; a line without such a reason has no hover text. The
              double-click hint is the title of the section's "Calling me" header. When no row qualifies, the section shows the muted placeholder
              "Nobody is calling" instead of an empty list, in the same height.
-             An inbound UDP Clear of window 1 or 2 (WSJT-X Rx Frequency window) hides the
-             rows below its floor (WstxUdp::UdpDisplayEvent rx_frequency, #40 CL-040-08).
              4. NEXT: "▸ next: <message>" with a progress bar and the countdown to
              the next period of the contact's parity, only while Enable Tx is on and the
              contact is calling or a QSO runs. While the station reports transmitting
@@ -1032,7 +1017,8 @@ attribute def ActivityOrdering {
              · <reason>", while the contact snapshot's transmit refusal names a reason the
              operator must fix (transmit unsupported or unavailable, radio unavailable or lost,
              clock not synchronized, frequency out of range, the message not packable, PTT or
-             audio failures), until the next accepted Enable Tx clears it; stationUpdated and
+             audio failures), until the next accepted Enable Tx clears it; txAlcHigh, txPowerLow,
+             txSwrHigh and txSwrFault from the radio.tx_level warnings (CL-044-14); stationUpdated and
              stationDataRejected. Informational or transient events (a refused request that is
              retried, busy, a stale revision or period, a receive restart, a completed action)
              are no entries. With no entry the block shows one muted line "No problems".
@@ -1073,11 +1059,9 @@ attribute def ActivityOrdering {
              address:port, enabled, multicast TTL (the hop limit of an IPv6 group) and
              interface (an interface index for an IPv6 group, with a hint that an
              interface- or link-local group needs one; WstxUdp D6), the outbound message
-             selection and accept_commands (not offered for an IPv4 or IPv6 multicast
-             address), with each
-             target's status (active, schema, last send, error, last inbound command) and a
-             standing warning that accept_commands lets that program select a QSO and edit
-             Tx5 but never key the transmitter. GET /udp is read when the drawer opens (at
+             selection, with each target's status (active, schema, last send, error) and a
+             note that the interface is send-only: programs listen and the station takes no
+             command over UDP (operator 2026-11-06). GET /udp is read when the drawer opens (at
              most every 30 s, so routine drawer use stays inside the Thin budget), on the
              Logging tab and on Reload; Save sends one PUT /udp with expected_revision; it
              is a setting that restarts nothing (no restart mark). PSK Reporter remains a

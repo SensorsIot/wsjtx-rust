@@ -10,7 +10,6 @@ use crate::contact_http_tests::{Fixture, fixture, now_ms, period_text, record};
 use axum::body::Body;
 use std::sync::atomic::Ordering;
 use tower::ServiceExt;
-use wstx_rust::transmit::service::DisarmCause;
 
 fn peer() -> UdpSocket {
     let s = UdpSocket::bind("127.0.0.1:0").unwrap();
@@ -100,9 +99,9 @@ fn status_fields(b: &[u8]) -> Value {
     assert!(r.end());
     v
 }
-fn target_json(address: SocketAddr, messages: &[&str], accept: bool) -> Value {
+fn target_json(address: SocketAddr, messages: &[&str]) -> Value {
     json!({"address":address.to_string(),"enabled":true,"multicast_ttl":1,"multicast_interface":null,
-        "messages":messages,"accept_commands":accept})
+        "messages":messages})
 }
 /// Writes udp.json before the owner opens, so no default target is ever activated.
 fn install(f: &Fixture, targets: Vec<Value>) -> Arc<Owner> {
@@ -204,38 +203,36 @@ fn free_text(text: &str) -> Vec<u8> {
     b.push(1);
     b
 }
-fn highlight(call: &str, bg: Option<(u8, u8, u8)>) -> Vec<u8> {
-    highlight_with(call, bg, Some((255, 255, 255)), false)
-}
-/// Highlight Callsign (13) with a QColor each (None: an invalid colour) and Highlight last.
-fn highlight_with(
-    call: &str,
-    bg: Option<(u8, u8, u8)>,
-    fg: Option<(u8, u8, u8)>,
-    last_only: bool,
-) -> Vec<u8> {
+/// Highlight Callsign (13): the call in red on an invalid foreground, Highlight last off.
+fn highlight(call: &str) -> Vec<u8> {
     let mut b = header(13, 2, "WSTX-Rust");
     put_s(&mut b, call);
-    for color in [bg, fg] {
-        b.push(u8::from(color.is_some()));
-        let (r, g, bl) = color.unwrap_or_default();
-        for c in [255u16, u16::from(r), u16::from(g), u16::from(bl), 0] {
-            b.extend_from_slice(
-                &(if c == 255 && color.is_none() {
-                    0
-                } else {
-                    c * 257
-                })
-                .to_be_bytes(),
-            );
-        }
+    b.push(1);
+    for c in [0xFFFFu16, 0xFFFF, 0, 0, 0] {
+        b.extend_from_slice(&c.to_be_bytes());
     }
-    b.push(u8::from(last_only));
+    b.push(0);
+    for c in [0xFFFFu16, 0, 0, 0, 0] {
+        b.extend_from_slice(&c.to_be_bytes());
+    }
+    b.push(0);
     b
 }
 fn halt_tx(schema: u32, id: &str) -> Vec<u8> {
     let mut b = header(8, schema, id);
     b.push(0);
+    b
+}
+fn location(text: &str) -> Vec<u8> {
+    let mut b = header(11, 2, "WSTX-Rust");
+    put_s(&mut b, text);
+    b
+}
+fn heartbeat_from_tool(schema: u32, id: &str) -> Vec<u8> {
+    let mut b = header(0, schema, id);
+    b.extend_from_slice(&3u32.to_be_bytes());
+    put_s(&mut b, "1.24");
+    put_s(&mut b, "r1");
     b
 }
 fn station_socket(owner: &Owner, i: usize) -> SocketAddr {
@@ -246,20 +243,6 @@ fn station_socket(owner: &Owner, i: usize) -> SocketAddr {
         .local_addr()
         .unwrap()
 }
-/// Sends from `from` to station socket `i`, runs one step and returns its last_command.
-fn command(f: &Fixture, owner: &Owner, from: &UdpSocket, i: usize, bytes: &[u8]) -> Value {
-    from.send_to(bytes, station_socket(owner, i)).unwrap();
-    std::thread::sleep(Duration::from_millis(20));
-    owner.step(&f.state);
-    owner.snapshot(&f.state.recording)["status"][i]["last_command"].clone()
-}
-fn outcome(v: &Value) -> (String, Value) {
-    (
-        v["outcome"].as_str().unwrap_or("none").to_owned(),
-        v["code"].clone(),
-    )
-}
-
 // Proves: CL-040-04, TC-012-001
 #[test]
 fn tc_012_001_decode_text_uses_the_wsjtx_report_form() {
@@ -285,8 +268,8 @@ async fn tc_012_002_outbound_messages_to_several_targets() {
     let owner = install(
         &f,
         vec![
-            target_json(a.local_addr().unwrap(), &MESSAGES, false),
-            target_json(b.local_addr().unwrap(), &["decode"], false),
+            target_json(a.local_addr().unwrap(), &MESSAGES),
+            target_json(b.local_addr().unwrap(), &["decode"]),
         ],
     );
     owner.step(&f.state);
@@ -454,19 +437,15 @@ async fn tc_012_002_outbound_messages_to_several_targets() {
     assert!(drain(&a).is_empty());
 }
 
-// Proves: CL-040-03, TC-012-003
+// Proves: CL-040-03, TC-012-003. Send-only (operator 2026-11-06): no inbound message acts on
+// the station; the browser and MCP are the only control paths. A target's Heartbeat alone
+// negotiates the header schema.
 #[tokio::test(flavor = "multi_thread")]
-async fn tc_012_003_inbound_commands_never_key_the_transmitter() {
+async fn tc_012_003_no_inbound_message_acts_on_the_station() {
     let f = fixture("http://127.0.0.1:18402", true);
     early_in_period(&f);
-    let (a, c, x) = (peer(), peer(), peer());
-    let owner = install(
-        &f,
-        vec![
-            target_json(a.local_addr().unwrap(), &MESSAGES, false),
-            target_json(c.local_addr().unwrap(), &MESSAGES, true),
-        ],
-    );
+    let (a, x) = (peer(), peer());
+    let owner = install(&f, vec![target_json(a.local_addr().unwrap(), &MESSAGES)]);
     f.state.recording.fixture_live_job("ft8");
     let period = 1_793_536_470_000i64;
     f.state.recording.fixture_publish_period(
@@ -474,403 +453,174 @@ async fn tc_012_003_inbound_commands_never_key_the_transmitter() {
         vec![record("CQ K1ABC FN42", 1234.6, Some(-12.4))],
     );
     owner.step(&f.state);
-    drain(&a);
-    drain(&c);
-    let time = 45_270_000;
-    let matching = reply(time, -12, 1235, "CQ K1ABC FN42");
-    let none = || f.contact().facts().1.is_none();
-    // Free Text needs a prepared contact and a standard message (browser parity).
-    let v = command(&f, &owner, &c, 1, &free_text("CQ POTA HB9BLA"));
-    assert_eq!(outcome(&v), ("refused".into(), json!("no_contact")), "{v}");
-
-    // Accept commands off (A), and C's socket from a source that is not C: no effect.
-    for (from, i) in [(&a, 0usize), (&x, 1)] {
-        for bytes in [
-            matching.clone(),
-            free_text("K1ABC HB9BLA 73"),
-            header(7, 2, "WSTX-Rust"),
-            header(3, 2, "WSTX-Rust"),
-            highlight("K1ABC", Some((255, 0, 0))),
-        ] {
-            let v = command(&f, &owner, from, i, &bytes);
-            assert_eq!(outcome(&v).0, "not_accepted", "{v}");
-        }
-        assert!(none(), "no contact prepared");
-        assert!(
-            drain(&a).is_empty() && drain(&c).is_empty(),
-            "no Replay sent"
-        );
-    }
-    let snap = owner.snapshot(&f.state.recording);
-    assert_eq!(
-        (
-            snap["highlights"].clone(),
-            snap["clear"]["sequence"].clone()
-        ),
-        (json!([]), json!(0))
-    );
-    assert_eq!(owner.display_revision(), 0, "nothing for the browser");
-
-    // From C: a mismatching Reply, then the matching one prepares K1ABC disarmed.
-    let v = command(&f, &owner, &c, 1, &reply(time, -11, 1235, "CQ K1ABC FN42"));
-    assert_eq!(outcome(&v), ("refused".into(), json!("no_match")));
-    let v = command(
-        &f,
-        &owner,
-        &c,
-        1,
-        &reply(time, -12, 1235, " CQ K1ABC FN42 "),
-    );
-    assert_eq!(outcome(&v), ("applied".into(), Value::Null), "{v}");
-    assert_eq!(v["type"], "reply");
-    let (_, facts, _) = f.contact().facts();
-    let facts = facts.unwrap();
-    assert_eq!(
-        (facts.state, facts.dx_call.as_deref()),
-        ("replying", Some("K1ABC"))
-    );
-    assert_eq!(
-        f.contact().status_facts().next_message.as_deref(),
-        Some("K1ABC HB9BLA JN47")
-    );
-    assert_eq!(arm_state(&f), ArmState::Disarmed);
-
-    // #24 S1b: Tx5 takes free text of at most 13 characters, not longer.
-    let v = command(&f, &owner, &c, 1, &free_text("TNX FER QSO 73 GL"));
-    assert_eq!(
-        outcome(&v),
-        ("refused".into(), json!("invalid_message")),
-        "{v}"
-    );
-    let v = command(&f, &owner, &c, 1, &free_text("K1ABC HB9BLA 73"));
-    assert_eq!(outcome(&v).0, "applied", "{v}");
-    let snapshot: Value = serde_json::from_slice(&f.contact().snapshot(&f.state).unwrap()).unwrap();
-    assert_eq!(snapshot["contact"]["messages"][4], "K1ABC HB9BLA 73");
-    assert_eq!(
-        arm_state(&f),
-        ArmState::Disarmed,
-        "the Send flag is ignored"
-    );
-
-    // Replay goes to C only: the retained decode with New false, then Status.
-    drain(&c);
-    let v = command(&f, &owner, &c, 1, &header(7, 2, "WSTX-Rust"));
-    assert_eq!(outcome(&v).0, "applied");
-    let replayed = drain(&c);
-    assert_eq!(kinds(&replayed), [2, 1]);
-    let d = decode_fields(&replayed[0]);
-    assert_eq!((d.0, d.1, d.6.as_str()), (false, time, "CQ K1ABC FN42"));
-    assert!(
-        drain(&a).iter().all(|d| head(d).1 != 2),
-        "nothing replayed to A"
-    );
-
-    let v = command(&f, &owner, &c, 1, &highlight("K1ABC", Some((255, 0, 0))));
-    assert_eq!(outcome(&v).0, "applied");
-    assert_eq!(
-        owner.snapshot(&f.state.recording)["highlights"],
-        json!([{"call":"K1ABC","background":"#ff0000","foreground":"#ffffff","last_only":false,"period":null}])
-    );
-    command(&f, &owner, &c, 1, &highlight("W1AW", Some((0, 255, 0))));
-    command(
-        &f,
-        &owner,
-        &c,
-        1,
-        &highlight_with("K1ABC", None, None, false),
-    );
-    assert_eq!(
-        owner.snapshot(&f.state.recording)["highlights"][0]["call"],
-        "W1AW",
-        "two invalid colours remove"
-    );
-    command(&f, &owner, &c, 1, &highlight("CLEARALL!", Some((0, 0, 0))));
-    assert_eq!(owner.snapshot(&f.state.recording)["highlights"], json!([]));
-
-    for (bytes, kind) in [
-        (header(6, 2, "WSTX-Rust"), "close"),
-        (header(15, 2, "WSTX-Rust"), "configure"),
-    ] {
-        let v = command(&f, &owner, &c, 1, &bytes);
-        assert_eq!(
-            (v["type"].as_str(), outcome(&v).0.as_str()),
-            (Some(kind), "ignored")
-        );
-    }
-
-    // Armed by the browser: Reply and Free Text are refused tx_enabled.
+    let first = drain(&a);
+    assert_eq!(kinds(&first), [0, 2, 1], "Heartbeat, Decode, Status");
+    let grid_before = status_fields(first.last().unwrap())["de_grid"].clone();
     f.contact().grant.store(true, Ordering::SeqCst);
-    let transmit = f.state.recording.transmit.get().unwrap().clone();
-    let arm = || {
-        operate(
-            &f,
-            "enable_tx",
-            json!({"enabled":true,"safety_revision":3}),
-            true,
-        );
-        assert_eq!(arm_state(&f), ArmState::Armed);
-    };
-    arm();
-    let v = command(&f, &owner, &c, 1, &matching);
-    assert_eq!(outcome(&v), ("refused".into(), json!("tx_enabled")));
-    let v = command(&f, &owner, &c, 1, &free_text("K1ABC HB9BLA RR73"));
-    assert_eq!(outcome(&v), ("refused".into(), json!("tx_enabled")));
-    // A foreign id or schema 4 is no Halt Tx of this station.
-    let before = transmit.service.halt_requests();
-    for bytes in [halt_tx(2, "WSJT-X"), halt_tx(4, "WSTX-Rust")] {
-        c.send_to(&bytes, station_socket(&owner, 1)).unwrap();
-        std::thread::sleep(Duration::from_millis(20));
-        owner.step(&f.state);
-    }
-    assert_eq!(
-        (arm_state(&f), transmit.service.halt_requests()),
-        (ArmState::Armed, before)
-    );
-    assert!(
-        owner.snapshot(&f.state.recording)["ignored"]
-            .as_u64()
-            .unwrap()
-            >= 2
-    );
-    // Halt Tx always acts: from A (accept off), from a non-target source and from C.
-    for (n, (from, i)) in [(&a, 0usize), (&x, 0), (&c, 1)].into_iter().enumerate() {
-        if n > 0 {
-            arm();
-        }
-        let v = command(
-            &f,
-            &owner,
-            from,
-            i,
-            &halt_tx(2 + (n as u32 % 2), "WSTX-Rust"),
-        );
-        assert_eq!(
-            (v["type"].as_str(), outcome(&v).0.as_str()),
-            (Some("halt_tx"), "applied")
-        );
-        let view = transmit.service.view();
-        assert_eq!(
-            (view.arm_state, view.last_disarm_cause),
-            (ArmState::Disarmed, DisarmCause::Halt)
-        );
-        assert_eq!(transmit.service.halt_requests(), before + n as u64 + 1);
-    }
-
-    // Clear (window 0) hides the earlier decodes from Replay and Reply.
-    let v = command(&f, &owner, &c, 1, &header(3, 2, "WSTX-Rust"));
-    assert_eq!(outcome(&v).0, "applied");
-    let clear = owner.snapshot(&f.state.recording)["clear"].clone();
-    assert_eq!(
-        (
-            &clear["sequence"],
-            &clear["window"],
-            &clear["band_activity"]["sequence"],
-            &clear["rx_frequency"]
-        ),
-        (&json!(1), &json!(0), &json!(1), &Value::Null)
-    );
-    drain(&c);
-    command(&f, &owner, &c, 1, &header(7, 2, "WSTX-Rust"));
-    assert_eq!(kinds(&drain(&c)), [1], "Replay after Clear: Status only");
-    operate(&f, "cancel", json!({}), false);
-    let v = command(&f, &owner, &c, 1, &matching);
-    assert_eq!(outcome(&v), ("refused".into(), json!("no_match")));
-    let keys = f.bench.keys.lock().unwrap().clone();
-    assert!(keys.iter().all(|(_, on)| !on), "PTT never keyed: {keys:?}");
-}
-
-// Proves: CL-040-08, TC-012-008 (the station side; tests/contact.test.cjs renders it).
-// Hand table from WSJT-X 3.3.0-beta5 widgets/displaytext.cpp highlight_callsign.
-#[tokio::test(flavor = "multi_thread")]
-async fn tc_012_008_highlight_callsign_and_clear_keep_the_wsjtx_display_rules() {
-    let f = fixture("http://127.0.0.1:18408", false);
-    let (a, c) = (peer(), peer());
-    let owner = install(
+    operate(
         &f,
-        vec![
-            target_json(a.local_addr().unwrap(), &MESSAGES, false),
-            target_json(c.local_addr().unwrap(), &MESSAGES, true),
-        ],
+        "enable_tx",
+        json!({"enabled":true,"safety_revision":3}),
+        true,
     );
-    let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
-    let p1 = period_text(1_793_536_470_000);
-    let p2 = period_text(1_793_536_485_000);
-    f.state.recording.fixture_publish_period(
-        &p1,
-        vec![
-            record("CQ K1ABC FN42", 1234.6, Some(-12.4)),
-            record("CQ W1AW FN31", 800.0, Some(-3.0)),
-        ],
-    );
+    assert_eq!(arm_state(&f), ArmState::Armed);
     owner.step(&f.state);
     drain(&a);
-    drain(&c);
-    let list = || owner.snapshot(&f.state.recording)["highlights"].clone();
-    let entry = |call: &str, bg: Value, fg: Value, last: bool, period: Value| json!({"call":call,"background":bg,"foreground":fg,"last_only":last,"period":period});
-    let (red, white, green, blue, yellow) = (
-        json!("#ff0000"),
-        json!("#ffffff"),
-        json!("#00ff00"),
-        json!("#0000ff"),
-        json!("#ffff00"),
-    );
-
-    // Accept commands off: nothing reaches the display.
-    let v = command(
-        &f,
-        &owner,
-        &a,
-        0,
-        &highlight_with("K1ABC", Some((255, 0, 0)), None, false),
-    );
-    assert_eq!(outcome(&v).0, "not_accepted");
-    let v = command(&f, &owner, &a, 0, &header(3, 2, "WSTX-Rust"));
-    assert_eq!(outcome(&v).0, "not_accepted");
-    assert_eq!((list(), owner.display_revision()), (json!([]), 0));
-
-    // A map entry, upper-cased (WSJT-X keys and finds without case).
-    let v = command(
-        &f,
-        &owner,
-        &c,
-        1,
-        &highlight_with("k1abc", Some((255, 0, 0)), Some((255, 255, 255)), false),
-    );
-    assert_eq!(outcome(&v).0, "applied");
-    assert_eq!(
-        list(),
-        json!([entry(
-            "K1ABC",
-            red.clone(),
-            white.clone(),
-            false,
-            Value::Null
-        )])
-    );
-    assert_eq!(owner.display_revision(), 1);
-    // Last period only: anchored to the period of the latest decode.
-    command(
-        &f,
-        &owner,
-        &c,
-        1,
-        &highlight_with("W1AW", Some((0, 255, 0)), None, true),
-    );
-    assert_eq!(
-        list()[1],
-        entry("W1AW", green, Value::Null, true, json!(p1))
-    );
-    f.state
-        .recording
-        .fixture_publish_period(&p2, vec![record("K1ABC W1AW -05", 900.0, Some(-5.0))]);
-    command(
-        &f,
-        &owner,
-        &c,
-        1,
-        &highlight_with("W1AW", Some((0, 0, 255)), None, true),
-    );
-    assert_eq!(
-        list(),
-        json!([
-            entry("K1ABC", red.clone(), white.clone(), false, Value::Null),
-            entry("W1AW", blue.clone(), Value::Null, true, json!(p2))
-        ]),
-        "a newer last-period highlight of the call replaces its older one"
-    );
-    // A map entry of the call replaces its last-period entry (WSJT-X recolours all).
-    command(
-        &f,
-        &owner,
-        &c,
-        1,
-        &highlight_with("W1AW", None, Some((255, 255, 0)), false),
-    );
-    assert_eq!(
-        list(),
-        json!([
-            entry("K1ABC", red.clone(), white.clone(), false, Value::Null),
-            entry("W1AW", Value::Null, yellow.clone(), false, Value::Null)
-        ]),
-        "one valid colour is enough; the other is cleared"
-    );
-    // A last-period reset keeps the map entry; a map removal removes both.
-    command(
-        &f,
-        &owner,
-        &c,
-        1,
-        &highlight_with("K1ABC", None, None, true),
-    );
-    assert_eq!(
-        list(),
-        json!([
-            entry("K1ABC", red.clone(), white.clone(), false, Value::Null),
-            entry("W1AW", Value::Null, yellow.clone(), false, Value::Null),
-            entry("K1ABC", Value::Null, Value::Null, true, json!(p2))
-        ])
-    );
-    command(
-        &f,
-        &owner,
-        &c,
-        1,
-        &highlight_with("K1ABC", None, None, false),
-    );
-    assert_eq!(
-        list(),
-        json!([entry(
-            "W1AW",
-            Value::Null,
-            yellow.clone(),
-            false,
-            Value::Null
-        )])
-    );
-    let revision = owner.display_revision();
-    for call in [" ", "0"] {
-        let v = command(
-            &f,
-            &owner,
-            &c,
-            1,
-            &highlight_with(call, Some((1, 2, 3)), None, false),
-        );
-        assert_eq!(outcome(&v).0, "ignored", "{call:?}");
+    let halts = || {
+        f.state
+            .recording
+            .transmit
+            .get()
+            .unwrap()
+            .service
+            .view()
+            .last_disarm_cause
+    };
+    let cause = halts();
+    let contact_before = f.contact().facts().0;
+    let to = station_socket(&owner, 0);
+    // Every former command, from the target itself and from another host.
+    for from in [&a, &x] {
+        for bytes in [
+            halt_tx(2, "WSTX-Rust"),
+            header(3, 2, "WSTX-Rust"),
+            reply(45_270_000, -12, 1235, "CQ K1ABC FN42"),
+            header(6, 2, "WSTX-Rust"),
+            header(7, 2, "WSTX-Rust"),
+            free_text("K1ABC HB9BLA 73"),
+            location("JN36AB"),
+            highlight("K1ABC"),
+            header(14, 2, "WSTX-Rust"),
+            header(15, 2, "WSTX-Rust"),
+        ] {
+            from.send_to(&bytes, to).unwrap();
+        }
     }
-    assert_eq!(owner.display_revision(), revision);
-    command(
-        &f,
-        &owner,
-        &c,
-        1,
-        &highlight_with("CLEARALL!", None, None, false),
+    std::thread::sleep(Duration::from_millis(30));
+    owner.step(&f.state);
+    assert_eq!(
+        arm_state(&f),
+        ArmState::Armed,
+        "Halt Tx over UDP does not halt"
     );
-    assert_eq!(list(), json!([]));
-    assert_eq!(owner.display_revision(), revision + 1);
+    assert_eq!(halts(), cause, "nothing disarmed");
+    // Enable Tx alone prepared the own CQ: no command changed it or named a station.
+    let (revision, facts, _) = f.contact().facts();
+    assert_eq!(revision, contact_before, "the contact is untouched");
+    assert_eq!(facts.and_then(|c| c.dx_call), None, "no station selected");
+    assert_eq!(
+        contact_http::profile_facts(&f.state).1,
+        grid_before.as_str().map(str::to_owned),
+        "the station grid stays the profile's"
+    );
+    let sent = drain(&a);
+    assert!(
+        kinds(&sent).iter().all(|k| *k == 1),
+        "no Replay: at most a Status of a window or a change, {:?}",
+        kinds(&sent)
+    );
+    assert_eq!(
+        status_fields(
+            &sent
+                .last()
+                .cloned()
+                .unwrap_or_else(|| first.last().unwrap().clone())
+        )["de_grid"],
+        grid_before,
+        "no session grid in Status"
+    );
+    // UdpSnapshot carries no inbound state.
+    let snap = owner.snapshot(&f.state.recording);
+    let mut keys: Vec<&str> = snap
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "boot_id",
+            "configuration",
+            "configuration_error",
+            "profile_id",
+            "revision",
+            "status",
+            "v"
+        ]
+    );
+    let mut keys: Vec<&str> = snap["status"][0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        ["active", "address", "error", "last_send_utc_ms", "schema"]
+    );
 
-    // Clear: window 1 the Rx Frequency floor only, window 2 both, at the next sequence.
-    let floor = json!({"source_id":source,"job_id":job,"generation":generation,"sequence":3});
-    let mut clear1 = header(3, 2, "WSTX-Rust");
-    clear1.push(1);
-    command(&f, &owner, &c, 1, &clear1);
-    let clear = owner.snapshot(&f.state.recording)["clear"].clone();
-    assert_eq!(
-        clear,
-        json!({"sequence":1,"window":1,"band_activity":null,"rx_frequency":floor})
+    // Negotiation: only a target's own Heartbeat with this id raises the schema, a 5000-byte
+    // datagram does not hold back the Heartbeat behind it, and nothing ever lowers it.
+    let schema = || owner.snapshot(&f.state.recording)["status"][0]["schema"].clone();
+    for (from, bytes) in [
+        (&x, heartbeat_from_tool(3, "WSTX-Rust")),
+        (&a, heartbeat_from_tool(3, "OTHER")),
+        (&a, heartbeat_from_tool(4, "WSTX-Rust")),
+        (&a, header(7, 3, "WSTX-Rust")),
+        (&a, halt_tx(3, "WSTX-Rust")),
+    ] {
+        from.send_to(&bytes, to).unwrap();
+        std::thread::sleep(Duration::from_millis(20));
+        owner.step(&f.state);
+        assert_eq!(schema(), json!(2), "{bytes:02x?}");
+    }
+    let mut big = heartbeat_from_tool(3, "WSTX-Rust");
+    big.resize(5000, 0);
+    a.send_to(&big, to).unwrap();
+    a.send_to(&heartbeat_from_tool(3, "WSTX-Rust"), to).unwrap();
+    std::thread::sleep(Duration::from_millis(30));
+    drain(&a);
+    owner.step(&f.state);
+    assert_eq!(schema(), json!(3));
+    a.send_to(&heartbeat_from_tool(2, "WSTX-Rust"), to).unwrap();
+    std::thread::sleep(Duration::from_millis(20));
+    owner.step(&f.state);
+    assert_eq!(schema(), json!(3), "never lowered");
+    // The next datagram to the target carries the negotiated schema.
+    f.state.recording.fixture_publish_period(
+        &period_text(period + 15_000),
+        vec![record("CQ W1AW FN31", 1500.0, Some(-5.0))],
     );
-    let mut clear2 = header(3, 2, "WSTX-Rust");
-    clear2.push(2);
-    command(&f, &owner, &c, 1, &clear2);
-    let (revision, text) = owner.display_event(&f.state.recording);
-    let event: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(
-        event,
-        json!({"v":1,"type":"udp.display","data":{"profile_id":f.id,"boot_id":f.boot,
-            "display_revision":revision,"highlights":[],
-            "clear":{"sequence":2,"window":2,"band_activity":floor,"rx_frequency":floor}}})
-    );
-    assert_eq!(revision, owner.display_revision());
+    owner.step(&f.state);
+    let after = drain(&a);
+    assert!(after.iter().any(|b| head(b).1 == 2), "a Decode was sent");
+    assert!(after.iter().all(|b| head(b).0 == 3), "schema 3");
+    assert_eq!(arm_state(&f), ArmState::Armed);
+}
+
+// Proves: CL-040-02, TC-012-004. A udp.json saved before send-only keeps working after the
+// update: the retired accept_commands key is dropped on load and gone after the next save.
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_012_004_a_file_saved_with_accept_commands_keeps_loading() {
+    let f = fixture("http://127.0.0.1:18409", true);
+    let a = peer();
+    let clean = target_json(a.local_addr().unwrap(), &["heartbeat"]);
+    let mut saved = clean.clone();
+    saved["accept_commands"] = json!(true);
+    let owner = install(&f, vec![saved]);
+    let snap = owner.snapshot(&f.state.recording);
+    assert_eq!(snap["configuration_error"], Value::Null, "{snap}");
+    assert_eq!(snap["configuration"]["targets"], json!([clean]));
+    owner.step(&f.state);
+    assert_eq!(kinds(&drain(&a)), [0], "the target is active");
+    let body = config_body(&f, 0, json!([clean]));
+    let (s, v) = call(&f, "PUT", "/udp", Some(serde_json::to_vec(&body).unwrap())).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let file = std::fs::read_to_string(f.dir.join(FILE_NAME)).unwrap();
+    assert!(!file.contains("accept_commands"), "{file}");
 }
 
 fn config_body(f: &Fixture, revision: u64, targets: Value) -> Value {
@@ -896,7 +646,7 @@ async fn tc_012_004_target_configuration_and_persistence() {
         (
             json!(0),
             json!({"instance_name":"WSTX-Rust","targets":[{"address":"127.0.0.1:2237","enabled":true,
-                "multicast_ttl":1,"multicast_interface":null,"messages":MESSAGES,"accept_commands":false}]}),
+                "multicast_ttl":1,"multicast_interface":null,"messages":MESSAGES}]}),
             Value::Null
         )
     );
@@ -908,9 +658,9 @@ async fn tc_012_004_target_configuration_and_persistence() {
 
     let targets = json!([
         {"address":"127.0.0.1:52001","enabled":true,"multicast_ttl":1,"multicast_interface":null,
-         "messages":["decode"],"accept_commands":false},
+         "messages":["decode"]},
         {"address":"239.255.0.1:2237","enabled":false,"multicast_ttl":2,"multicast_interface":"127.0.0.1",
-         "messages":["logged_adif","heartbeat","status"],"accept_commands":false}]);
+         "messages":["logged_adif","heartbeat","status"]}]);
     let good = config_body(&f, 0, targets.clone());
     let (s, v) = call(&f, "PUT", "/udp", Some(serde_json::to_vec(&good).unwrap())).await;
     assert_eq!(s, StatusCode::OK, "{v}");
@@ -973,7 +723,7 @@ async fn tc_012_004_target_configuration_and_persistence() {
     let seventeen: Vec<Value> = (0..17)
         .map(|i| {
             json!({"address":format!("127.0.0.1:{}", 52100 + i),"enabled":true,"multicast_ttl":1,
-            "multicast_interface":null,"messages":[],"accept_commands":false})
+            "multicast_interface":null,"messages":[]})
         })
         .collect();
     let sixteen = Value::from(seventeen[..16].to_vec());
@@ -1008,10 +758,10 @@ async fn tc_012_004_target_configuration_and_persistence() {
         (
             {
                 let mut list = targets.clone();
-                list[1]["accept_commands"] = json!(true);
+                list[1]["accept_commands"] = json!(false);
                 list
             },
-            "targets[1].accept_commands",
+            "targets[1]",
         ),
     ] {
         cases.push((
@@ -1105,7 +855,7 @@ async fn tc_012_004_target_configuration_and_persistence() {
     let body = config_body(
         &g,
         0,
-        json!([target_json(p.local_addr().unwrap(), &MESSAGES, false)]),
+        json!([target_json(p.local_addr().unwrap(), &MESSAGES)]),
     );
     let (s, v) = call(&g, "PUT", "/udp", Some(serde_json::to_vec(&body).unwrap())).await;
     assert_eq!(
@@ -1119,224 +869,6 @@ async fn tc_012_004_target_configuration_and_persistence() {
         [0, 1],
         "Heartbeat and Status, no stale Decode"
     );
-}
-
-fn location(text: &str) -> Vec<u8> {
-    let mut b = header(11, 2, "WSTX-Rust");
-    put_s(&mut b, text);
-    b
-}
-
-// Proves: CL-040-05, TC-012-005
-#[test]
-fn tc_012_005_location_text_rules() {
-    // WSJT-X MainWindow::locationChange: <= 6 characters is a grid, longer needs GRID:.
-    assert_eq!(location_grid("JN47"), Some("JN47".into()));
-    assert_eq!(location_grid(" jn36ab "), Some("JN36AB".into()));
-    assert_eq!(location_grid("GRID:JN36AB"), Some("JN36AB".into()));
-    assert_eq!(location_grid("grid: fn42"), Some("FN42".into()));
-    for bad in [
-        "",
-        "XX",
-        "JN4",
-        "JN47A",
-        "JN47AA11",
-        "47.1,8.5",
-        "LOC:JN47AA",
-        "ZZ99",
-    ] {
-        assert_eq!(location_grid(bad), None, "{bad}");
-    }
-}
-
-// Proves: CL-040-05, TC-012-005
-#[tokio::test(flavor = "multi_thread")]
-async fn tc_012_005_location_sets_a_session_grid() {
-    let f = fixture("http://127.0.0.1:18405", true);
-    early_in_period(&f);
-    let (a, c) = (peer(), peer());
-    let owner = install(
-        &f,
-        vec![
-            target_json(a.local_addr().unwrap(), &MESSAGES, false),
-            target_json(c.local_addr().unwrap(), &MESSAGES, true),
-        ],
-    );
-    owner.step(&f.state);
-    let first = drain(&c);
-    assert_eq!(status_fields(&first[1])["de_grid"], "JN47AA");
-    // From a target without accept_commands: no effect.
-    let v = command(&f, &owner, &a, 0, &location("JN36AB"));
-    assert_eq!(outcome(&v).0, "not_accepted");
-    let v = command(&f, &owner, &c, 1, &location("XX"));
-    assert_eq!(outcome(&v), ("refused".into(), json!("invalid_grid")));
-    assert!(drain(&c).is_empty(), "nothing changed");
-    let v = command(&f, &owner, &c, 1, &location("GRID:JN36AB"));
-    assert_eq!(
-        (v["type"].as_str(), outcome(&v).0.as_str()),
-        (Some("location"), "applied")
-    );
-    let changed = drain(&c);
-    assert_eq!(kinds(&changed), [1]);
-    assert_eq!(
-        status_fields(&changed[0])["de_grid"],
-        "JN36AB",
-        "Status DE grid"
-    );
-
-    // Generated messages use the session grid (Tx1 carries its 4-character square).
-    f.state.recording.fixture_live_job("ft8");
-    f.state.recording.fixture_publish_period(
-        &period_text(1_793_536_470_000),
-        vec![record("CQ K1ABC FN42", 1234.6, Some(-12.4))],
-    );
-    owner.step(&f.state);
-    let v = command(
-        &f,
-        &owner,
-        &c,
-        1,
-        &reply(45_270_000, -12, 1235, "CQ K1ABC FN42"),
-    );
-    assert_eq!(outcome(&v).0, "applied", "{v}");
-    assert_eq!(
-        f.contact().status_facts().next_message.as_deref(),
-        Some("K1ABC HB9BLA JN36")
-    );
-    let snapshot: Value = serde_json::from_slice(&f.contact().snapshot(&f.state).unwrap()).unwrap();
-    assert_eq!(snapshot["contact"]["messages"][5], "CQ HB9BLA JN36");
-
-    // The log takes the session grid as my_gridsquare; the profile grid is refused.
-    let body = |grid: &str| {
-        json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
-            "record":{"contact_id":profile::new_uuid().unwrap(),"call":"K1ABC","gridsquare":"FN42","mode":"FT8",
-            "submode":null,"rst_sent":"-12","rst_rcvd":"-09","qso_date":"20261101","time_on":"123430",
-            "qso_date_off":"20261101","time_off":"123615","band":"20m","freq":"14.075500",
-            "station_callsign":"HB9BLA","my_gridsquare":grid,"tx_pwr":null,"comment":null}})
-    };
-    let (s, v) = call(
-        &f,
-        "POST",
-        "/contacts",
-        Some(serde_json::to_vec(&body("JN47AA")).unwrap()),
-    )
-    .await;
-    assert_eq!(
-        (s, v["error"]["field"].as_str()),
-        (StatusCode::BAD_REQUEST, Some("record.my_gridsquare")),
-        "{v}"
-    );
-    let (s, v) = call(
-        &f,
-        "POST",
-        "/contacts",
-        Some(serde_json::to_vec(&body("JN36AB")).unwrap()),
-    )
-    .await;
-    assert_eq!(s, StatusCode::CREATED, "{v}");
-
-    // Session only: the profile is unchanged and a new owner (a restart) has no override.
-    let saved: Value =
-        serde_json::from_slice(&std::fs::read(f.dir.join("profile.json")).unwrap()).unwrap();
-    assert_eq!(saved["locator"], "JN47AA");
-    assert_eq!(f.state.store.lock().unwrap().document.locator, "JN47AA");
-    let restarted = Owner::open(&f.state, true);
-    assert_eq!(*restarted.grid.lock().unwrap(), None);
-    assert!(f.bench.keys.lock().unwrap().iter().all(|(_, on)| !on));
-}
-
-// Proves: CL-040-03, TC-012-003
-#[test]
-fn tc_012_003_oversize_datagram_does_not_hold_back_halt() {
-    let f = fixture("http://127.0.0.1:18406", true);
-    early_in_period(&f);
-    let a = peer();
-    let owner = install(
-        &f,
-        vec![target_json(a.local_addr().unwrap(), &MESSAGES, false)],
-    );
-    owner.step(&f.state);
-    f.contact().grant.store(true, Ordering::SeqCst);
-    operate(
-        &f,
-        "enable_tx",
-        json!({"enabled":true,"safety_revision":3}),
-        true,
-    );
-    assert_eq!(arm_state(&f), ArmState::Armed);
-    let before = owner.snapshot(&f.state.recording)["ignored"]
-        .as_u64()
-        .unwrap();
-    let to = station_socket(&owner, 0);
-    let mut big = header(7, 2, "WSTX-Rust");
-    big.resize(5000, 0);
-    a.send_to(&big, to).unwrap();
-    a.send_to(&halt_tx(2, "WSTX-Rust"), to).unwrap();
-    std::thread::sleep(Duration::from_millis(30));
-    owner.step(&f.state);
-    let snap = owner.snapshot(&f.state.recording);
-    assert_eq!(
-        arm_state(&f),
-        ArmState::Disarmed,
-        "the Halt behind it acts in the same step"
-    );
-    assert_eq!(snap["status"][0]["last_command"]["type"], "halt_tx");
-    assert_eq!(
-        snap["ignored"].as_u64().unwrap(),
-        before + 1,
-        "the oversize datagram is counted"
-    );
-}
-
-// Proves: CL-039-06, TC-039-005. A UDP Reply or Free Text is never an operator action
-// for the Tx watchdog: with no browser action this boot it stays spent after both
-// (#39, WstxStrategy::WatchdogFromOperator).
-#[test]
-fn tc_039_005_udp_reply_and_free_text_never_reset_the_watchdog() {
-    let f = fixture("http://127.0.0.1:18407", true);
-    early_in_period(&f);
-    let c = peer();
-    let owner = install(
-        &f,
-        vec![target_json(c.local_addr().unwrap(), &MESSAGES, true)],
-    );
-    f.state.recording.fixture_live_job("ft8");
-    let period = 1_793_536_470_000i64;
-    f.state.recording.fixture_publish_period(
-        &period_text(period),
-        vec![record("CQ K1ABC FN42", 1234.6, Some(-12.4))],
-    );
-    owner.step(&f.state);
-    drain(&c);
-    let spent = || {
-        f.state
-            .recording
-            .transmit
-            .get()
-            .unwrap()
-            .service
-            .with(|core| core.watchdog_spent())
-    };
-    assert!(spent(), "no browser action yet");
-    let v = command(
-        &f,
-        &owner,
-        &c,
-        0,
-        &reply(45_270_000, -12, 1235, "CQ K1ABC FN42"),
-    );
-    assert_eq!(outcome(&v), ("applied".into(), Value::Null), "{v}");
-    let v = command(&f, &owner, &c, 0, &free_text("K1ABC HB9BLA 73"));
-    assert_eq!(outcome(&v), ("applied".into(), Value::Null), "{v}");
-    assert!(spent(), "the UDP commands did not reset the watchdog");
-    // The browser's ContactCommand path is an operator action.
-    operate(
-        &f,
-        "set_watchdogs",
-        json!({"tx_calls":1,"tune_seconds":90}),
-        false,
-    );
-    assert!(!spent());
 }
 
 /// 2026-11-01T12:34:30Z, an even FT8 period (Julian day 2461346, see tc_012_002).
@@ -1383,12 +915,8 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
     let owner = install(
         &f,
         vec![
-            target_json(
-                a.local_addr().unwrap(),
-                &["qso_logged", "logged_adif"],
-                false,
-            ),
-            target_json(b.local_addr().unwrap(), &["heartbeat"], true),
+            target_json(a.local_addr().unwrap(), &["qso_logged", "logged_adif"]),
+            target_json(b.local_addr().unwrap(), &["heartbeat"]),
         ],
     );
     owner.step(&f.state);
@@ -1484,25 +1012,9 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
     f.tick();
     assert_eq!(stored(&f).len(), 2, "no retry before the backoff");
     assert!(drain(&a).is_empty());
-    // The due retry runs in a command reached from a UDP FreeText while the UDP owner
-    // holds its lock: the step returns (no re-entry) and the datagrams follow the tick.
+    // The due retry runs in the station's contact step.
     f.contact().retry_logs_now();
-    b.send_to(&free_text("K1ABC HB9BLA 73"), station_socket(&owner, 1))
-        .unwrap();
-    std::thread::sleep(Duration::from_millis(20));
-    let (done, finished) = std::sync::mpsc::channel();
-    let (o, state) = (owner.clone(), f.state.clone());
-    std::thread::spawn(move || {
-        o.step(&state);
-        let _ = done.send(());
-    });
-    finished
-        .recv_timeout(Duration::from_secs(5))
-        .expect("the UDP step returns");
-    assert_eq!(
-        owner.snapshot(&f.state.recording)["status"][1]["last_command"]["outcome"],
-        "applied"
-    );
+    f.tick();
     let after = stored(&f);
     assert_eq!(after.len(), 3, "the retry stores it");
     f.tick();
@@ -1552,9 +1064,9 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
 const LOOPBACK_INDEX: u32 = 1;
 /// A transient link-local test group (flags 1, scope 2), never a well-known one.
 const GROUP: &str = "ff12::5754:5358";
-fn multicast_json(address: &str, hops: u32, interface: Value, accept: bool) -> Value {
+fn multicast_json(address: &str, hops: u32, interface: Value) -> Value {
     json!({"address":address,"enabled":true,"multicast_ttl":hops,"multicast_interface":interface,
-        "messages":["heartbeat","status"],"accept_commands":accept})
+        "messages":["heartbeat","status"]})
 }
 
 // Proves: CL-040-06, TC-012-006
@@ -1582,7 +1094,7 @@ async fn tc_012_006_ipv6_multicast_targets() {
     let address = format!("[{GROUP}]:{port}");
 
     // Refusals: each with its field, nothing saved.
-    let good = multicast_json(&address, 2, json!("1"), false);
+    let good = multicast_json(&address, 2, json!("1"));
     let with = |k: &str, value: Value| {
         let mut t = good.clone();
         t[k] = value;
@@ -1606,7 +1118,6 @@ async fn tc_012_006_ipv6_multicast_targets() {
         ),
         (with("multicast_ttl", json!(0)), "multicast_ttl"),
         (with("multicast_ttl", json!(256)), "multicast_ttl"),
-        (with("accept_commands", json!(true)), "accept_commands"),
         (
             {
                 let mut t = with("address", json!("239.255.0.1:2237"));
@@ -1658,12 +1169,12 @@ async fn tc_012_006_ipv6_multicast_targets() {
     // site-local group with hop limit 255 (on loopback, so nothing leaves the machine),
     // an index no interface has, and a disabled organization-local group without an
     // interface (optional above link scope).
-    let mut org = multicast_json("[ff08::5754:5358]:2239", 1, Value::Null, false);
+    let mut org = multicast_json("[ff08::5754:5358]:2239", 1, Value::Null);
     org["enabled"] = json!(false);
     let targets = json!([
         good,
-        multicast_json("[ff05::5754:5358]:2237", 255, json!("1"), false),
-        multicast_json("[ff15::5754:5358]:2238", 1, json!("4000000000"), false),
+        multicast_json("[ff05::5754:5358]:2237", 255, json!("1")),
+        multicast_json("[ff15::5754:5358]:2238", 1, json!("4000000000")),
         org,
     ]);
     let body = config_body(&f, 0, targets.clone());
@@ -1674,7 +1185,7 @@ async fn tc_012_006_ipv6_multicast_targets() {
     assert_eq!(reopened["configuration"]["targets"], targets);
 
     // An IPv6 unicast target keeps the #40 IPv4 interface form (a saved file loads).
-    let mut unicast = multicast_json("[::1]:2240", 1, json!("127.0.0.1"), false);
+    let mut unicast = multicast_json("[::1]:2240", 1, json!("127.0.0.1"));
     unicast["enabled"] = json!(false);
     let mut with_unicast = targets.as_array().unwrap().clone();
     with_unicast.push(unicast.clone());
@@ -1723,18 +1234,6 @@ async fn tc_012_006_ipv6_multicast_targets() {
     assert_eq!(kinds(&got), [0, 1], "Heartbeat then Status to the group");
     let (schema, _, id, _) = head(&got[0]);
     assert_eq!((schema, id.as_str()), (2, "WSTX-Rust"));
-
-    // A command sent to the multicast target's socket from a host is not accepted.
-    let host = UdpSocket::bind("[::1]:0").unwrap();
-    let to = SocketAddr::from((Ipv6Addr::LOCALHOST, station_socket(&owner, 0).port()));
-    host.send_to(&free_text("TNX 73 GL"), to).unwrap();
-    std::thread::sleep(Duration::from_millis(20));
-    owner.step(&f.state);
-    let last = owner.snapshot(&f.state.recording)["status"][0]["last_command"].clone();
-    assert_eq!(
-        (last["type"].as_str(), outcome(&last).0.as_str()),
-        (Some("free_text"), "not_accepted")
-    );
 }
 
 // Proves: CL-040-07, TC-012-007. Status cadence as WSJT-X (MainWindow::beginDecode /
@@ -1750,9 +1249,9 @@ async fn tc_012_007_status_follows_each_decode_window_and_the_pulse() {
     let owner = install(
         &f,
         vec![
-            target_json(a.local_addr().unwrap(), &MESSAGES, false),
-            target_json(b.local_addr().unwrap(), &["status"], false),
-            target_json(c.local_addr().unwrap(), &["heartbeat", "decode"], false),
+            target_json(a.local_addr().unwrap(), &MESSAGES),
+            target_json(b.local_addr().unwrap(), &["status"]),
+            target_json(c.local_addr().unwrap(), &["heartbeat", "decode"]),
         ],
     );
     let r = &f.state.recording;
@@ -1838,7 +1337,6 @@ async fn tc_011_002_update_logbook_adds_records_without_any_udp_datagram() {
         vec![target_json(
             a.local_addr().unwrap(),
             &["qso_logged", "logged_adif"],
-            false,
         )],
     );
     owner.step(&f.state);

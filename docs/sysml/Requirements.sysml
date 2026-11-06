@@ -72,7 +72,7 @@ package WstxRequirements {
     }
     requirement 'FR-012' {
         doc /* Integrations
-             Preserve required external protocols and message formats, including baseline UDP integrations and reception-reporting workflows. The WSJT-X UDP interface is specified by issue #40, CL-040-01..04, contract WstxUdp; reception reporting remains target. */
+             Preserve required external protocols and message formats, including baseline UDP integrations and reception-reporting workflows. The WSJT-X UDP interface is specified by issue #40, CL-040-01..04 (send-only, operator 2026-11-06), contract WstxUdp; reception reporting remains target. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/network_message.rs; server/src/udp.rs";
     }
@@ -1177,7 +1177,7 @@ package WstxRequirements {
              CL-010-04
              Setup: actual server/browser, disposable profile directories, a UDP target socket bound on 127.0.0.1, independent failure injection (failed write, failed atomic replace), contacts with known identities and fields, transmit double.
              Steps: complete a contact (transmitted Tx5 73 after the partner's report; received 73 in rogers); repeat the completion events; manual Log QSO before completion, then the partner's later messages; Log QSO again unchanged; storage failure at completion, then recovery; restart; the same call again as a new contact; SaveContact with power 10 and comment, invalid power -1, comment with CR/LF or 1025 characters, repeat save; second profile; the browser Log QSO button.
-             Expected (independent record catalogue and direct file reading): each completion stores exactly one record with the hand-computed CALL, GRIDSQUARE, MODE/SUBMODE, RST_SENT/RST_RCVD, QSO_DATE/TIME_ON (first transmitted Tx2/Tx3 rule), TIME_OFF, BAND, FREQ = dial + Tx offset, STATION_CALLSIGN and MY_GRIDSQUARE, and the UDP target receives one QSO Logged and one Logged ADIF for it; repeated completion and an unchanged Log QSO add no record and no datagram; an early Log QSO closes the contact (completed, Enable Tx off, nothing queued), so the partner's later messages neither replace its record nor send a second datagram pair (#37); Log QSO of a completed contact keeps its completion record even after a location change; a UDP FreeText command arriving while a retry is due returns (no lock re-entry) and the datagrams follow; a failed write leaves the record unsaved with storage_unavailable shown and is stored by the retry; nothing is logged again after restart; the second contact with the same call is a separate record; SaveContact identical resave alreadySaved, changed resave conflict, invalid fields refused; the browser shows no review form and sends no POST /contacts; no cross-profile record or browser-clock time.
+             Expected (independent record catalogue and direct file reading): each completion stores exactly one record with the hand-computed CALL, GRIDSQUARE, MODE/SUBMODE, RST_SENT/RST_RCVD, QSO_DATE/TIME_ON (first transmitted Tx2/Tx3 rule), TIME_OFF, BAND, FREQ = dial + Tx offset, STATION_CALLSIGN and MY_GRIDSQUARE, and the UDP target receives one QSO Logged and one Logged ADIF for it; repeated completion and an unchanged Log QSO add no record and no datagram; an early Log QSO closes the contact (completed, Enable Tx off, nothing queued), so the partner's later messages neither replace its record nor send a second datagram pair (#37); Log QSO of a completed contact keeps its completion record even after a location change; a due retry stores the record in the contact step and the datagrams follow; a failed write leaves the record unsaved with storage_unavailable shown and is stored by the retry; nothing is logged again after restart; the second contact with the same call is a separate record; SaveContact identical resave alreadySaved, changed resave conflict, invalid fields refused; the browser shows no review form and sends no POST /contacts; no cross-profile record or browser-clock time.
              2 — Isolated automated functional tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -2115,11 +2115,10 @@ package WstxRequirements {
              Logging & Reporting shows the UDP configuration read from GET /udp (no /udp request
              before the drawer opens); editing a target, adding one and Save send exactly one PUT
              /udp {v 1, profile_id, boot_id, expected_revision, configuration} whose configuration
-             is the edited list, and no receive start, stop or selection; accept_commands is not
-             offered for a multicast address; a refusal shows its code and field and keeps the
-             edits; the accept_commands warning and each target's status are shown. An IPv6
-             group target [ff12::5754:5358]:2237 (#46, CL-040-06) is not offered
-             accept_commands, shows the hop-limit/interface-index hint naming the link-local
+             is the edited list, and no receive start, stop or selection; no Accept commands control exists; a refusal
+             shows its code and field and keeps the edits; the send-only note and each target's
+             status are shown. An IPv6
+             group target [ff12::5754:5358]:2237 (#46, CL-040-06) shows the hop-limit/interface-index hint naming the link-local
              need, and saves with the TTL field as hop limit 2 and interface "1"; the same group
              without an interface is refused with targets[0].multicast_interface.
              Compact QSO pane (#37, QsoPane): with a running QSO at 1366x768 the pane shows the
@@ -2948,7 +2947,7 @@ package WstxRequirements {
     dependency CL_012_02_to_FR_020 from 'CL-012-02' to 'FR-020';
     dependency CL_012_02_to_FR_007 from 'CL-012-02' to 'FR-007';
     requirement 'CL-012-03' {
-        doc /* MCP authorization is explicit and separate from the browser (#58): exactly one Authorization: Bearer field carrying an MCP client token of this station, created and revoked in Settings > General > Access & grants, shown once, stored only as its SHA-256 and compared in constant time; cookies sent to /mcp are never read, the station access token and browser grant transports are refused with a hint to the MCP client token, an MCP token is refused on every browser route and never exchanged for a browser cookie or grant, revocation takes effect at the next request, refused bearers are rate limited and every use is audited (name, action, time). Every request carries its principal (browser, mcp, udp, automation) from its credential; only browser is an operator action. A plaintext profile has no MCP access, a present Origin must be the station's. Transmit-capable operations need the MCP client's station transport like the browser's grant. Automation is station-owned, unconfigured and stopped at every boot, starts only on an explicit start with a current grant transport and the current acknowledged safety revision, lives no longer than that transport and its maximum duration, is shown read-only in the browser station bar, never takes over an operator's CQ or contact, and stops at Halt (also one racing its arming, answered with a Halt), explicit stop, lost or replaced transport, receive context or mode change, contact change, disarm, no answer, completion or its contact limit, never replaying a transmit action or leaving a selected unarmed contact. Details: WstxMcp::McpCredential, OperatingAutomation, AutomationIndicator. */
+        doc /* MCP authorization is explicit and separate from the browser (#58): exactly one Authorization: Bearer field carrying an MCP client token of this station, created and revoked in Settings > General > Access & grants, shown once, stored only as its SHA-256 and compared in constant time; cookies sent to /mcp are never read, the station access token and browser grant transports are refused with a hint to the MCP client token, an MCP token is refused on every browser route and never exchanged for a browser cookie or grant, revocation takes effect at the next request, refused bearers are rate limited and every use is audited (name, action, time). Every request carries its principal (browser, mcp, automation) from its credential; only browser is an operator action. A plaintext profile has no MCP access, a present Origin must be the station's. Transmit-capable operations need the MCP client's station transport like the browser's grant. Automation is station-owned, unconfigured and stopped at every boot, starts only on an explicit start with a current grant transport and the current acknowledged safety revision, lives no longer than that transport and its maximum duration, is shown read-only in the browser station bar, never takes over an operator's CQ or contact, and stops at Halt (also one racing its arming, answered with a Halt), explicit stop, lost or replaced transport, receive context or mode change, contact change, disarm, no answer, completion or its contact limit, never replaying a transmit action or leaving a selected unarmed contact. Details: WstxMcp::McpCredential, OperatingAutomation, AutomationIndicator. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/mcp.rs; server/src/automation.rs; server/src/authorization.rs; server/src/authorization_http.rs; server/src/contact_http.rs; server/src/profile.rs; server/src/main.rs; client/contact.js";
     }
@@ -3040,14 +3039,14 @@ package WstxRequirements {
     }
     dependency CL_040_01_to_FR_012 from 'CL-040-01' to 'FR-012';
     requirement 'CL-040-02' {
-        doc /* Any number of targets up to 16, each address:port (unicast, IPv4 multicast with TTL and interface, or IPv6 multicast per CL-040-06), enabled, a per-type outbound message selection (default all) and accept_commands (default off), with per-target status (last send, error, last inbound command). The configuration is persisted in the selected profile directory and served by GET /udp and PUT /udp; the default is one target 127.0.0.1:2237, enabled, accept_commands off, instance name WSTX-Rust. Details: WstxUdp::UdpTarget, UdpConfiguration, TargetStatus, UdpHttp. */
+        doc /* Any number of targets up to 16, each address:port (unicast, IPv4 multicast with TTL and interface, or IPv6 multicast per CL-040-06), enabled, a per-type outbound message selection (default all), with per-target status (last send, error). The configuration is persisted in the selected profile directory and served by GET /udp and PUT /udp; the default is one target 127.0.0.1:2237, enabled, instance name WSTX-Rust. Details: WstxUdp::UdpTarget, UdpConfiguration, TargetStatus, UdpHttp. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/udp.rs; server/src/profile.rs; server/src/main.rs";
     }
     dependency CL_040_02_to_FR_012 from 'CL-040-02' to 'FR-012';
     dependency CL_040_02_to_FR_001 from 'CL-040-02' to 'FR-001';
     requirement 'CL-040-03' {
-        doc /* Halt Tx from any source always acts as the HALT button (HaltTransmit), whether or not accept_commands is on. Clear, Reply, Replay, Free Text and Highlight Callsign act only from a target with accept_commands on and only on datagrams whose source is that target. No inbound command keys the transmitter: Reply prepares the QSO like a single click (ContactCommand select_row, no transmit authority) and Free Text sets the Tx5 text of a prepared contact (as the browser edit: a standard, nonstandard or free-text message of at most 13 characters, #24 CL-024-01); both are refused while Enable Tx is on, and the Send flag is ignored. A datagram too large for the receive buffer is dropped, counted and never holds back the datagrams behind it. Details: WstxUdp::InboundRules. */
+        doc /* Send-only (operator decision 2026-11-06: "GridTracker just listens. We only react to the front end or to the MCP."; "The UI has to be able to halt the station in emergency halt."). No inbound UDP message acts on the station: Clear, Reply, Close, Replay, Halt Tx, Free Text, Location, Highlight Callsign, Switch Configuration, Configure and unknown types from any source have no effect, change no state and are not answered. All control comes from the browser and MCP; the emergency off is the browser's HALT and MCP's halt. Only a Heartbeat from a target's own address with the configured id raises that target's header schema (2 to 3, never lowered), as the WSJT-X protocol negotiates it. A datagram too large for the receive buffer never holds back the datagrams behind it. Details: WstxUdp::InboundRules. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/udp.rs; server/src/network_message.rs";
     }
@@ -3059,28 +3058,10 @@ package WstxRequirements {
         attribute implementation : String = "server/src/udp.rs";
     }
     dependency CL_040_04_to_FR_012 from 'CL-040-04' to 'FR-012';
-    requirement 'CL-040-05' {
-        doc /* Location (11) from a target with accept_commands on and from that target's address, carrying a 4- or 6-character Maidenhead grid (longer text only after a "GRID:" prefix), sets a session-only station grid: it replaces the profile locator for the Status DE grid, the generated messages and the logged my_gridsquare until the station restarts, and is never saved to the profile. An invalid location is refused invalid_grid and changes nothing. Details: WstxUdp D5, InboundRules. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/udp.rs; server/src/contact_http.rs; server/src/logbook_http.rs";
-    }
-    dependency CL_040_05_to_FR_012 from 'CL-040-05' to 'FR-012';
-    verification 'TC-012-005' {
-        doc /* TC-012-005 — Session location
-             CL-040-05
-             Setup: actual candidate router, UDP owner, contact engine and #9 transmit owner on the recording hardware double (profile HB9BLA, JN47AA); target A accept_commands off and C on, loopback peers; an injected FT8 live job with the row "CQ K1ABC FN42" 1234.6 Hz -12.4 dB at 12:34:30.
-             Steps: (a) pure rule table: "JN47", " jn36ab ", "GRID:JN36AB", "grid: fn42", and "", "XX", "JN4", "JN47A", "JN47AA11", "47.1,8.5", "LOC:JN47AA", "ZZ99"; (b) one step; Location "JN36AB" from A; "XX" from C; "GRID:JN36AB" from C; step; Reply to the CQ row from C; POST /contacts with my_gridsquare JN47AA, then JN36AB; read profile.json; open a new owner.
-             Expected: (a) JN47, JN36AB, JN36AB, FN42, the rest refused; (b) first Status DE grid JN47AA; A not_accepted; XX refused invalid_grid with no Status; GRID:JN36AB applied and one Status with DE grid JN36AB; Tx1 "K1ABC HB9BLA JN36" and Tx6 "CQ HB9BLA JN36"; the JN47AA log record refused 400 log_invalid_field record.my_gridsquare and the JN36AB one 201; profile.json and the store keep JN47AA; the new owner has no session grid; PTT never keyed.
-             2 — Isolated automated functional tests; Windows development PC, loopback UDP only, no radio, audio or RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-040-05';
-        }
-        attribute executable : String = "server/src/udp_tests.rs";
-    }
-    dependency CL_040_05_verified_by_TC_012_005 from 'CL-040-05' to 'TC-012-005';
+    // CL-040-05 and TC-012-005 (Location session grid) retired by the operator decision
+    // 2026-11-06 recorded in CL-040-03 and WstxUdp; the identities are not reused.
     requirement 'CL-040-06' {
-        doc /* Issue #46: an IPv6 multicast group target (ff00::/8) with a hop limit 1..255 (multicast_ttl) and an interface index (multicast_interface as decimal text, required for interface-local and link-local scope, optional above) is admitted by PUT /udp, saved, and receives its selected outbound messages through a socket with IPV6_MULTICAST_HOPS and IPV6_MULTICAST_IF set. Reserved scopes 0 and 15, interface names and accept_commands on are refused; inbound commands from a host to its socket are not accepted, as for IPv4 multicast. Details: WstxUdp D6, UdpTarget, OutboundRules. */
+        doc /* Issue #46: an IPv6 multicast group target (ff00::/8) with a hop limit 1..255 (multicast_ttl) and an interface index (multicast_interface as decimal text, required for interface-local and link-local scope, optional above) is admitted by PUT /udp, saved, and receives its selected outbound messages through a socket with IPV6_MULTICAST_HOPS and IPV6_MULTICAST_IF set. Reserved scopes 0 and 15 and interface names are refused. Details: WstxUdp D6, UdpTarget, OutboundRules. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/udp.rs";
     }
@@ -3088,9 +3069,9 @@ package WstxRequirements {
     verification 'TC-012-006' {
         doc /* TC-012-006 — IPv6 multicast targets
              CL-040-06
-             Setup: actual candidate router and UDP owner on a disposable profile; a peer socket joined to the transient link-local group ff12::5754:5358 on the Windows loopback pseudo-interface (index 1); a host socket on [::1].
-             Steps: PUT, each alone: scope 0 ff00::1, scope 15 ff0f::1 and ff1f::1, the group without an interface, ff01::1 without an interface, hop limit 0 and 256, accept_commands true, an IPv4 group with interface "1", interfaces "0", "01", "-1", "+1", " 1", "4294967296", "Ethernet", "127.0.0.1", "::1", "" and the number 1; then one PUT of the group at the peer's port with hop limit 2 and interface "1", [ff05::5754:5358]:2237 hop limit 255 interface "1", [ff15::5754:5358]:2238 interface "4000000000", and a disabled [ff08::5754:5358]:2239 without an interface; open a new owner; PUT the list plus a disabled [::1]:2240 with interface "127.0.0.1", then with "1"; read the socket options; one station step; Free Text from the host to the group target's socket; step.
-             Expected: each refusal 400 invalid_request with its field (address for the scopes, otherwise the named field) and nothing saved; the PUT admitted with the targets saved as given and unchanged after the reopen; the IPv6 unicast target with "127.0.0.1" admitted and with "1" refused targets[4].multicast_interface; the group socket has hop limit 2, interface 1 and loopback on, the site-local one hop limit 255; the unknown index shows active false, socket_unavailable; the joined peer receives Heartbeat then Status (schema 2, id WSTX-Rust); the Free Text is not_accepted.
+             Setup: actual candidate router and UDP owner on a disposable profile; a peer socket joined to the transient link-local group ff12::5754:5358 on the Windows loopback pseudo-interface (index 1);
+             Steps: PUT, each alone: scope 0 ff00::1, scope 15 ff0f::1 and ff1f::1, the group without an interface, ff01::1 without an interface, hop limit 0 and 256, an IPv4 group with interface "1", interfaces "0", "01", "-1", "+1", " 1", "4294967296", "Ethernet", "127.0.0.1", "::1", "" and the number 1; then one PUT of the group at the peer's port with hop limit 2 and interface "1", [ff05::5754:5358]:2237 hop limit 255 interface "1", [ff15::5754:5358]:2238 interface "4000000000", and a disabled [ff08::5754:5358]:2239 without an interface; open a new owner; PUT the list plus a disabled [::1]:2240 with interface "127.0.0.1", then with "1"; read the socket options; one station step.
+             Expected: each refusal 400 invalid_request with its field (address for the scopes, otherwise the named field) and nothing saved; the PUT admitted with the targets saved as given and unchanged after the reopen; the IPv6 unicast target with "127.0.0.1" admitted and with "1" refused targets[4].multicast_interface; the group socket has hop limit 2, interface 1 and loopback on, the site-local one hop limit 255; the unknown index shows active false, socket_unavailable; the joined peer receives Heartbeat then Status (schema 2, id WSTX-Rust).
              2 — Isolated automated functional tests; Windows development PC, loopback IPv6 multicast only, nothing leaves the machine. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -3119,32 +3100,15 @@ package WstxRequirements {
         attribute executable : String = "server/src/udp_tests.rs; server/src/recording_tests.rs";
     }
     dependency CL_040_07_verified_by_TC_012_007 from 'CL-040-07' to 'TC-012-007';
-    requirement 'CL-040-08' {
-        doc /* Issue #40: an inbound Highlight Callsign (13) or Clear (3) that a target with accept_commands on applied (CL-040-03) changes the browser's display as WSJT-X 3.3 applies them (widgets/displaytext.cpp DisplayText::highlight_callsign; Clear window 0 Band Activity, 1 Rx Frequency, 2 both): the station announces the current highlights and clear floors to every display-subscribed browser (udp.display), Band Activity colours the rows of a highlighted call with its background and foreground (Highlight last: only rows of the period of the latest decode when it arrived; a call with no valid colour is reset; CLEARALL! removes all), and Clear hides the decoded rows below its floor in Band Activity (window 0, 2) and in the QSO pane's callers that replace the Rx Frequency window (window 1, 2) until later decodes arrive. A UDP highlight marks a station of interest by definition: it colours a row that matches no slot and wins over the Band Activity colour slots (#50 CL-050-02, operator 2026-11-04; the QSO partner marker stays on top, CL-050-08). A target without accept_commands changes nothing. Details: WstxUdp::InboundRules, UdpDisplayEvent; WstxOperatingLayout::BandActivityColours. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/udp.rs; server/src/main.rs; client/recording.js; client/contact.js";
-    }
-    dependency CL_040_08_to_FR_012 from 'CL-040-08' to 'FR-012';
-    verification 'TC-012-008' {
-        doc /* TC-012-008 — Highlight Callsign and Clear in the browser
-             CL-040-08
-             Setup: (a) actual candidate UDP owner on a disposable profile with loopback peers A (accept_commands off) and C (on), an FT8 live job with period P1 (CQ K1ABC FN42, CQ W1AW FN31); (b) the actual candidate router, contact engine and UDP owner started with no target, the browser, and two loopback peers that the test configures through PUT /udp (other: accept_commands off, tool: on) and whose datagrams it packs by hand.
-             Steps: (a) from A Highlight K1ABC and Clear; from C: "k1abc" red on white; W1AW green Highlight last; publish P2 (K1ABC W1AW -05); W1AW blue Highlight last; W1AW foreground yellow only; K1ABC without colours Highlight last; K1ABC without colours; " " and "0"; CLEARALL!; Clear window 1; Clear window 2; read the udp.display event. (b) publish P1 (CQ K1ABC FN42, CQ W1AW FN31, HB9BLA DL1XYZ JO62); from other K1ABC red; from tool W1AW green Highlight last without foreground, "dl1xyz" blue on yellow; publish P1+15 s (CQ W1AW FN31, HB9BLA DL1XYZ R-05); DL1XYZ without colours Highlight last; DL1XYZ without colours; K1ABC magenta, then the page given another boot_id and back, then K1ABC without colours; Clear window 1; Clear window 0; publish P1+30 s (CQ K1ABC FN42).
-             Expected (hand table from DisplayText::highlight_callsign): (a) A not_accepted, nothing listed, display revision 0; K1ABC listed upper case with period null; W1AW last-only with period P1, then replaced by blue with period P2; the map entry W1AW (background null, foreground #ffff00) replaces the last-only one; the K1ABC reset is a last-only entry with period P2 beside its map entry; the K1ABC removal removes both; " " and "0" ignored without a revision change; CLEARALL! empties the list; window 1 sets only rx_frequency, window 2 both, at the next sequence 3 of the live job; the event is exactly {v 1, type udp.display, data {profile_id, boot_id, display_revision, highlights, clear}}. (b) the other target is not_accepted and K1ABC keeps its look; the P1 W1AW row green with its own text colour; the DL1XYZ row blue on yellow instead of the My call slot; in P1+15 s W1AW uncoloured while P1's stays green, DL1XYZ blue; the last-period reset uncolours only the P1+15 s DL1XYZ row (My call slot) and P1's stays blue; the removal gives both DL1XYZ rows the My call slot again; under another boot_id K1ABC shows its own look, back under the station's boot it is highlighted; window 1 empties the QSO pane callers and keeps the five Band Activity rows; window 0 empties Band Activity; the later decode is the one row shown; no page error.
-             2 — Isolated automated functional tests; Windows development PC, loopback UDP on ephemeral ports only (never 2237), no radio, audio or RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-040-08';
-        }
-        attribute executable : String = "server/src/udp_tests.rs; tests/contact.test.cjs; server/src/contact_http_tests.rs";
-    }
-    dependency CL_040_08_verified_by_TC_012_008 from 'CL-040-08' to 'TC-012-008';
+    // CL-040-08 and TC-012-008 (udp.display: Highlight Callsign and Clear in the browser)
+    // retired by the operator decision 2026-11-06 recorded in CL-040-03 and WstxUdp; the
+    // identities are not reused.
     verification 'TC-012-001' {
         doc /* TC-012-001 — NetworkMessage wire vectors
              CL-040-01, CL-040-03, CL-040-04
              Setup: hand-constructed byte vectors in server/tests/vectors/udp/, each written field by field from WSJT-X v3.3.0-beta5 NetworkMessage.hpp (SHA-256 b640a632...) with the construction steps recorded in the file, independent of the encoder.
-             Steps: encode Heartbeat, Status, Decode, Clear, QSO Logged, Close and Logged ADIF from the vector inputs; parse the inbound vectors (Heartbeat with and without maximum schema, Clear with window, Reply, Replay, Halt Tx with and without Auto Tx Only, Free Text, Location, Highlight Callsign with valid and invalid colours, Switch Configuration, Configure, an unknown type, trailing bytes); parse every refused vector (wrong magic, schema 1 and 4, truncated utf8, null id, 4097 bytes).
-             Expected: encoded bytes equal each vector exactly; parsed fields equal the vector's fields; refused vectors are refused; arbitrary bytes and every truncation never panic; the decoder text "K1ABC W9XYZ R -09" renders "K1ABC W9XYZ R-09" and "R +03" renders "R+03", other texts unchanged.
+             Steps: encode Heartbeat, Status, Decode, Clear, QSO Logged, Close and Logged ADIF from the vector inputs; read the Heartbeat vectors (schema 3 with its fields, schema 2 without them, trailing bytes); read every refused vector (each former command and an unknown type: Clear, Reply, Close, Replay, Halt Tx, Free Text, Location, Highlight Callsign, Switch Configuration, Configure, type 18; a Heartbeat with wrong magic, schema 1 and 4, truncated utf8, invalid utf8, null id, 4097 bytes).
+             Expected: encoded bytes equal each vector exactly; the read header equals the vector's schema and id; refused vectors give nothing; arbitrary bytes and every truncation never panic; the decoder text "K1ABC W9XYZ R -09" renders "K1ABC W9XYZ R-09" and "R +03" renders "R+03", other texts unchanged.
              2 — Isolated automated tests; Windows development PC, no network. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -3176,11 +3140,11 @@ package WstxRequirements {
     dependency CL_040_02_verified_by_TC_012_002 from 'CL-040-02' to 'TC-012-002';
     dependency CL_040_04_verified_by_TC_012_002 from 'CL-040-04' to 'TC-012-002';
     verification 'TC-012-003' {
-        doc /* TC-012-003 — Inbound commands and transmit safety
+        doc /* TC-012-003 — No inbound message acts; Heartbeat negotiates the schema
              CL-040-03
-             Setup: as TC-012-002 with target A accept_commands off and target C accept_commands on; the PTT log of the hardware double.
-             Steps: Halt Tx from A, from C and from an unconfigured third socket (to A's socket) while armed by the browser's enable_tx; Reply, Free Text, Replay, Clear and Highlight Callsign from A; the same from a socket other than C's address to C's socket; from C: Reply matching the published CQ row while disarmed, Reply with a different snr, Reply while armed, Free Text before any contact and "TNX 73 GL", Free Text "K1ABC HB9BLA 73" with Send true, Replay, Clear window 0 then Replay and Reply, Highlight Callsign K1ABC and CLEARALL!, Close, Configure; a 5000-byte datagram followed by Halt Tx while armed; a datagram with another id; a Halt Tx with schema 4.
-             Expected: every Halt Tx with this id and schema 2 or 3 disarms (arm_state disarmed, last cause halt, halt count +1) with outcome applied; the schema-4 or foreign-id Halt has no effect; commands from A and from the wrong source have outcome not_accepted and change nothing; C's Reply selects K1ABC (contact replying, Tx1 "K1ABC HB9BLA JN47") with arm_state disarmed; the mismatching Reply is refused no_match; a Reply or Free Text while armed is refused tx_enabled; Free Text without a contact is refused no_contact and a text that packs as no slot message (a 17-character free text, #24) invalid_message; Free Text sets Tx5 and leaves arm_state disarmed; Replay sends the retained decodes with New false then Status, to C only; after Clear Replay sends nothing and Reply is refused no_match; highlights list K1ABC then empty; Close and Configure ignored; the 5000-byte datagram is counted ignored and the Halt Tx behind it disarms in the same step; the PTT log stays empty throughout.
+             Setup: as TC-012-002 with one target A and another socket X; a published CQ row; the browser's enable_tx has armed the station; the PTT log of the hardware double.
+             Steps: from A and from X to A's socket: Halt Tx, Clear, a Reply matching the row, Close, Replay, Free Text, Location "JN36AB", Highlight Callsign, Switch Configuration, Configure; one step; read arm state, last disarm cause, contact, profile grid, the datagrams at A, and GET-shape of the snapshot. Then, one step each: a schema-3 Heartbeat from X; from A a schema-3 Heartbeat with another id, a schema-4 Heartbeat, a schema-3 Replay and a schema-3 Halt Tx. Then from A a 5000-byte datagram followed by a schema-3 Heartbeat, one step; a schema-2 Heartbeat, one step; publish a further decode, one step.
+             Expected: still armed with the disarm cause unchanged, no contact prepared, the grid and the Status DE grid the profile's, at A no Decode with New false (only Status); the snapshot keys exactly v, profile_id, boot_id, revision, configuration, configuration_error, status and a status entry exactly active, address, error, last_send_utc_ms, schema; the schema stays 2 through each of the single steps, becomes 3 in the step of the oversize datagram and its Heartbeat, stays 3 after the schema-2 Heartbeat, and the next datagrams at A carry header schema 3.
              2 — Isolated automated functional tests; Windows development PC, loopback UDP only, transmit and radio doubles; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -3193,8 +3157,8 @@ package WstxRequirements {
         doc /* TC-012-004 — Target configuration and persistence
              CL-040-02
              Setup: actual candidate router on a disposable profile directory without udp.json; a second profile with an invalid udp.json.
-             Steps: GET /udp; PUT a list of A (unicast, decode only), B (239.255.0.1:2237 multicast, ttl 2, interface 127.0.0.1, accept_commands off); open a new owner on the same profile; PUT with a stale revision, another profile, another boot, an unknown key, 17 targets, a duplicate address, port 0, 0.0.0.0, ff02::1 without an interface, ttl 0 and 256, an interface that is not IPv4, a duplicated or unknown message name, accept_commands on the multicast target, an empty and a 65-byte instance name, v 2, text/plain, 8193 bytes, a query; GET on the invalid profile.
-             Expected: the default {instance_name WSTX-Rust, one target 127.0.0.1:2237 enabled, all seven messages, multicast_ttl 1, interface null, accept_commands false} at revision 0; the PUT returns revision 1 with the messages in enum order and survives the reopen unchanged; each refusal with its status, code and field and nothing saved; the invalid profile shows configuration null and configuration_error invalid_configuration with no socket; a row published then is not sent after a valid PUT (only Heartbeat and Status).
+             Steps: GET /udp; PUT a list of A (unicast, decode only), B (239.255.0.1:2237 multicast, ttl 2, interface 127.0.0.1); open a new owner on the same profile; PUT with a stale revision, another profile, another boot, an unknown key, 17 targets, a duplicate address, port 0, 0.0.0.0, ff02::1 without an interface, ttl 0 and 256, an interface that is not IPv4, a duplicated or unknown message name, accept_commands on a target (a retired key), an empty and a 65-byte instance name, v 2, text/plain, 8193 bytes, a query; GET on the invalid profile; open an owner on a udp.json whose target also names accept_commands true, then PUT.
+             Expected: the default {instance_name WSTX-Rust, one target 127.0.0.1:2237 enabled, all seven messages, multicast_ttl 1, interface null} at revision 0; the PUT returns revision 1 with the messages in enum order and survives the reopen unchanged; each refusal with its status, code and field and nothing saved; the invalid profile shows configuration null and configuration_error invalid_configuration with no socket; a row published then is not sent after a valid PUT (only Heartbeat and Status); the file with accept_commands loads without configuration error, its target unchanged but for that key and active, and the PUT writes a file without the key.
              2 — Isolated automated functional tests; Windows development PC, loopback only. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -3708,10 +3672,24 @@ package WstxRequirements {
     // setting only when it does not fit. IC-7300 AGC: Icom IC-7300 Full Manual section 19,
     // command table "16 12 AGC" (01 FAST, 02 MID, 03 SLOW; read: the command without data).
     requirement 'CL-044-09' {
-        doc /* Every CI-V change of a radio setting by the station is read, compare, write, verify: the station first reads the setting's current value; when it already equals the wanted value no write frame is sent and the read is the confirmation; otherwise it sends the write only after the radio reports RX (1C 00 00), requires its ACK (FB; FA is refused radio_rejected) and reads the setting back, a different value being readback_mismatch and a failed readback indeterminate. No write is sent while this station's transmit hold is taken (the CAT owner's single lease excludes it). The transmit switch 1C 00 is a keying action, not a setting, and is not subject to this rule (CL-009 PTT readback). */
+        doc /* Every CI-V change of a radio setting by the station is read, compare, write, verify: the station first reads the setting's current value; when it already equals the wanted value no write frame is sent and the read is the confirmation; otherwise it sends the write with the radio in RX (1C 00 00, checked as stated at the end of this clause), requires its ACK (FB; FA is refused radio_rejected) and reads the setting back, a different value being readback_mismatch and a failed readback indeterminate. No write is sent while this station's transmit hold is taken (the CAT owner's single lease excludes it). The transmit switch 1C 00 is a keying action, not a setting, and is not subject to this rule (CL-009 PTT readback). The rule holds for every setter path of the station: the AGC (16 12, CL-044-10); the receive setup of a mode or band selection, where mode (06), DATA mode (1A 06) and frequency (05) are each read first and written only when they differ, and the final state is read again only after a write (with nothing written the three reads are the confirmation); the CAT owner's single setter operations SetFrequency, SetMode and SetData, which answer from the read without a write when the value fits (POST /radio/operation itself refuses these three with selection_unavailable and sends no frame); and the IC-7300 menu writes of Apply recommended radio settings and Undo (1A 05, CL-044-04), where an item already at its value is not written again. A setter whose read is refused (FA) is refused radio_rejected without a write. The RX check of a write is per write for 16 12 and 1A 05; the 05, 06 and 1A 06 setters of a selection's receive setup rely on the selection's single RX read (1C 00) inside its CAT reservation, before the first of them. With all three differing a receive setup is twelve exchanges inside the 5 s composite bound (TC-009-005 proves it at 360 ms per exchange, down from 470 ms for the nine exchanges without the reads); the CAT owner's single setter operations have no RX check of their own, and no route reaches them. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/radio_control/executor.rs; server/src/radio_control/actor.rs";
     }
+    verification 'TC-044-012' {
+        doc /* TC-044-012 — Existing CI-V setters read first
+             CL-044-09
+             Setup: the actual executor on the scripted CI-V transport of TC-009-001 (hand-written replies, every written frame recorded).
+             Steps: (a) the CAT owner's SetFrequency 14.074 MHz, SetMode USB FIL2 and SetData ON FIL2 with the radio already there, then each with its read answered FA; (b) SetFrequency with the radio at 7.074 MHz; (c) the receive setup 14.074 MHz USB-D FIL2 with the radio already there; (d) with the radio at USB FIL1, DATA OFF, 7.074 MHz; (e) a 1A 05 write of USB SEND OFF with the item already OFF, and with it at DTR.
+             Expected: (a) one read frame each (03, 04, 1A 06) and no setter frame; with FA radio_rejected, the same single frame and the connection open; (b) 03, 05 00 40 07 14 00, 03, the frequency fact unconfirmed when the setter frame is sent and confirmed by the read-back; (c) 04, 1A 06, 03 and nothing else; (d) 04, 06 01 02, 04, 1A 06, 1A 06 01 02, 1A 06, 03, 05 00 40 07 14 00, 03, then the final 04, 1A 06, 03; (e) only FE FE 94 E0 1A 05 00 78 FD, then 1A 05 00 78, 1C 00, 1A 05 00 78 00, 1A 05 00 78; a read answered FA is refused with no further frame.
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-09';
+        }
+        attribute executable : String = "server/tests/radio_control.rs; server/src/radio_control/executor.rs";
+    }
+    dependency CL_044_09_verified_by_TC_044_012 from 'CL-044-09' to 'TC-044-012';
     dependency CL_044_09_to_FR_009 from 'CL-044-09' to 'FR-009';
     requirement 'CL-044-10' {
         doc /* The radio profile holds the radio settings the station manages: settings.radio {agc FAST|MID|SLOW}, present exactly when settings.control is CAT with an endpoint that is a supported IC-7300 CI-V configuration (the only radio with a known CI-V AGC command; every other control has no settings.radio key and the setting is hidden). GET /profile and the PUT response carry it; PUT /profile refuses settings.radio for an unmanaged control (400 invalid_settings, field radio) and settings.radio.agc outside FAST/MID/SLOW (400 invalid_settings, field settings.radio.agc); a PUT without settings.radio keeps the saved value, or takes SLOW for a newly managed radio. settings.radio is not part of settings.control, so changing it never changes the receive-only CAT confirmation's checked control (CL-022-03); like every profile save it advances the revision, which reconnects CAT. Migration: a profile saved without radio whose control is IC-7300 CAT is read with agc SLOW (the FT8/FT4 default); other profiles stay without it; the file is rewritten only by a later save. The station applies the saved AGC with one read-compare-write-verify exchange (CL-044-09; CI-V read FE FE <address> E0 16 12 FD, write FE FE <address> E0 16 12 <01|02|03> FD) through its CAT owner: once per ready connection (a refusal busy, e.g. the lease held or the radio reporting TX, is tried again after 2 s; any other outcome ends the attempt for that connection) and on each FT8 or FT4 mode selection inside the selection's CAT reservation, after its receive setup and before receive restarts. Nothing is sent while the transmitter is armed, tuning or transmitting (the connection attempt waits for disarm). An AGC failure never fails the selection. */
@@ -3773,6 +3751,133 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_044_11_verified_by_TC_044_010 from 'CL-044-11' to 'TC-044-010';
+    // Operator decisions 2026-11-04 (#44 comments 6627977497, 6628000054): Tx audio level.
+    // IC-7300 meters: Icom IC-7300 Full Manual section 19, command table "15 11 Po" (0000 0 %,
+    // 0143 50 %, 0213 100 %), "15 12 SWR" (0000 1.0, 0048 1.5, 0080 2.0, 0120 3.0), "15 13 ALC"
+    // (0000..0120 the ALC zone); data two BCD bytes 0000..0255. The repository holds no copy of
+    // that table beyond this citation; TC-044-015 confirms it on the radio.
+    requirement 'CL-044-12' {
+        doc /* Tx level and Set level. The Tx level is a digital attenuation of the station's Tx audio, -40..0 dB in whole dB below the playback scale (Transmit TransmitTiming playbackScale), stored per radio profile in tx-level.json of the profile directory {schema_version 1, level_db}; storing it does not advance the profile revision and so does not reconnect CAT. Without a stored level, or with an invalid file, it is 0 dB. Set level is the default way to set it: POST /radio/tx-level {v, profile_id, boot_id, command_id, action set_level, tx_offset_hz} (transmit authority as Tune: a current CL-022 grant, otherwise 401 unauthorized; malformed 400 invalid_request; reply 200 {v, profile_id, boot_id, command_id, accepted, refusal}, refused busy while a transmission, a pending request, a Tune or another run is active, otherwise with the transmit refusal). It arms when disarmed and disarms again at its end, starts Tune at -30 dB and, every 400 ms, reads the meters and decides: ALC above 0 or Po above the profile power settings.radio.power_limit_pct (1..100; absent: no limit but the radio's own RF power setting) stores one step below the current level, never below -40 dB (result stored); 0 dB reached without either stores 0 dB (result max_without_alc); otherwise one step up. SWR at or above 3.0 (raw 0120) stops without storing (result high_swr); an ALC read refused FA stops without storing (result no_alc). It always ends with Tune stopped. HALT, the Tune limit or any other loss of Tune aborts it without storing (result aborted), and every failure leaves the prior level. A manual level (action manual, level_db -40..0) exists only after the radio refused the ALC read (otherwise refused alc_available) and applies to a running Tune at once. A transmission takes the level at its audio start and keeps it to its end. A meter read is one burst of reads FE FE <address> E0 15 13 FD, 15 11, 15 12 (one reply each; FA: that meter is missing), bounded at 400 ms in total, admitted only while this station holds the transmit hold (otherwise Busy with no byte). It takes no lease, so no operation or poll can start through it and it cannot delay a key; a PTT exchange cancels it at once, so the 250 ms halt bound holds; a timeout or cancel leaves the connection open. While Tune runs outside Set level the station reads the meters once per second on its own thread. Reads only: this slice writes no radio setting. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_level.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs; server/src/radio_control/setup.rs; server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/playback.rs; server/src/profile.rs";
+    }
+    dependency CL_044_12_to_FR_009 from 'CL-044-12' to 'FR-009';
+    requirement 'CL-044-13' {
+        doc /* The server pushes the Tx level state (client-server rule of #10): each WebSocket peer with a display subscription receives radio.tx_level {v 1, type radio.tx_level, data {profile_id, boot_id, managed, level_db, stored, alc unknown|available|unavailable, assistant, result, meters null|{alc, po_pct, swr_x10}, power_limit_pct, warnings [...] (CL-044-14)}} after each change; nothing is polled. Settings > Radio > Audio shows, for an IC-7300 CAT control only, a Set level button, a line with the level and the last result, the last ALC, Po and SWR, and the optional Profile power field (settings.radio.power_limit_pct) saved with Apply; the Tx level slider is shown only with alc unavailable. Set level and the slider send POST /radio/tx-level; a refusal is shown on the line. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_level.rs; server/src/main.rs; client/recording.js; client/app.js";
+    }
+    dependency CL_044_13_to_FR_019 from 'CL-044-13' to 'FR-019';
+    dependency CL_044_13_to_FR_009 from 'CL-044-13' to 'FR-009';
+    // Operator decision 2026-11-04 (#44 comment 6628026397): monitoring in normal operation.
+    requirement 'CL-044-14' {
+        doc /* In normal operation the station reads the radio's meters exactly once per transmission, in the middle of its audio: the transmit step calls the read when half of the audio remaining at audio start has played, once per transmission, on no Tune, and not at all when less than 2 s of audio remained at audio start. The call returns at once and the burst (CL-044-12: 15 13, 15 11, 15 12) runs on its own thread, so the transmit step, the audio and the release never wait for the radio, and a PTT exchange cancels the burst. Nothing is read while Set level runs. From the reading the level moves by at most one step, stored like CL-044-12 and taken by the next transmission's audio start only: ALC at or above raw 0060 (half the ALC zone) or Po above the profile power: one down, not below -40 dB; else ALC exactly 0 and Po below 80 % of the profile power: one up, not above 0 dB; otherwise unchanged. Without a profile power Po is neither over nor low, so there is no step up. Persistent trouble is an entry in the error field, from the third transmission in a row until a reading without it: alc_high (ALC at or above 0060), po_low (Po below half the profile power), swr_high (SWR at or above 2.0, raw 0080). A clear fault, SWR at or above 3.0 (raw 0120), stops transmitting at once through the priority halt (DisarmCause halt) with the entry swr_fault, and automation may not arm again until an operator action (WatchdogFromOperator); the entry stays until a later reading below 3.0 or a stored Set level. The radio.tx_level data carries these as warnings [...]. A failed read judges nothing. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_level.rs; server/src/transmit/service.rs; server/src/transmit_http.rs; client/recording.js; client/contact.js";
+    }
+    dependency CL_044_14_to_FR_009 from 'CL-044-14' to 'FR-009';
+    verification 'TC-044-017' {
+        doc /* TC-044-017 — One meter read per transmission and its bounded correction
+             CL-044-14
+             Setup: the actual transmit core on a virtual clock; the actual Recording, transmit owner on a recording double and CAT actor on a scripted IC-7300 reporting set meter values.
+             Steps: (a) the decision table; (b) two FT8 transmissions and a Tune on the virtual clock; (c) the call without the hold, then with ALC 0060; (d) three transmissions in a row, then a good one; (e) SWR 0120, a reading without SWR, then the operator arms and SWR is clear; (f) the call while Set level runs; (g) the transmit step's call through the station's boxed hardware to the sink, and the sink startup installs; (h) ALC 0060 with the level file unwritable.
+             Expected: (a) one down at ALC 0060, none at 0059, the floor and 0 dB hold, one up only with ALC 0 and Po below 80 %, none without a profile power, one down above it, none without ALC, fault at 0120 and not at 0119, warnings from the third reading, cleared by one good reading; (b) due exactly once at period + 6 820 ms in each, none for Tune, none for audio starting at period + 11 200 ms; (c) no byte without the hold; with it exactly 15 13, 15 11, 15 12, level -11 stored, nothing handed to the running audio; (d) alc_high from the third, level -13, gone with the good one; (e) one halt, disarmed halt, automation refused, entry swr_fault; the entry stays with the reading without SWR; after the clear reading no entry and still armed; (f) no byte; (g) one call reaches the sink, one burst from the installed sink; (h) the level stays -10, stored false, and the next Tune plays -10.
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-14';
+        }
+        attribute executable : String = "server/src/radio_level_tests.rs; server/src/transmit_http_tests.rs; server/tests/transmit_service.rs";
+    }
+    dependency CL_044_14_verified_by_TC_044_017 from 'CL-044-14' to 'TC-044-017';
+    verification 'TC-044-018' {
+        doc /* TC-044-018 — Tx trouble in the error field
+             CL-044-14
+             Setup: candidate server and Chromium; radio.tx_level events injected.
+             Steps: inject the four warnings, then none.
+             Expected: one error field entry each, swr_fault with error severity and the others warn, all gone after the empty list.
+             2 — Isolated automated browser test; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-14';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_044_14_verified_by_TC_044_018 from 'CL-044-14' to 'TC-044-018';
+    verification 'TC-044-019' {
+        doc /* TC-044-019 — Monitoring on HB9BLA
+             CL-044-14
+             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, 1 W on 40 m.
+             Steps: transmit during normal operation, compare the frame count in the CI-V log and the transmit timing; check the thresholds against the radio's own meters.
+             Expected: three meter frames per transmission, in the middle; decode by another station unaffected; the ALC and SWR thresholds match the radio's display; a mismatched antenna stops at SWR 3.0.
+             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-044-14';
+        }
+    }
+    dependency CL_044_14_verified_by_TC_044_019 from 'CL-044-14' to 'TC-044-019';
+    verification 'TC-044-013' {
+        doc /* TC-044-013 — Meter burst under the transmit hold; level timing
+             CL-044-12
+             Setup: the actual CAT actor and executor on a scripted IC-7300 transport (echo of each frame, hand-written replies); the actual transmit core on a virtual clock.
+             Steps: (a) read without the hold, then with it; (b) ALC refused FA; (c) a timeout, then a stalled read released by PTT off; (d) raw values through the scales; (e) a level set before and during a transmission and during Tune.
+             Expected: (a) Busy and no byte, then exactly the frames 15 13, 15 11, 15 12, and the release still works; (b) ALC missing, Po read; (c) the connection stays Ready, the release returns within 250 ms and the read returns Cancelled; (d) Po 0143 50 %, 0213 100 %, SWR 0048 1.5, 0080 2.0, 0120 3.0; (e) the level reaches the hardware immediately before the play, not during the transmission, at once during Tune; 0 dB is the playback scale, -20 dB a tenth of it.
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-12';
+        }
+        attribute executable : String = "server/src/radio_level_tests.rs; server/tests/transmit_service.rs";
+    }
+    dependency CL_044_12_verified_by_TC_044_013 from 'CL-044-12' to 'TC-044-013';
+    verification 'TC-044-014' {
+        doc /* TC-044-014 — Set level, manual level, push and route
+             CL-044-12, CL-044-13
+             Setup: the actual router, Recording owner and transmit owner on a recording hardware double, the CAT actor on a scripted IC-7300 whose ALC follows the double's level.
+             Steps: (a) the decision table; (b) a run with the ALC rising at -27 dB; (c) HALT during a run; (d) a radio refusing the ALC read, then the manual level, also during Tune; (e) stored and invalid level files at startup; (f) ticks with and without Tune; (g) malformed requests and a request without a grant; (h) the profile field.
+             Expected: (a) up, stored one below, -40 floor, power limit 49/50 % at Po 50 %, max_without_alc, no_alc, high_swr; (b) levels -30, -29, -28, -27, -28 stored, Tune off, disarmed, the profile revision unchanged, the next Tune at -28, no setter frame; (c) aborted, no file, prior level, Tune off, disarmed; (d) no_alc, alc unavailable, the slider action refused alc_available before, range refused, -10 stored, Tune follows; (e) -17 applied, invalid files ignored; (f) no read without Tune, one burst per second with it, exact event keys and values; (g) 400 and 401, Tune stays off; (h) absent by default, saved, 0 and 101 refused.
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-12';
+            verify 'CL-044-13';
+        }
+        attribute executable : String = "server/src/radio_level_tests.rs";
+    }
+    dependency CL_044_12_verified_by_TC_044_014 from 'CL-044-12' to 'TC-044-014';
+    dependency CL_044_13_verified_by_TC_044_014 from 'CL-044-13' to 'TC-044-014';
+    verification 'TC-044-015' {
+        doc /* TC-044-015 — Tx level in Settings > Radio > Audio
+             CL-044-13
+             Setup: candidate server and Chromium; radio.tx_level events injected, POST /radio/tx-level answered by a route fixture.
+             Steps: open the Audio section for an IC-7300 CAT control; inject meters, a run, its result, alc unavailable; click Set level; move the slider; save a power limit; hide for a disabled control; 360 px.
+             Expected: the button is in #settings-audio, no slider before alc unavailable, the line and meters show the pushed values, a malformed event is ignored, the click sends exactly one set_level, the slider sends one manual, Apply saves radio.power_limit_pct, all of it hidden when control is Disabled, no horizontal overflow at 360 px.
+             2 — Isolated automated browser test; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-13';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_044_13_verified_by_TC_044_015 from 'CL-044-13' to 'TC-044-015';
+    verification 'TC-044-016' {
+        doc /* TC-044-016 — Set level on HB9BLA
+             CL-044-12, CL-044-13
+             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, a dummy load or the 1 W authorization.
+             Steps: read 15 13, 15 11, 15 12 during Tune and compare with the radio's own meter; press Set level; press HALT during a second run.
+             Expected: the meter values agree with the radio's display and the manual's scales; the run ends with the ALC just below rising, the level stored and Tune off; HALT stops it at once and keeps the stored level.
+             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-044-12';
+            verify 'CL-044-13';
+        }
+    }
+    dependency CL_044_12_verified_by_TC_044_016 from 'CL-044-12' to 'TC-044-016';
+    dependency CL_044_13_verified_by_TC_044_016 from 'CL-044-13' to 'TC-044-016';
     verification 'TC-044-011' {
         doc /* TC-044-011 — AGC on HB9BLA
              CL-044-09, CL-044-10, CL-044-11
@@ -3933,9 +4038,9 @@ package WstxRequirements {
     dependency CL_039_05_to_FR_020 from 'CL-039-05' to 'FR-020';
     dependency CL_039_05_to_FR_007 from 'CL-039-05' to 'FR-007';
     requirement 'CL-039-06' {
-        doc /* The Tx watchdog limits the repetitions of one message (WstxContact::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or an Auto start from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or Auto start from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run, MCP requests (including starting or restarting a run) and UDP commands never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP, UDP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a run stops tx_watchdog; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt, UDP Halt Tx). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxContact::TxWatchdog. */
+        doc /* The Tx watchdog limits the repetitions of one message (WstxContact::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or an Auto start from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or Auto start from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run and MCP requests (including starting or restarting a run) never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a run stops tx_watchdog; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxContact::TxWatchdog. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs; server/src/mcp.rs; server/src/udp.rs; server/src/authorization.rs";
+        attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs; server/src/mcp.rs; server/src/authorization.rs";
     }
     dependency CL_039_06_to_FR_008 from 'CL-039-06' to 'FR-008';
     requirement 'CL-039-07' {
@@ -3956,6 +4061,26 @@ package WstxRequirements {
         }
     }
     dependency CL_039_07_verified_by_TC_039_008 from 'CL-039-07' to 'TC-039-008';
+    requirement 'CL-039-08' {
+        doc /* Hold Tx is on by default (operator decision 2026-11-04, #39; consistent with the split-frequency rule): a station starts with settings.hold_tx true, in manual operation and for a strategy alike, so selecting or answering a station moves Rx and never Tx; Tx stays on the operator's chosen slot until an explicit Tx action (the Tx input, a waterfall Tx pointer action, the Hound's own rule). The operator may switch it off with set_hold_tx; the choice lasts for the station's running session, since contact settings are not persisted, so no stored value can override the default. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact.rs; client/contact.js";
+    }
+    dependency CL_039_08_to_FR_007 from 'CL-039-08' to 'FR-007';
+    verification 'TC-039-009' {
+        doc /* TC-039-009 — Hold Tx is on by default
+             CL-039-08
+             Setup: actual contact engine and actual station Router with a fresh profile (no explicit choice), hand-authored decode rows.
+             Steps: read the first contact snapshot; select a CQ at another frequency; answer through a strategy Auto pick; switch Hold Tx off and select again.
+             Expected (oracle: the operator's decision on #39): settings.hold_tx true in a fresh snapshot and #contact-hold checked; after the selection Rx follows the row and Tx stays 1500; after the strategy pick Tx stays; with Hold Tx explicitly off a selection moves Tx to the row (the WSJT-X rule of FirstSlotOnSelection). On the parent the fresh snapshot says false and the selection moves Tx.
+             2 — Isolated automated tests; Windows PC, no radio (wstx-rust, contact-browser suites). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-08';
+        }
+        attribute executable : String = "server/src/contact_tests.rs::hold_tx_is_on_by_default_and_a_selection_keeps_tx; server/src/strategy_tests.rs::tc_039_004_auto_call_follows_the_strategy_and_the_directed_cq_rule; tests/contact.test.cjs";
+    }
+    dependency CL_039_08_verified_by_TC_039_009 from 'CL-039-08' to 'TC-039-009';
     requirement 'CL-042-01' {
         doc /* The strategy's New matrix is complete: besides new call and new grid, a condition holds for a sender whose DXCC entity, continent, CQ zone or ITU zone (from its cty.dat entity, #55) is not in the internal log, ever or on this band and mode, each negatable; a sender without an entity, an unknown station band (for the band form) or an unreadable log never counts as new. The editor offers the four conditions with the same ever / on this band and mode choice; the live preview names a failing one. Details: WstxStrategy::Condition, NewEntity. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -4151,14 +4276,14 @@ package WstxRequirements {
         doc /* TC-039-005 — The Tx watchdog stop is never ended by automation
              CL-039-06
              Setup: as TC-039-004 with role cq; for the unit cases the #9 Core on the hardware double; counts per WstxContact::TxWatchdog (#39, 2026-11-06).
-             Steps: (1) browser limit 2; browser Auto start; transmit the own CQ at E+15 s; publish a caller at E+30 s; transmit the report at E+45 s and its repeat at E+75 s; reach E+105 s; cancel and start Auto again from the browser. (2) MCP and browser: an MCP Enable Tx before any browser action; browser limit 1; an MCP Enable Tx (CQ) transmitted at E+15 s; MCP set_frequency; MCP set_watchdogs 99; reach E+45 s; a station calls HB9BLA in period E+30 s; an MCP Enable Tx; an MCP run start and a matching CQ; a browser action and an MCP Enable Tx. (3) MCP route: browser limit 1, an MCP Enable Tx and its CQ, MCP-principal commands through the tool and straight to /contact/command, then MCP Enable Tx on both. (4) UDP: a UDP Reply and Free Text from an accepting target before any browser action, then a browser-path action. Unit: automatic arm before any operator action; activity, limit 2, automatic arm; operator arm.
-             Expected: (1) remaining calls 1 after the CQ, 2 after the caller's answer (the run's reply is a different message), the request at E+105 s is never keyed, the run stops tx_watchdog, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the browser start arms again. (2) refused tx_watchdog; not spent after the one CQ and the MCP command, set_watchdogs refused operator_required, the next CQ never keyed and spent, still spent after the caller (an answer after a stop ends nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; still spent after an unrelated browser action; after a browser Enable Tx not spent and the MCP Enable Tx arms. (3) after the stop spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. (4) spent before and after both applied commands; not spent after the browser action. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
+             Steps: (1) browser limit 2; browser Auto start; transmit the own CQ at E+15 s; publish a caller at E+30 s; transmit the report at E+45 s and its repeat at E+75 s; reach E+105 s; cancel and start Auto again from the browser. (2) MCP and browser: an MCP Enable Tx before any browser action; browser limit 1; an MCP Enable Tx (CQ) transmitted at E+15 s; MCP set_frequency; MCP set_watchdogs 99; reach E+45 s; a station calls HB9BLA in period E+30 s; an MCP Enable Tx; an MCP run start and a matching CQ; a browser action and an MCP Enable Tx. (3) MCP route: browser limit 1, an MCP Enable Tx and its CQ, MCP-principal commands through the tool and straight to /contact/command, then MCP Enable Tx on both. Unit: automatic arm before any operator action; activity, limit 2, automatic arm; operator arm.
+             Expected: (1) remaining calls 1 after the CQ, 2 after the caller's answer (the run's reply is a different message), the request at E+105 s is never keyed, the run stops tx_watchdog, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the browser start arms again. (2) refused tx_watchdog; not spent after the one CQ and the MCP command, set_watchdogs refused operator_required, the next CQ never keyed and spent, still spent after the caller (an answer after a stop ends nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; still spent after an unrelated browser action; after a browser Enable Tx not spent and the MCP Enable Tx arms. (3) after the stop spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
              2 — Isolated automated functional tests; Windows development PC, transmit double; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-06';
         }
-        attribute executable : String = "server/src/strategy_tests.rs; server/src/udp_tests.rs";
+        attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_039_06_verified_by_TC_039_005 from 'CL-039-06' to 'TC-039-005';
     verification 'TC-039-006' {
@@ -4593,7 +4718,7 @@ package WstxRequirements {
     dependency CL_050_07_verified_by_TC_050_007 from 'CL-050-07' to 'TC-050-007';
     // #50 operator design 2026-11-04 (refines the 2026-11-03 colour rule).
     requirement 'CL-050-08' {
-        doc /* Band Activity marks each decoded row by what makes it interesting, highest first (WstxOperatingLayout::BandActivityScheme, BandActivityRowMark): (1) the current QSO partner, from the contact preparation until the contact is logged or cancelled, taken from the contact snapshot the page already holds (no further request): its rows are moved to the top of Band Activity with a red separator stripe below them and carry a red left bar, a "◆ QSO" badge after the message and a bold message, without a slot background; (2) a row to my call from another station (also <MYCALL> and a nonstandard i3=4 'to', #24): the whole row in the My call colour, also when the sender was worked before on this band and mode; (3) a CQ or QRZ from a station with an enabled new_* slot: the whole row in that slot's colour; (4) any other row from a station with an enabled new_* slot (in QSO with another station): only the sender's call is coloured, the rest of the row is plain; (5) everything else has no colour. The Settings slot choice applies to every mark; an accepted UDP highlight (CL-040-08) wins over every slot colour, and on a partner row the partner marker stays. A row's reason tip is one compact line naming only the reasons of its colour that the row does not show, joined by " · ": per kind (continent, DXCC, zone, grid, call) the strongest enabled one, so an overall flag never also names its on-band form, the on-band call reason with the worked-before status in parentheses, then "UDP highlight" and the strategy verdict, e.g. "New DXCC · New call", "New on 40m (worked on another band or mode)"; no country, continent, distance or "Calls you" (the row shows them); a row without such a reason has no tip. It uses the #55 record data and the existing worked-before answers only (WstxOperatingLayout::BandActivityHover). */
+        doc /* Band Activity marks each decoded row by what makes it interesting, highest first (WstxOperatingLayout::BandActivityScheme, BandActivityRowMark): (1) the current QSO partner, from the contact preparation until the contact is logged or cancelled, taken from the contact snapshot the page already holds (no further request): its rows are moved to the top of Band Activity with a red separator stripe below them and carry a red left bar, a "◆ QSO" badge after the message and a bold message, without a slot background; (2) a row to my call from another station (also <MYCALL> and a nonstandard i3=4 'to', #24): the whole row in the My call colour, also when the sender was worked before on this band and mode; (3) a CQ or QRZ from a station with an enabled new_* slot: the whole row in that slot's colour; (4) any other row from a station with an enabled new_* slot (in QSO with another station): only the sender's call is coloured, the rest of the row is plain; (5) everything else has no colour. The Settings slot choice applies to every mark. A row's reason tip is one compact line naming only the reasons of its colour that the row does not show, joined by " · ": per kind (continent, DXCC, zone, grid, call) the strongest enabled one, so an overall flag never also names its on-band form, the on-band call reason with the worked-before status in parentheses, then the strategy verdict, e.g. "New DXCC · New call", "New on 40m (worked on another band or mode)"; no country, continent, distance or "Calls you" (the row shows them); a row without such a reason has no tip. It uses the #55 record data and the existing worked-before answers only (WstxOperatingLayout::BandActivityHover). */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/recording.js; client/contact.js; client/recording.css";
     }
@@ -4602,8 +4727,8 @@ package WstxRequirements {
         doc /* TC-050-008 — Band Activity row marks: partner first with the stripe, calls me, CQ of interest, sender-only colour, one-line reason tip
              CL-050-08
              Setup: actual release candidate (fixture station) and Chromium at 1440x900; routed receive pages for a kept period 12:00:00 (CQ K1PT FN42 new_call_band; CQ K7OLD FN42; K9XX W1AA R-03) and a latest period 12:00:15 (HB9BLA K1PT FN42 new_call_band; HB9BLA K2CM -05; HB9BLA K3NB R-07 new_call_band; CQ OA4DX FH17 and K9XX YO3ABC -07 with new_dxcc, new_dxcc_band, new_call, new_call_band and dxcc Peru/Romania; CQ K1WB FN42; W9AA W2CD 73; CQ JA1ZZ PM95 new_cq_zone, new_cq_zone_band, CQ zone 25), selection band 40m, routed /contact/worked statuses (K2CM, K1WB and W2CD worked on 40m FT8, K3NB on another band or mode, the others not worked) and routed contact snapshots.
-             Steps: with no contact read each row's marks, message cell and sender-call backgrounds and reason tip; hover the YO3ABC message, its DXCC cell and an uncoloured row; focus the K3NB row; route a contact with K1PT in replying and reload the snapshot; read the order, stripe and marker; read the stripe at 360x800; sort by Freq and back; turn My call and New call off in Settings; deliver a udp.display event highlighting K1PT (blue) and YO3ABC (green); route the contact completed and reload.
-             Expected: no contact: no stripe; the three rows to my call whole row rgba(255,102,102,0.32) with tips "New on 40m", none (worked on this band and mode, no flag) and "New on 40m (worked on another band or mode)"; CQ OA4DX whole row rgba(255,0,255,0.26) tip "New DXCC · New call"; K9XX YO3ABC -07 message cell transparent with only the YO3ABC span rgba(255,0,255,0.26) and the same tip; CQ JA1ZZ whole row rgba(255,191,0,0.26) tip "New CQ zone 25"; the rows without a flag uncoloured without a tip; no row has a native title and the aria-description equals the tip; the tip box is one line at the pointer, absent over the DXCC cell and over an uncoloured row, shown for the focused row and gone after focus moves. Prepared K1PT: HB9BLA K1PT FN42 then CQ K1PT FN42 first, then one stripe row (no text, rgb(255,64,64)), then the other rows in the earlier order with the kept divider; the partner rows have no slot background or tip, a 4 px rgb(255,64,64) inset left bar, a bold message and the badge " ◆ QSO"; at 360x800 the stripe is a 3 px full-width rgb(255,64,64) bar; the partner block stays first after the Freq sort. With My call and New call off: K2CM uncoloured, K3NB whole row rgba(153,255,255,0.2), the OA4DX and YO3ABC tips "New DXCC · New on 40m". UDP: both K1PT rows rgb(0,0,255) with the marker kept and tip "UDP highlight"; the YO3ABC row rgb(0,255,0) without the sender mark, tip ending "· UDP highlight". Completed: no stripe and no partner row; HB9BLA K1PT FN42 is a calls-me row; one worked-before query per published period (two: 3 and 8 calls), none added by the marks, the partner or the tip; no page error.
+             Steps: with no contact read each row's marks, message cell and sender-call backgrounds and reason tip; hover the YO3ABC message, its DXCC cell and an uncoloured row; focus the K3NB row; route a contact with K1PT in replying and reload the snapshot; read the order, stripe and marker; read the stripe at 360x800; sort by Freq and back; turn My call and New call off in Settings; route the contact completed and reload.
+             Expected: no contact: no stripe; the three rows to my call whole row rgba(255,102,102,0.32) with tips "New on 40m", none (worked on this band and mode, no flag) and "New on 40m (worked on another band or mode)"; CQ OA4DX whole row rgba(255,0,255,0.26) tip "New DXCC · New call"; K9XX YO3ABC -07 message cell transparent with only the YO3ABC span rgba(255,0,255,0.26) and the same tip; CQ JA1ZZ whole row rgba(255,191,0,0.26) tip "New CQ zone 25"; the rows without a flag uncoloured without a tip; no row has a native title and the aria-description equals the tip; the tip box is one line at the pointer, absent over the DXCC cell and over an uncoloured row, shown for the focused row and gone after focus moves. Prepared K1PT: HB9BLA K1PT FN42 then CQ K1PT FN42 first, then one stripe row (no text, rgb(255,64,64)), then the other rows in the earlier order with the kept divider; the partner rows have no slot background or tip, a 4 px rgb(255,64,64) inset left bar, a bold message and the badge " ◆ QSO"; at 360x800 the stripe is a 3 px full-width rgb(255,64,64) bar; the partner block stays first after the Freq sort. With My call and New call off: K2CM uncoloured, K3NB whole row rgba(153,255,255,0.2), the OA4DX and YO3ABC tips "New DXCC · New on 40m". Completed: no stripe and no partner row; HB9BLA K1PT FN42 is a calls-me row; one worked-before query per published period (two: 3 and 8 calls), none added by the marks, the partner or the tip; no page error.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
