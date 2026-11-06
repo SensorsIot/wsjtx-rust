@@ -11,6 +11,7 @@ const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
 const crypto=require('node:crypto');
+const WebSocket=require('ws');
 const origin=process.env.WSTX_CONTACT_FIXTURE_ORIGIN,control=process.env.WSTX_CONTACT_FIXTURE_CONTROL;
 let browser,page,requests=[];
 const publish=async(period_ms,rows)=>(await fetch(control+'/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({period_ms,rows})})).json();
@@ -374,27 +375,131 @@ async function completes(call,report){
 // each on its own station and browser started by contact_browser_operating_flow, so that
 // their real-clock periods elapse concurrently (harness#28); every step and assertion is kept.
 // Proves: CL-010-15; TC-007-005 (#10 pushed transmit state, browser subset). The actual
-// station pushes transmit.state; the page reads GET /transmit once per socket, once per
-// announced change and not on a timer while the view is unchanged.
-test('TC-007-005 transmit state is pushed: one GET /transmit per socket, one per announced change, no 1 s poll',{timeout:60000},async()=>{
-  const frames=[];page.on('websocket',ws=>ws.on('framereceived',e=>{try{const m=JSON.parse(e.payload);if(m.type==='transmit.state')frames.push({at:performance.now(),revision:m.data.transmit_revision});}catch{}}));
+// station pushes transmit.state: all fields first, then what changed; the page reads no
+// GET /transmit and receives nothing while the view is unchanged.
+test('TC-007-005 transmit state is pushed: the event carries it, no GET /transmit',{timeout:60000},async()=>{
+  const frames=[];page.on('websocket',ws=>ws.on('framereceived',e=>{try{const m=JSON.parse(e.payload);if(m.type==='transmit.state')frames.push({at:performance.now(),revision:m.data.transmit_revision,changed:m.data.changed});}catch{}}));
   const reads=since=>requests.filter(r=>r.method==='GET'&&r.path==='/transmit'&&r.at>=since);
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   const loaded=performance.now();await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
-  await sleep(8000);
-  assert.equal(reads(loaded).length,1,'one snapshot read per socket');
-  assert.ok(frames.some(f=>f.at>=loaded),'transmit.state at the first step');
-  const idle=performance.now();await sleep(10000);
-  assert.equal(reads(idle).length,0,'no timer read while the view is unchanged');
+  await waitFor(()=>frames.some(f=>f.at>=loaded),'transmit.state at the first step',5000);
+  const first=frames.find(f=>f.at>=loaded).changed;
+  for(const key of ['transmit','ptt','transmitting','clock','watchdog'])assert.ok(key in first,`the first event has ${key}`);
+  assert.ok(!('outcomes' in first));
+  await waitFor(async()=>await page.evaluate(()=>/^(?!Transmit unavailable)/.test(document.querySelector('#transmit-status').textContent)),'shown from the event',5000);
+  const count=frames.length;await sleep(6000);
+  assert.equal(frames.length,count,'nothing while the view is unchanged');
   const live=await (await fetch(origin+'/receive')).json();
   const watchdogs=async tx_calls=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};
   const changed=performance.now();await watchdogs(8);
-  await waitFor(async()=>await page.evaluate(()=>transmitView?.watchdog?.tx_calls)===8,'pushed change read',5000);
-  assert.ok(frames.some(f=>f.at>=changed),'the change is announced');
-  await sleep(1500);
-  assert.equal(reads(changed).length,1,'one read per announced change');
+  await waitFor(async()=>await page.evaluate(()=>transmitView?.watchdog?.tx_calls)===8,'pushed change shown',5000);
+  const event=frames.find(f=>f.at>=changed);assert.ok(event&&event.at-changed<=2000,'the change is pushed within the 1 s check');
+  assert.deepEqual(event.changed.watchdog,{tx_calls:8},'only what changed');
   await watchdogs(6);await waitFor(async()=>await page.evaluate(()=>transmitView?.watchdog?.tx_calls)===6,'restored',5000);
+  assert.equal(reads(loaded).length,0,'the browser reads no GET /transmit');
   assert.deepEqual(page.errors,[]);
+});
+
+// Proves: CL-010-15; TC-007-005 (#10 pushed contact state, browser subset). Another client's change
+// reaches this page in contact.state: only what changed, shown without a GET /contact.
+test('TC-007-005 contact state is pushed: only what changed, no GET /contact',{timeout:60000},async()=>{
+  const frames=[];page.on('websocket',ws=>ws.on('framereceived',e=>{try{const m=JSON.parse(e.payload);if(m.type==='contact.state')frames.push({at:performance.now(),data:m.data});}catch{}}));
+  const loaded=performance.now();await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
+  await waitFor(()=>frames.some(f=>f.at>=loaded),'contact.state at the first step',5000);
+  const first=frames.find(f=>f.at>=loaded).data.changed;
+  for(const key of ['transmit','settings','watchdog'])assert.ok(key in first,`the first event has ${key}`);
+  await new Promise(r=>setTimeout(r,1500));
+  const before=await snapshot(),hold=!before.settings.hold_tx,changed=performance.now();
+  const sent=await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:before.profile_id,boot_id:before.boot_id,command_id:crypto.randomUUID(),contact_revision:before.contact_revision,action:'set_hold_tx',enabled:hold})});
+  assert.ok([200,202].includes(sent.status),await sent.text());
+  await waitFor(async()=>await page.evaluate(h=>window.wstxContact.snapshot()?.settings?.hold_tx===h,hold),'the change is shown',5000);
+  const event=frames.find(f=>f.at>=changed);assert.ok(event&&event.at-changed<=2000,'pushed within the 1 s check');
+  assert.deepEqual(event.data.changed,{settings:{hold_tx:hold}},'only what changed');
+  assert.equal(requests.filter(r=>r.method==='GET'&&r.path==='/contact'&&r.at>=changed).length,0,'another client\'s change needs no GET /contact');
+  // Two changes that cancel out inside one check leave no changed field; the revision still reaches the page.
+  const command=async(s,enabled)=>{const r=await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'set_hold_tx',enabled})});assert.ok([200,202].includes(r.status),await r.text());};
+  await new Promise(r=>setTimeout(r,1200));
+  await command(await snapshot(),!hold);await command(await snapshot(),hold);
+  const latest=(await snapshot()).contact_revision;
+  await waitFor(async()=>await page.evaluate(n=>window.wstxContact.snapshot()?.contact_revision===n,latest),'the revision is shown',5000);
+  assert.deepEqual(page.errors,[]);
+});
+
+// Proves: CL-010-15; TC-007-005. A read older than a pushed change does not replace it.
+test('TC-007-005 an older GET /contact does not replace pushed state',{timeout:60000},async()=>{
+  const live=await snapshot();const watchdogs=async tx_calls=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};
+  let release,fetched;const held=new Promise(r=>{release=r;}),read=new Promise(r=>{fetched=r;});
+  await page.route('**/contact',async route=>{const response=await route.fetch();fetched();await held;await route.fulfill({response});});
+  try{
+    page.evaluate(()=>window.wstxContact.load());await read;
+    await watchdogs(8);
+    await waitFor(async()=>await page.evaluate(()=>window.wstxContact.snapshot()?.settings?.tx_calls)===8,'the change is shown',5000);
+    release();await new Promise(r=>setTimeout(r,2500));
+    assert.equal(await page.evaluate(()=>window.wstxContact.snapshot()?.settings?.tx_calls),8,'the older read is not shown');
+  }finally{release();await page.unroute('**/contact');await watchdogs(6);}
+  assert.deepEqual(page.errors,[]);
+});
+
+// Proves: CL-010-15; TC-007-005. contact.js loads after the socket on a thin link: the socket's first
+// event still gives it the state, with no read succeeding, and the next event follows.
+test('TC-007-005 a contact client loading after the first event has the state without a read',{timeout:60000},async()=>{
+  const frame=new Promise(resolve=>{page.on('websocket',ws=>ws.on('framereceived',e=>{try{if(JSON.parse(e.payload).type==='contact.state')resolve();}catch{}}));});
+  await page.route('**/contact.js',async route=>{const response=await route.fetch();await frame;await new Promise(r=>setTimeout(r,200));await route.fulfill({response});});
+  await page.route('**/contact',route=>route.abort('failed'));
+  try{
+    page.reload().catch(()=>{});
+    await waitFor(async()=>await page.evaluate(()=>!!window.wstxContact?.snapshot()?.settings).catch(()=>false),'state from the first event',30000);
+    const s=await snapshot(),hold=!s.settings.hold_tx;
+    const r=await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'set_hold_tx',enabled:hold})});assert.ok([200,202].includes(r.status),await r.text());
+    await waitFor(async()=>await page.evaluate(h=>window.wstxContact.snapshot()?.settings?.hold_tx===h,hold),'the next event',5000);
+    assert.equal(await page.evaluate(()=>!!window.wstxContact.snapshot().transmit.capability),true,'a whole state');
+  }finally{await page.unroute('**/contact.js');await page.unroute('**/contact');}
+  const s=await snapshot();await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'set_hold_tx',enabled:false})});
+});
+
+// Proves: CL-010-15; TC-007-005. A read held across events does not lose a pushed change.
+test('TC-007-005 a held read keeps the pushed changes around it',{timeout:60000},async()=>{
+  const start=await snapshot();
+  const send=async(url,body)=>{const r=await fetch(origin+url,{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:start.profile_id,boot_id:start.boot_id,command_id:crypto.randomUUID(),...body})});assert.ok([200,202].includes(r.status),await r.text());};
+  const hold=async enabled=>send('/contact/command',{contact_revision:(await snapshot()).contact_revision,action:'set_hold_tx',enabled});
+  const shown=expr=>page.evaluate(expr);
+  let release,fetched,first=true;const held=new Promise(r=>{release=r;}),read=new Promise(r=>{fetched=r;});
+  const frame=new Promise(resolve=>{page.on('websocket',ws=>ws.on('framereceived',e=>{try{if(JSON.parse(e.payload).type==='contact.state')resolve();}catch{}}));});
+  await page.route('**/contact.js',async route=>{const response=await route.fetch();await frame;await new Promise(r=>setTimeout(r,200));await route.fulfill({response});});
+  await page.route('**/contact',async route=>{if(!first)return route.continue();first=false;const response=await route.fetch();fetched();await held;await route.fulfill({response});});
+  try{
+    page.reload().catch(()=>{});
+    await read;
+    await hold(true);await new Promise(r=>setTimeout(r,1500));
+    release();
+    await waitFor(()=>shown(()=>window.wstxContact?.snapshot()?.settings?.hold_tx===true),'the queued read shows the change',8000);
+    await send('/transmit/command',{action:'set_watchdogs',tx_calls:8,tune_seconds:90});
+    await waitFor(()=>shown(()=>window.wstxContact.snapshot()?.settings?.tx_calls===8),'the pushed change is shown',5000);
+    assert.equal(await shown(()=>window.wstxContact.snapshot().settings.hold_tx),true,'an earlier change stays');
+    assert.equal(await page.locator('#station-notice').isVisible().catch(()=>false),false,'the page understood the station');
+  }finally{release();await page.unroute('**/contact.js');await page.unroute('**/contact');await send('/transmit/command',{action:'set_watchdogs',tx_calls:6,tune_seconds:90});await hold(false);}
+});
+
+// Proves: CL-010-15; TC-007-005. On the actual socket: a running Tune's countdown alone at most once per
+// 5 s on Thin and about once per second on Detailed.
+test('TC-007-005 the Tune countdown is paced by the display profile on the socket',{timeout:60000},async()=>{
+  const types=['transmit.state','contact.state'];
+  const peer=async command=>{const ws=new WebSocket(origin.replace('http','ws')+'/ws','wstx.v1',{origin});const log=[];ws.on('message',d=>{const m=JSON.parse(String(d));if(types.includes(m.type))log.push({type:m.type,at:performance.now(),changed:m.data.changed});});await new Promise((ok,no)=>{ws.once('open',ok);ws.once('error',no);});ws.send(JSON.stringify({v:1,type:command,id:1}));return {ws,log};};
+  const countdown=c=>Object.keys(c).length===1&&c.watchdog&&Object.keys(c.watchdog).join()==='tune_remaining_seconds';
+  const thin=await peer('spectrum.thin'),detail=await peer('spectrum.detail');
+  const tune=async enabled=>{const r=await fetch(control+'/tune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});return r.json();};
+  try{
+    await new Promise(r=>setTimeout(r,1500));
+    const started=await tune(true);assert.equal(started.accepted,true,`Tune starts: ${started.refusal}`);
+    await new Promise(r=>setTimeout(r,11000));
+    await tune(false);
+  }finally{thin.ws.close();detail.ws.close();}
+  for(const type of types){
+    const ticks=(p)=>p.log.filter(e=>e.type===type&&countdown(e.changed));
+    assert.ok(ticks(detail).length>=7,`Detailed ${type}: ${ticks(detail).length} countdown events`);
+    const paced=ticks(thin);assert.ok(paced.length>=1&&paced.length<=3,`Thin ${type}: ${paced.length} countdown events`);
+    for(let n=1;n<paced.length;n++)assert.ok(paced[n].at-paced[n-1].at>=4000,`Thin ${type}: at most once per 5 s, arrival jitter allowed`);
+  }
 });
 
 test('TC-050-004 mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO completes, and CQ right after it calls',{timeout:420000},async()=>{

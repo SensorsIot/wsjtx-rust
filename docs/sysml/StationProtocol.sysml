@@ -249,11 +249,12 @@ package WstxStationProtocol {
              clock, log changes), each throttled per peer by that peer's
              display subscription (Detailed, Thin, Off), so an idle Off peer receives
              almost nothing beyond heartbeat and station.tick. HTTP carries commands and
-             one snapshot read per state on (re)connect, after an announcement event (one
-             pending read per state and browser, as contact.state/GET /contact), and after
-             the browser's own mutation; a browser does not poll on a timer, except a
-             safety read of a pushed state no more often than once per
-             safetyReadMinimumMs. The browser holds the state (snapshot plus events) and
+             one snapshot read per state on (re)connect. transmit.state and contact.state
+             carry their state (WstxTransmit::TransmitWire, WstxContact::ContactStateEvent);
+             a state not yet carried is read after its announcement event (one pending read
+             per state and browser) and after the browser's own mutation; a browser does not
+             poll on a timer, except a safety read of a state not yet carried no more often
+             than once per safetyReadMinimumMs. The browser holds the state (snapshot plus events) and
              renders locally. Safety decisions (HALT, watchdog, PTT keying and release)
              stay on the station and never wait for a browser read. Existing reads are
              migrated in slices: first GET /transmit (WstxTransmit::TransmitWire

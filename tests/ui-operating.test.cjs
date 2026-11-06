@@ -2310,16 +2310,41 @@ test('TC-006-003 transmit status shows the SNTP clock measurement',{timeout:4500
   let view;
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
     view=await (await fetch(app.origin+'/transmit')).json();
-    await p.route('**/transmit',route=>route.request().method()==='GET'?route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(view)}):route.continue());
   }});
   assert.equal(view.clock,'unknown','isolated server never measured');assert.equal(view.clock_measurement,null);
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
-  const status=async()=>page.evaluate(async()=>{profileData.settings.control.ptt='cat';await transmitSync();return document.querySelector('#transmit-status').textContent;});
+  const status=async()=>page.evaluate(v=>{profileData.settings.control.ptt='cat';transmitView=null;transmitApply(v);transmitShow();return document.querySelector('#transmit-status').textContent;},view);
   assert.match(await status(),/ · clock unknown · halt /,'no measurement: state only');
   view={...view,clock:'synchronized',clock_measurement:{server:'ch.pool.ntp.org',offset_ms:12,round_trip_ms:20,age_ms:34400}};
   assert.match(await status(),/ · clock synchronized \+12 ms ch\.pool\.ntp\.org 34 s ago · halt /);
   view={...view,clock:'unsynchronized',clock_measurement:{server:'time.windows.com',offset_ms:-2089,round_trip_ms:22,age_ms:5600}};
   assert.match(await status(),/ · clock unsynchronized -2089 ms time\.windows\.com 6 s ago · halt /);
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-010-15; TC-007-005. contact.state builds the snapshot: a contact and its dialogue rows
+// in order, the rows that follow on the next tick at the same sequence shown too, and no read.
+test('TC-007-005 contact.state rows arrive in order and a continuation is shown',{timeout:45000},async t=>{
+  const {page,errors}=await fixture(t,{width:1440,height:900});
+  await page.waitForFunction(()=>!!window.wstxContact?.snapshot()?.settings,null,{timeout:30000});
+  const reads=[];page.on('request',r=>{const u=new URL(r.url());if(u.pathname==='/contact'&&r.method()==='GET')reads.push(u.pathname);});
+  const base=await page.evaluate(()=>window.wstxContact.snapshot());
+  const row=n=>({dir:n%2?'tx':'rx',text:`HB9BLA K1ABC R-${String(n).padStart(2,'0')}`,snr:-7,period_utc_ms:1793962997000+n*15000,count:1});
+  const contact={id:'12345678-1234-4234-8234-123456789012',origin:'manual',dx_call:'K1ABC',dx_grid:'FN42',report_sent:null,report_rcvd:null,exchange_sent:null,exchange_rcvd:null,state:'calling',next_slot:'tx1',tx4:'rrr',messages:{},start_utc:null,end_utc:null,saved:false,suggested_slot:null,last_rcvd:null};
+  const feed=(sequence,changed)=>page.evaluate(data=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'contact.state',data}}})),{profile_id:base.profile_id,boot_id:base.boot_id,contact_revision:base.contact_revision+1,snapshot_sequence:sequence,monotonic_ms:2000,utc_ms:Date.now(),changed});
+  const rows=()=>page.evaluate(()=>window.wstxContact.snapshot().contact?.dialogue?.map(d=>d.text));
+  // The socket's own first event already came; these follow it. A whole contact, then the rest of its rows.
+  const sequence=base.snapshot_sequence+1,all=Array.from({length:16},(_,n)=>row(n));
+  await feed(sequence,{contact:{...contact,dialogue_from:0,dialogue:all.slice(0,13)}});
+  assert.deepEqual(await rows(),all.slice(0,13).map(r=>r.text));
+  await feed(sequence,{contact:{dialogue_from:13,dialogue:all.slice(13)}});
+  assert.deepEqual(await rows(),all.map(r=>r.text),'the continuation at the same sequence is shown, in order');
+  // A member change keeps the rows; a repeat's count resends them from the start, replacing them.
+  await feed(sequence+1,{contact:{state:'rogers'}});
+  assert.equal(await page.evaluate(()=>window.wstxContact.snapshot().contact.state),'rogers');
+  assert.equal((await rows()).length,16);
+  await feed(sequence+2,{contact:{dialogue_from:0,dialogue:all.slice(0,2)}});
+  assert.deepEqual(await rows(),all.slice(0,2).map(r=>r.text));
+  assert.deepEqual(reads,[],'no GET /contact');
   assert.deepEqual(errors,[]);
 });
 // Proves: CL-043-01, CL-009-05; TC-043-003. Settings > General > Clock reads GET /clock only
@@ -2330,7 +2355,6 @@ test('TC-043-003 the clock source and the clock from the air are shown in Settin
   let view;
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     view=await (await fetch(app.origin+'/transmit')).json();
-    await p.route('**/transmit',route=>route.request().method()==='GET'?route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(view)}):route.continue());
   }});
   const requests=[],posts=[];
   page.on('request',r=>{const p=new URL(r.url()).pathname;requests.push(`${r.method()} ${p}`);if(r.method()==='POST'&&p==='/clock')posts.push(JSON.parse(r.postData()));});
@@ -2360,7 +2384,7 @@ test('TC-043-003 the clock source and the clock from the air are shown in Settin
   assert.equal(await page.locator('#clock-source').inputValue(),'both','a refusal restores the shown source');
   await page.locator('#settings-drawer .return-operate').click();
   // Chips from the GET /transmit view (CAT PTT set in the page only).
-  const chips=async next=>{view={...view,...next};return page.evaluate(async()=>{profileData.settings.control.ptt='cat';await transmitSync();window.wstxChipsShow();return [...document.querySelectorAll('#exception-chips [data-chip^=clock]')].map(b=>b.textContent);});};
+  const chips=async next=>{view={...view,...next};return page.evaluate(v=>{profileData.settings.control.ptt='cat';transmitView=null;transmitApply(v);transmitShow();window.wstxChipsShow();return [...document.querySelectorAll('#exception-chips [data-chip^=clock]')].map(b=>b.textContent);},view);};
   assert.deepEqual(await chips({clock:'unknown',clock_source:'air',clock_warning:null}),['✖ Clock unknown · Tx blocked'],'air without enough stations refuses transmit');
   assert.match(await page.locator('#clock-setting').textContent(),/^Station clock: system UTC corrected from the air, unknown/);
   assert.deepEqual(await chips({clock:'unknown',clock_source:'ntp'}),[],'NTP unknown keeps no chip, as before');
@@ -3195,7 +3219,7 @@ test('TC-007-002 the transmit controls and badge follow the pushed transmit capa
   }});
   await page.waitForFunction(()=>window.wstxContact?.snapshot()?.transmit.capability==='available',null,{timeout:25000});
   const read=()=>page.evaluate(()=>({cq:document.querySelector('#qso-cq').disabled,tune:document.querySelector('#contact-tune').disabled,auto:document.querySelector('#contact-auto').disabled,now:[...document.querySelectorAll('.ct-now')].some(b=>!b.disabled),badge:document.querySelector('.op-contact-badge').textContent,reason:document.querySelector('#transmit-unavailable').hidden?null:document.querySelector('#transmit-unavailable').textContent,control:document.querySelector('#qso-control').getBoundingClientRect().top,pane:document.querySelector('#rx-focus').getBoundingClientRect().height}));
-  const pushed=async next=>{capability=next;revision++;await page.evaluate(r=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{type:'contact.state',data:{contact_revision:r,boot_id:window.wstxContact.snapshot().boot_id}}}})),revision);await page.waitForFunction(c=>window.wstxContact.snapshot().transmit.capability===c,next);};
+  const pushed=async next=>{capability=next;revision++;await page.evaluate(([r,c,t])=>{const s=window.wstxContact.snapshot();dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'contact.state',data:{profile_id:s.profile_id,boot_id:s.boot_id,contact_revision:r,snapshot_sequence:r,monotonic_ms:2000,utc_ms:Date.now(),changed:{transmit:{...s.transmit,capability:c,tune:t},settings:s.settings,contact:s.contact&&{...s.contact,dialogue_from:0,dialogue:s.contact.dialogue??[]},log:s.log,watchdog:s.watchdog}}}}}));},[revision,capability,tune]);await page.waitForFunction(c=>window.wstxContact.snapshot().transmit.capability===c,next);};
   const ready=await read();
   assert.deepEqual([ready.cq,ready.tune,ready.auto,ready.now,ready.badge,ready.reason],[false,false,false,true,'Ready',null],'available');
   await pushed('unavailable');

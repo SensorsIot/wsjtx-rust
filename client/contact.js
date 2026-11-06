@@ -99,8 +99,15 @@ async function fetchSnapshot(){
     const response=await stationFetch('/contact',{cache:'no-store',signal:AbortSignal.timeout(10000)});
     contactMissing=response.status===404;
     // #51: a contact snapshot this page cannot validate shows the reload chip.
-    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence||value.contact_revision>=snap.contact_revision)){snap=value;render();}}
+    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence)){snap=value;render();}}
   }catch{}
+}
+// WstxContact::ContactStateEvent (#10): show what recording.js holds from the station's events,
+// unless this client's own read is newer.
+function stateShow(){
+  const view=contactHeld;if(!view)return;
+  window.wstxStationData?.('contact',valid(view));
+  if(valid(view)){stationSample(view.utc_ms);if(!snap||snap.boot_id!==view.boot_id||view.snapshot_sequence>=snap.snapshot_sequence){snap=view;render();}}
 }
 const ids=()=>snap&&{v:1,profile_id:snap.profile_id,boot_id:snap.boot_id};
 // Commands are sent one at a time, each with the revision of the latest snapshot.
@@ -826,7 +833,7 @@ addEventListener('station-stale',()=>{displays();});
 addEventListener('station-message',event=>{
   const {message,current}=event.detail;if(current!==socket)return;
   const d=message.data;
-  if(message.type==='contact.state'&&d&&(!snap||d.contact_revision!==snap.contact_revision||d.boot_id!==snap.boot_id))load();
+  if(message.type==='contact.state'&&d?.changed)stateShow();
   else if(message.type==='automation.state'&&d)loadAutomation();
   else if(message.type==='station.tick'&&d&&Number.isSafeInteger(d.utc_ms)&&[15000,7500].includes(d.period_ms)){
     const changed=tick?.transmitting!==d.transmitting;stationSample(d.utc_ms);
@@ -844,7 +851,6 @@ async function transmitAction(extra,label){
   const result=document.querySelector('#transmit-result');
   try{const reply=await transmitPost('/transmit/command',extra),r=reply.result;result.textContent=`${label}: ${r.kind??(r.accepted?'accepted':'refused')}${r.refusal?' · '+r.refusal:''}${r.failure?' · '+r.failure:''}`;}
   catch(error){result.textContent=`${label} not sent · ${error.message}`;}
-  transmitSync();
 }
 $('tx-arm').addEventListener('click',()=>{const revision=catStatus?.scope?.safety_revision;if(!revision){document.querySelector('#transmit-result').textContent='Arm needs the current setup revision (CAT status)';return;}transmitAction({action:'arm',safety_revision:revision},'Arm');});
 $('tx-disarm').addEventListener('click',()=>transmitAction({action:'disarm'},'Disarm'));
@@ -962,6 +968,7 @@ serverForm.addEventListener('submit',async event=>{
   if(await confirmAction('Applying these settings may restart receive and interrupt the QSO in progress. Apply now?','Apply')){applyConfirmed=true;serverForm.requestSubmit();}
 },true);
 window.wstxContact=Object.freeze({load,snapshot:()=>snap});
+stateShow();
 })();
 // #39 WstxStrategy: the strategy element (selector, editor, Value), the marks and value order in
 // Band Activity and the editor popup. The station evaluates every strategy (POST
