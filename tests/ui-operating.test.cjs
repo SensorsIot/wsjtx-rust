@@ -2447,6 +2447,11 @@ test('TC-039-006 Highlight marks and sorts, the editor previews and saves, Auto 
   await page.locator('#strategy-auto[aria-pressed=true]').filter({hasText:'Auto · waiting'}).waitFor();
   assert.equal(await page.locator('#strategy-name').isDisabled(),true,'the strategy is locked while Auto runs');
   assert.match(await page.locator('#station-automation').textContent(),/^Automation waiting · run [0-9a-f]{8} · HALT ends it$/);
+  // Proves: TC-039-010. No free slot: the status says so.
+  automation.run={...automation.run,tx_slot:{hz:1500,free:false}};automation.runRevision++;
+  await page.evaluate(run_revision=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:1,run_revision}}}})),automation.runRevision);
+  await page.locator('#station-automation').filter({hasText:'no free Tx slot'}).waitFor();
+  assert.match(await page.locator('#station-automation').textContent(),/^Automation waiting · no free Tx slot · run [0-9a-f]{8} · HALT ends it$/);
   // A second click stops it; a later use asks no more.
   await page.locator('#strategy-auto').click();for(let i=0;i<40&&autos.length<3;i++)await page.waitForTimeout(50);
   assert.deepEqual([autos[2].action,autos[2].run_id],['stop',automation.run.id]);

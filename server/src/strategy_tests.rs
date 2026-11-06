@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
-// Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-042-01, CL-042-02, CL-042-03,
-// CL-042-04; TC-039-001..005, TC-042-001, TC-042-002, TC-042-004, TC-042-006 (each test names its
+// Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-039-09, CL-042-01, CL-042-02, CL-042-03,
+// CL-042-04; TC-039-001..005, TC-039-010, TC-042-001, TC-042-002, TC-042-004, TC-042-006 (each test names its
 // case below). Hand-authored records and strategies; the expected ranks,
 // grey marks, orders, stop reasons and requests are the WstxStrategy tables written in
 // these tests (geography from the locator square centres), not evaluator output.
@@ -1048,6 +1048,303 @@ async fn tc_039_004_auto_cq_answers_a_caller_and_alternates_after_n_tries() {
         (json!("waiting"), json!("call"))
     );
     assert_eq!(contact(&f).await.2, json!("disarmed"));
+    assert_eq!(f.keys(), 0);
+}
+
+/// A station that is neither calling nor calling me, on `hz`.
+fn busy(hz: f64) -> (&'static str, f64, Option<f64>) {
+    ("W2XX W3YY -05", hz, Some(-5.0))
+}
+/// (Rx, Tx, the run's slot status).
+async fn frequencies(f: &Mcp) -> (Value, Value, Value) {
+    let settings = f.read("contact").await["settings"].clone();
+    let slot = f.read("automation").await["run"]["tx_slot"].clone();
+    (settings["rx_hz"].clone(), settings["tx_hz"].clone(), slot)
+}
+
+// Proves: CL-039-09; TC-039-010. My Tx parity after answering an even station is odd. Slots
+// worked out by hand: an FT8 signal at f forbids the slots strictly between f-100 and f+100.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_auto_call_takes_a_free_slot_keeps_it_and_changes_it_only_when_busy() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    // The 5th period back (would force 1720 Hz) and the other parity (too) do not count.
+    publish(&f, e - 135_000, &[busy(1320.0)]);
+    publish(&f, e - 105_000, &[busy(2000.0)]);
+    publish(&f, e - 75_000, &[busy(1480.0)]);
+    publish(&f, e - 60_000, &[busy(1290.0)]);
+    publish(&f, e - 45_000, &[busy(1620.0)]);
+    publish(&f, e - 15_000, &[busy(2100.0)]);
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    // 1480 and 1620 forbid 1380 < slot < 1720: my Tx 1500 goes to 1380, Rx to the station.
+    publish(&f, e, &[("CQ K1ABC FN42", 2400.0, Some(-5.0))]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(2400), json!(1380), json!({"hz":1380,"free":true}))
+    );
+    // The whole QSO stays there.
+    publish(&f, e + 30_000, &[("HB9BLA K1ABC -10", 2400.0, Some(-10.0))]);
+    assert_eq!(contact(&f).await.1, json!("roger_report"));
+    assert_eq!(frequencies(&f).await.1, json!(1380));
+    publish(
+        &f,
+        e + 60_000,
+        &[("HB9BLA K1ABC RR73", 2400.0, Some(-10.0))],
+    );
+    assert_eq!(contact(&f).await.1, json!("signoff"));
+    transmit_own_period(&f, e + 15_000).await;
+    assert_eq!(contact(&f).await.1, json!("completed"));
+    assert_eq!(frequencies(&f).await.1, json!(1380));
+    f.tick();
+    // The next call: last 4 odd periods 2650, 2100, 1620, 1480 leave 1380 free; it stays.
+    publish(&f, e + 75_000, &[busy(2650.0)]);
+    publish(&f, e + 90_000, &[("CQ DL1XYZ JO62", 900.0, Some(-5.0))]);
+    assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(900), json!(1380), json!({"hz":1380,"free":true}))
+    );
+    // skip_after 2 gives DL1XYZ up. The slot then becomes busy: the last 4 odd periods
+    // 1400, 2650, 2100, 1620 and the station on 1000 forbid 900..1100, 1300..1500,
+    // 1520..1720, 2000..2200, 2550..2750: 1300 is the nearest to 1380.
+    publish(&f, e + 120_000, &[]);
+    publish(&f, e + 150_000, &[]);
+    publish(&f, e + 165_000, &[busy(1400.0)]);
+    publish(&f, e + 180_000, &[("CQ G4ABC IO91", 1000.0, Some(-5.0))]);
+    assert_eq!(contact(&f).await.0, json!("G4ABC"));
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(1000), json!(1300), json!({"hz":1300,"free":true}))
+    );
+}
+
+// Proves: CL-039-09; TC-039-010.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_never_on_the_called_station_also_with_hold_tx_off() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    // A station on my Tx: 1400 and 1600 tie, the lower.
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-5.0))]);
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(1500), json!(1400), json!({"hz":1400,"free":true}))
+    );
+    // skip_after 2 gives K1ABC up. Hold Tx off: the selection moves Tx, the run takes it back.
+    publish(&f, e + 30_000, &[]);
+    publish(&f, e + 60_000, &[]);
+    assert_eq!(contact(&f).await.2, json!("disarmed"));
+    mcp_contact(&f, "set_hold_tx", json!({"enabled":false})).await;
+    publish(&f, e + 90_000, &[("CQ DL1XYZ JO62", 1700.0, Some(-5.0))]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("DL1XYZ"), json!("replying"), json!("armed"))
+    );
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(1700), json!(1400), json!({"hz":1400,"free":true}))
+    );
+    assert_eq!(f.keys(), 0);
+}
+
+// Proves: CL-039-09; TC-039-010. Signals every 190 Hz leave no FT8 slot in 300..2650.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_a_full_band_keeps_the_tx_still_calls_and_says_so() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    let full: Vec<_> = (0..13).map(|i| busy(f64::from(300 + 190 * i))).collect();
+    publish(&f, e - 15_000, &full);
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ K1ABC FN42", 2400.0, Some(-5.0))]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(2400), json!(1500), json!({"hz":1500,"free":false}))
+    );
+    assert_eq!(f.keys(), 0);
+}
+
+// Proves: CL-039-09; TC-039-010. A full band and a station on my Tx: no free slot, and the call
+// still does not go out on the station: 1400 and 1600 tie for 1500, the lower.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_a_full_band_still_never_calls_on_the_called_station() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    let full: Vec<_> = (0..13).map(|i| busy(f64::from(300 + 190 * i))).collect();
+    publish(&f, e - 15_000, &full);
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-5.0))]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(1500), json!(1400), json!({"hz":1400,"free":false}))
+    );
+}
+
+// Proves: CL-039-09; TC-039-010. 4 periods fill the band; the 3 most recent leave a gap: 1350
+// and 1500 forbid 1250..1600, 1600 is nearest 1500 (1250 is 250 away).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_a_band_filled_over_four_periods_looks_at_fewer() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    let full: Vec<_> = (0..13).map(|i| busy(f64::from(300 + 190 * i))).collect();
+    publish(&f, e - 105_000, &full);
+    publish(&f, e - 75_000, &[busy(1350.0)]);
+    publish(&f, e - 45_000, &[busy(2000.0)]);
+    publish(&f, e - 15_000, &[busy(1500.0)]);
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ K1ABC FN42", 900.0, Some(-5.0))]);
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(900), json!(1600), json!({"hz":1600,"free":true}))
+    );
+}
+
+// Proves: CL-039-09; TC-039-010. A retune on the radio keeps the live job: the signals of the old
+// band say nothing about this one, and those of the new band do.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_signals_of_the_previous_band_do_not_count() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    publish(&f, e - 15_000, &[busy(1500.0)]);
+    f.state.recording.fixture_band("20m");
+    publish(&f, e, &[("CQ K1ABC FN42", 2400.0, Some(-5.0))]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(2400), json!(1500), json!({"hz":1500,"free":true}))
+    );
+    // skip_after 2 gives K1ABC up; a signal on this band counts: 1400 and 1600 tie.
+    publish(&f, e + 30_000, &[]);
+    publish(&f, e + 60_000, &[]);
+    publish(&f, e + 75_000, &[busy(1500.0)]);
+    publish(&f, e + 90_000, &[("CQ DL1XYZ JO62", 2200.0, Some(-5.0))]);
+    assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(2200), json!(1400), json!({"hz":1400,"free":true}))
+    );
+}
+
+// Proves: CL-039-05, CL-039-09; TC-039-010. Between the run's select_row and its Tx
+// move the operator replaces the contact: the set_frequency is refused stale and the operator's
+// contact stands.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_a_double_click_racing_the_slot_move_stays_the_operators() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    let state = f.state.clone();
+    let (id, boot) = (f.id.clone(), f.boot.clone());
+    *f.state
+        .recording
+        .contact
+        .get()
+        .unwrap()
+        .automation
+        .before_slot_move
+        .lock()
+        .unwrap() = Some(Box::new(move || {
+        let (identity, _, records) = state.recording.live_records_after(None, 0).unwrap();
+        let record = records
+            .iter()
+            .find(|r| r["text"] == "CQ DL1XYZ JO62")
+            .unwrap();
+        let row = json!({"source_id":identity.0,"job_id":identity.1,"generation":identity.2,"sequence":record["sequence"]});
+        let station = state.recording.contact.get().unwrap();
+        let body = json!({"v":1,"profile_id":id,"boot_id":boot,"command_id":profile::new_uuid().unwrap(),
+                "contact_revision":station.facts().0,"action":"select_row","row":row,"replace":true});
+        station
+            .operate_as(&state, body, true, authorization::Principal::Browser)
+            .unwrap();
+    }));
+    // K1ABC (strongest) is on my Tx 1500, so the run must move it.
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ K1ABC FN42", 1500.0, Some(-3.0)),
+            ("CQ DL1XYZ JO62", 1200.0, Some(-5.0)),
+        ],
+    );
+    assert_eq!(
+        contact(&f).await.0,
+        json!("DL1XYZ"),
+        "the operator's contact stands"
+    );
+    assert_eq!(run_state(&f).await, ("manual".to_owned(), Value::Null));
+}
+
+// Proves: CL-039-09; TC-039-010. A pounce answers as Auto Call does.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_a_pounce_never_calls_on_the_called_station() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    assert_eq!(pounce(&f, "K1ABC", 5).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-5.0))]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(1500), json!(1400), json!({"hz":1400,"free":true}))
+    );
+}
+
+// Proves: CL-039-09; TC-039-010. Own CQ on odd periods (the station's parity).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_auto_cq_goes_out_from_a_free_slot_and_stays_for_a_caller() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "cq")).await;
+    publish(&f, e - 15_000, &[busy(1500.0)]);
+    // An even period does not count; it would forbid the 1400 Hz slot.
+    publish(&f, e, &[busy(1350.0)]);
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    f.tick();
+    assert_eq!(contact(&f).await.2, json!("armed"));
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(1500), json!(1400), json!({"hz":1400,"free":true}))
+    );
+    // A caller on my own slot is answered from there (no new decision during a QSO).
+    publish(
+        &f,
+        e + 30_000,
+        &[("HB9BLA K1ABC FN42", 1400.0, Some(-10.0))],
+    );
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("report"), json!("armed"))
+    );
+    assert_eq!(frequencies(&f).await.1, json!(1400));
     assert_eq!(f.keys(), 0);
 }
 
@@ -2258,7 +2555,8 @@ async fn tc_042_004_pounce_answers_a_73_holding_tx_and_never_an_ignored_or_direc
     publish(&f, e + 30_000, &[("CQ NA K1ABC FN42", 1500.0, Some(-15.0))]);
     assert_eq!(f.read("contact").await["contact"], Value::Null);
     assert_eq!(run_state(&f).await, ("waiting".into(), Value::Null));
-    // K1ABC ends its QSO with W1AW: answered, my Tx frequency held.
+    // K1ABC ends its QSO with W1AW: answered, my Tx frequency held (TC-039-010: a pounce
+    // takes the free slot, and Hold Tx off moved Tx to the station).
     let tx = f.read("contact").await["settings"]["tx_hz"].clone();
     publish(&f, e + 60_000, &[("W1AW K1ABC RR73", 1700.0, Some(-9.0))]);
     let c = f.read("contact").await;
