@@ -733,7 +733,7 @@ impl Recording {
     }
     /// Fixture: a complete manual operating selection (band with its nominal frequency, origin
     /// manual) as the browser validates it; no radio command.
-    #[cfg(test)]
+    #[cfg(all(test, not(debug_assertions)))]
     pub(crate) fn fixture_manual_band(&self, band: &'static str, nominal_hz: u64) {
         let mut s = self.state.lock().unwrap();
         s.operating.nominal.band = Some(band);
