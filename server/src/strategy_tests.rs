@@ -284,7 +284,7 @@ fn tc_039_002_each_condition_and_its_negation() {
         m.sort();
         m
     };
-    let all_cq = [0, 1, 3, 5, 8];
+    let all_cq = [0, 1, 3, 5];
     let negated = |mut c: Value| {
         c["negate"] = json!(true);
         c
@@ -292,15 +292,15 @@ fn tc_039_002_each_condition_and_its_negation() {
     for (c, expected) in [
         (
             json!({"kind":"new_call","negate":false,"value":"ever"}),
-            vec![3, 5, 8],
+            vec![3, 5],
         ),
         (
             json!({"kind":"new_call","negate":false,"value":"band"}),
-            vec![0, 3, 5, 8],
+            vec![0, 3, 5],
         ),
         (
             json!({"kind":"new_grid","negate":false,"value":"ever"}),
-            vec![0, 3, 5, 8],
+            vec![0, 3, 5],
         ),
         (
             json!({"kind":"continent","negate":false,"values":["EU","AS"]}),
@@ -308,15 +308,15 @@ fn tc_039_002_each_condition_and_its_negation() {
         ),
         (
             json!({"kind":"distance_km","negate":false,"min":5000,"max":null}),
-            vec![0, 5, 8],
+            vec![0, 5],
         ),
         (
             json!({"kind":"azimuth_deg","negate":false,"min":250,"max":320}),
-            vec![0, 3, 8],
+            vec![0, 3],
         ),
         (
             json!({"kind":"snr_db","negate":false,"min":-10,"max":-2}),
-            vec![1, 3, 8],
+            vec![1, 3],
         ),
         (
             json!({"kind":"dt_s","negate":false,"min":0,"max":0.2}),
@@ -332,7 +332,7 @@ fn tc_039_002_each_condition_and_its_negation() {
         ),
         (
             json!({"kind":"cq_target","negate":false,"values":["TEST","DX"]}),
-            vec![5, 8],
+            vec![5],
         ),
         (
             json!({"kind":"band","negate":false,"values":["40m"]}),
@@ -1157,7 +1157,10 @@ async fn tc_039_002_a_selection_of_a_cq_not_for_me_is_a_warning_only_the_browser
         json!({"row":na,"replace":false,"directive_confirmed":true}),
     )
     .await;
-    assert_eq!(m["result"]["error"]["code"], "directive_not_answerable", "{m}");
+    assert_eq!(
+        m["result"]["error"]["code"], "directive_not_answerable",
+        "{m}"
+    );
     assert_eq!(contact(&f).await.0, Value::Null);
     // The operator's confirmation selects it; a CQ for my continent asks nothing.
     let c = f

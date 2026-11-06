@@ -146,6 +146,7 @@ test('TC-039-002 a double-click on a CQ not for me warns and only the confirmati
   await row.first().dblclick();await page.locator('#op-confirm[open]').waitFor();
   await page.locator('#op-confirm-ok').click();
   await waitFor(async()=>(await snapshot()).contact.dx_call==='W9XYZ','confirmed: selected');
+  await waitFor(async()=>(await snapshot()).transmit.arm_state==='armed','the confirmed double-click arms');
   await page.keyboard.press('Escape');
   await waitFor(async()=>['cancelled','idle'].includes((await snapshot()).contact.state),'contact ended');
   assert.deepEqual(page.errors,[]);
