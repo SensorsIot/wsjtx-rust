@@ -462,6 +462,15 @@ impl<T: Transport> Executor<T> {
             SetupCommand::Read(setting) => read(transport, setting).map(SetupReply::Value),
             SetupCommand::Write(setting, value) => {
                 setting.encode(value)?;
+                // CL-044-09: read first; a fitting value is not written again, and a
+                // value the radio refuses to report is not written blind.
+                match read(transport, setting)? {
+                    Some(current) if current == value => {
+                        return Ok(SetupReply::Value(Some(value)));
+                    }
+                    Some(_) => {}
+                    None => return Err(Error::Rejected),
+                }
                 let state = exchange(
                     transport,
                     configuration,
@@ -618,6 +627,18 @@ impl<T: Transport> Executor<T> {
         overall: Instant,
         cancel: &AtomicBool,
     ) -> Result<()> {
+        self.run_written(inner, operation, overall, cancel)
+            .map(|_| ())
+    }
+    /// As `run`; true when a setter frame was sent. CL-044-09: a setter first reads its
+    /// value and sends no write frame when it already fits.
+    fn run_written(
+        &self,
+        inner: &mut Inner<T>,
+        operation: &Operation,
+        overall: Instant,
+        cancel: &AtomicBool,
+    ) -> Result<bool> {
         // Before a setter can emit bytes, its prior facts cease to establish readiness.
         self.snapshot
             .lock()
@@ -631,6 +652,7 @@ impl<T: Transport> Executor<T> {
             data_filter,
         } = operation
         {
+            let mut written = false;
             for setter in [
                 Operation::SetMode {
                     mode: *mode,
@@ -644,7 +666,12 @@ impl<T: Transport> Executor<T> {
                     frequency_hz: *frequency_hz,
                 },
             ] {
-                self.run(inner, &setter, overall, cancel)?;
+                written |= self.run_written(inner, &setter, overall, cancel)?;
+            }
+            // Each setter read its value first; with nothing written those reads are
+            // the confirmation, otherwise the final state is read again.
+            if !written {
+                return Ok(false);
             }
             for query in [
                 Operation::ReadMode,
@@ -666,7 +693,33 @@ impl<T: Transport> Executor<T> {
             {
                 return Err(Error::ReadbackMismatch);
             }
-            return Ok(());
+            return Ok(true);
+        }
+        let query = match operation {
+            Operation::SetFrequency { .. } => Some(Operation::ReadFrequency),
+            Operation::SetMode { .. } => Some(Operation::ReadMode),
+            Operation::SetData { .. } => Some(Operation::ReadData),
+            _ => None,
+        };
+        if let Some(query) = &query {
+            if self.snapshot()?.facts.sequence >= 9_007_199_254_740_991 {
+                return Err(Error::Limit);
+            }
+            let deadline = std::cmp::min(overall, Instant::now() + Duration::from_secs(1));
+            let current = exchange(
+                &mut inner.transport,
+                &inner.configuration,
+                query,
+                deadline,
+                cancel,
+            )?;
+            self.update(&current)?;
+            if current == Reply::Rejected {
+                return Err(Error::Rejected);
+            }
+            if fits(operation, &current) {
+                return Ok(false);
+            }
         }
         let deadline = std::cmp::min(overall, Instant::now() + Duration::from_secs(1));
         if self.snapshot()?.facts.sequence >= 9_007_199_254_740_991 {
@@ -683,12 +736,6 @@ impl<T: Transport> Executor<T> {
         if matches!(reply, Reply::Rejected) {
             return Err(Error::Rejected);
         }
-        let query = match operation {
-            Operation::SetFrequency { .. } => Some(Operation::ReadFrequency),
-            Operation::SetMode { .. } => Some(Operation::ReadMode),
-            Operation::SetData { .. } => Some(Operation::ReadData),
-            _ => None,
-        };
         if let Some(query) = query {
             if reply != Reply::Ack {
                 return Err(Error::Protocol);
@@ -712,27 +759,31 @@ impl<T: Transport> Executor<T> {
             if read == Reply::Rejected {
                 return Err(Error::Indeterminate);
             }
-            let matched = match (operation, read) {
-                (Operation::SetFrequency { frequency_hz }, Reply::Frequency(actual)) => {
-                    *frequency_hz == actual
-                }
-                (Operation::SetMode { mode, filter }, Reply::Mode(actual)) => {
-                    actual.sideband() == Some(*mode) && actual.filter == *filter
-                }
-                (Operation::SetData { data, filter }, Reply::Data(actual)) => {
-                    actual
-                        == DataValue {
-                            enabled: *data,
-                            filter: *filter,
-                        }
-                }
-                _ => false,
-            };
-            if !matched {
+            if !fits(operation, &read) {
                 return Err(Error::ReadbackMismatch);
             }
+            return Ok(true);
         }
-        Ok(())
+        Ok(false)
+    }
+}
+/// True when a setter's query reply already shows the setter's value.
+fn fits(operation: &Operation, reply: &Reply) -> bool {
+    match (operation, reply) {
+        (Operation::SetFrequency { frequency_hz }, Reply::Frequency(actual)) => {
+            frequency_hz == actual
+        }
+        (Operation::SetMode { mode, filter }, Reply::Mode(actual)) => {
+            actual.sideband() == Some(*mode) && actual.filter == *filter
+        }
+        (Operation::SetData { data, filter }, Reply::Data(actual)) => {
+            *actual
+                == DataValue {
+                    enabled: *data,
+                    filter: *filter,
+                }
+        }
+        _ => false,
     }
 }
 fn check(deadline: Instant, cancel: &AtomicBool) -> Result<()> {
