@@ -59,6 +59,10 @@ impl Renderer {
             phase: 0.,
         }
     }
+    /// #44 the Tx level of a running Tune, without a phase step in the tone.
+    pub fn set_scale(&mut self, scale: f32) {
+        self.scale = scale;
+    }
     /// True once every program sample has been written (a tone never ends).
     pub fn exhausted(&self) -> bool {
         match &self.source {

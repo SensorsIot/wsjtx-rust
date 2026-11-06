@@ -513,6 +513,53 @@ impl<T: Transport> Executor<T> {
         }
         result
     }
+    /// #44 CL-044-12 one meter burst under the transmit hold. It changes no radio setting
+    /// and no connection state: a timeout or a cancel (a PTT exchange waits for nothing)
+    /// never closes the connection a keyed transmission still needs. A refused read (FA)
+    /// is a missing meter; a late reply is skipped by the next exchange's parse.
+    pub fn read_meters(
+        &self,
+        deadline: Instant,
+        cancel: &AtomicBool,
+    ) -> Result<super::setup::Meters> {
+        use super::setup::{self, Heard, Meter};
+        check(deadline, cancel)?;
+        let mut inner = self.inner.try_lock().map_err(|e| match e {
+            TryLockError::WouldBlock => Error::Busy,
+            TryLockError::Poisoned(_) => Error::Unavailable,
+        })?;
+        if self.snapshot()?.state != State::Ready {
+            return Err(Error::Unavailable);
+        }
+        let address = inner.configuration.radio_address;
+        let mut meters = setup::Meters::default();
+        for meter in Meter::ALL {
+            let bytes = setup::read_meter_frame(address, meter);
+            let value = exchange_setup(
+                &mut inner.transport,
+                &bytes,
+                deadline,
+                cancel,
+                |h| match h {
+                    Heard::Meter {
+                        address: a,
+                        sub_command,
+                        data,
+                    } if a == address && sub_command == meter.sub_command() => {
+                        Some(setup::decode_bcd(data))
+                    }
+                    Heard::Ng { address: a } if a == address => Some(None),
+                    _ => None,
+                },
+            )?;
+            match meter {
+                Meter::Alc => meters.alc = value,
+                Meter::Po => meters.po = value,
+                Meter::Swr => meters.swr = value,
+            }
+        }
+        Ok(meters)
+    }
     pub fn refresh(&self, cancel: Arc<AtomicBool>, deadline: Instant) -> Result<Observation> {
         let mut inner = self.inner.try_lock().map_err(|_| Error::Busy)?;
         if self.snapshot()?.state != State::Ready {

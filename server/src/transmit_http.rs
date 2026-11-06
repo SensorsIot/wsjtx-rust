@@ -34,8 +34,17 @@ pub(crate) struct StationHardware {
     abort: Arc<std::sync::atomic::AtomicBool>,
     origin: Instant,
     clock: Arc<StationClock>,
+    /// #44 CL-044-12 the Tx level of the next play and a running Tune.
+    level_db: i32,
 }
 impl Hardware for StationHardware {
+    fn set_level_db(&mut self, level_db: i32) {
+        self.level_db = level_db;
+        #[cfg(windows)]
+        if let Some(output) = self.output.as_ref() {
+            output.set_scale(tx::level_scale(level_db));
+        }
+    }
     fn attach_abort(&mut self, abort: Arc<std::sync::atomic::AtomicBool>) {
         self.abort = abort;
     }
@@ -132,7 +141,7 @@ impl Hardware for StationHardware {
             Program::Tone { hz } => Source::Tone { hz },
         };
         output
-            .play(source, tx::PLAYBACK_SCALE)
+            .play(source, tx::level_scale(self.level_db))
             .map_err(|_| AudioError::DeviceLost)
     }
     #[cfg(not(windows))]
@@ -194,6 +203,7 @@ impl Station {
             abort: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             origin: Instant::now(),
             clock: clock.clone(),
+            level_db: tx::LEVEL_MAX_DB,
         };
         Ok(Arc::new(Self {
             inputs,
@@ -264,7 +274,7 @@ impl Station {
     }
 }
 
-fn name<T: std::fmt::Debug>(value: T) -> String {
+pub(crate) fn name<T: std::fmt::Debug>(value: T) -> String {
     // CamelCase variant names map to the wire's snake_case.
     let text = format!("{value:?}");
     let mut out = String::new();
@@ -368,7 +378,7 @@ pub async fn snapshot(
         Err(_) => error("storage_unavailable"),
     }
 }
-fn keys(body: &Value, extra: &[&str]) -> Result<(), &'static str> {
+pub(crate) fn keys(body: &Value, extra: &[&str]) -> Result<(), &'static str> {
     let object = body.as_object().ok_or("invalid_request")?;
     let base = ["v", "profile_id", "boot_id", "command_id"];
     if object.len() != base.len() + extra.len()
@@ -378,7 +388,7 @@ fn keys(body: &Value, extra: &[&str]) -> Result<(), &'static str> {
     }
     Ok(())
 }
-fn envelope(
+pub(crate) fn envelope(
     body: &Value,
     r: &recording::Recording,
     boot_checked: bool,

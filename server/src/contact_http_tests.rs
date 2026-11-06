@@ -22,8 +22,13 @@ pub(crate) struct Bench {
     pub(crate) offset: Arc<AtomicI64>,
     /// When nonzero, the station's UTC stands still at this value (offset ignored).
     pub(crate) frozen: Arc<AtomicI64>,
+    /// Every Tx level handed to the hardware (#44 CL-044-12).
+    pub(crate) levels: Arc<Mutex<Vec<i32>>>,
 }
 impl Hardware for Bench {
+    fn set_level_db(&mut self, level_db: i32) {
+        self.levels.lock().unwrap().push(level_db);
+    }
     fn now_utc_ms(&self) -> i64 {
         let frozen = self.frozen.load(Ordering::SeqCst);
         if frozen != 0 {

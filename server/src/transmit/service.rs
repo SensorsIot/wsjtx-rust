@@ -27,6 +27,13 @@ pub const SAMPLE_RATE_HZ: u32 = 48_000;
 pub const HALT_BOUND_MS: u64 = 250;
 /// Playback scale of the unit-peak waveform (-6.02 dBFS, TransmitTiming playbackScale).
 pub const PLAYBACK_SCALE: f32 = 0.5;
+/// #44 CL-044-12 the Tx level: digital attenuation below PLAYBACK_SCALE, in whole dB.
+pub const LEVEL_MIN_DB: i32 = -40;
+pub const LEVEL_MAX_DB: i32 = 0;
+/// The playback scale of a Tx level.
+pub fn level_scale(level_db: i32) -> f32 {
+    PLAYBACK_SCALE * 10f32.powf(level_db.clamp(LEVEL_MIN_DB, LEVEL_MAX_DB) as f32 / 20.)
+}
 /// WstxTransmit::TransmitTiming releaseMarginMs: PTT is released at the latest this long
 /// after the waveform's last sample was due, whatever the device reports. It covers the
 /// render drain (RENDER_BUFFER_MS) and scheduling delays under load with headroom, and
@@ -210,6 +217,10 @@ pub trait Hardware: Send {
     fn attach_abort(&mut self, abort: Arc<AtomicBool>) {
         let _ = abort;
     }
+    /// #44 The Tx level the next `play` uses; a running Tune tone follows it at once.
+    fn set_level_db(&mut self, level_db: i32) {
+        let _ = level_db;
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -299,6 +310,9 @@ pub struct Core<H: Hardware> {
     startup_release: StartupRelease,
     abort: Arc<AtomicBool>,
     faulted: bool,
+    /// #44 the Tx level (dB): Tune follows it at once, a transmission takes it at its
+    /// audio start and keeps it to its end.
+    level_db: i32,
     /// WstxTransmit::StationModeGate: the station's operating mode (None: not gated).
     station_mode: Option<Mode>,
     /// The station's call hash table (WstxOfflineDecode::HashResolution): every
@@ -386,6 +400,7 @@ impl<H: Hardware> Core<H> {
             startup_release: StartupRelease::Pending,
             abort: Arc::new(AtomicBool::new(false)),
             faulted: false,
+            level_db: LEVEL_MAX_DB,
             station_mode: None,
             hashes: None,
         }
@@ -430,6 +445,18 @@ impl<H: Hardware> Core<H> {
                 || self.tune.is_some(),
             self.last_period,
         )
+    }
+    /// #44 CL-044-12 sets the Tx level. A running Tune follows at once; a transmission
+    /// already playing keeps its level, so a change takes effect between transmissions.
+    pub fn set_tx_level(&mut self, level_db: i32) {
+        self.level_db = level_db.clamp(LEVEL_MIN_DB, LEVEL_MAX_DB);
+        if self.tune.is_some() {
+            self.hardware.set_level_db(self.level_db);
+        }
+    }
+    /// A cheap read for the CAT lifecycle's meter display.
+    pub fn tune_on(&self) -> bool {
+        self.tune.is_some()
     }
     pub fn hardware_mut(&mut self) -> &mut H {
         &mut self.hardware
@@ -766,6 +793,7 @@ impl<H: Hardware> Core<H> {
             return Err(TransmitRefusal::RadioUnavailable);
         }
         self.ptt = PttState::Keyed;
+        self.hardware.set_level_db(self.level_db);
         if self
             .hardware
             .play(Program::Tone { hz: f64::from(hz) })
@@ -936,6 +964,7 @@ impl<H: Hardware> Core<H> {
             let samples = job.prepared.samples.clone();
             let job_len = samples.len();
             let text = job.prepared.text.clone();
+            self.hardware.set_level_db(self.level_db);
             if let Err(e) = self.hardware.play(Program::Waveform {
                 samples,
                 skip: start.skipped_samples as usize,
@@ -1354,6 +1383,9 @@ impl Hardware for Box<dyn Hardware> {
     }
     fn attach_abort(&mut self, abort: Arc<AtomicBool>) {
         (**self).attach_abort(abort)
+    }
+    fn set_level_db(&mut self, level_db: i32) {
+        (**self).set_level_db(level_db)
     }
     fn clock(&self) -> ClockState {
         (**self).clock()

@@ -66,11 +66,16 @@ pub struct Control {
 #[serde(deny_unknown_fields)]
 pub struct Radio {
     pub agc: wstx_rust::radio_control::setup::Agc,
+    /// #44 CL-044-12 the profile power: the Po (percent of the radio's full scale) the Tx
+    /// level never drives above. None: only the radio's own RF power setting limits it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub power_limit_pct: Option<u8>,
 }
 impl Radio {
     /// FT8/FT4 default on the IC-7300 (operator decision 2026-11-04, #44/#54).
     pub const DEFAULT: Self = Self {
         agc: wstx_rust::radio_control::setup::Agc::Slow,
+        power_limit_pct: None,
     };
 }
 /// True when the control is CAT on a radio whose CI-V AGC command is known: every
@@ -167,6 +172,13 @@ impl Settings {
         self.control.validate()?;
         if self.radio.is_some() != manages_radio(&self.control) {
             return Err("radio");
+        }
+        if self
+            .radio
+            .and_then(|r| r.power_limit_pct)
+            .is_some_and(|p| !(1..=100).contains(&p))
+        {
+            return Err("radio.power_limit_pct");
         }
         Ok(())
     }

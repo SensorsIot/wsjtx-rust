@@ -1530,3 +1530,99 @@ fn accepted_requests_teach_the_station_hash_table() {
     assert_eq!(shown(&t, "<YW18FIFA> PA/K1XX"), "<YW18FIFA> PA/K1XX");
     assert_eq!(shown(&t, "<3D2CR/P> W9XYZ"), "<...> W9XYZ");
 }
+
+/// Records each Tx level with the log position, on top of the shared fake.
+#[derive(Clone)]
+struct Levelled(Fake, Arc<Mutex<Vec<(usize, i32)>>>);
+impl Hardware for Levelled {
+    fn now_utc_ms(&self) -> i64 {
+        self.0.now_utc_ms()
+    }
+    fn clock(&self) -> ClockState {
+        self.0.clock()
+    }
+    fn context(&self) -> Context {
+        self.0.context()
+    }
+    fn ptt(&mut self, on: bool) -> Result<(), PttError> {
+        self.0.ptt(on)
+    }
+    fn open_audio(&mut self) -> Result<(), AudioError> {
+        self.0.open_audio()
+    }
+    fn play(&mut self, program: Program) -> Result<(), AudioError> {
+        self.0.play(program)
+    }
+    fn poll_audio(&mut self) -> AudioPoll {
+        self.0.poll_audio()
+    }
+    fn stop_audio(&mut self) {
+        self.0.stop_audio()
+    }
+    fn audio_stopper(&self) -> Arc<dyn Fn() + Send + Sync> {
+        self.0.audio_stopper()
+    }
+    fn set_level_db(&mut self, level_db: i32) {
+        self.1.lock().unwrap().push((self.0.log().len(), level_db));
+    }
+}
+
+// Proves: CL-044-12; TC-044-013. A transmission takes the level at its audio start and
+// keeps it to the end; a running Tune follows at once; the scale is the attenuation.
+#[test]
+fn tx_level_applies_at_audio_start_and_live_only_in_tune() {
+    use wstx_rust::audio::{Encoding, NativeFormat};
+    use wstx_rust::playback::{Renderer, Source};
+    let f = Fake::new();
+    let levels = Arc::new(Mutex::new(Vec::new()));
+    let mut core = Core::new(Levelled(f.clone(), levels.clone()));
+    core.arm(7).unwrap();
+    core.set_tx_level(-12);
+    assert!(levels.lock().unwrap().is_empty(), "nothing plays yet");
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    let mut t = f.now_utc_ms();
+    while t <= P + 1_000 {
+        f.at(t);
+        core.tick();
+        t += 1;
+    }
+    let play = f
+        .log()
+        .iter()
+        .position(|(_, e)| matches!(e, Event::Play { .. }))
+        .unwrap();
+    assert_eq!(
+        *levels.lock().unwrap(),
+        vec![(play, -12)],
+        "set just before play"
+    );
+    // A change during the transmission is not handed to the running audio.
+    core.set_tx_level(-13);
+    assert_eq!(levels.lock().unwrap().len(), 1);
+    *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
+    f.at(P + 13_000);
+    core.tick();
+    // Range is clamped; Tune starts at the level and follows it.
+    core.set_tx_level(-99);
+    core.set_tune(true, 1500).unwrap();
+    assert_eq!(levels.lock().unwrap().last().map(|l| l.1), Some(-40));
+    core.set_tx_level(5);
+    assert_eq!(levels.lock().unwrap().last().map(|l| l.1), Some(0));
+    assert_eq!(level_scale(0), PLAYBACK_SCALE);
+    assert!((level_scale(-20) - 0.05).abs() < 1e-5);
+    assert_eq!(level_scale(-99), level_scale(LEVEL_MIN_DB));
+    let mut renderer = Renderer::new(Source::Tone { hz: 12_000. }, 0.5);
+    let format = NativeFormat {
+        rate: 48_000,
+        channels: 1,
+        encoding: Encoding::Float32,
+    };
+    let mut out = [0u8; 8];
+    renderer.fill(format, &mut out, 2);
+    assert_eq!(f32::from_le_bytes(out[4..8].try_into().unwrap()), 0.5);
+    renderer.set_scale(0.25);
+    renderer.fill(format, &mut out, 1);
+    assert!(f32::from_le_bytes(out[..4].try_into().unwrap()).abs() < 1e-5);
+    renderer.fill(format, &mut out, 1);
+    assert!((f32::from_le_bytes(out[..4].try_into().unwrap()) + 0.25).abs() < 1e-5);
+}
