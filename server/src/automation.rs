@@ -18,6 +18,41 @@ const MAX_SAFE: u64 = 9_007_199_254_740_991;
 const AUTOMATION: authorization::Principal = authorization::Principal::Automation;
 pub const RECEIPTS: usize = 16;
 pub const CALLS_MAX: usize = 16;
+/// #39 WstxStrategy::StrategyRun (coordinator default, for the operator to confirm): with no
+/// authenticated client for this long a strategy starts nothing new.
+pub const CLIENT_GONE: Duration = Duration::from_secs(60);
+/// #39 who is connected: open status WebSocket sessions (authenticated at the upgrade) and an
+/// authenticated MCP request since the last run step (MCP has no sessions).
+#[derive(Default)]
+pub(crate) struct Clients {
+    sessions: Arc<std::sync::atomic::AtomicUsize>,
+    request: std::sync::atomic::AtomicBool,
+}
+/// Holds one status WebSocket session open.
+pub(crate) struct ClientSession(Arc<std::sync::atomic::AtomicUsize>);
+impl Drop for ClientSession {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+    }
+}
+impl Clients {
+    pub(crate) fn session(&self) -> ClientSession {
+        self.sessions
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        ClientSession(self.sessions.clone())
+    }
+    pub(crate) fn mcp_request(&self) {
+        self.request
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+    /// A client is here now: a session is open, or a request came since the last call.
+    fn present(&self) -> bool {
+        let request = self
+            .request
+            .swap(false, std::sync::atomic::Ordering::AcqRel);
+        request || self.sessions.load(std::sync::atomic::Ordering::Acquire) > 0
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Ranking {
@@ -346,6 +381,8 @@ struct Run {
     /// this run), and the one left after calls_per_station (passed over once).
     given_up: Vec<String>,
     rested: Option<String>,
+    /// When a client was last there (WstxStrategy::StrategyRun; a selection counts).
+    client_seen: Instant,
     /// #42 Pounce: the call and the station band captured at start.
     pounce: Option<(String, String)>,
 }
@@ -654,6 +691,7 @@ impl Owner {
                     last_decision: None,
                     given_up: Vec::new(),
                     rested: None,
+                    client_seen: self.now(),
                     pounce,
                 });
                 inner.run_revision += 1;
@@ -768,6 +806,7 @@ impl Owner {
                 last_decision: None,
                 given_up: Vec::new(),
                 rested: None,
+                client_seen: self.now(),
                 pounce: None,
             })
         })();
@@ -855,7 +894,7 @@ impl Owner {
                 disarm(contact, state);
             }
         };
-        // Halt (browser button, Alt+H, MCP or UDP) ends the run in every state.
+        // Halt (browser button, Alt+H or MCP) ends the run in every state.
         let halts = r.transmit.get().map(|t| t.service.halt_requests());
         if halts != Some(run.halts) {
             return stop(&mut inner, "halted", armed);
@@ -934,6 +973,10 @@ impl Owner {
         if let Some((id, _, _, _)) = &fresh {
             run.last_decode = *id;
         }
+        if r.clients.present() {
+            run.client_seen = now;
+        }
+        let no_client = is_strategy && now >= run.client_seen + CLIENT_GONE;
         if is_strategy && run.state == RunState::Waiting && run.reason != waiting_reason {
             run.reason = waiting_reason;
             inner.run_revision = inner.run_revision.saturating_add(1).min(MAX_SAFE);
@@ -1048,6 +1091,11 @@ impl Owner {
                         return manual(&mut inner);
                     }
                     return stop(&mut inner, "contact_changed", false);
+                }
+                // Nobody has been connected: nothing new is started. A contact in progress got
+                // here by its normal end; a manual one waits in Manual first.
+                if no_client {
+                    return stop(&mut inner, "no_client", false);
                 }
                 if waiting_reason.is_some() {
                     return;

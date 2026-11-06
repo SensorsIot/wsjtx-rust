@@ -16,7 +16,7 @@ tuning.innerHTML='<div class="op-dial"><span class="op-dial-label">DIAL MHz</spa
 const chips=document.createElement('div');chips.id='exception-chips';chips.className='op-chips';chips.setAttribute('role','group');chips.setAttribute('aria-label','Station exceptions');
 const headerActions=document.createElement('div');headerActions.className='op-header-actions';
 headerActions.innerHTML='<button type="button" data-region="logbook" id="open-logbook" title="Logbook">&#9776; Logbook</button><button type="button" data-region="server-settings" id="open-server-settings" title="Settings (F2)">&#9881; Settings</button><button type="button" data-region="help" aria-label="Help" title="Keyboard and mouse overview (?)">?</button>';
-const halt=document.createElement('button');halt.id='halt-tx';halt.className='op-halt';halt.disabled=true;halt.innerHTML='<span class="op-square" aria-hidden="true"></span>HALT';halt.setAttribute('aria-label','Halt Tx');halt.title='Halt Tx (Esc, Alt+H)';halt.setAttribute('aria-describedby','transmit-unavailable');headerActions.append(halt);
+const halt=document.createElement('button');halt.id='halt-tx';halt.className='op-halt';halt.disabled=true;halt.innerHTML='<span class="op-square" aria-hidden="true"></span>HALT';halt.setAttribute('aria-label','Halt Tx');halt.title='Halt Tx: emergency stop (Alt+H)';halt.setAttribute('aria-describedby','transmit-unavailable');headerActions.append(halt);
 stationBar.replaceChildren(tuning,chips,stationConnectionNode,headerActions);
 const strip=document.createElement('section');strip.id='rxtx-strip';strip.className='op-strip';strip.setAttribute('aria-label','Rx and Tx audio frequencies');
 const workspace=document.createElement('div');workspace.id='operating-workspace';
@@ -33,8 +33,8 @@ const secondaryRegions=new Map();
 function region(id,title,intro){const section=document.createElement('section');section.id='region-'+id;section.className='op-secondary';section.hidden=true;section.setAttribute('aria-labelledby','region-title-'+id);section.innerHTML=`<header><div><span class="op-eyebrow">WSTX / ${title.toUpperCase()}</span><h2 id="region-title-${id}">${title}</h2></div><button type="button" data-region="operate" class="return-operate">&#8592; Back to operation</button></header><div class="op-secondary-body"><p class="op-muted">${intro}</p></div>`;secondaryRoot.append(section);secondaryRegions.set(id,section);return section.querySelector('.op-secondary-body');}
 const logRegion=region('logbook','Logbook','Contact history and ADIF operations are unavailable until this station offers contact logging.');
 logRegion.insertAdjacentHTML('beforeend','<p>No server-confirmed contacts are available.</p><button type="button" disabled>Import ADIF</button> <button type="button" disabled>Export ADIF</button>');
-const helpRegion=region('help','Keyboard and mouse','WSJT-X keys where the function exists. Letter keys and ? are inactive while a text field has focus; Esc and Alt+H always halt.');
-helpRegion.insertAdjacentHTML('beforeend','<dl class="op-keys" id="help-keys"><div><dt>Esc / Alt+H / HALT</dt><dd>Halt Tx now (Esc also cancels the contact). Panels stay open.</dd></div><div><dt>F1 / F3 / F5 / ?</dt><dd>This overview</dd></div></dl><p class="op-muted">The interface contains no generated callsigns or simulated radio state.</p>');
+const helpRegion=region('help','Keyboard and mouse','WSJT-X keys where the function exists. Letter keys and ? are inactive while a text field has focus; Alt+H always halts, Esc aborts the QSO.');
+helpRegion.insertAdjacentHTML('beforeend','<dl class="op-keys" id="help-keys"><div><dt>Alt+H / HALT</dt><dd>Emergency stop: halt Tx now, everything off. Panels stay open.</dd></div><div><dt>Esc / Abort QSO</dt><dd>Abort the QSO: the transmission stops now and the contact is cancelled (nothing logged); the station stays ready.</dd></div><div><dt>F1 / F3 / F5 / ?</dt><dd>This overview</dd></div></dl><p class="op-muted">The interface contains no generated callsigns or simulated radio state.</p>');
 function secondary(id,title,element,parent){const detail=document.createElement('details');detail.id=id;const summary=document.createElement('summary');summary.textContent=title;detail.append(summary,element);parent.append(detail);return detail;}
 function block(id,title,parent,html=''){const section=document.createElement('section');section.id=id;section.className='op-section';section.setAttribute('aria-labelledby',id+'-title');section.innerHTML=`<h3 id="${id}-title">${title}</h3>${html}`;parent.append(section);return section;}
 const drawer=document.createElement('aside');drawer.id='settings-drawer';drawer.className='op-secondary op-drawer';drawer.hidden=true;drawer.setAttribute('aria-labelledby','drawer-title');
@@ -76,7 +76,7 @@ document.querySelector('#settings-save').textContent='Apply ⟳';
 radioSection.append(profilePanel);
 const catSettings=block('settings-cat','CAT receive-only confirmation',radioSection);
 // #44 CL-044-08: one Audio section; the selects belong to the profile form (Apply ⟳), their values are endpoint IDs.
-const audioSettings=block('settings-audio','Audio &#10227;',radioSection,'<div class="op-audio-input"></div><div class="op-input-meter"><span>Rx level <strong>Unknown</strong></span><div></div></div><div class="op-audio-output"></div><p id="audio-recommend" hidden><span id="audio-recommend-text"></span> <button type="button" id="audio-use-radio">Use IC-7300 audio</button></p><p id="audio-list-status" class="op-muted" role="status"></p>');
+const audioSettings=block('settings-audio','Audio &#10227;',radioSection,'<div class="op-audio-input"></div><div class="op-input-meter"><span>Rx level <strong>Unknown</strong></span><div></div></div><div class="op-audio-output"></div><div id="tx-level" hidden><p><button type="button" id="tx-level-set">Set level</button> <span id="tx-level-line" role="status"></span></p><p id="tx-meters" class="op-muted" role="status" hidden></p><label id="tx-level-manual" hidden>Tx level (no ALC over CI-V) <input id="tx-level-slider" type="range" min="-40" max="0" step="1"></label></div><p id="audio-recommend" hidden><span id="audio-recommend-text"></span> <button type="button" id="audio-use-radio">Use IC-7300 audio</button></p><p id="audio-list-status" class="op-muted" role="status"></p>');
 for(const [id,slot] of [['audio-input','.op-audio-input'],['audio-output','.op-audio-output']]){const select=document.getElementById(id);select.setAttribute('form','settings');audioSettings.querySelector(slot).append(select.closest('label'));}
 for(const type of ['input','change'])audioSettings.addEventListener(type,event=>{if(event.target.form===serverForm)serverForm.dispatchEvent(new Event(type));});
 const connectionPanel=document.createElement('div');connectionPanel.append(controls.querySelector('section[aria-label="Station status"]'),profileMetadata);
@@ -407,7 +407,7 @@ async function sync(current=socket) {
     }
     show();
     if(subscribedSocket!==current && current.readyState===WebSocket.OPEN) {subscribedSocket=current;subscribe(current);}
-  } catch(error){if(current===socket)statusText.textContent=`Recording state unavailable · ${error.message}`;} finally{syncPending=false;if(syncAgain){syncAgain=false;sync(socket);}}
+  } catch(error){if(current===socket){statusText.textContent=`Recording state unavailable · ${error.message}`;if(subscribedSocket===current)disconnect(current);}} finally{syncPending=false;if(syncAgain){syncAgain=false;sync(socket);}}
 }
 addEventListener('station-ready',event => {if(subscribedSocket!==event.detail || snapshot?.boot_id!==profileData.boot_id)sync(event.detail);});
 addEventListener('station-stale',()=>{statusText.textContent='Disconnected · recording data stale';subscribedSocket=undefined;});
@@ -415,7 +415,14 @@ addEventListener('station-message',event => {
   const {message,current}=event.detail;
   if(current!==socket)return;
   if(message.type==='recording.state') {
-    if(snapshot && (message.data.generation!==snapshot.generation || message.data.state!==(snapshot.job?.state??null) || message.data.source_id!==(snapshot.job?.kind==='live'?snapshot.job.source_id:(snapshot.recording?.id??null)) || message.data.job_id!==(snapshot.job?.id??null))) sync(current);
+    // Pushed on change (RecordingReceive, PushedStationState): read the snapshot only for what the event does not carry.
+    if(!snapshot)return;
+    const d=message.data,running=d.import??null,shown=snapshot.import??null;
+    if(d.generation!==snapshot.generation || d.state!==(snapshot.job?.state??null) || d.source_id!==(snapshot.job?.kind==='live'?snapshot.job.source_id:(snapshot.recording?.id??null)) || d.job_id!==(snapshot.job?.id??null)) sync(current);
+    else if(!uploading){
+      if(running?.id!==shown?.id)sync(current); // the event carries the whole import: only another or an ended one needs the snapshot
+      else if(running){snapshot.import={...shown,...running};show();}
+    }
     return;
   }
   if(message.type==='error'&&message.data.code==='unknown_command'){
@@ -453,9 +460,6 @@ addEventListener('station-message',event => {
   else snapshot.job.processed_frames=f.end_frame;
   show();
 });
-// While the live job this snapshot shows is running, receive.state carries its changes (below), so the poll rests.
-setInterval(()=>{if(socket?.readyState===WebSocket.OPEN && snapshot && !liveCovered())socket.send(JSON.stringify({v:1,type:'recording.get',id:nextId++}));},2000);
-setInterval(()=>{if(socket?.readyState===WebSocket.OPEN && snapshot?.import && !uploading)sync();},5000);
 function startBody(){return {v:1,profile_id:snapshot.profile_id,boot_id:snapshot.boot_id,generation:snapshot.generation};}
 document.querySelector('#recording-import').addEventListener('click',async()=>{
   const file=document.querySelector('#recording-file').files[0];if(!file){progress.textContent='Choose a WAV recording.';return;}
@@ -614,50 +618,8 @@ function sortBy(button){
 }
 document.querySelector('#band-activity thead').addEventListener('click',event=>{const th=event.target.closest('th[data-sort]');if(th)sortBy(th);});
 document.querySelector('#band-activity thead').addEventListener('keydown',event=>{const th=event.target.closest('th[data-sort]');if(th&&(event.key==='Enter'||event.key===' ')){event.preventDefault();sortBy(th);}});
-// #40 CL-040-08 WstxUdp::UdpDisplayEvent: Highlight Callsign and Clear from a UDP target with
-// accept_commands on (GridTracker, JTAlert), as WSJT-X's Band Activity and Rx Frequency
-// windows apply them. kind band_activity or rx_frequency: a Clear hides the rows of its job
-// below its floor (and, while that job is live, the rows of every earlier job).
-// The event is kept whatever the page knows yet and applies only while its profile and boot are
-// the station's (a station restart drops the earlier boot's highlights and floors).
-let udpDisplay=null;
-const udpCurrent=()=>udpDisplay&&udpDisplay.profile_id===profileData?.profile_id&&udpDisplay.boot_id===profileData?.boot_id?udpDisplay:null;
-function udpVisible(kind,record,context){
-  const d=udpCurrent(),f=d?.clear?.[kind];if(!f)return true;
-  const at=`${d.profile_id}/${d.boot_id}/${f.source_id}/${f.job_id}/${f.generation}`;
-  return at===liveIdentity(live)?context===at&&record.sequence>=f.sequence:context!==at||record.sequence>=f.sequence;
-}
-window.wstxUdpVisible=udpVisible;
-// The UDP highlight of a row (WSJT-X DisplayText::highlight_callsign): a whole message word,
-// also in <>, the sender first. A last-period entry of the row's period wins over the call's
-// map entry; a last-period reset (no colours) leaves that word uncoloured. It is interesting by
-// definition and replaces the slot colour (BandActivityColours).
-function udpHighlight(record){
-  const list=udpCurrent()?.highlights;if(!list?.length||record.status!=='decoded')return null;
-  const words=record.text.toUpperCase().split(' ').filter(Boolean).map(w=>w.replace(/^<(.+)>$/,'$1')),from=record.fields?.from?.text?.toUpperCase();
-  for(const word of from&&words.includes(from)?[from,...words.filter(w=>w!==from)]:words){
-    const last=list.findLast(h=>h.last_only&&h.call===word&&h.period!==null&&h.period===record.period_start_utc);
-    if(last){if(last.background||last.foreground)return last;continue;}
-    const map=list.find(h=>!h.last_only&&h.call===word);if(map)return map;
-  }
-  return null;
-}
-function validUdpDisplay(d){
-  const colour=c=>c===null||(typeof c==='string'&&/^#[0-9a-f]{6}$/.test(c));
-  const floor=f=>f===null||(!!f&&typeof f==='object'&&typeof f.source_id==='string'&&typeof f.job_id==='string'&&Number.isSafeInteger(f.generation)&&Number.isSafeInteger(f.sequence));
-  return !!d&&typeof d.profile_id==='string'&&typeof d.boot_id==='string'&&Number.isSafeInteger(d.display_revision)&&Array.isArray(d.highlights)&&d.highlights.length<=100&&d.highlights.every(h=>h&&typeof h.call==='string'&&colour(h.background)&&colour(h.foreground)&&typeof h.last_only==='boolean'&&(h.period===null||typeof h.period==='string'))&&
-    !!d.clear&&floor(d.clear.band_activity)&&floor(d.clear.rx_frequency);
-}
-addEventListener('station-message',event=>{
-  const {current,message}=event.detail;if(current!==socket||message?.type!=='udp.display')return;
-  const d=message.data;
-  if(!validUdpDisplay(d)){stationData('udp',false);return;}stationData('udp',true);
-  if(udpDisplay&&udpDisplay.profile_id===d.profile_id&&udpDisplay.boot_id===d.boot_id&&d.display_revision<=udpDisplay.display_revision)return;
-  udpDisplay=d;renderResults();
-});
 function renderResults(){
-  const shownRows=resultRows.filter(r=>udpVisible('band_activity',r,liveIdentity(live)));
-  const ordered=activityOrdering(shownRows);
+  const ordered=activityOrdering(resultRows);
   const body=document.querySelector('#band-activity tbody');
   const loading=resultView&&resultCursor<resultView.next_sequence;
   // #61 CL-061-03: the station's Tx period (CL-061-04) shows its marker row and no empty block;
@@ -666,14 +628,14 @@ function renderResults(){
   document.querySelector('#band-activity header .op-muted').textContent=own?`Tx \u00b7 ${mode?.toUpperCase()} period ${periodLabel(resultView.period_start_utc,mode)} UTC \u00b7 this station transmitted, no decode`:resultView?
     `Latest ${live?.job?.mode.toUpperCase()} period ${periodLabel(resultView.period_start_utc,live?.job?.mode)}${resultView.period_start_utc?' UTC':''} \u00b7 ${resultView.complete?'Attempt complete':'Partial'}${loading?' \u00b7 Loading results':''}${historyIncomplete?' \u00b7 Incomplete history':''}`:'Latest decode period';
   document.querySelector('#band-activity header .op-muted').title=resultView?.period_start_utc?'Timing relative to station system clock; external UTC accuracy unknown. DT positive: late; negative: early.':'Station clock correlation unavailable until supplied by this source.';
-  const count=own?activityHistory.reduce((n,h)=>n+h.rows.filter(r=>udpVisible('band_activity',r,h.context)).length,0):shownRows.length;
+  const count=own?activityHistory.reduce((n,h)=>n+h.rows.length,0):resultRows.length;
   document.querySelector('#band-activity .op-count').textContent=`${count} message${count===1?'':'s'}`;
   if(own){
     const marker=document.createElement('tr'),cell=document.createElement('td');marker.className='ba-tx';marker.dataset.period='tx';marker.setAttribute('role','row');
     cell.colSpan=7;cell.setAttribute('role','cell');cell.textContent=`Tx ${periodLabel(resultView.period_start_utc,mode)} \u00b7 this station transmitted \u00b7 no decode`;marker.append(cell);
     body.replaceChildren(marker);window.wstxRenderHistory?.(body);partnerFirst(body);return;
   }
-  if(!shownRows.length){
+  if(!resultRows.length){
     body.innerHTML='<tr><td colspan="7" class="empty-messages"><strong></strong><span></span></td></tr>';
     const decoder=live?.job&&['ft4','ft8'].includes(live.job.mode),job=live?.job;
     let heading='Decoder unavailable',message='No decoded messages are available from this server.';
@@ -711,21 +673,19 @@ function activityRow(record,period,context,mode){
   if(decoded&&/^CQ\b/.test(record.text))row.classList.add('ba-cq');
   if(isPartner)row.classList.add('ba-partner');
   else if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
-  const udp=udpHighlight(record);
   const cqLike=/^(CQ|QRZ)\b/.test(record.text)||(f?.type==='nonstandard'&&f.cq);
-  const senderOnly=!udp&&hl.length>0&&!row.classList.contains('ba-tome')&&!cqLike;
+  const senderOnly=hl.length>0&&!row.classList.contains('ba-tome')&&!cqLike;
   // #37 (operator 2026-11-04): a row of a QSO between others cannot start a contact for me.
   if(from)row.dataset.sender=from;
   if(from&&!cqLike&&to!==my)row.dataset.foreign='true';
   if(senderOnly)row.classList.add('ba-sender');
-  if(udp)row.dataset.udp=udp.call;else if(hl.length)row.dataset.hl=hl.join(' ');
+  if(hl.length)row.dataset.hl=hl.join(' ');
   const grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value:null,km=grid?window.wstxDistanceKm?.(profileData?.settings?.locator,grid)??null:null,dx=record.dxcc,approx=km===null&&Number.isInteger(dx?.km);
   if(dx?.cont)row.dataset.continent=dx.cont;
   if(!isPartner)row.dataset.reasons=JSON.stringify(activityHover(record));
   const cells=[periodLabel(record.period_start_utc,mode),record.snr_db===null?'\u2014':record.snr_db.toFixed(1),record.dt_seconds===null?'\u2014':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),decoded?record.text:`Payload ${record.status}`,dx?dx.name:'\u2014',approx?`~${dx.km} km`:km===null?'\u2014':`${km} km`];
   for(const [index,text] of cells.entries()){
     const cell=document.createElement('td');cell.setAttribute('role','cell');cell.dataset.label=labels[index];cell.textContent=text;
-    if(udp){if(udp.background)cell.style.backgroundColor=udp.background;if(udp.foreground)cell.style.color=udp.foreground;}
     if(index===4){cell.dataset.col='message';
       // The sender's call word (also in < >) of a sender-only row is its own span; the text stays the message.
       const words=text.split(' '),at=senderOnly&&from?[...words.keys()].sort((a,b)=>(a===0)-(b===0)).find(i=>words[i].replace(/^<(.+)>$/,'$1').toUpperCase()===from):undefined;
@@ -856,7 +816,6 @@ function receiveReady(current){
 }
 addEventListener('station-ready',event=>receiveReady(event.detail));
 addEventListener('station-stale',()=>{lastReceiveReady=null;receiveShow();receiveStatus.textContent='Disconnected · live receive data stale';});
-function liveCovered(){return !!(live?.job&&snapshot?.job?.kind==='live'&&snapshot.job.id===live.job.id&&['running','cancelling'].includes(live.job.state));}
 addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;resultsAnnounced=performance.now();receiveSync(current);
   const d=message.data;if(snapshot&&d&&(d.generation!==snapshot.generation||d.job_id!==(snapshot.job?.id??null)||d.state!==(snapshot.job?.state??null)))sync(current);});
 setInterval(receiveResults,250);
@@ -1084,7 +1043,7 @@ document.querySelector('#cat-confirm-button').addEventListener('click',async()=>
 // #44 CL-044-06 Settings > Radio "Detect radio": one request per button press, no polling.
 // Detection writes nothing; "Use this setup" only fills the Radio form, which the operator
 // applies with Apply (restart receive) and then the receive-only confirmation above.
-const detectSection=block('settings-detect','Detect radio',radioSection,'<p class="op-muted">Detection opens only USB radio bridges (Silicon Labs CP210x) that this station\'s CAT does not hold, reads the CI-V ID and the IC-7300 menu, and writes nothing.</p><label class="receive-only-verification"><input type="checkbox" id="detect-ack">USB SEND and USB keying (CW/RTTY) are OFF or the radio is on a dummy load; opening a port can pulse DTR/RTS, also on other CP210x boards</label><p class="op-actions"><button type="button" id="detect-run" disabled>Detect radio</button></p><p id="detect-result" role="status">Not run</p><div id="detect-proposal" hidden><dl id="detect-fields"></dl><p class="op-actions"><button type="button" id="detect-use">Use this setup</button></p></div><div id="detect-settings" hidden><h4>IC-7300 settings</h4><ul id="detect-items"></ul><p class="op-actions"><button type="button" id="radio-settings-apply" disabled>Apply recommended radio settings</button><button type="button" id="radio-settings-undo" disabled>Undo radio settings</button></p><p id="radio-settings-result" role="status"></p></div>');
+const detectSection=block('settings-detect','Detect radio',radioSection,'<p class="op-muted">Detection opens only USB radio bridges (Silicon Labs CP210x) that this station\'s CAT does not hold, reads the CI-V ID and the IC-7300 menu, and writes nothing.</p><p id="discovery-state" class="op-muted" role="status">Radio discovery on start is off until confirmed once: tick the line below and press Detect radio.</p><label class="receive-only-verification"><input type="checkbox" id="detect-ack">USB SEND and USB keying (CW/RTTY) are OFF or the radio is on a dummy load; opening a port can pulse DTR/RTS, also on other CP210x boards</label><p class="op-actions"><button type="button" id="detect-run" disabled>Detect radio</button></p><p id="detect-result" role="status">Not run</p><div id="detect-proposal" hidden><dl id="detect-fields"></dl><p class="op-actions"><button type="button" id="detect-use">Use this setup</button></p></div><div id="detect-settings" hidden><h4>IC-7300 settings</h4><ul id="detect-items"></ul><p class="op-actions"><button type="button" id="radio-settings-apply" disabled>Apply recommended radio settings</button><button type="button" id="radio-settings-undo" disabled>Undo radio settings</button></p><p id="radio-settings-result" role="status"></p></div>');
 radioSection.insertBefore(detectSection,profilePanel);
 let detectPending=false,detectProposal=null,radioSettingsPending=false;
 const detectEl=id=>document.getElementById(id);
@@ -1179,6 +1138,46 @@ addEventListener('station-message',event=>{const {current,message}=event.detail;
   if(profileData&&(message.data.profile_id!==profileData.profile_id||message.data.boot_id!==profileData.boot_id))return;agcState=message.data;agcShow();});
 addEventListener('station-ready',()=>{if(agcState&&agcState.boot_id!==profileData?.boot_id)agcState=null;agcShow();});
 for(const type of ['input','change'])serverForm.addEventListener(type,agcShow);
+// #44 CL-044-13 Tx level: "Set level" (Tune, step up until the ALC rises, back off one step, store,
+// stop Tune) is the default; the manual slider exists only without ALC over CI-V. The state arrives as
+// the server's radio.tx_level push; nothing is polled.
+const powerRow=document.getElementById('control-power-row');document.getElementById('tx-level').append(powerRow);powerRow.hidden=false;
+let txLevelState=null;
+const txLevelResults={stored:'stored',max_without_alc:'stored at the maximum, ALC did not rise',aborted:'aborted, level unchanged',no_alc:'this radio reports no ALC, set the level by hand',high_swr:'stopped: high SWR, check the antenna'};
+function validTxLevelEvent(d){
+  const meter=v=>v===null||Number.isSafeInteger(v),m=d?.meters;
+  return operatingShape(d,'profile_id,boot_id,managed,level_db,stored,alc,assistant,result,meters,power_limit_pct,warnings,keying_confirmed')&&typeof d.keying_confirmed==='boolean'&&Array.isArray(d.warnings)&&d.warnings.every(w=>typeof w==='string')&&typeof d.managed==='boolean'&&Number.isSafeInteger(d.level_db)&&typeof d.stored==='boolean'&&['unknown','available','unavailable'].includes(d.alc)&&
+    typeof d.assistant==='boolean'&&(d.result===null||typeof d.result==='string')&&(d.power_limit_pct===null||Number.isSafeInteger(d.power_limit_pct))&&(m===null||operatingShape(m,'alc,po_pct,swr_x10')&&meter(m.alc)&&meter(m.po_pct)&&meter(m.swr_x10));
+}
+function txLevelShow(){
+  document.getElementById('discovery-state').textContent=txLevelState?.keying_confirmed?'Radio discovery on start is on: the station looks for a free radio when it starts.':'Radio discovery on start is off until confirmed once: tick the line below and press Detect radio.';
+  const managed=agcManaged(),v=txLevelState;document.getElementById('tx-level').hidden=!managed;if(!managed)return;
+  const line=document.getElementById('tx-level-line'),meters=document.getElementById('tx-meters'),slider=document.getElementById('tx-level-slider');
+  const level=v?`${v.level_db} dB`:'unknown';
+  line.textContent=v?.assistant?`Tune on · stepping up · ${level}`:v?.result?`Tx level ${level} · ${txLevelResults[v.result]??v.result}`:v?.stored?`Tx level ${level}`:'Tx level not set yet';
+  document.getElementById('tx-level-set').disabled=!!v?.assistant;
+  document.getElementById('tx-level-manual').hidden=v?.alc!=='unavailable';
+  if(v&&document.activeElement!==slider)slider.value=v.level_db;
+  const m=v?.meters;meters.hidden=!m;if(m)meters.textContent=`ALC ${m.alc??'–'} · Po ${m.po_pct??'–'} % · SWR ${m.swr_x10===null?'–':(m.swr_x10/10).toFixed(1)}`;
+}
+async function txLevelCommand(params){
+  const line=document.getElementById('tx-level-line');
+  try{
+    const response=await stationFetch('/radio/tx-level',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(10000),body:JSON.stringify({v:1,profile_id:profileData.profile_id,boot_id:profileData.boot_id,command_id:crypto.randomUUID(),...params})});
+    const data=await response.json().catch(()=>null);
+    if(!response.ok)line.textContent=`Tx level refused · ${data?.error?.code??`http_${response.status}`}`;
+    else if(!data?.accepted)line.textContent=`Tx level refused · ${data?.refusal}`;
+  }catch(error){line.textContent=`Tx level outcome unknown · ${error.message}`;}
+}
+document.getElementById('tx-level-set').addEventListener('click',()=>txLevelCommand({action:'set_level',tx_offset_hz:Number(document.querySelector('#tx-offset')?.value)||1500}));
+document.getElementById('tx-level-slider').addEventListener('change',event=>txLevelCommand({action:'manual',level_db:Number(event.target.value)}));
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='radio.tx_level'||!validTxLevelEvent(message.data))return;
+  if(profileData&&(message.data.profile_id!==profileData.profile_id||message.data.boot_id!==profileData.boot_id))return;txLevelState=message.data;txLevelShow();window.wstxChipsShow?.();});
+// CL-044-14 the persistent Tx trouble the server reports, for the error field.
+window.wstxTxWarnings=()=>txLevelState?.warnings??[];
+addEventListener('station-ready',()=>{if(txLevelState&&txLevelState.boot_id!==profileData?.boot_id)txLevelState=null;txLevelShow();});
+for(const type of ['input','change'])serverForm.addEventListener(type,txLevelShow);
+txLevelShow();
 detectEl('detect-use').addEventListener('click',()=>{const agc=detectProposal?.radio?.agc;if(agc){const field=document.getElementById('control-agc');field.value=agc;field.dispatchEvent(new Event('change',{bubbles:true}));}agcShow();});
 agcShow();
 addEventListener('station-stale',catShow);
@@ -1239,18 +1238,17 @@ halt.addEventListener('click',async()=>{
   try{const r=await transmitPost('/transmit/halt',{});result.textContent=`Halt: ${r.halt_state}`;}catch(error){result.textContent=`Halt not confirmed · ${error.message}`;}
   transmitSync();
 });
-// WstxContact::HaltTx: Esc and Alt+H send #9's priority halt from this always-loaded
-// script, in every page state and focused field. Skipped only when the station is known
-// receive-only (the contact snapshot says unsupported); without a snapshot it is sent
-// (halt is idempotent). contact.js adds only the contact cancellation for Esc.
+// WstxContact::HaltTx: Alt+H sends #9's priority halt (the emergency stop) from this
+// always-loaded script, in every page state and focused field. Skipped only when the
+// station is known receive-only (the contact snapshot says unsupported); without a
+// snapshot it is sent (halt is idempotent). Esc is Abort QSO, handled by contact.js.
 function keyboardHaltSkipped(){const s=window.wstxContact?.snapshot?.();return !!s&&s.transmit.capability==='unsupported';}
 addEventListener('keydown',event=>{
   const altH=event.altKey&&!event.ctrlKey&&!event.metaKey&&event.key.toLowerCase()==='h';
-  if(event.key!=='Escape'&&!altH)return;
+  if(!altH)return;
   event.preventDefault();
-  // 'keyboard-halt' tells contact.js when the halt was answered (or skipped), so the Esc
-  // contact cancellation always follows it.
-  const done=reply=>window.dispatchEvent(new CustomEvent('keyboard-halt',{detail:{escape:event.key==='Escape',reply}}));
+  // 'keyboard-halt' tells contact.js when the halt was answered (or skipped).
+  const done=reply=>window.dispatchEvent(new CustomEvent('keyboard-halt',{detail:{reply}}));
   if(!profileData||keyboardHaltSkipped()){done(null);return;}
   const result=document.querySelector('#transmit-result');
   transmitPost('/transmit/halt',{}).then(r=>{result.textContent=`Halt: ${r.halt_state}`;done(r);},error=>{result.textContent=`Halt not confirmed · ${error.message}`;done(null);}).finally(transmitSync);
@@ -1341,8 +1339,7 @@ function activityHover(r){
   return Object.fromEntries(Object.entries(text).filter(([k])=>r.flags[k]===true).map(([k,t])=>[k,t.trim()]));
 }
 const HOVER_KINDS=[['new_continent','new_continent_band'],['new_dxcc','new_dxcc_band'],['new_cq_zone','new_itu_zone','new_cq_zone_band','new_itu_zone_band'],['new_grid','new_grid_band'],['new_call','new_call_band']];
-// One line, " · " between reasons (operator: "line them up horizontally"), then "UDP highlight" for an
-// accepted UDP highlight and the strategy verdict. A row without such a reason has no tip. Shown in
+// One line, " · " between reasons (operator: "line them up horizontally"), then the strategy verdict. A row without such a reason has no tip. Shown in
 // the compact Band Activity tip (data-tip) and as aria-description; no native title, which wraps.
 function hoverReasons(reasons,worked){
   const on=new Set((document.querySelector('#band-activity')?.dataset.hlOn??'').split(' '));
@@ -1352,7 +1349,7 @@ function activityWhy(row){
   let reasons={};try{reasons=JSON.parse(row.dataset.reasons??'{}')??{};}catch{}
   const worked=row.dataset.worked==='worked_this_band_and_mode'?`on ${row.dataset.workedOn||'this band and mode'}`:row.dataset.worked==='worked_other_band_or_mode'?'on another band or mode':'';
   const parts=hoverReasons(reasons,worked);
-  parts.push(row.dataset.udp?'UDP highlight':'',row.dataset.whyStrategy??'');
+  parts.push(row.dataset.whyStrategy??'');
   const tip=parts.filter(Boolean).join(' · ');
   if(tip){row.dataset.tip=tip;row.setAttribute('aria-description',tip);}else{delete row.dataset.tip;row.removeAttribute('aria-description');}
   const t=window.wstxActivityTip;if(t?.row===row)t.show(row);

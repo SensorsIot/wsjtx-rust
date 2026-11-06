@@ -3,10 +3,5 @@
  "exact": true,
  "direction": "inbound",
  "hex": "adbccbda000000020000001200000009575354582d527573740000000178",
- "expect": {
-  "schema": 2,
-  "id": "WSTX-Rust",
-  "type": "other",
-  "kind": 18
- }
+ "expect": null
 }

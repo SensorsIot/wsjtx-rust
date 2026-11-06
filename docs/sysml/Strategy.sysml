@@ -1,7 +1,7 @@
 package WstxStrategy {
     private import ScalarValues::*;
     doc /* Canonical contract of the strategy engine (issue #39, CL-039-01..07 in
-         WstxRequirements; verification TC-039-001..007 and TC-039-030..032; the ignore
+         WstxRequirements; verification TC-039-001..007 and TC-039-030..033; the ignore
          lists of issue #42, CL-042-02 and TC-042-002..003; Pounce, CL-042-03 and
          TC-042-004..005; Alert, CL-042-04 and TC-042-006..007): the award strategies, the
          directed-CQ rule, the value order in Band Activity, the strategy editor popup and
@@ -391,7 +391,9 @@ package WstxStrategy {
              selection of such a row (double-click, Reply, Select, the other-calls list) is
              refused directive_not_answerable (409 with error.reason = this text); the
              browser shows it as a warning the operator can confirm, and only then sends
-             select_row again with the optional directive_confirmed true. A command that is
+             select_row again with the optional directive_confirmed true. The directive is checked
+             before contact_active, so during a contact a plain click (select_row without replace) on
+             such a row is refused this way too and offers nothing (CL-037-05); a double-click warns. A command that is
              not the browser's (automation, MCP, UDP) can never confirm it: its select_row is
              refused directive_not_answerable also with directive_confirmed. */
     }
@@ -526,14 +528,24 @@ package WstxStrategy {
              No bounds: max_contacts and max_run_minutes do not apply and read null. The run
              checks the grant, not the transport of the selecting request: a page load, a
              second tab or a 401 recovery (a new proof) and the transport's 8 h deadline do
-             not end it; a revoked grant or a safety edit does (authority_lost). The
-             run ends only by a HALT, a selection, the grant (authority_lost), the Tx
+             not end it; a revoked grant or a safety edit does (authority_lost).
+             Unattended (coordinator default 2026-11-06, for the operator to confirm; the
+             constant automation::CLIENT_GONE, no setting): when no authenticated client has
+             been there for 60 s, the run selects no new station: a contact in progress ends
+             its normal way (completed, calls_per_station, the Tx watchdog), a manual one is
+             left alone, and when it next waits the run stops no_client; the strategy stays
+             selected with the reason shown and only a selection restarts it. A client is
+             there while a status WebSocket session is open (authenticated at its upgrade), and
+             at each authenticated POST /mcp, which has only per-request authentication: its
+             last request within the 60 s; the selection itself counts. A client back before the
+             stop continues the run. So with every browser closed it does not go on calling. The
+             run ends only by a HALT, a selection, the grant (authority_lost), no client (no_client), the Tx
              watchdog (tx_watchdog) or a refused command (transmit_refused, provider_error):
              the strategy stays selected with the stop reason shown, and only a new
              selection (None, then the strategy) starts it again: an AutomationCommand start
              of a configuration a strategy run left is refused 409 operator_required strategy,
              from an MCP client and from the browser. HALT from any source (button,
-             Alt+H, MCP, UDP) ends the run and sets active to None in the store, also with no
+             Alt+H, MCP) ends the run and sets active to None in the store, also with no
              run, at the next station step (revision + 1, in memory: active is never read
              from the file), pushed by strategy.state. Esc (Abort QSO) changes neither.
              Receive: a strategy run has no receive identity of its own. Without FT8 or FT4
@@ -572,8 +584,8 @@ package WstxStrategy {
              read from the credential at the auth boundary, so an MCP client is never one
              on any route, #58). Only an Enable Tx or a strategy selection from the browser ends
              a watchdog stop. Never operator actions: commands of a run (select_row,
-             set_frequency, enable_tx, cancel, disarm), any MCP request (also starting or
-             restarting a run) and any UDP command (Reply, Free Text). Such an enable_tx
+             set_frequency, enable_tx, cancel, disarm) and any MCP request (also starting or
+             restarting a run). Such an enable_tx
              is refused tx_watchdog after a watchdog stop or when no browser action was
              seen this boot; only the browser may change the watchdog setting (set_watchdogs from any
              other source is refused operator_required). At the limit Enable Tx goes off

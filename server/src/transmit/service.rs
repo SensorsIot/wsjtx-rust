@@ -27,6 +27,15 @@ pub const SAMPLE_RATE_HZ: u32 = 48_000;
 pub const HALT_BOUND_MS: u64 = 250;
 /// Playback scale of the unit-peak waveform (-6.02 dBFS, TransmitTiming playbackScale).
 pub const PLAYBACK_SCALE: f32 = 0.5;
+/// #44 CL-044-12 the Tx level: digital attenuation below PLAYBACK_SCALE, in whole dB.
+pub const LEVEL_MIN_DB: i32 = -40;
+pub const LEVEL_MAX_DB: i32 = 0;
+/// #44 CL-044-14 a transmission with less audio left than this gets no meter read.
+pub const METER_MIN_REMAINING_MS: i64 = 2_000;
+/// The playback scale of a Tx level.
+pub fn level_scale(level_db: i32) -> f32 {
+    PLAYBACK_SCALE * 10f32.powf(level_db.clamp(LEVEL_MIN_DB, LEVEL_MAX_DB) as f32 / 20.)
+}
 /// WstxTransmit::TransmitTiming releaseMarginMs: PTT is released at the latest this long
 /// after the waveform's last sample was due, whatever the device reports. It covers the
 /// render drain (RENDER_BUFFER_MS) and scheduling delays under load with headroom, and
@@ -102,6 +111,8 @@ pub enum OutcomeKind {
     Halted,
     Refused,
     Failed,
+    /// #39 Abort QSO: stopped by the operator's abort, not by a halt.
+    Aborted,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Outcome {
@@ -210,6 +221,13 @@ pub trait Hardware: Send {
     fn attach_abort(&mut self, abort: Arc<AtomicBool>) {
         let _ = abort;
     }
+    /// #44 CL-044-14 the middle of a transmission: exactly once per transmission, from the
+    /// transmit step. It must return at once; the meter read runs elsewhere.
+    fn meter_due(&mut self) {}
+    /// #44 The Tx level the next `play` uses; a running Tune tone follows it at once.
+    fn set_level_db(&mut self, level_db: i32) {
+        let _ = level_db;
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -260,6 +278,8 @@ struct Job {
     audio_start_utc_ms: Option<i64>,
     /// Device-independent release deadline once audio started.
     release_by_mono_ms: Option<i64>,
+    /// #44 CL-044-14 when the one meter read of this transmission is due.
+    meter_at_mono_ms: Option<i64>,
 }
 struct Tune {
     hz: f64,
@@ -300,6 +320,9 @@ pub struct Core<H: Hardware> {
     startup_release: StartupRelease,
     abort: Arc<AtomicBool>,
     faulted: bool,
+    /// #44 the Tx level (dB): Tune follows it at once, a transmission takes it at its
+    /// audio start and keeps it to its end.
+    level_db: i32,
     /// WstxTransmit::StationModeGate: the station's operating mode (None: not gated).
     station_mode: Option<Mode>,
     /// The station's call hash table (WstxOfflineDecode::HashResolution): every
@@ -387,6 +410,7 @@ impl<H: Hardware> Core<H> {
             startup_release: StartupRelease::Pending,
             abort: Arc::new(AtomicBool::new(false)),
             faulted: false,
+            level_db: LEVEL_MAX_DB,
             station_mode: None,
             hashes: None,
         }
@@ -431,6 +455,22 @@ impl<H: Hardware> Core<H> {
                 || self.tune.is_some(),
             self.last_period,
         )
+    }
+    /// #44 CL-044-12 sets the Tx level. A running Tune follows at once; a transmission
+    /// already playing keeps its level, so a change takes effect between transmissions.
+    pub fn set_tx_level(&mut self, level_db: i32) {
+        self.level_db = level_db.clamp(LEVEL_MIN_DB, LEVEL_MAX_DB);
+        if self.tune.is_some() {
+            self.hardware.set_level_db(self.level_db);
+        }
+    }
+    /// #44 CL-044-14 after a clear fault only an operator action lets automation arm again.
+    pub fn require_operator(&mut self) {
+        self.operator_seen = false;
+    }
+    /// A cheap read for the CAT lifecycle's meter display.
+    pub fn tune_on(&self) -> bool {
+        self.tune.is_some()
     }
     pub fn hardware_mut(&mut self) -> &mut H {
         &mut self.hardware
@@ -654,6 +694,7 @@ impl<H: Hardware> Core<H> {
                 keyed: false,
                 audio_start_utc_ms: None,
                 release_by_mono_ms: None,
+                meter_at_mono_ms: None,
             });
         }
         self.emit(sequence, OutcomeKind::Accepted)
@@ -682,6 +723,28 @@ impl<H: Hardware> Core<H> {
             HaltState::Pending
         };
         self.halt_state
+    }
+    /// Abort QSO (#39, 2026-11-04, WstxTransmit::AbortTransmission): stop the current
+    /// transmission or Tune now (audio stopped, PTT released with readback), drop every
+    /// request and disarm with `cause`. Not a halt: halt_state and the halt count stay.
+    pub fn abort(&mut self, cause: DisarmCause) {
+        let active = self.current.as_ref().is_some_and(|j| j.keyed)
+            || self.tune.is_some()
+            || self.ptt != PttState::Released;
+        self.hardware.stop_audio();
+        // A release that failed is reported, as for a halt: the operator must not read
+        // "stopped" while the switch is indeterminate.
+        if active && !self.release() {
+            self.refusal = Some(TransmitRefusal::RadioUnavailable);
+        }
+        self.tune = None;
+        if let Some(job) = self.current.take() {
+            self.emit(job.prepared.request.request_sequence, OutcomeKind::Aborted);
+        }
+        if let Some(next) = self.next.take() {
+            self.emit(next.request.request_sequence, OutcomeKind::Aborted);
+        }
+        self.disarm_with(cause);
     }
     /// Releases PTT with readback; on failure the switch is indeterminate.
     fn release(&mut self) -> bool {
@@ -776,6 +839,7 @@ impl<H: Hardware> Core<H> {
             return Err(TransmitRefusal::RadioUnavailable);
         }
         self.ptt = PttState::Keyed;
+        self.hardware.set_level_db(self.level_db);
         if self
             .hardware
             .play(Program::Tone { hz: f64::from(hz) })
@@ -939,6 +1003,7 @@ impl<H: Hardware> Core<H> {
             let samples = job.prepared.samples.clone();
             let job_len = samples.len();
             let text = job.prepared.text.clone();
+            self.hardware.set_level_db(self.level_db);
             if let Err(e) = self.hardware.play(Program::Waveform {
                 samples,
                 skip: start.skipped_samples as usize,
@@ -958,11 +1023,22 @@ impl<H: Hardware> Core<H> {
             let bound = period + release_bound_ms(mode) - now;
             if let Some(job) = &mut self.current {
                 job.audio_start_utc_ms = Some(now);
+                let start_mono = self.hardware.monotonic_ms();
                 job.release_by_mono_ms =
-                    Some(self.hardware.monotonic_ms() + (remaining + RELEASE_MARGIN_MS).min(bound));
+                    Some(start_mono + (remaining + RELEASE_MARGIN_MS).min(bound));
+                // A late start too short to read clear of its release has no read.
+                job.meter_at_mono_ms =
+                    (remaining >= METER_MIN_REMAINING_MS).then_some(start_mono + remaining / 2);
             }
             self.emit_full(sequence, OutcomeKind::Started, None, None, Some(now));
             return;
+        }
+        let mono = self.hardware.monotonic_ms();
+        if let Some(job) = &mut self.current
+            && job.meter_at_mono_ms.is_some_and(|at| mono >= at)
+        {
+            job.meter_at_mono_ms = None;
+            self.hardware.meter_due();
         }
         // The device is polled first, also at the deadline: a device that consumed every
         // sample completes normally however late its step ran (#49). Otherwise the
@@ -994,6 +1070,7 @@ impl<H: Hardware> Core<H> {
                             keyed: false,
                             audio_start_utc_ms: None,
                             release_by_mono_ms: None,
+                            meter_at_mono_ms: None,
                         });
                     }
                 } else {
@@ -1356,6 +1433,12 @@ impl Hardware for Box<dyn Hardware> {
     }
     fn attach_abort(&mut self, abort: Arc<AtomicBool>) {
         (**self).attach_abort(abort)
+    }
+    fn set_level_db(&mut self, level_db: i32) {
+        (**self).set_level_db(level_db)
+    }
+    fn meter_due(&mut self) {
+        (**self).meter_due()
     }
     fn clock(&self) -> ClockState {
         (**self).clock()

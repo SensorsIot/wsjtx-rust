@@ -3,6 +3,9 @@ use crate::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use wstx_rust::radio_control::{self as cat, actor::Actor};
 
+/// CL-044-16 how long a selection waits for a poll or exchange to give up the CAT lease.
+pub(crate) const LEASE_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+
 pub const BANDS: [&str; 12] = [
     "160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m", "4m",
 ];

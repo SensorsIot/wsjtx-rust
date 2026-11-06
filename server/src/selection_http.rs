@@ -230,7 +230,12 @@ pub async fn select(
             return error("busy");
         }
     }
-    match r.selection_begin(intent, device, cat) {
+    // The CAT lease can take seconds to come free (CL-044-16): off the async runtime.
+    let begin = r.clone();
+    let begun = tokio::task::spawn_blocking(move || begin.selection_begin(intent, device, cat))
+        .await
+        .unwrap_or(Err("radio_unavailable"));
+    match begun {
         Ok(v) => {
             receive_http::contact_step(state.clone()).await;
             (StatusCode::ACCEPTED, Json(v)).into_response()
