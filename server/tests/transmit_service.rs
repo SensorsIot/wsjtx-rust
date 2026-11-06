@@ -606,7 +606,7 @@ fn restart_never_resumes_an_armed_station_or_its_request() {
 // answer resets the count; at the limit the next request is never keyed and nothing
 // is halted.
 #[test]
-fn tx_watchdog_never_keys_after_the_unanswered_limit_and_tune_ends_at_its_limit() {
+fn tx_watchdog_stop_never_keys_and_tune_ends_at_its_limit() {
     let f = Fake::new();
     let mut core = Core::new(f.clone());
     core.set_watchdogs(1, 2).unwrap();
@@ -617,16 +617,13 @@ fn tx_watchdog_never_keys_after_the_unanswered_limit_and_tune_ends_at_its_limit(
     assert_eq!(core.view().tx_remaining_calls, 1);
     core.submit(request(1, P, "CQ HB9BLA JN47"));
     run(&mut core, &f, P + 13_000);
-    assert_eq!(
-        core.view().tx_remaining_calls,
-        0,
-        "one started transmission"
-    );
+    // The owner keeps no count: the remaining calls follow the contact's Rep.
+    assert_eq!(core.view().tx_remaining_calls, 1, "no Rep reported");
+    core.report_tx_repetitions(1);
+    assert_eq!(core.view().tx_remaining_calls, 0, "limit minus Rep");
+    core.report_tx_repetitions(0);
     *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
     run(&mut core, &f, P + 14_000);
-    // An answer resets the count: the next one is keyed.
-    core.answered();
-    assert_eq!(core.view().tx_remaining_calls, 1);
     *f.0.audio.lock().unwrap() = None;
     core.submit(request(2, P + 30_000, "CQ HB9BLA JN47"));
     run(&mut core, &f, P + 43_000);
@@ -634,9 +631,10 @@ fn tx_watchdog_never_keys_after_the_unanswered_limit_and_tune_ends_at_its_limit(
     run(&mut core, &f, P + 44_000);
     let keyed = f.keys().len();
     assert!(keyed >= 4, "two transmissions keyed and released");
-    // No answer: the third request is refused before keying, without a halt.
+    // The contact's stop drops the next request before keying, without a halt.
     *f.0.audio.lock().unwrap() = None;
     core.submit(request(3, P + 60_000, "CQ HB9BLA JN47"));
+    core.watchdog_stop();
     run(&mut core, &f, P + 61_000);
     let v = core.view();
     assert_eq!(
@@ -1252,6 +1250,7 @@ fn watchdog_stop_never_touches_ptt() {
     *f.0.unkey_error.lock().unwrap() = Some(PttError::Timeout);
     let keys = f.keys().len();
     core.submit(request(2, P + 30_000, "CQ HB9BLA JN47"));
+    core.watchdog_stop();
     run(&mut core, &f, P + 31_000);
     let v = core.view();
     assert_eq!(v.last_disarm_cause, DisarmCause::TxWatchdog);

@@ -19,7 +19,7 @@ verify their availability in the actual agent environment before starting work.
 
 - Station: **https://192.168.0.37:18081**, task `WSTX Rust Station HB9BLA`;
   receipt `%LOCALAPPDATA%\WstxRust\station\station-running.json`.
-- IC-7300: **COM3**, USB Audio CODEC; in use on **40 m FT8 (7.074 MHz USB-D)**, 1 W for
+- IC-7300: **COM3**, USB Audio CODEC; in use on **20 m FT8 (14.074 MHz USB-D)**, 1 W for
   agent tests; **AGC SLOW** for FT8/FT4 (operator finding: it removes the AGC line between
   periods). Read back before changes — CI-V reads first and writes only on a difference.
   The camera microphone belongs to Dictate, not the radio.
@@ -81,8 +81,13 @@ HARNESS_REPO=D:/Github/wsjtx-rust python D:/Github/harness-mq/core/tools/merge_q
 
 `D:\Github\harness-mq` is a harness clone at the pinned (or newer reviewed) commit; keep it
 and the main checkout's `harness` submodule on the same commit. Agent builds use their own
-`CARGO_TARGET_DIR=C:/wstx-build/<worktree>` (never inside a worktree, never shared) and
-wait with `merge_queue.py busy --wait` before heavy local runs.
+`CARGO_TARGET_DIR=D:/wstx-build/<worktree>` and `TEMP`/`TMP=D:/wstx-tmp/<worktree>` (never
+inside a worktree, never shared). Agents do not wait for `busy` (it starves them when the
+queue gates back to back): they run beside the gate at BelowNormal with 2 build jobs and
+rerun a timing-sensitive failure once. Gate builds go to
+`D:/harness-cargo-target/wsjtx-rust/<checkout>` and are pruned by the gate itself; agent
+build directories are pruned with `harness/core/tools/build_prune.py agent-dirs --root DIR
+--apply` (harness/core/docs/Parallel-Work.md, "Build output").
 
 Use this synchronization set, not stale `synchronization-inputs-final`/`-lf` caches.
 Evidence: `.git\migration-evidence\hardware-preparation\`; original design: sibling

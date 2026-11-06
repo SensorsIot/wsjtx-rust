@@ -229,7 +229,7 @@ function split(value) {
   const minimum=Math.max(160,Math.ceil(signalText+60));
   main.style.minHeight=`${minimum+228+otherHeight}px`;
   const available = Math.max(minimum+228,main.clientHeight-otherHeight)-splitter.offsetHeight, maximum = available-200;
-  upper = Math.max(minimum,Math.min(maximum,value ?? Math.min(330,available-400))); // #37: room for the QSO pane, Control and error field
+  upper = Math.max(minimum,Math.min(maximum,value ?? Math.min(330,available-490))); // #37: room for the fixed QSO pane (12 dialogue rows), Control and error field
   signal.style.height = `${upper}px`;
   for (const [name,value] of [['min',minimum],['max',maximum],['now',Math.round(upper)]]) splitter.setAttribute(`aria-value${name}`,String(value));
   paint();
@@ -243,17 +243,32 @@ splitter.addEventListener('pointermove',event => {if (splitter.hasPointerCapture
 addEventListener('resize',() => split(upper));
 const textLayoutObserver=new ResizeObserver(()=>split(upper));
 for(const node of [stationBar,strip,document.querySelector("#frequency-ruler"),document.querySelector("#level-legend")])textLayoutObserver.observe(node); split();
+// #61 CL-061-05: a run of Tx rows takes one thin band of this height, whatever its source time.
+const TX_BAND_CSS_PX=4;
 function timeProjection(H=waterfall.height,C=waterfall.getBoundingClientRect().height){
-  const groups=Array(H),T=(rows.at(-1)?.end_frame??0)/12000,scale=10*speed*H/Math.max(C,1);
-  let count=0;
+  const groups=Array(H),T=(rows.at(-1)?.end_frame??0)/12000,scale=10*speed*H/Math.max(C,1),txRuns=[];
+  let count=0,shift=0;
+  const fill=(from,to,newest,oldest)=>{
+    for(let y=Math.max(0,from);y<Math.min(H,to);y++){
+      if(groups[y])groups[y][1]=oldest;else groups[y]=[newest,oldest];count=Math.max(count,oldest+1);
+    }
+  };
   for(let r=0;r<rows.length;r++){
-    const row=rows.at(-1-r),top=Math.floor((T-row.end_frame/12000)*scale),bottom=Math.floor((T-row.first_frame/12000)*scale);
+    const row=rows.at(-1-r),top=Math.floor((T-row.end_frame/12000)*scale-shift);
     if(top>=H)break;
-    for(let y=Math.max(0,top);y<Math.min(H,Math.max(top+1,bottom));y++){
-      if(groups[y])groups[y][1]=r;else groups[y]=[r,r];count=Math.max(count,r+1);
+    if(row.tx){
+      let oldest=r;while(rows.at(-2-oldest)?.tx)oldest++;
+      const band=Math.max(1,Math.round(TX_BAND_CSS_PX*H/Math.max(C,1))),first=rows.at(-1-oldest).first_frame/12000,end=row.end_frame/12000;
+      fill(top,top+band,r,oldest);
+      shift+=(end-first)*scale-band;txRuns.push({end,first,top,shift});r=oldest;
+    }else{
+      const bottom=Math.floor((T-row.first_frame/12000)*scale-shift);
+      fill(top,Math.max(top+1,bottom),r,r);
     }
   }
-  return {groups,count,T,capacity:C/(10*speed)};
+  // The one mapping of source time to canvas row: a time inside a Tx run lies on its band.
+  const rowOf=t=>{let before=0;for(const run of txRuns){if(t>=run.end)break;if(t>run.first)return run.top;before=run.shift;}return Math.floor((T-t)*scale-before);};
+  return {groups,count,T,capacity:C/(10*speed),txRuns,rowOf,elided:shift/scale};
 }
 function visibleCount(){return timeProjection().count;}
 function groupLevels(first,last,B){
@@ -270,7 +285,7 @@ function readout(){
   const row=rows.at(-1-selectedRow);if(!row){text.textContent='No measurement';return;}
   const W=waterfall.width,H=waterfall.height,x=pointerColumn===null?Math.floor(selectedBin*W/B):Math.max(0,Math.min(W-1,pointerColumn));
   const first=W<B?Math.ceil(x*B/W):selectedBin,last=W<B?Math.min(B-1,Math.ceil((x+1)*B/W)-1):selectedBin;
-  const projection=timeProjection(),nativeY=Math.floor((projection.T-row.end_frame/12000)*10*speed*H/Math.max(waterfall.getBoundingClientRect().height,1)),group=projection.groups[pointerTime===null?Math.max(0,Math.min(H-1,nativeY)):pointerTime];
+  const projection=timeProjection(),nativeY=projection.rowOf(row.end_frame/12000),group=projection.groups[pointerTime===null?Math.max(0,Math.min(H-1,nativeY)):pointerTime];
   if(!group){text.textContent='No measurement (unobserved source time)';return;}
   const [newest,oldest]=group,projected=groupLevels(newest,oldest,B);
   const value=row.levels?`${row.levels[selectedBin]-120} dBFS`:'no measurement (gap)';
@@ -333,12 +348,13 @@ function paint() {
         }
         const last=rows.at(-1),oldest=R?rows.at(-R):null,low=oldest?.first_frame/12000,high=last?.end_frame/12000;
         c.dataset.rows=String(rows.length);c.dataset.visibleRows=String(R);c.dataset.sequences=rows.map(r=>r.sequence).join(',');c.dataset.bins=String(B);c.dataset.span='0,3000';
-        c.setAttribute('aria-label',`Waterfall, visible source time ${R?`${low.toFixed(1)} to ${high.toFixed(1)} seconds`:''}; newest top, grey groups are unknown; arrow keys select native bins and rows`);
+        c.setAttribute('aria-label',`Waterfall, visible source time ${R?`${low.toFixed(1)} to ${high.toFixed(1)} seconds`:''}; newest top, grey groups are unknown, a thin dark red band is a Tx period; arrow keys select native bins and rows`);
         const ruler=document.querySelector('#time-ruler');ruler.replaceChildren();
         if(last){
           const latest=projection.T,times=[latest];let previousY=0;
-          for(let t=Math.floor(latest/5)*5;t>=Math.max(0,latest-projection.capacity);t-=5){const y=Math.floor((latest-t)*10*speed*H/box.height)/devicePixelRatio;if(y-previousY>=16){times.push(t);previousY=y;}}
-          for(const t of times){const label=document.createElement('span');label.textContent=`${t.toFixed(1)}s`;label.style.top=`${Math.floor((latest-t)*10*speed*H/box.height)/devicePixelRatio}px`;ruler.append(label);}
+          // #61 CL-061-05: no label inside a collapsed Tx run; the times beyond it stay exact.
+          for(let t=Math.floor(latest/5)*5;t>=Math.max(0,latest-projection.capacity-projection.elided);t-=5){if(projection.txRuns.some(run=>t<run.end&&t>run.first))continue;const y=projection.rowOf(t)/devicePixelRatio;if(y-previousY>=16){times.push(t);previousY=y;}}
+          for(const t of times){const label=document.createElement('span');label.textContent=`${t.toFixed(1)}s`;label.style.top=`${projection.rowOf(t)/devicePixelRatio}px`;ruler.append(label);}
         }
         document.querySelector('#speed-value').title=`${projection.capacity.toFixed(1)} s viewport capacity; ${R?`observed source ${low.toFixed(1)}-${high.toFixed(1)} s`:'no observed history'}; replay/network rate unchanged`;
       }
@@ -428,7 +444,9 @@ addEventListener('station-message',event => {
   const previous=rows.at(-1)?.sequence??-1;if(f.sequence<=previous)return;
   // #54: live Thin is paced to one row per 2 s, so one or two missing sequences are drawn with the next row (held); longer runs are real gaps.
   const held=!detail&&currentLive&&previous>=0&&f.sequence-previous<=3;
-  for(let sequence=Math.max(previous+1,f.sequence-cap+1);sequence<f.sequence;sequence++)rows.push({sequence,first_frame:sequence*interval,end_frame:currentLive?(sequence+1)*interval:Math.min((sequence+1)*interval,snapshot.recording.frames),levels:held?Uint8Array.from(values):null,held,tx:held&&f.tx===true});
+  // #61 CL-061-05: a row missing between two Tx rows of one Tx period is a Tx row, not a grey gap.
+  const txGap=f.tx===true&&(held||(rows.at(-1)?.tx===true&&f.first_frame-rows.at(-1).end_frame<=90000));
+  for(let sequence=Math.max(previous+1,f.sequence-cap+1);sequence<f.sequence;sequence++)rows.push({sequence,first_frame:sequence*interval,end_frame:currentLive?(sequence+1)*interval:Math.min((sequence+1)*interval,snapshot.recording.frames),levels:held?Uint8Array.from(values):null,held,tx:txGap});
   const row={...f,levels:Uint8Array.from(values),tx:f.tx===true};stationData('waterfall',true);rows.push(row);rows=rows.slice(-cap);paint();
 
   if(currentLive){live.job.processed_frames=Math.max(live.job.processed_frames,f.end_frame);live.source.next_frame=Math.max(live.source.next_frame,f.end_frame);}
@@ -694,10 +712,15 @@ function activityRow(record,period,context,mode){
   if(isPartner)row.classList.add('ba-partner');
   else if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
   const udp=udpHighlight(record);
-  const senderOnly=!udp&&hl.length>0&&!row.classList.contains('ba-tome')&&!/^(CQ|QRZ)\b/.test(record.text)&&!(f?.type==='nonstandard'&&f.cq);
+  const cqLike=/^(CQ|QRZ)\b/.test(record.text)||(f?.type==='nonstandard'&&f.cq);
+  const senderOnly=!udp&&hl.length>0&&!row.classList.contains('ba-tome')&&!cqLike;
+  // #37 (operator 2026-11-04): a row of a QSO between others cannot start a contact for me.
+  if(from)row.dataset.sender=from;
+  if(from&&!cqLike&&to!==my)row.dataset.foreign='true';
   if(senderOnly)row.classList.add('ba-sender');
   if(udp)row.dataset.udp=udp.call;else if(hl.length)row.dataset.hl=hl.join(' ');
   const grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value:null,km=grid?window.wstxDistanceKm?.(profileData?.settings?.locator,grid)??null:null,dx=record.dxcc,approx=km===null&&Number.isInteger(dx?.km);
+  if(dx?.cont)row.dataset.continent=dx.cont;
   if(!isPartner)row.dataset.reasons=JSON.stringify(activityHover(record));
   const cells=[periodLabel(record.period_start_utc,mode),record.snr_db===null?'\u2014':record.snr_db.toFixed(1),record.dt_seconds===null?'\u2014':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),decoded?record.text:`Payload ${record.status}`,dx?dx.name:'\u2014',approx?`~${dx.km} km`:km===null?'\u2014':`${km} km`];
   for(const [index,text] of cells.entries()){
@@ -1321,11 +1344,14 @@ const HOVER_KINDS=[['new_continent','new_continent_band'],['new_dxcc','new_dxcc_
 // One line, " · " between reasons (operator: "line them up horizontally"), then "UDP highlight" for an
 // accepted UDP highlight and the strategy verdict. A row without such a reason has no tip. Shown in
 // the compact Band Activity tip (data-tip) and as aria-description; no native title, which wraps.
+function hoverReasons(reasons,worked){
+  const on=new Set((document.querySelector('#band-activity')?.dataset.hlOn??'').split(' '));
+  return HOVER_KINDS.map(kind=>{const k=kind.find(k=>reasons[k]&&on.has(k));return !k?'':k==='new_call_band'&&worked?`${reasons[k]} (worked ${worked})`:reasons[k];}).filter(Boolean);
+}
 function activityWhy(row){
   let reasons={};try{reasons=JSON.parse(row.dataset.reasons??'{}')??{};}catch{}
-  const on=new Set((document.querySelector('#band-activity')?.dataset.hlOn??'').split(' '));
   const worked=row.dataset.worked==='worked_this_band_and_mode'?`on ${row.dataset.workedOn||'this band and mode'}`:row.dataset.worked==='worked_other_band_or_mode'?'on another band or mode':'';
-  const parts=HOVER_KINDS.map(kind=>{const k=kind.find(k=>reasons[k]&&on.has(k));return !k?'':k==='new_call_band'&&worked?`${reasons[k]} (worked ${worked})`:reasons[k];});
+  const parts=hoverReasons(reasons,worked);
   parts.push(row.dataset.udp?'UDP highlight':'',row.dataset.whyStrategy??'');
   const tip=parts.filter(Boolean).join(' · ');
   if(tip){row.dataset.tip=tip;row.setAttribute('aria-description',tip);}else{delete row.dataset.tip;row.removeAttribute('aria-description');}

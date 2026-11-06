@@ -1021,7 +1021,7 @@ package WstxRequirements {
     dependency CL_010_06_to_FR_007 from 'CL-010-06' to 'FR-007';
     dependency CL_010_06_to_FR_021 from 'CL-010-06' to 'FR-021';
     requirement 'CL-010-10' {
-        doc /* Bound unattended transmission with a server-owned Tx watchdog (#39, 2026-11-04: default 6, 1..99 consecutive unanswered own transmissions, reset by an answer from the partner or, to my CQ, from anyone, and by accepted operating requests from the browser; at the limit the next transmission is not keyed and Enable Tx goes off without a halt) and an always-on Tune watchdog (default 90 s, 1..300 s). Details: WstxContact::TxWatchdog, TuneWatchdog. */
+        doc /* Bound unattended transmission with a server-owned Tx watchdog (#39, 2026-11-06: default 6, 1..99 repetitions of one message, the Rep of the contact dialogue; only a different message, a new contact or an operator Enable Tx restarts it, never a partner message, a browser click or a setting; a send that would exceed the limit is not keyed and Enable Tx goes off without a halt) and an always-on Tune watchdog (default 90 s, 1..300 s). Details: WstxContact::TxWatchdog, TuneWatchdog. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/contact.rs; server/src/transmit/service.rs; client/contact.js";
     }
@@ -1075,8 +1075,8 @@ package WstxRequirements {
         doc /* TC-007-003 — Received views, Rx Frequency pane and partner selection
              CL-010-01, CL-010-06
              Setup: actual server/browser with an independently scripted result source and request recorder; rows with distinct UTC/DT/SNR/frequency/text including literal markup, unresolved hashes, duplicate/old tuples, 2047/2048/2049 retained records and expired cursors; Rx offset 1500 Hz; profile call HB9BLA, DX call K1ABC.
-             Steps: filter/sort Band Activity; with no contact, read the QSO pane Others lines for one period with rows at 1449.9, 1450.0, 1489.9, 1510.1, 1550.0 Hz, "HB9BLA W1XYZ -10" at 400 Hz and "HB9BL K1ABC -01" at 2600 Hz (#37); select rows by click/Enter and by manual DX entry; switch profile.
-             Expected (fixed input catalogue): the Others lines are exactly the two newest candidates among 1450.0, 1489.9, 1510.1, 1550.0 Hz and the HB9BLA row, plain (no warning sign), each a QSO table row with its period start, calls, exchange, our SNR and, for a report, the Tx SNR (no DT or frequency), and not 1449.9 Hz or HB9BL; sorting Band Activity sends no request and changes no contact/log; selection sends the exact identity and changes the partner only after acceptance; unresolved/old/wrong-profile rows cannot prepare a contact; no invented UTC/callsign, executable markup or cross-profile state.
+             Steps: filter/sort Band Activity; with no contact, read the QSO pane Calling me lines for one period with rows at 1449.9, 1450.0, 1489.9, 1510.1, 1550.0 Hz, "HB9BLA W1XYZ -10" at 400 Hz and "HB9BL K1ABC -01" at 2600 Hz (#37); select rows by click/Enter and by manual DX entry; switch profile.
+             Expected (fixed input catalogue): the Calling me lines are exactly the HB9BLA row, plain (no warning sign), with call W1XYZ, SNR −10, no grid and country U.S.A. (#37 2026-11-04), and not the CQs near Rx or HB9BL; sorting Band Activity sends no request and changes no contact/log; selection sends the exact identity and changes the partner only after acceptance; unresolved/old/wrong-profile rows cannot prepare a contact; no invented UTC/callsign, executable markup or cross-profile state.
              2 — Isolated automated functional tests; Windows development PC, real browser/server and independent result source. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1120,7 +1120,7 @@ package WstxRequirements {
         doc /* TC-007-007 — Live FT8 contact on the IC-7300
              CL-010-01, CL-010-02, CL-010-03, CL-010-04, CL-010-10
              Setup: deployed candidate on HB9BLA with the IC-7300 (USB audio and CAT, USB-D, 20 m 14.074 MHz or another FT8 dial frequency), operator present at the radio, low power chosen by the operator, Halt Tx and the radio's own power control within reach; transmit authorized by the operator on 2026-10-31 for this test only. An independent receiver (separate WSJT-X station or PSK Reporter reception reports) observes our transmissions.
-             Steps: run a UDP listener on 127.0.0.1:2237 enabled as a WSJT-X UDP target with QSO Logged and Logged ADIF; complete at least one contact answering a real CQ and, if band conditions allow, one by calling CQ, with Auto Seq, without pressing Log QSO; then Enable Tx without operator activity until the Tx watchdog (set to 2 unanswered calls for the test) stops it; Halt once during a transmission; restart the server.
+             Steps: run a UDP listener on 127.0.0.1:2237 enabled as a WSJT-X UDP target with QSO Logged and Logged ADIF; complete at least one contact answering a real CQ and, if band conditions allow, one by calling CQ, with Auto Seq, without pressing Log QSO; then Enable Tx without operator activity until the Tx watchdog (set to 2 repetitions for the test) stops it; Halt once during a transmission; restart the server.
              Expected: the partner's messages addressed to HB9BLA appear in the Rx Frequency pane with the report we sent echoed back; the independent receiver decodes exactly the transmitted texts in the expected periods and audio offset within 10 Hz; the contact completes per the AutoSequence table with Enable Tx off and logs itself (no review form; the Logbook page lists it); the listener receives one QSO Logged and one Logged ADIF with the same call, reports, times and frequency; contacts.adi contains exactly one record with the independent observations (call, grid, reports, date/time, band, FREQ = dial + Tx offset) after restart; Halt stops RF promptly as observed on the radio; watchdog expiry stops transmission and disarms. Failures are recorded, not reworded as passes.
              5 — Live RF transmission with operator authorization; HB9BLA station PC with the actual IC-7300 and antenna. */
         attribute automation : AutomationState = AutomationState::planned;
@@ -1137,8 +1137,8 @@ package WstxRequirements {
         doc /* TC-008-001 — Tx and Tune watchdogs
              CL-010-10
              Setup: actual server with virtual clock and the #9 transmit-service double; browser and MCP clients.
-             Steps: refuse limits 0 and 100, accept 6 (default) and 1..99; with limit 2 call CQ with no answer for three periods; with limit 2 select a CQ, send Tx1 twice and let the partner answer with a report, then send further unanswered messages; with limit 2 call CQ and let another station answer; send an accepted browser request after one unanswered call; disarm and re-enable; Tune with 90 s default, 1 and 300 s, refuse 0 and 301; Halt during Tune.
-             Expected (hand-counted): the third CQ is never keyed: Enable Tx goes off before keying with cause tx_watchdog, tx_expired true, halt_state unchanged (no halt), PTT released; remaining calls 2, 1, 0 while armed; the partner's report resets the count (two more unanswered messages before the stop); an answer to my CQ by anyone resets it; a message from another station to someone else does not; an accepted browser request resets it; the counter is 0 while disarmed; the contact state is kept and "Tx watchdog: 2 unanswered calls" is shown; Tune ends at its limit through #9; startup default 6 calls and 90 s.
+             Steps: refuse limits 0 and 100, accept 6 (default) and 1..99; with limit 2 call CQ with no answer for three periods; with limit 2 select a CQ, send Tx1 twice and let the partner answer with a report, then repeat the reply; with limit 3 let the partner repeat the same report every period while I repeat (R+report), with unrelated browser requests between the transmissions (hold, frequency, settings), and after the stop Enable Tx again; with limit 2 send Enable Tx while armed after the first reply and select the partner's row, at the same and at another SNR and after an edited Tx3, after the second; lower the limit to 2 with a third reply pending; at the limit with RR73 received and 73 pending choose Tx3; with limit 2 repeat the reply twice and let the partner advance with RR73 at +14.2 s, after the start window's lead for the third; with limit 2 call CQ, send one CQ and let a station answer with Call 1st off, then with Call 1st on; disarm and re-enable; Tune with 90 s default, 1 and 300 s, refuse 0 and 301; Halt during Tune.
+             Expected (hand-counted): the third CQ is never keyed: Enable Tx goes off before keying with cause tx_watchdog, tx_expired true, halt_state unchanged (no halt), PTT released; remaining calls 2, 1, 0 while armed; the partner's report makes the next message a different one, which starts at the limit again (two repetitions before the stop); the partner's repeats and the browser requests change nothing: exactly three R+report go out, the fourth is never keyed, cause tx_watchdog without a halt, the dialogue shows the report and R+report each with their Rep; Enable Tx after the stop sends the same message again, a new tx entry with Rep 1; Enable Tx while armed and the partner's row change neither the remaining calls nor the dialogue, and the third reply is never sent, the lowered limit and the Tx button stop at once with nothing keyed; the RR73 makes 73 go out and the contact complete; with Call 1st off a caller leaves the CQ count unchanged, with Call 1st on the reply to the caller starts at the limit; a message from another station to someone else changes nothing; the counter is 0 while disarmed; the contact state is kept and "Tx watchdog: same message sent 2 times" is shown; Tune ends at its limit through #9; startup default 6 calls and 90 s.
              2 — Isolated automated functional tests; Windows development PC, virtual clock and independent transmit double; no RF. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1204,7 +1204,7 @@ package WstxRequirements {
              Setup: profile log fixture with K1ABC on 20m FT8, W1XYZ on 40m FT8, DL1ABC on 20m MFSK/FT4; dial 20m FT8; rows from K1ABC, W1XYZ, DL1ABC, k1abc case variant, N0NEW and a hashed call; 65 distinct calls in one period.
              Steps: publish periods, save a new contact with N0NEW, publish again.
              Expected: K1ABC this band and mode; W1XYZ and DL1ABC other band or mode; N0NEW not worked then this band and mode after the save; hashed unknown; the status is text (hover text and aria-description, BandActivityHover) in Band Activity and the QSO pane's stations calling me, colour only from the enabled new_* slots of the record flags, so worked before on this band and mode has no colour; one query per period with at most 64 calls (the 65th unknown); no change to decoding, sequence or log.
-             QSO pane subset (#10 2026-11-04, WstxOperatingLayout::QsoPane item 3). Setup: actual server log K1ABC 20m FT8 and DL1ABC 40m FT8; selection 20m FT8; one period with callers to my call HB9BLA K1ABC FN42 (no flags), HB9BLA W1XYZ FN31 (new_call, new_call_band) and HB9BLA DL1ABC -10 (new_call_band). Steps: wait for the Band Activity worked-before answer; read the callers; turn New call off in Settings; refresh status. Expected: K1ABC no colour, "Worked before on 20m FT8"; W1XYZ the New call colour, "New call", "New call on 20m"; DL1ABC the New call on band colour, "New call on 20m", "Worked before on another band or mode"; each title ends with the double-click hint; no My call colour; with New call off W1XYZ takes New call on band; exactly one worked-before query (the callers add none).
+             QSO pane subset (#10 2026-11-04, WstxOperatingLayout::QsoPane item 3). Setup: actual server log K1ABC 20m FT8 and DL1ABC 40m FT8; selection 20m FT8; one period with callers to my call HB9BLA K1ABC FN42 (no flags), HB9BLA W1XYZ FN31 (new_call, new_call_band) and HB9BLA DL1ABC -10 (new_call_band). Steps: wait for the Band Activity worked-before answer; read the callers; turn New call off in Settings; refresh status. Expected (#50 BandActivityHover compact rule, #37 2026-11-04): K1ABC no colour and no hover text; W1XYZ the New call colour and the one-line hover "New call"; DL1ABC the New call on band colour and "New on 20m (worked on another band or mode)"; no My call colour; with New call off W1XYZ takes New call on band and the hover "New on 20m"; exactly one worked-before query (the callers add none).
              2 — Isolated automated functional tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1642,8 +1642,8 @@ package WstxRequirements {
              with non-null migrated scope, completed storage of key/grant/enrollment operation
              IDs BEFORE enroll200, then challenge/proof204/status200. Session204 alone is not
              ordinary permission. Initial migration assigns identity to existing selection even
-             with disabled control, but creates no grant/commission or native effects; explicit
-             removed/null scope cannot be invented or auto-added. Fetch GET `/profile` using
+             with disabled control, but creates no grant/commission or native effects; a
+             null scope cannot be invented. Fetch GET `/profile` using
              ordinary same-origin browser fetch with no manually supplied Origin and require200.
              Inspect cookie names/attributes only, then Refresh/reconnect every window. Repeat
              retained authorization in reverse order with proof/status, no token or enrollment
@@ -2124,21 +2124,17 @@ package WstxRequirements {
              without an interface is refused with targets[0].multicast_interface.
              Compact QSO pane (#37, QsoPane): with a running QSO at 1366x768 the pane shows the
              header, the last partner message "HB9BLA IW9FRA RR73  +17 dB ×3", the QSO
-             dialogue as the #60 table (ten entries, oldest first, scrolling inside the card at its newest
-             row) and below it the Others as ⚠ rows of the same table oldest first (only
-             stations calling me within +/-50 Hz of Rx 1500 Hz or Tx 2100 Hz, not the partner,
-             not a station near neither, no DT/frequency; "nobody else calling" when none),
-             NEXT "▸ next:
-             <message>" while armed, and the buttons, all inside the pane (not clipped), the
-             pane content without the QSO area at most 250 px high (the earlier pane needed about 380 px for the
-             same contact); item 8 (#60, operator 2026-11-03): the pane height equals its content
-             height (within 3 px), at most 300 px at 1366x768, at the top of its column, the QSO
-             area at most its header row and 6 rows; at 1920x1080 the area is the header row and
-             6 rows, the pane at most 340 px, and the Control panel and the error field follow
-             below it (#37 LowerPanel, TC-037-001); there is no LAST row or
-             crowding badge; double-clicking an Others line sends select_row with replace true
-             then enable_tx. Idle, every station calling me is a table row "HH:MM:SS | <my call> ◂ <caller> | <exchange> |
-             <SNR> |" (no CQ, even near Rx) whose double-click sends select_row then enable_tx. When the contact is
+             dialogue as the #60 table (ten entries, oldest first, the newest row inside the
+             section) and below it Calling me oldest first (every station calling me but the
+             partner, ⚠ on those within +/-50 Hz of Rx 1500 Hz or Tx 2100 Hz, no DT/frequency;
+             no ⚠ with Rx and Tx at 2800 Hz), NEXT "▸ next: <message>" while armed, and the
+             buttons, all inside the pane (not clipped); item 8 (#37 2026-11-04): the pane at
+             the top of its column, its fixed height proved by TC-037-003; at 1920x1080 at
+             least 100 px free below the error field (#37 LowerPanel, TC-037-001); there is no LAST row or
+             crowding badge; double-clicking a Calling me line during the QSO sends select_row
+             with replace true then enable_tx. Idle, every station calling me is a Calling me row
+             "<caller> | <SNR> | <grid> | <country>" (no CQ, even near Rx) whose double-click
+             sends select_row then enable_tx. When the contact is
              completed (Log QSO or completion) the pane shows "✓ Logged <call>", no NEXT and
              no partner lines, and after loggedNoticeSeconds only the idle pane; a cancelled
              contact is gone at once. At 360x800 nothing overflows horizontally.
@@ -2443,8 +2439,8 @@ package WstxRequirements {
          and the status condition). Delivered (partial, before live acceptance):
          CL-022-03 'Confirm receive-only setup' UI and the automatic read-only CAT
          lifecycle, CL-022-04 cadence, CL-022-05 CAT status/freshness presentation;
-         TC-022-009 automated companions. Still target: CL-022-02 explicit radio
-         identity Add/Replace/Remove (ChangeSelectedRadioIdentity, no route yet), the
+         TC-022-009 automated companions. Radio identity Add/Replace/Remove is dropped
+         from the contract (operator 2026-11-06, CL-022-02). Still target: the
          CL-022-05 dated freeze reproduction and Thin/Off accounted-traffic companion;
          TC-022-008 and TC-022-010 stay planned.
          Existing99 identities retain meaning and numbering. No parser, model
@@ -2539,15 +2535,13 @@ package WstxRequirements {
              authority alone owns it; audio/CAT adapters refer to that same identity.
              Initial migration assigns one UUID to the existing selected configuration,
              but creates NO authorization grant or commissioning acknowledgement.
-             Explicit Add/Replace/Remove uses WstxProfiles::ChangeSelectedRadioIdentity,
-             not an inferred control-settings edit. Fresh bootstrap alone grants no
-             control: ReadBootstrapScope provides its read-only authority tuple before
-             enrollment. Add only from absent scope; Replace/Remove require exact current
-             scope. Add/Replace assign new UUID/revision1, remove leaves absent scope;
-             both invalidate old grants/commissioning atomically after confirmed native
-             release, with bounded operation receipt and no automatic mutation replay.
-             Subsequent enrollment/commissioning is required; disabled/re-enable alone
-             never removes or replaces identity. Endpoint/model/PTT edits
+             Operator decision 2026-11-06 (#22): no explicit radio identity
+             Add/Replace/Remove operation exists. Automatic discovery of an available
+             transmitter is requested on #44 and is not delivered or promised by this
+             clause. Fresh
+             bootstrap alone grants no control: ReadBootstrapScope provides its read-only
+             authority tuple before enrollment. Disable/re-enable never removes or
+             changes identity. Endpoint/model/PTT edits
              preserve selected UUID but increment SafetyConfigurationRevision and
              invalidate commissioning; they cannot make a newly configured device
              usable until explicit re-commissioning. Endpoint reversion also needs
@@ -2602,7 +2596,6 @@ package WstxRequirements {
              Delivered: durable record, logout/revoke-all, a locked admission check of
              every operating HTTP route and WS upgrade, WS-message rechecks of an earlier
              admitted grant, safety-revision advance and the commissioning server API.
-             Explicit Add/Replace/Remove remains target.
              Accepted bound: an operating HTTP request is admitted by validating its
              transport (scope, grant, current revocation generation) under the authority
              lock; the lock is then released. Such an admitted request may still be
@@ -2740,8 +2733,8 @@ package WstxRequirements {
              bytes contain that full origin, compact auth bodies do not echo it.
              Hand-count canonical ASCII widths (UUID36/revision16/IDs43/key87/signature86),
              including JSON quotes/punctuation: scope138, enrollment374, receipt-proof426,
-             challenge-response396, conservative receipt302 and bootstrap response440
-             with BOTH current and receipt scopes. Require actual compact serialization
+             challenge-response396, conservative receipt302 and bootstrap response170.
+             Require actual compact serialization
              <= these envelopes and <=1024; no candidate serializer as expected oracle.
              Full status still includes bounded receive/error fields within1024, not
              truncation or a weakened origin/profile domain. Whitespace-padded request
@@ -2764,12 +2757,13 @@ package WstxRequirements {
              WS grant or disconnect CAT/audio, while actual revoke still fences effects
              and closes affected WS. Same-document readiness sharing is not a claimed
              cross-tab lock; keep rate10/60 and all other caps/budgets unchanged.
-             Removed scope returns null; no implicit Add/enrollment. Authorize A once; preserve ordinary
+             A record with a null scope, which no delivered operation writes, returns null
+             and enrolls nothing (no automated case). Authorize A once; preserve ordinary
              browser profile/key, close actual browser process, remove/expire only its
              transport cookie under test control, advance injected times across28800s
              and browser-cookie retention boundary, restart server/browser. A becomes
              usable through signed proof with zero bootstrap submissions; no long real
-             wait claimed. Test retained identity/revision vs Add/Replace radio, other
+             wait claimed. Test retained identity/revision vs another scope, other
              profile/origin, malformed/duplicate cookies, stale/replayed/wrong tuple/
              expired signatures, consumed nonce and challenge saturation. Independently
              fixed tuples/challenge bytes and effect counters are oracle, not server
@@ -2795,37 +2789,9 @@ package WstxRequirements {
              attempt stops after exactly 3 attempts with 'Could not authenticate'.
              A 401 bootstrap-scope is never retried. Navigating away during a held
              attempt sends no further setup request.
-             Automated companions: tests/profiles.test.cjs TC-022-006 cases and
-             server/src/auth_tests.rs, including plaintext runtime-token operating
-             access. Radio identity Add/Replace and injected-time restart subsets
-             remain pending. */
-        attribute automation : AutomationState = AutomationState::partial;
-        attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs";
-        objective {
-            verify 'CL-022-01';
-            verify 'CL-022-02';
-        }
-    }
-    dependency CL_022_01_verified_by_TC_022_006 from 'CL-022-01' to 'TC-022-006';
-    dependency CL_022_02_verified_by_TC_022_006 from 'CL-022-02' to 'TC-022-006';
-    verification 'TC-022-007' {
-        doc /* TC-022-007, CL-022-02; cost2 profiles/protocol and station authority companions.
-             With independent durable-state/native-peer oracles exercise explicit
-             radio-identity add/replace/remove and bootstrap-scope receipt recovery.
-             Add with present scope, replace/remove with absent/stale scope, ordinary
-             transport without bootstrap and cross-profile context refuse with no state
-             commit/native bytes. Disable/re-enable and endpoint edit preserve UUID;
+             Grant revocation and configuration edits (operator 2026-11-06: moved here from
+             the retired TC-022-007). Disable/re-enable and endpoint edit preserve UUID;
              endpoint change advances safety revision/invalidates commissioning only.
-             Replace at identical endpoint yields different UUID and no inherited
-             grant/commissioning; Remove yields null current scope and zero CAT attempts
-             despite saved enabled settings. Explicit Add creates another UUID; no
-             timer/settings edit auto-Adds. Hold close/fail close: no identity commit,
-             quarantine never clears on retry. Fail atomic write: no acknowledged new
-             identity; inspect last committed record. Lose response after commit/restart,
-             bootstrap again and query same operation receipt: one UUID allocation,
-             old grants deleted, no repeated mutation or queued CAT effects. Contrast
-             precommit failure/evicted receipt with409 unknown, never claimed success.
-             A setup receipt cannot satisfy verifier proof/receipt or grant authority.
              Two A browser grants plus B; logout one A leaves otherA/B; revoke-allA
              removes bothA only; restart cannot revive acknowledged revocation. Race
              queued HTTP/WS mutations and selection against revocation with independently
@@ -2836,18 +2802,29 @@ package WstxRequirements {
              failure/restart and verify documented last-committed-state limitation and
              failclosed current process. Cap64 grants without evicting active grants;
              delete verifier and replay old proof/cookie: rejected, no tombstone growth.
-             Automated: server/src/auth_tests.rs (logout/revoke fencing of every
-             operating HTTP route and WS upgrade, foreign grant refusal, commission
-             receipts) and station-authority unit tests; tests/profiles.test.cjs
-             TC-022-004 covers browser logout and revoke-all. Radio identity
-             add/replace/remove cases remain pending with that target slice. */
+             Automated companions: tests/profiles.test.cjs TC-022-006 cases (TC-022-004
+             covers browser logout and revoke-all) and server/src/auth_tests.rs, including
+             plaintext runtime-token operating access, logout/revoke fencing of every
+             operating HTTP route and WS upgrade, foreign grant refusal and commission
+             receipts; station-authority unit tests in server/src/authorization_tests.rs.
+             Injected-time restart: the store-level cases there use an injected clock (a
+             transport usable at 28799 s and refused at exactly 28800 s, a challenge 400 days
+             on, a reopen keeping grants and receipts with no transport), and
+             tests/profiles.test.cjs "actual browser and server process restart" removes the
+             cookie and restarts both processes. No run advances a browser's clock; that
+             combination stays unautomated, and TC-022-010 observes controlled cookie expiry
+             live. */
         attribute automation : AutomationState = AutomationState::partial;
-        attribute executable : String = "server/src/auth_tests.rs; server/src/authorization_tests.rs";
+        attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs; server/src/authorization_tests.rs";
         objective {
+            verify 'CL-022-01';
             verify 'CL-022-02';
         }
     }
-    dependency CL_022_02_verified_by_TC_022_007 from 'CL-022-02' to 'TC-022-007';
+    dependency CL_022_01_verified_by_TC_022_006 from 'CL-022-01' to 'TC-022-006';
+    dependency CL_022_02_verified_by_TC_022_006 from 'CL-022-02' to 'TC-022-006';
+    // TC-022-007 retired (operator 2026-11-06, radio identity Add/Replace/Remove dropped, #22);
+    // its revocation and configuration-edit cases moved to TC-022-006. The identity is not reused.
     verification 'TC-022-008' {
         doc /* TC-022-008 CL-022-05 cost2 actual TLS browser. Preserve original missing-cookie/
              openWS reproduction and held-old-response cases; prove401 invalidation and
@@ -2920,7 +2897,7 @@ package WstxRequirements {
              policy_attempt_deferred_by_rf_work_is_not_a_failure. Pending: real Windows
              native release/cancel measurement. */
         attribute automation : AutomationState = AutomationState::partial;
-        attribute executable : String = "server/src/cat_lifecycle_tests.rs; server/src/auth_tests.rs; tests/radio-selection.test.cjs";
+        attribute executable : String = "server/src/cat_lifecycle_tests.rs; server/src/auth_tests.rs; server/src/selection_http_tests.rs; tests/radio-selection.test.cjs";
         objective {
             verify 'CL-022-03';
             verify 'CL-022-04';
@@ -3956,7 +3933,7 @@ package WstxRequirements {
     dependency CL_039_05_to_FR_020 from 'CL-039-05' to 'FR-020';
     dependency CL_039_05_to_FR_007 from 'CL-039-05' to 'FR-007';
     requirement 'CL-039-06' {
-        doc /* The Tx watchdog counts consecutive unanswered own transmissions (WstxContact::TxWatchdog, 2026-11-04) and is never paused or reset by automation; only an answer from the partner (to my CQ: from anyone) or a human action in the browser resets it. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or Auto start from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run, MCP requests (including starting or restarting a run) and UDP commands never reset or extend it; their Enable Tx keeps the count and is refused tx_watchdog when the limit is used up or no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP, UDP or automation is refused operator_required); a new target chosen by a run does not reset it. At the limit Enable Tx goes off without a halt and a run stops tx_watchdog; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt, UDP Halt Tx). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxContact::TxWatchdog. */
+        doc /* The Tx watchdog limits the repetitions of one message (WstxContact::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or an Auto start from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or Auto start from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run, MCP requests (including starting or restarting a run) and UDP commands never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP, UDP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a run stops tx_watchdog; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt, UDP Halt Tx). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxContact::TxWatchdog. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs; server/src/mcp.rs; server/src/udp.rs; server/src/authorization.rs";
     }
@@ -4191,11 +4168,11 @@ package WstxRequirements {
     dependency CL_039_03_verified_by_TC_039_004 from 'CL-039-03' to 'TC-039-004';
     dependency CL_039_05_verified_by_TC_039_004 from 'CL-039-05' to 'TC-039-004';
     verification 'TC-039-005' {
-        doc /* TC-039-005 — The Tx watchdog is never reset by automation
+        doc /* TC-039-005 — The Tx watchdog stop is never ended by automation
              CL-039-06
-             Setup: as TC-039-004 with role cq; for the unit cases the #9 Core on the hardware double; counts per WstxContact::TxWatchdog (#39, 2026-11-04).
+             Setup: as TC-039-004 with role cq; for the unit cases the #9 Core on the hardware double; counts per WstxContact::TxWatchdog (#39, 2026-11-06).
              Steps: (1) browser limit 2; browser Auto start; transmit the own CQ at E+15 s; publish a caller at E+30 s; transmit the report at E+45 s and its repeat at E+75 s; reach E+105 s; cancel and start Auto again from the browser. (2) MCP and browser: an MCP Enable Tx before any browser action; browser limit 1; an MCP Enable Tx (CQ) transmitted at E+15 s; MCP set_frequency; MCP set_watchdogs 99; reach E+45 s; a station calls HB9BLA in period E+30 s; an MCP Enable Tx; an MCP run start and a matching CQ; a browser action and an MCP Enable Tx. (3) MCP route: browser limit 1, an MCP Enable Tx and its CQ, MCP-principal commands through the tool and straight to /contact/command, then MCP Enable Tx on both. (4) UDP: a UDP Reply and Free Text from an accepting target before any browser action, then a browser-path action. Unit: automatic arm before any operator action; activity, limit 2, automatic arm; operator arm.
-             Expected: (1) remaining calls 1 after the CQ, 2 after the caller's answer (the run's selection does not reset it), the request at E+105 s is never keyed, the run stops tx_watchdog, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the browser start arms again. (2) refused tx_watchdog; spent after the one CQ, still spent after the MCP command, set_watchdogs refused operator_required, the next CQ never keyed, still spent after the caller (an answer after a stop resets nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; after the browser action not spent and the MCP Enable Tx arms. (3) spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. (4) spent before and after both applied commands; not spent after the browser action. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
+             Expected: (1) remaining calls 1 after the CQ, 2 after the caller's answer (the run's reply is a different message), the request at E+105 s is never keyed, the run stops tx_watchdog, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the browser start arms again. (2) refused tx_watchdog; not spent after the one CQ and the MCP command, set_watchdogs refused operator_required, the next CQ never keyed and spent, still spent after the caller (an answer after a stop ends nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; still spent after an unrelated browser action; after a browser Enable Tx not spent and the MCP Enable Tx arms. (3) after the stop spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. (4) spent before and after both applied commands; not spent after the browser action. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
              2 — Isolated automated functional tests; Windows development PC, transmit double; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4207,7 +4184,7 @@ package WstxRequirements {
     verification 'TC-039-006' {
         doc /* TC-039-006 — Strategy element, Highlight, editor popup and Auto in the browser
              CL-039-01, CL-039-04, CL-039-05
-             Setup: actual isolated server and Chromium at 1366x768 (and 360x740 for the popup); routed fixtures: an FT8 live job with CQ K1ABC FN42, CQ NA W1AW FN31, CQ DL1XYZ JO62, a strategy view (revision 4, "DX first", Highlight off), station verdicts [2 rank 0, 0 rank 1, 1 grey] (with reasons when explain), an automation owner recording commands, the contact snapshot (safety revision 7, watchdog 6 unanswered calls). A second case uses the real station store.
+             Setup: actual isolated server and Chromium at 1366x768 (and 360x740 for the popup); routed fixtures: an FT8 live job with CQ K1ABC FN42, CQ NA W1AW FN31, CQ DL1XYZ JO62, a strategy view (revision 4, "DX first", Highlight off), station verdicts [2 rank 0, 0 rank 1, 1 grey] (with reasons when explain), an automation owner recording commands, the contact snapshot (safety revision 7, watchdog 6 repetitions). A second case uses the real station store.
              Steps: wait; click Highlight; open the editor; read the preview; resize to 360 px; change the sort to weakest; tick "not" on the first condition; Save; Close; click Auto, Cancel; click Auto, Start Auto; announce automation.state; click Auto again. Second case: choose continent AS in Settings > General.
              Expected: no evaluation request while Highlight is off; one PUT {expected_revision 4, highlight true}; one evaluation {the live identity, 0..3, strategy null, explain false}; rows DL1XYZ (rule 1), K1ABC (rule 2), W1AW greyed; the popup HALT has the top-bar state; preview rows "#1 CQ DL1XYZ JO62 matches rule 1", "#2 ...", "— CQ NA W1AW FN31 CQ NA is not addressed to my continent (EU)" from a draft evaluation with explain; no horizontal overflow at 360 px; an edit re-runs the preview; Save sends exactly the edited strategy at expected_revision 5; the confirmation names the strategy, role and watchdog; Cancel sends nothing; Start sends configure {strategy true, the maxima} then start {policy 1, run 0, ft8, safety 7}; the button shows "Auto · waiting" pressed and the name is locked; the second click sends stop with the run id; no enable_tx from the browser. Second case: PUT saved continent AS (my_continent AS) and no browser storage key.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
@@ -4225,9 +4202,9 @@ package WstxRequirements {
     verification 'TC-039-007' {
         doc /* TC-039-007 — Live Highlight and Auto on HB9BLA
              CL-039-03, CL-039-04, CL-039-05, CL-039-06
-             Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 at 1 W on 40 m FT8, operator consent; Tx watchdog 6 unanswered calls (the profile default).
+             Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 at 1 W on 40 m FT8, operator consent; Tx watchdog 6 repetitions (the profile default).
              Steps: create a strategy (rule 1 CQ and not continent EU, rule 2 CQ; Treat 73 as CQ) and turn Highlight on; then Auto in role cq; then role call.
-             Expected: matching decodes marked and on top, CQ NA/AS and same-continent CQ DX greyed; Auto CQ transmits CQ and answers the first caller to a logged QSO, or ends by the watchdog after 6 unanswered CQs; Auto Call answers only matching CQs; HALT and Esc stop at once; the watchdog is not extended by Auto.
+             Expected: matching decodes marked and on top, CQ NA/AS and same-continent CQ DX greyed; Auto CQ transmits CQ and answers the first caller to a logged QSO, or ends by the watchdog after 6 identical CQs; Auto Call answers only matching CQs; HALT and Esc stop at once; the watchdog is not extended by Auto.
              5 — Live with RF on the station, operator consent; not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
@@ -4557,7 +4534,7 @@ package WstxRequirements {
     dependency CL_050_03_to_FR_008 from 'CL-050-03' to 'FR-008';
     dependency CL_050_03_to_FR_019 from 'CL-050-03' to 'FR-019';
     requirement 'CL-050-05' {
-        doc /* (#37) While an own CQ runs the QSO pane header reads "Calling CQ" with the Tx period; the message line reads "▶ TX now: <message>" with the seconds left while the station reports transmitting ("▶ TX now: Tune" with the Tune seconds left during Tune) and "▸ next: <message> · Tx in <n> s" otherwise; the Others, below the QSO dialogue, list only stations calling my call, with time and SNR: during a QSO those other than the partner within +/-50 Hz of my Rx or Tx offset (⚠, a double-click switches the contact with Enable Tx kept), otherwise every caller on any frequency as soon as decoded; an empty list is one muted line "nobody calling" ("nobody else calling" during a QSO). Details: WstxOperatingLayout::QsoPane. */
+        doc /* (#37) While an own CQ runs the QSO pane header reads "Calling CQ" with the Tx period; the message line reads "▶ TX now: <message>" with the seconds left while the station reports transmitting ("▶ TX now: Tune" with the Tune seconds left during Tune) and "▸ next: <message> · Tx in <n> s" otherwise; the Calling me section below the QSO dialogue lists only stations calling my call, one line per station with call, SNR, grid and country: every caller other than the partner on any frequency as soon as decoded, during a QSO ⚠ marking one within +/-50 Hz of my Rx or Tx offset and a double-click switching the contact with Enable Tx kept; an empty list shows the placeholder "Nobody is calling" (#37 2026-11-04, CL-037-04). Details: WstxOperatingLayout::QsoPane. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js; client/recording.css";
     }
@@ -4588,8 +4565,8 @@ package WstxRequirements {
         doc /* TC-050-005 — QSO pane while calling CQ and transmitting (#37)
              CL-050-05
              Setup: actual candidate server and Chromium; routed ContactSnapshot of an own CQ with Enable Tx on; station.tick events dispatched to the page; routed live rows.
-             Steps: (ui-operating TC-050-005) read the header after a receive refresh, the message line with transmitting true (4 s into my period), with a transmit view whose last_text of this period differs from the next message, during Tune, and with transmitting false at the next odd period start, and the Others with no row; (ui-operating TC-007-009) the Others idle and during a QSO with Rx 1500 Hz and Tx 2100 Hz, with callers of my call at 400, 1505 (the partner), 1530, 2130 and 1600 Hz and CQs near Rx, then with Rx and Tx at 2800 Hz; (contact.test TC-007-003) the Others with a caller and CQs near Rx on the actual server; screenshots of calling CQ, TX now and between periods.
-             Expected: header "Calling CQ" with "Tx even (1st)"; "▶ TX now:" "CQ HB9BLA JN47" with "10 s left", then "K1ABC HB9BLA -05" (the text on the air), "▶ TX now:" "Tune" with "80 s left"; "▸ next:" "CQ HB9BLA JN47" with "Tx in 15 s"; "nobody calling" for an empty list; idle every caller as a QSO table row "HH:MM:SS | <my call> ◂ <caller> | …" oldest first and no CQ; during the QSO only the 1530 and 2130 Hz callers as rows "HH:MM:SS ⚠ | …", never the partner or 1600 Hz, "nobody else calling" at 2800 Hz, and a double-click sends select_row replace true then enable_tx.
+             Steps: (ui-operating TC-050-005) read the header after a receive refresh, the message line with transmitting true (4 s into my period), with a transmit view whose last_text of this period differs from the next message, during Tune, and with transmitting false at the next odd period start, and Calling me with no row; (ui-operating TC-007-009) Calling me idle and during a QSO with Rx 1500 Hz and Tx 2100 Hz, with callers of my call at 400, 1505 (the partner), 1530, 2130 and 1600 Hz and CQs near Rx, then with Rx and Tx at 2800 Hz; (contact.test TC-007-003) Calling me with a caller and CQs near Rx on the actual server; screenshots of calling CQ, TX now and between periods.
+             Expected: header "Calling CQ" with "Tx even (1st)"; "▶ TX now:" "CQ HB9BLA JN47" with "10 s left", then "K1ABC HB9BLA -05" (the text on the air), "▶ TX now:" "Tune" with "80 s left"; "▸ next:" "CQ HB9BLA JN47" with "Tx in 15 s"; "Nobody is calling" for an empty list; idle every caller as a Calling me row "<caller> | <SNR> | <grid> | <country>" oldest first and no CQ; during the QSO every caller but the partner, the 1530 and 2130 Hz callers marked ⚠ ("SV1DZB ⚠"), none marked at 2800 Hz, and a double-click on any caller sends select_row replace true then enable_tx.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4933,8 +4910,8 @@ package WstxRequirements {
              CL-024-01
              Setup: the browser fixture of the operating screen with the actual isolated station, hand-written live records and a hand-written contact snapshot of an own CQ (no partner, only Tx6), the profile call HB9BLA; contact commands are recorded (the station's validation of the text is TC-024-003).
              Steps: publish rows "<HB9BLA> PJ4/K1ABC" (nonstandard, 'to' filled in), "HB9BLA <PJ4/K1ABC> -12" (standard, 'from' filled in), "<...> PJ4/K1ABC" and "<HB9BLA> K1ABC -12" (standard, 'to' filled in); open the message fold-out and type "tnx 73 gl" into Tx5.
-             Then (QsoPane Others) the same rows during a QSO with PJ4/K1ABC, Rx 1000 Hz and Tx 1300 Hz.
-             Expected: the rows to <HB9BLA> or HB9BLA carry the mycall mark (ba-tome) and sort first as value 1 (calling me, #55 BandActivityValue), the unresolved one does not and follows them; the QSO pane Others list exactly the three rows to my call, oldest first, and not the unresolved one; during the QSO only "<HB9BLA> K1ABC -12" (1300 Hz, not the partner PJ4/K1ABC's nonstandard row at 1000 Hz, not the row at 1100 Hz); Tx5 is enabled without a message while the other empty slots and the Tx5 Next choice are not; edit_message {slot tx5, text "tnx 73 gl"} is sent and nothing transmits; no page errors.
+             Then (QsoPane Calling me) the same rows during a QSO with PJ4/K1ABC, Rx 1000 Hz and Tx 1300 Hz.
+             Expected: the rows to <HB9BLA> or HB9BLA carry the mycall mark (ba-tome) and sort first as value 1 (calling me, #55 BandActivityValue), the unresolved one does not and follows them; the QSO pane Calling me lists one line per station calling my call, oldest first: PJ4/K1ABC by its newest row "HB9BLA <PJ4/K1ABC> -12" and "<HB9BLA> K1ABC -12", not the unresolved one; during the QSO only "<HB9BLA> K1ABC -12" (the partner PJ4/K1ABC's rows are not callers); Tx5 is enabled without a message while the other empty slots and the Tx5 Next choice are not; edit_message {slot tx5, text "tnx 73 gl"} is sent and nothing transmits; no page errors.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4945,7 +4922,7 @@ package WstxRequirements {
     dependency CL_024_01_verified_by_TC_024_004 from 'CL-024-01' to 'TC-024-004';
     // #60 QSO pane dialogue as a table (operator 2026-11-03, final spec).
     requirement 'CL-060-01' {
-        doc /* (#60) The QSO pane shows the QSO dialogue as a table with the header row "UTC | Direction | Exchange | Rep | Rx SNR | Tx SNR", and the stations calling me (Others, ⚠ after the time while a QSO runs) as rows of the same table and columns below a thin separator. UTC is the period start HH:MM:SS with no ◂/▸ mark after it. Direction is the two calls in the Band Activity order, recipient first and sender second, with "◂" between them pointing to the recipient ("HB9BLA ◂ CT1BFP" received from CT1BFP, "CT1BFP ◂ HB9BLA" sent by me; a hashed call as decoded); a CQ is "CQ <call>" or "CQ DX <call>" without an arrow and its grid is the Exchange. Exchange is the message after the two calls; a message that is neither (free text) is all Exchange. Rep is "×N" when the identical message repeated N > 1 times, else empty (operator 2026-11-03: its own column). On every dialogue row, received and sent alike (operator 2026-11-03), Rx SNR is our measured SNR, signed, of the latest received dialogue entry at or before that row, and Tx SNR is the latest report the partner sent us at or before that row ("R-02" gives "−2", a plain report "-05" gives "−5"); each is empty only while no such value exists yet. An Others row shows its own SNR and its own report, if any. The pane is content high at the top of its column, its table area at most the header row and 6 rows, scrolling inside at its newest row, so the height below the pane is free for the #37 Control panel and error field (#37 item 8, operator 2026-11-03: "The QSO part is way too long"); it does not grow the page (TC-007-009) and the table fits 360 CSS px, the titles abbreviated and the Direction calls wrapping at their spaces there. Details: WstxOperatingLayout::QsoPane items 3 and 7. */
+        doc /* (#60) The QSO pane shows the QSO dialogue as a table with the header row "UTC | Direction | Exchange | Rep | Rx SNR | Tx SNR", and, since #37 CL-037-04 (2026-11-04), the stations calling me in their own Calling me section, no longer rows of this table. UTC is the period start HH:MM:SS with no ◂/▸ mark after it. Direction is the two calls in the Band Activity order, recipient first and sender second, with "◂" between them pointing to the recipient ("HB9BLA ◂ CT1BFP" received from CT1BFP, "CT1BFP ◂ HB9BLA" sent by me; a hashed call as decoded); a CQ is "CQ <call>" or "CQ DX <call>" without an arrow and its grid is the Exchange. Exchange is the message after the two calls; a message that is neither (free text) is all Exchange. Rep is "×N" when the identical message repeated N > 1 times, else empty (operator 2026-11-03: its own column). On every dialogue row, received and sent alike (operator 2026-11-03), Rx SNR is our measured SNR, signed, of the latest received dialogue entry at or before that row, and Tx SNR is the latest report the partner sent us at or before that row ("R-02" gives "−2", a plain report "-05" gives "−5"); each is empty only while no such value exists yet. The table is the QSO section of the fixed-height pane (#37 CL-037-04): its header row and 12 rows without scrolling (6 at most 48em wide), more scrolling inside at its newest row; it does not grow the page (TC-007-009) and the table fits 360 CSS px, the titles abbreviated and the Direction calls wrapping at their spaces there. Details: WstxOperatingLayout::QsoPane items 7 and 8. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js";
     }
@@ -4955,8 +4932,8 @@ package WstxRequirements {
         doc /* TC-060-001 — QSO pane dialogue table
              CL-060-01
              Setup: actual candidate server and Chromium at 1366x768; routed ContactSnapshot of a running QSO of HB9BLA with CT1BFP whose dialogue holds a sent CQ, the operator's #60 example (received IM59 +8, sent +08, received R-02 +7, sent RR73, received 73 +9, here repeated twice with my call hashed and unknown) and a sent free text; routed live rows of callers of my call: DL1ABC JO31, an unknown hashed call with RR73, a known hashed call <PJ4/K1ABC> with the report -05, and EA8BIA IL18 near my Rx.
-             Steps: read the header cells and every #qso-dialogue and #qso-others row's cells idle and while the QSO runs, the separator above the Others, the page scroll and the header position, then at 360x800 the table and page widths; screenshots at 1366x768 and 360x800.
-             Expected (independent oracle: the literal operator table of #60 and its 2026-11-03 Rep and every-row SNR requests): header UTC, Direction, Exchange, Rep, Rx SNR, Tx SNR; idle Others [12:00:15, HB9BLA ◂ DL1ABC, JO31, "", −8, ""], [12:00:15, HB9BLA ◂ <...>, RR73, "", −12, ""], [12:00:15, HB9BLA ◂ <PJ4/K1ABC>, -05, "", −5, −5], [12:00:15, HB9BLA ◂ EA8BIA, IL18, "", 0, ""]; dialogue [22:51:00, CQ HB9BLA, JN37, "", "", ""], [22:51:15, HB9BLA ◂ CT1BFP, IM59, "", +8, ""], [22:51:30, CT1BFP ◂ HB9BLA, +08, "", +8, ""], [22:51:45, HB9BLA ◂ CT1BFP, R-02, "", +7, −2], [22:52:00, CT1BFP ◂ HB9BLA, RR73, "", +7, −2], [22:52:15, <...> ◂ CT1BFP, 73, ×2, +9, −2], [22:52:30, "", TNX 73 GL, "", +9, −2]; during the QSO the Others [12:00:15 ⚠, HB9BLA ◂ EA8BIA, IL18, "", 0, ""] with a 1 px top border; no page scroll at 1366x768, the header row visible with the area at its newest row; at 360 px no horizontal overflow and the table within the pane.
+             Steps: read the header cells and every #qso-dialogue row's cells and the #37 Calling me rows idle and while the QSO runs, the page scroll, the header row and the newest row position, then at 360x800 the table and page widths; screenshots at 1366x768 and 360x800.
+             Expected (independent oracle: the literal operator table of #60 and its 2026-11-03 Rep and every-row SNR requests): header UTC, Direction, Exchange, Rep, Rx SNR, Tx SNR; idle no dialogue row ("No QSO") and the callers in Calling me [DL1ABC, −8, JO31, ""], [<...>, −12, JO31, ""], [<PJ4/K1ABC>, −5, JO31, ""], [EA8BIA, 0, JO31, ""]; dialogue [22:51:00, CQ HB9BLA, JN37, "", "", ""], [22:51:15, HB9BLA ◂ CT1BFP, IM59, "", +8, ""], [22:51:30, CT1BFP ◂ HB9BLA, +08, "", +8, ""], [22:51:45, HB9BLA ◂ CT1BFP, R-02, "", +7, −2], [22:52:00, CT1BFP ◂ HB9BLA, RR73, "", +7, −2], [22:52:15, <...> ◂ CT1BFP, 73, ×2, +9, −2], [22:52:30, "", TNX 73 GL, "", +9, −2]; during the QSO the same callers in Calling me, EA8BIA as "EA8BIA ⚠", and none of them a row of the QSO table; no page scroll at 1366x768, the header row and the newest row visible; at 360 px no horizontal overflow and the table within the pane.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -5051,6 +5028,48 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_037_02_verified_by_TC_037_002 from 'CL-037-02' to 'TC-037-002';
+    // #37 fixed-height QSO pane with a QSO and a Calling me section (operator 2026-11-04).
+    requirement 'CL-037-04' {
+        doc /* (#37, operator 2026-11-04: "The QSO panel should contain all needed information for the operator. And it should be fixed in size that the things below it do not move all the time up and down. We probably have a section for the QSO and a section for who is calling"; "you can make this section big enough to accommodate also longer QSOs. We have enough space") The QSO pane has a fixed height that depends on the screen only, never on its content, so the Control panel and the error field below it do not move when a QSO starts or ends, dialogue rows or callers are added or a message line appears. It has two sections of fixed height that scroll inside: QSO, below the header (partner call, grid, country, distance, reports) and the message lines (state, NEXT, last partner message), holds the #60 dialogue table with its header row and 12 rows without scrolling on a laptop screen (6 at most 48em wide), more rows scrolling inside with the newest row always visible, and the placeholder "No QSO" while no QSO runs; Calling me lists every station calling my call except the partner, one line per station with call, SNR, grid and country, at least 5 rows high, double-click (or Enter) to work it, with the #10 worked-before marks, and the placeholder "Nobody is calling". At 360 CSS px both sections stack with fixed heights, and Band Activity, with a fixed height, shows compact rows (numbers and distance, then message and country, wrapping only between whole fields, usually two lines) instead of labelled cards, at least six on screen at 360x800. The Calling me hover follows the compact #50 BandActivityHover rule (one line, only the enabled colour reasons, the strongest per kind). No new request or poll: the sections show the contact snapshot and the result rows the page already reads. Details: WstxOperatingLayout::QsoPane items 3, 7 and 8, BandActivityView. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.css";
+    }
+    dependency CL_037_04_to_FR_007 from 'CL-037-04' to 'FR-007';
+    dependency CL_037_04_to_FR_019 from 'CL-037-04' to 'FR-019';
+    verification 'TC-037-003' {
+        doc /* TC-037-003 — Fixed-height QSO pane with QSO and Calling me sections
+             CL-037-04
+             Setup: actual candidate server and Chromium at 1366x768, then 1920x1080 and 360x800; routed live rows of one period with ten CQs, later joined by three callers of my call (a later publication announced by receive.state, #10) (DL1ABC JO31 Fed. Rep. of Germany at 600 Hz, IW9FRA JM68 Sicily, EA8BIA IL18 Canary Islands at 1520 Hz, near my Rx 1500 Hz); routed ContactSnapshots idle, of a running QSO with IW9FRA with 1, 12 and 15 dialogue entries, armed and disarmed, and completed.
+             Steps: at each step read the top and height of the QSO pane, the QSO section, the Calling me section and the top of the Control panel (in the coordinates of the scrolled workspace), the section placeholders, the Calling me cells and whether the dialogue rows lie inside the QSO section; at 360x800 scroll the workspace to the first Band Activity row and count the rows fully on screen and their height; screenshots at each size.
+             Expected (independent oracle: the operator's 2026-11-04 #37 design and the live finding 2026-11-04): idle "No QSO" and "Nobody is calling" shown; with the callers the Calling me header Calling me, SNR, Grid, Country and rows [DL1ABC, −8, JO31, Fed. Rep. of Germany], [IW9FRA, +17, JM68, Sicily], [EA8BIA, 0, IL18, Canary Islands]; during the QSO no "No QSO", the partner gone from Calling me and EA8BIA marked ⚠; 12 dialogue rows all inside the section without scrolling and the section on screen at 1366x768 and 1920x1080; with 15 rows the section scrolls and the newest row is inside it; after completion "No QSO" again; at each size the Control panel top, the pane height and both section heights are the same at every step; Calling me holds its header and 5 rows; no page scroll at 1366x768 with the Control panel, the error field and the pane HALT on screen; at 360x800 no horizontal overflow, at least six Band Activity rows on screen, each at most 48 px high, and the newest dialogue row visible.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-037-04';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_037_04_verified_by_TC_037_003 from 'CL-037-04' to 'TC-037-003';
+    requirement 'CL-037-05' {
+        doc /* (#37, operator 2026-11-04: the QSO area offered "Change contact to W4WFC DL1FRH JO30", "This makes no sense") While a contact is active, a click on a Band Activity row offers a contact change only for a row that can start a contact for me, a CQ/QRZ complying with the directed-CQ rule (WstxStrategy::DirectedCqRule, also without Highlight or an active strategy) or a row addressed to my call, and the offer names the sender ("Change contact to K1ABC"); a click on a row of a QSO between others or on a CQ directed elsewhere offers nothing and leaves no refusal text. A deliberate double-click on such a row calls its sender and its command line reads "Call <sender>", never the foreign message. Details: WstxOperatingLayout::BandActivityView. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.js";
+    }
+    dependency CL_037_05_to_FR_007 from 'CL-037-05' to 'FR-007';
+    verification 'TC-037-004' {
+        doc /* TC-037-004 — A contact change is offered only for a row that can start a contact for me
+             CL-037-05
+             Setup: actual candidate server and Chromium at 1366x768; my continent EU from HB9BLA; routed live rows "CQ K1ABC FN42", "QRZ W1XYZ FN31", "HB9BLA DL1ABC JO31", "W4WFC DL1FRH JO30", "CQ EU G4ABC IO91", "CQ DX K2DX FN42" (NA), "CQ NA K3NA FN42" and "CQ DX DL2DX JO31" (EU); a running contact with IW9FRA; a routed POST /contact/command that refuses select_row without replace as contact_active and accepts everything else.
+             Steps: click each row and read the change button and the command line; double-click the foreign row and read the commands and the command line.
+             Expected (independent oracle: the operator's report of 2026-11-04 on #37): CQ, QRZ, addressed and complying directed rows offer "Change contact to K1ABC", "Change contact to W1XYZ", "Change contact to DL1ABC", "Change contact to G4ABC" and "Change contact to K2DX"; the foreign row and both CQs directed elsewhere each remove the offer, show none and leave the command line empty; its double-click sends select_row with replace true, then enable_tx, and the command line reads "Call DL1FRH: accepted".
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-037-05';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_037_05_verified_by_TC_037_004 from 'CL-037-05' to 'TC-037-004';
     // Found in the #61 gate (TC-050-004, CQ right after a completed contact refused stale_revision).
     requirement 'CL-061-02' {
         doc /* The QSO pane CQ button is an explicit operator choice like the double-click (CL-050-04): a stale_revision refusal of its enable_tx (the contact revision moves with every transmit step, also when the last period of a just completed contact ends) is retried at most twice with the reloaded snapshot; a third refusal stays shown. */
@@ -5146,5 +5165,39 @@ package WstxRequirements {
         }
     }
     dependency CL_061_04_verified_by_TC_061_007 from 'CL-061-04' to 'TC-061-007';
+    requirement 'CL-061-05' {
+        doc /* A Tx period takes only a thin marker band in the waterfall (operator 2026-11-04 and 2026-11-06, #61: "the Tx area in the waterfall can be much shorter", "we still have a white band when the TX runs"). The browser collapses each run of consecutive rows the station marked tx (CL-061-04; it adds no polling and no new station data, #10 client-server rule) to one band of 4 CSS pixels in RGB(90,20,30), whatever the run's source time: while the station transmits the picture holds still once the band stands; receive rows keep the Speed scale. The time ruler stays exact: T at the top, no label inside a band, and a source time t beyond a band at floor((T-t)*p*H/C) less the collapsed source time of the bands above it, plus their height; the readout's projected source range over a band names the whole Tx run. A row the station did not deliver between two Tx rows at most 7.5 s apart is a Tx row of that band, never a grey gap stripe; a longer hole stays a gap. In the Day theme the signal canvases keep their colours: the waterfall's background stays dark and the Tx band dark red, never pale (the canvas counter-filter was overridden by #signal canvas{filter:none}, so the page's inversion turned both nearly white). */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js; client/recording.css";
+    }
+    dependency CL_061_05_to_FR_019 from 'CL-061-05' to 'FR-019';
+    verification 'TC-061-008' {
+        doc /* TC-061-008 — A Tx period is a thin band, the time axis stays exact, nothing pale
+             CL-061-05
+             Setup: actual station Router and browser client at 1366x1200 (device scale 1; a plot holding 20 s at 10 px/s, which the #37 default split at 1366x768 does not) with a scripted correlated live receive and Detailed frames, Speed 1 (10 CSS px/s) (explicit presentation fixtures).
+             Steps: deliver 12 s of receive rows; one Tx row; the rest of a 15 s Tx period with two missing rows; 12 s of receive rows; read the canvas column and the time ruler; hover the band; set the Day theme and read the rendered page pixels; deliver Tx rows after a 7.4 s hole and after a 7.6 s hole.
+             Expected (independent: computed from the 0.2 s rows and 10 px/s with y(s)=floor(s*10*H/C)): after the first Tx row the band covers rows 0-3 and the receive rows start at 4; the remaining Tx rows leave that picture unchanged; after the 12 s of receive the band covers rows y(12) to y(12)+3, receive rows above and below it and no grey row; labels 39.0 s at 0, 35.0 s at y(4), 30.0 s at y(9), then 10.0 s at y(14)+4, none of 25, 20, 15 s; the band's readout names the source range 12.0-27.000 s; the Day page pixels of the band are dark red; the 7.4 s hole is part of the band and the 7.6 s hole stays grey. On the parent client the Tx rows take 150 px, the labels ignore the band and the Day pixels are pale.
+             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). Live acceptance: TC-061-009. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-061-05';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_061_05_verified_by_TC_061_008 from 'CL-061-05' to 'TC-061-008';
+    verification 'TC-061-009' {
+        doc /* TC-061-009 — The Tx band on HB9BLA
+             CL-061-05
+             Setup: the installed station on HB9BLA, IC-7300, the operator's browser in its usual theme.
+             Steps: run a QSO with several Tx periods and look at the waterfall during and after them.
+             Expected: each Tx period shows only a thin dark red band; no white or grey band appears while transmitting; the time labels below a band are the source times of those rows.
+             3 — Live on the station with transmission; with the operator at acceptance. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-061-05';
+        }
+    }
+    dependency CL_061_05_verified_by_TC_061_009 from 'CL-061-05' to 'TC-061-009';
 
 }

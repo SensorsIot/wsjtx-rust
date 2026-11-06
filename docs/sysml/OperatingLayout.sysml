@@ -386,7 +386,7 @@ attribute def ActivityOrdering {
              Station bar: Halt Tx (always visible, Alt+H, Esc; disabled with reason on a
              receive-only station, where Esc only cancels the contact) and a compact
              transmit state with the last transmitted text, Tx watchdog remaining calls WD:n
-             or "Tx watchdog: N unanswered calls", visible in every region. Radio toolbar (its period
+             or "Tx watchdog: same message sent N times", visible in every region. Radio toolbar (its period
              and level slots): UTC clock, Tx progress v/15 with Transmitting label, Rx
              level meter 0..90 dB with high/low text labels
              (WstxContact::OperatorDisplays); they are not in the station bar because the
@@ -709,14 +709,23 @@ attribute def ActivityOrdering {
              by value (BandActivityValue, ActivityOrdering); row density (#55, operator 2026-11-03,
              CL-055-05): table rows with a fine pointer have 1 px vertical cell padding and line
              height 1.25 at the unchanged font size (at most 24 px per row), period dividers 1 px,
-             so more stations fit; with a coarse pointer (touch) rows keep 8 px padding, and the
-             stacked narrow layout keeps its card rows, so rows stay tappable at 360 px and 200 %
-             zoom; with Highlight on the strategy accent of
+             so more stations fit; with a coarse pointer (touch) rows keep 8 px padding; at most
+             44em wide (360 px, 200 % zoom) a row is a compact row without field labels (#37, live
+             finding 2026-11-04: the earlier labelled card rows were about 325 px high, one
+             decode on screen): UTC, dB, DT, Freq and the distance on the first line, then the
+             message and the country, wrapping only between whole fields at the readable text
+             size (usually two lines, about 45 px, still tappable), so at least six rows are on
+             screen at 360x800 (TC-037-003); at most 48em wide Band Activity, above the QSO
+             pane, has a fixed height (29rem) and scrolls inside; with Highlight on the strategy accent of
              WstxStrategy::HighlightView (matches first in their period, greyed directed
              CQs not for my continent). Pointer: click selects (SelectDecodedRow, prepares, never
-             transmits; another station while a contact is active only offers "Change
-             contact to <call>", whose replacement keeps Enable Tx as it is); double-click
-             replies (select, then SetEnableTx on), and on another station while a contact
+             transmits; while a contact is active a row that can start a contact for me, a
+             CQ/QRZ complying with WstxStrategy::DirectedCqRule or a row addressed to my call,
+             only offers "Change contact to <call>", naming its sender, whose replacement keeps
+             Enable Tx as it is, and a row of a QSO between others or a CQ directed elsewhere
+             offers nothing (#37, CL-037-05); double-click
+             replies (select, then SetEnableTx on; on a row of a QSO between others the command
+             line reads "Call <sender>"), and on another station while a contact
              is active, or during an own CQ, it is itself the explicit
              WstxContact::ChangeContact (replace true, no confirmation, as WSJT-X
              handleDecodeSelection widgets/mainwindow.cpp ~9122-9229 with quick_call on,
@@ -747,7 +756,7 @@ attribute def ActivityOrdering {
              (rowFrequencyHz >= txOffsetHz - 50.0 and rowFrequencyHz <= txOffsetHz + 50.0));
         doc /* #37 (operator 2026-11-02, replacing the near-Rx rule): another station
              calling my call within +/-50 Hz of my Rx or Tx offset in the latest two
-             published periods (the latest and the one before it): a QsoPane Others line
+             published periods (the latest and the one before it): a ⚠ QsoPane Calling me line
              while a QSO runs. A station near my Rx that does not call me is not a QsoPane
              line (Band Activity shows it). Presentation only. */
     }
@@ -756,7 +765,10 @@ attribute def ActivityOrdering {
         attribute hasPartnerHeader : Boolean = true;
         attribute hasLastPartnerMessage : Boolean = true;
         attribute maximumOtherLines : Integer = 8;
-        attribute qsoAreaRows : Integer = 6;
+        attribute qsoAreaRows : Integer = 12;
+        attribute narrowQsoAreaRows : Integer = 6;
+        attribute callingMeRows : Integer = 5;
+        attribute fixedHeight : Boolean = true;
         attribute hasNextWithCountdown : Boolean = true;
         attribute hasDialogue : Boolean = true;
         attribute hasLastSentRow : Boolean = false;
@@ -767,6 +779,7 @@ attribute def ActivityOrdering {
         attribute hasFinalMessageButtons : Boolean = false;
         assert constraint compact {
             hasPartnerHeader and hasLastPartnerMessage and maximumOtherLines == 8 and
+            fixedHeight and qsoAreaRows >= 12 and callingMeRows >= 5 and
             hasNextWithCountdown and hasDialogue and not hasLastSentRow and
             not hasCrowdingBadge and not hasEnableTx and hasNowButtons and
             not hasFinalMessageButtons
@@ -776,16 +789,32 @@ attribute def ActivityOrdering {
              and nothing else, and its content takes about half the height the earlier pane
              needed. Item 8 (operator 2026-11-03 on #37, "The QSO part is way too long. It
              should be much smaller. Then we can add a lot of different things below it.",
-             replacing the earlier option C where the card filled its column): the pane is
-             content high at the top of its column, side by side as when it sits below Band
-             Activity (at most 75em wide, where Band Activity takes the freed height); side
-             by side the height below the pane holds the ControlPanel and the ErrorField
-             (LowerPanel, #37 operator 2026-11-03); the default split leaves room for them (LowerPanel). The QSO
-             area (the #60 table of the dialogue and the Others, items 7 and 3) shows its
-             header row and at most qsoAreaRows (6) rows and scrolls inside, kept at its
-             newest row; where the workspace is lower than the pane's content (1366x768) the
-             area gives up height first, so the pane stays within the column and the screen
-             (TC-007-009), at most 300 px high at 1366x768.
+             replacing the earlier option C where the card filled its column), revised on
+             2026-11-04 (CL-037-04, live finding: at 1366x768 the dialogue rows sat in a 46 px
+             area): "The QSO panel should contain all needed information for the operator. And
+             it should be fixed in size that the things below it do not move all the time up
+             and down. We probably have a section for the QSO and a section for who is
+             calling", and "you can make this section big enough to accommodate also longer
+             QSOs. We have enough space". The pane is at the top of its column and has a fixed
+             height (fixedHeight): its height depends on the screen width only, never on its
+             content, so the ControlPanel and the ErrorField below it (LowerPanel) never move
+             when a QSO starts or ends, dialogue rows or callers are added or a line such as
+             NEXT appears. From top to bottom: the header (item 1: the partner line, which
+             wraps and scrolls in its own fixed line when longer; then the last partner message
+             of item 2, cut to the line since the dialogue repeats it, the direct buttons of
+             item 5, the Tx1-Tx6 fold-out and the badge), the message lines (item 4 NEXT first,
+             then items 6, the exception status, Pounce and Auto Seq off; one fixed line, two at
+             most 48em wide, scrolling inside), the QSO section
+             (the #60 dialogue table, item 7: its header row and qsoAreaRows (12) rows without
+             scrolling, narrowQsoAreaRows (6) when the workspace is at most 48em wide; more
+             rows scroll inside, kept at the newest row; "No QSO" while no QSO runs), the
+             Calling me section (item 3: its header row and callingMeRows (5) rows, scrolling
+             inside; "Nobody is calling" when none). Each
+             section keeps its height whether it is empty or full; the open Tx1-Tx6 fold-out
+             covers both sections in place, so it moves nothing. Heights
+             follow the text size (rem), so 200 % text keeps the same rows. The whole stack fits the
+             1366x768 screen (TC-007-009, TC-037-003); the default split (LowerPanel) leaves
+             room for it.
              A running QSO is a contact with a DX call in replying..signoff
              (WstxContact::ContactState); a contact that is completed, logged or cancelled is
              gone from the pane, which then shows idle.
@@ -801,21 +830,25 @@ attribute def ActivityOrdering {
              2. Last partner message, while a QSO runs: the contact's ContactSnapshot
              last_rcvd as one line "<text>  <SNR>" with "×N" when the identical message was
              counted N > 1 times in a row; a new text replaces it.
-             3. Others (#37, operator 2026-11-02), in the QSO area below the dialogue (item
-             7), at most maximumOtherLines lines, oldest first (period, then decode order) as
-             the dialogue, from the decoded rows of the latest two published periods that
+             3. Calling me (#37, operator 2026-11-02, its own section since 2026-11-04, formerly
+             the Others rows of the QSO table): a table with the columns "Calling me" (the
+             caller's call as decoded, a hashed call as "<...>"), SNR (signed), Grid (the
+             grid of its message, else empty) and Country (the #55 cty.dat name of its
+             record, else empty).
+             One line per station, its newest decode, at most maximumOtherLines lines, oldest
+             first (period, then decode order) and kept at the newest line, from the decoded
+             rows of the latest two published periods that
              are addressed to my call by the Band Activity mycall rule (a standard message to
              my call or to a filled-in hash <MYCALL>, or a nonstandard i3=4 message whose 'to'
              call is mine, #24) from another station than the partner (the
              partner of the last QSO stays excluded after it ended, until another contact
-             runs): while a QSO runs, those within +/-50 Hz of my Rx or Tx offset
-             (QsoPaneCrowding), each a ⚠ row of the QSO table (item 7, #60) ("22:48:15 ⚠ |
-             HB9BLA ◂ DL1ABC | JO31 | −8 |"); double-click (or Enter) switches the contact to that station and
-             replies (SelectDecodedRow with replace, then SetEnableTx on; ChangeContact keeps
-             Enable Tx on). When no QSO runs (idle, finished, or an own CQ), every station
-             calling my call on any frequency, as soon as its row is decoded, each
-             a row of the QSO table ("22:51:15 | HB9BLA ◂ CT1BFP | IM59 | +8 |");
-             double-click (or Enter) answers (select, then
+             runs), on any frequency, as soon as its row is decoded (operator 2026-11-04:
+             everyone addressing me except the partner). While a QSO runs a caller within
+             +/-50 Hz of my Rx or Tx offset (QsoPaneCrowding) is a ⚠ line ("EA8BIA ⚠ | 0 | IL18 |
+             Canary Islands"), and a double-click (or Enter) on any line switches the contact
+             to that station and replies (SelectDecodedRow with replace, then SetEnableTx on;
+             ChangeContact keeps Enable Tx on). When no QSO runs (idle, finished, or an own
+             CQ) a double-click (or Enter) answers (select, then
              SetEnableTx on). Stations that do not call me are not listed (Band Activity
              shows them). Worked-before marks (CL-010-13, #10 2026-11-04): each line
              carries the Band Activity marks of its sender, so only stations of interest
@@ -823,15 +856,16 @@ attribute def ActivityOrdering {
              its record flags (BandActivityColours, the same Settings choice; mycall is
              not used, since every line calls me), none without such a flag, so a sender
              worked before on this band and mode has no colour; its hover text (title and
-             aria-description) names each flag of its record, one per line ("New continent
-             <cont>", "New continent on <band>", "New DXCC: <shown name>", "New DXCC on <band>",
-             "New CQ zone <cq>", "New ITU zone <itu>", "New grid <square>", "New call", "New call
-             on <band>" and the other on-band forms) and the
-             worked-before status ("Worked before on <band> <MODE>" or "Worked before on
-             another band or mode") from the answers of the Band Activity
+             aria-description) follows the compact BandActivityHover rule (#50, operator
+             2026-11-04 "too much information"): one line joined by " · ", per kind
+             (continent, DXCC, zone, grid, call) only the strongest reason whose slot is
+             enabled, no country, continent or distance text, "New on <band>" followed by the
+             worked-before status in parentheses ("(worked on <band> <MODE>)" or "(worked on
+             another band or mode)") from the answers of the Band Activity
              WorkedBeforeQuery of the latest and the previous period (no further query),
-             followed by the double-click hint. When no row qualifies, one muted line says so instead of an empty
-             list: "nobody calling" when no QSO runs, "nobody else calling" while one runs.
+             e.g. "New DXCC · New call"; a line without such a reason has no hover text. The
+             double-click hint is the title of the section's "Calling me" header. When no row qualifies, the section shows the muted placeholder
+             "Nobody is calling" instead of an empty list, in the same height.
              An inbound UDP Clear of window 1 or 2 (WSJT-X Rx Frequency window) hides the
              rows below its floor (WstxUdp::UdpDisplayEvent rx_frequency, #40 CL-040-08).
              4. NEXT: "▸ next: <message>" with a progress bar and the countdown to
@@ -855,7 +889,7 @@ attribute def ActivityOrdering {
              and an RR73 and a 73 button there"): RR73 and 73 are gone, Auto Seq sends them
              and the fold-out Next/Now overrides by hand as in WSJT-X; Reply, kept only as the
              operator's workaround until the #50 double-click fix was installed, is gone too:
-             a double-click on a Band Activity row or an Others row, or the row menu Reply,
+             a double-click on a Band Activity row or a Calling me row, or the row menu Reply,
              starts the reply;
              this HALT is the one HALT of the operating view (OperatingScreen);
              Log QSO, offered (button and Alt+Q) while a QSO runs, logs the contact now, WstxContact::DirectLog
@@ -864,16 +898,16 @@ attribute def ActivityOrdering {
              6. Log outcome: after a completion or Log QSO is stored, "✓ Logged <call>" for loggedNoticeSeconds seconds, then nothing; a contact that could not
              be stored shows "Not logged <call> · <reason>" while that outcome holds.
              7. QSO dialogue (#37, operator 2026-11-02, revising "no dialogue"): the QSO
-             area below the controls (bounded, item 8), holds the
+             section (fixed height, item 8) holds the
              ContactSnapshot
              dialogue of the running QSO only, as a table (#60, operator 2026-11-03, replacing
              the earlier line and arrow formats) with the header row "UTC | Direction |
              Exchange | Rep | Rx SNR | Tx SNR", one row per entry, oldest first and newest at the
              bottom, "×N" in Rep for N > 1 repeats (empty for one), no frequency and no other
-             station; below a thin separator the Others (item 3) as rows of the same table
-             and columns, a ⚠ after the time while a QSO runs. The area scrolls inside the
-             card, kept at its newest row, with the header row staying visible, at most the
-             header row and qsoAreaRows (6) rows high (item 8), and never grows the page
+             station (the callers are the Calling me section, item 3). The section scrolls
+             inside, kept at its newest row, with the header row staying visible; it is the
+             header row and qsoAreaRows (12) rows high (narrowQsoAreaRows at most 48em wide,
+             item 8) and shows "No QSO" while no QSO runs; it never grows the page
              (TC-007-009); at 360 CSS px the table fits the pane width and the
              titles may be abbreviated (UTC, Dir, Exch, Rep, Rx, Tx) and the Direction calls
              may wrap at their spaces.
@@ -893,8 +927,7 @@ attribute def ActivityOrdering {
              measured SNR of the latest received dialogue entry at or before that row, signed
              ("+8", "−12", "0"); Tx SNR is the latest report the partner sent us in a received
              dialogue entry at or before that row (an Exchange "R-02" gives "−2", a plain report
-             "-05" gives "−5"); each is empty only while no such value exists yet. An Others row
-             shows its own decode's SNR and, when it carries one, its own report. Example
+             "-05" gives "−5"); each is empty only while no such value exists yet. Example
              (operator, #60): "22:51:15 | HB9BLA ◂ CT1BFP | IM59 | | +8 |",
              "22:51:30 | CT1BFP ◂ HB9BLA | +08 | | +8 |", "22:51:45 | HB9BLA ◂ CT1BFP | R-02 | | +7 | −2",
              "22:52:00 | CT1BFP ◂ HB9BLA | RR73 | | +7 | −2", "22:52:15 | HB9BLA ◂ CT1BFP | 73 | ×2 | +9 | −2".
@@ -904,7 +937,7 @@ attribute def ActivityOrdering {
              for a finished contact. A status line under the header is shown only for an
              exception: a refused transmission, a halt pending, an unknown contact state.
              Auto Seq off (#11): while Auto Seq is off during a contact or CQ, a warning
-             line below the Others reads "Auto Seq off" (title: received messages do not
+             line among the message lines reads "Auto Seq off" (title: received messages do not
              advance the QSO) with an "Auto Seq on" button; when the contact's ContactSnapshot
              suggested_slot is set, the line adds "<call> expects" and a "Send <exchange>
              next" button (e.g. "Send 73 next", the full message as its title) that chooses
@@ -954,10 +987,11 @@ attribute def ActivityOrdering {
              Messages panel). Rx/Tx frequency and dial frequency stay under the waterfall
              (RxTxStrip) and in the top bar, and the input level is no meter here: it appears
              only as an ErrorField entry when wrong. The whole stack stays within the fixed
-             1366x768 screen (TC-007-009); the QSO area gives up height first. To leave room
-             for the stack, the default signal height (SplitGeometry, before the operator
-             drags the separator) is 330 px or, when less, the available height minus 400 px
-             (never below the signal minimum): unchanged at 1920x1080, about 250 px at
+             1366x768 screen (TC-007-009, TC-037-003) with the fixed-height QSO pane (QsoPane
+             item 8, 12 dialogue rows). To leave room for the stack, the default signal height
+             (SplitGeometry, before the operator drags the separator) is 330 px or, when less,
+             the available height minus 490 px (#37 2026-11-04, was 400 px; never below the
+             signal minimum): unchanged at 1920x1080, the signal minimum (about 200 px) at
              1366x768. */
     }
     attribute def ControlPanel {

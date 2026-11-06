@@ -13,8 +13,9 @@ rules around it. Agent memory only points here.
   [merge queue](../../harness/core/docs/Merge-Queue.md), harness pushes) come from one
   session at a time; another session reads, copies and reports. A CR reaches the main
   branch through the queue (the single exception the merge queue document names aside).
-- **Heavy runs wait for the gate.** Before a long build or test run outside the gate, a
-  session runs `merge_queue.py busy --wait`, so that it does not compete with a gate.
+- **Heavy runs yield to the gate by priority.** A long build or test run outside the gate
+  runs at BelowNormal with 2 build jobs beside the gate, without waiting for `busy`, and
+  reruns a timing-sensitive failure once before treating it as real.
 - **CR agents never push.** A CR agent never runs `git push`, not even of its own branch;
   only the merge queue pushes CRs, and harness and pin bumps are pushed by the coordinator
   or a dedicated harness agent from the main checkout or another clone (the agent guard
