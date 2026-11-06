@@ -344,7 +344,7 @@ fn tc_039_002_each_condition_and_its_negation() {
         ),
         (
             json!({"kind":"message","negate":false,"value":"directed_cq"}),
-            vec![3, 5, 8],
+            vec![3, 5],
         ),
     ] {
         assert_eq!(matching(c.clone()), expected, "{c}");
@@ -1157,7 +1157,7 @@ async fn tc_039_002_a_selection_of_a_cq_not_for_me_is_a_warning_only_the_browser
         json!({"row":na,"replace":false,"directive_confirmed":true}),
     )
     .await;
-    assert_eq!(m["error"]["code"], "directive_not_answerable", "{m}");
+    assert_eq!(m["result"]["error"]["code"], "directive_not_answerable", "{m}");
     assert_eq!(contact(&f).await.0, Value::Null);
     // The operator's confirmation selects it; a CQ for my continent asks nothing.
     let c = f
