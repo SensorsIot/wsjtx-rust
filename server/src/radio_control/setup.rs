@@ -185,6 +185,58 @@ impl Setting {
     }
 }
 
+/// #44 CL-044-10/11 IC-7300 AGC, CI-V command 16 sub 12 with one data byte 01 FAST,
+/// 02 MID, 03 SLOW; read with the same command without data (Icom IC-7300 Full Manual,
+/// section 19 command table, "16 12 AGC"). The JSON names are the radio's labels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum Agc {
+    Fast,
+    Mid,
+    Slow,
+}
+impl Agc {
+    pub fn code(self) -> u8 {
+        match self {
+            Self::Fast => 1,
+            Self::Mid => 2,
+            Self::Slow => 3,
+        }
+    }
+    pub fn from_code(code: u8) -> Option<Self> {
+        match code {
+            1 => Some(Self::Fast),
+            2 => Some(Self::Mid),
+            3 => Some(Self::Slow),
+            _ => None,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Fast => "FAST",
+            Self::Mid => "MID",
+            Self::Slow => "SLOW",
+        }
+    }
+}
+/// FE FE <address> E0 16 12 FD: read the AGC.
+pub fn read_agc_frame(address: u8) -> Vec<u8> {
+    vec![0xfe, 0xfe, address, CONTROLLER, 0x16, 0x12, 0xfd]
+}
+/// FE FE <address> E0 16 12 <01|02|03> FD: set the AGC.
+pub fn write_agc_frame(address: u8, agc: Agc) -> Vec<u8> {
+    vec![
+        0xfe,
+        0xfe,
+        address,
+        CONTROLLER,
+        0x16,
+        0x12,
+        agc.code(),
+        0xfd,
+    ]
+}
+
 /// Every frame a probe can emit (CL-044-01). Nothing else is ever written while probing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProbeFrame {
@@ -237,6 +289,11 @@ pub enum Heard {
     Ng {
         address: u8,
     },
+    /// The AGC reply 16 12 <code>; the code is checked by the reader.
+    Agc {
+        address: u8,
+        code: u8,
+    },
     /// Echo of our own frame, a collision, traffic for others or an unknown body.
     Other,
 }
@@ -253,6 +310,10 @@ pub fn hear(frame: &[u8]) -> Heard {
         [0x19, 0x00, id] => Heard::Id { address, id: *id },
         [0xfb] => Heard::Ack { address },
         [0xfa] => Heard::Ng { address },
+        [0x16, 0x12, code] => Heard::Agc {
+            address,
+            code: *code,
+        },
         [0x1a, 0x05, hi, lo, data @ ..] if !data.is_empty() => {
             match SETTINGS.into_iter().find(|s| s.item() == [*hi, *lo]) {
                 Some(setting) => Heard::Setting {
