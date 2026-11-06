@@ -85,20 +85,22 @@ async function fetchSnapshot(){
     const response=await stationFetch('/contact',{cache:'no-store',signal:AbortSignal.timeout(10000)});
     contactMissing=response.status===404;
     // #51: a contact snapshot this page cannot validate shows the reload chip.
-    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence||value.contact_revision>=snap.contact_revision)){snap=value;render();}}
+    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence||value.contact_revision>=snap.contact_revision)){snap=value;held=value;heldSocket=socket;render();}}
   }catch{}
 }
-// WstxContact::ContactStateEvent (#10): the station's events build the same snapshot, from every
-// field in the socket's first one and what changed after it; newer ones replace what is shown.
+// WstxContact::ContactStateEvent (#10): the station's events build the same snapshot: every field
+// in the socket's first one, what changed after it; newer ones replace what is shown. This client
+// loads after the socket on a thin link and can miss the first one: it then builds on its own read.
 let heldSocket=null,held=null;
 function stateApply(current,d){
   if(heldSocket!==current){heldSocket=current;held=null;}
-  const {changed,...identity}=d,view={v:1,contact:null,log:null,...held,...identity};
+  const base=held??snap,{changed,...identity}=d;if(!base&&!changed.settings)return;
+  const view={v:1,contact:null,log:null,...base,...identity};
   for(const [key,value] of Object.entries(changed)){
     if(key==='contact'&&value){
       const whole=value.id!==undefined,{dialogue_from,...rest}=value;
       view.contact=whole?rest:{...view.contact,...rest};
-      if(dialogue_from!==undefined)view.contact.dialogue=[...(whole?[]:held?.contact?.dialogue??[]).slice(0,dialogue_from),...value.dialogue];
+      if(dialogue_from!==undefined)view.contact.dialogue=[...(whole?[]:base?.contact?.dialogue??[]).slice(0,dialogue_from),...value.dialogue];
     }else view[key]=value&&key!=='log'&&view[key]?{...view[key],...value}:value;
   }
   held=view;

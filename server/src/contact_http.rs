@@ -758,13 +758,14 @@ fn transmit_view(v: &View, problem: Option<&str>, safety_revision: Option<u64>) 
 const STATE_CHANGED_BYTES_MAX: usize = 1800;
 /// What this peer lacks of the snapshot `now`, given the fields it was `sent`: changed fields, of
 /// transmit, settings and watchdog the changed members, of the same contact the changed members
-/// and the dialogue from the first row it lacks. Returns them and what the peer then holds.
+/// and the dialogue from the first row it lacks; a peer holding nothing gets every field, null
+/// too, which replaces what it shows from an earlier socket. Returns them and what it then holds.
 pub(crate) fn state_changes(sent: &Value, now: &Value) -> (serde_json::Map<String, Value>, Value) {
     let mut changed = serde_json::Map::new();
     let mut holds = now.clone();
     for key in ["transmit", "settings", "contact", "log", "watchdog"] {
         let (old, new) = (&sent[key], &now[key]);
-        if old == new {
+        if old == new && !sent.is_null() {
             continue;
         }
         let same_contact = key == "contact" && old["id"] == new["id"] && old.is_object();

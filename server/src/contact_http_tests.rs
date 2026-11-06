@@ -1069,12 +1069,12 @@ fn contact_state_carries_only_what_the_peer_lacks() {
             "transmit":{"capability":"unsupported","tune":false},"settings":{"hold_tx":hold,"rx_hz":1500},
             "contact":contact,"log":null,"watchdog":{"tx_expired":false,"tune_remaining_seconds":0}})
     };
-    // A peer holding nothing gets every field that has a value; null fields stay out.
+    // A peer holding nothing gets every field, null too.
     let first = view(Value::Null, false);
     let (changed, holds) = contact_http::state_changes(&Value::Null, &first);
     assert_eq!(
         Value::Object(changed),
-        json!({"transmit":first["transmit"],"settings":first["settings"],"watchdog":first["watchdog"]})
+        json!({"transmit":first["transmit"],"settings":first["settings"],"contact":null,"log":null,"watchdog":first["watchdog"]})
     );
     assert_eq!(holds, first);
     assert!(contact_http::state_changes(&first, &first).0.is_empty());

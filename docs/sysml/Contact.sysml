@@ -1362,13 +1362,14 @@ package WstxContact {
              second per peer and always sent within 1 s of a change; below Detailed a change
              of only watchdog.tune_remaining_seconds at most once per 5 s. changed (#10
              2026-11-06, operator rule 2026-11-04): on a peer's first event every field of
-             transmit, settings, contact, log and watchdog that is not null; later only the
+             transmit, settings, contact, log and watchdog, null too; later only the
              changed fields, of transmit, settings and watchdog only the changed members,
              of the same contact (id) only the changed members. A contact's dialogue goes
              with dialogue_from, the index of its first row, and only the rows the peer
              lacks: all rows when an earlier row changed; rows over the frame budget follow
-             on the next tick. The browser builds the snapshot from these events and shows
-             a newer snapshot_sequence; it reads GET /contact once per socket and after
+             on the next tick. The browser builds the snapshot from these events, on its own
+             read when it loaded after the first one, and shows a newer snapshot_sequence or
+             contact_revision; it reads GET /contact once per socket and after
              its own command, whose next command needs the revision at once, with one
              pending GET per browser. It is not a StatusReply:
              station.status stays exactly {v,type,id,data{version,radio}}. Control and
