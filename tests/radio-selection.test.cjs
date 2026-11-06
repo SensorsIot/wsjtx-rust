@@ -333,6 +333,10 @@ test('TC-009-005 browser preferred selection and Stop fence a genuinely delayed 
   await page.selectOption('#operating-band','40m');await page.locator('#operating-selection-status').filter({hasText:'audio_unconfigured'}).waitFor();
   await page.locator('#exception-chips [data-chip=selection]').filter({hasText:'audio_unconfigured'}).waitFor();
   assert.match(await page.locator('#operating-radio').textContent(),/Nominal 7\.074000 MHz.*manual, actual rig unconfirmed/);
+  // Proves: CL-044-16; TC-044-023 (d). A refused band change leaves the control on the station's band.
+  await page.route('**/receive/select',route=>route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({error:{code:'busy',field:null}})}),{times:1});
+  await page.selectOption('#operating-band','20m');await page.locator('#operating-selection-status').filter({hasText:'Selection refused · busy'}).waitFor();
+  await page.waitForFunction(()=>document.querySelector('#operating-band').value==='40m'&&!mutationPending);
   await page.selectOption('#operating-mode','ft4');await page.waitForFunction(()=>document.querySelector('#op-dial').value==='7.047500');
   await page.locator('#operating-mode:enabled').waitFor();
   const before=(await request('/receive/selection')).body;
@@ -361,10 +365,10 @@ test('TC-009-005 one status refresh coalesces unchanged receive readiness',{time
   await loginPage(page,origin,token);await page.locator('#operating-band:enabled').waitFor();await page.waitForTimeout(200);
   await page.evaluate(()=>{window.__readyReads=[];addEventListener('station-ready',event=>window.__readyReads.push({sameSocket:event.detail===socket,pendingId,profile:profileData.profile_id,boot:profileData.boot_id,revision:profileData.revision}));});
   const reads=[];page.on('request',request=>{if(new URL(request.url()).pathname==='/receive')reads.push({method:request.method(),at:Date.now()});});
-  const prior=await page.locator('#updated').textContent();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,prior);await page.waitForFunction(()=>window.__readyReads.length>=2);await page.waitForTimeout(250);
+  const prior=await page.locator('#updated').textContent();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,prior);await page.waitForFunction(()=>window.__readyReads.length>=1);await page.waitForTimeout(250);
   const ready=await page.evaluate(()=>window.__readyReads);const evidence={reads,ready};await fs.mkdir('test-results/radio-selection',{recursive:true});await fs.writeFile('test-results/radio-selection/receive-ready.json',JSON.stringify(evidence,null,2));
-  assert.equal(ready.length,2,'the actual before/after-profile readiness notifications were observed');assert.deepEqual(ready[0],ready[1],'the readiness context and status identity were unchanged');
-  assert.equal(reads.length,1,'unchanged readiness from one status refresh needs one receive snapshot');
+  assert.equal(ready.length,1,'a status refresh on the socket reads no profile: one readiness notification');
+  assert.equal(reads.length,1,'one status refresh needs one receive snapshot');
   await page.evaluate(()=>{dispatchEvent(new CustomEvent('station-ready',{detail:socket}));dispatchEvent(new CustomEvent('station-ready',{detail:socket}));});await page.waitForTimeout(100);assert.equal(reads.length,1,'the same completed readiness does not refetch');
   const keys=await page.evaluate(()=>{
     const p={profile_id:'00000000-0000-4000-8000-000000000001',boot_id:'00000000-0000-4000-8000-000000000002',revision:0};
@@ -373,8 +377,8 @@ test('TC-009-005 one status refresh coalesces unchanged receive readiness',{time
   assert.equal(new Set([keys.base,keys.profile,keys.boot,keys.revision,keys.status]).size,5,'every independently validated context field changes admission identity');assert.deepEqual(keys.invalid,[null,null,null,null]);assert.equal(keys.staleAdmitted,false);
   let release,entered;const gate=new Promise(resolve=>release=resolve),captured=new Promise(resolve=>entered=resolve);t.after(()=>release());
   let held=false;await page.route('**/receive',async route=>{if(!held){held=true;entered();await gate;}await route.continue();});
-  await refreshStatus(page);await captured;await page.waitForFunction(()=>window.__readyReads.length>=4);
-  const secondUpdate=await page.locator('#updated').textContent();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,secondUpdate);await page.waitForFunction(()=>window.__readyReads.length>=6);await page.waitForTimeout(100);
+  await refreshStatus(page);await captured;await page.waitForFunction(()=>window.__readyReads.length>=2);
+  const secondUpdate=await page.locator('#updated').textContent();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,secondUpdate);await page.waitForFunction(()=>window.__readyReads.length>=3);await page.waitForTimeout(100);
   assert.equal(reads.length,2,'a changed status while pending queues one follow-up, not another parallel request');release();
   await page.waitForFunction(()=>!livePending);await page.waitForTimeout(100);assert.equal(reads.length,3,'the single legitimate changed-status follow-up executes');
   await page.unroute('**/receive');

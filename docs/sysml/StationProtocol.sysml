@@ -246,7 +246,7 @@ package WstxStationProtocol {
              2026-11-04): a client-server application. Each browser holds one wstx.v1
              WebSocket; the station pushes typed state events on that socket when its
              state changes (transmit/PTT, contact, decode records, selection/radio/band,
-             clock, UDP display, log changes), each throttled per peer by that peer's
+             clock, log changes), each throttled per peer by that peer's
              display subscription (Detailed, Thin, Off), so an idle Off peer receives
              almost nothing beyond heartbeat and station.tick. HTTP carries commands and
              one snapshot read per state on (re)connect, after an announcement event (one
@@ -257,8 +257,13 @@ package WstxStationProtocol {
              renders locally. Safety decisions (HALT, watchdog, PTT keying and release)
              stay on the station and never wait for a browser read. Existing reads are
              migrated in slices: first GET /transmit (WstxTransmit::TransmitWire
-             transmit.state), then receive results, operating selection, radio and
-             profile; until a read is migrated its existing cadence rules apply. */
+             transmit.state), then receive results, recording (WstxRecordingReceive
+             recording.state), profile (profile.state: exactly {v:1,type:"profile.state",
+             data:{profile_id,boot_id,revision}}, sent to a display-subscribed peer once
+             after its first subscription and then when the saved revision changes, checked
+             once per second; the browser reads GET /profile once per socket for its first
+             status and on a newer announced revision, not on a later status of the socket),
+             operating selection and radio; until a read is migrated its existing cadence rules apply. */
     }
     attribute def IndependentLinkAccounting {
         attribute payloadBytesPerSecond : Integer = 4000;

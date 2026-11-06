@@ -350,7 +350,7 @@ Sec-WebSocket-Protocol: wstx.v1
     line.trim_end().to_owned()
 }
 
-// Proves: CL-022-02; TC-022-007. A current grant dispatches operating HTTP/WS
+// Proves: CL-022-02; TC-022-006. A current grant dispatches operating HTTP/WS
 // effects under the authority lock; foreign and revoked transports cannot.
 #[tokio::test]
 async fn http_auth_current_grant_dispatches_operating_mutations_revoked_or_foreign_cannot() {
@@ -1235,7 +1235,7 @@ fn commission_body(g: &BrowserGrant, operation_id: &str) -> Value {
     json!({"version":1,"operation_id":operation_id,"scope":g.scope,"receive_only_confirmed":true})
 }
 
-// Proves: CL-022-02/03; TC-022-007. Literal persisted acknowledgement, not a status-only oracle.
+// Proves: CL-022-02/03; TC-022-006. Literal persisted acknowledgement, not a status-only oracle.
 #[tokio::test]
 async fn commission_http_commits_exact_disabled_configuration_and_retained_duplicate_is_read_only()
 {
@@ -1324,7 +1324,7 @@ async fn commission_http_commits_exact_disabled_configuration_and_retained_dupli
     );
 }
 
-// Proves: CL-022-02; TC-022-007. Each invalid request has an independent pristine fixture.
+// Proves: CL-022-02; TC-022-006. Each invalid request has an independent pristine fixture.
 #[tokio::test]
 async fn commission_http_strict_negatives_never_change_acknowledgement_or_files() {
     for case in [
@@ -1953,7 +1953,9 @@ pub(crate) async fn commission_zero_native_io_case() {
     state.recording.fixture_radio(actor.clone());
     // Suppress the fixture Actor's independent periodic refresh; reserving this
     // existing lease executes no setup/setter and creates no maintenance owner.
-    let lease = actor.reserve_transition().unwrap();
+    let lease = actor
+        .reserve_transition(Instant::now() + Duration::from_secs(1))
+        .unwrap();
     let before = {
         let r = rig.lock().unwrap();
         (
@@ -2088,6 +2090,56 @@ mod automatic_cat {
             )
             .await;
         assert_eq!(reply.status, StatusCode::OK);
+    }
+    // Proves: CL-044-15; TC-044-020 (b). The actual authorization owner: a commissioned
+    // station moved to another radio needs the confirmation again.
+    #[tokio::test]
+    async fn discovery_moving_to_another_radio_requires_the_confirmation_again() {
+        use crate::radio_setup_tests::{double, port};
+        let f = HttpFixture::new("https://localhost:8080");
+        let state = f.app().profile.as_ref().unwrap().clone();
+        let g = f.authorize().await;
+        assert_eq!(
+            put_control(&f, &g.cookie, ENDPOINT).await.status,
+            StatusCode::OK
+        );
+        let cookie = f.renew(&g).await;
+        let before = status(&f, &cookie).await;
+        commission(&f, &cookie, &before["scope"]).await;
+        let eligible = |state: &ProfileState| {
+            let store = state.store.lock().unwrap();
+            let service = state.authorization.lock().unwrap();
+            authorization_http::cat_gate(&store, service.as_ref())
+        };
+        assert!(matches!(
+            eligible(&state),
+            crate::cat_lifecycle::Gate::Eligible { .. }
+        ));
+        let saved = wstx_rust::radio_control::Configuration::parse(ENDPOINT)
+            .unwrap()
+            .port;
+        let free = saved + 1;
+        let hw = double(
+            vec![port(saved, "USB\\HUB\\A"), port(free, "USB\\HUB\\B")],
+            std::collections::HashMap::from([(free, (0x94, 19200))]),
+            vec![saved],
+        );
+        *state.recording.radio_setup.hardware.lock().unwrap() = Some(hw);
+        radio_setup::confirm_keying(&state);
+        assert!(radio_setup::discover_on_start(&state).is_some());
+        assert!(matches!(
+            eligible(&state),
+            crate::cat_lifecycle::Gate::CommissioningRequired
+        ));
+        let store = state.store.lock().unwrap();
+        let service = state.authorization.lock().unwrap();
+        let record = service.as_ref().unwrap().authority.record();
+        assert!(record.commissioning.is_none());
+        assert_eq!(
+            record.current_scope.as_ref().unwrap().wire.safety_revision,
+            before["scope"]["safety_revision"].as_u64().unwrap() + 1
+        );
+        assert_eq!(record.checked_control, store.document.control);
     }
     fn ticks(f: &HttpFixture, n: usize) {
         let state = f.app().profile.as_ref().unwrap();

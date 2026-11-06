@@ -7,6 +7,8 @@ function contactEvent(value, bytes) {
   if (!keys(value, ['v', 'type', 'data']) || value.v !== 1) return false;
   if (value.type === 'contact.state') return bytes <= 192 && keys(value.data, ['profile_id', 'boot_id', 'contact_revision']);
   if (value.type === 'transmit.state') return bytes <= 192 && keys(value.data, ['profile_id', 'boot_id', 'transmit_revision']);
+  if (value.type === 'recording.state') return bytes <= 1024 && keys(value.data, ['generation', 'source_id', 'job_id', 'state', 'import']);
+  if (value.type === 'profile.state') return bytes <= 192 && keys(value.data, ['profile_id', 'boot_id', 'revision']);
   if (value.type === 'station.tick') return bytes <= 224 && keys(value.data, ['profile_id', 'boot_id', 'utc_ms', 'period_ms', 'transmitting', 'rx_level_db']);
   return false;
 }
@@ -24,7 +26,7 @@ function receive(ws, milliseconds = 3000) {
       try { value = JSON.parse(String(data)); } catch (error) {finish(error); return;}
       if (value && typeof value === 'object' && !Array.isArray(value)
           && Object.keys(value).length === 2 && value.v === 1 && value.type === 'heartbeat') return;
-      // WstxContact::ContactStateEvent/StationTickEvent and WstxTransmit transmit.state are unsolicited optional events of
+      // WstxContact::ContactStateEvent/StationTickEvent WstxTransmit transmit.state and the pushed recording.state are unsolicited optional events of
       // a display-subscribed peer; like heartbeats they interleave with a response. Only
       // the exact versioned shapes within their byte bounds are skipped.
       if (contactEvent(value, Buffer.byteLength(String(data)))) return;

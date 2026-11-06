@@ -50,12 +50,13 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
   assert.equal((await dxcc('CQ DL1ABC JO62'))[0],'Germany');
   assert.doesNotMatch((await dxcc('CQ K1ABC FN42'))[2],/~/,'a message grid gives the exact distance');
   // #37 QsoPane, no contact (operator 2026-11-02): only the stations calling my call, on any
-  // frequency, with their period start and SNR; never the CQs near Rx or HB9BL.
+  // frequency; never the CQs near Rx or HB9BL.
   // Proves: CL-050-05; TC-050-005 (Others).
   const others=async()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(tr=>[tr.dataset.kind,[...tr.cells].map(td=>td.textContent)]));
   await waitFor(async()=>(await others()).length===1,async()=>`QSO pane ${JSON.stringify(await others())}`);
-  const recv=String.fromCharCode(0x25C2),minus=String.fromCharCode(0x2212),hms=new Date(period).toISOString().slice(11,19);
-  assert.deepEqual(await others(),[['candidate',[hms,`HB9BLA ${recv} W1XYZ`,'-10','',`${minus}10`,`${minus}10`]]]);
+  const minus=String.fromCharCode(0x2212);
+  // #37 Calling me (2026-11-04): call, SNR, grid (none in a report) and country.
+  assert.deepEqual(await others(),[['candidate',['W1XYZ',`${minus}10`,'','U.S.A.']]]);
   assert.equal(await page.locator('#qso-others-none').isVisible(),false);
   // Local sorting: no request. The DX entry is in the QSO fold-out.
   const before=requests.length;
@@ -88,7 +89,7 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
   assert.deepEqual(page.errors,[]);
 });
 
-test('TC-007-001 double-click starts transmission, partner report advances to Tx3, Esc halts first and cancels with a panel open',{timeout:90000},async()=>{
+test('TC-007-001 double-click starts transmission, partner report advances to Tx3, Esc aborts the QSO (no halt) with a panel open',{timeout:90000},async()=>{
   // #37 WstxContact::SetEnableTx: no Enable Tx control and no Reply button (gone since the #50
   // double-click fix); a double-click on the decoded row selects it again and arms.
   assert.equal(await page.locator('#contact-enable,#qso-reply').count(),0);
@@ -117,22 +118,50 @@ test('TC-007-001 double-click starts transmission, partner report advances to Tx
   assert.equal(await page.locator('#op-confirm[open]').count(),0,'HALT closes the popup');
   await new Promise(r=>setTimeout(r,300));
   assert.deepEqual(requests.slice(popupMark).filter(r=>r.method==='POST').map(r=>r.path),['/transmit/halt'],'the popup HALT sends only the halt; the CQ is not sent');
-  // A panel is open; Esc in a text field halts (priority route) before cancelling and closes nothing.
+  // #39 Abort QSO: a panel is open; Esc in a text field aborts the QSO (one contact
+  // command, no halt) and closes nothing.
   await page.locator('#station-bar [data-region=help]').click();
   assert.equal(await page.locator('#region-help').isVisible(),true);
   await page.locator('[data-region=operate]').first().focus();
-  const mark=requests.length;
+  const mark=requests.length,haltBefore=(await snapshot()).transmit.halt_state;
   await page.keyboard.press('Escape');
   await waitFor(async()=>(await snapshot()).contact.state==='cancelled','cancelled');
   await waitFor(()=>requests.slice(mark).some(r=>r.path==='/contact/command'),'cancel request observed');
   const after=requests.slice(mark).filter(r=>r.method==='POST');
-  assert.deepEqual(after.map(r=>r.path),['/transmit/halt','/contact/command']);
-  assert.equal(JSON.parse(after[1].body).action,'cancel');
+  assert.deepEqual(after.map(r=>r.path),['/contact/command'],'Esc sends no halt');
+  assert.equal(JSON.parse(after[0].body).action,'abort');
   assert.equal(await page.locator('#region-help').isVisible(),true,'Esc closes no panel');
+  assert.equal((await snapshot()).transmit.halt_state,haltBefore,'not halted');
   assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
   const s=await snapshot();assert.equal(s.transmit.arm_state,'disarmed');assert.equal(s.contact.dx_call,null);
-  const keys=await (await fetch(control+'/keys')).json();assert.ok(keys.length===0||keys.at(-1)===false,'PTT released after halt');
+  const keys=await (await fetch(control+'/keys')).json();assert.ok(keys.length===0||keys.at(-1)===false,'PTT released after the abort');
   await page.locator('.op-secondary:not([hidden]) .return-operate').click();
+  // #39 Abort QSO: the visible button beside HALT does the same, and the station stays ready.
+  await publish(evenNow(),[{text:'CQ K2ABC FN31',hz:1300,snr:-4}]);
+  const fresh=page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:'CQ K2ABC FN31'}).first();
+  await fresh.waitFor();await fresh.dblclick();
+  await waitFor(async()=>(await snapshot()).transmit.arm_state==='armed','armed again');
+  // An open dialog or menu takes Esc first: it closes, and the QSO runs on.
+  const aborts=()=>commands().filter(c=>c.action==='abort').length,abortsBefore=aborts();
+  await page.locator('#qso-cq').click();await page.locator('#op-confirm[open]').waitFor();
+  await page.keyboard.press('Escape');await waitFor(async()=>await page.locator('#op-confirm[open]').count()===0,'dialog closed by Esc');
+  await fresh.click({button:'right'});await page.locator('#ba-menu').waitFor();
+  await page.keyboard.press('Escape');await page.locator('#ba-menu').waitFor({state:'hidden'});
+  await new Promise(r=>setTimeout(r,300));
+  assert.equal(aborts(),abortsBefore,'Esc on a dialog or menu aborts nothing');
+  assert.equal((await snapshot()).transmit.arm_state,'armed','the QSO runs on');
+  const button=page.getByRole('button',{name:'Abort QSO (Esc)',exact:true}).locator('visible=true');
+  await button.first().waitFor();assert.equal(await button.first().isEnabled(),true);
+  const buttonMark=requests.length;
+  await button.first().click();
+  await waitFor(async()=>(await snapshot()).contact.state==='cancelled','cancelled by the button');
+  const sent=requests.slice(buttonMark).filter(r=>r.method==='POST');
+  assert.deepEqual(sent.map(r=>r.path),['/contact/command'],'the button sends no halt');assert.equal(JSON.parse(sent[0].body).action,'abort');
+  assert.equal((await snapshot()).transmit.arm_state,'disarmed');
+  await fresh.dblclick();
+  await waitFor(async()=>(await snapshot()).transmit.arm_state==='armed','ready: the next QSO arms');
+  await page.keyboard.press('Escape');
+  await waitFor(async()=>(await snapshot()).transmit.arm_state==='disarmed','disarmed by Esc');
   assert.deepEqual(page.errors,[]);
 });
 
@@ -240,16 +269,16 @@ test('TC-007-004 manual DX entry and Log QSO log the contact at once without hid
 });
 
 // Review finding P2-2: with the contact snapshot unavailable (GET /contact failing),
-// Esc still sends the #9 halt; only a station known to be receive-only skips it.
-test('TC-007-004 Esc halts even when the contact snapshot is unavailable',{timeout:60000},async()=>{
+// Alt+H still sends the #9 halt; only a station known to be receive-only skips it.
+test('TC-007-004 Alt+H halts even when the contact snapshot is unavailable',{timeout:60000},async()=>{
   await page.route('**/contact',route=>route.abort('failed'));
   await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   const mark=requests.length;
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Alt+h');
   await waitFor(()=>requests.slice(mark).some(r=>r.method==='POST'&&r.path==='/transmit/halt'),'halt without snapshot');
   await new Promise(r=>setTimeout(r,500));
-  assert.equal(requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/transmit/halt').length,1,'exactly one halt per Esc');
+  assert.equal(requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/transmit/halt').length,1,'exactly one halt per Alt+H');
   const halt=JSON.parse(requests.slice(mark).find(r=>r.path==='/transmit/halt').body);
   const live=await (await fetch(origin+'/receive')).json();
   assert.equal(halt.profile_id,live.profile_id);assert.equal(halt.boot_id,live.boot_id);
@@ -270,8 +299,8 @@ test('TC-007-002 a pointer action outside the Settings drawer returns to operati
 });
 
 // Re-check item 2: the keyboard halt does not wait for contact.js (loaded after the first
-// state reads); one Esc sends exactly one halt before and after that load.
-test('TC-007-004 Esc halts once before and once after the contact client loads',{timeout:60000},async()=>{
+// state reads); one Alt+H sends exactly one halt before and after that load.
+test('TC-007-004 Alt+H halts once before and once after the contact client loads',{timeout:60000},async()=>{
   // Hold /contact.js so the first Esc happens deterministically before it loads.
   let release;const held=new Promise(r=>release=r);
   await page.route('**/contact.js',route=>held.then(()=>route.continue()).catch(()=>{}));
@@ -279,7 +308,7 @@ test('TC-007-004 Esc halts once before and once after the contact client loads',
   await waitFor(()=>requests.some(r=>r.path==='/contact.js'&&r.end===null),'contact.js requested and held');
   assert.equal(await page.evaluate(()=>!!window.wstxContact),false,'contact.js not loaded yet');
   const start=requests.length;
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Alt+h');
   await waitFor(()=>requests.slice(start).some(r=>r.method==='POST'&&r.path==='/transmit/halt'),'halt before contact.js');
   await new Promise(r=>setTimeout(r,500));
   assert.equal(requests.slice(start).filter(r=>r.method==='POST'&&r.path==='/transmit/halt').length,1);
@@ -288,7 +317,7 @@ test('TC-007-004 Esc halts once before and once after the contact client loads',
   await page.unroute('**/contact.js');
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   const mark=requests.length;
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Alt+h');
   await waitFor(()=>requests.slice(mark).some(r=>r.method==='POST'&&r.path==='/transmit/halt'),'halt after contact.js');
   await new Promise(r=>setTimeout(r,800));
   assert.equal(requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/transmit/halt').length,1,'contact.js sends no second halt');
@@ -416,94 +445,4 @@ test('TC-050-004 from-CQ: a double-click from my CQ switches with Tx kept on, th
   await waitFor(async()=>{const s=await snapshot();return s.transmit.arm_state==='armed'&&s.contact?.dx_call==='G8KHF';},'armed with G8KHF',15000);
   await waitFor(()=>sentTo('G8KHF HB9BLA JN47'),'Tx1 to G8KHF',45000);
   assert.deepEqual(page.errors,[]);
-});
-
-// Proves: CL-040-08; TC-012-008. #40: inbound UDP Highlight Callsign and Clear reach Band
-// Activity and the QSO pane as WSJT-X 3.3 applies them (widgets/displaytext.cpp
-// highlight_callsign; Clear windows 0/1/2), sent as real NetworkMessage datagrams from two
-// loopback peers to the station's own UDP owner (contact_browser_operating_flow starts it for
-// this test only, with no target): one with accept_commands on (the tool), one with it off.
-// Datagrams are packed here by hand (QDataStream big-endian), not by the station's codec.
-const dgram=require('node:dgram');
-const qstring=s=>{const b=Buffer.from(s,'utf8'),n=Buffer.alloc(4);n.writeUInt32BE(b.length);return Buffer.concat([n,b]);};
-const nmDatagram=(type,body)=>{const h=Buffer.alloc(12);h.writeUInt32BE(0xADBCCBDA,0);h.writeUInt32BE(2,4);h.writeUInt32BE(type,8);return Buffer.concat([h,qstring('WSTX-Rust'),...body]);};
-// QColor: spec (1 Rgb, 0 invalid), alpha, red, green, blue (16 bit), pad.
-const qcolor=hex=>{const b=Buffer.alloc(11);if(hex){b.writeUInt8(1,0);b.writeUInt16BE(0xffff,1);for(let i=0;i<3;i++)b.writeUInt16BE(parseInt(hex.slice(1+2*i,3+2*i),16)*257,3+2*i);}return b;};
-const highlightCall=(call,bg,fg,last=false)=>nmDatagram(13,[qstring(call),qcolor(bg),qcolor(fg),Buffer.from([last?1:0])]);
-const clearWindow=w=>nmDatagram(3,[Buffer.from([w])]);
-test('TC-012-008 UDP Highlight Callsign colours Band Activity rows and Clear empties its view, only from an accepting target',{timeout:120000},async()=>{
-  const open=()=>new Promise(r=>{const s=dgram.createSocket('udp4');s.bind(0,'127.0.0.1',()=>r(s));});
-  const tool=await open(),other=await open();
-  try{
-    const stationPort=s=>new Promise(r=>s.once('message',(m,info)=>r(info.port)));
-    const toolPort=stationPort(tool),otherPort=stationPort(other);
-    const udp=await (await fetch(origin+'/udp')).json();
-    const target=(s,accept)=>({address:`127.0.0.1:${s.address().port}`,enabled:true,multicast_ttl:1,multicast_interface:null,messages:['heartbeat'],accept_commands:accept});
-    const put=await fetch(origin+'/udp',{method:'PUT',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:udp.profile_id,boot_id:udp.boot_id,expected_revision:udp.revision,configuration:{instance_name:'WSTX-Rust',targets:[target(other,false),target(tool,true)]}})});
-    assert.equal(put.status,200,await put.text());
-    const ports=new Map([[tool,await toolPort],[other,await otherPort]]);
-    const send=(s,bytes)=>new Promise((resolve,reject)=>s.send(bytes,ports.get(s),'127.0.0.1',e=>e?reject(e):resolve()));
-    const lastCommand=async i=>(await (await fetch(origin+'/udp')).json()).status[i].last_command;
-    const row=seq=>page.locator(`#band-activity tbody tr[data-sequence="${seq}"]`);
-    const look=seq=>row(seq).evaluate(tr=>({udp:tr.dataset.udp??null,hl:tr.dataset.hl??null,bg:getComputedStyle(tr.children[4]).backgroundColor,fg:getComputedStyle(tr.children[4]).color}));
-    const until=async(seq,predicate,label)=>waitFor(async()=>{const v=await look(seq);return predicate(v)&&v;},async()=>`${label}: ${JSON.stringify(await look(seq))}`,10000);
-
-    const p1=evenNow();
-    const {sequences:[k1,w1,d1]}=await publish(p1,[{text:'CQ K1ABC FN42',hz:1000,snr:-10},{text:'CQ W1AW FN31',hz:1200,snr:-8},{text:'HB9BLA DL1XYZ JO62',hz:1400,snr:-6}]);
-    for(const s of [k1,w1,d1])await row(s).waitFor({timeout:30000});
-    const base={k1:await look(k1),w1:await look(w1),d1:await look(d1)};
-    assert.match(base.d1.hl??'',/\bmycall\b/,'the row calling me carries the My call slot');
-
-    // accept_commands off: the station refuses it and the row keeps its colour.
-    await send(other,highlightCall('K1ABC','#ff0000','#ffffff'));
-    await waitFor(async()=>(await lastCommand(0))?.outcome==='not_accepted','not_accepted from the other target');
-    // Highlight last period only, background only: the period of the latest decode.
-    await send(tool,highlightCall('W1AW','#00ff00',null,true));
-    const w1lit=await until(w1,v=>v.udp==='W1AW','W1AW highlighted');
-    assert.deepEqual([w1lit.bg,w1lit.fg],['rgb(0, 255, 0)',base.w1.fg],'background set, foreground left as it was');
-    assert.deepEqual(await look(k1),base.k1,'nothing from the target without accept_commands');
-    // A map entry (case-insensitive) wins over the My call slot: background and foreground.
-    await send(tool,highlightCall('dl1xyz','#0000ff','#ffff00'));
-    const d1lit=await until(d1,v=>v.udp==='DL1XYZ','DL1XYZ highlighted');
-    assert.deepEqual([d1lit.hl,d1lit.bg,d1lit.fg],[null,'rgb(0, 0, 255)','rgb(255, 255, 0)']);
-
-    // The next period: the map entry colours the new row too, the last-period one does not.
-    const {sequences:[w2,d2]}=await publish(p1+15000,[{text:'CQ W1AW FN31',hz:1200,snr:-7},{text:'HB9BLA DL1XYZ R-05',hz:1400,snr:-5}]);
-    for(const s of [w2,d2])await row(s).waitFor({timeout:30000});
-    assert.equal((await look(w2)).udp,null,'last period only: not the newer period');
-    assert.equal((await look(w1)).bg,'rgb(0, 255, 0)','the older period below keeps it');
-    assert.deepEqual(await look(d2).then(v=>[v.udp,v.bg]),['DL1XYZ','rgb(0, 0, 255)']);
-    // Highlight last without colours: a reset in the latest period only; the map entry stays.
-    await send(tool,highlightCall('DL1XYZ',null,null,true));
-    const d2reset=await until(d2,v=>v.udp===null,'DL1XYZ reset in the latest period');
-    assert.match(d2reset.hl??'',/\bmycall\b/,'the reset row has its slot colour');
-    assert.deepEqual(await look(d1).then(v=>[v.udp,v.bg]),['DL1XYZ','rgb(0, 0, 255)'],'the earlier period keeps the map colour');
-    // Both colours invalid: the highlight is removed and the slot colour returns.
-    await send(tool,highlightCall('DL1XYZ',null,null));
-    await until(d1,v=>v.udp===null,'DL1XYZ removed');
-    assert.deepEqual(await look(d1),base.d1,'the My call slot colour is back');
-    // A station restart (another boot) drops the earlier boot's display state.
-    await send(tool,highlightCall('K1ABC','#ff00ff',null));
-    await until(k1,v=>v.udp==='K1ABC','K1ABC highlighted');
-    await page.evaluate(()=>{profileData={...profileData,boot_id:'00000000-0000-4000-8000-000000000000'};renderResults();});
-    assert.deepEqual(await look(k1),base.k1,'no highlight of another boot');
-    await page.evaluate(b=>{profileData={...profileData,boot_id:b};renderResults();},udp.boot_id);
-    assert.equal((await look(k1)).udp,'K1ABC');
-    await send(tool,highlightCall('K1ABC',null,null));
-    await until(k1,v=>v.udp===null,'K1ABC removed');
-
-    // Clear window 1 (Rx Frequency): the QSO pane's callers go, Band Activity stays.
-    const others=page.locator('#qso-others tr');
-    await waitFor(async()=>await others.count()>0,'DL1XYZ calls me in the QSO pane');
-    await send(tool,clearWindow(1));
-    await waitFor(async()=>await others.count()===0,'Rx Frequency cleared');
-    assert.equal(await page.locator('#band-activity tbody tr[data-sequence]').count(),5,'Band Activity kept');
-    // Clear window 0 (Band Activity): its rows go; a later decode shows again.
-    await send(tool,clearWindow(0));
-    await waitFor(async()=>await page.locator('#band-activity tbody tr[data-sequence]').count()===0,'Band Activity cleared');
-    const {sequences:[k3]}=await publish(p1+30000,[{text:'CQ K1ABC FN42',hz:1000,snr:-9}]);
-    await row(k3).waitFor({timeout:30000});
-    assert.equal(await page.locator('#band-activity tbody tr[data-sequence]').count(),1);
-    assert.deepEqual(page.errors,[]);
-  }finally{tool.close();other.close();}
 });

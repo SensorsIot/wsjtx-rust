@@ -636,10 +636,10 @@ impl Owner {
                     return Err(("counter_exhausted", None));
                 }
                 let id = profile::new_uuid().map_err(|_| ("storage_unavailable", None))?;
-                // A start from the browser is the operator action the Tx watchdog counts
-                // from; an MCP start never resets or extends it (#39).
+                // A start from the browser is the operator's decision to transmit again
+                // after a Tx watchdog stop; an MCP start never is (#39).
                 if operator {
-                    transmit.service.with(|c| c.activity());
+                    transmit.service.with(|c| c.operator_restart());
                 }
                 let last_decode = r.latest_publication().map_or(0, |p| p.0);
                 let deadline = self.now() + Duration::from_secs(config.max_run_minutes * 60);
@@ -731,7 +731,7 @@ impl Owner {
                 disarm(contact, state);
             }
         };
-        // Halt (browser button, Esc or MCP) ends the run in every state.
+        // Halt (browser button, Alt+H, MCP or UDP) ends the run in every state.
         let halts = r.transmit.get().map(|t| t.service.halt_requests());
         if halts != Some(run.halts) {
             return stop(&mut inner, "halted", armed);
@@ -1424,8 +1424,8 @@ pub async fn command(
         Err(e) => return refusal(e, None),
     };
     let checked = authorization_http::operating_access_async(&headers, &app).await;
-    // A start from the browser is the operator action the Tx watchdog counts from; an
-    // MCP client's start never is (#58: the principal comes from the credential).
+    // A start from the browser is the operator action the Tx watchdog needs; an MCP
+    // client's start never is (#58: the principal comes from the credential).
     let operator = match &checked {
         Ok(Some(a)) => a.principal.is_operator(),
         Ok(None) => true,

@@ -61,7 +61,7 @@ function stationEnv(env = {}) {
   const clean = {...process.env};
   // Windows environment names ignore case: no differently cased LOCALAPPDATA may survive.
   for (const key of Object.keys(clean)) if (key.startsWith('WSTX_') || key.toUpperCase() === 'LOCALAPPDATA') delete clean[key];
-  return {...clean, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off', LOCALAPPDATA: stationDataRoot(), ...env};
+  return {...clean, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off', WSTX_RADIO_DISCOVERY: 'off', LOCALAPPDATA: stationDataRoot(), ...env};
 }
 async function serverOnce(env, args) {
   const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', process.platform === 'win32' ? 'wstx-rust.exe' : 'wstx-rust');
