@@ -1851,6 +1851,9 @@ async fn tc_042_004_pounce_answers_a_73_holding_tx_and_never_an_ignored_or_direc
         ignore(&f, json!("K1ABC"), json!(true)).await.status,
         StatusCode::OK
     );
+    // Hold Tx off: "Hold Tx after a 73" below is the automation's own rule, not the default.
+    mcp_contact(&f, "set_hold_tx", json!({"enabled":false})).await;
+    assert_eq!(f.read("contact").await["settings"]["hold_tx"], json!(false));
     assert_eq!(pounce(&f, "K1ABC", 5).await.status, StatusCode::ACCEPTED);
     // The ignore lists win over the pounce.
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-15.0))]);

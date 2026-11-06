@@ -3996,7 +3996,7 @@ package WstxRequirements {
         objective {
             verify 'CL-039-08';
         }
-        attribute executable : String = "server/src/contact_tests.rs::hold_tx_is_on_by_default_and_a_selection_keeps_tx; tests/contact.test.cjs";
+        attribute executable : String = "server/src/contact_tests.rs::hold_tx_is_on_by_default_and_a_selection_keeps_tx; server/src/strategy_tests.rs::tc_039_004_auto_call_follows_the_strategy_and_the_directed_cq_rule; tests/contact.test.cjs";
     }
     dependency CL_039_08_verified_by_TC_039_009 from 'CL-039-08' to 'TC-039-009';
     requirement 'CL-042-01' {

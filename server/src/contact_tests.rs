@@ -414,6 +414,8 @@ fn responder_progresses_tx1_tx3_tx5_and_completes_once_after_the_transmitted_73(
 fn caller_cq_then_selected_reply_reaches_rogers_and_completes_on_73_or_sent_rr73() {
     for rr73 in [false, true] {
         let mut s = station();
+        // Hold Tx off: "a reply to me keeps my Tx frequency" below is the to-my-call rule alone.
+        s.command(Command::SetHoldTx(false)).unwrap();
         // Call 1st off: the reply to my CQ waits for the operator's selection (#12).
         s.command(Command::SetCallFirst(false)).unwrap();
         s.command(Command::SetParity(Parity::Even)).unwrap();
