@@ -386,7 +386,7 @@ attribute def ActivityOrdering {
              Station bar: Halt Tx (always visible, Alt+H, Esc; disabled with reason on a
              receive-only station, where Esc only cancels the contact) and a compact
              transmit state with the last transmitted text, Tx watchdog remaining calls WD:n
-             or "Tx watchdog: N unanswered calls", visible in every region. Radio toolbar (its period
+             or "Tx watchdog: same message sent N times", visible in every region. Radio toolbar (its period
              and level slots): UTC clock, Tx progress v/15 with Transmitting label, Rx
              level meter 0..90 dB with high/low text labels
              (WstxContact::OperatorDisplays); they are not in the station bar because the

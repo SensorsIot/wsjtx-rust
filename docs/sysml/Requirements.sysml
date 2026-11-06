@@ -1021,7 +1021,7 @@ package WstxRequirements {
     dependency CL_010_06_to_FR_007 from 'CL-010-06' to 'FR-007';
     dependency CL_010_06_to_FR_021 from 'CL-010-06' to 'FR-021';
     requirement 'CL-010-10' {
-        doc /* Bound unattended transmission with a server-owned Tx watchdog (#39, 2026-11-04: default 6, 1..99 consecutive unanswered own transmissions, reset by an answer from the partner or, to my CQ, from anyone, and by accepted operating requests from the browser; at the limit the next transmission is not keyed and Enable Tx goes off without a halt) and an always-on Tune watchdog (default 90 s, 1..300 s). Details: WstxContact::TxWatchdog, TuneWatchdog. */
+        doc /* Bound unattended transmission with a server-owned Tx watchdog (#39, 2026-11-06: default 6, 1..99 repetitions of one message, the Rep of the contact dialogue; only a different message, a new contact or an operator Enable Tx restarts it, never a partner message, a browser click or a setting; a send that would exceed the limit is not keyed and Enable Tx goes off without a halt) and an always-on Tune watchdog (default 90 s, 1..300 s). Details: WstxContact::TxWatchdog, TuneWatchdog. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/contact.rs; server/src/transmit/service.rs; client/contact.js";
     }
@@ -1120,7 +1120,7 @@ package WstxRequirements {
         doc /* TC-007-007 — Live FT8 contact on the IC-7300
              CL-010-01, CL-010-02, CL-010-03, CL-010-04, CL-010-10
              Setup: deployed candidate on HB9BLA with the IC-7300 (USB audio and CAT, USB-D, 20 m 14.074 MHz or another FT8 dial frequency), operator present at the radio, low power chosen by the operator, Halt Tx and the radio's own power control within reach; transmit authorized by the operator on 2026-10-31 for this test only. An independent receiver (separate WSJT-X station or PSK Reporter reception reports) observes our transmissions.
-             Steps: run a UDP listener on 127.0.0.1:2237 enabled as a WSJT-X UDP target with QSO Logged and Logged ADIF; complete at least one contact answering a real CQ and, if band conditions allow, one by calling CQ, with Auto Seq, without pressing Log QSO; then Enable Tx without operator activity until the Tx watchdog (set to 2 unanswered calls for the test) stops it; Halt once during a transmission; restart the server.
+             Steps: run a UDP listener on 127.0.0.1:2237 enabled as a WSJT-X UDP target with QSO Logged and Logged ADIF; complete at least one contact answering a real CQ and, if band conditions allow, one by calling CQ, with Auto Seq, without pressing Log QSO; then Enable Tx without operator activity until the Tx watchdog (set to 2 repetitions for the test) stops it; Halt once during a transmission; restart the server.
              Expected: the partner's messages addressed to HB9BLA appear in the Rx Frequency pane with the report we sent echoed back; the independent receiver decodes exactly the transmitted texts in the expected periods and audio offset within 10 Hz; the contact completes per the AutoSequence table with Enable Tx off and logs itself (no review form; the Logbook page lists it); the listener receives one QSO Logged and one Logged ADIF with the same call, reports, times and frequency; contacts.adi contains exactly one record with the independent observations (call, grid, reports, date/time, band, FREQ = dial + Tx offset) after restart; Halt stops RF promptly as observed on the radio; watchdog expiry stops transmission and disarms. Failures are recorded, not reworded as passes.
              5 — Live RF transmission with operator authorization; HB9BLA station PC with the actual IC-7300 and antenna. */
         attribute automation : AutomationState = AutomationState::planned;
@@ -1137,8 +1137,8 @@ package WstxRequirements {
         doc /* TC-008-001 — Tx and Tune watchdogs
              CL-010-10
              Setup: actual server with virtual clock and the #9 transmit-service double; browser and MCP clients.
-             Steps: refuse limits 0 and 100, accept 6 (default) and 1..99; with limit 2 call CQ with no answer for three periods; with limit 2 select a CQ, send Tx1 twice and let the partner answer with a report, then send further unanswered messages; with limit 2 call CQ and let another station answer; send an accepted browser request after one unanswered call; disarm and re-enable; Tune with 90 s default, 1 and 300 s, refuse 0 and 301; Halt during Tune.
-             Expected (hand-counted): the third CQ is never keyed: Enable Tx goes off before keying with cause tx_watchdog, tx_expired true, halt_state unchanged (no halt), PTT released; remaining calls 2, 1, 0 while armed; the partner's report resets the count (two more unanswered messages before the stop); an answer to my CQ by anyone resets it; a message from another station to someone else does not; an accepted browser request resets it; the counter is 0 while disarmed; the contact state is kept and "Tx watchdog: 2 unanswered calls" is shown; Tune ends at its limit through #9; startup default 6 calls and 90 s.
+             Steps: refuse limits 0 and 100, accept 6 (default) and 1..99; with limit 2 call CQ with no answer for three periods; with limit 2 select a CQ, send Tx1 twice and let the partner answer with a report, then repeat the reply; with limit 3 let the partner repeat the same report every period while I repeat (R+report), with unrelated browser requests between the transmissions (hold, frequency, settings), and after the stop Enable Tx again; with limit 2 send Enable Tx while armed after the first reply and select the partner's row, at the same and at another SNR and after an edited Tx3, after the second; lower the limit to 2 with a third reply pending; at the limit with RR73 received and 73 pending choose Tx3; with limit 2 repeat the reply twice and let the partner advance with RR73 at +14.2 s, after the start window's lead for the third; with limit 2 call CQ, send one CQ and let a station answer with Call 1st off, then with Call 1st on; disarm and re-enable; Tune with 90 s default, 1 and 300 s, refuse 0 and 301; Halt during Tune.
+             Expected (hand-counted): the third CQ is never keyed: Enable Tx goes off before keying with cause tx_watchdog, tx_expired true, halt_state unchanged (no halt), PTT released; remaining calls 2, 1, 0 while armed; the partner's report makes the next message a different one, which starts at the limit again (two repetitions before the stop); the partner's repeats and the browser requests change nothing: exactly three R+report go out, the fourth is never keyed, cause tx_watchdog without a halt, the dialogue shows the report and R+report each with their Rep; Enable Tx after the stop sends the same message again, a new tx entry with Rep 1; Enable Tx while armed and the partner's row change neither the remaining calls nor the dialogue, and the third reply is never sent, the lowered limit and the Tx button stop at once with nothing keyed; the RR73 makes 73 go out and the contact complete; with Call 1st off a caller leaves the CQ count unchanged, with Call 1st on the reply to the caller starts at the limit; a message from another station to someone else changes nothing; the counter is 0 while disarmed; the contact state is kept and "Tx watchdog: same message sent 2 times" is shown; Tune ends at its limit through #9; startup default 6 calls and 90 s.
              2 — Isolated automated functional tests; Windows development PC, virtual clock and independent transmit double; no RF. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1642,8 +1642,8 @@ package WstxRequirements {
              with non-null migrated scope, completed storage of key/grant/enrollment operation
              IDs BEFORE enroll200, then challenge/proof204/status200. Session204 alone is not
              ordinary permission. Initial migration assigns identity to existing selection even
-             with disabled control, but creates no grant/commission or native effects; explicit
-             removed/null scope cannot be invented or auto-added. Fetch GET `/profile` using
+             with disabled control, but creates no grant/commission or native effects; a
+             null scope cannot be invented. Fetch GET `/profile` using
              ordinary same-origin browser fetch with no manually supplied Origin and require200.
              Inspect cookie names/attributes only, then Refresh/reconnect every window. Repeat
              retained authorization in reverse order with proof/status, no token or enrollment
@@ -2438,8 +2438,8 @@ package WstxRequirements {
          and the status condition). Delivered (partial, before live acceptance):
          CL-022-03 'Confirm receive-only setup' UI and the automatic read-only CAT
          lifecycle, CL-022-04 cadence, CL-022-05 CAT status/freshness presentation;
-         TC-022-009 automated companions. Still target: CL-022-02 explicit radio
-         identity Add/Replace/Remove (ChangeSelectedRadioIdentity, no route yet), the
+         TC-022-009 automated companions. Radio identity Add/Replace/Remove is dropped
+         from the contract (operator 2026-11-06, CL-022-02). Still target: the
          CL-022-05 dated freeze reproduction and Thin/Off accounted-traffic companion;
          TC-022-008 and TC-022-010 stay planned.
          Existing99 identities retain meaning and numbering. No parser, model
@@ -2534,15 +2534,13 @@ package WstxRequirements {
              authority alone owns it; audio/CAT adapters refer to that same identity.
              Initial migration assigns one UUID to the existing selected configuration,
              but creates NO authorization grant or commissioning acknowledgement.
-             Explicit Add/Replace/Remove uses WstxProfiles::ChangeSelectedRadioIdentity,
-             not an inferred control-settings edit. Fresh bootstrap alone grants no
-             control: ReadBootstrapScope provides its read-only authority tuple before
-             enrollment. Add only from absent scope; Replace/Remove require exact current
-             scope. Add/Replace assign new UUID/revision1, remove leaves absent scope;
-             both invalidate old grants/commissioning atomically after confirmed native
-             release, with bounded operation receipt and no automatic mutation replay.
-             Subsequent enrollment/commissioning is required; disabled/re-enable alone
-             never removes or replaces identity. Endpoint/model/PTT edits
+             Operator decision 2026-11-06 (#22): no explicit radio identity
+             Add/Replace/Remove operation exists. Automatic discovery of an available
+             transmitter is requested on #44 and is not delivered or promised by this
+             clause. Fresh
+             bootstrap alone grants no control: ReadBootstrapScope provides its read-only
+             authority tuple before enrollment. Disable/re-enable never removes or
+             changes identity. Endpoint/model/PTT edits
              preserve selected UUID but increment SafetyConfigurationRevision and
              invalidate commissioning; they cannot make a newly configured device
              usable until explicit re-commissioning. Endpoint reversion also needs
@@ -2597,7 +2595,6 @@ package WstxRequirements {
              Delivered: durable record, logout/revoke-all, a locked admission check of
              every operating HTTP route and WS upgrade, WS-message rechecks of an earlier
              admitted grant, safety-revision advance and the commissioning server API.
-             Explicit Add/Replace/Remove remains target.
              Accepted bound: an operating HTTP request is admitted by validating its
              transport (scope, grant, current revocation generation) under the authority
              lock; the lock is then released. Such an admitted request may still be
@@ -2735,8 +2732,8 @@ package WstxRequirements {
              bytes contain that full origin, compact auth bodies do not echo it.
              Hand-count canonical ASCII widths (UUID36/revision16/IDs43/key87/signature86),
              including JSON quotes/punctuation: scope138, enrollment374, receipt-proof426,
-             challenge-response396, conservative receipt302 and bootstrap response440
-             with BOTH current and receipt scopes. Require actual compact serialization
+             challenge-response396, conservative receipt302 and bootstrap response170.
+             Require actual compact serialization
              <= these envelopes and <=1024; no candidate serializer as expected oracle.
              Full status still includes bounded receive/error fields within1024, not
              truncation or a weakened origin/profile domain. Whitespace-padded request
@@ -2759,12 +2756,13 @@ package WstxRequirements {
              WS grant or disconnect CAT/audio, while actual revoke still fences effects
              and closes affected WS. Same-document readiness sharing is not a claimed
              cross-tab lock; keep rate10/60 and all other caps/budgets unchanged.
-             Removed scope returns null; no implicit Add/enrollment. Authorize A once; preserve ordinary
+             A record with a null scope, which no delivered operation writes, returns null
+             and enrolls nothing (no automated case). Authorize A once; preserve ordinary
              browser profile/key, close actual browser process, remove/expire only its
              transport cookie under test control, advance injected times across28800s
              and browser-cookie retention boundary, restart server/browser. A becomes
              usable through signed proof with zero bootstrap submissions; no long real
-             wait claimed. Test retained identity/revision vs Add/Replace radio, other
+             wait claimed. Test retained identity/revision vs another scope, other
              profile/origin, malformed/duplicate cookies, stale/replayed/wrong tuple/
              expired signatures, consumed nonce and challenge saturation. Independently
              fixed tuples/challenge bytes and effect counters are oracle, not server
@@ -2790,37 +2788,9 @@ package WstxRequirements {
              attempt stops after exactly 3 attempts with 'Could not authenticate'.
              A 401 bootstrap-scope is never retried. Navigating away during a held
              attempt sends no further setup request.
-             Automated companions: tests/profiles.test.cjs TC-022-006 cases and
-             server/src/auth_tests.rs, including plaintext runtime-token operating
-             access. Radio identity Add/Replace and injected-time restart subsets
-             remain pending. */
-        attribute automation : AutomationState = AutomationState::partial;
-        attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs";
-        objective {
-            verify 'CL-022-01';
-            verify 'CL-022-02';
-        }
-    }
-    dependency CL_022_01_verified_by_TC_022_006 from 'CL-022-01' to 'TC-022-006';
-    dependency CL_022_02_verified_by_TC_022_006 from 'CL-022-02' to 'TC-022-006';
-    verification 'TC-022-007' {
-        doc /* TC-022-007, CL-022-02; cost2 profiles/protocol and station authority companions.
-             With independent durable-state/native-peer oracles exercise explicit
-             radio-identity add/replace/remove and bootstrap-scope receipt recovery.
-             Add with present scope, replace/remove with absent/stale scope, ordinary
-             transport without bootstrap and cross-profile context refuse with no state
-             commit/native bytes. Disable/re-enable and endpoint edit preserve UUID;
+             Grant revocation and configuration edits (operator 2026-11-06: moved here from
+             the retired TC-022-007). Disable/re-enable and endpoint edit preserve UUID;
              endpoint change advances safety revision/invalidates commissioning only.
-             Replace at identical endpoint yields different UUID and no inherited
-             grant/commissioning; Remove yields null current scope and zero CAT attempts
-             despite saved enabled settings. Explicit Add creates another UUID; no
-             timer/settings edit auto-Adds. Hold close/fail close: no identity commit,
-             quarantine never clears on retry. Fail atomic write: no acknowledged new
-             identity; inspect last committed record. Lose response after commit/restart,
-             bootstrap again and query same operation receipt: one UUID allocation,
-             old grants deleted, no repeated mutation or queued CAT effects. Contrast
-             precommit failure/evicted receipt with409 unknown, never claimed success.
-             A setup receipt cannot satisfy verifier proof/receipt or grant authority.
              Two A browser grants plus B; logout one A leaves otherA/B; revoke-allA
              removes bothA only; restart cannot revive acknowledged revocation. Race
              queued HTTP/WS mutations and selection against revocation with independently
@@ -2831,18 +2801,29 @@ package WstxRequirements {
              failure/restart and verify documented last-committed-state limitation and
              failclosed current process. Cap64 grants without evicting active grants;
              delete verifier and replay old proof/cookie: rejected, no tombstone growth.
-             Automated: server/src/auth_tests.rs (logout/revoke fencing of every
-             operating HTTP route and WS upgrade, foreign grant refusal, commission
-             receipts) and station-authority unit tests; tests/profiles.test.cjs
-             TC-022-004 covers browser logout and revoke-all. Radio identity
-             add/replace/remove cases remain pending with that target slice. */
+             Automated companions: tests/profiles.test.cjs TC-022-006 cases (TC-022-004
+             covers browser logout and revoke-all) and server/src/auth_tests.rs, including
+             plaintext runtime-token operating access, logout/revoke fencing of every
+             operating HTTP route and WS upgrade, foreign grant refusal and commission
+             receipts; station-authority unit tests in server/src/authorization_tests.rs.
+             Injected-time restart: the store-level cases there use an injected clock (a
+             transport usable at 28799 s and refused at exactly 28800 s, a challenge 400 days
+             on, a reopen keeping grants and receipts with no transport), and
+             tests/profiles.test.cjs "actual browser and server process restart" removes the
+             cookie and restarts both processes. No run advances a browser's clock; that
+             combination stays unautomated, and TC-022-010 observes controlled cookie expiry
+             live. */
         attribute automation : AutomationState = AutomationState::partial;
-        attribute executable : String = "server/src/auth_tests.rs; server/src/authorization_tests.rs";
+        attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs; server/src/authorization_tests.rs";
         objective {
+            verify 'CL-022-01';
             verify 'CL-022-02';
         }
     }
-    dependency CL_022_02_verified_by_TC_022_007 from 'CL-022-02' to 'TC-022-007';
+    dependency CL_022_01_verified_by_TC_022_006 from 'CL-022-01' to 'TC-022-006';
+    dependency CL_022_02_verified_by_TC_022_006 from 'CL-022-02' to 'TC-022-006';
+    // TC-022-007 retired (operator 2026-11-06, radio identity Add/Replace/Remove dropped, #22);
+    // its revocation and configuration-edit cases moved to TC-022-006. The identity is not reused.
     verification 'TC-022-008' {
         doc /* TC-022-008 CL-022-05 cost2 actual TLS browser. Preserve original missing-cookie/
              openWS reproduction and held-old-response cases; prove401 invalidation and
@@ -2915,7 +2896,7 @@ package WstxRequirements {
              policy_attempt_deferred_by_rf_work_is_not_a_failure. Pending: real Windows
              native release/cancel measurement. */
         attribute automation : AutomationState = AutomationState::partial;
-        attribute executable : String = "server/src/cat_lifecycle_tests.rs; server/src/auth_tests.rs; tests/radio-selection.test.cjs";
+        attribute executable : String = "server/src/cat_lifecycle_tests.rs; server/src/auth_tests.rs; server/src/selection_http_tests.rs; tests/radio-selection.test.cjs";
         objective {
             verify 'CL-022-03';
             verify 'CL-022-04';
@@ -3916,7 +3897,7 @@ package WstxRequirements {
     dependency CL_039_05_to_FR_020 from 'CL-039-05' to 'FR-020';
     dependency CL_039_05_to_FR_007 from 'CL-039-05' to 'FR-007';
     requirement 'CL-039-06' {
-        doc /* The Tx watchdog counts consecutive unanswered own transmissions (WstxContact::TxWatchdog, 2026-11-04) and is never paused or reset by automation; only an answer from the partner (to my CQ: from anyone) or a human action in the browser resets it. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or Auto start from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run, and MCP requests (including starting or restarting a run) never reset or extend it; their Enable Tx keeps the count and is refused tx_watchdog when the limit is used up or no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP or automation is refused operator_required); a new target chosen by a run does not reset it. At the limit Enable Tx goes off without a halt and a run stops tx_watchdog; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxContact::TxWatchdog. */
+        doc /* The Tx watchdog limits the repetitions of one message (WstxContact::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or an Auto start from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or Auto start from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run and MCP requests (including starting or restarting a run) never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a run stops tx_watchdog; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxContact::TxWatchdog. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs; server/src/mcp.rs; server/src/authorization.rs";
     }
@@ -4131,11 +4112,11 @@ package WstxRequirements {
     dependency CL_039_03_verified_by_TC_039_004 from 'CL-039-03' to 'TC-039-004';
     dependency CL_039_05_verified_by_TC_039_004 from 'CL-039-05' to 'TC-039-004';
     verification 'TC-039-005' {
-        doc /* TC-039-005 — The Tx watchdog is never reset by automation
+        doc /* TC-039-005 — The Tx watchdog stop is never ended by automation
              CL-039-06
-             Setup: as TC-039-004 with role cq; for the unit cases the #9 Core on the hardware double; counts per WstxContact::TxWatchdog (#39, 2026-11-04).
+             Setup: as TC-039-004 with role cq; for the unit cases the #9 Core on the hardware double; counts per WstxContact::TxWatchdog (#39, 2026-11-06).
              Steps: (1) browser limit 2; browser Auto start; transmit the own CQ at E+15 s; publish a caller at E+30 s; transmit the report at E+45 s and its repeat at E+75 s; reach E+105 s; cancel and start Auto again from the browser. (2) MCP and browser: an MCP Enable Tx before any browser action; browser limit 1; an MCP Enable Tx (CQ) transmitted at E+15 s; MCP set_frequency; MCP set_watchdogs 99; reach E+45 s; a station calls HB9BLA in period E+30 s; an MCP Enable Tx; an MCP run start and a matching CQ; a browser action and an MCP Enable Tx. (3) MCP route: browser limit 1, an MCP Enable Tx and its CQ, MCP-principal commands through the tool and straight to /contact/command, then MCP Enable Tx on both. Unit: automatic arm before any operator action; activity, limit 2, automatic arm; operator arm.
-             Expected: (1) remaining calls 1 after the CQ, 2 after the caller's answer (the run's selection does not reset it), the request at E+105 s is never keyed, the run stops tx_watchdog, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the browser start arms again. (2) refused tx_watchdog; spent after the one CQ, still spent after the MCP command, set_watchdogs refused operator_required, the next CQ never keyed, still spent after the caller (an answer after a stop resets nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; after the browser action not spent and the MCP Enable Tx arms. (3) spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
+             Expected: (1) remaining calls 1 after the CQ, 2 after the caller's answer (the run's reply is a different message), the request at E+105 s is never keyed, the run stops tx_watchdog, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the browser start arms again. (2) refused tx_watchdog; not spent after the one CQ and the MCP command, set_watchdogs refused operator_required, the next CQ never keyed and spent, still spent after the caller (an answer after a stop ends nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; still spent after an unrelated browser action; after a browser Enable Tx not spent and the MCP Enable Tx arms. (3) after the stop spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
              2 — Isolated automated functional tests; Windows development PC, transmit double; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4147,7 +4128,7 @@ package WstxRequirements {
     verification 'TC-039-006' {
         doc /* TC-039-006 — Strategy element, Highlight, editor popup and Auto in the browser
              CL-039-01, CL-039-04, CL-039-05
-             Setup: actual isolated server and Chromium at 1366x768 (and 360x740 for the popup); routed fixtures: an FT8 live job with CQ K1ABC FN42, CQ NA W1AW FN31, CQ DL1XYZ JO62, a strategy view (revision 4, "DX first", Highlight off), station verdicts [2 rank 0, 0 rank 1, 1 grey] (with reasons when explain), an automation owner recording commands, the contact snapshot (safety revision 7, watchdog 6 unanswered calls). A second case uses the real station store.
+             Setup: actual isolated server and Chromium at 1366x768 (and 360x740 for the popup); routed fixtures: an FT8 live job with CQ K1ABC FN42, CQ NA W1AW FN31, CQ DL1XYZ JO62, a strategy view (revision 4, "DX first", Highlight off), station verdicts [2 rank 0, 0 rank 1, 1 grey] (with reasons when explain), an automation owner recording commands, the contact snapshot (safety revision 7, watchdog 6 repetitions). A second case uses the real station store.
              Steps: wait; click Highlight; open the editor; read the preview; resize to 360 px; change the sort to weakest; tick "not" on the first condition; Save; Close; click Auto, Cancel; click Auto, Start Auto; announce automation.state; click Auto again. Second case: choose continent AS in Settings > General.
              Expected: no evaluation request while Highlight is off; one PUT {expected_revision 4, highlight true}; one evaluation {the live identity, 0..3, strategy null, explain false}; rows DL1XYZ (rule 1), K1ABC (rule 2), W1AW greyed; the popup HALT has the top-bar state; preview rows "#1 CQ DL1XYZ JO62 matches rule 1", "#2 ...", "— CQ NA W1AW FN31 CQ NA is not addressed to my continent (EU)" from a draft evaluation with explain; no horizontal overflow at 360 px; an edit re-runs the preview; Save sends exactly the edited strategy at expected_revision 5; the confirmation names the strategy, role and watchdog; Cancel sends nothing; Start sends configure {strategy true, the maxima} then start {policy 1, run 0, ft8, safety 7}; the button shows "Auto · waiting" pressed and the name is locked; the second click sends stop with the run id; no enable_tx from the browser. Second case: PUT saved continent AS (my_continent AS) and no browser storage key.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
@@ -4165,9 +4146,9 @@ package WstxRequirements {
     verification 'TC-039-007' {
         doc /* TC-039-007 — Live Highlight and Auto on HB9BLA
              CL-039-03, CL-039-04, CL-039-05, CL-039-06
-             Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 at 1 W on 40 m FT8, operator consent; Tx watchdog 6 unanswered calls (the profile default).
+             Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 at 1 W on 40 m FT8, operator consent; Tx watchdog 6 repetitions (the profile default).
              Steps: create a strategy (rule 1 CQ and not continent EU, rule 2 CQ; Treat 73 as CQ) and turn Highlight on; then Auto in role cq; then role call.
-             Expected: matching decodes marked and on top, CQ NA/AS and same-continent CQ DX greyed; Auto CQ transmits CQ and answers the first caller to a logged QSO, or ends by the watchdog after 6 unanswered CQs; Auto Call answers only matching CQs; HALT and Esc stop at once; the watchdog is not extended by Auto.
+             Expected: matching decodes marked and on top, CQ NA/AS and same-continent CQ DX greyed; Auto CQ transmits CQ and answers the first caller to a logged QSO, or ends by the watchdog after 6 identical CQs; Auto Call answers only matching CQs; HALT and Esc stop at once; the watchdog is not extended by Auto.
              5 — Live with RF on the station, operator consent; not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
