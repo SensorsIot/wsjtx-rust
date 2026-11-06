@@ -569,7 +569,8 @@ attribute def ActivityOrdering {
              new_call_band. Worked before on this band and mode has no colour.
              Operator decision (#55, 2026-11-03, CL-055-04), deviating from WSJT-X, which colours
              only CQ/QRZ and calling-me lines: the new_* slots apply to the sender of every decoded
-             standard message (CQ, replies to others, reports, R-reports, RR73, 73), and they match
+             message (CQ, replies to others, reports, R-reports, RR73, 73; the sender call of
+             WstxContact::DecodedEntity), and they match
              only the record's flags (WstxContact::DecodedEntity; the worked-before query no longer
              adds slots). A row without a flag has no colour: there is no cq slot (#50). A row
              to my call keeps mycall on top. A row with a reason of its colour carries the reason
@@ -630,8 +631,8 @@ attribute def ActivityOrdering {
              continent (flags new_dxcc, new_continent); 4 new DXCC or continent on this band
              (new_dxcc_band, new_continent_band); 5 new CQ or ITU zone, ever or on this band;
              6 new grid, ever or on this band; 7 new call, ever or on this band; 8 no flag.
-             The flags are those of WstxContact::DecodedEntity for any decoded standard
-             sender, CQ or not. */
+             The flags are those of WstxContact::DecodedEntity for its sender call, CQ or
+             not. */
     }
     attribute def BandActivityHover {
         doc /* #55 (CL-055-04), #50 (operator 2026-11-04, CL-050-08: "too much information",

@@ -1008,8 +1008,13 @@ package WstxContact {
              Vienna Intl Ctr, AF/EU Turkey), as with "Include extra WAE entities" off. */
     }
     attribute def DecodedEntity {
-        doc /* #55 (CL-055-02). GET /receive/results adds to each decoded standard record
-             whose sender resolves two optional keys; other records are unchanged:
+        doc /* #55 (CL-055-02). GET /receive/results adds to each decoded record whose
+             sender call resolves two optional keys; other records are unchanged. The
+             sender call is the 'from' call, also a filled-in hash; of a nonstandard (i3=4)
+             message its full call, or its filled-in hash when that comes second; of a
+             DXpedition message its hashed call, for dxcc only because Band Activity names
+             no sender for that form. A hash nobody heard ("<...>") and a free text have
+             none. The keys:
              dxcc {name (shown name), cont, cq, itu, km (only with a profile locator:
              great circle in whole km to the entity position)} when the sender has an
              entity; flags {name: true ...} holding only the flags that are true, omitted
