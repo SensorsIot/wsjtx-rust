@@ -119,7 +119,7 @@ test('TC-007-001 double-click starts transmission, partner report advances to Tx
   await page.locator('#station-bar [data-region=help]').click();
   assert.equal(await page.locator('#region-help').isVisible(),true);
   await page.locator('[data-region=operate]').first().focus();
-  const mark=requests.length;
+  const mark=requests.length,haltBefore=(await snapshot()).transmit.halt_state;
   await page.keyboard.press('Escape');
   await waitFor(async()=>(await snapshot()).contact.state==='cancelled','cancelled');
   await waitFor(()=>requests.slice(mark).some(r=>r.path==='/contact/command'),'cancel request observed');
@@ -127,11 +127,26 @@ test('TC-007-001 double-click starts transmission, partner report advances to Tx
   assert.deepEqual(after.map(r=>r.path),['/contact/command'],'Esc sends no halt');
   assert.equal(JSON.parse(after[0].body).action,'abort');
   assert.equal(await page.locator('#region-help').isVisible(),true,'Esc closes no panel');
-  assert.notEqual((await snapshot()).transmit.halt_state,'stopped','not halted');
+  assert.equal((await snapshot()).transmit.halt_state,haltBefore,'not halted');
   assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
   const s=await snapshot();assert.equal(s.transmit.arm_state,'disarmed');assert.equal(s.contact.dx_call,null);
-  const keys=await (await fetch(control+'/keys')).json();assert.ok(keys.length===0||keys.at(-1)===false,'PTT released after halt');
+  const keys=await (await fetch(control+'/keys')).json();assert.ok(keys.length===0||keys.at(-1)===false,'PTT released after the abort');
   await page.locator('.op-secondary:not([hidden]) .return-operate').click();
+  // #39 Abort QSO: the visible button beside HALT does the same, and the station stays ready.
+  await page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:'CQ K1ABC FN42'}).dblclick();
+  await waitFor(async()=>(await snapshot()).transmit.arm_state==='armed','armed again');
+  const button=page.getByRole('button',{name:'Abort QSO (Esc)',exact:true}).locator('visible=true');
+  await button.first().waitFor();assert.equal(await button.first().isEnabled(),true);
+  const buttonMark=requests.length;
+  await button.first().click();
+  await waitFor(async()=>(await snapshot()).contact.state==='cancelled','cancelled by the button');
+  const sent=requests.slice(buttonMark).filter(r=>r.method==='POST');
+  assert.deepEqual(sent.map(r=>r.path),['/contact/command'],'the button sends no halt');assert.equal(JSON.parse(sent[0].body).action,'abort');
+  assert.equal((await snapshot()).transmit.arm_state,'disarmed');
+  await page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:'CQ K1ABC FN42'}).dblclick();
+  await waitFor(async()=>(await snapshot()).transmit.arm_state==='armed','ready: the next QSO arms');
+  await page.keyboard.press('Escape');
+  await waitFor(async()=>(await snapshot()).transmit.arm_state==='disarmed','disarmed by Esc');
   assert.deepEqual(page.errors,[]);
 });
 

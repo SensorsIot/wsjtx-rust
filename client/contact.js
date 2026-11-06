@@ -22,7 +22,7 @@ const qsoButton=(id,label,title,extra='')=>`<button type="button" id="${id}" dis
 document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<p id="qso-heard" class="ct-line" hidden></p>
 <p id="qso-autoseq" class="op-warning ct-autoseq" role="status" hidden><span id="qso-autoseq-text"></span> <button type="button" id="qso-suggest" hidden></button> <button type="button" id="qso-autoseq-on" title="Turn Auto Seq on">Auto Seq on</button></p>
 <div id="qso-next" class="op-qso-next" hidden><span id="qso-next-label" class="op-eyebrow">&#9656; next:</span><strong id="contact-next">None</strong><span id="qso-countdown" class="op-muted"></span><div class="op-qso-progress" aria-hidden="true"><i id="qso-progress"></i></div></div>
-<div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx: emergency stop (Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>
+<div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx: emergency stop (Alt+H)">HALT</button><button type="button" id="qso-abort" disabled title="Abort QSO (Esc): stop the transmission now and cancel the contact, without HALT">Abort QSO (Esc)</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>
 <p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable" hidden>Log QSO needs a running QSO.</p><p id="contact-result" class="op-muted" role="status"></p><p id="contact-logged" class="op-muted" role="status"></p>
 <div id="qso-area" class="ct-qso-area"><table id="qso-table" class="ct-qso-table" hidden><thead><tr><th scope="col">UTC</th><th scope="col" data-short="Dir">Direction</th><th scope="col" data-short="Exch">Exchange</th><th scope="col" title="How often the identical message repeated">Rep</th><th scope="col" title="Our measured SNR of the partner's latest decode at or before this line" data-short="Rx">Rx SNR</th><th scope="col" title="The partner's latest report on us at or before this line" data-short="Tx">Tx SNR</th></tr></thead><tbody id="qso-dialogue" class="ct-dialogue" aria-label="QSO dialogue" hidden></tbody><tbody id="qso-others" class="ct-others" aria-label="Stations calling me (double-click or Enter answers)"></tbody></table><p id="qso-others-none" class="op-muted ct-line" hidden></p></div>
 `);
@@ -114,7 +114,7 @@ addEventListener('keyboard-halt',event=>{
 });
 // WstxContact::AbortQso (#39): Esc and the Abort QSO button stop the transmission now
 // and cancel the contact; the station is not halted. The server decides what stops.
-const abortButton=document.createElement('button');abortButton.type='button';abortButton.id='abort-qso';abortButton.className='op-abort';abortButton.textContent='Abort QSO';abortButton.title='Abort QSO (Esc): stop the transmission now and cancel the contact, without HALT';abortButton.disabled=true;
+const abortButton=document.createElement('button');abortButton.type='button';abortButton.id='abort-qso';abortButton.className='op-abort';abortButton.textContent='Abort QSO (Esc)';abortButton.title='Abort QSO (Esc): stop the transmission now and cancel the contact, without HALT';abortButton.disabled=true;
 document.querySelector('#halt-tx')?.after(abortButton);
 const abortable=()=>{const c=snap?.contact,t=snap?.transmit;return !!snap&&((c&&!['idle','cancelled','completed'].includes(c.state))||t?.arm_state==='armed'||!!tick?.transmitting);};
 function abortQso(){if(abortable())send('abort',{},'Abort QSO');}
@@ -170,7 +170,7 @@ function render(){
   $('transmit-unavailable').textContent=!snap?'Transmission unavailable: contact state unknown.':t?.capability==='unavailable'?'Transmission unavailable: radio/authorization not ready.':'Transmission unavailable: this server does not offer transmit control.';
   const tune=$('contact-tune');tune.disabled=!capable;tune.setAttribute('aria-pressed',String(!!t?.tune));tune.textContent=t?.tune?`Tune on · ${snap.watchdog.tune_remaining_seconds} s`:'Tune';
   $('contact-cancel').disabled=!c||['idle','cancelled'].includes(c.state);
-  abortButton.disabled=!abortable();
+  abortButton.disabled=!abortable();$('qso-abort').disabled=abortButton.disabled;
   // Log QSO while a QSO runs (it also closes it); a finished contact is gone from the pane.
   // The reason stays the disabled button's description without taking a line.
   const log=$('contact-log');log.disabled=!qso;$('contact-unavailable').hidden=true;
@@ -323,6 +323,7 @@ $('qso-cq').addEventListener('click',async()=>{
   sendExplicit(()=>arm('CQ'));
 });
 $('qso-halt').addEventListener('click',()=>halt.click());$('qso-halt').disabled=halt.disabled;
+$('qso-abort').addEventListener('click',abortQso);
 // #37 one HALT: the top-bar HALT hides only while the QSO pane HALT is fully on screen.
 new IntersectionObserver(([entry])=>{document.body.dataset.qsoHaltShown=String(entry.isIntersecting&&entry.intersectionRatio>=0.99);},{threshold:[0,0.99,1]}).observe($('qso-halt'));
 // #37 fold-out Now (operator 2026-11-03, WSJT-X Next/Now): choose the line next and turn Enable
