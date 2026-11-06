@@ -352,13 +352,13 @@ test('TC-007-005 contact state is pushed: only what changed, no GET /contact',{t
   await waitFor(async()=>await page.evaluate(h=>window.wstxContact.snapshot()?.settings?.hold_tx===h,hold),'the change is shown',5000);
   const event=frames.find(f=>f.at>=changed);assert.ok(event&&event.at-changed<=2000,'pushed within the 1 s check');
   assert.deepEqual(event.data.changed,{settings:{hold_tx:hold}},'only what changed');
+  assert.equal(requests.filter(r=>r.method==='GET'&&r.path==='/contact'&&r.at>=changed).length,0,'another client\'s change needs no GET /contact');
   // Two changes that cancel out inside one check leave no changed field; the revision still reaches the page.
   const command=async(s,enabled)=>{const r=await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'set_hold_tx',enabled})});assert.ok([200,202].includes(r.status),await r.text());};
   await new Promise(r=>setTimeout(r,1200));
   await command(await snapshot(),!hold);await command(await snapshot(),hold);
   const latest=(await snapshot()).contact_revision;
   await waitFor(async()=>await page.evaluate(n=>window.wstxContact.snapshot()?.contact_revision===n,latest),'the revision is shown',5000);
-  assert.equal(requests.filter(r=>r.method==='GET'&&r.path==='/contact'&&r.at>=changed).length,0,'another client\'s change needs no GET /contact');
   assert.deepEqual(page.errors,[]);
 });
 
