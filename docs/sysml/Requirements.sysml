@@ -1642,8 +1642,8 @@ package WstxRequirements {
              with non-null migrated scope, completed storage of key/grant/enrollment operation
              IDs BEFORE enroll200, then challenge/proof204/status200. Session204 alone is not
              ordinary permission. Initial migration assigns identity to existing selection even
-             with disabled control, but creates no grant/commission or native effects; explicit
-             removed/null scope cannot be invented or auto-added. Fetch GET `/profile` using
+             with disabled control, but creates no grant/commission or native effects; a
+             null scope cannot be invented. Fetch GET `/profile` using
              ordinary same-origin browser fetch with no manually supplied Origin and require200.
              Inspect cookie names/attributes only, then Refresh/reconnect every window. Repeat
              retained authorization in reverse order with proof/status, no token or enrollment
@@ -2443,8 +2443,8 @@ package WstxRequirements {
          and the status condition). Delivered (partial, before live acceptance):
          CL-022-03 'Confirm receive-only setup' UI and the automatic read-only CAT
          lifecycle, CL-022-04 cadence, CL-022-05 CAT status/freshness presentation;
-         TC-022-009 automated companions. Still target: CL-022-02 explicit radio
-         identity Add/Replace/Remove (ChangeSelectedRadioIdentity, no route yet), the
+         TC-022-009 automated companions. Radio identity Add/Replace/Remove is dropped
+         from the contract (operator 2026-11-06, CL-022-02). Still target: the
          CL-022-05 dated freeze reproduction and Thin/Off accounted-traffic companion;
          TC-022-008 and TC-022-010 stay planned.
          Existing99 identities retain meaning and numbering. No parser, model
@@ -2539,15 +2539,12 @@ package WstxRequirements {
              authority alone owns it; audio/CAT adapters refer to that same identity.
              Initial migration assigns one UUID to the existing selected configuration,
              but creates NO authorization grant or commissioning acknowledgement.
-             Explicit Add/Replace/Remove uses WstxProfiles::ChangeSelectedRadioIdentity,
-             not an inferred control-settings edit. Fresh bootstrap alone grants no
-             control: ReadBootstrapScope provides its read-only authority tuple before
-             enrollment. Add only from absent scope; Replace/Remove require exact current
-             scope. Add/Replace assign new UUID/revision1, remove leaves absent scope;
-             both invalidate old grants/commissioning atomically after confirmed native
-             release, with bounded operation receipt and no automatic mutation replay.
-             Subsequent enrollment/commissioning is required; disabled/re-enable alone
-             never removes or replaces identity. Endpoint/model/PTT edits
+             Operator decision 2026-11-06 (#22): no explicit radio identity
+             Add/Replace/Remove operation exists; the server is pragmatic and discovers
+             whichever transmitter is available, and that discovery belongs to #44. Fresh
+             bootstrap alone grants no control: ReadBootstrapScope provides its read-only
+             authority tuple before enrollment. Disable/re-enable never removes or
+             changes identity. Endpoint/model/PTT edits
              preserve selected UUID but increment SafetyConfigurationRevision and
              invalidate commissioning; they cannot make a newly configured device
              usable until explicit re-commissioning. Endpoint reversion also needs
@@ -2602,7 +2599,6 @@ package WstxRequirements {
              Delivered: durable record, logout/revoke-all, a locked admission check of
              every operating HTTP route and WS upgrade, WS-message rechecks of an earlier
              admitted grant, safety-revision advance and the commissioning server API.
-             Explicit Add/Replace/Remove remains target.
              Accepted bound: an operating HTTP request is admitted by validating its
              transport (scope, grant, current revocation generation) under the authority
              lock; the lock is then released. Such an admitted request may still be
@@ -2740,8 +2736,8 @@ package WstxRequirements {
              bytes contain that full origin, compact auth bodies do not echo it.
              Hand-count canonical ASCII widths (UUID36/revision16/IDs43/key87/signature86),
              including JSON quotes/punctuation: scope138, enrollment374, receipt-proof426,
-             challenge-response396, conservative receipt302 and bootstrap response440
-             with BOTH current and receipt scopes. Require actual compact serialization
+             challenge-response396, conservative receipt302 and bootstrap response170.
+             Require actual compact serialization
              <= these envelopes and <=1024; no candidate serializer as expected oracle.
              Full status still includes bounded receive/error fields within1024, not
              truncation or a weakened origin/profile domain. Whitespace-padded request
@@ -2764,12 +2760,12 @@ package WstxRequirements {
              WS grant or disconnect CAT/audio, while actual revoke still fences effects
              and closes affected WS. Same-document readiness sharing is not a claimed
              cross-tab lock; keep rate10/60 and all other caps/budgets unchanged.
-             Removed scope returns null; no implicit Add/enrollment. Authorize A once; preserve ordinary
+             A null scope returns null and enrolls nothing. Authorize A once; preserve ordinary
              browser profile/key, close actual browser process, remove/expire only its
              transport cookie under test control, advance injected times across28800s
              and browser-cookie retention boundary, restart server/browser. A becomes
              usable through signed proof with zero bootstrap submissions; no long real
-             wait claimed. Test retained identity/revision vs Add/Replace radio, other
+             wait claimed. Test retained identity/revision vs another scope, other
              profile/origin, malformed/duplicate cookies, stale/replayed/wrong tuple/
              expired signatures, consumed nonce and challenge saturation. Independently
              fixed tuples/challenge bytes and effect counters are oracle, not server
@@ -2795,37 +2791,9 @@ package WstxRequirements {
              attempt stops after exactly 3 attempts with 'Could not authenticate'.
              A 401 bootstrap-scope is never retried. Navigating away during a held
              attempt sends no further setup request.
-             Automated companions: tests/profiles.test.cjs TC-022-006 cases and
-             server/src/auth_tests.rs, including plaintext runtime-token operating
-             access. Radio identity Add/Replace and injected-time restart subsets
-             remain pending. */
-        attribute automation : AutomationState = AutomationState::partial;
-        attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs";
-        objective {
-            verify 'CL-022-01';
-            verify 'CL-022-02';
-        }
-    }
-    dependency CL_022_01_verified_by_TC_022_006 from 'CL-022-01' to 'TC-022-006';
-    dependency CL_022_02_verified_by_TC_022_006 from 'CL-022-02' to 'TC-022-006';
-    verification 'TC-022-007' {
-        doc /* TC-022-007, CL-022-02; cost2 profiles/protocol and station authority companions.
-             With independent durable-state/native-peer oracles exercise explicit
-             radio-identity add/replace/remove and bootstrap-scope receipt recovery.
-             Add with present scope, replace/remove with absent/stale scope, ordinary
-             transport without bootstrap and cross-profile context refuse with no state
-             commit/native bytes. Disable/re-enable and endpoint edit preserve UUID;
+             Grant revocation and configuration edits (operator 2026-11-06: moved here from
+             the retired TC-022-007). Disable/re-enable and endpoint edit preserve UUID;
              endpoint change advances safety revision/invalidates commissioning only.
-             Replace at identical endpoint yields different UUID and no inherited
-             grant/commissioning; Remove yields null current scope and zero CAT attempts
-             despite saved enabled settings. Explicit Add creates another UUID; no
-             timer/settings edit auto-Adds. Hold close/fail close: no identity commit,
-             quarantine never clears on retry. Fail atomic write: no acknowledged new
-             identity; inspect last committed record. Lose response after commit/restart,
-             bootstrap again and query same operation receipt: one UUID allocation,
-             old grants deleted, no repeated mutation or queued CAT effects. Contrast
-             precommit failure/evicted receipt with409 unknown, never claimed success.
-             A setup receipt cannot satisfy verifier proof/receipt or grant authority.
              Two A browser grants plus B; logout one A leaves otherA/B; revoke-allA
              removes bothA only; restart cannot revive acknowledged revocation. Race
              queued HTTP/WS mutations and selection against revocation with independently
@@ -2836,18 +2804,29 @@ package WstxRequirements {
              failure/restart and verify documented last-committed-state limitation and
              failclosed current process. Cap64 grants without evicting active grants;
              delete verifier and replay old proof/cookie: rejected, no tombstone growth.
-             Automated: server/src/auth_tests.rs (logout/revoke fencing of every
-             operating HTTP route and WS upgrade, foreign grant refusal, commission
-             receipts) and station-authority unit tests; tests/profiles.test.cjs
-             TC-022-004 covers browser logout and revoke-all. Radio identity
-             add/replace/remove cases remain pending with that target slice. */
+             Automated companions: tests/profiles.test.cjs TC-022-006 cases (TC-022-004
+             covers browser logout and revoke-all) and server/src/auth_tests.rs, including
+             plaintext runtime-token operating access, logout/revoke fencing of every
+             operating HTTP route and WS upgrade, foreign grant refusal and commission
+             receipts; station-authority unit tests in server/src/authorization_tests.rs.
+             Injected-time restart: the store-level cases there use an injected clock (a
+             transport usable at 28799 s and refused at exactly 28800 s, a challenge 400 days
+             on, a reopen keeping grants and receipts with no transport), and
+             tests/profiles.test.cjs "actual browser and server process restart" removes the
+             cookie and restarts both processes. No run advances a browser's clock; that
+             combination stays unautomated, and TC-022-010 observes controlled cookie expiry
+             live. */
         attribute automation : AutomationState = AutomationState::partial;
-        attribute executable : String = "server/src/auth_tests.rs; server/src/authorization_tests.rs";
+        attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs; server/src/authorization_tests.rs";
         objective {
+            verify 'CL-022-01';
             verify 'CL-022-02';
         }
     }
-    dependency CL_022_02_verified_by_TC_022_007 from 'CL-022-02' to 'TC-022-007';
+    dependency CL_022_01_verified_by_TC_022_006 from 'CL-022-01' to 'TC-022-006';
+    dependency CL_022_02_verified_by_TC_022_006 from 'CL-022-02' to 'TC-022-006';
+    // TC-022-007 retired (operator 2026-11-06, radio identity Add/Replace/Remove dropped, #22);
+    // its revocation and configuration-edit cases moved to TC-022-006. The identity is not reused.
     verification 'TC-022-008' {
         doc /* TC-022-008 CL-022-05 cost2 actual TLS browser. Preserve original missing-cookie/
              openWS reproduction and held-old-response cases; prove401 invalidation and
@@ -2920,7 +2899,7 @@ package WstxRequirements {
              policy_attempt_deferred_by_rf_work_is_not_a_failure. Pending: real Windows
              native release/cancel measurement. */
         attribute automation : AutomationState = AutomationState::partial;
-        attribute executable : String = "server/src/cat_lifecycle_tests.rs; server/src/auth_tests.rs; tests/radio-selection.test.cjs";
+        attribute executable : String = "server/src/cat_lifecycle_tests.rs; server/src/auth_tests.rs; server/src/selection_http_tests.rs; tests/radio-selection.test.cjs";
         objective {
             verify 'CL-022-03';
             verify 'CL-022-04';
