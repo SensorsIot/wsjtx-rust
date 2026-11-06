@@ -33,7 +33,7 @@ package WstxMcp {
             start/stop, radio, profile edit, strategy edit or log save tool (the browser
             keeps them); reads cover every operating view. Since #39 the browser also
             shows the strategy (GET /strategy) and its verdicts (POST /strategy/evaluate,
-            Highlight rank and greyed directed CQs); #12 CR 2026-11-03 adds the view
+            value rank and greyed directed CQs); #12 CR 2026-11-03 adds the view
             strategy and the read-only tool wstx_strategy_evaluate, so an MCP client sees
             the strategy a strategy run uses and the directed-CQ verdicts before it
             selects; PUT /strategy stays browser-only.
@@ -50,14 +50,16 @@ package WstxMcp {
             no longer than the starting request's transport (its 8 h deadline, a newer proof
             of that browser grant, revocation of that grant or MCP client, or a safety edit
             stop it authority_lost; a browser proof never ends an MCP client's run) and no
-            longer than max_run_minutes (default 120, 1..480; stop time_limit). A running
+            longer than max_run_minutes (default 120, 1..480; stop time_limit); a strategy run
+            follows its grant instead, D8 and WstxStrategy::StrategyRun. A running
             automation is shown read-only in the browser station bar (AutomationIndicator).
-         D8 Strategy runs (#39, WstxStrategy::AutoStrategyRun): an optional configuration
-            key strategy true lets the station's active strategy choose and order
-            candidates (Auto Call), call CQ and answer callers (Auto CQ) or alternate; such
-            a run skips an unanswered station instead of stopping no_answer. For every run
+         D8 Strategy runs (#39, WstxStrategy::StrategyRun): selecting a strategy in the
+            browser starts a run of this owner in which the active strategy chooses and
+            orders stations; it has no contact limit, its own limit of 8 hours (run_limit) and never stops no_answer. An
+            MCP client cannot select one: the configuration key strategy true is refused
+            operator_required, PUT /strategy has no MCP tool. For every run
             (D6 included) the Tx watchdog limits the repetitions of one message; only an
-            Enable Tx or Auto start from the browser ends its stop, never the run's commands
+            Enable Tx or a strategy selection from the browser ends its stop, never the run's commands
             or an MCP request (including starting or restarting a run)
             (WstxStrategy::WatchdogFromOperator, coordinator default for the operator's
             rule, recorded on #39/#12, 2026-11-02, amending D5/D7; repetition form 2026-11-06);
@@ -189,8 +191,9 @@ package WstxMcp {
         doc /* Wire keys exactly modes, ranking, min_snr_db, allowed_calls, blocked_calls,
              max_contacts, max_unanswered_periods, completion_action, all required, and
              max_run_minutes, optional (absent: 120; D7), and strategy, optional boolean
-             (absent: false; D8), and pounce, optional (absent or null: no pounce; else one
-             call of 3..13 A-Z 0-9 / passing WstxStrategy::SaneCall, with strategy false and
+             (absent or false; true is refused 409 operator_required strategy: a strategy
+             run starts only by a browser's selection, D8), and pounce, optional (absent or null: no pounce; else one
+             call of 3..13 A-Z 0-9 / passing WstxStrategy::SaneCall, and
              not in blocked_calls, else invalid_request pounce; #42 WstxStrategy::Pounce);
              null is the unconfigured state; the snapshot always shows
              max_run_minutes, strategy and pounce. modes: nonempty unique subset of
@@ -211,12 +214,12 @@ package WstxMcp {
              Exact published values; no tolerance or epsilon. The first candidate is
              chosen, once per publication. */
     }
-    enum def RunState { enum waiting; enum calling_cq; enum contact_active; enum manual; enum stopped; }
+    enum def RunState { enum waiting; enum contact_active; enum manual; enum stopped; }
     enum def StopReason {
         enum stopped; enum completed; enum limit_reached; enum no_answer; enum halted;
         enum transmit_stopped; enum contact_changed; enum authority_lost;
         enum context_changed; enum transmit_refused; enum provider_error;
-        enum time_limit; enum tx_watchdog; enum strategy_missing; enum band_changed;
+        enum time_limit; enum tx_watchdog; enum strategy_missing; enum band_changed; enum no_client; enum run_limit;
     }
     attribute def OperatingAutomation {
         attribute runState : RunState;
@@ -255,8 +258,8 @@ package WstxMcp {
              change of (state, report_rcvd) since the selection or the last change counts
              unanswered, at max_unanswered_periods stop no_answer.
              Stopped runs stay visible until the next start. A run with strategy true
-             follows WstxStrategy::AutoStrategyRun instead of CandidateSelection and the
-             no_answer stop (calling_cq is its own CQ); a run with pounce follows
+             follows WstxStrategy::StrategyRun instead of CandidateSelection, its bounds,
+             its context_changed stop and the no_answer stop; a run with pounce follows
              WstxStrategy::Pounce instead of CandidateSelection, its completion and no_answer
              rules, and stops band_changed on a station band change; a disarm by the Tx watchdog stops
              tx_watchdog for every run; a refused enable_tx with code tx_watchdog stops
@@ -267,7 +270,7 @@ package WstxMcp {
              waiting or in a contact it shows "Automation waiting" or "Automation in
              contact", the first 8 characters of the run id and "Halt ends it" (#42 a
              pounce run: "Pounce <call> waiting" or "Pounce <call> in QSO" and "HALT ends
-             it", WstxStrategy::Pounce); hidden
+             it", WstxStrategy::Pounce; a strategy run: WstxStrategy::StrategySelector); hidden
              otherwise. The station sends automation.state {profile_id, boot_id,
              policy_revision, run_revision} (an optional write paced with contact.state)
              after each change since boot, also once to a peer that subscribes while
@@ -281,8 +284,10 @@ package WstxMcp {
              policy_revision, run_revision, configuration (null or the configuration),
              run (null or {id, state, reason, mode, completed_contacts, unanswered_periods,
              contact_id, selected (null or {source_id, job_id, generation, sequence, call}),
-             last_decision, role (null, call or cq), tries, skipped (calls), tx_slot (null or
-             {hz, free}, WstxStrategy::FreeTxSlot), pounce (null or {call, band}, #42))}; existing auth and Origin rules of GET routes.
+             last_decision, given_up (calls the operator gave up in a strategy run), rested (the call a
+             strategy run left after calls_per_station, or null), tx_slot (null or {hz, free}, WstxStrategy::FreeTxSlot), pounce (null or
+             {call, band}, #42)), strategy_refusal (null or why the last selection started no run,
+             WstxStrategy::StrategyRun)}; existing auth and Origin rules of GET routes.
              POST /automation/command (AutomationCommand): exactly {v, profile_id, boot_id,
              command_id, action} plus configure {expected_policy_revision, configuration};
              start {expected_policy_revision, expected_run_revision, mode ft8|ft4,
@@ -293,13 +298,12 @@ package WstxMcp {
              state_conflict command_id. configure: stale_revision on
              expected_policy_revision, state_conflict run while a run is active, then
              policy_revision + 1. start: stale_revision on either revision, state_conflict
-             run, not_configured, not_ready mode (configuration), not_ready receive,
+             run, not_configured, operator_required strategy (a configuration a strategy run left), not_ready mode (configuration), not_ready receive,
              not_ready mode (live job or operating mode), not_ready auto_seq, not_ready
              call (a nonstandard profile callsign: automation stays standard-only, #24
              CL-024-01), not_ready activity (a contest activity other than none, or hound, is set:
              automation only observes in contests and as a Hound, #24 CL-024-02, CL-024-04), not_ready band (a pounce without a known station band),
-             state_conflict contact, not_configured strategy (strategy true without an
-             active strategy), transmit_unavailable (no grant transport, no transmit
+             state_conflict contact, transmit_unavailable (no grant transport, no transmit
              owner or no current safety revision), stale_revision safety_revision; then
              run_revision + 1 and a new run id. stop: a current
              unstopped run id, else 409 stale_request; dispatch ends before the receipt,

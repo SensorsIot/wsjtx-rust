@@ -48,6 +48,7 @@ mod selection_http;
 #[cfg(all(test, not(debug_assertions)))]
 mod selection_http_tests;
 use wstx_rust::{audio, decoder, source};
+mod most_wanted;
 mod spectrum;
 mod strategy;
 #[cfg(test)]
@@ -505,6 +506,7 @@ fn router(state: App) -> Router {
         .route("/strategy", get(strategy::snapshot).put(strategy::put).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/strategy/evaluate", post(strategy::evaluate_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/strategy/ignore", post(strategy::ignore_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
+        .route("/strategy/most-wanted/download", post(strategy::most_wanted_download_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/strategy/alerts", get(strategy::alerts_route))
         .route("/strategy/alerts/clear", post(strategy::clear_alerts_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/udp", get(udp::snapshot).put(udp::put).layer(axum::extract::DefaultBodyLimit::max(udp::BODY_MAX)))
@@ -853,6 +855,8 @@ async fn upgrade(State(app): State<App>, headers: HeaderMap, ws: WebSocketUpgrad
         .max_write_buffer_size(4096)
         .on_upgrade(move |socket| async move {
             let _permit = permit;
+            // #39 an authenticated client is here (WstxStrategy::StrategyRun).
+            let _client = app.profile.as_ref().map(|p| p.recording.clients.session());
             connection(socket, app.profile, authority).await
         })
 }
@@ -1096,6 +1100,8 @@ async fn connection(
     let mut transmit_sent_at = Instant::now();
     // WstxMcp::AutomationStateEvent: only after a change since boot (no event while unused).
     let mut automation_seen: Option<(u64, u64)> = Some((0, 0));
+    // #39 WstxStrategy::StrategyHttp strategy.state: only after a change since this peer subscribed.
+    let mut strategy_seen: Option<u64> = None;
     // #42 WstxStrategy::Alert alert.state: only after a change since this peer subscribed.
     let mut alert_seen: Option<u64> = None;
     // #44 CL-044-11 radio.agc: the managed AGC and its last read-back, once known, then
@@ -1192,6 +1198,15 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(automation::state_event(r,automation.unwrap_or_default()).into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{automation_seen=automation;if !flushed {optional_since=Some(Instant::now());continue;}},
+                        Err(_)=>break,
+                    }
+                }
+                let strategy=r.contact.get().map_or(0,|c|c.strategy.revision());
+                if strategy_seen.is_none() { strategy_seen=Some(strategy); }
+                if strategy_seen!=Some(strategy) {
+                    match optional_write(&mut socket,Message::Text(strategy::state_event(r,strategy).into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{strategy_seen=Some(strategy);if !flushed {optional_since=Some(Instant::now());continue;}},
                         Err(_)=>break,
                     }
                 }

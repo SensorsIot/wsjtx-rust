@@ -923,6 +923,29 @@ impl WorkedIndex {
 fn square(grid: &str) -> Option<String> {
     grid.get(..4).map(str::to_ascii_uppercase)
 }
+/// The most windows of worked sets kept (WstxStrategy::WorkedWindow).
+const WORKED_WINDOWS: usize = 4;
+/// (log revision, country table, (first date, last date), worked set).
+type WindowCache = (
+    u64,
+    std::sync::Arc<crate::dxcc::Cty>,
+    (u32, u32),
+    std::sync::Arc<crate::dxcc::Worked>,
+);
+/// What the worked sets read of the records.
+fn logged(records: &[Record]) -> Vec<crate::dxcc::Logged> {
+    records
+        .iter()
+        .map(|r| crate::dxcc::Logged {
+            call: r.values[CALL].clone().unwrap_or_default(),
+            grid: r.values[GRID].clone(),
+            band: r.effective_band(),
+            mode: Some(r.effective_mode()).filter(|m| !m.is_empty()),
+            confirmed: r.confirmed(),
+            date: r.values[QSO_DATE].as_deref().and_then(|d| d.parse().ok()),
+        })
+        .collect()
+}
 type WorkedCache = (
     u64,
     std::sync::Arc<crate::dxcc::Cty>,
@@ -937,6 +960,9 @@ pub struct Logbook {
     /// when either changes: /receive/results reads it on every page.
     /// The table is held (not its address), so a later table can never match it.
     worked_set: Mutex<Option<WorkedCache>>,
+    worked_windows: Mutex<Vec<WindowCache>>,
+    /// #39 the keys a background build is running for (WstxStrategy::WorkedWindow).
+    worked_building: Mutex<Vec<Option<(u32, u32)>>>,
     /// #10 the worked-before index for the records revision it was built from.
     worked_index: Mutex<Option<(u64, std::sync::Arc<WorkedIndex>)>>,
 }
@@ -1099,6 +1125,8 @@ impl Logbook {
             }),
             dxcc: Mutex::new(load_dxcc(&directory.join(crate::dxcc::FILE_NAME))),
             worked_set: Mutex::new(None),
+            worked_windows: Mutex::new(Vec::new()),
+            worked_building: Mutex::new(Vec::new()),
             worked_index: Mutex::new(None),
         }
     }
@@ -1317,7 +1345,6 @@ impl Logbook {
             .collect())
     }
 
-    /// #55 the (call, band) of every logged contact, for the entity worked status.
     /// #55 WorkedBefore of the stored log against the current country table (cached).
     pub fn worked_set(&self) -> Result<std::sync::Arc<crate::dxcc::Worked>, StoreError> {
         let (table, _) = self.dxcc();
@@ -1329,23 +1356,106 @@ impl Logbook {
             {
                 return Ok(w.clone());
             }
-            let logged: Vec<crate::dxcc::Logged> = inner
-                .records
-                .iter()
-                .map(|r| crate::dxcc::Logged {
-                    call: r.values[CALL].clone().unwrap_or_default(),
-                    grid: r.values[GRID].clone(),
-                    band: r.effective_band(),
-                    mode: Some(r.effective_mode()).filter(|m| !m.is_empty()),
-                    confirmed: r.confirmed(),
-                })
-                .collect();
-            (inner.revision, logged)
+            (inner.revision, logged(&inner.records))
         };
         let worked = std::sync::Arc::new(crate::dxcc::Worked::from_log(&table, &logged));
         *self.worked_set.lock().unwrap_or_else(|p| p.into_inner()) =
             Some((revision, table.cty.clone(), worked.clone()));
         Ok(worked)
+    }
+    /// #39 WstxStrategy::WorkedWindow: WorkedBefore of the records dated first..=last
+    /// (YYYYMMDD), cached per log revision, country table and window, at most
+    /// WORKED_WINDOWS of them.
+    pub fn worked_window(
+        &self,
+        first: u32,
+        last: u32,
+    ) -> Result<std::sync::Arc<crate::dxcc::Worked>, StoreError> {
+        let (table, _) = self.dxcc();
+        let (revision, logged) = {
+            let inner = self.lock()?;
+            let cache = self
+                .worked_windows
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            if let Some(hit) = cache.iter().find(|c| {
+                c.0 == inner.revision
+                    && std::sync::Arc::ptr_eq(&c.1, &table.cty)
+                    && c.2 == (first, last)
+            }) {
+                return Ok(hit.3.clone());
+            }
+            (inner.revision, logged(&inner.records))
+        };
+        let worked = std::sync::Arc::new(crate::dxcc::Worked::from_log_window(
+            &table,
+            &logged,
+            Some((first, last)),
+        ));
+        let mut cache = self
+            .worked_windows
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        cache.retain(|c| c.2 != (first, last));
+        if cache.len() >= WORKED_WINDOWS {
+            cache.remove(0);
+        }
+        cache.push((revision, table.cty.clone(), (first, last), worked.clone()));
+        Ok(worked)
+    }
+    /// #39 WstxStrategy::WorkedWindow for the station step: the last built set of this window
+    /// (all time: None) at once, without building (a rebuild of the operator's log takes about
+    /// 100 ms, two station steps). A set that is missing or behind the log or the country
+    /// table is built on its own thread for a later step; None until the first is ready.
+    pub fn worked_latest(
+        self: &std::sync::Arc<Self>,
+        window: Option<(u32, u32)>,
+    ) -> Option<std::sync::Arc<crate::dxcc::Worked>> {
+        let (table, _) = self.dxcc();
+        let last = match window {
+            None => self
+                .worked_set
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone(),
+            Some(key) => self
+                .worked_windows
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .iter()
+                .find(|c| c.2 == key)
+                .map(|c| (c.0, c.1.clone(), c.3.clone())),
+        };
+        // A busy log (a save, an import) keeps the last set: the step never waits for it.
+        let revision = match self.inner.try_lock() {
+            Ok(inner) => Some(inner.revision),
+            Err(_) => None,
+        };
+        let current = revision.is_none_or(|revision| {
+            last.as_ref()
+                .is_some_and(|(r, t, _)| *r == revision && std::sync::Arc::ptr_eq(t, &table.cty))
+        });
+        if !current {
+            let mut building = self
+                .worked_building
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            if !building.contains(&window) {
+                building.push(window);
+                let log = self.clone();
+                std::thread::spawn(move || {
+                    let _ = match window {
+                        None => log.worked_set(),
+                        Some((first, last)) => log.worked_window(first, last),
+                    };
+                    log.worked_building
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .retain(|k| *k != window);
+                });
+            }
+        }
+        last.map(|(_, _, w)| w)
     }
     /// #55 the country table in use and whether an uploaded file was unreadable.
     pub fn dxcc(&self) -> (crate::dxcc::Table, bool) {
@@ -1396,25 +1506,6 @@ impl Logbook {
             unreadable: false,
         };
         Ok(())
-    }
-
-    /// #39 WstxStrategy new_grid: the same query over the 4-character grid square
-    /// (GRIDSQUARE), case-insensitive.
-    pub fn worked_grids(
-        &self,
-        grids: &[String],
-        band: &str,
-        mode: &str,
-    ) -> Result<Vec<&'static str>, StoreError> {
-        let index = self.index(&*self.lock()?);
-        let (band, mode) = (band.to_ascii_lowercase(), mode.to_ascii_uppercase());
-        Ok(grids
-            .iter()
-            .map(|g| match square(g) {
-                Some(g) => WorkedIndex::status(index.grids.get(&g), &band, &mode),
-                None => "not_worked",
-            })
-            .collect())
     }
 
     // -------------------------------------------------------------- imports

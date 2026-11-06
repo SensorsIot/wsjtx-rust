@@ -9,7 +9,7 @@ block('settings-startup','Receive at startup',document.querySelector('#settings-
 block('settings-startup-resume','Startup resume',document.querySelector('#settings-expert'),'<p id="startup-resume" class="op-muted" role="status">Startup resume unknown</p>');
 // #52 CL-052-01: off by default; read when Settings opens (at most every 30 s) or on Refresh, never polled.
 block('settings-window-diagnostics','Decode window diagnostics',document.querySelector('#settings-expert'),'<label class="op-check"><input type="checkbox" id="window-dump" disabled>Save FT8 decode windows</label><p id="window-diagnostics" class="op-muted" role="status">Window counters unknown</p><button type="button" id="window-diagnostics-refresh">Refresh</button><p class="op-muted">Keeps the last 20 FT8 prompt windows (12 kHz WAV and JSON) in the profile folder diagnostic-windows. Saved at once; it acts from the next window.</p>');
-block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station: Auto in the strategy element or an MCP client. Its state shows beside the strategy element; HALT ends it; Esc aborts the current QSO. The Tx watchdog stops transmitting when one message would be sent more often than its limit. A different message or a new contact starts the count again; after a stop only Enable Tx or Auto in this browser transmits again, automation never does.</p>');
+block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station: a strategy selected in the strategy element, or an MCP client. Its state shows beside the strategy element; HALT ends it; Esc aborts the current QSO. A strategy keeps running through a page reload; with no browser or MCP client connected for 60 s, or 8 hours after its selection also with a browser open, it starts nothing new, ends the QSO in progress and stops (select it again to restart). The Tx watchdog stops transmitting when one message would be sent more often than its limit. A different message or a new contact starts the count again; after a stop only Enable Tx or a new strategy selection in this browser transmits again, automation never does.</p>');
 block('settings-transmit','Transmit',document.querySelector('#settings-radio'),'<label>Tx watchdog (repetitions of one message)<input id="watchdog-tx" type="number" min="1" max="99" step="1" disabled></label><label>Tune watchdog (seconds)<input id="watchdog-tune" type="number" min="1" max="300" step="1" disabled></label><p id="watchdog-result" class="op-muted" role="status"></p><p class="op-muted">Watchdogs apply at once, as in WSJT-X. Tx power is set on the transceiver; this station sends no power command. PTT is chosen under CAT.</p>');
 block('settings-log','Log',document.querySelector('#settings-logging'),'<p>Each completed QSO is logged at once, as in WSJT-X: saved in this station profile’s contacts.adi (ADIF) and sent to the UDP targets that select QSO Logged / Logged ADIF. There is no review step; Log QSO logs the current contact now.</p><button type="button" data-region="logbook">&#9776; Open Logbook</button>');
 // #10 logbook.js (loaded first) made Update logbook from ADIF; it belongs below the Log block.
@@ -39,7 +39,7 @@ window.wstxConfirm=function(text,okLabel='Continue'){
 // The modal popup makes the page inert, so it carries HALT itself (same action and state).
 confirmDialog.querySelector('#op-confirm-halt').addEventListener('click',()=>{confirmDialog.close('cancel');halt.click();});
 main.append(confirmDialog);
-document.querySelector('#band-activity').insertAdjacentHTML('afterbegin','<div id="strategy-element" class="op-strategy-bar" role="group" aria-label="Strategy"><span class="op-strategy-label">Strategy</span><select id="strategy-name" disabled aria-label="Strategy name" title="Strategies are loading"><option value="">None</option></select><button type="button" id="strategy-edit" disabled aria-label="Edit strategy" title="Strategies are loading">&#9998;</button><span class="op-segmented" role="group" aria-label="Strategy mode"><button type="button" id="strategy-highlight" disabled aria-pressed="false" title="Choose a strategy first">Highlight</button><button type="button" id="strategy-auto" disabled aria-pressed="false" title="Choose a strategy first">Auto</button></span><span id="station-automation" class="op-automation" role="status">Automation idle</span></div>');
+document.querySelector('#band-activity').insertAdjacentHTML('afterbegin','<div id="strategy-element" class="op-strategy-bar" role="group" aria-label="Strategy"><span class="op-strategy-label">Strategy</span><select id="strategy-name" disabled aria-label="Strategy name" title="Strategies are loading"><option value="">None</option></select><button type="button" id="strategy-edit" disabled aria-label="Edit strategy" title="Strategies are loading">&#9998;</button><button type="button" id="activity-value" aria-pressed="true" title="Sort Band Activity by value">Value</button><span id="station-automation" class="op-automation" role="status">Automation idle</span></div>');
 const slotsMarkup=['tx1','tx2','tx3','tx4','tx5','tx6'];
 focus.querySelector('.op-contact-body').insertAdjacentHTML('beforeend',`<details id="qso-more"><summary title="Messages Tx1&ndash;Tx6 and activity" aria-label="Messages Tx1&ndash;Tx6 and activity">Tx1&ndash;Tx6</summary><div class="ct-more-body"><div class="ct-dx"><label>Activity<select id="contact-activity" disabled><option value="none">None</option><option value="na_vhf">NA VHF</option><option value="ww_digi">WW Digi</option><option value="arrl_digi">ARRL Digi</option><option value="field_day">Field Day</option><option value="rtty">RTTY Roundup</option><option value="hound">Hound</option></select></label><label title="Field Day: class and section, e.g. 1A EMA. RTTY Roundup: state or province, or DX or # for a serial number">Exchange<input id="contact-exchange" maxlength="8" autocomplete="off" spellcheck="false" disabled></label><span id="contact-serial" class="op-muted"></span></div><ol id="contact-messages" class="ct-messages" aria-label="Standard messages Tx1 to Tx6">${slotsMarkup.map((s,i)=>`<li data-slot="${s}"><label class="ct-next"><input type="radio" name="contact-next" value="${s}" aria-label="Next message Tx${i+1}" disabled>Tx${i+1}</label><button type="button" class="ct-now" data-slot="${s}" aria-label="Send Tx${i+1} now" title="Send Tx${i+1} from the next own period (turns Enable Tx on)" disabled>Now</button><input class="ct-text" data-slot="${s}" maxlength="37" aria-label="Tx${i+1} message" autocomplete="off" spellcheck="false" disabled>${s==='tx1'?'<label class="op-check"><input type="checkbox" id="contact-tx1-skip" disabled>Skip Tx1</label>':''}${s==='tx4'?'<label class="op-check"><input type="checkbox" id="contact-rr73" disabled>RR73</label>':''}</li>`).join('')}</ol>
 <div class="op-frequency-fields ct-fields"><button type="button" id="contact-cancel" disabled>Cancel contact</button><span id="contact-watchdog" class="op-muted"></span></div></div></details>`);
@@ -310,9 +310,10 @@ function loadAutomation(){
     const run=a?.v===1?a.run:null,active=run&&run.state!=='stopped';
     automationNode.dataset.active=String(!!active);
     // #42 a pounce run names its call (WstxStrategy::Pounce).
+    // A strategy run's state is the strategy client's (WstxStrategy::StrategySelector).
     // #39 WstxStrategy::FreeTxSlot: no free slot keeps the current one and says so.
     const slot=active&&run.tx_slot?.free===false?' · no free Tx slot':'';
-    automationNode.textContent=active&&run.pounce?`Pounce ${run.pounce.call} ${run.state==='waiting'?'waiting':'in QSO'}${slot} · HALT ends it`:active?`Automation ${{waiting:'waiting',calling_cq:'calling CQ',manual:'paused for your QSO'}[run.state]??'in contact'}${slot} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
+    if(!a?.configuration?.strategy&&!a?.strategy_refusal)automationNode.textContent=active&&run.pounce?`Pounce ${run.pounce.call} ${run.state==='waiting'?'waiting':'in QSO'}${slot} · HALT ends it`:active?`Automation ${{waiting:'waiting',manual:'paused for your QSO'}[run.state]??'in contact'}${slot} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
     if(a?.v===1)dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));
   }).catch(()=>{}).finally(()=>{automationLoading=null;});
   return automationLoading;
@@ -969,21 +970,22 @@ serverForm.addEventListener('submit',async event=>{
 window.wstxContact=Object.freeze({load,snapshot:()=>snap});
 stateShow();
 })();
-// #39 WstxStrategy: the strategy element (name, editor, Highlight | Auto), Highlight in
+// #39 WstxStrategy: the strategy element (selector, editor, Value), the marks and value order in
 // Band Activity and the editor popup. The station evaluates every strategy (POST
-// /strategy/evaluate); this client only shows its verdicts and sends explicit requests.
+// /strategy/evaluate) and decides the run; this client only sends the selection and shows verdicts.
 (()=>{
 const $=id=>document.getElementById(id);
-const nameSelect=$('strategy-name'),editButton=$('strategy-edit'),highlightButton=$('strategy-highlight'),autoButton=$('strategy-auto'),statusNode=$('station-automation');
+const nameSelect=$('strategy-name'),editButton=$('strategy-edit'),valueButton=$('activity-value'),statusNode=$('station-automation');
 if(!nameSelect)return;
-let view=null,viewLoading=null,strategyMissing=false,run=null,autoConfirmed=false,verdicts=new Map(),evaluatedKey='',evaluating=false,lastEvaluation=-Infinity;
+let view=null,viewLoading=null,viewAgain=false,strategyMissing=false,run=null,refusal=null,pounceConfirmed=false,verdicts=new Map(),evaluatedKey='',evaluating=false,evaluateAgain=false;
 const config=()=>view?.configuration??null;
 const active=()=>{const c=config();return c?.strategies.find(s=>s.name===c.active)??null;};
 const runActive=()=>!!run&&run.state!=='stopped';
 const strategyRun=()=>runActive()&&run.strategy;
 function loadStrategy(){
-  if(viewLoading)return viewLoading;
-  viewLoading=stationFetch('/strategy',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>{strategyMissing=r.status===404;return r.ok?r.json():null;}).then(v=>{if(v?.v===1){if(view?.revision!==v.revision){verdicts=new Map();evaluatedKey='';}view=v;show();}}).catch(()=>{}).finally(()=>{viewLoading=null;});
+  // A change announced during a read reads again: it must not leave an older view.
+  if(viewLoading){viewAgain=true;return viewLoading;}
+  viewLoading=stationFetch('/strategy',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>{strategyMissing=r.status===404;return r.ok?r.json():null;}).then(v=>{if(v?.v===1){if(view?.revision!==v.revision){verdicts=new Map();evaluatedKey='';}view=v;show();evaluateShown();}}).catch(()=>{}).finally(()=>{viewLoading=null;if(viewAgain){viewAgain=false;loadStrategy();}});
   return viewLoading;
 }
 async function saveConfiguration(configuration,label){
@@ -992,91 +994,102 @@ async function saveConfiguration(configuration,label){
     const response=await stationFetch('/strategy',{method:'PUT',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,expected_revision:view.revision,configuration}),signal:AbortSignal.timeout(10000)});
     const data=await response.json().catch(()=>null);
     if(!response.ok||data?.v!==1){const e=data?.error;statusNode.textContent=`${label} not saved · ${e?.code??response.status}${e?.field?` (${e.field})`:''}${e?.code==='stale_revision'?' · changed elsewhere, reloaded':''}`;if(e?.code==='stale_revision')await loadStrategy();return false;}
-    // A saved configuration is evaluated at once, not at the next row change or 5 s check (#10:
-    // no result re-read re-renders the rows any more).
+    // A saved configuration is evaluated at once, not at the next publication.
     view=data;verdicts=new Map();evaluatedKey='';show();evaluateShown();return true;
   }catch(error){statusNode.textContent=`${label} not saved · ${error.message}`;return false;}
 }
+const words_=t=>String(t).replace(/_/g,' ');
+// WstxStrategy::StrategySelector: the run state, from GET /automation on automation.state only.
+function showRun(){
+  const name=config()?.active;
+  // None: a run the HALT or a selection ended (the generic text is for other runs).
+  if(!name){if(run?.strategy){statusNode.dataset.active='false';statusNode.textContent=run.reason&&run.reason!=='stopped'?`Strategy stopped · ${words_(run.reason)}`:'Strategy None';}return;}
+  if(refusal){statusNode.textContent=`Strategy ${name} not started · ${words_(refusal)}`;statusNode.dataset.active='false';return;}
+  if(!run||!run.strategy||runActive()&&run.pounce)return;
+  statusNode.dataset.active=String(strategyRun());
+  // WstxStrategy::FreeTxSlot: no free slot keeps the current one and says so.
+  const slot=run.tx_slot?.free===false?' · no free Tx slot':'';
+  statusNode.textContent=!strategyRun()?`Strategy ${name} stopped${run.reason?` · ${words_(run.reason)}`:''}`:run.state==='contact_active'?`Strategy ${name} · ${run.selected?.call??'in QSO'}${slot}`:run.state==='manual'?`Strategy ${name} · your QSO`:`Strategy ${name} waiting${run.reason?` · ${words_(run.reason)}`:''}${slot}`;
+}
 function show(){
-  const c=config(),locked=strategyRun();
+  const c=config();
   const options=[['','None'],...(c?.strategies??[]).map(s=>[s.name,s.name])];
   const key=options.map(o=>o[0]).join('\n');
   if(nameSelect.dataset.key!==key){nameSelect.dataset.key=key;nameSelect.replaceChildren(...options.map(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;return o;}));}
-  if(document.activeElement!==nameSelect)nameSelect.value=c?.active??'';
-  nameSelect.disabled=!c||locked;nameSelect.title=locked?'Auto runs with this strategy; stop Auto to change it':c?'Choose the strategy':(view?.configuration_error?`Saved strategies unreadable (${view.configuration_error}); the editor's Save replaces them`:'Strategies unavailable');
+  // Always the station's: a HALT's None must show also while the selector has the focus.
+  nameSelect.value=c?.active??'';
+  nameSelect.disabled=!c;nameSelect.title=c?'Selecting a strategy starts it; None stops it':(view?.configuration_error?`Saved strategies unreadable (${view.configuration_error}); the editor's Save replaces them`:'Strategies unavailable');
   editButton.disabled=!view;editButton.title='Edit strategies (the station keeps receiving)';
-  const on=!!c?.highlight&&!!active();
-  highlightButton.disabled=!active();highlightButton.setAttribute('aria-pressed',String(on));highlightButton.title=active()?'Colour matching decodes and sort them to the top':'Choose a strategy first';
-  const capable=window.wstxContact?.snapshot()?.transmit?.capability==='available';
-  autoButton.disabled=runActive()?!strategyRun():!active()||!capable;
-  autoButton.setAttribute('aria-pressed',String(strategyRun()));
-  autoButton.title=strategyRun()?'Stop Auto':runActive()&&run.pounce?`Pouncing on ${run.pounce.call}: stop the pounce first`:runActive()?'An MCP automation run is active; HALT ends it':!active()?'Choose a strategy first':!capable?'Transmission unavailable':'Answer only stations matching the strategy (transmits)';
-  showContinent();showIgnore();showPounce();
-  autoButton.textContent=strategyRun()?`Auto · ${run.state==='calling_cq'?'CQ':run.state==='contact_active'?(run.selected?.call??'QSO'):run.state==='manual'?'your QSO':'waiting'}`:'Auto';
+  showContinent();showIgnore();showPounce();showMostWanted();showRun();
   decorate();
 }
-// ---------------------------------------------------------------- Highlight
+// ---------------------------------------------------------------- marks and value order
 const tbody=document.querySelector('#band-activity tbody');
 const identity=()=>typeof live!=='undefined'&&live?.job?liveIdentity(live):'';
-function highlightOn(){const c=config();return !!c?.highlight&&!!active()&&!!identity();}
+function marksOn(){return !!active()&&!!identity();}
+const valueSort=()=>typeof activitySortField!=='undefined'&&activitySortField==='value';
 let reordering=false;
 function decorate(){
   if(!tbody)return;
-  const on=highlightOn(),rows=[...tbody.querySelectorAll('tr[data-sequence]')];
+  valueButton.setAttribute('aria-pressed',String(valueSort()));
+  const on=marksOn(),rows=[...tbody.querySelectorAll('tr[data-sequence]')];
   for(const tr of rows){
     const v=on?verdicts.get(tr.dataset.resultId):null;
     tr.classList.toggle('ba-strategy',v?.rank!==null&&v?.rank!==undefined);tr.classList.toggle('ba-grey',!!v?.grey);
     if(v&&v.rank!==null)tr.dataset.rank=String(v.rank+1);else delete tr.dataset.rank;
     // #55 BandActivityHover: the verdict joins the row's other reasons.
-    if(v?.grey)tr.dataset.whyStrategy='Directed CQ, not calling us: the strategy skips it, a double-click warns';else if(v&&v.rank!==null)tr.dataset.whyStrategy=`Strategy ${config().active}: rule ${v.rank+1}`;else delete tr.dataset.whyStrategy;window.wstxActivityWhy?.(tr);
+    if(v?.grey)tr.dataset.whyStrategy='Directed CQ, not calling us: the strategy skips it, a double-click warns';else if(v&&v.rank!==null)tr.dataset.whyStrategy=`Strategy ${config().active}: #${v.rank+1}`;else delete tr.dataset.whyStrategy;window.wstxActivityWhy?.(tr);
   }
-  if(!on)return;
-  // Matches go to the top of their period block in the station's order.
+  // WstxStrategy::ValueView: in the value sort the ranked rows go up in the station's order; a
+  // column click sorts by the column until Value is chosen again (the marks stay).
+  if(!on||!valueSort())return;
   reordering=true;
   let block=[];
   const flush=()=>{
-    const matched=block.filter(tr=>tr.classList.contains('ba-strategy')).sort((a,b)=>verdicts.get(a.dataset.resultId).index-verdicts.get(b.dataset.resultId).index);
-    if(!matched.length)return;
+    const ranked=block.filter(tr=>tr.classList.contains('ba-strategy')).sort((a,b)=>verdicts.get(a.dataset.resultId).rank-verdicts.get(b.dataset.resultId).rank);
+    if(!ranked.length)return;
     const anchor=block.at(-1).nextSibling;
-    // #55 BandActivityValue: in the value order rows calling me stay above the strategy hits (value 2).
-    const first=typeof activitySortField!=='undefined'&&activitySortField==='value'?block.filter(r=>r.classList.contains('ba-tome')):[];
-    for(const tr of [...first,...matched.filter(r=>!first.includes(r)),...block.filter(r=>!matched.includes(r)&&!first.includes(r))])tbody.insertBefore(tr,anchor);
+    // #55 BandActivityValue: rows calling me stay above the candidates (value 1), also when ignored.
+    const first=block.filter(r=>r.classList.contains('ba-tome')),order=[...ranked.filter(r=>first.includes(r)),...first.filter(r=>!ranked.includes(r)),...ranked.filter(r=>!first.includes(r))];
+    for(const tr of [...order,...block.filter(r=>!order.includes(r))])tbody.insertBefore(tr,anchor);
   };
   for(const tr of [...tbody.children]){if(tr.classList.contains('ba-divider')){flush();block=[];}else if(tr.dataset.sequence)block.push(tr);}
   flush();observer.takeRecords();reordering=false;
 }
 function wanted(){
   // The sequences shown for the current receive identity, evaluated once each.
-  const id=identity();if(!highlightOn()||!id)return null;
+  const id=identity();if(!marksOn()||!id)return null;
   const seqs=[...tbody.querySelectorAll('tr[data-sequence]')].filter(tr=>tr.dataset.resultId.startsWith(id+'/')).map(tr=>Number(tr.dataset.sequence)).filter(Number.isSafeInteger);
   if(!seqs.length)return null;
   const first=Math.min(...seqs),next=Math.max(...seqs)+1;
   return {first:Math.max(first,next-2048),next,id};
 }
+// Asked after a new publication event (its rows have arrived) and after a save or an ignore;
+// never on a timer.
 async function evaluateShown(){
-  const w=wanted();if(!w||evaluating)return;
+  // Rows that arrive during an evaluation are asked for when it ends (no timer).
+  if(evaluating){evaluateAgain=true;return;}
+  const w=wanted();if(!w)return;
   const key=`${view.revision}/${w.id}/${w.first}/${w.next}`;if(key===evaluatedKey)return;
-  // Once per complete period (or every 15 s while one loads): a Thin link stays light.
-  const loaded=typeof resultView!=='undefined'&&resultView&&resultCursor>=resultView.next_sequence;
-  if(!loaded&&performance.now()-lastEvaluation<15000)return;
-  evaluating=true;lastEvaluation=performance.now();
+  if(!(typeof resultView!=='undefined'&&resultView&&resultCursor>=resultView.next_sequence))return;
+  evaluating=true;
   try{
     const [,,source_id,job_id,generation]=w.id.split('/');
     const response=await stationFetch('/strategy/evaluate',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,source_id,job_id,generation:Number(generation),first_sequence:w.first,next_sequence:w.next,strategy:null,explain:false}),signal:AbortSignal.timeout(10000)});
     const data=await response.json().catch(()=>null);
     if(response.ok&&data?.v===1&&w.id===identity()){
-      const map=new Map();data.verdicts.forEach((v,index)=>map.set(`${w.id}/${v.sequence}`,{rank:v.rank,grey:v.grey,index}));
+      const map=new Map();data.verdicts.forEach(v=>map.set(`${w.id}/${v.sequence}`,{rank:v.rank,grey:v.grey}));
       verdicts=map;evaluatedKey=key;decorate();
     }
-  }catch{}finally{evaluating=false;}
+  }catch{}finally{evaluating=false;if(evaluateAgain){evaluateAgain=false;evaluateShown();}}
 }
 const observer=new MutationObserver(()=>{if(reordering)return;decorate();evaluateShown();});
 if(tbody)observer.observe(tbody,{childList:true});
-setInterval(evaluateShown,5000);
-nameSelect.addEventListener('change',()=>{const c=config();if(!c)return;const name=nameSelect.value||null;saveConfiguration({...c,active:name,highlight:name?c.highlight:false},'Strategy').then(ok=>{if(!ok)show();});});
-highlightButton.addEventListener('click',()=>{const c=config();if(!c||!active())return;saveConfiguration({...c,highlight:!c.highlight},'Highlight');});
-// ---------------------------------------------------------------- Auto
-addEventListener('wstx-automation',event=>{run=event.detail?.run??null;if(run)run.strategy=!!event.detail?.configuration?.strategy;show();});
+nameSelect.addEventListener('change',()=>{const c=config();if(!c)return;saveConfiguration({...c,active:nameSelect.value||null},'Strategy').then(ok=>{if(!ok)show();});});
+valueButton.addEventListener('click',()=>{if(typeof sortBy==='function')sortBy({dataset:{sort:'value'}});show();});
+document.querySelector('#band-activity thead')?.addEventListener('click',()=>valueButton.setAttribute('aria-pressed',String(valueSort())));
+// ---------------------------------------------------------------- run state
+addEventListener('wstx-automation',event=>{run=event.detail?.run??null;refusal=event.detail?.strategy_refusal??null;if(run)run.strategy=!!event.detail?.configuration?.strategy;show();});
 async function automationCommand(action,extra){
   const s=window.wstxContact?.snapshot();if(!s)throw new Error('contact state unavailable');
   const response=await stationFetch('/automation/command',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),action,...extra}),signal:AbortSignal.timeout(10000)});
@@ -1085,25 +1098,8 @@ async function automationCommand(action,extra){
   return data;
 }
 async function readAutomation(){const r=await stationFetch('/automation',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!r.ok)throw new Error(`automation ${r.status}`);return r.json();}
-autoButton.addEventListener('click',async()=>{
-  if(runActive()){if(!strategyRun())return;try{await automationCommand('stop',{run_id:run.id});}catch(error){statusNode.textContent=`Auto stop refused · ${error.message}`;}return;}
-  const s=active(),c=window.wstxContact?.snapshot(),mode=typeof live!=='undefined'?live?.job?.mode:null;
-  if(!s||!c||!['ft8','ft4'].includes(mode)){statusNode.textContent='Auto needs a strategy and FT8/FT4 receive';return;}
-  // First use in this page session asks once; HALT stops Auto at any time.
-  if(!autoConfirmed){
-    const ok=await window.wstxConfirm(`Auto transmits without asking: it answers only stations that match "${s.name}" (${{call:'Auto Call',cq:'Auto CQ',alternate:`Auto Call and Auto CQ, switching after ${s.switch_after} tries`}[s.auto_role]}). The Tx watchdog stops it when one message would be sent more than ${c.settings.tx_calls} times; a new message or station starts that count again, so Auto can run until its limit of 8 hours. HALT stops it; Esc aborts the current QSO.`,'Start Auto');
-    if(!ok)return;autoConfirmed=true;
-  }
-  autoButton.disabled=true;
-  try{
-    let a=await readAutomation();
-    await automationCommand('configure',{expected_policy_revision:a.policy_revision,configuration:{modes:[mode],ranking:'first_seen',min_snr_db:null,allowed_calls:[],blocked_calls:[],max_contacts:100,max_unanswered_periods:20,completion_action:'next_candidate',max_run_minutes:480,strategy:true}});
-    a=await readAutomation();
-    await automationCommand('start',{expected_policy_revision:a.policy_revision,expected_run_revision:a.run_revision,mode,safety_revision:window.wstxContact.snapshot()?.transmit?.safety_revision??null});
-  }catch(error){statusNode.textContent=`Auto not started · ${error.message}`;}
-  finally{show();}
-});
-addEventListener('station-message',event=>{const m=event.detail?.message;if(m?.type==='contact.state')show();});
+// WstxStrategy::StrategyHttp strategy.state: a HALT's None or another browser's selection.
+addEventListener('station-message',event=>{const m=event.detail?.message;if(m?.type==='contact.state')show();else if(m?.type==='strategy.state'&&event.detail?.current===socket&&m.data?.strategy_revision!==view?.revision)loadStrategy();});
 // ---------------------------------------------------------------- continent (Settings > General)
 const continentSelect=$('station-continent');
 function showContinent(){
@@ -1116,7 +1112,7 @@ continentSelect?.addEventListener('change',()=>{const c=config();if(c)saveConfig
 // WstxStrategy::IgnoreLists: the station keeps both lists and applies them; this client
 // only edits them (PUT /strategy for the permanent list, POST /strategy/ignore for the
 // session list) and shows the session list the station returns.
-continentSelect?.closest('label')?.insertAdjacentHTML('afterend','<label>Always ignore (calls)<input id="ignore-calls" spellcheck="false" autocomplete="off" placeholder="K1ABC DL1XYZ" aria-describedby="ignore-help"></label><label>Session ignore (minutes)<input id="ignore-minutes" type="number" min="1" max="720" step="1"></label><div class="op-ignore-session"><small id="ignore-help">Ignored stations are never highlighted or answered by Auto. Band Activity right-click adds a station for this session; a band change clears the session list.</small><ul id="ignore-session" aria-label="Ignored this session"></ul></div>');
+continentSelect?.closest('label')?.insertAdjacentHTML('afterend','<label>Always ignore (calls)<input id="ignore-calls" spellcheck="false" autocomplete="off" placeholder="K1ABC DL1XYZ" aria-describedby="ignore-help"></label><label>Session ignore (minutes)<input id="ignore-minutes" type="number" min="1" max="720" step="1"></label><div class="op-ignore-session"><small id="ignore-help">Ignored stations are never marked or answered by a strategy. Band Activity right-click adds a station for this session; a band change clears the session list.</small><ul id="ignore-session" aria-label="Ignored this session"></ul></div>');
 const ignoreCalls=$('ignore-calls'),ignoreMinutes=$('ignore-minutes'),ignoreList=$('ignore-session');
 const sessionIgnored=call=>(view?.session_ignore??[]).some(e=>e.call===call);
 function showIgnore(){
@@ -1136,7 +1132,7 @@ async function ignore(call,on){
     const data=await response.json().catch(()=>null);
     if(!response.ok||data?.v!==1){const e=data?.error;statusNode.textContent=`Ignore not saved · ${e?.code??response.status}${e?.field?` (${e.field})`:''}`;return;}
     // The shown rows are evaluated again with the station's new list.
-    view=data;verdicts=new Map();evaluatedKey='';lastEvaluation=-Infinity;show();evaluateShown();
+    view=data;verdicts=new Map();evaluatedKey='';show();evaluateShown();
   }catch(error){statusNode.textContent=`Ignore not saved · ${error.message}`;}
 }
 // A change that leaves the saved value as it is (a repeated change on blur) sends nothing.
@@ -1171,10 +1167,10 @@ addEventListener('wstx-row-menu',event=>{
 });
 ignoreItem.addEventListener('click',()=>{const call=ignoreItem.dataset.call;if(call)ignore(call,!sessionIgnored(call));});
 // ---------------------------------------------------------------- #42 Alert
-// WstxStrategy::Alert: the station records the alerts of rules marked alert; this client
+// WstxStrategy::Alert: the station records an alert for each new candidate of the active strategy; this client
 // lists the history and announces new alerts as the operator chose (both off by default):
 // a short tone while the page is visible, a browser notification also while it is hidden.
-ignoreList?.closest('.op-ignore-session')?.insertAdjacentHTML('afterend','<div class="op-alerts" style="min-width:0"><strong>Alerts</strong> <small>A strategy rule marked Alert (strategy editor) records an alert; alerts never transmit.</small><br><label class="op-check"><input type="checkbox" id="alert-sound">Sound</label> <label class="op-check"><input type="checkbox" id="alert-notify">Browser notification</label> <small id="alert-note" role="status"></small><ul id="alert-history" aria-label="Alert history" style="margin:4px 0 0;padding-left:1.2em;max-height:12em;overflow:auto;overflow-wrap:anywhere"></ul><button type="button" id="alert-clear">Clear alerts</button></div>');
+ignoreList?.closest('.op-ignore-session')?.insertAdjacentHTML('afterend','<div class="op-alerts" style="min-width:0"><strong>Alerts</strong> <small>Each new station the active strategy would call records an alert; alerts never transmit.</small><br><label class="op-check"><input type="checkbox" id="alert-sound">Sound</label> <label class="op-check"><input type="checkbox" id="alert-notify">Browser notification</label> <small id="alert-note" role="status"></small><ul id="alert-history" aria-label="Alert history" style="margin:4px 0 0;padding-left:1.2em;max-height:12em;overflow:auto;overflow-wrap:anywhere"></ul><button type="button" id="alert-clear">Clear alerts</button></div>');
 const alertSound=$('alert-sound'),alertNotify=$('alert-notify'),alertList=$('alert-history'),alertNote=$('alert-note');
 let alertView=null,alertSeen=null,alertSocket=null,alertSeq=0,audio=null;
 const alertKey=()=>`wstx.alerts.v1:${alertView?.profile_id??view?.profile_id??''}`;
@@ -1253,10 +1249,10 @@ $('qso-pounce-stop')?.addEventListener('click',stopPounce);
 async function startPounce(call){
   const c=window.wstxContact?.snapshot(),mode=typeof live!=='undefined'?live?.job?.mode:null;
   if(!c||!['ft8','ft4'].includes(mode)){statusNode.textContent='Pounce needs FT8/FT4 receive';return;}
-  // The page session's one confirmation, shared with Auto.
-  if(!autoConfirmed){
+  // Asked once per page session.
+  if(!pounceConfirmed){
     const ok=await window.wstxConfirm(`Pounce transmits without asking: it answers ${call} when it calls CQ or ends a QSO with 73 on this band. The Tx watchdog stops it when one message would be sent more than ${c.settings.tx_calls} times. HALT stops it; Esc aborts the current QSO.`,'Pounce');
-    if(!ok)return;autoConfirmed=true;
+    if(!ok)return;pounceConfirmed=true;
   }
   try{
     let a=await readAutomation();
@@ -1267,14 +1263,30 @@ async function startPounce(call){
   finally{show();}
 }
 pounceItem.addEventListener('click',()=>{const call=pounceItem.dataset.call;if(!call)return;if(pouncing(call))stopPounce();else startPounce(call);});
+// ---------------------------------------------------------------- #39 Most Wanted list
+// WstxStrategy::MostWantedList in Settings > General: status with the source attribution, an upload
+// the station validates, and Download now, one fetch on the operator's click. No automatic refresh.
+if(typeof block==='function'&&document.querySelector('#settings-general'))block('settings-most-wanted','Most Wanted list',document.querySelector('#settings-general'),'<p class="op-actions"><span id="mw-status" class="op-muted" role="status">No list</span> <button type="button" id="mw-update" title="Fetches the list from clublog.org once, now">Update Most Wanted</button></p><p id="mw-result" class="op-muted" role="status"></p><p id="mw-attribution" class="op-muted"></p><p class="op-muted">A strategy calls the stations on this list first, by their rank, then the strongest; without a list the strongest first. It only changes when you click: Club Log states no terms for it.</p>');
+function showMostWanted(){
+  const status=$('mw-status');if(!status)return;const m=view?.most_wanted;
+  status.textContent=m?`List from ${m.date} · ${m.entries} entries${m.unmapped?` · ${m.unmapped} not mapped to an entity`:''}`:view?.most_wanted_unreadable?'The stored list is unreadable; strategies call the strongest first':'No list; strategies call the strongest first';
+  $('mw-attribution').textContent=view?.most_wanted_attribution??'';
+}
+$('mw-update')?.addEventListener('click',async()=>{
+  if(!view)return;const result=$('mw-result'),button=$('mw-update');button.disabled=true;result.textContent='';
+  try{
+    const response=await stationFetch('/strategy/most-wanted/download',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id}),signal:AbortSignal.timeout(40000)});
+    const data=await response.json().catch(()=>null);
+    // A failure keeps the list and says why, in one line.
+    if(!response.ok||data?.v!==1){result.textContent=`Update failed · ${data?.error?.reason??data?.error?.code??response.status}; the list stays as it was`;return;}
+    view=data;verdicts=new Map();evaluatedKey='';show();evaluateShown();result.textContent='Updated';
+  }catch(error){result.textContent=`Update failed · ${error.message}; the list stays as it was`;}
+  finally{button.disabled=false;}
+});
 // ---------------------------------------------------------------- editor popup
 const CONTINENTS=[['AF','Africa'],['AN','Antarctica'],['AS','Asia'],['EU','Europe'],['NA','North America'],['OC','Oceania'],['SA','South America']];
-const KINDS=[['message','Message type'],['new_call','New call'],['new_grid','New grid'],['new_dxcc','New DXCC'],['new_continent','New continent'],['new_cq_zone','New CQ zone'],['new_itu_zone','New ITU zone'],['continent','Continent'],['distance_km','Distance (km)'],['azimuth_deg','Azimuth (deg)'],['snr_db','SNR (dB)'],['dt_s','DT (s)'],['audio_hz','Audio frequency (Hz)'],['call','Call or prefix'],['cq_target','CQ target (DX, TEST, POTA...)'],['band','Band']];
-const MESSAGES=[['cq','CQ (any)'],['directed_cq','Directed CQ'],['to_me','Calls me'],['signoff','RR73 / 73']];
-// #42 the New matrix: call, grid and the sender's cty.dat entity, continent, CQ and ITU zone.
-const NEW_KINDS=['new_call','new_grid','new_dxcc','new_continent','new_cq_zone','new_itu_zone'];
-const fresh=kind=>NEW_KINDS.includes(kind)?{value:'ever'}:({message:{value:'cq'},continent:{values:['EU']},call:{values:['DL']},cq_target:{values:['DX']},band:{values:['40m']}}[kind]??{min:null,max:null});
-const newStrategy=name=>({name,rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3});
+const GOALS=[['dxcc','DXCC'],['dxcc_band','DXCC per band'],['dxcc_slot','DXCC slot (band and mode)'],['waz','WAZ (CQ zones)'],['wpx','WPX (prefixes)'],['grid','Grids'],['new_call','New call']];
+const newStrategy=name=>({name,class:'award',goals:['dxcc'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:true,window:{kind:'all'}});
 const editor=document.createElement('dialog');editor.id='strategy-editor';editor.className='op-dialog op-strategy-editor';editor.setAttribute('aria-labelledby','strategy-editor-title');
 editor.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="strategy-editor-title">Strategies</h2><button type="button" class="op-halt-small" id="strategy-editor-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button></header>
 <div class="se-pick"><label>Edit<select id="se-which"></select></label><button type="button" id="se-new">New</button><button type="button" id="se-copy">Duplicate</button><button type="button" id="se-delete">Delete</button></div>
@@ -1285,9 +1297,9 @@ document.querySelector('main').append(editor);
 let drafts=[],current=0,previewTimer=null,previewSeq=0;
 function editorOpen(){
   const c=config();drafts=structuredClone(c?.strategies??[]);current=Math.max(0,drafts.findIndex(s=>s.name===c?.active));
-  if(!drafts.length)drafts.push(newStrategy('CQ'));
+  if(!drafts.length)drafts.push(newStrategy('Strategy 1'));
   editor.querySelector('#strategy-editor-halt').disabled=document.querySelector('#halt-tx')?.disabled??true;
-  $('se-result').textContent=c?`My continent ${view.my_continent??'unknown'} (Settings > General) · Save applies at once`:'Saved strategies unreadable: Save replaces them';
+  $('se-result').textContent=c?`My continent ${view.my_continent??'unknown'} (Settings > General) · Save applies at once, selecting starts a strategy`:'Saved strategies unreadable: Save replaces them';
   renderEditor();editor.showModal();
 }
 editButton.addEventListener('click',editorOpen);
@@ -1295,59 +1307,46 @@ editButton.addEventListener('click',editorOpen);
 editor.querySelector('#strategy-editor-halt').addEventListener('click',()=>{editor.close('cancel');document.querySelector('#halt-tx')?.click();});
 function option(value,label,selected){return `<option value="${value}"${selected?' selected':''}>${label}</option>`;}
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function conditionMarkup(c,ri,ci){
-  let value='';
-  if(c.kind==='message')value=`<select data-f="value" aria-label="Message type">${MESSAGES.map(([v,l])=>option(v,l,c.value===v)).join('')}</select>`;
-  else if(NEW_KINDS.includes(c.kind))value=`<select data-f="value" aria-label="Scope">${option('ever','ever',c.value==='ever')}${option('band','on this band and mode',c.value==='band')}</select>`;
-  else if(c.kind==='continent')value=`<span class="se-continents" role="group" aria-label="Continents">${CONTINENTS.map(([v,l])=>`<label class="op-check" title="${l}"><input type="checkbox" data-continent="${v}"${c.values.includes(v)?' checked':''}>${v}</label>`).join('')}</span>`;
-  else if(c.values)value=`<input data-f="values" value="${esc(c.values.join(' '))}" aria-label="Values, separated by spaces" spellcheck="false" autocomplete="off">`;
-  else value=`<input type="number" step="any" data-f="min" value="${c.min??''}" placeholder="min" aria-label="Minimum"><input type="number" step="any" data-f="max" value="${c.max??''}" placeholder="max" aria-label="Maximum">`;
-  return `<li class="se-condition" data-rule="${ri}" data-condition="${ci}"><label class="op-check"><input type="checkbox" data-f="negate"${c.negate?' checked':''}>not</label><select data-f="kind" aria-label="Condition">${KINDS.map(([v,l])=>option(v,l,c.kind===v)).join('')}</select>${value}<button type="button" data-act="remove-condition" aria-label="Remove condition">&times;</button></li>`;
-}
 function renderEditor(){
   $('se-which').innerHTML=drafts.map((s,i)=>option(i,esc(s.name),i===current)).join('');
   const s=drafts[current];if(!s){$('se-body').innerHTML='<p class="op-muted">No strategy. Choose New.</p>';preview();return;}
+  const w=s.window,continents=s.region.continents??[];
   $('se-body').innerHTML=`<label>Name<input id="se-name" maxlength="32" value="${esc(s.name)}" autocomplete="off"></label>
-<p class="op-muted">A decode matches when every condition of a rule holds; rule 1 has the highest priority. CQs directed elsewhere (another continent, CQ DX from my own, any other word) never match.</p>
-<ol class="se-rules">${s.rules.map((r,ri)=>`<li><fieldset><legend>Rule ${ri+1}${ri===0?' (highest priority)':''}</legend><label class="op-check se-alert" title="Sound or browser notification when a decode matches this rule (Settings &gt; General); never transmits"><input type="checkbox" data-alert="${ri}"${r.alert?' checked':''}>Alert</label><ul class="se-conditions">${r.conditions.map((c,ci)=>conditionMarkup(c,ri,ci)).join('')}</ul><p class="op-actions"><button type="button" data-act="add-condition" data-rule="${ri}">Add condition</button>${ri?`<button type="button" data-act="up" data-rule="${ri}">Higher priority</button>`:''}${s.rules.length>1?`<button type="button" data-act="remove-rule" data-rule="${ri}">Remove rule</button>`:''}</p></fieldset></li>`).join('')}</ol>
-<p class="op-actions"><button type="button" data-act="add-rule"${s.rules.length>=8?' disabled':''}>Add rule</button></p>
-<div class="se-options"><label>Sort matches<select id="se-sort">${[['strongest','Strongest first'],['weakest','Weakest first'],['furthest','Furthest first'],['newest','Newest first']].map(([v,l])=>option(v,l,s.sort===v)).join('')}</select></label>
+<fieldset class="se-goals"><legend>Goals (a station is called when at least one is needed)</legend>${GOALS.map(([v,l])=>`<label class="op-check"><input type="checkbox" data-goal="${v}"${s.goals.includes(v)?' checked':''}>${l}</label>`).join('')}</fieldset>
+<div class="se-options"><label>Needed<select id="se-needed">${[['not_worked','Not worked'],['not_confirmed','Not worked or not confirmed']].map(([v,l])=>option(v,l,s.needed===v)).join('')}</select></label>
+<label>Region<select id="se-region">${[['all','All'],['dx','DX only (other continents)'],['selected','Selected continents']].map(([v,l])=>option(v,l,s.region.kind===v)).join('')}</select></label>
+${s.region.kind==='selected'?`<span class="se-continents" role="group" aria-label="Continents">${CONTINENTS.map(([v,l])=>`<label class="op-check" title="${l}"><input type="checkbox" data-continent="${v}"${continents.includes(v)?' checked':''}>${v}</label>`).join('')}</span>`:''}
+<label>Minimum SNR (dB)<input id="se-snr" type="number" min="-50" max="49" step="1" value="${s.min_snr_db??''}" placeholder="none"></label>
+<label>Calls per station<input id="se-calls" type="number" min="1" max="20" step="1" value="${s.calls_per_station}"></label>
 <label class="op-check"><input type="checkbox" id="se-73"${s.treat_73_as_cq?' checked':''}>Treat 73 as CQ (answer a station that just ended a QSO; my Tx frequency is held)</label>
-<label>Auto role<select id="se-role">${[['call','Auto Call: answer matching CQs'],['cq','Auto CQ: call CQ, answer callers'],['alternate','Alternate Call and CQ']].map(([v,l])=>option(v,l,s.auto_role===v)).join('')}</select></label>
-<label>Switch after (tries without a contact)<input id="se-switch" type="number" min="1" max="20" step="1" value="${s.switch_after}"></label>
-<label>Skip a station after (unanswered calls)<input id="se-skip" type="number" min="1" max="20" step="1" value="${s.skip_after}"></label>
-<label class="op-check"><input type="checkbox" id="se-callers"${s.apply_to_callers?' checked':''}>Auto CQ answers only callers that match</label></div>`;
+<label>Worked window<select id="se-window">${[['all','All time'],['today','Today (UTC)'],['from_to','From - to (UTC dates)']].map(([v,l])=>option(v,l,w.kind===v)).join('')}</select></label>
+${w.kind==='from_to'?`<label>From<input id="se-from" type="date" min="1930-01-01" max="2099-12-31" value="${esc(w.from)}"></label><label>To<input id="se-to" type="date" min="1930-01-01" max="2099-12-31" value="${esc(w.to)}"></label>`:''}</div>
+<p class="op-muted">Stations calling me are always answered, whatever these settings say. CQs directed elsewhere (another continent, CQ DX from my own, any other word) are never called.</p>`;
   preview();
 }
 function words(text,lower){return text.split(/[\s,]+/).map(w=>lower?w.toLowerCase():w.toUpperCase()).filter(Boolean);}
+const todayUtc=()=>new Date().toISOString().slice(0,10);
 editor.addEventListener('input',event=>{
-  const s=drafts[current];if(!s)return;const t=event.target,li=t.closest('.se-condition');
-  if(li){const c=s.rules[li.dataset.rule].conditions[li.dataset.condition],f=t.dataset.f;
-    if(f==='negate')c.negate=t.checked;
-    else if(f==='kind'){const n={kind:t.value,negate:c.negate,...fresh(t.value)};s.rules[li.dataset.rule].conditions[li.dataset.condition]=n;renderEditor();return;}
-    else if(f==='value')c.value=t.value;
-    else if(f==='values')c.values=words(t.value,c.kind==='band');
-    else if(f==='min'||f==='max')c[f]=t.value===''?null:Number(t.value);
-    else if(t.dataset.continent)c.values=[...li.querySelectorAll('[data-continent]')].filter(b=>b.checked).map(b=>b.dataset.continent);
-  }
-  else if(t.dataset.alert!==undefined){const r=s.rules[Number(t.dataset.alert)];if(t.checked)r.alert=true;else delete r.alert;}
+  const s=drafts[current];if(!s)return;const t=event.target;
+  if(t.dataset.goal){s.goals=GOALS.map(g=>g[0]).filter(g=>editor.querySelector(`[data-goal="${g}"]`).checked);}
+  else if(t.dataset.continent){s.region={kind:'selected',continents:[...editor.querySelectorAll('[data-continent]')].filter(b=>b.checked).map(b=>b.dataset.continent)};}
   else if(t.id==='se-name')s.name=t.value;
-  else if(t.id==='se-sort')s.sort=t.value;else if(t.id==='se-73')s.treat_73_as_cq=t.checked;else if(t.id==='se-role')s.auto_role=t.value;
-  else if(t.id==='se-switch')s.switch_after=Number(t.value);else if(t.id==='se-skip')s.skip_after=Number(t.value);else if(t.id==='se-callers')s.apply_to_callers=t.checked;
+  else if(t.id==='se-needed')s.needed=t.value;
+  else if(t.id==='se-region'){s.region=t.value==='selected'?{kind:'selected',continents:[view?.my_continent==='EU'?'NA':'EU']}:{kind:t.value};renderEditor();return;}
+  else if(t.id==='se-snr')s.min_snr_db=t.value===''?null:Number(t.value);
+  else if(t.id==='se-calls')s.calls_per_station=Number(t.value);
+  else if(t.id==='se-73')s.treat_73_as_cq=t.checked;
+  else if(t.id==='se-window'){s.window=t.value==='from_to'?{kind:'from_to',from:todayUtc(),to:todayUtc()}:{kind:t.value};renderEditor();return;}
+  else if(t.id==='se-from')s.window.from=t.value;
+  else if(t.id==='se-to')s.window.to=t.value;
   else if(t.id==='se-which'){current=Number(t.value);renderEditor();return;}
   schedulePreview();
 });
 editor.addEventListener('click',event=>{
-  const b=event.target.closest('button[data-act],#se-new,#se-copy,#se-delete');if(!b)return;const s=drafts[current],ri=Number(b.dataset.rule);
+  const b=event.target.closest('#se-new,#se-copy,#se-delete');if(!b)return;const s=drafts[current];
   if(b.id==='se-new'){let n=1;while(drafts.some(d=>d.name.toLowerCase()===`strategy ${n}`))n++;drafts.push(newStrategy(`Strategy ${n}`));current=drafts.length-1;}
   else if(b.id==='se-copy'&&s){const copy=structuredClone(s);copy.name=`${s.name} copy`.slice(0,32);drafts.push(copy);current=drafts.length-1;}
   else if(b.id==='se-delete'&&s){drafts.splice(current,1);current=Math.max(0,current-1);}
-  else if(!s)return;
-  else if(b.dataset.act==='add-condition'&&s.rules[ri].conditions.length<12)s.rules[ri].conditions.push({kind:'snr_db',negate:false,min:-15,max:null});
-  else if(b.dataset.act==='remove-condition'){const li=b.closest('.se-condition');s.rules[li.dataset.rule].conditions.splice(Number(li.dataset.condition),1);}
-  else if(b.dataset.act==='add-rule'&&s.rules.length<8)s.rules.push({conditions:[{kind:'message',negate:false,value:'cq'}]});
-  else if(b.dataset.act==='remove-rule')s.rules.splice(ri,1);
-  else if(b.dataset.act==='up'&&ri>0)[s.rules[ri-1],s.rules[ri]]=[s.rules[ri],s.rules[ri-1]];
   renderEditor();
 });
 function schedulePreview(){clearTimeout(previewTimer);previewTimer=setTimeout(preview,400);}
@@ -1363,15 +1362,14 @@ async function preview(){
     const text=new Map(resultRows.map(r=>[r.sequence,r.text]));
     body.replaceChildren(...data.verdicts.map(v=>{const tr=document.createElement('tr');tr.className=v.rank!==null?'ba-strategy':v.grey?'ba-grey':'';
       for(const t of [v.rank!==null?`#${v.rank+1}`:v.grey?'—':'',text.get(v.sequence)??`#${v.sequence}`,v.why]){const td=document.createElement('td');td.textContent=t;tr.append(td);}return tr;}));
-    status.textContent=`${data.verdicts.filter(v=>v.rank!==null).length} of ${data.verdicts.length} decodes match · ${periodLabel(latest.period_start_utc,live.job.mode)} UTC`;
+    status.textContent=`${data.verdicts.filter(v=>v.rank!==null).length} of ${data.verdicts.length} decodes would be called · ${periodLabel(latest.period_start_utc,live.job.mode)} UTC`;
   }catch(error){if(seq===previewSeq)status.textContent=`Preview unavailable · ${error.message}`;}
 }
 $('se-save').addEventListener('click',async()=>{
-  const c=config()??{continent:null,active:null,highlight:false,ignore_calls:[],session_ignore_minutes:30};
-  const names=drafts.map(d=>d.name);const keep=names.includes(c.active)?c.active:null;
-  // A strategy saved from the editor applies at once; the edited one becomes active if none was.
-  const activeName=keep??drafts[current]?.name??null;
-  const ok=await saveConfiguration({...c,continent:c.continent??null,active:activeName,highlight:!!c.highlight&&!!activeName,strategies:drafts},'Strategies');
+  const c=config()??{continent:null,active:null,ignore_calls:[],session_ignore_minutes:30};
+  // Save never selects: selecting starts a strategy. A deleted active one is None.
+  const names=drafts.map(d=>d.name);
+  const ok=await saveConfiguration({...c,continent:c.continent??null,active:names.includes(c.active)?c.active:null,strategies:drafts},'Strategies');
   $('se-result').textContent=ok?`Saved · revision ${view.revision} · applies now`:statusNode.textContent;
   if(ok){drafts=structuredClone(config().strategies);renderEditor();}
 });
