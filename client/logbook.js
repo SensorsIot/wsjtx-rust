@@ -120,7 +120,8 @@ function annotate(body,records){
   const period=resultView?`${liveIdentity(live)}/${resultView.first_sequence}/${resultView.period_start_utc}`:null;
   const complete=resultView?.complete&&resultCursor>=resultView.next_sequence;
   const from=r=>r.status==='decoded'&&r.fields?.type==='standard'&&r.fields.from?.kind==='call'&&typeof r.fields.from.text==='string'?r.fields.from.text.toUpperCase():null;
-  const decorate=()=>{for(const row of body.querySelectorAll('tr[data-sequence]')){const record=records.find(r=>String(r.sequence)===row.dataset.sequence),c=record&&from(record),status=c&&answered.get(c);if(!status||row.dataset.worked)continue;row.dataset.worked=status;row.dataset.workedOn=`${band} ${mode.toUpperCase()}`;window.wstxActivityWhy?.(row);}};
+  // The answer stays on its record: the record moves to the kept period and is drawn again there (#50 BandActivityHover).
+  const decorate=()=>{for(const row of body.querySelectorAll('tr[data-period=latest][data-sequence]')){const record=records.find(r=>String(r.sequence)===row.dataset.sequence),c=record&&from(record),status=c&&answered.get(c);if(!status||row.dataset.worked)continue;record.worked={status,on:`${band} ${mode.toUpperCase()}`};row.dataset.worked=status;row.dataset.workedOn=record.worked.on;window.wstxActivityWhy?.(row);}};
   if(!period||!band||!['ft8','ft4'].includes(mode))return;
   if(period===askedPeriod){decorate();return;}
   if(!complete)return;
