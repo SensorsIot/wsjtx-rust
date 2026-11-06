@@ -330,6 +330,12 @@ struct Run {
     skipped: Vec<String>,
     /// #42 Pounce: the call and the station band captured at start.
     pounce: Option<(String, String)>,
+    /// #39 WstxStrategy::FreeTxSlot: the last slot decision {hz, free}, for the status; the
+    /// station band last seen on a fresh publication, and the first sequence of that band
+    /// (a retune on the radio keeps the live job).
+    tx_slot: Option<Value>,
+    slot_band: Option<&'static str>,
+    slot_from: u64,
 }
 #[derive(Default)]
 struct Inner {
@@ -349,6 +355,9 @@ pub(crate) struct Owner {
     /// Test seam: runs between select_row and enable_tx (a racing Halt).
     #[cfg(test)]
     pub(crate) before_enable: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    /// Test seam: runs before a run moves Tx to its free slot (a racing operator).
+    #[cfg(test)]
+    pub(crate) before_slot_move: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 /// The descriptor of the latest receive publication, read before the contact step so
@@ -397,6 +406,19 @@ impl Owner {
     }
     #[cfg(not(test))]
     fn before_enable(&self) {}
+    #[cfg(test)]
+    fn before_slot_move(&self) {
+        let hook = self
+            .before_slot_move
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+    #[cfg(not(test))]
+    fn before_slot_move(&self) {}
     /// (policy_revision, run_revision): the automation.state event cursor.
     pub(crate) fn revisions(&self) -> (u64, u64) {
         let inner = self.lock();
@@ -410,7 +432,7 @@ impl Owner {
                 "completed_contacts":run.completed,"unanswered_periods":run.unanswered,
                 "contact_id":run.contact_id,"selected":run.selected,"last_decision":run.last_decision,
                 "role":run.role.map(|r| if r == strategy::Role::Cq {"cq"} else {"call"}),"tries":run.tries,
-                "skipped":run.skipped,
+                "skipped":run.skipped,"tx_slot":run.tx_slot,
                 "pounce":run.pounce.as_ref().map(|(call, band)| json!({"call":call,"band":band}))})
         });
         json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"policy_revision":inner.policy_revision,
@@ -645,6 +667,9 @@ impl Owner {
                     tries: 0,
                     skipped: Vec::new(),
                     pounce,
+                    tx_slot: None,
+                    slot_band: None,
+                    slot_from: 0,
                 });
                 inner.run_revision += 1;
             }
@@ -745,6 +770,8 @@ impl Owner {
         } else {
             None
         };
+        // The records before this sequence belong to complete publications.
+        let settled = publication.as_ref().map(|p| if p.3 { p.2 } else { p.1 });
         let fresh = publication
             .filter(|p| p.3 && p.0 > run.last_decode)
             .map(|p| (p.0, p.1, p.2, p.4));
@@ -770,8 +797,15 @@ impl Owner {
                 .is_some_and(|ms| wstx_rust::transmit::parity(mode, ms) != c.parity)
         });
         let run = inner.run.as_mut().expect("checked");
-        if let Some((id, _, _, _)) = &fresh {
+        if let Some((id, _, next, _)) = &fresh {
             run.last_decode = *id;
+            if let Some(band) = strategy::station_band(r) {
+                // The publication that shows the change may hold either band: not counted.
+                if run.slot_band.is_some_and(|seen| seen != band) {
+                    run.slot_from = *next;
+                }
+                run.slot_band = Some(band);
+            }
         }
         if let Some((_, s)) = &chosen
             && s.role != strategy::Role::Alternate
@@ -986,7 +1020,7 @@ impl Owner {
                     return stop(&mut inner, "contact_changed", false);
                 }
                 if run.role == Some(strategy::Role::Cq) {
-                    return self.call_cq(&mut inner, contact, state);
+                    return self.call_cq(&mut inner, contact, state, settled);
                 }
                 let Some((_, first, next, _)) = fresh else {
                     return;
@@ -996,8 +1030,7 @@ impl Owner {
                     .first()
                     .map(|v| v["period_start_utc"].clone())
                     .unwrap_or(Value::Null);
-                // (call, sequence, answering an RR73/73 rather than a CQ)
-                let list: Vec<(String, u64, bool)> = match (&run.pounce, &chosen) {
+                let list: Vec<(String, u64)> = match (&run.pounce, &chosen) {
                     // #42 Pounce: the chosen call's CQ (not greyed) or RR73/73 to another
                     // call, never when ignored; the first by sequence.
                     (Some((target, _)), _) => {
@@ -1014,13 +1047,13 @@ impl Owner {
                                     && st.cq_like(f, true)
                             })
                             .min_by_key(|f| f.sequence)
-                            .map(|f| (f.from, f.sequence, !f.cq))
+                            .map(|f| (f.from, f.sequence))
                             .into_iter()
                             .collect()
                     }
                     (None, None) => candidates(&records, &run.config, &my, &run.worked)
                         .into_iter()
-                        .map(|c| (c.call, c.sequence, false))
+                        .map(|c| (c.call, c.sequence))
                         .collect(),
                     (None, Some((config, s))) => {
                         let st = strategy::station(state, config, &records);
@@ -1042,7 +1075,7 @@ impl Owner {
                                 seen.push(v.facts.from.clone());
                                 first
                             })
-                            .map(|v| (v.facts.from, v.facts.sequence, !v.facts.cq))
+                            .map(|v| (v.facts.from, v.facts.sequence))
                             .collect()
                     }
                 };
@@ -1051,7 +1084,7 @@ impl Owner {
                     "selected_call":chosen_row.as_ref().map(|c|c.0.clone())}));
                 inner.run_revision += 1;
                 let run = inner.run.as_mut().expect("checked");
-                let Some((call, sequence, after_73)) = chosen_row else {
+                let Some((call, sequence)) = chosen_row else {
                     if let Some((_, s)) = &chosen {
                         run.tries += 1;
                         switch(run, s);
@@ -1081,24 +1114,33 @@ impl Owner {
                 };
                 let prepared = contact.facts().1.map(|c| c.id);
                 let mut revision = receipt["contact_revision"].as_u64().unwrap_or(revision);
-                // #39 Treat 73 as CQ: keep my Tx frequency (Hold Tx) so the answer never
-                // lands on the final 73 of the QSO that just ended.
-                if after_73 && contact.status_facts().tx_hz != held_tx {
-                    let body = contact_body(
-                        r,
+                // #39 WstxStrategy::FreeTxSlot: the call goes out from a free slot, never
+                // from the called station's frequency (the selection's Rx).
+                if run.config.strategy || run.pounce.is_some() {
+                    let called = contact.status_facts().rx_hz;
+                    let taken = take_slot(
+                        run,
+                        contact,
+                        state,
+                        settled,
+                        held_tx,
+                        Some(called),
                         revision,
-                        "set_frequency",
-                        json!({"rx_hz":null,"tx_hz":held_tx}),
                     );
-                    match contact.operate_as(state, body, true, AUTOMATION) {
-                        Ok((_, receipt)) => {
-                            revision = receipt["contact_revision"].as_u64().unwrap_or(revision)
+                    let Some(taken) = taken else {
+                        // As for enable_tx: another contact is the operator's.
+                        if run.config.strategy
+                            && contact
+                                .facts()
+                                .1
+                                .is_some_and(|c| c.active && Some(&c.id) != prepared.as_ref())
+                        {
+                            return manual(&mut inner);
                         }
-                        Err(_) => {
-                            cancel(contact, state);
-                            return stop(&mut inner, "provider_error", false);
-                        }
-                    }
+                        cancel(contact, state);
+                        return stop(&mut inner, "provider_error", false);
+                    };
+                    revision = taken;
                 }
                 self.before_enable();
                 let enabled = contact.operate_as(
@@ -1162,10 +1204,22 @@ impl Owner {
         true
     }
     /// #39 Auto CQ: arm a new own CQ through Enable Tx (the contact engine generates it).
-    fn call_cq(&self, inner: &mut Inner, contact: &contact_http::Station, state: &ProfileState) {
+    fn call_cq(
+        &self,
+        inner: &mut Inner,
+        contact: &contact_http::Station,
+        state: &ProfileState,
+        settled: Option<u64>,
+    ) {
         let r = &state.recording;
         let run = inner.run.as_mut().expect("checked");
         let (revision, _, _) = contact.facts();
+        // #39 WstxStrategy::FreeTxSlot: a new CQ goes out from a free slot.
+        let current = contact.status_facts().tx_hz;
+        let Some(revision) = take_slot(run, contact, state, settled, current, None, revision)
+        else {
+            return Self::finish(inner, "provider_error");
+        };
         self.before_enable();
         let body = contact_body(
             r,
@@ -1213,6 +1267,43 @@ fn refused(code: &str) -> &'static str {
     } else {
         "transmit_refused"
     }
+}
+/// The records of a slot decision: 8 periods of up to 128 decodes (the live job retains
+/// up to 2048).
+const SLOT_RECORDS: u64 = 1024;
+/// #39 WstxStrategy::FreeTxSlot: decide the slot, name it in the run's status and set the
+/// Tx there when it is not there. The next contact revision, or None when the engine refused
+/// the command.
+fn take_slot(
+    run: &mut Run,
+    contact: &contact_http::Station,
+    state: &ProfileState,
+    settled: Option<u64>,
+    current: u32,
+    called: Option<u32>,
+    revision: u64,
+) -> Option<u64> {
+    let r = &state.recording;
+    let mode = contact_http::mode_of(run.mode);
+    let facts = contact.status_facts();
+    let records = settled.map_or_else(Vec::new, |next| {
+        let first = next.saturating_sub(SLOT_RECORDS).max(run.slot_from);
+        fresh_records(r, &run.identity, first, next)
+    });
+    let (hz, free) = freeslot::decide(&records, mode, facts.parity, current, called);
+    run.tx_slot = Some(json!({"hz":hz,"free":free}));
+    if facts.tx_hz == hz {
+        return Some(revision);
+    }
+    contact.automation.before_slot_move();
+    let body = contact_body(
+        r,
+        revision,
+        "set_frequency",
+        json!({"rx_hz":null,"tx_hz":hz}),
+    );
+    let (_, receipt) = contact.operate_as(state, body, true, AUTOMATION).ok()?;
+    Some(receipt["contact_revision"].as_u64().unwrap_or(revision))
 }
 /// A call not completed nor given up in this run.
 fn eligible(run: &Run, call: &str) -> bool {

@@ -68,6 +68,8 @@ let dxLookup={call:null,entity:null},snap=null,sending=false,tick=null,changeTar
 window.wstxPartner=()=>bandPartner;
 const valid=s=>s&&s.v===1&&Object.keys(s).sort().join(',')==='boot_id,contact,contact_revision,log,monotonic_ms,profile_id,settings,snapshot_sequence,transmit,utc_ms,v,watchdog'&&Number.isSafeInteger(s.contact_revision);
 const transmitCapable=()=>snap&&snap.transmit.capability!=='unsupported';
+// What the station can key now: unavailable is #9's radio/authorization not ready (CL-010-07).
+const transmitReady=()=>snap?.transmit.capability==='available';
 // One GET /contact at a time; a caller during a pending GET waits for a fresh one.
 // contactMissing: this station has no contact engine (404); routine refreshes then skip /contact.
 let loading=null,queued=null,contactMissing=false;
@@ -162,7 +164,7 @@ const running=c=>!!c?.dx_call&&['replying','report','roger_report','rogers','sig
 const snrText=snr=>typeof snr==='number'?`${snr>0?'+':snr<0?'\u2212':''}${Math.abs(Math.round(snr))} dB`:'';
 function setValue(input,value){if(document.activeElement!==input)input.value=value??'';}
 function render(){
-  const c=snap?.contact,t=snap?.transmit,s=snap?.settings,capable=transmitCapable(),armed=t?.arm_state==='armed';
+  const c=snap?.contact,t=snap?.transmit,s=snap?.settings,ready=transmitReady(),armed=t?.arm_state==='armed';
   const qso=running(c);
   focus.dataset.contact=qso?'true':c?.state==='calling'?'calling':'';
   // Nothing of a finished contact stays: an accepted command's result goes with it.
@@ -182,7 +184,7 @@ function render(){
   else if(c){const cq=c.state==='calling';strong.textContent=cq?'Calling CQ':'No contact selected';detail.textContent=cq?(s?.parity==='odd'?'Tx odd (2nd)':'Tx even (1st)'):'Select a decoded station or enter a DX call.';}
   for(const id of ['dx-call','dx-grid','dx-generate','contact-activity','contact-exchange','contact-report','contact-parity','contact-tx1-skip','contact-rx','contact-tx','contact-hold','strip-tx-from-rx','strip-rx-from-tx'])$(id).disabled=!snap;
   for(const button of document.querySelectorAll('#rxtx-strip [data-strip-step]'))button.disabled=!snap;
-  focus.querySelector('.op-contact-badge').textContent=!snap?'Unavailable':armed?(tick?.transmitting?'Transmitting':'Tx on'):capable?'Ready':'Receive only';
+  focus.querySelector('.op-contact-badge').textContent=!snap?'Unavailable':armed?(tick?.transmitting?'Transmitting':'Tx on'):ready?'Ready':'Receive only';
   focus.dataset.armed=String(armed);
   for(const [i,slot] of slots.entries()){
     const row=focus.querySelector(`li[data-slot="${slot}"]`),text=row.querySelector('.ct-text'),radio=row.querySelector('input[type=radio]');
@@ -193,19 +195,19 @@ function render(){
   if(s){setValue($('contact-report'),s.report);setValue($('contact-rx'),s.rx_hz);setValue($('contact-tx'),s.tx_hz);$('contact-hold').checked=s.hold_tx;if(document.activeElement!==$('contact-parity'))$('contact-parity').value=s.parity;if(document.activeElement!==$('contact-activity'))$('contact-activity').value=s.activity??'none';if(document.activeElement!==$('contact-exchange')&&s.exchange!==shownExchange){shownExchange=s.exchange;$('contact-exchange').value=s.exchange??'';}$('contact-serial').textContent=s.activity==='rtty'&&(s.exchange==='DX'||s.exchange==='#')?`Serial ${String(s.serial??1).padStart(4,'0')}`:'';$('contact-auto').checked=s.auto_seq;$('contact-call-first').checked=s.call_first!==false;
     setValue($('watchdog-tx'),s.tx_calls);setValue($('watchdog-tune'),s.tune_seconds);}
   $('watchdog-tx').disabled=$('watchdog-tune').disabled=!snap;
-  $('contact-call-first').disabled=!capable;
-  const auto=$('contact-auto');auto.disabled=!capable;auto.setAttribute('aria-label',capable?'Auto sequence':'Auto sequence unavailable');
+  $('contact-call-first').disabled=!transmitCapable();
+  const auto=$('contact-auto');auto.disabled=!ready;auto.setAttribute('aria-label',ready?'Auto sequence':'Auto sequence unavailable');
   // WstxContact::SetEnableTx (#37): no Enable Tx control; CQ or a double-click starts a QSO
   // (no Reply button since the #50 double-click fix).
-  $('qso-cq').disabled=!capable||(armed&&c?.state==='calling');
+  $('qso-cq').disabled=!ready||(armed&&c?.state==='calling');
   // #37: no RR73/73 buttons; a fold-out Now is the manual override. Not on a finished contact:
   // there Enable Tx would start a new CQ.
   const finished=['completed','cancelled'].includes(c?.state);
-  for(const button of focus.querySelectorAll('.ct-now'))button.disabled=!capable||finished||!c?.messages?.[slots.indexOf(button.dataset.slot)];
-  for(const id of ['qso-cq','contact-tune'])if(capable)$(id).removeAttribute('aria-describedby');else $(id).setAttribute('aria-describedby','transmit-unavailable');
-  $('transmit-unavailable').hidden=capable;
+  for(const button of focus.querySelectorAll('.ct-now'))button.disabled=!ready||finished||!c?.messages?.[slots.indexOf(button.dataset.slot)];
+  for(const id of ['qso-cq','contact-tune'])if(ready)$(id).removeAttribute('aria-describedby');else $(id).setAttribute('aria-describedby','transmit-unavailable');
+  $('transmit-unavailable').hidden=ready;
   $('transmit-unavailable').textContent=!snap?'Transmission unavailable: contact state unknown.':t?.capability==='unavailable'?'Transmission unavailable: radio/authorization not ready.':'Transmission unavailable: this server does not offer transmit control.';
-  const tune=$('contact-tune');tune.disabled=!capable;tune.setAttribute('aria-pressed',String(!!t?.tune));tune.textContent=t?.tune?`Tune on · ${snap.watchdog.tune_remaining_seconds} s`:'Tune';
+  const tune=$('contact-tune');tune.disabled=!ready&&!t?.tune;tune.setAttribute('aria-pressed',String(!!t?.tune));tune.textContent=t?.tune?`Tune on · ${snap.watchdog.tune_remaining_seconds} s`:'Tune';
   $('contact-cancel').disabled=!c||['idle','cancelled'].includes(c.state);
   abortButton.disabled=!abortable();$('qso-abort').disabled=abortButton.disabled;
   // Log QSO while a QSO runs (it also closes it); a finished contact is gone from the pane.
@@ -289,12 +291,12 @@ function autoSeqShow(c,s){
   // The exchange word only ("Send 73 next"), so the line stays one row; the title has the text.
   const word=message?message.split(' ').slice(2).join(' ')||message:'';
   suggest.hidden=!message;suggest.textContent=message?`Send ${word} next`:'';suggest.title=message?`Send ${message} next`:'';suggest.dataset.slot=slot??'';
-  $('qso-autoseq-on').hidden=!off;
+  $('qso-autoseq-on').hidden=!off||!transmitReady();
 }
 $('qso-suggest').addEventListener('click',async()=>{
   const slot=$('qso-suggest').dataset.slot;if(!slot)return;
   const r=await send('choose_next',{slot},`Next ${slot.toUpperCase()}`);if(!r||r.refused)return;
-  if(snap?.transmit.arm_state!=='armed'&&transmitCapable())arm('Reply');
+  if(snap?.transmit.arm_state!=='armed'&&transmitReady())arm('Reply');
 });
 $('qso-autoseq-on').addEventListener('click',()=>send('set_auto_seq',{enabled:true},'Auto sequence'));
 // WstxContact::DirectLog (#41): the server logs each completed QSO and every Log QSO; the
@@ -322,7 +324,9 @@ function loadAutomation(){
     const run=a?.v===1?a.run:null,active=run&&run.state!=='stopped';
     automationNode.dataset.active=String(!!active);
     // #42 a pounce run names its call (WstxStrategy::Pounce).
-    automationNode.textContent=active&&run.pounce?`Pounce ${run.pounce.call} ${run.state==='waiting'?'waiting':'in QSO'} · HALT ends it`:active?`Automation ${{waiting:'waiting',calling_cq:'calling CQ',manual:'paused for your QSO'}[run.state]??'in contact'} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
+    // #39 WstxStrategy::FreeTxSlot: no free slot keeps the current one and says so.
+    const slot=active&&run.tx_slot?.free===false?' · no free Tx slot':'';
+    automationNode.textContent=active&&run.pounce?`Pounce ${run.pounce.call} ${run.state==='waiting'?'waiting':'in QSO'}${slot} · HALT ends it`:active?`Automation ${{waiting:'waiting',calling_cq:'calling CQ',manual:'paused for your QSO'}[run.state]??'in contact'}${slot} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
     if(a?.v===1)dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));
   }).catch(()=>{}).finally(()=>{automationLoading=null;});
   return automationLoading;
@@ -366,7 +370,7 @@ new IntersectionObserver(([entry])=>{document.body.dataset.qsoHaltShown=String(e
 // #37 fold-out Now (operator 2026-11-03, WSJT-X Next/Now): choose the line next and turn Enable
 // Tx on, so it goes from the next own period (never into a waveform already on the air).
 async function nowMessage(slot){
-  const c=snap?.contact;if(['completed','cancelled'].includes(c?.state)||!transmitCapable())return;
+  const c=snap?.contact;if(['completed','cancelled'].includes(c?.state)||!transmitReady())return;
   const label=`Now ${slot.toUpperCase()}`,r=await send('choose_next',{slot},label);if(!r||r.refused)return;
   if(snap?.transmit.arm_state!=='armed')arm(label);
 }
@@ -633,7 +637,7 @@ async function replyRow(tr){
   // #37: a deliberate double-click on a foreign QSO's row calls its sender, and says so.
   const label=tr.dataset.foreign?`Call ${tr.dataset.sender}`:'Reply';
   const reply=await selectConfirmed(row,true,label);
-  if(reply&&!reply.refused&&transmitCapable())await sendExplicit(()=>arm(label));
+  if(reply&&!reply.refused&&transmitReady())await sendExplicit(()=>arm(label));
 }
 let clickTimer=null;
 // The double-click is the row's second press (click count 2), not the dblclick event: the
@@ -648,7 +652,7 @@ const menu=document.createElement('div');menu.id='ba-menu';menu.className='op-me
 menu.innerHTML='<button type="button" role="menuitem" data-menu="reply">Reply</button><button type="button" role="menuitem" data-menu="select">Select</button><button type="button" role="menuitem" data-menu="rx">Set Rx here</button>';
 document.querySelector('main').append(menu);let menuRow=null;
 // The row's own items (#42 Pounce, Ignore) are set first, so the menu is placed at its real size.
-function openMenu(tr,x,y){menuRow=tr;menu.hidden=false;menu.querySelector('[data-menu=reply]').disabled=!transmitCapable();dispatchEvent(new CustomEvent('wstx-row-menu',{detail:tr}));menu.style.left=`${Math.max(0,Math.min(x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(0,Math.min(y,innerHeight-menu.offsetHeight-8))}px`;menu.querySelector('button:not(:disabled):not([hidden])').focus();}
+function openMenu(tr,x,y){menuRow=tr;menu.hidden=false;menu.querySelector('[data-menu=reply]').disabled=!transmitReady();dispatchEvent(new CustomEvent('wstx-row-menu',{detail:tr}));menu.style.left=`${Math.max(0,Math.min(x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(0,Math.min(y,innerHeight-menu.offsetHeight-8))}px`;menu.querySelector('button:not(:disabled):not([hidden])').focus();}
 function closeMenu(){menu.hidden=true;menuRow=null;}
 activity?.addEventListener('contextmenu',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr)return;event.preventDefault();openMenu(tr,event.clientX,event.clientY);});
 menu.addEventListener('click',event=>{
@@ -724,8 +728,8 @@ function rowOf(context,sequence){const [,,source_id,job_id,generation]=context.s
 async function answerOther(li){
   const row=JSON.parse(li.dataset.row),qso=li.dataset.qso==='true';
   const reply=await selectConfirmed(row,qso,qso?'Change contact':'Select station');
-  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true,directive_confirmed:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitCapable())arm('Reply');}),li.dataset.call);return;}
-  if(reply&&!reply.refused&&transmitCapable())arm('Reply');
+  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true,directive_confirmed:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitReady())arm('Reply');}),li.dataset.call);return;}
+  if(reply&&!reply.refused&&transmitReady())arm('Reply');
 }
 othersList.addEventListener('mousedown',event=>{const li=secondPress(event,'tr[data-row]');if(li)answerOther(li);});
 othersList.addEventListener('keydown',event=>{const li=event.target.closest('tr[data-row]');if(li&&event.key==='Enter'){event.preventDefault();answerOther(li);}});

@@ -2061,7 +2061,16 @@ package WstxRequirements {
              desktop 200% zoom-equivalent CSS viewport, verify station identity and truthful status,
              signal above separator above workspace, no document horizontal overflow, empty
              Band Activity/contact tables and explicit unsupported explanations. Verify unsupported
-             controls are disabled and produce no requests. Open/close saved settings and recording
+             controls are disabled and produce no requests. With the capability pushed from available
+             to unavailable and back (#22): CQ, Tune, Now and Auto Seq disabled, badge Receive only, the
+             reason shown, Control panel and pane unmoved, a running Tune can be turned off, Call 1st
+             enabled; a double-click or a Calling me line sends select_row and no enable_tx, the
+             menu's Reply disabled, "Auto Seq on" not offered; back to Ready without any action. After a real station restart (#22; a new boot's generation below
+             the old one) with no receive job yet: whichever of /receive and /recording answers first,
+             and while /receive is still pending, Band Activity heading "Latest decode period", no row
+             or divider of the previous boot, Decoder unavailable; with a receive job already running
+             at a lower generation: the same heading and rows, Listening for FT8.
+             Open/close saved settings and recording
              regions with keyboard; verify existing controls remain reachable in the same page.
              Use separator ArrowUp/Down/Home/End and pointer dragging; verify actual height changes,
              ARIA value changes and the signal remains above the workspace. Disconnect the server
@@ -4113,7 +4122,7 @@ package WstxRequirements {
     dependency CL_039_04_to_FR_010 from 'CL-039-04' to 'FR-010';
     dependency CL_039_04_to_FR_019 from 'CL-039-04' to 'FR-019';
     requirement 'CL-039-05' {
-        doc /* Auto answers only strategy matches through the existing station automation and contact engine (no second engine): Auto Call answers the best matching CQ (with Treat 73 as CQ also a station that just ended a QSO, keeping my Tx frequency), Auto CQ calls CQ and answers the best caller (not after its RR73/73), Alternate switches between them after N consecutive tries without a contact; a station unanswered after N calls is skipped for the run; calls must pass the callsign guard. Auto never runs without the active strategy, asks once per page session, shows its state in the button, cannot switch the strategy while it runs, and stops by HALT (in every state), a second click, the Tx watchdog or the existing automation stops. A double-click is always possible and is a manual intervention: the strategy stays selected, waits for that QSO to end and resumes; cancelling its own contact gives that station up and it goes on. No QSO or time limit is offered. Details: WstxStrategy::AutoStrategyRun, ManualIntervention, SaneCall; WstxMcp::OperatingAutomation. */
+        doc /* Auto answers only strategy matches through the existing station automation and contact engine (no second engine): Auto Call answers the best matching CQ (with Treat 73 as CQ also a station that just ended a QSO), Auto CQ calls CQ and answers the best caller (not after its RR73/73), Alternate switches between them after N consecutive tries without a contact; a station unanswered after N calls is skipped for the run; calls must pass the callsign guard. Auto never runs without the active strategy, asks once per page session, shows its state in the button, cannot switch the strategy while it runs, and stops by HALT (in every state), a second click, the Tx watchdog or the existing automation stops. A double-click is always possible and is a manual intervention: the strategy stays selected, waits for that QSO to end and resumes; cancelling its own contact gives that station up and it goes on. No QSO or time limit is offered. Details: WstxStrategy::AutoStrategyRun, ManualIntervention, SaneCall; WstxMcp::OperatingAutomation. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/automation.rs; server/src/strategy.rs; client/contact.js";
     }
@@ -4144,7 +4153,7 @@ package WstxRequirements {
     }
     dependency CL_039_07_verified_by_TC_039_008 from 'CL-039-07' to 'TC-039-008';
     requirement 'CL-039-08' {
-        doc /* Hold Tx is on by default (operator decision 2026-11-04, #39; consistent with the split-frequency rule): a station starts with settings.hold_tx true, in manual operation and for a strategy alike, so selecting or answering a station moves Rx and never Tx; Tx stays on the operator's chosen slot until an explicit Tx action (the Tx input, a waterfall Tx pointer action, the Hound's own rule). The operator may switch it off with set_hold_tx; the choice lasts for the station's running session, since contact settings are not persisted, so no stored value can override the default. */
+        doc /* Hold Tx is on by default (operator decision 2026-11-04, #39; consistent with the split-frequency rule): a station starts with settings.hold_tx true, in manual operation and for a strategy alike, so selecting or answering a station moves Rx and never Tx; Tx stays on the operator's chosen slot until an explicit Tx action (the Tx input, a waterfall Tx pointer action, the Hound's own rule, a run's free slot: WstxStrategy::FreeTxSlot). The operator may switch it off with set_hold_tx; the choice lasts for the station's running session, since contact settings are not persisted, so no stored value can override the default. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/contact.rs; client/contact.js";
     }
@@ -4163,6 +4172,27 @@ package WstxRequirements {
         attribute executable : String = "server/src/contact_tests.rs::hold_tx_is_on_by_default_and_a_selection_keeps_tx; server/src/strategy_tests.rs::tc_039_004_auto_call_follows_the_strategy_and_the_directed_cq_rule; tests/contact.test.cjs";
     }
     dependency CL_039_08_verified_by_TC_039_009 from 'CL-039-08' to 'TC-039-009';
+    requirement 'CL-039-09' {
+        doc /* A strategy run or a pounce calls from a free audio slot chosen between QSOs from the last 4 decoding periods of my Tx parity on the current band (when these fill the band, the 3, 2 or 1 most recent), with 50 Hz clear of every occupied signal, inside 300..2700 Hz; the slot nearest the current Tx, then the lowest, so it changes only when the current one has become busy; Tx stays there for the whole QSO. No free slot keeps the current Tx, still calls and says so in the status. In every case Tx is never within 50 Hz of the called station's signal when calling it, also with no free slot. Details: WstxStrategy::FreeTxSlot. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/freeslot.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js";
+    }
+    dependency CL_039_09_to_FR_007 from 'CL-039-09' to 'FR-007';
+    dependency CL_039_09_to_FR_020 from 'CL-039-09' to 'FR-020';
+    verification 'TC-039-010' {
+        doc /* TC-039-010 — Free Tx slot
+             CL-039-09
+             Setup: the pure slot function with hand-authored tables; the actual station Router with the contact engine and #9 owner on the hardware double, an injected FT8 live job, Auto with roles call and cq, a pounce, a plain MCP run; browser page with a mocked run.
+             Steps: decide on tables (margins, edges, widths, ties, no slot, preferred frequencies, 4 periods of one parity, fewer periods on a busy band, the called station with no free slot, FT4); publish periods of both parities, then a candidate; complete a QSO; publish a signal on the slot and a new candidate; call a station on my Tx; fill the band, with the station away from and on my Tx; fill the band over 4 periods only; change the station band within the job; have the operator replace the contact just before the Tx move; switch Hold Tx off; start Auto CQ on a busy slot and answer a caller on my slot; show a run with tx_slot.free false.
+             Expected (oracle: the operator's rule on #39 and the independently computed slots in the tests): Tx 1380 before the first call with the 5th period and the other parity ignored, Rx on the station; Tx 1380 through the whole QSO; 1300 for the next call after the slot became busy; 1400 for a station on 1500 Hz; with Hold Tx off Tx back on its slot; a full band keeps 1500, arms and reports {hz 1500, free false}; a full band with the station on 1500 gives 1400 and free false; a band filled over 4 periods gives 1600 and free true from the 3 most recent; the old band's signal does not count and the new band's does (1500, then 1400); the operator's raced contact stands and the run is manual; the CQ goes out from 1400 and stays there; the plain run has tx_slot null and keeps its Tx; the station bar says "no free Tx slot". On the parent Tx stays or follows the station.
+             2 — Isolated automated tests; Windows PC, no radio (wstx-rust, ui-operating suites). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-09';
+        }
+        attribute executable : String = "server/src/freeslot_tests.rs; server/src/strategy_tests.rs; server/src/automation_tests.rs; tests/ui-operating.test.cjs";
+    }
+    dependency CL_039_09_verified_by_TC_039_010 from 'CL-039-09' to 'TC-039-010';
     requirement 'CL-042-01' {
         doc /* The strategy's New matrix is complete: besides new call and new grid, a condition holds for a sender whose DXCC entity, continent, CQ zone or ITU zone (from its cty.dat entity, #55) is not in the internal log, ever or on this band and mode, each negatable; a sender without an entity, an unknown station band (for the band form) or an unreadable log never counts as new. The editor offers the four conditions with the same ever / on this band and mode choice; the live preview names a failing one. Details: WstxStrategy::Condition, NewEntity. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
