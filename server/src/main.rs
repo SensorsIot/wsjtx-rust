@@ -506,7 +506,6 @@ fn router(state: App) -> Router {
         .route("/strategy", get(strategy::snapshot).put(strategy::put).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/strategy/evaluate", post(strategy::evaluate_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/strategy/ignore", post(strategy::ignore_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
-        .route("/strategy/most-wanted", post(strategy::most_wanted_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/strategy/most-wanted/download", post(strategy::most_wanted_download_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/strategy/alerts", get(strategy::alerts_route))
         .route("/strategy/alerts/clear", post(strategy::clear_alerts_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))

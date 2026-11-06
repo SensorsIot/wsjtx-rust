@@ -1052,8 +1052,7 @@ attribute def ActivityOrdering {
              minutes, the session list with remove controls; #42 the Alerts section of
              WstxStrategy::Alert: Sound and Browser notification checkboxes, both off by
              default, and the alert history newest first with Clear; #39 the Most Wanted
-             section of WstxStrategy::MostWantedList: status with the source attribution,
-             upload and Download now), clock
+             section of WstxStrategy::MostWantedList: status with the date and source attribution, and one button Update Most Wanted), clock
              (the SNTP state, and #43 CL-043-01 the clock source NTP / From the air /
              Both with the air estimate, read with GET /clock when the drawer opens,
              saved on change with POST /clock, a plain setting without restart mark),

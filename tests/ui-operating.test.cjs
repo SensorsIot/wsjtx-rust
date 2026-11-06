@@ -2510,23 +2510,25 @@ test('TC-039-006 Settings > General continent saves to the station strategy stor
   assert.equal(await page.evaluate(()=>Object.keys(localStorage).some(k=>k.startsWith('wstx.continent'))),false,'not browser-local any more');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-039-10; TC-039-006 the Most Wanted section on the actual isolated station: status,
-// attribution, a refused and a good upload, removal. Download now needs the network: only offered.
-test('TC-039-006 Settings > General Most Wanted list: status, upload and removal on the station',{timeout:40000},async t=>{
+// Proves: CL-039-10; TC-039-006 the Most Wanted section: one button beside the date, no upload, a
+// failure's reason in one line. The update route is routed here: no network.
+test('TC-039-006 Settings > General Most Wanted: one button beside the date, a failure says why',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
   await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
-  await page.locator('#mw-status').filter({hasText:'No list; strategies rank by new DXCC'}).waitFor();
+  await page.locator('#mw-status').filter({hasText:'No list; strategies call the strongest first'}).waitFor();
+  assert.equal(await page.locator('#mw-update').textContent(),'Update Most Wanted');
   assert.equal(await page.locator('#mw-attribution').textContent(),'Club Log Most Wanted list, Club Log (c) Michael Wells G7VJR, clublog.org');
-  assert.equal(await page.locator('#mw-remove').isDisabled(),true);
-  assert.equal(await page.locator('#mw-download').isVisible(),true);
-  await page.locator('#mw-file').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from('{"1":"x"}')});
-  await page.locator('#mw-upload').click();await page.locator('#mw-result').filter({hasText:'not a Most Wanted list'}).waitFor();
-  await page.locator('#mw-file').setInputFiles({name:'list.json',mimeType:'application/json',buffer:Buffer.from('{"1":"150","2":"9999"}')});
-  await page.locator('#mw-upload').click();await page.locator('#mw-result').filter({hasText:'Uploaded list.json'}).waitFor();
-  assert.match(await page.locator('#mw-status').textContent(),/^List of \d{4}-\d{2}-\d{2} · uploaded · 2 entries · 1 not mapped to an entity$/);
-  await page.locator('#mw-remove').click();await page.locator('#mw-result').filter({hasText:'List removed'}).waitFor();
-  assert.equal(await page.locator('#mw-status').textContent(),'No list; strategies rank by new DXCC');
+  for(const gone of ['#mw-file','#mw-upload','#mw-remove','#mw-fallback','#mw-download'])assert.equal(await page.locator(gone).count(),0,`${gone} is gone`);
+  let reply={status:502,json:{error:{code:'download_failed',reason:'status 503'}}};
+  await page.route('**/strategy/most-wanted/download',route=>route.fulfill(reply));
+  await page.locator('#mw-update').click();await page.locator('#mw-result').filter({hasText:'Update failed'}).waitFor();
+  assert.equal(await page.locator('#mw-result').textContent(),'Update failed · status 503; the list stays as it was');
+  assert.equal(await page.locator('#mw-status').textContent(),'No list; strategies call the strongest first');
+  const view=await page.evaluate(async()=>(await stationFetch('/strategy',{cache:'no-store'})).json());
+  reply={status:200,json:{...view,most_wanted:{date:'2030-01-02',entries:2,unmapped:1}}};
+  await page.locator('#mw-update').click();await page.locator('#mw-result').filter({hasText:'Updated'}).waitFor();
+  assert.equal(await page.locator('#mw-status').textContent(),'List from 2030-01-02 · 2 entries · 1 not mapped to an entity');
   await page.screenshot({path:'test-results/ui-operating/most-wanted-1366.png'});
   assert.deepEqual(errors,[]);
 });

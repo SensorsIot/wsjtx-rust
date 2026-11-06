@@ -56,8 +56,11 @@ package WstxStrategy {
          D12 Most Wanted list (#39 6626483800, MostWantedList): the operator asked for
             "download and refresh like cty.dat". This project's cty.dat has no automatic
             download (bundled file plus Settings upload, WstxContact country file), so the
-            list has the same shape: a Settings section with status and upload, and a
-            Download now button that fetches it once on the operator's click.
+            list is kept simple (operator 2026-11-06: "Most wanted countries stay forever. They do
+            not change a lot. We have to find an extremely simple way to update it from time to
+            time."): a Settings section with one button "Update Most Wanted" beside the list's
+            date that fetches it once on the operator's click. There is no upload (operator:
+            "Why would we upload something?"); a failed download keeps the list.
             Terms check (2026-11-06): the clublog.org pages mostwanted.php, need_api and
             requestapikey state no terms and no limits; the footer says "Club Log (c)
             Michael Wells G7VJR"; need_api says "You do not need a key unless you write
@@ -199,37 +202,39 @@ package WstxStrategy {
              browser's partner rows), then callers (CallerOfMyCall), candidates most valuable
              first, then the rest. Callers among themselves: SNR strongest (unknown last), then
              sequence. Candidates: on the Most Wanted list first, by its rank ascending; then
-             the others (or all, without a list) by their DXCC-new rank: 0 the entity not
-             worked ever, 1 not on this band, 2 not on this band and mode, 3 anything else (the
-             same window as the goals); then SNR strongest, then sequence. */
+             the others, and all of them without a list, SNR strongest (operator 2026-11-06, which
+             replaces a DXCC-new rank); then sequence. */
     }
     attribute def MostWantedList {
         attribute entriesMax : Integer = 1000;
         doc /* D12. Source https://clublog.org/mostwanted.php?api=1: JSON {"1":"344","2":"123",
              ...}, rank to ADIF DXCC number (340 entries, verified 2026-11-06). Parsed exactly:
              an object of 1..1000 keys, each a positive integer in text, each value a positive
-             integer below 10000 in text or as a number, no number twice; else refused 400
-             invalid_most_wanted field text, nothing changed. Stored in the profile folder as
-             most_wanted.json {schema_version 1, profile_id, date (UTC date of the upload or
-             download), source (upload | download), list}. cty.dat has no ADIF numbers: the
+             integer below 10000 in text or as a number, no number twice; else the update fails,
+             nothing changed. Stored in the profile folder as
+             most_wanted.json {schema_version 1, profile_id, date (UTC date of the download), list}. cty.dat has no ADIF numbers: the
              table most_wanted::ENTITIES maps cty.dat entity full names to ADIF numbers (the
              340 current entities; WAE-only entities, Sicily, African Italy, Bear Island,
              Shetland Islands, European Turkey and Vienna Intl Ctr, carry their DXCC parent's
              number). A number of the list without a table entry is ignored and counted as
              unmapped in the status. An entity not in the table or not on the list has no rank
-             (ValueOrder falls back). The file is read off the station step (the first
+             (ValueOrder sorts it after the listed ones). A list once fetched stays until the next
+             update. The file is read off the station step (the first
              GET /strategy, POST /strategy/evaluate or selection, on a blocking thread); the
              step only reads a parsed Arc behind a leaf lock. An unreadable file: no list,
              most_wanted_unreadable true.
-             Status in the GET /strategy snapshot: most_wanted null or {date, source, entries,
+             Status in the GET /strategy snapshot: most_wanted null or {date, entries,
              unmapped}, most_wanted_unreadable, most_wanted_attribution "Club Log Most Wanted
              list, Club Log (c) Michael Wells G7VJR, clublog.org".
-             POST /strategy/most-wanted {v, profile_id, boot_id, text}: text is the list as JSON
-             text, null removes it. POST /strategy/most-wanted/download {v, profile_id, boot_id}:
+             Browser, Settings > General: "List from <date> · <entries> entries" (and how many
+             are not mapped), or "No list; strategies call the strongest first", with beside it one
+             button "Update Most Wanted"; one click does everything. A failure keeps the list and shows the
+             reason in one line.
+             POST /strategy/most-wanted/download {v, profile_id, boot_id}:
              the station fetches the source once on the operator's click, with the User-Agent
-             of most_wanted::USER_AGENT naming this project; a failure is 502 download_failed,
-             nothing changed. Both exact keys, with the refusals of POST /strategy/ignore, and
-             return the snapshot; no MCP tool dispatches to them. There is no automatic
+             of most_wanted::USER_AGENT naming this project; a failure or a reply that is no list is 502 download_failed with
+             error.reason, nothing changed. Exact keys, with the refusals of POST /strategy/ignore, and
+             it returns the snapshot; no MCP tool dispatches to it. There is no automatic
              refresh. */
     }
     attribute def IgnoreLists {

@@ -23,16 +23,15 @@ pub const ATTRIBUTION: &str =
 pub struct List {
     ranks: HashMap<u16, u32>,
     pub date: String,
-    pub source: String,
     pub unmapped: usize,
 }
 impl List {
     /// Parses list JSON text exactly (MostWantedList); `None` refuses it.
-    pub fn parse(text: &str, date: &str, source: &str) -> Option<Self> {
+    pub fn parse(text: &str, date: &str) -> Option<Self> {
         let v: Value = serde_json::from_str(text).ok()?;
-        Self::from_value(&v, date, source)
+        Self::from_value(&v, date)
     }
-    pub fn from_value(v: &Value, date: &str, source: &str) -> Option<Self> {
+    pub fn from_value(v: &Value, date: &str) -> Option<Self> {
         let o = v.as_object()?;
         if o.is_empty() || o.len() > ENTRIES_MAX {
             return None;
@@ -53,7 +52,6 @@ impl List {
         Some(Self {
             ranks,
             date: date.to_owned(),
-            source: source.to_owned(),
             unmapped,
         })
     }
@@ -74,7 +72,7 @@ impl List {
         )
     }
     pub fn status(&self) -> Value {
-        json!({"date":self.date,"source":self.source,"entries":self.entries(),"unmapped":self.unmapped})
+        json!({"date":self.date,"entries":self.entries(),"unmapped":self.unmapped})
     }
 }
 fn table() -> &'static HashMap<&'static str, u16> {
@@ -522,7 +520,7 @@ mod tests {
     use super::*;
     #[test]
     fn tc_039_031_parser_refuses_all_but_the_exact_list() {
-        let ok = List::parse(r#"{"1":"344","2":123,"3":"9999"}"#, "2026-11-06", "upload").unwrap();
+        let ok = List::parse(r#"{"1":"344","2":123,"3":"9999"}"#, "2026-11-06").unwrap();
         assert_eq!(ok.entries(), 3);
         assert_eq!(ok.unmapped, 1, "9999 has no entity");
         assert_eq!(ok.rank("Fed. Rep. of Germany"), None, "230 is not listed");
@@ -539,12 +537,12 @@ mod tests {
             r#"{"1":"344","2":"344"}"#,
             r#"{"1":null}"#,
         ] {
-            assert_eq!(List::parse(bad, "d", "upload"), None, "{bad}");
+            assert_eq!(List::parse(bad, "d"), None, "{bad}");
         }
         let many: serde_json::Map<String, Value> = (1..=1001)
             .map(|i| (i.to_string(), json!(i.to_string())))
             .collect();
-        assert_eq!(List::from_value(&Value::Object(many), "d", "upload"), None);
+        assert_eq!(List::from_value(&Value::Object(many), "d"), None);
     }
     #[test]
     fn tc_039_031_every_bundled_entity_has_its_adif_number() {

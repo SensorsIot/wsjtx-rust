@@ -1259,26 +1259,23 @@ pounceItem.addEventListener('click',()=>{const call=pounceItem.dataset.call;if(!
 // ---------------------------------------------------------------- #39 Most Wanted list
 // WstxStrategy::MostWantedList in Settings > General: status with the source attribution, an upload
 // the station validates, and Download now, one fetch on the operator's click. No automatic refresh.
-if(typeof block==='function'&&document.querySelector('#settings-general'))block('settings-most-wanted','Most Wanted list',document.querySelector('#settings-general'),'<p id="mw-status" class="op-muted" role="status">No list</p><label>List file (JSON)<input id="mw-file" type="file" accept=".json,application/json,text/plain"></label><p class="op-actions"><button type="button" id="mw-upload">Upload list</button> <button type="button" id="mw-download" title="Fetches the list from clublog.org once, now">Download now</button> <button type="button" id="mw-remove">Remove list</button></p><p id="mw-result" class="op-muted" role="status"></p><p id="mw-attribution" class="op-muted"></p><p class="op-muted">Strategies rank the stations they would call by this list, then by new DXCC; they work without it. It is only fetched when you click: Club Log states no terms for it.</p>');
+if(typeof block==='function'&&document.querySelector('#settings-general'))block('settings-most-wanted','Most Wanted list',document.querySelector('#settings-general'),'<p class="op-actions"><span id="mw-status" class="op-muted" role="status">No list</span> <button type="button" id="mw-update" title="Fetches the list from clublog.org once, now">Update Most Wanted</button></p><p id="mw-result" class="op-muted" role="status"></p><p id="mw-attribution" class="op-muted"></p><p class="op-muted">A strategy calls the stations on this list first, by their rank, then the strongest; without a list the strongest first. It only changes when you click: Club Log states no terms for it.</p>');
 function showMostWanted(){
   const status=$('mw-status');if(!status)return;const m=view?.most_wanted;
-  status.textContent=m?`List of ${m.date} · ${m.source==='download'?'downloaded':'uploaded'} · ${m.entries} entries${m.unmapped?` · ${m.unmapped} not mapped to an entity`:''}`:view?.most_wanted_unreadable?'The stored list is unreadable; strategies work without it':'No list; strategies rank by new DXCC';
-  $('mw-attribution').textContent=view?.most_wanted_attribution??'';$('mw-remove').disabled=!m;
+  status.textContent=m?`List from ${m.date} · ${m.entries} entries${m.unmapped?` · ${m.unmapped} not mapped to an entity`:''}`:view?.most_wanted_unreadable?'The stored list is unreadable; strategies call the strongest first':'No list; strategies call the strongest first';
+  $('mw-attribution').textContent=view?.most_wanted_attribution??'';
 }
-async function mostWanted(path,extra,label){
-  if(!view)return;const result=$('mw-result');
+$('mw-update')?.addEventListener('click',async()=>{
+  if(!view)return;const result=$('mw-result'),button=$('mw-update');button.disabled=true;result.textContent='';
   try{
-    const response=await stationFetch(path,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,...extra}),signal:AbortSignal.timeout(40000)});
+    const response=await stationFetch('/strategy/most-wanted/download',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id}),signal:AbortSignal.timeout(40000)});
     const data=await response.json().catch(()=>null);
-    if(!response.ok||data?.v!==1){const c=data?.error?.code??response.status;result.textContent=c==='invalid_most_wanted'?'Refused · not a Most Wanted list; nothing changed':c==='download_failed'?'Download failed; nothing changed':`Refused · ${c}; nothing changed`;return;}
-    view=data;verdicts=new Map();evaluatedKey='';show();evaluateShown();result.textContent=label;
-  }catch(error){result.textContent=`Outcome unknown · ${error.message}`;}
-}
-$('mw-upload')?.addEventListener('click',async()=>{const file=$('mw-file').files[0];if(!file){$('mw-result').textContent='Choose a list file first';return;}if(file.size===0||file.size>30000){$('mw-result').textContent='Refused · the file must hold 1 byte to 30 kB';return;}mostWanted('/strategy/most-wanted',{text:await file.text()},`Uploaded ${file.name}`);});
-$('mw-download')?.addEventListener('click',()=>mostWanted('/strategy/most-wanted/download',{},'Downloaded'));
-$('mw-remove')?.addEventListener('click',()=>mostWanted('/strategy/most-wanted',{text:null},'List removed'));
-// Station settings, not profile fields: they never mark the profile form unsaved.
-for(const type of ['input','change'])$('mw-file')?.addEventListener(type,event=>event.stopPropagation());
+    // A failure keeps the list and says why, in one line.
+    if(!response.ok||data?.v!==1){result.textContent=`Update failed · ${data?.error?.reason??data?.error?.code??response.status}; the list stays as it was`;return;}
+    view=data;verdicts=new Map();evaluatedKey='';show();evaluateShown();result.textContent='Updated';
+  }catch(error){result.textContent=`Update failed · ${error.message}; the list stays as it was`;}
+  finally{button.disabled=false;}
+});
 // ---------------------------------------------------------------- editor popup
 const CONTINENTS=[['AF','Africa'],['AN','Antarctica'],['AS','Asia'],['EU','Europe'],['NA','North America'],['OC','Oceania'],['SA','South America']];
 const GOALS=[['dxcc','DXCC'],['dxcc_band','DXCC per band'],['dxcc_slot','DXCC slot (band and mode)'],['waz','WAZ (CQ zones)'],['wpx','WPX (prefixes)'],['grid','Grids'],['new_call','New call']];
