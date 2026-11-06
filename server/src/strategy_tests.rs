@@ -7,7 +7,7 @@
 // Integration cases use the actual station router, contact engine and #9 transmit owner
 // on the recording hardware double (virtual UTC; no audio, PTT or radio).
 use super::*;
-use crate::automation_tests::{at_even, publish, run_state, transmit_own_period};
+use crate::automation_tests::{at_even, not_keyed_in, publish, run_state, transmit_own_period};
 use crate::contact_http_tests::{period_text, record};
 use crate::mcp_tests::{Mcp, station};
 use std::sync::atomic::Ordering;
@@ -909,12 +909,21 @@ async fn tc_039_004_auto_call_follows_the_strategy_and_the_directed_cq_rule() {
             ("CQ JA JA1XYZ PM95", 600.0, Some(9.0)),
             ("CQ 290 N1MM FN31", 700.0, Some(8.0)),
             ("CQ DL1XYZ JO62", 1200.0, Some(0.0)),
-            ("CQ K1ABC FN42", 1500.0, Some(-15.0)),
+            ("CQ K1ABC FN42", 1400.0, Some(-15.0)),
         ],
     );
     assert_eq!(
         contact(&f).await,
         (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    // Proves: CL-039-08; TC-039-009: the strategy's pick moves Rx, Tx stays on its slot.
+    let c = f.read("contact").await;
+    assert_eq!(
+        (
+            c["settings"]["rx_hz"].clone(),
+            c["settings"]["tx_hz"].clone()
+        ),
+        (json!(1400), json!(1500))
     );
     let run = f.read("automation").await["run"].clone();
     assert_eq!(
@@ -1414,8 +1423,8 @@ async fn tc_039_005_automation_never_resets_the_tx_watchdog() {
     f.tick();
     assert_eq!(contact(&f).await.1, json!("calling"));
     let halt = f.read("contact").await["transmit"]["halt_state"].clone();
-    // The own CQ counts 1; the caller is an answer (0); the run's selection does not
-    // reset it; the report and its repeat count 1 and 2; the next is never keyed.
+    // The own CQ is Rep 1; the run's reply to the caller is a different message; the
+    // report and its repeat are Rep 1 and 2; the next is never keyed.
     transmit_own_period(&f, e + 15_000).await;
     assert_eq!(f.read("contact").await["watchdog"]["tx_remaining_calls"], 1);
     publish(
@@ -1527,17 +1536,16 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
         "{v}"
     );
     assert!(!armed());
-    // (1) Limit 1 from the browser; an MCP Enable Tx calls CQ, which counts 1.
+    // (1) Limit 1 from the browser; an MCP Enable Tx calls CQ, which is Rep 1.
     browser_watchdog(&f, 1).await;
     assert!(!spent());
     let v = mcp_contact(&f, "enable_tx", json!({"enabled":true,"safety_revision":3})).await;
     assert_eq!(v["status"], 202, "{v}");
     transmit_own_period(&f, e + 15_000).await;
-    assert!(spent());
-    // MCP commands never reset it, and MCP may not lengthen it.
+    assert!(!spent(), "only a stop spends it");
+    // MCP commands never restart it, and MCP may not lengthen it.
     let v = mcp_contact(&f, "set_frequency", json!({"rx_hz":1200,"tx_hz":null})).await;
     assert_eq!(v["status"], 202, "{v}");
-    assert!(spent(), "an MCP command is no operator action");
     let v = mcp_contact(
         &f,
         "set_watchdogs",
@@ -1549,6 +1557,7 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
     let keys = f.keys();
     not_keyed_in(&f, e + 45_000).await;
     assert_eq!(f.keys(), keys);
+    assert!(spent());
     // A station calling me after the stop is no human: the watchdog stays spent.
     publish(&f, e + 30_000, &[("HB9BLA DL1XYZ JO62", 900.0, Some(-7.0))]);
     assert!(spent(), "an answer after the stop does not re-open arming");
@@ -1592,8 +1601,17 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
     );
     assert!(!armed());
     assert_eq!(f.keys(), keys);
-    // (3) A browser action resets it: MCP may arm again.
+    // (3) Another browser request ends nothing; a browser Enable Tx does: MCP may arm again.
     browser_watchdog(&f, 1).await;
+    assert!(spent());
+    let c = f.browser("GET", "/contact", None).await.json;
+    let body = f.command(
+        c["contact_revision"].as_u64().unwrap(),
+        "enable_tx",
+        json!({"enabled":true,"safety_revision":3}),
+    );
+    let r = f.browser("POST", "/contact/command", Some(body)).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.json);
     assert!(!spent());
     let v = mcp_contact(&f, "enable_tx", json!({"enabled":true,"safety_revision":3})).await;
     assert_eq!(v["status"], 202, "{v}");
@@ -2227,6 +2245,9 @@ async fn tc_042_004_pounce_answers_a_73_holding_tx_and_never_an_ignored_or_direc
         ignore(&f, json!("K1ABC"), json!(true)).await.status,
         StatusCode::OK
     );
+    // Hold Tx off: "Hold Tx after a 73" below is the automation's own rule, not the default.
+    mcp_contact(&f, "set_hold_tx", json!({"enabled":false})).await;
+    assert_eq!(f.read("contact").await["settings"]["hold_tx"], json!(false));
     assert_eq!(pounce(&f, "K1ABC", 5).await.status, StatusCode::ACCEPTED);
     // The ignore lists win over the pounce.
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-15.0))]);

@@ -479,6 +479,7 @@ fn profile_radio_settings_default_migrate_and_validate() {
     };
     let mid = Radio {
         agc: setup::Agc::Mid,
+        power_limit_pct: None,
     };
     let mut kept = s.clone();
     kept.complete_radio(Some(mid));

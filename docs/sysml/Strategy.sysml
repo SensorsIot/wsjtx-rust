@@ -29,7 +29,7 @@ package WstxStrategy {
          D4 Auto roles in the first version: Auto Call (answer the best matching CQ),
             Auto CQ (call CQ, answer the best caller) and Alternate (switch between them
             after switch_after consecutive tries without a contact).
-         D5 No QSO or time limit is offered: the Tx watchdog bounds Auto
+         D5 No QSO or time limit is offered: the Tx watchdog bounds each message of Auto
             (WatchdogFromOperator). The browser's Auto sends the WstxMcp run bounds at
             their maxima (max_contacts 100, max_run_minutes 480).
          D6 Skip after N: a station given up after skip_after partner periods without an
@@ -452,20 +452,19 @@ package WstxStrategy {
         doc /* At least 3 characters with a digit and a letter, not ending /R (rover). */
     }
     attribute def WatchdogFromOperator {
-        doc /* The Tx watchdog counts unanswered own transmissions (WstxContact::TxWatchdog,
-             operator redefinition 2026-11-04) and is never paused or reset by
-             automation. Only an answer (a decoded message addressed to my call from the
-             partner, or from anyone to my CQ) or a human action in the browser resets
-             it: an Enable Tx, any accepted ContactCommand or an Auto start sent by the
-             browser (principal browser, WstxProfiles::RequestPrincipalRule: read from
-             the credential at the auth boundary, so an MCP client is never one on any
-             route, #58). Never operator actions: commands of a run (select_row,
-             set_frequency, enable_tx, cancel, disarm), any MCP request (also starting or
-             restarting a run) and any UDP command (Reply, Free Text). Such an enable_tx
-             arms with the count kept and is refused tx_watchdog when the limit is used
-             up or no browser action was seen this boot (until a human acts in the
-             browser; after a watchdog stop an answer no longer resets it); a run selecting a new station does not reset
-             it; only the browser may change the watchdog setting (set_watchdogs from any
+        doc /* The Tx watchdog limits the repetitions of one message
+             (WstxContact::TxWatchdog, operator rule 2026-11-06) and is never paused by
+             automation; a new message or station restarts the repetition count, so it
+             bounds a run per message, not in total (max_run_minutes bounds the run). A
+             human action in the browser is an accepted ContactCommand or an Auto start
+             sent by the browser (principal browser, WstxProfiles::RequestPrincipalRule:
+             read from the credential at the auth boundary, so an MCP client is never one
+             on any route, #58). Only an Enable Tx or an Auto start from the browser ends
+             a watchdog stop. Never operator actions: commands of a run (select_row,
+             set_frequency, enable_tx, cancel, disarm) and any MCP request (also starting or
+             restarting a run). Such an enable_tx
+             is refused tx_watchdog after a watchdog stop or when no browser action was
+             seen this boot; only the browser may change the watchdog setting (set_watchdogs from any
              other source is refused operator_required). At the limit Enable Tx goes off
              without a halt and a run stops tx_watchdog.
              Halt from any source stops the run; grant, clock, period and safety-revision

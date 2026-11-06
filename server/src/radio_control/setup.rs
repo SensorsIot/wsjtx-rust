@@ -219,6 +219,55 @@ impl Agc {
         }
     }
 }
+/// #44 CL-044-12 IC-7300 meters read in one burst under the transmit hold (Full Manual
+/// section 19, "15 11 Po", "15 12 SWR", "15 13 ALC", data 0000..0255 in BCD). None: the
+/// radio refused that read (FA).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Meters {
+    pub alc: Option<u16>,
+    pub po: Option<u16>,
+    pub swr: Option<u16>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Meter {
+    Alc,
+    Po,
+    Swr,
+}
+impl Meter {
+    pub const ALL: [Self; 3] = [Self::Alc, Self::Po, Self::Swr];
+    pub fn sub_command(self) -> u8 {
+        match self {
+            Self::Po => 0x11,
+            Self::Swr => 0x12,
+            Self::Alc => 0x13,
+        }
+    }
+}
+/// FE FE <address> E0 15 <sub> FD: read a meter.
+pub fn read_meter_frame(address: u8, meter: Meter) -> Vec<u8> {
+    vec![
+        0xfe,
+        0xfe,
+        address,
+        CONTROLLER,
+        0x15,
+        meter.sub_command(),
+        0xfd,
+    ]
+}
+/// Two BCD bytes; None for a nibble that is no digit.
+pub fn decode_bcd(data: [u8; 2]) -> Option<u16> {
+    let mut value = 0u16;
+    for byte in data {
+        let (high, low) = (byte >> 4, byte & 0x0f);
+        if high > 9 || low > 9 {
+            return None;
+        }
+        value = value * 100 + u16::from(high) * 10 + u16::from(low);
+    }
+    Some(value)
+}
 /// FE FE <address> E0 16 12 FD: read the AGC.
 pub fn read_agc_frame(address: u8) -> Vec<u8> {
     vec![0xfe, 0xfe, address, CONTROLLER, 0x16, 0x12, 0xfd]
@@ -290,6 +339,11 @@ pub enum Heard {
         address: u8,
     },
     /// The AGC reply 16 12 <code>; the code is checked by the reader.
+    Meter {
+        address: u8,
+        sub_command: u8,
+        data: [u8; 2],
+    },
     Agc {
         address: u8,
         code: u8,
@@ -313,6 +367,11 @@ pub fn hear(frame: &[u8]) -> Heard {
         [0x16, 0x12, code] => Heard::Agc {
             address,
             code: *code,
+        },
+        [0x15, sub, high, low] => Heard::Meter {
+            address,
+            sub_command: *sub,
+            data: [*high, *low],
         },
         [0x1a, 0x05, hi, lo, data @ ..] if !data.is_empty() => {
             match SETTINGS.into_iter().find(|s| s.item() == [*hi, *lo]) {

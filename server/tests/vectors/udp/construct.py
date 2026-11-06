@@ -105,60 +105,32 @@ vector("logged-adif", "outbound",
         "adif": "\n<adif_ver:5>3.1.8\n<programid:9>WSTX-Rust\n<EOH>\n<call:5>K1ABC <EOR>"})
 
 # ---------------------------------------------------------------- inbound
-vector("in-heartbeat", "inbound", header(0, 3, "GridTracker") + u32(3) + utf8("1.24") + utf8("r1"),
-       expect={"schema": 3, "id": "GridTracker", "type": "heartbeat", "max_schema": 3,
-               "version": "1.24", "revision": "r1"})
+# Send-only (issue #40, operator 2026-11-06): a target's Heartbeat header is all the station
+# reads. Every other message type, the former commands first, is refused by that read.
+vector("in-heartbeat", "inbound", header(0, 3) + u32(3) + utf8("1.24") + utf8("r1"),
+       expect={"schema": 3, "id": ID})
 vector("in-heartbeat-old", "inbound", header(0, 2, "JTAlert"),
-       expect={"schema": 2, "id": "JTAlert", "type": "heartbeat", "max_schema": 2,
-               "version": "", "revision": ""})
-vector("in-clear-window", "inbound", header(3) + u8(2),
-       expect={"schema": 2, "id": ID, "type": "clear", "window": 2})
-vector("in-clear-default", "inbound", header(3),
-       expect={"schema": 2, "id": ID, "type": "clear", "window": 0})
-vector("in-reply", "inbound",
+       expect={"schema": 2, "id": "JTAlert"})
+vector("in-heartbeat-trailing", "inbound", header(0, 3) + b"\x01\x02\x03",
+       expect={"schema": 3, "id": ID})
+vector("refused-clear", "inbound", header(3) + u8(2))
+vector("refused-reply", "inbound",
        header(4) + qtime(12, 34, 30) + i32(-12) + single_as_double(0.1) + u32(1235)
-       + utf8("~") + utf8("CQ K1ABC FN42") + boolean(False) + u8(0x02),
-       expect={"schema": 2, "id": ID, "type": "reply", "time_ms": 45_270_000, "snr": -12,
-               "delta_time": struct.unpack(">f", struct.pack(">f", 0.1))[0],
-               "delta_frequency": 1235, "mode": "~", "message": "CQ K1ABC FN42",
-               "low_confidence": False, "modifiers": 2})
-vector("in-close", "inbound", header(6), expect={"schema": 2, "id": ID, "type": "close"})
-vector("in-replay", "inbound", header(7), expect={"schema": 2, "id": ID, "type": "replay"})
-vector("in-halt", "inbound", header(8) + boolean(True),
-       expect={"schema": 2, "id": ID, "type": "halt_tx", "auto_only": True})
-vector("in-halt-short", "inbound", header(8),
-       expect={"schema": 2, "id": ID, "type": "halt_tx", "auto_only": False})
-vector("in-free-text", "inbound", header(9, 3) + utf8("K1ABC HB9BLA 73") + boolean(True),
-       expect={"schema": 3, "id": ID, "type": "free_text", "text": "K1ABC HB9BLA 73",
-               "send": True})
-vector("in-free-text-null", "inbound", header(9) + null() + boolean(False),
-       expect={"schema": 2, "id": ID, "type": "free_text", "text": "", "send": False})
-vector("in-location", "inbound", header(11) + utf8("JN47"),
-       expect={"schema": 2, "id": ID, "type": "location", "location": "JN47"})
-vector("in-highlight", "inbound",
-       header(13) + utf8("K1ABC") + qcolor((255, 0, 128)) + qcolor((0, 0, 0)) + boolean(True),
-       expect={"schema": 2, "id": ID, "type": "highlight", "call": "K1ABC",
-               "background": [255, 0, 128], "foreground": [0, 0, 0], "last_only": True})
-vector("in-highlight-invalid", "inbound",
-       header(13) + utf8("K1ABC") + qcolor(None) + qcolor((1, 2, 3)) + boolean(False),
-       expect={"schema": 2, "id": ID, "type": "highlight", "call": "K1ABC",
-               "background": None, "foreground": [1, 2, 3], "last_only": False})
-vector("in-switch-configuration", "inbound", header(14) + utf8("Default"),
-       expect={"schema": 2, "id": ID, "type": "switch_configuration"})
-vector("in-configure", "inbound",
-       header(15) + utf8("FT8") + u32(0xFFFFFFFF) + utf8("") + boolean(False) + u32(15)
-       + u32(1500) + utf8("") + utf8("") + boolean(False),
-       expect={"schema": 2, "id": ID, "type": "configure"})
-vector("in-unknown-type", "inbound", header(18) + utf8("x"),
-       expect={"schema": 2, "id": ID, "type": "other", "kind": 18})
-vector("in-trailing", "inbound", header(7) + b"\x01\x02\x03",
-       expect={"schema": 2, "id": ID, "type": "replay"})
-vector("refused-magic", "inbound", u32(0xADBCCBDB) + u32(2) + u32(7) + utf8(ID))
-vector("refused-schema1", "inbound", header(7, 1))
-vector("refused-schema4", "inbound", header(8, 4) + boolean(False))
-vector("refused-utf8-truncated", "inbound", u32(0xADBCCBDA) + u32(2) + u32(9) + u32(20) + b"WSTX")
-vector("refused-null-id", "inbound", u32(0xADBCCBDA) + u32(2) + u32(8) + null())
-vector("refused-reply-truncated", "inbound", header(4) + qtime(1, 2, 3) + i32(-1))
-vector("refused-clear-window", "inbound", header(3) + u8(3))
-vector("refused-oversize", "inbound", header(7) + b"\x00" * (4097 - len(header(7))))
-vector("refused-invalid-utf8", "inbound", header(9) + u32(2) + b"\xff\xfe" + boolean(False))
+       + utf8("~") + utf8("CQ K1ABC FN42") + boolean(False) + u8(0))
+vector("refused-close", "inbound", header(6))
+vector("refused-replay", "inbound", header(7))
+vector("refused-halt", "inbound", header(8) + boolean(False))
+vector("refused-free-text", "inbound", header(9) + utf8("K1ABC HB9BLA 73") + boolean(True))
+vector("refused-location", "inbound", header(11) + utf8("JN47"))
+vector("refused-highlight", "inbound",
+       header(13) + utf8("K1ABC") + qcolor((255, 0, 0)) + qcolor(None) + boolean(False))
+vector("refused-switch-configuration", "inbound", header(14) + utf8("Default"))
+vector("refused-configure", "inbound", header(15) + utf8("Default"))
+vector("refused-unknown-type", "inbound", header(18) + utf8("x"))
+vector("refused-magic", "inbound", u32(0xADBCCBDB) + u32(2) + u32(0) + utf8(ID))
+vector("refused-schema1", "inbound", header(0, 1))
+vector("refused-schema4", "inbound", header(0, 4))
+vector("refused-utf8-truncated", "inbound", u32(0xADBCCBDA) + u32(2) + u32(0) + u32(20) + b"WSTX")
+vector("refused-null-id", "inbound", u32(0xADBCCBDA) + u32(2) + u32(0) + null())
+vector("refused-oversize", "inbound", header(0) + b"\x00" * (4097 - len(header(0))))
+vector("refused-invalid-utf8", "inbound", u32(0xADBCCBDA) + u32(2) + u32(0) + u32(2) + b"\xff\xfe")

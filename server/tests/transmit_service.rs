@@ -606,7 +606,7 @@ fn restart_never_resumes_an_armed_station_or_its_request() {
 // answer resets the count; at the limit the next request is never keyed and nothing
 // is halted.
 #[test]
-fn tx_watchdog_never_keys_after_the_unanswered_limit_and_tune_ends_at_its_limit() {
+fn tx_watchdog_stop_never_keys_and_tune_ends_at_its_limit() {
     let f = Fake::new();
     let mut core = Core::new(f.clone());
     core.set_watchdogs(1, 2).unwrap();
@@ -617,16 +617,13 @@ fn tx_watchdog_never_keys_after_the_unanswered_limit_and_tune_ends_at_its_limit(
     assert_eq!(core.view().tx_remaining_calls, 1);
     core.submit(request(1, P, "CQ HB9BLA JN47"));
     run(&mut core, &f, P + 13_000);
-    assert_eq!(
-        core.view().tx_remaining_calls,
-        0,
-        "one started transmission"
-    );
+    // The owner keeps no count: the remaining calls follow the contact's Rep.
+    assert_eq!(core.view().tx_remaining_calls, 1, "no Rep reported");
+    core.report_tx_repetitions(1);
+    assert_eq!(core.view().tx_remaining_calls, 0, "limit minus Rep");
+    core.report_tx_repetitions(0);
     *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
     run(&mut core, &f, P + 14_000);
-    // An answer resets the count: the next one is keyed.
-    core.answered();
-    assert_eq!(core.view().tx_remaining_calls, 1);
     *f.0.audio.lock().unwrap() = None;
     core.submit(request(2, P + 30_000, "CQ HB9BLA JN47"));
     run(&mut core, &f, P + 43_000);
@@ -634,9 +631,10 @@ fn tx_watchdog_never_keys_after_the_unanswered_limit_and_tune_ends_at_its_limit(
     run(&mut core, &f, P + 44_000);
     let keyed = f.keys().len();
     assert!(keyed >= 4, "two transmissions keyed and released");
-    // No answer: the third request is refused before keying, without a halt.
+    // The contact's stop drops the next request before keying, without a halt.
     *f.0.audio.lock().unwrap() = None;
     core.submit(request(3, P + 60_000, "CQ HB9BLA JN47"));
+    core.watchdog_stop();
     run(&mut core, &f, P + 61_000);
     let v = core.view();
     assert_eq!(
@@ -1252,6 +1250,7 @@ fn watchdog_stop_never_touches_ptt() {
     *f.0.unkey_error.lock().unwrap() = Some(PttError::Timeout);
     let keys = f.keys().len();
     core.submit(request(2, P + 30_000, "CQ HB9BLA JN47"));
+    core.watchdog_stop();
     run(&mut core, &f, P + 31_000);
     let v = core.view();
     assert_eq!(v.last_disarm_cause, DisarmCause::TxWatchdog);
@@ -1529,4 +1528,193 @@ fn accepted_requests_teach_the_station_hash_table() {
     assert_eq!(shown(&t, "<VP2X/K1JT> W9XYZ"), "<VP2X/K1JT> W9XYZ");
     assert_eq!(shown(&t, "<YW18FIFA> PA/K1XX"), "<YW18FIFA> PA/K1XX");
     assert_eq!(shown(&t, "<3D2CR/P> W9XYZ"), "<...> W9XYZ");
+}
+
+/// Records each Tx level with the log position, on top of the shared fake.
+#[derive(Clone)]
+struct Levelled(Fake, Arc<Mutex<Vec<(usize, i32)>>>);
+impl Hardware for Levelled {
+    fn now_utc_ms(&self) -> i64 {
+        self.0.now_utc_ms()
+    }
+    fn clock(&self) -> ClockState {
+        self.0.clock()
+    }
+    fn context(&self) -> Context {
+        self.0.context()
+    }
+    fn ptt(&mut self, on: bool) -> Result<(), PttError> {
+        self.0.ptt(on)
+    }
+    fn open_audio(&mut self) -> Result<(), AudioError> {
+        self.0.open_audio()
+    }
+    fn play(&mut self, program: Program) -> Result<(), AudioError> {
+        self.0.play(program)
+    }
+    fn poll_audio(&mut self) -> AudioPoll {
+        self.0.poll_audio()
+    }
+    fn stop_audio(&mut self) {
+        self.0.stop_audio()
+    }
+    fn audio_stopper(&self) -> Arc<dyn Fn() + Send + Sync> {
+        self.0.audio_stopper()
+    }
+    fn set_level_db(&mut self, level_db: i32) {
+        self.1.lock().unwrap().push((self.0.log().len(), level_db));
+    }
+}
+
+// Proves: CL-044-12; TC-044-013. A transmission takes the level at its audio start and
+// keeps it to the end; a running Tune follows at once; the scale is the attenuation.
+#[test]
+fn tx_level_applies_at_audio_start_and_live_only_in_tune() {
+    use wstx_rust::audio::{Encoding, NativeFormat};
+    use wstx_rust::playback::{Renderer, Source};
+    let f = Fake::new();
+    let levels = Arc::new(Mutex::new(Vec::new()));
+    let mut core = Core::new(Levelled(f.clone(), levels.clone()));
+    core.arm(7).unwrap();
+    core.set_tx_level(-12);
+    assert!(levels.lock().unwrap().is_empty(), "nothing plays yet");
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    let mut t = f.now_utc_ms();
+    while t <= P + 1_000 {
+        f.at(t);
+        core.tick();
+        t += 1;
+    }
+    let play = f
+        .log()
+        .iter()
+        .position(|(_, e)| matches!(e, Event::Play { .. }))
+        .unwrap();
+    assert_eq!(
+        *levels.lock().unwrap(),
+        vec![(play, -12)],
+        "set just before play"
+    );
+    // A change during the transmission is not handed to the running audio.
+    core.set_tx_level(-13);
+    assert_eq!(levels.lock().unwrap().len(), 1);
+    *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
+    f.at(P + 13_000);
+    core.tick();
+    // Range is clamped; Tune starts at the level and follows it.
+    core.set_tx_level(-99);
+    core.set_tune(true, 1500).unwrap();
+    assert_eq!(levels.lock().unwrap().last().map(|l| l.1), Some(-40));
+    core.set_tx_level(5);
+    assert_eq!(levels.lock().unwrap().last().map(|l| l.1), Some(0));
+    assert_eq!(level_scale(0), PLAYBACK_SCALE);
+    assert!((level_scale(-20) - 0.05).abs() < 1e-5);
+    assert_eq!(level_scale(-99), level_scale(LEVEL_MIN_DB));
+    let mut renderer = Renderer::new(Source::Tone { hz: 12_000. }, 0.5);
+    let format = NativeFormat {
+        rate: 48_000,
+        channels: 1,
+        encoding: Encoding::Float32,
+    };
+    let mut out = [0u8; 8];
+    renderer.fill(format, &mut out, 2);
+    assert_eq!(f32::from_le_bytes(out[4..8].try_into().unwrap()), 0.5);
+    renderer.set_scale(0.25);
+    renderer.fill(format, &mut out, 1);
+    assert!(f32::from_le_bytes(out[..4].try_into().unwrap()).abs() < 1e-5);
+    renderer.fill(format, &mut out, 1);
+    assert!((f32::from_le_bytes(out[..4].try_into().unwrap()) + 0.25).abs() < 1e-5);
+}
+
+/// Records when the transmit step asks for the meter read.
+#[derive(Clone)]
+struct Metered(Fake, Arc<Mutex<Vec<i64>>>);
+impl Hardware for Metered {
+    fn now_utc_ms(&self) -> i64 {
+        self.0.now_utc_ms()
+    }
+    fn clock(&self) -> ClockState {
+        self.0.clock()
+    }
+    fn context(&self) -> Context {
+        self.0.context()
+    }
+    fn ptt(&mut self, on: bool) -> Result<(), PttError> {
+        self.0.ptt(on)
+    }
+    fn open_audio(&mut self) -> Result<(), AudioError> {
+        self.0.open_audio()
+    }
+    fn play(&mut self, program: Program) -> Result<(), AudioError> {
+        self.0.play(program)
+    }
+    fn poll_audio(&mut self) -> AudioPoll {
+        self.0.poll_audio()
+    }
+    fn stop_audio(&mut self) {
+        self.0.stop_audio()
+    }
+    fn audio_stopper(&self) -> Arc<dyn Fn() + Send + Sync> {
+        self.0.audio_stopper()
+    }
+    fn meter_due(&mut self) {
+        self.1.lock().unwrap().push(self.0.now_utc_ms());
+    }
+}
+
+// Proves: CL-044-14; TC-044-017. Exactly one meter read per transmission, in the middle of
+// its audio; none for Tune.
+#[test]
+fn the_meter_read_is_due_once_in_the_middle_of_each_transmission() {
+    let f = Fake::new();
+    let due = Arc::new(Mutex::new(Vec::new()));
+    let mut core = Core::new(Metered(f.clone(), due.clone()));
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    let step = |core: &mut Core<Metered>, until: i64| {
+        let mut t = f.now_utc_ms();
+        while t <= until {
+            f.at(t);
+            core.tick();
+            t += 1;
+        }
+    };
+    // Audio starts at P + 500 and lasts 79 * 160 ms = 12 640 ms: the middle is P + 6 820.
+    step(&mut core, P + 6_819);
+    assert!(due.lock().unwrap().is_empty());
+    step(&mut core, P + 12_000);
+    assert_eq!(*due.lock().unwrap(), vec![P + 6_820]);
+    *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
+    f.at(P + 13_140);
+    core.tick();
+    assert_eq!(due.lock().unwrap().len(), 1, "exactly one");
+    // The next transmission has its own.
+    core.submit(request(2, P + 30_000, "CQ HB9BLA JN47"));
+    step(&mut core, P + 30_000 + 12_000);
+    assert_eq!(*due.lock().unwrap(), vec![P + 6_820, P + 36_820]);
+    *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
+    f.at(P + 43_140);
+    core.tick();
+    // Tune has none: its meters are read by the display.
+    core.set_tune(true, 1500).unwrap();
+    step(&mut core, P + 50_000);
+    assert_eq!(due.lock().unwrap().len(), 2);
+}
+
+// Proves: CL-044-14; TC-044-017 (b). A late start too short to read clear of its release
+// has no read: audio at about period + 11 200 ms leaves under 2 s of the 13 140 ms.
+#[test]
+fn a_late_start_with_under_two_seconds_of_audio_has_no_meter_read() {
+    let f = Fake::new();
+    let due = Arc::new(Mutex::new(Vec::new()));
+    let mut core = Core::new(Metered(f.clone(), due.clone()));
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    let mut t = P + 11_200;
+    while t <= P + 12_500 {
+        f.at(t);
+        core.tick();
+        t += 1;
+    }
+    assert!(due.lock().unwrap().is_empty());
 }
