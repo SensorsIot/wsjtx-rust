@@ -1149,7 +1149,8 @@ async fn connection(
                     if let Some(snapshot)=snapshot {
                         let (changed,holds)=contact_http::state_changes(&contact_sent,&snapshot);
                         let complete=holds["contact"]==snapshot["contact"];
-                        if changed.is_empty() {contact_seen=Some(revision);}
+                        // A revision without a changed field still goes: the next command needs it.
+                        if changed.is_empty() && contact_sent["contact_revision"]==snapshot["contact_revision"] {contact_seen=Some(revision);}
                         else if display_profile=="detail" || !transmit_http::countdown_only(&changed) || contact_sent_at.elapsed()>=Duration::from_secs(5) {
                             match optional_write(&mut socket,Message::Text(contact_http::state_event(&snapshot,changed).into())) {
                                 Ok(None)=>{},

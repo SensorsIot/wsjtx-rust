@@ -1357,7 +1357,8 @@ package WstxContact {
         doc /* New versioned WebSocket event on the existing wstx.v1 socket, exactly
              {v:1,type:"contact.state",data:{profile_id,boot_id,contact_revision,
              snapshot_sequence,monotonic_ms,utc_ms,changed}}, at most 2048 bytes, sent when
-             the GET /contact snapshot of this peer changes, coalesced to at most one per
+             the GET /contact snapshot of this peer changes or its contact_revision does (then
+             with an empty changed, so the next command has the revision), coalesced to at most one per
              second per peer and always sent within 1 s of a change; below Detailed a change
              of only watchdog.tune_remaining_seconds at most once per 5 s. changed (#10
              2026-11-06, operator rule 2026-11-04): on a peer's first event every field of

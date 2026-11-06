@@ -103,7 +103,7 @@ function stateApply(current,d){
   }
   held=view;
   window.wstxStationData?.('contact',valid(view));
-  if(valid(view)){stationSample(view.utc_ms);if(!snap||snap.boot_id!==view.boot_id||view.snapshot_sequence>snap.snapshot_sequence){snap=view;render();}}
+  if(valid(view)){stationSample(view.utc_ms);if(!snap||snap.boot_id!==view.boot_id||view.snapshot_sequence>snap.snapshot_sequence||view.contact_revision>snap.contact_revision){snap=view;render();}}
 }
 const ids=()=>snap&&{v:1,profile_id:snap.profile_id,boot_id:snap.boot_id};
 // Commands are sent one at a time, each with the revision of the latest snapshot.
