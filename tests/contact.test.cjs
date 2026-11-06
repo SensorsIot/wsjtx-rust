@@ -489,16 +489,16 @@ test('TC-007-005 the Tune countdown is paced by the display profile on the socke
   const thin=await peer('spectrum.thin'),detail=await peer('spectrum.detail');
   const s=await snapshot();
   const tune=async body=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),action:'tune',...body})});assert.equal(r.status,200,await r.text());return r.json();};
-  await new Promise(r=>setTimeout(r,1500));
   try{
+    await new Promise(r=>setTimeout(r,1500));
     const started=await tune({enabled:true,tx_offset_hz:1500});assert.notEqual(started.result?.accepted,false,JSON.stringify(started));
     await new Promise(r=>setTimeout(r,11000));
-  }finally{await tune({enabled:false});}
+    await tune({enabled:false});
+  }finally{thin.ws.close();detail.ws.close();}
   const ticks=peer=>peer.log.filter(e=>countdown(e.changed));
   assert.ok(ticks(detail).length>=7,`Detailed ${ticks(detail).length} countdown events`);
   const paced=ticks(thin);assert.ok(paced.length>=1&&paced.length<=3,`Thin ${paced.length} countdown events`);
   for(let n=1;n<paced.length;n++)assert.ok(paced[n].at-paced[n-1].at>=4900,'Thin countdown at most once per 5 s');
-  thin.ws.close();detail.ws.close();
 });
 
 test('TC-050-004 mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO completes, and CQ right after it calls',{timeout:420000},async()=>{
