@@ -3094,14 +3094,14 @@ test('TC-007-002 no arming path sends enable_tx while the transmit capability is
   const standard=(to,from,toKind='call')=>({type:'standard',to:{kind:toKind,text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
   const row=(sequence,text,fields)=>({sequence,start_frame:1000+sequence,frequency_hz:1000+sequence*100,snr_db:-5,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields,period_start_utc:period,dt_seconds:0.1});
   const records=[row(0,'CQ K1ABC FN42',standard('CQ','K1ABC','token')),row(1,'HB9BLA W1XYZ FN42',standard('HB9BLA','W1XYZ'))];
-  const commands=[];let capability='unavailable',contact=null,settings={},revision=3,state;
+  const commands=[];let capability='unavailable',contact=null,settings={},revision=3,state,refuse=null;
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
     state=liveFixture(await (await fetch(app.origin+'/receive')).json());
     state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-11-06T10:50:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
     Object.assign(state.job,{next_sequence:2,available_count:2,latest_decode:{id:1,first_sequence:0,next_sequence:2,period_start_utc:period,complete:true}});
     await p.route('**/contact',route=>route.fulfill({json:contactSnapshot({...base,revision,sequence:revision},{contact,settings,transmit:{capability}})}));
-    await contactCommands(p,commands);
+    await p.route('**/contact/command',async route=>{commands.push(JSON.parse(route.request().postData()));if(refuse){const code=refuse;refuse=null;await route.fulfill({status:409,json:{v:1,error:{code,field:null}}});}else await route.fulfill({status:202,json:{v:1,accepted:true}});});
     await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));await route.fulfill({json:{...emptyResults(state),next_sequence:2,available_count:2,next:2,records:records.slice(cursor)}});});
   }});
@@ -3114,12 +3114,19 @@ test('TC-007-002 no arming path sends enable_tx while the transmit capability is
   assert.deepEqual(await sent(1),['select_row'],'a double-click selects and does not arm');
   await page.locator('#qso-others tr').first().dblclick();
   assert.deepEqual(await sent(1),['select_row'],'a Calling me line selects and does not arm');
+  refuse='contact_active';await page.locator('#qso-others tr').first().dblclick();
+  await page.locator('#contact-change').click();
+  assert.deepEqual(await sent(2),['select_row','select_row'],'a contact change from a Calling me line does not arm');
   await page.locator('tr[data-sequence="0"] td').nth(4).click({button:'right'});
   assert.equal(await page.locator('#ba-menu [data-menu=reply]').isDisabled(),true,'the menu offers no Reply');
   await page.keyboard.press('Escape');commands.splice(0);
   contact=partner('replying',{suggested_slot:null});settings={auto_seq:false};revision++;await page.evaluate(()=>window.wstxContact.load());
   await page.waitForFunction(()=>window.wstxContact.snapshot().settings.auto_seq===false);
   assert.equal(await shown(page,'#qso-autoseq-on'),false,'Auto Seq on is not offered');
+  contact={...contact,suggested_slot:'tx5'};revision++;await page.evaluate(()=>window.wstxContact.load());
+  await page.locator('#qso-suggest:not([hidden])').click();
+  assert.deepEqual(await sent(1),['choose_next'],'the offered next message does not arm');
+  contact={...contact,suggested_slot:null};revision++;await page.evaluate(()=>window.wstxContact.load());
   capability='available';revision++;await page.evaluate(()=>window.wstxContact.load());
   await page.waitForFunction(()=>window.wstxContact.snapshot().transmit.capability==='available');
   assert.equal(await shown(page,'#qso-autoseq-on'),true,'offered again when available');
