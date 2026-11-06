@@ -841,6 +841,8 @@ async fn upgrade(State(app): State<App>, headers: HeaderMap, ws: WebSocketUpgrad
         .max_write_buffer_size(4096)
         .on_upgrade(move |socket| async move {
             let _permit = permit;
+            // #39 an authenticated client is here (WstxStrategy::StrategyRun).
+            let _client = app.profile.as_ref().map(|p| p.recording.clients.session());
             connection(socket, app.profile.map(|p| p.recording.clone()), authority).await
         })
 }

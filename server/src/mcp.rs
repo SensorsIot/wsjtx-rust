@@ -415,6 +415,10 @@ pub async fn endpoint(
             );
         }
     };
+    // #39 an authenticated client is here (WstxStrategy::StrategyRun; MCP is per request).
+    if let Some(p) = &app.profile {
+        p.recording.clients.mcp_request();
+    }
     let action = audit_action(&body);
     let response = dispatch(&app, &caller.transport, &headers, query, body).await;
     let status = response

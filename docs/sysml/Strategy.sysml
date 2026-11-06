@@ -1,7 +1,7 @@
 package WstxStrategy {
     private import ScalarValues::*;
     doc /* Canonical contract of the strategy engine (issue #39, CL-039-01..07 in
-         WstxRequirements; verification TC-039-001..007 and TC-039-030..031; the ignore
+         WstxRequirements; verification TC-039-001..007, TC-039-030..031 and TC-039-033; the ignore
          lists of issue #42, CL-042-02 and TC-042-002..003; Pounce, CL-042-03 and
          TC-042-004..005; Alert, CL-042-04 and TC-042-006..007): the award strategies, the
          directed-CQ rule, the value order in Band Activity, the strategy editor popup and
@@ -508,9 +508,18 @@ package WstxStrategy {
              No bounds: max_contacts and max_run_minutes do not apply and read null. The run
              checks the grant, not the transport of the selecting request: a page load, a
              second tab or a 401 recovery (a new proof) and the transport's 8 h deadline do
-             not end it; a revoked grant or a safety edit does (authority_lost). So
-             with every browser closed a strategy keeps calling until HALT (also MCP or UDP), None, a revoked grant, a refused command or a Tx watchdog stop. The
-             run ends only by a HALT, a selection, the grant (authority_lost), the Tx
+             not end it; a revoked grant or a safety edit does (authority_lost).
+             Unattended (coordinator default 2026-11-06, for the operator to confirm; the
+             constant automation::CLIENT_GONE, no setting): when no authenticated client has
+             been there for 60 s, the run selects no new station: a contact in progress ends
+             its normal way (completed, calls_per_station, the Tx watchdog), a manual one is
+             left alone, and when it next waits the run stops no_client; the strategy stays
+             selected with the reason shown and only a selection restarts it. A client is
+             there while a status WebSocket session is open (authenticated at its upgrade), and
+             at each authenticated POST /mcp, which has only per-request authentication: its
+             last request within the 60 s; the selection itself counts. A client back before the
+             stop continues the run. So with every browser closed it does not go on calling. The
+             run ends only by a HALT, a selection, the grant (authority_lost), no client (no_client), the Tx
              watchdog (tx_watchdog) or a refused command (transmit_refused, provider_error):
              the strategy stays selected with the stop reason shown, and only a new
              selection (None, then the strategy) starts it again: an AutomationCommand start

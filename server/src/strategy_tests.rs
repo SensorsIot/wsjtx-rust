@@ -1270,6 +1270,7 @@ async fn tc_039_004_a_run_goes_on_after_each_qso_without_a_limit() {
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
     select(&f, config(Some("New calls"))).await;
+    let _client = f.state.recording.clients.session();
     // No time_limit (the policy deadline is the start; the grant's 8 h still bind it).
     *f.state
         .recording
@@ -1629,6 +1630,7 @@ async fn tc_039_004_a_strategy_run_follows_the_grant_not_the_transport() {
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
     select(&f, config(Some("New calls"))).await;
+    let client = f.state.recording.clients.session();
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
     assert_eq!(contact(&f).await.2, json!("armed"));
     // A new proof, as a page load makes: the run and its contact go on.
@@ -1652,6 +1654,7 @@ async fn tc_039_004_a_strategy_run_follows_the_grant_not_the_transport() {
     f.tick();
     assert_eq!(run_state(&f).await, ("contact_active".into(), Value::Null));
     skew(Duration::ZERO);
+    drop(client);
     // The grant revoked: it stops, a contact it armed is disarmed.
     {
         let mut store = f.state.store.lock().unwrap();
@@ -1679,6 +1682,158 @@ async fn tc_039_004_a_strategy_run_follows_the_grant_not_the_transport() {
             .arm_state,
         wstx_rust::transmit::service::ArmState::Disarmed
     );
+}
+
+/// The run state without an MCP request (a request counts as a client).
+fn quiet_run(f: &Mcp) -> (String, Value) {
+    let a = f
+        .state
+        .recording
+        .contact
+        .get()
+        .unwrap()
+        .automation
+        .snapshot(&f.state.recording);
+    (
+        a["run"]["state"].as_str().unwrap_or("").to_owned(),
+        a["run"]["reason"].clone(),
+    )
+}
+/// The contact the browser reads (no MCP request).
+async fn quiet_contact(f: &Mcp) -> (Value, Value, Value) {
+    let c = f.browser("GET", "/contact", None).await.json;
+    (
+        c["contact"]["dx_call"].clone(),
+        c["contact"]["state"].clone(),
+        c["transmit"]["arm_state"].clone(),
+    )
+}
+fn at_skew(f: &Mcp, seconds: u64) {
+    *f.state
+        .recording
+        .contact
+        .get()
+        .unwrap()
+        .automation
+        .skew
+        .lock()
+        .unwrap() = Duration::from_secs(seconds);
+    f.tick();
+}
+
+// Proves: TC-039-033 (WstxStrategy::StrategyRun, coordinator default): with no client for 60 s a
+// strategy selects nothing new, the exchange in progress runs on, then it stops no_client.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_033_without_a_client_for_60_s_nothing_new_and_the_exchange_ends() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    select(&f, config(Some("New calls"))).await;
+    // 59 s: it still calls.
+    at_skew(&f, 59);
+    assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
+    assert_eq!(
+        quiet_contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    // 60 s: the exchange in progress runs on to its end.
+    at_skew(&f, 60);
+    assert_eq!(quiet_run(&f), ("contact_active".into(), Value::Null));
+    publish(&f, e + 30_000, &[("HB9BLA K1ABC -05", 1505.0, Some(-6.0))]);
+    assert_eq!(quiet_run(&f).0, "contact_active");
+    publish(&f, e + 60_000, &[("HB9BLA K1ABC RR73", 1505.0, Some(-6.0))]);
+    transmit_own_period(&f, e + 15_000).await;
+    assert_eq!(quiet_contact(&f).await.1, json!("completed"));
+    f.tick();
+    f.tick();
+    assert_eq!(quiet_run(&f), ("stopped".into(), json!("no_client")));
+    assert_eq!(
+        f.browser("GET", "/strategy", None).await.json["configuration"]["active"],
+        json!("New calls"),
+        "it stays selected with the reason"
+    );
+    // Nothing new is selected.
+    publish(&f, e + 150_000, &[("CQ DL1XYZ JO62", 1200.0, Some(9.0))]);
+    assert_eq!(quiet_contact(&f).await.2, json!("disarmed"));
+    assert_eq!(quiet_contact(&f).await.0, json!("K1ABC"));
+    // No automatic and no MCP restart: only a new selection.
+    let a = f.read("automation").await;
+    let safety = f.read("contact").await["transmit"]["safety_revision"].clone();
+    let r = f
+        .tool(
+            "wstx_automation_command",
+            json!({"command":{"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
+                "action":"start","expected_policy_revision":a["policy_revision"],
+                "expected_run_revision":a["run_revision"],"mode":"ft8","safety_revision":safety}}),
+        )
+        .await;
+    assert_eq!(r["result"]["error"]["code"], "operator_required", "{r}");
+    save(&f, config(None)).await;
+    select(&f, config(Some("New calls"))).await;
+    assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
+    publish(&f, e + 180_000, &[("CQ DL1XYZ JO62", 1200.0, Some(9.0))]);
+    assert_eq!(quiet_contact(&f).await.0, json!("DL1XYZ"));
+    assert_eq!(f.keys(), 2, "key on and off of the one own period above");
+}
+
+// Proves: TC-039-033
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_033_waiting_stops_at_60_s_and_a_client_or_reload_keeps_it() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    select(&f, config(Some("New calls"))).await;
+    at_skew(&f, 60);
+    assert_eq!(quiet_run(&f), ("stopped".into(), json!("no_client")));
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
+    assert_eq!(quiet_contact(&f).await.0, Value::Null, "nothing selected");
+    // A status session keeps it, however long; after it the 60 s count from its end. A reload
+    // inside them (a new session) keeps it too.
+    at_skew(&f, 0);
+    save(&f, config(None)).await;
+    select(&f, config(Some("New calls"))).await;
+    let session = f.state.recording.clients.session();
+    at_skew(&f, 120);
+    assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
+    drop(session);
+    at_skew(&f, 150);
+    assert_eq!(quiet_run(&f).0, "waiting");
+    let reloaded = f.state.recording.clients.session();
+    at_skew(&f, 300);
+    drop(reloaded);
+    at_skew(&f, 359);
+    assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
+    at_skew(&f, 360);
+    assert_eq!(quiet_run(&f), ("stopped".into(), json!("no_client")));
+    // An authenticated MCP request: its time counts.
+    at_skew(&f, 0);
+    save(&f, config(None)).await;
+    select(&f, config(Some("New calls"))).await;
+    at_skew(&f, 59);
+    f.read("transmit").await;
+    f.tick();
+    assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
+    at_skew(&f, 118);
+    assert_eq!(quiet_run(&f).0, "waiting");
+    at_skew(&f, 119);
+    assert_eq!(quiet_run(&f), ("stopped".into(), json!("no_client")));
+    // A client back before the contact's end: no stop.
+    at_skew(&f, 0);
+    save(&f, config(None)).await;
+    select(&f, config(Some("New calls"))).await;
+    publish(&f, e + 30_000, &[("CQ DL1XYZ JO62", 1200.0, Some(-1.0))]);
+    assert_eq!(quiet_contact(&f).await.0, json!("DL1XYZ"));
+    at_skew(&f, 61);
+    assert_eq!(quiet_run(&f).0, "contact_active");
+    let back = f.state.recording.clients.session();
+    f.tick();
+    browser_ok(&f, "cancel", json!({})).await;
+    f.tick();
+    f.tick();
+    assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
+    drop(back);
+    assert_eq!(f.keys(), 0);
 }
 
 // Proves: TC-039-030 (WstxStrategy::WorkedWindow through the store): a QSO of this UTC date

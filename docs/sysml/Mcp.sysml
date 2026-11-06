@@ -219,7 +219,7 @@ package WstxMcp {
         enum stopped; enum completed; enum limit_reached; enum no_answer; enum halted;
         enum transmit_stopped; enum contact_changed; enum authority_lost;
         enum context_changed; enum transmit_refused; enum provider_error;
-        enum time_limit; enum tx_watchdog; enum strategy_missing; enum band_changed;
+        enum time_limit; enum tx_watchdog; enum strategy_missing; enum band_changed; enum no_client;
     }
     attribute def OperatingAutomation {
         attribute runState : RunState;
