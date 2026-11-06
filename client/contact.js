@@ -166,7 +166,7 @@ function render(){
   if(s){setValue($('contact-report'),s.report);setValue($('contact-rx'),s.rx_hz);setValue($('contact-tx'),s.tx_hz);$('contact-hold').checked=s.hold_tx;if(document.activeElement!==$('contact-parity'))$('contact-parity').value=s.parity;if(document.activeElement!==$('contact-activity'))$('contact-activity').value=s.activity??'none';if(document.activeElement!==$('contact-exchange')&&s.exchange!==shownExchange){shownExchange=s.exchange;$('contact-exchange').value=s.exchange??'';}$('contact-serial').textContent=s.activity==='rtty'&&(s.exchange==='DX'||s.exchange==='#')?`Serial ${String(s.serial??1).padStart(4,'0')}`:'';$('contact-auto').checked=s.auto_seq;$('contact-call-first').checked=s.call_first!==false;
     setValue($('watchdog-tx'),s.tx_calls);setValue($('watchdog-tune'),s.tune_seconds);}
   $('watchdog-tx').disabled=$('watchdog-tune').disabled=!snap;
-  $('contact-call-first').disabled=!ready;
+  $('contact-call-first').disabled=!transmitCapable();
   const auto=$('contact-auto');auto.disabled=!ready;auto.setAttribute('aria-label',ready?'Auto sequence':'Auto sequence unavailable');
   // WstxContact::SetEnableTx (#37): no Enable Tx control; CQ or a double-click starts a QSO
   // (no Reply button since the #50 double-click fix).
@@ -261,7 +261,7 @@ function autoSeqShow(c,s){
   // The exchange word only ("Send 73 next"), so the line stays one row; the title has the text.
   const word=message?message.split(' ').slice(2).join(' ')||message:'';
   suggest.hidden=!message;suggest.textContent=message?`Send ${word} next`:'';suggest.title=message?`Send ${message} next`:'';suggest.dataset.slot=slot??'';
-  $('qso-autoseq-on').hidden=!off;
+  $('qso-autoseq-on').hidden=!off||!transmitReady();
 }
 $('qso-suggest').addEventListener('click',async()=>{
   const slot=$('qso-suggest').dataset.slot;if(!slot)return;
