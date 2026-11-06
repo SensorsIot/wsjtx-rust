@@ -99,27 +99,13 @@ async function fetchSnapshot(){
     const response=await stationFetch('/contact',{cache:'no-store',signal:AbortSignal.timeout(10000)});
     contactMissing=response.status===404;
     // #51: a contact snapshot this page cannot validate shows the reload chip.
-    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence)){snap=value;if(!held||heldSocket!==socket||(heldRead&&value.snapshot_sequence>=held.snapshot_sequence)){held=value;heldSocket=socket;heldRead=true;}render();}}
+    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence)){snap=value;render();}}
   }catch{}
 }
-// WstxContact::ContactStateEvent (#10): the station's events build the same snapshot: every field
-// in the socket's first one, what changed after it. This client loads after the socket on a thin
-// link and can miss the first one: it then builds on its own read, and an event that moves the
-// sequence without a change means that read caught a value that is gone: it reads again.
-let heldSocket=null,held=null,heldRead=false;
-function stateApply(current,d){
-  if(heldSocket!==current){heldSocket=current;held=null;heldRead=false;}
-  const {changed,...identity}=d;if(!held&&!(changed.transmit&&changed.settings&&changed.watchdog)){load();return;}
-  const view={v:1,contact:null,log:null,...held,...identity};
-  for(const [key,value] of Object.entries(changed)){
-    if(key==='contact'&&value){
-      const whole=value.id!==undefined,{dialogue_from,...rest}=value;
-      view.contact=whole?rest:{...view.contact,...rest};
-      if(dialogue_from!==undefined)view.contact.dialogue=[...(whole?[]:held?.contact?.dialogue??[]).slice(0,dialogue_from),...value.dialogue];
-    }else view[key]=value&&key!=='log'&&view[key]?{...view[key],...value}:value;
-  }
-  if(heldRead&&!Object.keys(changed).length)load();
-  held=view;
+// WstxContact::ContactStateEvent (#10): show what recording.js holds from the station's events,
+// unless this client's own read is newer.
+function stateShow(){
+  const view=contactHeld;if(!view)return;
   window.wstxStationData?.('contact',valid(view));
   if(valid(view)){stationSample(view.utc_ms);if(!snap||snap.boot_id!==view.boot_id||view.snapshot_sequence>=snap.snapshot_sequence){snap=view;render();}}
 }
@@ -846,7 +832,7 @@ addEventListener('station-stale',()=>{displays();});
 addEventListener('station-message',event=>{
   const {message,current}=event.detail;if(current!==socket)return;
   const d=message.data;
-  if(message.type==='contact.state'&&d?.changed)stateApply(current,d);
+  if(message.type==='contact.state'&&d?.changed)stateShow();
   else if(message.type==='automation.state'&&d)loadAutomation();
   else if(message.type==='station.tick'&&d&&Number.isSafeInteger(d.utc_ms)&&[15000,7500].includes(d.period_ms)){
     const changed=tick?.transmitting!==d.transmitting;stationSample(d.utc_ms);
@@ -981,6 +967,7 @@ serverForm.addEventListener('submit',async event=>{
   if(await confirmAction('Applying these settings may restart receive and interrupt the QSO in progress. Apply now?','Apply')){applyConfirmed=true;serverForm.requestSubmit();}
 },true);
 window.wstxContact=Object.freeze({load,snapshot:()=>snap});
+stateShow();
 })();
 // #39 WstxStrategy: the strategy element (name, editor, Highlight | Auto), Highlight in
 // Band Activity and the editor popup. The station evaluates every strategy (POST

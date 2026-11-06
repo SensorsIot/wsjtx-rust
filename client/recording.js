@@ -1213,6 +1213,21 @@ function transmitShow(){
 // one what changed. It does not read GET /transmit. Ages advance locally; HALT is enabled as
 // soon as the station is ready (#57).
 let transmitEventSocket=null;
+// WstxContact::ContactStateEvent (#10): this client is loaded before the socket opens and the
+// contact client is not, so the contact state from the events is held here: every field in the
+// socket's first event, what changed after it.
+let contactHeld=null,contactHeldSocket=null;
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='contact.state'||!message.data?.changed)return;
+  if(contactHeldSocket!==current){contactHeldSocket=current;contactHeld=null;}
+  const {changed,...identity}=message.data,view={v:1,contact:null,log:null,...contactHeld,...identity};
+  for(const [key,value] of Object.entries(changed)){
+    if(key==='contact'&&value){
+      const whole=value.id!==undefined,{dialogue_from,...rest}=value;
+      view.contact=whole?rest:{...view.contact,...rest};
+      if(dialogue_from!==undefined)view.contact.dialogue=[...(whole?[]:contactHeld?.contact?.dialogue??[]).slice(0,dialogue_from),...value.dialogue];
+    }else view[key]=value&&key!=='log'&&view[key]?{...view[key],...value}:value;
+  }
+  contactHeld=view;});
 function transmitApply(changed){
   const view=transmitView??{};
   for(const [key,value] of Object.entries(changed))view[key]=['transmit','watchdog'].includes(key)&&view[key]?{...view[key],...value}:value;

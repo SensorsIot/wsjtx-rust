@@ -1277,7 +1277,20 @@ async fn contact_browser_station(filter: &[&str]) -> std::process::Output {
     let control = crate::test_ports::browser_listener();
     let control_origin = format!("http://{}", control.local_addr().unwrap());
     let publisher = f.clone();
+    let tuner = f.clone();
     let control_app = Router::new()
+        .route(
+            "/tune",
+            post(move |Json(body): Json<Value>| {
+                let f = tuner.clone();
+                async move {
+                    let station = f.state.recording.transmit.get().unwrap();
+                    let enabled = body["enabled"].as_bool().unwrap();
+                    let accepted = station.service.with(|c| c.set_tune(enabled, 1500)).is_ok();
+                    Json(json!({"accepted":accepted}))
+                }
+            }),
+        )
         .route(
             "/publish",
             post(move |Json(body): Json<Value>| {
