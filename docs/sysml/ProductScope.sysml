@@ -334,7 +334,7 @@ package WstxProductScope {
              Pinned (CL-013-02), read from the station's radio on 2026-11-06: model FLEX-6600,
              firmware SmartSDR 4.3.16.42034, API V1.4.0.0, 4 slices. Admission is by API version;
              another model or firmware speaking it connects and is displayed but not claimed as
-             supported. The session reads info for model, serial and firmware.
+             supported. The displayed model, serial and firmware are the announced ones.
              Profile: the connection type is chosen at creation (--create-native-flex-profile
              <dir> <rx antenna>) and is read-only in the browser. Remaining: hardware/firmware,
              24 kHz DAX, latency/timestamps, >= 4 usable slices, broadcast discovery and resource

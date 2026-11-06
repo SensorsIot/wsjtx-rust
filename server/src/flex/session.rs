@@ -624,15 +624,6 @@ fn attempt(
         }
     }
     radio.protocol = conn.version.map(|v| v.to_string());
-    // What the radio says of itself, also where no announcement was heard.
-    if let Ok((0, reply)) = conn.request("info") {
-        let info = wire::parse_info(&reply);
-        if !info.serial.is_empty() {
-            radio.serial = info.serial;
-        }
-        radio.model = info.model.or(radio.model.take());
-        radio.firmware = info.firmware.or(radio.firmware.take());
-    }
     shared.update(|s| s.radio = Some(radio.clone()));
     conn.expect_ok("sub client all")?;
     // Replies come in order, so the next reply also proves the client list has arrived,

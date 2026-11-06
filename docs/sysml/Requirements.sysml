@@ -1767,9 +1767,10 @@ package WstxRequirements {
              client's slice and no transmit, disconnect or persistence command is sent. Rust unit
              tests check the pinned independent narrow48 vector field by field, its negative cases,
              documented control lines and the 4096-byte line bound; the emulator encoder reproduces
-             the same vector bytes. Another model on the admitted API connects, and model, serial
-             and firmware come from the radio's info reply, whose recorded real form a unit test
-             checks. */
+             the same vector bytes. Another model on the admitted API connects and its announced
+             model, serial and firmware are shown. GET /native-flex reports the packet's timestamp
+             kind and this host's clock minus its time, which a new session without own packets
+             shows as null. */
         attribute automation : AutomationState = AutomationState::implemented;
         attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
         objective {

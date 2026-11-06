@@ -253,16 +253,33 @@ test('TC-023-002 persisted intent reconciles restarted radios, changed handles a
   }
 });
 
-test('TC-023-001 another model on the admitted API connects and the radio states its own facts', {timeout: 60000}, async t => {
+test('TC-023-001 another model on the admitted API connects, with its announced facts shown', {timeout: 60000}, async t => {
   const port = await udpPort();
   const emulator = await new FlexEmulator({discoveryPorts: [port], model: 'FLEX-8400', serial: '0000-1111-6600-2222'}).start();
   t.after(() => emulator.stop());
   const s = await station(t, {name: 'Other model', discovery: port});
   const v = await state(s, 'ready');
   assert.equal(v.radio.model, 'FLEX-8400'); assert.equal(v.radio.serial, '0000-1111-6600-2222');
-  assert.equal(v.radio.firmware, '4.3.16.42034', 'from the info reply, not the announced 4.1.3.39644');
+  assert.equal(v.radio.firmware, '4.1.3.39644');
+});
+
+test('TC-023-001 the VITA measurement is reported and belongs to its session', {timeout: 60000}, async t => {
+  const port = await udpPort();
+  let emulator = await new FlexEmulator({discoveryPorts: [port]}).start();
+  t.after(() => emulator.stop());
+  const s = await station(t, {name: 'Measured', discovery: port});
+  await state(s, 'ready');
   const measured = await waitFor(async () => { const x = await s.flex(); return x.packets.accepted > 50 && x; }, 'packets');
-  assert.equal(measured.vita.tsi, 3, 'the packet timestamp kind is reported');
+  // The emulator stamps integer second 1 and fraction 0, so the offset is the clock since then.
+  assert.equal(measured.vita.tsi, 3);
+  assert.ok(Math.abs(measured.vita.host_minus_radio_ms - (Date.now() - 1000)) < 5000, JSON.stringify(measured.vita));
+  // A new session whose own packets never arrive shows no measurement from the old one.
+  await emulator.stop();
+  emulator = await new FlexEmulator({discoveryPorts: [port]}).start();
+  emulator.strangerOnly = true;
+  await failure(s, 'transport_lost');
+  const fresh = await state(s, 'ready', 30000);
+  assert.deepEqual(fresh.vita, {tsi: null, host_minus_radio_ms: null});
 });
 
 test('TC-023-002 a new session goes back to the selected frequency', {timeout: 60000}, async t => {
@@ -429,7 +446,7 @@ test('TC-023-003 capacity, incompatible API and mixed standard/native profiles t
   assert.equal(await standardPage.locator('#settings select:not([id])').inputValue(), 'standard');
   assert.equal(await nativePage.locator('#settings select:not([id])').inputValue(), 'native_flex');
   await nativePage.locator('#native-status[data-state="ready"]').waitFor({state: 'attached', timeout: 20000});
-  assert.match(await nativePage.locator('#native-status').textContent(), /^Native FlexRadio ready .*FLEX-6600 4\.3\.16\.42034.*transmit unsupported$/);
+  assert.match(await nativePage.locator('#native-status').textContent(), /^Native FlexRadio ready .*FLEX-6600 4\.1\.3\.39644.*transmit unsupported$/);
   assert.equal(await standardPage.locator('#native-status').isHidden(), true);
   await nativePage.locator('#operating-radio').waitFor({state: 'attached'});
   // A native station with no receive job is offered Start, never told it lacks an audio input.

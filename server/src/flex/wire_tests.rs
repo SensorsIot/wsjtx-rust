@@ -7,18 +7,6 @@ fn bytes(hex: &str) -> Vec<u8> {
         .collect()
 }
 
-// Proves: TC-023-001. The reply of a real FLEX-6600 (2026-11-06) with its MAC left out.
-#[test]
-fn info_reply_of_a_real_radio_gives_its_facts() {
-    let found = parse_info(
-        r#"model="FLEX-6600",chassis_serial="0000-1111-6600-2222",name="",callsign="HB9BLA",gps="Not Present",atu_present=1,num_scu=2,num_slice=4,num_tx=1,software_ver=4.3.16.42034,ip=192.0.2.10"#,
-    );
-    assert_eq!(found.model.as_deref(), Some("FLEX-6600"));
-    assert_eq!(found.serial, "0000-1111-6600-2222");
-    assert_eq!(found.firmware.as_deref(), Some("4.3.16.42034"));
-    assert_eq!(parse_info("").serial, "");
-}
-
 // Proves: TC-023-001. Independently authored issue-13 preparation vector
 // (hb9bla-progress/flex-readiness/independent-protocol-vectors.json, SHA256
 // d706e67b6bf78ae46ddc8c7b7a3331d8fdde5c15e2a1446eb0110586fa893f3e), not vendor output.

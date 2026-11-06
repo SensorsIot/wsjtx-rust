@@ -178,8 +178,6 @@ class FlexEmulator {
       return;
     }
     if (text === 'client start_persistence off' || text === 'ping') return reply(0);
-    // The shape of a real FLEX-6600's reply, recorded 2026-11-06.
-    if (text === 'info') return reply(0, `model="${this.model}",chassis_serial="${this.serial}",name="",callsign="TEST",gps="Not Present",num_slice=${this.maxSlices},num_tx=1,software_ver=4.3.16.42034,ip=127.0.0.1`);
     if (words[0] === 'client' && words[1] === 'gui' && words.length === 3) {
       if (this.guiCount() >= this.maxGui) return reply('50000005');
       client.gui = true; client.clientId = words[2];
