@@ -22,8 +22,10 @@ package WstxStrategy {
             the run answers from its free Tx slot (FreeTxSlot) so the answer never lands on the
             final 73.
          D4 An award strategy never calls CQ. It waits for the next opportunity and goes on
-            after each QSO without a limit (no QSO or time limit; the WstxMcp run bounds
-            and the transport's 8 h do not apply to it). The grant and every safety check still apply.
+            after each QSO without a limit (no QSO limit; the WstxMcp run bounds and the
+            transport's 8 h do not apply to it; its own limit is 8 hours from the selection,
+            operator decision 2026-11-06, StrategyRun, which replaces the former "no time limit").
+            The grant and every safety check still apply.
          D5 Stations calling my callsign are always answered, independent of goal, region
             and SNR, and come first (CallerOfMyCall).
          D6 No skip: a station is never skipped after N calls. calls_per_station is the
@@ -506,9 +508,14 @@ package WstxStrategy {
              the selection. Without a grant transport or transmit owner no run starts:
              the strategy stays selected and the snapshot's strategy_refusal names the reason
              (transmit_unavailable) until the next selection.
-             No bounds: max_contacts and max_run_minutes do not apply and read null. The run
-             checks the grant, not the transport of the selecting request: a page load, a
-             second tab or a 401 recovery (a new proof) and the transport's 8 h deadline do
+             max_contacts and max_run_minutes do not apply and read null. Run limit (operator
+             decision 2026-11-06; the constant automation::STRATEGY_RUN_MAX, no setting): a run lasts
+             at most 8 hours from its selection, also with a browser open; a new selection
+             starts a new 8 hours. At the limit it selects no new station: a contact in progress
+             ends its normal way, a manual one is left alone, and when it next waits the run
+             stops run_limit; the strategy stays selected with the reason shown and only a
+             selection restarts it. The run checks the grant, not the transport of the selecting request: a page load, a
+             second tab or a 401 recovery (a new proof) and the transport's own 8 h deadline do
              not end it; a revoked grant or a safety edit does (authority_lost).
              Unattended (coordinator default 2026-11-06, for the operator to confirm; the
              constant automation::CLIENT_GONE, no setting): when no authenticated client has
@@ -520,7 +527,7 @@ package WstxStrategy {
              at each authenticated POST /mcp, which has only per-request authentication: its
              last request within the 60 s; the selection itself counts. A client back before the
              stop continues the run. So with every browser closed it does not go on calling. The
-             run ends only by a HALT, a selection, the grant (authority_lost), no client (no_client), the Tx
+             run ends only by a HALT, a selection, the grant (authority_lost), no client (no_client), the run limit (run_limit), the Tx
              watchdog (tx_watchdog) or a refused command (transmit_refused, provider_error):
              the strategy stays selected with the stop reason shown, and only a new
              selection (None, then the strategy) starts it again: an AutomationCommand start

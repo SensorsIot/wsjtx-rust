@@ -1280,7 +1280,7 @@ async fn tc_039_004_a_run_goes_on_after_each_qso_without_a_limit() {
     let e = at_even(&f);
     select(&f, config(Some("New calls"))).await;
     let _client = f.state.recording.clients.session();
-    // No time_limit (a policy deadline would be the start); only the grant binds it.
+    // No limit on the contacts, and the run goes on before its 8 hours.
     *f.state
         .recording
         .contact
@@ -1901,6 +1901,58 @@ async fn tc_039_033_a_real_status_websocket_keeps_a_strategy_and_its_close_ends_
     at_skew(&f, 360);
     assert_eq!(quiet_run(&f), ("stopped".into(), json!("no_client")));
     server.abort();
+}
+
+// Proves: TC-039-033 (operator decision 2026-11-06): a run lasts at most 8 hours from its
+// selection, also with a client connected throughout; a new selection starts again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_033_a_strategy_run_lasts_at_most_8_hours_from_its_selection() {
+    const H8: u64 = 8 * 3600;
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    select(&f, config(Some("New calls"))).await;
+    // Just before: it still selects.
+    at_skew(&f, H8 - 1);
+    assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
+    assert_eq!(quiet_contact(&f).await.0, json!("K1ABC"));
+    assert_eq!(quiet_contact(&f).await.2, json!("armed"));
+    // At 8 h: the exchange in progress runs on to its end, then the run stops.
+    at_skew(&f, H8);
+    assert_eq!(quiet_run(&f), ("contact_active".into(), Value::Null));
+    publish(&f, e + 30_000, &[("HB9BLA K1ABC -05", 1505.0, Some(-6.0))]);
+    assert_eq!(quiet_run(&f).0, "contact_active");
+    publish(&f, e + 60_000, &[("HB9BLA K1ABC RR73", 1505.0, Some(-6.0))]);
+    transmit_own_period(&f, e + 15_000).await;
+    assert_eq!(quiet_contact(&f).await.1, json!("completed"));
+    f.tick();
+    f.tick();
+    assert_eq!(quiet_run(&f), ("stopped".into(), json!("run_limit")));
+    assert_eq!(
+        f.browser("GET", "/strategy", None).await.json["configuration"]["active"],
+        json!("New calls"),
+        "it stays selected with the reason"
+    );
+    // No new station.
+    publish(&f, e + 150_000, &[("CQ DL1XYZ JO62", 1200.0, Some(9.0))]);
+    assert_eq!(quiet_contact(&f).await.2, json!("disarmed"));
+    assert_eq!(quiet_contact(&f).await.0, json!("K1ABC"));
+    // A new selection starts a new 8 hours, also from here on.
+    save(&f, config(None)).await;
+    select(&f, config(Some("New calls"))).await;
+    at_skew(&f, H8 + H8 - 1);
+    assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
+    publish(&f, e + 180_000, &[("CQ DL1XYZ JO62", 1200.0, Some(9.0))]);
+    assert_eq!(quiet_contact(&f).await.0, json!("DL1XYZ"));
+    // Waiting at the limit: it stops at once.
+    browser_ok(&f, "cancel", json!({})).await;
+    f.tick();
+    f.tick();
+    assert_eq!(quiet_run(&f).0, "waiting");
+    at_skew(&f, H8 + H8);
+    assert_eq!(quiet_run(&f), ("stopped".into(), json!("run_limit")));
 }
 
 // Proves: TC-039-033

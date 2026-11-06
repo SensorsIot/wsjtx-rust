@@ -21,6 +21,9 @@ pub const CALLS_MAX: usize = 16;
 /// #39 WstxStrategy::StrategyRun (coordinator default, for the operator to confirm): with no
 /// authenticated client for this long a strategy starts nothing new.
 pub const CLIENT_GONE: Duration = Duration::from_secs(60);
+/// #39 WstxStrategy::StrategyRun (operator decision 2026-11-06): the longest a strategy run lasts
+/// from its selection, also with a browser open.
+pub const STRATEGY_RUN_MAX: Duration = Duration::from_secs(8 * 3600);
 /// #39 who is connected: open status WebSocket sessions (authenticated at the upgrade) and an
 /// authenticated MCP request since the last run step (MCP has no sessions).
 #[derive(Default)]
@@ -822,7 +825,7 @@ impl Owner {
                     .map_or_else(Default::default, |(s, j, g, _)| (s, j, g)),
                 access,
                 token,
-                deadline: self.now(),
+                deadline: self.now() + STRATEGY_RUN_MAX,
                 safety_revision: current,
                 halts: transmit.service.halt_requests(),
                 last_decode: r.latest_publication().map_or(0, |p| p.0),
@@ -1020,6 +1023,7 @@ impl Owner {
             run.client_seen = now;
         }
         let no_client = is_strategy && now >= run.client_seen + CLIENT_GONE;
+        let run_limit = is_strategy && now >= run.deadline;
         if is_strategy && run.state == RunState::Waiting && run.reason != waiting_reason {
             run.reason = waiting_reason;
             inner.run_revision = inner.run_revision.saturating_add(1).min(MAX_SAFE);
@@ -1135,8 +1139,11 @@ impl Owner {
                     }
                     return stop(&mut inner, "contact_changed", false);
                 }
-                // Nobody has been connected: nothing new is started. A contact in progress got
+                // At the run limit or with nobody connected nothing new is started. A contact in progress got
                 // here by its normal end; a manual one waits in Manual first.
+                if run_limit {
+                    return stop(&mut inner, "run_limit", false);
+                }
                 if no_client {
                     return stop(&mut inner, "no_client", false);
                 }
