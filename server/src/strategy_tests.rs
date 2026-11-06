@@ -3164,7 +3164,7 @@ async fn run_at_limit(limit: u64, calls: u64, set: impl FnOnce(&crate::pskr::Fee
     std::fs::create_dir(&dir).unwrap();
     let feed = crate::pskr::Feed::start(&dir, &f.id, &f.boot, None, crate::pskr::Timing::BROKER);
     f.state.recording.pskr.set(feed.clone()).ok().unwrap();
-    let mut c = config(Some("New calls"));
+    let mut c = config(Some("Test calls"));
     c["strategies"][0]["calls_per_station"] = json!(calls);
     select(&f, c).await;
     publish(&f, e, &[("CQ K1ABC FN42", 1800.0, Some(-10.0))]);
