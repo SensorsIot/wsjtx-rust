@@ -1396,21 +1396,6 @@ async fn browser_command(f: &Mcp, action: &str, extra: Value) -> Value {
     b
 }
 
-async fn not_keyed_in(f: &Mcp, own: i64) {
-    let service = &f.state.recording.transmit.get().unwrap().service;
-    f.bench
-        .offset
-        .fetch_add(own - 30 - f.bench.now_utc_ms(), Ordering::SeqCst);
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while service.view().arm_state == wstx_rust::transmit::service::ArmState::Armed {
-        assert!(Instant::now() < deadline, "{:?}", service.view());
-        f.tick();
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    assert!(!service.view().transmitting);
-    f.tick();
-}
-
 // Proves: TC-039-005
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_005_automation_never_resets_the_tx_watchdog() {

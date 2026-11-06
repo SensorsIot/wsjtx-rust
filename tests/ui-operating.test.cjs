@@ -3292,7 +3292,7 @@ test('TC-037-004 a contact change is offered only for a row that can start a con
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor);await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next:cursor+batch.length,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
     await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:partner('replying',{dx_call:'IW9FRA',dx_grid:'JM68'}),transmit:{}})}));
     await p.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());commands.push(b);
-      if(b.action==='select_row'&&!b.replace)await route.fulfill({status:409,json:{error:{code:'contact_active'}}});else await route.fulfill({status:202,json:{v:1,accepted:true}});});
+      if(b.action==='select_row'&&!b.replace)await route.fulfill({status:409,json:{error:{code:[6,7].includes(b.row.sequence)?'directive_not_answerable':'contact_active',reason:'CQ NA \u2014 not for EU'}}});else await route.fulfill({status:202,json:{v:1,accepted:true}});});
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===8&&window.wstxContact?.snapshot()&&document.querySelector('#continent-derived')?.textContent.includes('EU'),null,{timeout:25000});
   const row=text=>page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:text});

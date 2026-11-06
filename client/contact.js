@@ -573,14 +573,12 @@ function rowIdentity(row){
 }
 async function selectRow(tr){
   const row=rowIdentity(tr);if(!row)return null;
-  // #37: during a contact a CQ directed elsewhere offers nothing, so it is not even asked.
-  if(running(snap?.contact)&&window.wstxCqNotForMe?.(tr)){changeTarget?.remove();changeTarget=null;resultText.textContent='';return null;}
-  const reply=await selectConfirmed(row,false,'Select station');
-  if(reply?.refused==='contact_active'){
-    // #37: only a row that can start a contact for me offers the change; a foreign QSO's row offers nothing.
-    if(tr.dataset.foreign){changeTarget?.remove();changeTarget=null;resultText.textContent='';}
-    else offerChange(()=>send('select_row',{row,replace:true,directive_confirmed:true},'Change contact'),tr.dataset.sender);
-  }
+  // #37: during a contact only a row that can start a contact for me offers the change; a foreign
+  // QSO's row or a CQ directed elsewhere (the station's refusal, DirectedCqRule) offers nothing.
+  const qso=running(snap?.contact);
+  const reply=qso?await send('select_row',{row,replace:false},'Select station'):await selectConfirmed(row,false,'Select station');
+  if(qso&&(reply?.refused==='directive_not_answerable'||(reply?.refused==='contact_active'&&tr.dataset.foreign))){changeTarget?.remove();changeTarget=null;resultText.textContent='';}
+  else if(reply?.refused==='contact_active')offerChange(()=>send('select_row',{row,replace:true,directive_confirmed:true},'Change contact'),tr.dataset.sender);
   return reply;
 }
 // WstxStrategy::DirectedCqRule: the station decides; a CQ that is not answerable is a warning
@@ -1024,14 +1022,6 @@ function decorate(){
   for(const tr of [...tbody.children]){if(tr.classList.contains('ba-divider')){flush();block=[];}else if(tr.dataset.sequence)block.push(tr);}
   flush();observer.takeRecords();reordering=false;
 }
-// #37: WstxStrategy::DirectedCqRule (addressed_to_me, server/src/strategy.rs) for a row the operator
-// clicks; the verdicts above exist only with Highlight on and an active strategy.
-window.wstxCqNotForMe=tr=>{
-  const target=tr.children[4]?.textContent.match(/^CQ (\S+) /)?.[1];if(!target||target===tr.dataset.sender)return false;
-  const mine=config()?.continent??view?.derived_continent??null;
-  if(['AF','AN','AS','EU','NA','OC','SA'].includes(target))return mine!==target;
-  return target==='DX'&&!(mine&&tr.dataset.continent&&mine!==tr.dataset.continent);
-};
 function wanted(){
   // The sequences shown for the current receive identity, evaluated once each.
   const id=identity();if(!highlightOn()||!id)return null;
