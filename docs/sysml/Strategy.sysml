@@ -374,7 +374,9 @@ package WstxStrategy {
              selection of such a row (double-click, Reply, Select, the other-calls list) is
              refused directive_not_answerable (409 with error.reason = this text); the
              browser shows it as a warning the operator can confirm, and only then sends
-             select_row again with the optional directive_confirmed true. A command that is
+             select_row again with the optional directive_confirmed true. The directive is checked
+             before contact_active, so during a contact a plain click (select_row without replace) on
+             such a row is refused this way too and offers nothing (CL-037-05); a double-click warns. A command that is
              not the browser's (automation, MCP, UDP) can never confirm it: its select_row is
              refused directive_not_answerable also with directive_confirmed. */
     }
@@ -525,7 +527,7 @@ package WstxStrategy {
              selection (None, then the strategy) starts it again: an AutomationCommand start
              of a configuration a strategy run left is refused 409 operator_required strategy,
              from an MCP client and from the browser. HALT from any source (button,
-             Alt+H, MCP, UDP) ends the run and sets active to None in the store, also with no
+             Alt+H, MCP) ends the run and sets active to None in the store, also with no
              run, at the next station step (revision + 1, in memory: active is never read
              from the file), pushed by strategy.state. Esc (Abort QSO) changes neither.
              Receive: a strategy run has no receive identity of its own. Without FT8 or FT4
@@ -564,8 +566,8 @@ package WstxStrategy {
              read from the credential at the auth boundary, so an MCP client is never one
              on any route, #58). Only an Enable Tx or a strategy selection from the browser ends
              a watchdog stop. Never operator actions: commands of a run (select_row,
-             set_frequency, enable_tx, cancel, disarm), any MCP request (also starting or
-             restarting a run) and any UDP command (Reply, Free Text). Such an enable_tx
+             set_frequency, enable_tx, cancel, disarm) and any MCP request (also starting or
+             restarting a run). Such an enable_tx
              is refused tx_watchdog after a watchdog stop or when no browser action was
              seen this boot; only the browser may change the watchdog setting (set_watchdogs from any
              other source is refused operator_required). At the limit Enable Tx goes off

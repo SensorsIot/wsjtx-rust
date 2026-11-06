@@ -183,8 +183,8 @@ test('receive snapshot race preserves unknown mutation until a later read',{time
   await chip.filter({hasText:'Receive stopped'}).waitFor();
   assert.deepEqual(errors,[]);
 });
-// WstxContact::HaltTx D5 / OperatingLayout escapeClosesRegion=false: Escape halts and
-// aborts the contact but closes no panel or drawer; its Back/Close control returns.
+// WstxContact::AbortQso (#39) / OperatingLayout escapeClosesRegion=false: Escape aborts
+// the QSO but closes no panel or drawer; its Back/Close control returns.
 async function returnToOperation(page){
   const open=await page.locator('.op-secondary:not([hidden])').count();
   await page.keyboard.press('Escape');
@@ -201,7 +201,7 @@ test('TC-007-002 operating screen exposes literal identity and truthful unsuppor
   assert.equal(await page.locator('#operating-station station').count(),0);
   assert.match(await page.locator('#band-activity').innerText(),/Decoder unavailable/);assert.match(await page.locator('#rx-focus').innerText(),/No station selected/);assert.equal(await page.locator('tr[data-result-id]').count(),0);
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot(),null,{timeout:25000});
-  for(const name of ['CQ','Tune','HALT','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
+  for(const name of ['CQ','Tune','HALT','Abort QSO (Esc)','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
   assert.equal(await page.locator('#contact-auto').isDisabled(),true);assert.equal(await page.locator('#contact-auto').getAttribute('aria-label'),'Auto sequence unavailable');
   assert.equal(await page.locator('#transmit-unavailable').isVisible(),true,'the reason is next to the disabled transmit buttons');
   await page.locator('#open-server-settings').click();await page.locator('#tab-expert').click();
@@ -332,7 +332,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
 // expected sets below come from the model's decisions, not from the candidate markup.
 const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#operating-monitor','#contact-enable','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar','#rx-frequency','#region-server-settings','#region-expert'];
 const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#qso-halt','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#display-sensitivity','#display-speed','#qso-cq','#contact-tune','#qso-halt','#contact-log'];
-const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#detect-run','#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#udp-warning','#udp-save','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
+const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#detect-run','#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#udp-note','#udp-save','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
 const healthyTexts=['#cat-status','#receive-status','#signal-status','#operating-radio','#operating-selection-status','#clock-detail'];
 async function inViewport(page,selector){return page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();return el.checkVisibility({visibilityProperty:true})&&r.width>1&&r.height>1&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;});}
 // checkVisibility also treats the content of a closed <details> fold-out as not shown.
@@ -480,6 +480,10 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
   for(const selector of ['#qso-heard','#qso-others tr:last-child','#qso-dialogue tr:last-child','#qso-next','#qso-cq','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible`);
   await page.screenshot({path:'test-results/ui-operating/qso-dialogue-1366x768.png'});
+  // #39 Abort QSO: with five direct buttons the partner's message keeps its room and the longest
+  // badge stays inside the pane.
+  const headFit=await page.evaluate(()=>{const pane=document.querySelector('#rx-focus').getBoundingClientRect(),badge=document.querySelector('#rx-focus .op-contact-badge');badge.textContent='Transmitting';const b=badge.getBoundingClientRect();return {heard:document.querySelector('#qso-heard').getBoundingClientRect().width,inside:b.right<=pane.right+0.5&&b.right<=innerWidth};});
+  assert.ok(headFit.heard>=50,`the partner's message has room: ${headFit.heard} px`);assert.equal(headFit.inside,true,'the Transmitting badge stays inside the pane');
   // Item 8 (#37, operator 2026-11-04): the pane has a fixed height with the QSO section (12
   // rows, here all ten entries without scrolling) and Calling me; TC-037-003 proves that nothing
   // below it moves. At 1920x1080 the height below the column stays free.
@@ -821,7 +825,7 @@ test('TC-007-009 the Settings drawer has four sections holding every control mov
   assert.equal(await page.locator('#settings-drawer #transmit-details #transmit-panel').count(),1,'the raw #9 transmit panel is an Expert section');
   // #44 CL-044-08: opening the drawer lists the endpoints by name; listing is not an Apply.
   assert.ok(requests.includes('GET /audio/endpoints'));assert.equal(requests.includes('GET /audio/devices'),false);assert.equal(requests.includes('PUT /profile'),false,'listing inputs is not an Apply');
-  await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'Esc halts and closes no panel');
+  await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'Esc closes no panel');
   await page.locator('#band-activity').click({position:{x:40,y:200}});assert.equal(await page.locator('#settings-drawer').isVisible(),false,'a pointer action outside closes the drawer');
   await page.keyboard.press('F2');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'F2 opens Settings');
   await page.locator('#settings-drawer .return-operate').click();
@@ -892,6 +896,56 @@ test('TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fi
   assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-044-13; TC-044-015. The Tx level in the Audio section follows the server's radio.tx_level
+// push; Set level and the slider are commands, the slider appears only without ALC over CI-V.
+test('TC-044-015 Tx level in Settings > Radio > Audio',{timeout:60000},async t=>{
+  const endpoint='icom7300://COM250?baud=19200&radio=94&controller=e0',posts=[];
+  const {page,app,errors}=await fixture(t,{width:1366,height:768},{control:{mode:'cat',endpoint,ptt:'disabled'},beforeNavigate:async p=>{
+    await p.route('**/radio/tx-level',async route=>{const body=JSON.parse(route.request().postData());posts.push(body);await route.fulfill({json:{v:1,profile_id:body.profile_id,boot_id:body.boot_id,command_id:body.command_id,accepted:true,refusal:null}});});
+  }});
+  await page.waitForFunction(()=>!!profileData,null,{timeout:30000});
+  await page.locator('#open-server-settings').click();await page.locator('#tab-radio').click();
+  const section=page.locator('#settings-audio'),line=section.locator('#tx-level-line'),button=section.locator('#tx-level-set'),slider=section.locator('#tx-level-manual'),meters=section.locator('#tx-meters');
+  await button.scrollIntoViewIfNeeded();assert.equal(await button.isVisible(),true,'Set level is in the Audio section');
+  assert.equal(await slider.isVisible(),false,'no manual level while the radio may report ALC');
+  const base={managed:true,level_db:0,stored:false,alc:'unknown',assistant:false,result:null,meters:null,power_limit_pct:null,warnings:[],keying_confirmed:false};
+  const inject=data=>page.evaluate(d=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'radio.tx_level',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,...d}}}})),data);
+  // Proves: CL-044-15; TC-044-022. The one-time confirmation is offered until it is stored.
+  await inject(base);assert.match(await page.locator('#discovery-state').textContent(),/off until confirmed once/);
+  await inject({...base,keying_confirmed:true});assert.match(await page.locator('#discovery-state').textContent(),/discovery on start is on/);
+  await inject(base);assert.equal(await line.textContent(),'Tx level not set yet');assert.equal(await meters.isVisible(),false);
+  await inject({...base,assistant:true,level_db:-25,alc:'available',meters:{alc:0,po_pct:12,swr_x10:11}});
+  assert.equal(await line.textContent(),'Tune on · stepping up · -25 dB');assert.equal(await meters.textContent(),'ALC 0 · Po 12 % · SWR 1.1');assert.equal(await button.isDisabled(),true);
+  await inject({...base,level_db:-22,stored:true,alc:'available',result:'stored',meters:{alc:3,po_pct:50,swr_x10:11}});
+  assert.equal(await line.textContent(),'Tx level -22 dB · stored');assert.equal(await button.isDisabled(),false);
+  // A malformed event is ignored.
+  await inject({...base,level_db:'x'});assert.equal(await line.textContent(),'Tx level -22 dB · stored');
+  await button.click();await page.waitForFunction(()=>true);
+  await assert.doesNotReject(async()=>{for(let i=0;i<100&&!posts.length;i++)await page.waitForTimeout(20);});
+  assert.equal(posts.length,1);assert.equal(posts[0].action,'set_level');assert.equal(Number.isInteger(posts[0].tx_offset_hz),true);
+  await inject({...base,alc:'unavailable',level_db:-9,stored:true,result:'no_alc'});
+  assert.equal(await line.textContent(),'Tx level -9 dB · this radio reports no ALC, set the level by hand');assert.equal(await slider.isVisible(),true);
+  await section.locator('#tx-level-slider').fill('-14');
+  for(let i=0;i<100&&posts.length<2;i++)await page.waitForTimeout(20);
+  assert.deepEqual([posts.length,posts[1].action,posts[1].level_db],[2,'manual',-14]);
+  // The Power limit is a profile field, saved with Apply.
+  await section.locator('#control-power-limit').fill('10');await page.locator('#settings-save').click();
+  await page.locator('#settings-result').filter({hasText:/Saved revision/}).waitFor();
+  assert.deepEqual((await (await fetch(app.origin+'/profile')).json()).settings.radio,{agc:'SLOW',power_limit_pct:10});
+  // Proves: CL-044-14; TC-044-018. Persistent Tx trouble is an entry in the error field, gone when cleared.
+  const field=page.locator('#error-field');
+  await inject({...base,warnings:['alc_high','po_low','swr_high','swr_fault']});
+  for(const [key,severity,text] of [['tx-alc_high','warn','ALC too high'],['tx-po_low','warn','Tx power low'],['tx-swr_high','warn','SWR high'],['tx-swr_fault','error','SWR too high']]){
+    const chip=field.locator(`[data-chip="${key}"]`);await chip.waitFor({timeout:5000});assert.equal(await chip.getAttribute('data-severity'),severity);assert.match(await chip.textContent(),new RegExp(text));
+  }
+  await inject({...base,warnings:[]});
+  await field.locator('[data-chip^="tx-"]').first().waitFor({state:'detached',timeout:5000});
+  await page.setViewportSize({width:360,height:740});
+  assert.equal(await page.evaluate(()=>{const d=document.querySelector('#settings-audio');return d.scrollWidth<=d.clientWidth+1;}),true,'fits 360 px');
+  await page.setViewportSize({width:1366,height:768});
+  await page.selectOption('#control-mode','disabled');assert.equal(await button.isVisible(),false,'hidden for a control without CI-V');
+  assert.deepEqual(errors,[]);
+});
 // Proves: CL-044-11; TC-044-010. AGC is a Radio/CAT setting: the select is in the CAT group only
 // for an IC-7300 CAT endpoint, the read-back line follows the server's radio.agc push (the real
 // server's first event, then injected outcomes), Apply saves settings.radio, Detect radio
@@ -1035,21 +1089,22 @@ test('TC-007-009 the UDP editor reads GET /udp when Settings opens and saves the
   assert.ok(requests.filter(r=>r==='GET /udp').length>=1,'read when the drawer opens');
   assert.equal(await page.locator('#udp-instance').inputValue(),'WSTX-Rust');
   const first=rows.nth(0);assert.equal(await first.locator('[data-f=address]').inputValue(),'127.0.0.1:2237');
-  assert.equal(await first.locator('[data-f=enabled]').isChecked(),true);assert.equal(await first.locator('[data-f=accept]').isChecked(),false);
+  assert.equal(await first.locator('[data-f=enabled]').isChecked(),true);
   assert.deepEqual(await first.locator('[data-m]').evaluateAll(b=>b.filter(x=>x.checked).map(x=>x.dataset.m)),['heartbeat','status','decode','clear','qso_logged','close','logged_adif']);
   assert.match(await first.locator('[data-f=status]').textContent(),/Inactive/,'WSTX_UDP=off opens no socket and the status says so');
-  assert.match(await page.locator('#udp-warning').textContent(),/select a QSO.*Tx5.*never key/s,'the accept_commands warning is shown');
+  assert.equal(await page.locator('#settings-udp [data-f=accept]').count(),0,'send-only: no Accept commands');
+  assert.match(await page.locator('#udp-note').textContent(),/Send-only/,'the note says so');
   assert.doesNotMatch(await page.locator('#tab-logging').textContent(),/⟳/,'a setting, not a restart change');
-  // Edit: no Decode to the first target; add a multicast target, where Accept commands is not offered.
-  await first.locator('[data-m=decode]').uncheck();await first.locator('[data-f=accept]').check();
+  // Edit: no Decode to the first target; add a multicast target.
+  await first.locator('[data-m=decode]').uncheck();
   await page.locator('#udp-add').click();const added=rows.nth(1);
-  await added.locator('[data-f=address]').fill('239.255.0.1:2237');assert.equal(await added.locator('[data-f=accept]').isDisabled(),true,'no accept_commands for a multicast group');
+  await added.locator('[data-f=address]').fill('239.255.0.1:2237');
   await added.locator('[data-f=ttl]').fill('3');
   await page.locator('#udp-save').click();await page.locator('#udp-result').filter({hasText:'Saved'}).waitFor();
   const all=['heartbeat','status','decode','clear','qso_logged','close','logged_adif'];
   const expected={instance_name:'WSTX-Rust',targets:[
-    {address:'127.0.0.1:2237',enabled:true,multicast_ttl:1,multicast_interface:null,messages:all.filter(m=>m!=='decode'),accept_commands:true},
-    {address:'239.255.0.1:2237',enabled:true,multicast_ttl:3,multicast_interface:null,messages:all,accept_commands:false}]};
+    {address:'127.0.0.1:2237',enabled:true,multicast_ttl:1,multicast_interface:null,messages:all.filter(m=>m!=='decode')},
+    {address:'239.255.0.1:2237',enabled:true,multicast_ttl:3,multicast_interface:null,messages:all}]};
   assert.deepEqual(puts,[{v:1,profile_id:initial.profile_id,boot_id:initial.boot_id,expected_revision:initial.revision,configuration:expected}],'exactly one exact PUT');
   const saved=await (await fetch(app.origin+'/udp')).json();assert.deepEqual(saved.configuration,expected,'the station stored the edited list');assert.equal(saved.revision,initial.revision+1);
   // A refused address keeps the edits and names the field.
@@ -1072,10 +1127,7 @@ test('TC-007-009 the UDP editor saves an IPv6 multicast target with hop limit an
   await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();
   const rows=page.locator('#udp-targets .udp-target');await rows.first().waitFor();
   const row=rows.nth(0);
-  await row.locator('[data-f=accept]').check();
   await row.locator('[data-f=address]').fill('[ff12::5754:5358]:2237');
-  assert.equal(await row.locator('[data-f=accept]').isDisabled(),true,'no accept_commands for an IPv6 group');
-  assert.equal(await row.locator('[data-f=accept]').isChecked(),false);
   assert.match(await row.locator('[data-f=iface-note]').textContent(),/hop limit.*index.*link-local group needs one/s);
   assert.equal(await row.locator('[data-f=iface]').getAttribute('placeholder'),'interface index');
   // Without an interface the station refuses the link-local group and names the field.
@@ -1084,7 +1136,7 @@ test('TC-007-009 the UDP editor saves an IPv6 multicast target with hop limit an
   await row.locator('[data-f=ttl]').fill('2');await row.locator('[data-f=iface]').fill('1');
   await page.locator('#udp-save').click();await page.locator('#udp-result').filter({hasText:'Saved'}).waitFor();
   const target={address:'[ff12::5754:5358]:2237',enabled:true,multicast_ttl:2,multicast_interface:'1',
-    messages:['heartbeat','status','decode','clear','qso_logged','close','logged_adif'],accept_commands:false};
+    messages:['heartbeat','status','decode','clear','qso_logged','close','logged_adif']};
   assert.equal(puts.length,2);
   assert.deepEqual(puts[1].configuration,{instance_name:'WSTX-Rust',targets:[target]},'the TTL field is the hop limit, the interface its index');
   const saved=await (await fetch(app.origin+'/udp')).json();
@@ -1287,7 +1339,7 @@ test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Ac
   // next and turns Enable Tx on, as WSJT-X Next/Now. No Reply button either since the #50
   // double-click fix is installed: the double-click above replies.
   assert.equal(await page.locator('#qso-rr73,#qso-73,#qso-reply').count(),0,'no Reply, RR73 or 73 button');
-  assert.deepEqual(await page.locator('#rx-focus .op-qso-buttons button').allTextContents(),['CQ','Tune','HALT','Log QSO']);
+  assert.deepEqual(await page.locator('#rx-focus .op-qso-buttons button').allTextContents(),['CQ','Tune','HALT','Abort QSO (Esc)','Log QSO']);
   await page.locator('#qso-more summary').click();
   const now=slot=>page.locator(`#contact-messages .ct-now[data-slot=${slot}]`);
   m=commands.length;await now('tx4').click();for(let i=0;i<60&&commands.length<m+2;i++)await page.waitForTimeout(50);
@@ -1401,10 +1453,9 @@ test('TC-007-002 in-page navigation preserves unsaved profile and selected recor
  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();assert.equal(await page.locator('#display-name').inputValue(),'Unsaved operator edit');
  await page.locator('#tab-expert').click();
  assert.equal(await page.locator('#recording-file').evaluate(el=>el.files[0].name),'selected-but-not-imported.wav');
- // Escape is the keyboard Halt Tx (WstxContact::HaltTx D5): until the contact snapshot
- // shows a receive-only station it sends the idempotent #9 halt, never anything else.
- assert.deepEqual(mutations.filter(m=>new URL(m.url).pathname!=='/transmit/halt'),[],'navigation does not save/import or issue station mutations');
- assert.ok(mutations.every(m=>m.method==='POST'),'only the keyboard halt POST');
+ // Escape is Abort QSO (WstxContact::AbortQso, #39): with no contact in progress it sends
+ // nothing, and it is never a halt.
+ assert.deepEqual(mutations,[],'navigation does not save/import or issue station mutations, and Esc sends no halt');
  assert.deepEqual(errors,[]);
 });
 
@@ -2113,7 +2164,7 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
 });
 
 // Proves: CL-050-08; TC-050-008 (#50, operator 2026-11-04). The receive pages (with the #55 flags and
-// dxcc), the /contact/worked statuses, the contact snapshots and the UDP display event are routed
+// dxcc), the /contact/worked statuses, the contact snapshots are routed
 // fixtures; marks, colours, order and the reason tip are the served client's. Expected values come
 // from the operator's scheme, not from the candidate.
 test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, CQ of interest, sender-only colour, one-line reason tip',{timeout:60000},async t=>{
@@ -2207,11 +2258,6 @@ test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, C
  assert.deepEqual(await byText('HB9BLA K3NB R-07'),['HB9BLA K3NB R-07','ba-tome',newCallBand,null,'New on 40m (worked on another band or mode)']);
  assert.deepEqual(await byText('CQ OA4DX FH17'),['CQ OA4DX FH17','',newDxcc,null,'New DXCC · New on 40m'],'the strongest enabled call slot');
  assert.deepEqual(await byText('K9XX YO3ABC -07'),['K9XX YO3ABC -07','ba-sender',none,['YO3ABC',newDxcc],'New DXCC · New on 40m']);
- // An accepted UDP highlight colours a partner row under its marker and replaces a row's slot colour.
- await page.evaluate(()=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{type:'udp.display',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,display_revision:1,
-  highlights:[{call:'K1PT',background:'#0000ff',foreground:null,last_only:false,period:null},{call:'YO3ABC',background:'#00ff00',foreground:null,last_only:false,period:null}],clear:{band_activity:null,rx_frequency:null}}}}})));
- assert.deepEqual((await rows()).slice(0,3),[['HB9BLA K1PT FN42','ba-partner','rgb(0, 0, 255)',null,'UDP highlight'],['CQ K1PT FN42','ba-partner','rgb(0, 0, 255)',null,'UDP highlight'],['stripe','','rgb(255, 64, 64)']]);
- assert.deepEqual(await byText('K9XX YO3ABC -07'),['K9XX YO3ABC -07','','rgb(0, 255, 0)',null,'New DXCC · New on 40m · UDP highlight'],'the UDP colour wins over the sender-only slot');
  // Logged (completed): no stripe and no marker remain.
  contact=partner('completed',{dx_call:'K1PT'});await page.evaluate(()=>window.wstxContact.load());
  await page.waitForFunction(()=>!document.querySelector('#band-activity tr.ba-partner-stripe'));
@@ -2587,7 +2633,7 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
   await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
   assert.deepEqual(await items(),['Reply','Select','Set Rx here','Pounce K1ABC','Ignore K1ABC']);
   await page.locator('#ba-menu [data-menu=pounce]').click();await page.locator('#op-confirm[open]').waitFor();
-  assert.match(await page.locator('#op-confirm-text').textContent(),/^Pounce transmits without asking: it answers K1ABC when it calls CQ or ends a QSO with 73 on this band\. The Tx watchdog stops it when one message would be sent more than 6 times\. HALT stops it\.$/);
+  assert.match(await page.locator('#op-confirm-text').textContent(),/^Pounce transmits without asking: it answers K1ABC when it calls CQ or ends a QSO with 73 on this band\. The Tx watchdog stops it when one message would be sent more than 6 times\. HALT stops it; Esc aborts the current QSO\.$/);
   await page.locator('#op-confirm-ok').click();
   for(let i=0;i<60&&autos.length<2;i++)await page.waitForTimeout(50);
   assert.deepEqual(autos.map(b=>[b.action,b.expected_policy_revision,b.expected_run_revision,b.mode,b.safety_revision]),[['configure',0,undefined,undefined,undefined],['start',1,0,'ft8',7]]);
@@ -3327,7 +3373,7 @@ test('TC-037-004 a contact change is offered only for a row that can start a con
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor);await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next:cursor+batch.length,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
     await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:partner('replying',{dx_call:'IW9FRA',dx_grid:'JM68'}),transmit:{}})}));
     await p.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());commands.push(b);
-      if(b.action==='select_row'&&!b.replace)await route.fulfill({status:409,json:{error:{code:'contact_active'}}});else await route.fulfill({status:202,json:{v:1,accepted:true}});});
+      if(b.action==='select_row'&&!b.replace)await route.fulfill({status:409,json:{error:{code:[6,7].includes(b.row.sequence)?'directive_not_answerable':'contact_active',reason:'CQ NA \u2014 not for EU'}}});else await route.fulfill({status:202,json:{v:1,accepted:true}});});
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===8&&window.wstxContact?.snapshot()&&document.querySelector('#continent-derived')?.textContent.includes('EU'),null,{timeout:25000});
   const row=text=>page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:text});
@@ -3373,7 +3419,7 @@ test('TC-044-007 the Audio section shows endpoint names, keeps IDs in hover and 
   assert.equal(await page.locator('#settings-audio #audio-input').evaluate(el=>el.tagName),'SELECT');
   assert.equal(await page.locator('#settings-audio #audio-output').evaluate(el=>el.tagName),'SELECT');
   assert.equal(await page.locator('#settings-audio .op-input-meter').count(),1);
-  assert.equal(await page.locator('#audio-enumerate,#audio-inputs,#settings-audio input').count(),0);
+  assert.equal(await page.locator('#audio-enumerate,#audio-inputs,#settings-audio input:not(#tx-level input)').count(),0);
   const options=sel=>page.locator(sel+' option').evaluateAll(list=>list.map(o=>[o.textContent,o.title,o.disabled]));
   assert.deepEqual(await options('#audio-input'),[['None','',false],['Microphone (USB Audio CODEC) \u2014 IC-7300',codecIn,false],[headset+' #2',headsetB,false],[headset+' #1',headsetA,false],['Microphone (Old radio) \u00b7 not present',saved,true]]);
   assert.deepEqual(await options('#audio-output'),[['None','',false],['Speakers (USB Audio CODEC) \u2014 IC-7300',codecOut,false]]);

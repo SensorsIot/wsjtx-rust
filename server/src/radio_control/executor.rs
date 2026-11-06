@@ -462,6 +462,15 @@ impl<T: Transport> Executor<T> {
             SetupCommand::Read(setting) => read(transport, setting).map(SetupReply::Value),
             SetupCommand::Write(setting, value) => {
                 setting.encode(value)?;
+                // CL-044-09: read first; a fitting value is not written again, and a
+                // value the radio refuses to report is not written blind.
+                match read(transport, setting)? {
+                    Some(current) if current == value => {
+                        return Ok(SetupReply::Value(Some(value)));
+                    }
+                    Some(_) => {}
+                    None => return Err(Error::Rejected),
+                }
                 let state = exchange(
                     transport,
                     configuration,
@@ -503,6 +512,53 @@ impl<T: Transport> Executor<T> {
             self.set_state(State::Unavailable, Some(error))?;
         }
         result
+    }
+    /// #44 CL-044-12 one meter burst under the transmit hold. It changes no radio setting
+    /// and no connection state: a timeout or a cancel (a PTT exchange waits for nothing)
+    /// never closes the connection a keyed transmission still needs. A refused read (FA)
+    /// is a missing meter; a late reply is skipped by the next exchange's parse.
+    pub fn read_meters(
+        &self,
+        deadline: Instant,
+        cancel: &AtomicBool,
+    ) -> Result<super::setup::Meters> {
+        use super::setup::{self, Heard, Meter};
+        check(deadline, cancel)?;
+        let mut inner = self.inner.try_lock().map_err(|e| match e {
+            TryLockError::WouldBlock => Error::Busy,
+            TryLockError::Poisoned(_) => Error::Unavailable,
+        })?;
+        if self.snapshot()?.state != State::Ready {
+            return Err(Error::Unavailable);
+        }
+        let address = inner.configuration.radio_address;
+        let mut meters = setup::Meters::default();
+        for meter in Meter::ALL {
+            let bytes = setup::read_meter_frame(address, meter);
+            let value = exchange_setup(
+                &mut inner.transport,
+                &bytes,
+                deadline,
+                cancel,
+                |h| match h {
+                    Heard::Meter {
+                        address: a,
+                        sub_command,
+                        data,
+                    } if a == address && sub_command == meter.sub_command() => {
+                        Some(setup::decode_bcd(data))
+                    }
+                    Heard::Ng { address: a } if a == address => Some(None),
+                    _ => None,
+                },
+            )?;
+            match meter {
+                Meter::Alc => meters.alc = value,
+                Meter::Po => meters.po = value,
+                Meter::Swr => meters.swr = value,
+            }
+        }
+        Ok(meters)
     }
     pub fn refresh(&self, cancel: Arc<AtomicBool>, deadline: Instant) -> Result<Observation> {
         let mut inner = self.inner.try_lock().map_err(|_| Error::Busy)?;
@@ -618,6 +674,18 @@ impl<T: Transport> Executor<T> {
         overall: Instant,
         cancel: &AtomicBool,
     ) -> Result<()> {
+        self.run_written(inner, operation, overall, cancel)
+            .map(|_| ())
+    }
+    /// As `run`; true when a setter frame was sent. CL-044-09: a setter first reads its
+    /// value and sends no write frame when it already fits.
+    fn run_written(
+        &self,
+        inner: &mut Inner<T>,
+        operation: &Operation,
+        overall: Instant,
+        cancel: &AtomicBool,
+    ) -> Result<bool> {
         // Before a setter can emit bytes, its prior facts cease to establish readiness.
         self.snapshot
             .lock()
@@ -631,6 +699,7 @@ impl<T: Transport> Executor<T> {
             data_filter,
         } = operation
         {
+            let mut written = false;
             for setter in [
                 Operation::SetMode {
                     mode: *mode,
@@ -644,7 +713,12 @@ impl<T: Transport> Executor<T> {
                     frequency_hz: *frequency_hz,
                 },
             ] {
-                self.run(inner, &setter, overall, cancel)?;
+                written |= self.run_written(inner, &setter, overall, cancel)?;
+            }
+            // Each setter read its value first; with nothing written those reads are
+            // the confirmation, otherwise the final state is read again.
+            if !written {
+                return Ok(false);
             }
             for query in [
                 Operation::ReadMode,
@@ -666,7 +740,39 @@ impl<T: Transport> Executor<T> {
             {
                 return Err(Error::ReadbackMismatch);
             }
-            return Ok(());
+            return Ok(true);
+        }
+        let query = match operation {
+            Operation::SetFrequency { .. } => Some(Operation::ReadFrequency),
+            Operation::SetMode { .. } => Some(Operation::ReadMode),
+            Operation::SetData { .. } => Some(Operation::ReadData),
+            _ => None,
+        };
+        if let Some(query) = &query {
+            if self.snapshot()?.facts.sequence >= 9_007_199_254_740_991 {
+                return Err(Error::Limit);
+            }
+            let deadline = std::cmp::min(overall, Instant::now() + Duration::from_secs(1));
+            let current = exchange(
+                &mut inner.transport,
+                &inner.configuration,
+                query,
+                deadline,
+                cancel,
+            )?;
+            self.update(&current)?;
+            if current == Reply::Rejected {
+                return Err(Error::Rejected);
+            }
+            if fits(operation, &current) {
+                return Ok(false);
+            }
+            // That read confirmed the old value; while the setter frame is on the wire
+            // the fact establishes nothing until the read-back.
+            self.snapshot
+                .lock()
+                .map_err(|_| Error::Unavailable)?
+                .invalidate(operation)?;
         }
         let deadline = std::cmp::min(overall, Instant::now() + Duration::from_secs(1));
         if self.snapshot()?.facts.sequence >= 9_007_199_254_740_991 {
@@ -683,12 +789,6 @@ impl<T: Transport> Executor<T> {
         if matches!(reply, Reply::Rejected) {
             return Err(Error::Rejected);
         }
-        let query = match operation {
-            Operation::SetFrequency { .. } => Some(Operation::ReadFrequency),
-            Operation::SetMode { .. } => Some(Operation::ReadMode),
-            Operation::SetData { .. } => Some(Operation::ReadData),
-            _ => None,
-        };
         if let Some(query) = query {
             if reply != Reply::Ack {
                 return Err(Error::Protocol);
@@ -712,27 +812,31 @@ impl<T: Transport> Executor<T> {
             if read == Reply::Rejected {
                 return Err(Error::Indeterminate);
             }
-            let matched = match (operation, read) {
-                (Operation::SetFrequency { frequency_hz }, Reply::Frequency(actual)) => {
-                    *frequency_hz == actual
-                }
-                (Operation::SetMode { mode, filter }, Reply::Mode(actual)) => {
-                    actual.sideband() == Some(*mode) && actual.filter == *filter
-                }
-                (Operation::SetData { data, filter }, Reply::Data(actual)) => {
-                    actual
-                        == DataValue {
-                            enabled: *data,
-                            filter: *filter,
-                        }
-                }
-                _ => false,
-            };
-            if !matched {
+            if !fits(operation, &read) {
                 return Err(Error::ReadbackMismatch);
             }
+            return Ok(true);
         }
-        Ok(())
+        Ok(false)
+    }
+}
+/// True when a setter's query reply already shows the setter's value.
+fn fits(operation: &Operation, reply: &Reply) -> bool {
+    match (operation, reply) {
+        (Operation::SetFrequency { frequency_hz }, Reply::Frequency(actual)) => {
+            frequency_hz == actual
+        }
+        (Operation::SetMode { mode, filter }, Reply::Mode(actual)) => {
+            actual.sideband() == Some(*mode) && actual.filter == *filter
+        }
+        (Operation::SetData { data, filter }, Reply::Data(actual)) => {
+            *actual
+                == DataValue {
+                    enabled: *data,
+                    filter: *filter,
+                }
+        }
+        _ => false,
     }
 }
 fn check(deadline: Instant, cancel: &AtomicBool) -> Result<()> {
@@ -842,6 +946,98 @@ mod publication_tests {
         fn close(&mut self) -> Result<()> {
             panic!("no I/O in publication interleaving")
         }
+    }
+    /// Records whether the frequency fact counts as confirmed when the setter frame is sent.
+    struct Probe {
+        shared: Arc<Mutex<Snapshot>>,
+        replies: std::collections::VecDeque<Vec<u8>>,
+        pending: Vec<u8>,
+        at_setter: Arc<Mutex<Vec<bool>>>,
+    }
+    impl Transport for Probe {
+        fn configure(&mut self, _: u32) -> Result<()> {
+            Ok(())
+        }
+        fn write(&mut self, bytes: &[u8], _: Instant, _: &AtomicBool) -> Result<usize> {
+            if bytes[4] == 5 {
+                let confirmed = self.shared.lock().unwrap().facts.frequency.confirmed;
+                self.at_setter.lock().unwrap().push(confirmed);
+            }
+            self.pending = self.replies.pop_front().unwrap();
+            Ok(bytes.len())
+        }
+        fn read(&mut self, bytes: &mut [u8], _: Instant, _: &AtomicBool) -> Result<usize> {
+            let count = bytes.len().min(self.pending.len());
+            bytes[..count].copy_from_slice(&self.pending[..count]);
+            self.pending.drain(..count);
+            Ok(count)
+        }
+        fn quiet(&mut self, _: Instant, _: &AtomicBool) -> Result<()> {
+            Ok(())
+        }
+        fn close(&mut self) -> Result<()> {
+            Ok(())
+        }
+    }
+    // Proves: CL-044-09; TC-044-012. The read-first read does not re-confirm the old value
+    // while the setter frame is on the wire; the read-back confirms the new one.
+    #[test]
+    fn setter_fact_stays_unconfirmed_from_the_write_until_its_read_back() {
+        let authority = Authority {
+            profile_id: "a".into(),
+            boot_id: "b".into(),
+            profile_revision: 0,
+            resource_id: "isolated".into(),
+            connection_generation: 1,
+        };
+        let shared = Arc::new(Mutex::new(Snapshot {
+            publication: 0,
+            closing_requested: false,
+            state: State::Ready,
+            authority: authority.clone(),
+            effective_baud: Some(9600),
+            observation: Observation::default(),
+            facts: super::super::Facts::default(),
+            last_error: None,
+        }));
+        let at_setter = Arc::new(Mutex::new(Vec::new()));
+        let executor = Executor {
+            authority,
+            catalogue: Catalogue::builtin().unwrap(),
+            inner: Mutex::new(Inner {
+                transport: Probe {
+                    shared: shared.clone(),
+                    replies: [
+                        vec![0xfe, 0xfe, 0xe0, 0x94, 3, 0, 0x40, 7, 7, 0, 0xfd],
+                        vec![0xfe, 0xfe, 0xe0, 0x94, 0xfb, 0xfd],
+                        vec![0xfe, 0xfe, 0xe0, 0x94, 3, 0, 0x40, 7, 0x14, 0, 0xfd],
+                    ]
+                    .into(),
+                    pending: Vec::new(),
+                    at_setter: at_setter.clone(),
+                },
+                configuration: Configuration::parse("COM3").unwrap(),
+                last_poll: None,
+            }),
+            snapshot: shared.clone(),
+        };
+        let mut inner = executor.inner.lock().unwrap();
+        executor
+            .run(
+                &mut inner,
+                &Operation::SetFrequency {
+                    frequency_hz: 14_074_000,
+                },
+                Instant::now() + Duration::from_secs(3),
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+        assert_eq!(*at_setter.lock().unwrap(), [false]);
+        let facts = shared.lock().unwrap().facts.clone();
+        assert_eq!(
+            (facts.frequency.confirmed, facts.frequency.value),
+            (true, Some(14_074_000))
+        );
     }
     #[test]
     fn closing_publication_survives_late_attach_and_query() {

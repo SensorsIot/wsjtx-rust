@@ -1191,12 +1191,21 @@ async fn tc_039_004_selecting_starts_a_run_that_calls_by_value_and_never_calls_c
             ("CQ JA JA1XYZ PM95", 600.0, Some(9.0)),
             ("CQ 290 N1MM FN31", 700.0, Some(8.0)),
             ("CQ DL1XYZ JO62", 1200.0, Some(0.0)),
-            ("CQ K1ABC FN42", 1500.0, Some(-15.0)),
+            ("CQ K1ABC FN42", 1400.0, Some(-15.0)),
         ],
     );
     assert_eq!(
         contact(&f).await,
         (json!("DL1XYZ"), json!("replying"), json!("armed"))
+    );
+    // Proves: CL-039-08; TC-039-009: the strategy's pick moves Rx, Tx stays on its slot.
+    let c = f.read("contact").await;
+    assert_eq!(
+        (
+            c["settings"]["rx_hz"].clone(),
+            c["settings"]["tx_hz"].clone()
+        ),
+        (json!(1200), json!(1500))
     );
     let run = f.read("automation").await["run"].clone();
     assert_eq!(
@@ -1338,6 +1347,44 @@ async fn tc_039_004_halt_sets_none_esc_and_a_cancel_do_not_and_a_new_selection_r
     f.tick();
     assert_eq!(active_of(&f).await, json!("New calls"));
     assert_eq!(run_state(&f).await.0, "waiting");
+    // Esc sends abort: the strategy stays selected, the station is given up, the run goes on.
+    publish(&f, e + 15_000, &[("CQ G4ABC IO91", 1100.0, Some(-1.0))]);
+    assert_eq!(contact(&f).await.0, json!("G4ABC"));
+    assert_eq!(contact(&f).await.2, json!("armed"));
+    let halts = f
+        .state
+        .recording
+        .transmit
+        .get()
+        .unwrap()
+        .service
+        .halt_requests();
+    browser_ok(&f, "abort", json!({})).await;
+    f.tick();
+    f.tick();
+    assert_eq!(active_of(&f).await, json!("New calls"), "Esc is no HALT");
+    assert_eq!(
+        f.state
+            .recording
+            .transmit
+            .get()
+            .unwrap()
+            .service
+            .halt_requests(),
+        halts
+    );
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(
+        (
+            run["state"].clone(),
+            run["reason"].clone(),
+            run["given_up"].clone()
+        ),
+        (json!("waiting"), Value::Null, json!(["K1ABC", "G4ABC"]))
+    );
+    assert_eq!(contact(&f).await.2, json!("disarmed"));
+    publish(&f, e + 22_500, &[("CQ G4ABC IO91", 1100.0, Some(-1.0))]);
+    assert_eq!(contact(&f).await.0, Value::Null, "not selected again");
     // HALT: run stopped halted, active None, a new revision the browser is told of.
     let before = f.browser("GET", "/strategy", None).await.json["revision"].clone();
     halt(&f).await;
@@ -1373,7 +1420,17 @@ async fn tc_039_004_halt_sets_none_esc_and_a_cancel_do_not_and_a_new_selection_r
     assert_eq!(run_state(&f).await, ("waiting".into(), Value::Null));
     publish(&f, e + 30_000, &[("CQ DL1XYZ JO62", 1200.0, Some(-1.0))]);
     assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
-    assert_eq!(f.keys(), 0);
+    // G4ABC's own period had begun when Esc came: its one transmission, key on then released.
+    assert_eq!(
+        f.bench
+            .keys
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, on)| *on)
+            .collect::<Vec<_>>(),
+        vec![true, false]
+    );
 }
 
 // Proves: TC-039-004
@@ -2165,6 +2222,19 @@ async fn tc_039_002_a_selection_of_a_cq_not_for_me_is_a_warning_only_the_browser
         .await;
     assert_eq!(c.status, StatusCode::ACCEPTED, "{}", c.json);
     assert_eq!(contact(&f).await.0, json!("G4ABC"));
+    // During a contact the directive is checked before contact_active: a plain click stays silent.
+    publish(&f, e + 30_000, &[("CQ NA W9XYZ EN52", 900.0, Some(-1.0))]);
+    let click = live_row(&f, "CQ NA W9XYZ EN52");
+    let during = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":click,"replace":false})).await),
+        )
+        .await;
+    assert_eq!(during.status, StatusCode::CONFLICT, "{}", during.json);
+    assert_eq!(during.json["error"]["code"], "directive_not_answerable");
+    assert_eq!(contact(&f).await.0, json!("G4ABC"), "the contact stands");
     // The body key is optional and exact.
     let bad = f
         .browser(
@@ -3175,6 +3245,9 @@ async fn tc_042_004_pounce_answers_a_73_holding_tx_and_never_an_ignored_or_direc
         ignore(&f, json!("K1ABC"), json!(true)).await.status,
         StatusCode::OK
     );
+    // Hold Tx off: "Hold Tx after a 73" below is the automation's own rule, not the default.
+    mcp_contact(&f, "set_hold_tx", json!({"enabled":false})).await;
+    assert_eq!(f.read("contact").await["settings"]["hold_tx"], json!(false));
     assert_eq!(pounce(&f, "K1ABC", 5).await.status, StatusCode::ACCEPTED);
     // The ignore lists win over the pounce.
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-15.0))]);

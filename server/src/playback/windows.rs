@@ -129,6 +129,14 @@ impl Output {
             .map_err(|_| OutputError::Unavailable)? = OutputState::Playing;
         Ok(())
     }
+    /// #44 the scale of the running program from its next sample (Tune level steps).
+    pub fn set_scale(&self, scale: f32) {
+        if let Ok(mut program) = self.shared.program.lock()
+            && let Some(renderer) = program.as_mut()
+        {
+            renderer.set_scale(scale);
+        }
+    }
     /// Device state; a render thread that ended, or made no consumption progress for
     /// STALL_MS while playing, is reported lost (render watchdog).
     pub fn state(&self) -> OutputState {

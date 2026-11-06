@@ -42,7 +42,7 @@ struct Inner {
     retry_at: Option<Instant>,
     log: Option<LogView>,
     /// Newly saved records for the UDP targets, sent by the station tick only, after the
-    /// station lock is released (a command reached from a UDP Reply holds the UDP lock).
+    /// station lock is released.
     outbox: Vec<logbook::Record>,
     /// WstxStationDecode::APrioriContext of the next decode window, refreshed every tick.
     a_priori: decoder::APriori,
@@ -92,12 +92,16 @@ fn refusal(code: &str, field: Option<&str>) -> Response {
 fn station_of(r: &recording::Recording) -> Result<Arc<Station>, &'static str> {
     r.contact.get().cloned().ok_or("not_found")
 }
+/// The profile locator as the station uses it: upper case, None when empty.
+pub(crate) fn station_locator(locator: &str) -> Option<String> {
+    Some(locator.trim().to_ascii_uppercase()).filter(|l| !l.is_empty())
+}
 pub(crate) fn profile_facts(state: &ProfileState) -> (Option<String>, Option<String>) {
     let store = state.store.lock().unwrap_or_else(|p| p.into_inner());
     let d = &store.document;
     (
         Some(d.callsign.trim().to_ascii_uppercase()).filter(|c| !c.is_empty()),
-        crate::udp::effective_locator(state, &d.locator),
+        station_locator(&d.locator),
     )
 }
 /// The selected profile's callsign (upper case), as the contact engine uses it.
@@ -372,7 +376,7 @@ impl Station {
         self.operate_as(state, body, granted, authorization::Principal::Browser)
     }
     /// The ContactCommand path with the request's principal (#58). Every principal that
-    /// is not the browser (automation, MCP, UDP) is automatic: it never resets the Tx
+    /// is not the browser (automation, MCP) is automatic: it never resets the Tx
     /// watchdog and arms only within the watchdog time of the last browser action (#39).
     pub(crate) fn operate_as(
         &self,
@@ -800,7 +804,7 @@ fn params(action: &str) -> Option<&'static [&'static str]> {
     Some(match action {
         "select_row" => &["row", "replace", "directive_confirmed"],
         "enter_dx" => &["dx_call", "dx_grid", "replace"],
-        "cancel" | "redecode" | "open_log" => &[],
+        "cancel" | "abort" | "redecode" | "open_log" => &[],
         "choose_next" => &["slot"],
         "edit_message" => &["slot", "text"],
         "set_report" => &["report"],
@@ -875,6 +879,7 @@ fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
             }
         }
         "cancel" => Command::Cancel,
+        "abort" => Command::Abort,
         "redecode" => Command::Redecode,
         "open_log" => Command::OpenLog,
         "choose_next" => Command::ChooseNext(slot(b)?),
@@ -1075,7 +1080,7 @@ impl Station {
             };
         }
         let current = inner.engine.revision;
-        let relaxed = action == "cancel"
+        let relaxed = matches!(action, "cancel" | "abort")
             || (matches!(action, "enable_tx" | "tune") && body["enabled"] == false);
         if revision > current || (revision != current && !relaxed) {
             return Err(("stale_revision", Some("contact_revision")));

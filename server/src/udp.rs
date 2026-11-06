@@ -1,14 +1,13 @@
 #![forbid(unsafe_code)]
 //! WstxUdp: the WSJT-X-compatible UDP interface with multiple targets (#40). The station
-//! step sends Heartbeat, Status, Decode and Clear to each enabled target and reads its
-//! inbound datagrams; SaveContact sends QSO Logged and Logged ADIF. Inbound commands
-//! reach the station only through HaltTransmit and the ContactCommand path, never with
-//! transmit authority. Routes: GET /udp (UdpSnapshot), PUT /udp (configuration).
+//! step sends Heartbeat, Status, Decode and Clear to each enabled target; SaveContact sends
+//! QSO Logged and Logged ADIF. Send-only (operator 2026-11-06): the station reacts to the
+//! browser and MCP, never to a UDP command; a target's Heartbeat only negotiates the header
+//! schema. Routes: GET /udp (UdpSnapshot), PUT /udp (configuration).
 use crate::*;
 use axum::extract::RawQuery;
 use recording_http::authorize;
 use selection_http::empty;
-use std::collections::VecDeque;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, UdpSocket};
 use wstx_rust::network_message as nm;
 use wstx_rust::transmit::service::ArmState;
@@ -21,8 +20,6 @@ pub const TARGETS_MAX: usize = 16;
 pub const BODY_MAX: usize = 8192;
 pub const FILE_NAME: &str = "udp.json";
 pub const INSTANCE_DEFAULT: &str = "WSTX-Rust";
-pub const REPLAY_PER_STEP: usize = 32;
-pub const HIGHLIGHTS_MAX: usize = 100;
 const HEARTBEAT: Duration = Duration::from_secs(15);
 const DATAGRAMS_PER_STEP: usize = 64;
 /// Winsock WSAEMSGSIZE: a received datagram was larger than the buffer.
@@ -56,7 +53,6 @@ pub(crate) struct Target {
     pub ttl: u32,
     pub interface: Option<Interface>,
     pub messages: u8,
-    pub accept: bool,
 }
 /// multicast_interface: an IPv4 address for an IPv4 target, an interface index for an
 /// IPv6 target (WstxUdp D6).
@@ -91,8 +87,7 @@ impl Target {
             .map(|(_, m)| *m)
             .collect();
         json!({"address":self.address.to_string(),"enabled":self.enabled,"multicast_ttl":self.ttl,
-            "multicast_interface":self.interface.map(|i|i.text()),"messages":messages,
-            "accept_commands":self.accept})
+            "multicast_interface":self.interface.map(|i|i.text()),"messages":messages})
     }
     /// The socket settings: a change reopens the socket.
     fn socket_key(&self) -> (SocketAddr, bool, u32, Option<Interface>) {
@@ -115,7 +110,6 @@ impl Config {
                 ttl: 1,
                 interface: None,
                 messages: 127,
-                accept: false,
             }],
         }
     }
@@ -145,7 +139,6 @@ fn target(v: &Value, i: usize) -> Result<Target, String> {
             "multicast_ttl",
             "multicast_interface",
             "messages",
-            "accept_commands",
         ],
         &format!("targets[{i}]"),
     )?;
@@ -200,20 +193,12 @@ fn target(v: &Value, i: usize) -> Result<Target, String> {
         }
         messages |= 1 << bit;
     }
-    let accept = v["accept_commands"]
-        .as_bool()
-        .ok_or_else(|| f("accept_commands"))?;
-    // A command's source is a host, never the group: accept_commands could never act.
-    if accept && address.ip().is_multicast() {
-        return Err(f("accept_commands"));
-    }
     Ok(Target {
         address,
         enabled,
         ttl,
         interface,
         messages,
-        accept,
     })
 }
 /// Exact UdpConfiguration parsing; the error is the refused field.
@@ -248,7 +233,6 @@ struct Runtime {
     schema: u32,
     last_send: Option<i64>,
     error: Option<&'static str>,
-    last_command: Option<Value>,
     last_status: Option<Vec<u8>>,
     /// The decoder's windows-begun count when the last Status was sent.
     status_windows: u64,
@@ -256,21 +240,8 @@ struct Runtime {
     pulse_at: Option<Instant>,
     /// A pulse fell due: the next Status goes out even when unchanged.
     status_due: bool,
-    replay: VecDeque<Vec<u8>>,
-    replay_status: bool,
 }
 type Identity = (String, String, u64);
-/// One Highlight Callsign entry (WSJT-X DisplayText::highlight_callsign): the call upper
-/// case, each colour or none (cleared), and for a last-period-only entry the period start
-/// of the live job's latest decode when it arrived (None: no decode, it colours nothing).
-#[derive(Clone)]
-struct Highlight {
-    call: String,
-    background: nm::Color,
-    foreground: nm::Color,
-    last_only: bool,
-    period: Option<String>,
-}
 #[derive(Default)]
 struct Inner {
     revision: u64,
@@ -281,46 +252,12 @@ struct Inner {
     cursor: Option<(Identity, u64)>,
     /// A Decode of the cursor's job was produced (a later change sends Clear).
     decoded: bool,
-    /// Reply/Replay ignore decodes below this sequence of this job (inbound Clear).
-    floor: Option<(Identity, u64)>,
-    /// The Rx Frequency floor of the last inbound Clear of window 1 or 2 (browser only).
-    rx_floor: Option<(Identity, u64)>,
-    highlights: VecDeque<Highlight>,
-    /// Advances with every applied Highlight Callsign and Clear (the udp.display event).
-    display: u64,
-    clear: (u64, Option<u8>),
-    received: u64,
-    ignored: u64,
 }
 /// The UDP interface of one station.
 pub(crate) struct Owner {
     inner: Mutex<Inner>,
     /// WSTX_UDP=off: no socket is opened (isolated tests of the executable).
     disabled: bool,
-    /// The Location (11) session grid: volatile, never saved to the profile. A leaf lock
-    /// of its own, because the contact engine reads it while `inner` is held.
-    grid: Mutex<Option<String>>,
-}
-/// The station's grid: the Location session grid when one was accepted, else the
-/// profile locator (upper case; None when empty).
-pub(crate) fn effective_locator(state: &ProfileState, profile: &str) -> Option<String> {
-    let session = state
-        .recording
-        .udp
-        .get()
-        .and_then(|o| o.grid.lock().unwrap_or_else(|p| p.into_inner()).clone());
-    session.or_else(|| Some(profile.trim().to_ascii_uppercase()).filter(|l| !l.is_empty()))
-}
-/// A Location text as WSJT-X MainWindow::locationChange reads it: at most 6 characters
-/// is a grid, longer needs a "GRID:" prefix; a 4- or 6-character Maidenhead locator.
-pub(crate) fn location_grid(text: &str) -> Option<String> {
-    let mut grid = text.trim();
-    if grid.chars().count() > 6 {
-        let prefix = grid.get(..5).filter(|p| p.eq_ignore_ascii_case("GRID:"))?;
-        grid = grid[prefix.len()..].trim();
-    }
-    let grid = grid.to_ascii_uppercase();
-    contact::valid_grid(&grid).then_some(grid)
 }
 
 fn wall_ms() -> i64 {
@@ -516,7 +453,7 @@ pub(crate) fn status_of(state: &ProfileState, r: &recording::Recording) -> nm::S
         let d = &store.document;
         (
             d.callsign.trim().to_ascii_uppercase(),
-            effective_locator(state, &d.locator).unwrap_or_default(),
+            contact_http::station_locator(&d.locator).unwrap_or_default(),
             d.display_name.clone(),
         )
     };
@@ -561,57 +498,6 @@ pub(crate) fn status_of(state: &ProfileState, r: &recording::Recording) -> nm::S
         tx_message: facts.and_then(|f| f.next_message).unwrap_or_default(),
     }
 }
-fn color_text(color: nm::Color) -> Value {
-    color.map_or(Value::Null, |(r, g, b)| {
-        json!(format!("#{r:02x}{g:02x}{b:02x}"))
-    })
-}
-/// (highlights, clear) of UdpSnapshot and UdpDisplayEvent.
-fn display_of(inner: &Inner) -> (Vec<Value>, Value) {
-    let highlights = inner
-        .highlights
-        .iter()
-        .map(|h| {
-            json!({"call":h.call,"background":color_text(h.background),
-                "foreground":color_text(h.foreground),"last_only":h.last_only,"period":h.period})
-        })
-        .collect();
-    let floor = |f: &Option<(Identity, u64)>| {
-        f.as_ref()
-            .map_or(Value::Null, |((source, job, generation), sequence)| {
-                json!({"source_id":source,"job_id":job,"generation":generation,"sequence":sequence})
-            })
-    };
-    let clear = json!({"sequence":inner.clear.0,"window":inner.clear.1,
-        "band_activity":floor(&inner.floor),"rx_frequency":floor(&inner.rx_floor)});
-    (highlights, clear)
-}
-fn armed(r: &recording::Recording) -> bool {
-    r.transmit
-        .get()
-        .is_some_and(|t| t.service.view().arm_state == ArmState::Armed)
-}
-/// One ContactCommand through the browser's path, without transmit authority.
-fn contact_command(state: &ProfileState, action: &str, extra: Value) -> Result<(), &'static str> {
-    let r = &state.recording;
-    let contact = r.contact.get().ok_or("not_found")?;
-    let (revision, _, _) = contact.facts();
-    let mut body = json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,
-        "command_id":profile::new_uuid().map_err(|_| "storage_unavailable")?,
-        "contact_revision":revision,"action":action});
-    if let (Some(o), Some(e)) = (body.as_object_mut(), extra.as_object()) {
-        o.extend(e.clone());
-    }
-    // #39: a UDP command is never an operator action for the Tx watchdog.
-    contact
-        .operate_as(state, body, false, authorization::Principal::Udp)
-        .map(|_| ())
-        .map_err(|(code, _)| code)
-}
-
-type Outcome = (&'static str, Option<&'static str>);
-const APPLIED: Outcome = ("applied", None);
-
 impl Owner {
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|p| p.into_inner())
@@ -632,7 +518,15 @@ impl Owner {
                         && v["schema_version"] == 1
                         && v["profile_id"] == state.recording.profile.as_str()
                         && v["revision"].as_u64().is_some_and(|n| n <= MAX_SAFE);
-                    let config = json!({"instance_name":v["instance_name"],"targets":v["targets"]});
+                    // A file saved before send-only names accept_commands on each target: it
+                    // keeps loading, and the next save drops the key.
+                    let mut targets = v["targets"].clone();
+                    for t in targets.as_array_mut().into_iter().flatten() {
+                        if let Some(t) = t.as_object_mut() {
+                            t.remove("accept_commands");
+                        }
+                    }
+                    let config = json!({"instance_name":v["instance_name"],"targets":targets});
                     ok.then(|| parse_config(&config).ok())
                         .flatten()
                         .map(|c| (v["revision"].as_u64().unwrap_or(0), c))
@@ -653,7 +547,6 @@ impl Owner {
         Arc::new(Self {
             inner: Mutex::new(inner),
             disabled,
-            grid: Mutex::new(None),
         })
     }
     /// UdpSnapshot.
@@ -665,29 +558,12 @@ impl Owner {
             .flat_map(|c| c.targets.iter().zip(&inner.runtimes))
             .map(|(t, rt)| {
                 json!({"address":t.address.to_string(),"active":rt.socket.is_some(),"schema":rt.schema,
-                    "last_send_utc_ms":rt.last_send,"error":rt.error,"last_command":rt.last_command})
+                    "last_send_utc_ms":rt.last_send,"error":rt.error})
             })
             .collect();
-        let (highlights, clear) = display_of(&inner);
         json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"revision":inner.revision,
             "configuration":inner.config.as_ref().map(Config::json),"configuration_error":inner.error,
-            "status":status,"highlights":highlights,"clear":clear,
-            "received":inner.received,"ignored":inner.ignored})
-    }
-    /// The udp.display revision: 0 until a Highlight Callsign or Clear was applied.
-    pub(crate) fn display_revision(&self) -> u64 {
-        self.lock().display
-    }
-    /// WstxUdp::UdpDisplayEvent: the highlights and clear floors the browser renders.
-    pub(crate) fn display_event(&self, r: &recording::Recording) -> (u64, String) {
-        let inner = self.lock();
-        let (highlights, clear) = display_of(&inner);
-        let data = json!({"profile_id":r.profile,"boot_id":r.boot,"display_revision":inner.display,
-            "highlights":highlights,"clear":clear});
-        (
-            inner.display,
-            json!({"v":1,"type":"udp.display","data":data}).to_string(),
-        )
+            "status":status})
     }
     /// PUT /udp after the route checks: validation, revision, atomic save, then the
     /// running sockets follow the saved configuration.
@@ -793,8 +669,8 @@ impl Owner {
         inner.runtimes = runtimes;
         inner.config = Some(next);
     }
-    /// One station step (main.rs timer, every 50 ms): inbound datagrams, Heartbeat,
-    /// Decode/Clear, Status and the Replay queues.
+    /// One station step (main.rs timer, every 50 ms): schema negotiation, Heartbeat,
+    /// Decode/Clear and Status.
     pub(crate) fn step(&self, state: &ProfileState) {
         let r = &state.recording;
         let mut inner = self.lock();
@@ -803,7 +679,7 @@ impl Owner {
         let active = inner.runtimes.iter().any(|rt| rt.socket.is_some());
         let now = now_ms(r);
         if active {
-            self.inbound(&mut inner, state, now);
+            negotiate(&mut inner);
         }
         let inner = &mut *inner;
         // An invalid configuration has no targets; its cursor still advances, so a later
@@ -879,26 +755,17 @@ impl Owner {
         if !active {
             return;
         }
-        // Replay queues, then Status: at activation, on change, on each decoder window (a
-        // window begun and ended between two steps still sends one), with each pulse and
-        // after a Replay.
+        // Status: at activation, on change, on each decoder window (a window begun and ended
+        // between two steps still sends one) and with each pulse.
         let windows = r.decoder_activity().1;
         let status = status_of(state, r);
         for (t, rt) in config.targets.iter().zip(inner.runtimes.iter_mut()) {
             if rt.socket.is_none() {
                 continue;
             }
-            for _ in 0..REPLAY_PER_STEP {
-                let Some(bytes) = rt.replay.pop_front() else {
-                    break;
-                };
-                send(rt, t.address, &bytes, now);
-            }
-            let replayed = rt.replay_status && rt.replay.is_empty();
             if t.messages & STATUS_BIT != 0 {
                 let bytes = nm::status(rt.schema, id, &status);
-                if replayed
-                    || rt.status_due
+                if rt.status_due
                     || rt.status_windows != windows
                     || rt.last_status.as_ref() != Some(&bytes)
                 {
@@ -908,245 +775,6 @@ impl Owner {
                 }
             }
             rt.status_due = false;
-            if replayed {
-                rt.replay_status = false;
-            }
-        }
-    }
-    /// The decodes of the current live job retained after the last inbound Clear.
-    fn retained(inner: &Inner, r: &recording::Recording) -> Vec<(Identity, u64, nm::Decode)> {
-        let Some((identity, mode, records)) = r.live_records_after(None, 0) else {
-            return Vec::new();
-        };
-        let floor = inner
-            .floor
-            .as_ref()
-            .filter(|f| f.0 == identity)
-            .map_or(0, |f| f.1);
-        records
-            .iter()
-            .filter_map(|record| {
-                let sequence = record["sequence"].as_u64().filter(|s| *s >= floor)?;
-                Some((identity.clone(), sequence, decode_of(record, mode)?))
-            })
-            .collect()
-    }
-    fn inbound(&self, inner: &mut Inner, state: &ProfileState, now: i64) {
-        let Some(config) = inner.config.clone() else {
-            return;
-        };
-        let mut datagrams = Vec::new();
-        let mut oversize: u64 = 0;
-        for (i, rt) in inner.runtimes.iter().enumerate() {
-            let Some(socket) = &rt.socket else {
-                continue;
-            };
-            let mut buffer = [0u8; nm::INBOUND_BYTES_MAX + 1];
-            for _ in 0..DATAGRAMS_PER_STEP {
-                match socket.recv_from(&mut buffer) {
-                    Ok((n, from)) => datagrams.push((i, from, buffer[..n].to_vec())),
-                    // Windows reports an earlier send's ICMP port unreachable here.
-                    Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => continue,
-                    // A datagram larger than the buffer (Windows WSAEMSGSIZE; elsewhere it
-                    // arrives truncated and parse refuses it) is dropped and counted; the
-                    // datagrams behind it, a Halt Tx among them, are still read.
-                    Err(e) if e.raw_os_error() == Some(WSAEMSGSIZE) => {
-                        oversize += 1;
-                        continue;
-                    }
-                    Err(_) => break,
-                }
-            }
-        }
-        inner.ignored = inner.ignored.saturating_add(oversize);
-        for (i, from, bytes) in datagrams {
-            let Some(d) = nm::parse(&bytes).filter(|d| d.id == config.instance) else {
-                inner.ignored = inner.ignored.saturating_add(1);
-                continue;
-            };
-            inner.received = inner.received.saturating_add(1);
-            let t = &config.targets[i];
-            let from_target = from == t.address;
-            if from_target && d.schema > inner.runtimes[i].schema {
-                inner.runtimes[i].schema = d.schema;
-            }
-            use nm::Inbound as I;
-            let name = match &d.message {
-                I::Heartbeat { .. } | I::Other(_) => continue,
-                I::Clear { .. } => "clear",
-                I::Reply { .. } => "reply",
-                I::Close => "close",
-                I::Replay => "replay",
-                I::HaltTx { .. } => "halt_tx",
-                I::FreeText { .. } => "free_text",
-                I::Location { .. } => "location",
-                I::Highlight { .. } => "highlight",
-                I::SwitchConfiguration => "switch_configuration",
-                I::Configure => "configure",
-            };
-            let outcome = match d.message {
-                // Emergency off: any source, whatever accept_commands says.
-                I::HaltTx { .. } => halt(state),
-                I::Close | I::SwitchConfiguration | I::Configure => ("ignored", None),
-                _ if !(t.accept && from_target) => ("not_accepted", None),
-                I::Clear { window } => {
-                    if let Some((identity, _, records)) =
-                        state.recording.live_records_after(None, 0)
-                    {
-                        let next = records
-                            .last()
-                            .and_then(|r| r["sequence"].as_u64())
-                            .map_or(0, |s| s + 1);
-                        if window != 1 {
-                            inner.floor = Some((identity.clone(), next));
-                        }
-                        if window != 0 {
-                            inner.rx_floor = Some((identity, next));
-                        }
-                    }
-                    inner.clear = (inner.clear.0.saturating_add(1), Some(window));
-                    inner.display = inner.display.saturating_add(1);
-                    APPLIED
-                }
-                I::Reply {
-                    time_ms,
-                    snr,
-                    delta_time,
-                    delta_frequency,
-                    mode,
-                    message,
-                    ..
-                } => {
-                    if armed(&state.recording) {
-                        ("refused", Some("tx_enabled"))
-                    } else {
-                        let message = message.trim();
-                        let found = Self::retained(inner, &state.recording).into_iter().find(
-                            |(_, _, d)| {
-                                d.time_ms == time_ms
-                                    && d.snr == snr
-                                    && d.delta_frequency == delta_frequency
-                                    && d.mode == mode
-                                    && (f64::from(d.delta_time) - delta_time).abs() <= 0.05
-                                    && d.message.trim() == message
-                            },
-                        );
-                        match found {
-                            None => ("refused", Some("no_match")),
-                            Some((identity, sequence, _)) => {
-                                let row = json!({"source_id":identity.0,"job_id":identity.1,
-                                    "generation":identity.2,"sequence":sequence});
-                                match contact_command(
-                                    state,
-                                    "select_row",
-                                    json!({"row":row,"replace":false}),
-                                ) {
-                                    Ok(()) => APPLIED,
-                                    Err(code) => ("refused", Some(code)),
-                                }
-                            }
-                        }
-                    }
-                }
-                I::Location { location } => match location_grid(&location) {
-                    Some(grid) => {
-                        *self.grid.lock().unwrap_or_else(|p| p.into_inner()) = Some(grid);
-                        APPLIED
-                    }
-                    None => ("refused", Some("invalid_grid")),
-                },
-                I::Replay => {
-                    let schema = inner.runtimes[i].schema;
-                    let decodes = if t.messages & DECODE_BIT != 0 {
-                        Self::retained(inner, &state.recording)
-                    } else {
-                        Vec::new()
-                    };
-                    // A new Replay replaces a pending one (bounded by the retained set).
-                    let rt = &mut inner.runtimes[i];
-                    rt.replay.clear();
-                    rt.replay.extend(
-                        decodes
-                            .iter()
-                            .map(|(_, _, d)| nm::decode(schema, &config.instance, false, d)),
-                    );
-                    rt.replay_status = true;
-                    APPLIED
-                }
-                I::FreeText { text, .. } => {
-                    if armed(&state.recording) {
-                        ("refused", Some("tx_enabled"))
-                    } else if text.trim().is_empty() {
-                        ("ignored", None)
-                    } else {
-                        match contact_command(
-                            state,
-                            "edit_message",
-                            json!({"slot":"tx5","text":text}),
-                        ) {
-                            Ok(()) => APPLIED,
-                            Err(code) => ("refused", Some(code)),
-                        }
-                    }
-                }
-                I::Highlight {
-                    call,
-                    background,
-                    foreground,
-                    last_only,
-                } => {
-                    // WSJT-X DisplayText::highlight_callsign: an empty, " " or "0" call
-                    // does nothing; CLEARALL! empties the map; calls match without
-                    // regard to case.
-                    if call.is_empty()
-                        || call == " "
-                        || call == "0"
-                        || call.len() > 32
-                        || call.chars().any(char::is_control)
-                    {
-                        ("ignored", None)
-                    } else if call == "CLEARALL!" {
-                        inner.highlights.clear();
-                        inner.display = inner.display.saturating_add(1);
-                        APPLIED
-                    } else {
-                        let call = call.to_uppercase();
-                        let coloured = background.is_some() || foreground.is_some();
-                        // The last period: that of the live job's latest decode.
-                        let period = last_only
-                            .then(|| state.recording.live_records_after(None, 0))
-                            .flatten()
-                            .and_then(|(_, _, records)| {
-                                records.last()?["period_start_utc"]
-                                    .as_str()
-                                    .map(str::to_owned)
-                            });
-                        // A last-period entry (also a reset, without colours) replaces the
-                        // call's last-period entry and keeps its map entry; a map entry or
-                        // its removal replaces both (WSJT-X recolours every occurrence).
-                        inner
-                            .highlights
-                            .retain(|h| h.call != call || (last_only && !h.last_only));
-                        if last_only || coloured {
-                            if inner.highlights.len() == HIGHLIGHTS_MAX {
-                                inner.highlights.pop_front();
-                            }
-                            inner.highlights.push_back(Highlight {
-                                call,
-                                background,
-                                foreground,
-                                last_only,
-                                period,
-                            });
-                        }
-                        inner.display = inner.display.saturating_add(1);
-                        APPLIED
-                    }
-                }
-                I::Heartbeat { .. } | I::Other(_) => continue,
-            };
-            inner.runtimes[i].last_command = Some(json!({"type":name,"utc_ms":now,
-                "outcome":outcome.0,"code":outcome.1}));
         }
     }
     /// QSO Logged then Logged ADIF of a newly saved contact (SaveContact outcome saved).
@@ -1170,16 +798,37 @@ impl Owner {
         }
     }
 }
-/// HaltTransmit, the same as the HALT button.
-fn halt(state: &ProfileState) -> Outcome {
-    let Some(t) = state.recording.transmit.get() else {
-        return ("refused", Some("transmit_unavailable"));
+/// The one thing read from a target: its Heartbeat raises that target's header schema
+/// (MessageClient negotiation, never lowered). Everything else is read and dropped, so a tool's
+/// command has no effect and a pending ICMP error of an earlier send does not stay behind.
+fn negotiate(inner: &mut Inner) {
+    let Some(config) = &inner.config else {
+        return;
     };
-    let Ok(id) = profile::new_uuid() else {
-        return ("refused", Some("storage_unavailable"));
-    };
-    t.service.halt(&id);
-    APPLIED
+    for (t, rt) in config.targets.iter().zip(inner.runtimes.iter_mut()) {
+        let Some(socket) = &rt.socket else {
+            continue;
+        };
+        let mut buffer = [0u8; nm::INBOUND_BYTES_MAX + 1];
+        for _ in 0..DATAGRAMS_PER_STEP {
+            match socket.recv_from(&mut buffer) {
+                Ok((n, from)) => {
+                    if from == t.address
+                        && let Some(h) = nm::heartbeat_of(&buffer[..n])
+                        && h.id == config.instance
+                    {
+                        rt.schema = rt.schema.max(h.schema);
+                    }
+                }
+                // Windows reports an earlier send's ICMP port unreachable here, and a
+                // datagram larger than the buffer as WSAEMSGSIZE.
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::ConnectionReset
+                        || e.raw_os_error() == Some(WSAEMSGSIZE) => {}
+                Err(_) => break,
+            }
+        }
+    }
 }
 
 /// The station step of the UDP interface (main.rs timer).

@@ -1215,7 +1215,7 @@ profile/Recording locks; no owner calls another while holding its own I/O lock.
 Existing read-only refresh remains at most1Hz and does not retry setters. `/radio`
 keeps its dated aggregate version1 shape; per-field facts are on this new endpoint.
 The existing actor lease plus transition lease returns busy to conflicting operations,
-without a queue. Direct setters must use the same RF-context invalidation/release
+without a queue; a selection first waits up to 3 s for the lease (CL-044-16). Direct setters must use the same RF-context invalidation/release
 barrier; keep those generic bindings unsupported until it exists. The initial UI
 exposes mode/band only through coordinated selection, with no raw setter bypass.
 

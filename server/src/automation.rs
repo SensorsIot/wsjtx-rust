@@ -894,7 +894,7 @@ impl Owner {
                 disarm(contact, state);
             }
         };
-        // Halt (browser button, Alt+H, MCP or UDP) ends the run in every state.
+        // Halt (browser button, Alt+H or MCP) ends the run in every state.
         let halts = r.transmit.get().map(|t| t.service.halt_requests());
         if halts != Some(run.halts) {
             return stop(&mut inner, "halted", armed);

@@ -59,8 +59,8 @@ package WstxMcp {
             MCP client cannot select one: the configuration key strategy true is refused
             operator_required, PUT /strategy has no MCP tool. For every run
             (D6 included) the Tx watchdog limits the repetitions of one message; only an
-            Enable Tx or a strategy selection from the browser ends its stop, never the run's commands,
-            an MCP request (including starting or restarting a run) or a UDP command
+            Enable Tx or a strategy selection from the browser ends its stop, never the run's commands
+            or an MCP request (including starting or restarting a run)
             (WstxStrategy::WatchdogFromOperator, coordinator default for the operator's
             rule, recorded on #39/#12, 2026-11-02, amending D5/D7; repetition form 2026-11-06);
             an MCP Enable Tx or run arm is refused tx_watchdog after a stop
@@ -232,7 +232,7 @@ package WstxMcp {
              publications are never used).
              Each station step (after the contact step, with the publication descriptor
              read before it), in this order: any HaltTransmit since start (browser button,
-             Esc or MCP) stops halted; a different live identity, live mode or operating
+             Alt+H, MCP or UDP) stops halted; a different live identity, live mode or operating
              mode stops context_changed; the starting transport no longer this grant's
              current unexpired transport stops authority_lost; the run deadline stops
              time_limit; a contact armed by the run is disarmed (Enable Tx off, never a

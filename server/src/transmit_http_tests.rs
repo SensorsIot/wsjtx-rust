@@ -500,3 +500,19 @@ async fn transmit_wire_shows_the_sntp_clock_measurement() {
     assert_eq!(view["clock_measurement"]["server"], "time.windows.com");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// Proves: CL-044-14; TC-044-017 (g). The transmit step's call reaches the sink through the
+// boxed hardware the station really runs on.
+#[test]
+fn the_meter_call_of_the_transmit_step_reaches_the_sink() {
+    let station =
+        transmit_http::Station::start(ntp_clock(wstx_rust::transmit::clock::Monitor::new()))
+            .unwrap();
+    let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = count.clone();
+    station.set_meter_sink(Arc::new(move || {
+        seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }));
+    station.service.with(|c| c.hardware_mut().meter_due());
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+}

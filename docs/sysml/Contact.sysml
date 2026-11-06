@@ -420,7 +420,7 @@ package WstxContact {
              (a row without a grid of the same partner and mode keeps the known dxGrid,
              as WSJT-X's DX Grid, #11; EnterDxStation sets exactly the grid entered);
              report from the row SNR, with the exception stated there (ReportRange); rxOffsetHz = row frequency rounded
-             to integer Hz; txOffsetHz = the same, unless Hold Tx is on or the row's
+             to integer Hz; txOffsetHz = the same, unless Hold Tx is on (the default, CL-039-08) or the row's
              'to' call is my call (replying to me keeps my Tx frequency, DMR ~320-333);
              txParity = opposite of the row's period parity; message set generated, except the texts kept for the same active partner (ContactSnapshot dialogue);
              nextSlot and state per FirstSlotOnSelection. Unresolved hashes (<...>), rows
@@ -619,12 +619,14 @@ package WstxContact {
              auto_sequence(decodedtext,25,50); 50 Hz rule): in replying, or in report
              when the contact started with Tx1 skipped, with Auto Seq on, the DX call's
              decoded message to another call within 50 Hz inclusive of my txOffsetHz
-             disarms and halts a transmission already started; the state is kept. #9
+             disarms and stops a transmission already started by an abort
+             (WstxTransmit::AbortTransmission, never a halt: #39 2026-11-04, normal flow
+             never uses HALT); the state is kept. #9
              has no dedicated DisarmCause for it: the disarm is recorded with cause
              operator (supervisor decision on #10 review, 2026-10-31).
              halt and watchdogExpired turn Enable Tx off and keep the state (the
              contact can resume after an explicit Enable Tx), except in calling where
-             the CQ ends. cancel follows CancelContact. Esc is halt plus cancel. */
+             the CQ ends. cancel follows CancelContact. Esc is Abort QSO (AbortQso), not a halt. */
     }
     attribute def TransmitSubmission {
         attribute contactId : String;
@@ -656,7 +658,9 @@ package WstxContact {
              operator choice like the double-click, retries their enable_tx at most twice after a
              stale_revision refusal with the reloaded snapshot (CL-061-02). Transmission ends by itself
              on completion (Enable Tx off after a completed Tx4 RR73/Tx5 73, see the
-             transition table) or by HALT; there is no other off control. Alt+N has no
+             transition table), by the Tx watchdog, by Cancel contact or F4 (the contact
+             is cancelled, a transmission already on the air finishes), by Abort QSO (Esc,
+             AbortQso: the transmission stops now) or by HALT, the emergency stop. Alt+N has no
              function. Earlier text: Separate explicit operator action (Alt+N where the browser delivers it,
              HT Alt+N). Maps to WstxTransmit::TransmitArming (armed/disarmed is #9
              state). On: transmissions of the next slot start in the contact's parity
@@ -665,17 +669,33 @@ package WstxContact {
              already started finishes (WSJT-X Enable Tx off lets the current Tx finish). */
     }
     action def HaltTx {
-        doc /* Halt Tx button, Alt+H (HT) and Esc. Sends WstxTransmit::HaltTransmit
-             (POST /transmit/halt), stopping a transmission or Tune now and disarming
-             (MW on_stopTxButton_clicked). Esc additionally cancels the active contact
-             as MW keyPressEvent ~3683 (abortQSO); D5: Esc acts on every page state and
-             in every focused field and closes no panel. With no transmit capability
-             (receive-only station) Esc only cancels the contact and sends no halt.
-             Shown as halted only after #9 confirms; until then pending/unknown. The
-             keyboard halt is sent by the always-loaded page script (never waiting for
-             the contact client), skipped only when the station is known receive-only;
-             the Esc cancellation follows the answered halt. Esc on a completed contact
-             only selects Tx6 and keeps its fields (Log QSO still works). */
+        doc /* The operator's emergency stop (operator decision #39, 2026-11-04: HALT is
+             emergency only and only manual): the Halt Tx buttons and Alt+H (HT). Sends
+             WstxTransmit::HaltTransmit (POST /transmit/halt), stopping a transmission
+             or Tune now and disarming (MW on_stopTxButton_clicked). Esc is no longer a
+             halt (AbortQso). Shown as halted only after #9 confirms; until then
+             pending/unknown. The keyboard halt is sent by the always-loaded page script
+             (never waiting for the contact client), skipped only when the station is
+             known receive-only. The remote emergency stops (MCP wstx_transmit_halt, UDP
+             Halt Tx) stay. The station and its automation never send it in normal flow
+             (WstxTransmit::TransmitHaltUse). */
+    }
+    action def AbortQso {
+        doc /* Abort QSO (operator decision #39, 2026-11-04, "stop the transmission and
+             the QSO immediately, but not HALT the system"): Esc and the "Abort QSO"
+             button beside HALT send ContactCommand abort {}. The station stops the
+             current transmission or Tune now (WstxTransmit::AbortTransmission: audio
+             stopped, PTT released with readback, requests dropped, Enable Tx off with
+             cause contactCancelled) and cancels the contact as CancelContact (nothing
+             logged; a completed contact only selects Tx6 and keeps its fields). It is no
+             halt: halt_state and the halt count are unchanged and the station stays
+             ready for the next QSO. Like cancel it is accepted on any older contact
+             revision. Esc (MW keyPressEvent ~3683 abortQSO) acts on every page state and
+             in every focused field and closes no panel; an open dialog or menu takes Esc
+             first. With nothing active (no contact in progress, disarmed, not
+             transmitting) the button is disabled and Esc sends nothing. A running station
+             automation run reacts to the cancelled contact as to any operator contact
+             change. */
     }
 
     // ---------------------------------------------------------------- watchdogs
@@ -698,7 +718,7 @@ package WstxContact {
              only restart: a different message (the exchange advanced), a new contact, and
              one addition for the operator: an operator Enable Tx while Enable Tx
              is off makes the next transmission open a new tx entry, so a stopped station
-             may send the same message again; while it is on it restarts nothing. Partner messages, browser clicks, settings, Auto Seq, MCP, UDP
+             may send the same message again; while it is on it restarts nothing. Partner messages, browser clicks, settings, Auto Seq, MCP
              and automation requests restart nothing by themselves.
              Stop: when the send due next would exceed the limit it is never planned or
              keyed: 1.2 s into its period (past the latest live decode measured, #47) Enable
@@ -761,7 +781,7 @@ package WstxContact {
         assert constraint rxDomain { rxOffsetHz >= 0 and rxOffsetHz <= 3000 }
         assert constraint txDomain { txOffsetHz >= 200 and txOffsetHz <= 2950 }
         doc /* Labelled numeric Rx Hz and Tx Hz inputs (MW RxFreqSpinBox/TxFreqSpinBox),
-             Hold Tx (requested vs confirmed shown separately). Tx<-Rx/Rx<-Tx copy
+             Hold Tx (requested vs confirmed shown separately; on by default, CL-039-08). Tx<-Rx/Rx<-Tx copy
              buttons are not adopted (agent choice 2026-10-31: ctrl-click and the
              numeric inputs cover them); F11/F12 steps are not adopted (D7). FT4-NOTE Tx max 2916. */
     }
@@ -822,8 +842,7 @@ package WstxContact {
              ADIF band enumeration (e.g. 20m), absent when the dial is not confirmed;
              FREQ in MHz with six decimals = confirmed dial + Tx offset (LQ ~384,
              mainwindow_slots.cpp ~545), absent when unconfirmed; STATION_CALLSIGN and
-             MY_GRIDSQUARE the WstxUdp Location session grid when one is set, else the
-             profile locator; TX_PWR watts (decimal >0, optional, D10); COMMENT single
+             MY_GRIDSQUARE the profile locator; TX_PWR watts (decimal >0, optional, D10); COMMENT single
              line, printable ASCII without '<' and '>', at most 1024 characters
              (optional, D10); a COMMENT containing '<' or '>' is refused (DIFFERENT from
              WSJT-X to_adi_text stripping them: a supplied record is never altered).
@@ -888,8 +907,7 @@ package WstxContact {
              without a dupe check). Only the first store of a contactId (saved) is sent
              to the WstxUdp targets as QSO Logged then Logged ADIF, so each contact
              reaches the external programs once; a replacement stays internal. They are
-             sent by the station step, never from inside a command, so a UDP Reply or
-             FreeText that reaches ContactCommand cannot re-enter the UDP owner. Idempotence: a retried command_id has no second
+             sent by the station step, never from inside a command. Idempotence: a retried command_id has no second
              effect, a repeated completion logs once, and a restart starts no contact,
              so it logs nothing again; stored records survive in contacts.adi.
              Storage failure: the record stays pending in the station process, at most 64
@@ -989,8 +1007,13 @@ package WstxContact {
              Vienna Intl Ctr, AF/EU Turkey), as with "Include extra WAE entities" off. */
     }
     attribute def DecodedEntity {
-        doc /* #55 (CL-055-02). GET /receive/results adds to each decoded standard record
-             whose sender resolves two optional keys; other records are unchanged:
+        doc /* #55 (CL-055-02). GET /receive/results adds to each decoded record whose
+             sender call resolves two optional keys; other records are unchanged. The
+             sender call is the 'from' call, also a filled-in hash; of a nonstandard (i3=4)
+             message its full call, or its filled-in hash when that comes second; of a
+             DXpedition message its hashed call, for dxcc only because Band Activity names
+             no sender for that form. A hash nobody heard ("<...>") and a free text have
+             none. The keys:
              dxcc {name (shown name), cont, cq, itu, km (only with a profile locator:
              great circle in whole km to the entity position)} when the sender has an
              entity; flags {name: true ...} holding only the flags that are true, omitted
@@ -1249,7 +1272,7 @@ package WstxContact {
     enum def ContactAction {
         enum select_row; enum enter_dx; enum cancel; enum choose_next; enum edit_message;
         enum set_report; enum set_tx1_skip; enum set_tx4; enum set_frequency; enum set_hold_tx;
-        enum set_parity; enum set_auto_seq; enum set_call_first; enum set_watchdogs;
+        enum set_parity; enum set_auto_seq; enum set_call_first; enum set_watchdogs; enum abort;
         enum set_activity;
         enum enable_tx; enum tune; enum redecode; enum open_log;
         doc /* discard_review is retired (#41, no log review queue) and refused
