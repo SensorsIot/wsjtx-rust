@@ -5542,4 +5542,81 @@ package WstxRequirements {
     }
     dependency CL_063_02_verified_by_TC_063_004 from 'CL-063-02' to 'TC-063-004';
 
+    requirement 'CL-063-03' {
+        doc /* The operator selects a contest with its period through a prompt pre-filled from the schedule rule (empty for ARRL January VHF, which the prompt asks), shown with the strategy and editable; colouring only is the default and starts no run. It is exclusive with an award strategy, is held in station memory only, and None ends it. The log is evaluated only inside that period: dupes by the profile's rule, multipliers, points and the score. Choosing an activity sets no strategy and selecting a contest sets no activity. Details: WstxContest::ContestSelection, ContestLog, ContestPrompt. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contest.rs; server/src/strategy.rs; server/src/logbook.rs; client/contact.js";
+    }
+    dependency CL_063_03_to_FR_024 from 'CL-063-03' to 'FR-024';
+    dependency CL_063_03_to_FR_019 from 'CL-063-03' to 'FR-019';
+    requirement 'CL-063-04' {
+        doc /* With a contest in force Band Activity lists only the stations that can be called (non-dupe in the period, directive allows it, a CQ or an RR73/73, on a band of the contest), ordered by callers of my call, new multiplier, QSO points, SNR, with the partner on top; a Show all toggle (off) shows the rest. Colour only for the callable, a new multiplier apart; a dupe and a directed CQ dimmed. The station evaluates, the browser renders after a publication, never on a timer. A contest also works by hand: every row stays selectable with Show all. Details: WstxContest::ContestVerdict, ContestValueOrder, ContestView. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contest.rs; server/src/strategy.rs; client/contact.js; client/recording.css";
+    }
+    dependency CL_063_04_to_FR_024 from 'CL-063-04' to 'FR-024';
+    dependency CL_063_04_to_FR_010 from 'CL-063-04' to 'FR-010';
+    verification 'TC-063-005' {
+        doc /* TC-063-005 \— The points and multiplier rules
+             CL-063-03
+             Setup: distances computed apart from this code (haversine, R 6371 km; IARU 111.2 km per degree): JN37-FN42 5894.6 km, JN37-JO62 701.6, JN37-JN38 111.2, JN37-PM95 9624.3.
+             Steps: each points rule for those pairs, a six-character locator, the same square, no grid; the VHF band tables; Field Day per mode; the multiplier keys.
+             Expected: WW 2, 1, 1, 4; ARRL 13, 3, 2, 21; IARU 5895, 702, 112, 9625; the same large square 50; ARRL same square 2 (the minimum distance value); no grid none; 1 per call; January 1,1,2,2,4,4,8,8 and June/September 1,1,2,2,3,3,4,4 for 6 m, 2 m, 1.25 m, 70 cm, 33 cm, 23 cm, 13 cm, 3 cm; Field Day digital 2, CW 2, phone 1; keys FN|20m and FN42|6m, none without a rule or a grid.
+             2 \— Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-03';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_005_the_points_rules_by_hand";
+    }
+    dependency CL_063_03_verified_by_TC_063_005 from 'CL-063-03' to 'TC-063-005';
+    verification 'TC-063-006' {
+        doc /* TC-063-006 \— The log inside the period, the dupe rules and the verdicts
+             CL-063-03, CL-063-04
+             Setup: hand-written QSO lists and decoded records for HB9BLA JN37 in EU on 20 m with activity ww_digi.
+             Steps: a WW Digi log with a QSO before the period, one at its exclusive end, a repeat in FT4, another band, SSB and 30 m; ARRL VHF with a rover and without a grid; Field Day SSB; FT8 Activity on another band; ARRL Digi with RTTY. Verdicts for a known field, a new far field, a new near field, a dupe, CQ NA, no CQ, another station's RR73, a weak caller, a dupe caller; on 30 m; without a log; a /R CQ in ARRL VHF and IARU.
+             Expected: 2 QSOs, 2 multipliers, 4 points, score 8, nothing outside the period counted; VHF dupe on the same grid only, every grid without a logged grid; Field Day digital no dupe of SSB; FT8 Activity a dupe on another band; ARRL Digi 1 QSO, 13 points, score 13. Rank order caller, far new multiplier, near new multiplier, the known field, the RR73; the dupes rank null with dupe true, also the caller; greyed CQ NA; nothing ranked on 30 m or without a log; the wire form of a verdict; the rover ranked in ARRL VHF, refused callsign guard in IARU.
+             2 \— Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-03';
+            verify 'CL-063-04';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_006_only_the_period_counts_and_each_dupe_rule; server/src/contest_tests.rs::tc_063_006_verdicts_callable_by_value";
+    }
+    dependency CL_063_03_verified_by_TC_063_006 from 'CL-063-03' to 'TC-063-006';
+    dependency CL_063_04_verified_by_TC_063_006 from 'CL-063-04' to 'TC-063-006';
+    verification 'TC-063-007' {
+        doc /* TC-063-007 \— The contest selection on the store and the evaluate route
+             CL-063-03, CL-063-04
+             Setup: exact-parse table; the actual station router on a disposable selected HTTPS profile (HB9BLA, JN47AA) on 40 m with an imported log (one QSO inside the period, one before), an injected FT8 live job with CQ WW W1DUP, K1OLD and JA1XYZ, activity ww_digi.
+             Steps: each refused selection form; PUT with a contest; read strategy.json; a new owner; the automation snapshot; PUT with a strategy and a contest; a period with end not after start; evaluate; PUT without contest; evaluate.
+             Expected: each field named; the configuration echoes the contest, the file holds none, a new owner has none, no run; 400 field contest and contest.end; verdicts JA1XYZ rank 0 new multiplier 4 points, K1OLD rank 1, W1DUP dupe with rank null; tally 1 QSO, 1 multiplier, 3 points, score 3 (JN47-EM12 8469.4 km); strategy WW Digi; after None the key is gone and evaluate says not_configured.
+             2 \— Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-03';
+            verify 'CL-063-04';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_007_a_selection_is_parsed_exactly; server/src/strategy_tests.rs::tc_063_007_a_contest_selection_store_and_evaluation";
+    }
+    dependency CL_063_03_verified_by_TC_063_007 from 'CL-063-03' to 'TC-063-007';
+    dependency CL_063_04_verified_by_TC_063_007 from 'CL-063-04' to 'TC-063-007';
+    verification 'TC-063-008' {
+        doc /* TC-063-008 \— The contest prompt, the callable list and Show all in the browser
+             CL-063-03, CL-063-04
+             Setup: actual browser with hand-written station replies for the receive results, GET and PUT /strategy, GET /strategy/contests and POST /strategy/evaluate.
+             Steps: no contest; the prompt on WW Digi; ARRL January VHF without a date; Start; Show all on and off; 1.5 s of silence; reopen; None; the prompt at 360 px.
+             Expected: the toggle hidden, the selector unchanged and nothing evaluated without a contest; the rule's period pre-filled, the clause, the activity line, colouring only checked; January empty and refused with no request; one PUT with active null and the contest; one evaluation; only JA1XYZ with the multiplier colour and K1ABC listed, the status with period and tally; Show all adds the dupe and the directed CQ dimmed with no new request; no request during the silence; the period in force on reopening; None sends no contest and shows every row; no sideways overflow on the phone.
+             2 \— Isolated automated browser test; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-03';
+            verify 'CL-063-04';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_063_03_verified_by_TC_063_008 from 'CL-063-03' to 'TC-063-008';
+    dependency CL_063_04_verified_by_TC_063_008 from 'CL-063-04' to 'TC-063-008';
+
 }

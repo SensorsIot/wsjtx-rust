@@ -39,7 +39,7 @@ window.wstxConfirm=function(text,okLabel='Continue'){
 // The modal popup makes the page inert, so it carries HALT itself (same action and state).
 confirmDialog.querySelector('#op-confirm-halt').addEventListener('click',()=>{confirmDialog.close('cancel');halt.click();});
 main.append(confirmDialog);
-document.querySelector('#band-activity').insertAdjacentHTML('afterbegin','<div id="strategy-element" class="op-strategy-bar" role="group" aria-label="Strategy"><span class="op-strategy-label">Strategy</span><select id="strategy-name" disabled aria-label="Strategy name" title="Strategies are loading"><option value="">None</option></select><button type="button" id="strategy-edit" disabled aria-label="Edit strategy" title="Strategies are loading">&#9998;</button><button type="button" id="activity-value" aria-pressed="true" title="Sort Band Activity by value">Value</button><span id="station-automation" class="op-automation" role="status">Automation idle</span></div>');
+document.querySelector('#band-activity').insertAdjacentHTML('afterbegin','<div id="strategy-element" class="op-strategy-bar" role="group" aria-label="Strategy"><span class="op-strategy-label">Strategy</span><select id="strategy-name" disabled aria-label="Strategy name" title="Strategies are loading"><option value="">None</option></select><button type="button" id="strategy-edit" disabled aria-label="Edit strategy" title="Strategies are loading">&#9998;</button><button type="button" id="activity-value" aria-pressed="true" title="Sort Band Activity by value">Value</button><button type="button" id="strategy-contest" disabled title="Contest strategies are loading">Contest</button><button type="button" id="activity-show-all" aria-pressed="false" hidden title="Also show the stations a contest strategy cannot call">Show all</button><span id="station-automation" class="op-automation" role="status">Automation idle</span></div>');
 const slotsMarkup=['tx1','tx2','tx3','tx4','tx5','tx6'];
 focus.querySelector('.op-contact-body').insertAdjacentHTML('beforeend',`<details id="qso-more"><summary title="Messages Tx1&ndash;Tx6 and activity" aria-label="Messages Tx1&ndash;Tx6 and activity">Tx1&ndash;Tx6</summary><div class="ct-more-body"><div class="ct-dx"><label>Activity<select id="contact-activity" disabled><option value="none">None</option><option value="na_vhf">NA VHF</option><option value="ww_digi">WW Digi</option><option value="arrl_digi">ARRL Digi</option><option value="field_day">Field Day</option><option value="rtty">RTTY Roundup</option><option value="hound">Hound</option></select></label><label title="Field Day: class and section, e.g. 1A EMA. RTTY Roundup: state or province, or DX or # for a serial number">Exchange<input id="contact-exchange" maxlength="8" autocomplete="off" spellcheck="false" disabled></label><span id="contact-serial" class="op-muted"></span></div><ol id="contact-messages" class="ct-messages" aria-label="Standard messages Tx1 to Tx6">${slotsMarkup.map((s,i)=>`<li data-slot="${s}"><label class="ct-next"><input type="radio" name="contact-next" value="${s}" aria-label="Next message Tx${i+1}" disabled>Tx${i+1}</label><button type="button" class="ct-now" data-slot="${s}" aria-label="Send Tx${i+1} now" title="Send Tx${i+1} from the next own period (turns Enable Tx on)" disabled>Now</button><input class="ct-text" data-slot="${s}" maxlength="37" aria-label="Tx${i+1} message" autocomplete="off" spellcheck="false" disabled>${s==='tx1'?'<label class="op-check"><input type="checkbox" id="contact-tx1-skip" disabled>Skip Tx1</label>':''}${s==='tx4'?'<label class="op-check"><input type="checkbox" id="contact-rr73" disabled>RR73</label>':''}</li>`).join('')}</ol>
 <div class="op-frequency-fields ct-fields"><button type="button" id="contact-cancel" disabled>Cancel contact</button><span id="contact-watchdog" class="op-muted"></span></div></div></details>`);
@@ -968,11 +968,19 @@ window.wstxContact=Object.freeze({load,snapshot:()=>snap});
 // /strategy/evaluate) and decides the run; this client only sends the selection and shows verdicts.
 (()=>{
 const $=id=>document.getElementById(id);
-const nameSelect=$('strategy-name'),editButton=$('strategy-edit'),valueButton=$('activity-value'),statusNode=$('station-automation');
+const nameSelect=$('strategy-name'),editButton=$('strategy-edit'),valueButton=$('activity-value'),statusNode=$('station-automation'),contestButton=$('strategy-contest'),showAllButton=$('activity-show-all');
 if(!nameSelect)return;
 let view=null,viewLoading=null,viewAgain=false,strategyMissing=false,run=null,refusal=null,pounceConfirmed=false,verdicts=new Map(),evaluatedKey='',evaluating=false,evaluateAgain=false;
 const config=()=>view?.configuration??null;
 const active=()=>{const c=config();return c?.strategies.find(s=>s.name===c.active)??null;};
+// #63 WstxContest: the contest in force and the profiles of GET /strategy/contests.
+let contests=[],contestSummary=null,showAll=false;
+const selection=()=>config()?.contest??null;
+const selectedProfile=()=>contests.find(p=>p.id===selection()?.profile)??null;
+async function loadContests(){
+  try{const r=await stationFetch('/strategy/contests',{cache:'no-store',signal:AbortSignal.timeout(10000)});const d=r.ok?await r.json():null;if(d?.v===1){contests=d.profiles;show();}}catch{}
+  return contests;
+}
 const runActive=()=>!!run&&run.state!=='stopped';
 const strategyRun=()=>runActive()&&run.strategy;
 function loadStrategy(){
@@ -995,6 +1003,13 @@ const words_=t=>String(t).replace(/_/g,' ');
 // WstxStrategy::StrategySelector: the run state, from GET /automation on automation.state only.
 function showRun(){
   const name=config()?.active;
+  // WstxContest::ContestView: the contest, its period and the log inside it.
+  const contest=selection();
+  if(contest){
+    const when=t=>`${t.slice(5,10)} ${t.slice(11,16)}`,tally=contestSummary?` · ${contestSummary.qsos} QSOs · ${contestSummary.multipliers} mult · score ${contestSummary.score}`:'';
+    statusNode.dataset.active='false';statusNode.textContent=`Contest ${selectedProfile()?.name??contest.profile} · ${when(contest.start)} to ${when(contest.end)} UTC · colouring only${tally}`;
+    return;
+  }
   // None: a run the HALT or a selection ended (the generic text is for other runs).
   if(!name){if(run?.strategy){statusNode.dataset.active='false';statusNode.textContent=run.reason&&run.reason!=='stopped'?`Strategy stopped · ${words_(run.reason)}`:'Strategy None';}return;}
   if(refusal){statusNode.textContent=`Strategy ${name} not started · ${words_(refusal)}`;statusNode.dataset.active='false';return;}
@@ -1006,11 +1021,14 @@ function showRun(){
 }
 function show(){
   const c=config();
-  const options=[['','None'],...(c?.strategies??[]).map(s=>[s.name,s.name])];
+  const contest=selection(),contestValue=contest?`contest:${contest.profile}`:null;
+  const options=[['','None'],...(c?.strategies??[]).map(s=>[s.name,s.name]),...(contest?[[contestValue,`${selectedProfile()?.name??contest.profile} (contest)`]]:[])];
   const key=options.map(o=>o[0]).join('\n');
   if(nameSelect.dataset.key!==key){nameSelect.dataset.key=key;nameSelect.replaceChildren(...options.map(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;return o;}));}
   // Always the station's: a HALT's None must show also while the selector has the focus.
-  nameSelect.value=c?.active??'';
+  nameSelect.value=contestValue??c?.active??'';
+  contestButton.disabled=!c||!contests.length;contestButton.title=contests.length?'Choose a contest strategy and its period':'Contest strategies unavailable';
+  showAllButton.hidden=!contest;showAllButton.setAttribute('aria-pressed',String(showAll));
   nameSelect.disabled=!c;nameSelect.title=c?'Selecting a strategy starts it; None stops it':(view?.configuration_error?`Saved strategies unreadable (${view.configuration_error}); the editor's Save replaces them`:'Strategies unavailable');
   editButton.disabled=!view;editButton.title='Edit strategies (the station keeps receiving)';
   showContinent();showIgnore();showPounce();showMostWanted();showRun();
@@ -1019,7 +1037,7 @@ function show(){
 // ---------------------------------------------------------------- marks and value order
 const tbody=document.querySelector('#band-activity tbody');
 const identity=()=>typeof live!=='undefined'&&live?.job?liveIdentity(live):'';
-function marksOn(){return !!active()&&!!identity();}
+function marksOn(){return (!!active()||!!selection())&&!!identity();}
 const valueSort=()=>typeof activitySortField!=='undefined'&&activitySortField==='value';
 let reordering=false;
 function decorate(){
@@ -1028,10 +1046,14 @@ function decorate(){
   const on=marksOn(),rows=[...tbody.querySelectorAll('tr[data-sequence]')];
   for(const tr of rows){
     const v=on?verdicts.get(tr.dataset.resultId):null;
-    tr.classList.toggle('ba-strategy',v?.rank!==null&&v?.rank!==undefined);tr.classList.toggle('ba-grey',!!v?.grey);
+    const ranked=v?.rank!==null&&v?.rank!==undefined;
+    tr.classList.toggle('ba-strategy',ranked);tr.classList.toggle('ba-grey',!!v?.grey);
+    // WstxContest::ContestView: only what can be called, unless Show all; the partner and rows to me stay.
+    tr.classList.toggle('ba-contest-mult',!!v?.new_multiplier);tr.classList.toggle('ba-dupe',!!v?.dupe);
+    tr.classList.toggle('ba-hidden',on&&!!selection()&&!showAll&&!ranked&&!tr.classList.contains('ba-tome')&&!tr.classList.contains('ba-partner'));
     if(v&&v.rank!==null)tr.dataset.rank=String(v.rank+1);else delete tr.dataset.rank;
     // #55 BandActivityHover: the verdict joins the row's other reasons.
-    if(v?.grey)tr.dataset.whyStrategy='Directed CQ, not calling us: the strategy skips it, a double-click warns';else if(v&&v.rank!==null)tr.dataset.whyStrategy=`Strategy ${config().active}: #${v.rank+1}`;else delete tr.dataset.whyStrategy;window.wstxActivityWhy?.(tr);
+    if(v?.grey)tr.dataset.whyStrategy='Directed CQ, not calling us: the strategy skips it, a double-click warns';else if(v?.dupe)tr.dataset.whyStrategy='Dupe in the contest period';else if(selection()&&v&&v.rank!==null)tr.dataset.whyStrategy=[`Contest ${selectedProfile()?.name??selection().profile}: #${v.rank+1}`,v.new_multiplier?'new multiplier':'',v.points!==null&&v.points!==undefined?`${v.points} points`:''].filter(Boolean).join(' · ');else if(v&&v.rank!==null)tr.dataset.whyStrategy=`Strategy ${config().active}: #${v.rank+1}`;else delete tr.dataset.whyStrategy;window.wstxActivityWhy?.(tr);
   }
   // WstxStrategy::ValueView: in the value sort the ranked rows go up in the station's order; a
   // column click sorts by the column until Value is chosen again (the marks stay).
@@ -1063,7 +1085,7 @@ async function evaluateShown(){
   // Rows that arrive during an evaluation are asked for when it ends (no timer).
   if(evaluating){evaluateAgain=true;return;}
   const w=wanted();if(!w)return;
-  const key=`${view.revision}/${w.id}/${w.first}/${w.next}`;if(key===evaluatedKey)return;
+  const key=`${view.revision}/${window.wstxContact?.snapshot()?.settings?.activity??''}/${w.id}/${w.first}/${w.next}`;if(key===evaluatedKey)return;
   if(!(typeof resultView!=='undefined'&&resultView&&resultCursor>=resultView.next_sequence))return;
   evaluating=true;
   try{
@@ -1071,14 +1093,16 @@ async function evaluateShown(){
     const response=await stationFetch('/strategy/evaluate',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,source_id,job_id,generation:Number(generation),first_sequence:w.first,next_sequence:w.next,strategy:null,explain:false}),signal:AbortSignal.timeout(10000)});
     const data=await response.json().catch(()=>null);
     if(response.ok&&data?.v===1&&w.id===identity()){
-      const map=new Map();data.verdicts.forEach(v=>map.set(`${w.id}/${v.sequence}`,{rank:v.rank,grey:v.grey}));
+      const map=new Map();data.verdicts.forEach(v=>map.set(`${w.id}/${v.sequence}`,{rank:v.rank,grey:v.grey,dupe:v.dupe,new_multiplier:v.new_multiplier,points:v.points}));
       verdicts=map;evaluatedKey=key;decorate();
+      contestSummary=data.contest??null;showRun();
     }
   }catch{}finally{evaluating=false;if(evaluateAgain){evaluateAgain=false;evaluateShown();}}
 }
 const observer=new MutationObserver(()=>{if(reordering)return;decorate();evaluateShown();});
 if(tbody)observer.observe(tbody,{childList:true});
-nameSelect.addEventListener('change',()=>{const c=config();if(!c)return;saveConfiguration({...c,active:nameSelect.value||null},'Strategy').then(ok=>{if(!ok)show();});});
+nameSelect.addEventListener('change',()=>{const c=config();if(!c||nameSelect.value.startsWith('contest:'))return;const {contest:_,...rest}=c;contestSummary=null;saveConfiguration({...rest,active:nameSelect.value||null},'Strategy').then(ok=>{if(!ok)show();});});
+showAllButton.addEventListener('click',()=>{showAll=!showAll;show();});
 valueButton.addEventListener('click',()=>{if(typeof sortBy==='function')sortBy({dataset:{sort:'value'}});show();});
 document.querySelector('#band-activity thead')?.addEventListener('click',()=>valueButton.setAttribute('aria-pressed',String(valueSort())));
 // ---------------------------------------------------------------- run state
@@ -1092,7 +1116,7 @@ async function automationCommand(action,extra){
 }
 async function readAutomation(){const r=await stationFetch('/automation',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!r.ok)throw new Error(`automation ${r.status}`);return r.json();}
 // WstxStrategy::StrategyHttp strategy.state: a HALT's None or another browser's selection.
-addEventListener('station-message',event=>{const m=event.detail?.message;if(m?.type==='contact.state')show();else if(m?.type==='strategy.state'&&event.detail?.current===socket&&m.data?.strategy_revision!==view?.revision)loadStrategy();});
+addEventListener('station-message',event=>{const m=event.detail?.message;if(m?.type==='contact.state'){show();evaluateShown();}else if(m?.type==='strategy.state'&&event.detail?.current===socket&&m.data?.strategy_revision!==view?.revision)loadStrategy();});
 // ---------------------------------------------------------------- continent (Settings > General)
 const continentSelect=$('station-continent');
 function showContinent(){
@@ -1279,6 +1303,40 @@ $('mw-update')?.addEventListener('click',async()=>{
 // ---------------------------------------------------------------- editor popup
 const CONTINENTS=[['AF','Africa'],['AN','Antarctica'],['AS','Asia'],['EU','Europe'],['NA','North America'],['OC','Oceania'],['SA','South America']];
 const GOALS=[['dxcc','DXCC'],['dxcc_band','DXCC per band'],['dxcc_slot','DXCC slot (band and mode)'],['waz','WAZ (CQ zones)'],['wpx','WPX (prefixes)'],['grid','Grids'],['new_call','New call']];
+// WstxContest::ContestPrompt: choose the contest, its period (pre-filled from the schedule rule)
+// and the operation; the station keeps receiving and HALT stays reachable.
+const contestPrompt=document.createElement('dialog');contestPrompt.id='contest-prompt';contestPrompt.className='op-dialog op-strategy-editor';contestPrompt.setAttribute('aria-labelledby','contest-prompt-title');
+contestPrompt.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="contest-prompt-title">Contest strategy</h2><button type="button" class="op-halt-small" id="contest-prompt-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button></header>
+<div class="se-options"><label>Contest<select id="cp-profile"></select></label><label>Start (UTC)<input id="cp-start" type="datetime-local" step="60"></label><label>End (UTC)<input id="cp-end" type="datetime-local" step="60"></label></div>
+<p id="cp-schedule" class="op-muted"></p><p id="cp-activity" class="op-muted"></p>
+<fieldset class="se-options"><legend>Operation</legend><label class="op-check"><input type="radio" name="cp-operation" value="colouring" checked>Colouring only: Band Activity by the contest rules, you operate</label></fieldset>
+<ul id="cp-notes" class="op-muted"></ul><p id="cp-result" class="op-muted" role="status"></p><menu><button value="cancel" type="submit">Cancel</button><button type="button" class="op-primary" id="cp-go">Start</button></menu></form>`;
+document.querySelector('main').append(contestPrompt);
+function contestFill(keep){
+  const p=contests.find(x=>x.id===$('cp-profile').value)??contests[0];if(!p)return;
+  const minute=t=>t?t.slice(0,16):'';
+  $('cp-start').value=minute(keep?.start??p.period?.start);$('cp-end').value=minute(keep?.end??p.period?.end);
+  $('cp-schedule').textContent=`${p.schedule}${p.period?.band?` · this round ${p.period.band}`:''}${p.period?'':' · enter the date'}`;
+  const on=window.wstxContact?.snapshot()?.settings?.activity??'none';
+  $('cp-activity').textContent=on===p.activity?'':`This contest uses the activity ${words_(p.activity)}; the station is on ${words_(on)} (Tx1-Tx6). A CQ with the contest's word is only answerable in its activity.`;
+  $('cp-notes').replaceChildren(...[p.automation_text,...p.notes].map(n=>{const li=document.createElement('li');li.textContent=n;return li;}));
+  $('cp-result').textContent='';
+}
+contestButton.addEventListener('click',async()=>{
+  await loadContests();if(!contests.length)return;
+  const now=selection();
+  $('cp-profile').replaceChildren(...contests.map(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name;return o;}));
+  $('cp-profile').value=now?.profile??contests[0].id;contestFill(now);contestPrompt.showModal();
+});
+$('cp-profile').addEventListener('change',()=>contestFill(null));
+$('contest-prompt-halt').addEventListener('click',()=>{contestPrompt.close('cancel');document.querySelector('#halt-tx')?.click();});
+$('cp-go').addEventListener('click',async()=>{
+  const c=config();if(!c)return;const start=$('cp-start').value,end=$('cp-end').value;
+  if(!start||!end){$('cp-result').textContent='Enter the start and the end of the contest period';return;}
+  const utc=t=>`${t.slice(0,16)}Z`;contestSummary=null;
+  const ok=await saveConfiguration({...c,active:null,contest:{profile:$('cp-profile').value,start:utc(start),end:utc(end),operation:'colouring'}},'Contest');
+  if(ok)contestPrompt.close('ok');else $('cp-result').textContent=statusNode.textContent;
+});
 const newStrategy=name=>({name,class:'award',goals:['dxcc'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:true,window:{kind:'all'}});
 const editor=document.createElement('dialog');editor.id='strategy-editor';editor.className='op-dialog op-strategy-editor';editor.setAttribute('aria-labelledby','strategy-editor-title');
 editor.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="strategy-editor-title">Strategies</h2><button type="button" class="op-halt-small" id="strategy-editor-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button></header>
@@ -1368,7 +1426,7 @@ $('se-save').addEventListener('click',async()=>{
 });
 // Read once per socket (a status refresh on the same socket reads nothing: Thin link).
 let strategySocket=null;
-addEventListener('station-ready',event=>{if(event.detail===strategySocket&&(view||strategyMissing))return;strategySocket=event.detail;loadStrategy();});
-if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){strategySocket=socket;loadStrategy();}
+addEventListener('station-ready',event=>{if(event.detail===strategySocket&&(view||strategyMissing))return;strategySocket=event.detail;loadStrategy();loadContests();});
+if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){strategySocket=socket;loadStrategy();loadContests();}
 show();
 })();

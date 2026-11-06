@@ -16,8 +16,8 @@ package WstxStrategy {
             itself; a run uses the same verdicts.
          D2 What a strategy is: the goal of a strategy is to auto-call. Exactly one strategy
             is active, or none (manual operation). Selecting it starts it (no separate
-            Highlight, Auto or Start); None stops it. The browser sends only the selection. Only the class award has behaviour;
-            contest is #63 and is refused on the wire until then (StrategyClass).
+            Highlight, Auto or Start); None stops it. The browser sends only the selection. A saved strategy is of the class award;
+            contest strategies are #63 (WstxContest), a selection and no saved class (StrategyClass).
          D3 Treat 73 as CQ: an RR73 or 73 that ends another station's QSO counts as calling;
             the run answers from its free Tx slot (FreeTxSlot) so the answer never lands on the
             final 73.
@@ -74,8 +74,9 @@ package WstxStrategy {
             a grid, so a missing grid is unknown, never new (GoalNeeded grid). */
 
     enum def StrategyClass {
-        doc /* award: the only class with behaviour. contest (#63) is refused on the wire
-             (400 invalid_request, field ...class) until #63 defines it. */
+        doc /* award: the saved strategies. A saved strategy of class contest is refused on the
+             wire (400 invalid_request, field ...class): contest strategies are profiles and a
+             selection (#63, WstxContest::ContestSelection), not saved ones. */
         enum award;
     }
     enum def Goal { enum dxcc; enum dxcc_band; enum dxcc_slot; enum waz; enum wpx; enum grid; enum new_call; }
@@ -112,8 +113,9 @@ package WstxStrategy {
              the seven codes: my continent for the directed-CQ rule and region dx), active
              (null or the name of a listed strategy), strategies (0..16 Strategy),
              ignore_calls (#42 the permanent ignore list: 0..100 unique calls of 1..13
-             A-Z 0-9 /, IgnoreLists) and session_ignore_minutes (#42 the session list
-             expiry, an integer 1..720, default 30). Persisted as strategy.json beside
+             A-Z 0-9 /, IgnoreLists), session_ignore_minutes (#42 the session list
+             expiry, an integer 1..720, default 30) and the optional contest (#63,
+             WstxContest::ContestSelection, never persisted). Persisted as strategy.json beside
              profile.json: {schema_version 2, profile_id, revision, configuration}, written
              atomically like udp.json; missing: the default {null, null, [], [], 30} at
              revision 0; foreign, malformed or larger than 262144 bytes: configuration null
