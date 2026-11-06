@@ -5749,8 +5749,8 @@ package WstxRequirements {
         doc /* TC-063-010 — Run: CQ and the most valuable caller
              CL-063-05
              Setup: as TC-063-009, activity ww_digi, run selected.
-             Steps: a step; callers W1DUP (dupe, strongest), K1ABC (first non-dupe decoded), JA1XYZ (weakest, new multiplier, most points); its R and 73; steps; JA1XYZ again; once the log is rebuilt, callers JA2ABC PM85 (more points) and K1NEW FN42; Abort; an empty period; the band leaves the contest and returns; the station clock past the period's end.
-             Expected: calling_cq, armed, Tx6 "CQ WW HB9BLA JN47"; JA1XYZ answered with 2 candidates, not the first, not the strongest, not the dupe; completed, then calling_cq again with 1 completed; not answered again; K1NEW selected, PM being no new multiplier any more; after Abort calling_cq; the CQ goes on; waiting band and disarmed, then calling_cq and armed again; waiting outside_period and disarmed.
+             Steps: a step; callers W1DUP (dupe, strongest), K1ABC (first non-dupe decoded), JA1XYZ (weakest, new multiplier, most points); its R and 73; steps; JA1XYZ again; once the log is rebuilt, callers JA2ABC PM85 (more points) and K1NEW FN42; Abort of that QSO; an empty period; Abort of the run's own CQ; the band leaves the contest and returns; the station clock past the period's end.
+             Expected: calling_cq, armed, Tx6 "CQ WW HB9BLA JN47"; JA1XYZ answered with 2 candidates, not the first, not the strongest, not the dupe; completed, then calling_cq again with 1 completed; not answered again; K1NEW selected, PM being no new multiplier any more; after that Abort calling_cq; the CQ goes on; after Abort of the CQ calling_cq, armed, with a new contact id and operation run; waiting band and disarmed, then calling_cq and armed again; waiting outside_period and disarmed.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {

@@ -4816,11 +4816,24 @@ async fn tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller() {
     assert_eq!(
         run_state(&f).await.0,
         "calling_cq",
-        "Esc: the run calls again"
+        "Esc on a caller's QSO gives that station up, the run calls again"
     );
     // No caller keeps the CQ on the air.
     publish(&f, e + 150_000, &[]);
     assert_eq!(run_state(&f).await.0, "calling_cq");
+    // Esc on the run's own CQ ends that CQ; the run calls again, a new CQ on the same selection.
+    let id = f.read("contact").await["contact"]["id"].clone();
+    browser_ok(&f, "abort", json!({})).await;
+    f.tick();
+    f.tick();
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "calling_cq");
+    assert_eq!(contact(&f).await.2, json!("armed"));
+    assert_ne!(f.read("contact").await["contact"]["id"], id);
+    assert_eq!(
+        f.browser("GET", "/strategy", None).await.json["configuration"]["contest"]["operation"],
+        "run"
+    );
     // A reason appearing ends the CQ: a band outside the contest, disarmed; back, it calls again.
     f.state.recording.fixture_band("30m");
     f.tick();
