@@ -144,7 +144,11 @@ test('TC-010-008 TC-050-001 waterfall click sets Tx, double-click sets Rx and Tx
   const last=async(n=1)=>{await waitFor(()=>commands().length>=n,()=>`command ${n} ${JSON.stringify(requests.slice(-8).map(r=>[r.method,r.path,Math.round(r.at),r.end]))} now ${Math.round(performance.now())}`);return commands().at(-1);};
   const settle=async(field,hz)=>waitFor(async()=>(await snapshot()).settings[field]===hz,async()=>`${field} ${hz}: ${await page.locator('#contact-result').textContent()}`);
   // #50 PointerEffect: click sets Tx (after the 250 ms double-click wait), double-click sets Rx and Tx.
+  // Tx away from 1500 Hz first: Hold Tx keeps it there (CL-039-08), and a press on the Tx line is a drag, no click.
   let n=commands().length;
+  await clickAt(2000);await last(n+1);await settle('tx_hz',2000);
+  await page.waitForFunction(()=>document.querySelector('#waterfall-wrap .ct-txm').getAttribute('aria-valuenow')==='2000');
+  n=commands().length;
   await clickAt(1500);
   let c=await last(n+1);assert.deepEqual([c.action,c.rx_hz,c.tx_hz],['set_frequency',null,1500]);await settle('tx_hz',1500);
   const tx=page.locator('#waterfall-wrap .ct-txm');await page.waitForFunction(()=>document.querySelector('#waterfall-wrap .ct-txm').getAttribute('aria-valuenow')==='1500');
