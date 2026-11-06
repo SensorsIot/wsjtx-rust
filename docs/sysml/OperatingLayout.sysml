@@ -802,9 +802,10 @@ attribute def ActivityOrdering {
              content, so the ControlPanel and the ErrorField below it (LowerPanel) never move
              when a QSO starts or ends, dialogue rows or callers are added or a line such as
              NEXT appears. From top to bottom: the header (item 1: the partner line, which
-             wraps and scrolls in its own fixed line when longer; then the last partner message
-             of item 2, cut to the line since the dialogue repeats it, the direct buttons of
-             item 5, the Tx1-Tx6 fold-out and the badge), the message lines (item 4 NEXT first,
+             wraps and scrolls in its own fixed line when longer, with the badge beside it; then
+             the last partner message of item 2, cut to the line since the dialogue repeats
+             it, the direct buttons of item 5 and the Tx1-Tx6 fold-out; at most 48em wide the
+             badge follows the buttons), the message lines (item 4 NEXT first,
              then items 6, the exception status, Pounce and Auto Seq off; one fixed line, two at
              most 48em wide, scrolling inside), the QSO section
              (the #60 dialogue table, item 7: its header row and qsoAreaRows (12) rows without
