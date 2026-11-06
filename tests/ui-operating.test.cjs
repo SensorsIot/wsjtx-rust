@@ -2489,6 +2489,7 @@ test('TC-039-032 Built-in strategies are read-only in the editor and copy to a u
   assert.equal(reply.configuration.active,'DXCC slots');
   assert.equal(reply.configuration.strategies.some(s=>s.name==='DXCC slots'),false);
   assert.deepEqual(errors.filter(e=>!/400/.test(e)),[]);
+});
 // Proves: CL-039-04; TC-039-006 review 6683200740 finding 5: rows published during an evaluation are
 // evaluated when it ends, without a timer. Station replies are hand-written fixtures.
 test('TC-039-006 Rows arriving during an evaluation are evaluated when it ends',{timeout:60000},async t=>{
