@@ -70,6 +70,7 @@ const BACKOFF_MAX_MS: u64 = 4000;
 const MAX_TRACKED: usize = 64;
 const REGISTER_EVERY: Duration = Duration::from_secs(5);
 const UNKNOWN_GAP_100NS: u64 = 2_000_000;
+const DAX_RATE: u32 = 24_000;
 /// 10 ms at 48 kHz.
 const GROUP_FRAMES: usize = 480;
 /// Reply codes the pinned API documents for missing receiver/license/resources.
@@ -216,6 +217,10 @@ pub struct Snapshot {
     /// a measurement of whether the radio's time could serve, not used for timing.
     pub vita_tsi: Option<u8>,
     pub vita_offset_ms: Option<i64>,
+    /// Spacing of own packets against their duration, as read by this session (its read
+    /// loop waits up to 10 ms, which sets the floor): smoothed and largest.
+    pub jitter_mean_ms: Option<f64>,
+    pub jitter_max_ms: Option<f64>,
     pub retry_after_ms: Option<u64>,
 }
 
@@ -270,10 +275,15 @@ impl Shared {
             }
         }
     }
-    fn update_vita(&self, tsi: u8, offset: Option<i64>) {
+    fn update_vita(&self, tsi: u8, offset: Option<i64>, spacing_error_ms: Option<f64>) {
         if let Ok(mut s) = self.snapshot.lock() {
             s.vita_tsi = Some(tsi);
             s.vita_offset_ms = offset;
+            if let Some(error) = spacing_error_ms.map(f64::abs) {
+                let mean = s.jitter_mean_ms.unwrap_or(error);
+                s.jitter_mean_ms = Some(mean + (error - mean) / 16.0);
+                s.jitter_max_ms = Some(s.jitter_max_ms.unwrap_or(0.0).max(error));
+            }
         }
     }
     /// Packet rate: the counters and the peak only, never a pushed change.
@@ -362,6 +372,8 @@ impl Session {
                 last_peak: None,
                 vita_tsi: None,
                 vita_offset_ms: None,
+                jitter_mean_ms: None,
+                jitter_max_ms: None,
                 retry_after_ms: None,
             }),
             sink: Mutex::new(None),
@@ -772,6 +784,8 @@ fn attempt(
         s.last_peak = None;
         s.vita_tsi = None;
         s.vita_offset_ms = None;
+        s.jitter_mean_ms = None;
+        s.jitter_max_ms = None;
     });
     loop {
         if shared.stopping() {
@@ -948,6 +962,7 @@ struct Conn<'a> {
     slice: Option<u32>,
     stream: Option<u32>,
     last_count: Option<u8>,
+    last_seen: Option<u64>,
     buffer: Vec<u8>,
 }
 impl<'a> Conn<'a> {
@@ -969,6 +984,7 @@ impl<'a> Conn<'a> {
             slice: None,
             stream: None,
             last_count: None,
+            last_seen: None,
             buffer: vec![0; wire::MAX_DATAGRAM + 1],
         }
     }
@@ -1060,16 +1076,24 @@ impl<'a> Conn<'a> {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_millis() as i128);
             let (tsi, offset) = (vita.tsi, vita_offset_ms(&vita, now_ms));
-            self.shared.update_vita(tsi, offset);
+            let arrival = arrival_100ns();
+            let frames = samples.len() as u64 / 2;
+            let spacing = self.last_seen.zip(arrival).map(|(last, now)| {
+                (now as f64 - last as f64) / 10_000.0 - frames as f64 * 1000.0 / DAX_RATE as f64
+            });
+            self.last_seen = arrival.or(self.last_seen);
+            self.shared.update_vita(tsi, offset, spacing);
             let missed = self
                 .last_count
                 .map_or(0, |c| u64::from(count.wrapping_sub(c).wrapping_sub(1) & 15));
             self.last_count = Some(count);
-            Self::deliver(self.shared, &samples, missed, arrival_100ns());
+            Self::deliver(self.shared, &samples, missed, arrival);
         }
     }
     fn deliver(shared: &Shared, samples: &[f32], missed: u64, arrival: Option<u64>) {
-        let frames = samples.len() / 2;
+        // The radio's 24 kHz reach the shared 48 kHz converter with each frame held twice;
+        // its 6 kHz low-pass removes the images.
+        let frames = samples.len();
         let peak = samples
             .iter()
             .step_by(2)
@@ -1107,8 +1131,12 @@ impl<'a> Conn<'a> {
                     flags,
                 );
             }
-            sink.pending
-                .extend(samples.iter().flat_map(|v| v.to_le_bytes()));
+            for frame in samples.chunks_exact(2) {
+                for _ in 0..2 {
+                    sink.pending
+                        .extend(frame.iter().flat_map(|v| v.to_le_bytes()));
+                }
+            }
             sink.pending_frames += frames;
             sink.next_frame = sink.next_frame.saturating_add(frames as u64);
             if sink.pending_frames >= GROUP_FRAMES {

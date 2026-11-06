@@ -296,17 +296,19 @@ package WstxProductScope {
              connecting) / closed (stopped, unauthorized) / unavailable (unavailable, conflict),
              error the session error, frequency the own slice's status while ready, every other
              observation null.
-             Samples: only datagrams from the radio address with the own stream ID and packet
-             class 0x03E4 (stereo big-endian float32, 48 kHz) enter the existing native
-             queue/converter/epoch path, channel 0 only; other IDs are counted foreign, 24/96 kHz
-             and reduced-bandwidth classes are refused as invalid. A gap in the 4-bit packet count
+             Samples: only datagrams from the radio address with the own stream ID, VITA type 3
+             and packet class 0x03E3 (stereo big-endian float32, 24 kHz, 128 frames per packet, as
+             the station's FLEX-6600 sent on 2026-11-06) enter the existing native
+             queue/converter/epoch path, channel 0 only, each frame held twice for the 48 kHz
+             converter, whose 6 kHz low-pass removes the images; other IDs are counted foreign,
+             48/96 kHz and reduced-bandwidth classes are refused as invalid. A gap in the 4-bit packet count
              advances the frame position by the missing packets, keeping the timeline; an arrival
              gap above 200 ms is unknown loss (native_discontinuity) because the count may have
              wrapped. The receive socket asks for a 1 MiB buffer, and packets enter the queue in
              groups of at least 10 ms, as an audio device delivers them. Timing: each packet carries its host arrival
              time less its own duration, so the epoch is correlated to the system clock; network
-             and radio latency are not measured, VITA timestamps are not used until a live
-             qualification (GET /native-flex reports the radio's timestamp kind and this host's
+             and radio latency are not measured. VITA timestamps are not used: that radio, with no
+             GPS, sent a frozen filler value on every packet (GET /native-flex reports the radio's timestamp kind and this host's
              clock minus it, for that measurement), and drift follows the same filtered clock tracking as an audio device.
              Tuning: the station operation's band selection on the own slice (origin
              native_readback).
@@ -326,8 +328,8 @@ package WstxProductScope {
              protocol,address}, slice null or {index,letter,frequency_hz,mode,rx_antenna,
              dax_channel,stream_id}, transmit always unsupported, at most 4096
              encoded bytes. GET /native-flex is the read-only snapshot, the same keys plus v, packets
-             {accepted,foreign,invalid,lost}, last_peak and vita {tsi,host_minus_radio_ms}, reset
-             per session, for diagnosis and tests, 404 for standard
+             {accepted,foreign,invalid,lost}, last_peak and vita {tsi,host_minus_radio_ms} and arrival
+             {jitter_mean_ms,jitter_max_ms}, reset per session, for diagnosis and tests, 404 for standard
              profiles; no request accepts a slice, stream or handle as authority. A session that is
              not ready shows the ErrorFieldEntry nativeRadio with its state and error; the
              "No audio input" entry does not apply to a native profile. The status line stands
@@ -344,7 +346,7 @@ package WstxProductScope {
              another model or firmware speaking it connects and is displayed but not claimed as
              supported. The displayed model, serial and firmware are the announced ones.
              Profile: the connection type is chosen at creation (--create-native-flex-profile
-             <dir> <rx antenna> [<address:port>]) and is read-only in the browser. Remaining: hardware/firmware,
+             <dir> <rx antenna> [<address:port>]) and is read-only in the browser. tests/flex-live-check.cjs is the one-run live measurement. Remaining: hardware/firmware,
              24 kHz DAX, latency/timestamps, >= 4 usable slices, broadcast discovery and resource
              release on disconnect (TC-023-004/005); transmit (TC-023-006). */
     }

@@ -23,8 +23,9 @@ pub const MAX_COMMAND: usize = 1024;
 pub const MAX_DATAGRAM: usize = 16_384;
 pub const FLEX_OUI: u32 = 0x00_1C2D;
 pub const FLEX_INFORMATION_CLASS: u16 = 0x534C;
-/// Narrow-band IEEE float stereo DAX audio at 48 kHz, the one admitted format.
-pub const DAX_FLOAT_48K: u16 = 0x03E4;
+/// IEEE float stereo DAX audio at 24 kHz, the one admitted format: what a FLEX-6600 on
+/// SmartSDR 4.3.16 sent on 2026-11-06 (type 3, 128 frames per packet, equal channels).
+pub const DAX_FLOAT_24K: u16 = 0x03E3;
 pub const DISCOVERY_CLASS: u16 = 0xFFFF;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -341,17 +342,17 @@ pub fn parse_vita(bytes: &[u8]) -> Result<Vita<'_>, WireError> {
     })
 }
 
-/// Decodes one DAX receive packet: stereo frames of big-endian IEEE float32.
+/// Decodes one DAX receive packet: 24 kHz stereo frames of big-endian IEEE float32.
 /// Returns interleaved samples (channel 0, channel 1, ...).
 pub fn dax_samples(packet: &Vita<'_>) -> Result<Vec<f32>, WireError> {
-    if packet.packet_type != 1
+    if packet.packet_type != 3
         || packet.oui != Some(FLEX_OUI)
         || packet.information_class != Some(FLEX_INFORMATION_CLASS)
     {
         return Err(WireError::NotDaxAudio);
     }
-    if packet.packet_class != Some(DAX_FLOAT_48K) {
-        // 24/96 kHz float and reduced-bandwidth integer DAX use other rules.
+    if packet.packet_class != Some(DAX_FLOAT_24K) {
+        // 48/96 kHz float and reduced-bandwidth integer DAX use other rules.
         return Err(WireError::UnsupportedFormat);
     }
     if packet.payload.is_empty() {

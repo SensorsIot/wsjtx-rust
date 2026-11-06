@@ -1747,7 +1747,9 @@ package WstxRequirements {
 
              **Level-2 realization:** tests/native-flex.test.cjs starts the independent loopback
              emulator tests/flex-emulator.cjs (TCP command/status, unicast loopback discovery and
-             VITA-49 DAX float 48 kHz streams; no code shared with the candidate) and four real
+             VITA-49 DAX float 24 kHz streams at the radio's 187.5 packets/s in the form a real
+             FLEX-6600 sent, its encoder checked byte for byte against that captured packet; no code
+             shared with the candidate) and four real
              station servers with disposable schema-2 HTTPS profiles. Each emulated slice carries
              a 1 kHz tone of a slice-specific amplitude, and every eighth packet another client's
              stream ID is sent at amplitude 0.95. Oracle: the emulator's own slice/stream/owner
@@ -1765,9 +1767,12 @@ package WstxRequirements {
              the channel, not the owner. Datagrams with the own stream ID from another address
              (127.0.0.2, amplitude 0.95) are never accepted. No slice command targets another
              client's slice and no transmit, disconnect or persistence command is sent. Rust unit
-             tests check the pinned independent narrow48 vector field by field, its negative cases,
-             documented control lines and the 4096-byte line bound; the emulator encoder reproduces
-             the same vector bytes. Another model on the admitted API connects and its announced
+             tests check the captured packet and the pinned independent vector field by field, their
+             negative cases, documented control lines and the 4096-byte line bound. The live check
+             script tests/flex-live-check.cjs, run against the emulator streaming the verified FT8
+             vector on the UTC period at 24 kHz, measures zero loss, reports jitter, shows the
+             vector's expected text from the station's decoder with DT within 0.3 s from arrival
+             anchoring, saves the windows and leaves no slice or client. Another model on the admitted API connects and its announced
              model, serial and firmware are shown. GET /native-flex reports the packet's timestamp
              kind and this host's clock minus its time, which a new session without own packets
              shows as null. A saved address connects with nothing announced and no discovery

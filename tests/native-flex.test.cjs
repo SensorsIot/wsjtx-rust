@@ -16,7 +16,8 @@ const {gunzipSync} = require('node:zlib');
 const selfsigned = require('selfsigned');
 const {chromium} = require('playwright');
 const {server, grant, loginPage, browserPort} = require('./support.cjs');
-const {FlexEmulator, vita, daxPayload} = require('./flex-emulator.cjs');
+const {FlexEmulator, vita, daxPayload, FROZEN} = require('./flex-emulator.cjs');
+const {run: liveCheck} = require('./flex-live-check.cjs');
 
 const FT8 = {'40m': 7074000, '30m': 10136000, '20m': 14074000, '17m': 18100000};
 // Commands that could transmit or disturb other clients are never acceptable here.
@@ -171,7 +172,9 @@ test('TC-023-002 persisted intent reconciles restarted radios, changed handles a
   let emulator = await new FlexEmulator({discoveryPorts: ports}).start();
   t.after(() => emulator.stop());
   const [a, b] = await Promise.all(ports.map((discovery, i) => station(t, {name: `Native ${'AB'[i]}`, discovery})));
-  await state(a, 'ready'); await state(b, 'ready');
+  // Stations choosing a DAX channel together may have to separate first.
+  const separated = () => waitFor(async () => { const [x, y] = await Promise.all([a.flex(), b.flex()]); return x.state === 'ready' && y.state === 'ready' && x.slice.dax_channel !== y.slice.dax_channel; }, 'two ready stations on separate channels', 30000);
+  await separated();
   const before = {a: await a.flex(), b: await b.flex()};
   // A's receive job runs through the restart.
   const running = (await a.request('/receive')).body;
@@ -187,7 +190,7 @@ test('TC-023-002 persisted intent reconciles restarted radios, changed handles a
   await restart({handleBase: 0x7a000000, sliceOrder: [7, 6, 5, 4, 3, 2, 1, 0], streamBase: 0x08000000, staleStreams: oldStreams});
   await failure(a, 'transport_lost'); await failure(b, 'transport_lost');
   await waitFor(async () => (await a.request('/receive')).body.audio.state === 'unavailable', 'the running job shows its input unavailable');
-  await state(a, 'ready', 30000); await state(b, 'ready', 30000);
+  await separated();
   for (const s of [a, b]) {
     const v = await s.flex(), own = emulator.slicesOf(s.clientId);
     assert.equal(own.length, 1); assert.equal(v.slice.index, own[0].index);
@@ -231,7 +234,7 @@ test('TC-023-002 persisted intent reconciles restarted radios, changed handles a
   await restart({announceClients: 0});
   const second = await new FlexEmulator({discoveryPorts: ports, serial: '9999-0000-0000-0000', handleBase: 0x20000000}).start();
   t.after(() => second.stop());
-  await state(a, 'ready', 30000); await state(b, 'ready', 30000);
+  await separated();
   assert.equal(emulator.connections, 0, 'no connection to the full radio');
   assert.equal(second.slicesOf(a.clientId).length, 1);
   assert.equal((await a.flex()).radio.serial, '9999-0000-0000-0000');
@@ -281,6 +284,30 @@ test('TC-023-001 a saved address reaches a radio no announcement crosses, and th
   await waitFor(() => emulator.registered.filter(r => r.port === client.udpPort).length > before, 'the keep-alive repeats', 8000);
 });
 
+test('TC-023-001 the live check script decodes real FT8 through the real packet form and leaves nothing behind', {timeout: 120000}, async t => {
+  const vectors = process.env.WSTX_DECODER_VECTORS;
+  assert.ok(vectors, 'WSTX_DECODER_VECTORS names the verified vector cache');
+  const emulator = await new FlexEmulator({silent: true, periodWav: path.join(vectors, 'ft8-cq', '000000_000000.wav')}).start();
+  t.after(() => emulator.stop());
+  const out = await fs.mkdtemp(path.join(os.tmpdir(), 'wstx-flex-check-test-'));
+  t.after(() => fs.rm(out, {recursive: true, force: true}));
+  const report = await liveCheck({address: `127.0.0.1:${emulator.port}`, seconds: 40, out, registerPort: emulator.udpPort});
+  assert.equal(report.status, 'measured', JSON.stringify(report));
+  assert.deepEqual([report.before.clients, report.before.slices], [0, '']);
+  assert.deepEqual([report.after.clients, report.after.slices], [0, ''], 'released at the end');
+  assert.equal(report.packets.invalid, 0); assert.equal(report.loss_percent, 0);
+  assert.ok(report.received_ratio > 0.8, `received ${report.received_ratio}`);
+  // Independent oracle: the vector's own manifest text, and a signal on the UTC period.
+  const manifest = JSON.parse(await fs.readFile(path.join(__dirname, '..', 'fixtures', 'decoder', 'independent-vectors', 'manifest.json')));
+  const expected = manifest.vectors.find(v => v.mode === 'ft8' && v.id === 'cq').expected_receive.text;
+  assert.ok(report.texts.includes(expected), JSON.stringify(report.texts));
+  // The vector starts 0.5 s into its period, which FT8 calls DT 0; arrival time may add a little.
+  assert.ok(Math.abs(report.dt_seconds.median) < 0.3, JSON.stringify(report.dt_seconds));
+  assert.equal(typeof report.arrival.jitter_mean_ms, 'number');
+  assert.ok((await fs.readdir(path.join(out, 'windows'))).length > 0, 'the windows are saved for offline analysis');
+  assert.doesNotMatch(emulator.log.map(e => e.command).join('\n'), /xmit|transmit/);
+});
+
 test('TC-023-001 the VITA measurement is reported and belongs to its session', {timeout: 60000}, async t => {
   const port = await udpPort();
   let emulator = await new FlexEmulator({discoveryPorts: [port]}).start();
@@ -288,9 +315,10 @@ test('TC-023-001 the VITA measurement is reported and belongs to its session', {
   const s = await station(t, {name: 'Measured', discovery: port});
   await state(s, 'ready');
   const measured = await waitFor(async () => { const x = await s.flex(); return x.packets.accepted > 50 && x; }, 'packets');
-  // The emulator stamps integer second 1 and fraction 0, so the offset is the clock since then.
-  assert.equal(measured.vita.tsi, 3);
-  assert.ok(Math.abs(measured.vita.host_minus_radio_ms - (Date.now() - 1000)) < 5000, JSON.stringify(measured.vita));
+  // The emulator stamps what the radio stamped, a frozen filler, so the offset shows it plainly.
+  assert.equal(measured.vita.tsi, 1);
+  assert.ok(Math.abs(measured.vita.host_minus_radio_ms - (Date.now() - FROZEN.integer * 1000)) < 5000, JSON.stringify(measured.vita));
+  assert.equal(typeof measured.arrival.jitter_mean_ms, 'number'); assert.ok(measured.arrival.jitter_max_ms >= measured.arrival.jitter_mean_ms);
   // A new session whose own packets never arrive shows no measurement from the old one.
   await emulator.stop();
   emulator = await new FlexEmulator({discoveryPorts: [port]}).start();
@@ -298,6 +326,7 @@ test('TC-023-001 the VITA measurement is reported and belongs to its session', {
   await failure(s, 'transport_lost');
   const fresh = await state(s, 'ready', 30000);
   assert.deepEqual(fresh.vita, {tsi: null, host_minus_radio_ms: null});
+  assert.deepEqual(fresh.arrival, {jitter_mean_ms: null, jitter_max_ms: null});
 });
 
 test('TC-023-002 a new session goes back to the selected frequency', {timeout: 60000}, async t => {
@@ -492,11 +521,13 @@ test('TC-023-003 capacity, incompatible API and mixed standard/native profiles t
   onlyOwnSlices(emulator);
 });
 
-test('TC-023-001 emulator encoder reproduces the independent narrow48 preparation vector', () => {
-  // The emulator's VITA encoder is checked against the pinned hand-authored bytes, so the
-  // candidate is never compared with an emulator that drifted from the fixture truth.
-  const payload = Buffer.from('3f000000bf0000003f800000bf800000', 'hex');
-  const packet = vita({type: 1, stream: 0x81000001, packetClass: 0x03e4, count: 15, integer: 1, payload});
-  assert.equal(packet.toString('hex'), '18ef000b8100000100001c2d534c03e40000000100000000000000003f000000bf0000003f800000bf800000');
-  assert.equal(daxPayload(2, 0.5, 12).readFloatBE(0), 0.5);
+test('TC-023-001 the emulator sends what a real FLEX-6600 sent', async () => {
+  // Its encoder must reproduce the captured packet byte for byte, so the candidate is never
+  // compared with an emulator that drifted from what the radio does.
+  const real = Buffer.from((await fs.readFile(path.join(__dirname, '..', 'server', 'src', 'flex', 'dax_rx_6600.hex'), 'utf8')).trim(), 'hex');
+  const packet = vita({type: 3, stream: 0x04000008, packetClass: 0x03e3, count: 0, time: FROZEN, payload: real.subarray(28)});
+  assert.equal(packet.toString('hex'), real.toString('hex'));
+  // 1 kHz at 24 kHz: sample 6 is the quarter period's peak, equal in both channels.
+  const tone = daxPayload(7, 0.5, 0);
+  assert.ok(Math.abs(tone.readFloatBE(6 * 8) - 0.5) < 1e-6); assert.equal(tone.readFloatBE(6 * 8), tone.readFloatBE(6 * 8 + 4));
 });
