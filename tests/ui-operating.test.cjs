@@ -903,8 +903,11 @@ test('TC-044-015 Tx level in Settings > Radio > Audio',{timeout:60000},async t=>
   const section=page.locator('#settings-audio'),line=section.locator('#tx-level-line'),button=section.locator('#tx-level-set'),slider=section.locator('#tx-level-manual'),meters=section.locator('#tx-meters');
   await button.scrollIntoViewIfNeeded();assert.equal(await button.isVisible(),true,'Set level is in the Audio section');
   assert.equal(await slider.isVisible(),false,'no manual level while the radio may report ALC');
-  const base={managed:true,level_db:0,stored:false,alc:'unknown',assistant:false,result:null,meters:null,power_limit_pct:null,warnings:[]};
+  const base={managed:true,level_db:0,stored:false,alc:'unknown',assistant:false,result:null,meters:null,power_limit_pct:null,warnings:[],keying_confirmed:false};
   const inject=data=>page.evaluate(d=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'radio.tx_level',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,...d}}}})),data);
+  // Proves: CL-044-15; TC-044-022. The one-time confirmation is offered until it is stored.
+  await inject(base);assert.match(await page.locator('#discovery-state').textContent(),/off until confirmed once/);
+  await inject({...base,keying_confirmed:true});assert.match(await page.locator('#discovery-state').textContent(),/discovery on start is on/);
   await inject(base);assert.equal(await line.textContent(),'Tx level not set yet');assert.equal(await meters.isVisible(),false);
   await inject({...base,assistant:true,level_db:-25,alc:'available',meters:{alc:0,po_pct:12,swr_x10:11}});
   assert.equal(await line.textContent(),'Tune on · stepping up · -25 dB');assert.equal(await meters.textContent(),'ALC 0 · Po 12 % · SWR 1.1');assert.equal(await button.isDisabled(),true);

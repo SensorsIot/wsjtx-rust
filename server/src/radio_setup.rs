@@ -29,9 +29,40 @@ pub(crate) trait Hardware: Send + Sync {
         deadline: Instant,
         cancel: &AtomicBool,
     ) -> Result<Box<dyn Transport>, cat::Error>;
+    /// CL-044-15 claims a radio for this process's lifetime, before its CAT connects:
+    /// false when another station process claimed it.
+    fn reserve(&self, port: u16) -> bool;
 }
 #[cfg(windows)]
 struct Native;
+/// The radios this process discovered; the locks end with the process.
+#[cfg(windows)]
+static RESERVED: Mutex<Vec<std::fs::File>> = Mutex::new(Vec::new());
+/// True when this process now holds the lock of `port` in `held`; false when another handle
+/// holds it. Without a usable lock file discovery works as if nobody else had reserved.
+#[cfg(windows)]
+pub(crate) fn reserve_in(
+    held: &Mutex<Vec<std::fs::File>>,
+    root: &std::path::Path,
+    port: u16,
+) -> bool {
+    let Ok(file) = std::fs::create_dir_all(root).and_then(|()| {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(root.join(format!("COM{port}.lock")))
+    }) else {
+        return true;
+    };
+    if matches!(file.try_lock(), Err(std::fs::TryLockError::WouldBlock)) {
+        return false;
+    }
+    if let Ok(mut held) = held.lock() {
+        held.push(file);
+    }
+    true
+}
 #[cfg(windows)]
 impl Hardware for Native {
     fn ports(&self) -> Result<Vec<PortInfo>, cat::Error> {
@@ -60,6 +91,14 @@ impl Hardware for Native {
         };
         cat::windows::SerialTransport::open(&configuration, &lock_root, deadline, cancel)
             .map(|t| Box::new(t) as Box<dyn Transport>)
+    }
+    fn reserve(&self, port: u16) -> bool {
+        let root = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("WstxRust")
+            .join("radio-reservation");
+        reserve_in(&RESERVED, &root, port)
     }
 }
 #[cfg(windows)]
@@ -330,6 +369,145 @@ pub(crate) fn detect(state: &ProfileState) -> Result<Value, &'static str> {
         "manual":setup::MANUAL_FAMILIES,"supported_radios":supported.len(),"proposal":proposal,
         "settings":settings,"audio_error":audio_error}),
     )
+}
+
+/// CL-044-15 the operator's keying confirmation of Detect radio, kept for automatic opens.
+pub(crate) const KEYING_FILE: &str = "radio-keying-confirmed.json";
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KeyingRecord {
+    schema_version: u32,
+    keying_inhibit_confirmed: bool,
+}
+pub(crate) fn keying_confirmed(state: &ProfileState) -> bool {
+    state
+        .store
+        .lock()
+        .ok()
+        .and_then(|s| s.read_document_file(KEYING_FILE, 256).ok().flatten())
+        .and_then(|b| serde_json::from_slice::<KeyingRecord>(&b).ok())
+        .is_some_and(|r| r.schema_version == 1 && r.keying_inhibit_confirmed)
+}
+/// Stores the confirmation once. A failed write leaves discovery off and is shown as such.
+pub(crate) fn confirm_keying(state: &ProfileState) {
+    if keying_confirmed(state) {
+        return;
+    }
+    let written = state.store.lock().is_ok_and(|mut s| {
+        s.write_document_file(
+            KEYING_FILE,
+            &KeyingRecord {
+                schema_version: 1,
+                keying_inhibit_confirmed: true,
+            },
+        )
+        .is_ok()
+    });
+    if written {
+        state.recording.tx_level.set_keying_confirmed();
+    }
+}
+/// The radio an opened port answers with, read-only (19 00 only); the port is closed again.
+fn identify(
+    hardware: &dyn Hardware,
+    port: u16,
+    until: Instant,
+) -> Result<Option<setup::Identity>, cat::Error> {
+    let deadline = std::cmp::min(Instant::now() + PORT_BUDGET, until);
+    let cancel = AtomicBool::new(false);
+    let mut transport = hardware.open(port, deadline, &cancel)?;
+    let found = setup::probe(&mut *transport, deadline, &cancel).unwrap_or_default();
+    let _ = transport.close();
+    Ok(found
+        .into_iter()
+        .find(|r| setup::model(r.id).is_some_and(|m| m.station_cat)))
+}
+/// CL-044-15 on start, before the CAT lifecycle: a saved radio that answers stays. When it
+/// does not (held by another station process, absent, silent), or on a profile never saved,
+/// the next radio on a known USB bridge that this process can open and that answers
+/// becomes the profile's radio, with its audio endpoints, and that radio's stored Tx level
+/// goes with the old one. It changes control, so the receive-only confirmation applies
+/// to the new radio before CAT opens. An operator's saved Disabled stays. Returns what changed.
+pub(crate) fn discover_on_start(state: &ProfileState) -> Option<String> {
+    discover_within(state, DETECT_BUDGET)
+}
+pub(crate) fn discover_within(state: &ProfileState, budget: Duration) -> Option<String> {
+    // Opening a port can pulse DTR/RTS (CL-044-01): nothing opens without the confirmation.
+    if !keying_confirmed(state) {
+        return None;
+    }
+    let until = Instant::now() + budget;
+    let hardware = state.recording.radio_setup.hardware()?;
+    let (control, revision) = {
+        let store = state.store.lock().ok()?;
+        (store.document.control.clone(), store.document.revision)
+    };
+    let saved = match control.mode.as_str() {
+        "cat" => Some(
+            control
+                .endpoint
+                .as_deref()
+                .and_then(|e| cat::Configuration::parse(e).ok())?,
+        ),
+        _ if revision == 0 => None,
+        _ => return None,
+    };
+    let ports = hardware.ports().ok()?;
+    if let Some(saved) = &saved
+        && ports.iter().any(|p| p.port == saved.port)
+        && matches!(identify(&*hardware, saved.port, until), Ok(Some(_)))
+        && hardware.reserve(saved.port)
+    {
+        return None;
+    }
+    let found = ports
+        .iter()
+        .take(64)
+        .filter(|p| radio_bridge(p) && saved.as_ref().is_none_or(|s| s.port != p.port))
+        .take_while(|_| Instant::now() < until)
+        .find_map(|p| {
+            let radio = identify(&*hardware, p.port, until).ok().flatten()?;
+            hardware.reserve(p.port).then_some((p, radio))
+        });
+    let (port, radio) = found?;
+    let endpoints = hardware.endpoints().unwrap_or_default();
+    let pick = |flow| match setup::match_audio(port, &endpoints, flow) {
+        Match::One(e) => Some(e.id),
+        _ => None,
+    };
+    let mut store = state.store.lock().ok()?;
+    let mut settings = store.document.settings();
+    settings.control = profile::Control {
+        mode: "cat".into(),
+        endpoint: Some(format!(
+            "icom7300://COM{}?baud={}&radio={:02x}&controller=e0",
+            port.port, radio.baud, radio.address
+        )),
+        ptt: if control.mode == "cat" {
+            control.ptt
+        } else {
+            "cat".into()
+        },
+    };
+    settings.audio.input_device = pick(Flow::Capture);
+    settings.audio.output_device = pick(Flow::Render);
+    settings.radio = Some(store.document.radio.unwrap_or(profile::Radio::DEFAULT));
+    settings.validate().ok()?;
+    store.save(settings).ok()?;
+    // The Tx level and the settings undo belonged to the other radio.
+    let _ = store.remove_document_file(crate::radio_level::LEVEL_FILE);
+    let _ = store.remove_document_file(UNDO_FILE);
+    if let Ok(mut authorization) = state.authorization.lock()
+        && let Some(service) = authorization.as_mut()
+    {
+        let _ = service.authority.reconcile_control(&mut store);
+    }
+    state.recording.profile_changed(store.document.revision);
+    Some(format!(
+        "radio discovery: COM{} ({}) is this station's radio",
+        port.port,
+        setup::model(radio.id).map_or("unknown", |m| m.name)
+    ))
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -784,7 +962,12 @@ pub async fn detect_route(
     let Some(state) = app.profile.clone() else {
         return error("not_found");
     };
-    match tokio::task::spawn_blocking(move || detect(&state)).await {
+    match tokio::task::spawn_blocking(move || {
+        confirm_keying(&state);
+        detect(&state)
+    })
+    .await
+    {
         Ok(Ok(v)) => Json(v).into_response(),
         Ok(Err(e)) => error(e),
         Err(_) => error("radio_unavailable"),

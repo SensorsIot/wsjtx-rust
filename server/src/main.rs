@@ -341,6 +341,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // CL-044-07: the saved audio endpoints' names, before the first /receive.
             let named = state.clone();
             tokio::task::spawn_blocking(move || {
+                // CL-044-15: the next free radio, before the CAT lifecycle first ticks.
+                if !env::var("WSTX_RADIO_DISCOVERY").is_ok_and(|v| v == "off")
+                    && let Some(line) = radio_setup::discover_on_start(&named)
+                {
+                    eprintln!("{line}");
+                }
                 radio_setup::startup_names(&named);
                 // CL-044-12: the stored Tx level, before anything can transmit.
                 radio_level::startup(&named);
