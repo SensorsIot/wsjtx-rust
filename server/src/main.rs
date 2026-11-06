@@ -1149,9 +1149,10 @@ async fn connection(
                     if let Some(snapshot)=snapshot {
                         let (changed,holds)=contact_http::state_changes(&contact_sent,&snapshot);
                         let complete=holds["contact"]==snapshot["contact"];
-                        // A revision without a changed field still goes: the next command needs it.
-                        if changed.is_empty() && contact_sent["contact_revision"]==snapshot["contact_revision"] {contact_seen=Some(revision);}
-                        else if display_profile=="detail" || !transmit_http::countdown_only(&changed) || contact_sent_at.elapsed()>=Duration::from_secs(5) {
+                        // A new revision or sequence without a changed field still goes: the next command needs the
+                        // revision, and a read may have caught a value that is gone again.
+                        if changed.is_empty() && contact_sent["contact_revision"]==snapshot["contact_revision"] && contact_sent["snapshot_sequence"]==snapshot["snapshot_sequence"] {contact_seen=Some(revision);}
+                        else if transmit_http::due(display_profile,&changed,contact_sent_at.elapsed()) {
                             match optional_write(&mut socket,Message::Text(contact_http::state_event(&snapshot,changed).into())) {
                                 Ok(None)=>{},
                                 Ok(Some(flushed))=>{if complete {contact_seen=Some(revision);}contact_sent=holds;contact_sent_at=Instant::now();if !flushed {optional_since=Some(Instant::now());continue;}},
@@ -1164,7 +1165,7 @@ async fn connection(
                     let now=transmit_http::pushed_view(r).unwrap_or(Value::Null);
                     let changed=transmit_http::changed_fields(&transmit_sent,&now);
                     if changed.is_empty() {transmit_seen=Some(revision);}
-                    else if display_profile=="detail" || !transmit_http::countdown_only(&changed) || transmit_sent_at.elapsed()>=Duration::from_secs(5) {
+                    else if transmit_http::due(display_profile,&changed,transmit_sent_at.elapsed()) {
                         match optional_write(&mut socket,Message::Text(transmit_http::state_event(r,revision,changed).into())) {
                             Ok(None)=>{},
                             Ok(Some(flushed))=>{transmit_seen=Some(revision);transmit_sent=now;transmit_sent_at=Instant::now();if !flushed {optional_since=Some(Instant::now());continue;}},

@@ -1123,6 +1123,70 @@ fn contact_state_carries_only_what_the_peer_lacks() {
     }
     assert!(frames > 1);
     assert_eq!(json!(received), long["contact"]["dialogue"]);
+    // The whole first event of a socket fits as well, with real ids, a log and a long dialogue.
+    let id = "12345678-1234-4234-8234-123456789012";
+    let mut reload = view(
+        json!({"id":id,"origin":"manual","dx_call":"K1ABC/P","dx_grid":"FN42","report_sent":"-07","report_rcvd":"R-09",
+        "exchange_sent":null,"exchange_rcvd":null,"state":"rogers","next_slot":"tx4","tx4":"rr73",
+        "messages":{"tx1":"K1ABC/P HB9BLA JN37","tx2":"K1ABC/P HB9BLA -07","tx3":"K1ABC/P HB9BLA R-07","tx4":"K1ABC/P HB9BLA RR73","tx5":"K1ABC/P HB9BLA 73","tx6":"CQ HB9BLA JN37"},
+        "start_utc":"2026-11-06T10:00:00Z","end_utc":null,"saved":false,"suggested_slot":null,
+        "last_rcvd":{"text":"HB9BLA K1ABC/P R-09","snr":-9,"period_utc_ms":1793962997000i64,"count":1},
+        "dialogue":(0..16).map(row).collect::<Vec<_>>()}),
+        true,
+    );
+    reload["profile_id"] = json!(id);
+    reload["boot_id"] = json!(id);
+    reload["contact_revision"] = json!(9007199254740991i64);
+    reload["snapshot_sequence"] = json!(9007199254740991i64);
+    reload["monotonic_ms"] = json!(9007199254740991i64);
+    reload["utc_ms"] = json!(1793962997000i64);
+    reload["log"] =
+        json!({"contact_id":id,"call":"K1ABC/P","outcome":"unsaved","error":"storage_unavailable"});
+    reload["transmit"] = json!({"capability":"available","arm_state":"disarmed","last_disarm_cause":"tx_watchdog_expired","tune":false,"pending_sequence":null,"last_text":"K1ABC/P HB9BLA R-07","last_period_utc":1793962997000i64,"halt_state":"idle","safety_revision":7,"refusal":"tune_active"});
+    reload["settings"] = json!({"auto_seq":true,"call_first":true,"tx1_skip":false,"tx_calls":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":false,"parity":"odd","report":-15,"activity":"none","exchange":null,"serial":1});
+    reload["watchdog"] =
+        json!({"tx_remaining_calls":6,"tx_expired":false,"tune_remaining_seconds":0});
+    let (mut holds, mut received, mut frames) = (Value::Null, 0, 0);
+    while holds["contact"] != reload["contact"] {
+        let (changed, next) = contact_http::state_changes(&holds, &reload);
+        let event = contact_http::state_event(&reload, changed.clone());
+        assert!(event.len() <= 2048, "frame {frames}: {} bytes", event.len());
+        received += changed["contact"]["dialogue"].as_array().unwrap().len();
+        holds = next;
+        frames += 1;
+        assert!(frames < 10);
+    }
+    assert_eq!(received, 16);
+}
+// Proves: CL-010-15; TC-007-005. Below Detailed a running Tune countdown alone goes at most every 5 s.
+#[test]
+fn pushed_state_paces_a_countdown_by_display_profile() {
+    use std::time::Duration;
+    let of = |v: Value| v.as_object().cloned().unwrap();
+    let countdown = of(json!({"watchdog":{"tune_remaining_seconds":44}}));
+    let other = of(json!({"watchdog":{"tx_calls":3}}));
+    assert!(transmit_http::due(
+        "detail",
+        &countdown,
+        Duration::from_secs(1)
+    ));
+    for profile in ["thin", "off"] {
+        assert!(!transmit_http::due(
+            profile,
+            &countdown,
+            Duration::from_millis(4900)
+        ));
+        assert!(transmit_http::due(
+            profile,
+            &countdown,
+            Duration::from_secs(5)
+        ));
+        assert!(transmit_http::due(
+            profile,
+            &other,
+            Duration::from_millis(1)
+        ));
+    }
 }
 
 /// TC-007-001/003/004, TC-010-008/009, TC-050-004 in the real browser: launches

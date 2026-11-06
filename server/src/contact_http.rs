@@ -754,8 +754,9 @@ fn transmit_view(v: &View, problem: Option<&str>, safety_revision: Option<u64>) 
         "last_text":v.last_text,"last_period_utc":v.last_period_utc_ms,"halt_state":halt,"safety_revision":safety_revision,
         "refusal":v.refusal.map(|r|name(format!("{r:?}"))).or(problem.map(String::from))})
 }
-/// contact.state stays below the optional write limit: dialogue rows over it follow a second later.
-const STATE_CHANGED_BYTES_MAX: usize = 1800;
+/// contact.state stays below the 2048 B optional write limit with its 260 B envelope: dialogue
+/// rows over it follow a second later.
+const STATE_CHANGED_BYTES_MAX: usize = 1780;
 /// What this peer lacks of the snapshot `now`, given the fields it was `sent`: changed fields, of
 /// transmit, settings and watchdog the changed members, of the same contact the changed members
 /// and the dialogue from the first row it lacks; a peer holding nothing gets every field, null
@@ -763,7 +764,7 @@ const STATE_CHANGED_BYTES_MAX: usize = 1800;
 pub(crate) fn state_changes(sent: &Value, now: &Value) -> (serde_json::Map<String, Value>, Value) {
     let mut changed = serde_json::Map::new();
     let mut holds = now.clone();
-    for key in ["transmit", "settings", "contact", "log", "watchdog"] {
+    for key in ["transmit", "settings", "log", "watchdog", "contact"] {
         let (old, new) = (&sent[key], &now[key]);
         if old == new && !sent.is_null() {
             continue;
@@ -794,9 +795,10 @@ pub(crate) fn state_changes(sent: &Value, now: &Value) -> (serde_json::Map<Strin
             let size = |part: &serde_json::Map<String, Value>| {
                 changed
                     .iter()
-                    .map(|(k, v)| k.len() + v.to_string().len())
+                    .map(|(k, v)| k.len() + v.to_string().len() + 4)
                     .sum::<usize>()
                     + Value::Object(part.clone()).to_string().len()
+                    + 12
             };
             while kept > 0 && size(&part) > STATE_CHANGED_BYTES_MAX {
                 kept -= 1;

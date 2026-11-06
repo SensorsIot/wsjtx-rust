@@ -85,27 +85,29 @@ async function fetchSnapshot(){
     const response=await stationFetch('/contact',{cache:'no-store',signal:AbortSignal.timeout(10000)});
     contactMissing=response.status===404;
     // #51: a contact snapshot this page cannot validate shows the reload chip.
-    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence||value.contact_revision>=snap.contact_revision)){snap=value;held=value;heldSocket=socket;render();}}
+    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence)){snap=value;if(!held||heldSocket!==socket){held=value;heldSocket=socket;heldRead=true;}render();}}
   }catch{}
 }
 // WstxContact::ContactStateEvent (#10): the station's events build the same snapshot: every field
-// in the socket's first one, what changed after it; newer ones replace what is shown. This client
-// loads after the socket on a thin link and can miss the first one: it then builds on its own read.
-let heldSocket=null,held=null;
+// in the socket's first one, what changed after it. This client loads after the socket on a thin
+// link and can miss the first one: it then builds on its own read, and an event that moves the
+// sequence without a change means that read caught a value that is gone: it reads again.
+let heldSocket=null,held=null,heldRead=false;
 function stateApply(current,d){
-  if(heldSocket!==current){heldSocket=current;held=null;}
-  const base=held??snap,{changed,...identity}=d;if(!base&&!changed.settings)return;
-  const view={v:1,contact:null,log:null,...base,...identity};
+  if(heldSocket!==current){heldSocket=current;held=null;heldRead=false;}
+  const {changed,...identity}=d;if(!held&&!changed.transmit){load();return;}
+  const view={v:1,contact:null,log:null,...held,...identity};
   for(const [key,value] of Object.entries(changed)){
     if(key==='contact'&&value){
       const whole=value.id!==undefined,{dialogue_from,...rest}=value;
       view.contact=whole?rest:{...view.contact,...rest};
-      if(dialogue_from!==undefined)view.contact.dialogue=[...(whole?[]:base?.contact?.dialogue??[]).slice(0,dialogue_from),...value.dialogue];
+      if(dialogue_from!==undefined)view.contact.dialogue=[...(whole?[]:held?.contact?.dialogue??[]).slice(0,dialogue_from),...value.dialogue];
     }else view[key]=value&&key!=='log'&&view[key]?{...view[key],...value}:value;
   }
+  if(heldRead&&!Object.keys(changed).length)load();
   held=view;
   window.wstxStationData?.('contact',valid(view));
-  if(valid(view)){stationSample(view.utc_ms);if(!snap||snap.boot_id!==view.boot_id||view.snapshot_sequence>snap.snapshot_sequence||view.contact_revision>snap.contact_revision){snap=view;render();}}
+  if(valid(view)){stationSample(view.utc_ms);if(!snap||snap.boot_id!==view.boot_id||view.snapshot_sequence>=snap.snapshot_sequence){snap=view;render();}}
 }
 const ids=()=>snap&&{v:1,profile_id:snap.profile_id,boot_id:snap.boot_id};
 // Commands are sent one at a time, each with the revision of the latest snapshot.

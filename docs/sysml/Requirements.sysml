@@ -1107,7 +1107,7 @@ package WstxRequirements {
              CL-010-06, CL-010-08, CL-010-15
              Setup: calibrated TLS 32,000 bit/s per direction, 300 ms RTT, two-client fixture for 60 s with the active result/display workload, contact status, worked-before queries and log page/import/export traffic.
              Steps: filter/sort, resize, switch panes, scroll the Rx Frequency pane, run one contact.
-             Expected: the request recorder shows no traffic from local presentation, at most one worked-before query of at most 64 calls per period per client and station.tick at 1/s Detailed and 1/5 s Thin/Off, contact.state at most 1/s with one pending GET /contact; with Off and two idle clients the total stays within 1000 B/s per direction, with Thin within 3000 B/s; existing byte envelopes and bounded queues hold; connected status within 2 s and first status within 10 s after page load; overhead counted from the simulator, not packet capture.
+             Expected: the request recorder shows no traffic from local presentation, at most one worked-before query of at most 64 calls per period per client and station.tick at 1/s Detailed and 1/5 s Thin/Off, contact.state at most 1/s with one pending GET /contact; another client's change reaches the page in transmit.state and contact.state, only what changed, with no GET /transmit and no GET /contact, the dialogue rows in order including rows following at the same sequence, an older read never replacing a pushed change, and a page that missed the first event recovering through its read or the next event; a Tune countdown alone at most once per 5 s below Detailed; with Off and two idle clients the total stays within 1000 B/s per direction, with Thin within 3000 B/s; existing byte envelopes and bounded queues hold; connected status within 2 s and first status within 10 s after page load; overhead counted from the simulator, not packet capture.
              2 — Isolated automated functional tests; Windows development PC, real browser/server and the existing thin-link simulator; no radio. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
@@ -3472,7 +3472,7 @@ package WstxRequirements {
              CL-043-01, CL-043-03, CL-009-05
              Setup: the actual station router on a disposable profile directory with the
              station clock as main wires it (SNTP monitor that never measures); the actual
-             transmit owner; the actual server and Chromium with GET /transmit and GET
+             transmit owner; the actual server and Chromium with transmit.state and GET
              /clock fixtures where stated.
              Steps: load clock.json missing, air, both, gps, AIR, a foreign profile,
              schema 2, an extra key, 1024 padding bytes and malformed JSON; GET /clock;

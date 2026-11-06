@@ -2236,6 +2236,32 @@ test('TC-006-003 transmit status shows the SNTP clock measurement',{timeout:4500
   assert.match(await status(),/ · clock unsynchronized -2089 ms time\.windows\.com 6 s ago · halt /);
   assert.deepEqual(errors,[]);
 });
+// Proves: CL-010-15; TC-007-005. contact.state builds the snapshot: a contact and its dialogue rows
+// in order, the rows that follow on the next tick at the same sequence shown too, and no read.
+test('TC-007-005 contact.state rows arrive in order and a continuation is shown',{timeout:45000},async t=>{
+  const {page,errors}=await fixture(t,{width:1440,height:900});
+  await page.waitForFunction(()=>!!window.wstxContact?.snapshot()?.settings,null,{timeout:30000});
+  const reads=[];page.on('request',r=>{const u=new URL(r.url());if(u.pathname==='/contact'&&r.method()==='GET')reads.push(u.pathname);});
+  const base=await page.evaluate(()=>window.wstxContact.snapshot());
+  const row=n=>({dir:n%2?'tx':'rx',text:`HB9BLA K1ABC R-${String(n).padStart(2,'0')}`,snr:-7,period_utc_ms:1793962997000+n*15000,count:1});
+  const contact={id:'12345678-1234-4234-8234-123456789012',origin:'manual',dx_call:'K1ABC',dx_grid:'FN42',report_sent:null,report_rcvd:null,exchange_sent:null,exchange_rcvd:null,state:'calling',next_slot:'tx1',tx4:'rrr',messages:{},start_utc:null,end_utc:null,saved:false,suggested_slot:null,last_rcvd:null};
+  const feed=(sequence,changed)=>page.evaluate(data=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'contact.state',data}}})),{profile_id:base.profile_id,boot_id:base.boot_id,contact_revision:base.contact_revision+1,snapshot_sequence:sequence,monotonic_ms:2000,utc_ms:Date.now(),changed});
+  const rows=()=>page.evaluate(()=>window.wstxContact.snapshot().contact?.dialogue?.map(d=>d.text));
+  // The socket's own first event already came; these follow it. A whole contact, then the rest of its rows.
+  const sequence=base.snapshot_sequence+1,all=Array.from({length:16},(_,n)=>row(n));
+  await feed(sequence,{contact:{...contact,dialogue_from:0,dialogue:all.slice(0,13)}});
+  assert.deepEqual(await rows(),all.slice(0,13).map(r=>r.text));
+  await feed(sequence,{contact:{dialogue_from:13,dialogue:all.slice(13)}});
+  assert.deepEqual(await rows(),all.map(r=>r.text),'the continuation at the same sequence is shown, in order');
+  // A member change keeps the rows; a repeat's count resends them from the start, replacing them.
+  await feed(sequence+1,{contact:{state:'rogers'}});
+  assert.equal(await page.evaluate(()=>window.wstxContact.snapshot().contact.state),'rogers');
+  assert.equal((await rows()).length,16);
+  await feed(sequence+2,{contact:{dialogue_from:0,dialogue:all.slice(0,2)}});
+  assert.deepEqual(await rows(),all.slice(0,2).map(r=>r.text));
+  assert.deepEqual(reads,[],'no GET /contact');
+  assert.deepEqual(errors,[]);
+});
 // Proves: CL-043-01, CL-009-05; TC-043-003. Settings > General > Clock reads GET /clock only
 // when Settings opens, saves the clock source with one exact POST, shows the air estimate
 // (offset, stations used, confidence, age), and the clock chips appear only when transmit is

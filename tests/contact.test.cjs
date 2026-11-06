@@ -362,6 +362,39 @@ test('TC-007-005 contact state is pushed: only what changed, no GET /contact',{t
   assert.deepEqual(page.errors,[]);
 });
 
+// Proves: CL-010-15; TC-007-005. A read older than a pushed change does not replace it.
+test('TC-007-005 an older GET /contact does not replace pushed state',{timeout:60000},async()=>{
+  const live=await snapshot();const watchdogs=async tx_calls=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};
+  let release,fetched;const held=new Promise(r=>{release=r;}),read=new Promise(r=>{fetched=r;});
+  await page.route('**/contact',async route=>{const response=await route.fetch();fetched();await held;await route.fulfill({response});});
+  try{
+    page.evaluate(()=>window.wstxContact.load());await read;
+    await watchdogs(8);
+    await waitFor(async()=>await page.evaluate(()=>window.wstxContact.snapshot()?.settings?.tx_calls)===8,'the change is shown',5000);
+    release();await new Promise(r=>setTimeout(r,2500));
+    assert.equal(await page.evaluate(()=>window.wstxContact.snapshot()?.settings?.tx_calls),8,'the older read is not shown');
+  }finally{release();await page.unroute('**/contact');await watchdogs(6);}
+  assert.deepEqual(page.errors,[]);
+});
+
+// Proves: CL-010-15; TC-007-005. contact.js loads after the socket on a thin link: when it missed the
+// first event and its first read fails, the next event still gives it the state.
+test('TC-007-005 a failed first read after a missed first event recovers on the next event',{timeout:60000},async()=>{
+  let script,scriptHeld=true,failed=0;const frame=new Promise(resolve=>{page.on('websocket',ws=>ws.on('framereceived',e=>{try{if(JSON.parse(e.payload).type==='contact.state')resolve();}catch{}}));});
+  await page.route('**/contact.js',async route=>{const response=await route.fetch();script=frame;await frame;await new Promise(r=>setTimeout(r,200));scriptHeld=false;await route.fulfill({response});});
+  await page.route('**/contact',route=>{if(failed===0){failed++;return route.abort('failed');}return route.continue();});
+  try{
+    page.reload().catch(()=>{});
+    await waitFor(()=>!scriptHeld&&failed===1,'the first read failed after the missed event',30000);
+    await waitFor(async()=>await page.evaluate(()=>!!window.wstxContact),'contact client loaded',10000);
+    assert.equal(await page.evaluate(()=>window.wstxContact.snapshot()),null,'no contact state yet');
+    const s=await snapshot();
+    const r=await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'set_hold_tx',enabled:!s.settings.hold_tx})});assert.ok([200,202].includes(r.status),await r.text());
+    await waitFor(async()=>await page.evaluate(h=>window.wstxContact.snapshot()?.settings?.hold_tx===h,!s.settings.hold_tx),'state after the next event',5000);
+  }finally{await page.unroute('**/contact.js');await page.unroute('**/contact');}
+  const s=await snapshot();await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'set_hold_tx',enabled:false})});
+});
+
 test('TC-050-004 mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO completes, and CQ right after it calls',{timeout:420000},async()=>{
   // Mid-QSO: calling K1ABC (armed), K1ABC does not answer, double-click DL1ABC.
   let mark=await dblclickRow('CQ K1ABC FN42',1234.6,-12);

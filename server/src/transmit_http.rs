@@ -385,7 +385,17 @@ pub(crate) fn changed_fields(sent: &Value, now: &Value) -> serde_json::Map<Strin
     }
     changed
 }
-/// Only the running Tune countdown changed: at most every 5 s below Detailed.
+/// Whether a pushed state goes now: only the running Tune countdown changed goes at most every
+/// 5 s below Detailed.
+pub(crate) fn due(
+    display_profile: &str,
+    changed: &serde_json::Map<String, Value>,
+    since_last: std::time::Duration,
+) -> bool {
+    display_profile == "detail"
+        || !countdown_only(changed)
+        || since_last >= std::time::Duration::from_secs(5)
+}
 pub(crate) fn countdown_only(changed: &serde_json::Map<String, Value>) -> bool {
     changed.len() == 1
         && changed
