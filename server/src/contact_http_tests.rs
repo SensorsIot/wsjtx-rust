@@ -360,7 +360,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     assert_eq!(v["log"], Value::Null, "#41: no review; nothing logged yet");
     assert_eq!(
         v["settings"],
-        json!({"auto_seq":true,"call_first":true,"tx1_skip":false,"tx_calls":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":false,"parity":"odd","report":-15,"activity":"none","exchange":null,"serial":1})
+        json!({"auto_seq":true,"call_first":true,"tx1_skip":false,"tx_calls":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":true,"parity":"odd","report":-15,"activity":"none","exchange":null,"serial":1})
     );
     assert_eq!(v["transmit"]["capability"], "available");
     assert_eq!(v["transmit"]["arm_state"], "disarmed");
@@ -696,7 +696,7 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
             snap["settings"]["tx_hz"].as_u64(),
             snap["settings"]["parity"].as_str()
         ),
-        (Some(1235), Some(1235), Some("odd"))
+        (Some(1235), Some(1500), Some("odd"))
     );
     for _ in 0..5 {
         f.tick();

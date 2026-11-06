@@ -867,12 +867,21 @@ async fn tc_039_004_auto_call_follows_the_strategy_and_the_directed_cq_rule() {
             ("CQ JA JA1XYZ PM95", 600.0, Some(9.0)),
             ("CQ 290 N1MM FN31", 700.0, Some(8.0)),
             ("CQ DL1XYZ JO62", 1200.0, Some(0.0)),
-            ("CQ K1ABC FN42", 1500.0, Some(-15.0)),
+            ("CQ K1ABC FN42", 1400.0, Some(-15.0)),
         ],
     );
     assert_eq!(
         contact(&f).await,
         (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    // Proves: CL-039-08; TC-039-009: the strategy's pick moves Rx, Tx stays on its slot.
+    let c = f.read("contact").await;
+    assert_eq!(
+        (
+            c["settings"]["rx_hz"].clone(),
+            c["settings"]["tx_hz"].clone()
+        ),
+        (json!(1400), json!(1500))
     );
     let run = f.read("automation").await["run"].clone();
     assert_eq!(
@@ -1836,6 +1845,9 @@ async fn tc_042_004_pounce_answers_a_73_holding_tx_and_never_an_ignored_or_direc
         ignore(&f, json!("K1ABC"), json!(true)).await.status,
         StatusCode::OK
     );
+    // Hold Tx off: "Hold Tx after a 73" below is the automation's own rule, not the default.
+    mcp_contact(&f, "set_hold_tx", json!({"enabled":false})).await;
+    assert_eq!(f.read("contact").await["settings"]["hold_tx"], json!(false));
     assert_eq!(pounce(&f, "K1ABC", 5).await.status, StatusCode::ACCEPTED);
     // The ignore lists win over the pounce.
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-15.0))]);

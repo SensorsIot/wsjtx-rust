@@ -631,7 +631,8 @@ impl Default for Settings {
             tx1_skip: false,
             rx_hz: 1500,
             tx_hz: 1500,
-            hold_tx: false,
+            // #39 CL-039-08 (operator 2026-11-04): on by default; a selection never moves Tx.
+            hold_tx: true,
             // WSJT-X m_txFirst default false: transmit in the second (odd) period.
             parity: Parity::Odd,
             report: REPORT_DEFAULT,
