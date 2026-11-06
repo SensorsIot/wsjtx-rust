@@ -1080,8 +1080,11 @@ attribute def ActivityOrdering {
              command over UDP (operator 2026-11-06). GET /udp is read when the drawer opens (at
              most every 30 s, so routine drawer use stays inside the Thin budget), on the
              Logging tab and on Reload; Save sends one PUT /udp with expected_revision; it
-             is a setting that restarts nothing (no restart mark). PSK Reporter remains a
-             placeholder (later CR).
+             is a setting that restarts nothing (no restart mark). PSK Reporter: the read-only
+             feed's switch and status (off; connecting; connected with the age of the last
+             spot, or no spot yet; not connected with the error and retrying) from
+             WstxStrategy::HearingFeed; plain setting, saved at once, never an error
+             elsewhere on the screen.
              Expert: raw CAT readback, receive job/generation, timing, the explicit receive
              start/stop, the startup resume state of #45 (resume state and last receive
              choice from GET /receive/startup), the decode window diagnostics of #52 (Save

@@ -394,6 +394,12 @@ struct Run {
     client_seen: Instant,
     /// #42 Pounce: the call and the station band captured at start.
     pounce: Option<(String, String)>,
+    /// #39 WstxStrategy::StrategyWatchdog: the Rep of the last check, and that check.
+    rep_mark: u32,
+    check_every: u32,
+    /// No client or past the run limit: the stop at N is back, whatever else ends the contact.
+    unattended: bool,
+    slot_check: Option<Value>,
     /// #39 WstxStrategy::FreeTxSlot: the last slot decision {hz, free}, for the status; the
     /// station band last seen on a fresh publication, and the first sequence of that band
     /// (a retune on the radio keeps the live job).
@@ -490,6 +496,17 @@ impl Owner {
         let inner = self.lock();
         (inner.policy_revision, inner.run_revision)
     }
+    /// WstxStrategy::StrategyWatchdog: the strategy run's own contact, which sends past the
+    /// Tx watchdog limit, and the repetitions between its checks.
+    pub(crate) fn repeat_exempt(&self) -> Option<(String, u32)> {
+        self.lock()
+            .run
+            .as_ref()
+            .filter(|run| {
+                run.config.strategy && run.state == RunState::ContactActive && !run.unattended
+            })
+            .and_then(|run| Some((run.contact_id.clone()?, run.check_every)))
+    }
     /// AutomationSnapshot.
     pub(crate) fn snapshot(&self, r: &recording::Recording) -> Value {
         let inner = self.lock();
@@ -497,7 +514,7 @@ impl Owner {
             json!({"id":run.id,"state":run.state.name(),"reason":run.reason,"mode":run.mode,
                 "completed_contacts":run.completed,"unanswered_periods":run.unanswered,
                 "contact_id":run.contact_id,"selected":run.selected,"last_decision":run.last_decision,
-                "given_up":run.given_up,"rested":run.rested.as_ref().map(|c| &c.0),"tx_slot":run.tx_slot,
+                "given_up":run.given_up,"rested":run.rested.as_ref().map(|c| &c.0),"tx_slot":run.tx_slot,"slot_check":run.slot_check,
                 "pounce":run.pounce.as_ref().map(|(call, band)| json!({"call":call,"band":band}))})
         });
         json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"policy_revision":inner.policy_revision,
@@ -724,6 +741,10 @@ impl Owner {
                     rested: None,
                     client_seen: self.now(),
                     pounce,
+                    rep_mark: 0,
+                    check_every: u32::MAX,
+                    unattended: false,
+                    slot_check: None,
                     tx_slot: None,
                     slot_band: None,
                     slot_from: 0,
@@ -842,6 +863,10 @@ impl Owner {
                 rested: None,
                 client_seen: self.now(),
                 pounce: None,
+                rep_mark: 0,
+                check_every: u32::MAX,
+                unattended: false,
+                slot_check: None,
                 tx_slot: None,
                 slot_band: None,
                 slot_from: 0,
@@ -1026,6 +1051,7 @@ impl Owner {
         }
         let no_client = is_strategy && now >= run.client_seen + CLIENT_GONE;
         let run_limit = is_strategy && now >= run.deadline;
+        run.unattended = no_client || run_limit;
         if is_strategy && run.state == RunState::Waiting && run.reason != waiting_reason {
             run.reason = waiting_reason;
             inner.run_revision = inner.run_revision.saturating_add(1).min(MAX_SAFE);
@@ -1089,12 +1115,40 @@ impl Owner {
                     return manual(&mut inner);
                 }
                 if arm != Some(wstx_rust::transmit::service::ArmState::Armed) {
-                    return stop(&mut inner, disarmed, false);
+                    // Unattended the stop at N is back for this reason: the run names it.
+                    let reason = match disarmed {
+                        "tx_watchdog" if run_limit => "run_limit",
+                        "tx_watchdog" if no_client => "no_client",
+                        other => other,
+                    };
+                    return stop(&mut inner, reason, false);
                 }
+                if run.config.strategy
+                    && strategy_watchdog(
+                        run,
+                        contact,
+                        state,
+                        settled,
+                        c.dx_call.as_deref(),
+                        chosen.as_ref().map(|(_, s)| s.calls_per_station),
+                        &my,
+                    )
+                {
+                    inner.run_revision += 1;
+                }
+                let run = inner.run.as_mut().expect("checked");
                 // Only a publication of the partner's period parity can answer.
                 if partner_period {
                     let progress = (c.state.to_owned(), c.report_rcvd);
-                    if run.progress.as_ref() == Some(&progress) {
+                    // WstxStrategy::StrategyWatchdog: a target that hears us is not left, while
+                    // the run may go on at all: nothing else would end this contact unattended.
+                    let queued = run.config.strategy
+                        && !no_client
+                        && !run_limit
+                        && pskr::hearing_of(r, c.dx_call.as_deref(), mode).0
+                        && !caller_waits(run, state, &chosen, &fresh, c.dx_call.as_deref());
+                    let same = run.progress.as_ref() == Some(&progress);
+                    if same && !queued {
                         run.unanswered += 1;
                         let limit = chosen
                             .as_ref()
@@ -1128,7 +1182,7 @@ impl Owner {
                             cancel(contact, state);
                             return;
                         }
-                    } else {
+                    } else if !same {
                         run.progress = Some(progress);
                         run.unanswered = 0;
                     }
@@ -1367,6 +1421,99 @@ fn refused(code: &str) -> &'static str {
 /// The records of a slot decision: 8 periods of up to 128 decodes (the live job retains
 /// up to 2048).
 const SLOT_RECORDS: u64 = 1024;
+/// #39 WstxStrategy::StrategyWatchdog: when the Rep has grown by N, or by calls_per_station
+/// when that is less, since the last check, a target known to hear us keeps the slot; any
+/// other takes a new one near what it decodes. True when it checked.
+fn strategy_watchdog(
+    run: &mut Run,
+    contact: &contact_http::Station,
+    state: &ProfileState,
+    settled: Option<u64>,
+    target: Option<&str>,
+    calls_per_station: Option<u64>,
+    my: &str,
+) -> bool {
+    let r = &state.recording;
+    let Some(limit) = r.transmit.get().map(|t| t.service.with(|c| c.tx_limit())) else {
+        return false;
+    };
+    // The run leaves the station after its calls, which restarts the Rep: the check must
+    // come first or a target that does not hear us would never see another slot.
+    let limit = calls_per_station
+        .and_then(|calls| u32::try_from(calls).ok())
+        .map_or(limit, |calls| limit.min(calls));
+    run.check_every = limit;
+    let repetitions = contact.repetitions_due();
+    // A new message or contact restarts the Rep.
+    run.rep_mark = run.rep_mark.min(repetitions);
+    if repetitions < run.rep_mark.saturating_add(limit) || repetitions == 0 {
+        return false;
+    }
+    run.rep_mark = repetitions;
+    let mode = contact_http::mode_of(run.mode);
+    let (spot, preferred) = pskr::hearing_of(r, target, mode);
+    // An answer in this contact proves it as well as a spot, and for a partner no reporter.
+    let hears = spot || contact.partner_answered(my);
+    let facts = contact.status_facts();
+    let (hz, free) = if hears {
+        (facts.tx_hz, true)
+    } else {
+        let records = slot_records(run, r, settled);
+        freeslot::decide_away(
+            &records,
+            mode,
+            facts.parity,
+            facts.tx_hz,
+            Some(facts.rx_hz),
+            &preferred,
+        )
+    };
+    run.slot_check = Some(json!({"repetitions":repetitions,"hears_us":hears,"hz":hz,"free":free}));
+    // A kept slot was not looked at again: the status of its last choice stands.
+    if !hears {
+        run.tx_slot = Some(json!({"hz":hz,"free":free}));
+    }
+    if hz != facts.tx_hz {
+        let (revision, _, _) = contact.facts();
+        let body = contact_body(
+            r,
+            revision,
+            "set_frequency",
+            json!({"rx_hz":null,"tx_hz":hz}),
+        );
+        // Refused: the check comes again N repetitions later; the run never stops for it.
+        let _ = contact.operate_as(state, body, true, AUTOMATION);
+    }
+    true
+}
+/// WstxStrategy::CallerOfMyCall: an eligible caller in the fresh publication, other than `dx`.
+/// It outranks the queue of a target that hears us.
+fn caller_waits(
+    run: &Run,
+    state: &ProfileState,
+    chosen: &Option<(strategy::Config, strategy::Strategy)>,
+    fresh: &Option<(u64, u64, u64, Option<String>)>,
+    dx: Option<&str>,
+) -> bool {
+    let (Some((config, s)), Some((_, first, next, _))) = (chosen, fresh) else {
+        return false;
+    };
+    let r = &state.recording;
+    let records = fresh_records(r, &run.identity, *first, *next);
+    let st = strategy::station(state, config, s.window);
+    let band = strategy::station_band(r);
+    strategy::evaluate(s, &records, &st).into_iter().any(|v| {
+        v.kind == Some(strategy::Kind::Caller)
+            && Some(v.facts.from.as_str()) != dx
+            && eligible(run, &v.facts.from, band)
+    })
+}
+fn slot_records(run: &Run, r: &recording::Recording, settled: Option<u64>) -> Vec<Value> {
+    settled.map_or_else(Vec::new, |next| {
+        let first = next.saturating_sub(SLOT_RECORDS).max(run.slot_from);
+        fresh_records(r, &run.identity, first, next)
+    })
+}
 /// #39 WstxStrategy::FreeTxSlot: decide the slot, name it in the run's status and set the
 /// Tx there when it is not there. The next contact revision, or None when the engine refused
 /// the command.
@@ -1382,10 +1529,7 @@ fn take_slot(
     let r = &state.recording;
     let mode = contact_http::mode_of(run.mode);
     let facts = contact.status_facts();
-    let records = settled.map_or_else(Vec::new, |next| {
-        let first = next.saturating_sub(SLOT_RECORDS).max(run.slot_from);
-        fresh_records(r, &run.identity, first, next)
-    });
+    let records = slot_records(run, r, settled);
     let (hz, free) = freeslot::decide(&records, mode, facts.parity, current, called);
     run.tx_slot = Some(json!({"hz":hz,"free":free}));
     if facts.tx_hz == hz {

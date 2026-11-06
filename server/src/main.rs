@@ -30,6 +30,7 @@ mod mcp_tests;
 mod profile;
 #[cfg(test)]
 mod protocol_tests;
+mod pskr;
 mod radio_agc;
 mod radio_http;
 #[cfg(all(test, not(debug_assertions)))]
@@ -416,6 +417,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let owner =
                 tokio::task::spawn_blocking(move || udp::Owner::open(&opened, disabled)).await?;
             let _ = state.recording.udp.set(owner);
+            // WstxStrategy::HearingFeed: read-only; its thread waits on the network, nothing
+            // else does. WSTX_PSKR=off opens no connection (isolated tests of the executable).
+            let feed_base = selected.clone().ok_or("profile directory absent")?;
+            let feed_setting = env::var("WSTX_PSKR").ok();
+            let feed = pskr::Feed::start(
+                &feed_base,
+                &state.recording.profile,
+                &state.recording.boot,
+                pskr::station_connector(feed_setting.as_deref()),
+                pskr::Timing::BROKER,
+            );
+            let _ = state.recording.pskr.set(feed);
             let interface = state.clone();
             tokio::spawn(async move {
                 let mut timer = interval(Duration::from_millis(50));
@@ -553,6 +566,7 @@ fn router(state: App) -> Router {
         .route("/strategy/alerts", get(strategy::alerts_route))
         .route("/strategy/contests", get(strategy::contests_route))
         .route("/strategy/alerts/clear", post(strategy::clear_alerts_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
+        .route("/pskr", get(pskr::snapshot).post(pskr::update).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/udp", get(udp::snapshot).put(udp::put).layer(axum::extract::DefaultBodyLimit::max(udp::BODY_MAX)))
         .route("/mcp", post(mcp::endpoint).get(mcp::not_allowed).delete(mcp::not_allowed).layer(axum::extract::DefaultBodyLimit::max(mcp::BODY_MAX)))
         .route("/ws", get(upgrade))
@@ -1157,6 +1171,9 @@ async fn connection(
     // #44 CL-044-11 radio.agc: the managed AGC and its last read-back, once known, then
     // after each change (the first event is this peer's snapshot).
     let mut agc_seen: u64 = 0;
+    // #39 WstxStrategy::HearingFeed pskr.state: after a change since this peer subscribed
+    // (the first event follows its GET /pskr snapshot).
+    let mut pskr_seen: u64 = 0;
     // #44 CL-044-13 radio.tx_level: after each change of the level, assistant or meters.
     let mut tx_level_seen: u64 = 0;
     // FR-023 radio.native: this peer's snapshot, then each change of the native session.
@@ -1276,6 +1293,14 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{agc_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},
+                        Err(_)=>break,
+                    }
+                }
+                if let Some(feed)=r.pskr.get() && feed.revision()!=pskr_seen {
+                    let (revision,text)=feed.event();
+                    match optional_write(&mut socket,Message::Text(text.into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{pskr_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},
                         Err(_)=>break,
                     }
                 }
