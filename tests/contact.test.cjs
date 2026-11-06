@@ -133,7 +133,9 @@ test('TC-007-001 double-click starts transmission, partner report advances to Tx
   const keys=await (await fetch(control+'/keys')).json();assert.ok(keys.length===0||keys.at(-1)===false,'PTT released after the abort');
   await page.locator('.op-secondary:not([hidden]) .return-operate').click();
   // #39 Abort QSO: the visible button beside HALT does the same, and the station stays ready.
-  await page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:'CQ K1ABC FN42'}).dblclick();
+  await publish(evenNow(),[{text:'CQ K2ABC FN31',hz:1300,snr:-4}]);
+  const fresh=page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:'CQ K2ABC FN31'}).first();
+  await fresh.waitFor();await fresh.dblclick();
   await waitFor(async()=>(await snapshot()).transmit.arm_state==='armed','armed again');
   const button=page.getByRole('button',{name:'Abort QSO (Esc)',exact:true}).locator('visible=true');
   await button.first().waitFor();assert.equal(await button.first().isEnabled(),true);
@@ -143,7 +145,7 @@ test('TC-007-001 double-click starts transmission, partner report advances to Tx
   const sent=requests.slice(buttonMark).filter(r=>r.method==='POST');
   assert.deepEqual(sent.map(r=>r.path),['/contact/command'],'the button sends no halt');assert.equal(JSON.parse(sent[0].body).action,'abort');
   assert.equal((await snapshot()).transmit.arm_state,'disarmed');
-  await page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:'CQ K1ABC FN42'}).dblclick();
+  await fresh.dblclick();
   await waitFor(async()=>(await snapshot()).transmit.arm_state==='armed','ready: the next QSO arms');
   await page.keyboard.press('Escape');
   await waitFor(async()=>(await snapshot()).transmit.arm_state==='disarmed','disarmed by Esc');
