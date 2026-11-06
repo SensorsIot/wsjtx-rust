@@ -1082,6 +1082,10 @@ async fn connection(
     // #44 CL-044-11 radio.agc: the managed AGC and its last read-back, once known, then
     // after each change (the first event is this peer's snapshot).
     let mut agc_seen: u64 = 0;
+    // Pushed recording.state: its comparison key (without received_bytes), the last data and when.
+    let mut recording_tick = interval(Duration::from_secs(1));
+    recording_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut recording_seen: Option<(Value, Value, Instant)> = None;
     let mut last_station_tick: Option<Instant> = None;
     let mut tick_transmitting: Option<bool> = None;
     // Events pace by the peer's display subscription; a peer that never chose one
@@ -1185,6 +1189,23 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{last_station_tick=Some(Instant::now());tick_transmitting=Some(transmitting);if !flushed {optional_since=Some(Instant::now());}},
+                        Err(_)=>break,
+                    }
+                }
+            }
+            _ = recording_tick.tick(), if subscribed && recording.is_some() => {
+                if !auth_ready { continue; }
+                if optional_since.is_some() {
+                    match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break }
+                }
+                let data=recording.as_ref().unwrap().state_event_data();
+                let mut key=data.clone();
+                if let Some(import)=key["import"].as_object_mut() { import.remove("received_bytes"); }
+                let due=recording_seen.as_ref().is_none_or(|(k,d,at)|*k!=key||(*d!=data&&at.elapsed()>=Duration::from_secs(5)));
+                if due {
+                    match optional_write(&mut socket,Message::Text(json!({"v":1,"type":"recording.state","data":data}).to_string().into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{recording_seen=Some((key,data,Instant::now()));if !flushed {optional_since=Some(Instant::now());}},
                         Err(_)=>break,
                     }
                 }

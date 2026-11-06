@@ -399,16 +399,56 @@ test('TC-010-002 optional output is opt-in, bounded, paced and invalidated by ca
   // FSD12.6 allows bounded buffered output; it does not allow a frame after that ACK.
   const offStart=messages.length,offSent=performance.now();ws.send(JSON.stringify({v:1,type:'spectrum.off',id:2}));
   let ackIndex=-1;
-  while(performance.now()-offSent<2000){ackIndex=messages.findIndex((m,i)=>i>=offStart&&!['spectrum.frame','heartbeat'].includes(m.value.type));if(ackIndex>=0)break;await sleep(5);}
+  while(performance.now()-offSent<2000){ackIndex=messages.findIndex((m,i)=>i>=offStart&&!['spectrum.frame','heartbeat','recording.state'].includes(m.value.type));if(ackIndex>=0)break;await sleep(5);}
   assert.ok(ackIndex>=offStart,'correlated Off ACK arrives within the existing2s control deadline');
   const ack=messages[ackIndex].value;assert.ok(messages[ackIndex].at-offSent<=2000);assert.deepEqual(ack,{v:1,type:'spectrum.subscription',id:2,data:{profile:'off'}});
   for(const m of messages.slice(offStart,ackIndex))if(m.value.type==='heartbeat')assert.deepEqual(m.value,{v:1,type:'heartbeat'});
-  const buffered=messages.slice(offStart,ackIndex).filter(m=>m.value.type!=='heartbeat');
+  const buffered=messages.slice(offStart,ackIndex).filter(m=>!['heartbeat','recording.state'].includes(m.value.type));
   assert.ok(buffered.length<=Math.floor((messages[ackIndex].at-offSent)/995)+1,'buffered prefix remains bounded by Thin cadence and the control deadline');
   for(const m of buffered){assert.deepEqual(Object.keys(m.value).sort(),['data','type','v']);assert.equal(m.value.v,1);const f=m.value.data;assert.deepEqual(Object.keys(f).sort(),['boot_id','end_frame','first_frame','generation','job_id','levels','sequence','source_id']);assert.equal(m.value.type,'spectrum.frame');assert.equal(f.boot_id,initial.boot_id);assert.equal(f.source_id,initial.recording.id);assert.equal(f.job_id,job.id);assert.equal(f.generation,job.generation);assert.ok(Number.isSafeInteger(f.sequence)&&f.sequence>=0&&f.sequence<5);assert.ok(f.first_frame<f.end_frame&&f.end_frame<=60000);assert.equal(f.first_frame,f.sequence*12000);assert.equal(f.end_frame,Math.min(f.first_frame+12000,60000));assert.equal(f.levels.length,128);assert.ok(f.levels.every(q=>Number.isInteger(q)&&q>=0&&q<=120));assert.ok(Buffer.byteLength(JSON.stringify(m.value))<=1024);}
   const throughAck=messages.slice(0,ackIndex+1).filter(m=>m.value.type==='spectrum.frame');for(let n=1;n<throughAck.length;n++)assert.ok(throughAck[n].at-throughAck[n-1].at>=995);
   const noPostAckFrames=()=>assert.equal(messages.slice(ackIndex+1).filter(m=>m.value.type==='spectrum.frame').length,0,'no optional frame may follow the Off ACK');noPostAckFrames();await sleep(1100);noPostAckFrames();
   await f.req('/recording/jobs/'+job.id,'DELETE');await terminal(f);const snapshot=await f.snapshot();assert.equal(snapshot.job.state,'cancelled');
+});
+
+// Proves: CL-006-03/04; TC-010-002, recording.state is pushed on change and the browser does not poll for it.
+test('TC-010-002 recording state and import progress are pushed on change, without recording.get or a timer read',{timeout:45000},async t=>{
+  const f=await fixture(t),initial=await f.upload(wav(40));
+  const open=async()=>{const ws=new WebSocket(f.origin.replace('http','ws')+'/ws','wstx.v1',{origin:f.origin});await once(ws,'open');t.after(()=>ws.close());const log=[];ws.on('message',data=>{const value=JSON.parse(String(data));if(value.type==='recording.state')log.push({at:performance.now(),bytes:Buffer.byteLength(String(data)),value});});return {ws,log};};
+  const watcher=await open(),bare=await open();
+  // Off is the quietest subscription and still receives it; a peer without one gets nothing.
+  let pending=receive(watcher.ws);watcher.ws.send(JSON.stringify({v:1,type:'spectrum.off',id:1}));assert.equal((await pending).data.profile,'off');
+  const p=await f.context.newPage();const frames=[],reads=[];
+  p.on('websocket',ws=>ws.on('framesent',event=>{try{frames.push(JSON.parse(event.payload).type);}catch{}}));
+  p.on('request',r=>{if(new URL(r.url()).pathname==='/recording')reads.push(r.method());});
+  await p.goto(f.origin);await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});await p.waitForFunction(()=>snapshot?.recording);
+  await sleep(1500);
+  assert.equal(watcher.log.length,1,'one recording.state after the first subscription');assert.ok(!('id' in watcher.log[0].value));
+  assert.deepEqual(watcher.log[0].value.data,{generation:initial.generation,source_id:initial.recording.id,job_id:null,state:null,import:null});
+  // Idle: no event and no read for longer than the old 2 s and 5 s timers.
+  const idle=reads.length;await sleep(6000);assert.equal(watcher.log.length,1,'an unchanged state sends nothing');assert.equal(reads.length,idle,'no timer GET /recording');
+  // Another actor's replay: announced within the 1 s check, read by the browser.
+  const start=performance.now(),job=await f.replay();
+  await p.waitForFunction(id=>snapshot?.job?.id===id,job.id,{timeout:5000});
+  const announced=watcher.log.find(e=>e.value.data.job_id===job.id);assert.ok(announced&&announced.at-start<=2000,'the replay is announced within 2 s');assert.equal(announced.value.data.source_id,initial.recording.id);assert.ok(announced.bytes<=1024);
+  await f.req('/recording/jobs/'+job.id,'DELETE');await terminal(f);
+  await p.waitForFunction(()=>snapshot?.job?.state==='cancelled',null,{timeout:5000});
+  // Another actor's import: identity and state at once; received_bytes alone at most once per 5 s, shown without a read.
+  await sleep(1100);const beforeImport=watcher.log.length,bytes=wav(1),op=await f.reserve();
+  await p.waitForFunction(id=>snapshot?.import?.id===id,op.id,{timeout:5000});await sleep(300);const readsAfterReserve=reads.length;
+  const put=(from,to)=>f.req(`/recording/imports/${op.id}`,'PUT',bytes.subarray(from,to),{'Content-Type':'audio/wav','Content-Range':`bytes ${from}-${to-1}/${bytes.length}`});
+  assert.equal((await put(0,2048)).status,202);await sleep(1200);assert.equal((await put(2048,4096)).status,202);
+  await p.waitForFunction(()=>snapshot?.import?.received_bytes===4096,null,{timeout:8000});
+  const events=watcher.log.slice(beforeImport).map(e=>({at:e.at,...e.value.data.import}));
+  assert.equal(events[0].id,op.id);assert.deepEqual(Object.keys(watcher.log.at(-1).value.data.import).sort(),['error','id','received_bytes','state','total_bytes']);
+  const growing=events.filter((e,i)=>i&&e.received_bytes!==events[i-1].received_bytes&&e.state===events[i-1].state);
+  for(let n=1;n<growing.length;n++)assert.ok(growing[n].at-growing[n-1].at>=4900,'received_bytes alone at most once per 5 s');
+  assert.equal(reads.length,readsAfterReserve,'import progress adds no GET /recording');
+  // The import ends: the browser reads again.
+  assert.equal((await f.req('/recording/imports/'+op.id,'DELETE')).status,200);
+  await p.waitForFunction(()=>!snapshot?.import,null,{timeout:5000});
+  assert.deepEqual(frames.filter(type=>type==='recording.get'),[],'the browser sends no recording.get');
+  assert.equal(bare.log.length,0,'a peer without a display subscription receives no recording.state');
 });
 
 // Proves: CL-006-03/04; TC-010-002/003, browser event boundary under loss/late delivery.

@@ -735,7 +735,16 @@ package WstxRecordingReceive {
              binary1003, heartbeats and liveness unchanged. Add exact three-field requests
              `{v:1,type:"recording.get"|"spectrum.thin"|"spectrum.detail"|"spectrum.off",id}`. `recording.get` returns
              `{v:1,type:"recording.state",id,data:{generation,source_id,job_id,state}}` with nullable
-             IDs/state; full snapshot stays HTTP. Thin/detail/off acknowledge
+             IDs/state; full snapshot stays HTTP. A peer that has chosen a display subscription also
+             receives the pushed event without id (WstxStationProtocol::PushedStationState, #10):
+             `{v:1,type:"recording.state",data:{generation,source_id,job_id,state,import}}`, `import` null
+             or `{id,state,received_bytes,total_bytes,error}` of the running import. It is sent once after
+             the first subscription and then only on a change, checked once per second, on every display
+             profile including Off; a change of received_bytes alone is sent at most once per
+             5 s. It is an optional write that a full socket defers and never loses. The browser sends no
+             recording.get: it reads GET /recording once per socket (the snapshot), after its own mutation
+             and when the event differs from its snapshot in identity, job state or import identity or
+             state; received_bytes alone updates its view without a read. Thin/detail/off acknowledge
              `{v:1,type:"spectrum.subscription",id,data:{profile:"thin"|"detail"|"off"}}`. Selected-profile
              absence returns recoverable `unavailable` for these commands. Every new connection starts
              off; legacy peers receive only existing status/heartbeat messages. New browser obtains

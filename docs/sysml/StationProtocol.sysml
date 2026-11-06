@@ -257,8 +257,8 @@ package WstxStationProtocol {
              renders locally. Safety decisions (HALT, watchdog, PTT keying and release)
              stay on the station and never wait for a browser read. Existing reads are
              migrated in slices: first GET /transmit (WstxTransmit::TransmitWire
-             transmit.state), then receive results, operating selection, radio and
-             profile; until a read is migrated its existing cadence rules apply. */
+             transmit.state), then receive results, recording (WstxRecordingReceive
+             recording.state), operating selection, radio and profile; until a read is migrated its existing cadence rules apply. */
     }
     attribute def IndependentLinkAccounting {
         attribute payloadBytesPerSecond : Integer = 4000;
