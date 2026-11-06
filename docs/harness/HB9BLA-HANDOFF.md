@@ -82,7 +82,10 @@ HARNESS_REPO=D:/Github/wsjtx-rust python D:/Github/harness-mq/core/tools/merge_q
 `D:\Github\harness-mq` is a harness clone at the pinned (or newer reviewed) commit; keep it
 and the main checkout's `harness` submodule on the same commit. Agent builds use their own
 `CARGO_TARGET_DIR=C:/wstx-build/<worktree>` (never inside a worktree, never shared) and
-wait with `merge_queue.py busy --wait` before heavy local runs.
+wait with `merge_queue.py busy --wait` before heavy local runs. Gate builds go to
+`D:/harness-cargo-target/wsjtx-rust/<checkout>` and are pruned by the gate itself; agent
+build directories are pruned with `harness/core/tools/build_prune.py agent-dirs --root DIR
+--apply` (harness/core/docs/Parallel-Work.md, "Build output").
 
 Use this synchronization set, not stale `synchronization-inputs-final`/`-lf` caches.
 Evidence: `.git\migration-evidence\hardware-preparation\`; original design: sibling
