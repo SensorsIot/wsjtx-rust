@@ -246,7 +246,7 @@ package WstxStationProtocol {
              2026-11-04): a client-server application. Each browser holds one wstx.v1
              WebSocket; the station pushes typed state events on that socket when its
              state changes (transmit/PTT, contact, decode records, selection/radio/band,
-             clock, UDP display, log changes), each throttled per peer by that peer's
+             clock, log changes), each throttled per peer by that peer's
              display subscription (Detailed, Thin, Off), so an idle Off peer receives
              almost nothing beyond heartbeat and station.tick. HTTP carries commands and
              one snapshot read per state on (re)connect, after an announcement event (one

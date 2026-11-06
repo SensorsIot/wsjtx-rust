@@ -285,6 +285,7 @@ pub struct Recording {
     pub(crate) radio_setup: crate::radio_setup::Owner,
     /// #44 the station-managed radio AGC (CL-044-10).
     pub(crate) agc: crate::radio_agc::Owner,
+    pub(crate) tx_level: crate::radio_level::Owner,
     /// Bumped at each latest_decode publication so Detailed WebSocket peers announce it at
     /// once instead of on the 2 s receive tick (#57 CL-057-01).
     pub(crate) publication: tokio::sync::watch::Sender<u64>,
@@ -3362,6 +3363,7 @@ impl Recording {
                 clock: std::sync::OnceLock::new(),
                 radio_setup: Default::default(),
                 agc: Default::default(),
+                tx_level: Default::default(),
                 publication: tokio::sync::watch::Sender::new(0),
                 hashes: Default::default(),
                 startup,
@@ -3436,6 +3438,7 @@ impl Recording {
             clock: std::sync::OnceLock::new(),
             radio_setup: Default::default(),
             agc: Default::default(),
+            tx_level: Default::default(),
             publication: tokio::sync::watch::Sender::new(0),
             hashes: Default::default(),
             startup,

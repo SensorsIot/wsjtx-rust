@@ -1,8 +1,8 @@
 package WstxUdp {
     private import ScalarValues::*;
     doc /* Canonical contract of the WSJT-X-compatible UDP interface with multiple targets
-         (issue #40, CL-040-01..05 in WstxRequirements; IPv6 multicast issue #46,
-         CL-040-06; Status cadence CL-040-07; verification TC-012-001..007).
+         (issue #40, CL-040-01..04 in WstxRequirements; IPv6 multicast issue #46,
+         CL-040-06; Status cadence CL-040-07; verification TC-012-001..004, 006, 007).
          Nothing here is an execution result.
 
          Normative reference: WSJT-X v3.3.0-beta5 source Network/NetworkMessage.hpp
@@ -11,25 +11,30 @@ package WstxUdp {
          8cfa89debc2b916b39151975437619e7f9b28aefa698f05231fbdf2247cb9f35) on HB9BLA; the
          message types used here are unchanged from the v3.3.0-beta4 behaviour baseline.
 
+         Operator decision 2026-11-06 (issue #40): "GridTracker just listens. We only react
+         to the front end or to the MCP." and "The UI has to be able to halt the station in
+         emergency halt. Also other commands can come from the UI." The interface is send-only:
+         all control comes from the browser and MCP, and no inbound UDP command exists (Clear,
+         Reply, Close, Replay, Halt Tx, Free Text, Location, Highlight Callsign, accept_commands
+         and the udp.display event of CL-040-08 are removed). This supersedes D3, D5 and the
+         earlier decision that UDP Halt stays (#39). Emergency off: the browser's HALT and MCP's
+         halt tool.
+
          Decisions (issue #40 comments "Defaults chosen for implementation" and "R-09",
          2026-11-01; operator not asked, standing instruction):
          D1 Protocol: NetworkMessage, outbound header schema 2 until a target's own
-            datagram carries schema 3 (MessageClient negotiation), Heartbeat maximum
+            Heartbeat carries schema 3 (MessageClient negotiation), Heartbeat maximum
             schema 3. For every field type used here schema 2 (Qt_5_2) and 3 (Qt_5_4)
             serialize identically.
          D2 Targets: any number up to targetsMax, each its own UDP socket, unicast, IPv4
             multicast with TTL and an optional interface address, or IPv6 multicast (D6);
             per-target message
-            selection (default all) and accept_commands (default off). Default list: one
-            target 127.0.0.1:2237, enabled, all messages, accept_commands off.
-         D3 Safety: Halt Tx always acts, from any source, whether or not accept_commands
-            is on. No inbound command keys the transmitter: Reply and Free Text use the
-            ContactCommand path without transmit authority, are refused while Enable Tx
-            is on, and never send enable_tx or tune.
+            selection (default all). Default list: one
+            target 127.0.0.1:2237, enabled, all messages.
+         D3 Retired 2026-11-06 (send-only, above).
          D4 Text form: Decode and log texts use the WSJT-X form "R-09" / "R+03".
-         D5 Location (11) sets a session-only grid (CL-040-05): it replaces the profile
-            locator for Status, generated messages and the log's my_gridsquare until the
-            process restarts and is never saved to the profile.
+         D5 Retired 2026-11-06 (send-only): no Location, no session grid; the profile locator
+            is the station's grid.
          D6 IPv6 multicast (CL-040-06, issue #46 defaults, 2026-11-02; operator not asked,
             standing instruction): a group of ff00::/8 with a hop limit (multicast_ttl,
             1..255) and an interface given by its index (multicast_interface, decimal
@@ -38,8 +43,7 @@ package WstxUdp {
             and getaddrinfo does not resolve scope names. Scope 0 and 15 (reserved,
             RFC 4291 2.7) are refused; interface-local (1) and link-local (2) groups exist
             on one interface only and need the index; wider scopes may leave it null (the
-            system's default interface). accept_commands stays refused as for IPv4
-            multicast. An index no interface has is admitted and shows the target
+            system's default interface). An index no interface has is admitted and shows the target
             socket_unavailable.
          D7 The Settings UI is #37's; Close is sent when a target is disabled or removed
             (the station has no graceful-shutdown path). */
@@ -54,17 +58,9 @@ package WstxUdp {
              type, utf8 id, then the type's fields, all big-endian (Qt QDataStream).
              quint8/quint32/qint32/quint64/qint64 as fixed width; bool one byte 0/1;
              float fields (Delta time) are written as an IEEE double of the single-precision
-             value; utf8 is quint32 byte length then the bytes (0xFFFFFFFF = null, read as
-             empty); QTime quint32 ms since midnight; QDateTime qint64 Julian day, quint32
-             ms since midnight, quint8 timespec 1 (UTC); QColor qint8 spec (0 = invalid,
-             1 = RGB), quint16 alpha, red, green, blue, pad (component c of 0..255 is
-             c * 257). id is the configured instance_name.
-             Inbound: a datagram larger than inboundDatagramBytesMax (also when the socket
-             reports it as too large for the receive buffer; reading continues behind it), with another magic, a
-             schema other than 2 or 3, a truncated or malformed known field, or an id other
-             than instance_name is ignored and counted; unknown types and trailing bytes
-             after the known fields are ignored (protocol rule 1 and 2). A Heartbeat
-             without its maximum-schema field means schema 2. */
+             value; utf8 is quint32 byte length then the bytes; QTime quint32 ms since
+             midnight; QDateTime qint64 Julian day, quint32 ms since midnight, quint8
+             timespec 1 (UTC). id is the configured instance_name. Inbound: InboundRules. */
     }
     enum def OutboundMessage {
         enum heartbeat; enum status; enum decode; enum clear; enum qso_logged; enum close;
@@ -76,10 +72,9 @@ package WstxUdp {
         attribute multicastTtl : Integer;
         attribute multicastInterface : String[0..1];
         attribute messages : OutboundMessage[0..7];
-        attribute acceptCommands : Boolean;
         assert constraint ttlRange { multicastTtl >= 1 and multicastTtl <= 255 }
         doc /* Wire keys exactly address, enabled, multicast_ttl, multicast_interface,
-             messages, accept_commands, all required. address: "a.b.c.d:port" or
+             messages, all required; an unknown key, accept_commands among them, is refused. address: "a.b.c.d:port" or
              "[v6]:port", port 1..65535; unspecified, 255.255.255.255 and an IPv6
              multicast group of scope 0 or 15 are refused; an address is unique in the
              list (it is the target's identity). multicast_ttl 1..255 is the TTL of an
@@ -88,10 +83,8 @@ package WstxUdp {
              address, an interface index as decimal text 1..4294967295 without sign or
              leading zero (D6); for any other address, an IPv4 address (unchanged from
              #40, so a saved file keeps loading); an IPv6 multicast group of
-             scope 1 or 2 requires it. Both apply only to a multicast address;
-             accept_commands true is
-             refused for a multicast address (a command's source is a host, never the
-             group, so it could never act). messages: unique names of
+             scope 1 or 2 requires it. Both apply only to a multicast address.
+             messages: unique names of
              OutboundMessage, any order, stored in the enum order; empty sends nothing. */
     }
     attribute def UdpConfiguration {
@@ -105,6 +98,9 @@ package WstxUdp {
              file is the default configuration at revision 0 (D2). An unreadable, invalid
              or other-profile file leaves the configuration null with configuration_error
              invalid_configuration; then no socket is opened until a valid PUT replaces it.
+             A file saved before send-only names accept_commands on its targets: the key is
+             dropped when the file loads (the target otherwise unchanged) and is gone after
+             the next save.
              WSTX_UDP=off in the station's environment opens no socket (every target
              inactive; configuration and HTTP unchanged): isolated tests of the executable
              set it so they never reach port 2237 of the machine.
@@ -115,10 +111,7 @@ package WstxUdp {
         doc /* Per configured target, volatile, in configuration order: {address, active
              (an open socket), schema (2 or 3), last_send_utc_ms (null or the last
              successful send), error (null, socket_unavailable or send_failed; a later
-             successful send clears send_failed), last_command (null or {type, utc_ms,
-             outcome applied|refused|not_accepted|ignored, code})}. type is the inbound
-             name: clear, reply, close, replay, halt_tx, free_text, location, highlight,
-             switch_configuration, configure. */
+             successful send clears send_failed)}. */
     }
     attribute def OutboundRules {
         doc /* Each enabled target has its own UDP socket, bound to the loopback address of
@@ -137,7 +130,7 @@ package WstxUdp {
              Status (1) (CL-040-07) at activation, whenever its encoded content changes, once
              for each live decoder window begun since the last Status (also when that window
              began and ended between two station steps), at each pulse even when unchanged
-             (also to a target that selects status but not heartbeat), and after a Replay.
+             (also to a target that selects status but not heartbeat).
              WSJT-X sends Status from MainWindow::statusUpdate, which beginDecode and
              endDecode reach through updateDecodeControls, so its decoding field toggles at
              least once per T/R period; the resend at each pulse is this station's choice
@@ -178,72 +171,27 @@ package WstxUdp {
              WSPRDecode (10) is not applicable. */
     }
     attribute def InboundRules {
-        attribute replayPerStep : Integer = 32;
-        attribute highlightsMax : Integer = 100;
-        doc /* Datagrams are read from every active target socket. Any valid datagram whose
-             source equals the target address raises that target's schema to the
-             datagram's schema (never lowers it; a new socket starts at 2).
-             Halt Tx (8) from any source, whether or not accept_commands is on and whatever
-             Auto Tx Only says (also when that field is missing): HaltTransmit, the same as
-             the HALT button (outcome applied).
-             Clear (3), Reply (4), Replay (7), Free Text (9), Location (11) and Highlight
-             Callsign (13) act only when the target's accept_commands is on and the datagram's source equals
-             the target address; otherwise outcome not_accepted and no effect.
-             Heartbeat (0), Close (6), Switch Configuration (14) and Configure (15) have no
-             effect (Heartbeat is not recorded as a command; the
-             others outcome ignored).
-             Reply: refused tx_enabled while Enable Tx is on; else it must match a decode of
-             the current live job retained after the last inbound Clear of window 0 or 2
-             (Time, snr, Delta frequency and Mode exactly, Delta time within 0.05 s, the
-             Message after trimming spaces, against this station's Decode rendering; Low
-             confidence and Modifiers ignored), else refused no_match; then ContactCommand
-             select_row {row, replace false} without transmit authority (engine refusals
-             such as contact_active or row_not_standard are outcome refused with that code).
-             Location (WSJT-X MainWindow::locationChange): the trimmed text, when longer
-             than 6 characters only after a case-insensitive "GRID:" prefix, upper-cased,
-             must be a 4- or 6-character Maidenhead locator, else refused invalid_grid; it
-             becomes the session grid (D5), the same for every target; a later Location
-             replaces it.
-             Free Text: refused tx_enabled while Enable Tx is on; an empty text is ignored;
-             else ContactCommand edit_message {slot tx5, text}, as the browser's Tx5 edit:
-             without a prepared contact it is refused no_contact, and a text that does not
-             pack unaltered as a standard, nonstandard or free-text (at most 13
-             characters) message is refused invalid_message (WstxContact::
-             StandardMessageSet, #24 S1b); the Send flag is ignored.
-             Replay: the retained decodes (as for Reply) are sent to that target only, New
-             false, in sequence order, at most replayPerStep per station step, then Status.
-             Clear: window 0 (also when missing) or 2 sets the Reply/Replay floor, which is
-             also the Band Activity floor (clear.band_activity), to the current live job and
-             its next sequence; window 1 or 2 sets the Rx Frequency floor
-             (clear.rx_frequency) the same way, which has no decode effect; without a live
-             job a floor stays as it was; each applied Clear advances clear.sequence and
-             records clear.window; window above 2 is malformed. The browser applies both
-             floors (UdpDisplayEvent, #40 CL-040-08).
-             Highlight Callsign (WSJT-X 3.3 widgets/displaytext.cpp
-             DisplayText::highlight_callsign): an empty, " " or "0" call is ignored;
-             "CLEARALL!" removes every highlight; any other call is kept upper case (WSJT-X
-             keys its map upper case and finds case-insensitively). A colour is "#rrggbb" or
-             null for an invalid QColor. Highlight last off: with at least one valid colour
-             the call's map entry {call, background, foreground, last_only false, period
-             null} is set or replaced, with both invalid it is removed; either way the call's
-             last-period entry is removed too (WSJT-X recolours or resets every occurrence).
-             Highlight last on: the call's last-period entry {call, background, foreground,
-             last_only true, period} replaces its earlier one, also with both colours invalid
-             (a reset in that period); period is period_start_utc of the current live job's
-             latest decode when it arrived (null without one: it colours nothing); the map
-             entry is kept. At most highlightsMax entries (the oldest is dropped); volatile.
-             Calls are 1..32 bytes without control characters. Each applied Highlight
-             Callsign advances the display revision. */
+        doc /* Send-only (operator decision 2026-11-06, CL-040-03): the station reacts to the
+             browser and MCP only. The one thing read from a target is its Heartbeat, because
+             the WSJT-X protocol negotiates the header schema through it: each station step
+             reads at most 64 datagrams per active target socket; a Heartbeat (0) whose source
+             equals the target address, with magic, schema 2 or 3, a non-empty valid utf8 id equal to
+             instance_name and at most inboundDatagramBytesMax bytes, raises that target's
+             schema to the datagram's schema (never lowers it; a new socket starts at 2). Fields
+             after the Heartbeat's header are not read (protocol rule 2). Every other datagram is
+             read and dropped with no effect, no state and no count: Clear (3), Reply (4), Close
+             (6), Replay (7), Halt Tx (8), Free Text (9), Location (11), Highlight Callsign (13),
+             Switch Configuration (14), Configure (15), unknown types, a datagram too large for
+             the receive buffer (reading continues behind it), a Heartbeat from any other source or with another
+             id. A Heartbeat arriving at a multicast target's socket never matches the group
+             address. */
     }
     attribute def UdpHttp {
         attribute bodyBytesMax : Integer = 8192;
         doc /* GET /udp (UdpSnapshot), existing auth and Origin rules of GET routes; no
              query or body: exactly {v:1, profile_id, boot_id, revision, configuration (null
              or {instance_name, targets}), configuration_error (null or
-             invalid_configuration), status [TargetStatus], highlights [{call, background,
-             foreground, last_only, period}], clear {sequence, window (null or 0..2),
-             band_activity, rx_frequency (each null or {source_id, job_id, generation,
-             sequence})}, received, ignored} (InboundRules).
+             invalid_configuration), status [TargetStatus]}.
              PUT /udp: Origin, session, no query, application/json, at most bodyBytesMax
              (413), JSON; exactly {v, profile_id, boot_id, expected_revision,
              configuration {instance_name, targets}}; refusals in this order 400
@@ -257,41 +205,8 @@ package WstxUdp {
              an unchanged target keeps its socket, schema and status). */
     }
 
-    item def UdpDisplayEvent {
-        attribute v : Integer = 1;
-        attribute 'type' : String = "udp.display";
-        doc /* #40 (CL-040-08). Versioned WebSocket event on the existing wstx.v1 socket,
-             exactly {v:1, type:"udp.display", data:{profile_id, boot_id, display_revision,
-             highlights, clear}} with highlights and clear as in UdpHttp. The display
-             revision starts at 0 and advances with each applied inbound Highlight Callsign
-             and Clear (InboundRules); a display-subscribed peer receives the event, paced
-             with contact.state as an optional write, once its revision differs from the
-             last one sent to that peer, and at once after it subscribes when the revision
-             is above 0, so a page opened later shows the current state; nothing is sent
-             while no command was applied, and the browser reads no /udp for it. A datagram
-             that is not_accepted changes nothing and sends nothing.
-             The browser (WstxOperatingLayout::BandActivityColours, BandActivityView,
-             QsoPane) keeps the event of the highest revision of its boot and applies it only while its profile_id and boot_id are the station's (a station restart drops the earlier boot's highlights and floors). A row matches a
-             highlight when a whole word of its message, also inside <>, equals the call
-             (upper case), the sending call first, then the words in message order; for
-             each word a last-period entry whose period equals the row's period_start_utc
-             applies (a reset leaves that word without a UDP colour), else the call's map
-             entry. The first applicable entry sets the row background to its background
-             (none when null) and the row text colour to its foreground (unchanged when
-             null). A floor hides the rows of its job below its sequence, and while its job
-             is the live job also every row of another job: band_activity in Band Activity
-             (both the latest and the kept period), rx_frequency in the QSO pane Others,
-             which replace the WSJT-X Rx Frequency window. Rows decoded later show as
-             usual. Deviation, as the browser derives the rows from this state: CLEARALL!
-             and a removal also take the colour off rows already shown (WSJT-X leaves text
-             already coloured until it is re-highlighted or erased), and the colours apply
-             to the whole row rather than the word, as the slot colours do (#50). */
-    }
-
     dependency servicePlacement from OutboundRules to WstxArchitecture::StationService;
     dependency profilePlacement from UdpConfiguration to WstxArchitecture::PersistedProfile;
-    dependency replyPath from InboundRules to WstxContact::ContactCommand;
-    dependency haltPath from InboundRules to WstxTransmit::HaltTransmit;
     dependency logPath from OutboundRules to WstxContact::SaveContact;
     dependency directLogPath from OutboundRules to WstxContact::DirectLog;
     dependency wireClause from UdpWire to WstxRequirements::'CL-040-01';
@@ -301,6 +216,4 @@ package WstxUdp {
     dependency inboundClause from InboundRules to WstxRequirements::'CL-040-03';
     dependency textClause from OutboundRules to WstxRequirements::'CL-040-04';
     dependency statusCadenceClause from OutboundRules to WstxRequirements::'CL-040-07';
-    dependency displayClause from UdpDisplayEvent to WstxRequirements::'CL-040-08';
-    dependency displayRulesClause from InboundRules to WstxRequirements::'CL-040-08';
 }

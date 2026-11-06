@@ -27,12 +27,11 @@ const MCP_LAST_USED_PERSIST_MS: u64 = 600_000;
 
 /// Who sent a request, fixed at the auth boundary from the credential (#58, CL-039-06):
 /// a browser grant transport (or the plaintext runtime token) is the human operator;
-/// an MCP client token, a UDP target and the station's own automation never are.
+/// an MCP client token and the station's own automation never are.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Principal {
     Browser,
     Mcp,
-    Udp,
     Automation,
 }
 impl Principal {
@@ -612,7 +611,7 @@ impl Authority {
                 .iter()
                 .any(|g| g.grant_id == id && g.scope.same_radio(scope)),
             Principal::Mcp => self.record.mcp_clients.iter().any(|c| c.id == id),
-            Principal::Udp | Principal::Automation => false,
+            Principal::Automation => false,
         }
     }
     fn transport_current(&self, t: &Transport, now: Instant) -> bool {
