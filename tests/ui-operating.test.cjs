@@ -3184,6 +3184,38 @@ test('TC-037-002 the error field lists only current problems with their time and
   assert.deepEqual((await entries()).map(e=>e[1]),['✖ Station connection lost · reconnecting']);
   assert.deepEqual(errors,[]);
 });
+// Proves: CL-037-02; TC-037-002 (#37, live 2026-11-06): a long problem text cannot run past the screen at
+// 1366x768: all of it can be scrolled into view inside the block, on screen, and the Control panel stays.
+test('TC-037-002 a long problem scrolls inside the error field on screen and the Control panel stays',{timeout:60000},async t=>{
+  const {page,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input',beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base)}));
+    const idle=await (await fetch(app.origin+'/receive')).json(),running=liveFixture({...idle,generation:idle.generation+1});
+    await p.route('**/receive',route=>route.fulfill({json:running}));
+    await p.route('**/receive/results?*',route=>route.fulfill({json:emptyResults(running)}));
+    await p.route('**/recording',async route=>{const real=await (await route.fetch()).json();await route.fulfill({json:{...real,generation:running.generation,job:{id:running.job.id,source_id:running.source.id,generation:running.generation,kind:'live',state:'running',processed_frames:0,error:null}}});});
+  }});
+  await page.waitForFunction(()=>window.wstxContact?.snapshot()&&live?.job?.state==='running',null,{timeout:45000});
+  const control=()=>page.locator('#qso-control').evaluate(e=>e.getBoundingClientRect().top);
+  await page.evaluate(()=>window.wstxChipsShow());
+  const before=await control();
+  const reach=async text=>{await page.evaluate(text=>{profileData.settings.control.mode='cat';catStatus={condition:'radioUnavailable'};document.querySelector('#cat-status').textContent=text;window.wstxChipsShow();},text);
+    return page.evaluate(()=>{const body=document.querySelector('#error-field .op-error-body');body.scrollTop=body.scrollHeight;const b=body.getBoundingClientRect(),e=[...document.querySelectorAll('#error-field .op-error-entry')].at(-1).getBoundingClientRect(),w=document.querySelector('#error-field').getBoundingClientRect();return {entryIn:e.bottom<=b.bottom+1&&e.top<b.bottom,bodyOnScreen:b.bottom<=innerHeight&&b.top>=0,fieldOnScreen:w.bottom<=innerHeight,page:document.documentElement.scrollHeight<=innerHeight};});};
+  const ok={entryIn:true,bodyOnScreen:true,fieldOnScreen:true,page:true};
+  assert.deepEqual(await reach('CAT unavailable \u00b7 COM3 in use by another program \u00b7 automatic retry in 8 s'),ok);
+  assert.equal(await control(),before,'the Control panel does not move');
+  await page.screenshot({path:'test-results/ui-operating/error-field-long-1366x768.png'});
+  // A wheel notch shows the next line: it does not jump past the chip's second line.
+  const body=page.locator('#error-field .op-error-body');await body.evaluate(e=>{e.scrollTop=0;});await body.hover();await page.mouse.wheel(0,100);await page.waitForTimeout(200);
+  const step=await body.evaluate(e=>[e.scrollTop,e.clientHeight]);assert.ok(step[0]>0&&step[0]<=step[1]+1,`one notch moves by at most the visible height: ${step}`);
+  assert.deepEqual(await reach('CAT unavailable \u00b7 '+'COM3 in use by another program \u00b7 '.repeat(8)+'automatic retry in 8 s'),ok,'longer than the block: it scrolls');
+  assert.equal(await control(),before,'the Control panel does not move');
+  await page.setViewportSize({width:360,height:800});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
+  await page.locator('#error-field').scrollIntoViewIfNeeded();
+  await page.screenshot({path:'test-results/ui-operating/error-field-long-360x800.png'});
+  assert.deepEqual(errors,[]);
+});
 // Proves: CL-061-02; TC-061-003. Scripted contact snapshots and command replies (presentation fixtures): the CQ
 // button retries a stale_revision refusal of its enable_tx with the reloaded revision, at most twice.
 test('TC-061-003 CQ retries a stale_revision refusal with the reloaded snapshot',{timeout:40000},async t=>{
@@ -3310,7 +3342,8 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
   assert.ok(visible.count>=6,`at least six Band Activity rows on screen at 360 px ${JSON.stringify(visible)}`);
   assert.ok(visible.height<=48,`a compact Band Activity row, ${visible.height} px`);
   const phone=[];
-  for(const [name,n] of [['idle',0],['6 rows',6],['15 rows',15]]){await show(n?qso(n):null,{arm_state:n?'armed':'disarmed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,n);phone.push([name,await geometry()]);}
+  for(const [name,n] of [['idle',0],['6 rows',6],['15 rows',15]]){await show(n?qso(n):null,{arm_state:n?'armed':'disarmed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,n);phone.push([name,await geometry()]);
+    if(n===6){f=await fit();assert.deepEqual([f.scrolls,f.inside],[false,6],'six full dialogue rows at 360 px (live 2026-11-06)');}}
   same(phone,'360x800');
   f=await fit();assert.equal(f.lastInside,true,'the newest row is visible at 360 px');
   await page.locator('#rx-focus').scrollIntoViewIfNeeded();

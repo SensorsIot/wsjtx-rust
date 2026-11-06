@@ -237,7 +237,7 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #rx-focus .ct-qso-table td:is(:first-child,:nth-child(2)){white-space:nowrap}
 #rx-focus .ct-qso-table :is(th,td):nth-child(n+4){text-align:right;white-space:nowrap}
 #rx-focus .ct-others:empty{display:none}
-@media (max-width:30em){#rx-focus .ct-qso-table th[data-short]{font-size:0}#rx-focus .ct-qso-table th[data-short]::after{content:attr(data-short);font-size:var(--op-font-secondary)}#rx-focus .ct-qso-table :is(th,td){padding:0 2px}#rx-focus .ct-qso-table td:nth-child(2){white-space:normal}}/* #60 Rep column: at phone width the two calls may wrap at their spaces */
+@media (max-width:30em){#rx-focus .ct-qso-table th[data-short]{font-size:0}#rx-focus .ct-qso-table th[data-short]::after{content:attr(data-short);font-size:var(--op-font-secondary);vertical-align:top}/* on the baseline of the font-size 0 strut it made the header 20 px */#rx-focus .ct-qso-table :is(th,td){padding:0 2px}#rx-focus .ct-qso-table td:nth-child(2){white-space:normal}}/* #60 Rep column: at phone width the two calls may wrap at their spaces */
 #rx-focus .ct-dialogue:not([hidden])+.ct-others tr:first-child td{border-top:1px solid #355065}
 #rx-focus .ct-others tr{cursor:pointer}
 #rx-focus .ct-others tr[data-kind=warn]{color:#f2c14e;background:rgba(242,193,78,.1)}
@@ -490,6 +490,9 @@ body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #s
 #qso-control :is(input:not([type=checkbox]),select,button){height:1.375rem;box-sizing:border-box;padding-top:0;padding-bottom:0}
 #error-field{padding:2px 12px}
 #error-field .op-error-none,#error-field .op-lower-head{line-height:1.125rem;padding-top:0}
+/* One fixed screen: the Control panel never moves, so a long problem scrolls inside what is left
+   of the column instead of running past the screen (#37, live 2026-11-06). */
+@container (min-width:75em){#qso-column>#error-field{flex:0 1 auto;flex-wrap:nowrap;min-height:0}#error-field .op-error-body{align-self:stretch;min-height:0}}
 @container (max-width:48em){
  #rx-focus{--ct-head:calc(3 * var(--ct-line) + 2.25rem);--ct-lines:calc(2 * var(--ct-line) + .375rem)}
  #rx-focus .op-contact-identity>div{flex-direction:column;gap:0}
