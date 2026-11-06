@@ -891,6 +891,45 @@ test('TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fi
   assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-044-13; TC-044-015. The Tx level in the Audio section follows the server's radio.tx_level
+// push; Set level and the slider are commands, the slider appears only without ALC over CI-V.
+test('TC-044-015 Tx level in Settings > Radio > Audio',{timeout:60000},async t=>{
+  const endpoint='icom7300://COM250?baud=19200&radio=94&controller=e0',posts=[];
+  const {page,app,errors}=await fixture(t,{width:1366,height:768},{control:{mode:'cat',endpoint,ptt:'disabled'},beforeNavigate:async p=>{
+    await p.route('**/radio/tx-level',async route=>{const body=JSON.parse(route.request().postData());posts.push(body);await route.fulfill({json:{v:1,profile_id:body.profile_id,boot_id:body.boot_id,command_id:body.command_id,accepted:true,refusal:null}});});
+  }});
+  await page.waitForFunction(()=>!!profileData,null,{timeout:30000});
+  await page.locator('#open-server-settings').click();await page.locator('#tab-radio').click();
+  const section=page.locator('#settings-audio'),line=section.locator('#tx-level-line'),button=section.locator('#tx-level-set'),slider=section.locator('#tx-level-manual'),meters=section.locator('#tx-meters');
+  await button.scrollIntoViewIfNeeded();assert.equal(await button.isVisible(),true,'Set level is in the Audio section');
+  assert.equal(await slider.isVisible(),false,'no manual level while the radio may report ALC');
+  const base={managed:true,level_db:0,stored:false,alc:'unknown',assistant:false,result:null,meters:null,power_limit_pct:null};
+  const inject=data=>page.evaluate(d=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'radio.tx_level',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,...d}}}})),data);
+  await inject(base);assert.equal(await line.textContent(),'Tx level not set yet');assert.equal(await meters.isVisible(),false);
+  await inject({...base,assistant:true,level_db:-25,alc:'available',meters:{alc:0,po_pct:12,swr_x10:11}});
+  assert.equal(await line.textContent(),'Tune on · stepping up · -25 dB');assert.equal(await meters.textContent(),'ALC 0 · Po 12 % · SWR 1.1');assert.equal(await button.isDisabled(),true);
+  await inject({...base,level_db:-22,stored:true,alc:'available',result:'stored',meters:{alc:3,po_pct:50,swr_x10:11}});
+  assert.equal(await line.textContent(),'Tx level -22 dB · stored');assert.equal(await button.isDisabled(),false);
+  // A malformed event is ignored.
+  await inject({...base,level_db:'x'});assert.equal(await line.textContent(),'Tx level -22 dB · stored');
+  await button.click();await page.waitForFunction(()=>true);
+  await assert.doesNotReject(async()=>{for(let i=0;i<100&&!posts.length;i++)await page.waitForTimeout(20);});
+  assert.equal(posts.length,1);assert.equal(posts[0].action,'set_level');assert.equal(Number.isInteger(posts[0].tx_offset_hz),true);
+  await inject({...base,alc:'unavailable',level_db:-9,stored:true,result:'no_alc'});
+  assert.equal(await line.textContent(),'Tx level -9 dB · this radio reports no ALC, set the level by hand');assert.equal(await slider.isVisible(),true);
+  await section.locator('#tx-level-slider').fill('-14');
+  for(let i=0;i<100&&posts.length<2;i++)await page.waitForTimeout(20);
+  assert.deepEqual([posts.length,posts[1].action,posts[1].level_db],[2,'manual',-14]);
+  // The Power limit is a profile field, saved with Apply.
+  await section.locator('#control-power-limit').fill('10');await page.locator('#settings-save').click();
+  await page.locator('#settings-result').filter({hasText:/Saved revision/}).waitFor();
+  assert.deepEqual((await (await fetch(app.origin+'/profile')).json()).settings.radio,{agc:'SLOW',power_limit_pct:10});
+  await page.setViewportSize({width:360,height:740});
+  assert.equal(await page.evaluate(()=>{const d=document.querySelector('#settings-audio');return d.scrollWidth<=d.clientWidth+1;}),true,'fits 360 px');
+  await page.setViewportSize({width:1366,height:768});
+  await page.selectOption('#control-mode','disabled');assert.equal(await button.isVisible(),false,'hidden for a control without CI-V');
+  assert.deepEqual(errors,[]);
+});
 // Proves: CL-044-11; TC-044-010. AGC is a Radio/CAT setting: the select is in the CAT group only
 // for an IC-7300 CAT endpoint, the read-back line follows the server's radio.agc push (the real
 // server's first event, then injected outcomes), Apply saves settings.radio, Detect radio
@@ -3291,7 +3330,7 @@ test('TC-044-007 the Audio section shows endpoint names, keeps IDs in hover and 
   assert.equal(await page.locator('#settings-audio #audio-input').evaluate(el=>el.tagName),'SELECT');
   assert.equal(await page.locator('#settings-audio #audio-output').evaluate(el=>el.tagName),'SELECT');
   assert.equal(await page.locator('#settings-audio .op-input-meter').count(),1);
-  assert.equal(await page.locator('#audio-enumerate,#audio-inputs,#settings-audio input').count(),0);
+  assert.equal(await page.locator('#audio-enumerate,#audio-inputs,#settings-audio input:not(#tx-level input)').count(),0);
   const options=sel=>page.locator(sel+' option').evaluateAll(list=>list.map(o=>[o.textContent,o.title,o.disabled]));
   assert.deepEqual(await options('#audio-input'),[['None','',false],['Microphone (USB Audio CODEC) \u2014 IC-7300',codecIn,false],[headset+' #2',headsetB,false],[headset+' #1',headsetA,false],['Microphone (Old radio) \u00b7 not present',saved,true]]);
   assert.deepEqual(await options('#audio-output'),[['None','',false],['Speakers (USB Audio CODEC) \u2014 IC-7300',codecOut,false]]);

@@ -69,8 +69,14 @@ package WstxProfiles {
         doc /* #44 CL-044-10: the radio settings the station manages over CAT, exactly
              agc (FAST|MID|SLOW, default SLOW for FT8/FT4 on the IC-7300). Present only
              while control is CAT on an IC-7300 CI-V endpoint, absent otherwise; separate
-             from ControlSelection, which is the receive-only confirmation's identity. */
+             from ControlSelection, which is the receive-only confirmation's identity.
+             power_limit_pct (CL-044-12, optional 1..100): the profile power, the Po in
+             percent of the radio's full scale the Tx level never drives above; absent,
+             only the radio's own RF power setting limits it. The Tx level itself is not
+             part of the profile document: it lives in tx-level.json of the profile
+             directory, so that storing it does not advance the revision. */
         attribute agc : AgcSetting = AgcSetting::SLOW;
+        attribute power_limit_pct : Integer[0..1];
     }
     attribute def Settings {
         doc /* Exactly these five required fields and the optional radio (CL-044-10). display_name: 1..64 UTF-8 bytes,

@@ -76,7 +76,7 @@ document.querySelector('#settings-save').textContent='Apply ⟳';
 radioSection.append(profilePanel);
 const catSettings=block('settings-cat','CAT receive-only confirmation',radioSection);
 // #44 CL-044-08: one Audio section; the selects belong to the profile form (Apply ⟳), their values are endpoint IDs.
-const audioSettings=block('settings-audio','Audio &#10227;',radioSection,'<div class="op-audio-input"></div><div class="op-input-meter"><span>Rx level <strong>Unknown</strong></span><div></div></div><div class="op-audio-output"></div><p id="audio-recommend" hidden><span id="audio-recommend-text"></span> <button type="button" id="audio-use-radio">Use IC-7300 audio</button></p><p id="audio-list-status" class="op-muted" role="status"></p>');
+const audioSettings=block('settings-audio','Audio &#10227;',radioSection,'<div class="op-audio-input"></div><div class="op-input-meter"><span>Rx level <strong>Unknown</strong></span><div></div></div><div class="op-audio-output"></div><div id="tx-level" hidden><p><button type="button" id="tx-level-set">Set level</button> <span id="tx-level-line" role="status"></span></p><p id="tx-meters" class="op-muted" role="status" hidden></p><label id="tx-level-manual" hidden>Tx level (no ALC over CI-V) <input id="tx-level-slider" type="range" min="-40" max="0" step="1"></label></div><p id="audio-recommend" hidden><span id="audio-recommend-text"></span> <button type="button" id="audio-use-radio">Use IC-7300 audio</button></p><p id="audio-list-status" class="op-muted" role="status"></p>');
 for(const [id,slot] of [['audio-input','.op-audio-input'],['audio-output','.op-audio-output']]){const select=document.getElementById(id);select.setAttribute('form','settings');audioSettings.querySelector(slot).append(select.closest('label'));}
 for(const type of ['input','change'])audioSettings.addEventListener(type,event=>{if(event.target.form===serverForm)serverForm.dispatchEvent(new Event(type));});
 const connectionPanel=document.createElement('div');connectionPanel.append(controls.querySelector('section[aria-label="Station status"]'),profileMetadata);
@@ -1135,6 +1135,43 @@ addEventListener('station-message',event=>{const {current,message}=event.detail;
   if(profileData&&(message.data.profile_id!==profileData.profile_id||message.data.boot_id!==profileData.boot_id))return;agcState=message.data;agcShow();});
 addEventListener('station-ready',()=>{if(agcState&&agcState.boot_id!==profileData?.boot_id)agcState=null;agcShow();});
 for(const type of ['input','change'])serverForm.addEventListener(type,agcShow);
+// #44 CL-044-13 Tx level: "Set level" (Tune, step up until the ALC rises, back off one step, store,
+// stop Tune) is the default; the manual slider exists only without ALC over CI-V. The state arrives as
+// the server's radio.tx_level push; nothing is polled.
+const powerRow=document.getElementById('control-power-row');document.getElementById('tx-level').append(powerRow);powerRow.hidden=false;
+let txLevelState=null;
+const txLevelResults={stored:'stored',max_without_alc:'stored at the maximum, ALC did not rise',aborted:'aborted, level unchanged',no_alc:'this radio reports no ALC, set the level by hand',high_swr:'stopped: high SWR, check the antenna'};
+function validTxLevelEvent(d){
+  const meter=v=>v===null||Number.isSafeInteger(v),m=d?.meters;
+  return operatingShape(d,'profile_id,boot_id,managed,level_db,stored,alc,assistant,result,meters,power_limit_pct')&&typeof d.managed==='boolean'&&Number.isSafeInteger(d.level_db)&&typeof d.stored==='boolean'&&['unknown','available','unavailable'].includes(d.alc)&&
+    typeof d.assistant==='boolean'&&(d.result===null||typeof d.result==='string')&&(d.power_limit_pct===null||Number.isSafeInteger(d.power_limit_pct))&&(m===null||operatingShape(m,'alc,po_pct,swr_x10')&&meter(m.alc)&&meter(m.po_pct)&&meter(m.swr_x10));
+}
+function txLevelShow(){
+  const managed=agcManaged(),v=txLevelState;document.getElementById('tx-level').hidden=!managed;if(!managed)return;
+  const line=document.getElementById('tx-level-line'),meters=document.getElementById('tx-meters'),slider=document.getElementById('tx-level-slider');
+  const level=v?`${v.level_db} dB`:'unknown';
+  line.textContent=v?.assistant?`Tune on · stepping up · ${level}`:v?.result?`Tx level ${level} · ${txLevelResults[v.result]??v.result}`:v?.stored?`Tx level ${level}`:'Tx level not set yet';
+  document.getElementById('tx-level-set').disabled=!!v?.assistant;
+  document.getElementById('tx-level-manual').hidden=v?.alc!=='unavailable';
+  if(v&&document.activeElement!==slider)slider.value=v.level_db;
+  const m=v?.meters;meters.hidden=!m;if(m)meters.textContent=`ALC ${m.alc??'–'} · Po ${m.po_pct??'–'} % · SWR ${m.swr_x10===null?'–':(m.swr_x10/10).toFixed(1)}`;
+}
+async function txLevelCommand(params){
+  const line=document.getElementById('tx-level-line');
+  try{
+    const response=await stationFetch('/radio/tx-level',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(10000),body:JSON.stringify({v:1,profile_id:profileData.profile_id,boot_id:profileData.boot_id,command_id:crypto.randomUUID(),...params})});
+    const data=await response.json().catch(()=>null);
+    if(!response.ok)line.textContent=`Tx level refused · ${data?.error?.code??`http_${response.status}`}`;
+    else if(!data?.accepted)line.textContent=`Tx level refused · ${data?.refusal}`;
+  }catch(error){line.textContent=`Tx level outcome unknown · ${error.message}`;}
+}
+document.getElementById('tx-level-set').addEventListener('click',()=>txLevelCommand({action:'set_level',tx_offset_hz:Number(document.querySelector('#tx-offset')?.value)||1500}));
+document.getElementById('tx-level-slider').addEventListener('change',event=>txLevelCommand({action:'manual',level_db:Number(event.target.value)}));
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='radio.tx_level'||!validTxLevelEvent(message.data))return;
+  if(profileData&&(message.data.profile_id!==profileData.profile_id||message.data.boot_id!==profileData.boot_id))return;txLevelState=message.data;txLevelShow();});
+addEventListener('station-ready',()=>{if(txLevelState&&txLevelState.boot_id!==profileData?.boot_id)txLevelState=null;txLevelShow();});
+for(const type of ['input','change'])serverForm.addEventListener(type,txLevelShow);
+txLevelShow();
 detectEl('detect-use').addEventListener('click',()=>{const agc=detectProposal?.radio?.agc;if(agc){const field=document.getElementById('control-agc');field.value=agc;field.dispatchEvent(new Event('change',{bubbles:true}));}agcShow();});
 agcShow();
 addEventListener('station-stale',catShow);

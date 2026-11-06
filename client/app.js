@@ -249,6 +249,7 @@ async function loadProfile(reload, current = socket) {
       field.value = value ?? '';
     }
     document.querySelector('#control-agc').value = s.radio?.agc ?? 'SLOW';
+    document.querySelector('#control-power-limit').value = s.radio?.power_limit_pct ?? '';
     window.dispatchEvent(new CustomEvent('profile-fields'));
     editingRevision = data.revision; dirty = false; conflict = false;
   }
@@ -269,7 +270,7 @@ settingsForm.addEventListener('submit', async event => {
   const controls = [...settingsForm.elements].map(element => [element, element.disabled]);
   for (const [element] of controls) element.disabled = true;
   try {
-    const response = await stationFetch('/profile', {method: 'PUT', signal: AbortSignal.timeout(10000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({profile_id: profileData.profile_id, revision: editingRevision, settings: {...formSettings(), ...(agcManaged() ? {radio: {agc: document.querySelector('#control-agc').value}} : {})}})});
+    const response = await stationFetch('/profile', {method: 'PUT', signal: AbortSignal.timeout(10000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({profile_id: profileData.profile_id, revision: editingRevision, settings: {...formSettings(), ...(agcManaged() ? {radio: {agc: document.querySelector('#control-agc').value, ...(document.querySelector('#control-power-limit').value ? {power_limit_pct: Number(document.querySelector('#control-power-limit').value)} : {})}} : {})}})});
     const result = await response.json();
     if(!stationContext(current,authEpoch)||context!==JSON.stringify([profileData.profile_id,profileData.boot_id,profileData.revision]))throw new Error('Stale save completion');
     if (!response.ok) {

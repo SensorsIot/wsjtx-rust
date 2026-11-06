@@ -3672,10 +3672,24 @@ package WstxRequirements {
     // setting only when it does not fit. IC-7300 AGC: Icom IC-7300 Full Manual section 19,
     // command table "16 12 AGC" (01 FAST, 02 MID, 03 SLOW; read: the command without data).
     requirement 'CL-044-09' {
-        doc /* Every CI-V change of a radio setting by the station is read, compare, write, verify: the station first reads the setting's current value; when it already equals the wanted value no write frame is sent and the read is the confirmation; otherwise it sends the write only after the radio reports RX (1C 00 00), requires its ACK (FB; FA is refused radio_rejected) and reads the setting back, a different value being readback_mismatch and a failed readback indeterminate. No write is sent while this station's transmit hold is taken (the CAT owner's single lease excludes it). The transmit switch 1C 00 is a keying action, not a setting, and is not subject to this rule (CL-009 PTT readback). */
+        doc /* Every CI-V change of a radio setting by the station is read, compare, write, verify: the station first reads the setting's current value; when it already equals the wanted value no write frame is sent and the read is the confirmation; otherwise it sends the write with the radio in RX (1C 00 00, checked as stated at the end of this clause), requires its ACK (FB; FA is refused radio_rejected) and reads the setting back, a different value being readback_mismatch and a failed readback indeterminate. No write is sent while this station's transmit hold is taken (the CAT owner's single lease excludes it). The transmit switch 1C 00 is a keying action, not a setting, and is not subject to this rule (CL-009 PTT readback). The rule holds for every setter path of the station: the AGC (16 12, CL-044-10); the receive setup of a mode or band selection, where mode (06), DATA mode (1A 06) and frequency (05) are each read first and written only when they differ, and the final state is read again only after a write (with nothing written the three reads are the confirmation); the CAT owner's single setter operations SetFrequency, SetMode and SetData, which answer from the read without a write when the value fits (POST /radio/operation itself refuses these three with selection_unavailable and sends no frame); and the IC-7300 menu writes of Apply recommended radio settings and Undo (1A 05, CL-044-04), where an item already at its value is not written again. A setter whose read is refused (FA) is refused radio_rejected without a write. The RX check of a write is per write for 16 12 and 1A 05; the 05, 06 and 1A 06 setters of a selection's receive setup rely on the selection's single RX read (1C 00) inside its CAT reservation, before the first of them. With all three differing a receive setup is twelve exchanges inside the 5 s composite bound (TC-009-005 proves it at 360 ms per exchange, down from 470 ms for the nine exchanges without the reads); the CAT owner's single setter operations have no RX check of their own, and no route reaches them. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/radio_control/executor.rs; server/src/radio_control/actor.rs";
     }
+    verification 'TC-044-012' {
+        doc /* TC-044-012 — Existing CI-V setters read first
+             CL-044-09
+             Setup: the actual executor on the scripted CI-V transport of TC-009-001 (hand-written replies, every written frame recorded).
+             Steps: (a) the CAT owner's SetFrequency 14.074 MHz, SetMode USB FIL2 and SetData ON FIL2 with the radio already there, then each with its read answered FA; (b) SetFrequency with the radio at 7.074 MHz; (c) the receive setup 14.074 MHz USB-D FIL2 with the radio already there; (d) with the radio at USB FIL1, DATA OFF, 7.074 MHz; (e) a 1A 05 write of USB SEND OFF with the item already OFF, and with it at DTR.
+             Expected: (a) one read frame each (03, 04, 1A 06) and no setter frame; with FA radio_rejected, the same single frame and the connection open; (b) 03, 05 00 40 07 14 00, 03, the frequency fact unconfirmed when the setter frame is sent and confirmed by the read-back; (c) 04, 1A 06, 03 and nothing else; (d) 04, 06 01 02, 04, 1A 06, 1A 06 01 02, 1A 06, 03, 05 00 40 07 14 00, 03, then the final 04, 1A 06, 03; (e) only FE FE 94 E0 1A 05 00 78 FD, then 1A 05 00 78, 1C 00, 1A 05 00 78 00, 1A 05 00 78; a read answered FA is refused with no further frame.
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-09';
+        }
+        attribute executable : String = "server/tests/radio_control.rs; server/src/radio_control/executor.rs";
+    }
+    dependency CL_044_09_verified_by_TC_044_012 from 'CL-044-09' to 'TC-044-012';
     dependency CL_044_09_to_FR_009 from 'CL-044-09' to 'FR-009';
     requirement 'CL-044-10' {
         doc /* The radio profile holds the radio settings the station manages: settings.radio {agc FAST|MID|SLOW}, present exactly when settings.control is CAT with an endpoint that is a supported IC-7300 CI-V configuration (the only radio with a known CI-V AGC command; every other control has no settings.radio key and the setting is hidden). GET /profile and the PUT response carry it; PUT /profile refuses settings.radio for an unmanaged control (400 invalid_settings, field radio) and settings.radio.agc outside FAST/MID/SLOW (400 invalid_settings, field settings.radio.agc); a PUT without settings.radio keeps the saved value, or takes SLOW for a newly managed radio. settings.radio is not part of settings.control, so changing it never changes the receive-only CAT confirmation's checked control (CL-022-03); like every profile save it advances the revision, which reconnects CAT. Migration: a profile saved without radio whose control is IC-7300 CAT is read with agc SLOW (the FT8/FT4 default); other profiles stay without it; the file is rewritten only by a later save. The station applies the saved AGC with one read-compare-write-verify exchange (CL-044-09; CI-V read FE FE <address> E0 16 12 FD, write FE FE <address> E0 16 12 <01|02|03> FD) through its CAT owner: once per ready connection (a refusal busy, e.g. the lease held or the radio reporting TX, is tried again after 2 s; any other outcome ends the attempt for that connection) and on each FT8 or FT4 mode selection inside the selection's CAT reservation, after its receive setup and before receive restarts. Nothing is sent while the transmitter is armed, tuning or transmitting (the connection attempt waits for disarm). An AGC failure never fails the selection. */
@@ -3737,6 +3751,84 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_044_11_verified_by_TC_044_010 from 'CL-044-11' to 'TC-044-010';
+    // Operator decisions 2026-11-04 (#44 comments 6627977497, 6628000054): Tx audio level.
+    // IC-7300 meters: Icom IC-7300 Full Manual section 19, command table "15 11 Po" (0000 0 %,
+    // 0143 50 %, 0213 100 %), "15 12 SWR" (0000 1.0, 0048 1.5, 0080 2.0, 0120 3.0), "15 13 ALC"
+    // (0000..0120 the ALC zone); data two BCD bytes 0000..0255. The repository holds no copy of
+    // that table beyond this citation; TC-044-015 confirms it on the radio.
+    requirement 'CL-044-12' {
+        doc /* Tx level and Set level. The Tx level is a digital attenuation of the station's Tx audio, -40..0 dB in whole dB below the playback scale (Transmit TransmitTiming playbackScale), stored per radio profile in tx-level.json of the profile directory {schema_version 1, level_db}; storing it does not advance the profile revision and so does not reconnect CAT. Without a stored level, or with an invalid file, it is 0 dB. Set level is the default way to set it: POST /radio/tx-level {v, profile_id, boot_id, command_id, action set_level, tx_offset_hz} (transmit authority as Tune: a current CL-022 grant, otherwise 401 unauthorized; malformed 400 invalid_request; reply 200 {v, profile_id, boot_id, command_id, accepted, refusal}, refused busy while a transmission, a pending request, a Tune or another run is active, otherwise with the transmit refusal). It arms when disarmed and disarms again at its end, starts Tune at -30 dB and, every 400 ms, reads the meters and decides: ALC above 0 or Po above the profile power settings.radio.power_limit_pct (1..100; absent: no limit but the radio's own RF power setting) stores one step below the current level, never below -40 dB (result stored); 0 dB reached without either stores 0 dB (result max_without_alc); otherwise one step up. SWR at or above 3.0 (raw 0120) stops without storing (result high_swr); an ALC read refused FA stops without storing (result no_alc). It always ends with Tune stopped. HALT, the Tune limit or any other loss of Tune aborts it without storing (result aborted), and every failure leaves the prior level. A manual level (action manual, level_db -40..0) exists only after the radio refused the ALC read (otherwise refused alc_available) and applies to a running Tune at once. A transmission takes the level at its audio start and keeps it to its end. A meter read is one burst of reads FE FE <address> E0 15 13 FD, 15 11, 15 12 (one reply each; FA: that meter is missing), bounded at 400 ms in total, admitted only while this station holds the transmit hold (otherwise Busy with no byte). It takes no lease, so no operation or poll can start through it and it cannot delay a key; a PTT exchange cancels it at once, so the 250 ms halt bound holds; a timeout or cancel leaves the connection open. While Tune runs outside Set level the station reads the meters once per second on its own thread. Reads only: this slice writes no radio setting. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_level.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs; server/src/radio_control/setup.rs; server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/playback.rs; server/src/profile.rs";
+    }
+    dependency CL_044_12_to_FR_009 from 'CL-044-12' to 'FR-009';
+    requirement 'CL-044-13' {
+        doc /* The server pushes the Tx level state (client-server rule of #10): each WebSocket peer with a display subscription receives radio.tx_level {v 1, type radio.tx_level, data {profile_id, boot_id, managed, level_db, stored, alc unknown|available|unavailable, assistant, result, meters null|{alc, po_pct, swr_x10}, power_limit_pct}} after each change; nothing is polled. Settings > Radio > Audio shows, for an IC-7300 CAT control only, a Set level button, a line with the level and the last result, the last ALC, Po and SWR, and the optional Profile power field (settings.radio.power_limit_pct) saved with Apply; the Tx level slider is shown only with alc unavailable. Set level and the slider send POST /radio/tx-level; a refusal is shown on the line. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_level.rs; server/src/main.rs; client/recording.js; client/app.js";
+    }
+    dependency CL_044_13_to_FR_019 from 'CL-044-13' to 'FR-019';
+    dependency CL_044_13_to_FR_009 from 'CL-044-13' to 'FR-009';
+    verification 'TC-044-013' {
+        doc /* TC-044-013 — Meter burst under the transmit hold; level timing
+             CL-044-12
+             Setup: the actual CAT actor and executor on a scripted IC-7300 transport (echo of each frame, hand-written replies); the actual transmit core on a virtual clock.
+             Steps: (a) read without the hold, then with it; (b) ALC refused FA; (c) a timeout, then a stalled read released by PTT off; (d) raw values through the scales; (e) a level set before and during a transmission and during Tune.
+             Expected: (a) Busy and no byte, then exactly the frames 15 13, 15 11, 15 12, and the release still works; (b) ALC missing, Po read; (c) the connection stays Ready, the release returns within 250 ms and the read returns Cancelled; (d) Po 0143 50 %, 0213 100 %, SWR 0048 1.5, 0080 2.0, 0120 3.0; (e) the level reaches the hardware immediately before the play, not during the transmission, at once during Tune; 0 dB is the playback scale, -20 dB a tenth of it.
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-12';
+        }
+        attribute executable : String = "server/src/radio_level_tests.rs; server/tests/transmit_service.rs";
+    }
+    dependency CL_044_12_verified_by_TC_044_013 from 'CL-044-12' to 'TC-044-013';
+    verification 'TC-044-014' {
+        doc /* TC-044-014 — Set level, manual level, push and route
+             CL-044-12, CL-044-13
+             Setup: the actual router, Recording owner and transmit owner on a recording hardware double, the CAT actor on a scripted IC-7300 whose ALC follows the double's level.
+             Steps: (a) the decision table; (b) a run with the ALC rising at -27 dB; (c) HALT during a run; (d) a radio refusing the ALC read, then the manual level, also during Tune; (e) stored and invalid level files at startup; (f) ticks with and without Tune; (g) malformed requests and a request without a grant; (h) the profile field.
+             Expected: (a) up, stored one below, -40 floor, power limit 49/50 % at Po 50 %, max_without_alc, no_alc, high_swr; (b) levels -30, -29, -28, -27, -28 stored, Tune off, disarmed, the profile revision unchanged, the next Tune at -28, no setter frame; (c) aborted, no file, prior level, Tune off, disarmed; (d) no_alc, alc unavailable, the slider action refused alc_available before, range refused, -10 stored, Tune follows; (e) -17 applied, invalid files ignored; (f) no read without Tune, one burst per second with it, exact event keys and values; (g) 400 and 401, Tune stays off; (h) absent by default, saved, 0 and 101 refused.
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-12';
+            verify 'CL-044-13';
+        }
+        attribute executable : String = "server/src/radio_level_tests.rs";
+    }
+    dependency CL_044_12_verified_by_TC_044_014 from 'CL-044-12' to 'TC-044-014';
+    dependency CL_044_13_verified_by_TC_044_014 from 'CL-044-13' to 'TC-044-014';
+    verification 'TC-044-015' {
+        doc /* TC-044-015 — Tx level in Settings > Radio > Audio
+             CL-044-13
+             Setup: candidate server and Chromium; radio.tx_level events injected, POST /radio/tx-level answered by a route fixture.
+             Steps: open the Audio section for an IC-7300 CAT control; inject meters, a run, its result, alc unavailable; click Set level; move the slider; save a power limit; hide for a disabled control; 360 px.
+             Expected: the button is in #settings-audio, no slider before alc unavailable, the line and meters show the pushed values, a malformed event is ignored, the click sends exactly one set_level, the slider sends one manual, Apply saves radio.power_limit_pct, all of it hidden when control is Disabled, no horizontal overflow at 360 px.
+             2 — Isolated automated browser test; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-13';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_044_13_verified_by_TC_044_015 from 'CL-044-13' to 'TC-044-015';
+    verification 'TC-044-016' {
+        doc /* TC-044-016 — Set level on HB9BLA
+             CL-044-12, CL-044-13
+             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, a dummy load or the 1 W authorization.
+             Steps: read 15 13, 15 11, 15 12 during Tune and compare with the radio's own meter; press Set level; press HALT during a second run.
+             Expected: the meter values agree with the radio's display and the manual's scales; the run ends with the ALC just below rising, the level stored and Tune off; HALT stops it at once and keeps the stored level.
+             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-044-12';
+            verify 'CL-044-13';
+        }
+    }
+    dependency CL_044_12_verified_by_TC_044_016 from 'CL-044-12' to 'TC-044-016';
+    dependency CL_044_13_verified_by_TC_044_016 from 'CL-044-13' to 'TC-044-016';
     verification 'TC-044-011' {
         doc /* TC-044-011 — AGC on HB9BLA
              CL-044-09, CL-044-10, CL-044-11

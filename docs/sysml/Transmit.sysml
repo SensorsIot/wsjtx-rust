@@ -349,9 +349,10 @@ package WstxTransmit {
              and halt keeps answering. ExitRelease: Ctrl+C, console close, logoff,
              shutdown and any process panic stop output and, only when the CI-V switch
              may be keyed, send one off-only release bounded to 500 ms.
-             playbackScale: the unit-peak waveform is played at -6.02 dBFS, fixed for
-             now (supervisor decision); drive level is set at the radio (IC-7300 USB MOD
-             level), no attenuation setting is offered in this slice. */
+             playbackScale: the unit-peak waveform is played at -6.02 dBFS at Tx level
+             0 dB, the highest; the Tx level (CL-044-12, -40..0 dB in whole dB) attenuates
+             below it digitally. A transmission takes the level at its audio start and
+             keeps it to its end; a running Tune follows it at once. */
     }
     attribute def TransmitClock {
         attribute maxOffsetMs : Integer = 500;

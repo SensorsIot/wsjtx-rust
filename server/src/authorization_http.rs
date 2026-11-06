@@ -143,6 +143,7 @@ pub(crate) fn cat_tick(state: &ProfileState, now: Instant) {
     // #44 CL-044-10 the saved AGC, applied once per ready connection.
     let agc = store.document.radio.map(|r| r.agc);
     crate::radio_agc::tick(&state.recording, agc, now);
+    crate::radio_level::tick(&state.recording, store.document.radio, now);
     // The transmit owner reads, never drives, the lifecycle's actor and gate.
     if let Some(transmit) = state.recording.transmit.get() {
         transmit.update(&store.document, &gate, state.recording.radio_actor());
