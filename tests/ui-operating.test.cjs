@@ -1655,7 +1655,8 @@ test('TC-061-006 Tx rows are painted as Tx and level warnings show for receive p
 // Proves: CL-061-05; TC-061-008 (#61, operator 2026-11-06). Scripted rows, computed from 0.2 s rows
 // at 10 px/s with y(s)=floor(s*10*H/C): a Tx period takes a 4 px band, the labels beyond it stay exact.
 test('TC-061-008 a Tx period is a thin band, the time axis stays exact and nothing turns pale',{timeout:45000},async t=>{
-  const {page,errors}=await liveDisplayFixture(t);
+  // A plot that holds the 20 s the bands below need at 10 px/s; at 1366x768 the default split leaves the room to the QSO pane (#37).
+  const {page,errors}=await liveDisplayFixture(t,{width:1366,height:1200});
   await page.locator('#waterfall').evaluate(()=>{speed=1;updateSliders();paint();});
   const rx=Array.from({length:1024},()=>60),tx=Array.from({length:1024},()=>118);
   const [H,C]=await page.locator('#waterfall').evaluate(c=>[c.height,c.getBoundingClientRect().height]),y=s=>Math.floor(s*10*H/C);
@@ -2766,9 +2767,9 @@ async function cell(page,bin){
   await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   return page.evaluate(bin=>{const c=document.querySelector('#waterfall'),x=Math.floor((bin+.5)*c.width/1024);return [...c.getContext('2d').getImageData(x,0,1,1).data.slice(0,3)];},bin);
 }
-async function liveDisplayFixture(t){
+async function liveDisplayFixture(t,viewport={width:1366,height:768}){
   let receiving;
-  const f=await fixture(t,{width:1366,height:768},{beforeNavigate:async p=>{
+  const f=await fixture(t,viewport,{beforeNavigate:async p=>{
     await p.route('**/receive',async route=>{const json=await (await route.fetch()).json();if(!receiving)receiving=liveFixture(json);await route.fulfill({json:receiving});});
     await p.route('**/receive/results?*',route=>route.fulfill({json:emptyResults(receiving)}));
   }});
