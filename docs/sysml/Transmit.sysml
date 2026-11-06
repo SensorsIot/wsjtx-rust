@@ -349,9 +349,10 @@ package WstxTransmit {
              and halt keeps answering. ExitRelease: Ctrl+C, console close, logoff,
              shutdown and any process panic stop output and, only when the CI-V switch
              may be keyed, send one off-only release bounded to 500 ms.
-             playbackScale: the unit-peak waveform is played at -6.02 dBFS, fixed for
-             now (supervisor decision); drive level is set at the radio (IC-7300 USB MOD
-             level), no attenuation setting is offered in this slice. */
+             playbackScale: the unit-peak waveform is played at -6.02 dBFS at Tx level
+             0 dB, the highest; the Tx level (CL-044-12, -40..0 dB in whole dB) attenuates
+             below it digitally. A transmission takes the level at its audio start and
+             keeps it to its end; a running Tune follows it at once. */
     }
     attribute def TransmitClock {
         attribute maxOffsetMs : Integer = 500;
@@ -516,7 +517,7 @@ package WstxTransmit {
              start, so a request that became stale is refused, never replayed. A
              request of another boot is refused at the wire (state_conflict). */
     }
-    enum def TransmitOutcomeKind { enum accepted; enum replaced; enum started; enum completed; enum halted; enum refused; enum failed; }
+    enum def TransmitOutcomeKind { enum accepted; enum replaced; enum started; enum completed; enum halted; enum refused; enum failed; enum aborted; }
     attribute def TransmitOutcome {
         attribute outcomeSequence : Integer;
         attribute requestSequence : Integer;
@@ -550,15 +551,33 @@ package WstxTransmit {
              HaltTransmit or the tune limit (WstxContact::TuneWatchdog, default 90 s,
              1..300 s) with PTT release. */
     }
+    action def AbortTransmission {
+        doc /* #39 (2026-11-04) Abort QSO: the contact consumer's immediate stop of the
+             current transmission or Tune: stop audio, release PTT with readback (on
+             failure PTT indeterminate, as for every release, and refusal radio_unavailable
+             so the operator sees it), report every pending or
+             current request as outcome aborted and disarm with the caller's cause. It is
+             not HaltTransmit: halt_state and the halt count are unchanged. */
+    }
+    attribute def TransmitHaltUse {
+        doc /* HALT is the operator's emergency stop only (operator decision #39,
+             2026-11-04): the browser HALT buttons and Alt+H, and the remote emergency
+             stops MCP wstx_transmit_halt and UDP Halt Tx. The station and its automation
+             never send HaltTransmit in normal flow: a completed contact and ending a run
+             disarm, the partner-works-other stop and Abort QSO use
+             AbortTransmission. */
+    }
+    dependency haltUseClause from TransmitHaltUse to WstxRequirements::'CL-010-03';
+    dependency abortClause from AbortTransmission to WstxRequirements::'CL-010-03';
     attribute def TransmitWatchdog {
-        doc /* WstxContact::TxWatchdog enforced by the owner (#39, 2026-11-04): limit
-             1..99 unanswered transmissions (default 6 at each start). Every transmission
-             whose audio starts adds one; an operator Arm, accepted operator activity
-             (every accepted browser transmit command; the contact consumer reports its
-             own) and an answer the contact consumer reports reset the count to 0; an
-             automatic arm keeps it. When a request would be keyed with the count at the
-             limit the owner disarms (txWatchdog) instead of keying, so PTT is never keyed
-             for it and no halt happens (HALT is the operator's emergency stop only), and reports tx_expired until the next Arm. */
+        doc /* WstxContact::TxWatchdog (#39, 2026-11-06): the owner holds the limit, 1..99
+             repetitions (default 6 at each start), and no count: the contact consumer
+             compares its dialogue Rep with the limit and reports that Rep for
+             tx_remaining_calls. At the consumer's stop the owner disarms (txWatchdog)
+             without keying, so PTT is never keyed for that send and no halt happens (HALT
+             is the operator's emergency stop only), and reports tx_expired until the next
+             Arm. A request submitted directly on the transmit route has no dialogue and
+             is not bounded by it: each one is its own browser request. */
     }
     attribute def TransmitWire {
         doc /* Selected-profile routes, existing authentication, exact Origin on mutations,

@@ -24,6 +24,8 @@ pub(crate) struct Inputs {
     /// The current CL-022 safety revision while the automatic CAT gate is eligible.
     safety_revision: Option<u64>,
     actor: Option<Arc<Actor>>,
+    /// #44 CL-044-14 starts the one meter read of a transmission (never blocks).
+    meter_sink: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 type Stopper = Arc<dyn Fn() + Send + Sync>;
 pub(crate) struct StationHardware {
@@ -34,8 +36,28 @@ pub(crate) struct StationHardware {
     abort: Arc<std::sync::atomic::AtomicBool>,
     origin: Instant,
     clock: Arc<StationClock>,
+    /// #44 CL-044-12 the Tx level of the next play and a running Tune.
+    level_db: i32,
 }
 impl Hardware for StationHardware {
+    fn meter_due(&mut self) {
+        let sink = self
+            .inputs
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .meter_sink
+            .clone();
+        if let Some(sink) = sink {
+            sink();
+        }
+    }
+    fn set_level_db(&mut self, level_db: i32) {
+        self.level_db = level_db;
+        #[cfg(windows)]
+        if let Some(output) = self.output.as_ref() {
+            output.set_scale(tx::level_scale(level_db));
+        }
+    }
     fn attach_abort(&mut self, abort: Arc<std::sync::atomic::AtomicBool>) {
         self.abort = abort;
     }
@@ -132,7 +154,7 @@ impl Hardware for StationHardware {
             Program::Tone { hz } => Source::Tone { hz },
         };
         output
-            .play(source, tx::PLAYBACK_SCALE)
+            .play(source, tx::level_scale(self.level_db))
             .map_err(|_| AudioError::DeviceLost)
     }
     #[cfg(not(windows))]
@@ -194,6 +216,7 @@ impl Station {
             abort: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             origin: Instant::now(),
             clock: clock.clone(),
+            level_db: tx::LEVEL_MAX_DB,
         };
         Ok(Arc::new(Self {
             inputs,
@@ -203,6 +226,21 @@ impl Station {
             receipts: Mutex::new(VecDeque::new()),
             revision: Mutex::new((None, 0)),
         }))
+    }
+    /// #44 CL-044-14 what the transmit step calls in the middle of a transmission.
+    pub(crate) fn set_meter_sink(&self, sink: Arc<dyn Fn() + Send + Sync>) {
+        self.inputs
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .meter_sink = Some(sink);
+    }
+    #[cfg(test)]
+    pub(crate) fn meter_sink(&self) -> Option<Arc<dyn Fn() + Send + Sync>> {
+        self.inputs
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .meter_sink
+            .clone()
     }
     /// Shares the station's call hash table with the transmit owner (CL-024-01).
     pub(crate) fn attach_hashes(&self, hashes: Arc<Mutex<wstx_rust::decoder::HashTable>>) {
@@ -264,7 +302,7 @@ impl Station {
     }
 }
 
-fn name<T: std::fmt::Debug>(value: T) -> String {
+pub(crate) fn name<T: std::fmt::Debug>(value: T) -> String {
     // CamelCase variant names map to the wire's snake_case.
     let text = format!("{value:?}");
     let mut out = String::new();
@@ -438,7 +476,7 @@ pub async fn snapshot(
         Err(_) => error("storage_unavailable"),
     }
 }
-fn keys(body: &Value, extra: &[&str]) -> Result<(), &'static str> {
+pub(crate) fn keys(body: &Value, extra: &[&str]) -> Result<(), &'static str> {
     let object = body.as_object().ok_or("invalid_request")?;
     let base = ["v", "profile_id", "boot_id", "command_id"];
     if object.len() != base.len() + extra.len()
@@ -448,7 +486,7 @@ fn keys(body: &Value, extra: &[&str]) -> Result<(), &'static str> {
     }
     Ok(())
 }
-fn envelope(
+pub(crate) fn envelope(
     body: &Value,
     r: &recording::Recording,
     boot_checked: bool,

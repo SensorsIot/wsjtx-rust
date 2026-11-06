@@ -35,6 +35,11 @@ struct SetupRequest {
     /// Set when the exchange runs inside a receive transition's reservation.
     reservation: Option<Arc<AtomicBool>>,
 }
+/// #44 CL-044-12 one meter burst, only under the transmit hold.
+struct MeterRequest {
+    deadline: Instant,
+    response: SyncSender<Result<super::setup::Meters>>,
+}
 pub struct Actor {
     commands: SyncSender<Command>,
     snapshot: Arc<Mutex<Snapshot>>,
@@ -43,6 +48,9 @@ pub struct Actor {
     current_cancel: Arc<Mutex<Option<Arc<AtomicBool>>>>,
     ptt: SyncSender<PttCommand>,
     setup: SyncSender<SetupRequest>,
+    meters: SyncSender<MeterRequest>,
+    /// Set by a PTT exchange: a running meter burst gives way at once.
+    meters_cancel: Arc<AtomicBool>,
     /// PTT keyed or not confirmed released by readback since the last key request.
     keyed: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
@@ -129,6 +137,9 @@ impl Actor {
         let (commands, receive) = mpsc::sync_channel::<Command>(1);
         let (ptt, ptt_receive) = mpsc::sync_channel::<PttCommand>(1);
         let (setup, setup_receive) = mpsc::sync_channel::<SetupRequest>(1);
+        let (meters, meter_receive) = mpsc::sync_channel::<MeterRequest>(1);
+        let meters_cancel = Arc::new(AtomicBool::new(false));
+        let worker_meters_cancel = meters_cancel.clone();
         let keyed = Arc::new(AtomicBool::new(false));
         let (shared, busy, stop, current, worker_keyed) = (
             snapshot.clone(),
@@ -196,6 +207,17 @@ impl Actor {
                             worker_keyed.store(false, Ordering::Release);
                         }
                         let _ = command.response.try_send(result);
+                        continue;
+                    }
+                    if let Ok(request) = meter_receive.try_recv() {
+                        let result = if busy.load(Ordering::Acquire) != TRANSMIT_HOLD
+                            || stop.load(Ordering::Acquire)
+                        {
+                            Err(Error::Busy)
+                        } else {
+                            executor.read_meters(request.deadline, &worker_meters_cancel)
+                        };
+                        let _ = request.response.try_send(result);
                         continue;
                     }
                     if let Ok(request) = setup_receive.try_recv() {
@@ -269,6 +291,8 @@ impl Actor {
             current_cancel,
             ptt,
             setup,
+            meters,
+            meters_cancel,
             keyed,
             thread: Some(worker),
         })
@@ -328,6 +352,7 @@ impl Actor {
                 TrySendError::Disconnected(_) => Error::Unavailable,
             });
         }
+        self.meters_cancel.store(true, Ordering::Release);
         let outcome = loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             // The worker bounds the exchange by the same deadline; allow its reply.
@@ -404,6 +429,30 @@ impl Actor {
             }
         }
     }
+    /// #44 CL-044-12 one meter burst (reads only) while this station holds the transmit
+    /// hold, otherwise Busy with no bytes: it takes no lease, cannot delay a key, and a
+    /// PTT exchange cancels it. The caller never holds the transmit owner's lock.
+    pub fn read_meters(&self, deadline: Instant) -> Result<super::setup::Meters> {
+        if self.shutdown.load(Ordering::Acquire)
+            || self.lease.load(Ordering::Acquire) != TRANSMIT_HOLD
+        {
+            return Err(Error::Busy);
+        }
+        self.meters_cancel.store(false, Ordering::Release);
+        let (response, result) = mpsc::sync_channel(1);
+        self.meters
+            .try_send(MeterRequest { deadline, response })
+            .map_err(|error| match error {
+                TrySendError::Full(_) => Error::Busy,
+                TrySendError::Disconnected(_) => Error::Unavailable,
+            })?;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        match result.recv_timeout(remaining + Duration::from_secs(2)) {
+            Ok(value) => value,
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err(Error::Unavailable),
+            Err(mpsc::RecvTimeoutError::Timeout) => Err(Error::Timeout),
+        }
+    }
     /// True after a key request until a release is confirmed by readback.
     pub fn ptt_indeterminate(&self) -> bool {
         self.keyed.load(Ordering::Acquire)
@@ -422,13 +471,24 @@ impl Actor {
     pub fn execute(&self, request: Request) -> Result<Observation> {
         self.execute_inner(request, None)
     }
-    pub fn reserve_transition(self: &Arc<Self>) -> Result<TransitionLease> {
+    /// CL-044-16 waits until `deadline` for a poll or exchange to give up the lease; a
+    /// transmit hold refuses at once, it lasts far longer than the wait.
+    pub fn reserve_transition(self: &Arc<Self>, deadline: Instant) -> Result<TransitionLease> {
         if self.shutdown.load(Ordering::Acquire) {
             return Err(Error::Unavailable);
         }
-        self.lease
-            .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| Error::Busy)?;
+        while let Err(holder) =
+            self.lease
+                .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
+        {
+            if holder == TRANSMIT_HOLD || Instant::now() >= deadline {
+                return Err(Error::Busy);
+            }
+            if self.shutdown.load(Ordering::Acquire) {
+                return Err(Error::Unavailable);
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
         Ok(TransitionLease {
             actor: self.clone(),
             released: Arc::new(AtomicBool::new(false)),

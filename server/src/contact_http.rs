@@ -42,7 +42,7 @@ struct Inner {
     retry_at: Option<Instant>,
     log: Option<LogView>,
     /// Newly saved records for the UDP targets, sent by the station tick only, after the
-    /// station lock is released (a command reached from a UDP Reply holds the UDP lock).
+    /// station lock is released.
     outbox: Vec<logbook::Record>,
     /// WstxStationDecode::APrioriContext of the next decode window, refreshed every tick.
     a_priori: decoder::APriori,
@@ -92,12 +92,16 @@ fn refusal(code: &str, field: Option<&str>) -> Response {
 fn station_of(r: &recording::Recording) -> Result<Arc<Station>, &'static str> {
     r.contact.get().cloned().ok_or("not_found")
 }
+/// The profile locator as the station uses it: upper case, None when empty.
+pub(crate) fn station_locator(locator: &str) -> Option<String> {
+    Some(locator.trim().to_ascii_uppercase()).filter(|l| !l.is_empty())
+}
 pub(crate) fn profile_facts(state: &ProfileState) -> (Option<String>, Option<String>) {
     let store = state.store.lock().unwrap_or_else(|p| p.into_inner());
     let d = &store.document;
     (
         Some(d.callsign.trim().to_ascii_uppercase()).filter(|c| !c.is_empty()),
-        crate::udp::effective_locator(state, &d.locator),
+        station_locator(&d.locator),
     )
 }
 /// The selected profile's callsign (upper case), as the contact engine uses it.
@@ -372,7 +376,7 @@ impl Station {
         self.operate_as(state, body, granted, authorization::Principal::Browser)
     }
     /// The ContactCommand path with the request's principal (#58). Every principal that
-    /// is not the browser (automation, MCP, UDP) is automatic: it never resets the Tx
+    /// is not the browser (automation, MCP) is automatic: it never resets the Tx
     /// watchdog and arms only within the watchdog time of the last browser action (#39).
     pub(crate) fn operate_as(
         &self,
@@ -857,9 +861,9 @@ pub async fn snapshot(
 /// Exactly the parameter keys of each ContactAction.
 fn params(action: &str) -> Option<&'static [&'static str]> {
     Some(match action {
-        "select_row" => &["row", "replace"],
+        "select_row" => &["row", "replace", "directive_confirmed"],
         "enter_dx" => &["dx_call", "dx_grid", "replace"],
-        "cancel" | "redecode" | "open_log" => &[],
+        "cancel" | "abort" | "redecode" | "open_log" => &[],
         "choose_next" => &["slot"],
         "edit_message" => &["slot", "text"],
         "set_report" => &["report"],
@@ -916,6 +920,9 @@ fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
                 return Err(("invalid_request", Some("row")));
             }
             boolean(b, "replace")?;
+            if b.get("directive_confirmed").is_some() {
+                boolean(b, "directive_confirmed")?;
+            }
             return Ok(None);
         }
         "enter_dx" => {
@@ -931,6 +938,7 @@ fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
             }
         }
         "cancel" => Command::Cancel,
+        "abort" => Command::Abort,
         "redecode" => Command::Redecode,
         "open_log" => Command::OpenLog,
         "choose_next" => Command::ChooseNext(slot(b)?),
@@ -1015,8 +1023,12 @@ fn envelope(b: &Value) -> Result<(String, u64, String), Refusal> {
         let _ = k;
         return Err(("invalid_request", None));
     }
-    // set_activity's exchange is optional (ContestExchange, #24 S2b).
-    let optional = |k: &str| action == "set_activity" && k == "exchange";
+    // set_activity's exchange is optional (ContestExchange, #24 S2b), and so is
+    // select_row's directive_confirmed (WstxStrategy::DirectedCqRule).
+    let optional = |k: &str| {
+        (action == "set_activity" && k == "exchange")
+            || (action == "select_row" && k == "directive_confirmed")
+    };
     if let Some(k) = base
         .iter()
         .chain(extra)
@@ -1127,7 +1139,7 @@ impl Station {
             };
         }
         let current = inner.engine.revision;
-        let relaxed = action == "cancel"
+        let relaxed = matches!(action, "cancel" | "abort")
             || (matches!(action, "enable_tx" | "tune") && body["enabled"] == false);
         if revision > current || (revision != current && !relaxed) {
             return Err(("stale_revision", Some("contact_revision")));
@@ -1161,6 +1173,18 @@ impl Station {
                 let (record, mode) = r
                     .live_record(source, job, generation, sequence)
                     .ok_or(("row_unavailable", Some("row")))?;
+                // WstxStrategy::DirectedCqRule: only the operator can confirm the warning.
+                if let Some(reason) = strategy::selection_warning(state, &record)
+                    && (automatic || body["directive_confirmed"] != true)
+                {
+                    if automatic {
+                        return Err(("directive_not_answerable", Some("row")));
+                    }
+                    return Ok((
+                        StatusCode::CONFLICT,
+                        json!({"error":{"code":"directive_not_answerable","field":"row","reason":reason}}),
+                    ));
+                }
                 let identity = (source.to_owned(), job.to_owned(), generation);
                 let row =
                     row_of(&record, &identity, mode).ok_or(("row_not_standard", Some("row")))?;

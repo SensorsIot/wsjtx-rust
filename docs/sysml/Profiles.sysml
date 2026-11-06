@@ -69,8 +69,14 @@ package WstxProfiles {
         doc /* #44 CL-044-10: the radio settings the station manages over CAT, exactly
              agc (FAST|MID|SLOW, default SLOW for FT8/FT4 on the IC-7300). Present only
              while control is CAT on an IC-7300 CI-V endpoint, absent otherwise; separate
-             from ControlSelection, which is the receive-only confirmation's identity. */
+             from ControlSelection, which is the receive-only confirmation's identity.
+             power_limit_pct (CL-044-12, optional 1..100): the profile power, the Po in
+             percent of the radio's full scale the Tx level never drives above; absent,
+             only the radio's own RF power setting limits it. The Tx level itself is not
+             part of the profile document: it lives in tx-level.json of the profile
+             directory, so that storing it does not advance the revision. */
         attribute agc : AgcSetting = AgcSetting::SLOW;
+        attribute power_limit_pct : Integer[0..1];
     }
     attribute def Settings {
         doc /* Exactly these five required fields and the optional radio (CL-044-10). display_name: 1..64 UTF-8 bytes,
@@ -355,8 +361,8 @@ package WstxProfiles {
     action def AuthenticateProfile {
         doc /* Issue22 authentication for selected persisted HTTPS profiles. CL-022-01/02
              supersede the old UUID.runtime-token transport cookie, restart revocation
-             and HttpOnly-only persistence rule; delivered except the target radio
-             identity Add/Replace/Remove slice. A selected profile on a plaintext
+             and HttpOnly-only persistence rule; delivered (the radio identity
+             Add/Replace/Remove slice was dropped, operator 2026-11-06, CL-022-02). A selected profile on a plaintext
              loopback origin has no grant authority: its configuration GET/PUT,
              operating HTTP routes and WS upgrade keep the runtime-token cookie
              wstx_session_<UUID>=<UUID>.<token> (no configured token = trusted
@@ -421,9 +427,9 @@ package WstxProfiles {
              After every await captured socket must remain current and OPEN before
              applying HTTP results. Established same-socket correlated status updates
              version/radio/Connected/updated and enables Refresh immediately, independent
-             of settings HTTP. Still refresh saved settings asynchronously: at most one
-             status-triggered GET in flight and one pending follow-up per socket.
-             A repeated Refresh eventually fetches newest settings; no mutation replay.
+             of settings HTTP. A status on an established socket reads no settings; a newer
+             announced revision (WstxStationProtocol profile.state) reads them asynchronously:
+             at most one GET in flight and one pending follow-up per socket; no mutation replay.
              Failed background GET visibly fails and marks socket stale. Old/disconnected
              results cannot restore Connected or mutate newer snapshots/forms.
              GET body exactly ProfileRepresentation, no-store JSON <=8192 bytes.
@@ -439,13 +445,13 @@ package WstxProfiles {
              a second submission during saving sends no second PUT. Restore editable
              controls after completion, while permanent read-only controls stay disabled.
              SnapshotApplicable rejects a lower revision from the same boot so a held
-             Refresh cannot overwrite an acknowledged newer save/form. A changed boot
+             GET cannot overwrite an acknowledged newer save/form. A changed boot
              permits authoritative restart/recovery resynchronization, including an
              independently restored lower revision.
              Invalid field preserves typed input with error, never Saved. Successful save
              updates revision only on durable 200. On 409 prompt reload before another
              save. An unknown outcome also requires explicit reload before another save,
-             without automatic PUT replay or an assumed rollback. Refresh/reconnect reload authoritative settings; preserve in-progress
+             without automatic PUT replay or an assumed rollback. A newer announced revision or a reconnect reloads authoritative settings; preserve in-progress
              edits until explicit reload or successful save. No settings polling/replay.
              Refresh fixture <=2 seconds unshaped loopback. Existing watchdog 12-second
              silence checked each second =>13-second detection (31 seconds while a deferred
@@ -595,10 +601,10 @@ package WstxProfiles {
                  exact8192/8193 HTTP-byte bodies padded with whitespace and media type.
                  Valid boundaries persist; invalid leaves memory/disk/revision intact.
                  Two stale competing windows: one winner/one409, no merge.
-                 Hold Refresh GET, start/hold PUT, then release GET: Save stays disabled,
+                 Hold an announced revision's GET, start/hold PUT, then release GET: Save stays disabled,
                  repeated submit sends no second PUT. Release PUT, require one revision
                  increment and usable editable controls/Save, preserving read-only controls.
-                 Inverse order on revision0 station: hold old Refresh, complete PUT and
+                 Inverse order on revision0 station: hold an old announced GET, complete PUT and
                  its revision1 GET, then release old GET. Visible revision/form/name and
                  Saved1 feedback remain1; same-boot ordering does not reject changed boots.
                  Render <img src=x onerror=alert(1)> display name and
@@ -628,7 +634,7 @@ package WstxProfiles {
                  reopen independently checks old/new JSON and retained revision. No
                  runtime fault knobs. Browser route fetches a real successful PUT then
                  aborts delivery; one PUT only and subsequent GET recovers commit. After
-                 a lost response, Refresh/background GET/reconnect keeps Save disabled;
+                 a lost response, Refresh, an announced GET or a reconnect keeps Save disabled;
                  failed explicit reload keeps the guard and successful current-socket
                  validated explicit reload recovers the committed revision without another PUT. Lost
                  response GET, no replay. Relative path from different CWD, aliases,
@@ -706,10 +712,11 @@ package WstxProfiles {
                  Use the common operational HTTPS/grant partition before each relevant
                  protected socket; count profile GETs separately from auth setup, never
                  substitute auth status for the correlated WS observation.
-                 Established socket: hold GET/profile; actual correlated WS response and
+                 Established socket: Refresh reads no profile; an independent save announces the
+                 revision and the browser reads once. Hold that GET; actual correlated WS response and
                  changed updated/enabled Refresh <=2s BEFORE HTTP release. Repeated
-                 Refresh: one in-flight GET plus one follow-up gets independently saved
-                 newer revision and retains dirty input. Fresh socket: held initial GET
+                 Refresh adds no GET; a second save while held starts no parallel read, and
+                 one follow-up gets that newer revision and retains dirty input. Fresh socket: held initial GET
                  withholds Connected/station-ready/optional display until validated.
                  Close old socket with GET held, establish replacement, release old:
                  no reconnection or newer snapshot/form overwrite. Initial/background
@@ -739,7 +746,6 @@ package WstxProfiles {
     enum def GrantCondition { enum unauthorized; enum authorized; enum revoked; enum unknown; }
     enum def AuthOperationKind { enum enroll; enum challenge; enum prove; enum logout; enum revokeAll; enum receipt; enum commission; enum bootstrapScope; enum status; }
     enum def AuthOperationOutcome { enum committed; enum proofRequired; enum unauthorized; enum wrongOrigin; enum invalid; enum saturated; enum persistenceFailed; enum unknown; }
-    enum def RadioIdentityChange { enum add; enum replace; enum remove; }
     attribute maxActiveBrowserGrants : Integer = 64;
     attribute maxPendingProofChallenges : Integer = 64;
     attribute proofChallengeLifetimeSeconds : Integer = 60;
@@ -793,8 +799,8 @@ package WstxProfiles {
              HTTPS origin is exact effective Endpoint.origin including port. UUIDs are
              lowercase RFC9562v4; safetyRevision is positive safe integer<=maxRevision.
              RadioId is authority-assigned, not COM endpoint/boot/browser identity.
-             Migration assigns identity only, no grant or commissioning. Replacement
-             creates a new UUID; endpoint/model/PTT change increments revision and
+             Migration assigns identity only, no grant or commissioning. An
+             endpoint/model/PTT change increments revision and
              invalidates commissioning. Unchanged USB return preserves both. */
         attribute profileId : String;
         attribute radioId : String;
@@ -824,9 +830,7 @@ package WstxProfiles {
              enrollment374, ordinary proof225, receipt proof426,
              commissioning244, revoke236, challenge response396, receipt response<=302
              (conservative18ASCII outcome/43grantId). Delivered bootstrap response
-             {version,current_scope} is<=170bytes; the target identity slice's
-             receipt query67/identity request242/440byte two-scope response stay
-             target bounds. All below unchanged1024 logical-byte cap.
+             {version,current_scope} is<=170bytes. All below unchanged1024 logical-byte cap.
              These bounds are for compact server JSON; input whitespace may consume
              the remaining request allowance but total>1024 still413. All bounded
              strings here are canonical ASCII, so no hidden UTF8/escape growth.
@@ -860,12 +864,12 @@ package WstxProfiles {
         attribute scope : SelectedRadioAuthorizationScope;
         attribute receiveOnlyConfirmed : Boolean;
     }
-    enum def RequestPrincipal { enum browser; enum mcp; enum udp; enum automation; }
+    enum def RequestPrincipal { enum browser; enum mcp; enum automation; }
     attribute def RequestPrincipalRule {
         doc /* (#58) The station attaches a RequestPrincipal to every request at the auth
              boundary from its credential, never from the route: a browser grant transport
              (or the plaintext runtime token) is browser; an MCP client's internal transport
-             is mcp; a UDP target command is udp; commands of the station's own automation
+             is mcp; commands of the station's own automation
              run are automation. Only browser is an operator action (Tx watchdog,
              set_watchdogs, WstxStrategy::WatchdogFromOperator); an unreadable credential is
              never browser. The auth-v1 status/revoke/commission operations and MCP client
@@ -919,32 +923,15 @@ package WstxProfiles {
     }
     attribute def BootstrapScopeRequest {
         doc /* Delivered: exact POST /authorization/v1/bootstrap-scope request is
-             {version:1}; no optional/unknown/duplicate fields. The target radio
-             identity slice (ChangeSelectedRadioIdentity) adds read-only receipt
-             reconciliation by operation_id only when that slice lands. */
+             {version:1}; no optional/unknown/duplicate fields. */
         attribute version : Integer = 1;
     }
     attribute def BootstrapScopeResponse {
         doc /* Delivered strict200 {version,current_scope}. Scope is the station-
-             authority snapshot, never a browser-supplied tuple. The target identity
-             slice adds identity_receipt with its reconciliation. No grant/verifier
+             authority snapshot, never a browser-supplied tuple. No grant/verifier
              enumeration, cookies, keys or credentials in response. */
         attribute version : Integer = 1;
         attribute currentScope : AuthWireScope[0..1];
-    }
-    attribute def RadioIdentityRequest {
-        doc /* Target slice, not delivered: no radio-identity route, journal kind or
-             persisted identity request exists until this slice lands.
-             Exact POST /authorization/v1/radio-identity JSON fields:
-             version,operation_id,expected_scope,change. expected_scope is explicit
-             null or the full last-authoritative scope; change is add/replace/remove.
-             operation_id is browser-generated UUIDv4 retained through unknown outcome.
-             This is explicit Add/Replace/Remove radio setup intent, not disable,
-             reconnect, endpoint edit, commissioning or automatic browser recovery. */
-        attribute version : Integer = 1;
-        attribute operationId : String;
-        attribute expectedScope : AuthWireScope[0..1];
-        attribute change : RadioIdentityChange;
     }
     action def ReadBootstrapScope {
         doc /* Valid unexpired ephemeral bootstrap cookie for this selected profile
@@ -953,51 +940,14 @@ package WstxProfiles {
              POST is read-only: no identity/grant/receipt/challenge mutation, transport
              issuance, CAT/native I/O or implicit enrollment. After POST/session204,
              a fresh browser reads this response, then enrolls its exact non-null scope.
-             Removed radio yields null; Add is explicit before enrollment, never inferred.
+             Every HTTPS profile receives a scope when its record is first created, whether
+             or not a radio is configured. A persisted record whose current scope is null,
+             which no delivered operation writes, yields null and cannot enroll.
              Scope may race configuration: enrollment still compares authoritative
              scope and bootstrap binding at dispatch; stale tuple409, no effect.
              A read never rebinds a bootstrap context or broadens its enrollment scope. */
         in request : BootstrapScopeRequest;
         out response : BootstrapScopeResponse;
-    }
-    action def ChangeSelectedRadioIdentity {
-        doc /* Target slice, not delivered (see RadioIdentityRequest). Same-profile unexpired bootstrap cookie and explicit setup intent are
-             required; an ordinary grant/transport cookie alone is insufficient401.
-             Strict auth-v1 bounds/errors apply. Before current-scope comparison,
-             a committed same operation ID/equal parsed request returns its receipt
-             without effects; different fields409. For a new operation compare
-             expected_scope under existing station authority; add requires no current scope, replace/remove require
-             exact current scope. Wrong presence/tuple or reused operation ID with
-             different parsed fields409, no change. Initial selected-profile migration
-             may assign its first logical UUID without a grant; Add is used after
-             explicit removal, never repeated for an already selected identity.
-             Fence access/automatic retry, use existing acknowledged close/cancellation
-             before identity commit, without scan/query/set/PTT. No parallel native owner.
-             Failed close retains quarantine and returns409 resource_quarantined, no
-             identity commit. After confirmed release, recheck scope/configuration and
-             atomically commit under the existing single profile writer: delete old
-             grants/commissioning, advance revocation generation, and retain operation
-             receipt/request in the existing bounded64-entry FIFO journal. Add/replace
-             allocate fresh radio UUID, safetyRevision1 and exact current effective
-             safety configuration; remove leaves no current scope/commissioning/grant.
-             Public profile JSON/configuration is unchanged. With no selected scope,
-             CAT stays disabled regardless of saved control settings; settings edits
-             cannot silently Add. Ordinary disable/re-enable/USB return preserve UUID;
-             endpoint/model/PTT edit only advances its safety revision as CL-022-02.
-             Commit success rebinds only this explicit operation's bootstrap context
-             to its resulting scope (null on removal), without extending its60s life;
-             this is not a grant. New radio needs fresh enrollment and explicit current
-             commissioning; no old proof/cookie/acknowledgement transfers. Return200
-             AuthOperationReceipt: scope is resulting scope for add/replace, old scope
-             for remove; grant_id null. Failed write503 keeps last committed identity
-             and current-process access quarantined, never claims durable completion.
-             Retain parsed request for same-operation equality; the browser never
-             automatically resubmits this mutation. Lost response uses read-only
-             bootstrap-scope(operation_id); after bootstrap expiry/restart, explicit
-             bootstrap reauthorization permits reconciliation, not mutation replay.
-             Missing/evicted receipt409 leaves operation outcome unknown. */
-        in request : RadioIdentityRequest;
-        out receipt : AuthOperationReceipt;
     }
     attribute def AuthChallenge {
         doc /* Server CSPRNG32byte nonce, canonical unpadded base64url43characters,
@@ -1054,7 +1004,7 @@ package WstxProfiles {
              queued effects; already-dispatched I/O follows acknowledged cancellation.
              Delivered entries are verifier-owned (enroll/logout/revokeAll/commission)
              and require ownerVerifier; any other persisted entry is corrupt and fails
-             closed. The target identity slice adds its own setup-receipt kind.
+             closed.
              A failed revocation write quarantines current-process access but discloses
              NOT durably revoked; restart may restore last committed grant. */
         attribute version : Integer = 1;
@@ -1069,7 +1019,6 @@ package WstxProfiles {
     action def HandleScopedAuthorization {
         doc /* Delivered strict auth API v1. Exact paths POST /authorization/v1/bootstrap-scope,
              /status,/enroll,/challenge,/proof,/revoke,/commission,/receipt; no credentialed CORS.
-             Target /radio-identity is not routed until ChangeSelectedRadioIdentity lands.
              Existing POST /session stays raw-token, never accepts JSON extension keys.
              Every new request exactly version1 plus its listed fields; unknown,
              missing,duplicate keys/wrongtype/noncanonicalencoding400, contenttype
@@ -1082,7 +1031,7 @@ package WstxProfiles {
              snapshot per AutomaticCatStatus, no effects and no GET fallback;
              enroll: AuthEnrollmentRequest, ephemeral bootstrap cookie required;
              non-null current scope and exact bootstrap-scope binding required, stale
-             tuple409, no grant. A removed scope cannot enroll or prove readiness;
+             tuple409, no grant. A null scope cannot enroll or prove readiness;
              challenge: {version,grant_id}, exact Origin and known verifier required;
              proof: AuthProofRequest; successful204 issues only new opaque transport;
              revoke: {version,operation_id,scope,all_for_radio}, matching active grant

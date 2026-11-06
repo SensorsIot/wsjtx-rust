@@ -743,8 +743,9 @@ package WstxRecordingReceive {
              profile including Off; a change of received_bytes alone is sent at most once per
              5 s. It is an optional write that a full socket defers and never loses. The browser sends no
              recording.get: it reads GET /recording once per socket (the snapshot), after its own mutation
-             and when the event differs from its snapshot in identity, job state or import identity or
-             state; received_bytes alone updates its view without a read. Thin/detail/off acknowledge
+             and when the event differs from its snapshot in identity, job state or import identity;
+             the rest of the import updates its view without a read. A failed read on a subscribed socket closes
+             the socket: an event is sent once and no timer reads, so the reconnect reads again; an upload in progress then stops with its reservation left to cancel. Thin/detail/off acknowledge
              `{v:1,type:"spectrum.subscription",id,data:{profile:"thin"|"detail"|"off"}}`. Selected-profile
              absence returns recoverable `unavailable` for these commands. Every new connection starts
              off; legacy peers receive only existing status/heartbeat messages. New browser obtains
@@ -1135,8 +1136,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
         verification boundedThinLink {
             subject operation : TransferDisplay;
             objective { verify WstxRequirements::'CL-006-03'; verify WstxRequirements::'CL-006-04'; }
-            doc /* TC-010-002: setup/input/action: Existing independently calibrated shared TLS link: 4000 bytes/s each direction, 150 ms one-way, two real browsers. After upload/page load, replay >=60 s with both thin; issue paired status refresh at ten preselected source times. Repeat off; stall one reader, replace/cancel job and reconnect. Separately upload while refreshing.
-                 Independent expected oracle: Over 60 steady-state seconds thin total <=3000 accounted bytes/s each direction and every connected refresh displays <=2 s; off preserves existing <=1000 idle budget. No >1 frame/s/peer, >1024-byte event or >1 pending optional frame; no raw audio streaming. Missing rows are gaps, obsolete frames ignored, reconnection obtains snapshot before subscription. Upload bytes/time and cold asset metrics are reported separately; upload must not break status<=2 s. Counter oracle is simulator's actual-stream+defined overhead, not physical-link certification. */
+            doc /* TC-010-002: defined in WstxRequirements::'TC-010-002'. */
         }
         dependency traceboundedThinLink from boundedThinLink to WstxRequirements::'TC-010-002';
         verification integratedPanes {

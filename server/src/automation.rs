@@ -286,12 +286,15 @@ enum RunState {
     /// #39 Auto CQ: the run's own CQ is called (WstxStrategy::AutoRoles).
     CallingCq,
     ContactActive,
+    /// #39 ManualIntervention: an operator's contact is on the engine; the strategy waits.
+    Manual,
     Stopped,
 }
 impl RunState {
     fn name(self) -> &'static str {
         match self {
             RunState::Waiting => "waiting",
+            RunState::Manual => "manual",
             RunState::CallingCq => "calling_cq",
             RunState::ContactActive => "contact_active",
             RunState::Stopped => "stopped",
@@ -611,10 +614,10 @@ impl Owner {
                     return Err(("counter_exhausted", None));
                 }
                 let id = profile::new_uuid().map_err(|_| ("storage_unavailable", None))?;
-                // A start from the browser is the operator action the Tx watchdog counts
-                // from; an MCP start never resets or extends it (#39).
+                // A start from the browser is the operator's decision to transmit again
+                // after a Tx watchdog stop; an MCP start never is (#39).
                 if operator {
-                    transmit.service.with(|c| c.activity());
+                    transmit.service.with(|c| c.operator_restart());
                 }
                 let last_decode = r.latest_publication().map_or(0, |p| p.0);
                 let deadline = self.now() + Duration::from_secs(config.max_run_minutes * 60);
@@ -703,7 +706,7 @@ impl Owner {
                 disarm(contact, state);
             }
         };
-        // Halt (browser button, Esc or MCP) ends the run in every state.
+        // Halt (browser button, Alt+H, MCP or UDP) ends the run in every state.
         let halts = r.transmit.get().map(|t| t.service.halt_requests());
         if halts != Some(run.halts) {
             return stop(&mut inner, "halted", armed);
@@ -776,8 +779,18 @@ impl Owner {
             run.role = Some(s.role);
         }
         match run.state {
+            // WstxStrategy::ManualIntervention: resume when the operator's contact has ended.
+            RunState::Manual => {
+                if !facts.as_ref().is_some_and(|c| c.active) {
+                    run.state = RunState::Waiting;
+                    inner.run_revision += 1;
+                }
+            }
             RunState::ContactActive => {
                 let Some(c) = facts.filter(|c| Some(&c.id) == run.contact_id.as_ref()) else {
+                    if run.config.strategy {
+                        return manual(&mut inner);
+                    }
                     return stop(&mut inner, "contact_changed", true);
                 };
                 if c.state == "completed" {
@@ -809,7 +822,19 @@ impl Owner {
                     return;
                 }
                 if c.state == "cancelled" || c.state == "idle" {
-                    return stop(&mut inner, "contact_changed", false);
+                    if !run.config.strategy {
+                        return stop(&mut inner, "contact_changed", false);
+                    }
+                    // The operator gave this station up: the strategy goes on without it.
+                    if let Some(call) = run
+                        .selected
+                        .as_ref()
+                        .and_then(|s| s["call"].as_str())
+                        .map(str::to_owned)
+                    {
+                        run.skipped.push(call);
+                    }
+                    return manual(&mut inner);
                 }
                 if arm != Some(wstx_rust::transmit::service::ArmState::Armed) {
                     return stop(&mut inner, disarmed, false);
@@ -862,13 +887,14 @@ impl Owner {
             }
             RunState::CallingCq => {
                 let Some(c) = facts.filter(|c| Some(&c.id) == run.contact_id.as_ref()) else {
-                    return stop(&mut inner, "contact_changed", true);
+                    return manual(&mut inner);
                 };
+                // Before the arm check: an operator's cancel also disarms.
+                if c.state != "calling" {
+                    return manual(&mut inner);
+                }
                 if arm != Some(wstx_rust::transmit::service::ArmState::Armed) {
                     return stop(&mut inner, disarmed, false);
-                }
-                if c.state != "calling" {
-                    return stop(&mut inner, "contact_changed", true);
                 }
                 let Some((config, s)) = chosen else {
                     return stop(&mut inner, "strategy_missing", true);
@@ -935,6 +961,10 @@ impl Owner {
                     json!({"row":row,"replace":false}),
                 );
                 if contact.operate_as(state, body, true, AUTOMATION).is_err() {
+                    // The operator's double-click won the race: the contact is theirs.
+                    if contact.facts().1.is_some_and(|c| c.state != "calling") {
+                        return manual(&mut inner);
+                    }
                     return stop(&mut inner, "provider_error", true);
                 }
                 let (_, facts, _) = contact.facts();
@@ -950,6 +980,9 @@ impl Owner {
             RunState::Waiting => {
                 // An operator's CQ or contact in progress is never taken over.
                 if facts.as_ref().is_some_and(|c| c.active) {
+                    if run.config.strategy {
+                        return manual(&mut inner);
+                    }
                     return stop(&mut inner, "contact_changed", false);
                 }
                 if run.role == Some(strategy::Role::Cq) {
@@ -996,7 +1029,6 @@ impl Owner {
                             .filter(|v| {
                                 v.rank.is_some()
                                     && st.cq_like(&v.facts, s.treat_73_as_cq)
-                                    && strategy::auto_target_ok(s, v)
                                     && strategy::sane_call(&v.facts.from)
                                     && v.facts.from != my
                                     && eligible(run, &v.facts.from)
@@ -1042,8 +1074,12 @@ impl Owner {
                     AUTOMATION,
                 );
                 let Ok((_, receipt)) = selected else {
+                    if run.config.strategy && contact.facts().1.is_some_and(|c| c.active) {
+                        return manual(&mut inner);
+                    }
                     return stop(&mut inner, "provider_error", false);
                 };
+                let prepared = contact.facts().1.map(|c| c.id);
                 let mut revision = receipt["contact_revision"].as_u64().unwrap_or(revision);
                 // #39 Treat 73 as CQ: keep my Tx frequency (Hold Tx) so the answer never
                 // lands on the final 73 of the QSO that just ended.
@@ -1077,6 +1113,16 @@ impl Owner {
                     AUTOMATION,
                 );
                 if let Err((code, _)) = enabled {
+                    // WstxStrategy::ManualIntervention: another contact than the one the run
+                    // prepared is the operator's: it is left alone.
+                    if run.config.strategy
+                        && contact
+                            .facts()
+                            .1
+                            .is_some_and(|c| c.active && Some(&c.id) != prepared.as_ref())
+                    {
+                        return manual(&mut inner);
+                    }
                     // No unarmed selected contact is left behind.
                     cancel(contact, state);
                     return stop(&mut inner, refused(code), false);
@@ -1148,6 +1194,16 @@ impl Owner {
             .run
             .as_ref()
             .is_some_and(|run| run.config.strategy && run.state != RunState::Stopped)
+    }
+}
+/// #39 WstxStrategy::ManualIntervention: leave the operator's contact alone.
+fn manual(inner: &mut Inner) {
+    if let Some(run) = inner.run.as_mut() {
+        run.state = RunState::Manual;
+        run.contact_id = None;
+        run.progress = None;
+        run.unanswered = 0;
+        inner.run_revision += 1;
     }
 }
 /// The enable_tx refusal as a stop reason (#39: the Tx watchdog has its own).
@@ -1277,8 +1333,8 @@ pub async fn command(
         Err(e) => return refusal(e, None),
     };
     let checked = authorization_http::operating_access_async(&headers, &app).await;
-    // A start from the browser is the operator action the Tx watchdog counts from; an
-    // MCP client's start never is (#58: the principal comes from the credential).
+    // A start from the browser is the operator action the Tx watchdog needs; an MCP
+    // client's start never is (#58: the principal comes from the credential).
     let operator = match &checked {
         Ok(Some(a)) => a.principal.is_operator(),
         Ok(None) => true,

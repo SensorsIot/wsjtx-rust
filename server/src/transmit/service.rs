@@ -27,6 +27,15 @@ pub const SAMPLE_RATE_HZ: u32 = 48_000;
 pub const HALT_BOUND_MS: u64 = 250;
 /// Playback scale of the unit-peak waveform (-6.02 dBFS, TransmitTiming playbackScale).
 pub const PLAYBACK_SCALE: f32 = 0.5;
+/// #44 CL-044-12 the Tx level: digital attenuation below PLAYBACK_SCALE, in whole dB.
+pub const LEVEL_MIN_DB: i32 = -40;
+pub const LEVEL_MAX_DB: i32 = 0;
+/// #44 CL-044-14 a transmission with less audio left than this gets no meter read.
+pub const METER_MIN_REMAINING_MS: i64 = 2_000;
+/// The playback scale of a Tx level.
+pub fn level_scale(level_db: i32) -> f32 {
+    PLAYBACK_SCALE * 10f32.powf(level_db.clamp(LEVEL_MIN_DB, LEVEL_MAX_DB) as f32 / 20.)
+}
 /// WstxTransmit::TransmitTiming releaseMarginMs: PTT is released at the latest this long
 /// after the waveform's last sample was due, whatever the device reports. It covers the
 /// render drain (RENDER_BUFFER_MS) and scheduling delays under load with headroom, and
@@ -102,6 +111,8 @@ pub enum OutcomeKind {
     Halted,
     Refused,
     Failed,
+    /// #39 Abort QSO: stopped by the operator's abort, not by a halt.
+    Aborted,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Outcome {
@@ -210,6 +221,13 @@ pub trait Hardware: Send {
     fn attach_abort(&mut self, abort: Arc<AtomicBool>) {
         let _ = abort;
     }
+    /// #44 CL-044-14 the middle of a transmission: exactly once per transmission, from the
+    /// transmit step. It must return at once; the meter read runs elsewhere.
+    fn meter_due(&mut self) {}
+    /// #44 The Tx level the next `play` uses; a running Tune tone follows it at once.
+    fn set_level_db(&mut self, level_db: i32) {
+        let _ = level_db;
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -260,6 +278,8 @@ struct Job {
     audio_start_utc_ms: Option<i64>,
     /// Device-independent release deadline once audio started.
     release_by_mono_ms: Option<i64>,
+    /// #44 CL-044-14 when the one meter read of this transmission is due.
+    meter_at_mono_ms: Option<i64>,
 }
 struct Tune {
     hz: f64,
@@ -285,12 +305,13 @@ pub struct Core<H: Hardware> {
     refusal: Option<TransmitRefusal>,
     outcomes: VecDeque<Outcome>,
     outcome_sequence: u64,
-    /// WstxTransmit::TransmitWatchdog: the limit of consecutive unanswered own
-    /// transmissions (#39, 2026-11-04).
+    /// WstxTransmit::TransmitWatchdog: the limit of repetitions of one message (#39,
+    /// 2026-11-06).
     tx_calls: u32,
     tune_seconds: u32,
-    /// Own transmissions started since the last answer or operator action.
-    unanswered: u32,
+    /// The contact dialogue's Rep of the message due next, as its consumer reports it
+    /// (no count of its own): only tx_remaining_calls reads it.
+    tx_repetitions: u32,
     /// #39: an operator action (operator arm or accepted browser activity) was seen this
     /// boot; automation never sets it.
     operator_seen: bool,
@@ -299,6 +320,9 @@ pub struct Core<H: Hardware> {
     startup_release: StartupRelease,
     abort: Arc<AtomicBool>,
     faulted: bool,
+    /// #44 the Tx level (dB): Tune follows it at once, a transmission takes it at its
+    /// audio start and keeps it to its end.
+    level_db: i32,
     /// WstxTransmit::StationModeGate: the station's operating mode (None: not gated).
     station_mode: Option<Mode>,
     /// The station's call hash table (WstxOfflineDecode::HashResolution): every
@@ -379,13 +403,14 @@ impl<H: Hardware> Core<H> {
             outcome_sequence: 0,
             tx_calls: 6,
             tune_seconds: 90,
-            unanswered: 0,
+            tx_repetitions: 0,
             operator_seen: false,
             tx_expired: false,
             ever_keyed: false,
             startup_release: StartupRelease::Pending,
             abort: Arc::new(AtomicBool::new(false)),
             faulted: false,
+            level_db: LEVEL_MAX_DB,
             station_mode: None,
             hashes: None,
         }
@@ -430,6 +455,22 @@ impl<H: Hardware> Core<H> {
                 || self.tune.is_some(),
             self.last_period,
         )
+    }
+    /// #44 CL-044-12 sets the Tx level. A running Tune follows at once; a transmission
+    /// already playing keeps its level, so a change takes effect between transmissions.
+    pub fn set_tx_level(&mut self, level_db: i32) {
+        self.level_db = level_db.clamp(LEVEL_MIN_DB, LEVEL_MAX_DB);
+        if self.tune.is_some() {
+            self.hardware.set_level_db(self.level_db);
+        }
+    }
+    /// #44 CL-044-14 after a clear fault only an operator action lets automation arm again.
+    pub fn require_operator(&mut self) {
+        self.operator_seen = false;
+    }
+    /// A cheap read for the CAT lifecycle's meter display.
+    pub fn tune_on(&self) -> bool {
+        self.tune.is_some()
     }
     pub fn hardware_mut(&mut self) -> &mut H {
         &mut self.hardware
@@ -509,42 +550,51 @@ impl<H: Hardware> Core<H> {
         self.armed_revision = Some(safety_revision);
         self.refusal = None;
         self.tx_expired = false;
-        self.unanswered = 0;
+        self.tx_repetitions = 0;
         self.operator_seen = true;
         Ok(())
     }
-    /// #39 (WstxStrategy::WatchdogFromOperator): an arm requested by automation. The
-    /// unanswered count is kept; automation never resets the Tx watchdog.
+    /// #39 (WstxStrategy::WatchdogFromOperator): an arm requested by automation records
+    /// no operator action.
     pub fn arm_automatic(&mut self, safety_revision: u64) -> Result<(), TransmitRefusal> {
-        let (unanswered, seen) = (self.unanswered, self.operator_seen);
+        let seen = self.operator_seen;
         self.arm(safety_revision)?;
-        self.unanswered = unanswered;
         self.operator_seen = seen;
         Ok(())
     }
-    /// True when no operator action is recorded this boot or the Tx watchdog's count of
-    /// unanswered transmissions is used up: automation may then not arm.
+    /// True when no operator action is recorded this boot or the Tx watchdog has stopped
+    /// the station: automation may then not arm.
     pub fn watchdog_spent(&self) -> bool {
-        !self.operator_seen || self.unanswered >= self.tx_calls
+        !self.operator_seen || self.tx_expired
     }
     /// Operator or contact disarm; no new request is sent.
     pub fn disarm(&mut self, cause: DisarmCause) {
         self.disarm_with(cause);
         self.cancel_unstarted(OutcomeKind::Refused, Some(TransmitRefusal::NotArmed));
     }
-    /// Accepted operator activity in the browser (WstxContact::TxWatchdog): a human is
-    /// present, so the unanswered count starts again.
+    /// Accepted operator activity in the browser: a human was seen this boot. It changes
+    /// nothing of the Tx watchdog's limit, repetitions or stop (WstxContact::TxWatchdog).
     pub fn activity(&mut self) {
         self.operator_seen = true;
-        self.unanswered = 0;
     }
-    /// The contact consumer decoded an answer to my transmission (a message addressed
-    /// to my call from the current partner, or from anyone while no partner is set).
-    /// After a watchdog stop only an operator action restarts it (#39 review).
-    pub fn answered(&mut self) {
-        if !self.tx_expired {
-            self.unanswered = 0;
-        }
+    /// A browser Auto start: the explicit operator decision to transmit again after a stop.
+    pub fn operator_restart(&mut self) {
+        self.operator_seen = true;
+        self.tx_expired = false;
+    }
+    /// The limit of repetitions of one message (WstxContact::TxWatchdog).
+    pub fn tx_limit(&self) -> u32 {
+        self.tx_calls
+    }
+    /// The contact consumer's Rep of the message due next, for tx_remaining_calls.
+    pub fn report_tx_repetitions(&mut self, repetitions: u32) {
+        self.tx_repetitions = repetitions;
+    }
+    /// The next send would exceed the limit: Enable Tx goes off without a halt; a keyed
+    /// or started transmission finishes.
+    pub fn watchdog_stop(&mut self) {
+        self.tx_expired = true;
+        self.disarm(DisarmCause::TxWatchdog);
     }
     pub fn set_watchdogs(
         &mut self,
@@ -644,6 +694,7 @@ impl<H: Hardware> Core<H> {
                 keyed: false,
                 audio_start_utc_ms: None,
                 release_by_mono_ms: None,
+                meter_at_mono_ms: None,
             });
         }
         self.emit(sequence, OutcomeKind::Accepted)
@@ -672,6 +723,28 @@ impl<H: Hardware> Core<H> {
             HaltState::Pending
         };
         self.halt_state
+    }
+    /// Abort QSO (#39, 2026-11-04, WstxTransmit::AbortTransmission): stop the current
+    /// transmission or Tune now (audio stopped, PTT released with readback), drop every
+    /// request and disarm with `cause`. Not a halt: halt_state and the halt count stay.
+    pub fn abort(&mut self, cause: DisarmCause) {
+        let active = self.current.as_ref().is_some_and(|j| j.keyed)
+            || self.tune.is_some()
+            || self.ptt != PttState::Released;
+        self.hardware.stop_audio();
+        // A release that failed is reported, as for a halt: the operator must not read
+        // "stopped" while the switch is indeterminate.
+        if active && !self.release() {
+            self.refusal = Some(TransmitRefusal::RadioUnavailable);
+        }
+        self.tune = None;
+        if let Some(job) = self.current.take() {
+            self.emit(job.prepared.request.request_sequence, OutcomeKind::Aborted);
+        }
+        if let Some(next) = self.next.take() {
+            self.emit(next.request.request_sequence, OutcomeKind::Aborted);
+        }
+        self.disarm_with(cause);
     }
     /// Releases PTT with readback; on failure the switch is indeterminate.
     fn release(&mut self) -> bool {
@@ -766,6 +839,7 @@ impl<H: Hardware> Core<H> {
             return Err(TransmitRefusal::RadioUnavailable);
         }
         self.ptt = PttState::Keyed;
+        self.hardware.set_level_db(self.level_db);
         if self
             .hardware
             .play(Program::Tone { hz: f64::from(hz) })
@@ -866,13 +940,6 @@ impl<H: Hardware> Core<H> {
                 return;
             }
             if !job.keyed {
-                // Tx watchdog (#39): the next transmission is never keyed after the
-                // limit of unanswered ones; Enable Tx goes off without a halt.
-                if self.arm == ArmState::Armed && self.unanswered >= self.tx_calls {
-                    self.tx_expired = true;
-                    self.disarm(DisarmCause::TxWatchdog);
-                    return;
-                }
                 // Key at the period start (audio delay before the first sample), or at
                 // once for a late admitted start; output is opened before PTT.
                 if let Err(e) = plan_start(mode, now, self.hardware.clock(), period, SAMPLE_RATE_HZ)
@@ -936,6 +1003,7 @@ impl<H: Hardware> Core<H> {
             let samples = job.prepared.samples.clone();
             let job_len = samples.len();
             let text = job.prepared.text.clone();
+            self.hardware.set_level_db(self.level_db);
             if let Err(e) = self.hardware.play(Program::Waveform {
                 samples,
                 skip: start.skipped_samples as usize,
@@ -947,7 +1015,6 @@ impl<H: Hardware> Core<H> {
                 self.fail_current(failure, DisarmCause::DeviceLost);
                 return;
             }
-            self.unanswered = self.unanswered.saturating_add(1);
             self.last_text = Some(text);
             self.last_period = Some(period);
             let remaining = (job_len - start.skipped_samples as usize) as i64 * 1000
@@ -956,11 +1023,22 @@ impl<H: Hardware> Core<H> {
             let bound = period + release_bound_ms(mode) - now;
             if let Some(job) = &mut self.current {
                 job.audio_start_utc_ms = Some(now);
+                let start_mono = self.hardware.monotonic_ms();
                 job.release_by_mono_ms =
-                    Some(self.hardware.monotonic_ms() + (remaining + RELEASE_MARGIN_MS).min(bound));
+                    Some(start_mono + (remaining + RELEASE_MARGIN_MS).min(bound));
+                // A late start too short to read clear of its release has no read.
+                job.meter_at_mono_ms =
+                    (remaining >= METER_MIN_REMAINING_MS).then_some(start_mono + remaining / 2);
             }
             self.emit_full(sequence, OutcomeKind::Started, None, None, Some(now));
             return;
+        }
+        let mono = self.hardware.monotonic_ms();
+        if let Some(job) = &mut self.current
+            && job.meter_at_mono_ms.is_some_and(|at| mono >= at)
+        {
+            job.meter_at_mono_ms = None;
+            self.hardware.meter_due();
         }
         // The device is polled first, also at the deadline: a device that consumed every
         // sample completes normally however late its step ran (#49). Otherwise the
@@ -992,6 +1070,7 @@ impl<H: Hardware> Core<H> {
                             keyed: false,
                             audio_start_utc_ms: None,
                             release_by_mono_ms: None,
+                            meter_at_mono_ms: None,
                         });
                     }
                 } else {
@@ -1081,7 +1160,7 @@ impl<H: Hardware> Core<H> {
                     .map(|j| j.prepared.request.request_sequence)
             });
         let tx_remaining_calls = match self.arm {
-            ArmState::Armed => self.tx_calls.saturating_sub(self.unanswered),
+            ArmState::Armed => self.tx_calls.saturating_sub(self.tx_repetitions),
             _ => 0,
         };
         View {
@@ -1354,6 +1433,12 @@ impl Hardware for Box<dyn Hardware> {
     }
     fn attach_abort(&mut self, abort: Arc<AtomicBool>) {
         (**self).attach_abort(abort)
+    }
+    fn set_level_db(&mut self, level_db: i32) {
+        (**self).set_level_db(level_db)
+    }
+    fn meter_due(&mut self) {
+        (**self).meter_due()
     }
     fn clock(&self) -> ClockState {
         (**self).clock()

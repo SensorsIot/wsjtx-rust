@@ -29,14 +29,15 @@ package WstxStrategy {
          D4 Auto roles in the first version: Auto Call (answer the best matching CQ),
             Auto CQ (call CQ, answer the best caller) and Alternate (switch between them
             after switch_after consecutive tries without a contact).
-         D5 No QSO or time limit is offered: the Tx watchdog bounds Auto
+         D5 No QSO or time limit is offered: the Tx watchdog bounds each message of Auto
             (WatchdogFromOperator). The browser's Auto sends the WstxMcp run bounds at
             their maxima (max_contacts 100, max_run_minutes 480).
          D6 Skip after N: a station given up after skip_after partner periods without an
             answer is skipped for the rest of the run; the run goes on (no stop).
-         D7 Manual intervention ends Auto (the existing WstxMcp contact_changed stop); a
-            second Auto click starts it again. The first Auto use in a page session asks
-            for confirmation once.
+         D7 Manual intervention (operator decision #39, 2026-11-04): a double-click is
+            always possible, also during a strategy; the strategy stays selected and resumes
+            after the manual QSO (ManualIntervention). The first Auto use in a page session
+            asks for confirmation once.
          D8 Out (operator decision on #42): band hopping, also as a suggestion; Rapid
             RR73; unauthenticated UDP control; shell-command alerts.
          D9 Ignore lists (#42, IgnoreLists): a permanent list in Settings > General and a
@@ -203,11 +204,9 @@ package WstxStrategy {
              (a contact armed by the run is disarmed).
              Waiting: on each fresh complete publication the candidates are the decoded
              standard records from exactly the pounce call that are a CQ not greyed by
-             DirectedCqRule (my continent as configured in the strategy store, else
-             derived), or an RR73/73 to another call than mine (D3, always for a pounce),
-             and whose sender is not ignored (IgnoreLists, both tiers; the ignore lists
-             win); a CQ with any other target (TEST, POTA, a country, a number) is
-             answered, since the operator chose the station. The first by sequence is
+             DirectedCqRule (MyContinent), or an RR73/73 to another call than mine (D3, always
+             for a pounce), and whose sender is not ignored (IgnoreLists, both tiers; the
+             ignore lists win). The first by sequence is
              answered exactly as Auto Call answers (select_row {replace false}, after an
              RR73/73 set_frequency keeping my Tx frequency (Hold Tx), enable_tx with the
              run's safety revision), so the contact engine calls it in the next own period
@@ -293,20 +292,55 @@ package WstxStrategy {
              with both off nothing is announced (the history still lists it). */
     }
     calc def DirectedCqRule {
-        in target : String;
+        in target : String[0..1];
         in myContinent : String[0..1];
         in senderContinent : String[0..1];
-        return addressedToMe : Boolean;
-        doc /* The hard rule, applied before any strategy: a CQ "CQ x" with x one of the
-             seven continent codes is addressed to me only when x is my continent; "CQ DX"
-             only when both continents are known and differ (a CQ DX from my own continent,
-             or from an unknown one, is not for me); any other target (TEST, POTA, a
-             number, a country) is not continent-directed: Highlight leaves it to the
-             rules, and Auto answers it only when the matched rule has a non-negated
-             cq_target condition listing that target (AutoTarget), so a country-directed
-             CQ such as CQ JA is never answered by default. A CQ not addressed to me is greyed in Band Activity, never matches
-             a rule and is never answered by Auto. My continent unknown: every continent-
-             directed CQ and CQ DX is greyed. */
+        return answerable : Boolean;
+        doc /* The one directive rule of strategies and the operator (operator decision #39,
+             2026-11-04), applied before any strategy and one function in the station. A CQ
+             is answerable when its directive does not exclude me: a plain CQ (no target);
+             "CQ x" with x my continent; "CQ DX" when both continents are known and differ.
+             Every other directive is not answerable: another continent or region (NA, JA,
+             SA, ...), any other word (TEST, POTA, a number), CQ DX from my own or an unknown
+             continent, and with my continent unknown every directive. A record that is no
+             CQ has no directive and is answerable. Its text is "CQ x — not for <my continent>"
+             ("not for this station" when unknown).
+             My continent: MyContinent.
+             A strategy skips a CQ that is not answerable: it is greyed in Band Activity,
+             never matches a rule and is never answered by a run or a pounce. An operator's
+             selection of such a row (double-click, Reply, Select, the other-calls list) is
+             refused directive_not_answerable (409 with error.reason = this text); the
+             browser shows it as a warning the operator can confirm, and only then sends
+             select_row again with the optional directive_confirmed true. The directive is checked
+             before contact_active, so during a contact a plain click (select_row without replace) on
+             such a row is refused this way too and offers nothing (CL-037-05); a double-click warns. A command that is
+             not the browser's (automation, MCP, UDP) can never confirm it: its select_row is
+             refused directive_not_answerable also with directive_confirmed. */
+    }
+    calc def MyContinent {
+        in configured : String[0..1];
+        in callsign : String[0..1];
+        in locator : String[0..1];
+        return continent : String[0..1];
+        doc /* The configured continent (StrategyConfiguration continent) when set; else
+             ContinentOfCall of the profile callsign; else, when the call has no entity
+             (/MM, /AM, unknown prefix), the continent of the cty.dat entity whose centre
+             is nearest to the centre of the profile locator; else none. */
+    }
+    attribute def ManualIntervention {
+        doc /* A strategy run (OperatingAutomation with strategy true) and a manual contact
+             (operator decision #39, 2026-11-04). The run never disarms or cancels it and
+             does not stop: when a contact it did not select is on the engine (a double-click,
+             Reply or DX entry replacing its contact, or made while it waits), the run state
+             is manual until that contact is no longer active (completed, cancelled or
+             logged), then waiting: it resumes. While manual it selects nothing. The operator
+             cancelling or aborting the run's own contact (F4, Esc) gives that station up for
+             the rest of the run (it is not selected again) and the run goes on waiting; a
+             cancelled own CQ of a run in role cq or alternate lets the run call CQ again at
+             its next step. A command of the run refused because the operator's contact
+             arrived first (the double-click racing its select_row or enable_tx) makes it
+             manual too: it cancels and disarms nothing.
+             A pounce and an MCP run keep their contact_changed stop. HALT stops every run. */
     }
     attribute def Verdict {
         attribute sequence : Integer;
@@ -316,8 +350,8 @@ package WstxStrategy {
              an ignored sender (IgnoreLists) has rank null, grey false; else grey per
              DirectedCqRule; else rank = index (0-based) of the first rule all of
              whose conditions hold, null when none. why (explain only): "matches rule n",
-             "no match (rule n: <first failing condition>; ...)", "CQ x is not
-             addressed to my continent (c)" or "<call> is ignored (session list)" /
+             "no match (rule n: <first failing condition>; ...)", the DirectedCqRule text
+             "CQ x — not for c" or "<call> is ignored (session list)" /
              "(permanent list)". Display order: rank ascending, then the sort
              (strongest: SNR descending, weakest: SNR ascending, furthest: distance
              descending, newest: sequence descending; unknown values last), then sequence;
@@ -393,9 +427,7 @@ package WstxStrategy {
              starts as Auto Call, Cq as Auto CQ; a saved role other than alternate applies
              at the next step.
              Auto Call (waiting): on each fresh complete publication the candidates are
-             the verdicts with a rank, cq-like (D3), not greyed, a CQ target other than a
-             continent or DX only when the matched rule asks for it with a non-negated
-             cq_target condition, a sane call (SaneCall), not ignored (IgnoreLists: no
+             the verdicts with a rank, cq-like (D3), not greyed (DirectedCqRule), a sane call (SaneCall), not ignored (IgnoreLists: no
              rank),
              not mine, not completed or skipped in this run, one per call, in display
              order; the first is selected (select_row) and armed (enable_tx); an RR73/73
@@ -409,10 +441,11 @@ package WstxStrategy {
              selected (the armed CQ becomes that contact). No caller: one try.
              Alternate: switch_after consecutive tries switch Call -> CQ or CQ -> Call
              (the CQ is cancelled); a contact resets the tries.
+             A contact the run did not select: ManualIntervention.
              In a contact: completion counts and returns to waiting (CQ again in role
              cq); skip_after partner periods without progress give the station up (D6),
              disarm and cancel the contact and count a try. All other WstxMcp stops
-             (halted, context, authority, time, contact changed, transmit stopped) are
+             (halted, context, authority, time, transmit stopped) are
              unchanged; a disarm by the Tx watchdog stops tx_watchdog. */
     }
     calc def SaneCall {
@@ -421,20 +454,19 @@ package WstxStrategy {
         doc /* At least 3 characters with a digit and a letter, not ending /R (rover). */
     }
     attribute def WatchdogFromOperator {
-        doc /* The Tx watchdog counts unanswered own transmissions (WstxContact::TxWatchdog,
-             operator redefinition 2026-11-04) and is never paused or reset by
-             automation. Only an answer (a decoded message addressed to my call from the
-             partner, or from anyone to my CQ) or a human action in the browser resets
-             it: an Enable Tx, any accepted ContactCommand or an Auto start sent by the
-             browser (principal browser, WstxProfiles::RequestPrincipalRule: read from
-             the credential at the auth boundary, so an MCP client is never one on any
-             route, #58). Never operator actions: commands of a run (select_row,
-             set_frequency, enable_tx, cancel, disarm), any MCP request (also starting or
-             restarting a run) and any UDP command (Reply, Free Text). Such an enable_tx
-             arms with the count kept and is refused tx_watchdog when the limit is used
-             up or no browser action was seen this boot (until a human acts in the
-             browser; after a watchdog stop an answer no longer resets it); a run selecting a new station does not reset
-             it; only the browser may change the watchdog setting (set_watchdogs from any
+        doc /* The Tx watchdog limits the repetitions of one message
+             (WstxContact::TxWatchdog, operator rule 2026-11-06) and is never paused by
+             automation; a new message or station restarts the repetition count, so it
+             bounds a run per message, not in total (max_run_minutes bounds the run). A
+             human action in the browser is an accepted ContactCommand or an Auto start
+             sent by the browser (principal browser, WstxProfiles::RequestPrincipalRule:
+             read from the credential at the auth boundary, so an MCP client is never one
+             on any route, #58). Only an Enable Tx or an Auto start from the browser ends
+             a watchdog stop. Never operator actions: commands of a run (select_row,
+             set_frequency, enable_tx, cancel, disarm) and any MCP request (also starting or
+             restarting a run). Such an enable_tx
+             is refused tx_watchdog after a watchdog stop or when no browser action was
+             seen this boot; only the browser may change the watchdog setting (set_watchdogs from any
              other source is refused operator_required). At the limit Enable Tx goes off
              without a halt and a run stops tx_watchdog.
              Halt from any source stops the run; grant, clock, period and safety-revision
@@ -449,6 +481,8 @@ package WstxStrategy {
     dependency pouncePath from Pounce to WstxMcp::OperatingAutomation;
     dependency alertClause from Alert to WstxRequirements::'CL-042-04';
     dependency directedClause from DirectedCqRule to WstxRequirements::'CL-039-03';
+    dependency myContinentClause from MyContinent to WstxRequirements::'CL-039-03';
+    dependency manualClause from ManualIntervention to WstxRequirements::'CL-039-05';
     dependency highlightClause from HighlightView to WstxRequirements::'CL-039-04';
     dependency editorClause from StrategyEditor to WstxRequirements::'CL-039-04';
     dependency autoClause from AutoStrategyRun to WstxRequirements::'CL-039-05';

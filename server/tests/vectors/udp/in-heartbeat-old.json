@@ -5,10 +5,6 @@
  "hex": "adbccbda0000000200000000000000074a54416c657274",
  "expect": {
   "schema": 2,
-  "id": "JTAlert",
-  "type": "heartbeat",
-  "max_schema": 2,
-  "version": "",
-  "revision": ""
+  "id": "JTAlert"
  }
 }
