@@ -332,6 +332,92 @@ pub(crate) fn detect(state: &ProfileState) -> Result<Value, &'static str> {
     )
 }
 
+/// The radio an opened port answers with, read-only (19 00 only); the port is closed again.
+fn identify(hardware: &dyn Hardware, port: u16) -> Result<Option<setup::Identity>, cat::Error> {
+    let deadline = Instant::now() + PORT_BUDGET;
+    let cancel = AtomicBool::new(false);
+    let mut transport = hardware.open(port, deadline, &cancel)?;
+    let found = setup::probe(&mut *transport, deadline, &cancel).unwrap_or_default();
+    let _ = transport.close();
+    Ok(found
+        .into_iter()
+        .find(|r| setup::model(r.id).is_some_and(|m| m.station_cat)))
+}
+/// CL-044-15 on start, before the CAT lifecycle: a saved radio that answers stays. When it
+/// does not (held by another station process, absent, silent), or on a profile never saved,
+/// the next radio on a known USB bridge that this process can open and that answers
+/// becomes the profile's radio, with its audio endpoints, and that radio's stored Tx level
+/// goes with the old one. It changes control, so the receive-only confirmation applies
+/// to the new radio before CAT opens. An operator's saved Disabled stays. Returns what changed.
+pub(crate) fn discover_on_start(state: &ProfileState) -> Option<String> {
+    let hardware = state.recording.radio_setup.hardware()?;
+    let (control, revision) = {
+        let store = state.store.lock().ok()?;
+        (store.document.control.clone(), store.document.revision)
+    };
+    let saved = match control.mode.as_str() {
+        "cat" => Some(
+            control
+                .endpoint
+                .as_deref()
+                .and_then(|e| cat::Configuration::parse(e).ok())?,
+        ),
+        _ if revision == 0 => None,
+        _ => return None,
+    };
+    let ports = hardware.ports().ok()?;
+    if let Some(saved) = &saved
+        && ports.iter().any(|p| p.port == saved.port)
+        && matches!(identify(&*hardware, saved.port), Ok(Some(_)))
+    {
+        return None;
+    }
+    let started = Instant::now();
+    let found = ports
+        .iter()
+        .take(64)
+        .filter(|p| radio_bridge(p) && saved.as_ref().is_none_or(|s| s.port != p.port))
+        .take_while(|_| started.elapsed() < DETECT_BUDGET)
+        .find_map(|p| Some((p, identify(&*hardware, p.port).ok().flatten()?)));
+    let (port, radio) = found?;
+    let endpoints = hardware.endpoints().unwrap_or_default();
+    let pick = |flow| match setup::match_audio(port, &endpoints, flow) {
+        Match::One(e) => Some(e.id),
+        _ => None,
+    };
+    let mut store = state.store.lock().ok()?;
+    let mut settings = store.document.settings();
+    settings.control = profile::Control {
+        mode: "cat".into(),
+        endpoint: Some(format!(
+            "icom7300://COM{}?baud={}&radio={:02x}&controller=e0",
+            port.port, radio.baud, radio.address
+        )),
+        ptt: if control.mode == "cat" {
+            control.ptt
+        } else {
+            "cat".into()
+        },
+    };
+    settings.audio.input_device = pick(Flow::Capture);
+    settings.audio.output_device = pick(Flow::Render);
+    settings.radio = Some(store.document.radio.unwrap_or(profile::Radio::DEFAULT));
+    settings.validate().ok()?;
+    store.save(settings).ok()?;
+    let _ = store.remove_document_file(crate::radio_level::LEVEL_FILE);
+    if let Ok(mut authorization) = state.authorization.lock()
+        && let Some(service) = authorization.as_mut()
+    {
+        let _ = service.authority.reconcile_control(&mut store);
+    }
+    state.recording.profile_changed(store.document.revision);
+    Some(format!(
+        "radio discovery: COM{} ({}) is this station's radio",
+        port.port,
+        setup::model(radio.id).map_or("unknown", |m| m.name)
+    ))
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct UndoItem {

@@ -960,3 +960,183 @@ async fn audio_endpoints_list_names_remember_saved_names_and_name_the_receive_in
         (StatusCode::CONFLICT, Some("audio_unavailable"))
     );
 }
+
+/// The saved control of a fixture: IC-7300 CAT on `port`, saved once.
+fn saved_on(f: &Fixture, port: u16) {
+    let mut store = f.state.store.lock().unwrap();
+    let mut settings = store.document.settings();
+    settings.control = profile::Control {
+        mode: "cat".into(),
+        endpoint: Some(format!("COM{port}")),
+        ptt: "cat".into(),
+    };
+    settings.radio = Some(profile::Radio {
+        agc: wstx_rust::radio_control::setup::Agc::Mid,
+        power_limit_pct: Some(10),
+    });
+    store.save(settings).unwrap();
+}
+fn hardware_of(f: &Fixture, hw: &Arc<Double>) {
+    *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw.clone());
+}
+fn saved_control(f: &Fixture) -> (profile::Control, u64) {
+    let store = f.state.store.lock().unwrap();
+    (store.document.control.clone(), store.document.revision)
+}
+fn only_id_reads(hw: &Double) {
+    for write in hw.writes.lock().unwrap().iter() {
+        assert_eq!(&write[4..write.len() - 1], &[0x19, 0], "{write:02x?}");
+    }
+}
+
+// Proves: CL-044-15; TC-044-020.
+#[test]
+fn discovery_keeps_a_saved_radio_that_answers() {
+    let f = fixture("http://127.0.0.1:18047", false);
+    saved_on(&f, 3);
+    let before = saved_control(&f);
+    let hw = double(
+        vec![port(3, "USB\\HUB\\A"), port(5, "USB\\HUB\\IC7300")],
+        HashMap::from([(3, (0x94, 19200)), (5, (0x94, 19200))]),
+        vec![],
+    );
+    hardware_of(&f, &hw);
+    assert_eq!(radio_setup::discover_on_start(&f.state), None);
+    assert_eq!(saved_control(&f), before);
+    assert_eq!(
+        *hw.opened.lock().unwrap(),
+        vec![3],
+        "no other port is touched"
+    );
+    only_id_reads(&hw);
+}
+
+// Proves: CL-044-15; TC-044-020. Two transceivers on one PC: the second station process
+// takes the next free one; its audio follows; the confirmation is not carried over.
+#[test]
+fn discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held() {
+    let f = fixture("http://127.0.0.1:18048", false);
+    saved_on(&f, 3);
+    std::fs::write(f.dir.join(crate::radio_level::LEVEL_FILE), "{}").unwrap();
+    let revision = saved_control(&f).1;
+    let hw = double(
+        vec![
+            port(3, "USB\\HUB\\A"),
+            port(4, "USB\\HUB\\B"),
+            port(5, "USB\\HUB\\C"),
+            port(6, "USB\\HUB\\IC7300"),
+        ],
+        // COM3 is the saved one, held; COM4 another station's; COM5 silent; COM6 free.
+        HashMap::from([(6, (0x94, 19200))]),
+        vec![3, 4],
+    );
+    hardware_of(&f, &hw);
+    let line = radio_setup::discover_on_start(&f.state).unwrap();
+    assert_eq!(
+        line,
+        "radio discovery: COM6 (IC-7300) is this station's radio"
+    );
+    let (control, after) = saved_control(&f);
+    assert_eq!(after, revision + 1);
+    assert_eq!(
+        control,
+        profile::Control {
+            mode: "cat".into(),
+            endpoint: Some("icom7300://COM6?baud=19200&radio=94&controller=e0".into()),
+            ptt: "cat".into(),
+        }
+    );
+    let store = f.state.store.lock().unwrap();
+    assert_eq!(store.document.audio.input_device.as_deref(), Some(CAPTURE));
+    assert_eq!(store.document.audio.output_device.as_deref(), Some(RENDER));
+    assert_eq!(
+        store.document.radio.map(|r| r.power_limit_pct),
+        Some(Some(10)),
+        "the radio settings stay"
+    );
+    assert!(
+        !f.dir.join(crate::radio_level::LEVEL_FILE).exists(),
+        "the Tx level belonged to the other radio"
+    );
+    assert!(
+        !matches!(
+            crate::authorization_http::cat_gate(
+                &store,
+                f.state.authorization.lock().unwrap().as_ref()
+            ),
+            crate::cat_lifecycle::Gate::Eligible { .. }
+        ),
+        "no CAT before the operator confirms this radio"
+    );
+    drop(store);
+    assert_eq!(*hw.opened.lock().unwrap(), vec![3, 4, 5, 6]);
+    only_id_reads(&hw);
+}
+
+// Proves: CL-044-15; TC-044-020.
+#[test]
+fn discovery_changes_nothing_without_a_free_radio_or_against_a_saved_disabled() {
+    // Nothing else free: the saved radio stays for the lifecycle's retries.
+    let f = fixture("http://127.0.0.1:18049", false);
+    saved_on(&f, 3);
+    let before = saved_control(&f);
+    let hw = double(
+        vec![port(3, "USB\\HUB\\A"), port(4, "USB\\HUB\\B")],
+        HashMap::new(),
+        vec![4],
+    );
+    hardware_of(&f, &hw);
+    assert_eq!(radio_setup::discover_on_start(&f.state), None);
+    assert_eq!(saved_control(&f), before);
+    // An operator's saved Disabled opens nothing.
+    let f = fixture("http://127.0.0.1:18050", false);
+    {
+        let mut store = f.state.store.lock().unwrap();
+        let settings = store.document.settings();
+        store.save(settings).unwrap();
+    }
+    let hw = double(
+        vec![port(3, "USB\\HUB\\A")],
+        HashMap::from([(3, (0x94, 19200))]),
+        vec![],
+    );
+    hardware_of(&f, &hw);
+    assert_eq!(radio_setup::discover_on_start(&f.state), None);
+    assert!(hw.opened.lock().unwrap().is_empty());
+}
+
+// Proves: CL-044-15; TC-044-020. A profile never saved takes the first radio this station
+// supports; a radio without station CAT and a port without a radio bridge are passed over.
+#[test]
+fn discovery_sets_up_a_profile_never_saved() {
+    let f = fixture("http://127.0.0.1:18051", false);
+    assert_eq!(saved_control(&f).1, 0);
+    let hw = double(
+        vec![
+            PortInfo {
+                port: 2,
+                instance_id: "FTDIBUS\\VID_0403+PID_6001+A1\\0000".into(),
+                friendly_name: None,
+                topology: Topology {
+                    usb_device: Some("USB\\VID_0403&PID_6001\\A1".into()),
+                    ..Default::default()
+                },
+            },
+            port(5, "USB\\HUB\\IC705"),
+            port(6, "USB\\HUB\\IC7300"),
+        ],
+        HashMap::from([(5, (0xa4, 115200)), (6, (0x94, 9600))]),
+        vec![],
+    );
+    hardware_of(&f, &hw);
+    assert!(radio_setup::discover_on_start(&f.state).is_some());
+    let (control, revision) = saved_control(&f);
+    assert_eq!(revision, 1);
+    assert_eq!(
+        control.endpoint.as_deref(),
+        Some("icom7300://COM6?baud=9600&radio=94&controller=e0")
+    );
+    assert_eq!(control.ptt, "cat");
+    assert_eq!(*hw.opened.lock().unwrap(), vec![5, 6], "no FTDI board");
+    only_id_reads(&hw);
+}

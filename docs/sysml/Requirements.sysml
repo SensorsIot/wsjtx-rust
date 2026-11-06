@@ -3877,6 +3877,41 @@ package WstxRequirements {
         }
     }
     dependency CL_044_14_verified_by_TC_044_019 from 'CL-044-14' to 'TC-044-019';
+    // Operator requirement 2026-11-06 (#44 comment 6679345317, from #22): pragmatic discovery.
+    requirement 'CL-044-15' {
+        doc /* On start, before the CAT lifecycle first runs, the station discovers its radio read-only: the same port opening as Detect radio (the per-device ownership claim, DTR and RTS low) and the same probe (CI-V 19 00 only, CL-044-01). A profile with control cat whose saved endpoint's port is present and answers with a radio this station has CAT for keeps its radio, and no other port is opened. Otherwise (the port is held by another station process or another program, is absent or silent), and on a profile never saved (revision 0, control disabled), the ports on a known radio USB bridge are tried in port order, without the saved one and within the 40 s detection budget: a port that cannot be opened is passed over, which is how a radio another station process holds is recognised, so each process takes the next free radio and more than one transceiver on one PC works. The first that answers with such a radio is saved as the profile's control (icom7300://COMn?baud=b&radio=aa&controller=e0, ptt kept from a CAT control, otherwise cat), with the capture and render endpoints that match it and none otherwise (never the old radio's audio); settings.radio stays or takes the default; its stored Tx level (CL-044-12) is removed, it belonged to the other radio. This is a profile save, so the revision advances and the receive-only confirmation (CL-022-03) binds to the new control: CAT opens only after the operator confirmed this radio. Nothing is found: nothing changes and the lifecycle keeps retrying the saved endpoint. A control of an operator's saved Disabled, or an endpoint that does not parse, is left alone and no port is opened. Discovery runs once per process start, before the station listens and before anything loads the Tx level or the audio names, so a port that does not answer delays listening by its probe and at most the detection budget. It does not write a radio setting. WSTX_RADIO_DISCOVERY=off turns it off, for the test stations. Limit: two processes starting within one probe of each other can pick the same radio; the second then reports port_in_use until restarted. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_setup.rs; server/src/main.rs";
+    }
+    dependency CL_044_15_to_FR_009 from 'CL-044-15' to 'FR-009';
+    verification 'TC-044-020' {
+        doc /* TC-044-020 — Discovery on start
+             CL-044-15
+             Setup: the actual profile store and authorization owner, a detection hardware double of ports, held ports, radios and audio endpoints, recording every frame.
+             Steps: (a) saved COM3 answers, COM5 too; (b) saved COM3 held, COM4 held, COM5 silent, COM6 an IC-7300 with matching audio; (c) saved silent, the other held; (d) an operator's saved Disabled with a radio present; (e) a profile never saved with an FTDI board, an IC-705 and an IC-7300.
+             Expected: (a) nothing saved, only COM3 opened; (b) control COM6 with the probed rate and address, ptt kept, the matching endpoints, settings.radio kept, the Tx level file gone, revision +1, the CAT gate not eligible, ports opened 3, 4, 5, 6; (c) nothing saved; (d) no port opened; (e) COM6, ptt cat, the FTDI board never opened; in all of them only 19 00 frames are written.
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-15';
+        }
+        attribute executable : String = "server/src/radio_setup_tests.rs";
+    }
+    dependency CL_044_15_verified_by_TC_044_020 from 'CL-044-15' to 'TC-044-020';
+    verification 'TC-044-021' {
+        doc /* TC-044-021 — Discovery on HB9BLA
+             CL-044-15
+             Setup: the gated candidate on HB9BLA, the IC-7300 on COM3; a second station process on its own profile; the operator's consent.
+             Steps: start the station with COM3 saved; start a second process with COM3 saved while the first holds it; start it with a second transceiver connected, if one is available.
+             Expected: the first keeps COM3; the second reports port_in_use with nothing changed when no other radio is free, and takes the second transceiver when one is.
+             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-044-15';
+        }
+    }
+    dependency CL_044_15_verified_by_TC_044_021 from 'CL-044-15' to 'TC-044-021';
     verification 'TC-044-013' {
         doc /* TC-044-013 — Meter burst under the transmit hold; level timing
              CL-044-12

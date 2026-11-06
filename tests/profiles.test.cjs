@@ -2067,7 +2067,7 @@ test('suite stations own profile UUIDs in per-run station data', {timeout: 30000
   };
   const account = {...process.env}; for (const key of Object.keys(account)) if (key.startsWith('WSTX_')) delete account[key];
   const held = await profile('held', heldPort), heldLock = path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'wstx-rust-profile-locks', `${id}.lock`);
-  const other = spawn(exe, ['--profile', held.dir], {env: {...account, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off'}, windowsHide: true});
+  const other = spawn(exe, ['--profile', held.dir], {env: {...account, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off', WSTX_RADIO_DISCOVERY: 'off'}, windowsHide: true});
   let otherOutput = ''; other.stdout.on('data', b => {otherOutput += b;}); other.stderr.on('data', b => {otherOutput += b;});
   t.after(async () => {if (other.exitCode === null && other.signalCode === null) {other.kill(); await once(other, 'exit');} await fs.rm(heldLock, {force: true});});
   const deadline = Date.now() + 10000;
