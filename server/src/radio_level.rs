@@ -312,6 +312,7 @@ fn assistant(
     let limit = recording.tx_level.lock().power_limit;
     let lost = || station.service.halt_requests() != halts || !station.service.view().tune;
     let mut level = ASSISTANT_START_DB;
+    recording.tx_level.update(|i| i.level_db = level);
     let (stored, result) = loop {
         let settled = Instant::now() + SETTLE;
         while Instant::now() < settled && !lost() {
@@ -337,28 +338,33 @@ fn assistant(
             Step::Up(next) => {
                 level = next;
                 station.service.with(|c| c.set_tx_level(level));
+                recording.tx_level.update(|i| i.level_db = level);
             }
             Step::Done(value, result) => break (Some(value), result),
             Step::Stop(result) => break (None, result),
         }
     };
-    let level = stored.unwrap_or(prior);
     station.service.with(|c| {
         let _ = c.set_tune(false, 0);
-        c.set_tx_level(level);
+        c.set_tx_level(prior);
         if armed_here && c.view().arm_state == ArmState::Armed {
             c.disarm(DisarmCause::Operator);
         }
     });
-    let result = match stored.map(|value| store_level(state, value)) {
-        Some(Err(e)) => e,
-        _ => result,
+    // CL-044-12: a level counts only once it is on disk; every failure leaves the prior one.
+    let (kept, result) = match stored.map(|value| (value, store_level(state, value))) {
+        Some((value, Ok(_))) => {
+            station.service.with(|c| c.set_tx_level(value));
+            (Some(value), result)
+        }
+        Some((_, Err(e))) => (None, e),
+        None => (None, result),
     };
     recording.tx_level.update(|i| {
         i.assistant = false;
         i.result = Some(result);
-        i.level_db = level;
-        i.stored |= stored.is_some();
+        i.level_db = kept.unwrap_or(prior);
+        i.stored |= kept.is_some();
     });
 }
 /// The manual level, offered only for a radio that reports no ALC over CI-V; also live

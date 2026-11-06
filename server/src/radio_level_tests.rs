@@ -211,9 +211,14 @@ fn a_stalled_meter_read_gives_way_to_the_release_and_keeps_the_connection() {
     assert_eq!(actor(&f).snapshot().unwrap().state, cat::State::Ready);
     // A release during a stalled read is served at once, inside the 250 ms halt bound.
     let reader = actor(&f);
+    let before = meter_frames(&r).len();
     let read =
         std::thread::spawn(move || reader.read_meters(Instant::now() + Duration::from_secs(3)));
-    std::thread::sleep(Duration::from_millis(40));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while meter_frames(&r).len() == before {
+        assert!(Instant::now() < deadline, "the read did not start");
+        std::thread::sleep(Duration::from_millis(1));
+    }
     let start = Instant::now();
     actor(&f)
         .ptt(false, Instant::now() + Duration::from_secs(1))
@@ -565,4 +570,53 @@ async fn profile_power_limit_is_saved_kept_absent_by_default_and_validated() {
             .await;
         assert_eq!(s, StatusCode::BAD_REQUEST, "{bad} {v}");
     }
+}
+
+// Proves: CL-044-13; TC-044-014 (b). The pushed level is the one playing at every step.
+#[test]
+fn set_level_pushes_the_level_it_is_playing_at_every_step() {
+    let (f, r) = station(radio(fixed([0, 0])));
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let (levels, rec, log) = (
+        f.bench.levels.clone(),
+        f.state.recording.clone(),
+        seen.clone(),
+    );
+    r.lock().unwrap().alc = Some(Arc::new(move || {
+        let v: Value = serde_json::from_str(&event(&rec).1).unwrap();
+        let played = *levels.lock().unwrap().last().unwrap();
+        log.lock()
+            .unwrap()
+            .push((played, v["data"]["level_db"].as_i64().unwrap() as i32));
+        if played >= -27 { [0, 5] } else { [0, 0] }
+    }));
+    hold(&f);
+    start_assistant(&f.state, 1500).unwrap();
+    assert_eq!(finished(&f), "stored");
+    let seen = seen.lock().unwrap();
+    assert!(!seen.is_empty());
+    for (played, pushed) in seen.iter() {
+        assert_eq!(played, pushed);
+    }
+}
+
+// Proves: CL-044-12; TC-044-014 (c). A level that cannot be stored is not kept.
+#[test]
+fn set_level_that_cannot_be_stored_leaves_the_prior_level() {
+    let (f, r) = station(radio(fixed([0, 0])));
+    rising(&f, &r, -27);
+    std::fs::create_dir(f.dir.join(LEVEL_FILE)).unwrap();
+    hold(&f);
+    start_assistant(&f.state, 1500).unwrap();
+    assert_eq!(finished(&f), "storage_unavailable");
+    assert_eq!(f.state.recording.tx_level.level_db(), 0);
+    let v: Value = serde_json::from_str(&event(&f.state.recording).1).unwrap();
+    assert_eq!(v["data"]["stored"], json!(false));
+    let service = &f.state.recording.transmit.get().unwrap().service;
+    service.with(|c| {
+        c.arm(3).unwrap();
+        c.set_tune(true, 1500).unwrap();
+    });
+    assert_eq!(f.bench.levels.lock().unwrap().last(), Some(&0));
+    service.with(|c| c.set_tune(false, 0).unwrap());
 }
