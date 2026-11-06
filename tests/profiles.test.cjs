@@ -115,9 +115,12 @@ async function browserWindows(t, profiles) {
   // CL-044-08: the audio selects offer only listed endpoints; the fixture endpoints are listed by a
   // route (no audio device is read for them), in place of the station's own listing.
   await context.route('**/audio/endpoints', async route => {
-    const origin = new URL(route.request().url()).origin, profile = await (await route.fetch({url: origin + '/profile', method: 'GET'})).json();
-    const entry = (id, label) => ({id, name: label, label, present: true, radio: null});
-    await route.fulfill({json: {v: 1, profile_id: profile.profile_id, boot_id: profile.boot_id, inputs: [entry(captureId(91), 'Fixture input 91')], outputs: [entry(renderId(97), 'Fixture output 97')]}});
+    // A station stopped with its window open (mid-test or at teardown) refuses, as it really would.
+    try {
+      const origin = new URL(route.request().url()).origin, profile = await (await route.fetch({url: origin + '/profile', method: 'GET'})).json();
+      const entry = (id, label) => ({id, name: label, label, present: true, radio: null});
+      await route.fulfill({json: {v: 1, profile_id: profile.profile_id, boot_id: profile.boot_id, inputs: [entry(captureId(91), 'Fixture input 91')], outputs: [entry(renderId(97), 'Fixture output 97')]}});
+    } catch {await route.abort('connectionrefused').catch(() => {});}
   });
   const launcher = await context.newPage(), pages = [];
   for (const p of profiles) {const opened = context.waitForEvent('page'); await launcher.evaluate(({url, name}) => {window.open(url, name, 'popup,width=1100,height=850');}, {url: p.origin, name: p.document.profile_id}); pages.push(await opened);}
@@ -2052,6 +2055,15 @@ test('TC-022-005: status readiness survives held settings HTTP with bounded refr
   await failed.goto(profiles[0].origin);
   await failed.locator('#connection').filter({hasText: 'could not load saved settings.'}).waitFor();
   assert.notEqual(await failed.locator('#connection').getAttribute('data-state'), 'connected');
+});
+
+// Proves the suite's route for /audio/endpoints: a station stopped with its window open refuses,
+// mid-test or at teardown, and is no unhandled rejection after the test ended.
+test('suite audio endpoint route refuses for a stopped station', {timeout: 30000}, async t => {
+  const {profiles} = await fixture(t), {pages} = await browserWindows(t, profiles);
+  await profiles[0].app.close();
+  const outcome = await pages[0].evaluate(() => fetch('/audio/endpoints').then(() => 'answered', () => 'refused'));
+  assert.equal(outcome, 'refused');
 });
 
 // Proves: test isolation (harness#28 escape). A station a suite starts claims its profile
