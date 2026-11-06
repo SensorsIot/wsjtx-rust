@@ -648,7 +648,8 @@ attribute def ActivityOrdering {
              zone on <band>", else "New ITU zone on <band>"; grid "New grid <square>", else "New
              grid on <band>"; call "New call", else "New on <band>" followed by the sender's
              worked-before status in parentheses ("(worked on another band or mode)" or "(worked
-             on <band> <MODE>)", WstxContact::WorkedBeforeQuery answers, no further query). An
+             on <band> <MODE>)", WstxContact::WorkedBeforeQuery answers, no further query; the
+             status stays on the row while it is shown, also as a kept period, #50). An
              overall flag implies its on-band flag, so the on-band text appears only without
              it. Then the #39
              strategy verdict ("Strategy <name>: #<rank>" or "Directed CQ, not calling us: the
@@ -1003,9 +1004,9 @@ attribute def ActivityOrdering {
         assert constraint currentOnly { not hasHistory and not hasAcknowledge and showsSince }
         doc /* CL-037-02 (#37, operator 2026-11-03, with the correction "NO history"). A small
              block at the bottom of the right column, below the ControlPanel, that lists only
-             problems that still apply and need the operator to act (ErrorFieldEntry), one line
-             each, naming the cause and "since HH:MM" (UTC, when this page first saw the
-             condition hold). An entry appears while its condition holds and disappears by
+             problems that still apply and need the operator to act (ErrorFieldEntry), each
+             naming the cause and "since HH:MM" (UTC, when this page first saw the condition
+             hold), on one line where it fits. An entry appears while its condition holds and disappears by
              itself when it clears; there is no acknowledge control and no list of past
              problems. A click on an entry opens its detail in the Settings drawer;
              receiveStopped offers the explicit receive start; stationUpdated and
@@ -1027,7 +1028,11 @@ attribute def ActivityOrdering {
              stationDataRejected. Informational or transient events (a refused request that is
              retried, busy, a stale revision or period, a receive restart, a completed action)
              are no entries. With no entry the block shows one muted line "No problems".
-             The block is small: at most about four entry lines high, scrolling inside. */
+             The block is small: at most about four entry lines high and never past the screen
+             where the page does not scroll, scrolling inside, a wheel notch by at most the
+             visible height; the Control panel above it does not move (#37, live 2026-11-06).
+             At 1366x768 about one line of it is visible; a longer entry is read by scrolling
+             inside it, by its hover text or in its Settings detail. */
     }
     attribute def SettingsDrawer {
         attribute sections : Integer = 4;

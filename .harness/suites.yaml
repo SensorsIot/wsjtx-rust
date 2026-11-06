@@ -604,6 +604,7 @@
   - server/src/logbook.rs
   - server/src/logbook_http.rs
   - server/src/strategy.rs
+  - server/src/freeslot.rs
   - server/src/udp.rs
   - server/src/transmit_http.rs
   - client/app.js
@@ -786,6 +787,7 @@
   - server/src/main.rs
   - server/src/mcp.rs
   - server/src/automation.rs
+  - server/src/freeslot.rs
   - server/src/authorization.rs
   - server/src/authorization_http.rs
   - client/authorization.js

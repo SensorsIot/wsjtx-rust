@@ -2163,6 +2163,42 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
  assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-050-08; TC-050-008 (#50, live 2026-11-06, M7OZL UT4PA KO20): the worked-before status of a row
+// stays while it is on screen, also when the next period moves it to the kept period. The receive pages and
+// the /contact/worked statuses are routed fixtures.
+test('TC-050-008 a kept row keeps its worked-before status in the tip',{timeout:40000},async t=>{
+  const a='2026-11-06T10:55:30.0000000Z',b='2026-11-06T10:55:45.0000000Z';
+  const record=(sequence,text,from,period)=>({sequence,start_frame:1000+sequence,frequency_hz:1000+sequence*100,snr_db:-5,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:{type:'standard',to:{kind:'call',text:'M7OZL',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'KO20'}},period_start_utc:period,dt_seconds:0.1,flags:{new_call_band:true}});
+  const records=[record(0,'M7OZL UT4PA KO20','UT4PA',a),record(1,'M7OZL DL1ABC JO62','DL1ABC',b)];
+  let state;const asked=[];
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-11-06T10:50:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    Object.assign(state.job,{next_sequence:1,available_count:1,latest_decode:{id:1,first_sequence:0,next_sequence:1,period_start_utc:a,complete:true}});
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/selection',async route=>{const s=await (await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),next=state.job.next_sequence;await route.fulfill({json:{...emptyResults(state),next_sequence:next,available_count:next,next,records:records.slice(cursor,next)}});});
+    await p.route('**/contact/worked',async route=>{const body=JSON.parse(route.request().postData());asked.push(body.calls);await route.fulfill({json:{v:1,statuses:body.calls.map(call=>({call,status:'worked_other_band_or_mode'}))}});});
+  }});
+  const tip='New on 20m (worked on another band or mode)';
+  const tipOf=sequence=>page.locator(`tr[data-sequence="${sequence}"]`).evaluate(r=>[r.dataset.period,r.dataset.tip??null]);
+  await page.waitForFunction(()=>document.querySelector('tr[data-sequence="0"][data-worked]'),null,{timeout:25000});
+  assert.deepEqual(await tipOf(0),['latest',tip]);
+  // The next period starts (the other parity, still partial): the row moves below the divider.
+  Object.assign(state.job,{next_sequence:2,available_count:2,latest_decode:{id:2,first_sequence:1,next_sequence:2,period_start_utc:b,complete:false}});
+  await page.evaluate(()=>receiveSync());
+  await page.locator('tr[data-period=history][data-sequence="0"]').waitFor();
+  assert.deepEqual(await tipOf(0),['history',tip],'kept while the next period is partial');
+  // Complete: its own answer arrives, and the kept row keeps its status through this redraw too.
+  Object.assign(state.job,{latest_decode:{...state.job.latest_decode,complete:true}});
+  await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>document.querySelector('tr[data-sequence="1"][data-worked]'),null,{timeout:10000});
+  assert.deepEqual(await tipOf(1),['latest',tip]);
+  assert.deepEqual(await tipOf(0),['history',tip],'kept after the next answer');
+  assert.deepEqual(asked,[['UT4PA'],['DL1ABC']],'no extra query: one per published period');
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-050-08; TC-050-008 (#50, operator 2026-11-04). The receive pages (with the #55 flags and
 // dxcc), the /contact/worked statuses, the contact snapshots are routed
 // fixtures; marks, colours, order and the reason tip are the served client's. Expected values come
@@ -2408,6 +2444,13 @@ test('TC-039-006 Selecting starts it, marks and value order from the verdicts, a
   automation={...automation,refusal:null,run:{id:crypto.randomUUID(),state:'waiting',reason:null,mode:'ft8',given_up:[],rested:null}};
   await announce('automation.state',{policy_revision:1,run_revision:4});
   await page.locator('#station-automation').filter({hasText:'Strategy DX first waiting'}).waitFor();
+  // Proves: TC-039-010. No free slot: the status says so.
+  automation={...automation,runRevision:5,run:{...automation.run,tx_slot:{hz:1500,free:false}}};
+  await announce('automation.state',{policy_revision:1,run_revision:5});
+  await page.locator('#station-automation').filter({hasText:'Strategy DX first waiting · no free Tx slot'}).waitFor();
+  automation={...automation,runRevision:6,run:{...automation.run,tx_slot:{hz:1400,free:true}}};
+  await announce('automation.state',{policy_revision:1,run_revision:6});
+  await page.waitForFunction(()=>document.querySelector('#station-automation').textContent==='Strategy DX first waiting');
   // Editor popup: exactly the settings, a draft preview with the reason per decode, HALT inside.
   await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
   assert.equal(await page.locator('#strategy-editor-halt').isDisabled(),await page.locator('#halt-tx').isDisabled(),'the popup HALT has the top-bar HALT state');
@@ -3223,6 +3266,38 @@ test('TC-037-002 the error field lists only current problems with their time and
   assert.deepEqual((await entries()).map(e=>e[1]),['✖ Station connection lost · reconnecting']);
   assert.deepEqual(errors,[]);
 });
+// Proves: CL-037-02; TC-037-002 (#37, live 2026-11-06): a long problem text cannot run past the screen at
+// 1366x768: all of it can be scrolled into view inside the block, on screen, and the Control panel stays.
+test('TC-037-002 a long problem scrolls inside the error field on screen and the Control panel stays',{timeout:60000},async t=>{
+  const {page,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input',beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base)}));
+    const idle=await (await fetch(app.origin+'/receive')).json(),running=liveFixture({...idle,generation:idle.generation+1});
+    await p.route('**/receive',route=>route.fulfill({json:running}));
+    await p.route('**/receive/results?*',route=>route.fulfill({json:emptyResults(running)}));
+    await p.route('**/recording',async route=>{const real=await (await route.fetch()).json();await route.fulfill({json:{...real,generation:running.generation,job:{id:running.job.id,source_id:running.source.id,generation:running.generation,kind:'live',state:'running',processed_frames:0,error:null}}});});
+  }});
+  await page.waitForFunction(()=>window.wstxContact?.snapshot()&&live?.job?.state==='running',null,{timeout:45000});
+  const control=()=>page.locator('#qso-control').evaluate(e=>e.getBoundingClientRect().top);
+  await page.evaluate(()=>window.wstxChipsShow());
+  const before=await control();
+  const reach=async text=>{await page.evaluate(text=>{profileData.settings.control.mode='cat';catStatus={condition:'radioUnavailable'};document.querySelector('#cat-status').textContent=text;window.wstxChipsShow();},text);
+    return page.evaluate(()=>{const body=document.querySelector('#error-field .op-error-body');body.scrollTop=body.scrollHeight;const b=body.getBoundingClientRect(),e=[...document.querySelectorAll('#error-field .op-error-entry')].at(-1).getBoundingClientRect(),w=document.querySelector('#error-field').getBoundingClientRect();return {entryIn:e.bottom<=b.bottom+1&&e.top<b.bottom,bodyOnScreen:b.bottom<=innerHeight&&b.top>=0,fieldOnScreen:w.bottom<=innerHeight,page:document.documentElement.scrollHeight<=innerHeight};});};
+  const ok={entryIn:true,bodyOnScreen:true,fieldOnScreen:true,page:true};
+  assert.deepEqual(await reach('CAT unavailable \u00b7 COM3 in use by another program \u00b7 automatic retry in 8 s'),ok);
+  assert.equal(await control(),before,'the Control panel does not move');
+  await page.screenshot({path:'test-results/ui-operating/error-field-long-1366x768.png'});
+  // A wheel notch shows the next line: it does not jump past the chip's second line.
+  const body=page.locator('#error-field .op-error-body');await body.evaluate(e=>{e.scrollTop=0;});await body.hover();await page.mouse.wheel(0,100);await page.waitForTimeout(200);
+  const step=await body.evaluate(e=>[e.scrollTop,e.clientHeight]);assert.ok(step[0]>0&&step[0]<=step[1]+1,`one notch moves by at most the visible height: ${step}`);
+  assert.deepEqual(await reach('CAT unavailable \u00b7 '+'COM3 in use by another program \u00b7 '.repeat(8)+'automatic retry in 8 s'),ok,'longer than the block: it scrolls');
+  assert.equal(await control(),before,'the Control panel does not move');
+  await page.setViewportSize({width:360,height:800});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
+  await page.locator('#error-field').scrollIntoViewIfNeeded();
+  await page.screenshot({path:'test-results/ui-operating/error-field-long-360x800.png'});
+  assert.deepEqual(errors,[]);
+});
 // Proves: CL-061-02; TC-061-003. Scripted contact snapshots and command replies (presentation fixtures): the CQ
 // button retries a stale_revision refusal of its enable_tx with the reloaded revision, at most twice.
 test('TC-061-003 CQ retries a stale_revision refusal with the reloaded snapshot',{timeout:40000},async t=>{
@@ -3235,6 +3310,8 @@ test('TC-061-003 CQ retries a stale_revision refusal with the reloaded snapshot'
       if(stale>0){stale--;revision++;await route.fulfill({status:409,json:{v:1,error:{code:'stale_revision'}}});}else await route.fulfill({status:202,json:{v:1,accepted:true}});});
   }});
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-cq').disabled,null,{timeout:25000});
+  // WstxTransmit late start (live 2026-11-06, #10): a click 10 s into my Tx period keys at once for the rest.
+  assert.equal(await page.locator('#qso-cq').getAttribute('title'),'Call CQ: keys at once for the rest of my Tx period when it is early enough, otherwise from my next Tx period');
   const sent=async(m,count)=>{for(let i=0;i<80&&commands.length<m+count;i++)await page.waitForTimeout(50);await page.waitForTimeout(300);return commands.slice(m).map(c=>[c.action,c.enabled,c.contact_revision]);};
   stale=1;let m=commands.length;await page.locator('#qso-cq').click();
   assert.deepEqual(await sent(m,2),[['enable_tx',true,3],['enable_tx',true,4]],'CQ: refused once, sent again with the reloaded revision');
@@ -3349,7 +3426,8 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
   assert.ok(visible.count>=6,`at least six Band Activity rows on screen at 360 px ${JSON.stringify(visible)}`);
   assert.ok(visible.height<=48,`a compact Band Activity row, ${visible.height} px`);
   const phone=[];
-  for(const [name,n] of [['idle',0],['6 rows',6],['15 rows',15]]){await show(n?qso(n):null,{arm_state:n?'armed':'disarmed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,n);phone.push([name,await geometry()]);}
+  for(const [name,n] of [['idle',0],['6 rows',6],['15 rows',15]]){await show(n?qso(n):null,{arm_state:n?'armed':'disarmed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,n);phone.push([name,await geometry()]);
+    if(n===6){f=await fit();assert.deepEqual([f.scrolls,f.inside],[false,6],'six full dialogue rows at 360 px (live 2026-11-06)');}}
   same(phone,'360x800');
   f=await fit();assert.equal(f.lastInside,true,'the newest row is visible at 360 px');
   await page.locator('#rx-focus').scrollIntoViewIfNeeded();
