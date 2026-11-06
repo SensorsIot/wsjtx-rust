@@ -16,7 +16,9 @@ const PACKETS_PER_SECOND = 24000 / 128;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const stats = values => { const s = [...values].sort((a, b) => a - b); return s.length ? {n: s.length, min: s[0], median: s[s.length >> 1], max: s[s.length - 1]} : {n: 0}; };
 
-// A plain look at the radio: who holds it. Sends only slice list and sub client all.
+// A plain look at the radio: who holds it. Sends only slice list and sub client all. Replies
+// come in order, so the last one proves the client list has arrived. Without every reply at code
+// 0 nothing is known about who holds the radio, and that is not "free".
 function look(address) {
   return new Promise((resolve, reject) => {
     const [host, port] = address.split(':');
@@ -24,14 +26,15 @@ function look(address) {
     let text = '';
     socket.setTimeout(8000, () => socket.destroy(new Error('radio connection timeout')));
     socket.on('error', reject);
-    socket.on('connect', () => socket.write('C1|slice list\nC2|sub client all\n'));
-    socket.on('data', data => { text += data.toString('latin1'); });
-    setTimeout(() => {
-      socket.destroy();
-      const lines = text.split('\n');
-      const slices = /^R1\|0\|(.*)$/m.exec(text)?.[1]?.trim() ?? null;
-      resolve({reachable: lines.some(l => l.startsWith('V')), slices, clients: lines.filter(l => /\|client 0x\S+ connected/.test(l)).length});
-    }, 2000);
+    socket.on('connect', () => socket.write('C1|slice list\nC2|sub client all\nC3|slice list\n'));
+    const reply = n => { const m = new RegExp(`^R${n}\\|([0-9A-Fa-f]+)\\|(.*)$`, 'm').exec(text); return m && {ok: parseInt(m[1], 16) === 0, message: m[2].trim()}; };
+    const finish = () => {
+      clearTimeout(timer); socket.destroy();
+      const lines = text.split('\n'), first = reply(1), second = reply(2), third = reply(3);
+      resolve({reachable: lines.some(l => l.startsWith('V')), verified: !!(first?.ok && second?.ok && third?.ok), slices: first?.message ?? null, clients: lines.filter(l => /\|client 0x\S+ connected/.test(l)).length});
+    };
+    const timer = setTimeout(finish, 6000);
+    socket.on('data', data => { text += data.toString('latin1'); if (reply(3)) finish(); });
   });
 }
 
@@ -43,6 +46,7 @@ async function run({address, seconds = 180, band = '20m', out, registerPort, ant
   const finish = async () => { await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify(report, null, 1)); return report; };
   report.before = await look(address);
   if (!report.before.reachable) { report.status = 'unreachable'; return finish(); }
+  if (!report.before.verified) { report.status = 'unverified'; return finish(); }
   if (report.before.clients || report.before.slices) { report.status = 'occupied'; return finish(); }
   const dir = path.join(directory, 'profile'), port = await browserPort();
   await fs.mkdir(dir, {recursive: true});
@@ -105,6 +109,8 @@ async function run({address, seconds = 180, band = '20m', out, registerPort, ant
     report.after = await look(address).catch(error => ({error: error.message}));
     await fs.cp(path.join(dir, 'diagnostic-windows'), path.join(directory, 'windows'), {recursive: true}).catch(() => {});
     await fs.rm(dir, {recursive: true, force: true}).catch(() => {});
+    // A measurement that leaves something on the radio is not a clean run.
+    if (!report.after.verified || report.after.clients || report.after.slices) report.status = 'not_released';
     await finish();
   }
   return report;

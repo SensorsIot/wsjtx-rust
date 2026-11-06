@@ -69,6 +69,10 @@ class FlexEmulator {
     this.registered = []; // {text, port, at}
     this.ignoreTune = options.ignoreTune ?? false; // accepts slice tune, never reports it
     this.replyFirst = options.replyFirst ?? false; // answers sub client before its statuses
+    this.dropEvery = options.dropEvery ?? 0; // loses every Nth stream packet on the way
+    this.keepOnDisconnect = options.keepOnDisconnect ?? false; // does not release a lost client's slice
+    this.refuseList = options.refuseList ?? false; // refuses slice list
+    this.pausedUntil = 0; // a stall: no packet leaves until then, the backlog follows at once
     this.daxStatusDelay = options.daxStatusDelay ?? 0; // ms until a DAX change takes effect
     this.discoveryPorts = options.discoveryPorts ?? [];
     this.handleBase = options.handleBase ?? 0x10000000;
@@ -120,6 +124,7 @@ class FlexEmulator {
     for (const port of this.discoveryPorts) this.udp.send(packet, port, '127.0.0.1');
   }
   audio() {
+    if (performance.now() < this.pausedUntil) return;
     const due = Math.floor((performance.now() - this.started) * 24) - this.sentFrames;
     for (let left = due; left >= 128; left -= 128) {
       const wall = this.startedWall + this.sentFrames / 24;
@@ -130,8 +135,11 @@ class FlexEmulator {
         if (!client?.udpPort || !slice) continue;
         if (this.needRegister && !this.registered.some(r => r.port === client.udpPort && r.text === `client udp_register handle=0x${hex(s.owner)}`)) continue;
         const sender = this.strangerOnly ? this.stranger : this.udp;
+        s.sent = (s.sent ?? 0) + 1;
+        const dropped = this.dropEvery && s.sent % this.dropEvery === 0;
         const payload = this.periodWav ? periodPayload(128, this.periodWav, wall) : daxPayload(128, slice.amplitude, s.phase);
-        sender.send(vita({type: 3, stream: id, packetClass: DAX24, count: s.count++, time: FROZEN, payload}), client.udpPort, '127.0.0.1');
+        const packet = vita({type: 3, stream: id, packetClass: DAX24, count: s.count++, time: FROZEN, payload});
+        if (!dropped) sender.send(packet, client.udpPort, '127.0.0.1');
         s.phase += 128;
         // Interference every 8th packet: another client's stream ID and any stale old-session
         // ID, at a loud amplitude a correctly routed station must never accept.
@@ -176,7 +184,7 @@ class FlexEmulator {
     this.clients.delete(handle);
     // A GUI client's resources leave with its connection.
     for (const [id, s] of [...this.streams]) if (s.owner === handle) { this.streams.delete(id); this.publish('dax', `S${hex(handle)}|stream 0x${hex(id)} removed`); }
-    for (const [i, s] of [...this.slices]) if (s.owner === handle) { this.slices.delete(i); this.publish('slice', `S${hex(handle)}|slice ${i} in_use=0`); }
+    if (!this.keepOnDisconnect) for (const [i, s] of [...this.slices]) if (s.owner === handle) { this.slices.delete(i); this.publish('slice', `S${hex(handle)}|slice ${i} in_use=0`); }
     this.publish('client', `S0|client 0x${hex(handle)} disconnected forced=0`);
   }
   removeExternal(clientId) {
@@ -198,6 +206,7 @@ class FlexEmulator {
       return;
     }
     if (text === 'client start_persistence off' || text === 'ping') return reply(0);
+    if (text === 'slice list' && this.refuseList) return reply('50000016');
     if (text === 'slice list') return reply(0, [...this.slices.keys()].join(' '));
     // The form of a real FLEX-6600's reply, recorded 2026-11-06.
     if (text === 'info') return reply(0, `model="${this.model}",chassis_serial="${this.serial}",name="",callsign="TEST",gps="Not Present",num_slice=${this.maxSlices},num_tx=1,software_ver=4.3.16.42034,ip=127.0.0.1`);

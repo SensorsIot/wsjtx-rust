@@ -1772,13 +1772,18 @@ package WstxRequirements {
              script tests/flex-live-check.cjs, run against the emulator streaming the verified FT8
              vector on the UTC period at 24 kHz, measures zero loss, reports jitter, shows the
              vector's expected text from the station's decoder with DT within 0.3 s from arrival
-             anchoring, saves the windows and leaves no slice or client. Another model on the admitted API connects and its announced
+             anchoring, saves the windows and leaves no slice or client. It stops as occupied with a
+             client or slice present, whichever way round the replies come, as unverified when a
+             reply is refused, and reports not_released for a slice left behind. One packet in four
+             lost is counted at 25% with the canonical frame rate kept and no new epoch, and a
+             120 ms stall reads as at least 90 ms of jitter. Another model on the admitted API connects and its announced
              model, serial and firmware are shown. GET /native-flex reports the packet's timestamp
              kind and this host's clock minus its time, which a new session without own packets
              shows as null. A saved address connects with nothing announced and no discovery
              listener; model, serial and firmware then come from the radio's info reply; the stream
              arrives only after client udp_register from the stream's port, which repeats, and no
-             command names a local address. */
+             command names a local address. A full radio on a saved address reports
+             radio_refused. */
         attribute automation : AutomationState = AutomationState::implemented;
         attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
         objective {

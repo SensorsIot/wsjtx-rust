@@ -347,5 +347,16 @@ fn native_profile_creation_persists_intent_without_runtime_handles() {
         text
     );
     drop(store);
+    fs::remove_dir_all(&directory).unwrap();
+    // The one supported way to set the address reaches the session's intent.
+    Store::create_native(&directory, "ANT1", Some("192.0.2.10:4992")).unwrap();
+    let (store, _) = Store::open(&directory).unwrap();
+    let located = store.document.native.clone().unwrap();
+    assert_eq!(located.radio_address.as_deref(), Some("192.0.2.10:4992"));
+    assert_eq!(
+        located.intent().radio_address,
+        Some("192.0.2.10:4992".parse().unwrap())
+    );
+    drop(store);
     fs::remove_dir_all(directory).unwrap();
 }

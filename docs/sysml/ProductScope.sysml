@@ -265,7 +265,7 @@ package WstxProductScope {
              stream's own UDP port to the radio's UDP ports 4991 and 4993, right after client
              udpport and every 5 s, to open and keep open the way back through connection tracking
              (WSTX_FLEX_REGISTER_PORT replaces both ports for tests).
-             Control: TCP to the announced ip/port (default 4992), connect/step deadline 5 s,
+             Control: TCP to the announced ip/port (default 4992) or the saved address, connect/step deadline 5 s,
              lines <= 4096 bytes incoming and <= 1024 outgoing, one outstanding command, reply
              codes hexadecimal. Only API protocol V1.4.0.0 is admitted; any other version
              refuses before the first command (incompatible_api). Firmware/model are displayed,
@@ -344,7 +344,8 @@ package WstxProductScope {
              Pinned (CL-013-02), read from the station's radio on 2026-11-06: model FLEX-6600,
              firmware SmartSDR 4.3.16.42034, API V1.4.0.0, 4 slices. Admission is by API version;
              another model or firmware speaking it connects and is displayed but not claimed as
-             supported. The displayed model, serial and firmware are the announced ones.
+             supported. The displayed model, serial and firmware are the announced ones, or the
+             info reply's on a saved address.
              Profile: the connection type is chosen at creation (--create-native-flex-profile
              <dir> <rx antenna> [<address:port>]) and is read-only in the browser. tests/flex-live-check.cjs is the one-run live measurement. Remaining: hardware/firmware,
              24 kHz DAX, latency/timestamps, >= 4 usable slices, broadcast discovery and resource
