@@ -1372,7 +1372,7 @@ fn update_rerun_upgrades_confirmations_of_present_records_and_never_removes_one(
     assert_eq!(log.put(changed, GATE).unwrap(), LogOutcome::AlreadySaved);
 }
 
-// Proves: TC-039-010 WstxStrategy::WorkedWindow: only the records of the window, cached until
+// Proves: TC-039-030 WstxStrategy::WorkedWindow: only the records of the window, cached until
 // the log changes, a record without a date only for all time.
 #[test]
 fn worked_window_reads_only_the_dated_records_and_is_cached_per_revision() {

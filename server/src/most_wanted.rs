@@ -518,10 +518,10 @@ fn response_body(reply: &[u8]) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    // Proves: TC-039-011. Hand-written list text and replies; no network.
+    // Proves: TC-039-031. Hand-written list text and replies; no network.
     use super::*;
     #[test]
-    fn tc_039_011_parser_refuses_all_but_the_exact_list() {
+    fn tc_039_031_parser_refuses_all_but_the_exact_list() {
         let ok = List::parse(r#"{"1":"344","2":123,"3":"9999"}"#, "2026-11-06", "upload").unwrap();
         assert_eq!(ok.entries(), 3);
         assert_eq!(ok.unmapped, 1, "9999 has no entity");
@@ -547,7 +547,7 @@ mod tests {
         assert_eq!(List::from_value(&Value::Object(many), "d", "upload"), None);
     }
     #[test]
-    fn tc_039_011_every_bundled_entity_has_its_adif_number() {
+    fn tc_039_031_every_bundled_entity_has_its_adif_number() {
         let table = crate::dxcc::Table::default();
         for name in table.cty.entity_names() {
             assert!(adif_number(name).is_some(), "{name}");
@@ -572,7 +572,7 @@ mod tests {
         }
     }
     #[test]
-    fn tc_039_011_response_body() {
+    fn tc_039_031_response_body() {
         assert_eq!(
             response_body(b"HTTP/1.1 200 OK\r\nServer: x\r\n\r\n{\"1\":\"344\"}"),
             Ok("{\"1\":\"344\"}".to_owned())

@@ -509,9 +509,9 @@ fn tc_055_002_worked_set_follows_each_uploaded_table() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-// Proves: TC-039-010 WstxStrategy::WpxPrefix, the examples of the CQ WPX Contest rules.
+// Proves: TC-039-030 WstxStrategy::WpxPrefix, the examples of the CQ WPX Contest rules.
 #[test]
-fn tc_039_010_wpx_prefix_table() {
+fn tc_039_030_wpx_prefix_table() {
     for (call, prefix) in [
         ("N8BJQ", "N8"),
         ("W8AA", "W8"),
@@ -545,9 +545,9 @@ fn tc_039_010_wpx_prefix_table() {
     }
 }
 
-// Proves: TC-039-010 the per-call and per-prefix facts of the worked set.
+// Proves: TC-039-030 the per-call and per-prefix facts of the worked set.
 #[test]
-fn tc_039_010_worked_set_keeps_call_grid_prefix_standing_and_gridless_calls() {
+fn tc_039_030_worked_set_keeps_call_grid_prefix_standing_and_gridless_calls() {
     let t = bundled();
     let log = |call: &str, grid: Option<&str>, confirmed: bool| Logged {
         call: call.into(),

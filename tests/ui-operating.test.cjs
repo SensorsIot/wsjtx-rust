@@ -2289,7 +2289,7 @@ test('TC-043-003 the clock source and the clock from the air are shown in Settin
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-039-01, CL-039-04, CL-039-05, CL-039-08; TC-039-006. The browser renders the
+// Proves: CL-039-01, CL-039-04, CL-039-05, CL-039-10; TC-039-006. The browser renders the
 // station's verdicts (it never evaluates), sends only the selection and the editor's save, and
 // keeps HALT reachable in the popup. Station replies are hand-written fixtures; the expected
 // requests and row order are written here.
@@ -2421,7 +2421,7 @@ test('TC-039-006 Settings > General continent saves to the station strategy stor
   assert.equal(await page.evaluate(()=>Object.keys(localStorage).some(k=>k.startsWith('wstx.continent'))),false,'not browser-local any more');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-039-08; TC-039-006 the Most Wanted section on the actual isolated station: status,
+// Proves: CL-039-10; TC-039-006 the Most Wanted section on the actual isolated station: status,
 // attribution, a refused and a good upload, removal. Download now needs the network: only offered.
 test('TC-039-006 Settings > General Most Wanted list: status, upload and removal on the station',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});

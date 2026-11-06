@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
-// Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-039-08, CL-042-01, CL-042-02,
-// CL-042-03, CL-042-04; TC-039-001..005, TC-039-010, TC-039-011, TC-042-001, TC-042-002,
+// Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-039-10, CL-042-01, CL-042-02,
+// CL-042-03, CL-042-04; TC-039-001..005, TC-039-030, TC-039-031, TC-042-001, TC-042-002,
 // TC-042-004, TC-042-006 (each test names its case below). Hand-authored records, logs and
 // strategies; the expected verdicts, orders, stop reasons and requests are the WstxStrategy
 // tables written in these tests (entities from the cited cty.dat columns), not evaluator output.
@@ -232,7 +232,7 @@ fn tc_039_002_verdicts_grey_reasons_and_treat_73() {
     }
 }
 
-// Proves: TC-039-010, TC-042-001. Entity columns of cty.dat: DL Fed. Rep. of Germany (CQ 14), F
+// Proves: TC-039-030, TC-042-001. Entity columns of cty.dat: DL Fed. Rep. of Germany (CQ 14), F
 // France (14), JA Japan (25), K United States (5), VK Australia (30); XX1ABC has no entity.
 fn goal_log() -> Arc<Worked> {
     worked(&[
@@ -274,9 +274,9 @@ fn of_goal(goal: Goal, needed: Needed, st: &Station) -> Vec<&'static str> {
         .collect()
 }
 
-// Proves: TC-039-010, TC-042-001
+// Proves: TC-039-030, TC-042-001
 #[test]
-fn tc_039_010_each_goal_in_both_needed_settings() {
+fn tc_039_030_each_goal_in_both_needed_settings() {
     let st = Station {
         worked: Some(goal_log()),
         ..me()
@@ -328,9 +328,9 @@ fn tc_039_010_each_goal_in_both_needed_settings() {
     }
 }
 
-// Proves: TC-039-010
+// Proves: TC-039-030
 #[test]
-fn tc_039_010_a_missing_grid_is_unknown_never_new() {
+fn tc_039_030_a_missing_grid_is_unknown_never_new() {
     let st = Station {
         worked: Some(worked(&[
             ("K2ABC", Some("40m"), Some("FT8"), None, false),
@@ -360,9 +360,9 @@ fn tc_039_010_a_missing_grid_is_unknown_never_new() {
     }
 }
 
-// Proves: TC-039-010
+// Proves: TC-039-030
 #[test]
-fn tc_039_010_region_min_snr_for_an_eu_and_a_non_eu_profile() {
+fn tc_039_030_region_min_snr_for_an_eu_and_a_non_eu_profile() {
     let records = rows(&[
         ("CQ K1ABC FN42", Some(-10.0)),
         ("CQ DL2XYZ JO50", Some(-5.0)),
@@ -416,9 +416,9 @@ fn tc_039_010_region_min_snr_for_an_eu_and_a_non_eu_profile() {
     assert_eq!(snr(None, None), Some(0));
 }
 
-// Proves: TC-039-010
+// Proves: TC-039-030
 #[test]
-fn tc_039_010_a_caller_beats_a_most_wanted_station_and_ignores_goal_region_and_snr() {
+fn tc_039_030_a_caller_beats_a_most_wanted_station_and_ignores_goal_region_and_snr() {
     let list = crate::most_wanted::List::parse(r#"{"1":"150"}"#, "2026-11-06", "upload");
     let st = Station {
         // The caller is worked and confirmed on every goal; Australia is rank 1.
@@ -466,9 +466,9 @@ fn tc_039_010_a_caller_beats_a_most_wanted_station_and_ignores_goal_region_and_s
     );
 }
 
-// Proves: TC-039-010
+// Proves: TC-039-030
 #[test]
-fn tc_039_010_value_order_with_and_without_a_list() {
+fn tc_039_030_value_order_with_and_without_a_list() {
     // Germany on 20m only, France on 40m FT4 only, England on 40m FT8.
     let log = worked(&[
         ("DL1ABC", Some("20m"), Some("FT8"), Some("JO62"), false),
@@ -522,9 +522,9 @@ fn tc_039_010_value_order_with_and_without_a_list() {
     );
 }
 
-// Proves: TC-039-010
+// Proves: TC-039-030
 #[test]
-fn tc_039_010_worked_window_from_dated_records() {
+fn tc_039_030_worked_window_from_dated_records() {
     let table = crate::dxcc::Table::default();
     let log = |call: &str, date: Option<u32>| Logged {
         call: call.into(),
@@ -621,7 +621,7 @@ fn config(active: Option<&str>) -> Value {
         "ignore_calls":[],"session_ignore_minutes":30})
 }
 
-// Proves: TC-039-001, TC-039-010
+// Proves: TC-039-001, TC-039-030
 #[test]
 fn tc_039_001_configuration_is_exact() {
     let mut full = config(Some("New calls"));
@@ -839,9 +839,9 @@ fn tc_039_001_configuration_is_exact() {
     assert_eq!(parse_config(&c), Err("strategies".into()));
 }
 
-// Proves: TC-039-010 (WstxStrategy::StrategyConfiguration upgrade and restart).
+// Proves: TC-039-030 (WstxStrategy::StrategyConfiguration upgrade and restart).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_010_an_old_file_upgrades_and_active_never_survives_a_restart() {
+async fn tc_039_030_an_old_file_upgrades_and_active_never_survives_a_restart() {
     let f = station(true).await;
     let write = |schema: u64, revision: u64, configuration: Value| {
         std::fs::write(
@@ -1512,10 +1512,10 @@ async fn tc_039_004_callers_come_first_and_a_cancelled_station_never_again() {
     assert_eq!(contact(&f).await.0, json!("VK2ABC"));
 }
 
-// Proves: TC-039-010 (WstxStrategy::WorkedWindow through the store): a QSO of this UTC date
+// Proves: TC-039-030 (WstxStrategy::WorkedWindow through the store): a QSO of this UTC date
 // counts in today, not in a window that ended before.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_010_today_and_from_to_read_the_log_of_the_window() {
+async fn tc_039_030_today_and_from_to_read_the_log_of_the_window() {
     let f = station(true).await;
     let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
@@ -1571,9 +1571,9 @@ async fn tc_039_010_today_and_from_to_read_the_log_of_the_window() {
     );
 }
 
-// Proves: TC-039-011
+// Proves: TC-039-031
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_011_most_wanted_upload_download_status_and_mcp_refusal() {
+async fn tc_039_031_most_wanted_upload_download_status_and_mcp_refusal() {
     let f = station(true).await;
     let post = async |path: &str, extra: Value| {
         let mut b = json!({"v":1,"profile_id":f.id,"boot_id":f.boot});

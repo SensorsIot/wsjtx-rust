@@ -1,7 +1,7 @@
 package WstxStrategy {
     private import ScalarValues::*;
     doc /* Canonical contract of the strategy engine (issue #39, CL-039-01..07 in
-         WstxRequirements; verification TC-039-001..007 and TC-039-010..011; the ignore
+         WstxRequirements; verification TC-039-001..007 and TC-039-030..031; the ignore
          lists of issue #42, CL-042-02 and TC-042-002..003; Pounce, CL-042-03 and
          TC-042-004..005; Alert, CL-042-04 and TC-042-006..007): the award strategies, the
          directed-CQ rule, the value order in Band Activity, the strategy editor popup and
@@ -554,7 +554,7 @@ package WstxStrategy {
     dependency evaluateClause from Verdict to WstxRequirements::'CL-039-02';
     dependency goalClause from GoalNeeded to WstxRequirements::'CL-039-02';
     dependency valueClause from ValueOrder to WstxRequirements::'CL-039-02';
-    dependency mostWantedClause from MostWantedList to WstxRequirements::'CL-039-08';
+    dependency mostWantedClause from MostWantedList to WstxRequirements::'CL-039-10';
     dependency ignoreClause from IgnoreLists to WstxRequirements::'CL-042-02';
     dependency pounceClause from Pounce to WstxRequirements::'CL-042-03';
     dependency pouncePath from Pounce to WstxMcp::OperatingAutomation;

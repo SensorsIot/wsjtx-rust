@@ -3956,14 +3956,14 @@ package WstxRequirements {
         }
     }
     dependency CL_039_07_verified_by_TC_039_008 from 'CL-039-07' to 'TC-039-008';
-    requirement 'CL-039-08' {
+    requirement 'CL-039-10' {
         doc /* The value order can use the Club Log Most Wanted list: Settings shows its status (date, entries, unmapped numbers, source attribution) and offers an upload and a Download now that fetches it once on the operator's click; it is validated, stored in the profile folder and mapped to cty.dat entities by ADIF number (an unmapped number is ignored and counted). No automatic refresh and no bundled copy until the operator rules on the terms (none stated by Club Log, recorded in WstxStrategy D12). Everything works without a list (DXCC-new first). The list is read off the station step. Details: WstxStrategy::MostWantedList, ValueOrder. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/most_wanted.rs; server/src/strategy.rs; client/contact.js";
     }
-    dependency CL_039_08_to_FR_007 from 'CL-039-08' to 'FR-007';
-    verification 'TC-039-010' {
-        doc /* TC-039-010 — Goals, windows, value order, callers and the WPX prefix
+    dependency CL_039_10_to_FR_007 from 'CL-039-10' to 'FR-007';
+    verification 'TC-039-030' {
+        doc /* TC-039-030 — Goals, windows, value order, callers and the WPX prefix
              CL-039-01, CL-039-02, CL-039-05
              Setup: hand-authored rows and a log of hand-written contacts (worked, confirmed, per band and mode, with and without a grid, with dates) for HB9BLA on 40m FT8, EU, and for a non-EU profile; the expected verdicts are written in the tests.
              Steps: each goal with worked and confirmed fixtures in both needed settings; grid with no message grid and with a logged QSO without a grid; region all, dx and selected for an EU and a non-EU profile; window all, today and from-to with an undated record; min_snr_db; a caller against a Most Wanted station with a goal, region and SNR that exclude it; value order with and without a list; the WPX prefix table; contest class; the old file upgrade.
@@ -3977,23 +3977,23 @@ package WstxRequirements {
         }
         attribute executable : String = "server/src/strategy_tests.rs; server/src/dxcc_tests.rs";
     }
-    dependency CL_039_01_verified_by_TC_039_010 from 'CL-039-01' to 'TC-039-010';
-    dependency CL_039_02_verified_by_TC_039_010 from 'CL-039-02' to 'TC-039-010';
-    dependency CL_039_05_verified_by_TC_039_010 from 'CL-039-05' to 'TC-039-010';
-    verification 'TC-039-011' {
-        doc /* TC-039-011 — Most Wanted list: parsing, mapping, routes
-             CL-039-08
+    dependency CL_039_01_verified_by_TC_039_030 from 'CL-039-01' to 'TC-039-030';
+    dependency CL_039_02_verified_by_TC_039_030 from 'CL-039-02' to 'TC-039-030';
+    dependency CL_039_05_verified_by_TC_039_030 from 'CL-039-05' to 'TC-039-030';
+    verification 'TC-039-031' {
+        doc /* TC-039-031 — Most Wanted list: parsing, mapping, routes
+             CL-039-10
              Setup: hand-written list text (no network); the bundled cty.dat; the actual station router on a disposable HTTPS profile; a test seam in place of the HTTP fetch.
              Steps: parse valid and refused lists; map every bundled cty.dat entity; upload a list with an unknown number; read the snapshot; open a new owner; remove it; Download now with a fake fetch that succeeds and one that fails; POST with the MCP cookie.
              Expected: the refusals invalid_most_wanted, nothing changed; every bundled entity has an ADIF number, exactly 340 distinct numbers; status {date, source upload, entries, unmapped 1}; the new owner reads it; the removal gives null; the download stores source download, a failure is 502 download_failed and changes nothing; the MCP cookie is refused 401.
              2 — Isolated automated tests; Windows development PC, no network. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
-            verify 'CL-039-08';
+            verify 'CL-039-10';
         }
         attribute executable : String = "server/src/strategy_tests.rs";
     }
-    dependency CL_039_08_verified_by_TC_039_011 from 'CL-039-08' to 'TC-039-011';
+    dependency CL_039_10_verified_by_TC_039_031 from 'CL-039-10' to 'TC-039-031';
     requirement 'CL-042-01' {
         doc /* The award goals read the sender's cty.dat entity (#55) against the internal log: DXCC entity ever, on this band, on this band and mode, and CQ zone ever (WstxStrategy::GoalNeeded, #39 2026-11-04, which replaces the former New conditions on continent and ITU zone); a sender without an entity, an unknown station band (for the band forms) or an unreadable log never counts as needed. The editor offers them as goals; the live preview names why. Details: WstxStrategy::GoalNeeded. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -4201,7 +4201,7 @@ package WstxRequirements {
     dependency CL_039_06_verified_by_TC_039_005 from 'CL-039-06' to 'TC-039-005';
     verification 'TC-039-006' {
         doc /* TC-039-006 — Strategy selector, value marks, editor popup and Most Wanted in the browser
-             CL-039-01, CL-039-04, CL-039-05, CL-039-08
+             CL-039-01, CL-039-04, CL-039-05, CL-039-10
              Setup: actual isolated server and Chromium at 1366x768 (and 360x740 for the popup); routed fixtures: an FT8 live job with CQ K1ABC FN42, CQ NA W1AW FN31, CQ DL1XYZ JO62, a strategy view (revision 4, "DX first", none active), station verdicts [2 rank 0, 0 rank 1, 1 grey] (with reasons when explain), the automation owner. A second case uses the real station store.
              Steps: wait; select "DX first"; click the Freq column; click Value; open the editor; read the preview; resize to 360 px; change a goal; Save; Close; announce automation.state with a waiting run; strategy.state with active null (a HALT); select None. Second case: choose continent AS in Settings > General; the Most Wanted section with an upload.
              Expected: no evaluation request and no mark while none is active; selecting sends one PUT {expected_revision 4, active "DX first"} and asks nothing; no POST /automation/command and no enable_tx from the browser; one evaluation {the live identity, 0..3, strategy null, explain false}, none on a timer; rows DL1XYZ, K1ABC marked in that order, W1AW greyed; a column click sorts by the column with the marks kept, Value returns to the station's order; the editor holds exactly the settings of Strategy; the popup HALT has the top-bar state; preview rows with their reasons from a draft evaluation with explain; no horizontal overflow at 360 px; an edit re-runs the preview; Save sends exactly the edited strategy and does not select; the run state reads "Strategy DX first waiting" after the event, GET /automation only on the event; strategy.state re-reads GET /strategy and the selector shows None. Second case: PUT saved continent AS (my_continent AS) and no browser storage key; the upload posts the file text and the status shows entries and attribution.
@@ -4211,14 +4211,14 @@ package WstxRequirements {
             verify 'CL-039-01';
             verify 'CL-039-04';
             verify 'CL-039-05';
-            verify 'CL-039-08';
+            verify 'CL-039-10';
         }
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_039_01_verified_by_TC_039_006 from 'CL-039-01' to 'TC-039-006';
     dependency CL_039_04_verified_by_TC_039_006 from 'CL-039-04' to 'TC-039-006';
     dependency CL_039_05_verified_by_TC_039_006 from 'CL-039-05' to 'TC-039-006';
-    dependency CL_039_08_verified_by_TC_039_006 from 'CL-039-08' to 'TC-039-006';
+    dependency CL_039_10_verified_by_TC_039_006 from 'CL-039-10' to 'TC-039-006';
     verification 'TC-039-007' {
         doc /* TC-039-007 — Live strategy on HB9BLA
              CL-039-03, CL-039-04, CL-039-05, CL-039-06
