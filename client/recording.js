@@ -229,7 +229,7 @@ function split(value) {
   const minimum=Math.max(160,Math.ceil(signalText+60));
   main.style.minHeight=`${minimum+228+otherHeight}px`;
   const available = Math.max(minimum+228,main.clientHeight-otherHeight)-splitter.offsetHeight, maximum = available-200;
-  upper = Math.max(minimum,Math.min(maximum,value ?? Math.min(330,available-400))); // #37: room for the QSO pane, Control and error field
+  upper = Math.max(minimum,Math.min(maximum,value ?? Math.min(330,available-490))); // #37: room for the fixed QSO pane (12 dialogue rows), Control and error field
   signal.style.height = `${upper}px`;
   for (const [name,value] of [['min',minimum],['max',maximum],['now',Math.round(upper)]]) splitter.setAttribute(`aria-value${name}`,String(value));
   paint();
@@ -712,10 +712,15 @@ function activityRow(record,period,context,mode){
   if(isPartner)row.classList.add('ba-partner');
   else if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
   const udp=udpHighlight(record);
-  const senderOnly=!udp&&hl.length>0&&!row.classList.contains('ba-tome')&&!/^(CQ|QRZ)\b/.test(record.text)&&!(f?.type==='nonstandard'&&f.cq);
+  const cqLike=/^(CQ|QRZ)\b/.test(record.text)||(f?.type==='nonstandard'&&f.cq);
+  const senderOnly=!udp&&hl.length>0&&!row.classList.contains('ba-tome')&&!cqLike;
+  // #37 (operator 2026-11-04): a row of a QSO between others cannot start a contact for me.
+  if(from)row.dataset.sender=from;
+  if(from&&!cqLike&&to!==my)row.dataset.foreign='true';
   if(senderOnly)row.classList.add('ba-sender');
   if(udp)row.dataset.udp=udp.call;else if(hl.length)row.dataset.hl=hl.join(' ');
   const grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value:null,km=grid?window.wstxDistanceKm?.(profileData?.settings?.locator,grid)??null:null,dx=record.dxcc,approx=km===null&&Number.isInteger(dx?.km);
+  if(dx?.cont)row.dataset.continent=dx.cont;
   if(!isPartner)row.dataset.reasons=JSON.stringify(activityHover(record));
   const cells=[periodLabel(record.period_start_utc,mode),record.snr_db===null?'\u2014':record.snr_db.toFixed(1),record.dt_seconds===null?'\u2014':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),decoded?record.text:`Payload ${record.status}`,dx?dx.name:'\u2014',approx?`~${dx.km} km`:km===null?'\u2014':`${km} km`];
   for(const [index,text] of cells.entries()){
@@ -1338,11 +1343,14 @@ const HOVER_KINDS=[['new_continent','new_continent_band'],['new_dxcc','new_dxcc_
 // One line, " · " between reasons (operator: "line them up horizontally"), then "UDP highlight" for an
 // accepted UDP highlight and the strategy verdict. A row without such a reason has no tip. Shown in
 // the compact Band Activity tip (data-tip) and as aria-description; no native title, which wraps.
+function hoverReasons(reasons,worked){
+  const on=new Set((document.querySelector('#band-activity')?.dataset.hlOn??'').split(' '));
+  return HOVER_KINDS.map(kind=>{const k=kind.find(k=>reasons[k]&&on.has(k));return !k?'':k==='new_call_band'&&worked?`${reasons[k]} (worked ${worked})`:reasons[k];}).filter(Boolean);
+}
 function activityWhy(row){
   let reasons={};try{reasons=JSON.parse(row.dataset.reasons??'{}')??{};}catch{}
-  const on=new Set((document.querySelector('#band-activity')?.dataset.hlOn??'').split(' '));
   const worked=row.dataset.worked==='worked_this_band_and_mode'?`on ${row.dataset.workedOn||'this band and mode'}`:row.dataset.worked==='worked_other_band_or_mode'?'on another band or mode':'';
-  const parts=HOVER_KINDS.map(kind=>{const k=kind.find(k=>reasons[k]&&on.has(k));return !k?'':k==='new_call_band'&&worked?`${reasons[k]} (worked ${worked})`:reasons[k];});
+  const parts=hoverReasons(reasons,worked);
   parts.push(row.dataset.udp?'UDP highlight':'',row.dataset.whyStrategy??'');
   const tip=parts.filter(Boolean).join(' · ');
   if(tip){row.dataset.tip=tip;row.setAttribute('aria-description',tip);}else{delete row.dataset.tip;row.removeAttribute('aria-description');}

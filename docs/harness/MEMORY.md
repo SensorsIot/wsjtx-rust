@@ -20,7 +20,7 @@ normal checks, independent review and one shared-file/integration writer.
 `HB9BLA-HANDOFF.md` identifies runtime/data locations. The pinned `harness/` is the process
 source; do not replace it with a user-level skill or update its pin without its review.
 
-## Working state and rules (2026-11-04)
+## Working state and rules (2026-11-06)
 
 - **Lifecycle:** every open issue carries one `cr:*` label (preparing … accepted); read
   `python harness/core/tools/cr_state.py status` (with `HARNESS_REPO` set inline) before
@@ -39,5 +39,7 @@ source; do not replace it with a user-level skill or update its pin without its 
   client polling (#10); Band Activity colours only interesting stations (#50); CI-V
   always reads first and writes only on a difference (#44); Windows-only product for now.
 - **Open work and decisions** for the next session: the newest comments on #10, #37,
-  #39, #44, #50, #61 and the contest issue #63; operator decisions pending on #56, #24
-  (S5 licence), #22 (radio identity), #40 (accept_commands) and #63.
+  #39, #44, #50, #61 and the contest issue #63. Decided 2026-11-06: #22 drops radio identity;
+  #40 is send-only UDP (all inbound removed, including UDP Halt; the operator may correct this reading); #56 accepts the current
+  corpus result with a live comparison as evidence. #24 S5 waits for the SuperFox licence
+  answer the operator requested by e-mail.
