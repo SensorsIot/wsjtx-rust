@@ -2483,6 +2483,8 @@ test('TC-039-006 Rows arriving during an evaluation are evaluated when it ends',
   await page.evaluate(s=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',data:{profile_id:s.profile_id,boot_id:s.boot_id,generation:s.generation}}}})),state);
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3,null,{timeout:15000});
   assert.equal(evaluations.length,1,'one at a time');
+  // Nothing renders from here on: only the end of the evaluation can ask again.
+  await page.evaluate(()=>{window.renderResults=()=>{};});
   release();
   await page.waitForFunction(()=>document.querySelectorAll('#band-activity tr.ba-strategy').length===3,null,{timeout:10000});
   assert.deepEqual(evaluations.map(b=>[b.first_sequence,b.next_sequence]),[[0,2],[0,3]]);
