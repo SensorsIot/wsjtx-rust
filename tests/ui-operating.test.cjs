@@ -304,10 +304,11 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
  assert.match(await page.locator('#radio-toolbar').innerText(),/Band \u27F3[\s\S]*Mode \u27F3/,'band and mode are marked as restart changes');
  assert.equal(await page.locator('#op-dial').isDisabled(),true);assert.equal(await page.locator('#op-dial').inputValue(),'');
  assert.match(await page.locator('#signal .op-signal-heading').innerText(),/Sensitivity/,'Sensitivity stays in the waterfall corner');
- // #39: without a saved strategy only None and the editor are offered; Highlight and Auto wait for a strategy.
+ // #39: without a saved strategy only None, the editor and Value are offered.
  await page.waitForFunction(()=>!document.querySelector('#strategy-edit').disabled,null,{timeout:15000});
  assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None']);
- for(const id of ['#strategy-highlight','#strategy-auto'])assert.equal(await page.locator(id).isDisabled(),true,`${id} needs a strategy`);
+ for(const id of ['#strategy-highlight','#strategy-auto'])assert.equal(await page.locator(id).count(),0,`${id} is gone`);
+ assert.equal(await page.locator('#activity-value').isVisible(),true,'the Value control is visible');
  assert.equal(await page.locator('#station-automation').textContent(),'Automation idle');
  // WstxContact::OperatorDisplays (D11): server UTC in the top bar. #50: one period bar only, the QSO pane's NEXT bar.
  await page.locator('#radio-toolbar .op-period > span').filter({hasText:/^UTC \d\d:\d\d:\d\d$/}).waitFor();
@@ -2055,12 +2056,12 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
  ];
  const records=rows.map(([text,from,to,exchange,snr,flags,dxcc],i)=>({sequence:i,start_frame:186000+i,frequency_hz:2400-i*150,snr_db:snr,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:from?fields(from,to,exchange):{},period_start_utc:period,dt_seconds:0.1,...(flags?{flags}:{}),...(dxcc?{dxcc}:{})}));
  const n=records.length;let state,view;
- const strategy={name:'Hover test',rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3};
+ const strategy={name:'Hover test',class:'award',goals:['new_call'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:false,window:{kind:'all'}};
  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
   const profile=await(await fetch(app.origin+'/profile')).json();
   const saved=await fetch(app.origin+'/contacts',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.origin},body:JSON.stringify({v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,command_id:crypto.randomUUID(),record:{contact_id:crypto.randomUUID(),call:'K1ABC',gridsquare:null,mode:'FT8',submode:null,rst_sent:null,rst_rcvd:null,qso_date:'20261027',time_on:'115900',qso_date_off:'20261027',time_off:'120000',band:'20m',freq:null,station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null}})});
   assert.equal(saved.status,201);
-  view={v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,revision:1,configuration:{continent:null,active:'Hover test',highlight:true,strategies:[strategy]},configuration_error:null,my_continent:'EU',derived_continent:'EU'};
+  view={v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,revision:1,configuration:{continent:null,active:'Hover test',strategies:[strategy]},configuration_error:null,my_continent:'EU',derived_continent:'EU'};
   state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
   Object.assign(state.job,{first_sequence:0,next_sequence:n,available_count:n,latest_decode:{id:1,first_sequence:0,next_sequence:n,period_start_utc:period,complete:true}});
@@ -2069,7 +2070,7 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
   await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:n,available_count:n,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
   await page.route('**/strategy',route=>route.fulfill({json:view}));
   // The strategy hits the 73 from W2CD (no flag): value 2, under the row to my call.
-  await page.route('**/strategy/evaluate',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'Hover test',my_continent:'EU',sort:'strongest',verdicts:[{sequence:8,rank:0,grey:false}]}}));
+  await page.route('**/strategy/evaluate',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'Hover test',my_continent:'EU',verdicts:[{sequence:8,rank:0,grey:false}]}}));
  }});
  await page.waitForFunction(()=>document.querySelector('tr[data-sequence="0"][data-worked]')&&document.querySelector('tr.ba-strategy'),null,{timeout:25000});
  // #50 CL-050-08: the one-line reason tip of the colour; a row in QSO with another station colours only its sender's call.
@@ -2077,7 +2078,7 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
  const none='rgba(0, 0, 0, 0)';
  const expected=[
   ['HB9BLA W1XYZ -12','New call','rgba(255, 102, 102, 0.32)',null],
-  ['W9AA W2CD 73','Strategy Hover test: rule 1',none,null],
+  ['W9AA W2CD 73','Strategy Hover test: #1',none,null],
   ['K9XX YO3ABC -07','New DXCC \u00b7 New call',none,'rgba(255, 0, 255, 0.26)'],
   ['CQ JA1AAA PM95','New CQ zone 25','rgba(255, 191, 0, 0.26)',null],
   ['CQ G4XYZ IO91','',none,null],
@@ -2370,20 +2371,20 @@ test('TC-043-003 the clock source and the clock from the air are shown in Settin
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-039-01, CL-039-04, CL-039-05; TC-039-006. The browser shows the
-// station's verdicts (it never evaluates), sends exactly the PUT /strategy and automation
-// requests below, and keeps HALT reachable in the editor popup. Station replies are
-// hand-written fixtures; the expected requests and row order are written here.
-test('TC-039-006 Highlight marks and sorts, the editor previews and saves, Auto asks once and starts the strategy run',{timeout:60000},async t=>{
-  let state,view,automation={run:null,policy:0,runRevision:0};const puts=[],evaluations=[],autos=[],commands=[];
+// Proves: CL-039-01, CL-039-04, CL-039-05, CL-039-10; TC-039-006. The browser renders the
+// station's verdicts (it never evaluates), sends only the selection and the editor's save, and
+// keeps HALT reachable in the popup. Station replies are hand-written fixtures; the expected
+// requests and row order are written here.
+test('TC-039-006 Selecting starts it, marks and value order from the verdicts, a column click overrides, the editor holds the settings',{timeout:60000},async t=>{
+  let state,view,automation={run:null,refusal:null,policy:0,runRevision:0};const puts=[],evaluations=[],autos=[],commands=[];let automationReads=0;
   const period='2026-10-27T12:00:00.0000000Z';
   const standard=(from,to='CQ',grid='FN42')=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}});
   const record=(sequence,text,from,hz,to,grid)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to,grid),period_start_utc:period});
   const records=[record(0,'CQ K1ABC FN42','K1ABC',1000,'CQ','FN42'),record(1,'CQ NA W1AW FN31','W1AW',1200,'CQ NA','FN31'),record(2,'CQ DL1XYZ JO62','DL1XYZ',1400,'CQ','JO62')];
-  const strategy={name:'DX first',rules:[{conditions:[{kind:'message',negate:false,value:'cq'},{kind:'continent',negate:true,values:['NA']}]},{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'alternate',switch_after:3};
+  const strategy={name:'DX first',class:'award',goals:['dxcc','new_call'],needed:'not_worked',region:{kind:'dx'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:false,window:{kind:'all'}};
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
-    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:4,configuration:{continent:null,active:'DX first',highlight:false,strategies:[strategy]},configuration_error:null,my_continent:'EU',derived_continent:'EU'};
+    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:4,configuration:{continent:null,active:null,strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[],most_wanted:null,most_wanted_unreadable:false,most_wanted_attribution:'Club Log'};
     state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
     state.clock={basis:'system_utc',correlated:true,utc_anchor:period,canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
     Object.assign(state.job,{first_sequence:0,next_sequence:3,available_count:3,latest_decode:{id:1,first_sequence:0,next_sequence:3,period_start_utc:period,complete:true}});
@@ -2393,64 +2394,107 @@ test('TC-039-006 Highlight marks and sorts, the editor previews and saves, Auto 
     await contactCommands(p,commands);
     await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());puts.push(b);view={...view,revision:view.revision+1,configuration:b.configuration};}await route.fulfill({json:view});});
     await p.route('**/strategy/evaluate',async route=>{const b=JSON.parse(route.request().postData());evaluations.push(b);
-      const verdicts=b.explain?[{sequence:2,rank:0,grey:false,why:'matches rule 1'},{sequence:0,rank:1,grey:false,why:'matches rule 2'},{sequence:1,rank:null,grey:true,why:'CQ NA is not addressed to my continent (EU)'}]:[{sequence:2,rank:0,grey:false},{sequence:0,rank:1,grey:false},{sequence:1,rank:null,grey:true}];
-      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:b.strategy?.name??'DX first',my_continent:'EU',sort:'strongest',verdicts}});});
-    await p.route('**/automation',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,policy_revision:automation.policy,run_revision:automation.runRevision,configuration:automation.policy?{strategy:true}:null,run:automation.run}}));
-    await p.route('**/automation/command',async route=>{const b=JSON.parse(route.request().postData());autos.push(b);if(b.action==='configure')automation.policy++;if(b.action==='start'){automation.runRevision++;automation.run={id:crypto.randomUUID(),state:'waiting',reason:null,mode:'ft8',completed_contacts:0,unanswered_periods:0,contact_id:null,selected:null,last_decision:null,role:'call',tries:0,skipped:[]};}
-      if(b.action==='stop'){automation.runRevision++;automation.run={...automation.run,state:'stopped',reason:'stopped'};}await route.fulfill({status:202,json:{v:1,accepted:true}});});
+      const verdicts=b.explain?[{sequence:2,rank:0,grey:false,why:'needed: dxcc · Most Wanted #3'},{sequence:0,rank:1,grey:false,why:'needed: new_call'},{sequence:1,rank:null,grey:true,why:'CQ NA — not for EU'}]:[{sequence:2,rank:0,grey:false},{sequence:0,rank:1,grey:false},{sequence:1,rank:null,grey:true}];
+      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:b.strategy?.name??'DX first',my_continent:'EU',verdicts}});});
+    await p.route('**/automation',route=>{automationReads++;return route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,policy_revision:automation.policy,run_revision:automation.runRevision,configuration:automation.policy?{strategy:true}:null,run:automation.run,strategy_refusal:automation.refusal}});});
+    await p.route('**/automation/command',async route=>{autos.push(JSON.parse(route.request().postData()));await route.fulfill({status:202,json:{v:1,accepted:true}});});
   }});
-  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3&&document.querySelector("#strategy-highlight")?.disabled===false,null,{timeout:25000});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3&&document.querySelector("#strategy-name")?.disabled===false,null,{timeout:25000});
   const message=()=>page.locator('#band-activity tr[data-sequence]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.className.split(' ').filter(c=>c.startsWith('ba-')&&c!=='ba-cq').join(' '),r.dataset.rank??'']));
-  assert.equal(await page.inputValue('#strategy-name'),'DX first');
-  assert.equal(await page.locator('#strategy-highlight').getAttribute('aria-pressed'),'false');
+  const announce=(type,data)=>page.evaluate(([type,data])=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type,data}}})),[type,data]);
+  assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None','DX first']);
+  assert.equal(await page.inputValue('#strategy-name'),'');
+  for(const gone of ['#strategy-highlight','#strategy-auto'])assert.equal(await page.locator(gone).count(),0,`${gone} is gone`);
   await page.waitForTimeout(600);
-  assert.deepEqual(evaluations,[],'Highlight off: the client asks for no verdict');
-  assert.deepEqual((await message()).map(r=>r[1]),['','',''],'no strategy marks while Highlight is off');
-  // Highlight on: one exact PUT, then one evaluation of the shown sequences.
-  await page.locator('#strategy-highlight').click();
+  assert.deepEqual(evaluations,[],'None: the client asks for no verdict');
+  assert.deepEqual((await message()).map(r=>r[1]),['','',''],'no strategy marks without a strategy');
+  // Selecting: exactly one PUT, nothing asked, no run command from the browser; one evaluation.
+  await page.selectOption('#strategy-name','DX first');
   for(let i=0;i<60&&!evaluations.length;i++)await page.waitForTimeout(50);
-  assert.deepEqual(puts.map(b=>[b.expected_revision,b.configuration]),[[4,{continent:null,active:'DX first',highlight:true,strategies:[strategy]}]]);
+  assert.equal(await page.locator('#op-confirm[open]').count(),0,'selecting asks nothing');
+  assert.deepEqual(puts.map(b=>[b.expected_revision,b.configuration.active,b.configuration.strategies]),[[4,'DX first',[strategy]]]);
   assert.deepEqual(evaluations.map(b=>[b.source_id,b.job_id,b.generation,b.first_sequence,b.next_sequence,b.strategy,b.explain]),[[state.source.id,state.job.id,state.generation,0,3,null,false]]);
   await page.waitForFunction(()=>document.querySelector('#band-activity tr[data-sequence]').children[4].textContent==='CQ DL1XYZ JO62');
-  assert.deepEqual(await message(),[['CQ DL1XYZ JO62','ba-strategy','1'],['CQ K1ABC FN42','ba-strategy','2'],['CQ NA W1AW FN31','ba-grey','']],'matches on top in the station order; the directed CQ greyed');
-  assert.equal(await page.locator('#strategy-highlight').getAttribute('aria-pressed'),'true');
-  await page.screenshot({path:'test-results/ui-operating/strategy-highlight-1366.png'});
-  // Editor popup: a draft preview with the reason per decode, HALT inside, Save applies.
+  assert.deepEqual(await message(),[['CQ DL1XYZ JO62','ba-strategy','1'],['CQ K1ABC FN42','ba-strategy','2'],['CQ NA W1AW FN31','ba-grey','']],'by value in the station order; the directed CQ greyed');
+  // Never on a timer: the old 5 s check is gone; nothing asks while nothing is published.
+  const asked=evaluations.length;await page.waitForTimeout(5500);assert.equal(evaluations.length,asked,'no time-based evaluation');
+  await page.screenshot({path:'test-results/ui-operating/strategy-value-1366.png'});
+  // A column click overrides (the marks stay); Value returns to the station's order.
+  assert.equal(await page.locator('#activity-value').getAttribute('aria-pressed'),'true');
+  await page.locator('#band-activity th[data-sort=frequency]').click();
+  await page.waitForFunction(()=>document.querySelector('#band-activity tr[data-sequence]').children[4].textContent==='CQ K1ABC FN42');
+  assert.deepEqual(await message(),[['CQ K1ABC FN42','ba-strategy','2'],['CQ NA W1AW FN31','ba-grey',''],['CQ DL1XYZ JO62','ba-strategy','1']],'sorted by the column, the marks stay');
+  assert.equal(await page.locator('#activity-value').getAttribute('aria-pressed'),'false');
+  await page.locator('#activity-value').click();
+  await page.waitForFunction(()=>document.querySelector('#band-activity tr[data-sequence]').children[4].textContent==='CQ DL1XYZ JO62');
+  assert.equal(await page.locator('#activity-value').getAttribute('aria-pressed'),'true');
+  // The run state comes with the automation.state push; GET /automation only then.
+  await page.waitForTimeout(200);const reads=automationReads;await page.waitForTimeout(1500);assert.equal(automationReads,reads,'no client polling');
+  automation={...automation,policy:1,runRevision:1,run:{id:crypto.randomUUID(),state:'waiting',reason:'no_receive',mode:'ft8',completed_contacts:0,unanswered_periods:0,contact_id:null,selected:null,last_decision:null,given_up:[],rested:null}};
+  await announce('automation.state',{policy_revision:1,run_revision:1});
+  await page.locator('#station-automation').filter({hasText:'Strategy DX first waiting · no receive'}).waitFor();
+  automation={...automation,runRevision:2,run:{...automation.run,reason:null,state:'contact_active',selected:{call:'DL1XYZ'}}};
+  await announce('automation.state',{policy_revision:1,run_revision:2});
+  await page.locator('#station-automation').filter({hasText:'Strategy DX first · DL1XYZ'}).waitFor();
+  // A refused start stays selected with its reason.
+  automation={...automation,runRevision:3,run:null,refusal:'transmit_unavailable'};
+  await announce('automation.state',{policy_revision:1,run_revision:3});
+  await page.locator('#station-automation').filter({hasText:'Strategy DX first not started · transmit unavailable'}).waitFor();
+  assert.equal(await page.inputValue('#strategy-name'),'DX first');
+  automation={...automation,refusal:null,run:{id:crypto.randomUUID(),state:'waiting',reason:null,mode:'ft8',given_up:[],rested:null}};
+  await announce('automation.state',{policy_revision:1,run_revision:4});
+  await page.locator('#station-automation').filter({hasText:'Strategy DX first waiting'}).waitFor();
+  // Proves: TC-039-010. No free slot: the status says so.
+  automation={...automation,runRevision:5,run:{...automation.run,tx_slot:{hz:1500,free:false}}};
+  await announce('automation.state',{policy_revision:1,run_revision:5});
+  await page.locator('#station-automation').filter({hasText:'Strategy DX first waiting · no free Tx slot'}).waitFor();
+  automation={...automation,runRevision:6,run:{...automation.run,tx_slot:{hz:1400,free:true}}};
+  await announce('automation.state',{policy_revision:1,run_revision:6});
+  await page.waitForFunction(()=>document.querySelector('#station-automation').textContent==='Strategy DX first waiting');
+  // Editor popup: exactly the settings, a draft preview with the reason per decode, HALT inside.
   await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
   assert.equal(await page.locator('#strategy-editor-halt').isDisabled(),await page.locator('#halt-tx').isDisabled(),'the popup HALT has the top-bar HALT state');
   await page.locator('#se-preview tr').nth(2).waitFor();
-  assert.deepEqual(await page.locator('#se-preview tr').evaluateAll(rows=>rows.map(r=>[...r.children].map(c=>c.textContent))),[['#1','CQ DL1XYZ JO62','matches rule 1'],['#2','CQ K1ABC FN42','matches rule 2'],['—','CQ NA W1AW FN31','CQ NA is not addressed to my continent (EU)']]);
+  assert.deepEqual(await page.locator('#se-preview tr').evaluateAll(rows=>rows.map(r=>[...r.children].map(c=>c.textContent))),[['#1','CQ DL1XYZ JO62','needed: dxcc · Most Wanted #3'],['#2','CQ K1ABC FN42','needed: new_call'],['—','CQ NA W1AW FN31','CQ NA — not for EU']]);
+  assert.deepEqual(await page.locator('#se-body').evaluate(b=>[...b.querySelectorAll('input,select')].map(e=>e.id||e.dataset.goal||e.dataset.continent)),['se-name','dxcc','dxcc_band','dxcc_slot','waz','wpx','grid','new_call','se-needed','se-region','se-snr','se-calls','se-73','se-window'],'the settings and nothing else');
+  for(const gone of ['.se-condition','#se-sort','#se-role','#se-switch','#se-skip','#se-callers','[data-alert]'])assert.equal(await page.locator(gone).count(),0,`${gone} is gone`);
   await page.screenshot({path:'test-results/ui-operating/strategy-editor-1366.png'});
   // Phone width: the popup fits without horizontal scrolling (text reflows inside it).
   await page.setViewportSize({width:360,height:740});
   assert.deepEqual(await page.evaluate(()=>{const d=document.querySelector('#strategy-editor');return {dialog:d.scrollWidth<=d.clientWidth+1,page:document.documentElement.scrollWidth<=innerWidth,inside:d.getBoundingClientRect().right<=innerWidth};}),{dialog:true,page:true,inside:true});
   await page.screenshot({path:'test-results/ui-operating/strategy-editor-360.png'});await page.setViewportSize({width:1366,height:768});
   const draft=evaluations.at(-1);assert.deepEqual([draft.strategy,draft.explain,draft.first_sequence,draft.next_sequence],[strategy,true,0,3],'the preview evaluates the unsaved draft');
-  const n=evaluations.length;await page.selectOption('#se-sort','weakest');
+  let n=evaluations.length;await page.locator('[data-goal=waz]').check();
   for(let i=0;i<40&&evaluations.length===n;i++)await page.waitForTimeout(50);
-  assert.equal(evaluations.at(-1).strategy.sort,'weakest','an edit re-runs the preview');
-  await page.locator('.se-condition').first().locator('[data-f=negate]').check();
+  assert.deepEqual(evaluations.at(-1).strategy.goals,['dxcc','waz','new_call'],'an edit re-runs the preview');
+  await page.selectOption('#se-needed','not_confirmed');
+  await page.selectOption('#se-region','selected');await page.locator('[data-continent=SA]').check();await page.locator('[data-continent=NA]').uncheck();await page.locator('[data-continent=EU]').check();
+  await page.locator('#se-snr').fill('-15');await page.locator('#se-calls').fill('5');await page.locator('#se-73').check();
+  await page.selectOption('#se-window','from_to');await page.locator('#se-from').fill('2026-11-01');await page.locator('#se-to').fill('2026-11-02');
+  assert.equal(await page.evaluate(()=>{const d=document.querySelector('#strategy-editor');return d.scrollWidth<=d.clientWidth+1;}),true,'with the region and window fields too');
   await page.locator('#se-save').click();for(let i=0;i<40&&puts.length<2;i++)await page.waitForTimeout(50);
-  const edited={...strategy,sort:'weakest',rules:[{conditions:[{kind:'message',negate:true,value:'cq'},strategy.rules[0].conditions[1]]},strategy.rules[1]]};
-  assert.deepEqual(puts[1],{v:1,profile_id:view.profile_id,boot_id:view.boot_id,expected_revision:5,configuration:{continent:null,active:'DX first',highlight:true,strategies:[edited]}});
+  const edited={...strategy,goals:['dxcc','waz','new_call'],needed:'not_confirmed',region:{kind:'selected',continents:['EU','SA']},min_snr_db:-15,calls_per_station:5,treat_73_as_cq:true,window:{kind:'from_to',from:'2026-11-01',to:'2026-11-02'}};
+  assert.deepEqual(puts[1],{v:1,profile_id:view.profile_id,boot_id:view.boot_id,expected_revision:5,configuration:{continent:null,active:'DX first',strategies:[edited],ignore_calls:[],session_ignore_minutes:30}});
   await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
+  // Save never selects: a new strategy stays unselected, the selected one stays.
+  await page.locator('#se-new').click();await page.locator('#se-name').fill('Another');
+  assert.deepEqual(await page.locator('#se-body [data-goal]:checked').evaluateAll(g=>g.map(x=>x.dataset.goal)),['dxcc']);
+  await page.locator('#se-save').click();for(let i=0;i<40&&puts.length<3;i++)await page.waitForTimeout(50);
+  assert.deepEqual([puts[2].configuration.active,puts[2].configuration.strategies.map(s=>[s.name,s.calls_per_station,s.window.kind,s.class])],['DX first',[['DX first',5,'from_to','award'],['Another',3,'all','award']]]);
   await page.locator('#strategy-editor button[value=cancel]').click();assert.equal(await page.locator('#strategy-editor').evaluate(d=>d.open),false);
-  // Auto: the first use asks; Cancel sends nothing; Start sends configure then start.
-  await page.locator('#strategy-auto').click();await page.locator('#op-confirm[open]').waitFor();
-  assert.match(await page.locator('#op-confirm-text').textContent(),/Auto transmits without asking: it answers only stations that match "DX first" \(Auto Call and Auto CQ, switching after 3 tries\)\. The Tx watchdog stops it when one message would be sent more than 6 times; a new message or station starts that count again, so Auto can run until its limit of 8 hours\. HALT stops it; Esc aborts the current QSO\./);
-  await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);assert.deepEqual(autos,[],'cancelled: no automation request');
-  await page.locator('#strategy-auto').click();await page.locator('#op-confirm[open]').waitFor();await page.locator('#op-confirm-ok').click();
-  for(let i=0;i<60&&autos.length<2;i++)await page.waitForTimeout(50);
-  assert.deepEqual(autos.map(b=>[b.action,b.expected_policy_revision,b.expected_run_revision,b.mode,b.safety_revision]),[['configure',0,undefined,undefined,undefined],['start',1,0,'ft8',7]]);
-  assert.deepEqual(autos[0].configuration,{modes:['ft8'],ranking:'first_seen',min_snr_db:null,allowed_calls:[],blocked_calls:[],max_contacts:100,max_unanswered_periods:20,completion_action:'next_candidate',max_run_minutes:480,strategy:true});
-  await page.evaluate(()=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:1,run_revision:1}}}})));
-  await page.locator('#strategy-auto[aria-pressed=true]').filter({hasText:'Auto · waiting'}).waitFor();
-  assert.equal(await page.locator('#strategy-name').isDisabled(),true,'the strategy is locked while Auto runs');
-  assert.match(await page.locator('#station-automation').textContent(),/^Automation waiting · run [0-9a-f]{8} · HALT ends it$/);
-  // A second click stops it; a later use asks no more.
-  await page.locator('#strategy-auto').click();for(let i=0;i<40&&autos.length<3;i++)await page.waitForTimeout(50);
-  assert.deepEqual([autos[2].action,autos[2].run_id],['stop',automation.run.id]);
-  assert.equal(commands.some(c=>c.action==='enable_tx'),false,'the browser never arms for Auto; the station run does');
+  // HALT's None is pushed: the selector follows; the marks go.
+  view={...view,revision:view.revision+1,configuration:{...view.configuration,active:null}};
+  await announce('strategy.state',{strategy_revision:view.revision});
+  await page.waitForFunction(()=>document.querySelector('#strategy-name').value===''&&!document.querySelector('#band-activity tr.ba-strategy'),null,{timeout:5000});
+  // Another browser's selection arrives the same way; selecting None sends the PUT.
+  view={...view,revision:view.revision+1,configuration:{...view.configuration,active:'DX first'}};
+  await announce('strategy.state',{strategy_revision:view.revision});
+  await page.waitForFunction(()=>document.querySelector('#strategy-name').value==='DX first',null,{timeout:5000});
+  const before=puts.length;await page.selectOption('#strategy-name','');
+  for(let i=0;i<40&&puts.length===before;i++)await page.waitForTimeout(50);
+  assert.equal(puts.at(-1).configuration.active,null);
+  assert.deepEqual(autos,[],'the station starts and stops the run');
+  assert.equal(commands.some(c=>c.action==='enable_tx'),false,'the browser never arms for a strategy; the station run does');
   assert.deepEqual(errors,[]);
 });
 // Proves: CL-039-01; TC-039-006 the continent is a station setting now.
@@ -2466,32 +2510,80 @@ test('TC-039-006 Settings > General continent saves to the station strategy stor
   assert.equal(await page.evaluate(()=>Object.keys(localStorage).some(k=>k.startsWith('wstx.continent'))),false,'not browser-local any more');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-042-01; TC-042-001 the editor offers the four entity New conditions, each
-// with ever / on this band and mode, and the actual isolated station accepts and keeps
-// the saved draft. The expected labels and conditions are written here.
-test('TC-042-001 Editor offers new DXCC, continent, CQ zone and ITU zone and the station saves them',{timeout:40000},async t=>{
+// Proves: CL-039-10; TC-039-006 the Most Wanted section: one button beside the date, no upload, a
+// failure's reason in one line. The update route is routed here: no network.
+test('TC-039-006 Settings > General Most Wanted: one button beside the date, a failure says why',{timeout:40000},async t=>{
+  const {page,errors}=await fixture(t,{width:1366,height:768});
+  await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
+  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
+  await page.locator('#mw-status').filter({hasText:'No list; strategies call the strongest first'}).waitFor();
+  assert.equal(await page.locator('#mw-update').textContent(),'Update Most Wanted');
+  assert.equal(await page.locator('#mw-attribution').textContent(),'Club Log Most Wanted list, Club Log (c) Michael Wells G7VJR, clublog.org');
+  for(const gone of ['#mw-file','#mw-upload','#mw-remove','#mw-fallback','#mw-download'])assert.equal(await page.locator(gone).count(),0,`${gone} is gone`);
+  let reply={status:502,json:{error:{code:'download_failed',reason:'status 503'}}};
+  await page.route('**/strategy/most-wanted/download',route=>route.fulfill(reply));
+  await page.locator('#mw-update').click();await page.locator('#mw-result').filter({hasText:'Update failed'}).waitFor();
+  assert.equal(await page.locator('#mw-result').textContent(),'Update failed · status 503; the list stays as it was');
+  assert.equal(await page.locator('#mw-status').textContent(),'No list; strategies call the strongest first');
+  const view=await page.evaluate(async()=>(await stationFetch('/strategy',{cache:'no-store'})).json());
+  reply={status:200,json:{...view,most_wanted:{date:'2030-01-02',entries:2,unmapped:1}}};
+  await page.locator('#mw-update').click();await page.locator('#mw-result').filter({hasText:'Updated'}).waitFor();
+  assert.equal(await page.locator('#mw-status').textContent(),'List from 2030-01-02 · 2 entries · 1 not mapped to an entity');
+  await page.screenshot({path:'test-results/ui-operating/most-wanted-1366.png'});
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-042-01; TC-042-001 the editor offers the goals and the actual isolated station
+// accepts and keeps the saved draft; Save does not start anything. Expected values written here.
+test('TC-042-001 Editor offers the goals and the station saves them unselected',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
   await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
-  const kinds=[['new_dxcc','New DXCC'],['new_continent','New continent'],['new_cq_zone','New CQ zone'],['new_itu_zone','New ITU zone']];
-  for(const [i,[kind]] of kinds.entries()){
-    await page.locator('#strategy-editor [data-act=add-condition][data-rule="0"]').click();
-    await page.locator('.se-condition').nth(i+1).locator('[data-f=kind]').selectOption(kind);
-  }
-  const offered=await page.locator('.se-condition').nth(1).locator('[data-f=kind] option').evaluateAll(o=>o.map(x=>[x.value,x.textContent]));
-  for(const k of kinds)assert.ok(offered.some(o=>o[0]===k[0]&&o[1]===k[1]),`${k[0]} offered as ${k[1]}`);
-  for(let i=1;i<=4;i++)assert.deepEqual(await page.locator('.se-condition').nth(i).locator('[data-f=value] option').evaluateAll(o=>o.map(x=>[x.value,x.textContent])),[['ever','ever'],['band','on this band and mode']]);
-  await page.locator('.se-condition').nth(1).locator('[data-f=value]').selectOption('band');
-  await page.locator('.se-condition').nth(4).locator('[data-f=negate]').check();
+  assert.deepEqual(await page.locator('.se-goals label').evaluateAll(l=>l.map(x=>x.textContent)),['DXCC','DXCC per band','DXCC slot (band and mode)','WAZ (CQ zones)','WPX (prefixes)','Grids','New call']);
+  await page.locator('[data-goal=dxcc_slot]').check();await page.locator('[data-goal=waz]').check();
   const saved=page.waitForResponse(r=>r.url().endsWith('/strategy')&&r.request().method()==='PUT');
   await page.locator('#se-save').click();const reply=await (await saved).json();
-  assert.deepEqual([reply.revision,reply.configuration.strategies[0].rules[0].conditions],[1,[{kind:'message',negate:false,value:'cq'},{kind:'new_dxcc',negate:false,value:'band'},{kind:'new_continent',negate:false,value:'ever'},{kind:'new_cq_zone',negate:false,value:'ever'},{kind:'new_itu_zone',negate:true,value:'ever'}]]);
+  assert.deepEqual([reply.revision,reply.configuration.active,reply.configuration.strategies],[1,null,[{name:'Strategy 1',class:'award',goals:['dxcc','dxcc_slot','waz'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:true,window:{kind:'all'}}]]);
   await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-039-04; TC-039-006 review 6683200740 finding 5: rows published during an evaluation are
+// evaluated when it ends, without a timer. Station replies are hand-written fixtures.
+test('TC-039-006 Rows arriving during an evaluation are evaluated when it ends',{timeout:60000},async t=>{
+  let state,view,release;const evaluations=[];const held=new Promise(r=>{release=r;});
+  const period='2026-10-27T12:00:00.0000000Z';
+  const record=(sequence,text,from,hz,grid)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:{type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}},period_start_utc:period});
+  const records=[record(0,'CQ K1ABC FN42','K1ABC',1000,'FN42'),record(1,'CQ DL1XYZ JO62','DL1XYZ',1400,'JO62')];
+  const strategy={name:'CQ',class:'award',goals:['new_call'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:false,window:{kind:'all'}};
+  const publish=()=>{Object.assign(state.job,{first_sequence:0,next_sequence:records.length,available_count:records.length,latest_decode:{id:1,first_sequence:0,next_sequence:records.length,period_start_utc:period,complete:true}});};
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:2,configuration:{continent:null,active:'CQ',strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[]};
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:period,canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};publish();
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor);await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next:cursor+batch.length,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+    await p.route('**/strategy',route=>route.fulfill({json:view}));
+    await p.route('**/strategy/evaluate',async route=>{const b=JSON.parse(route.request().postData());evaluations.push(b);if(evaluations.length===1)await held;
+      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'CQ',my_continent:'EU',verdicts:Array.from({length:b.next_sequence},(_,i)=>({sequence:i,rank:i,grey:false}))}});});
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2,null,{timeout:25000});
+  for(let i=0;i<100&&!evaluations.length;i++)await page.waitForTimeout(50);
+  assert.equal(evaluations.length,1,'the first evaluation is held');
+  // A new row arrives while it is held.
+  records.push(record(2,'CQ G4ABC IO91','G4ABC',1800,'IO91'));publish();
+  await page.evaluate(s=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',data:{profile_id:s.profile_id,boot_id:s.boot_id,generation:s.generation}}}})),state);
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3,null,{timeout:15000});
+  assert.equal(evaluations.length,1,'one at a time');
+  // Nothing renders from here on: only the end of the evaluation can ask again.
+  await page.evaluate(()=>{window.renderResults=()=>{};});
+  release();
+  await page.waitForFunction(()=>document.querySelectorAll('#band-activity tr.ba-strategy').length===3,null,{timeout:10000});
+  assert.deepEqual(evaluations.map(b=>[b.first_sequence,b.next_sequence]),[[0,2],[0,3]]);
   assert.deepEqual(errors,[]);
 });
 // Proves: CL-042-02; TC-042-003 Band Activity right-click Ignore / Stop ignoring and the
 // Settings > General ignore lists send exactly the requests written here; the station
-// replies (snapshots, verdicts) are hand-written fixtures; the row loses its Highlight
+// replies (snapshots, verdicts) are hand-written fixtures; the row loses its strategy
 // mark only through the station's new verdicts.
 test('TC-042-003 Band Activity Ignore and the Settings ignore lists',{timeout:60000},async t=>{
   let state,view;const puts=[],ignores=[],evaluations=[],commands=[];let session=[];
@@ -2499,10 +2591,10 @@ test('TC-042-003 Band Activity Ignore and the Settings ignore lists',{timeout:60
   const standard=(from,to='CQ',grid='FN42')=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}});
   const record=(sequence,text,from,hz,to,grid)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to,grid),period_start_utc:period});
   const records=[record(0,'CQ K1ABC FN42','K1ABC',1000,'CQ','FN42'),record(1,'CQ DL1XYZ JO62','DL1XYZ',1400,'CQ','JO62')];
-  const strategy={name:'CQ',rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3};
+  const strategy={name:'CQ',class:'award',goals:['new_call'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:false,window:{kind:'all'}};
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
-    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:2,configuration:{continent:null,active:'CQ',highlight:true,strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[]};
+    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:2,configuration:{continent:null,active:'CQ',strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[]};
     state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
     state.clock={basis:'system_utc',correlated:true,utc_anchor:period,canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
     Object.assign(state.job,{first_sequence:0,next_sequence:2,available_count:2,latest_decode:{id:1,first_sequence:0,next_sequence:2,period_start_utc:period,complete:true}});
@@ -2516,7 +2608,7 @@ test('TC-042-003 Band Activity Ignore and the Settings ignore lists',{timeout:60
       await route.fulfill({json:{...view,session_ignore:session}});});
     await p.route('**/strategy/evaluate',async route=>{const b=JSON.parse(route.request().postData());evaluations.push(b);
       const ignored=session.some(e=>e.call==='K1ABC');
-      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'CQ',my_continent:'EU',sort:'strongest',verdicts:ignored?[{sequence:1,rank:0,grey:false}]:[{sequence:0,rank:0,grey:false},{sequence:1,rank:0,grey:false}]}});});
+      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'CQ',my_continent:'EU',verdicts:ignored?[{sequence:1,rank:0,grey:false}]:[{sequence:0,rank:0,grey:false},{sequence:1,rank:1,grey:false}]}});});
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest].ba-strategy').length===2,null,{timeout:25000});
   const row=page.locator('#band-activity tr[data-sequence="0"]');
@@ -2542,7 +2634,7 @@ test('TC-042-003 Band Activity Ignore and the Settings ignore lists',{timeout:60
   await page.fill('#ignore-calls','dl1xyz, w1aw');await page.locator('#ignore-calls').blur();
   await page.waitForFunction(()=>document.querySelector('#ignore-calls').value==='DL1XYZ W1AW');
   for(let i=0;i<60&&!puts.length;i++)await page.waitForTimeout(50);
-  assert.deepEqual(puts.map(b=>[b.expected_revision,b.configuration]),[[2,{continent:null,active:'CQ',highlight:true,strategies:[strategy],ignore_calls:['DL1XYZ','W1AW'],session_ignore_minutes:30}]]);
+  assert.deepEqual(puts.map(b=>[b.expected_revision,b.configuration]),[[2,{continent:null,active:'CQ',strategies:[strategy],ignore_calls:['DL1XYZ','W1AW'],session_ignore_minutes:30}]]);
   await page.fill('#ignore-minutes','45');await page.locator('#ignore-minutes').dispatchEvent('change');
   for(let i=0;i<60&&puts.length<2;i++)await page.waitForTimeout(50);
   assert.deepEqual([puts[1].expected_revision,puts[1].configuration.ignore_calls,puts[1].configuration.session_ignore_minutes],[3,['DL1XYZ','W1AW'],45]);
@@ -2561,10 +2653,10 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
   const standard=(from,to='CQ',grid='FN42')=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}});
   const record=(sequence,text,from,hz,to,grid)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to,grid),period_start_utc:period});
   const records=[record(0,'CQ K1ABC FN42','K1ABC',1000,'CQ','FN42'),record(1,'CQ DL1XYZ JO62','DL1XYZ',1400,'CQ','JO62')];
-  const strategy={name:'CQ',rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3};
+  const strategy={name:'CQ',class:'award',goals:['new_call'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:false,window:{kind:'all'}};
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
-    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:2,configuration:{continent:null,active:'CQ',highlight:false,strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[]};
+    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:2,configuration:{continent:null,active:null,strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[]};
     state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
     state.clock={basis:'system_utc',correlated:true,utc_anchor:period,canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
     Object.assign(state.job,{first_sequence:0,next_sequence:2,available_count:2,latest_decode:{id:1,first_sequence:0,next_sequence:2,period_start_utc:period,complete:true}});
@@ -2576,11 +2668,11 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
     await p.route('**/automation',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,policy_revision:automation.policy,run_revision:automation.runRevision,configuration:automation.configuration,run:automation.run}}));
     await p.route('**/automation/command',async route=>{const b=JSON.parse(route.request().postData());autos.push(b);
       if(b.action==='configure'){automation.policy++;automation.configuration={...b.configuration};}
-      if(b.action==='start'){automation.runRevision++;automation.run={id:crypto.randomUUID(),state:'waiting',reason:null,mode:'ft8',completed_contacts:0,unanswered_periods:0,contact_id:null,selected:null,last_decision:null,role:null,tries:0,skipped:[],pounce:{call:automation.configuration.pounce,band:'40m'}};}
+      if(b.action==='start'){automation.runRevision++;automation.run={id:crypto.randomUUID(),state:'waiting',reason:null,mode:'ft8',completed_contacts:0,unanswered_periods:0,contact_id:null,selected:null,last_decision:null,given_up:[],rested:null,pounce:{call:automation.configuration.pounce,band:'40m'}};}
       if(b.action==='stop'){automation.runRevision++;automation.run={...automation.run,state:'stopped',reason:'stopped'};}
       await route.fulfill({status:202,json:{v:1,accepted:true}});});
   }});
-  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2&&document.querySelector('#strategy-auto')?.disabled===false,null,{timeout:25000});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2&&document.querySelector('#strategy-name')?.disabled===false,null,{timeout:25000});
   const row=page.locator('#band-activity tr[data-sequence="0"]');
   const items=()=>page.locator('#ba-menu button:not([hidden])').evaluateAll(b=>b.map(x=>x.textContent));
   await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
@@ -2595,7 +2687,6 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
   await page.locator('#qso-pounce:not([hidden])').waitFor();
   assert.equal(await page.locator('#qso-pounce-text').textContent(),'Pouncing on K1ABC (40m) · waiting for CQ or 73');
   assert.match(await page.locator('#station-automation').textContent(),/^Pounce K1ABC waiting · HALT ends it$/);
-  assert.equal(await page.locator('#strategy-auto').isDisabled(),true,'no Auto beside the pounce');
   assert.equal(await page.locator('#qso-pounce').evaluate(n=>{const r=n.getBoundingClientRect();return r.bottom<=innerHeight&&r.right<=innerWidth&&n.scrollWidth<=n.clientWidth+1;}),true,'the pounce line is not clipped at 1366x768');
   await page.screenshot({path:'test-results/ui-operating/pounce-1366.png'});
   await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
@@ -2609,15 +2700,15 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
   assert.equal(commands.some(c=>c.action==='enable_tx'||c.action==='select_row'),false,'the station run answers; the browser never arms for it');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-042-04; TC-042-007 the editor's per-rule Alert checkbox, the Settings > General
+// Proves: CL-042-04; TC-042-007 the Settings > General
 // alert history, Sound and Browser notification (off by default; permission asked only on
 // the click). The station's alert snapshots are hand-written fixtures; the page's
 // Notification and AudioContext are recording doubles; the expected lines, tones and
 // notifications are written here from WstxStrategy::Alert.
-test('TC-042-007 Alert checkbox, alert history, sound and browser notification',{timeout:60000},async t=>{
+test('TC-042-007 Alert history, sound and browser notification',{timeout:60000},async t=>{
   let view;const puts=[],clears=[];let history=[],revision=1;
-  const strategy={name:'CQ',rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3};
-  const alert=(id,call,message,snr,dxcc)=>({id,utc:'2026-10-27T12:00:00.0000000Z',call,message,rule:'CQ rule 1',band:'40m',mode:'ft8',snr_db:snr,dxcc});
+  const strategy={name:'CQ',class:'award',goals:['new_call'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:false,window:{kind:'all'}};
+  const alert=(id,call,message,snr,dxcc)=>({id,utc:'2026-10-27T12:00:00.0000000Z',call,message,rule:'CQ',band:'40m',mode:'ft8',snr_db:snr,dxcc});
   history=[alert(1,'K1ABC','CQ K1ABC FN42',-12,'United States')];
   const doubles=()=>{
     window.__tones=0;window.__notes=[];window.__asks=0;window.__hidden=false;
@@ -2634,7 +2725,7 @@ test('TC-042-007 Alert checkbox, alert history, sound and browser notification',
   };
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
-    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:2,configuration:{continent:null,active:'CQ',highlight:false,strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[]};
+    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:2,configuration:{continent:null,active:'CQ',strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[]};
     await p.addInitScript(doubles);
     await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());puts.push(b);view={...view,revision:view.revision+1,configuration:b.configuration};}await route.fulfill({json:view});});
     await p.route('**/strategy/alerts',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,revision,alerts:history}}));
@@ -2645,22 +2736,15 @@ test('TC-042-007 Alert checkbox, alert history, sound and browser notification',
     await page.evaluate(r=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'alert.state',data:{profile_id:'p',boot_id:'b',alert_revision:r}}}})),revision);
     await page.waitForFunction(n=>document.querySelectorAll('#alert-history li').length===n,history.length,{timeout:10000});};
   const counters=()=>page.evaluate(()=>({tones:window.__tones,notes:window.__notes,asks:window.__asks}));
-  // The editor: rule 1 marked Alert is saved with alert true.
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
-  await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
-  await page.locator('#strategy-editor [data-alert="0"]').check();
-  await page.locator('#se-save').click();for(let i=0;i<60&&!puts.length;i++)await page.waitForTimeout(50);
-  assert.deepEqual(puts[0].configuration.strategies[0].rules,[{conditions:[{kind:'message',negate:false,value:'cq'}],alert:true}]);
-  await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
-  await page.locator('#strategy-editor button[value=cancel]').click();
   // Settings > General: the history, both announcements off by default.
   await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
   await page.locator('#alert-history li').first().waitFor();
   const lines=()=>page.locator('#alert-history li .al-text').evaluateAll(l=>l.map(x=>x.textContent));
-  assert.deepEqual(await lines(),['12:00:00 K1ABC CQ K1ABC FN42 · CQ rule 1 · 40m FT8 · -12 dB · United States']);
+  assert.deepEqual(await lines(),['12:00:00 K1ABC CQ K1ABC FN42 · CQ · 40m FT8 · -12 dB · United States']);
   assert.deepEqual([await page.locator('#alert-sound').isChecked(),await page.locator('#alert-notify').isChecked()],[false,false]);
   await announce(alert(2,'DL1XYZ','CQ DL1XYZ JO62',-3,'Fed. Rep. of Germany'));
-  assert.deepEqual((await lines())[0],'12:00:00 DL1XYZ CQ DL1XYZ JO62 · CQ rule 1 · 40m FT8 · -3 dB · Fed. Rep. of Germany','newest first');
+  assert.deepEqual((await lines())[0],'12:00:00 DL1XYZ CQ DL1XYZ JO62 · CQ · 40m FT8 · -3 dB · Fed. Rep. of Germany','newest first');
   assert.deepEqual(await counters(),{tones:0,notes:[],asks:0},'both off: nothing announced, no permission asked');
   await page.locator('#alert-sound').check();
   await announce(alert(3,'W1AW','CQ W1AW FN31',-5,'United States'));
@@ -2670,7 +2754,7 @@ test('TC-042-007 Alert checkbox, alert history, sound and browser notification',
   assert.equal(await page.locator('#alert-notify').isChecked(),true,'granted on the click');
   await announce(alert(4,'JA1XYZ','CQ JA1XYZ PM95',-15,'Japan'));
   for(let i=0;i<40&&!(await counters()).notes.length;i++)await page.waitForTimeout(50);
-  assert.deepEqual(await counters(),{tones:2,notes:[{title:'Alert JA1XYZ',body:'CQ JA1XYZ PM95 · CQ rule 1'}],asks:1});
+  assert.deepEqual(await counters(),{tones:2,notes:[{title:'Alert JA1XYZ',body:'CQ JA1XYZ PM95 · CQ'}],asks:1});
   // A hidden page plays no tone; the notification still shows.
   await page.evaluate(()=>{window.__hidden=true;});
   await announce(alert(5,'VK2ABC','CQ VK2ABC QF56',-20,'Australia'));
@@ -3101,6 +3185,129 @@ function assertStack(s,label){
   for(const k of ['control','error'])assert.ok(Math.abs(s[k].left-s.pane.left)<=1&&Math.abs(s[k].right-s.pane.right)<=1,`${label}: ${k} has the QSO card's edges ${JSON.stringify(s)}`);
   assert.equal(s.scroll,false,`${label}: no horizontal overflow`);
 }
+// Proves: CL-010-07; TC-007-002 (#22, live 2026-11-06, port held by another program): transmit unavailable
+// disables CQ, Tune and Now with the reason beside them, and the pane follows each contact.state push.
+test('TC-007-002 the transmit controls and badge follow the pushed transmit capability',{timeout:40000},async t=>{
+  let capability='available',revision=3,tune=false;const contact=partner('report',{suggested_slot:null});
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot({...base,revision,sequence:revision},{contact,transmit:{capability,tune}})}));
+  }});
+  await page.waitForFunction(()=>window.wstxContact?.snapshot()?.transmit.capability==='available',null,{timeout:25000});
+  const read=()=>page.evaluate(()=>({cq:document.querySelector('#qso-cq').disabled,tune:document.querySelector('#contact-tune').disabled,auto:document.querySelector('#contact-auto').disabled,now:[...document.querySelectorAll('.ct-now')].some(b=>!b.disabled),badge:document.querySelector('.op-contact-badge').textContent,reason:document.querySelector('#transmit-unavailable').hidden?null:document.querySelector('#transmit-unavailable').textContent,control:document.querySelector('#qso-control').getBoundingClientRect().top,pane:document.querySelector('#rx-focus').getBoundingClientRect().height}));
+  const pushed=async next=>{capability=next;revision++;await page.evaluate(r=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{type:'contact.state',data:{contact_revision:r,boot_id:window.wstxContact.snapshot().boot_id}}}})),revision);await page.waitForFunction(c=>window.wstxContact.snapshot().transmit.capability===c,next);};
+  const ready=await read();
+  assert.deepEqual([ready.cq,ready.tune,ready.auto,ready.now,ready.badge,ready.reason],[false,false,false,true,'Ready',null],'available');
+  await pushed('unavailable');
+  const held=await read();
+  assert.deepEqual([held.cq,held.tune,held.auto,held.now,held.badge,held.reason],[true,true,true,false,'Receive only','Transmission unavailable: radio/authorization not ready.'],'unavailable: nothing to key');
+  assert.equal(await page.locator('#transmit-unavailable').isVisible(),true,'the reason is shown');
+  assert.deepEqual([held.control,held.pane],[ready.control,ready.pane],'the Control panel and the pane do not move');
+  tune=true;await pushed('available');await pushed('unavailable');
+  assert.equal(await page.locator('#contact-tune').isDisabled(),false,'a running Tune can still be turned off');
+  tune=false;await pushed('available');
+  const back=await read();
+  assert.deepEqual([back.cq,back.tune,back.badge,back.reason],[false,false,'Ready',null],'back without any action');
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-010-07; TC-007-002 (#22). Without an available capability a double-click and a Calling me line select
+// the station and send no enable_tx, the menu's Reply and "Auto Seq on" are not offered; Call 1st stays a setting.
+test('TC-007-002 no arming path sends enable_tx while the transmit capability is unavailable',{timeout:40000},async t=>{
+  const period='2026-11-06T10:51:15.0000000Z';
+  const standard=(to,from,toKind='call')=>({type:'standard',to:{kind:toKind,text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
+  const row=(sequence,text,fields)=>({sequence,start_frame:1000+sequence,frequency_hz:1000+sequence*100,snr_db:-5,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields,period_start_utc:period,dt_seconds:0.1});
+  const records=[row(0,'CQ K1ABC FN42',standard('CQ','K1ABC','token')),row(1,'HB9BLA W1XYZ FN42',standard('HB9BLA','W1XYZ'))];
+  const commands=[];let capability='unavailable',contact=null,settings={},revision=3,state,refuse=null;
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-11-06T10:50:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    Object.assign(state.job,{next_sequence:2,available_count:2,latest_decode:{id:1,first_sequence:0,next_sequence:2,period_start_utc:period,complete:true}});
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot({...base,revision,sequence:revision},{contact,settings,transmit:{capability}})}));
+    await p.route('**/contact/command',async route=>{commands.push(JSON.parse(route.request().postData()));if(refuse){const code=refuse;refuse=null;await route.fulfill({status:409,json:{v:1,error:{code,field:null}}});}else await route.fulfill({status:202,json:{v:1,accepted:true}});});
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));await route.fulfill({json:{...emptyResults(state),next_sequence:2,available_count:2,next:2,records:records.slice(cursor)}});});
+  }});
+  await page.locator('tr[data-sequence="0"]').waitFor({timeout:25000});
+  await page.locator('#qso-others tr').first().waitFor();
+  await page.waitForFunction(()=>window.wstxContact?.snapshot()?.transmit.capability==='unavailable');
+  const sent=async n=>{for(let i=0;i<40&&commands.length<n;i++)await page.waitForTimeout(50);await page.waitForTimeout(300);return commands.splice(0).map(c=>c.action);};
+  assert.equal(await page.locator('#contact-call-first').isDisabled(),false,'Call 1st stays an operator setting');
+  await page.locator('tr[data-sequence="0"] td').nth(4).dblclick();
+  assert.deepEqual(await sent(1),['select_row'],'a double-click selects and does not arm');
+  await page.locator('#qso-others tr').first().dblclick();
+  assert.deepEqual(await sent(1),['select_row'],'a Calling me line selects and does not arm');
+  refuse='contact_active';await page.locator('#qso-others tr').first().dblclick();
+  await page.locator('#contact-change').click();
+  assert.deepEqual(await sent(2),['select_row','select_row'],'a contact change from a Calling me line does not arm');
+  await page.locator('tr[data-sequence="0"] td').nth(4).click({button:'right'});
+  assert.equal(await page.locator('#ba-menu [data-menu=reply]').isDisabled(),true,'the menu offers no Reply');
+  await page.locator('#activity-heading').click();await page.locator('#ba-menu').waitFor({state:'hidden'});
+  contact=partner('replying',{suggested_slot:null});settings={auto_seq:false};revision++;await page.evaluate(()=>window.wstxContact.load());
+  await page.waitForFunction(()=>window.wstxContact.snapshot().settings.auto_seq===false);
+  assert.equal(await shown(page,'#qso-autoseq-on'),false,'Auto Seq on is not offered');
+  contact={...contact,suggested_slot:'tx5'};revision++;await page.evaluate(()=>window.wstxContact.load());
+  await page.locator('#qso-suggest:not([hidden])').click();
+  assert.deepEqual(await sent(1),['choose_next'],'the offered next message does not arm');
+  contact={...contact,suggested_slot:null};revision++;await page.evaluate(()=>window.wstxContact.load());
+  capability='available';revision++;await page.evaluate(()=>window.wstxContact.load());
+  await page.waitForFunction(()=>window.wstxContact.snapshot().transmit.capability==='available');
+  assert.equal(await shown(page,'#qso-autoseq-on'),true,'offered again when available');
+  contact=null;settings={};revision++;await page.evaluate(()=>window.wstxContact.load());
+  await page.waitForFunction(()=>!window.wstxContact.snapshot().contact);commands.splice(0);
+  await page.locator('tr[data-sequence="0"] td').nth(4).dblclick();
+  assert.deepEqual(await sent(2),['select_row','enable_tx'],'available: the double-click arms');
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-057-03; TC-007-002 (#22, live 2026-11-06): a station restart leaves nothing of the previous boot in
+// Band Activity: no "Latest undefined period", no kept period, however the two reads are ordered. The real server
+// restarts on its port; the job of the first boot, the new job and their pages are presentation fixtures.
+for(const [name,order] of [['/receive answers first','receive'],['/recording answers first, /receive still pending','recording'],['a new job at a lower generation','job']])test(`TC-007-002 a station restart leaves no heading or rows of the previous boot in Band Activity: ${name}`,{timeout:60000},async t=>{
+  const a='2026-11-06T10:51:15.0000000Z',b='2026-11-06T10:51:30.0000000Z';
+  const record=(sequence,call,period)=>({sequence,start_frame:1000+sequence,frequency_hz:1000+sequence*100,snr_db:-5,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:`CQ ${call} FN42`,fields:{type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:call,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}},period_start_utc:period,dt_seconds:0.1});
+  const records=[record(0,'K1ABC',a),record(1,'W1XYZ',b)];
+  let state,restarted=false;const answered=deferred(),released=deferred();
+  const {page,app,dir,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input',beforeNavigate:async(p,station)=>{
+    state=liveFixture({...await (await fetch(station.origin+'/receive')).json(),generation:5});
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-11-06T10:50:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    Object.assign(state.job,{next_sequence:1,available_count:1,latest_decode:{id:1,first_sequence:0,next_sequence:1,period_start_utc:a,complete:true}});
+    const jobOf=real=>({...real,generation:state.generation,job:{id:state.job.id,source_id:state.source.id,generation:state.generation,kind:'live',state:'running',processed_frames:0,error:null}});
+    await p.route('**/receive',async route=>{
+      if(!restarted){await route.fulfill({json:state});return;}
+      if(order==='recording')await released.promise;
+      const response=await route.fetch();
+      if(order==='job'){state=liveFixture({...await response.json(),generation:1});await route.fulfill({json:state});}else await route.fulfill({response});
+      answered.resolve();});
+    await p.route('**/recording',async route=>{
+      if(restarted&&order==='recording'){await route.continue();return;}
+      if(restarted)await answered.promise;
+      if(restarted&&order==='receive'){await route.continue();return;}
+      await route.fulfill({json:jobOf(await (await route.fetch()).json())});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),next=state.job.next_sequence,batch=records.slice(cursor,next);await route.fulfill({json:{...emptyResults(state),next_sequence:next,available_count:next,next,records:batch}});});
+  }});
+  const heading=page.locator('#band-activity header .op-muted');
+  await heading.filter({hasText:'Latest FT8 period 10:51:15 UTC'}).waitFor({timeout:25000});
+  await page.locator('tr[data-sequence="0"]').waitFor();
+  // The next period, the other parity: the first stays below its divider.
+  Object.assign(state.job,{next_sequence:2,available_count:2,latest_decode:{id:2,first_sequence:1,next_sequence:2,period_start_utc:b,complete:true}});
+  await page.evaluate(()=>receiveSync());
+  await heading.filter({hasText:'Latest FT8 period 10:51:30 UTC'}).waitFor();
+  await page.locator('tr[data-period=history]').waitFor();
+  const before=await page.evaluate(()=>profileData.boot_id);
+  restarted=true;await app.close();
+  const second=await server({},['--profile',dir]);t.after(()=>second.close());
+  const settled=()=>page.waitForFunction(old=>profileData?.boot_id&&profileData.boot_id!==old&&snapshot?.boot_id===profileData.boot_id&&!syncPending,before,{timeout:30000});
+  const clean=async note=>{
+    assert.equal(await heading.textContent(),'Latest decode period',note);
+    assert.equal(await page.locator('tr[data-sequence],tr.ba-divider').count(),0,`no row of the previous boot: ${note}`);
+  };
+  await settled();
+  if(order==='recording'){await clean('/receive still pending');assert.equal(await page.evaluate(()=>livePending),true,'/receive is still pending');released.resolve();}
+  await page.waitForFunction(()=>!livePending&&live?.boot_id===profileData.boot_id,null,{timeout:30000});
+  await clean('settled');
+  assert.match(await page.locator('#band-activity tbody').innerText(),order==='job'?/Listening for FT8/:/Decoder unavailable/);
+  assert.deepEqual(errors,[]);
+});
 // Proves: CL-037-01; TC-037-001 the Control panel below the QSO pane.
 test('TC-037-001 the Control panel sits below the QSO pane at its width with DX call, report, Auto Seq, Call 1st, Hold Tx and Tx period always visible',{timeout:60000},async t=>{
   const commands=[];
@@ -3184,6 +3391,38 @@ test('TC-037-002 the error field lists only current problems with their time and
   assert.deepEqual((await entries()).map(e=>e[1]),['✖ Station connection lost · reconnecting']);
   assert.deepEqual(errors,[]);
 });
+// Proves: CL-037-02; TC-037-002 (#37, live 2026-11-06): a long problem text cannot run past the screen at
+// 1366x768: all of it can be scrolled into view inside the block, on screen, and the Control panel stays.
+test('TC-037-002 a long problem scrolls inside the error field on screen and the Control panel stays',{timeout:60000},async t=>{
+  const {page,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input',beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base)}));
+    const idle=await (await fetch(app.origin+'/receive')).json(),running=liveFixture({...idle,generation:idle.generation+1});
+    await p.route('**/receive',route=>route.fulfill({json:running}));
+    await p.route('**/receive/results?*',route=>route.fulfill({json:emptyResults(running)}));
+    await p.route('**/recording',async route=>{const real=await (await route.fetch()).json();await route.fulfill({json:{...real,generation:running.generation,job:{id:running.job.id,source_id:running.source.id,generation:running.generation,kind:'live',state:'running',processed_frames:0,error:null}}});});
+  }});
+  await page.waitForFunction(()=>window.wstxContact?.snapshot()&&live?.job?.state==='running',null,{timeout:45000});
+  const control=()=>page.locator('#qso-control').evaluate(e=>e.getBoundingClientRect().top);
+  await page.evaluate(()=>window.wstxChipsShow());
+  const before=await control();
+  const reach=async text=>{await page.evaluate(text=>{profileData.settings.control.mode='cat';catStatus={condition:'radioUnavailable'};document.querySelector('#cat-status').textContent=text;window.wstxChipsShow();},text);
+    return page.evaluate(()=>{const body=document.querySelector('#error-field .op-error-body');body.scrollTop=body.scrollHeight;const b=body.getBoundingClientRect(),e=[...document.querySelectorAll('#error-field .op-error-entry')].at(-1).getBoundingClientRect(),w=document.querySelector('#error-field').getBoundingClientRect();return {entryIn:e.bottom<=b.bottom+1&&e.top<b.bottom,bodyOnScreen:b.bottom<=innerHeight&&b.top>=0,fieldOnScreen:w.bottom<=innerHeight,page:document.documentElement.scrollHeight<=innerHeight};});};
+  const ok={entryIn:true,bodyOnScreen:true,fieldOnScreen:true,page:true};
+  assert.deepEqual(await reach('CAT unavailable \u00b7 COM3 in use by another program \u00b7 automatic retry in 8 s'),ok);
+  assert.equal(await control(),before,'the Control panel does not move');
+  await page.screenshot({path:'test-results/ui-operating/error-field-long-1366x768.png'});
+  // A wheel notch shows the next line: it does not jump past the chip's second line.
+  const body=page.locator('#error-field .op-error-body');await body.evaluate(e=>{e.scrollTop=0;});await body.hover();await page.mouse.wheel(0,100);await page.waitForTimeout(200);
+  const step=await body.evaluate(e=>[e.scrollTop,e.clientHeight]);assert.ok(step[0]>0&&step[0]<=step[1]+1,`one notch moves by at most the visible height: ${step}`);
+  assert.deepEqual(await reach('CAT unavailable \u00b7 '+'COM3 in use by another program \u00b7 '.repeat(8)+'automatic retry in 8 s'),ok,'longer than the block: it scrolls');
+  assert.equal(await control(),before,'the Control panel does not move');
+  await page.setViewportSize({width:360,height:800});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
+  await page.locator('#error-field').scrollIntoViewIfNeeded();
+  await page.screenshot({path:'test-results/ui-operating/error-field-long-360x800.png'});
+  assert.deepEqual(errors,[]);
+});
 // Proves: CL-061-02; TC-061-003. Scripted contact snapshots and command replies (presentation fixtures): the CQ
 // button retries a stale_revision refusal of its enable_tx with the reloaded revision, at most twice.
 test('TC-061-003 CQ retries a stale_revision refusal with the reloaded snapshot',{timeout:40000},async t=>{
@@ -3196,6 +3435,8 @@ test('TC-061-003 CQ retries a stale_revision refusal with the reloaded snapshot'
       if(stale>0){stale--;revision++;await route.fulfill({status:409,json:{v:1,error:{code:'stale_revision'}}});}else await route.fulfill({status:202,json:{v:1,accepted:true}});});
   }});
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-cq').disabled,null,{timeout:25000});
+  // WstxTransmit late start (live 2026-11-06, #10): a click 10 s into my Tx period keys at once for the rest.
+  assert.equal(await page.locator('#qso-cq').getAttribute('title'),'Call CQ: keys at once for the rest of my Tx period when it is early enough, otherwise from my next Tx period');
   const sent=async(m,count)=>{for(let i=0;i<80&&commands.length<m+count;i++)await page.waitForTimeout(50);await page.waitForTimeout(300);return commands.slice(m).map(c=>[c.action,c.enabled,c.contact_revision]);};
   stale=1;let m=commands.length;await page.locator('#qso-cq').click();
   assert.deepEqual(await sent(m,2),[['enable_tx',true,3],['enable_tx',true,4]],'CQ: refused once, sent again with the reloaded revision');
@@ -3310,7 +3551,8 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
   assert.ok(visible.count>=6,`at least six Band Activity rows on screen at 360 px ${JSON.stringify(visible)}`);
   assert.ok(visible.height<=48,`a compact Band Activity row, ${visible.height} px`);
   const phone=[];
-  for(const [name,n] of [['idle',0],['6 rows',6],['15 rows',15]]){await show(n?qso(n):null,{arm_state:n?'armed':'disarmed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,n);phone.push([name,await geometry()]);}
+  for(const [name,n] of [['idle',0],['6 rows',6],['15 rows',15]]){await show(n?qso(n):null,{arm_state:n?'armed':'disarmed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,n);phone.push([name,await geometry()]);
+    if(n===6){f=await fit();assert.deepEqual([f.scrolls,f.inside],[false,6],'six full dialogue rows at 360 px (live 2026-11-06)');}}
   same(phone,'360x800');
   f=await fit();assert.equal(f.lastInside,true,'the newest row is visible at 360 px');
   await page.locator('#rx-focus').scrollIntoViewIfNeeded();

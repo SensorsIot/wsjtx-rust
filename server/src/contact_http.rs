@@ -124,6 +124,8 @@ pub(crate) struct StatusFacts {
     pub report: i32,
     pub rx_hz: u32,
     pub tx_hz: u32,
+    /// My Tx period parity.
+    pub parity: Parity,
     pub next_message: Option<String>,
     /// GridExchangeContest (#24 S2a).
     pub activity: contact::Activity,
@@ -359,6 +361,7 @@ impl Station {
             report: c.map_or(e.settings.report, |c| c.report),
             rx_hz: e.settings.rx_hz,
             tx_hz: e.settings.tx_hz,
+            parity: e.settings.parity,
             next_message: c.and_then(|c| c.messages[c.next.index()].clone()),
             activity: e.settings.activity,
         }
@@ -1191,7 +1194,9 @@ pub(crate) fn station_tick(state: &ProfileState) {
     if let Some(s) = state.recording.contact.get() {
         // Read before the contact step: the engine then has every record of it.
         let publication = state.recording.latest_publication();
-        // #42 IgnoreLists: a station band change empties the session list before Auto.
+        // WstxStrategy::StrategyRun: a HALT from any source sets active to None.
+        s.strategy.halt_step(state);
+        // #42 IgnoreLists: a station band change empties the session list before a run step.
         s.strategy
             .observe_band(crate::strategy::station_band(&state.recording));
         // #42 Alert: every new live decode once, whether or not a browser is connected.

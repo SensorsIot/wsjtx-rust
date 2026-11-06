@@ -464,6 +464,7 @@ test('TC-023-003 capacity, incompatible API and mixed standard/native profiles t
   await emulator.stop(); emulator.stop = async () => {};
   await nativePage.locator('#native-status[data-state="unavailable"], #native-status[data-state="discovering"]').waitFor({state: 'attached', timeout: 20000});
   await nativePage.locator('#exception-chips [data-chip=native]').waitFor({timeout: 20000});
+  await nativePage.setViewportSize({width: 1280, height: 900});
   await nativePage.locator('#exception-chips [data-chip=native]').click();
   await nativePage.locator('#native-status').waitFor({state: 'visible', timeout: 10000});
   assert.equal(nativePage.polls + standardPage.polls, 0, 'no client request for the native status');
