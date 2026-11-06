@@ -719,7 +719,7 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
     const deadlineSource = {timeout(milliseconds) {timeoutValues.push(milliseconds); const controller = new AbortController(); controllers.push(controller); return controller.signal;},
       any(signals) {const combined = new AbortController(); for (const signal of signals) {if (signal.aborted) {combined.abort(signal.reason); break;} signal.addEventListener('abort', () => combined.abort(signal.reason), {once: true});} return combined.signal;}};
     // Controlled clock: a setup retry pause elapses at once and is recorded (CL-022-01 slow-link retry).
-    const realm = vm.createContext({window, location: {origin}, indexedDB, fetch, TextEncoder, Uint8Array, AbortController,
+    const realm = vm.createContext({window, document: {readyState: 'complete'}, location: {origin}, indexedDB, fetch, TextEncoder, Uint8Array, AbortController,
       setTimeout: (callback, milliseconds) => {pauses.push(milliseconds); queueMicrotask(callback); return pauses.length;}, clearTimeout() {},
       addEventListener: (type, listener) => pageListeners.push([type, listener]), removeEventListener: (type, listener) => {const index = pageListeners.findIndex(([t, l]) => t === type && l === listener); if (index >= 0) pageListeners.splice(index, 1);},
       CryptoKey: pair.privateKey.constructor, crypto: crypto.webcrypto, atob, btoa, AbortSignal: deadlineSource, CustomEvent: class {constructor(type, init) {this.type = type; this.detail = init.detail;}}});
