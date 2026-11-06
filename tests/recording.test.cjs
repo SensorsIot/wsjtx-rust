@@ -430,7 +430,9 @@ test('TC-010-002 recording state and import progress are pushed on change, witho
   // Another actor's replay: announced within the 1 s check, read by the browser.
   const start=performance.now(),job=await f.replay();
   await p.waitForFunction(id=>snapshot?.job?.id===id,job.id,{timeout:5000});
-  const announced=watcher.log.find(e=>e.value.data.job_id===job.id);assert.ok(announced&&announced.at-start<=2000,'the replay is announced within 2 s');assert.equal(announced.value.data.source_id,initial.recording.id);assert.ok(announced.bytes<=1024);
+  // Each socket checks on its own 1 s timer, so the browser can read the job before this peer's check.
+  let announced;while(!(announced=watcher.log.find(e=>e.value.data.job_id===job.id))&&performance.now()-start<=2500)await sleep(50);
+  assert.ok(announced&&announced.at-start<=2000,'the replay is announced within 2 s');assert.equal(announced.value.data.source_id,initial.recording.id);assert.ok(announced.bytes<=1024);
   await f.req('/recording/jobs/'+job.id,'DELETE');await terminal(f);
   await p.waitForFunction(()=>snapshot?.job?.state==='cancelled',null,{timeout:5000});
   // Another actor's import: identity and state at once; received_bytes alone at most once per 5 s, shown without a read.
