@@ -281,6 +281,38 @@ test('TC-009-005 strict TLS unions, early identity barriers and manual preferred
 
 // Proves: CL-008-07; CL-010-05/07/08; TC-009-005 cases1/2/6. Interception only
 // delays a mutation body; all successful replies/state originate in the real server.
+// Proves: CL-008-07; TC-009-005 case6 (#10). selection.state during a held POST (another client's
+// revision, then the command's own) does not take away the barrier of its unknown outcome.
+test('TC-009-005 an event during a pending command keeps the unknown outcome barrier',{timeout:60000},async t=>{
+  const {origin,request,token}=await station(t);const {chromium}=require('playwright');
+  const browser=await chromium.launch();t.after(()=>browser.close());
+  const page=await (await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}})).newPage();
+  await loginPage(page,origin,token);await page.locator('#operating-band:enabled').waitFor();
+  await page.selectOption('#operating-band','40m');await page.waitForFunction(()=>operatingState.operation?.error==='audio_unconfigured');
+  await page.locator('#operating-mode:enabled').waitFor();
+  const settled=()=>page.waitForFunction(()=>!mutationPending&&!operatingReadPending&&!operatingReadAgain);
+  const reads=[];page.on('request',r=>{if(new URL(r.url()).pathname==='/receive/selection')reads.push(performance.now());});
+  const held=async mode=>{let release,entered;const gate=new Promise(r=>release=r),reached=new Promise(r=>entered=r);t.after(()=>release());return {gate,release,entered,reached,mode};};
+  // Another client's revision while the POST is held; the POST never reaches the station.
+  const first=await held('ft4');
+  await page.route('**/receive/select',async route=>{await first.entered();await first.gate;await route.abort('failed');},{times:1});
+  await page.selectOption('#operating-mode','ft4');await first.reached;
+  const s=(await request('/receive/selection')).body;
+  const other=await request('/receive/select','POST',{v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:require('node:crypto').randomUUID(),action:'band',profile_revision:s.profile_revision,generation:s.generation,operating_revision:s.operating_revision,band:'20m'});
+  assert.equal(other.status,202,JSON.stringify(other.body));
+  await page.waitForFunction(revision=>operatingState.operating_revision>revision,s.operating_revision,{timeout:5000});
+  let before=reads.length;first.release();await page.waitForFunction(n=>operatingFailure===''&&!operatingUnknown&&!mutationPending,before,{timeout:15000}).catch(async e=>{throw new Error(`stuck: ${await page.evaluate(()=>JSON.stringify({operatingFailure,operatingUnknown,operatingIntent}))}; ${e.message}`);});await settled();
+  assert.ok(reads.length>before,'a reconciling read resolved the unknown outcome');
+  // The command's own event arrives while its reply is held, and the reply is lost.
+  await page.locator('#operating-band:enabled').waitFor();
+  const second=await held('ft8');
+  await page.route('**/receive/select',async route=>{await route.fetch();await second.entered();await second.gate;await route.abort('failed');},{times:1});
+  await page.selectOption('#operating-mode','ft8');await second.reached;
+  await page.waitForFunction(()=>operatingState.selection.mode==='ft8'||operatingState.operation?.requested?.mode==='ft8',null,{timeout:5000});
+  before=reads.length;second.release();await page.waitForFunction(()=>operatingFailure===''&&!operatingUnknown&&!mutationPending,null,{timeout:15000}).catch(async e=>{throw new Error(`stuck: ${await page.evaluate(()=>JSON.stringify({operatingFailure,operatingUnknown,operatingIntent}))}; ${e.message}`);});await settled();
+  assert.ok(reads.length>before,'a reconciling read resolved the unknown outcome');
+});
+
 test('TC-009-005 browser preferred selection and Stop fence a genuinely delayed POST',{timeout:45000},async t=>{
   const {origin,request,token}=await station(t);const {chromium}=require('playwright');
   const browser=await chromium.launch();t.after(()=>browser.close());
@@ -669,8 +701,8 @@ function liveSelectionFixture(){
     const freshRead=async index=>{
       const seen=observations[index],before=seen.reads.length;seen.gestures.push(performance.now());await pages[index].locator('#operating-refresh:enabled').click();
       const deadline=performance.now()+12000;while(!seen.reads.slice(before).some(r=>r.ended!==null&&r.body?.v===1)){assert.ok(performance.now()<deadline,'actual explicit operating read completed');await sleep(20);}
-      // A click during an in-flight timer read is coalesced into a follow-up read (operatingReadAgain),
-      // and Node may see the timer read only after `before`. The operator acts once the page has no
+      // A click during a read in flight is coalesced into a follow-up read (operatingReadAgain),
+      // and Node may see that read only after `before`. The operator acts once the page has no
       // selection read pending, so the next action cannot make the page discard its own read (#8).
       await pages[index].waitForFunction(()=>!operatingReadPending&&!operatingReadAgain,null,{timeout:Math.max(1,Math.ceil(deadline-performance.now()))});
     };
@@ -750,9 +782,16 @@ function liveSelectionFixture(){
         const gestures=seen.gestures.filter(at=>at>=start&&at<start+seconds*1000).length;
         assert.ok(reads.length<=gestures,`${profile} browser${index}: ${reads.length} selection reads for ${gestures} gestures`);
         const events=seen.selectionEvents.filter(e=>e.at>=start&&e.at<start+seconds*1000);
+        // Each CAT poll dates the radio facts anew: that alone goes at most every 30 s below Detailed, on the station's clock.
+        const undated=radio=>JSON.stringify(radio,(key,value)=>key==='query_sequence'||key==='observed_at_ms'?undefined:value);
+        const lastEvent=new Map(),heldRadio=new Map();let datesOnly=0;
+        for(const e of seen.selectionEvents){const c=e.data.changed,previous=lastEvent.get(e.socket);
+          if(Object.keys(c).join()==='radio'&&undated(c.radio)===undated(heldRadio.get(e.socket))){
+            if(e.at>=start){datesOnly++;assert.ok(e.data.monotonic_ms-previous>=29900,`${profile} browser${index}: new radio dates alone ${e.data.monotonic_ms-previous} ms after the last event`);}}
+          if(c.radio)heldRadio.set(e.socket,c.radio);lastEvent.set(e.socket,e.data.monotonic_ms);}
         assert.ok(events.every(e=>e.bytes<=2048),`${profile} browser${index}: selection.state over 2048 B`);
         assert.ok(events.length<=Math.ceil(seconds)+1,`${profile} browser${index}: ${events.length} selection.state in ${seconds} s`);
-        return {reads,pending,gestures,events:events.length,eventBytes:events.reduce((sum,e)=>sum+e.bytes,0),frames:seen.frames.length-frameStarts[index]};
+        return {reads,pending,gestures,events:events.length,datesOnly,eventBytes:events.reduce((sum,e)=>sum+e.bytes,0),frames:seen.frames.length-frameStarts[index]};
       });
       // A short command may end between two 1 s checks of one browser, not unseen by both.
       for(const n of commands.keys())assert.ok(polling.some(p=>p.pending[n]>=1),`${profile} command${n}: pending seen by neither browser`);

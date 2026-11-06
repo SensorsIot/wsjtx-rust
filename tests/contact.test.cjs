@@ -534,6 +534,18 @@ test('TC-009-005 operating selection is pushed: the event carries it, no timer r
   assert.deepEqual(page.errors,[]);
 });
 
+// Proves: CL-008-07; TC-009-005 case7 (#10). The socket's read getting lost on the link leaves the
+// controls on the state its first event gave: there is no timer read to repair them.
+test('TC-009-005 a lost selection read does not disable the controls the socket event holds',{timeout:60000},async()=>{
+  let release,reached;const gate=new Promise(r=>release=r),entered=new Promise(r=>reached=r);
+  await page.route('**/receive/selection',async route=>{reached();await gate;await route.abort('failed');},{times:1});
+  await page.reload();await page.locator('#connection[data-state=connected]').waitFor();await entered;
+  await page.waitForFunction(()=>operatingState&&operatingState===operatingHeld&&operatingHeldSocket===socket,null,{timeout:8000});
+  release();await page.waitForFunction(()=>!operatingReadPending);await new Promise(r=>setTimeout(r,3000));
+  assert.deepEqual(await page.evaluate(()=>({operatingFailure,operatingSupported,disabled:document.querySelector('#operating-band').disabled})),{operatingFailure:'',operatingSupported:true,disabled:false});
+  assert.deepEqual(page.errors,[]);
+});
+
 test('TC-050-004 mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO completes, and CQ right after it calls',{timeout:420000},async()=>{
   // Mid-QSO: calling K1ABC (armed), K1ABC does not answer, double-click DL1ABC.
   let mark=await dblclickRow('CQ K1ABC FN42',1234.6,-12);

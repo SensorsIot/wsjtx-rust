@@ -378,7 +378,8 @@ package WstxOperatingReceive {
              identity of its current status. It has no timer read. It reads GET /receive/selection
              once per socket, on a saved profile revision or boot change, on the operator's Refresh
              and after a command whose outcome is unknown; a pushed state never clears the barrier
-             of an unknown outcome. */
+             of an unknown outcome, also not while the command's POST is pending. A read lost on
+             the link before its answer changes nothing while this socket's events hold the state. */
     }
     part def HttpContentCodingBoundary {
         doc /* Six current GET routes have fixed serialized JSON. Each own logical cap
@@ -970,7 +971,7 @@ package WstxOperatingReceive {
              Thin/Off traffic has no timer read (SelectionStateEvent); an unknown stack refuses.
              Actual mode/band controls preserve existing
              two-browser32kbit mean<=3000B/s eachway and visible status<=2s.
-             Detailed2s/500ms fast-link is separate. Keyboard360px/200percent.
+             Keyboard360px/200percent.
              TC009002 separate authorizedcost4 physical IC7300/USB/CAT/browser;
              actual frequency/USB/DATA/FIL, width/notch/PBT and restore independently
              observed, no TX or quiet-band fabricated decoding. Verification not run. */
