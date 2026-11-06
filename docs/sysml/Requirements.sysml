@@ -2508,6 +2508,11 @@ package WstxRequirements {
              retained-rejected, invalid or missing credential is never retried
              without an operator action, so it cannot spam challenges or drain any
              admission bound; transient failures back off exponentially to60s.
+             Opening a page with a retained credential starts its renewal only after the
+             page's load event (issue10 TC-007-005): the asset bytes share the link with
+             the challenge, whose 10 s attempt bound would otherwise run out behind them
+             and add the 4 s back-off to the first status. A browser without a usable
+             credential shows the token form without waiting for the load event.
              Slow-link setup retry (operator decision 2026-11-03, issue22): during one
              token login each setup step (POST /session, bootstrap-scope, enroll, and
              the challenge/proof/status renewal) has its own 10 s attempt bound. A step
@@ -2726,7 +2731,9 @@ package WstxRequirements {
     dependency CL_022_05_to_FR_021 from 'CL-022-05' to 'FR-021';
     verification 'TC-022-006' {
         doc /* TC-022-006, CL-022-01/02; cost2 profiles/protocol companions
-             using existing TLS/browser helpers. Fresh-browser initial journey: POST
+             using existing TLS/browser helpers. Reopening a page with a retained credential while
+             its last asset is held sends no challenge before the load event, then one.
+             Fresh-browser initial journey: POST
              session204 then bootstrap-scope200 with strict independently expected tuple;
              no ordinary status/grant, challenge/transport or CAT I/O is created by read.
              Enroll that exact scope, prove key possession, then grant status is usable.

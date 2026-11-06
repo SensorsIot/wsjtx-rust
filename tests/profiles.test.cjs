@@ -254,6 +254,26 @@ test('TC-022-006: token login retries a slow or failed setup step without anothe
 });
 
 // Proves CL-022-01/02/05 ordinary cross-tab transport rotation; response-order faults remain separate.
+// Proves: CL-022-01; TC-022-006, #10 TC-007-005 first status: the renewal of a retained credential waits for the page's load event.
+test('TC-022-006: reopening a page renews its retained credential only after the load event', {timeout: 45000}, async t => {
+  const {profiles} = await fixture(t, true), p = profiles[0];
+  const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
+  const page = await context.newPage();
+  await page.goto(p.origin); await page.locator('#login').waitFor({state: 'visible'});
+  await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click(); await connected(page);
+  // Hold the page's last asset: load cannot fire and the challenge must not start.
+  let release; const held = new Promise(r => {release = r;}); t.after(() => release());
+  await page.route('**/recording.js', async route => {await held; await route.continue();});
+  const order = [];
+  page.on('request', request => {if (request.url().endsWith('/authorization/v1/challenge')) order.push('challenge');});
+  page.on('load', () => order.push('load'));
+  await page.goto(p.origin, {waitUntil: 'commit'});
+  await page.waitForFunction(() => !!window.stationAuthorization && document.readyState !== 'complete', null, {timeout: 15000});
+  await page.waitForTimeout(1500);
+  assert.deepEqual(order, [], 'no challenge while the page is still loading');
+  release(); await connected(page);
+  assert.deepEqual(order, ['load', 'challenge'], 'one renewal, after the load event');
+});
 test('TC-022-006: actual two tabs share retained authorization and rotated transport', {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true), p = profiles[0];
   const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
