@@ -38,6 +38,31 @@ struct Native;
 /// The radios this process discovered; the locks end with the process.
 #[cfg(windows)]
 static RESERVED: Mutex<Vec<std::fs::File>> = Mutex::new(Vec::new());
+/// True when this process now holds the lock of `port` in `held`; false when another handle
+/// holds it. Without a usable lock file discovery works as if nobody else had reserved.
+#[cfg(windows)]
+pub(crate) fn reserve_in(
+    held: &Mutex<Vec<std::fs::File>>,
+    root: &std::path::Path,
+    port: u16,
+) -> bool {
+    let Ok(file) = std::fs::create_dir_all(root).and_then(|()| {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(root.join(format!("COM{port}.lock")))
+    }) else {
+        return true;
+    };
+    if matches!(file.try_lock(), Err(std::fs::TryLockError::WouldBlock)) {
+        return false;
+    }
+    if let Ok(mut held) = held.lock() {
+        held.push(file);
+    }
+    true
+}
 #[cfg(windows)]
 impl Hardware for Native {
     fn ports(&self) -> Result<Vec<PortInfo>, cat::Error> {
@@ -73,23 +98,7 @@ impl Hardware for Native {
             .unwrap_or_else(std::env::temp_dir)
             .join("WstxRust")
             .join("radio-reservation");
-        // Without a usable lock file discovery works as if nobody else had reserved.
-        let Ok(file) = std::fs::create_dir_all(&root).and_then(|()| {
-            std::fs::OpenOptions::new()
-                .create(true)
-                .truncate(false)
-                .write(true)
-                .open(root.join(format!("COM{port}.lock")))
-        }) else {
-            return true;
-        };
-        if matches!(file.try_lock(), Err(std::fs::TryLockError::WouldBlock)) {
-            return false;
-        }
-        if let Ok(mut held) = RESERVED.lock() {
-            held.push(file);
-        }
-        true
+        reserve_in(&RESERVED, &root, port)
     }
 }
 #[cfg(windows)]

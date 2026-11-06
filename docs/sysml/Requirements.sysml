@@ -2627,12 +2627,13 @@ package WstxRequirements {
              converted into a persisted acknowledgement; migration starts unconfirmed.
              Invalidated commissioning displays 'Confirm changed receive-only setup'
              and exposes that same recovery action; no normal Connect/Disconnect CAT
-             buttons. CAT disabled remains disabled. No serial enumeration/fallback.
+             buttons. CAT disabled remains disabled and there is no serial
+             enumeration/fallback, except the read-only discovery of CL-044-15 after its
+             persisted keying confirmation, which may also save a found radio as CAT control.
              Missing/revoked/mismatched grant, missing/invalid commissioning, disabled
-             CAT and corrupt authorization store cause zero automatic native open (the sole
-             exception is the read-only discovery of CL-044-15, after its persisted keying
-             confirmation),
-             query, setter or PTT bytes. One matching unrevoked grant plus valid
+             CAT and corrupt authorization store cause zero automatic native open,
+             query, setter or PTT bytes (the sole exception is that same discovery, which
+             opens and sends 19 00 only). One matching unrevoked grant plus valid
              commissioning authorizes the station's automatic read-only CAT lifecycle
              even when that browser is closed; it does not authorize another browser's
              HTTP controls. Last-grant revocation cancels that lifecycle and releases
@@ -3824,7 +3825,7 @@ package WstxRequirements {
     }
     dependency CL_044_12_to_FR_009 from 'CL-044-12' to 'FR-009';
     requirement 'CL-044-13' {
-        doc /* The server pushes the Tx level state (client-server rule of #10): each WebSocket peer with a display subscription receives radio.tx_level {v 1, type radio.tx_level, data {profile_id, boot_id, managed, level_db, stored, alc unknown|available|unavailable, assistant, result, meters null|{alc, po_pct, swr_x10}, power_limit_pct, warnings [...] (CL-044-14)}} after each change; nothing is polled. Settings > Radio > Audio shows, for an IC-7300 CAT control only, a Set level button, a line with the level and the last result, the last ALC, Po and SWR, and the optional Profile power field (settings.radio.power_limit_pct) saved with Apply; the Tx level slider is shown only with alc unavailable. Set level and the slider send POST /radio/tx-level; a refusal is shown on the line. */
+        doc /* The server pushes the Tx level state (client-server rule of #10): each WebSocket peer with a display subscription receives radio.tx_level {v 1, type radio.tx_level, data {profile_id, boot_id, managed, level_db, stored, alc unknown|available|unavailable, assistant, result, meters null|{alc, po_pct, swr_x10}, power_limit_pct, warnings [...] (CL-044-14), keying_confirmed (CL-044-15)}} after each change; nothing is polled. Settings > Radio > Audio shows, for an IC-7300 CAT control only, a Set level button, a line with the level and the last result, the last ALC, Po and SWR, and the optional Profile power field (settings.radio.power_limit_pct) saved with Apply; the Tx level slider is shown only with alc unavailable. Set level and the slider send POST /radio/tx-level; a refusal is shown on the line. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/radio_level.rs; server/src/main.rs; client/recording.js; client/app.js";
     }
@@ -3917,9 +3918,9 @@ package WstxRequirements {
     verification 'TC-044-021' {
         doc /* TC-044-021 — Discovery on HB9BLA
              CL-044-15
-             Setup: the gated candidate on HB9BLA, the IC-7300 on COM3, keying inhibit confirmed through Detect radio; a second station process on its own profile; the operator's consent.
-             Steps: start the station with COM3 saved; start a second process with COM3 saved while the first holds it; start it with a second transceiver connected, if one is available.
-             Expected: the first keeps COM3; the second reports port_in_use with nothing changed when no other radio is free, and takes the second transceiver when one is.
+             Setup: the gated candidate on HB9BLA, the IC-7300 on COM3, keying inhibit confirmed through Detect radio on both profiles; a second station process on its own profile; the operator's consent.
+             Steps: start the station with COM3 saved; start a second process with COM3 saved while the first holds it; start it with a second transceiver connected, if one is available; with two transceivers, start two processes on unconfirmed CAT, so one holds its radio only by reservation.
+             Expected: the first keeps COM3; the second reports port_in_use with nothing changed when no other radio is free, and takes the second transceiver when one is; a radio reserved but not yet held is passed over.
              4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";

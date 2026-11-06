@@ -1265,3 +1265,17 @@ fn silent_ports_stay_within_the_budget() {
         "no port opened past the budget"
     );
 }
+
+// Proves: CL-044-15; TC-044-020 (f). The reservation is a real lock that stays held.
+#[cfg(windows)]
+#[test]
+fn the_reservation_lock_stays_held_and_is_per_port() {
+    let root = std::env::temp_dir().join(format!("wstx-reserve-{}", profile::new_uuid().unwrap()));
+    let held = Mutex::new(Vec::new());
+    assert!(radio_setup::reserve_in(&held, &root, 3));
+    assert!(!radio_setup::reserve_in(&Mutex::new(Vec::new()), &root, 3));
+    assert!(radio_setup::reserve_in(&held, &root, 6));
+    held.lock().unwrap().clear();
+    assert!(radio_setup::reserve_in(&Mutex::new(Vec::new()), &root, 3));
+    std::fs::remove_dir_all(root).unwrap();
+}
