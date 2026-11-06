@@ -659,10 +659,21 @@ pub(crate) fn annotate(state: &crate::ProfileState, records: &mut [Value]) {
         .as_deref()
         .and_then(crate::strategy::maidenhead);
     let band = crate::strategy::station_band(&state.recording);
+    let mode = state.recording.receive_snapshot()["job"]["mode"]
+        .as_str()
+        .map(str::to_ascii_uppercase);
     for record in records.iter_mut() {
         let Some(from) = sender(record) else {
             continue;
         };
+        // WstxOperatingLayout::BandActivityHover: this record's worked-before status, so the
+        // browser needs no query (#10).
+        if let (Some(band), Some(mode)) = (band, mode.as_deref())
+            && let Ok(status) = state.logbook.worked(std::slice::from_ref(&from), band, mode)
+            && let Some(status) = status.first()
+        {
+            record["worked_status"] = json!(status);
+        }
         let entity = table.lookup(&from);
         if let Some(r) = &entity {
             record["dxcc"] = compact(r, me);

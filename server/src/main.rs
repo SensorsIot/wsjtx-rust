@@ -1151,9 +1151,12 @@ async fn connection(
                 let r=recording.as_ref().unwrap();
                 let s=r.receive_snapshot();
                 let data=json!({"profile_id":s["profile_id"],"boot_id":s["boot_id"],"generation":s["generation"],
-                    "source_id":s["source"]["id"],"job_id":s["job"]["id"],"state":s["job"]["state"]});
-                let observed=json!([data,s["job"]["last_overrun"],s["job"]["latest_decode"]]);
-                let notify=!s["job"].is_null() || !receive_seen[0]["job_id"].is_null();
+                    "source_id":s["source"]["id"],"job_id":s["job"]["id"],"state":s["job"]["state"],
+                    // WstxRecordingReceive: what a browser with this identity would otherwise read GET /receive for.
+                    "audio":s["audio"],"job":{"error":s["job"]["error"],"first_sequence":s["job"]["first_sequence"],"next_sequence":s["job"]["next_sequence"],
+                        "available_count":s["job"]["available_count"],"last_overrun":s["job"]["last_overrun"],"latest_decode":s["job"]["latest_decode"]}});
+                let observed=data.clone();
+                let notify=!s["job"].is_null() || !receive_seen["job_id"].is_null();
                 if notify && observed!=receive_seen {
                     if !send_control(&mut socket,Message::Text(json!({"v":1,"type":"receive.state","data":data}).to_string().into()),optional_since).await {break "receive.state write";}
                     optional_since=None;receive_seen=observed;

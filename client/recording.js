@@ -701,7 +701,7 @@ function activityRow(record,period,context,mode){
   activityWhy(row);return row;
 }
 function validRecord(r){
-  return r&&Object.keys(r).filter(k=>!(k==='dxcc'&&validDxcc(r.dxcc))&&!(k==='flags'&&validFlags(r.flags))&&!(k==='a_priori'&&Number.isInteger(r.a_priori)&&r.a_priori>=1&&r.a_priori<=6&&r.status==='decoded')).sort().join(',')==='dt_seconds,fields,frequency_hz,i3,n3,payload77,period_start_utc,sequence,snr_db,start_frame,status,text'&&
+  return r&&Object.keys(r).filter(k=>!(k==='dxcc'&&validDxcc(r.dxcc))&&!(k==='flags'&&validFlags(r.flags))&&!(k==='worked_status'&&['not_worked','worked_other_band_or_mode','worked_this_band_and_mode'].includes(r.worked_status))&&!(k==='a_priori'&&Number.isInteger(r.a_priori)&&r.a_priori>=1&&r.a_priori<=6&&r.status==='decoded')).sort().join(',')==='dt_seconds,fields,frequency_hz,i3,n3,payload77,period_start_utc,sequence,snr_db,start_frame,status,text'&&
     Number.isSafeInteger(r.sequence)&&r.sequence>=0&&Number.isSafeInteger(r.start_frame)&&r.start_frame>=0&&
     ((r.period_start_utc===null&&r.dt_seconds===null)||(validPeriodTime(r.period_start_utc,live.job.mode)&&Number.isFinite(r.dt_seconds)&&r.dt_seconds>=-(live.job.mode==='ft8'?7.5:3.75)&&r.dt_seconds<(live.job.mode==='ft8'?7.5:3.75)))&&
     Number.isFinite(r.frequency_hz)&&r.frequency_hz>=200&&r.frequency_hz<=3500&&
@@ -819,7 +819,11 @@ function receiveReady(current){
 }
 addEventListener('station-ready',event=>receiveReady(event.detail));
 addEventListener('station-stale',()=>{lastReceiveReady=null;receiveShow();receiveStatus.textContent='Disconnected · live receive data stale';});
-addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;resultsAnnounced=performance.now();receiveSync(current);
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;resultsAnnounced=performance.now();
+  // WstxRecordingReceive: the event carries the job's progress and the audio; GET /receive only for a new identity or state.
+  const e=message.data,carried=live?.job&&e?.job&&e.audio&&e.boot_id===live.boot_id&&e.generation===live.generation&&e.job_id===live.job.id&&e.state===live.job.state&&e.source_id===(live.source?.id??null);
+  let shown=false;if(carried&&validLatestDecode(e.job.latest_decode,live.job.mode,e.job.next_sequence)){try{Object.assign(live.job,e.job);live.audio=e.audio;applyLatestDecode(e.job.latest_decode,e.job.first_sequence);receiveShow();shown=true;}catch{}}
+  if(!shown)receiveSync(current);
   const d=message.data;if(snapshot&&d&&(d.generation!==snapshot.generation||d.job_id!==(snapshot.job?.id??null)||d.state!==(snapshot.job?.state??null)))sync(current);});
 setInterval(receiveResults,250);
 if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state==='connected')receiveSync(socket);

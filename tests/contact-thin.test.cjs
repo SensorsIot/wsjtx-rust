@@ -112,7 +112,7 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
     const d=seen.map(s=>s.ticks.filter(k=>k.utc>=wall0&&k.utc<wall1)),worked=seen.map(s=>between(s.requests,start,end).filter(r=>r.path==='/contact/worked').map(r=>JSON.parse(r.body).calls.length));
     report.phases.detailed={seconds:(wall1-wall0)/1000,start:Math.round(start),end:Math.round(end),ticks:d.map(x=>x.length),utcSpacingMs:d.map(x=>x.slice(1).map((k,n)=>k.utc-x[n].utc)),worked};await save();
     for(const x of d){bound(x.length>=Math.floor((wall1-wall0)/1000)-1&&x.length<=Math.ceil((wall1-wall0)/1000)+1,`Detailed ticks in ${(wall1-wall0)/1000} s: ${x.length}`);for(let n=1;n<x.length;n++)bound(x[n].utc-x[n-1].utc>=900,`Detailed tick spacing ${x[n].utc-x[n-1].utc} ms`);for(const k of x)bound(k.bytes<=224,`station.tick ${k.bytes} bytes`);}
-    for(const [i,w]of worked.entries())bound(w.length===1&&w[0]===64,`client ${i}: worked-before queries for the 71-call period ${JSON.stringify(w)}`);
+    for(const [i,w]of worked.entries())bound(w.length===0,`client ${i}: worked-before queries for the 71-call period ${JSON.stringify(w)}`);
   }
 
   // ---- Local presentation: with those 71 rows shown and the station quiet, a baseline window
@@ -217,22 +217,19 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
   await waitUntil(at(seconds));const end=performance.now(),span=(end-start)/1000;
   const traffic={up:(proxy.counters.up-baseline.up)/span,down:(proxy.counters.down-baseline.down)/span};
   const thin=seen.map((s,i)=>{
-    const requests=between(s.requests,start,end),worked=requests.filter(r=>r.path==='/contact/worked').map(r=>({at:r.at,calls:JSON.parse(r.body).calls.length,names:JSON.parse(r.body).calls}));
-    // A query belongs to the period whose calls it asks about: on the link it can arrive after the next period starts.
-    const perPeriod=publishes.map((p,n)=>{const own=p.names.filter(c=>publishes.every((o,m)=>m===n||!o.names.includes(c)));return worked.filter(q=>q.names.some(c=>own.includes(c))).length;});
+    const requests=between(s.requests,start,end),worked=requests.filter(r=>r.path==='/contact/worked').map(r=>({at:r.at}));
     const gets=s.requests.filter(r=>r.method==='GET'&&r.path==='/contact'&&r.at<end&&(r.end??end)>start&&(r.end!==null||r.at>=start)); // a read an earlier reload dropped has no end event
     const edges=gets.flatMap(r=>[[r.at,1],[r.end??end,-1]]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);let open=0,maxPending=0;for(const [,d]of edges){open+=d;maxPending=Math.max(maxPending,open);}
     const ticks=s.ticks.filter(k=>k.utc>=wall&&k.utc<wall+span*1000),states=between(s.states,start,end);
     const churnStates=report.churn?between(s.states,report.churn.start,report.churn.end+2500).length:null;
-    return {worked,perPeriod,maxPendingContactGets:maxPending,contactGets:gets.length,ticks:ticks.length,tickUtcSpacingMs:ticks.slice(1).map((k,n)=>k.utc-ticks[n].utc),tickTransmitting:ticks.map(k=>k.transmitting),states:states.length,stateSpacingMs:states.slice(1).map((x,n)=>Math.round(x.at-states[n].at)),churnStates,maxStateBytes:Math.max(0,...states.map(x=>x.bytes)),maxTickBytes:Math.max(0,...ticks.map(x=>x.bytes)),routes:requests.reduce((m,r)=>(m[`${r.method} ${r.path}`]=(m[`${r.method} ${r.path}`]??0)+1,m),{})};
+    return {worked,maxPendingContactGets:maxPending,contactGets:gets.length,ticks:ticks.length,tickUtcSpacingMs:ticks.slice(1).map((k,n)=>k.utc-ticks[n].utc),tickTransmitting:ticks.map(k=>k.transmitting),states:states.length,stateSpacingMs:states.slice(1).map((x,n)=>Math.round(x.at-states[n].at)),churnStates,maxStateBytes:Math.max(0,...states.map(x=>x.bytes)),maxTickBytes:Math.max(0,...ticks.map(x=>x.bytes)),routes:requests.reduce((m,r)=>(m[`${r.method} ${r.path}`]=(m[`${r.method} ${r.path}`]??0)+1,m),{})};
   });
   report.phases.thin={state:'checking',seconds:span,frames:seen.map(s=>frameBytes(between(s.frames,start,end))),sharedBytesPerSecond:traffic,statusMs:latencies.slice(),publishes,churn:report.churn,clients:thin};await save();
   console.log(`Thin ${span.toFixed(1)} s ${JSON.stringify(traffic)}`);
   bound(traffic.up<=3000,`Thin counted uplink ${traffic.up} B/s`);bound(traffic.down<=3000,`Thin counted downlink ${traffic.down} B/s`);
   assert.equal(latencies.length,28);
   for(const [i,c]of thin.entries()){
-    bound(c.perPeriod.every(n=>n<=1),`client ${i}: worked-before queries per period ${c.perPeriod}`);
-    bound(c.worked.length>=1&&c.worked.every(q=>q.calls<=64),`client ${i}: worked-before calls ${c.worked.map(q=>q.calls)}`);
+    bound(c.worked.length===0,`client ${i}: ${c.worked.length} worked-before queries`);
     bound(c.maxPendingContactGets<=1,`client ${i}: ${c.maxPendingContactGets} GET /contact pending`);
     // Thin: one tick per 5 s plus at most one per transmit start/stop (three transmissions).
     const steady=c.tickUtcSpacingMs.filter((ms,n)=>c.tickTransmitting[n+1]===c.tickTransmitting[n]);

@@ -19,15 +19,6 @@ async function call(path,options={}){
   const data=type.startsWith('application/json')?await response.json():null;
   return {response,data};
 }
-// #55 CL-055-04: the New call slots come from the record flags; worked-before feeds only the row's
-// hover text (WstxOperatingLayout::BandActivityHover), never a colour.
-async function worked(band,mode,calls){
-  const s=station();if(!s||!band||!calls.length)return null;
-  const {response,data}=await call('/contact/worked',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,...s,band,mode,calls})});
-  if(!response.ok||!Array.isArray(data?.statuses))throw new Error(data?.error?.code??'worked_unavailable');
-  return new Map(data.statuses.map(entry=>[entry.call,entry.status]));
-}
-
 // ---------------------------------------------------------------- history
 let cursor=null,total=0;const page=10;
 function describe(r){
@@ -110,25 +101,22 @@ $('log-export').addEventListener('click',async()=>{
 });
 
 // ---------------------------------------------------------------- Band Activity worked-before
-// At most one query per published period with at most 64 distinct concrete calls.
-// The answers of the latest and the previous asked period also mark the QSO pane's callers
-// (CL-010-13, WstxOperatingLayout::QsoPane item 3); they add no query.
+// #55 CL-055-04: the New call slots come from the record flags; worked_status, which the station
+// sets on each record, feeds only the row's hover text (WstxOperatingLayout::BandActivityHover), never a colour.
+// The statuses of the latest and the previous period also mark the QSO pane's callers
+// (CL-010-13, WstxOperatingLayout::QsoPane item 3).
 let askedPeriod=null,answered=new Map(),previous=new Map(),answeredOn='';
 window.wstxWorkedOf=call=>{const status=answered.get(call)??previous.get(call);return status?{status,on:answeredOn}:null;};
 function annotate(body,records){
   const band=operatingState?.selection?.band,mode=live?.job?.mode;
   const period=resultView?`${liveIdentity(live)}/${resultView.first_sequence}/${resultView.period_start_utc}`:null;
-  const complete=resultView?.complete&&resultCursor>=resultView.next_sequence;
   const from=r=>r.status==='decoded'&&r.fields?.type==='standard'&&r.fields.from?.kind==='call'&&typeof r.fields.from.text==='string'?r.fields.from.text.toUpperCase():null;
   // The answer stays on its record: the record moves to the kept period and is drawn again there (#50 BandActivityHover).
   const decorate=()=>{for(const row of body.querySelectorAll('tr[data-period=latest][data-sequence]')){const record=records.find(r=>String(r.sequence)===row.dataset.sequence),c=record&&from(record),status=c&&answered.get(c);if(!status||row.dataset.worked)continue;record.worked={status,on:`${band} ${mode.toUpperCase()}`};row.dataset.worked=status;row.dataset.workedOn=record.worked.on;window.wstxActivityWhy?.(row);}};
   if(!period||!band||!['ft8','ft4'].includes(mode))return;
-  if(period===askedPeriod){decorate();return;}
-  if(!complete)return;
-  const calls=[...new Set(records.map(from).filter(Boolean))].slice(0,64);
-  const on=`${band} ${mode.toUpperCase()}`;previous=on===answeredOn?answered:new Map();
-  askedPeriod=period;answered=new Map();answeredOn=on;if(!calls.length)return;
-  worked(band,mode.toUpperCase(),calls).then(map=>{if(map&&askedPeriod===period){answered=map;decorate();document.dispatchEvent(new Event('wstx-worked'));}}).catch(()=>{});
+  if(period!==askedPeriod){const on=`${band} ${mode.toUpperCase()}`;previous=on===answeredOn?answered:new Map();askedPeriod=period;answered=new Map();answeredOn=on;}
+  let added=false;for(const r of records){const c=from(r);if(c&&r.worked_status&&!answered.has(c)){answered.set(c,r.worked_status);added=true;}}
+  decorate();if(added)document.dispatchEvent(new Event('wstx-worked'));
 }
 // Observe the rendered rows instead of changing recording.js (its served source is pinned).
 const activity=document.querySelector('#band-activity tbody');
