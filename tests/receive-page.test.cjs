@@ -86,7 +86,7 @@ test('TC-007-002 TC-050-008 a page kept across a restart and periods shows no ac
     // The real restart: every connection, the receive owner and the boot go, on the same port.
     fs.writeFileSync(path.join(control,'restart'),'');
     await until('the page sees the station gone',seen=>seen.state!=='connected',30000);
-    await until('the page is back on the new boot',seen=>seen.state==='connected'&&seen.boot&&seen.boot!==firstBoot,60000);
+    await until('the page is back on the new boot',seen=>seen.state==='connected'&&seen.boot&&seen.boot!==firstBoot&&!seen.rows.length,60000);
     assert.ok(fs.existsSync(path.join(control,'restarted')),'the new boot answers only after the restart');
     // No receive job yet: this window showed "Latest undefined period" with the old boot's rows.
     const quiet=Date.now()+8000;
