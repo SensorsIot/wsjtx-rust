@@ -1559,16 +1559,15 @@ fn abort_stops_tune_without_a_halt() {
     assert!(!v.tune);
     assert_eq!(v.ptt, PttState::Released);
     assert_eq!(v.halt_state, HaltState::Idle);
-    let last_key = f
-        .0
-        .log
-        .lock()
-        .unwrap()
-        .iter()
-        .rev()
-        .find_map(|(_, e)| match e {
-            Event::Key(on) => Some(*on),
-            _ => None,
-        });
+    let last_key =
+        f.0.log
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find_map(|(_, e)| match e {
+                Event::Key(on) => Some(*on),
+                _ => None,
+            });
     assert_eq!(last_key, Some(false), "PTT released");
 }
