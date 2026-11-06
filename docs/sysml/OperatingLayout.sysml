@@ -995,9 +995,9 @@ attribute def ActivityOrdering {
         assert constraint currentOnly { not hasHistory and not hasAcknowledge and showsSince }
         doc /* CL-037-02 (#37, operator 2026-11-03, with the correction "NO history"). A small
              block at the bottom of the right column, below the ControlPanel, that lists only
-             problems that still apply and need the operator to act (ErrorFieldEntry), one line
-             each, naming the cause and "since HH:MM" (UTC, when this page first saw the
-             condition hold). An entry appears while its condition holds and disappears by
+             problems that still apply and need the operator to act (ErrorFieldEntry), each
+             naming the cause and "since HH:MM" (UTC, when this page first saw the condition
+             hold), on one line where it fits. An entry appears while its condition holds and disappears by
              itself when it clears; there is no acknowledge control and no list of past
              problems. A click on an entry opens its detail in the Settings drawer;
              receiveStopped offers the explicit receive start; stationUpdated and
