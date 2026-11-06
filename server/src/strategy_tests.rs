@@ -1197,6 +1197,19 @@ async fn tc_039_002_a_selection_of_a_cq_not_for_me_is_a_warning_only_the_browser
         .await;
     assert_eq!(c.status, StatusCode::ACCEPTED, "{}", c.json);
     assert_eq!(contact(&f).await.0, json!("G4ABC"));
+    // During a contact the directive is checked before contact_active: a plain click stays silent.
+    publish(&f, e + 30_000, &[("CQ NA W9XYZ EN52", 900.0, Some(-1.0))]);
+    let click = live_row(&f, "CQ NA W9XYZ EN52");
+    let during = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":click,"replace":false})).await),
+        )
+        .await;
+    assert_eq!(during.status, StatusCode::CONFLICT, "{}", during.json);
+    assert_eq!(during.json["error"]["code"], "directive_not_answerable");
+    assert_eq!(contact(&f).await.0, json!("G4ABC"), "the contact stands");
     // The body key is optional and exact.
     let bad = f
         .browser(
