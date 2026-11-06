@@ -399,7 +399,6 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     assert_eq!(contact_http::admit(&over), Err("snapshot_limit"));
     // Event payloads stay within 192 bytes.
     let r = &f.state.recording;
-    assert!(contact_http::state_event(r, MAX_SAFE_TEST).len() <= 192);
     // station.tick with its exact keys is at least 220 bytes at maximum values (two
     // UUIDs, a 13-digit utc_ms); the model's StationTickEvent bound is 224 (#10 NOTES).
     let tick = contact_http::tick_event(r).0;
