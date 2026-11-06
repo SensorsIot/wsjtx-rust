@@ -427,9 +427,9 @@ package WstxProfiles {
              After every await captured socket must remain current and OPEN before
              applying HTTP results. Established same-socket correlated status updates
              version/radio/Connected/updated and enables Refresh immediately, independent
-             of settings HTTP. Still refresh saved settings asynchronously: at most one
-             status-triggered GET in flight and one pending follow-up per socket.
-             A repeated Refresh eventually fetches newest settings; no mutation replay.
+             of settings HTTP. A status on an established socket reads no settings; a newer
+             announced revision (WstxStationProtocol profile.state) reads them asynchronously:
+             at most one GET in flight and one pending follow-up per socket; no mutation replay.
              Failed background GET visibly fails and marks socket stale. Old/disconnected
              results cannot restore Connected or mutate newer snapshots/forms.
              GET body exactly ProfileRepresentation, no-store JSON <=8192 bytes.
@@ -445,13 +445,13 @@ package WstxProfiles {
              a second submission during saving sends no second PUT. Restore editable
              controls after completion, while permanent read-only controls stay disabled.
              SnapshotApplicable rejects a lower revision from the same boot so a held
-             Refresh cannot overwrite an acknowledged newer save/form. A changed boot
+             GET cannot overwrite an acknowledged newer save/form. A changed boot
              permits authoritative restart/recovery resynchronization, including an
              independently restored lower revision.
              Invalid field preserves typed input with error, never Saved. Successful save
              updates revision only on durable 200. On 409 prompt reload before another
              save. An unknown outcome also requires explicit reload before another save,
-             without automatic PUT replay or an assumed rollback. Refresh/reconnect reload authoritative settings; preserve in-progress
+             without automatic PUT replay or an assumed rollback. A newer announced revision or a reconnect reloads authoritative settings; preserve in-progress
              edits until explicit reload or successful save. No settings polling/replay.
              Refresh fixture <=2 seconds unshaped loopback. Existing watchdog 12-second
              silence checked each second =>13-second detection (31 seconds while a deferred
@@ -601,10 +601,10 @@ package WstxProfiles {
                  exact8192/8193 HTTP-byte bodies padded with whitespace and media type.
                  Valid boundaries persist; invalid leaves memory/disk/revision intact.
                  Two stale competing windows: one winner/one409, no merge.
-                 Hold Refresh GET, start/hold PUT, then release GET: Save stays disabled,
+                 Hold an announced revision's GET, start/hold PUT, then release GET: Save stays disabled,
                  repeated submit sends no second PUT. Release PUT, require one revision
                  increment and usable editable controls/Save, preserving read-only controls.
-                 Inverse order on revision0 station: hold old Refresh, complete PUT and
+                 Inverse order on revision0 station: hold an old announced GET, complete PUT and
                  its revision1 GET, then release old GET. Visible revision/form/name and
                  Saved1 feedback remain1; same-boot ordering does not reject changed boots.
                  Render <img src=x onerror=alert(1)> display name and
@@ -634,7 +634,7 @@ package WstxProfiles {
                  reopen independently checks old/new JSON and retained revision. No
                  runtime fault knobs. Browser route fetches a real successful PUT then
                  aborts delivery; one PUT only and subsequent GET recovers commit. After
-                 a lost response, Refresh/background GET/reconnect keeps Save disabled;
+                 a lost response, Refresh, an announced GET or a reconnect keeps Save disabled;
                  failed explicit reload keeps the guard and successful current-socket
                  validated explicit reload recovers the committed revision without another PUT. Lost
                  response GET, no replay. Relative path from different CWD, aliases,
@@ -712,10 +712,11 @@ package WstxProfiles {
                  Use the common operational HTTPS/grant partition before each relevant
                  protected socket; count profile GETs separately from auth setup, never
                  substitute auth status for the correlated WS observation.
-                 Established socket: hold GET/profile; actual correlated WS response and
+                 Established socket: Refresh reads no profile; an independent save announces the
+                 revision and the browser reads once. Hold that GET; actual correlated WS response and
                  changed updated/enabled Refresh <=2s BEFORE HTTP release. Repeated
-                 Refresh: one in-flight GET plus one follow-up gets independently saved
-                 newer revision and retains dirty input. Fresh socket: held initial GET
+                 Refresh adds no GET; a second save while held starts no parallel read, and
+                 one follow-up gets that newer revision and retains dirty input. Fresh socket: held initial GET
                  withholds Connected/station-ready/optional display until validated.
                  Close old socket with GET held, establish replacement, release old:
                  no reconnection or newer snapshot/form overwrite. Initial/background

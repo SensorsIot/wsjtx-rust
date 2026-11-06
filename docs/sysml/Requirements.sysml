@@ -1490,12 +1490,12 @@ package WstxRequirements {
              leaves memory/revision/file unchanged and shows its field/error outcome; valid boundary
              saves persist exactly. Revision exhaustion refuses another save. Test a second window
              saving from an old revision: one save wins, one receives 409, no silent merge/lost update.
-             Also hold a Refresh GET response, begin and hold a PUT, then release the GET while the
+             Also hold an announced revision's GET response, begin and hold a PUT, then release the GET while the
              save remains pending. Save stays disabled and even a repeated form submission sends
              no second PUT. Release the PUT: exactly one revision advances, editable controls and
              Save recover their usable state, and permanently read-only controls remain disabled.
              Repeat with the opposite response order on an unchanged revision-0 station: hold the
-             Refresh response, complete the PUT and its follow-up revision-1 GET, then release the
+             announced revision's GET response, complete the PUT and its follow-up revision-1 GET, then release the
              old response. Visible revision, saved fields and acknowledged-save feedback remain at
              revision 1. A changed boot identity still permits restart/recovery resynchronization.
 
@@ -1554,7 +1554,7 @@ package WstxRequirements {
              no acknowledgement, no revision advance, previous complete JSON and current settings
              remain authoritative. At crash-before/after-replacement fault points require either
              complete old or complete new JSON, never a partial file; a lost response is reconciled
-             by GET without replay. After a lost save response, ordinary Refresh/background GET or
+             by GET without replay. After a lost save response, ordinary Refresh, an announced GET or
              reconnect MUST NOT permit a second save: Save remains disabled until an explicit reload
              successfully validates the current authoritative profile. A failed explicit reload keeps
              that guard; a successful one recovers the committed revision without a second PUT.
@@ -1695,10 +1695,12 @@ package WstxRequirements {
              HTTPS/grant fixture before each relevant protected socket. Preserve separate
              plaintext HTTP/launch compatibility; auth setup requests do not count as profile
              GETs and auth status cannot replace correlated WS status.
-             On an established socket hold GET /profile behind a controlled barrier, click Refresh,
+             On an established socket a Refresh sends no GET /profile (#10 profile.state); an
+             independent save makes the station announce the revision and the browser reads once.
+             Hold that GET behind a controlled barrier, click Refresh,
              observe its actual correlated WebSocket status and require changed visible updated plus
-             enabled Refresh within 2 seconds before releasing HTTP. Repeat Refresh while held: only
-             one GET is in flight and one follow-up eventually obtains an independently saved newer
+             enabled Refresh within 2 seconds before releasing HTTP. Repeat Refresh while held: it adds no GET; a second independent save while held starts no parallel read, and
+             one follow-up eventually obtains that newer
              revision without overwriting dirty input. On a fresh socket hold initial GET: Connected,
              station-ready and optional display remain withheld until validated success. Close that
              socket with HTTP held, establish a replacement, then release the old response: it cannot
@@ -1982,7 +1984,7 @@ package WstxRequirements {
         doc /* TC-010-002
              CL-006-03, CL-006-04
              Existing independently calibrated shared TLS link: 4000 bytes/s each direction, 150 ms one-way, two real browsers. After upload/page load, replay >=60 s with both thin; issue paired status refresh at ten preselected source times. Repeat off; stall one reader, replace/cancel job and reconnect. Separately upload while refreshing.
-             Over 60 steady-state seconds thin total <=3000 accounted bytes/s each direction and every connected refresh displays <=2 s; off preserves existing <=1000 idle budget. No >1 frame/s/peer, >1024-byte event or >1 pending optional frame; no raw audio streaming. Missing rows are gaps, obsolete frames ignored, reconnection obtains snapshot before subscription. Upload bytes/time and cold asset metrics are reported separately; upload must not break status<=2 s. Counter oracle is simulator's actual-stream+defined overhead, not physical-link certification. */
+             Over 60 steady-state seconds thin total <=3000 accounted bytes/s each direction and every connected refresh displays <=2 s; off preserves existing <=1000 idle budget. No >1 frame/s/peer, >1024-byte event or >1 pending optional frame; no raw audio streaming. Missing rows are gaps, obsolete frames ignored, reconnection obtains snapshot before subscription. The browser sends no recording.get and no timer GET /recording; a subscribed peer (Off included) receives one recording.state after subscribing and then only on a change, within 2 s, with received_bytes alone at most once per 5 s, shown without a read; a peer without a subscription receives none. Upload bytes/time and cold asset metrics are reported separately; upload must not break status<=2 s. Counter oracle is simulator's actual-stream+defined overhead, not physical-link certification. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-006-03';
@@ -2503,6 +2505,11 @@ package WstxRequirements {
              retained-rejected, invalid or missing credential is never retried
              without an operator action, so it cannot spam challenges or drain any
              admission bound; transient failures back off exponentially to60s.
+             Opening a page with a retained credential starts its renewal only after the
+             page's load event (issue10 TC-007-005): the asset bytes share the link with
+             the challenge, whose 10 s attempt bound would otherwise run out behind them
+             and add the 4 s back-off to the first status. A browser without a usable
+             credential shows the token form without waiting for the load event.
              Slow-link setup retry (operator decision 2026-11-03, issue22): during one
              token login each setup step (POST /session, bootstrap-scope, enroll, and
              the challenge/proof/status renewal) has its own 10 s attempt bound. A step
@@ -2721,7 +2728,9 @@ package WstxRequirements {
     dependency CL_022_05_to_FR_021 from 'CL-022-05' to 'FR-021';
     verification 'TC-022-006' {
         doc /* TC-022-006, CL-022-01/02; cost2 profiles/protocol companions
-             using existing TLS/browser helpers. Fresh-browser initial journey: POST
+             using existing TLS/browser helpers. Reopening a page with a retained credential while
+             its last asset is held sends no challenge before the load event, then one.
+             Fresh-browser initial journey: POST
              session204 then bootstrap-scope200 with strict independently expected tuple;
              no ordinary status/grant, challenge/transport or CAT I/O is created by read.
              Enroll that exact scope, prove key possession, then grant status is usable.

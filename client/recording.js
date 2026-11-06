@@ -407,7 +407,7 @@ async function sync(current=socket) {
     }
     show();
     if(subscribedSocket!==current && current.readyState===WebSocket.OPEN) {subscribedSocket=current;subscribe(current);}
-  } catch(error){if(current===socket)statusText.textContent=`Recording state unavailable · ${error.message}`;} finally{syncPending=false;if(syncAgain){syncAgain=false;sync(socket);}}
+  } catch(error){if(current===socket){statusText.textContent=`Recording state unavailable · ${error.message}`;if(subscribedSocket===current)disconnect(current);}} finally{syncPending=false;if(syncAgain){syncAgain=false;sync(socket);}}
 }
 addEventListener('station-ready',event => {if(subscribedSocket!==event.detail || snapshot?.boot_id!==profileData.boot_id)sync(event.detail);});
 addEventListener('station-stale',()=>{statusText.textContent='Disconnected · recording data stale';subscribedSocket=undefined;});
@@ -415,7 +415,14 @@ addEventListener('station-message',event => {
   const {message,current}=event.detail;
   if(current!==socket)return;
   if(message.type==='recording.state') {
-    if(snapshot && (message.data.generation!==snapshot.generation || message.data.state!==(snapshot.job?.state??null) || message.data.source_id!==(snapshot.job?.kind==='live'?snapshot.job.source_id:(snapshot.recording?.id??null)) || message.data.job_id!==(snapshot.job?.id??null))) sync(current);
+    // Pushed on change (RecordingReceive, PushedStationState): read the snapshot only for what the event does not carry.
+    if(!snapshot)return;
+    const d=message.data,running=d.import??null,shown=snapshot.import??null;
+    if(d.generation!==snapshot.generation || d.state!==(snapshot.job?.state??null) || d.source_id!==(snapshot.job?.kind==='live'?snapshot.job.source_id:(snapshot.recording?.id??null)) || d.job_id!==(snapshot.job?.id??null)) sync(current);
+    else if(!uploading){
+      if(running?.id!==shown?.id)sync(current); // the event carries the whole import: only another or an ended one needs the snapshot
+      else if(running){snapshot.import={...shown,...running};show();}
+    }
     return;
   }
   if(message.type==='error'&&message.data.code==='unknown_command'){
@@ -453,9 +460,6 @@ addEventListener('station-message',event => {
   else snapshot.job.processed_frames=f.end_frame;
   show();
 });
-// While the live job this snapshot shows is running, receive.state carries its changes (below), so the poll rests.
-setInterval(()=>{if(socket?.readyState===WebSocket.OPEN && snapshot && !liveCovered())socket.send(JSON.stringify({v:1,type:'recording.get',id:nextId++}));},2000);
-setInterval(()=>{if(socket?.readyState===WebSocket.OPEN && snapshot?.import && !uploading)sync();},5000);
 function startBody(){return {v:1,profile_id:snapshot.profile_id,boot_id:snapshot.boot_id,generation:snapshot.generation};}
 document.querySelector('#recording-import').addEventListener('click',async()=>{
   const file=document.querySelector('#recording-file').files[0];if(!file){progress.textContent='Choose a WAV recording.';return;}
@@ -812,7 +816,6 @@ function receiveReady(current){
 }
 addEventListener('station-ready',event=>receiveReady(event.detail));
 addEventListener('station-stale',()=>{lastReceiveReady=null;receiveShow();receiveStatus.textContent='Disconnected · live receive data stale';});
-function liveCovered(){return !!(live?.job&&snapshot?.job?.kind==='live'&&snapshot.job.id===live.job.id&&['running','cancelling'].includes(live.job.state));}
 addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;resultsAnnounced=performance.now();receiveSync(current);
   const d=message.data;if(snapshot&&d&&(d.generation!==snapshot.generation||d.job_id!==(snapshot.job?.id??null)||d.state!==(snapshot.job?.state??null)))sync(current);});
 setInterval(receiveResults,250);
