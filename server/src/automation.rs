@@ -45,6 +45,10 @@ impl Clients {
         self.request
             .store(true, std::sync::atomic::Ordering::Release);
     }
+    #[cfg(test)]
+    pub(crate) fn sessions_open(&self) -> usize {
+        self.sessions.load(std::sync::atomic::Ordering::Acquire)
+    }
     /// A client is here now: a session is open, or a request came since the last call.
     fn present(&self) -> bool {
         let request = self

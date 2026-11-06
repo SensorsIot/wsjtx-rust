@@ -4100,7 +4100,7 @@ package WstxRequirements {
     dependency CL_039_02_to_FR_007 from 'CL-039-02' to 'FR-007';
     dependency CL_039_02_to_FR_011 from 'CL-039-02' to 'FR-011';
     requirement 'CL-039-03' {
-        doc /* One directive rule before every strategy and for the operator: a CQ is answerable when it is a plain CQ, CQ <my continent> (derived from the profile call via cty.dat, locator fallback) or CQ DX from another continent. Every other directive is not answerable: a strategy skips it (greyed, never matches, never answered by a run or pounce) and an operator's selection shows a warning the operator can confirm ("CQ NA — not for EU"); automation, MCP and UDP cannot confirm it. Details: WstxStrategy::DirectedCqRule, MyContinent, AutoStrategyRun. */
+        doc /* One directive rule before every strategy and for the operator: a CQ is answerable when it is a plain CQ, CQ <my continent> (derived from the profile call via cty.dat, locator fallback) or CQ DX from another continent. Every other directive is not answerable: a strategy skips it (greyed, never matches, never answered by a run or pounce) and an operator's selection shows a warning the operator can confirm ("CQ NA — not for EU"); automation, MCP and UDP cannot confirm it. Details: WstxStrategy::DirectedCqRule, MyContinent, StrategyRun. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/dxcc.rs; client/contact.js";
     }
@@ -4224,9 +4224,9 @@ package WstxRequirements {
     verification 'TC-039-033' {
         doc /* TC-039-033 — A strategy without a client
              CL-039-05
-             Setup: as TC-039-004; the automation clock of the test moved by the seam; no status WebSocket unless a session is held; reads through the browser routes, which are not clients here.
-             Steps: select; at 59 s publish CQ K1ABC; at 60 s run the exchange to its end; publish a CQ; an MCP start; None and select; at 60 s without a contact publish a CQ; a session held from 0 s and released at 120 s, ticks at 179 s and 180 s; an MCP request at 59 s, a tick, ticks at 118 s and 119 s; a client back at 59 s of a contact past 60 s.
-             Expected: K1ABC selected and armed at 59 s; the contact goes on at 60 s to completed, then stopped no_client, the strategy still selected, the CQ not called; the MCP start refused operator_required; the new selection waits and answers; stopped no_client at 60 s with nothing selected; waiting at 179 s and stopped at 180 s; waiting at 118 s and stopped at 119 s; no stop when the client came back before the contact ended.
+             Setup: as TC-039-004; the automation clock of the test moved by the seam; no status WebSocket unless a session is held or, in one case, a real upgrade over the served router; reads through the browser routes, which are not clients here.
+             Steps: select; at 59 s publish CQ K1ABC; at 60 s run the exchange to its end; publish a CQ; an MCP start; None and select; at 60 s without a contact publish a CQ; a session held from 0 s and released at 120 s, ticks at 179 s and 180 s; an MCP request at 59 s, a tick, ticks at 118 s and 119 s; a client back at 59 s of a contact past 60 s; an actual status WebSocket upgrade with the browser cookie, past 60 s, then closed.
+             Expected: K1ABC selected and armed at 59 s; the contact goes on at 60 s to completed, then stopped no_client, the strategy still selected, the CQ not called; the MCP start refused operator_required; the new selection waits and answers; stopped no_client at 60 s with nothing selected; waiting at 179 s and stopped at 180 s; waiting at 118 s and stopped at 119 s; no stop when the client came back before the contact ended; waiting while the real WebSocket is open and stopped no_client after it closes.
              2 — Isolated automated functional tests; Windows development PC, transmit double; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4464,7 +4464,7 @@ package WstxRequirements {
         doc /* TC-039-007 — Live strategy on HB9BLA
              CL-039-03, CL-039-04, CL-039-05, CL-039-06
              Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 at 1 W on 40 m FT8, operator consent; Tx watchdog 6 repetitions (the profile default).
-             Steps: create an award strategy (goal new_call, region dx, Treat 73 as CQ); select it; let it work two stations; HALT; select it again; select None.
+             Steps: create an award strategy (goal new_call, region dx, Treat 73 as CQ); select it; let it work two stations; HALT; select it again; Esc during a QSO; select None.
              Expected: the stations it would call are marked and on top by value, CQ NA/AS and same-continent CQ DX greyed; no CQ is transmitted; it answers callers first, then the best candidate, to a logged QSO, and goes on; HALT stops at once and the selector shows None; Esc aborts the QSO, gives the station up and the strategy goes on; None stops it; a station restart leaves None.
              5 — Live with RF on the station, operator consent; not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
