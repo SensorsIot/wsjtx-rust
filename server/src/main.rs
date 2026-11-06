@@ -17,6 +17,7 @@ mod contact_http_tests;
 #[cfg(test)]
 mod contact_tests;
 mod dxcc;
+mod freeslot;
 mod http_compression;
 #[cfg(test)]
 mod http_compression_tests;

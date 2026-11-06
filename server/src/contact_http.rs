@@ -120,6 +120,8 @@ pub(crate) struct StatusFacts {
     pub report: i32,
     pub rx_hz: u32,
     pub tx_hz: u32,
+    /// My Tx period parity.
+    pub parity: Parity,
     pub next_message: Option<String>,
     /// GridExchangeContest (#24 S2a).
     pub activity: contact::Activity,
@@ -355,6 +357,7 @@ impl Station {
             report: c.map_or(e.settings.report, |c| c.report),
             rx_hz: e.settings.rx_hz,
             tx_hz: e.settings.tx_hz,
+            parity: e.settings.parity,
             next_message: c.and_then(|c| c.messages[c.next.index()].clone()),
             activity: e.settings.activity,
         }
