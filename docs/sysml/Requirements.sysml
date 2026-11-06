@@ -4207,7 +4207,7 @@ package WstxRequirements {
              CL-039-03, CL-039-04, CL-039-05, CL-039-06
              Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 at 1 W on 40 m FT8, operator consent; Tx watchdog 6 unanswered calls (the profile default).
              Steps: create a strategy (rule 1 CQ and not continent EU, rule 2 CQ; Treat 73 as CQ) and turn Highlight on; then Auto in role cq; then role call.
-             Expected: matching decodes marked and on top, CQ NA/AS and same-continent CQ DX greyed; Auto CQ transmits CQ and answers the first caller to a logged QSO, or ends by the watchdog after 6 unanswered CQs; Auto Call answers only matching CQs; HALT and Esc stop at once; the watchdog is not extended by Auto.
+             Expected: matching decodes marked and on top, CQ NA/AS and same-continent CQ DX greyed; Auto CQ transmits CQ and answers the first caller to a logged QSO, or ends by the watchdog after 6 unanswered CQs; Auto Call answers only matching CQs; HALT stops at once; Abort QSO ends the run only through the contact change; the watchdog is not extended by Auto.
              5 — Live with RF on the station, operator consent; not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {

@@ -553,7 +553,8 @@ package WstxTransmit {
     action def AbortTransmission {
         doc /* #39 (2026-11-04) Abort QSO: the contact consumer's immediate stop of the
              current transmission or Tune: stop audio, release PTT with readback (on
-             failure PTT indeterminate, as for every release), report every pending or
+             failure PTT indeterminate, as for every release, and refusal radio_unavailable
+             so the operator sees it), report every pending or
              current request as outcome aborted and disarm with the caller's cause. It is
              not HaltTransmit: halt_state and the halt count are unchanged. */
     }
