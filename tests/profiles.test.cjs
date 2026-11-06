@@ -115,9 +115,12 @@ async function browserWindows(t, profiles) {
   // CL-044-08: the audio selects offer only listed endpoints; the fixture endpoints are listed by a
   // route (no audio device is read for them), in place of the station's own listing.
   await context.route('**/audio/endpoints', async route => {
-    const origin = new URL(route.request().url()).origin, profile = await (await route.fetch({url: origin + '/profile', method: 'GET'})).json();
-    const entry = (id, label) => ({id, name: label, label, present: true, radio: null});
-    await route.fulfill({json: {v: 1, profile_id: profile.profile_id, boot_id: profile.boot_id, inputs: [entry(captureId(91), 'Fixture input 91')], outputs: [entry(renderId(97), 'Fixture output 97')]}});
+    // A station stopped with its window open (mid-test or at teardown) refuses, as it really would.
+    try {
+      const origin = new URL(route.request().url()).origin, profile = await (await route.fetch({url: origin + '/profile', method: 'GET'})).json();
+      const entry = (id, label) => ({id, name: label, label, present: true, radio: null});
+      await route.fulfill({json: {v: 1, profile_id: profile.profile_id, boot_id: profile.boot_id, inputs: [entry(captureId(91), 'Fixture input 91')], outputs: [entry(renderId(97), 'Fixture output 97')]}});
+    } catch {await route.abort('connectionrefused').catch(() => {});}
   });
   const launcher = await context.newPage(), pages = [];
   for (const p of profiles) {const opened = context.waitForEvent('page'); await launcher.evaluate(({url, name}) => {window.open(url, name, 'popup,width=1100,height=850');}, {url: p.origin, name: p.document.profile_id}); pages.push(await opened);}
@@ -130,6 +133,8 @@ async function connected(page) {
   if(await settings.count() && !await settings.evaluate(el=>el.open))await settings.locator('summary').click();
 }
 // #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
+// The station's profile.state for a newer revision, delivered to this socket's actual handler: one background profile read.
+async function announceProfile(page) {await page.evaluate(() => socket.onmessage({data: JSON.stringify({v: 1, type: 'profile.state', data: {profile_id: profileData.profile_id, boot_id: profileData.boot_id, revision: profileData.revision + 1}})}));}
 async function refreshStatus(page) {const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
 async function savedBytes(profiles) {return Promise.all(profiles.map(p => fs.readFile(path.join(p.dir, 'profile.json'), 'utf8')));}
 
@@ -254,6 +259,26 @@ test('TC-022-006: token login retries a slow or failed setup step without anothe
 });
 
 // Proves CL-022-01/02/05 ordinary cross-tab transport rotation; response-order faults remain separate.
+// Proves: CL-022-01; TC-022-006, #10 TC-007-005 first status: the renewal of a retained credential waits for the page's load event.
+test('TC-022-006: reopening a page renews its retained credential only after the load event', {timeout: 45000}, async t => {
+  const {profiles} = await fixture(t, true), p = profiles[0];
+  const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
+  const page = await context.newPage();
+  await page.goto(p.origin); await page.locator('#login').waitFor({state: 'visible'});
+  await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click(); await connected(page);
+  // Hold the page's last asset: load cannot fire and the challenge must not start.
+  let release; const held = new Promise(r => {release = r;}); t.after(() => release());
+  await page.route('**/recording.js', async route => {await held; await route.continue();});
+  const order = [];
+  page.on('request', request => {if (request.url().endsWith('/authorization/v1/challenge')) order.push('challenge');});
+  page.on('load', () => order.push('load'));
+  await page.goto(p.origin, {waitUntil: 'commit'});
+  await page.waitForFunction(() => !!window.stationAuthorization && document.readyState !== 'complete', null, {timeout: 15000});
+  await page.waitForTimeout(1500);
+  assert.deepEqual(order, [], 'no challenge while the page is still loading');
+  release(); await connected(page);
+  assert.deepEqual(order, ['load', 'challenge'], 'one renewal, after the load event');
+});
 test('TC-022-006: actual two tabs share retained authorization and rotated transport', {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true), p = profiles[0];
   const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
@@ -699,7 +724,7 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
     const deadlineSource = {timeout(milliseconds) {timeoutValues.push(milliseconds); const controller = new AbortController(); controllers.push(controller); return controller.signal;},
       any(signals) {const combined = new AbortController(); for (const signal of signals) {if (signal.aborted) {combined.abort(signal.reason); break;} signal.addEventListener('abort', () => combined.abort(signal.reason), {once: true});} return combined.signal;}};
     // Controlled clock: a setup retry pause elapses at once and is recorded (CL-022-01 slow-link retry).
-    const realm = vm.createContext({window, location: {origin}, indexedDB, fetch, TextEncoder, Uint8Array, AbortController,
+    const realm = vm.createContext({window, document: {readyState: 'complete'}, location: {origin}, indexedDB, fetch, TextEncoder, Uint8Array, AbortController,
       setTimeout: (callback, milliseconds) => {pauses.push(milliseconds); queueMicrotask(callback); return pauses.length;}, clearTimeout() {},
       addEventListener: (type, listener) => pageListeners.push([type, listener]), removeEventListener: (type, listener) => {const index = pageListeners.findIndex(([t, l]) => t === type && l === listener); if (index >= 0) pageListeners.splice(index, 1);},
       CryptoKey: pair.privateKey.constructor, crypto: crypto.webcrypto, atob, btoa, AbortSignal: deadlineSource, CustomEvent: class {constructor(type, init) {this.type = type; this.detail = init.detail;}}});
@@ -1881,21 +1906,23 @@ test('TC-022-001 review regression: Refresh cannot reopen a pending save', {time
     const original = window.fetch; window.observedProfilePuts = 0;
     window.fetch = (...args) => {if (args[0] === '/profile' && args[1]?.method === 'PUT') window.observedProfilePuts++; return original(...args);};
   });
-  let releaseGet, releasePut, observedGet, observedPut, getHeld = false, putCount = 0;
+  let releaseGet, releasePut, observedGet, observedPut, getDone, getHeld = false, putCount = 0;
+  const gotDone = new Promise(r => {getDone = r;});
   const holdGet = new Promise(r => {releaseGet = r;}), holdPut = new Promise(r => {releasePut = r;});
   const gotGet = new Promise(r => {observedGet = r;}), gotPut = new Promise(r => {observedPut = r;});
   await page.route('**/profile', async route => {
     if (route.request().method() === 'GET' && !getHeld) {
-      getHeld = true; const response = await route.fetch(); observedGet(); await holdGet; await route.fulfill({response});
+      getHeld = true; const response = await route.fetch(); observedGet(); await holdGet; await route.fulfill({response}); getDone();
     } else if (route.request().method() === 'PUT') {
       putCount++; observedPut(); await holdPut; await route.continue();
     } else await route.continue();
   });
   try {
     await page.locator('#display-name').fill('One pending save');
-    const previousUpdate = await page.locator('#updated').textContent(); await refreshStatus(page); await gotGet;
+    const previousUpdate = await page.locator('#updated').textContent(); await refreshStatus(page); await page.waitForFunction(old => document.querySelector('#updated').textContent !== old, previousUpdate);
+    await announceProfile(page); await gotGet;
     await page.locator('#settings-save').click(); await gotPut;
-    releaseGet(); await page.waitForFunction(old => document.querySelector('#updated').textContent !== old, previousUpdate);
+    releaseGet(); await gotDone; await page.evaluate(() => new Promise(requestAnimationFrame));
     const stayedDisabled = await page.locator('#settings-save').isDisabled();
     // requestSubmit also exercises the explicit submission guard, independently of
     // a disabled button. The observer counts real fetch invocations synchronously.
@@ -1910,19 +1937,20 @@ test('TC-022-001 review regression: Refresh cannot reopen a pending save', {time
 
   // Inverse completion order: a real revision-0 Refresh response arrives only after
   // the save and its own revision-1 GET have already been acknowledged/rendered.
-  const inverse = pages[1]; let releaseOld, observedOld, oldHeld = false;
+  const inverse = pages[1]; let releaseOld, observedOld, oldDone, oldHeld = false;
+  const oldFinished = new Promise(r => {oldDone = r;});
   const oldResponse = new Promise(r => {releaseOld = r;}), oldStarted = new Promise(r => {observedOld = r;});
   await inverse.route('**/profile', async route => {
     if (route.request().method() === 'GET' && !oldHeld) {
-      oldHeld = true; const response = await route.fetch(); observedOld(); await oldResponse; await route.fulfill({response});
+      oldHeld = true; const response = await route.fetch(); observedOld(); await oldResponse; await route.fulfill({response}); oldDone();
     } else await route.continue();
   });
   try {
     await inverse.locator('#display-name').fill('Acknowledged revision 1');
-    const beforeRefresh = await inverse.locator('#updated').textContent(); await refreshStatus(inverse); await oldStarted;
+    await announceProfile(inverse); await oldStarted;
     await inverse.locator('#settings-save').click(); await inverse.locator('#settings-result').filter({hasText: 'Saved revision 1'}).waitFor();
     assert.equal(await inverse.locator('#profile-revision').textContent(), '1');
-    releaseOld(); await inverse.waitForFunction(old => document.querySelector('#updated').textContent !== old, beforeRefresh);
+    releaseOld(); await oldFinished; await inverse.evaluate(() => new Promise(requestAnimationFrame));
     assert.equal(await inverse.locator('#profile-revision').textContent(), '1');
     assert.equal(await inverse.locator('#display-name').inputValue(), 'Acknowledged revision 1');
     assert.equal(await inverse.locator('#profile-name').textContent(), 'Acknowledged revision 1');
@@ -1987,10 +2015,16 @@ test('TC-022-005: status readiness survives held settings HTTP with bounded refr
   }
   try {
     await page.locator('#callsign').fill('DIRTY');
-    await refreshWithinBound(); await started;
+    await refreshWithinBound(); await page.waitForTimeout(300);
+    assert.equal(gets, 0, 'a Refresh on an established socket reads no profile');
+    // Pushed by the actual station: an independent save announces the revision and the browser reads once.
+    assert.equal((await request(profiles[0].origin, 'PUT', edit(1, 0, {...settings(1), display_name: 'Announced revision'}))).status, 200);
+    await started;
     await refreshWithinBound(); await refreshWithinBound();
-    assert.equal(gets, 1, 'held HTTP must coalesce concurrent Refresh requests');
-    assert.equal((await request(profiles[0].origin, 'PUT', edit(1, 0, {...settings(1), display_name: 'New revision'}))).status, 200);
+    assert.equal(gets, 1, 'Refresh adds no read beside the held one');
+    assert.equal((await request(profiles[0].origin, 'PUT', edit(1, 1, {...settings(1), display_name: 'New revision'}))).status, 200);
+    await page.waitForTimeout(1300);
+    assert.equal(gets, 1, 'a second announcement while held starts no parallel read');
     release();
     await page.locator('#profile-name').filter({hasText: 'New revision'}).waitFor();
     assert.equal(gets, 2, 'exactly one queued follow-up obtains latest saved profile');
@@ -2007,8 +2041,8 @@ test('TC-022-005: status readiness survives held settings HTTP with bounded refr
     else await route.continue();
   });
   try {
-    await refreshWithinBound(); await oldStarted;
-    assert.equal((await request(profiles[0].origin, 'PUT', edit(1, 1, {...settings(1), display_name: 'Newest socket'}))).status, 200);
+    await announceProfile(page); await oldStarted;
+    assert.equal((await request(profiles[0].origin, 'PUT', edit(1, 2, {...settings(1), display_name: 'Newest socket'}))).status, 200);
     await page.evaluate(() => socket.close());
     await page.locator('#connection[data-state="stale"]').waitFor();
     await connected(page); await page.locator('#profile-name').filter({hasText: 'Newest socket'}).waitFor();
@@ -2044,7 +2078,7 @@ test('TC-022-005: status readiness survives held settings HTTP with bounded refr
   } finally {releaseInitial(); releaseReplacement();}
   await initial.close();
   await page.route('**/profile', route => route.fulfill({status: 503, contentType: 'application/json', body: '{}'}));
-  await refreshStatus(page);
+  await announceProfile(page);
   await page.locator('#settings-result').filter({hasText: 'Could not load saved settings.'}).waitFor();
   await page.locator('#connection[data-state="stale"]').waitFor();
   const failed = await context.newPage();
@@ -2052,6 +2086,15 @@ test('TC-022-005: status readiness survives held settings HTTP with bounded refr
   await failed.goto(profiles[0].origin);
   await failed.locator('#connection').filter({hasText: 'could not load saved settings.'}).waitFor();
   assert.notEqual(await failed.locator('#connection').getAttribute('data-state'), 'connected');
+});
+
+// Proves the suite's route for /audio/endpoints: a station stopped with its window open refuses,
+// mid-test or at teardown, and is no unhandled rejection after the test ended.
+test('suite audio endpoint route refuses for a stopped station', {timeout: 30000}, async t => {
+  const {profiles} = await fixture(t), {pages} = await browserWindows(t, profiles);
+  await profiles[0].app.close();
+  const outcome = await pages[0].evaluate(() => fetch('/audio/endpoints').then(() => 'answered', () => 'refused'));
+  assert.equal(outcome, 'refused');
 });
 
 // Proves: test isolation (harness#28 escape). A station a suite starts claims its profile
@@ -2067,7 +2110,7 @@ test('suite stations own profile UUIDs in per-run station data', {timeout: 30000
   };
   const account = {...process.env}; for (const key of Object.keys(account)) if (key.startsWith('WSTX_')) delete account[key];
   const held = await profile('held', heldPort), heldLock = path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'wstx-rust-profile-locks', `${id}.lock`);
-  const other = spawn(exe, ['--profile', held.dir], {env: {...account, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off'}, windowsHide: true});
+  const other = spawn(exe, ['--profile', held.dir], {env: {...account, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off', WSTX_RADIO_DISCOVERY: 'off'}, windowsHide: true});
   let otherOutput = ''; other.stdout.on('data', b => {otherOutput += b;}); other.stderr.on('data', b => {otherOutput += b;});
   t.after(async () => {if (other.exitCode === null && other.signalCode === null) {other.kill(); await once(other, 'exit');} await fs.rm(heldLock, {force: true});});
   const deadline = Date.now() + 10000;

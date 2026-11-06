@@ -448,6 +448,7 @@ fn tune_meters_are_read_once_a_second_and_pushed_as_one_event() {
             "alc",
             "assistant",
             "boot_id",
+            "keying_confirmed",
             "level_db",
             "managed",
             "meters",

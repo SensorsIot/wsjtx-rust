@@ -198,6 +198,8 @@ window.stationAuthorization = (() => {
         const record = await stored(); condition = record === undefined ? 'credential-missing' : 'credential-invalid';
         const credential = validateCredential(record);
         condition = credential.pending_enrollment ? 'enrollment-pending' : 'retained-transient';
+        // The page's assets share a thin link with the challenge, so its attempt bound starts after them.
+        if (document.readyState !== 'complete') await new Promise(resolve => addEventListener('load', resolve, {once: true}));
         const currentScope = await renew(credential, AbortSignal.timeout(10000), current);
         if (current === epoch) {lastFailure = null; retryAt = 0; failures = 0; publish('ready', currentScope);}
         return snapshot();

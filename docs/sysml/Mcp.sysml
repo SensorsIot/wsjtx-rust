@@ -229,7 +229,7 @@ package WstxMcp {
              publications are never used).
              Each station step (after the contact step, with the publication descriptor
              read before it), in this order: any HaltTransmit since start (browser button,
-             Esc or MCP) stops halted; a different live identity, live mode or operating
+             Alt+H, MCP or UDP) stops halted; a different live identity, live mode or operating
              mode stops context_changed; the starting transport no longer this grant's
              current unexpired transport stops authority_lost; the run deadline stops
              time_limit; a contact armed by the run is disarmed (Enable Tx off, never a

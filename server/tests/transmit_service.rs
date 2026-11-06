@@ -1530,6 +1530,47 @@ fn accepted_requests_teach_the_station_hash_table() {
     assert_eq!(shown(&t, "<3D2CR/P> W9XYZ"), "<...> W9XYZ");
 }
 
+// Proves: CL-010-03 (#39 Abort QSO): a failed PTT release on abort is reported.
+#[test]
+fn abort_with_a_failed_release_is_reported_not_silent() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    run(&mut core, &f, P + 3_000);
+    *f.0.unkey_error.lock().unwrap() = Some(PttError::Timeout);
+    core.abort(DisarmCause::ContactCancelled);
+    let v = core.view();
+    assert_eq!(v.ptt, PttState::Indeterminate);
+    assert!(v.refusal.is_some(), "the operator is told");
+    assert_eq!(v.halt_state, HaltState::Idle, "still no halt");
+}
+
+// Proves: CL-010-03 (#39 Abort QSO): abort also stops Tune.
+#[test]
+fn abort_stops_tune_without_a_halt() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    core.arm(7).unwrap();
+    core.set_tune(true, 1500).unwrap();
+    core.abort(DisarmCause::ContactCancelled);
+    let v = core.view();
+    assert!(!v.tune);
+    assert_eq!(v.ptt, PttState::Released);
+    assert_eq!(v.halt_state, HaltState::Idle);
+    let last_key =
+        f.0.log
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find_map(|(_, e)| match e {
+                Event::Key(on) => Some(*on),
+                _ => None,
+            });
+    assert_eq!(last_key, Some(false), "PTT released");
+}
+
 /// Records each Tx level with the log position, on top of the shared fake.
 #[derive(Clone)]
 struct Levelled(Fake, Arc<Mutex<Vec<(usize, i32)>>>);

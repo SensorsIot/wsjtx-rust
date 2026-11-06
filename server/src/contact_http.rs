@@ -804,7 +804,7 @@ fn params(action: &str) -> Option<&'static [&'static str]> {
     Some(match action {
         "select_row" => &["row", "replace", "directive_confirmed"],
         "enter_dx" => &["dx_call", "dx_grid", "replace"],
-        "cancel" | "redecode" | "open_log" => &[],
+        "cancel" | "abort" | "redecode" | "open_log" => &[],
         "choose_next" => &["slot"],
         "edit_message" => &["slot", "text"],
         "set_report" => &["report"],
@@ -879,6 +879,7 @@ fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
             }
         }
         "cancel" => Command::Cancel,
+        "abort" => Command::Abort,
         "redecode" => Command::Redecode,
         "open_log" => Command::OpenLog,
         "choose_next" => Command::ChooseNext(slot(b)?),
@@ -1079,7 +1080,7 @@ impl Station {
             };
         }
         let current = inner.engine.revision;
-        let relaxed = action == "cancel"
+        let relaxed = matches!(action, "cancel" | "abort")
             || (matches!(action, "enable_tx" | "tune") && body["enabled"] == false);
         if revision > current || (revision != current && !relaxed) {
             return Err(("stale_revision", Some("contact_revision")));

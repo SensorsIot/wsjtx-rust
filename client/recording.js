@@ -16,7 +16,7 @@ tuning.innerHTML='<div class="op-dial"><span class="op-dial-label">DIAL MHz</spa
 const chips=document.createElement('div');chips.id='exception-chips';chips.className='op-chips';chips.setAttribute('role','group');chips.setAttribute('aria-label','Station exceptions');
 const headerActions=document.createElement('div');headerActions.className='op-header-actions';
 headerActions.innerHTML='<button type="button" data-region="logbook" id="open-logbook" title="Logbook">&#9776; Logbook</button><button type="button" data-region="server-settings" id="open-server-settings" title="Settings (F2)">&#9881; Settings</button><button type="button" data-region="help" aria-label="Help" title="Keyboard and mouse overview (?)">?</button>';
-const halt=document.createElement('button');halt.id='halt-tx';halt.className='op-halt';halt.disabled=true;halt.innerHTML='<span class="op-square" aria-hidden="true"></span>HALT';halt.setAttribute('aria-label','Halt Tx');halt.title='Halt Tx (Esc, Alt+H)';halt.setAttribute('aria-describedby','transmit-unavailable');headerActions.append(halt);
+const halt=document.createElement('button');halt.id='halt-tx';halt.className='op-halt';halt.disabled=true;halt.innerHTML='<span class="op-square" aria-hidden="true"></span>HALT';halt.setAttribute('aria-label','Halt Tx');halt.title='Halt Tx: emergency stop (Alt+H)';halt.setAttribute('aria-describedby','transmit-unavailable');headerActions.append(halt);
 stationBar.replaceChildren(tuning,chips,stationConnectionNode,headerActions);
 const strip=document.createElement('section');strip.id='rxtx-strip';strip.className='op-strip';strip.setAttribute('aria-label','Rx and Tx audio frequencies');
 const workspace=document.createElement('div');workspace.id='operating-workspace';
@@ -33,8 +33,8 @@ const secondaryRegions=new Map();
 function region(id,title,intro){const section=document.createElement('section');section.id='region-'+id;section.className='op-secondary';section.hidden=true;section.setAttribute('aria-labelledby','region-title-'+id);section.innerHTML=`<header><div><span class="op-eyebrow">WSTX / ${title.toUpperCase()}</span><h2 id="region-title-${id}">${title}</h2></div><button type="button" data-region="operate" class="return-operate">&#8592; Back to operation</button></header><div class="op-secondary-body"><p class="op-muted">${intro}</p></div>`;secondaryRoot.append(section);secondaryRegions.set(id,section);return section.querySelector('.op-secondary-body');}
 const logRegion=region('logbook','Logbook','Contact history and ADIF operations are unavailable until this station offers contact logging.');
 logRegion.insertAdjacentHTML('beforeend','<p>No server-confirmed contacts are available.</p><button type="button" disabled>Import ADIF</button> <button type="button" disabled>Export ADIF</button>');
-const helpRegion=region('help','Keyboard and mouse','WSJT-X keys where the function exists. Letter keys and ? are inactive while a text field has focus; Esc and Alt+H always halt.');
-helpRegion.insertAdjacentHTML('beforeend','<dl class="op-keys" id="help-keys"><div><dt>Esc / Alt+H / HALT</dt><dd>Halt Tx now (Esc also cancels the contact). Panels stay open.</dd></div><div><dt>F1 / F3 / F5 / ?</dt><dd>This overview</dd></div></dl><p class="op-muted">The interface contains no generated callsigns or simulated radio state.</p>');
+const helpRegion=region('help','Keyboard and mouse','WSJT-X keys where the function exists. Letter keys and ? are inactive while a text field has focus; Alt+H always halts, Esc aborts the QSO.');
+helpRegion.insertAdjacentHTML('beforeend','<dl class="op-keys" id="help-keys"><div><dt>Alt+H / HALT</dt><dd>Emergency stop: halt Tx now, everything off. Panels stay open.</dd></div><div><dt>Esc / Abort QSO</dt><dd>Abort the QSO: the transmission stops now and the contact is cancelled (nothing logged); the station stays ready.</dd></div><div><dt>F1 / F3 / F5 / ?</dt><dd>This overview</dd></div></dl><p class="op-muted">The interface contains no generated callsigns or simulated radio state.</p>');
 function secondary(id,title,element,parent){const detail=document.createElement('details');detail.id=id;const summary=document.createElement('summary');summary.textContent=title;detail.append(summary,element);parent.append(detail);return detail;}
 function block(id,title,parent,html=''){const section=document.createElement('section');section.id=id;section.className='op-section';section.setAttribute('aria-labelledby',id+'-title');section.innerHTML=`<h3 id="${id}-title">${title}</h3>${html}`;parent.append(section);return section;}
 const drawer=document.createElement('aside');drawer.id='settings-drawer';drawer.className='op-secondary op-drawer';drawer.hidden=true;drawer.setAttribute('aria-labelledby','drawer-title');
@@ -407,7 +407,7 @@ async function sync(current=socket) {
     }
     show();
     if(subscribedSocket!==current && current.readyState===WebSocket.OPEN) {subscribedSocket=current;subscribe(current);}
-  } catch(error){if(current===socket)statusText.textContent=`Recording state unavailable · ${error.message}`;} finally{syncPending=false;if(syncAgain){syncAgain=false;sync(socket);}}
+  } catch(error){if(current===socket){statusText.textContent=`Recording state unavailable · ${error.message}`;if(subscribedSocket===current)disconnect(current);}} finally{syncPending=false;if(syncAgain){syncAgain=false;sync(socket);}}
 }
 addEventListener('station-ready',event => {if(subscribedSocket!==event.detail || snapshot?.boot_id!==profileData.boot_id)sync(event.detail);});
 addEventListener('station-stale',()=>{statusText.textContent='Disconnected · recording data stale';subscribedSocket=undefined;});
@@ -415,7 +415,14 @@ addEventListener('station-message',event => {
   const {message,current}=event.detail;
   if(current!==socket)return;
   if(message.type==='recording.state') {
-    if(snapshot && (message.data.generation!==snapshot.generation || message.data.state!==(snapshot.job?.state??null) || message.data.source_id!==(snapshot.job?.kind==='live'?snapshot.job.source_id:(snapshot.recording?.id??null)) || message.data.job_id!==(snapshot.job?.id??null))) sync(current);
+    // Pushed on change (RecordingReceive, PushedStationState): read the snapshot only for what the event does not carry.
+    if(!snapshot)return;
+    const d=message.data,running=d.import??null,shown=snapshot.import??null;
+    if(d.generation!==snapshot.generation || d.state!==(snapshot.job?.state??null) || d.source_id!==(snapshot.job?.kind==='live'?snapshot.job.source_id:(snapshot.recording?.id??null)) || d.job_id!==(snapshot.job?.id??null)) sync(current);
+    else if(!uploading){
+      if(running?.id!==shown?.id)sync(current); // the event carries the whole import: only another or an ended one needs the snapshot
+      else if(running){snapshot.import={...shown,...running};show();}
+    }
     return;
   }
   if(message.type==='error'&&message.data.code==='unknown_command'){
@@ -453,9 +460,6 @@ addEventListener('station-message',event => {
   else snapshot.job.processed_frames=f.end_frame;
   show();
 });
-// While the live job this snapshot shows is running, receive.state carries its changes (below), so the poll rests.
-setInterval(()=>{if(socket?.readyState===WebSocket.OPEN && snapshot && !liveCovered())socket.send(JSON.stringify({v:1,type:'recording.get',id:nextId++}));},2000);
-setInterval(()=>{if(socket?.readyState===WebSocket.OPEN && snapshot?.import && !uploading)sync();},5000);
 function startBody(){return {v:1,profile_id:snapshot.profile_id,boot_id:snapshot.boot_id,generation:snapshot.generation};}
 document.querySelector('#recording-import').addEventListener('click',async()=>{
   const file=document.querySelector('#recording-file').files[0];if(!file){progress.textContent='Choose a WAV recording.';return;}
@@ -812,7 +816,6 @@ function receiveReady(current){
 }
 addEventListener('station-ready',event=>receiveReady(event.detail));
 addEventListener('station-stale',()=>{lastReceiveReady=null;receiveShow();receiveStatus.textContent='Disconnected · live receive data stale';});
-function liveCovered(){return !!(live?.job&&snapshot?.job?.kind==='live'&&snapshot.job.id===live.job.id&&['running','cancelling'].includes(live.job.state));}
 addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;resultsAnnounced=performance.now();receiveSync(current);
   const d=message.data;if(snapshot&&d&&(d.generation!==snapshot.generation||d.job_id!==(snapshot.job?.id??null)||d.state!==(snapshot.job?.state??null)))sync(current);});
 setInterval(receiveResults,250);
@@ -1040,7 +1043,7 @@ document.querySelector('#cat-confirm-button').addEventListener('click',async()=>
 // #44 CL-044-06 Settings > Radio "Detect radio": one request per button press, no polling.
 // Detection writes nothing; "Use this setup" only fills the Radio form, which the operator
 // applies with Apply (restart receive) and then the receive-only confirmation above.
-const detectSection=block('settings-detect','Detect radio',radioSection,'<p class="op-muted">Detection opens only USB radio bridges (Silicon Labs CP210x) that this station\'s CAT does not hold, reads the CI-V ID and the IC-7300 menu, and writes nothing.</p><label class="receive-only-verification"><input type="checkbox" id="detect-ack">USB SEND and USB keying (CW/RTTY) are OFF or the radio is on a dummy load; opening a port can pulse DTR/RTS, also on other CP210x boards</label><p class="op-actions"><button type="button" id="detect-run" disabled>Detect radio</button></p><p id="detect-result" role="status">Not run</p><div id="detect-proposal" hidden><dl id="detect-fields"></dl><p class="op-actions"><button type="button" id="detect-use">Use this setup</button></p></div><div id="detect-settings" hidden><h4>IC-7300 settings</h4><ul id="detect-items"></ul><p class="op-actions"><button type="button" id="radio-settings-apply" disabled>Apply recommended radio settings</button><button type="button" id="radio-settings-undo" disabled>Undo radio settings</button></p><p id="radio-settings-result" role="status"></p></div>');
+const detectSection=block('settings-detect','Detect radio',radioSection,'<p class="op-muted">Detection opens only USB radio bridges (Silicon Labs CP210x) that this station\'s CAT does not hold, reads the CI-V ID and the IC-7300 menu, and writes nothing.</p><p id="discovery-state" class="op-muted" role="status">Radio discovery on start is off until confirmed once: tick the line below and press Detect radio.</p><label class="receive-only-verification"><input type="checkbox" id="detect-ack">USB SEND and USB keying (CW/RTTY) are OFF or the radio is on a dummy load; opening a port can pulse DTR/RTS, also on other CP210x boards</label><p class="op-actions"><button type="button" id="detect-run" disabled>Detect radio</button></p><p id="detect-result" role="status">Not run</p><div id="detect-proposal" hidden><dl id="detect-fields"></dl><p class="op-actions"><button type="button" id="detect-use">Use this setup</button></p></div><div id="detect-settings" hidden><h4>IC-7300 settings</h4><ul id="detect-items"></ul><p class="op-actions"><button type="button" id="radio-settings-apply" disabled>Apply recommended radio settings</button><button type="button" id="radio-settings-undo" disabled>Undo radio settings</button></p><p id="radio-settings-result" role="status"></p></div>');
 radioSection.insertBefore(detectSection,profilePanel);
 let detectPending=false,detectProposal=null,radioSettingsPending=false;
 const detectEl=id=>document.getElementById(id);
@@ -1143,10 +1146,11 @@ let txLevelState=null;
 const txLevelResults={stored:'stored',max_without_alc:'stored at the maximum, ALC did not rise',aborted:'aborted, level unchanged',no_alc:'this radio reports no ALC, set the level by hand',high_swr:'stopped: high SWR, check the antenna'};
 function validTxLevelEvent(d){
   const meter=v=>v===null||Number.isSafeInteger(v),m=d?.meters;
-  return operatingShape(d,'profile_id,boot_id,managed,level_db,stored,alc,assistant,result,meters,power_limit_pct,warnings')&&Array.isArray(d.warnings)&&d.warnings.every(w=>typeof w==='string')&&typeof d.managed==='boolean'&&Number.isSafeInteger(d.level_db)&&typeof d.stored==='boolean'&&['unknown','available','unavailable'].includes(d.alc)&&
+  return operatingShape(d,'profile_id,boot_id,managed,level_db,stored,alc,assistant,result,meters,power_limit_pct,warnings,keying_confirmed')&&typeof d.keying_confirmed==='boolean'&&Array.isArray(d.warnings)&&d.warnings.every(w=>typeof w==='string')&&typeof d.managed==='boolean'&&Number.isSafeInteger(d.level_db)&&typeof d.stored==='boolean'&&['unknown','available','unavailable'].includes(d.alc)&&
     typeof d.assistant==='boolean'&&(d.result===null||typeof d.result==='string')&&(d.power_limit_pct===null||Number.isSafeInteger(d.power_limit_pct))&&(m===null||operatingShape(m,'alc,po_pct,swr_x10')&&meter(m.alc)&&meter(m.po_pct)&&meter(m.swr_x10));
 }
 function txLevelShow(){
+  document.getElementById('discovery-state').textContent=txLevelState?.keying_confirmed?'Radio discovery on start is on: the station looks for a free radio when it starts.':'Radio discovery on start is off until confirmed once: tick the line below and press Detect radio.';
   const managed=agcManaged(),v=txLevelState;document.getElementById('tx-level').hidden=!managed;if(!managed)return;
   const line=document.getElementById('tx-level-line'),meters=document.getElementById('tx-meters'),slider=document.getElementById('tx-level-slider');
   const level=v?`${v.level_db} dB`:'unknown';
@@ -1234,18 +1238,17 @@ halt.addEventListener('click',async()=>{
   try{const r=await transmitPost('/transmit/halt',{});result.textContent=`Halt: ${r.halt_state}`;}catch(error){result.textContent=`Halt not confirmed · ${error.message}`;}
   transmitSync();
 });
-// WstxContact::HaltTx: Esc and Alt+H send #9's priority halt from this always-loaded
-// script, in every page state and focused field. Skipped only when the station is known
-// receive-only (the contact snapshot says unsupported); without a snapshot it is sent
-// (halt is idempotent). contact.js adds only the contact cancellation for Esc.
+// WstxContact::HaltTx: Alt+H sends #9's priority halt (the emergency stop) from this
+// always-loaded script, in every page state and focused field. Skipped only when the
+// station is known receive-only (the contact snapshot says unsupported); without a
+// snapshot it is sent (halt is idempotent). Esc is Abort QSO, handled by contact.js.
 function keyboardHaltSkipped(){const s=window.wstxContact?.snapshot?.();return !!s&&s.transmit.capability==='unsupported';}
 addEventListener('keydown',event=>{
   const altH=event.altKey&&!event.ctrlKey&&!event.metaKey&&event.key.toLowerCase()==='h';
-  if(event.key!=='Escape'&&!altH)return;
+  if(!altH)return;
   event.preventDefault();
-  // 'keyboard-halt' tells contact.js when the halt was answered (or skipped), so the Esc
-  // contact cancellation always follows it.
-  const done=reply=>window.dispatchEvent(new CustomEvent('keyboard-halt',{detail:{escape:event.key==='Escape',reply}}));
+  // 'keyboard-halt' tells contact.js when the halt was answered (or skipped).
+  const done=reply=>window.dispatchEvent(new CustomEvent('keyboard-halt',{detail:{reply}}));
   if(!profileData||keyboardHaltSkipped()){done(null);return;}
   const result=document.querySelector('#transmit-result');
   transmitPost('/transmit/halt',{}).then(r=>{result.textContent=`Halt: ${r.halt_state}`;done(r);},error=>{result.textContent=`Halt not confirmed · ${error.message}`;done(null);}).finally(transmitSync);
