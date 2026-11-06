@@ -137,6 +137,15 @@ test('TC-007-001 double-click starts transmission, partner report advances to Tx
   const fresh=page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:'CQ K2ABC FN31'}).first();
   await fresh.waitFor();await fresh.dblclick();
   await waitFor(async()=>(await snapshot()).transmit.arm_state==='armed','armed again');
+  // An open dialog or menu takes Esc first: it closes, and the QSO runs on.
+  const aborts=()=>commands().filter(c=>c.action==='abort').length,abortsBefore=aborts();
+  await page.locator('#qso-cq').click();await page.locator('#op-confirm[open]').waitFor();
+  await page.keyboard.press('Escape');await waitFor(async()=>await page.locator('#op-confirm[open]').count()===0,'dialog closed by Esc');
+  await fresh.click({button:'right'});await page.locator('#ba-menu').waitFor();
+  await page.keyboard.press('Escape');await page.locator('#ba-menu').waitFor({state:'hidden'});
+  await new Promise(r=>setTimeout(r,300));
+  assert.equal(aborts(),abortsBefore,'Esc on a dialog or menu aborts nothing');
+  assert.equal((await snapshot()).transmit.arm_state,'armed','the QSO runs on');
   const button=page.getByRole('button',{name:'Abort QSO (Esc)',exact:true}).locator('visible=true');
   await button.first().waitFor();assert.equal(await button.first().isEnabled(),true);
   const buttonMark=requests.length;

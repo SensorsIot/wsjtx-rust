@@ -683,8 +683,10 @@ impl<H: Hardware> Core<H> {
             || self.tune.is_some()
             || self.ptt != PttState::Released;
         self.hardware.stop_audio();
-        if active {
-            self.release();
+        // A release that failed is reported, as for a halt: the operator must not read
+        // "stopped" while the switch is indeterminate.
+        if active && !self.release() {
+            self.refusal = Some(TransmitRefusal::RadioUnavailable);
         }
         self.tune = None;
         if let Some(job) = self.current.take() {

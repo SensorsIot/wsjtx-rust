@@ -552,7 +552,7 @@ const typing=target=>!!target?.closest?.('input:not([type=checkbox]):not([type=r
 function nudge(rx,tx,label){const s=snap?.settings;if(!s)return;send('set_frequency',{rx_hz:rx===null?null:Math.max(0,Math.min(3000,s.rx_hz+rx)),tx_hz:tx===null?null:s.tx_hz+tx},label);}
 addEventListener('keydown',event=>{
   // Esc first closes an open dialog or menu; only otherwise it aborts the QSO.
-  if(event.key==='Escape'){if(event.defaultPrevented||document.querySelector('dialog[open]'))return;event.preventDefault();abortQso();return;}
+  if(event.key==='Escape'){if(event.defaultPrevented||document.querySelector('dialog[open],#ba-menu:not([hidden])'))return;event.preventDefault();abortQso();return;}
   if(event.key==='F4'){event.preventDefault();if(snap?.contact&&!['idle','cancelled'].includes(snap.contact.state))send('cancel',{},'Clear DX');return;}
   if(event.key==='F11'||event.key==='F12'){
     event.preventDefault();const sign=event.key==='F11'?-1:1,ft4=tick?.period===7500;

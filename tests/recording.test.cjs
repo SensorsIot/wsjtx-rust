@@ -187,7 +187,7 @@ test('TC-018-003 review: cancel pending reservation response deletes returned re
   await p.setInputFiles('#recording-file',{name:'pending.wav',mimeType:'audio/wav',buffer:wav(.1)});await p.locator('#recording-import').click();await accepted;
   assert.equal(await p.evaluate(()=>snapshot.import===null&&snapshot.job===null&&uploading&&!uploadId),true);
   await p.locator('#tab-general').click();
-  // Escape closes no panel (WstxContact::HaltTx D5); the Close control returns.
+  // Escape closes no panel (WstxContact::AbortQso); the Close control returns.
   await p.keyboard.press('Escape');await p.locator('.op-secondary:not([hidden]) .return-operate').click();await p.locator('#open-server-settings').click();await p.locator('#tab-expert').click();
   assert.equal(await p.locator('#recording-file').evaluate(el=>el.files[0].name),'pending.wav');
   assert.equal(await p.evaluate(()=>uploading&&!uploadId),true,'navigation preserves pending reservation state');

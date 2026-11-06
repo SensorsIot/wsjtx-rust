@@ -341,7 +341,7 @@ attribute def ActivityOrdering {
              desktop two-pane order (#37 OperatingScreen), compact top bar, no overflow,
              typography/breakpoint/native canvas/full-space/splitter assertions,
              pointer/keyboard region routes,F2/close-control/outside-click/focus (Escape
-             halts, CL-010-03), real profile/recording
+             aborts the QSO, CL-010-03), real profile/recording
              behavior and request recorder refusing invented RF/QSO/strategy work.
              Same1200x800 target/actual screenshots show design correspondence.
              Cost2 Windows isolated real server/Chromium; no radio. */
@@ -852,7 +852,7 @@ attribute def ActivityOrdering {
              it is red, as the waterfall Tx marker rgb(255,64,64), in a period of my Tx
              parity while Enable Tx is on and whenever the station reports transmitting,
              and green, as the Rx marker rgb(48,208,80), in every other (receive) period.
-             5. Direct buttons: CQ, Tune, HALT, Log QSO (SetEnableTx (#37). Operator
+             5. Direct buttons: CQ, Tune, HALT, Abort QSO (Esc), Log QSO (SetEnableTx (#37). Operator
              2026-11-03 ("We have two HALT buttons ... I do not understand why we need a Reply
              and an RR73 and a 73 button there"): RR73 and 73 are gone, Auto Seq sends them
              and the fold-out Next/Now overrides by hand as in WSJT-X; Reply, kept only as the
