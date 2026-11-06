@@ -376,7 +376,7 @@ impl Station {
         self.operate_as(state, body, granted, authorization::Principal::Browser)
     }
     /// The ContactCommand path with the request's principal (#58). Every principal that
-    /// is not the browser (automation, MCP, UDP) is automatic: it never resets the Tx
+    /// is not the browser (automation, MCP) is automatic: it never resets the Tx
     /// watchdog and arms only within the watchdog time of the last browser action (#39).
     pub(crate) fn operate_as(
         &self,
