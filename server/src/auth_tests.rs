@@ -350,7 +350,7 @@ Sec-WebSocket-Protocol: wstx.v1
     line.trim_end().to_owned()
 }
 
-// Proves: CL-022-02; TC-022-007. A current grant dispatches operating HTTP/WS
+// Proves: CL-022-02; TC-022-006. A current grant dispatches operating HTTP/WS
 // effects under the authority lock; foreign and revoked transports cannot.
 #[tokio::test]
 async fn http_auth_current_grant_dispatches_operating_mutations_revoked_or_foreign_cannot() {
@@ -1235,7 +1235,7 @@ fn commission_body(g: &BrowserGrant, operation_id: &str) -> Value {
     json!({"version":1,"operation_id":operation_id,"scope":g.scope,"receive_only_confirmed":true})
 }
 
-// Proves: CL-022-02/03; TC-022-007. Literal persisted acknowledgement, not a status-only oracle.
+// Proves: CL-022-02/03; TC-022-006. Literal persisted acknowledgement, not a status-only oracle.
 #[tokio::test]
 async fn commission_http_commits_exact_disabled_configuration_and_retained_duplicate_is_read_only()
 {
@@ -1324,7 +1324,7 @@ async fn commission_http_commits_exact_disabled_configuration_and_retained_dupli
     );
 }
 
-// Proves: CL-022-02; TC-022-007. Each invalid request has an independent pristine fixture.
+// Proves: CL-022-02; TC-022-006. Each invalid request has an independent pristine fixture.
 #[tokio::test]
 async fn commission_http_strict_negatives_never_change_acknowledgement_or_files() {
     for case in [
