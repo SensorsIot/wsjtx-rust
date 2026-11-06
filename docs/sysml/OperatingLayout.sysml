@@ -643,7 +643,8 @@ attribute def ActivityOrdering {
              zone on <band>", else "New ITU zone on <band>"; grid "New grid <square>", else "New
              grid on <band>"; call "New call", else "New on <band>" followed by the sender's
              worked-before status in parentheses ("(worked on another band or mode)" or "(worked
-             on <band> <MODE>)", WstxContact::WorkedBeforeQuery answers, no further query). An
+             on <band> <MODE>)", WstxContact::WorkedBeforeQuery answers, no further query; the
+             status stays on the row while it is shown, also as a kept period, #50). An
              overall flag implies its on-band flag, so the on-band text appears only without
              it. Then the #39
              strategy verdict ("Strategy <name>: rule <n>" or "Directed CQ not addressed to my

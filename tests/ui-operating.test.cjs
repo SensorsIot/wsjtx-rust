@@ -2156,6 +2156,42 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
  assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-050-08; TC-050-008 (#50, live 2026-11-06, M7OZL UT4PA KO20): the worked-before status of a row
+// stays while it is on screen, also when the next period moves it to the kept period. The receive pages and
+// the /contact/worked statuses are routed fixtures.
+test('TC-050-008 a kept row keeps its worked-before status in the tip',{timeout:40000},async t=>{
+  const a='2026-11-06T10:55:30.0000000Z',b='2026-11-06T10:55:45.0000000Z';
+  const record=(sequence,text,from,period)=>({sequence,start_frame:1000+sequence,frequency_hz:1000+sequence*100,snr_db:-5,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:{type:'standard',to:{kind:'call',text:'M7OZL',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'KO20'}},period_start_utc:period,dt_seconds:0.1,flags:{new_call_band:true}});
+  const records=[record(0,'M7OZL UT4PA KO20','UT4PA',a),record(1,'M7OZL DL1ABC JO62','DL1ABC',b)];
+  let state;const asked=[];
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-11-06T10:50:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    Object.assign(state.job,{next_sequence:1,available_count:1,latest_decode:{id:1,first_sequence:0,next_sequence:1,period_start_utc:a,complete:true}});
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/selection',async route=>{const s=await (await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),next=state.job.next_sequence;await route.fulfill({json:{...emptyResults(state),next_sequence:next,available_count:next,next,records:records.slice(cursor,next)}});});
+    await p.route('**/contact/worked',async route=>{const body=JSON.parse(route.request().postData());asked.push(body.calls);await route.fulfill({json:{v:1,statuses:body.calls.map(call=>({call,status:'worked_other_band_or_mode'}))}});});
+  }});
+  const tip='New on 20m (worked on another band or mode)';
+  const tipOf=sequence=>page.locator(`tr[data-sequence="${sequence}"]`).evaluate(r=>[r.dataset.period,r.dataset.tip??null]);
+  await page.waitForFunction(()=>document.querySelector('tr[data-sequence="0"][data-worked]'),null,{timeout:25000});
+  assert.deepEqual(await tipOf(0),['latest',tip]);
+  // The next period starts (the other parity, still partial): the row moves below the divider.
+  Object.assign(state.job,{next_sequence:2,available_count:2,latest_decode:{id:2,first_sequence:1,next_sequence:2,period_start_utc:b,complete:false}});
+  await page.evaluate(()=>receiveSync());
+  await page.locator('tr[data-period=history][data-sequence="0"]').waitFor();
+  assert.deepEqual(await tipOf(0),['history',tip],'kept while the next period is partial');
+  // Complete: its own answer arrives, and the kept row keeps its status through this redraw too.
+  Object.assign(state.job,{latest_decode:{...state.job.latest_decode,complete:true}});
+  await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>document.querySelector('tr[data-sequence="1"][data-worked]'),null,{timeout:10000});
+  assert.deepEqual(await tipOf(1),['latest',tip]);
+  assert.deepEqual(await tipOf(0),['history',tip],'kept after the next answer');
+  assert.deepEqual(asked,[['UT4PA'],['DL1ABC']],'no extra query: one per published period');
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-050-08; TC-050-008 (#50, operator 2026-11-04). The receive pages (with the #55 flags and
 // dxcc), the /contact/worked statuses, the contact snapshots are routed
 // fixtures; marks, colours, order and the reason tip are the served client's. Expected values come
