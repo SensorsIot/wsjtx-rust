@@ -1657,6 +1657,49 @@ test('TC-061-006 Tx rows are painted as Tx and level warnings show for receive p
   assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-061-05; TC-061-008 (#61, operator 2026-11-06). Scripted rows, computed from 0.2 s rows
+// at 10 px/s with y(s)=floor(s*10*H/C): a Tx period takes a 4 px band, the labels beyond it stay exact.
+test('TC-061-008 a Tx period is a thin band, the time axis stays exact and nothing turns pale',{timeout:45000},async t=>{
+  const {page,errors}=await liveDisplayFixture(t);
+  await page.locator('#waterfall').evaluate(()=>{speed=1;updateSliders();paint();});
+  const rx=Array.from({length:1024},()=>60),tx=Array.from({length:1024},()=>118);
+  const [H,C]=await page.locator('#waterfall').evaluate(c=>[c.height,c.getBoundingClientRect().height]),y=s=>Math.floor(s*10*H/C);
+  const run=(from,count,options={})=>Array.from({length:count},(_,i)=>({sequence:from+i,levels:options.tx?tx:rx,...options}));
+  // The canvas column as [first row, kind] changes; the page is settled by the two frames of cell().
+  const column=async()=>{await cell(page,500);return page.evaluate(()=>{const c=document.querySelector('#waterfall'),d=c.getContext('2d').getImageData(Math.floor(c.width/2),0,1,c.height).data,bands=[];let kind='';
+    for(let y=0;y<c.height;y++){const k=[d[4*y],d[4*y+1],d[4*y+2]].join();const now=k==='90,20,30'?'tx':k==='96,96,96'?'grey':k==='0,0,12'?'empty':'rx';if(now!==kind){bands.push([y,now]);kind=now;}}return bands;});};
+  await liveFrames(page,run(0,60));
+  assert.deepEqual(await column(),[[0,'rx'],[y(12),'empty']],'12 s of receive rows at 10 px/s');
+  await liveFrames(page,run(60,1,{tx:true}));
+  assert.deepEqual(await column(),[[0,'tx'],[4,'rx'],[4+y(12),'empty']],'the first Tx row stands as the band');
+  // The rest of the Tx period, with two rows the station did not deliver, leaves the picture still.
+  await liveFrames(page,[...run(61,30,{tx:true}),...run(93,42,{tx:true})]);
+  assert.deepEqual(await column(),[[0,'tx'],[4,'rx'],[4+y(12),'empty']],'the picture holds still while transmitting');
+  await liveFrames(page,run(135,60));
+  const bands=await column();
+  assert.deepEqual(bands.slice(0,3),[[0,'rx'],[y(12),'tx'],[y(12)+4,'rx']],'the receive rows keep 10 px/s around one 4 px band');
+  assert.equal(bands.some(([,kind])=>kind==='grey'),false,'no grey stripe in the band');
+  const labels=await page.locator('#time-ruler span').evaluateAll(spans=>spans.map(s=>[s.textContent,s.style.top]));
+  assert.deepEqual(labels.slice(0,4),[['39.0s','0px'],['35.0s',`${y(4)}px`],['30.0s',`${y(9)}px`],['10.0s',`${y(14)+4}px`]],'T - t at 10 px/s, without the collapsed 15 s plus the 4 px band');
+  // The band's readout names the whole Tx run.
+  const box=await page.locator('#waterfall').boundingBox();await page.mouse.move(box.x+box.width/2,box.y+y(12)+2);
+  assert.match(await page.locator('#bin-readout').textContent(),/projected source 12\.0-27\.000 s/);
+  await page.mouse.move(0,0);
+  // Day theme: what the operator sees on the page, dark and not pale.
+  await page.evaluate(()=>{document.documentElement.dataset.theme='day';});
+  const shot=(await page.screenshot({clip:{x:box.x+box.width/2,y:box.y,width:1,height:box.height}})).toString('base64');
+  // A blank page decodes the PNG: the station page's content policy refuses a data: URL.
+  const blank=await page.context().newPage();
+  const band=await blank.evaluate(async ([png,row])=>{const image=await createImageBitmap(await(await fetch(`data:image/png;base64,${png}`)).blob()),c=new OffscreenCanvas(1,image.height),x=c.getContext('2d');x.drawImage(image,0,0);const d=x.getImageData(0,0,1,image.height).data;return [...d.slice(4*row,4*row+3)];},[shot,y(12)+2]);
+  await blank.close();
+  assert.ok(band[0]+band[1]+band[2]<300&&band[0]>band[1],`Day: the Tx band stays dark red, not pale: ${band}`);
+  await page.evaluate(()=>{document.documentElement.dataset.theme='dark';});
+  // A hole of 50 s between two Tx rows is no Tx row: it stays a real gap.
+  await liveFrames(page,[...run(195,1,{tx:true}),...run(446,1,{tx:true})]);
+  assert.deepEqual(await column(),[[0,'tx'],[4,'grey']],'a long hole stays grey');
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-007-05; TC-004-004. A late window extends the period view in place (#47).
 test('TC-004-004 a correlated period view extended in place adds the late starter without an error or a reload',{timeout:35000},async t=>{
   let state,records,requested=[];
