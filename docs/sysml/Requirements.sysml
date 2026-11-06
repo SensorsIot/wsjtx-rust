@@ -1695,7 +1695,9 @@ package WstxRequirements {
              HTTPS/grant fixture before each relevant protected socket. Preserve separate
              plaintext HTTP/launch compatibility; auth setup requests do not count as profile
              GETs and auth status cannot replace correlated WS status.
-             On an established socket hold GET /profile behind a controlled barrier, click Refresh,
+             On an established socket a Refresh sends no GET /profile (#10 profile.state); an
+             independent save makes the station announce the revision and the browser reads once.
+             Hold that GET behind a controlled barrier, click Refresh,
              observe its actual correlated WebSocket status and require changed visible updated plus
              enabled Refresh within 2 seconds before releasing HTTP. Repeat Refresh while held: only
              one GET is in flight and one follow-up eventually obtains an independently saved newer

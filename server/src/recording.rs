@@ -3509,6 +3509,15 @@ impl Recording {
         });
         json!({"v":1,"profile_id":self.profile,"boot_id":self.boot,"generation":s.generation,"recording":recording,"source_error":s.source_error,"storage_error":s.storage_error,"import":import,"job":s.job})
     }
+    /// WstxStationProtocol::PushedStationState profile.state: the saved revision this station runs.
+    pub(crate) fn profile_state_event(&self) -> (u64, String) {
+        let revision = self.state.lock().unwrap().operating.profile_revision;
+        (
+            revision,
+            json!({"v":1,"type":"profile.state","data":{"profile_id":self.profile,"boot_id":self.boot,"revision":revision}})
+                .to_string(),
+        )
+    }
     /// RecordingReceive pushed recording.state data (WstxStationProtocol::PushedStationState).
     pub fn state_event_data(&self) -> Value {
         let s = self.snapshot();

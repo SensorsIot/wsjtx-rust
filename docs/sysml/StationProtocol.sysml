@@ -258,7 +258,12 @@ package WstxStationProtocol {
              stay on the station and never wait for a browser read. Existing reads are
              migrated in slices: first GET /transmit (WstxTransmit::TransmitWire
              transmit.state), then receive results, recording (WstxRecordingReceive
-             recording.state), operating selection, radio and profile; until a read is migrated its existing cadence rules apply. */
+             recording.state), profile (profile.state: exactly {v:1,type:"profile.state",
+             data:{profile_id,boot_id,revision}}, sent to a display-subscribed peer once
+             after its first subscription and then when the saved revision changes, checked
+             once per second; the browser reads GET /profile once per socket for its first
+             status and on a newer announced revision, not on a later status of the socket),
+             operating selection and radio; until a read is migrated its existing cadence rules apply. */
     }
     attribute def IndependentLinkAccounting {
         attribute payloadBytesPerSecond : Integer = 4000;

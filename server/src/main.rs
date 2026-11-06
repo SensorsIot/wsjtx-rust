@@ -1086,6 +1086,7 @@ async fn connection(
     let mut recording_tick = interval(Duration::from_secs(1));
     recording_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut recording_seen: Option<(Value, Value, Instant)> = None;
+    let mut profile_seen: Option<u64> = None;
     let mut last_station_tick: Option<Instant> = None;
     let mut tick_transmitting: Option<bool> = None;
     // Events pace by the peer's display subscription; a peer that never chose one
@@ -1197,6 +1198,14 @@ async fn connection(
                 if !auth_ready { continue; }
                 if optional_since.is_some() {
                     match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break }
+                }
+                let (revision,text)=recording.as_ref().unwrap().profile_state_event();
+                if profile_seen!=Some(revision) {
+                    match optional_write(&mut socket,Message::Text(text.into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{profile_seen=Some(revision);if !flushed {optional_since=Some(Instant::now());continue;}},
+                        Err(_)=>break,
+                    }
                 }
                 let data=recording.as_ref().unwrap().state_event_data();
                 let mut key=data.clone();

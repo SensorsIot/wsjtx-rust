@@ -130,6 +130,8 @@ async function connected(page) {
   if(await settings.count() && !await settings.evaluate(el=>el.open))await settings.locator('summary').click();
 }
 // #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
+// The station's profile.state for a newer revision, delivered to this socket's actual handler: one background profile read.
+async function announceProfile(page) {await page.evaluate(() => socket.onmessage({data: JSON.stringify({v: 1, type: 'profile.state', data: {profile_id: profileData.profile_id, boot_id: profileData.boot_id, revision: profileData.revision + 1}})}));}
 async function refreshStatus(page) {const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
 async function savedBytes(profiles) {return Promise.all(profiles.map(p => fs.readFile(path.join(p.dir, 'profile.json'), 'utf8')));}
 
@@ -1913,9 +1915,10 @@ test('TC-022-001 review regression: Refresh cannot reopen a pending save', {time
   });
   try {
     await page.locator('#display-name').fill('One pending save');
-    const previousUpdate = await page.locator('#updated').textContent(); await refreshStatus(page); await gotGet;
+    const previousUpdate = await page.locator('#updated').textContent(); await refreshStatus(page); await page.waitForFunction(old => document.querySelector('#updated').textContent !== old, previousUpdate);
+    await announceProfile(page); await gotGet;
     await page.locator('#settings-save').click(); await gotPut;
-    releaseGet(); await page.waitForFunction(old => document.querySelector('#updated').textContent !== old, previousUpdate);
+    releaseGet(); await page.waitForTimeout(100);
     const stayedDisabled = await page.locator('#settings-save').isDisabled();
     // requestSubmit also exercises the explicit submission guard, independently of
     // a disabled button. The observer counts real fetch invocations synchronously.
@@ -1939,10 +1942,10 @@ test('TC-022-001 review regression: Refresh cannot reopen a pending save', {time
   });
   try {
     await inverse.locator('#display-name').fill('Acknowledged revision 1');
-    const beforeRefresh = await inverse.locator('#updated').textContent(); await refreshStatus(inverse); await oldStarted;
+    await announceProfile(inverse); await oldStarted;
     await inverse.locator('#settings-save').click(); await inverse.locator('#settings-result').filter({hasText: 'Saved revision 1'}).waitFor();
     assert.equal(await inverse.locator('#profile-revision').textContent(), '1');
-    releaseOld(); await inverse.waitForFunction(old => document.querySelector('#updated').textContent !== old, beforeRefresh);
+    releaseOld(); await inverse.waitForTimeout(100);
     assert.equal(await inverse.locator('#profile-revision').textContent(), '1');
     assert.equal(await inverse.locator('#display-name').inputValue(), 'Acknowledged revision 1');
     assert.equal(await inverse.locator('#profile-name').textContent(), 'Acknowledged revision 1');
@@ -2007,10 +2010,16 @@ test('TC-022-005: status readiness survives held settings HTTP with bounded refr
   }
   try {
     await page.locator('#callsign').fill('DIRTY');
-    await refreshWithinBound(); await started;
+    await refreshWithinBound(); await page.waitForTimeout(300);
+    assert.equal(gets, 0, 'a Refresh on an established socket reads no profile');
+    // Pushed by the actual station: an independent save announces the revision and the browser reads once.
+    assert.equal((await request(profiles[0].origin, 'PUT', edit(1, 0, {...settings(1), display_name: 'Announced revision'}))).status, 200);
+    await started;
     await refreshWithinBound(); await refreshWithinBound();
-    assert.equal(gets, 1, 'held HTTP must coalesce concurrent Refresh requests');
-    assert.equal((await request(profiles[0].origin, 'PUT', edit(1, 0, {...settings(1), display_name: 'New revision'}))).status, 200);
+    assert.equal(gets, 1, 'Refresh adds no read beside the held one');
+    assert.equal((await request(profiles[0].origin, 'PUT', edit(1, 1, {...settings(1), display_name: 'New revision'}))).status, 200);
+    await page.waitForTimeout(1300);
+    assert.equal(gets, 1, 'a second announcement while held starts no parallel read');
     release();
     await page.locator('#profile-name').filter({hasText: 'New revision'}).waitFor();
     assert.equal(gets, 2, 'exactly one queued follow-up obtains latest saved profile');
@@ -2027,8 +2036,8 @@ test('TC-022-005: status readiness survives held settings HTTP with bounded refr
     else await route.continue();
   });
   try {
-    await refreshWithinBound(); await oldStarted;
-    assert.equal((await request(profiles[0].origin, 'PUT', edit(1, 1, {...settings(1), display_name: 'Newest socket'}))).status, 200);
+    await announceProfile(page); await oldStarted;
+    assert.equal((await request(profiles[0].origin, 'PUT', edit(1, 2, {...settings(1), display_name: 'Newest socket'}))).status, 200);
     await page.evaluate(() => socket.close());
     await page.locator('#connection[data-state="stale"]').waitFor();
     await connected(page); await page.locator('#profile-name').filter({hasText: 'Newest socket'}).waitFor();
@@ -2064,7 +2073,7 @@ test('TC-022-005: status readiness survives held settings HTTP with bounded refr
   } finally {releaseInitial(); releaseReplacement();}
   await initial.close();
   await page.route('**/profile', route => route.fulfill({status: 503, contentType: 'application/json', body: '{}'}));
-  await refreshStatus(page);
+  await announceProfile(page);
   await page.locator('#settings-result').filter({hasText: 'Could not load saved settings.'}).waitFor();
   await page.locator('#connection[data-state="stale"]').waitFor();
   const failed = await context.newPage();

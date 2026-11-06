@@ -95,6 +95,8 @@ async function connect() {
       if (message.v !== 1) throw new Error('Unsupported version');
       lastMessage = Date.now();
       window.dispatchEvent(new CustomEvent('station-message', {detail: {message, current}}));
+      // WstxStationProtocol::PushedStationState: the first status of a socket reads the profile, then only a newer announced revision does.
+      if (message.type === 'profile.state' && profileRefresh.initialized && (message.data?.boot_id !== profileData?.boot_id || message.data?.revision > profileData?.revision)) refreshProfile(current, profileRefresh).catch(() => disconnect(current));
       if (message.type === 'station.status' && message.id === pendingId && typeof message.data?.version === 'string' && message.data.radio === 'unconfigured') {
         if (stationUpdated(message.data.build)) return;
         if (profileMode) {
@@ -102,8 +104,6 @@ async function connect() {
             if (!await refreshProfile(current, profileRefresh)) return;
             if (current !== socket || current.readyState !== WebSocket.OPEN) return;
             profileRefresh.initialized = true;
-          } else {
-            refreshProfile(current, profileRefresh).catch(() => disconnect(current));
           }
         }
         if (current !== socket || current.readyState !== WebSocket.OPEN || !authorized()) return;
