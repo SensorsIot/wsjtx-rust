@@ -369,8 +369,12 @@ package WstxStrategy {
              2026-11-04), applied before any strategy and one function in the station. A CQ
              is answerable when its directive does not exclude me: a plain CQ (no target);
              "CQ x" with x my continent; "CQ DX" when both continents are known and differ.
+             Contest activity (#63, WstxContest::ContestDirective): the word of the station's
+             special activity (WstxContact::SpecialActivity: na_vhf and arrl_digi TEST, ww_digi WW,
+             field_day FD, rtty RU) is answerable too, whatever the continents.
              Every other directive is not answerable: another continent or region (NA, JA,
-             SA, ...), any other word (TEST, POTA, a number), CQ DX from my own or an unknown
+             SA, ...), any other word (TEST, POTA, a number; a contest word outside its activity),
+             CQ DX from my own or an unknown
              continent, and with my continent unknown every directive. A record that is no
              CQ has no directive and is answerable. Its text is "CQ x — not for <my continent>"
              ("not for this station" when unknown).

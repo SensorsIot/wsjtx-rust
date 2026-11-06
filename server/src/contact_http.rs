@@ -1118,7 +1118,8 @@ impl Station {
                     .live_record(source, job, generation, sequence)
                     .ok_or(("row_unavailable", Some("row")))?;
                 // WstxStrategy::DirectedCqRule: only the operator can confirm the warning.
-                if let Some(reason) = strategy::selection_warning(state, &record)
+                if let Some(reason) =
+                    strategy::selection_warning(state, &record, inner.engine.settings.activity)
                     && (automatic || body["directive_confirmed"] != true)
                 {
                     if automatic {

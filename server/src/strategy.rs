@@ -6,7 +6,7 @@
 //! /strategy (configuration; a changed active starts or stops a run), POST
 //! /strategy/evaluate (verdicts of retained live rows), #42 GET /strategy/alerts and POST
 //! /strategy/alerts/clear (WstxStrategy::Alert), POST /strategy/most-wanted/download
-//! (WstxStrategy::MostWantedList).
+//! (WstxStrategy::MostWantedList), GET /strategy/contests (WstxContest::ContestHttp).
 use crate::*;
 use axum::extract::RawQuery;
 use recording_http::authorize;
@@ -31,6 +31,7 @@ pub const ALERT_HISTORY_MAX: usize = 100;
 pub const ALERT_DEDUPE_MS: i64 = 10 * 60_000;
 const FILE_BYTES_MAX: u64 = 262_144;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
+use crate::contact::Activity;
 pub use crate::dxcc::CONTINENTS;
 use crate::dxcc::{Category, Standing, Worked};
 
@@ -509,6 +510,8 @@ pub(crate) struct Station {
     pub worked: Option<std::sync::Arc<Worked>>,
     pub ignored: HashMap<String, Tier>,
     pub most_wanted: Option<std::sync::Arc<crate::most_wanted::List>>,
+    /// #63 the station's activity, for the DirectedCqRule.
+    pub activity: Activity,
 }
 /// The list an ignored call is on (the session list wins when on both).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -586,13 +589,27 @@ pub(crate) fn answerable(target: Option<&str>, mine: Option<&str>, sender: Optio
         Some(t) => mine == Some(t),
     }
 }
+/// #63 the rule in a contest activity: the activity's own CQ word (CQ TEST, WW, FD, RU) is also
+/// answerable, without a warning.
+pub(crate) fn answerable_in(
+    activity: Activity,
+    target: Option<&str>,
+    mine: Option<&str>,
+    sender: Option<&str>,
+) -> bool {
+    (target.is_some() && target == activity.cq()) || answerable(target, mine, sender)
+}
 /// The DirectedCqRule text of a CQ that is not answerable.
 fn not_for_me(target: &str, mine: Option<&str>) -> String {
     format!("CQ {target} — not for {}", mine.unwrap_or("this station"))
 }
 /// The DirectedCqRule verdict of an operator's selection of this record: the warning text
-/// when it is a CQ that is not answerable.
-pub(crate) fn selection_warning(state: &ProfileState, record: &Value) -> Option<String> {
+/// when it is a CQ that is not answerable in this activity (the caller holds the contact lock).
+pub(crate) fn selection_warning(
+    state: &ProfileState,
+    record: &Value,
+    activity: Activity,
+) -> Option<String> {
     let f = facts(record)?;
     let (call, locator) = contact_http::profile_facts(state);
     let (dxcc, _) = state.logbook.dxcc();
@@ -604,7 +621,8 @@ pub(crate) fn selection_warning(state: &ProfileState, record: &Value) -> Option<
         .config(state)
         .unwrap_or_default();
     let mine = my_continent(&config, call.as_deref(), locator.as_deref(), &dxcc);
-    (!answerable(
+    (!answerable_in(
+        activity,
         f.target.as_deref(),
         mine.as_deref(),
         dxcc.continent(&f.from),
@@ -620,7 +638,8 @@ impl Station {
     }
     /// A CQ that is not answerable is greyed and is never a candidate nor answered by a run.
     pub(crate) fn greyed(&self, f: &Facts) -> bool {
-        !answerable(
+        !answerable_in(
+            self.activity,
             f.target.as_deref(),
             self.my_continent.as_deref(),
             self.dxcc.continent(&f.from),
@@ -876,7 +895,9 @@ pub(crate) fn station(state: &ProfileState, config: &Config, window: Window) -> 
         .map(|c| (c.clone(), Tier::Permanent))
         .collect();
     let mut most_wanted = None;
+    let mut activity = Activity::None;
     if let Some(s) = r.contact.get() {
+        activity = s.status_facts().activity;
         for (c, _, _) in s.strategy.session_entries(Instant::now()) {
             ignored.insert(c, Tier::Session);
         }
@@ -892,6 +913,7 @@ pub(crate) fn station(state: &ProfileState, config: &Config, window: Window) -> 
         worked,
         mode,
         most_wanted,
+        activity,
     }
 }
 
@@ -1692,6 +1714,28 @@ pub async fn clear_alerts_route(
         Ok(v) => Json(v).into_response(),
         Err((code, field)) => refusal(code, field.as_deref()),
     }
+}
+/// GET /strategy/contests (WstxContest::ContestHttp): the profiles with their current or
+/// next period, read at (re)connect and when the period prompt opens.
+pub async fn contests_route(
+    State(app): State<App>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let r = match authorize(&app, &headers, false).await {
+        Ok(r) => r,
+        Err(e) => return refusal(e, None),
+    };
+    if let Err(e) = empty(query, body) {
+        return refusal(e, None);
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as i64);
+    Json(json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,
+        "profiles":crate::contest::profiles_json(now)}))
+    .into_response()
 }
 /// POST /strategy/most-wanted/download.
 pub async fn most_wanted_download_route(
