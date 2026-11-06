@@ -135,7 +135,7 @@ const running=c=>!!c?.dx_call&&['replying','report','roger_report','rogers','sig
 const snrText=snr=>typeof snr==='number'?`${snr>0?'+':snr<0?'\u2212':''}${Math.abs(Math.round(snr))} dB`:'';
 function setValue(input,value){if(document.activeElement!==input)input.value=value??'';}
 function render(){
-  const c=snap?.contact,t=snap?.transmit,s=snap?.settings,capable=transmitCapable(),ready=transmitReady(),armed=t?.arm_state==='armed';
+  const c=snap?.contact,t=snap?.transmit,s=snap?.settings,ready=transmitReady(),armed=t?.arm_state==='armed';
   const qso=running(c);
   focus.dataset.contact=qso?'true':c?.state==='calling'?'calling':'';
   // Nothing of a finished contact stays: an accepted command's result goes with it.
@@ -166,8 +166,8 @@ function render(){
   if(s){setValue($('contact-report'),s.report);setValue($('contact-rx'),s.rx_hz);setValue($('contact-tx'),s.tx_hz);$('contact-hold').checked=s.hold_tx;if(document.activeElement!==$('contact-parity'))$('contact-parity').value=s.parity;if(document.activeElement!==$('contact-activity'))$('contact-activity').value=s.activity??'none';if(document.activeElement!==$('contact-exchange')&&s.exchange!==shownExchange){shownExchange=s.exchange;$('contact-exchange').value=s.exchange??'';}$('contact-serial').textContent=s.activity==='rtty'&&(s.exchange==='DX'||s.exchange==='#')?`Serial ${String(s.serial??1).padStart(4,'0')}`:'';$('contact-auto').checked=s.auto_seq;$('contact-call-first').checked=s.call_first!==false;
     setValue($('watchdog-tx'),s.tx_calls);setValue($('watchdog-tune'),s.tune_seconds);}
   $('watchdog-tx').disabled=$('watchdog-tune').disabled=!snap;
-  $('contact-call-first').disabled=!capable;
-  const auto=$('contact-auto');auto.disabled=!capable;auto.setAttribute('aria-label',capable?'Auto sequence':'Auto sequence unavailable');
+  $('contact-call-first').disabled=!ready;
+  const auto=$('contact-auto');auto.disabled=!ready;auto.setAttribute('aria-label',ready?'Auto sequence':'Auto sequence unavailable');
   // WstxContact::SetEnableTx (#37): no Enable Tx control; CQ or a double-click starts a QSO
   // (no Reply button since the #50 double-click fix).
   $('qso-cq').disabled=!ready||(armed&&c?.state==='calling');
@@ -594,7 +594,7 @@ async function replyRow(tr){
   // #37: a deliberate double-click on a foreign QSO's row calls its sender, and says so.
   const label=tr.dataset.foreign?`Call ${tr.dataset.sender}`:'Reply';
   const reply=await sendExplicit(()=>send('select_row',{row,replace:true},label));
-  if(reply&&!reply.refused&&transmitCapable())await sendExplicit(()=>arm(label));
+  if(reply&&!reply.refused&&transmitReady())await sendExplicit(()=>arm(label));
 }
 let clickTimer=null;
 // The double-click is the row's second press (click count 2), not the dblclick event: the
@@ -609,7 +609,7 @@ const menu=document.createElement('div');menu.id='ba-menu';menu.className='op-me
 menu.innerHTML='<button type="button" role="menuitem" data-menu="reply">Reply</button><button type="button" role="menuitem" data-menu="select">Select</button><button type="button" role="menuitem" data-menu="rx">Set Rx here</button>';
 document.querySelector('main').append(menu);let menuRow=null;
 // The row's own items (#42 Pounce, Ignore) are set first, so the menu is placed at its real size.
-function openMenu(tr,x,y){menuRow=tr;menu.hidden=false;menu.querySelector('[data-menu=reply]').disabled=!transmitCapable();dispatchEvent(new CustomEvent('wstx-row-menu',{detail:tr}));menu.style.left=`${Math.max(0,Math.min(x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(0,Math.min(y,innerHeight-menu.offsetHeight-8))}px`;menu.querySelector('button:not(:disabled):not([hidden])').focus();}
+function openMenu(tr,x,y){menuRow=tr;menu.hidden=false;menu.querySelector('[data-menu=reply]').disabled=!transmitReady();dispatchEvent(new CustomEvent('wstx-row-menu',{detail:tr}));menu.style.left=`${Math.max(0,Math.min(x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(0,Math.min(y,innerHeight-menu.offsetHeight-8))}px`;menu.querySelector('button:not(:disabled):not([hidden])').focus();}
 function closeMenu(){menu.hidden=true;menuRow=null;}
 activity?.addEventListener('contextmenu',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr)return;event.preventDefault();openMenu(tr,event.clientX,event.clientY);});
 menu.addEventListener('click',event=>{
@@ -685,8 +685,8 @@ function rowOf(context,sequence){const [,,source_id,job_id,generation]=context.s
 async function answerOther(li){
   const row=JSON.parse(li.dataset.row),qso=li.dataset.qso==='true';
   const reply=await send('select_row',{row,replace:qso},qso?'Change contact':'Select station');
-  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitCapable())arm('Reply');}),li.dataset.call);return;}
-  if(reply&&!reply.refused&&transmitCapable())arm('Reply');
+  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitReady())arm('Reply');}),li.dataset.call);return;}
+  if(reply&&!reply.refused&&transmitReady())arm('Reply');
 }
 othersList.addEventListener('mousedown',event=>{const li=secondPress(event,'tr[data-row]');if(li)answerOther(li);});
 othersList.addEventListener('keydown',event=>{const li=event.target.closest('tr[data-row]');if(li&&event.key==='Enter'){event.preventDefault();answerOther(li);}});

@@ -3065,19 +3065,19 @@ function assertStack(s,label){
 // Proves: CL-010-07; TC-007-002 (#22, live 2026-11-06, port held by another program): transmit unavailable
 // disables CQ, Tune and Now with the reason beside them, and the pane follows each contact.state push.
 test('TC-007-002 the transmit controls and badge follow the pushed transmit capability',{timeout:40000},async t=>{
-  let capability='available',revision=3,tune=false;
+  let capability='available',revision=3,tune=false;const contact=partner('report',{suggested_slot:null});
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
-    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot({...base,revision,sequence:revision},{transmit:{capability,tune}})}));
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot({...base,revision,sequence:revision},{contact,transmit:{capability,tune}})}));
   }});
   await page.waitForFunction(()=>window.wstxContact?.snapshot()?.transmit.capability==='available',null,{timeout:25000});
-  const read=()=>page.evaluate(()=>({cq:document.querySelector('#qso-cq').disabled,tune:document.querySelector('#contact-tune').disabled,auto:document.querySelector('#contact-auto').disabled,badge:document.querySelector('.op-contact-badge').textContent,reason:document.querySelector('#transmit-unavailable').hidden?null:document.querySelector('#transmit-unavailable').textContent,control:document.querySelector('#qso-control').getBoundingClientRect().top,pane:document.querySelector('#rx-focus').getBoundingClientRect().height}));
+  const read=()=>page.evaluate(()=>({cq:document.querySelector('#qso-cq').disabled,tune:document.querySelector('#contact-tune').disabled,auto:document.querySelector('#contact-auto').disabled,now:[...document.querySelectorAll('.ct-now')].some(b=>!b.disabled),badge:document.querySelector('.op-contact-badge').textContent,reason:document.querySelector('#transmit-unavailable').hidden?null:document.querySelector('#transmit-unavailable').textContent,control:document.querySelector('#qso-control').getBoundingClientRect().top,pane:document.querySelector('#rx-focus').getBoundingClientRect().height}));
   const pushed=async next=>{capability=next;revision++;await page.evaluate(r=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{type:'contact.state',data:{contact_revision:r,boot_id:window.wstxContact.snapshot().boot_id}}}})),revision);await page.waitForFunction(c=>window.wstxContact.snapshot().transmit.capability===c,next);};
   const ready=await read();
-  assert.deepEqual([ready.cq,ready.tune,ready.auto,ready.badge,ready.reason],[false,false,false,'Ready',null],'available');
+  assert.deepEqual([ready.cq,ready.tune,ready.auto,ready.now,ready.badge,ready.reason],[false,false,false,true,'Ready',null],'available');
   await pushed('unavailable');
   const held=await read();
-  assert.deepEqual([held.cq,held.tune,held.auto,held.badge,held.reason],[true,true,false,'Receive only','Transmission unavailable: radio/authorization not ready.'],'unavailable: nothing to key, Auto Seq stays a setting');
+  assert.deepEqual([held.cq,held.tune,held.auto,held.now,held.badge,held.reason],[true,true,true,false,'Receive only','Transmission unavailable: radio/authorization not ready.'],'unavailable: nothing to key');
   assert.equal(await page.locator('#transmit-unavailable').isVisible(),true,'the reason is shown');
   assert.deepEqual([held.control,held.pane],[ready.control,ready.pane],'the Control panel and the pane do not move');
   tune=true;await pushed('available');await pushed('unavailable');
@@ -3087,20 +3087,30 @@ test('TC-007-002 the transmit controls and badge follow the pushed transmit capa
   assert.deepEqual([back.cq,back.tune,back.badge,back.reason],[false,false,'Ready',null],'back without any action');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-057-03; TC-007-002 (#22, live 2026-11-06): after a station restart with no receive job yet,
-// Band Activity keeps nothing of the previous boot: no "Latest undefined period", no kept period. The real
-// server restarts on its port; the job of the first boot and its pages are presentation fixtures.
-test('TC-007-002 a station restart leaves no heading or rows of the previous boot in Band Activity',{timeout:60000},async t=>{
+// Proves: CL-057-03; TC-007-002 (#22, live 2026-11-06): a station restart leaves nothing of the previous boot in
+// Band Activity: no "Latest undefined period", no kept period, however the two reads are ordered. The real server
+// restarts on its port; the job of the first boot, the new job and their pages are presentation fixtures.
+for(const [name,order] of [['/receive answers first','receive'],['/recording answers first, /receive still pending','recording'],['a new job at a lower generation','job']])test(`TC-007-002 a station restart leaves no heading or rows of the previous boot in Band Activity: ${name}`,{timeout:60000},async t=>{
   const a='2026-11-06T10:51:15.0000000Z',b='2026-11-06T10:51:30.0000000Z';
   const record=(sequence,call,period)=>({sequence,start_frame:1000+sequence,frequency_hz:1000+sequence*100,snr_db:-5,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:`CQ ${call} FN42`,fields:{type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:call,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}},period_start_utc:period,dt_seconds:0.1});
   const records=[record(0,'K1ABC',a),record(1,'W1XYZ',b)];
-  let state,restarted=false;const answered=deferred();
+  let state,restarted=false;const answered=deferred(),released=deferred();
   const {page,app,dir,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input',beforeNavigate:async(p,station)=>{
     state=liveFixture({...await (await fetch(station.origin+'/receive')).json(),generation:5});
     state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-11-06T10:50:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
     Object.assign(state.job,{next_sequence:1,available_count:1,latest_decode:{id:1,first_sequence:0,next_sequence:1,period_start_utc:a,complete:true}});
-    await p.route('**/receive',async route=>{if(!restarted){await route.fulfill({json:state});return;}const response=await route.fetch();await route.fulfill({response});answered.resolve();});
-    await p.route('**/recording',async route=>{if(restarted){await answered.promise;await route.continue();return;}const real=await (await route.fetch()).json();await route.fulfill({json:{...real,generation:5,job:{id:state.job.id,source_id:state.source.id,generation:5,kind:'live',state:'running',processed_frames:0,error:null}}});});
+    const jobOf=real=>({...real,generation:state.generation,job:{id:state.job.id,source_id:state.source.id,generation:state.generation,kind:'live',state:'running',processed_frames:0,error:null}});
+    await p.route('**/receive',async route=>{
+      if(!restarted){await route.fulfill({json:state});return;}
+      if(order==='recording')await released.promise;
+      const response=await route.fetch();
+      if(order==='job'){state=liveFixture({...await response.json(),generation:1});await route.fulfill({json:state});}else await route.fulfill({response});
+      answered.resolve();});
+    await p.route('**/recording',async route=>{
+      if(restarted&&order==='recording'){await route.continue();return;}
+      if(restarted)await answered.promise;
+      if(restarted&&order==='receive'){await route.continue();return;}
+      await route.fulfill({json:jobOf(await (await route.fetch()).json())});});
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),next=state.job.next_sequence,batch=records.slice(cursor,next);await route.fulfill({json:{...emptyResults(state),next_sequence:next,available_count:next,next,records:batch}});});
   }});
   const heading=page.locator('#band-activity header .op-muted');
@@ -3114,10 +3124,16 @@ test('TC-007-002 a station restart leaves no heading or rows of the previous boo
   const before=await page.evaluate(()=>profileData.boot_id);
   restarted=true;await app.close();
   const second=await server({},['--profile',dir]);t.after(()=>second.close());
-  await page.waitForFunction(old=>profileData?.boot_id&&profileData.boot_id!==old&&snapshot?.boot_id===profileData.boot_id&&!syncPending&&!livePending,before,{timeout:30000});
-  assert.equal(await heading.textContent(),'Latest decode period');
-  assert.equal(await page.locator('tr[data-sequence],tr.ba-divider').count(),0,'no row of the previous boot');
-  assert.match(await page.locator('#band-activity tbody').innerText(),/Decoder unavailable/);
+  const settled=()=>page.waitForFunction(old=>profileData?.boot_id&&profileData.boot_id!==old&&snapshot?.boot_id===profileData.boot_id&&!syncPending,before,{timeout:30000});
+  const clean=async note=>{
+    assert.equal(await heading.textContent(),'Latest decode period',note);
+    assert.equal(await page.locator('tr[data-sequence],tr.ba-divider').count(),0,`no row of the previous boot: ${note}`);
+  };
+  await settled();
+  if(order==='recording'){await clean('/receive still pending');assert.equal(await page.evaluate(()=>livePending),true,'/receive is still pending');released.resolve();}
+  await page.waitForFunction(()=>!livePending&&live?.boot_id===profileData.boot_id,null,{timeout:30000});
+  await clean('settled');
+  assert.match(await page.locator('#band-activity tbody').innerText(),order==='job'?/Listening for FT8/:/Decoder unavailable/);
   assert.deepEqual(errors,[]);
 });
 // Proves: CL-037-01; TC-037-001 the Control panel below the QSO pane.
