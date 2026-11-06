@@ -1020,8 +1020,10 @@ attribute def ActivityOrdering {
              retried, busy, a stale revision or period, a receive restart, a completed action)
              are no entries. With no entry the block shows one muted line "No problems".
              The block is small: at most about four entry lines high and never past the screen
-             where the page does not scroll, scrolling inside; the Control panel above it
-             does not move (#37, live 2026-11-06). */
+             where the page does not scroll, scrolling inside, a wheel notch by at most the
+             visible height; the Control panel above it does not move (#37, live 2026-11-06).
+             At 1366x768 about one line of it is visible; a longer entry is read by scrolling
+             inside it, by its hover text or in its Settings detail. */
     }
     attribute def SettingsDrawer {
         attribute sections : Integer = 4;

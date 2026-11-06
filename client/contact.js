@@ -56,6 +56,8 @@ qsoColumn.insertAdjacentHTML('beforeend',`<section id="qso-control" class="op-ca
 <section id="error-field" class="op-card op-lower" aria-labelledby="error-heading"><h3 id="error-heading" class="op-lower-head">Problems</h3><div class="op-error-body"><p class="op-muted op-error-none" role="status">No problems</p></div></section>`);
 // WstxOperatingLayout::ErrorField (CL-037-02): the former top-bar exception chips, current only.
 const errorBody=qsoColumn.querySelector('#error-field .op-error-body');
+// A wheel notch moves by at most the visible height, so no line is skipped where the block has only one (1366x768).
+errorBody.addEventListener('wheel',event=>{if(errorBody.scrollHeight<=errorBody.clientHeight||errorBody.clientHeight>=Math.abs(event.deltaY))return;event.preventDefault();errorBody.scrollTop+=Math.sign(event.deltaY)*errorBody.clientHeight;},{passive:false});
 chips.setAttribute('role','list');chips.setAttribute('aria-label','Problems the operator must act on');chips.className='op-error-list';
 errorBody.prepend(chips);const notice=document.querySelector('#station-notice');if(notice)errorBody.prepend(notice);
 const body=focus.querySelector('.op-contact-body'),identity=focus.querySelector('.op-contact-identity');

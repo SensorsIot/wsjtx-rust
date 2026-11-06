@@ -3163,10 +3163,14 @@ test('TC-037-002 a long problem scrolls inside the error field on screen and the
   assert.deepEqual(await reach('CAT unavailable \u00b7 COM3 in use by another program \u00b7 automatic retry in 8 s'),ok);
   assert.equal(await control(),before,'the Control panel does not move');
   await page.screenshot({path:'test-results/ui-operating/error-field-long-1366x768.png'});
+  // A wheel notch shows the next line: it does not jump past the chip's second line.
+  const body=page.locator('#error-field .op-error-body');await body.evaluate(e=>{e.scrollTop=0;});await body.hover();await page.mouse.wheel(0,100);await page.waitForTimeout(200);
+  const step=await body.evaluate(e=>[e.scrollTop,e.clientHeight]);assert.ok(step[0]>0&&step[0]<=step[1]+1,`one notch moves by at most the visible height: ${step}`);
   assert.deepEqual(await reach('CAT unavailable \u00b7 '+'COM3 in use by another program \u00b7 '.repeat(8)+'automatic retry in 8 s'),ok,'longer than the block: it scrolls');
   assert.equal(await control(),before,'the Control panel does not move');
   await page.setViewportSize({width:360,height:800});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
+  await page.locator('#error-field').scrollIntoViewIfNeeded();
   await page.screenshot({path:'test-results/ui-operating/error-field-long-360x800.png'});
   assert.deepEqual(errors,[]);
 });
