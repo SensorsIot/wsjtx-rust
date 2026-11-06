@@ -302,7 +302,8 @@ package WstxProductScope {
              queue/converter/epoch path, channel 0 only, each frame held twice for the 48 kHz
              converter, whose 6 kHz low-pass removes the images; other IDs are counted foreign,
              48/96 kHz and reduced-bandwidth classes are refused as invalid. A gap in the 4-bit packet count
-             advances the frame position by the missing packets, keeping the timeline; an arrival
+             becomes silence of the missing packets' length, keeping the timeline and the analysis
+             window; an arrival
              gap above 200 ms is unknown loss (native_discontinuity) because the count may have
              wrapped. The receive socket asks for a 1 MiB buffer, and packets enter the queue in
              groups of at least 10 ms, as an audio device delivers them. Timing: each packet carries its host arrival

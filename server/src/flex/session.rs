@@ -1119,11 +1119,30 @@ impl<'a> Conn<'a> {
                 } else {
                     0
                 };
-            if missed > 0 || flags != 0 {
+            if flags != 0 {
                 sink.flush();
             }
-            // Known missing packets keep the timeline: the position jumps over them.
-            sink.next_frame = sink.next_frame.saturating_add(missed * frames as u64);
+            // Known missing packets keep the timeline and the analysis window: they become
+            // silence, since a jump of the position would discard the window being collected.
+            // An unknown gap (flags) opens a new epoch instead, and its count may have wrapped.
+            let silence = if flags == 0 {
+                missed as usize * frames
+            } else {
+                0
+            };
+            if silence > 0 {
+                if sink.pending_frames == 0 {
+                    sink.pending_first = (
+                        sink.next_frame,
+                        arrival.map_or(0, |a| a.saturating_sub(duration * (missed + 1))),
+                        0,
+                    );
+                }
+                let bytes = silence * 2 * 4;
+                sink.pending.resize(sink.pending.len() + bytes, 0);
+                sink.pending_frames += silence;
+                sink.next_frame = sink.next_frame.saturating_add(silence as u64);
+            }
             if sink.pending_frames == 0 {
                 sink.pending_first = (
                     sink.next_frame,

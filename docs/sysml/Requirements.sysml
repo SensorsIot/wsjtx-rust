@@ -1776,7 +1776,7 @@ package WstxRequirements {
              client or slice present, whichever way round the replies come, as unverified when a
              reply is refused, reports not_released for a slice left behind or a closing look it cannot
              verify, and reports the loss it saw. One packet in four
-             lost is counted at 25% with the canonical frame rate kept and no new epoch, and a
+             lost is counted at 25% and filled with silence, with the canonical frame rate kept and no new epoch, and a
              120 ms stall reads as at least 90 ms of jitter. Another model on the admitted API connects and its announced
              model, serial and firmware are shown. GET /native-flex reports the packet's timestamp
              kind and this host's clock minus its time, which a new session without own packets
