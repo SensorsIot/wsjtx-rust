@@ -648,8 +648,8 @@ attribute def ActivityOrdering {
              on <band> <MODE>)", WstxContact::WorkedBeforeQuery answers, no further query). An
              overall flag implies its on-band flag, so the on-band text appears only without
              it. Then the #39
-             strategy verdict ("Strategy <name>: rule <n>" or "Directed CQ not addressed to my
-             continent: never answered"). The reasons form one line joined by " · ", for
+             strategy verdict ("Strategy <name>: rule <n>" or "Directed CQ, not calling us: the
+             strategy skips it, a double-click warns"). The reasons form one line joined by " · ", for
              example "New DXCC · New call", "New on 40m (worked on another band or mode)",
              "New CQ zone 10". A partner row carries no flag reason (its marker shows it). A
              row without such a reason has no tip; a worked-before status alone gives none.
@@ -707,7 +707,9 @@ attribute def ActivityOrdering {
              screen at 360x800 (TC-037-003); at most 48em wide Band Activity, above the QSO
              pane, has a fixed height (29rem) and scrolls inside; with Highlight on the strategy accent of
              WstxStrategy::HighlightView (matches first in their period, greyed directed
-             CQs not for my continent). Pointer: click selects (SelectDecodedRow, prepares, never
+             CQs not for my continent). A selection of a CQ that is not answerable first shows the
+             WstxStrategy::DirectedCqRule warning; only its confirmation selects (during a contact a
+             click on it offers nothing). Pointer: click selects (SelectDecodedRow, prepares, never
              transmits; while a contact is active a row that can start a contact for me, a
              CQ/QRZ complying with WstxStrategy::DirectedCqRule or a row addressed to my call,
              only offers "Change contact to <call>", naming its sender, whose replacement keeps
@@ -878,7 +880,7 @@ attribute def ActivityOrdering {
              and the fold-out Next/Now overrides by hand as in WSJT-X; Reply, kept only as the
              operator's workaround until the #50 double-click fix was installed, is gone too:
              a double-click on a Band Activity row or a Calling me row, or the row menu Reply,
-             starts the reply;
+             starts the reply (with the WstxStrategy::DirectedCqRule warning for a CQ not answerable);
              this HALT is the one HALT of the operating view (OperatingScreen);
              Log QSO, offered (button and Alt+Q) while a QSO runs, logs the contact now, WstxContact::DirectLog
              (#41), and closes it, so nothing stays queued). A command's accepted result

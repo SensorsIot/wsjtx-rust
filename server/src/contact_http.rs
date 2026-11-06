@@ -802,7 +802,7 @@ pub async fn snapshot(
 /// Exactly the parameter keys of each ContactAction.
 fn params(action: &str) -> Option<&'static [&'static str]> {
     Some(match action {
-        "select_row" => &["row", "replace"],
+        "select_row" => &["row", "replace", "directive_confirmed"],
         "enter_dx" => &["dx_call", "dx_grid", "replace"],
         "cancel" | "abort" | "redecode" | "open_log" => &[],
         "choose_next" => &["slot"],
@@ -861,6 +861,9 @@ fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
                 return Err(("invalid_request", Some("row")));
             }
             boolean(b, "replace")?;
+            if b.get("directive_confirmed").is_some() {
+                boolean(b, "directive_confirmed")?;
+            }
             return Ok(None);
         }
         "enter_dx" => {
@@ -961,8 +964,12 @@ fn envelope(b: &Value) -> Result<(String, u64, String), Refusal> {
         let _ = k;
         return Err(("invalid_request", None));
     }
-    // set_activity's exchange is optional (ContestExchange, #24 S2b).
-    let optional = |k: &str| action == "set_activity" && k == "exchange";
+    // set_activity's exchange is optional (ContestExchange, #24 S2b), and so is
+    // select_row's directive_confirmed (WstxStrategy::DirectedCqRule).
+    let optional = |k: &str| {
+        (action == "set_activity" && k == "exchange")
+            || (action == "select_row" && k == "directive_confirmed")
+    };
     if let Some(k) = base
         .iter()
         .chain(extra)
@@ -1107,6 +1114,18 @@ impl Station {
                 let (record, mode) = r
                     .live_record(source, job, generation, sequence)
                     .ok_or(("row_unavailable", Some("row")))?;
+                // WstxStrategy::DirectedCqRule: only the operator can confirm the warning.
+                if let Some(reason) = strategy::selection_warning(state, &record)
+                    && (automatic || body["directive_confirmed"] != true)
+                {
+                    if automatic {
+                        return Err(("directive_not_answerable", Some("row")));
+                    }
+                    return Ok((
+                        StatusCode::CONFLICT,
+                        json!({"error":{"code":"directive_not_answerable","field":"row","reason":reason}}),
+                    ));
+                }
                 let identity = (source.to_owned(), job.to_owned(), generation);
                 let row =
                     row_of(&record, &identity, mode).ok_or(("row_not_standard", Some("row")))?;

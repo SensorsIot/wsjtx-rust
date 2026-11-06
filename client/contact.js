@@ -112,7 +112,7 @@ async function sendNow(action,params={},label=action){
     if(response.status===202||response.status===200){resultText.textContent=`${label}: accepted`;return data;}
     const code=data?.error?.code??`http_${response.status}`;
     resultText.textContent=`${label}: refused · ${code}${code==='stale_revision'?' · station state changed, review and retry':''}`;
-    return {refused:code};
+    return {refused:code,reason:data?.error?.reason};
   }catch(error){resultText.textContent=`${label}: outcome unknown · ${error.message}`;return null;}
   // A command that ended the QSO (Log QSO) leaves no accepted result in the idle pane.
   finally{sending=false;await load();if(before&&!running(snap?.contact)&&/: accepted$/.test(resultText.textContent))resultText.textContent='';}
@@ -299,7 +299,7 @@ function loadAutomation(){
     const run=a?.v===1?a.run:null,active=run&&run.state!=='stopped';
     automationNode.dataset.active=String(!!active);
     // #42 a pounce run names its call (WstxStrategy::Pounce).
-    automationNode.textContent=active&&run.pounce?`Pounce ${run.pounce.call} ${run.state==='waiting'?'waiting':'in QSO'} · HALT ends it`:active?`Automation ${{waiting:'waiting',calling_cq:'calling CQ'}[run.state]??'in contact'} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
+    automationNode.textContent=active&&run.pounce?`Pounce ${run.pounce.call} ${run.state==='waiting'?'waiting':'in QSO'} · HALT ends it`:active?`Automation ${{waiting:'waiting',calling_cq:'calling CQ',manual:'paused for your QSO'}[run.state]??'in contact'} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
     if(a?.v===1)dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));
   }).catch(()=>{}).finally(()=>{automationLoading=null;});
   return automationLoading;
@@ -583,13 +583,21 @@ function rowIdentity(row){
 }
 async function selectRow(tr){
   const row=rowIdentity(tr);if(!row)return null;
-  const reply=await send('select_row',{row,replace:false},'Select station');
-  if(reply?.refused==='contact_active'){
-    // #37: only a row that can start a contact for me offers the change; a foreign QSO's row or a CQ directed elsewhere offers nothing.
-    if(tr.dataset.foreign||window.wstxCqNotForMe?.(tr)){changeTarget?.remove();changeTarget=null;resultText.textContent='';}
-    else offerChange(()=>send('select_row',{row,replace:true},'Change contact'),tr.dataset.sender);
-  }
+  // #37: during a contact only a row that can start a contact for me offers the change; a foreign
+  // QSO's row or a CQ directed elsewhere (the station's refusal, DirectedCqRule) offers nothing.
+  const qso=running(snap?.contact);
+  const reply=qso?await send('select_row',{row,replace:false},'Select station'):await selectConfirmed(row,false,'Select station');
+  if(qso&&(reply?.refused==='directive_not_answerable'||(reply?.refused==='contact_active'&&tr.dataset.foreign))){changeTarget?.remove();changeTarget=null;resultText.textContent='';}
+  else if(reply?.refused==='contact_active')offerChange(()=>send('select_row',{row,replace:true,directive_confirmed:true},'Change contact'),tr.dataset.sender);
   return reply;
+}
+// WstxStrategy::DirectedCqRule: the station decides; a CQ that is not answerable is a warning
+// the operator may confirm (a declined warning sends nothing further).
+async function selectConfirmed(row,replace,label){
+  const reply=await sendExplicit(()=>send('select_row',{row,replace},label));
+  if(reply?.refused!=='directive_not_answerable')return reply;
+  if(!await window.wstxConfirm(`${reply.reason}. Answer anyway?`,'Answer anyway'))return {refused:'declined'};
+  return sendExplicit(()=>send('select_row',{row,replace,directive_confirmed:true},label));
 }
 // A double-click (or the Reply menu) is the explicit ChangeContact (#50, WSJT-X
 // handleDecodeSelection with quick_call): replace true, no confirmation, then Enable Tx on;
@@ -601,7 +609,7 @@ async function replyRow(tr){
   const row=rowIdentity(tr);if(!row)return;
   // #37: a deliberate double-click on a foreign QSO's row calls its sender, and says so.
   const label=tr.dataset.foreign?`Call ${tr.dataset.sender}`:'Reply';
-  const reply=await sendExplicit(()=>send('select_row',{row,replace:true},label));
+  const reply=await selectConfirmed(row,true,label);
   if(reply&&!reply.refused&&transmitCapable())await sendExplicit(()=>arm(label));
 }
 let clickTimer=null;
@@ -692,8 +700,8 @@ function othersShow(){
 function rowOf(context,sequence){const [,,source_id,job_id,generation]=context.split('/');return {source_id,job_id,generation:Number(generation),sequence};}
 async function answerOther(li){
   const row=JSON.parse(li.dataset.row),qso=li.dataset.qso==='true';
-  const reply=await send('select_row',{row,replace:qso},qso?'Change contact':'Select station');
-  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitCapable())arm('Reply');}),li.dataset.call);return;}
+  const reply=await selectConfirmed(row,qso,qso?'Change contact':'Select station');
+  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true,directive_confirmed:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitCapable())arm('Reply');}),li.dataset.call);return;}
   if(reply&&!reply.refused&&transmitCapable())arm('Reply');
 }
 othersList.addEventListener('mousedown',event=>{const li=secondPress(event,'tr[data-row]');if(li)answerOther(li);});
@@ -991,7 +999,7 @@ function show(){
   autoButton.setAttribute('aria-pressed',String(strategyRun()));
   autoButton.title=strategyRun()?'Stop Auto':runActive()&&run.pounce?`Pouncing on ${run.pounce.call}: stop the pounce first`:runActive()?'An MCP automation run is active; HALT ends it':!active()?'Choose a strategy first':!capable?'Transmission unavailable':'Answer only stations matching the strategy (transmits)';
   showContinent();showIgnore();showPounce();
-  autoButton.textContent=strategyRun()?`Auto · ${run.state==='calling_cq'?'CQ':run.state==='contact_active'?(run.selected?.call??'QSO'):'waiting'}`:'Auto';
+  autoButton.textContent=strategyRun()?`Auto · ${run.state==='calling_cq'?'CQ':run.state==='contact_active'?(run.selected?.call??'QSO'):run.state==='manual'?'your QSO':'waiting'}`:'Auto';
   decorate();
 }
 // ---------------------------------------------------------------- Highlight
@@ -1007,7 +1015,7 @@ function decorate(){
     tr.classList.toggle('ba-strategy',v?.rank!==null&&v?.rank!==undefined);tr.classList.toggle('ba-grey',!!v?.grey);
     if(v&&v.rank!==null)tr.dataset.rank=String(v.rank+1);else delete tr.dataset.rank;
     // #55 BandActivityHover: the verdict joins the row's other reasons.
-    if(v?.grey)tr.dataset.whyStrategy='Directed CQ not addressed to my continent: never answered';else if(v&&v.rank!==null)tr.dataset.whyStrategy=`Strategy ${config().active}: rule ${v.rank+1}`;else delete tr.dataset.whyStrategy;window.wstxActivityWhy?.(tr);
+    if(v?.grey)tr.dataset.whyStrategy='Directed CQ, not calling us: the strategy skips it, a double-click warns';else if(v&&v.rank!==null)tr.dataset.whyStrategy=`Strategy ${config().active}: rule ${v.rank+1}`;else delete tr.dataset.whyStrategy;window.wstxActivityWhy?.(tr);
   }
   if(!on)return;
   // Matches go to the top of their period block in the station's order.
@@ -1024,14 +1032,6 @@ function decorate(){
   for(const tr of [...tbody.children]){if(tr.classList.contains('ba-divider')){flush();block=[];}else if(tr.dataset.sequence)block.push(tr);}
   flush();observer.takeRecords();reordering=false;
 }
-// #37: WstxStrategy::DirectedCqRule (addressed_to_me, server/src/strategy.rs) for a row the operator
-// clicks; the verdicts above exist only with Highlight on and an active strategy.
-window.wstxCqNotForMe=tr=>{
-  const target=tr.children[4]?.textContent.match(/^CQ (\S+) /)?.[1];if(!target||target===tr.dataset.sender)return false;
-  const mine=config()?.continent??view?.derived_continent??null;
-  if(['AF','AN','AS','EU','NA','OC','SA'].includes(target))return mine!==target;
-  return target==='DX'&&!(mine&&tr.dataset.continent&&mine!==tr.dataset.continent);
-};
 function wanted(){
   // The sequences shown for the current receive identity, evaluated once each.
   const id=identity();if(!highlightOn()||!id)return null;
@@ -1295,7 +1295,7 @@ function renderEditor(){
   $('se-which').innerHTML=drafts.map((s,i)=>option(i,esc(s.name),i===current)).join('');
   const s=drafts[current];if(!s){$('se-body').innerHTML='<p class="op-muted">No strategy. Choose New.</p>';preview();return;}
   $('se-body').innerHTML=`<label>Name<input id="se-name" maxlength="32" value="${esc(s.name)}" autocomplete="off"></label>
-<p class="op-muted">A decode matches when every condition of a rule holds; rule 1 has the highest priority. Directed CQs not for my continent never match.</p>
+<p class="op-muted">A decode matches when every condition of a rule holds; rule 1 has the highest priority. CQs directed elsewhere (another continent, CQ DX from my own, any other word) never match.</p>
 <ol class="se-rules">${s.rules.map((r,ri)=>`<li><fieldset><legend>Rule ${ri+1}${ri===0?' (highest priority)':''}</legend><label class="op-check se-alert" title="Sound or browser notification when a decode matches this rule (Settings &gt; General); never transmits"><input type="checkbox" data-alert="${ri}"${r.alert?' checked':''}>Alert</label><ul class="se-conditions">${r.conditions.map((c,ci)=>conditionMarkup(c,ri,ci)).join('')}</ul><p class="op-actions"><button type="button" data-act="add-condition" data-rule="${ri}">Add condition</button>${ri?`<button type="button" data-act="up" data-rule="${ri}">Higher priority</button>`:''}${s.rules.length>1?`<button type="button" data-act="remove-rule" data-rule="${ri}">Remove rule</button>`:''}</p></fieldset></li>`).join('')}</ol>
 <p class="op-actions"><button type="button" data-act="add-rule"${s.rules.length>=8?' disabled':''}>Add rule</button></p>
 <div class="se-options"><label>Sort matches<select id="se-sort">${[['strongest','Strongest first'],['weakest','Weakest first'],['furthest','Furthest first'],['newest','Newest first']].map(([v,l])=>option(v,l,s.sort===v)).join('')}</select></label>
