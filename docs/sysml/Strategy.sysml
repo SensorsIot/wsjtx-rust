@@ -583,7 +583,8 @@ package WstxStrategy {
              Band: a retune on the radio keeps the live job, so on each fresh publication
              the run compares the station band (station_band); from a change on, only
              publications after the one that showed it count. A retune before the run or
-             within a band is not seen: the old signals age out with the periods.
+             within a band is not seen: the old signals age out with the periods. A new live
+             identity (StrategyRun) counts from its first record.
              Signal width, from the record's frequency_hz upwards: FT8 50 Hz, FT4 90 Hz,
              mine alike. A slot is free when 50 Hz or more separate my signal from every
              occupied signal, and my whole signal lies inside 300..2700 Hz within the Tx

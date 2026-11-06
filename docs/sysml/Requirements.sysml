@@ -2061,7 +2061,16 @@ package WstxRequirements {
              desktop 200% zoom-equivalent CSS viewport, verify station identity and truthful status,
              signal above separator above workspace, no document horizontal overflow, empty
              Band Activity/contact tables and explicit unsupported explanations. Verify unsupported
-             controls are disabled and produce no requests. Open/close saved settings and recording
+             controls are disabled and produce no requests. With the capability pushed from available
+             to unavailable and back (#22): CQ, Tune, Now and Auto Seq disabled, badge Receive only, the
+             reason shown, Control panel and pane unmoved, a running Tune can be turned off, Call 1st
+             enabled; a double-click or a Calling me line sends select_row and no enable_tx, the
+             menu's Reply disabled, "Auto Seq on" not offered; back to Ready without any action. After a real station restart (#22; a new boot's generation below
+             the old one) with no receive job yet: whichever of /receive and /recording answers first,
+             and while /receive is still pending, Band Activity heading "Latest decode period", no row
+             or divider of the previous boot, Decoder unavailable; with a receive job already running
+             at a lower generation: the same heading and rows, Listening for FT8.
+             Open/close saved settings and recording
              regions with keyboard; verify existing controls remain reachable in the same page.
              Use separator ArrowUp/Down/Home/End and pointer dragging; verify actual height changes,
              ARIA value changes and the signal remains above the workspace. Disconnect the server
