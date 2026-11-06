@@ -442,7 +442,7 @@ body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #s
    strip, the workspace and the Control panel. Text wraps rather than being cut off. */
 #rx-focus{--ct-row:.9375rem;--ct-line:1.125rem;--ct-head:calc(var(--ct-line) + 1.9375rem);--ct-lines:calc(var(--ct-line) + .25rem);position:relative;flex:none;gap:0}
 #qso-column>#rx-focus{flex:none}
-#controls #rx-focus>header.op-qso-head{flex:none;display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"id id id" "heard tools badge";align-items:center;gap:2px 8px;height:var(--ct-head);box-sizing:border-box;padding:2px 10px 3px;overflow:visible;position:static}
+#controls #rx-focus>header.op-qso-head{flex:none;display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"id id badge" "heard tools tools";align-items:center;gap:2px 8px;height:var(--ct-head);box-sizing:border-box;padding:2px 10px 3px;overflow:visible;position:static}
 #rx-focus .op-qso-head .op-contact-identity{grid-area:id;min-width:0;max-height:var(--ct-line);overflow:hidden auto}/* a longer partner line wraps and scrolls in its own line; the buttons never move */
 #rx-focus .op-qso-head .op-contact-badge{grid-area:badge;padding:0 6px;line-height:var(--ct-line);white-space:nowrap}
 #rx-focus .op-contact-identity>div{display:flex;flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:0 10px;min-width:0}

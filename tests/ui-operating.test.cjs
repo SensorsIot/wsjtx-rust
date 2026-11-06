@@ -479,6 +479,10 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
   for(const selector of ['#qso-heard','#qso-others tr:last-child','#qso-dialogue tr:last-child','#qso-next','#qso-cq','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible`);
   await page.screenshot({path:'test-results/ui-operating/qso-dialogue-1366x768.png'});
+  // #39 Abort QSO: with five direct buttons the partner's message keeps its room and the longest
+  // badge stays inside the pane.
+  const headFit=await page.evaluate(()=>{const pane=document.querySelector('#rx-focus').getBoundingClientRect(),badge=document.querySelector('#rx-focus .op-contact-badge');badge.textContent='Transmitting';const b=badge.getBoundingClientRect();return {heard:document.querySelector('#qso-heard').getBoundingClientRect().width,inside:b.right<=pane.right+0.5&&b.right<=innerWidth};});
+  assert.ok(headFit.heard>=50,`the partner's message has room: ${headFit.heard} px`);assert.equal(headFit.inside,true,'the Transmitting badge stays inside the pane');
   // Item 8 (#37, operator 2026-11-04): the pane has a fixed height with the QSO section (12
   // rows, here all ten entries without scrolling) and Calling me; TC-037-003 proves that nothing
   // below it moves. At 1920x1080 the height below the column stays free.
