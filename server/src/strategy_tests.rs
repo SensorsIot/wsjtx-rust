@@ -2047,7 +2047,7 @@ async fn tc_039_033_a_strategy_run_lasts_at_most_8_hours_from_its_selection() {
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
     let _client = f.state.recording.clients.session();
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     // Just before: it still selects.
     at_skew(&f, H8 - 1);
     assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
@@ -2067,7 +2067,7 @@ async fn tc_039_033_a_strategy_run_lasts_at_most_8_hours_from_its_selection() {
     assert_eq!(quiet_run(&f), ("stopped".into(), json!("run_limit")));
     assert_eq!(
         f.browser("GET", "/strategy", None).await.json["configuration"]["active"],
-        json!("New calls"),
+        json!("Test calls"),
         "it stays selected with the reason"
     );
     // No new station.
@@ -2076,7 +2076,7 @@ async fn tc_039_033_a_strategy_run_lasts_at_most_8_hours_from_its_selection() {
     assert_eq!(quiet_contact(&f).await.0, json!("K1ABC"));
     // A new selection starts a new 8 hours, also from here on.
     save(&f, config(None)).await;
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     at_skew(&f, H8 + H8 - 1);
     assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
     publish(&f, e + 180_000, &[("CQ DL1XYZ JO62", 1200.0, Some(9.0))]);
