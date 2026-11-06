@@ -12,6 +12,8 @@ use wstx_rust::radio_control::{
     self as cat, actor::Actor, catalogue::Catalogue, executor::Transport,
 };
 
+/// Read, write and read-back of three setters, then the three final reads.
+const SETUP_FRAMES: usize = 12;
 pub(crate) struct Rig {
     pub writes: Vec<Vec<u8>>,
     pub exchanges: Vec<(Instant, Option<Instant>, u64)>,
@@ -68,47 +70,53 @@ impl Transport for Port {
         let identity = std::ptr::from_ref(cancel) as usize;
         let connection = *self.connection_cancel.get_or_insert(identity);
         let mut rig = self.rig.lock().unwrap();
-        if body == [6, 1, 1] {
-            if self.remaining != 0 {
-                return Err(cat::Error::Protocol);
-            }
-            self.remaining = 9;
+        // CL-044-09: the slow rig plays the most a receive setup can cost: every setter
+        // differs, so it is read, write, read-back three times and the final three reads.
+        // A receive setup is the [4] of a request; polls run on the connection's cancel.
+        if self.slow && self.remaining == 0 && body == [4] && identity != connection {
+            self.remaining = SETUP_FRAMES;
             self.setup = Some(rig.setups.len());
             rig.setups.push((now, None));
         }
-        if self.remaining > 0 {
-            let allowed = match 9 - self.remaining {
-                0 => body == [6, 1, 1],
-                1 | 6 => body == [4],
-                2 => body == [0x1a, 6, 1, 1],
-                3 | 7 => body == [0x1a, 6],
-                4 => body.len() == 6 && body[0] == 5,
-                5 | 8 => body == [3],
+        let position = (self.remaining > 0).then(|| SETUP_FRAMES - self.remaining);
+        if let Some(position) = position {
+            let allowed = match position {
+                0 | 2 | 9 => body == [4],
+                1 => body == [6, 1, 1],
+                3 | 5 | 10 => body == [0x1a, 6],
+                4 => body == [0x1a, 6, 1, 1],
+                6 | 8 | 11 => body == [3],
+                7 => body.len() == 6 && body[0] == 5,
                 _ => false,
             };
             if !allowed {
                 return Err(cat::Error::Protocol);
             }
         }
+        // 12 * 360 ms = 4320 ms: the setup stays near the 5 s composite bound.
         let delay = if self.slow && self.remaining > 0 {
-            470
+            360
         } else if self.slow && body == [0x1c, 0] && identity != connection {
             800
         } else {
             0
         };
-        let reply = match body {
-            [3] => {
+        let reply = match (position, body) {
+            // The first read of each setter finds a different value.
+            (Some(0), _) => vec![4, 0, 2],
+            (Some(3), _) => vec![0x1a, 6, 0, 0],
+            (Some(6), _) => vec![3, 0, 0, 0, 0x10, 0],
+            (_, [3]) => {
                 let mut b = vec![3];
                 b.extend(rig.frequency);
                 b
             }
-            [4] => vec![4, 1, 1],
-            [0x1a, 6] => vec![0x1a, 6, 1, 1],
-            [0x1c, 0] => vec![0x1c, 0, 0],
-            [0x0f] => vec![0x0f, 0],
-            [6, 1, 1] | [0x1a, 6, 1, 1] => vec![0xfb],
-            [5, a, b, c, d, e] => {
+            (_, [4]) => vec![4, 1, 1],
+            (_, [0x1a, 6]) => vec![0x1a, 6, 1, 1],
+            (_, [0x1c, 0]) => vec![0x1c, 0, 0],
+            (_, [0x0f]) => vec![0x0f, 0],
+            (_, [6, 1, 1] | [0x1a, 6, 1, 1]) => vec![0xfb],
+            (_, [5, a, b, c, d, e]) => {
                 let value = [*a, *b, *c, *d, *e];
                 // Four literal independent dial vectors from FSD4.7.5/Icom BCD.
                 if ![
