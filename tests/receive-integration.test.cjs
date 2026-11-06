@@ -98,7 +98,7 @@ test('TC-009-004 real native audio reaches Rust manager HTTP and literal browser
     for(const id of ['#halt-tx','#qso-halt'])assert.equal(await page.locator(id).isDisabled(),true,id);
     assert.equal(await page.locator('#contact-auto').isDisabled(),true);
     await fs.mkdir('test-results/receive-integration',{recursive:true});
-    // In one step: the rows may be redrawn at any moment, which detaches the element Playwright's stability wait holds.
+    // Without Playwright's stability wait: the rows may be redrawn at any moment, which detaches the element that wait holds.
     await row.evaluate(el=>el.scrollIntoView({block:'nearest'}));
     await page.screenshot({path:`test-results/receive-integration/real-${mode}-callsign.png`,fullPage:true});
     assert.deepEqual(errors,[]);

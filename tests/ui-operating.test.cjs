@@ -1135,15 +1135,16 @@ async function waterfallMappingPass(page,commands,settings,label){
     await confirm(settings.rx_hz,c.tx_hz);assert.ok(Math.abs(await centre('txm')-to)<=1,`${label}: confirmed Tx line at the drop point`);}
   x=await axis();
   // The brackets: from the line over the occupied width to its right, in the line's colour.
-  const brackets=()=>page.evaluate(()=>['rx','txm'].map(key=>{const m=document.querySelector(`#waterfall-wrap .ct-${key}`),g=m.querySelector('.ct-goal');if(!g)return null;const r=g.getBoundingClientRect(),s=getComputedStyle(g);return {hz:Number(m.dataset.hz),left:r.left,right:r.right,top:r.top,height:r.height,colour:s.borderTopColor,visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0,pointer:s.pointerEvents};}));
+  const brackets=()=>page.evaluate(()=>['rx','txm'].map(key=>{const m=document.querySelector(`#waterfall-wrap .ct-${key}`),g=m.querySelector('.ct-goal');if(!g)return null;const r=g.getBoundingClientRect(),s=getComputedStyle(g);return {hz:Number(m.dataset.hz),left:r.left,right:r.right,top:r.top,height:r.height,colour:s.borderTopColor,visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0,pointer:s.pointerEvents,dragging:m.classList.contains('ct-dragging'),txMax:document.querySelector('#contact-tx').max};}));
   for(const [period,width] of [[15000,50],[7500,4*12000/576],[15000,50]]){
     await page.evaluate(period=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,test:true,message:{v:1,type:'station.tick',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,utc_ms:Date.now(),period_ms:period,transmitting:false,rx_level_db:null}}}})),period);
-    // The brackets follow the tick when the page next draws, which a loaded machine delays beyond any fixed wait.
+    // Bounded tolerance, cause not established: one gate (2026-11-06) read a bracket of the previous mode's
+    // width 50 ms after the tick. If it recurs, the message says whether the tick arrived and a line was held.
     let got=await brackets();
     for(let n=0;n<40&&!(got[0]&&Math.abs(got[0].right-x(got[0].hz+width))<=1);n++){await page.waitForTimeout(50);got=await brackets();}
     for(const [i,colour] of [[0,'rgb(48, 208, 80)'],[1,'rgb(255, 64, 64)']]){const b=got[i];
       assert.ok(b?.visible,`${label}: bracket ${i} shown (${JSON.stringify(b)})`);assert.equal(b.colour,colour);assert.equal(b.pointer,'none');
-      assert.ok(Math.abs(b.left-x(b.hz))<=1&&Math.abs(b.right-x(b.hz+width))<=1,`${label} ${period} ms: bracket ${b.left}-${b.right}, mapping ${x(b.hz)}-${x(b.hz+width)}`);
+      assert.ok(Math.abs(b.left-x(b.hz))<=1&&Math.abs(b.right-x(b.hz+width))<=1,`${label} ${period} ms: bracket ${b.left}-${b.right}, mapping ${x(b.hz)}-${x(b.hz+width)}, dragging ${b.dragging}, Tx max ${b.txMax}`);
       assert.ok(Math.abs(b.top-wf.y)<=1,`${label}: bracket at the top of the waterfall`);}
   }
   // A click inside a bracket still reaches the waterfall (within 1 px: a click's clientX is whole px).
