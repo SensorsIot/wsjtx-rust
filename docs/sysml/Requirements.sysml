@@ -3979,6 +3979,26 @@ package WstxRequirements {
         }
     }
     dependency CL_039_07_verified_by_TC_039_008 from 'CL-039-07' to 'TC-039-008';
+    requirement 'CL-039-08' {
+        doc /* Hold Tx is on by default (operator decision 2026-11-04, #39; consistent with the split-frequency rule): a station starts with settings.hold_tx true, in manual operation and for a strategy alike, so selecting or answering a station moves Rx and never Tx; Tx stays on the operator's chosen slot until an explicit Tx action (the Tx input, a waterfall Tx pointer action, the Hound's own rule). The operator may switch it off with set_hold_tx; the choice lasts for the station's running session, since contact settings are not persisted, so no stored value can override the default. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact.rs; client/contact.js";
+    }
+    dependency CL_039_08_to_FR_007 from 'CL-039-08' to 'FR-007';
+    verification 'TC-039-009' {
+        doc /* TC-039-009 — Hold Tx is on by default
+             CL-039-08
+             Setup: actual contact engine and actual station Router with a fresh profile (no explicit choice), hand-authored decode rows.
+             Steps: read the first contact snapshot; select a CQ at another frequency; answer through a strategy Auto pick; switch Hold Tx off and select again.
+             Expected (oracle: the operator's decision on #39): settings.hold_tx true in a fresh snapshot and #contact-hold checked; after the selection Rx follows the row and Tx stays 1500; after the strategy pick Tx stays; with Hold Tx explicitly off a selection moves Tx to the row (the WSJT-X rule of FirstSlotOnSelection). On the parent the fresh snapshot says false and the selection moves Tx.
+             2 — Isolated automated tests; Windows PC, no radio (wstx-rust, contact-browser suites). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-08';
+        }
+        attribute executable : String = "server/src/contact_tests.rs::hold_tx_is_on_by_default_and_a_selection_keeps_tx; tests/contact.test.cjs";
+    }
+    dependency CL_039_08_verified_by_TC_039_009 from 'CL-039-08' to 'TC-039-009';
     requirement 'CL-042-01' {
         doc /* The strategy's New matrix is complete: besides new call and new grid, a condition holds for a sender whose DXCC entity, continent, CQ zone or ITU zone (from its cty.dat entity, #55) is not in the internal log, ever or on this band and mode, each negatable; a sender without an entity, an unknown station band (for the band form) or an unreadable log never counts as new. The editor offers the four conditions with the same ever / on this band and mode choice; the live preview names a failing one. Details: WstxStrategy::Condition, NewEntity. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
