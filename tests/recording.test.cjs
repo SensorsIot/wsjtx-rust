@@ -442,6 +442,8 @@ test('TC-010-002 recording state and import progress are pushed on change, witho
   const put=(from,to)=>f.req(`/recording/imports/${op.id}`,'PUT',bytes.subarray(from,to),{'Content-Type':'audio/wav','Content-Range':`bytes ${from}-${to-1}/${bytes.length}`});
   assert.equal((await put(0,2048)).status,202);await sleep(1200);assert.equal((await put(2048,4096)).status,202);
   await p.waitForFunction(()=>snapshot?.import?.received_bytes===4096,null,{timeout:8000});
+  // Each socket checks on its own timer: this peer's event can follow the browser's.
+  for(let n=0;n<40&&watcher.log.at(-1).value.data.import?.received_bytes!==4096;n++)await sleep(100);
   const events=watcher.log.slice(beforeImport).map(e=>({at:e.at,...e.value.data.import}));
   assert.equal(events[0].id,op.id);assert.deepEqual(Object.keys(watcher.log.at(-1).value.data.import).sort(),['error','id','received_bytes','state','total_bytes']);
   const growing=events.filter(e=>e.state==='receiving');assert.ok(growing.length>=2,'the second chunk is announced');
