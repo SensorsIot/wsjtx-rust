@@ -956,7 +956,7 @@ window.wstxContact=Object.freeze({load,snapshot:()=>snap});
 const $=id=>document.getElementById(id);
 const nameSelect=$('strategy-name'),editButton=$('strategy-edit'),valueButton=$('activity-value'),statusNode=$('station-automation');
 if(!nameSelect)return;
-let view=null,viewLoading=null,viewAgain=false,strategyMissing=false,run=null,refusal=null,pounceConfirmed=false,verdicts=new Map(),evaluatedKey='',evaluating=false;
+let view=null,viewLoading=null,viewAgain=false,strategyMissing=false,run=null,refusal=null,pounceConfirmed=false,verdicts=new Map(),evaluatedKey='',evaluating=false,evaluateAgain=false;
 const config=()=>view?.configuration??null;
 const active=()=>{const c=config();return c?.strategies.find(s=>s.name===c.active)??null;};
 const runActive=()=>!!run&&run.state!=='stopped';
@@ -1052,7 +1052,9 @@ function wanted(){
 // Asked after a new publication event (its rows have arrived) and after a save or an ignore;
 // never on a timer.
 async function evaluateShown(){
-  const w=wanted();if(!w||evaluating)return;
+  // Rows that arrive during an evaluation are asked for when it ends (no timer).
+  if(evaluating){evaluateAgain=true;return;}
+  const w=wanted();if(!w)return;
   const key=`${view.revision}/${w.id}/${w.first}/${w.next}`;if(key===evaluatedKey)return;
   if(!(typeof resultView!=='undefined'&&resultView&&resultCursor>=resultView.next_sequence))return;
   evaluating=true;
@@ -1064,7 +1066,7 @@ async function evaluateShown(){
       const map=new Map();data.verdicts.forEach(v=>map.set(`${w.id}/${v.sequence}`,{rank:v.rank,grey:v.grey}));
       verdicts=map;evaluatedKey=key;decorate();
     }
-  }catch{}finally{evaluating=false;}
+  }catch{}finally{evaluating=false;if(evaluateAgain){evaluateAgain=false;evaluateShown();}}
 }
 const observer=new MutationObserver(()=>{if(reordering)return;decorate();evaluateShown();});
 if(tbody)observer.observe(tbody,{childList:true});

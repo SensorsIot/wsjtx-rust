@@ -565,6 +565,11 @@ impl Owner {
                     .configuration
                     .clone()
                     .ok_or(("not_configured", Some("configuration")))?;
+                // #39 only a browser's selection starts a strategy run (the configuration a
+                // stopped one left stays until replaced; WstxStrategy::StrategyRun).
+                if config.strategy {
+                    return Err(("operator_required", Some("strategy")));
+                }
                 let mode = if body["mode"] == "ft4" { "ft4" } else { "ft8" };
                 if !config.modes.contains(&mode) {
                     return Err(("not_ready", Some("mode")));
@@ -871,7 +876,7 @@ impl Owner {
         };
         let run = inner.run.as_ref().expect("checked");
         let now = self.now();
-        if !grant_current(state, &run.access, &run.token, now) {
+        if !grant_current(state, &run.access, &run.token, is_strategy, now) {
             return stop(&mut inner, "authority_lost", armed);
         }
         if !is_strategy && now >= run.deadline {
@@ -897,6 +902,10 @@ impl Owner {
         } else {
             None
         };
+        // WstxStrategy::WorkedWindow: keeps the worked set current off the step.
+        if let Some((_, s)) = &chosen {
+            strategy::worked_of(state, s.window);
+        }
         let fresh = publication
             .filter(|p| p.3 && p.0 > run.last_decode)
             .map(|p| (p.0, p.1, p.2, p.4));
@@ -1082,28 +1091,31 @@ impl Owner {
                         // Callers, then candidates by value; one per call. Nobody the
                         // operator gave up or completed in this run.
                         let mut seen: Vec<String> = Vec::new();
-                        let list: Vec<(String, u64, bool)> = strategy::evaluate(s, &records, &st)
-                            .into_iter()
-                            .filter(|v| v.rank.is_some() && eligible(run, &v.facts.from))
-                            .filter(|v| {
-                                let first = !seen.contains(&v.facts.from);
-                                seen.push(v.facts.from.clone());
-                                first
-                            })
-                            .map(|v| {
-                                let after_73 =
-                                    v.kind == Some(strategy::Kind::Candidate) && !v.facts.cq;
-                                (v.facts.from, v.facts.sequence, after_73)
-                            })
-                            .collect();
-                        // The station left after calls_per_station only when alone (D6).
-                        if list.iter().any(|c| Some(&c.0) != run.rested.as_ref()) {
-                            list.into_iter()
-                                .filter(|c| Some(&c.0) != run.rested.as_ref())
-                                .collect()
-                        } else {
-                            list
-                        }
+                        let list: Vec<(String, u64, bool, bool)> =
+                            strategy::evaluate(s, &records, &st)
+                                .into_iter()
+                                .filter(|v| v.rank.is_some() && eligible(run, &v.facts.from))
+                                .filter(|v| {
+                                    let first = !seen.contains(&v.facts.from);
+                                    seen.push(v.facts.from.clone());
+                                    first
+                                })
+                                .map(|v| {
+                                    let caller = v.kind == Some(strategy::Kind::Caller);
+                                    let after_73 = !caller && !v.facts.cq;
+                                    (v.facts.from, v.facts.sequence, after_73, caller)
+                                })
+                                .collect();
+                        // D6: the candidate left after calls_per_station only when alone; a
+                        // caller is always answered (D5).
+                        let keep = |c: &(String, u64, bool, bool)| {
+                            c.3 || Some(&c.0) != run.rested.as_ref()
+                        };
+                        let passed = list.iter().any(keep);
+                        list.into_iter()
+                            .filter(|c| !passed || keep(c))
+                            .map(|c| (c.0, c.1, c.2))
+                            .collect()
                     }
                 };
                 let chosen_row = list.first().cloned();
@@ -1290,16 +1302,22 @@ fn disarm(contact: &contact_http::Station, state: &ProfileState) {
     );
     let _ = contact.operate_as(state, body, false, AUTOMATION);
 }
-/// The starting transport is still this grant's current, unexpired transport (a
-/// revocation, safety edit, expiry or a newer proof of the grant ends it).
+/// A policy run: the starting transport is still this grant's current, unexpired transport
+/// (a revocation, safety edit, expiry or a newer proof of the grant ends it). A strategy run:
+/// the grant itself is current (a revocation or safety edit ends it; a page load's new proof
+/// or the transport's deadline does not, WstxStrategy::StrategyRun).
 fn grant_current(
     state: &ProfileState,
     access: &authorization::Access,
     token: &str,
+    is_strategy: bool,
     now: Instant,
 ) -> bool {
     state.authorization.lock().ok().is_some_and(|owner| {
         owner.as_ref().is_some_and(|s| {
+            if is_strategy {
+                return s.authority.current_grant(access).is_ok();
+            }
             s.authority
                 .access(token, &access.scope.https_origin, now)
                 .is_ok_and(|current| current.grant_id == access.grant_id)

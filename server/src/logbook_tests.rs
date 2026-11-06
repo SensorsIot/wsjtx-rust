@@ -1372,6 +1372,113 @@ fn update_rerun_upgrades_confirmations_of_present_records_and_never_removes_one(
     assert_eq!(log.put(changed, GATE).unwrap(), LogOutcome::AlreadySaved);
 }
 
+// Measurement for review 6683200740 finding 4: the rebuild of a worked set from a 26,902-QSO
+// log after one log write (run with --release --nocapture); no timing assertion.
+#[cfg(not(debug_assertions))]
+#[test]
+fn worked_set_rebuild_time_of_a_26902_qso_log() {
+    let dir = Dir::new();
+    let log = std::sync::Arc::new(Logbook::open(&dir.0));
+    let prefixes = [
+        "DL", "F", "JA", "VK", "K", "W", "G", "EA", "I", "OH", "UA9", "PY", "ZS", "LU",
+    ];
+    let mut file = String::from(CONFIRM_HEADER);
+    for i in 0..26_902u32 {
+        let (day, minute) = (1 + i / 1440 % 28, i % 1440);
+        let call = format!(
+            "{}{}A{}",
+            prefixes[i as usize % prefixes.len()],
+            i % 10,
+            base26(i)
+        );
+        // About a quarter with a grid, as the operator's log (6,729 of 26,902).
+        let grid = if i % 4 == 0 {
+            "<GRIDSQUARE:4>JO62 "
+        } else {
+            ""
+        };
+        file.push_str(&format!(
+            "<CALL:{}>{call} <BAND:3>20m <MODE:3>FT8 {grid}<QSO_DATE:8>2025{:02}{:02} <TIME_ON:6>{:02}{:02}00 <LOTW_QSL_RCVD:1>Y <eor>\n",
+            call.len(), 1 + i / 40_320, day, minute / 60, minute % 60
+        ));
+    }
+    import(&log, file.as_bytes()).0.unwrap();
+    assert_eq!(log.total().unwrap(), 26_902);
+    for round in 0..5 {
+        let more = format!(
+            "{CONFIRM_HEADER}<CALL:6>Z{round}1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20260101 <TIME_ON:6>12{round}000 <eor>\n"
+        );
+        import(&log, more.as_bytes()).0.unwrap();
+        let started = Instant::now();
+        log.worked_set().unwrap();
+        let all = started.elapsed();
+        let started = Instant::now();
+        log.worked_window(20250101, 20251231).unwrap();
+        let window = started.elapsed();
+        import(&log, format!("{CONFIRM_HEADER}<CALL:6>Z{round}2ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20260102 <TIME_ON:6>12{round}000 <eor>
+").as_bytes()).0.unwrap();
+        let started = Instant::now();
+        assert!(log.worked_latest(None).is_some());
+        eprintln!(
+            "MEASURE worked_set {all:?} worked_window {window:?} worked_latest (the step) {:?}",
+            started.elapsed()
+        );
+    }
+}
+#[cfg(not(debug_assertions))]
+fn base26(mut n: u32) -> String {
+    let mut s = String::new();
+    for _ in 0..3 {
+        s.push((b'A' + (n % 26) as u8) as char);
+        n /= 26;
+    }
+    s
+}
+
+// Proves: TC-039-030 WstxStrategy::WorkedWindow off the station step: the last set at once,
+// never built on the caller's thread; the new one follows on its own thread.
+#[test]
+fn worked_latest_returns_the_last_set_and_builds_off_the_caller() {
+    let dir = Dir::new();
+    let log = std::sync::Arc::new(Logbook::open(&dir.0));
+    let add = |call: &str| {
+        let file = format!(
+            "{CONFIRM_HEADER}<CALL:6>{call} <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20250101 <TIME_ON:4>1000 <eor>\n"
+        );
+        import(&log, file.as_bytes()).0.unwrap();
+    };
+    let wait_for = |window: Option<(u32, u32)>, call: &str| {
+        let deadline = Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if log
+                .worked_latest(window)
+                .is_some_and(|w| w.call_standing(call).worked)
+            {
+                return;
+            }
+            assert!(Instant::now() < deadline, "never built");
+            std::thread::yield_now();
+        }
+    };
+    add("DL1ABC");
+    for window in [None, Some((20250101, 20250102))] {
+        wait_for(window, "DL1ABC");
+        let before = log.worked_latest(window).unwrap();
+        add(if window.is_none() { "F1ABCD" } else { "G1ABCD" });
+        // At once the set from before the write, whatever a build thread is doing.
+        let stale = log.worked_latest(window).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&stale, &before));
+        wait_for(window, if window.is_none() { "F1ABCD" } else { "G1ABCD" });
+    }
+    // An unknown window: nothing yet, then its set.
+    assert!(log.worked_latest(Some((20250103, 20250104))).is_none());
+    let deadline = Instant::now() + std::time::Duration::from_secs(10);
+    while log.worked_latest(Some((20250103, 20250104))).is_none() {
+        assert!(Instant::now() < deadline, "never built");
+        std::thread::yield_now();
+    }
+}
+
 // Proves: TC-039-030 WstxStrategy::WorkedWindow: only the records of the window, cached until
 // the log changes, a record without a date only for all time.
 #[test]

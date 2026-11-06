@@ -50,7 +50,8 @@ package WstxMcp {
             no longer than the starting request's transport (its 8 h deadline, a newer proof
             of that browser grant, revocation of that grant or MCP client, or a safety edit
             stop it authority_lost; a browser proof never ends an MCP client's run) and no
-            longer than max_run_minutes (default 120, 1..480; stop time_limit). A running
+            longer than max_run_minutes (default 120, 1..480; stop time_limit); a strategy run
+            follows its grant instead, D8 and WstxStrategy::StrategyRun. A running
             automation is shown read-only in the browser station bar (AutomationIndicator).
          D8 Strategy runs (#39, WstxStrategy::StrategyRun): selecting a strategy in the
             browser starts a run of this owner in which the active strategy chooses and
@@ -297,7 +298,7 @@ package WstxMcp {
              state_conflict command_id. configure: stale_revision on
              expected_policy_revision, state_conflict run while a run is active, then
              policy_revision + 1. start: stale_revision on either revision, state_conflict
-             run, not_configured, not_ready mode (configuration), not_ready receive,
+             run, not_configured, operator_required strategy (a configuration a strategy run left), not_ready mode (configuration), not_ready receive,
              not_ready mode (live job or operating mode), not_ready auto_seq, not_ready
              call (a nonstandard profile callsign: automation stays standard-only, #24
              CL-024-01), not_ready activity (a contest activity other than none, or hound, is set:

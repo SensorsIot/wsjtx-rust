@@ -871,6 +871,28 @@ pub(crate) fn utc_date() -> u32 {
     let (year, month, day, ..) = crate::contact::civil(ms);
     year as u32 * 10000 + month * 100 + day
 }
+/// The dates of a window (None: all time).
+fn window_dates(window: Window) -> Option<(u32, u32)> {
+    match window {
+        Window::All => None,
+        Window::Today => {
+            let today = utc_date();
+            Some((today, today))
+        }
+        Window::FromTo(first, last) => Some((first, last)),
+    }
+}
+/// WstxStrategy::WorkedWindow for the station step: never builds on it.
+pub(crate) fn worked_of(state: &ProfileState, window: Window) -> Option<std::sync::Arc<Worked>> {
+    state.logbook.worked_latest(window_dates(window))
+}
+/// The same on a blocking thread (selection, evaluation route): waits until it is current.
+fn worked_build(state: &ProfileState, window: Window) {
+    let _ = match window_dates(window) {
+        None => state.logbook.worked_set(),
+        Some((first, last)) => state.logbook.worked_window(first, last),
+    };
+}
 /// Builds the evaluation facts from the profile, the station band, the log in this window and
 /// the list already read (never reads a file: the station step calls it).
 pub(crate) fn station(state: &ProfileState, config: &Config, window: Window) -> Station {
@@ -891,22 +913,14 @@ pub(crate) fn station(state: &ProfileState, config: &Config, window: Window) -> 
         }
         most_wanted = s.strategy.most_wanted_read();
     }
-    let worked = match window {
-        Window::All => state.logbook.worked_set(),
-        Window::Today => {
-            let today = utc_date();
-            state.logbook.worked_window(today, today)
-        }
-        Window::FromTo(first, last) => state.logbook.worked_window(first, last),
-    };
+    let worked = worked_of(state, window);
     Station {
         ignored,
         my_continent: my_continent(config, call.as_deref(), locator.as_deref(), &dxcc),
         my_call: call.unwrap_or_default(),
         band,
         dxcc,
-        // The log's cached sets (#55), rebuilt only after a log or country table change.
-        worked: worked.ok(),
+        worked,
         mode,
         most_wanted,
     }
@@ -1567,6 +1581,7 @@ impl Owner {
                 .collect(),
             _ => return Err(("stale_request", Some("job_id".into()))),
         };
+        worked_build(state, chosen.window);
         let st = station(state, &config, chosen.window);
         // In display order: by rank, then the rest.
         let verdicts: Vec<Value> = evaluate(&chosen, &records, &st)
@@ -1673,6 +1688,14 @@ pub async fn put(
         let (snapshot, changed) = station.strategy.put(&state, body)?;
         if changed {
             station.strategy.most_wanted_load(&state);
+            if let Some(s) = station
+                .strategy
+                .config(&state)
+                .as_ref()
+                .and_then(Config::active_strategy)
+            {
+                worked_build(&state, s.window);
+            }
             // Taken after the strategy lock is free: the automation lock comes first.
             station.automation.selected(&station, &state, access);
         }

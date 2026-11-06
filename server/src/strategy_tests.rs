@@ -1130,6 +1130,7 @@ fn store_only(f: &Mcp, configuration: Value) {
                 "configuration":configuration}),
         )
         .unwrap();
+    f.state.logbook.worked_set().unwrap();
 }
 async fn contact(f: &Mcp) -> (Value, Value, Value) {
     let c = f.read("contact").await;
@@ -1510,6 +1511,174 @@ async fn tc_039_004_callers_come_first_and_a_cancelled_station_never_again() {
     assert_eq!(run["given_up"], json!(["DL1XYZ"]));
     publish(&f, e + 60_000, &[("CQ VK2ABC QF56", 1000.0, Some(15.0))]);
     assert_eq!(contact(&f).await.0, json!("VK2ABC"));
+}
+
+// Proves: TC-039-004. Review 6683200740 finding 1: a stopped strategy run is restarted only
+// by a selection; an MCP stop then start is refused.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_004_an_mcp_client_cannot_restart_a_stopped_strategy() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    select(&f, config(Some("New calls"))).await;
+    f.tick();
+    let auto = |action: &str, extra: Value| {
+        let mut b = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),"action":action});
+        b.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        json!({ "command": b })
+    };
+    let a = f.read("automation").await;
+    let stop = f
+        .tool(
+            "wstx_automation_command",
+            auto("stop", json!({"run_id":a["run"]["id"]})),
+        )
+        .await;
+    assert_eq!(stop["status"], 202, "{stop}");
+    let a = f.read("automation").await;
+    let safety = f.read("contact").await["transmit"]["safety_revision"].clone();
+    let start = auto(
+        "start",
+        json!({"expected_policy_revision":a["policy_revision"],"expected_run_revision":a["run_revision"],
+            "mode":"ft8","safety_revision":safety}),
+    );
+    let r = f.tool("wstx_automation_command", start.clone()).await;
+    assert_eq!(
+        (
+            r["result"]["error"]["code"].clone(),
+            r["result"]["error"]["field"].clone()
+        ),
+        (json!("operator_required"), json!("strategy")),
+        "{r}"
+    );
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
+    assert_eq!(contact(&f).await.2, json!("disarmed"));
+    assert_eq!(run_state(&f).await.0, "stopped");
+    // The browser's start route is no path either: only PUT /strategy selects.
+    let body = start["command"].clone();
+    let mut browser = body.clone();
+    browser["command_id"] = json!(profile::new_uuid().unwrap());
+    let r = f
+        .browser("POST", "/automation/command", Some(browser))
+        .await;
+    assert_eq!(r.json["error"]["code"], "operator_required", "{}", r.json);
+    // An MCP client's own policy replaces the stored one and starts as ever.
+    let a = f.read("automation").await;
+    let cfg = crate::automation_tests::config_json();
+    let c = f
+        .tool(
+            "wstx_automation_command",
+            auto(
+                "configure",
+                json!({"expected_policy_revision":a["policy_revision"],"configuration":cfg}),
+            ),
+        )
+        .await;
+    assert_eq!(c["status"], 202, "{c}");
+    let a = f.read("automation").await;
+    let r = f
+        .tool(
+            "wstx_automation_command",
+            auto(
+                "start",
+                json!({"expected_policy_revision":a["policy_revision"],"expected_run_revision":a["run_revision"],
+                    "mode":"ft8","safety_revision":safety}),
+            ),
+        )
+        .await;
+    assert_eq!(r["status"], 202, "{r}");
+    assert_eq!(
+        f.read("automation").await["configuration"]["strategy"],
+        json!(false)
+    );
+}
+
+// Proves: TC-039-004. Review finding 2: the station left after calls_per_station answers me: it
+// is a caller, always answered first, not passed over.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_004_a_station_left_after_its_calls_is_answered_when_it_calls_me() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    select(&f, config(Some("New calls"))).await;
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-10.0))]);
+    publish(&f, e + 30_000, &[]);
+    publish(&f, e + 60_000, &[]);
+    assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
+    publish(
+        &f,
+        e + 90_000,
+        &[
+            ("HB9BLA K1ABC -10", 1500.0, Some(-10.0)),
+            ("CQ DL1XYZ JO62", 1200.0, Some(9.0)),
+        ],
+    );
+    let c = contact(&f).await;
+    assert_eq!(c.0, json!("K1ABC"), "the caller, not the stronger CQ");
+    assert_eq!(c.2, json!("armed"));
+}
+
+// Proves: TC-039-004. Review finding 3, coordinator's decision: a reload, second tab or 401
+// recovery (a new proof of the grant) does not stop a strategy; the grant does. The transport's
+// 8 h deadline does not bind it; a policy run keeps its transport (tc_020_003).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_004_a_strategy_run_follows_the_grant_not_the_transport() {
+    let mut f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    select(&f, config(Some("New calls"))).await;
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
+    assert_eq!(contact(&f).await.2, json!("armed"));
+    // A new proof, as a page load makes: the run and its contact go on.
+    f.renew().await;
+    f.tick();
+    assert_eq!(run_state(&f).await, ("contact_active".into(), Value::Null));
+    assert_eq!(contact(&f).await.2, json!("armed"));
+    // Past the transport's 8 h deadline: still running.
+    let skew = |d: Duration| {
+        *f.state
+            .recording
+            .contact
+            .get()
+            .unwrap()
+            .automation
+            .skew
+            .lock()
+            .unwrap() = d;
+    };
+    skew(Duration::from_secs(8 * 3600 + 1));
+    f.tick();
+    assert_eq!(run_state(&f).await, ("contact_active".into(), Value::Null));
+    skew(Duration::ZERO);
+    // The grant revoked: it stops, a contact it armed is disarmed.
+    {
+        let mut store = f.state.store.lock().unwrap();
+        let mut owner = f.state.authorization.lock().unwrap();
+        owner
+            .as_mut()
+            .unwrap()
+            .authority
+            .revoke(&mut store, &f.gid, &profile::new_uuid().unwrap(), false)
+            .unwrap();
+    }
+    f.tick();
+    assert_eq!(
+        run_state(&f).await,
+        ("stopped".into(), json!("authority_lost"))
+    );
+    assert_eq!(
+        f.state
+            .recording
+            .transmit
+            .get()
+            .unwrap()
+            .service
+            .view()
+            .arm_state,
+        wstx_rust::transmit::service::ArmState::Disarmed
+    );
 }
 
 // Proves: TC-039-030 (WstxStrategy::WorkedWindow through the store): a QSO of this UTC date
@@ -2976,7 +3145,7 @@ async fn automation_does_not_start_with_a_nonstandard_own_call() {
     assert_eq!(run_state(&f).await, ("waiting".into(), json!("call")));
     save(&f, config(None)).await;
     f.state.store.lock().unwrap().document.callsign = "HB9BLA".into();
-    let started = start_run(&f).await;
+    let started = plain_run(&f).await;
     assert_eq!(started.status, StatusCode::ACCEPTED, "{}", started.json);
 }
 
