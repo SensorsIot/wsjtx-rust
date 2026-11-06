@@ -58,7 +58,8 @@ package WstxMcp {
             orders stations; it has no contact limit, its own limit of 8 hours (run_limit) and never stops no_answer. An
             MCP client cannot select one: the configuration key strategy true is refused
             operator_required, PUT /strategy has no MCP tool. For every run
-            (D6 included) the Tx watchdog limits the repetitions of one message; only an
+            (D6 included; a strategy run's own contact only when unattended, otherwise it has
+            no stop: WstxStrategy::StrategyWatchdog) the Tx watchdog limits the repetitions of one message; only an
             Enable Tx or a strategy selection from the browser ends its stop, never the run's commands
             or an MCP request (including starting or restarting a run)
             (WstxStrategy::WatchdogFromOperator, coordinator default for the operator's

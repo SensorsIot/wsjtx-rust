@@ -566,7 +566,10 @@ package WstxStrategy {
              the target known to hear us (HearingFeed, on this band and mode) keeps the same
              slot, with no limit; a target not known to hear us (no spot, the feed off or
              unreachable, the band unknown, a call without a subscription) takes a new free
-             slot near the frequencies the target decodes and goes on. The new slot is
+             slot near the frequencies the target decodes and goes on. A message of the partner
+             addressed to my call in this contact also makes it known to hear us: it has
+             proved the slot, spot or no spot, so Tx never leaves a slot in an exchange the
+             partner has answered. The new slot is
              FreeTxSlot's choice with the slot it leaves also occupied and those frequencies
              preferred, so this is the one case in which Tx moves within a contact; no free
              slot keeps the current one and says so in the status. A refused move
@@ -576,7 +579,10 @@ package WstxStrategy {
              for another candidate after its calls ("we are in the queue"), but only while the
              run may go on: with no client (CLIENT_GONE) or past the run limit its
              calls_per_station count again, so the contact ends and the run stops no_client
-             or run_limit. The run shows the last check as slot_check {repetitions, hears_us,
+             or run_limit; and the stop at N is back at once for the contact, so that the run ends
+             even when no publication arrives (it then stops tx_watchdog). A caller of my call
+             (CallerOfMyCall) in a publication counts those calls as well: it outranks the queue
+             (D5), and a period without one holds the count without resetting it. The run shows the last check as slot_check {repetitions, hears_us,
              hz, free} and tx_slot {hz, free}. WD:n counts down to the next check. */
     }
     attribute def StrategySelector {
@@ -654,7 +660,8 @@ package WstxStrategy {
         doc /* A strategy run or a pounce (not a plain MCP policy run, not manual operation)
              calls from a free audio slot (operator decision 2026-11-04, #39). Decided once
              per call, between QSOs: when a strategy run or a pounce has selected its station, a
-             caller of my call as well (an award strategy never calls CQ); never during a contact.
+             caller of my call as well (an award strategy never calls CQ); never during a contact
+             except by StrategyWatchdog, before the partner has answered.
              Occupied: every decoded record of the last 4 periods of my Tx parity (the
              parity after the selection) that decoded anything, among the records of
              complete publications; a period I transmitted in decodes nothing and is not
@@ -684,7 +691,8 @@ package WstxStrategy {
              automation text.
              Tx is moved with set_frequency only when it is not on the slot (with Hold Tx
              off the selection has moved it to the station: it goes back). The Tx stays on
-             the slot for the whole QSO: nothing during the exchange moves it, and the "may" of the operator's rule (Tx
+             the slot for the whole QSO: nothing during the exchange moves it (StrategyWatchdog moves
+             it only while the partner has not answered), and the "may" of the operator's rule (Tx
              to the partner's frequency once the QSO is established) is not taken, so
              there is nothing to return from. A caller of my call is a called station like any other:
              one on my slot is answered from the slot beside it. The next decision starts from the Tx the

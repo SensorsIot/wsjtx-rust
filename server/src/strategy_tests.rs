@@ -3193,6 +3193,66 @@ async fn tc_039_022_a_target_that_hears_us_does_not_outlive_the_run_bounds() {
         assert_eq!(quiet_contact(&f).await.2, json!("disarmed"), "{reason}");
     }
 }
+// Proves: CL-039-21; TC-039-022. A station calling my call outranks the queue (D5): the run leaves
+// the target that hears us after its calls, and answers the caller.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_a_caller_of_my_call_outranks_a_target_that_hears_us() {
+    let (f, e) = run_at_limit(6, 3, |feed| {
+        feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+    })
+    .await;
+    let caller = [("HB9BLA DL1XYZ JO62", 1200.0, Some(-5.0))];
+    for period in [30_000, 60_000, 90_000, 120_000] {
+        publish(&f, e + period, &caller);
+    }
+    assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
+    assert_eq!(contact(&f).await.2, json!("armed"));
+}
+// Proves: CL-039-21; TC-039-022. A partner that answered has proved the slot, spot or no spot: Tx
+// stays through its repetitions (CL-039-09), and the message goes on without a stop.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_an_answer_keeps_the_slot_without_a_spot() {
+    let (f, e) = run_at_limit(2, 20, |_| {}).await;
+    transmit_own_period(&f, e + 15_000).await;
+    publish(&f, e + 30_000, &[("HB9BLA K1ABC -09", 1800.0, Some(-9.0))]);
+    transmit_own_period(&f, e + 45_000).await;
+    f.tick();
+    transmit_own_period(&f, e + 75_000).await;
+    f.tick();
+    let c = f.read("contact").await;
+    assert_eq!(c["settings"]["tx_hz"], 1500);
+    assert_eq!(c["transmit"]["arm_state"], "armed");
+    let check = f.read("automation").await["run"]["slot_check"].clone();
+    assert_eq!(
+        check,
+        json!({"repetitions":2,"hears_us":true,"hz":1500,"free":true})
+    );
+}
+// Proves: CL-039-21; TC-039-022. With no client, or past the run limit, the stop at N is back at once,
+// so the run cannot go on transmitting even when no publication ever arrives to end its contact.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_unattended_the_stop_at_n_is_back_without_a_publication() {
+    for skew in [crate::automation::CLIENT_GONE.as_secs(), 9 * 3600] {
+        let (f, e) = run_at_limit(2, 20, |feed| {
+            feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+        })
+        .await;
+        for own in [15_000, 45_000, 75_000] {
+            transmit_own_period(&f, e + own).await;
+            f.tick();
+        }
+        assert_eq!(
+            quiet_contact(&f).await.2,
+            json!("armed"),
+            "past N, attended"
+        );
+        at_skew(&f, skew);
+        let keys = f.keys();
+        not_keyed_in(&f, e + 105_000).await;
+        assert_eq!(f.keys(), keys, "never keyed again");
+        assert_eq!(quiet_run(&f), ("stopped".into(), json!("tx_watchdog")));
+    }
+}
 // Proves: CL-039-20; CL-039-21; TC-039-022. Only a strategy run's own contact subscribes to its
 // target: not a pounce, nor the same contact after the run ended.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

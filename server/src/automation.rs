@@ -397,6 +397,8 @@ struct Run {
     /// #39 WstxStrategy::StrategyWatchdog: the Rep of the last check, and that check.
     rep_mark: u32,
     check_every: u32,
+    /// No client or past the run limit: the stop at N is back, whatever else ends the contact.
+    unattended: bool,
     slot_check: Option<Value>,
     /// #39 WstxStrategy::FreeTxSlot: the last slot decision {hz, free}, for the status; the
     /// station band last seen on a fresh publication, and the first sequence of that band
@@ -500,7 +502,9 @@ impl Owner {
         self.lock()
             .run
             .as_ref()
-            .filter(|run| run.config.strategy && run.state == RunState::ContactActive)
+            .filter(|run| {
+                run.config.strategy && run.state == RunState::ContactActive && !run.unattended
+            })
             .and_then(|run| Some((run.contact_id.clone()?, run.check_every)))
     }
     /// AutomationSnapshot.
@@ -739,6 +743,7 @@ impl Owner {
                     pounce,
                     rep_mark: 0,
                     check_every: u32::MAX,
+                    unattended: false,
                     slot_check: None,
                     tx_slot: None,
                     slot_band: None,
@@ -860,6 +865,7 @@ impl Owner {
                 pounce: None,
                 rep_mark: 0,
                 check_every: u32::MAX,
+                unattended: false,
                 slot_check: None,
                 tx_slot: None,
                 slot_band: None,
@@ -1045,6 +1051,7 @@ impl Owner {
         }
         let no_client = is_strategy && now >= run.client_seen + CLIENT_GONE;
         let run_limit = is_strategy && now >= run.deadline;
+        run.unattended = no_client || run_limit;
         if is_strategy && run.state == RunState::Waiting && run.reason != waiting_reason {
             run.reason = waiting_reason;
             inner.run_revision = inner.run_revision.saturating_add(1).min(MAX_SAFE);
@@ -1118,6 +1125,7 @@ impl Owner {
                         settled,
                         c.dx_call.as_deref(),
                         chosen.as_ref().map(|(_, s)| s.calls_per_station),
+                        &my,
                     )
                 {
                     inner.run_revision += 1;
@@ -1131,8 +1139,10 @@ impl Owner {
                     let queued = run.config.strategy
                         && !no_client
                         && !run_limit
-                        && pskr::hearing_of(r, c.dx_call.as_deref(), mode).0;
-                    if run.progress.as_ref() == Some(&progress) && !queued {
+                        && pskr::hearing_of(r, c.dx_call.as_deref(), mode).0
+                        && !caller_waits(run, state, &chosen, &fresh, c.dx_call.as_deref());
+                    let same = run.progress.as_ref() == Some(&progress);
+                    if same && !queued {
                         run.unanswered += 1;
                         let limit = chosen
                             .as_ref()
@@ -1166,7 +1176,7 @@ impl Owner {
                             cancel(contact, state);
                             return;
                         }
-                    } else {
+                    } else if !same {
                         run.progress = Some(progress);
                         run.unanswered = 0;
                     }
@@ -1415,6 +1425,7 @@ fn strategy_watchdog(
     settled: Option<u64>,
     target: Option<&str>,
     calls_per_station: Option<u64>,
+    my: &str,
 ) -> bool {
     let r = &state.recording;
     let Some(limit) = r.transmit.get().map(|t| t.service.with(|c| c.tx_limit())) else {
@@ -1434,7 +1445,9 @@ fn strategy_watchdog(
     }
     run.rep_mark = repetitions;
     let mode = contact_http::mode_of(run.mode);
-    let (hears, preferred) = pskr::hearing_of(r, target, mode);
+    let (spot, preferred) = pskr::hearing_of(r, target, mode);
+    // An answer in this contact proves it as well as a spot, and for a partner no reporter.
+    let hears = spot || contact.partner_answered(my);
     let facts = contact.status_facts();
     let (hz, free) = if hears {
         (facts.tx_hz, true)
@@ -1463,6 +1476,28 @@ fn strategy_watchdog(
         let _ = contact.operate_as(state, body, true, AUTOMATION);
     }
     true
+}
+/// WstxStrategy::CallerOfMyCall: an eligible caller in the fresh publication, other than `dx`.
+/// It outranks the queue of a target that hears us.
+fn caller_waits(
+    run: &Run,
+    state: &ProfileState,
+    chosen: &Option<(strategy::Config, strategy::Strategy)>,
+    fresh: &Option<(u64, u64, u64, Option<String>)>,
+    dx: Option<&str>,
+) -> bool {
+    let (Some((config, s)), Some((_, first, next, _))) = (chosen, fresh) else {
+        return false;
+    };
+    let r = &state.recording;
+    let records = fresh_records(r, &run.identity, *first, *next);
+    let st = strategy::station(state, config, s.window);
+    let band = strategy::station_band(r);
+    strategy::evaluate(s, &records, &st).into_iter().any(|v| {
+        v.kind == Some(strategy::Kind::Caller)
+            && Some(v.facts.from.as_str()) != dx
+            && eligible(run, &v.facts.from, band)
+    })
 }
 fn slot_records(run: &Run, r: &recording::Recording, settled: Option<u64>) -> Vec<Value> {
     settled.map_or_else(Vec::new, |next| {

@@ -2242,6 +2242,18 @@ impl Engine {
         self.hound.reply = HoundReply::Pending;
         self.hound.reply_deadline = Some(ctx.now_utc_ms + 11 * period_ms(mode));
     }
+    /// The contact's partner sent a message addressed to `my` call.
+    pub fn partner_answered(&self, my: &str) -> bool {
+        self.contact.as_ref().is_some_and(|c| {
+            c.dialogue.iter().any(|e| {
+                !e.tx
+                    && e.text
+                        .split_whitespace()
+                        .next()
+                        .is_some_and(|to| to.trim_matches(['<', '>']) == my)
+            })
+        })
+    }
     /// The Rep of the message due next (WstxContact::TxWatchdog).
     pub fn repetitions_due(&self) -> u32 {
         self.contact.as_ref().map_or(0, |c| {
