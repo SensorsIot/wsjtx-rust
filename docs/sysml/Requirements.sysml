@@ -955,7 +955,7 @@ package WstxRequirements {
     dependency CL_010_09_to_FR_010 from 'CL-010-09' to 'FR-010';
     dependency CL_010_09_to_FR_019 from 'CL-010-09' to 'FR-019';
     requirement 'CL-010-16' {
-        doc /* Present the laptop operating screen of WstxOperatingLayout::OperatingScreen: a top bar with only band, mode, dial, UTC/period, Logbook, Settings and HALT; the full-width waterfall with the Rx/Tx strip; Band Activity with the strategy element and the QSO pane with direct buttons and no Enable Tx control; setup and diagnostics in the four-section Settings drawer; themes; WSJT-X keyboard shortcuts; and only the token form for an unauthorized browser. Details: OperatingScreen, RxTxStrip, BandActivityView, QsoPane, SettingsDrawer, ThemeChoice, UnauthorizedView, KeyboardShortcuts, WstxContact::SetEnableTx. */
+        doc /* Present the laptop operating screen of WstxOperatingLayout::OperatingScreen: a top bar with only band, mode, dial, UTC/period, Logbook, Settings, HALT and Abort QSO (Esc); the full-width waterfall with the Rx/Tx strip; Band Activity with the strategy element and the QSO pane with direct buttons and no Enable Tx control; setup and diagnostics in the four-section Settings drawer; themes; WSJT-X keyboard shortcuts; and only the token form for an unauthorized browser. Details: OperatingScreen, RxTxStrip, BandActivityView, QsoPane, SettingsDrawer, ThemeChoice, UnauthorizedView, KeyboardShortcuts, WstxContact::SetEnableTx. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "client/recording.js; client/recording.css; client/contact.js; client/logbook.js";
     }
@@ -986,7 +986,7 @@ package WstxRequirements {
     dependency CL_010_02_to_FR_008 from 'CL-010-02' to 'FR-008';
     dependency CL_010_02_to_FR_019 from 'CL-010-02' to 'FR-019';
     requirement 'CL-010-03' {
-        doc /* Offer explicit Enable Tx, disarm, contact cancellation and immediate Halt Tx (button, Alt+H and Esc; Esc also cancels the contact and closes no panel); every transmission is a TransmitRequest through the #9 transmit service and its transmit authority, never direct PTT; loss, reconnect, retry or duplicates replay no transmit request and create no second contact. The live transmit path consumes the delivered #9 slice B owner (WstxTransmit::TransmitArming, TransmitRequest, TransmitOutcome, HaltTransmit) in-process. Details: WstxContact::SetEnableTx, HaltTx, CancelContact, TransmitSubmission, ContactCommand. */
+        doc /* Offer explicit Enable Tx, disarm, contact cancellation, Abort QSO (Esc and a button beside HALT: the transmission stops now and the contact is cancelled without a halt, closing no panel; #39 2026-11-04) and the immediate Halt Tx emergency stop (buttons and Alt+H; the station and its automation never halt in normal flow); every transmission is a TransmitRequest through the #9 transmit service and its transmit authority, never direct PTT; loss, reconnect, retry or duplicates replay no transmit request and create no second contact. The live transmit path consumes the delivered #9 slice B owner (WstxTransmit::TransmitArming, TransmitRequest, TransmitOutcome, HaltTransmit) in-process. Details: WstxContact::SetEnableTx, HaltTx, AbortQso, CancelContact, TransmitSubmission, ContactCommand; WstxTransmit::AbortTransmission, TransmitHaltUse. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; server/src/main.rs; server/src/transmit/service.rs; client/contact.js";
     }
@@ -1060,7 +1060,7 @@ package WstxRequirements {
              CL-010-01, CL-010-02, CL-010-03, CL-010-12
              Setup: actual candidate server and Chromium; profile HB9BLA/JN47; virtual UTC clock; independently scripted decoded-result source and a #9 transmit-service double that records TransmitRequests and returns started/completed/halted/refused outcomes (no audio, PTT or radio).
              Steps: (a) responder: select a hand-authored "CQ K1ABC FN42" row (SNR -12.4, 1234.6 Hz, even period); Enable Tx; feed "HB9BLA K1ABC -05", then "HB9BLA K1ABC RR73"; (b) responder with RRR: feed "HB9BLA K1ABC RRR", then nothing; (c) caller: Enable Tx with no partner (Tx6, state calling), feed "HB9BLA K1ABC FN42" and select that row (prepareReply with firstSlot tx2), feed "HB9BLA K1ABC R-07", once with Tx4 RRR then "HB9BLA K1ABC 73", once toggled to RR73; (d) repeats: partner repeats each message one to three times; partner misses my Tx3 and resends its report from rogers; (e) other stations and late rows: "HB9BLA W1XYZ -10" during the contact, a row of the previous partner after ChangeContact, a reply after completion; (f) Tx1 skip, report override -50/+49/-51/+50, manual entry "DL1ABC" grid JO62 and invalid "AB1", "<...>" and grid "SS00"; (g) partner answers another call at 50 Hz and at 51 Hz from my Tx offset, in replying and again in report after a Tx1-skipped start; the watchdog expires while calling CQ; (h) Auto Seq off; Esc, Halt, disarm and cancel in every state.
-             Expected (independent hand-written table, not candidate output): selection gives dxCall K1ABC, grid FN42, report -12 rendered "-12", Rx and Tx 1235 Hz, odd parity, next Tx1 "K1ABC HB9BLA JN47", Tx2 "K1ABC HB9BLA -12", Tx3 "K1ABC HB9BLA R-12", Tx4 "K1ABC HB9BLA RRR", Tx5 "K1ABC HB9BLA 73", Tx6 "CQ HB9BLA JN47" and no TransmitRequest before Enable Tx. States/next slots follow WstxContact::AutoSequence exactly: (a) replying/Tx1 -> rogerReport/Tx3 -> signoff/Tx5 -> completed after the completed Tx5 outcome, Enable Tx off, one log offer; (b) RRR from the partner gives signoff/Tx5; the contact completes after the first completed Tx5 transmission (AutoSequence sent73), Enable Tx off, one log offer; (c) calling/Tx6 -> report/Tx2 only after selection -> rogers/Tx4 -> completed on 73 (RRR) or on the completed RR73 transmission, Enable Tx off and no further CQ; (d) repeats resend the same text, report-from-rogers returns to Tx3, no second completion or log offer; (e) other/late rows change nothing; (f) with Tx1 skip, selecting the CQ row enters report directly with next Tx2, overrides -50/+49 accepted and rendered "-50"/"+49", -51/+50 and invalid entries refused with no contact; (g) 50 Hz disarms in replying and in the Tx1-skipped report, 51 Hz does not; watchdog expiry while calling returns to idle; (h) Auto Seq off never changes the next slot; Esc and Halt send the halt request first, Esc also cancels; last transmitted text changes only on started outcomes and differs visibly from the next message. Each request carries a fresh requestSequence; a duplicated browser action (same command_id) yields one request; one decoded row delivered twice counts once.
+             Expected (independent hand-written table, not candidate output): selection gives dxCall K1ABC, grid FN42, report -12 rendered "-12", Rx and Tx 1235 Hz, odd parity, next Tx1 "K1ABC HB9BLA JN47", Tx2 "K1ABC HB9BLA -12", Tx3 "K1ABC HB9BLA R-12", Tx4 "K1ABC HB9BLA RRR", Tx5 "K1ABC HB9BLA 73", Tx6 "CQ HB9BLA JN47" and no TransmitRequest before Enable Tx. States/next slots follow WstxContact::AutoSequence exactly: (a) replying/Tx1 -> rogerReport/Tx3 -> signoff/Tx5 -> completed after the completed Tx5 outcome, Enable Tx off, one log offer; (b) RRR from the partner gives signoff/Tx5; the contact completes after the first completed Tx5 transmission (AutoSequence sent73), Enable Tx off, one log offer; (c) calling/Tx6 -> report/Tx2 only after selection -> rogers/Tx4 -> completed on 73 (RRR) or on the completed RR73 transmission, Enable Tx off and no further CQ; (d) repeats resend the same text, report-from-rogers returns to Tx3, no second completion or log offer; (e) other/late rows change nothing; (f) with Tx1 skip, selecting the CQ row enters report directly with next Tx2, overrides -50/+49 accepted and rendered "-50"/"+49", -51/+50 and invalid entries refused with no contact; (g) 50 Hz disarms in replying and in the Tx1-skipped report, 51 Hz does not; watchdog expiry while calling returns to idle; (h) Auto Seq off never changes the next slot; Halt and Alt+H send the halt request first; Esc sends one abort and no halt; last transmitted text changes only on started outcomes and differs visibly from the next message. Each request carries a fresh requestSequence; a duplicated browser action (same command_id) yields one request; one decoded row delivered twice counts once.
              2 — Isolated automated functional tests; Windows development PC, actual candidate server and browser, independent decoded-row and transmit-outcome fixtures; no RF. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1089,8 +1089,8 @@ package WstxRequirements {
         doc /* TC-007-004 — Authority, control and connection barriers
              CL-010-02, CL-010-03, CL-010-07, CL-010-08, CL-010-15
              Setup: actual server/browser; transmit-service and radio-control doubles with supported/unsupported transmit, CAT-only/audio-only, delayed/rejected/lost responses; two profiles; all secondary panels open.
-             Steps: Enable Tx, Tune, Halt, Esc (focus in a text field, in the DX Call input and in an open panel), save and contact change while the link drops; reconnect; replay old requests; unauthenticated, wrong-Origin and wrong-profile requests; Tx offset 199/200/2950/2951 Hz; every ContactCommand action with missing/extra keys, 1024/1025-byte bodies, stale contact_revision (also for cancel and enable_tx false), a retained command_id with identical and different bodies; GET /contact at its 4096-byte maximum shape; Esc on a receive-only station.
-             Expected (independent operation/state catalogue): Esc and Halt reach the #9 halt operation first even with panels open; Esc closes no panel; state shows pending/unknown until #9 confirms; reconnect loads the snapshot and replays no arm, tune, next-message or transmit request; no request reaches PTT except through the transmit-service double; unsupported transmit leaves Enable Tx/Tune disabled with a reason; 200 and 2950 accepted, 199/2951 refused; barrier refusals unchanged; no cross-profile contact. Each malformed command returns the independently expected ContactRefusal code and field with no state change; stale revisions refused except cancel/disarm; an identical retained command_id returns the same receipt with no second effect, a different body state_conflict; the maximum snapshot is exactly admitted and GET /contact is never gzip-coded; StatusReply keeps exactly {version,radio}; on the receive-only station Esc cancels the contact and sends no halt, while row selection and Log QSO still work.
+             Steps: Enable Tx, Tune, Halt (button and Alt+H, also before the contact client loads and without a contact snapshot), Esc (focus in a text field, in the DX Call input and in an open panel; Abort QSO), Cancel while transmitting, the partner working another call within 50 Hz while transmitting, save and contact change while the link drops; reconnect; replay old requests; unauthenticated, wrong-Origin and wrong-profile requests; Tx offset 199/200/2950/2951 Hz; every ContactCommand action with missing/extra keys, 1024/1025-byte bodies, stale contact_revision (also for cancel and enable_tx false), a retained command_id with identical and different bodies; GET /contact at its 4096-byte maximum shape; Esc on a receive-only station.
+             Expected (independent operation/state catalogue): Alt+H and Halt reach the #9 halt operation first even with panels open (exactly one halt per Alt+H); Esc sends exactly one ContactCommand abort and no halt, stops the transmission now (PTT released, outcome aborted, halt_state unchanged), cancels the contact with nothing logged and leaves the station ready for the next QSO; Cancel lets a transmission on the air finish; the partner-works-other stop releases PTT without a halt; Esc closes no panel; state shows pending/unknown until #9 confirms; reconnect loads the snapshot and replays no arm, tune, next-message or transmit request; no request reaches PTT except through the transmit-service double; unsupported transmit leaves Enable Tx/Tune disabled with a reason; 200 and 2950 accepted, 199/2951 refused; barrier refusals unchanged; no cross-profile contact. Each malformed command returns the independently expected ContactRefusal code and field with no state change; stale revisions refused except cancel/abort/disarm; an identical retained command_id returns the same receipt with no second effect, a different body state_conflict; the maximum snapshot is exactly admitted and GET /contact is never gzip-coded; StatusReply keeps exactly {version,radio}; on the receive-only station Alt+H sends no halt, while row selection and Log QSO still work.
              2 — Isolated automated functional tests; Windows development PC, actual candidate server/browser and independent control, audio and transmit emulators. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1490,12 +1490,12 @@ package WstxRequirements {
              leaves memory/revision/file unchanged and shows its field/error outcome; valid boundary
              saves persist exactly. Revision exhaustion refuses another save. Test a second window
              saving from an old revision: one save wins, one receives 409, no silent merge/lost update.
-             Also hold a Refresh GET response, begin and hold a PUT, then release the GET while the
+             Also hold an announced revision's GET response, begin and hold a PUT, then release the GET while the
              save remains pending. Save stays disabled and even a repeated form submission sends
              no second PUT. Release the PUT: exactly one revision advances, editable controls and
              Save recover their usable state, and permanently read-only controls remain disabled.
              Repeat with the opposite response order on an unchanged revision-0 station: hold the
-             Refresh response, complete the PUT and its follow-up revision-1 GET, then release the
+             announced revision's GET response, complete the PUT and its follow-up revision-1 GET, then release the
              old response. Visible revision, saved fields and acknowledged-save feedback remain at
              revision 1. A changed boot identity still permits restart/recovery resynchronization.
 
@@ -1554,7 +1554,7 @@ package WstxRequirements {
              no acknowledgement, no revision advance, previous complete JSON and current settings
              remain authoritative. At crash-before/after-replacement fault points require either
              complete old or complete new JSON, never a partial file; a lost response is reconciled
-             by GET without replay. After a lost save response, ordinary Refresh/background GET or
+             by GET without replay. After a lost save response, ordinary Refresh, an announced GET or
              reconnect MUST NOT permit a second save: Save remains disabled until an explicit reload
              successfully validates the current authoritative profile. A failed explicit reload keeps
              that guard; a successful one recovers the committed revision without a second PUT.
@@ -1695,10 +1695,12 @@ package WstxRequirements {
              HTTPS/grant fixture before each relevant protected socket. Preserve separate
              plaintext HTTP/launch compatibility; auth setup requests do not count as profile
              GETs and auth status cannot replace correlated WS status.
-             On an established socket hold GET /profile behind a controlled barrier, click Refresh,
+             On an established socket a Refresh sends no GET /profile (#10 profile.state); an
+             independent save makes the station announce the revision and the browser reads once.
+             Hold that GET behind a controlled barrier, click Refresh,
              observe its actual correlated WebSocket status and require changed visible updated plus
-             enabled Refresh within 2 seconds before releasing HTTP. Repeat Refresh while held: only
-             one GET is in flight and one follow-up eventually obtains an independently saved newer
+             enabled Refresh within 2 seconds before releasing HTTP. Repeat Refresh while held: it adds no GET; a second independent save while held starts no parallel read, and
+             one follow-up eventually obtains that newer
              revision without overwriting dirty input. On a fresh socket hold initial GET: Connected,
              station-ready and optional display remain withheld until validated success. Close that
              socket with HTTP held, establish a replacement, then release the old response: it cannot
@@ -1982,7 +1984,7 @@ package WstxRequirements {
         doc /* TC-010-002
              CL-006-03, CL-006-04
              Existing independently calibrated shared TLS link: 4000 bytes/s each direction, 150 ms one-way, two real browsers. After upload/page load, replay >=60 s with both thin; issue paired status refresh at ten preselected source times. Repeat off; stall one reader, replace/cancel job and reconnect. Separately upload while refreshing.
-             Over 60 steady-state seconds thin total <=3000 accounted bytes/s each direction and every connected refresh displays <=2 s; off preserves existing <=1000 idle budget. No >1 frame/s/peer, >1024-byte event or >1 pending optional frame; no raw audio streaming. Missing rows are gaps, obsolete frames ignored, reconnection obtains snapshot before subscription. Upload bytes/time and cold asset metrics are reported separately; upload must not break status<=2 s. Counter oracle is simulator's actual-stream+defined overhead, not physical-link certification. */
+             Over 60 steady-state seconds thin total <=3000 accounted bytes/s each direction and every connected refresh displays <=2 s; off preserves existing <=1000 idle budget. No >1 frame/s/peer, >1024-byte event or >1 pending optional frame; no raw audio streaming. Missing rows are gaps, obsolete frames ignored, reconnection obtains snapshot before subscription. The browser sends no recording.get and no timer GET /recording; a subscribed peer (Off included) receives one recording.state after subscribing and then only on a change, within 2 s, with received_bytes alone at most once per 5 s, shown without a read; a peer without a subscription receives none. Upload bytes/time and cold asset metrics are reported separately; upload must not break status<=2 s. Counter oracle is simulator's actual-stream+defined overhead, not physical-link certification. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-006-03';
@@ -2503,6 +2505,11 @@ package WstxRequirements {
              retained-rejected, invalid or missing credential is never retried
              without an operator action, so it cannot spam challenges or drain any
              admission bound; transient failures back off exponentially to60s.
+             Opening a page with a retained credential starts its renewal only after the
+             page's load event (issue10 TC-007-005): the asset bytes share the link with
+             the challenge, whose 10 s attempt bound would otherwise run out behind them
+             and add the 4 s back-off to the first status. A browser without a usable
+             credential shows the token form without waiting for the load event.
              Slow-link setup retry (operator decision 2026-11-03, issue22): during one
              token login each setup step (POST /session, bootstrap-scope, enroll, and
              the challenge/proof/status renewal) has its own 10 s attempt bound. A step
@@ -2619,10 +2626,13 @@ package WstxRequirements {
              converted into a persisted acknowledgement; migration starts unconfirmed.
              Invalidated commissioning displays 'Confirm changed receive-only setup'
              and exposes that same recovery action; no normal Connect/Disconnect CAT
-             buttons. CAT disabled remains disabled. No serial enumeration/fallback.
+             buttons. CAT disabled remains disabled and there is no serial
+             enumeration/fallback, except the read-only discovery of CL-044-15 after its
+             persisted keying confirmation, which may also save a found radio as CAT control.
              Missing/revoked/mismatched grant, missing/invalid commissioning, disabled
              CAT and corrupt authorization store cause zero automatic native open,
-             query, setter or PTT bytes. One matching unrevoked grant plus valid
+             query, setter or PTT bytes (the sole exception is that same discovery, which
+             opens and sends 19 00 only). One matching unrevoked grant plus valid
              commissioning authorizes the station's automatic read-only CAT lifecycle
              even when that browser is closed; it does not authorize another browser's
              HTTP controls. Last-grant revocation cancels that lifecycle and releases
@@ -2718,7 +2728,9 @@ package WstxRequirements {
     dependency CL_022_05_to_FR_021 from 'CL-022-05' to 'FR-021';
     verification 'TC-022-006' {
         doc /* TC-022-006, CL-022-01/02; cost2 profiles/protocol companions
-             using existing TLS/browser helpers. Fresh-browser initial journey: POST
+             using existing TLS/browser helpers. Reopening a page with a retained credential while
+             its last asset is held sends no challenge before the load event, then one.
+             Fresh-browser initial journey: POST
              session204 then bootstrap-scope200 with strict independently expected tuple;
              no ordinary status/grant, challenge/transport or CAT I/O is created by read.
              Enroll that exact scope, prove key possession, then grant status is usable.
@@ -3763,7 +3775,7 @@ package WstxRequirements {
     }
     dependency CL_044_12_to_FR_009 from 'CL-044-12' to 'FR-009';
     requirement 'CL-044-13' {
-        doc /* The server pushes the Tx level state (client-server rule of #10): each WebSocket peer with a display subscription receives radio.tx_level {v 1, type radio.tx_level, data {profile_id, boot_id, managed, level_db, stored, alc unknown|available|unavailable, assistant, result, meters null|{alc, po_pct, swr_x10}, power_limit_pct, warnings [...] (CL-044-14)}} after each change; nothing is polled. Settings > Radio > Audio shows, for an IC-7300 CAT control only, a Set level button, a line with the level and the last result, the last ALC, Po and SWR, and the optional Profile power field (settings.radio.power_limit_pct) saved with Apply; the Tx level slider is shown only with alc unavailable. Set level and the slider send POST /radio/tx-level; a refusal is shown on the line. */
+        doc /* The server pushes the Tx level state (client-server rule of #10): each WebSocket peer with a display subscription receives radio.tx_level {v 1, type radio.tx_level, data {profile_id, boot_id, managed, level_db, stored, alc unknown|available|unavailable, assistant, result, meters null|{alc, po_pct, swr_x10}, power_limit_pct, warnings [...] (CL-044-14), keying_confirmed (CL-044-15)}} after each change; nothing is polled. Settings > Radio > Audio shows, for an IC-7300 CAT control only, a Set level button, a line with the level and the last result, the last ALC, Po and SWR, and the optional Profile power field (settings.radio.power_limit_pct) saved with Apply; the Tx level slider is shown only with alc unavailable. Set level and the slider send POST /radio/tx-level; a refusal is shown on the line. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/radio_level.rs; server/src/main.rs; client/recording.js; client/app.js";
     }
@@ -3818,6 +3830,76 @@ package WstxRequirements {
         }
     }
     dependency CL_044_14_verified_by_TC_044_019 from 'CL-044-14' to 'TC-044-019';
+    // Operator requirement 2026-11-06 (#44 comment 6679345317, from #22): pragmatic discovery.
+    requirement 'CL-044-15' {
+        doc /* Coordinator default pending the operator (#44 comment 6682191117): the keying risk of an open is not accepted, so nothing opens automatically without the persisted confirmation. Discovery opens no port at all until the operator has confirmed keying inhibit once: the tick and press of Detect radio (CL-044-01) stores it in radio-keying-confirmed.json of the profile, and Settings > Radio says so until then (radio.tx_level data keying_confirmed). A commissioned saved radio still opens under CL-022-03 through the CAT lifecycle regardless. With the confirmation, on start, before the CAT lifecycle first runs, the station discovers its radio read-only: the same port opening as Detect radio (the per-device ownership claim, DTR and RTS low) and the same probe (CI-V 19 00 only, CL-044-01). A profile with control cat whose saved endpoint's port is present and answers with a radio this station has CAT for keeps its radio, and no other port is opened. Otherwise (the port is held by another station process or another program, is absent or silent), and on a profile never saved (revision 0, control disabled), the ports on a known radio USB bridge are tried in port order, without the saved one and within the budget: a port that cannot be opened is passed over, which is how a radio another station process holds is recognised, and a radio discovery chose or kept is also reserved for the life of the process (a lock per port under radio-reservation), so a station waiting for its confirmation holds it too; a port reserved by another process is passed over, so each process takes the next free radio and more than one transceiver on one PC works. The first that answers with such a radio is saved as the profile's control (icom7300://COMn?baud=b&radio=aa&controller=e0, ptt kept from a CAT control, otherwise cat), with the capture and render endpoints that match it and none otherwise (never the old radio's audio); settings.radio stays or takes the default; its stored Tx level (CL-044-12) and settings undo (CL-044-03) are removed, they belonged to the other radio. This is a profile save, so the revision advances and the receive-only confirmation (CL-022-03) binds to the new control: CAT opens only after the operator confirmed this radio. Nothing is found: nothing changes and the lifecycle keeps retrying the saved endpoint. A control of an operator's saved Disabled, or an endpoint that does not parse, is left alone and no port is opened. Discovery runs once per process start, before the station listens and before anything loads the Tx level or the audio names, so a port that does not answer delays listening by its probe; all of discovery, saved port included, ends within 40 s (each probe is cut at that bound). It does not write a radio setting. WSTX_RADIO_DISCOVERY=off turns it off, for the test stations. Limit: a saved radio reserved by another process with no other radio free changes nothing, and the lifecycle retries it. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_setup.rs; server/src/radio_level.rs; server/src/main.rs; client/recording.js";
+    }
+    dependency CL_044_15_to_FR_009 from 'CL-044-15' to 'FR-009';
+    verification 'TC-044-020' {
+        doc /* TC-044-020 — Discovery on start
+             CL-044-15
+             Setup: the actual profile store and authorization owner, a detection hardware double of ports, held ports, radios and audio endpoints, recording every frame.
+             Steps: (a) saved COM3 answers, COM5 too; (b) saved COM3 held, COM4 held, COM5 silent, COM6 an IC-7300 with matching audio; (c) saved silent, the other held; (d) an operator's saved Disabled with a radio present; (e) a profile never saved with an FTDI board, an IC-705 and an IC-7300; (f) three stations in turn on two free radios, the third with a saved one already reserved; (g) no confirmation with a radio present, never saved and saved, then Detect radio without and with the tick; (h) three silent ports with a 200 ms budget.
+             Expected: (a) nothing saved, only COM3 opened; (b) control COM6 with the probed rate and address, a disabled ptt kept, the matching endpoints, settings.radio kept, the Tx level and undo files gone, revision +1, ports opened 3, 4, 5, 6; on the actual authorization owner, a commissioned control moved this way gives CommissioningRequired, no commissioning, safety revision +1 and the new checked control; (c) nothing saved; (d) no port opened; (e) COM6, ptt cat, the FTDI board never opened; (f) COM3, then COM6, and the third keeps its saved control; (g) no port opened, keying_confirmed false; no file after the refused Detect, the file and keying_confirmed true after the other, and only then the saved port is opened; (h) only the first opened, over in under 2 s; in all of them only 19 00 frames are written.
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-15';
+        }
+        attribute executable : String = "server/src/radio_setup_tests.rs; server/src/auth_tests.rs";
+    }
+    dependency CL_044_15_verified_by_TC_044_020 from 'CL-044-15' to 'TC-044-020';
+    verification 'TC-044-022' {
+        doc /* TC-044-022 — The one-time confirmation in Settings
+             CL-044-15
+             Setup: candidate server and Chromium; radio.tx_level events injected.
+             Steps: inject keying_confirmed false, then true.
+             Expected: the Detect radio section says discovery is off until confirmed once, then that it is on.
+             2 — Isolated automated browser test; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-15';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_044_15_verified_by_TC_044_022 from 'CL-044-15' to 'TC-044-022';
+    verification 'TC-044-021' {
+        doc /* TC-044-021 — Discovery on HB9BLA
+             CL-044-15
+             Setup: the gated candidate on HB9BLA, the IC-7300 on COM3, keying inhibit confirmed through Detect radio on both profiles; a second station process on its own profile; the operator's consent.
+             Steps: start the station with COM3 saved; start a second process with COM3 saved while the first holds it; start it with a second transceiver connected, if one is available; with two transceivers, start two processes on unconfirmed CAT, so one holds its radio only by reservation.
+             Expected: the first keeps COM3; the second reports port_in_use with nothing changed when no other radio is free, and takes the second transceiver when one is; a radio reserved but not yet held is passed over.
+             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-044-15';
+        }
+    }
+    dependency CL_044_15_verified_by_TC_044_021 from 'CL-044-15' to 'TC-044-021';
+    // Live finding 2026-11-06 (#44 comment 6683284855): a band change from the operator must simply work.
+    requirement 'CL-044-16' {
+        doc /* A selection of POST /receive/select that finds the CAT lease held by the 1 s poll, a menu or AGC exchange or another transition waits for it up to 3 s, without a queue, off the async runtime, and then proceeds: a poll no longer refuses a band change. After the wait the preflight runs again as before. A lease still held at 3 s refuses busy, as does a transmit hold, at once, since a transmission lasts far longer than the wait. A refusal changes nothing: the operating revision and the selection stay as they were, and the Band control shows the band the station is on, with "Selection refused · busy". */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_control/actor.rs; server/src/recording.rs; server/src/selection.rs; server/src/selection_http.rs";
+    }
+    dependency CL_044_16_to_FR_009 from 'CL-044-16' to 'FR-009';
+    verification 'TC-044-023' {
+        doc /* TC-044-023 — A band change meets a held CAT lease
+             CL-044-16
+             Setup: the actual router, Recording and CAT actor on a scripted IC-7300; Chromium with one refusal injected.
+             Steps: (a) POST /receive/select while the lease is held for 300 ms; (b) while it stays held; (c) reserve the lease under a transmit hold; (d) in the browser, select a band and answer 409 busy.
+             Expected: (a) 202 after the wait; (b) 409 busy after 3 s, with the operating revision and selection unchanged; (c) Busy at once; (d) "Selection refused · busy" and the Band control back on the current band.
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-16';
+        }
+        attribute executable : String = "server/src/radio_level_tests.rs; tests/radio-selection.test.cjs";
+    }
+    dependency CL_044_16_verified_by_TC_044_023 from 'CL-044-16' to 'TC-044-023';
     verification 'TC-044-013' {
         doc /* TC-044-013 — Meter burst under the transmit hold; level timing
              CL-044-12
@@ -4018,9 +4100,9 @@ package WstxRequirements {
     dependency CL_039_02_to_FR_007 from 'CL-039-02' to 'FR-007';
     dependency CL_039_02_to_FR_011 from 'CL-039-02' to 'FR-011';
     requirement 'CL-039-03' {
-        doc /* Hard rule before every strategy: a directed CQ not addressed to my continent ("CQ <continent>" of another continent; "CQ DX" from my own or an unknown continent) is shown greyed, never matches and is never answered by Auto. Other CQ targets (TEST, POTA, a country such as CQ JA, a number) are answered by Auto only when the matched rule asks for that target with a non-negated CQ-target condition; Highlight leaves them to the rules. Details: WstxStrategy::DirectedCqRule, AutoStrategyRun. */
+        doc /* One directive rule before every strategy and for the operator: a CQ is answerable when it is a plain CQ, CQ <my continent> (derived from the profile call via cty.dat, locator fallback) or CQ DX from another continent. Every other directive is not answerable: a strategy skips it (greyed, never matches, never answered by a run or pounce) and an operator's selection shows a warning the operator can confirm ("CQ NA — not for EU"); automation, MCP and UDP cannot confirm it. Details: WstxStrategy::DirectedCqRule, MyContinent, AutoStrategyRun. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; client/contact.js";
+        attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/dxcc.rs; client/contact.js";
     }
     dependency CL_039_03_to_FR_007 from 'CL-039-03' to 'FR-007';
     requirement 'CL-039-04' {
@@ -4031,7 +4113,7 @@ package WstxRequirements {
     dependency CL_039_04_to_FR_010 from 'CL-039-04' to 'FR-010';
     dependency CL_039_04_to_FR_019 from 'CL-039-04' to 'FR-019';
     requirement 'CL-039-05' {
-        doc /* Auto answers only strategy matches through the existing station automation and contact engine (no second engine): Auto Call answers the best matching CQ (with Treat 73 as CQ also a station that just ended a QSO, keeping my Tx frequency), Auto CQ calls CQ and answers the best caller (not after its RR73/73), Alternate switches between them after N consecutive tries without a contact; a station unanswered after N calls is skipped for the run; calls must pass the callsign guard. Auto never runs without the active strategy, asks once per page session, shows its state in the button, cannot switch the strategy while it runs, and stops by HALT/Esc, a second click, a manual contact change, the Tx watchdog or the existing automation stops. No QSO or time limit is offered. Details: WstxStrategy::AutoStrategyRun, SaneCall; WstxMcp::OperatingAutomation. */
+        doc /* Auto answers only strategy matches through the existing station automation and contact engine (no second engine): Auto Call answers the best matching CQ (with Treat 73 as CQ also a station that just ended a QSO, keeping my Tx frequency), Auto CQ calls CQ and answers the best caller (not after its RR73/73), Alternate switches between them after N consecutive tries without a contact; a station unanswered after N calls is skipped for the run; calls must pass the callsign guard. Auto never runs without the active strategy, asks once per page session, shows its state in the button, cannot switch the strategy while it runs, and stops by HALT (in every state), a second click, the Tx watchdog or the existing automation stops. A double-click is always possible and is a manual intervention: the strategy stays selected, waits for that QSO to end and resumes; cancelling its own contact gives that station up and it goes on. No QSO or time limit is offered. Details: WstxStrategy::AutoStrategyRun, ManualIntervention, SaneCall; WstxMcp::OperatingAutomation. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/automation.rs; server/src/strategy.rs; client/contact.js";
     }
@@ -4226,8 +4308,8 @@ package WstxRequirements {
         doc /* TC-039-002 — Evaluator, continent and directed-CQ tables
              CL-039-02, CL-039-03
              Setup: hand-authored codec-packed rows for HB9BLA JN47AA (continent EU) on 40m: CQ K1ABC FN42 -12, CQ DL1XYZ JO62 -3, CQ NA W1AW FN31 -5, CQ EU G4ABC IO91 -8, CQ DX OH1AA KP20 -1, CQ DX JA1XYZ PM95 -15, W1AW K1ABC RR73 -6, HB9BLA VK2ABC QF56 -20, CQ TEST N1MM FN31 -2; log facts K1ABC worked on another band, DL1XYZ and JO62 worked here; continents from the cty.dat entities of the senders, distances from the square centres computed independently (JN47AA-FN42 5989 km, bearings FN42 296, IO91 311, JO62 28, PM95 38 degrees).
-             Steps: continent (cty.dat entity) of HB9BLA K1ABC OH1AA JA1XYZ VK2ABC PY1AA ZS6AA CE9AA UA9ABC Q1ABC K1ABC/MM; DirectedCqRule for EU/NA/DX/TEST/POTA with known and unknown continents; strategy [CQ and continent NA], [CQ] with each sort; Treat 73 as CQ; an empty rule; my continent unknown; each condition kind with its expected matching set and its negation (the complement among the CQs); the reasons.
-             Expected (hand table, continent column of the cited cty.dat lines): EU NA EU AS OC SA AF SA AS, none, none; ranks 0,1,grey,1,grey,1,none,none,0; strongest order 8,0,1,3,5, weakest 0,8,5,3,1, newest 8,0,5,3,1, furthest ends 5,3,1; with Treat 73 as CQ the RR73 of K1ABC (no grid, NA by its entity) has rank 0 and a call to me is never cq-like; an empty rule leaves only the two greyed rows unmatched; unknown continent greys rows 2,3,4,5; each condition set and complement as written in the test; reasons "no match (rule 1: SNR 0.. dB)" and "CQ NA is not addressed to my continent (EU)"; the callsign guard refuses K1, ABCDE and W1AW/R.
+             Steps: continent (cty.dat entity) of HB9BLA K1ABC OH1AA JA1XYZ VK2ABC PY1AA ZS6AA CE9AA UA9ABC Q1ABC K1ABC/MM; DirectedCqRule for plain/EU/NA/DX/JA/TEST/POTA with known and unknown continents, an EU profile and a non-EU (K1ABC, NA) profile; MyContinent from a configured value, a callsign, and a locator with a call without entity; strategy [CQ and continent NA], [CQ] with each sort; Treat 73 as CQ; an empty rule; my continent unknown; each condition kind with its expected matching set and its negation (the complement among the CQs); the reasons.
+             Expected (hand table, continent column of the cited cty.dat lines): EU NA EU AS OC SA AF SA AS, none, none; ranks 0,1,grey,1,grey,1,none,none,grey (CQ TEST is not answerable); for K1ABC: CQ NA and CQ DX from JA answerable, CQ EU and CQ DX from NA not; a call without entity: JN37 EU, FN42 NA, PM95 AS, QF56 OC, GG87 SA; none without call and locator; strongest order 0,1,3,5, weakest 0,5,3,1, newest 0,5,3,1, furthest ends 5,3,1; with Treat 73 as CQ the RR73 of K1ABC (no grid, NA by its entity) has rank 0 and a call to me is never cq-like; an empty rule leaves only the three greyed rows unmatched; unknown continent greys rows 2,3,4,5,8; each condition set and complement as written in the test; reasons "no match (rule 1: SNR 0.. dB)" and "CQ NA — not for EU"; the callsign guard refuses K1, ABCDE and W1AW/R.
              2 — Isolated automated tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4260,8 +4342,8 @@ package WstxRequirements {
         doc /* TC-039-004 — Auto strategy runs
              CL-039-03, CL-039-05
              Setup: as TC-039-003 with the contact engine and #9 transmit owner on the recording hardware double (virtual UTC set 1 s after an even FT8 period E; own periods odd); Auto started from the browser path (cookie grant) with the strategy "NA first" (rule 1 CQ from NA, rule 2 any CQ, Treat 73 as CQ, skip after 2, switch after 2).
-             Steps: (a) start without a strategy; save the strategy as role call; start; PUT a configuration without active; publish CQ NA W1AW (strongest), CQ JA JA1XYZ, CQ 290 N1MM, CQ DL1XYZ, CQ K1ABC; two empty partner periods; publish CQ K1ABC and W1AW DL1XYZ RR73 at 1700 Hz; browser HALT. (b) role alternate: publish only CQ NA W1AW, then an empty period; tick; publish HB9BLA OH1AA RR73 and HB9BLA K1ABC FN42; R-05; 73; tick twice; two empty partner periods.
-             Expected: (a) not_configured strategy; 409 state_conflict active; K1ABC selected and armed (replying, role call, 2 candidates; W1AW, JA1XYZ and N1MM never); after two unanswered periods disarmed, waiting, skipped [K1ABC], no stop reason; DL1XYZ selected (Tx1 "DL1XYZ HB9BLA JN47", armed) with Rx 1700 and Tx unchanged; HALT stops halted. (b) after two tries an own CQ "CQ HB9BLA JN47" armed (calling_cq, role cq); K1ABC answered (report, armed), never OH1AA; rogers, completed; calling again with 1 completed contact; after two empty partner periods waiting in role call, disarmed. No PTT exchange in either case.
+             Steps: (c) role call: a browser select_row and enable_tx during the run's contact and while it waits; the partner's RR73; a new CQ; a run contact cancelled by the browser followed by the same station's CQ; a browser selection racing the run's select_row and enable_tx; role cq: a double-click and a cancel during the own CQ; stop and Halt while manual. (a) start without a strategy; save the strategy as role call; start; PUT a configuration without active; publish CQ NA W1AW (strongest), CQ JA JA1XYZ, CQ 290 N1MM, CQ DL1XYZ, CQ K1ABC; two empty partner periods; publish CQ K1ABC and W1AW DL1XYZ RR73 at 1700 Hz; browser HALT. (b) role alternate: publish only CQ NA W1AW, then an empty period; tick; publish HB9BLA OH1AA RR73 and HB9BLA K1ABC FN42; R-05; 73; tick twice; two empty partner periods.
+             Expected: (a) not_configured strategy; 409 state_conflict active; K1ABC selected and armed (replying, role call, 2 candidates; W1AW, JA1XYZ and N1MM never); after two unanswered periods disarmed, waiting, skipped [K1ABC], no stop reason; DL1XYZ selected (Tx1 "DL1XYZ HB9BLA JN47", armed) with Rx 1700 and Tx unchanged; HALT stops halted. (c) a double-click during the run: the run is manual, the strategy stays active, the run neither disarms nor cancels; the manual QSO completed: the run waits and answers the next match; the operator's cancel of the run's contact: waiting, that station is not selected again; the race leaves the operator's contact and the state manual, no stop; the double-click during the CQ: manual, armed, the new contact stands; the cancelled CQ: the run goes on, no stop reason; stop while manual leaves the contact armed; Halt while manual stops halted. (b) after two tries an own CQ "CQ HB9BLA JN47" armed (calling_cq, role cq); K1ABC answered (report, armed), never OH1AA; rogers, completed; calling again with 1 completed contact; after two empty partner periods waiting in role call, disarmed. No PTT exchange in either case.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4309,7 +4391,7 @@ package WstxRequirements {
              CL-039-03, CL-039-04, CL-039-05, CL-039-06
              Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 at 1 W on 40 m FT8, operator consent; Tx watchdog 6 repetitions (the profile default).
              Steps: create a strategy (rule 1 CQ and not continent EU, rule 2 CQ; Treat 73 as CQ) and turn Highlight on; then Auto in role cq; then role call.
-             Expected: matching decodes marked and on top, CQ NA/AS and same-continent CQ DX greyed; Auto CQ transmits CQ and answers the first caller to a logged QSO, or ends by the watchdog after 6 identical CQs; Auto Call answers only matching CQs; HALT and Esc stop at once; the watchdog is not extended by Auto.
+             Expected: matching decodes marked and on top, CQ NA/AS and same-continent CQ DX greyed; Auto CQ transmits CQ and answers the first caller to a logged QSO, or ends by the watchdog after 6 identical CQs; Auto Call answers only matching CQs; HALT stops at once; Abort QSO ends the run only through the contact change; the watchdog is not extended by Auto.
              5 — Live with RF on the station, operator consent; not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
@@ -4344,7 +4426,7 @@ package WstxRequirements {
     }
     dependency CL_055_03_to_FR_016 from 'CL-055-03' to 'FR-016';
     requirement 'CL-055-04' {
-        doc /* Band Activity colours, hover text and order (operator 2026-11-03). Operator decision deviating from WSJT-X, which colours only CQ/QRZ and calling-me lines: the sender of every decoded standard message (CQ, replies to others, reports, R-reports, RR73, 73) is coloured by the same new DXCC, continent, zone, grid and call flags (the whole row for a CQ or QRZ, only the sender's call otherwise, #50 CL-050-08); a message to my call keeps the calling-me colour on top; a row without a flag has no colour (there is no CQ slot, #50, and worked before never colours). Every row with a reason carries hover text (title and aria-description, on the row and its colour mark) naming each reason in value order (#50 CL-050-08 replaces this Band Activity hover by its one-line reason tip; the QSO pane callers keep it): calling me, the strategy verdict, each new flag with its entity, zone, grid or band, then the worked-before status, for example "New DXCC: Romania", "New DXCC on 40m", "New CQ zone 20", "New grid KN34", "New call", "Worked before on 40m FT8". Within each period the rows are sorted by value (1 calling me, 2 strategy hits by their rank, 3 new DXCC, 4 new DXCC on this band, 5 new CQ or ITU zone, 6 new grid, 7 new call, 8 no flag), then by SNR strongest first, ties in decode order; the column headers still choose another order and the DXCC header returns to it. Details: WstxOperatingLayout::BandActivityColours, BandActivityValue, BandActivityHover, ActivityOrdering. */
+        doc /* Band Activity colours, hover text and order (operator 2026-11-03). Operator decision deviating from WSJT-X, which colours only CQ/QRZ and calling-me lines: the sender of every decoded message (CQ, replies to others, reports, R-reports, RR73, 73; the sender call of WstxContact::DecodedEntity) is coloured by the same new DXCC, continent, zone, grid and call flags (the whole row for a CQ or QRZ, only the sender's call otherwise, #50 CL-050-08); a message to my call keeps the calling-me colour on top; a row without a flag has no colour (there is no CQ slot, #50, and worked before never colours). Every row with a reason carries hover text (title and aria-description, on the row and its colour mark) naming each reason in value order (#50 CL-050-08 replaces this Band Activity hover by its one-line reason tip; the QSO pane callers keep it): calling me, the strategy verdict, each new flag with its entity, zone, grid or band, then the worked-before status, for example "New DXCC: Romania", "New DXCC on 40m", "New CQ zone 20", "New grid KN34", "New call", "Worked before on 40m FT8". Within each period the rows are sorted by value (1 calling me, 2 strategy hits by their rank, 3 new DXCC, 4 new DXCC on this band, 5 new CQ or ITU zone, 6 new grid, 7 new call, 8 no flag), then by SNR strongest first, ties in decode order; the column headers still choose another order and the DXCC header returns to it. Details: WstxOperatingLayout::BandActivityColours, BandActivityValue, BandActivityHover, ActivityOrdering. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/recording.js; client/contact.js; client/logbook.js";
     }
@@ -4374,7 +4456,7 @@ package WstxRequirements {
              CL-055-02
              Setup: actual router with a selected profile (HB9BLA JN47AA) whose log holds DL1ABC JO62 20m FT8, K1ABC FN42 40m FT8 and W1AW FN31 20m FT4; a live FT8 job with CQ K1ABC FN42, CQ DL2XYZ JO62, CQ JA1XYZ PM95, HB9BLA G4ABC IO91, a free text and CQ W1AW FN31; a hand log for the worked categories.
              Steps: read /receive/results without a band, then with the selection band 20m; log DL2XYZ on 20m and read again; worked categories from the hand log.
-             Expected: K1ABC dxcc {U.S.A., NA, 5, 8, 7706 km} without flags (no band), then only new_call_band and new_grid_band (the US is worked on 20m); W1AW worked on 20m in FT4 has no flag (band, not mode); DL2XYZ Germany 465 km with only new_call and new_call_band, none after it is logged; JA1XYZ all twelve flags; G4ABC new call, grid, DXCC and ITU zone (EU and CQ 14 worked); free text unchanged; calls compare case-insensitively, grids by square; Sicily counts as its own name.
+             Expected: K1ABC dxcc {U.S.A., NA, 5, 8, 7706 km} without flags (no band), then only new_call_band and new_grid_band (the US is worked on 20m); W1AW worked on 20m in FT4 has no flag (band, not mode); DL2XYZ Germany 465 km with only new_call and new_call_band, none after it is logged; JA1XYZ all twelve flags; G4ABC new call, grid, DXCC and ITU zone (EU and CQ 14 worked); free text unchanged; calls compare case-insensitively, grids by square; Sicily counts as its own name. Every decoded sender call resolves (#55, live 2026-11-06): CQ HF6FIRAC Poland with new-* flags and no grid flag, a filled-in hash such as OH2DKQ <CT9/DL7VXX> -02 its entity, a nonstandard full call and a filled-in second hash likewise, a DXpedition hashed call the entity only; R330S <...> 73, OH2DKQ <...> -02 and the free text CQ SA7BKX JO6 no entity.
              2 — Isolated automated tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4726,6 +4808,7 @@ package WstxRequirements {
     verification 'TC-050-008' {
         doc /* TC-050-008 — Band Activity row marks: partner first with the stripe, calls me, CQ of interest, sender-only colour, one-line reason tip
              CL-050-08
+             Kept status (#50, live 2026-11-06): a row with the tip "New on 20m (worked on another band or mode)" keeps that tip when the next period of the other parity moves it below the divider, while that period is partial and after its own worked-before answer, with one query per published period.
              Setup: actual release candidate (fixture station) and Chromium at 1440x900; routed receive pages for a kept period 12:00:00 (CQ K1PT FN42 new_call_band; CQ K7OLD FN42; K9XX W1AA R-03) and a latest period 12:00:15 (HB9BLA K1PT FN42 new_call_band; HB9BLA K2CM -05; HB9BLA K3NB R-07 new_call_band; CQ OA4DX FH17 and K9XX YO3ABC -07 with new_dxcc, new_dxcc_band, new_call, new_call_band and dxcc Peru/Romania; CQ K1WB FN42; W9AA W2CD 73; CQ JA1ZZ PM95 new_cq_zone, new_cq_zone_band, CQ zone 25), selection band 40m, routed /contact/worked statuses (K2CM, K1WB and W2CD worked on 40m FT8, K3NB on another band or mode, the others not worked) and routed contact snapshots.
              Steps: with no contact read each row's marks, message cell and sender-call backgrounds and reason tip; hover the YO3ABC message, its DXCC cell and an uncoloured row; focus the K3NB row; route a contact with K1PT in replying and reload the snapshot; read the order, stripe and marker; read the stripe at 360x800; sort by Freq and back; turn My call and New call off in Settings; route the contact completed and reload.
              Expected: no contact: no stripe; the three rows to my call whole row rgba(255,102,102,0.32) with tips "New on 40m", none (worked on this band and mode, no flag) and "New on 40m (worked on another band or mode)"; CQ OA4DX whole row rgba(255,0,255,0.26) tip "New DXCC · New call"; K9XX YO3ABC -07 message cell transparent with only the YO3ABC span rgba(255,0,255,0.26) and the same tip; CQ JA1ZZ whole row rgba(255,191,0,0.26) tip "New CQ zone 25"; the rows without a flag uncoloured without a tip; no row has a native title and the aria-description equals the tip; the tip box is one line at the pointer, absent over the DXCC cell and over an uncoloured row, shown for the focused row and gone after focus moves. Prepared K1PT: HB9BLA K1PT FN42 then CQ K1PT FN42 first, then one stripe row (no text, rgb(255,64,64)), then the other rows in the earlier order with the kept divider; the partner rows have no slot background or tip, a 4 px rgb(255,64,64) inset left bar, a bold message and the badge " ◆ QSO"; at 360x800 the stripe is a 3 px full-width rgb(255,64,64) bar; the partner block stays first after the Freq sort. With My call and New call off: K2CM uncoloured, K3NB whole row rgba(153,255,255,0.2), the OA4DX and YO3ABC tips "New DXCC · New on 40m". Completed: no stripe and no partner row; HB9BLA K1PT FN42 is a calls-me row; one worked-before query per published period (two: 3 and 8 calls), none added by the marks, the partner or the tip; no page error.
@@ -5098,7 +5181,7 @@ package WstxRequirements {
     }
     dependency CL_037_02_to_FR_019 from 'CL-037-02' to 'FR-019';
     requirement 'CL-037-03' {
-        doc /* (#37, operator 2026-11-03 "We have two HALT buttons ...") The operating view shows one HALT, the QSO pane's; the top-bar HALT shows whenever the QSO pane HALT is not fully on screen (a page or the Settings drawer covers the workspace, or the stacked pane is scrolled out of view), so a pointer HALT is always on screen; Esc and Alt+H halt everywhere. The QSO pane's direct buttons are CQ, Tune, HALT and Log QSO: RR73 and 73 are gone (Auto Seq sends them) and each Tx1-Tx6 line of the fold-out has Next and Now, Now choosing it next and turning Enable Tx on (from the next own period), disabled on a completed or cancelled contact. Reply is gone since the #50 double-click fix is installed: a double-click on a Band Activity or Others row, or the row menu Reply, starts the reply. Details: WstxOperatingLayout::OperatingScreen, QsoPane item 5. */
+        doc /* (#37, operator 2026-11-03 "We have two HALT buttons ...") The operating view shows one HALT, the QSO pane's; the top-bar HALT shows whenever the QSO pane HALT is not fully on screen (a page or the Settings drawer covers the workspace, or the stacked pane is scrolled out of view), so a pointer HALT is always on screen; Alt+H halts everywhere; Esc is Abort QSO. The QSO pane's direct buttons are CQ, Tune, HALT, Abort QSO (Esc) and Log QSO: RR73 and 73 are gone (Auto Seq sends them) and each Tx1-Tx6 line of the fold-out has Next and Now, Now choosing it next and turning Enable Tx on (from the next own period), disabled on a completed or cancelled contact. Reply is gone since the #50 double-click fix is installed: a double-click on a Band Activity or Others row, or the row menu Reply, starts the reply. Details: WstxOperatingLayout::OperatingScreen, QsoPane item 5. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js; client/recording.css";
     }
@@ -5158,13 +5241,13 @@ package WstxRequirements {
     requirement 'CL-037-05' {
         doc /* (#37, operator 2026-11-04: the QSO area offered "Change contact to W4WFC DL1FRH JO30", "This makes no sense") While a contact is active, a click on a Band Activity row offers a contact change only for a row that can start a contact for me, a CQ/QRZ complying with the directed-CQ rule (WstxStrategy::DirectedCqRule, also without Highlight or an active strategy) or a row addressed to my call, and the offer names the sender ("Change contact to K1ABC"); a click on a row of a QSO between others or on a CQ directed elsewhere offers nothing and leaves no refusal text. A deliberate double-click on such a row calls its sender and its command line reads "Call <sender>", never the foreign message. Details: WstxOperatingLayout::BandActivityView. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "client/contact.js; client/recording.js";
+        attribute implementation : String = "client/contact.js; client/recording.js; server/src/contact_http.rs";
     }
     dependency CL_037_05_to_FR_007 from 'CL-037-05' to 'FR-007';
     verification 'TC-037-004' {
         doc /* TC-037-004 — A contact change is offered only for a row that can start a contact for me
              CL-037-05
-             Setup: actual candidate server and Chromium at 1366x768; my continent EU from HB9BLA; routed live rows "CQ K1ABC FN42", "QRZ W1XYZ FN31", "HB9BLA DL1ABC JO31", "W4WFC DL1FRH JO30", "CQ EU G4ABC IO91", "CQ DX K2DX FN42" (NA), "CQ NA K3NA FN42" and "CQ DX DL2DX JO31" (EU); a running contact with IW9FRA; a routed POST /contact/command that refuses select_row without replace as contact_active and accepts everything else.
+             Setup: actual candidate server and Chromium at 1366x768; my continent EU from HB9BLA; routed live rows "CQ K1ABC FN42", "QRZ W1XYZ FN31", "HB9BLA DL1ABC JO31", "W4WFC DL1FRH JO30", "CQ EU G4ABC IO91", "CQ DX K2DX FN42" (NA), "CQ NA K3NA FN42" and "CQ DX DL2DX JO31" (EU); a running contact with IW9FRA; a routed POST /contact/command that refuses select_row without replace as directive_not_answerable for "CQ NA K3NA FN42" and "CQ DX DL2DX JO31" and as contact_active for the other rows, and accepts everything else.
              Steps: click each row and read the change button and the command line; double-click the foreign row and read the commands and the command line.
              Expected (independent oracle: the operator's report of 2026-11-04 on #37): CQ, QRZ, addressed and complying directed rows offer "Change contact to K1ABC", "Change contact to W1XYZ", "Change contact to DL1ABC", "Change contact to G4ABC" and "Change contact to K2DX"; the foreign row and both CQs directed elsewhere each remove the offer, show none and leave the command line empty; its double-click sends select_row with replace true, then enable_tx, and the command line reads "Call DL1FRH: accepted".
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */

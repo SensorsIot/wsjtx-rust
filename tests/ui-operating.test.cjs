@@ -183,8 +183,8 @@ test('receive snapshot race preserves unknown mutation until a later read',{time
   await chip.filter({hasText:'Receive stopped'}).waitFor();
   assert.deepEqual(errors,[]);
 });
-// WstxContact::HaltTx D5 / OperatingLayout escapeClosesRegion=false: Escape halts and
-// aborts the contact but closes no panel or drawer; its Back/Close control returns.
+// WstxContact::AbortQso (#39) / OperatingLayout escapeClosesRegion=false: Escape aborts
+// the QSO but closes no panel or drawer; its Back/Close control returns.
 async function returnToOperation(page){
   const open=await page.locator('.op-secondary:not([hidden])').count();
   await page.keyboard.press('Escape');
@@ -201,7 +201,7 @@ test('TC-007-002 operating screen exposes literal identity and truthful unsuppor
   assert.equal(await page.locator('#operating-station station').count(),0);
   assert.match(await page.locator('#band-activity').innerText(),/Decoder unavailable/);assert.match(await page.locator('#rx-focus').innerText(),/No station selected/);assert.equal(await page.locator('tr[data-result-id]').count(),0);
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot(),null,{timeout:25000});
-  for(const name of ['CQ','Tune','HALT','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
+  for(const name of ['CQ','Tune','HALT','Abort QSO (Esc)','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
   assert.equal(await page.locator('#contact-auto').isDisabled(),true);assert.equal(await page.locator('#contact-auto').getAttribute('aria-label'),'Auto sequence unavailable');
   assert.equal(await page.locator('#transmit-unavailable').isVisible(),true,'the reason is next to the disabled transmit buttons');
   await page.locator('#open-server-settings').click();await page.locator('#tab-expert').click();
@@ -479,6 +479,10 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
   for(const selector of ['#qso-heard','#qso-others tr:last-child','#qso-dialogue tr:last-child','#qso-next','#qso-cq','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible`);
   await page.screenshot({path:'test-results/ui-operating/qso-dialogue-1366x768.png'});
+  // #39 Abort QSO: with five direct buttons the partner's message keeps its room and the longest
+  // badge stays inside the pane.
+  const headFit=await page.evaluate(()=>{const pane=document.querySelector('#rx-focus').getBoundingClientRect(),badge=document.querySelector('#rx-focus .op-contact-badge');badge.textContent='Transmitting';const b=badge.getBoundingClientRect();return {heard:document.querySelector('#qso-heard').getBoundingClientRect().width,inside:b.right<=pane.right+0.5&&b.right<=innerWidth};});
+  assert.ok(headFit.heard>=50,`the partner's message has room: ${headFit.heard} px`);assert.equal(headFit.inside,true,'the Transmitting badge stays inside the pane');
   // Item 8 (#37, operator 2026-11-04): the pane has a fixed height with the QSO section (12
   // rows, here all ten entries without scrolling) and Calling me; TC-037-003 proves that nothing
   // below it moves. At 1920x1080 the height below the column stays free.
@@ -820,7 +824,7 @@ test('TC-007-009 the Settings drawer has four sections holding every control mov
   assert.equal(await page.locator('#settings-drawer #transmit-details #transmit-panel').count(),1,'the raw #9 transmit panel is an Expert section');
   // #44 CL-044-08: opening the drawer lists the endpoints by name; listing is not an Apply.
   assert.ok(requests.includes('GET /audio/endpoints'));assert.equal(requests.includes('GET /audio/devices'),false);assert.equal(requests.includes('PUT /profile'),false,'listing inputs is not an Apply');
-  await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'Esc halts and closes no panel');
+  await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'Esc closes no panel');
   await page.locator('#band-activity').click({position:{x:40,y:200}});assert.equal(await page.locator('#settings-drawer').isVisible(),false,'a pointer action outside closes the drawer');
   await page.keyboard.press('F2');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'F2 opens Settings');
   await page.locator('#settings-drawer .return-operate').click();
@@ -903,8 +907,11 @@ test('TC-044-015 Tx level in Settings > Radio > Audio',{timeout:60000},async t=>
   const section=page.locator('#settings-audio'),line=section.locator('#tx-level-line'),button=section.locator('#tx-level-set'),slider=section.locator('#tx-level-manual'),meters=section.locator('#tx-meters');
   await button.scrollIntoViewIfNeeded();assert.equal(await button.isVisible(),true,'Set level is in the Audio section');
   assert.equal(await slider.isVisible(),false,'no manual level while the radio may report ALC');
-  const base={managed:true,level_db:0,stored:false,alc:'unknown',assistant:false,result:null,meters:null,power_limit_pct:null,warnings:[]};
+  const base={managed:true,level_db:0,stored:false,alc:'unknown',assistant:false,result:null,meters:null,power_limit_pct:null,warnings:[],keying_confirmed:false};
   const inject=data=>page.evaluate(d=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'radio.tx_level',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,...d}}}})),data);
+  // Proves: CL-044-15; TC-044-022. The one-time confirmation is offered until it is stored.
+  await inject(base);assert.match(await page.locator('#discovery-state').textContent(),/off until confirmed once/);
+  await inject({...base,keying_confirmed:true});assert.match(await page.locator('#discovery-state').textContent(),/discovery on start is on/);
   await inject(base);assert.equal(await line.textContent(),'Tx level not set yet');assert.equal(await meters.isVisible(),false);
   await inject({...base,assistant:true,level_db:-25,alc:'available',meters:{alc:0,po_pct:12,swr_x10:11}});
   assert.equal(await line.textContent(),'Tune on · stepping up · -25 dB');assert.equal(await meters.textContent(),'ALC 0 · Po 12 % · SWR 1.1');assert.equal(await button.isDisabled(),true);
@@ -1331,7 +1338,7 @@ test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Ac
   // next and turns Enable Tx on, as WSJT-X Next/Now. No Reply button either since the #50
   // double-click fix is installed: the double-click above replies.
   assert.equal(await page.locator('#qso-rr73,#qso-73,#qso-reply').count(),0,'no Reply, RR73 or 73 button');
-  assert.deepEqual(await page.locator('#rx-focus .op-qso-buttons button').allTextContents(),['CQ','Tune','HALT','Log QSO']);
+  assert.deepEqual(await page.locator('#rx-focus .op-qso-buttons button').allTextContents(),['CQ','Tune','HALT','Abort QSO (Esc)','Log QSO']);
   await page.locator('#qso-more summary').click();
   const now=slot=>page.locator(`#contact-messages .ct-now[data-slot=${slot}]`);
   m=commands.length;await now('tx4').click();for(let i=0;i<60&&commands.length<m+2;i++)await page.waitForTimeout(50);
@@ -1445,10 +1452,9 @@ test('TC-007-002 in-page navigation preserves unsaved profile and selected recor
  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();assert.equal(await page.locator('#display-name').inputValue(),'Unsaved operator edit');
  await page.locator('#tab-expert').click();
  assert.equal(await page.locator('#recording-file').evaluate(el=>el.files[0].name),'selected-but-not-imported.wav');
- // Escape is the keyboard Halt Tx (WstxContact::HaltTx D5): until the contact snapshot
- // shows a receive-only station it sends the idempotent #9 halt, never anything else.
- assert.deepEqual(mutations.filter(m=>new URL(m.url).pathname!=='/transmit/halt'),[],'navigation does not save/import or issue station mutations');
- assert.ok(mutations.every(m=>m.method==='POST'),'only the keyboard halt POST');
+ // Escape is Abort QSO (WstxContact::AbortQso, #39): with no contact in progress it sends
+ // nothing, and it is never a halt.
+ assert.deepEqual(mutations,[],'navigation does not save/import or issue station mutations, and Esc sends no halt');
  assert.deepEqual(errors,[]);
 });
 
@@ -2156,6 +2162,42 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
  assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-050-08; TC-050-008 (#50, live 2026-11-06, M7OZL UT4PA KO20): the worked-before status of a row
+// stays while it is on screen, also when the next period moves it to the kept period. The receive pages and
+// the /contact/worked statuses are routed fixtures.
+test('TC-050-008 a kept row keeps its worked-before status in the tip',{timeout:40000},async t=>{
+  const a='2026-11-06T10:55:30.0000000Z',b='2026-11-06T10:55:45.0000000Z';
+  const record=(sequence,text,from,period)=>({sequence,start_frame:1000+sequence,frequency_hz:1000+sequence*100,snr_db:-5,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:{type:'standard',to:{kind:'call',text:'M7OZL',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'KO20'}},period_start_utc:period,dt_seconds:0.1,flags:{new_call_band:true}});
+  const records=[record(0,'M7OZL UT4PA KO20','UT4PA',a),record(1,'M7OZL DL1ABC JO62','DL1ABC',b)];
+  let state;const asked=[];
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-11-06T10:50:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    Object.assign(state.job,{next_sequence:1,available_count:1,latest_decode:{id:1,first_sequence:0,next_sequence:1,period_start_utc:a,complete:true}});
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/selection',async route=>{const s=await (await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),next=state.job.next_sequence;await route.fulfill({json:{...emptyResults(state),next_sequence:next,available_count:next,next,records:records.slice(cursor,next)}});});
+    await p.route('**/contact/worked',async route=>{const body=JSON.parse(route.request().postData());asked.push(body.calls);await route.fulfill({json:{v:1,statuses:body.calls.map(call=>({call,status:'worked_other_band_or_mode'}))}});});
+  }});
+  const tip='New on 20m (worked on another band or mode)';
+  const tipOf=sequence=>page.locator(`tr[data-sequence="${sequence}"]`).evaluate(r=>[r.dataset.period,r.dataset.tip??null]);
+  await page.waitForFunction(()=>document.querySelector('tr[data-sequence="0"][data-worked]'),null,{timeout:25000});
+  assert.deepEqual(await tipOf(0),['latest',tip]);
+  // The next period starts (the other parity, still partial): the row moves below the divider.
+  Object.assign(state.job,{next_sequence:2,available_count:2,latest_decode:{id:2,first_sequence:1,next_sequence:2,period_start_utc:b,complete:false}});
+  await page.evaluate(()=>receiveSync());
+  await page.locator('tr[data-period=history][data-sequence="0"]').waitFor();
+  assert.deepEqual(await tipOf(0),['history',tip],'kept while the next period is partial');
+  // Complete: its own answer arrives, and the kept row keeps its status through this redraw too.
+  Object.assign(state.job,{latest_decode:{...state.job.latest_decode,complete:true}});
+  await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>document.querySelector('tr[data-sequence="1"][data-worked]'),null,{timeout:10000});
+  assert.deepEqual(await tipOf(1),['latest',tip]);
+  assert.deepEqual(await tipOf(0),['history',tip],'kept after the next answer');
+  assert.deepEqual(asked,[['UT4PA'],['DL1ABC']],'no extra query: one per published period');
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-050-08; TC-050-008 (#50, operator 2026-11-04). The receive pages (with the #55 flags and
 // dxcc), the /contact/worked statuses, the contact snapshots are routed
 // fixtures; marks, colours, order and the reason tip are the served client's. Expected values come
@@ -2395,7 +2437,7 @@ test('TC-039-006 Highlight marks and sorts, the editor previews and saves, Auto 
   await page.locator('#strategy-editor button[value=cancel]').click();assert.equal(await page.locator('#strategy-editor').evaluate(d=>d.open),false);
   // Auto: the first use asks; Cancel sends nothing; Start sends configure then start.
   await page.locator('#strategy-auto').click();await page.locator('#op-confirm[open]').waitFor();
-  assert.match(await page.locator('#op-confirm-text').textContent(),/Auto transmits without asking: it answers only stations that match "DX first" \(Auto Call and Auto CQ, switching after 3 tries\)\. The Tx watchdog stops it when one message would be sent more than 6 times; a new message or station starts that count again, so Auto can run until its limit of 8 hours\. HALT or Esc stops it\./);
+  assert.match(await page.locator('#op-confirm-text').textContent(),/Auto transmits without asking: it answers only stations that match "DX first" \(Auto Call and Auto CQ, switching after 3 tries\)\. The Tx watchdog stops it when one message would be sent more than 6 times; a new message or station starts that count again, so Auto can run until its limit of 8 hours\. HALT stops it; Esc aborts the current QSO\./);
   await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);assert.deepEqual(autos,[],'cancelled: no automation request');
   await page.locator('#strategy-auto').click();await page.locator('#op-confirm[open]').waitFor();await page.locator('#op-confirm-ok').click();
   for(let i=0;i<60&&autos.length<2;i++)await page.waitForTimeout(50);
@@ -2544,7 +2586,7 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
   await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
   assert.deepEqual(await items(),['Reply','Select','Set Rx here','Pounce K1ABC','Ignore K1ABC']);
   await page.locator('#ba-menu [data-menu=pounce]').click();await page.locator('#op-confirm[open]').waitFor();
-  assert.match(await page.locator('#op-confirm-text').textContent(),/^Pounce transmits without asking: it answers K1ABC when it calls CQ or ends a QSO with 73 on this band\. The Tx watchdog stops it when one message would be sent more than 6 times\. HALT or Esc stops it\.$/);
+  assert.match(await page.locator('#op-confirm-text').textContent(),/^Pounce transmits without asking: it answers K1ABC when it calls CQ or ends a QSO with 73 on this band\. The Tx watchdog stops it when one message would be sent more than 6 times\. HALT stops it; Esc aborts the current QSO\.$/);
   await page.locator('#op-confirm-ok').click();
   for(let i=0;i<60&&autos.length<2;i++)await page.waitForTimeout(50);
   assert.deepEqual(autos.map(b=>[b.action,b.expected_policy_revision,b.expected_run_revision,b.mode,b.safety_revision]),[['configure',0,undefined,undefined,undefined],['start',1,0,'ft8',7]]);
@@ -3294,7 +3336,7 @@ test('TC-037-004 a contact change is offered only for a row that can start a con
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor);await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next:cursor+batch.length,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
     await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:partner('replying',{dx_call:'IW9FRA',dx_grid:'JM68'}),transmit:{}})}));
     await p.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());commands.push(b);
-      if(b.action==='select_row'&&!b.replace)await route.fulfill({status:409,json:{error:{code:'contact_active'}}});else await route.fulfill({status:202,json:{v:1,accepted:true}});});
+      if(b.action==='select_row'&&!b.replace)await route.fulfill({status:409,json:{error:{code:[6,7].includes(b.row.sequence)?'directive_not_answerable':'contact_active',reason:'CQ NA \u2014 not for EU'}}});else await route.fulfill({status:202,json:{v:1,accepted:true}});});
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===8&&window.wstxContact?.snapshot()&&document.querySelector('#continent-derived')?.textContent.includes('EU'),null,{timeout:25000});
   const row=text=>page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:text});

@@ -211,7 +211,7 @@ package WstxMcp {
              Exact published values; no tolerance or epsilon. The first candidate is
              chosen, once per publication. */
     }
-    enum def RunState { enum waiting; enum calling_cq; enum contact_active; enum stopped; }
+    enum def RunState { enum waiting; enum calling_cq; enum contact_active; enum manual; enum stopped; }
     enum def StopReason {
         enum stopped; enum completed; enum limit_reached; enum no_answer; enum halted;
         enum transmit_stopped; enum contact_changed; enum authority_lost;
@@ -229,14 +229,15 @@ package WstxMcp {
              publications are never used).
              Each station step (after the contact step, with the publication descriptor
              read before it), in this order: any HaltTransmit since start (browser button,
-             Esc or MCP) stops halted; a different live identity, live mode or operating
+             Alt+H, MCP or UDP) stops halted; a different live identity, live mode or operating
              mode stops context_changed; the starting transport no longer this grant's
              current unexpired transport stops authority_lost; the run deadline stops
              time_limit; a contact armed by the run is disarmed (Enable Tx off, never a
              Halt) on these and on contact_changed (run's contact gone or replaced) and
              no_answer.
              waiting: a contact calling or in progress that the run did not create (an
-             operator's CQ or contact) stops contact_changed and is left as it is; on a
+             operator's CQ or contact) stops contact_changed and is left as it is (a strategy
+             run: state manual, WstxStrategy::ManualIntervention); on a
              fresh publication record last_decision {period_start_utc, candidates,
              selected_call}; with a candidate send ContactCommand select_row {row, replace
              false} then enable_tx {enabled true, safety_revision} with the grant. Refusal
@@ -247,7 +248,8 @@ package WstxMcp {
              contact_active with that contact.
              contact_active: completed adds the call to the run's worked list and counts it;
              reaching max_contacts stops limit_reached, completion_action stop stops
-             completed, else waiting; cancelled or idle stops contact_changed; not armed
+             completed, else waiting; cancelled or idle stops contact_changed (a strategy run:
+             ManualIntervention); not armed
              stops transmit_stopped; each fresh publication of the partner's period parity
              (the opposite of the contact's own; unknown period: not counted) without a
              change of (state, report_rcvd) since the selection or the last change counts
@@ -303,7 +305,7 @@ package WstxMcp {
              unstopped run id, else 409 stale_request; dispatch ends before the receipt,
              then the run's contact is disarmed. Accepted: 202 {v:1, profile_id, boot_id,
              command_id, accepted:true, policy_revision, run_revision, run_id, state
-             off|waiting|contact_active|stopped}. run_revision also advances on every run
+             off|waiting|contact_active|manual|stopped}. run_revision also advances on every run
              change (selection, contact transition, counters, stop). Counters at
              9007199254740991 refuse counter_exhausted. Accepted means admitted, not keyed. */
     }

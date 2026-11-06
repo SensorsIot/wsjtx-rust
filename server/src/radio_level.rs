@@ -162,6 +162,8 @@ struct Inner {
     reading: bool,
     read_at: Option<Instant>,
     counts: Counts,
+    /// CL-044-15 shown beside Detect radio; kept here to share this one pushed event.
+    keying_confirmed: bool,
     warnings: Vec<&'static str>,
     /// SWR stopped transmitting; held until a later reading or Set level shows it clear.
     swr_fault: bool,
@@ -200,6 +202,9 @@ impl Owner {
     #[cfg(test)]
     pub(crate) fn alc(&self) -> Alc {
         self.lock().alc
+    }
+    pub(crate) fn set_keying_confirmed(&self) {
+        self.update(|i| i.keying_confirmed = true);
     }
     fn update(&self, change: impl FnOnce(&mut Inner)) {
         let mut i = self.lock();
@@ -252,6 +257,9 @@ pub(crate) fn startup(state: &Arc<ProfileState>) {
                 let _ = on_meter_due(&state);
             }
         }));
+    }
+    if radio_setup::keying_confirmed(state) {
+        state.recording.tx_level.set_keying_confirmed();
     }
     let record = state.store.lock().ok().and_then(|s| {
         let bytes = s.read_document_file(LEVEL_FILE, LEVEL_FILE_MAX).ok()??;
@@ -565,7 +573,7 @@ pub(crate) fn event(recording: &Recording) -> (u64, String) {
     let data = json!({"profile_id":recording.profile,"boot_id":recording.boot,
         "managed":i.managed,"level_db":i.level_db,"stored":i.stored,"alc":alc,
         "assistant":i.assistant,"result":i.result,"meters":meters,"power_limit_pct":i.power_limit,
-        "warnings":warnings});
+        "warnings":warnings,"keying_confirmed":i.keying_confirmed});
     (
         i.revision,
         json!({"v":1,"type":"radio.tx_level","data":data}).to_string(),
