@@ -50,6 +50,7 @@ mod selection_http;
 #[cfg(all(test, not(debug_assertions)))]
 mod selection_http_tests;
 use wstx_rust::{audio, decoder, source};
+mod contest;
 mod most_wanted;
 mod spectrum;
 mod strategy;
@@ -547,6 +548,7 @@ fn router(state: App) -> Router {
         .route("/strategy/ignore", post(strategy::ignore_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/strategy/most-wanted/download", post(strategy::most_wanted_download_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/strategy/alerts", get(strategy::alerts_route))
+        .route("/strategy/contests", get(strategy::contests_route))
         .route("/strategy/alerts/clear", post(strategy::clear_alerts_route).layer(axum::extract::DefaultBodyLimit::max(strategy::BODY_MAX)))
         .route("/pskr", get(pskr::snapshot).post(pskr::update).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/udp", get(udp::snapshot).put(udp::put).layer(axum::extract::DefaultBodyLimit::max(udp::BODY_MAX)))

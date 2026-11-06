@@ -4187,7 +4187,7 @@ package WstxRequirements {
     dependency CL_039_02_to_FR_007 from 'CL-039-02' to 'FR-007';
     dependency CL_039_02_to_FR_011 from 'CL-039-02' to 'FR-011';
     requirement 'CL-039-03' {
-        doc /* One directive rule before every strategy and for the operator: a CQ is answerable when it is a plain CQ, CQ <my continent> (derived from the profile call via cty.dat, locator fallback) or CQ DX from another continent. Every other directive is not answerable: a strategy skips it (greyed, never matches, never answered by a run or pounce) and an operator's selection shows a warning the operator can confirm ("CQ NA — not for EU"); automation, MCP and UDP cannot confirm it. Details: WstxStrategy::DirectedCqRule, MyContinent, StrategyRun. */
+        doc /* One directive rule before every strategy and for the operator: a CQ is answerable when it is a plain CQ, CQ <my continent> (derived from the profile call via cty.dat, locator fallback) or CQ DX from another continent. Every other directive is not answerable: a strategy skips it (greyed, never matches, never answered by a run or pounce) and an operator's selection shows a warning the operator can confirm ("CQ NA — not for EU"); automation, MCP and UDP cannot confirm it. In a contest activity its own word (CQ TEST, WW, FD, RU) is answerable too (CL-063-02). Details: WstxStrategy::DirectedCqRule, MyContinent, StrategyRun. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/dxcc.rs; client/contact.js";
     }
@@ -5626,5 +5626,74 @@ package WstxRequirements {
         }
     }
     dependency CL_061_05_verified_by_TC_061_009 from 'CL-061-05' to 'TC-061-009';
+    requirement 'CL-063-01' {
+        doc /* The station holds one profile per contest from the official rules: WW Digi, ARRL Digi, ARRL Field Day, ARRL January, June and September VHF, IARU R1 50 MHz and 70 MHz MGM and FT8 Activity, usable everywhere in the world; a limit that depends on the location or the entry class is a note, not a refusal. Each profile holds the schedule rule, bands, modes, exchange, dupe, points and multiplier rules, the automation clause as the rules word it, notes and the source, as data, so that a new contest is one more entry. Its period is pre-computed from the schedule rule for the current or next occurrence; ARRL January VHF is not computed. GET /strategy/contests reads them. Details: WstxContest::ContestProfile, ScheduleRule, AutomationClause, ProfileTable, ContestHttp. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contest.rs; server/src/strategy.rs; server/src/main.rs";
+    }
+    dependency CL_063_01_to_FR_024 from 'CL-063-01' to 'FR-024';
+    requirement 'CL-063-02' {
+        doc /* In a contest activity a CQ with the activity's own word (na_vhf and arrl_digi CQ TEST, ww_digi CQ WW, field_day CQ FD, rtty CQ RU) is answerable: it is no longer greyed and an operator's selection needs no confirmation. Outside the matching activity it stays not answerable, with the warning of CL-039-03. Details: WstxContest::ContestDirective, WstxStrategy::DirectedCqRule. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/strategy.rs; server/src/contact_http.rs; server/src/contact.rs";
+    }
+    dependency CL_063_02_to_FR_024 from 'CL-063-02' to 'FR-024';
+    dependency CL_063_02_to_FR_007 from 'CL-063-02' to 'FR-007';
+    verification 'TC-063-001' {
+        doc /* TC-063-001 — The profile table
+             CL-063-01
+             Setup: the profile table as compiled; an expected table written by hand from the rule sources listed on #63.
+             Steps: read id, activity, dupes, points, multipliers, automation clause, bands, Cabrillo mark and the notes of each profile.
+             Expected: the nine ids in selector order; WW Digi bands 160 to 10 m, dupes per band, 1 + 1 per 3000 km, grid field per band, forbidden; ARRL Digi with 6 m, 1 + 1 per 500 km rounded up, no multiplier, forbidden; Field Day per band and mode class, forbidden, check-log note, Cabrillo unconfirmed; the three VHF per band and grid, grid per band, forbidden, W/VE note; Field Day and VHF with every ADIF band from 50 MHz (6 m, 5 m, 4 m, 2 m up to submm); IARU 6 m and 4 m, kilometres, grid per band, silent, 6 hours note; FT8 Activity 2 m, 70 cm, 23 cm, one per call, silent; no RTTY Roundup; no id twice.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-01';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_001_the_profile_table_holds_the_rule_facts";
+    }
+    dependency CL_063_01_verified_by_TC_063_001 from 'CL-063-01' to 'TC-063-001';
+    verification 'TC-063-002' {
+        doc /* TC-063-002 — The period from the schedule rule
+             CL-063-01
+             Setup: instants chosen by a calendar, not by the code.
+             Steps: the current or next occurrence of each profile at 2026-01-01; WW Digi during and at the end of its period; WW Digi 2024 and ARRL Digi 2025 for the full-weekend edge; FT8 Activity at the start and between its rounds and across the year end.
+             Expected: WW Digi 2026-08-29 12:00 to 08-30 12:00, ARRL Digi 2026-06-06 18:00 to 06-08 00:00, Field Day 2026-06-27 18:00 to 06-28 21:00, June VHF 2026-06-13 18:00 to 06-15 03:00, September VHF 2026-09-12 18:00 to 09-14 03:00, IARU 2026-04-18 and 2026-05-16 14:00 to 14:00, end exclusive; January VHF none; at the end the next year's 2027-08-28; 2024-08-24 and 2025-06-07; FT8 Activity 2026-11-04 2 m, 11-11 70 cm, 11-18 23 cm, 2027-01-06 2 m, 17:00 to 21:00.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-01';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_002_the_period_comes_from_the_rule";
+    }
+    dependency CL_063_01_verified_by_TC_063_002 from 'CL-063-01' to 'TC-063-002';
+    verification 'TC-063-003' {
+        doc /* TC-063-003 — GET /strategy/contests
+             CL-063-01
+             Setup: the pure list at 2026-08-01; the actual station router on a disposable selected HTTPS profile with one grant.
+             Steps: the list; GET with the browser cookie, without credentials and with a query; POST.
+             Expected: the nine ids in order, WW Digi with period {2026-08-29T12:00Z, 2026-08-30T12:00Z, band null}, its activity and rule names; January VHF period null; the route returns v 1, the profile id and the list with a period that has not ended; 401 unauthorized; 400 invalid_request; 405.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-01';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_003_the_list_names_each_profile_with_its_period; server/src/strategy_tests.rs::tc_063_003_the_contests_route";
+    }
+    dependency CL_063_01_verified_by_TC_063_003 from 'CL-063-01' to 'TC-063-003';
+    verification 'TC-063-004' {
+        doc /* TC-063-004 — The directive rule in a contest activity
+             CL-063-02
+             Setup: a hand table of activity, directive and answerable; the actual router with an injected FT8 live job for the selection.
+             Steps: the table with EU and NA continents and with my continent unknown; the verdict of CQ WW K1ABC with and without the activity; the browser's select_row of that row in none and in ww_digi.
+             Expected: TEST answerable in na_vhf and arrl_digi only, WW in ww_digi, FD in field_day, RU in rtty, not in another activity or hound; NA stays not answerable and EU answerable in an activity; greyed without the activity, rank 0 with it; 409 directive_not_answerable in none, accepted in ww_digi without directive_confirmed.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-02';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs::tc_063_004_the_directive_table_in_a_contest_activity; server/src/strategy_tests.rs::tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation";
+    }
+    dependency CL_063_02_verified_by_TC_063_004 from 'CL-063-02' to 'TC-063-004';
 
 }

@@ -324,7 +324,7 @@ impl Activity {
         !matches!(self, Activity::None | Activity::Hound)
     }
     /// The CQ modifier of genCQMsg (m_cqStr).
-    fn cq(self) -> Option<&'static str> {
+    pub fn cq(self) -> Option<&'static str> {
         match self {
             Activity::None | Activity::Hound => None,
             Activity::NaVhf | Activity::ArrlDigi => Some("TEST"),
