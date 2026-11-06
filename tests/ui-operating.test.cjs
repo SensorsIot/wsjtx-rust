@@ -1681,22 +1681,24 @@ test('TC-061-008 a Tx period is a thin band, the time axis stays exact and nothi
   assert.equal(bands.some(([,kind])=>kind==='grey'),false,'no grey stripe in the band');
   const labels=await page.locator('#time-ruler span').evaluateAll(spans=>spans.map(s=>[s.textContent,s.style.top]));
   assert.deepEqual(labels.slice(0,4),[['39.0s','0px'],['35.0s',`${y(4)}px`],['30.0s',`${y(9)}px`],['10.0s',`${y(14)+4}px`]],'T - t at 10 px/s, without the collapsed 15 s plus the 4 px band');
-  // The band's readout names the whole Tx run.
-  const box=await page.locator('#waterfall').boundingBox();await page.mouse.move(box.x+box.width/2,box.y+y(12)+2);
-  assert.match(await page.locator('#bin-readout').textContent(),/projected source 12\.0-27\.000 s/);
+  // The band's readout names the whole Tx run. At 750 Hz: the Rx and Tx lines stand at 1500 Hz.
+  const box=await page.locator('#waterfall').boundingBox(),x=box.x+box.width/4;await page.mouse.move(x,box.y+y(12)+2);
+  await page.waitForFunction(()=>/projected source 12\.0-27\.000 s/.test(document.querySelector('#bin-readout').textContent),null,{timeout:5000});
   await page.mouse.move(0,0);
   // Day theme: what the operator sees on the page, dark and not pale.
   await page.evaluate(()=>{document.documentElement.dataset.theme='day';});
-  const shot=(await page.screenshot({clip:{x:box.x+box.width/2,y:box.y,width:1,height:box.height}})).toString('base64');
+  const shot=(await page.screenshot({clip:{x,y:box.y,width:1,height:box.height}})).toString('base64');
   // A blank page decodes the PNG: the station page's content policy refuses a data: URL.
   const blank=await page.context().newPage();
   const band=await blank.evaluate(async ([png,row])=>{const image=await createImageBitmap(await(await fetch(`data:image/png;base64,${png}`)).blob()),c=new OffscreenCanvas(1,image.height),x=c.getContext('2d');x.drawImage(image,0,0);const d=x.getImageData(0,0,1,image.height).data;return [...d.slice(4*row,4*row+3)];},[shot,y(12)+2]);
   await blank.close();
   assert.ok(band[0]+band[1]+band[2]<300&&band[0]>band[1],`Day: the Tx band stays dark red, not pale: ${band}`);
   await page.evaluate(()=>{document.documentElement.dataset.theme='dark';});
-  // A hole of 50 s between two Tx rows is no Tx row: it stays a real gap.
-  await liveFrames(page,[...run(195,1,{tx:true}),...run(446,1,{tx:true})]);
-  assert.deepEqual(await column(),[[0,'tx'],[4,'grey']],'a long hole stays grey');
+  // The 7.5 s limit: 37 missing rows (7.4 s) stay in the band, 38 more (7.6 s) are a real gap.
+  await liveFrames(page,[...run(195,1,{tx:true}),...run(233,1,{tx:true})]);
+  assert.deepEqual((await column()).slice(0,2),[[0,'tx'],[4,'rx']],'a 7.4 s hole between Tx rows is in the band');
+  await liveFrames(page,run(272,1,{tx:true}));
+  assert.deepEqual((await column()).slice(0,2),[[0,'tx'],[4,'grey']],'a 7.6 s hole stays grey');
   assert.deepEqual(errors,[]);
 });
 
