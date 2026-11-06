@@ -860,12 +860,12 @@ package WstxProfiles {
         attribute scope : SelectedRadioAuthorizationScope;
         attribute receiveOnlyConfirmed : Boolean;
     }
-    enum def RequestPrincipal { enum browser; enum mcp; enum udp; enum automation; }
+    enum def RequestPrincipal { enum browser; enum mcp; enum automation; }
     attribute def RequestPrincipalRule {
         doc /* (#58) The station attaches a RequestPrincipal to every request at the auth
              boundary from its credential, never from the route: a browser grant transport
              (or the plaintext runtime token) is browser; an MCP client's internal transport
-             is mcp; a UDP target command is udp; commands of the station's own automation
+             is mcp; commands of the station's own automation
              run are automation. Only browser is an operator action (Tx watchdog,
              set_watchdogs, WstxStrategy::WatchdogFromOperator); an unreadable credential is
              never browser. The auth-v1 status/revoke/commission operations and MCP client

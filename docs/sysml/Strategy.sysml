@@ -429,8 +429,8 @@ package WstxStrategy {
              browser (principal browser, WstxProfiles::RequestPrincipalRule: read from
              the credential at the auth boundary, so an MCP client is never one on any
              route, #58). Never operator actions: commands of a run (select_row,
-             set_frequency, enable_tx, cancel, disarm), any MCP request (also starting or
-             restarting a run) and any UDP command (Reply, Free Text). Such an enable_tx
+             set_frequency, enable_tx, cancel, disarm) and any MCP request (also starting or
+             restarting a run). Such an enable_tx
              arms with the count kept and is refused tx_watchdog when the limit is used
              up or no browser action was seen this boot (until a human acts in the
              browser; after a watchdog stop an answer no longer resets it); a run selecting a new station does not reset

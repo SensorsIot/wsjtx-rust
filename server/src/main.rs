@@ -1076,9 +1076,6 @@ async fn connection(
     let mut automation_seen: Option<(u64, u64)> = Some((0, 0));
     // #42 WstxStrategy::Alert alert.state: only after a change since this peer subscribed.
     let mut alert_seen: Option<u64> = None;
-    // #40 WstxUdp::UdpDisplayEvent udp.display: the current highlights and clear floors once
-    // a Highlight Callsign or Clear was applied since boot, then after each change.
-    let mut udp_seen: u64 = 0;
     // #44 CL-044-11 radio.agc: the managed AGC and its last read-back, once known, then
     // after each change (the first event is this peer's snapshot).
     let mut agc_seen: u64 = 0;
@@ -1159,14 +1156,6 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(strategy::alert_event(r,alert).into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{alert_seen=Some(alert);if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break,
-                    }
-                }
-                if let Some(udp)=r.udp.get() && udp.display_revision()!=udp_seen {
-                    let (revision,text)=udp.display_event(r);
-                    match optional_write(&mut socket,Message::Text(text.into())) {
-                        Ok(None)=>{},
-                        Ok(Some(flushed))=>{udp_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},
                         Err(_)=>break,
                     }
                 }

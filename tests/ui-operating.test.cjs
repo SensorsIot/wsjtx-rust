@@ -331,7 +331,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
 // expected sets below come from the model's decisions, not from the candidate markup.
 const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#operating-monitor','#contact-enable','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar','#rx-frequency','#region-server-settings','#region-expert'];
 const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#qso-halt','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#display-sensitivity','#display-speed','#qso-cq','#contact-tune','#qso-halt','#contact-log'];
-const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#detect-run','#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#udp-warning','#udp-save','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
+const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#detect-run','#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#udp-note','#udp-save','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
 const healthyTexts=['#cat-status','#receive-status','#signal-status','#operating-radio','#operating-selection-status','#clock-detail'];
 async function inViewport(page,selector){return page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();return el.checkVisibility({visibilityProperty:true})&&r.width>1&&r.height>1&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;});}
 // checkVisibility also treats the content of a closed <details> fold-out as not shown.
@@ -1037,21 +1037,22 @@ test('TC-007-009 the UDP editor reads GET /udp when Settings opens and saves the
   assert.ok(requests.filter(r=>r==='GET /udp').length>=1,'read when the drawer opens');
   assert.equal(await page.locator('#udp-instance').inputValue(),'WSTX-Rust');
   const first=rows.nth(0);assert.equal(await first.locator('[data-f=address]').inputValue(),'127.0.0.1:2237');
-  assert.equal(await first.locator('[data-f=enabled]').isChecked(),true);assert.equal(await first.locator('[data-f=accept]').isChecked(),false);
+  assert.equal(await first.locator('[data-f=enabled]').isChecked(),true);
   assert.deepEqual(await first.locator('[data-m]').evaluateAll(b=>b.filter(x=>x.checked).map(x=>x.dataset.m)),['heartbeat','status','decode','clear','qso_logged','close','logged_adif']);
   assert.match(await first.locator('[data-f=status]').textContent(),/Inactive/,'WSTX_UDP=off opens no socket and the status says so');
-  assert.match(await page.locator('#udp-warning').textContent(),/select a QSO.*Tx5.*never key/s,'the accept_commands warning is shown');
+  assert.equal(await page.locator('#settings-udp [data-f=accept]').count(),0,'send-only: no Accept commands');
+  assert.match(await page.locator('#udp-note').textContent(),/Send-only/,'the note says so');
   assert.doesNotMatch(await page.locator('#tab-logging').textContent(),/⟳/,'a setting, not a restart change');
-  // Edit: no Decode to the first target; add a multicast target, where Accept commands is not offered.
-  await first.locator('[data-m=decode]').uncheck();await first.locator('[data-f=accept]').check();
+  // Edit: no Decode to the first target; add a multicast target.
+  await first.locator('[data-m=decode]').uncheck();
   await page.locator('#udp-add').click();const added=rows.nth(1);
-  await added.locator('[data-f=address]').fill('239.255.0.1:2237');assert.equal(await added.locator('[data-f=accept]').isDisabled(),true,'no accept_commands for a multicast group');
+  await added.locator('[data-f=address]').fill('239.255.0.1:2237');
   await added.locator('[data-f=ttl]').fill('3');
   await page.locator('#udp-save').click();await page.locator('#udp-result').filter({hasText:'Saved'}).waitFor();
   const all=['heartbeat','status','decode','clear','qso_logged','close','logged_adif'];
   const expected={instance_name:'WSTX-Rust',targets:[
-    {address:'127.0.0.1:2237',enabled:true,multicast_ttl:1,multicast_interface:null,messages:all.filter(m=>m!=='decode'),accept_commands:true},
-    {address:'239.255.0.1:2237',enabled:true,multicast_ttl:3,multicast_interface:null,messages:all,accept_commands:false}]};
+    {address:'127.0.0.1:2237',enabled:true,multicast_ttl:1,multicast_interface:null,messages:all.filter(m=>m!=='decode')},
+    {address:'239.255.0.1:2237',enabled:true,multicast_ttl:3,multicast_interface:null,messages:all}]};
   assert.deepEqual(puts,[{v:1,profile_id:initial.profile_id,boot_id:initial.boot_id,expected_revision:initial.revision,configuration:expected}],'exactly one exact PUT');
   const saved=await (await fetch(app.origin+'/udp')).json();assert.deepEqual(saved.configuration,expected,'the station stored the edited list');assert.equal(saved.revision,initial.revision+1);
   // A refused address keeps the edits and names the field.
@@ -1074,10 +1075,7 @@ test('TC-007-009 the UDP editor saves an IPv6 multicast target with hop limit an
   await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();
   const rows=page.locator('#udp-targets .udp-target');await rows.first().waitFor();
   const row=rows.nth(0);
-  await row.locator('[data-f=accept]').check();
   await row.locator('[data-f=address]').fill('[ff12::5754:5358]:2237');
-  assert.equal(await row.locator('[data-f=accept]').isDisabled(),true,'no accept_commands for an IPv6 group');
-  assert.equal(await row.locator('[data-f=accept]').isChecked(),false);
   assert.match(await row.locator('[data-f=iface-note]').textContent(),/hop limit.*index.*link-local group needs one/s);
   assert.equal(await row.locator('[data-f=iface]').getAttribute('placeholder'),'interface index');
   // Without an interface the station refuses the link-local group and names the field.
@@ -1086,7 +1084,7 @@ test('TC-007-009 the UDP editor saves an IPv6 multicast target with hop limit an
   await row.locator('[data-f=ttl]').fill('2');await row.locator('[data-f=iface]').fill('1');
   await page.locator('#udp-save').click();await page.locator('#udp-result').filter({hasText:'Saved'}).waitFor();
   const target={address:'[ff12::5754:5358]:2237',enabled:true,multicast_ttl:2,multicast_interface:'1',
-    messages:['heartbeat','status','decode','clear','qso_logged','close','logged_adif'],accept_commands:false};
+    messages:['heartbeat','status','decode','clear','qso_logged','close','logged_adif']};
   assert.equal(puts.length,2);
   assert.deepEqual(puts[1].configuration,{instance_name:'WSTX-Rust',targets:[target]},'the TTL field is the hop limit, the interface its index');
   const saved=await (await fetch(app.origin+'/udp')).json();
@@ -2065,7 +2063,7 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
 });
 
 // Proves: CL-050-08; TC-050-008 (#50, operator 2026-11-04). The receive pages (with the #55 flags and
-// dxcc), the /contact/worked statuses, the contact snapshots and the UDP display event are routed
+// dxcc), the /contact/worked statuses, the contact snapshots are routed
 // fixtures; marks, colours, order and the reason tip are the served client's. Expected values come
 // from the operator's scheme, not from the candidate.
 test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, CQ of interest, sender-only colour, one-line reason tip',{timeout:60000},async t=>{
@@ -2159,11 +2157,6 @@ test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, C
  assert.deepEqual(await byText('HB9BLA K3NB R-07'),['HB9BLA K3NB R-07','ba-tome',newCallBand,null,'New on 40m (worked on another band or mode)']);
  assert.deepEqual(await byText('CQ OA4DX FH17'),['CQ OA4DX FH17','',newDxcc,null,'New DXCC · New on 40m'],'the strongest enabled call slot');
  assert.deepEqual(await byText('K9XX YO3ABC -07'),['K9XX YO3ABC -07','ba-sender',none,['YO3ABC',newDxcc],'New DXCC · New on 40m']);
- // An accepted UDP highlight colours a partner row under its marker and replaces a row's slot colour.
- await page.evaluate(()=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{type:'udp.display',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,display_revision:1,
-  highlights:[{call:'K1PT',background:'#0000ff',foreground:null,last_only:false,period:null},{call:'YO3ABC',background:'#00ff00',foreground:null,last_only:false,period:null}],clear:{band_activity:null,rx_frequency:null}}}}})));
- assert.deepEqual((await rows()).slice(0,3),[['HB9BLA K1PT FN42','ba-partner','rgb(0, 0, 255)',null,'UDP highlight'],['CQ K1PT FN42','ba-partner','rgb(0, 0, 255)',null,'UDP highlight'],['stripe','','rgb(255, 64, 64)']]);
- assert.deepEqual(await byText('K9XX YO3ABC -07'),['K9XX YO3ABC -07','','rgb(0, 255, 0)',null,'New DXCC · New on 40m · UDP highlight'],'the UDP colour wins over the sender-only slot');
  // Logged (completed): no stripe and no marker remain.
  contact=partner('completed',{dx_call:'K1PT'});await page.evaluate(()=>window.wstxContact.load());
  await page.waitForFunction(()=>!document.querySelector('#band-activity tr.ba-partner-stripe'));

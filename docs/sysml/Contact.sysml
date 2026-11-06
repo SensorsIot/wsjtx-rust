@@ -698,8 +698,8 @@ package WstxContact {
              started; after a watchdog stop answers no longer reset it, only the next
              operator Enable Tx does. A human action in the browser (an operator Enable Tx or any
              accepted operating request of this station from the browser) also resets it
-             (a human is present). Automation, MCP requests (including a run start) and
-             UDP commands never reset it (WstxStrategy::WatchdogFromOperator); their
+             (a human is present). Automation and MCP requests (including a run start)
+             never reset it (WstxStrategy::WatchdogFromOperator); their
              Enable Tx keeps the count, and is refused tx_watchdog when the limit is used
              up or no browser action was seen this boot; only the browser may set the
              watchdogs (set_watchdogs from another source is refused operator_required).
@@ -815,8 +815,7 @@ package WstxContact {
              ADIF band enumeration (e.g. 20m), absent when the dial is not confirmed;
              FREQ in MHz with six decimals = confirmed dial + Tx offset (LQ ~384,
              mainwindow_slots.cpp ~545), absent when unconfirmed; STATION_CALLSIGN and
-             MY_GRIDSQUARE the WstxUdp Location session grid when one is set, else the
-             profile locator; TX_PWR watts (decimal >0, optional, D10); COMMENT single
+             MY_GRIDSQUARE the profile locator; TX_PWR watts (decimal >0, optional, D10); COMMENT single
              line, printable ASCII without '<' and '>', at most 1024 characters
              (optional, D10); a COMMENT containing '<' or '>' is refused (DIFFERENT from
              WSJT-X to_adi_text stripping them: a supplied record is never altered).
@@ -881,8 +880,7 @@ package WstxContact {
              without a dupe check). Only the first store of a contactId (saved) is sent
              to the WstxUdp targets as QSO Logged then Logged ADIF, so each contact
              reaches the external programs once; a replacement stays internal. They are
-             sent by the station step, never from inside a command, so a UDP Reply or
-             FreeText that reaches ContactCommand cannot re-enter the UDP owner. Idempotence: a retried command_id has no second
+             sent by the station step, never from inside a command. Idempotence: a retried command_id has no second
              effect, a repeated completion logs once, and a restart starts no contact,
              so it logs nothing again; stored records survive in contacts.adi.
              Storage failure: the record stays pending in the station process, at most 64

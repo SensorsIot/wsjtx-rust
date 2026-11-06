@@ -1038,23 +1038,15 @@ async fn transmit_state_revision_follows_the_read_view_only() {
 #[cfg(not(debug_assertions))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn contact_browser_operating_flow() {
-    let (rest, switch_mid_qso, switch_from_cq, udp_display) = tokio::join!(
-        contact_browser_station(
-            &[
-                "--test-skip-pattern=^TC-050-004 ",
-                "--test-skip-pattern=^TC-012-008 "
-            ],
-            false
-        ),
-        contact_browser_station(&["--test-name-pattern=^TC-050-004 mid-QSO: "], false),
-        contact_browser_station(&["--test-name-pattern=^TC-050-004 from-CQ: "], false),
-        contact_browser_station(&["--test-name-pattern=^TC-012-008 "], true),
+    let (rest, switch_mid_qso, switch_from_cq) = tokio::join!(
+        contact_browser_station(&["--test-skip-pattern=^TC-050-004 "]),
+        contact_browser_station(&["--test-name-pattern=^TC-050-004 mid-QSO: "]),
+        contact_browser_station(&["--test-name-pattern=^TC-050-004 from-CQ: "]),
     );
     let runs = [
         ("other tests", rest),
         ("TC-050-004 mid-QSO", switch_mid_qso),
         ("TC-050-004 from-CQ", switch_from_cq),
-        ("TC-012-008 UDP display", udp_display),
     ];
     // Every run's output first, so that one failure does not hide the others.
     for (label, outcome) in &runs {
@@ -1080,7 +1072,7 @@ async fn contact_browser_operating_flow() {
 /// UDP owner and its step (#40), started with no target (the test configures its own
 /// loopback peers through PUT /udp, so nothing is ever sent to 2237).
 #[cfg(not(debug_assertions))]
-async fn contact_browser_station(filter: &[&str], udp: bool) -> std::process::Output {
+async fn contact_browser_station(filter: &[&str]) -> std::process::Output {
     let filter: Vec<String> = filter.iter().map(|f| f.to_string()).collect();
     let listener = crate::test_ports::browser_listener();
     let address = listener.local_addr().unwrap();
@@ -1089,22 +1081,11 @@ async fn contact_browser_station(filter: &[&str], udp: bool) -> std::process::Ou
     f.contact().grant.store(true, Ordering::SeqCst);
     let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
     let _ = (&source, &job, generation);
-    if udp {
-        let doc = json!({"schema_version":1,"profile_id":f.id,"revision":0,
-            "instance_name":"WSTX-Rust","targets":[]});
-        std::fs::write(
-            f.dir.join(crate::udp::FILE_NAME),
-            serde_json::to_vec(&doc).unwrap(),
-        )
-        .unwrap();
-        let owner = crate::udp::Owner::open(&f.state, false);
-        assert!(f.state.recording.udp.set(owner).is_ok());
-    }
     let router = f.router.clone();
     let service = tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });
-    // The station-wide contact step (and the UDP step), as main() runs them.
+    // The station-wide contact step, as main() runs it.
     let ticker = {
         let f = f.clone();
         tokio::spawn(async move {
@@ -1113,7 +1094,6 @@ async fn contact_browser_station(filter: &[&str], udp: bool) -> std::process::Ou
                 let state = f.state.clone();
                 let _ = tokio::task::spawn_blocking(move || {
                     contact_http::station_tick(&state);
-                    crate::udp::station_tick(&state);
                 })
                 .await;
             }

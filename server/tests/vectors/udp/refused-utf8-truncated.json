@@ -2,6 +2,6 @@
  "source": "WSJT-X v3.3.0-beta5 Network/NetworkMessage.hpp sha256 b640a632f38b218f97b9c9cf5b5a09b183e1629c613c33d90f39635f9b3fdb3d; MessageClient.cpp sha256 8cfa89debc2b916b39151975437619e7f9b28aefa698f05231fbdf2247cb9f35; constructed field by field by construct.py (Python struct), exact",
  "exact": true,
  "direction": "inbound",
- "hex": "adbccbda00000002000000090000001457535458",
+ "hex": "adbccbda00000002000000000000001457535458",
  "expect": null
 }

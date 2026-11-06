@@ -58,7 +58,7 @@ package WstxMcp {
             a run skips an unanswered station instead of stopping no_answer. For every run
             (D6 included) the Tx watchdog counts unanswered own transmissions; only an
             answer or a human action in the browser resets it, never the run's commands,
-            an MCP request (including starting or restarting a run) or a UDP command
+            or an MCP request (including starting or restarting a run)
             (WstxStrategy::WatchdogFromOperator, coordinator default for the operator's
             rule, recorded on #39/#12, 2026-11-02, amending D5/D7; count form 2026-11-04);
             an MCP Enable Tx or run arm is refused tx_watchdog when the count is used up

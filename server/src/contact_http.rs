@@ -92,12 +92,16 @@ fn refusal(code: &str, field: Option<&str>) -> Response {
 fn station_of(r: &recording::Recording) -> Result<Arc<Station>, &'static str> {
     r.contact.get().cloned().ok_or("not_found")
 }
+/// The profile locator as the station uses it: upper case, None when empty.
+pub(crate) fn station_locator(locator: &str) -> Option<String> {
+    Some(locator.trim().to_ascii_uppercase()).filter(|l| !l.is_empty())
+}
 pub(crate) fn profile_facts(state: &ProfileState) -> (Option<String>, Option<String>) {
     let store = state.store.lock().unwrap_or_else(|p| p.into_inner());
     let d = &store.document;
     (
         Some(d.callsign.trim().to_ascii_uppercase()).filter(|c| !c.is_empty()),
-        crate::udp::effective_locator(state, &d.locator),
+        station_locator(&d.locator),
     )
 }
 /// The selected profile's callsign (upper case), as the contact engine uses it.

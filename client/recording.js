@@ -596,50 +596,8 @@ function sortBy(button){
 }
 document.querySelector('#band-activity thead').addEventListener('click',event=>{const th=event.target.closest('th[data-sort]');if(th)sortBy(th);});
 document.querySelector('#band-activity thead').addEventListener('keydown',event=>{const th=event.target.closest('th[data-sort]');if(th&&(event.key==='Enter'||event.key===' ')){event.preventDefault();sortBy(th);}});
-// #40 CL-040-08 WstxUdp::UdpDisplayEvent: Highlight Callsign and Clear from a UDP target with
-// accept_commands on (GridTracker, JTAlert), as WSJT-X's Band Activity and Rx Frequency
-// windows apply them. kind band_activity or rx_frequency: a Clear hides the rows of its job
-// below its floor (and, while that job is live, the rows of every earlier job).
-// The event is kept whatever the page knows yet and applies only while its profile and boot are
-// the station's (a station restart drops the earlier boot's highlights and floors).
-let udpDisplay=null;
-const udpCurrent=()=>udpDisplay&&udpDisplay.profile_id===profileData?.profile_id&&udpDisplay.boot_id===profileData?.boot_id?udpDisplay:null;
-function udpVisible(kind,record,context){
-  const d=udpCurrent(),f=d?.clear?.[kind];if(!f)return true;
-  const at=`${d.profile_id}/${d.boot_id}/${f.source_id}/${f.job_id}/${f.generation}`;
-  return at===liveIdentity(live)?context===at&&record.sequence>=f.sequence:context!==at||record.sequence>=f.sequence;
-}
-window.wstxUdpVisible=udpVisible;
-// The UDP highlight of a row (WSJT-X DisplayText::highlight_callsign): a whole message word,
-// also in <>, the sender first. A last-period entry of the row's period wins over the call's
-// map entry; a last-period reset (no colours) leaves that word uncoloured. It is interesting by
-// definition and replaces the slot colour (BandActivityColours).
-function udpHighlight(record){
-  const list=udpCurrent()?.highlights;if(!list?.length||record.status!=='decoded')return null;
-  const words=record.text.toUpperCase().split(' ').filter(Boolean).map(w=>w.replace(/^<(.+)>$/,'$1')),from=record.fields?.from?.text?.toUpperCase();
-  for(const word of from&&words.includes(from)?[from,...words.filter(w=>w!==from)]:words){
-    const last=list.findLast(h=>h.last_only&&h.call===word&&h.period!==null&&h.period===record.period_start_utc);
-    if(last){if(last.background||last.foreground)return last;continue;}
-    const map=list.find(h=>!h.last_only&&h.call===word);if(map)return map;
-  }
-  return null;
-}
-function validUdpDisplay(d){
-  const colour=c=>c===null||(typeof c==='string'&&/^#[0-9a-f]{6}$/.test(c));
-  const floor=f=>f===null||(!!f&&typeof f==='object'&&typeof f.source_id==='string'&&typeof f.job_id==='string'&&Number.isSafeInteger(f.generation)&&Number.isSafeInteger(f.sequence));
-  return !!d&&typeof d.profile_id==='string'&&typeof d.boot_id==='string'&&Number.isSafeInteger(d.display_revision)&&Array.isArray(d.highlights)&&d.highlights.length<=100&&d.highlights.every(h=>h&&typeof h.call==='string'&&colour(h.background)&&colour(h.foreground)&&typeof h.last_only==='boolean'&&(h.period===null||typeof h.period==='string'))&&
-    !!d.clear&&floor(d.clear.band_activity)&&floor(d.clear.rx_frequency);
-}
-addEventListener('station-message',event=>{
-  const {current,message}=event.detail;if(current!==socket||message?.type!=='udp.display')return;
-  const d=message.data;
-  if(!validUdpDisplay(d)){stationData('udp',false);return;}stationData('udp',true);
-  if(udpDisplay&&udpDisplay.profile_id===d.profile_id&&udpDisplay.boot_id===d.boot_id&&d.display_revision<=udpDisplay.display_revision)return;
-  udpDisplay=d;renderResults();
-});
 function renderResults(){
-  const shownRows=resultRows.filter(r=>udpVisible('band_activity',r,liveIdentity(live)));
-  const ordered=activityOrdering(shownRows);
+  const ordered=activityOrdering(resultRows);
   const body=document.querySelector('#band-activity tbody');
   const loading=resultView&&resultCursor<resultView.next_sequence;
   // #61 CL-061-03: the station's Tx period (CL-061-04) shows its marker row and no empty block;
@@ -648,14 +606,14 @@ function renderResults(){
   document.querySelector('#band-activity header .op-muted').textContent=own?`Tx \u00b7 ${mode?.toUpperCase()} period ${periodLabel(resultView.period_start_utc,mode)} UTC \u00b7 this station transmitted, no decode`:resultView?
     `Latest ${live?.job?.mode.toUpperCase()} period ${periodLabel(resultView.period_start_utc,live?.job?.mode)}${resultView.period_start_utc?' UTC':''} \u00b7 ${resultView.complete?'Attempt complete':'Partial'}${loading?' \u00b7 Loading results':''}${historyIncomplete?' \u00b7 Incomplete history':''}`:'Latest decode period';
   document.querySelector('#band-activity header .op-muted').title=resultView?.period_start_utc?'Timing relative to station system clock; external UTC accuracy unknown. DT positive: late; negative: early.':'Station clock correlation unavailable until supplied by this source.';
-  const count=own?activityHistory.reduce((n,h)=>n+h.rows.filter(r=>udpVisible('band_activity',r,h.context)).length,0):shownRows.length;
+  const count=own?activityHistory.reduce((n,h)=>n+h.rows.length,0):resultRows.length;
   document.querySelector('#band-activity .op-count').textContent=`${count} message${count===1?'':'s'}`;
   if(own){
     const marker=document.createElement('tr'),cell=document.createElement('td');marker.className='ba-tx';marker.dataset.period='tx';marker.setAttribute('role','row');
     cell.colSpan=7;cell.setAttribute('role','cell');cell.textContent=`Tx ${periodLabel(resultView.period_start_utc,mode)} \u00b7 this station transmitted \u00b7 no decode`;marker.append(cell);
     body.replaceChildren(marker);window.wstxRenderHistory?.(body);partnerFirst(body);return;
   }
-  if(!shownRows.length){
+  if(!resultRows.length){
     body.innerHTML='<tr><td colspan="7" class="empty-messages"><strong></strong><span></span></td></tr>';
     const decoder=live?.job&&['ft4','ft8'].includes(live.job.mode),job=live?.job;
     let heading='Decoder unavailable',message='No decoded messages are available from this server.';
@@ -693,16 +651,14 @@ function activityRow(record,period,context,mode){
   if(decoded&&/^CQ\b/.test(record.text))row.classList.add('ba-cq');
   if(isPartner)row.classList.add('ba-partner');
   else if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
-  const udp=udpHighlight(record);
-  const senderOnly=!udp&&hl.length>0&&!row.classList.contains('ba-tome')&&!/^(CQ|QRZ)\b/.test(record.text)&&!(f?.type==='nonstandard'&&f.cq);
+  const senderOnly=hl.length>0&&!row.classList.contains('ba-tome')&&!/^(CQ|QRZ)\b/.test(record.text)&&!(f?.type==='nonstandard'&&f.cq);
   if(senderOnly)row.classList.add('ba-sender');
-  if(udp)row.dataset.udp=udp.call;else if(hl.length)row.dataset.hl=hl.join(' ');
+  if(hl.length)row.dataset.hl=hl.join(' ');
   const grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value:null,km=grid?window.wstxDistanceKm?.(profileData?.settings?.locator,grid)??null:null,dx=record.dxcc,approx=km===null&&Number.isInteger(dx?.km);
   if(!isPartner)row.dataset.reasons=JSON.stringify(activityHover(record));
   const cells=[periodLabel(record.period_start_utc,mode),record.snr_db===null?'\u2014':record.snr_db.toFixed(1),record.dt_seconds===null?'\u2014':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),decoded?record.text:`Payload ${record.status}`,dx?dx.name:'\u2014',approx?`~${dx.km} km`:km===null?'\u2014':`${km} km`];
   for(const [index,text] of cells.entries()){
     const cell=document.createElement('td');cell.setAttribute('role','cell');cell.dataset.label=labels[index];cell.textContent=text;
-    if(udp){if(udp.background)cell.style.backgroundColor=udp.background;if(udp.foreground)cell.style.color=udp.foreground;}
     if(index===4){cell.dataset.col='message';
       // The sender's call word (also in < >) of a sender-only row is its own span; the text stays the message.
       const words=text.split(' '),at=senderOnly&&from?[...words.keys()].sort((a,b)=>(a===0)-(b===0)).find(i=>words[i].replace(/^<(.+)>$/,'$1').toUpperCase()===from):undefined;
@@ -1318,15 +1274,14 @@ function activityHover(r){
   return Object.fromEntries(Object.entries(text).filter(([k])=>r.flags[k]===true).map(([k,t])=>[k,t.trim()]));
 }
 const HOVER_KINDS=[['new_continent','new_continent_band'],['new_dxcc','new_dxcc_band'],['new_cq_zone','new_itu_zone','new_cq_zone_band','new_itu_zone_band'],['new_grid','new_grid_band'],['new_call','new_call_band']];
-// One line, " · " between reasons (operator: "line them up horizontally"), then "UDP highlight" for an
-// accepted UDP highlight and the strategy verdict. A row without such a reason has no tip. Shown in
+// One line, " · " between reasons (operator: "line them up horizontally"), then the strategy verdict. A row without such a reason has no tip. Shown in
 // the compact Band Activity tip (data-tip) and as aria-description; no native title, which wraps.
 function activityWhy(row){
   let reasons={};try{reasons=JSON.parse(row.dataset.reasons??'{}')??{};}catch{}
   const on=new Set((document.querySelector('#band-activity')?.dataset.hlOn??'').split(' '));
   const worked=row.dataset.worked==='worked_this_band_and_mode'?`on ${row.dataset.workedOn||'this band and mode'}`:row.dataset.worked==='worked_other_band_or_mode'?'on another band or mode':'';
   const parts=HOVER_KINDS.map(kind=>{const k=kind.find(k=>reasons[k]&&on.has(k));return !k?'':k==='new_call_band'&&worked?`${reasons[k]} (worked ${worked})`:reasons[k];});
-  parts.push(row.dataset.udp?'UDP highlight':'',row.dataset.whyStrategy??'');
+  parts.push(row.dataset.whyStrategy??'');
   const tip=parts.filter(Boolean).join(' · ');
   if(tip){row.dataset.tip=tip;row.setAttribute('aria-description',tip);}else{delete row.dataset.tip;row.removeAttribute('aria-description');}
   const t=window.wstxActivityTip;if(t?.row===row)t.show(row);
