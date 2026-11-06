@@ -1770,7 +1770,7 @@ package WstxRequirements {
              tests check the captured packet and the pinned independent vector field by field, their
              negative cases, documented control lines and the 4096-byte line bound. The live check
              script tests/flex-live-check.cjs, run against the emulator streaming the verified FT8
-             vector on the UTC period at 24 kHz, measures zero loss, reports jitter, shows the
+             vector on the UTC period at 24 kHz with one packet in 64 lost, measures that loss, reports jitter, shows the
              vector's expected text from the station's decoder with DT within 0.3 s from arrival
              anchoring, saves the windows and leaves no slice or client. It stops as occupied with a
              client or slice present, whichever way round the replies come, as unverified when a
