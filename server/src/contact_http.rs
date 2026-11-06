@@ -767,8 +767,67 @@ fn transmit_view(v: &View, problem: Option<&str>, safety_revision: Option<u64>) 
         "last_text":v.last_text,"last_period_utc":v.last_period_utc_ms,"halt_state":halt,"safety_revision":safety_revision,
         "refusal":v.refusal.map(|r|name(format!("{r:?}"))).or(problem.map(String::from))})
 }
-pub(crate) fn state_event(r: &recording::Recording, revision: u64) -> String {
-    json!({"v":1,"type":"contact.state","data":{"profile_id":r.profile,"boot_id":r.boot,"contact_revision":revision}}).to_string()
+/// contact.state stays below the 2048 B optional write limit with its 260 B envelope: dialogue
+/// rows over it follow a second later.
+const STATE_CHANGED_BYTES_MAX: usize = 1780;
+/// What this peer lacks of the snapshot `now`, given the fields it was `sent`: changed fields, of
+/// transmit, settings and watchdog the changed members, of the same contact the changed members
+/// and the dialogue from the first row it lacks; a peer holding nothing gets every field, null
+/// too, which replaces what it shows from an earlier socket. Returns them and what it then holds.
+pub(crate) fn state_changes(sent: &Value, now: &Value) -> (serde_json::Map<String, Value>, Value) {
+    let mut changed = serde_json::Map::new();
+    let mut holds = now.clone();
+    for key in ["transmit", "settings", "log", "watchdog", "contact"] {
+        let (old, new) = (&sent[key], &now[key]);
+        if old == new && !sent.is_null() {
+            continue;
+        }
+        let same_contact = key == "contact" && old["id"] == new["id"] && old.is_object();
+        let members = matches!(key, "transmit" | "settings" | "watchdog") || same_contact;
+        let mut part = match (members, old.as_object(), new.as_object()) {
+            (true, Some(old), Some(fields)) => fields
+                .iter()
+                .filter(|(k, v)| old.get(k.as_str()) != Some(*v))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            _ => match new.as_object() {
+                Some(fields) => fields.clone(),
+                None => {
+                    changed.insert(key.into(), new.clone());
+                    continue;
+                }
+            },
+        };
+        if key == "contact" && part.contains_key("dialogue") {
+            let rows = new["dialogue"].as_array().cloned().unwrap_or_default();
+            let held = old["dialogue"].as_array().filter(|_| same_contact);
+            let from = held.filter(|h| rows.starts_with(h)).map_or(0, Vec::len);
+            part.insert("dialogue_from".into(), json!(from));
+            part.insert("dialogue".into(), json!(rows[from..]));
+            let mut kept = rows.len() - from;
+            let size = |part: &serde_json::Map<String, Value>| {
+                changed
+                    .iter()
+                    .map(|(k, v)| k.len() + v.to_string().len() + 4)
+                    .sum::<usize>()
+                    + Value::Object(part.clone()).to_string().len()
+                    + 12
+            };
+            while kept > 0 && size(&part) > STATE_CHANGED_BYTES_MAX {
+                kept -= 1;
+                part.insert("dialogue".into(), json!(rows[from..from + kept]));
+            }
+            holds["contact"]["dialogue"] = json!(rows[..from + kept]);
+        }
+        changed.insert(key.into(), Value::Object(part));
+    }
+    (changed, holds)
+}
+pub(crate) fn state_event(snapshot: &Value, changed: serde_json::Map<String, Value>) -> String {
+    json!({"v":1,"type":"contact.state","data":{"profile_id":snapshot["profile_id"],"boot_id":snapshot["boot_id"],
+        "contact_revision":snapshot["contact_revision"],"snapshot_sequence":snapshot["snapshot_sequence"],
+        "monotonic_ms":snapshot["monotonic_ms"],"utc_ms":snapshot["utc_ms"],"changed":changed}})
+    .to_string()
 }
 /// station.tick: (text, transmitting).
 pub(crate) fn tick_event(r: &recording::Recording) -> (String, bool) {

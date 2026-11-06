@@ -375,9 +375,79 @@ pub(crate) fn view_digest(mut view: Value) -> u64 {
     view.to_string().hash(&mut hasher);
     hasher.finish()
 }
-/// The transmit.state event for `revision` (at most 192 bytes).
-pub(crate) fn state_event(r: &recording::Recording, revision: u64) -> String {
-    json!({"v":1,"type":"transmit.state","data":{"profile_id":r.profile,"boot_id":r.boot,"transmit_revision":revision}})
+/// The fields transmit.state carries: the read view without the identity (in the event's
+/// data) and the outcomes (no browser shows them; they stay in GET /transmit).
+pub(crate) fn pushed_view(r: &recording::Recording) -> Option<Value> {
+    let s = r.transmit.get()?;
+    let mut view = view_json(r, &s.service.view());
+    let fields = view.as_object_mut()?;
+    for key in ["v", "profile_id", "boot_id", "outcomes"] {
+        fields.remove(key);
+    }
+    Some(view)
+}
+/// What `now` changes against `sent`: changed top-level fields, and only the changed members
+/// of `transmit` and `watchdog`. clock_measurement goes whole when anything but age_ms
+/// changes; the browser advances the age locally.
+pub(crate) fn changed_fields(sent: &Value, now: &Value) -> serde_json::Map<String, Value> {
+    let measured = |view: &Value| {
+        let mut m = view["clock_measurement"].clone();
+        if let Some(fields) = m.as_object_mut() {
+            fields.remove("age_ms");
+        }
+        m
+    };
+    let mut changed = serde_json::Map::new();
+    let Some(fields) = now.as_object() else {
+        return changed;
+    };
+    for (key, value) in fields {
+        let old = &sent[key.as_str()];
+        match (key.as_str(), old.as_object(), value.as_object()) {
+            ("clock_measurement", ..) if measured(sent) == measured(now) && !sent.is_null() => {}
+            ("transmit" | "watchdog", Some(old), Some(members)) => {
+                let part: serde_json::Map<String, Value> = members
+                    .iter()
+                    .filter(|(k, v)| old.get(k.as_str()) != Some(*v))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+                if !part.is_empty() {
+                    changed.insert(key.clone(), Value::Object(part));
+                }
+            }
+            _ if sent.get(key.as_str()) != Some(value) => {
+                changed.insert(key.clone(), value.clone());
+            }
+            _ => {}
+        }
+    }
+    changed
+}
+/// Whether a pushed state goes now: only the running Tune countdown changed goes at most every
+/// 5 s below Detailed.
+pub(crate) fn due(
+    display_profile: &str,
+    changed: &serde_json::Map<String, Value>,
+    since_last: std::time::Duration,
+) -> bool {
+    display_profile == "detail"
+        || !countdown_only(changed)
+        || since_last >= std::time::Duration::from_secs(5)
+}
+pub(crate) fn countdown_only(changed: &serde_json::Map<String, Value>) -> bool {
+    changed.len() == 1
+        && changed
+            .get("watchdog")
+            .and_then(Value::as_object)
+            .is_some_and(|w| w.len() == 1 && w.contains_key("tune_remaining_seconds"))
+}
+/// The transmit.state event for `revision` with the changed fields.
+pub(crate) fn state_event(
+    r: &recording::Recording,
+    revision: u64,
+    changed: serde_json::Map<String, Value>,
+) -> String {
+    json!({"v":1,"type":"transmit.state","data":{"profile_id":r.profile,"boot_id":r.boot,"transmit_revision":revision,"changed":changed}})
         .to_string()
 }
 fn station(r: &recording::Recording) -> Result<Arc<Station>, &'static str> {
