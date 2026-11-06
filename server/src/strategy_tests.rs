@@ -1280,7 +1280,7 @@ async fn tc_039_004_a_run_goes_on_after_each_qso_without_a_limit() {
     let e = at_even(&f);
     select(&f, config(Some("New calls"))).await;
     let _client = f.state.recording.clients.session();
-    // No time_limit (the policy deadline is the start; the grant's 8 h still bind it).
+    // No time_limit (a policy deadline would be the start); only the grant binds it.
     *f.state
         .recording
         .contact
@@ -1832,6 +1832,75 @@ async fn tc_039_033_without_a_client_for_60_s_nothing_new_and_the_exchange_ends(
     publish(&f, e + 180_000, &[("CQ DL1XYZ JO62", 1200.0, Some(9.0))]);
     assert_eq!(quiet_contact(&f).await.0, json!("DL1XYZ"));
     assert_eq!(f.keys(), 2, "key on and off of the one own period above");
+}
+
+// Proves: TC-039-033: the status WebSocket itself is what counts: an actual upgrade over the
+// served router with the browser's cookie holds a run past 60 s, its close lets the 60 s run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_033_a_real_status_websocket_keeps_a_strategy_and_its_close_ends_that() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    at_even(&f);
+    select(&f, config(Some("New calls"))).await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = f.app.clone();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, crate::router(app)).await.unwrap();
+    });
+    let (origin, cookie) = (f.app.origin.clone(), f.cookie());
+    let (stream, line) = tokio::task::spawn_blocking(move || {
+        use std::io::{BufRead, Write};
+        let mut stream = std::net::TcpStream::connect(address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let request = [
+            "GET /ws HTTP/1.1".to_owned(),
+            format!("Host: {address}"),
+            format!("Origin: {origin}"),
+            "Connection: Upgrade".to_owned(),
+            "Upgrade: websocket".to_owned(),
+            "Sec-WebSocket-Version: 13".to_owned(),
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==".to_owned(),
+            "Sec-WebSocket-Protocol: wstx.v1".to_owned(),
+            format!("Cookie: {cookie}"),
+            String::new(),
+            String::new(),
+        ]
+        .join("\r\n");
+        stream.write_all(request.as_bytes()).unwrap();
+        let mut line = String::new();
+        std::io::BufReader::new(stream.try_clone().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        (stream, line)
+    })
+    .await
+    .unwrap();
+    assert!(line.starts_with("HTTP/1.1 101"), "{line}");
+    let clients = &f.state.recording.clients;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while clients.sessions_open() != 1 {
+        assert!(Instant::now() < deadline, "the upgrade opens one session");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    at_skew(&f, 61);
+    assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null), "past 60 s");
+    at_skew(&f, 300);
+    assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
+    // The browser goes away: the session ends and the 60 s count from there.
+    drop(stream);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while clients.sessions_open() != 0 {
+        assert!(Instant::now() < deadline, "the close ends the session");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    at_skew(&f, 359);
+    assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
+    at_skew(&f, 360);
+    assert_eq!(quiet_run(&f), ("stopped".into(), json!("no_client")));
+    server.abort();
 }
 
 // Proves: TC-039-033
