@@ -379,6 +379,21 @@ test('TC-023-001 the live check reports the loss it saw', {timeout: 60000}, asyn
   assert.ok(Math.abs(report.loss_percent - 12.5) < 2, `loss ${report.loss_percent}`);
 });
 
+test('TC-023-001 a stall above 200 ms with packets missing opens a new epoch', {timeout: 60000}, async t => {
+  const port = await udpPort();
+  const emulator = await new FlexEmulator({discoveryPorts: [port], dropEvery: 2}).start();
+  t.after(() => emulator.stop());
+  const s = await station(t, {name: 'Stalled', discovery: port});
+  await state(s, 'ready');
+  const r0 = (await s.request('/receive')).body;
+  assert.equal((await s.request('/receive/start', 'POST', {v: 1, profile_id: s.id, boot_id: r0.boot_id, generation: r0.generation, profile_revision: 0, mode: 'spectrum'})).status, 202);
+  const running = await waitFor(async () => { const r = (await s.request('/receive')).body; return r.source?.next_frame > 12000 && r; }, 'receive runs');
+  assert.equal(running.audio.loss_epochs, 0, 'known gaps alone open no epoch');
+  emulator.pausedUntil = performance.now() + 400;
+  const after = await waitFor(async () => { const r = (await s.request('/receive')).body; return r.audio.loss_epochs >= 1 && r; }, 'a new epoch after the stall', 5000);
+  assert.equal(after.audio.last_loss, 'native_discontinuity');
+});
+
 test('TC-023-001 lost packets keep the timeline and are counted, and a stall shows as jitter', {timeout: 60000}, async t => {
   const port = await udpPort();
   const emulator = await new FlexEmulator({discoveryPorts: [port], dropEvery: 4}).start();
@@ -390,7 +405,7 @@ test('TC-023-001 lost packets keep the timeline and are counted, and a stall sho
   const first = await waitFor(async () => { const r = (await s.request('/receive')).body; return r.source?.next_frame > 12000 && {at: Date.now(), frame: r.source.next_frame, packets: (await s.flex()).packets}; }, 'receive runs');
   await new Promise(r => setTimeout(r, 5000));
   const r1 = (await s.request('/receive')).body, f = await s.flex();
-  // One packet in four is missing; the position jumps over it, so time keeps its full rate.
+  // One packet in four is missing and becomes silence, so time keeps its full rate.
   const lost = f.packets.lost - first.packets.lost, accepted = f.packets.accepted - first.packets.accepted;
   assert.ok(Math.abs(lost / (lost + accepted) - 0.25) < 0.03, `lost ${lost} accepted ${accepted}`);
   const rate = (r1.source.next_frame - first.frame) / ((Date.now() - first.at) / 1000);
