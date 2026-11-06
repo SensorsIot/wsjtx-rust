@@ -1417,8 +1417,7 @@ impl Logbook {
                 .worked_set
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
-                .clone()
-                .map(|(r, t, w)| (r, t, w)),
+                .clone(),
             Some(key) => self
                 .worked_windows
                 .lock()
