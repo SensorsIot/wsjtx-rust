@@ -1289,8 +1289,8 @@ fn tc_012_003_oversize_datagram_does_not_hold_back_halt() {
 }
 
 // Proves: CL-039-06, TC-039-005. A UDP Reply or Free Text is never an operator action
-// for the Tx watchdog: 61 s after the browser's action it is spent although both came
-// at 50 s (#39, WstxStrategy::WatchdogFromOperator).
+// for the Tx watchdog: with no browser action this boot it stays spent after both
+// (#39, WstxStrategy::WatchdogFromOperator).
 #[test]
 fn tc_039_005_udp_reply_and_free_text_never_reset_the_watchdog() {
     let f = fixture("http://127.0.0.1:18407", true);
@@ -1317,15 +1317,7 @@ fn tc_039_005_udp_reply_and_free_text_never_reset_the_watchdog() {
             .service
             .with(|core| core.watchdog_spent())
     };
-    // The operator's action (the browser's ContactCommand path, not automatic).
-    operate(
-        &f,
-        "set_watchdogs",
-        json!({"tx_minutes":1,"tune_seconds":90}),
-        false,
-    );
-    assert!(!spent());
-    f.bench.offset.fetch_add(50_000, Ordering::SeqCst);
+    assert!(spent(), "no browser action yet");
     let v = command(
         &f,
         &owner,
@@ -1336,8 +1328,15 @@ fn tc_039_005_udp_reply_and_free_text_never_reset_the_watchdog() {
     assert_eq!(outcome(&v), ("applied".into(), Value::Null), "{v}");
     let v = command(&f, &owner, &c, 0, &free_text("K1ABC HB9BLA 73"));
     assert_eq!(outcome(&v), ("applied".into(), Value::Null), "{v}");
-    f.bench.offset.fetch_add(11_000, Ordering::SeqCst);
-    assert!(spent(), "the UDP commands did not extend the watchdog");
+    assert!(spent(), "the UDP commands did not reset the watchdog");
+    // The browser's ContactCommand path is an operator action.
+    operate(
+        &f,
+        "set_watchdogs",
+        json!({"tx_calls":1,"tune_seconds":90}),
+        false,
+    );
+    assert!(!spent());
 }
 
 /// 2026-11-01T12:34:30Z, an even FT8 period (Julian day 2461346, see tc_012_002).

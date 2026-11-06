@@ -371,7 +371,8 @@ describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
 
 // Proves: CL-006-02/04; TC-018-003, endpoint-wide TLS authentication/Origin priority and WS opt-in.
 test('TC-018-003 every recording endpoint retains TLS cookie and exact Origin boundaries',{timeout:45000},async t=>{
-  const f=await fixture(t,{thin:true}),s=await f.snapshot(),id=crypto.randomUUID();
+  // TLS without the 32 kbit/s link: this test proves no link property, and enrolling across that link costs its whole budget as the client grows.
+  const f=await fixture(t,{secure:true}),s=await f.snapshot(),id=crypto.randomUUID();
   const absent=await browser.newContext({ignoreHTTPSErrors:true});t.after(()=>absent.close());
   for(const [route,method] of [['/recording','GET'],['/recording/imports','POST'],['/recording/imports/'+id,'GET'],['/recording/imports/'+id,'PUT'],['/recording/imports/'+id,'DELETE'],['/recording/replay','POST'],['/recording/jobs/'+id,'DELETE']]){
     const response=await absent.request.fetch(f.origin+route,{method,headers:{Origin:f.origin}});assert.equal(response.status(),401);assert.equal((await response.json()).error.code,'unauthorized');
@@ -538,8 +539,11 @@ test('TC-010-005 review real Detailed peer cadence and control priority',{timeou
   const f=await fixture(t);await f.upload(wav(3));
   const ws=new WebSocket(f.origin.replace('http','ws')+'/ws','wstx.v1',{origin:f.origin});await once(ws,'open');t.after(()=>ws.close());
   const stamps=[];ws.on('message',raw=>{const m=JSON.parse(String(raw));if(m.type==='spectrum.detail.frame')stamps.push(performance.now());});
-  let pending=receive(ws);ws.send(JSON.stringify({v:1,type:'spectrum.detail',id:1}));assert.equal((await pending).data.profile,'detail');await f.replay();
-  await sleep(1700);const started=performance.now();pending=receive(ws);ws.send(JSON.stringify({v:1,type:'station.get',id:2}));assert.equal((await pending).type,'station.status');assert.ok(performance.now()-started<2000);
+  const pending=receive(ws);ws.send(JSON.stringify({v:1,type:'spectrum.detail',id:1}));assert.equal((await pending).data.profile,'detail');await f.replay();
+  // A Detailed frame already in flight may precede the reply (FIFO, as in the Thin Off case above): the control deadline holds regardless.
+  await sleep(1700);const started=performance.now();
+  const status=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('no station.status within 2 s')),2000);ws.on('message',raw=>{if(JSON.parse(String(raw)).type==='station.status'){clearTimeout(timer);resolve();}});});
+  ws.send(JSON.stringify({v:1,type:'station.get',id:2}));await status;assert.ok(performance.now()-started<2000);
   // #54: 200 ms steady, 170 ms while retained rows wait: at least 165 ms apart and at most 5.9 rows/s.
   assert.ok(stamps.length>=5);for(let k=1;k<stamps.length;k++)assert.ok(stamps[k]-stamps[k-1]>=165,JSON.stringify(stamps));
   assert.ok((stamps.length-1)*1000/(stamps.at(-1)-stamps[0])<=5.9,JSON.stringify(stamps));

@@ -602,36 +602,64 @@ fn restart_never_resumes_an_armed_station_or_its_request() {
     assert!(f.log().is_empty());
 }
 
+// Proves: TC-008-001 (#39 2026-11-04). The owner counts started transmissions; an
+// answer resets the count; at the limit the next request is never keyed and nothing
+// is halted.
 #[test]
-fn tx_watchdog_expiry_halts_and_disarms_and_tune_ends_at_its_limit() {
+fn tx_watchdog_never_keys_after_the_unanswered_limit_and_tune_ends_at_its_limit() {
     let f = Fake::new();
     let mut core = Core::new(f.clone());
     core.set_watchdogs(1, 2).unwrap();
     assert!(core.set_watchdogs(0, 90).is_err() && core.set_watchdogs(100, 90).is_err());
     assert!(core.set_watchdogs(6, 0).is_err() && core.set_watchdogs(6, 301).is_err());
-    let t0 = P - 20_000;
+    f.at(P - 20_000);
     core.arm(7).unwrap();
-    assert_eq!(core.view().tx_remaining_minutes, 1);
+    assert_eq!(core.view().tx_remaining_calls, 1);
     core.submit(request(1, P, "CQ HB9BLA JN47"));
     run(&mut core, &f, P + 13_000);
-    *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
-    run(&mut core, &f, t0 + 59_999);
     assert_eq!(
-        core.view().arm_state,
-        ArmState::Armed,
-        "changed text at P+500 reset the count"
+        core.view().tx_remaining_calls,
+        0,
+        "one started transmission"
     );
-    f.at(P + 500 + 59_999);
-    core.tick();
-    assert_eq!(core.view().arm_state, ArmState::Armed);
-    f.at(P + 500 + 60_000);
-    core.tick();
+    *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
+    run(&mut core, &f, P + 14_000);
+    // An answer resets the count: the next one is keyed.
+    core.answered();
+    assert_eq!(core.view().tx_remaining_calls, 1);
+    *f.0.audio.lock().unwrap() = None;
+    core.submit(request(2, P + 30_000, "CQ HB9BLA JN47"));
+    run(&mut core, &f, P + 43_000);
+    *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
+    run(&mut core, &f, P + 44_000);
+    let keyed = f.keys().len();
+    assert!(keyed >= 4, "two transmissions keyed and released");
+    // No answer: the third request is refused before keying, without a halt.
+    *f.0.audio.lock().unwrap() = None;
+    core.submit(request(3, P + 60_000, "CQ HB9BLA JN47"));
+    run(&mut core, &f, P + 61_000);
     let v = core.view();
     assert_eq!(
         (v.arm_state, v.last_disarm_cause, v.tx_expired),
         (ArmState::Disarmed, DisarmCause::TxWatchdog, true)
     );
-    assert_eq!(f.keys().last().map(|k| k.1), Some(false));
+    assert_eq!(
+        (v.halt_state, v.ptt, v.transmitting),
+        (HaltState::Idle, PttState::Released, false)
+    );
+    assert_eq!(f.keys().len(), keyed, "never keyed");
+    assert!(
+        v.outcomes
+            .iter()
+            .all(|o| o.kind != wstx_rust::transmit::service::OutcomeKind::Halted),
+        "no halt outcome"
+    );
+    // An operator arm clears the expiry and starts the count again.
+    core.arm(7).unwrap();
+    assert_eq!(
+        (core.view().tx_expired, core.view().tx_remaining_calls),
+        (false, 1)
+    );
     // Tune: armed, 2 s limit, released through PTT at expiry.
     core.arm(7).unwrap();
     let t = f.now_utc_ms();
@@ -1207,24 +1235,29 @@ fn halt_during_a_slow_key_releases_within_the_bound() {
     driver.join().unwrap();
 }
 
-// Proves: CL-009-04; TC-008-003. Review finding 4.
+// Proves: CL-039-06 (WstxTransmit::TransmitHaltUse). The watchdog stop never touches
+// PTT: a failing release cannot make it indeterminate, and no halt is recorded.
 #[test]
-fn watchdog_expiry_reports_the_true_halt_state_when_release_fails() {
+fn watchdog_stop_never_touches_ptt() {
     let f = Fake::new();
     let mut core = Core::new(f.clone());
     core.set_watchdogs(1, 90).unwrap();
     f.at(P - 100);
     core.arm(7).unwrap();
     core.submit(request(1, P, "CQ HB9BLA JN47"));
-    run(&mut core, &f, P + 600);
+    run(&mut core, &f, P + 13_000);
+    *f.0.audio.lock().unwrap() = Some(AudioPoll::Finished);
+    run(&mut core, &f, P + 14_000);
+    *f.0.audio.lock().unwrap() = None;
     *f.0.unkey_error.lock().unwrap() = Some(PttError::Timeout);
-    f.at(P + 500 + 60_000);
-    core.tick();
+    let keys = f.keys().len();
+    core.submit(request(2, P + 30_000, "CQ HB9BLA JN47"));
+    run(&mut core, &f, P + 31_000);
     let v = core.view();
     assert_eq!(v.last_disarm_cause, DisarmCause::TxWatchdog);
     assert_eq!(
-        (v.halt_state, v.ptt),
-        (HaltState::Pending, PttState::Indeterminate)
+        (v.halt_state, v.ptt, f.keys().len()),
+        (HaltState::Idle, PttState::Released, keys)
     );
 }
 

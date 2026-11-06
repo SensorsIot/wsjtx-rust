@@ -326,13 +326,13 @@ test('TC-007-005 transmit state is pushed: one GET /transmit per socket, one per
   const idle=performance.now();await sleep(10000);
   assert.equal(reads(idle).length,0,'no timer read while the view is unchanged');
   const live=await (await fetch(origin+'/receive')).json();
-  const watchdogs=async tx_minutes=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_minutes,tune_seconds:90})});assert.equal(r.status,200,await r.text());};
+  const watchdogs=async tx_calls=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};
   const changed=performance.now();await watchdogs(8);
-  await waitFor(async()=>await page.evaluate(()=>transmitView?.watchdog?.tx_minutes)===8,'pushed change read',5000);
+  await waitFor(async()=>await page.evaluate(()=>transmitView?.watchdog?.tx_calls)===8,'pushed change read',5000);
   assert.ok(frames.some(f=>f.at>=changed),'the change is announced');
   await sleep(1500);
   assert.equal(reads(changed).length,1,'one read per announced change');
-  await watchdogs(6);await waitFor(async()=>await page.evaluate(()=>transmitView?.watchdog?.tx_minutes)===6,'restored',5000);
+  await watchdogs(6);await waitFor(async()=>await page.evaluate(()=>transmitView?.watchdog?.tx_calls)===6,'restored',5000);
   assert.deepEqual(page.errors,[]);
 });
 

@@ -112,6 +112,13 @@ function request(origin, method = 'GET', body, headers = {}, pathname = '/profil
 const edit = (i, revision, value = settings(i), id = uuid(i)) => ({profile_id: id, revision, settings: value});
 async function browserWindows(t, profiles) {
   const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
+  // CL-044-08: the audio selects offer only listed endpoints; the fixture endpoints are listed by a
+  // route (no audio device is read for them), in place of the station's own listing.
+  await context.route('**/audio/endpoints', async route => {
+    const origin = new URL(route.request().url()).origin, profile = await (await route.fetch({url: origin + '/profile', method: 'GET'})).json();
+    const entry = (id, label) => ({id, name: label, label, present: true, radio: null});
+    await route.fulfill({json: {v: 1, profile_id: profile.profile_id, boot_id: profile.boot_id, inputs: [entry(captureId(91), 'Fixture input 91')], outputs: [entry(renderId(97), 'Fixture output 97')]}});
+  });
   const launcher = await context.newPage(), pages = [];
   for (const p of profiles) {const opened = context.waitForEvent('page'); await launcher.evaluate(({url, name}) => {window.open(url, name, 'popup,width=1100,height=850');}, {url: p.origin, name: p.document.profile_id}); pages.push(await opened);}
   await launcher.close(); return {context, pages};
@@ -1640,7 +1647,7 @@ test('TC-022-001: four real windows, independent edits and HTTP input boundaries
   }
   assert.equal(boots.size, 4);
   const page = pages[0];
-  await page.locator('#display-name').fill('Edited station 1'); await page.locator('#audio-input').fill(captureId(91)); await page.locator('#control-mode').selectOption('cat'); await page.locator('#control-endpoint').fill('fixture-cat-1');
+  await page.locator('#display-name').fill('Edited station 1'); await page.locator('#audio-input').selectOption(captureId(91)); await page.locator('#control-mode').selectOption('cat'); await page.locator('#control-endpoint').fill('fixture-cat-1');
   await page.locator('#settings-save').click(); await page.locator('#settings-result').filter({hasText: 'Saved revision 1'}).waitFor();
   const second = await context.newPage(); await second.goto(profiles[0].origin); await connected(second); assert.equal(await second.locator('#display-name').inputValue(), 'Edited station 1'); await second.close();
   for (let i = 1; i < 4; i++) assert.equal((await savedBytes(profiles))[i], beforeBytes[i]);
@@ -1670,7 +1677,7 @@ test('TC-022-001: four real windows, independent edits and HTTP input boundaries
   assert.equal((await request(profiles[0].origin, 'DELETE')).status, 405);
   assert.equal((await request(profiles[0].origin, 'GET', undefined, {Origin: 'http://unrelated.invalid'})).status, 403);
   await page.reload(); await connected(page); await page.setViewportSize({width: 360, height: 900});
-  await page.locator('#display-name').fill('X'.repeat(64)); await page.locator('#audio-output').fill(renderId(97));
+  await page.locator('#display-name').fill('X'.repeat(64)); await page.locator('#audio-output').selectOption(renderId(97));
   await page.locator('#settings-save').click(); await page.locator('#settings-result').filter({hasText: `Saved revision ${revision + 1}`}).waitFor(); revision++;
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'maximum name and identifiers wrap or remain within inputs');
   await fs.mkdir('test-results', {recursive: true}); await page.screenshot({path: 'test-results/profile-boundary-mobile.png', fullPage: true});

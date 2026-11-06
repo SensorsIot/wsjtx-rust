@@ -331,7 +331,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
 // expected sets below come from the model's decisions, not from the candidate markup.
 const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#operating-monitor','#contact-enable','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar','#rx-frequency','#region-server-settings','#region-expert'];
 const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#qso-halt','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#display-sensitivity','#display-speed','#qso-cq','#contact-tune','#qso-halt','#contact-log'];
-const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#detect-run','#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#audio-enumerate','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#udp-warning','#udp-save','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
+const drawerItems={general:['#display-name','#callsign','#locator','#station-continent','#clock-setting','#theme-choice','#theme-switch','#display-profile','#settings-browsers','#settings-automation','#settings-startup'],radio:['#detect-run','#control-mode','#control-endpoint','#ptt-mode','#cat-status','#audio-input','#audio-output','#settings-audio .op-input-meter','#watchdog-tx','#watchdog-tune','#settings-save'],logging:['#settings-log','#settings-udp','#udp-warning','#udp-save','#settings-pskreporter'],expert:['#signal-status','#receive-status','#receive-generation','#operating-selection-status','#operating-radio','#operating-refresh','#clock-detail','#receive-toggle','#version','#operating-capabilities','#recording-file','#recording-import','#recording-replay','#startup-resume']};
 const healthyTexts=['#cat-status','#receive-status','#signal-status','#operating-radio','#operating-selection-status','#clock-detail'];
 async function inViewport(page,selector){return page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();return el.checkVisibility({visibilityProperty:true})&&r.width>1&&r.height>1&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;});}
 // checkVisibility also treats the content of a closed <details> fold-out as not shown.
@@ -339,8 +339,8 @@ async function shown(page,selector){return page.locator(selector).first().evalua
 function contactSnapshot(base,{contact=null,transmit={},settings={},log=null}={}){
   return {v:1,profile_id:base.profile_id,boot_id:base.boot_id,contact_revision:base.revision??3,snapshot_sequence:base.sequence??3,monotonic_ms:1000,utc_ms:Date.now(),log,
     transmit:{capability:'available',arm_state:'disarmed',last_disarm_cause:'startup',tune:false,pending_sequence:null,last_text:null,last_period_utc:null,halt_state:'idle',safety_revision:7,refusal:null,...transmit},
-    settings:{auto_seq:true,tx1_skip:false,tx_minutes:6,tune_seconds:90,rx_hz:1500,tx_hz:1500,hold_tx:false,parity:'even',report:-10,...settings},
-    contact,watchdog:{tx_remaining_minutes:6,tx_expired:false,tune_remaining_seconds:0}};
+    settings:{auto_seq:true,tx1_skip:false,tx_calls:6,tune_seconds:90,rx_hz:1500,tx_hz:1500,hold_tx:false,parity:'even',report:-10,...settings},
+    contact,watchdog:{tx_remaining_calls:6,tx_expired:false,tune_remaining_seconds:0}};
 }
 const partner=(state='replying',extra={})=>({id:crypto.randomUUID(),origin:'selected_row',dx_call:'K1ABC',dx_grid:'FN42',report_sent:'-12',report_rcvd:null,state,next_slot:'tx1',tx4:'rrr',messages:['K1ABC HB9BLA JN47','K1ABC HB9BLA -12','K1ABC HB9BLA R-12','K1ABC HB9BLA RRR','K1ABC HB9BLA 73','CQ HB9BLA JN47'],start_utc:null,end_utc:null,saved:false,...extra});
 // Records a page's contact commands and answers them like the station (202) without effects.
@@ -700,7 +700,7 @@ test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherw
   r=await tickAndRead(page,offset,true);
   assert.deepEqual([r.label,r.next],['▶ TX now:','K1ABC HB9BLA -05']);
   // Tune is a tone: "TX now: Tune" with the Tune time left, never a message.
-  transmit={arm_state:'armed',tune:true};watchdog={tx_remaining_minutes:6,tx_expired:false,tune_remaining_seconds:80};
+  transmit={arm_state:'armed',tune:true};watchdog={tx_remaining_calls:6,tx_expired:false,tune_remaining_seconds:80};
   await page.evaluate(()=>window.wstxContact.load());
   r=await tickAndRead(page,offset,true);
   assert.deepEqual([r.label,r.next,r.countdown],['▶ TX now:','Tune','80 s left']);
@@ -814,9 +814,8 @@ test('TC-007-009 the Settings drawer has four sections holding every control mov
     assert.equal(await inViewport(page,'#halt-tx'),true,'HALT stays reachable');
   }
   assert.equal(await page.locator('#settings-drawer #transmit-details #transmit-panel').count(),1,'the raw #9 transmit panel is an Expert section');
-  await page.locator('#tab-radio').click();await page.locator('#audio-enumerate').click();
-  await page.locator('#audio-inputs').filter({hasText:/\S/}).waitFor();
-  assert.ok(requests.includes('GET /audio/devices'));assert.equal(requests.includes('PUT /profile'),false,'listing inputs is not an Apply');
+  // #44 CL-044-08: opening the drawer lists the endpoints by name; listing is not an Apply.
+  assert.ok(requests.includes('GET /audio/endpoints'));assert.equal(requests.includes('GET /audio/devices'),false);assert.equal(requests.includes('PUT /profile'),false,'listing inputs is not an Apply');
   await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'Esc halts and closes no panel');
   await page.locator('#band-activity').click({position:{x:40,y:200}});assert.equal(await page.locator('#settings-drawer').isVisible(),false,'a pointer action outside closes the drawer');
   await page.keyboard.press('F2');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'F2 opens Settings');
@@ -839,7 +838,7 @@ test('TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fi
         radios:[{model:'IC-7300',id:'94',civ_address:'94',baud:19200,station_cat:true,unknown_model:false}],audio:null}],
       manual:['Yaesu','Kenwood','Elecraft'],supported_radios:1,audio_error:null,
       proposal:{port:'COM250',model:'IC-7300',civ_address:'94',baud:19200,control:{mode:'cat',endpoint:'icom7300://COM250?baud=19200&radio=94&controller=e0',ptt:'cat'},
-        audio:{input_device:capture,output_device:render,input_name:'Microphone (USB Audio CODEC )',output_name:'Speakers (USB Audio CODEC )'}},
+        audio:{input_device:capture,output_device:render,input_name:'Microphone (USB Audio CODEC)',output_name:'Speakers (USB Audio CODEC)'}},
       settings:{port:3,source:'probe',civ_baud:19200,error:null,items:[{item:'0078',name:'usb_send',value:1,label:'DTR',recommended:0,severity:'blocking',message:'USB SEND on DTR/RTS can key the transmitter.'},
         {item:'0067',name:'data_mod',value:3,label:'USB',recommended:3,severity:'ok',message:'DATA MOD takes transmit audio from USB.'}]}}});});
     await p.route('**/radio/settings/*',async route=>{const action=new URL(route.request().url()).pathname.split('/').pop(),body=JSON.parse(route.request().postData());radio.push([action,body]);
@@ -855,7 +854,10 @@ test('TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fi
   await page.locator('#detect-proposal:not([hidden])').waitFor();
   assert.deepEqual(radio,[['detect',{v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,keying_inhibit_confirmed:true}]]);
   const fields=await page.locator('#detect-fields').textContent();
-  for(const text of ['COM250','IC-7300','94h','19200','icom7300://COM250?baud=19200&radio=94&controller=e0','Microphone (USB Audio CODEC )',capture,'Speakers (USB Audio CODEC )',render])assert.ok(fields.includes(text),text);
+  for(const text of ['COM250','IC-7300','94h','19200','icom7300://COM250?baud=19200&radio=94&controller=e0','Microphone (USB Audio CODEC)','Speakers (USB Audio CODEC)'])assert.ok(fields.includes(text),text);
+  // CL-044-07/08: the endpoint IDs are not in the text, only in the hover titles.
+  assert.equal(fields.includes('{0.0.'),false,'no endpoint ID in the proposal text');
+  assert.deepEqual(await page.locator('#detect-fields dd[title]').evaluateAll(list=>list.map(dd=>dd.title)),[capture,render]);
   assert.match(await page.locator('#detect-items').textContent(),/0078 usb send: DTR · blocking/);
   assert.equal(await page.locator('#detect-ack').isChecked(),false,'the confirmation is asked again for the next detection');
   await page.locator('#detect-use').click();
@@ -1760,8 +1762,10 @@ test('TC-011-002 Update logbook from ADIF in Settings consolidates a logger expo
   await page.locator('#log-import-status',{hasText:expected}).waitFor();
   assert.equal(await page.locator('#log-import-status').innerText(),expected);
  };
- await update('log4om.adi',good,'Logbook updated: 2 added, 0 already present, 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
- await update('log4om.adi',good,'Logbook updated: 0 added, 2 already present, 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
+ await update('log4om.adi',good,'Logbook updated: 2 added, 0 already present (0 confirmations updated), 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
+ await update('log4om.adi',good,'Logbook updated: 0 added, 2 already present (0 confirmations updated), 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
+ // #10 (2026-11-04) a rerun that confirms a present QSO upgrades only its confirmation.
+ await update('lotw.adi','<CALL:5>K1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20261031 <TIME_ON:6>123000 <LOTW_QSL_RCVD:1>Y <eor>\n','Logbook updated: 0 added, 1 already present (1 confirmation updated), 0 skipped');
  const bad='<call:5>N0NEW <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n<call:5>W1XYZ <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <eor\n';
  await update('bad.adi',bad,'Logbook not updated · nothing was added · malformed in record 2');
  await page.setViewportSize({width:360,height:800});
@@ -1776,7 +1780,7 @@ test('TC-011-002 Update logbook from ADIF in Settings consolidates a logger expo
  assert.equal(download.suggestedFilename(),'contacts.adi');
  const text=await fs.readFile(await download.path(),'utf8');
  assert.match(text,/^ADIF Export\n<adif_ver:5>3\.1\.8\n/);
- assert.match(text,/<call:5>K1ABC <mode:3>FT8 <qso_date:8>20261031 <time_on:6>123000 <band:3>20m <app_wstxrust_contact_id:36>[0-9a-f-]{36} <app_wstxrust_source:7>LOG4OM2 <eor>\n/);
+ assert.match(text,/<call:5>K1ABC <mode:3>FT8 <qso_date:8>20261031 <time_on:6>123000 <band:3>20m <lotw_qsl_rcvd:1>Y <app_wstxrust_contact_id:36>[0-9a-f-]{36} <app_wstxrust_source:7>LOG4OM2 <eor>\n/);
  assert.match(text,/<call:6>DL1ABC <mode:4>MFSK <submode:3>FT4 <qso_date:8>20261031 <time_on:6>123100 <band:3>40m <app_wstxrust_contact_id:36>[0-9a-f-]{36} <app_wstxrust_source:7>LOG4OM2 <eor>\n/);
  assert.doesNotMatch(text,/Jos|example|dxcc|name/i,'only the log fields are stored');
  assert.equal(text.match(/<eor>/g).length,2);
@@ -1808,7 +1812,8 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
  // #50: no text marks; the New call slots come from the #55 flags of every sender (CL-055-04) and are on
  // by default. Only interesting stations are coloured (operator 2026-11-03, unlike WSJT-X): no CQ slot, so
  // the CQ of a station worked on this band and mode has no colour; rows in value order.
- const rowsNow=()=>page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.children[4]).backgroundColor]));
+ // #50 CL-050-08: a row in QSO with another station colours only its sender's call (the .ba-from span).
+ const rowsNow=()=>page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.querySelector('.ba-from')??r.children[4]).backgroundColor]));
  const [newCallBand,newCall,none]=['rgba(153, 255, 255, 0.2)','rgba(0, 255, 255, 0.24)','rgba(0, 0, 0, 0)'];
  assert.deepEqual(await rowsNow(),[['CQ W1XYZ FN42','not_worked','new_call new_call_band',newCall],['K9XX W2AB R-05','not_worked','new_call new_call_band',newCall],['CQ K1ABC FN42','worked_this_band_and_mode',null,none],['FREE TEXT',null,null,none]],'no CQ colour; worked before has no colour; New slots on non-CQ senders too (CL-055-04)');
  await page.locator('#open-server-settings').click();
@@ -1823,7 +1828,7 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
  await refreshStatus(page);await page.waitForTimeout(500);
  assert.equal(queries.length,1,'one query per published period');
  assert.deepEqual(queries[0].calls,['K1ABC','W1XYZ','W2AB']);assert.equal(queries[0].band,'20m');assert.equal(queries[0].mode,'FT8');
- assert.equal(await page.locator('tr[data-worked=worked_this_band_and_mode]').getAttribute('title'),'Worked before on 20m FT8','the status stays readable as the row tooltip (#55 BandActivityHover)');
+ assert.deepEqual(await page.locator('tr[data-worked=worked_this_band_and_mode]').evaluate(r=>[r.dataset.tip??null,r.title]),[null,''],'an uncoloured row has no reason tip (#50 CL-050-08 BandActivityHover)');
  assert.deepEqual(errors,[]);
 });
 
@@ -1910,28 +1915,30 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
   await page.route('**/strategy/evaluate',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'Hover test',my_continent:'EU',sort:'strongest',verdicts:[{sequence:8,rank:0,grey:false}]}}));
  }});
  await page.waitForFunction(()=>document.querySelector('tr[data-sequence="0"][data-worked]')&&document.querySelector('tr.ba-strategy'),null,{timeout:25000});
- const shown=()=>page.locator('#band-activity tr[data-sequence]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.title,getComputedStyle(r.children[4]).backgroundColor,r.getAttribute('aria-description')]));
+ // #50 CL-050-08: the one-line reason tip of the colour; a row in QSO with another station colours only its sender's call.
+ const shown=()=>page.locator('#band-activity tr[data-sequence]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.tip??'',getComputedStyle(r.children[4]).backgroundColor,r.getAttribute('aria-description'),r.querySelector('.ba-from')?getComputedStyle(r.querySelector('.ba-from')).backgroundColor:null]));
  const none='rgba(0, 0, 0, 0)';
  const expected=[
-  ['HB9BLA W1XYZ -12','Calling me\nNew call\nNew call on 20m','rgba(255, 102, 102, 0.32)'],
-  ['W9AA W2CD 73','Strategy Hover test: rule 1',none],
-  ['K9XX YO3ABC -07','New DXCC: Romania\nNew DXCC on 20m\nNew call\nNew call on 20m','rgba(255, 0, 255, 0.26)'],
-  ['CQ JA1AAA PM95','New CQ zone 25\nNew CQ zone on 20m','rgba(255, 191, 0, 0.26)'],
-  ['CQ G4XYZ IO91','New grid IO91\nNew grid on 20m',none],
-  ['K1ZZ W3EF RR73','New call\nNew call on 20m','rgba(0, 255, 255, 0.24)'],
-  ['K9XX W2AB R-05','New call\nNew call on 20m','rgba(0, 255, 255, 0.24)'],
-  ['FREE TEXT','',none],
-  ['CQ K1ABC FN42','Worked before on 20m FT8',none],
+  ['HB9BLA W1XYZ -12','New call','rgba(255, 102, 102, 0.32)',null],
+  ['W9AA W2CD 73','Strategy Hover test: rule 1',none,null],
+  ['K9XX YO3ABC -07','New DXCC \u00b7 New call',none,'rgba(255, 0, 255, 0.26)'],
+  ['CQ JA1AAA PM95','New CQ zone 25','rgba(255, 191, 0, 0.26)',null],
+  ['CQ G4XYZ IO91','',none,null],
+  ['K1ZZ W3EF RR73','New call',none,'rgba(0, 255, 255, 0.24)'],
+  ['K9XX W2AB R-05','New call',none,'rgba(0, 255, 255, 0.24)'],
+  ['FREE TEXT','',none,null],
+  ['CQ K1ABC FN42','',none,null],
  ];
  const got=await shown();
- assert.deepEqual(got.map(r=>r.slice(0,3)),expected,'value order, equal values strongest first; a report from a new DXCC is coloured; no flag, no colour');
- assert.deepEqual(got.map(r=>r[3]),expected.map(r=>r[1]?r[1].replaceAll('\n','; '):null),'the same reasons for assistive technology');
+ assert.deepEqual(got.map(r=>[...r.slice(0,3),r[4]]),expected,'value order, equal values strongest first; a report from a new DXCC colours its sender call; no flag, no colour; New grid is off, so no grid reason');
+ assert.deepEqual(got.map(r=>r[3]),expected.map(r=>r[1]||null),'the same reasons for assistive technology');
  assert.equal(await page.locator('#band-activity th[data-sort=value]').textContent(),'DXCC');
  assert.deepEqual(await sortState(page),['value','desc']);
  await page.screenshot({path:'test-results/ui-operating/band-activity-value-1440.png'});
  // New call (on by default, #50) and an enabled New grid colour the non-CQ senders as well (operator decision, not WSJT-X).
  await page.locator('#open-server-settings').click();await page.locator('#band-colours [data-hl-slot=new_grid]').check();await page.locator('#settings-drawer .return-operate').click();
- assert.deepEqual((await shown()).map(r=>r[2]),['rgba(255, 102, 102, 0.32)',none,'rgba(255, 0, 255, 0.26)','rgba(255, 191, 0, 0.26)','rgba(255, 128, 0, 0.26)','rgba(0, 255, 255, 0.24)','rgba(0, 255, 255, 0.24)',none,none]);
+ assert.deepEqual((await shown()).map(r=>r[4]??r[2]),['rgba(255, 102, 102, 0.32)',none,'rgba(255, 0, 255, 0.26)','rgba(255, 191, 0, 0.26)','rgba(255, 128, 0, 0.26)','rgba(0, 255, 255, 0.24)','rgba(0, 255, 255, 0.24)',none,none]);
+ assert.equal((await shown())[4][1],'New grid IO91','an enabled New grid names its reason');
  await page.screenshot({path:'test-results/ui-operating/band-activity-colours-all-senders-1440.png'});
  await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','asc']);
  assert.deepEqual((await shown()).map(r=>r[0]),[...rows].reverse().map(r=>r[0]),'a column header still sorts by its column');
@@ -1995,6 +2002,115 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
   ['CQ K3CC FN42','not_worked','new_call new_call_band','rgba(0, 255, 255, 0.24)'],
   ['CQ K1AA FN42','worked_this_band_and_mode',null,'rgba(0, 0, 0, 0)']],'only interesting stations are coloured; My call still applies; rows in value order (#55)');
  assert.deepEqual(queries.map(q=>q.calls),[['K1AA','K2BB','K3CC']]);
+ assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-050-08; TC-050-008 (#50, operator 2026-11-04). The receive pages (with the #55 flags and
+// dxcc), the /contact/worked statuses, the contact snapshots and the UDP display event are routed
+// fixtures; marks, colours, order and the reason tip are the served client's. Expected values come
+// from the operator's scheme, not from the candidate.
+test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, CQ of interest, sender-only colour, one-line reason tip',{timeout:60000},async t=>{
+ let state,base,contact=null;const records=[],queries=[];
+ const periods=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z'];
+ const call=text=>({kind:'call',text,hash_bits:null,hash_value:null});
+ const F=(...names)=>Object.fromEntries(names.map(n=>[n,true]));
+ const pe={name:'Peru',cont:'SA',cq:10,itu:12},ro={name:'Romania',cont:'EU',cq:20,itu:28},ja={name:'Japan',cont:'AS',cq:25,itu:45};
+ // [text, snr, flags, dxcc]; to and from are the first two words (a CQ: the token and the second word).
+ const rec=(sequence,period,[text,snr,flags,dxcc])=>{const w=text.split(' '),cq=w[0]==='CQ';
+  return {sequence,start_frame:186000+sequence,frequency_hz:500+sequence*100,snr_db:snr,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,
+   fields:{type:'standard',to:cq?{kind:'token',text:'CQ',hash_bits:null,hash_value:null}:call(w[0]),from:call(w[1]),ack:false,exchange:/^[A-R]{2}\d\d$/.test(w[2])?{kind:'grid',value:w[2]}:{kind:'report',value:-5}},
+   period_start_utc:period,dt_seconds:0.1,...(flags?{flags}:{}),...(dxcc?{dxcc}:{})};};
+ const kept=[['CQ K1PT FN42',-10,F('new_call_band'),null],['CQ K7OLD FN42',-11,null,null],['K9XX W1AA R-03',-12,null,null]];
+ const latest=[['HB9BLA K1PT FN42',-10,F('new_call_band'),null],['HB9BLA K2CM -05',-12,null,null],['HB9BLA K3NB R-07',-14,F('new_call_band'),null],
+  ['CQ OA4DX FH17',-5,F('new_dxcc','new_dxcc_band','new_call','new_call_band'),pe],['K9XX YO3ABC -07',-15,F('new_dxcc','new_dxcc_band','new_call','new_call_band'),ro],
+  ['CQ K1WB FN42',-9,null,null],['W9AA W2CD 73',-11,null,null],['CQ JA1ZZ PM95',-8,F('new_cq_zone','new_cq_zone_band'),ja]];
+ const statuses={K1PT:'not_worked',K2CM:'worked_this_band_and_mode',K3NB:'worked_other_band_or_mode',OA4DX:'not_worked',YO3ABC:'not_worked',K1WB:'worked_this_band_and_mode',W2CD:'worked_this_band_and_mode',JA1ZZ:'worked_other_band_or_mode'};
+ const publish=(id,period,list)=>{const first=records.length;records.push(...list.map((r,i)=>rec(first+i,period,r)));Object.assign(state.job,{first_sequence:0,next_sequence:records.length,available_count:records.length,latest_decode:{id,first_sequence:first,next_sequence:records.length,period_start_utc:period,complete:true}});};
+ const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
+  base=await(await fetch(app.origin+'/profile')).json();
+  state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+  state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+  publish(1,periods[0],kept);
+  await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'40m',nominal_hz:7074000,origin:'manual'};await route.fulfill({json:s});});
+  await page.route('**/receive/results?*',async route=>{const q=new URL(route.request().url()).searchParams,cursor=Number(q.get('cursor')),limit=Number(q.get('limit'))||64,batch=records.slice(cursor,cursor+limit),next=cursor+batch.length;
+   await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:next<records.length,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+  await page.route('**/contact/worked',async route=>{const q=JSON.parse(route.request().postData());queries.push(q);await route.fulfill({json:{v:1,statuses:q.calls.map(c=>({call:c,status:statuses[c]}))}});});
+  await page.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact})}));
+ }});
+ await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3&&window.wstxRenderHistory);
+ publish(2,periods[1],latest);await page.evaluate(()=>receiveSync());
+ await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest][data-worked]').length===8,null,{timeout:25000});
+ const [red,newCallBand,newDxcc,cqZone,none]=['rgba(255, 102, 102, 0.32)','rgba(153, 255, 255, 0.2)','rgba(255, 0, 255, 0.26)','rgba(255, 191, 0, 0.26)','rgba(0, 0, 0, 0)'];
+ // [message, marks, message cell background, sender span [text, background] or null, tip or null]; a divider '|text', the stripe ['stripe', text, background].
+ const rows=()=>page.evaluate(()=>[...document.querySelectorAll('#band-activity tbody tr')].map(r=>{
+  if(r.classList.contains('ba-divider'))return r.classList.contains('ba-partner-stripe')?['stripe',r.textContent,getComputedStyle(r.children[0]).backgroundColor]:['|'+r.textContent];
+  const m=r.children[4],s=m.querySelector('.ba-from');
+  return [m.textContent,['ba-partner','ba-tome','ba-sender'].filter(c=>r.classList.contains(c)).join(' '),getComputedStyle(m).backgroundColor,s?[s.textContent,getComputedStyle(s).backgroundColor]:null,r.dataset.tip??null];}));
+ const idle=[
+  ['HB9BLA K1PT FN42','ba-tome',red,null,'New on 40m'],
+  ['HB9BLA K2CM -05','ba-tome',red,null,null],
+  ['HB9BLA K3NB R-07','ba-tome',red,null,'New on 40m (worked on another band or mode)'],
+  ['CQ OA4DX FH17','',newDxcc,null,'New DXCC · New call'],
+  ['K9XX YO3ABC -07','ba-sender',none,['YO3ABC',newDxcc],'New DXCC · New call'],
+  ['CQ JA1ZZ PM95','',cqZone,null,'New CQ zone 25'],
+  ['CQ K1WB FN42','',none,null,null],
+  ['W9AA W2CD 73','',none,null,null],
+  ['|FT8 period 12:00:00 UTC'],
+  ['CQ K1PT FN42','',newCallBand,null,'New on 40m'],
+  ['CQ K7OLD FN42','',none,null,null],
+  ['K9XX W1AA R-03','',none,null,null]];
+ assert.deepEqual(await rows(),idle,'no contact: calls me red as a whole (also worked before), a CQ of interest whole, a station in QSO with another only its call; no stripe');
+ assert.equal(await page.locator('#band-activity tr[data-sequence][title]').count(),0,'no native title on the rows');
+ assert.deepEqual(await page.locator('#band-activity tr[data-sequence]').evaluateAll(rs=>rs.map(r=>r.getAttribute('aria-description'))),idle.filter(r=>!r[0].startsWith('|')).map(r=>r[4]),'the same text for assistive technology');
+ // The tip: one line at the pointer, none over a cell with its own title or on an uncoloured row, under a focused row.
+ const tip=()=>page.locator('#ba-tip').evaluate(el=>{const b=el.getBoundingClientRect();return {shown:!el.hidden&&b.height>0,text:el.textContent,oneLine:b.height<2*parseFloat(getComputedStyle(el).lineHeight)};});
+ const row=text=>page.locator('#band-activity tr[data-sequence]',{hasText:text});
+ await row('K9XX YO3ABC -07').locator('td[data-col=message]').hover();
+ assert.deepEqual(await tip(),{shown:true,text:'New DXCC · New call',oneLine:true});
+ await row('K9XX YO3ABC -07').locator('td').nth(5).hover();assert.equal((await tip()).shown,false,'the DXCC cell keeps its own title');
+ await row('CQ K1WB FN42').locator('td').nth(4).hover();assert.equal((await tip()).shown,false,'an uncoloured row has no tip');
+ await page.mouse.move(5,5);await row('HB9BLA K3NB R-07').focus();
+ assert.deepEqual(await tip(),{shown:true,text:'New on 40m (worked on another band or mode)',oneLine:true},'keyboard focus shows the tip');
+ await page.locator('#open-logbook').focus();assert.equal((await tip()).shown,false);
+ await page.screenshot({path:'test-results/ui-operating/band-activity-marks-idle-1440.png'});
+
+ // The contact with K1PT is prepared (replying): its rows of both periods on top, then the red stripe.
+ contact=partner('replying',{dx_call:'K1PT'});await page.evaluate(()=>window.wstxContact.load());
+ await page.locator('#band-activity tr.ba-partner-stripe').waitFor();
+ const partnerRows=[['HB9BLA K1PT FN42','ba-partner',none,null,null],['CQ K1PT FN42','ba-partner',none,null,null],['stripe','','rgb(255, 64, 64)']];
+ assert.deepEqual(await rows(),[...partnerRows,...idle.filter(r=>!/K1PT/.test(r[0]))],'the partner rows of both periods first, newest first, then the stripe; no slot colour on them, also to my call');
+ const look=await page.locator('#band-activity tr.ba-partner').first().evaluate(r=>({bar:getComputedStyle(r.children[0]).boxShadow,weight:getComputedStyle(r.children[4]).fontWeight,badge:getComputedStyle(r.children[4],'::after').content,hl:r.dataset.hl??null}));
+ assert.deepEqual(look,{bar:'rgb(255, 64, 64) 4px 0px 0px 0px inset',weight:'700',badge:'" ◆ QSO"',hl:null},'a red left bar, bold message and the badge after it');
+ await page.screenshot({path:'test-results/ui-operating/band-activity-marks-partner-1440.png'});
+ // Phone width (stacked rows): the stripe stays a full-width red bar under the partner rows.
+ await page.setViewportSize({width:360,height:800});
+ const stripe360=await page.locator('#band-activity tr.ba-partner-stripe').evaluate(r=>{const b=r.getBoundingClientRect(),w=r.closest('table').getBoundingClientRect();return {h:Math.round(b.height),full:Math.abs(b.width-w.width)<=2,bg:getComputedStyle(r.children[0]).backgroundColor};});
+ assert.deepEqual(stripe360,{h:3,full:true,bg:'rgb(255, 64, 64)'});
+ await page.locator('#band-activity tr.ba-partner').first().scrollIntoViewIfNeeded();
+ await page.screenshot({path:'test-results/ui-operating/band-activity-marks-partner-360.png'});
+ await page.setViewportSize({width:1440,height:900});
+ await clickSort(page,'frequency');
+ assert.deepEqual((await rows()).slice(0,3).map(r=>r[0]),['HB9BLA K1PT FN42','CQ K1PT FN42','stripe'],'the partner block stays on top in another column order');
+ await clickSort(page,'value');
+ // Settings: My call off (K3NB falls back to its New call on band slot) and New call off.
+ await page.locator('#open-server-settings').click();await page.locator('#band-colours [data-hl-slot=mycall]').uncheck();await page.locator('#band-colours [data-hl-slot=new_call]').uncheck();await page.locator('#settings-drawer .return-operate').click();
+ const byText=async text=>(await rows()).find(r=>r[0]===text);
+ assert.deepEqual(await byText('HB9BLA K2CM -05'),['HB9BLA K2CM -05','ba-tome',none,null,null]);
+ assert.deepEqual(await byText('HB9BLA K3NB R-07'),['HB9BLA K3NB R-07','ba-tome',newCallBand,null,'New on 40m (worked on another band or mode)']);
+ assert.deepEqual(await byText('CQ OA4DX FH17'),['CQ OA4DX FH17','',newDxcc,null,'New DXCC · New on 40m'],'the strongest enabled call slot');
+ assert.deepEqual(await byText('K9XX YO3ABC -07'),['K9XX YO3ABC -07','ba-sender',none,['YO3ABC',newDxcc],'New DXCC · New on 40m']);
+ // An accepted UDP highlight colours a partner row under its marker and replaces a row's slot colour.
+ await page.evaluate(()=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{type:'udp.display',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,display_revision:1,
+  highlights:[{call:'K1PT',background:'#0000ff',foreground:null,last_only:false,period:null},{call:'YO3ABC',background:'#00ff00',foreground:null,last_only:false,period:null}],clear:{band_activity:null,rx_frequency:null}}}}})));
+ assert.deepEqual((await rows()).slice(0,3),[['HB9BLA K1PT FN42','ba-partner','rgb(0, 0, 255)',null,'UDP highlight'],['CQ K1PT FN42','ba-partner','rgb(0, 0, 255)',null,'UDP highlight'],['stripe','','rgb(255, 64, 64)']]);
+ assert.deepEqual(await byText('K9XX YO3ABC -07'),['K9XX YO3ABC -07','','rgb(0, 255, 0)',null,'New DXCC · New on 40m · UDP highlight'],'the UDP colour wins over the sender-only slot');
+ // Logged (completed): no stripe and no marker remain.
+ contact=partner('completed',{dx_call:'K1PT'});await page.evaluate(()=>window.wstxContact.load());
+ await page.waitForFunction(()=>!document.querySelector('#band-activity tr.ba-partner-stripe'));
+ assert.equal(await page.locator('#band-activity tr.ba-partner').count(),0);
+ assert.equal((await byText('HB9BLA K1PT FN42'))[1],'ba-tome','the former partner calling me is a calls-me row again');
+ assert.deepEqual(queries.map(q=>q.calls.length),[3,8],'one query per published period; the marks, the partner and the tip add none');
  assert.deepEqual(errors,[]);
 });
 
@@ -2133,7 +2249,7 @@ test('TC-039-006 Highlight marks and sorts, the editor previews and saves, Auto 
   await page.locator('#strategy-editor button[value=cancel]').click();assert.equal(await page.locator('#strategy-editor').evaluate(d=>d.open),false);
   // Auto: the first use asks; Cancel sends nothing; Start sends configure then start.
   await page.locator('#strategy-auto').click();await page.locator('#op-confirm[open]').waitFor();
-  assert.match(await page.locator('#op-confirm-text').textContent(),/Auto transmits without asking: it answers only stations that match "DX first" \(Auto Call and Auto CQ, switching after 3 tries\)\. The Tx watchdog \(6 min\) counts from your last action and is never reset by Auto\. HALT or Esc stops it\./);
+  assert.match(await page.locator('#op-confirm-text').textContent(),/Auto transmits without asking: it answers only stations that match "DX first" \(Auto Call and Auto CQ, switching after 3 tries\)\. The Tx watchdog stops it after 6 unanswered calls; Auto never resets it\. HALT or Esc stops it\./);
   await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);assert.deepEqual(autos,[],'cancelled: no automation request');
   await page.locator('#strategy-auto').click();await page.locator('#op-confirm[open]').waitFor();await page.locator('#op-confirm-ok').click();
   for(let i=0;i<60&&autos.length<2;i++)await page.waitForTimeout(50);
@@ -2282,7 +2398,7 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
   await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
   assert.deepEqual(await items(),['Reply','Select','Set Rx here','Pounce K1ABC','Ignore K1ABC']);
   await page.locator('#ba-menu [data-menu=pounce]').click();await page.locator('#op-confirm[open]').waitFor();
-  assert.match(await page.locator('#op-confirm-text').textContent(),/^Pounce transmits without asking: it answers K1ABC when it calls CQ or ends a QSO with 73 on this band\. The Tx watchdog \(6 min\) counts from your last action and is never reset by automation\. HALT or Esc stops it\.$/);
+  assert.match(await page.locator('#op-confirm-text').textContent(),/^Pounce transmits without asking: it answers K1ABC when it calls CQ or ends a QSO with 73 on this band\. The Tx watchdog stops it after 6 unanswered calls; automation never resets it\. HALT or Esc stops it\.$/);
   await page.locator('#op-confirm-ok').click();
   for(let i=0;i<60&&autos.length<2;i++)await page.waitForTimeout(50);
   assert.deepEqual(autos.map(b=>[b.action,b.expected_policy_revision,b.expected_run_revision,b.mode,b.safety_revision]),[['configure',0,undefined,undefined,undefined],['start',1,0,'ft8',7]]);
@@ -3011,5 +3127,46 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
   f=await fit();assert.equal(f.lastInside,true,'the newest row is visible at 360 px');
   await page.locator('#rx-focus').scrollIntoViewIfNeeded();
   await page.screenshot({path:'test-results/ui-operating/qso-pane-fixed-360x800.png'});
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-044-08; TC-044-007. GET /audio/endpoints is a route fixture (hand-written names and
+// labels), so no audio device is read; the endpoint IDs are fixture GUIDs.
+test('TC-044-007 the Audio section shows endpoint names, keeps IDs in hover and Expert, and saves the radio audio',{timeout:60000},async t=>{
+  const codecIn='{0.0.1.00000000}.{6b9f2c1e-1111-4222-8333-944444444444}',codecOut='{0.0.0.00000000}.{f4069c8a-1111-4222-8333-944444444444}';
+  const headsetA='{0.0.1.00000000}.{aaaaaaaa-0000-4000-8000-000000000000}',headsetB='{0.0.1.00000000}.{bbbbbbbb-0000-4000-8000-000000000000}';
+  const saved='{0.0.1.00000000}.{0a0a0a0a-0000-4000-8000-000000000000}',headset='Headset Microphone (Sennheiser Communication Audio)';
+  const requests=[];
+  const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:saved,beforeNavigate:async(p,_app,doc)=>{
+    p.on('request',r=>requests.push(`${r.method()} ${new URL(r.url()).pathname}`));
+    await p.route('**/audio/endpoints',route=>route.fulfill({json:{v:1,profile_id:doc.profile_id,boot_id:'fixture-boot',
+      inputs:[{id:codecIn,name:'Microphone (USB Audio CODEC)',label:'Microphone (USB Audio CODEC) \u2014 IC-7300',present:true,radio:'IC-7300'},
+        {id:headsetB,name:headset,label:headset+' #2',present:true,radio:null},{id:headsetA,name:headset,label:headset+' #1',present:true,radio:null},
+        {id:saved,name:'Microphone (Old radio)',label:'Microphone (Old radio) \u00b7 not present',present:false,radio:null}],
+      outputs:[{id:codecOut,name:'Speakers (USB Audio CODEC)',label:'Speakers (USB Audio CODEC) \u2014 IC-7300',present:true,radio:'IC-7300'}]}}));
+  }});
+  await page.waitForFunction(()=>!!window.wstxContact&&!!profileData,null,{timeout:30000});
+  await page.locator('#open-server-settings').click();await page.locator('#tab-radio').click();
+  await page.locator('#audio-input option[value="'+codecIn+'"]').waitFor({state:'attached'});
+  // One Audio section with both selects and the meter; no listing button, no free-text device field.
+  assert.equal(await page.locator('#settings-audio #audio-input').evaluate(el=>el.tagName),'SELECT');
+  assert.equal(await page.locator('#settings-audio #audio-output').evaluate(el=>el.tagName),'SELECT');
+  assert.equal(await page.locator('#settings-audio .op-input-meter').count(),1);
+  assert.equal(await page.locator('#audio-enumerate,#audio-inputs,#settings-audio input').count(),0);
+  const options=sel=>page.locator(sel+' option').evaluateAll(list=>list.map(o=>[o.textContent,o.title,o.disabled]));
+  assert.deepEqual(await options('#audio-input'),[['None','',false],['Microphone (USB Audio CODEC) \u2014 IC-7300',codecIn,false],[headset+' #2',headsetB,false],[headset+' #1',headsetA,false],['Microphone (Old radio) \u00b7 not present',saved,true]]);
+  assert.deepEqual(await options('#audio-output'),[['None','',false],['Speakers (USB Audio CODEC) \u2014 IC-7300',codecOut,false]]);
+  assert.equal(await page.locator('#audio-input').inputValue(),saved,'the missing saved input stays selected');
+  assert.equal((await page.locator('#settings-radio').innerText()).includes('{0.0.'),false,'no endpoint ID in the visible Radio text');
+  assert.match(await page.locator('#audio-recommend').innerText(),/Recommended: Microphone \(USB Audio CODEC\) \u2014 IC-7300 \/ Speakers \(USB Audio CODEC\) \u2014 IC-7300/);
+  assert.equal(await page.locator('#audio-id-input').textContent(),saved,'Expert shows the saved endpoint ID');
+  await page.locator('#tab-radio').click();
+  await page.selectOption('#audio-input',headsetB);await page.waitForTimeout(300);
+  assert.equal(requests.filter(r=>r==='PUT /profile').length,0,'choosing saves nothing');
+  await page.locator('#audio-use-radio').click();await page.locator('#settings-result').filter({hasText:/Saved revision/}).waitFor();
+  assert.equal(requests.filter(r=>r==='PUT /profile').length,1,'Use IC-7300 audio is one Apply');
+  assert.deepEqual((await (await fetch(app.origin+'/profile')).json()).settings.audio,{input_device:codecIn,output_device:codecOut});
+  await page.setViewportSize({width:360,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'the Audio section fits a phone');
+  await page.locator('#settings-audio').screenshot({path:'test-results/ui-operating/audio-section-mobile.png'});
   assert.deepEqual(errors,[]);
 });
