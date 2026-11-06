@@ -19,7 +19,7 @@ package WstxStrategy {
             Highlight, Auto or Start); None stops it. The browser sends only the selection. Only the class award has behaviour;
             contest is #63 and is refused on the wire until then (StrategyClass).
          D3 Treat 73 as CQ: an RR73 or 73 that ends another station's QSO counts as calling;
-            the run then keeps my Tx frequency (Hold Tx) so the answer never lands on the
+            the run answers from its free Tx slot (FreeTxSlot) so the answer never lands on the
             final 73.
          D4 An award strategy never calls CQ. It waits for the next opportunity and goes on
             after each QSO without a limit (no QSO or time limit; the WstxMcp run bounds
@@ -292,9 +292,8 @@ package WstxStrategy {
              DirectedCqRule (MyContinent), or an RR73/73 to another call than mine (D3, always
              for a pounce), and whose sender is not ignored (IgnoreLists, both tiers; the
              ignore lists win). The first by sequence is
-             answered exactly as a strategy run answers (select_row {replace false}, after an
-             RR73/73 set_frequency keeping my Tx frequency (Hold Tx), enable_tx with the
-             run's safety revision), so the contact engine calls it in the next own period
+             answered exactly as a strategy run answers (select_row {replace false}, FreeTxSlot,
+             enable_tx with the run's safety revision), so the contact engine calls it in the next own period
              and Auto Seq runs the QSO; last_decision as for every run. Nothing from the
              call: the run keeps waiting (no try is counted, no stop).
              In the contact: completed stops completed (the pounce ends on success,
@@ -560,13 +559,52 @@ package WstxStrategy {
              (ManualIntervention), one per call, in ValueOrder (no CQ is ever called). A candidate the
              run left after calls_per_station is passed over when any other is listed; a
              caller never is (D5).
-             The first is selected (select_row {replace false}) and armed (enable_tx); an RR73/73
-             candidate keeps the previous Tx frequency (set_frequency). Nothing listed: it
+             The first is selected (select_row {replace false}), Tx takes its free slot (FreeTxSlot)
+             and it is armed (enable_tx). Nothing listed: it
              keeps waiting. A contact the run did not select: ManualIntervention.
              In a contact: completion counts and returns to waiting; calls_per_station partner
              periods without progress disarm and cancel the contact and return to waiting with
              that call passed over once; no stop. The browser itself never sends enable_tx
              for a strategy. */
+    }
+    attribute def FreeTxSlot {
+        doc /* A strategy run or a pounce (not a plain MCP policy run, not manual operation)
+             calls from a free audio slot (operator decision 2026-11-04, #39). Decided once
+             per call, between QSOs: when a strategy run or a pounce has selected its station, a
+             caller of my call as well (an award strategy never calls CQ); never during a contact.
+             Occupied: every decoded record of the last 4 periods of my Tx parity (the
+             parity after the selection) that decoded anything, among the records of
+             complete publications; a period I transmitted in decodes nothing and is not
+             counted, so older periods are used rather than none. Fewer periods: those
+             there are. A strategy run and a pounce add the called station's frequency, which is
+             not on my parity. When these 4 periods leave no free slot (a busy band), the 3,
+             then 2, then the 1 most recent are looked at, with the called station in each
+             look; a free slot found so is free.
+             Band: a retune on the radio keeps the live job, so on each fresh publication
+             the run compares the station band (station_band); from a change on, only
+             publications after the one that showed it count. A retune before the run or
+             within a band is not seen: the old signals age out with the periods.
+             Signal width, from the record's frequency_hz upwards: FT8 50 Hz, FT4 90 Hz,
+             mine alike. A slot is free when 50 Hz or more separate my signal from every
+             occupied signal, and my whole signal lies inside 300..2700 Hz within the Tx
+             range (FrequencyControls): FT8 slots 300..2650, FT4 300..2610.
+             Choice: the free slot nearest the current Tx, then the lowest, so a free
+             current Tx is kept and a new slot is chosen only when the current one has
+             become busy. The decision may instead be asked for the free slot nearest a list
+             of preferred frequencies, then nearest the current Tx, then the lowest.
+             No free slot even in the latest period: Tx keeps the current frequency unless it
+             is too near the called station (Tx is never on the called station: then the
+             slot nearest the current Tx, then the lowest, that is free of that station
+             alone), the call still goes out (no refusal), and the status says so: the run's
+             tx_slot {hz, free false} (WstxMcp), and "no free Tx slot" in the station bar's
+             automation text.
+             Tx is moved with set_frequency only when it is not on the slot (with Hold Tx
+             off the selection has moved it to the station: it goes back). The Tx stays on
+             the slot for the whole QSO: nothing during the exchange moves it, and the "may" of the operator's rule (Tx
+             to the partner's frequency once the QSO is established) is not taken, so
+             there is nothing to return from. A caller of my call is a called station like any other:
+             one on my slot is answered from the slot beside it. The next decision starts from the Tx the
+             operator may have set meanwhile. */
     }
     calc def SaneCall {
         in call : String;
@@ -611,6 +649,9 @@ package WstxStrategy {
     dependency editorClause from StrategyEditor to WstxRequirements::'CL-039-04';
     dependency selectorClause from StrategySelector to WstxRequirements::'CL-039-04';
     dependency runClause from StrategyRun to WstxRequirements::'CL-039-05';
+    dependency freeSlotClause from FreeTxSlot to WstxRequirements::'CL-039-09';
+    dependency freeSlotRun from StrategyRun to FreeTxSlot;
+    dependency freeSlotPounce from Pounce to FreeTxSlot;
     dependency watchdogClause from WatchdogFromOperator to WstxRequirements::'CL-039-06';
     dependency automationPath from StrategyRun to WstxMcp::OperatingAutomation;
     dependency watchdogOwner from WatchdogFromOperator to WstxContact::TxWatchdog;

@@ -30,7 +30,7 @@ document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<p id="q
 // call except the partner). The lines above them take the rest of the pane and scroll inside.
 focus.querySelector('.op-contact-body').insertAdjacentHTML('afterend',`<section id="qso-section" class="ct-section" aria-label="QSO dialogue"><div id="qso-area" class="ct-qso-area"><table id="qso-table" class="ct-qso-table" hidden><thead><tr><th scope="col">UTC</th><th scope="col" data-short="Dir">Direction</th><th scope="col" data-short="Exch">Exchange</th><th scope="col" title="How often the identical message repeated">Rep</th><th scope="col" title="Our measured SNR of the partner's latest decode at or before this line" data-short="Rx">Rx SNR</th><th scope="col" title="The partner's latest report on us at or before this line" data-short="Tx">Tx SNR</th></tr></thead><tbody id="qso-dialogue" class="ct-dialogue" aria-label="QSO dialogue"></tbody></table><p id="qso-none" class="op-muted ct-placeholder">No QSO</p></div></section>
 <section id="qso-calling" class="ct-section" aria-labelledby="calling-heading"><div id="calling-area" class="ct-calling-area"><table id="calling-table" class="ct-qso-table ct-calling-table"><thead><tr><th scope="col" id="calling-heading" title="Double-click a station to answer it (during a QSO: switch the contact to it)">Calling me</th><th scope="col">SNR</th><th scope="col">Grid</th><th scope="col">Country</th></tr></thead><tbody id="qso-others" class="ct-others" aria-label="Stations calling me (double-click or Enter answers)"></tbody></table><p id="qso-others-none" class="op-muted ct-placeholder">Nobody is calling</p></div></section>
-<div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx: emergency stop (Alt+H)">HALT</button><button type="button" id="qso-abort" disabled title="Abort QSO (Esc): stop the transmission now and cancel the contact, without HALT">Abort QSO (Esc)</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>`);
+<div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: keys at once for the rest of my Tx period when it is early enough, otherwise from my next Tx period')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx: emergency stop (Alt+H)">HALT</button><button type="button" id="qso-abort" disabled title="Abort QSO (Esc): stop the transmission now and cancel the contact, without HALT">Abort QSO (Esc)</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>`);
 const confirmDialog=document.createElement('dialog');confirmDialog.id='op-confirm';confirmDialog.className='op-dialog';confirmDialog.innerHTML='<form method="dialog"><p id="op-confirm-text"></p><menu><button type="button" class="op-halt-small" id="op-confirm-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button><button value="cancel" type="submit">Cancel</button><button value="ok" type="submit" class="op-primary" id="op-confirm-ok">Continue</button></menu></form>';
 window.wstxConfirm=function(text,okLabel='Continue'){
   confirmDialog.querySelector('#op-confirm-text').textContent=text;confirmDialog.querySelector('#op-confirm-ok').textContent=okLabel;
@@ -56,6 +56,8 @@ qsoColumn.insertAdjacentHTML('beforeend',`<section id="qso-control" class="op-ca
 <section id="error-field" class="op-card op-lower" aria-labelledby="error-heading"><h3 id="error-heading" class="op-lower-head">Problems</h3><div class="op-error-body"><p class="op-muted op-error-none" role="status">No problems</p></div></section>`);
 // WstxOperatingLayout::ErrorField (CL-037-02): the former top-bar exception chips, current only.
 const errorBody=qsoColumn.querySelector('#error-field .op-error-body');
+// A wheel notch moves by at most the visible height, so no line is skipped where the block has only one (1366x768).
+errorBody.addEventListener('wheel',event=>{if(errorBody.scrollHeight<=errorBody.clientHeight||errorBody.clientHeight>=Math.abs(event.deltaY))return;event.preventDefault();errorBody.scrollTop+=Math.sign(event.deltaY)*errorBody.clientHeight;},{passive:false});
 chips.setAttribute('role','list');chips.setAttribute('aria-label','Problems the operator must act on');chips.className='op-error-list';
 errorBody.prepend(chips);const notice=document.querySelector('#station-notice');if(notice)errorBody.prepend(notice);
 const body=focus.querySelector('.op-contact-body'),identity=focus.querySelector('.op-contact-identity');
@@ -300,7 +302,9 @@ function loadAutomation(){
     automationNode.dataset.active=String(!!active);
     // #42 a pounce run names its call (WstxStrategy::Pounce).
     // A strategy run's state is the strategy client's (WstxStrategy::StrategySelector).
-    if(!a?.configuration?.strategy&&!a?.strategy_refusal)automationNode.textContent=active&&run.pounce?`Pounce ${run.pounce.call} ${run.state==='waiting'?'waiting':'in QSO'} · HALT ends it`:active?`Automation ${{waiting:'waiting',manual:'paused for your QSO'}[run.state]??'in contact'} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
+    // #39 WstxStrategy::FreeTxSlot: no free slot keeps the current one and says so.
+    const slot=active&&run.tx_slot?.free===false?' · no free Tx slot':'';
+    if(!a?.configuration?.strategy&&!a?.strategy_refusal)automationNode.textContent=active&&run.pounce?`Pounce ${run.pounce.call} ${run.state==='waiting'?'waiting':'in QSO'}${slot} · HALT ends it`:active?`Automation ${{waiting:'waiting',manual:'paused for your QSO'}[run.state]??'in contact'}${slot} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
     if(a?.v===1)dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));
   }).catch(()=>{}).finally(()=>{automationLoading=null;});
   return automationLoading;
@@ -995,7 +999,9 @@ function showRun(){
   if(refusal){statusNode.textContent=`Strategy ${name} not started · ${words_(refusal)}`;statusNode.dataset.active='false';return;}
   if(!run||!run.strategy||runActive()&&run.pounce)return;
   statusNode.dataset.active=String(strategyRun());
-  statusNode.textContent=!strategyRun()?`Strategy ${name} stopped${run.reason?` · ${words_(run.reason)}`:''}`:run.state==='contact_active'?`Strategy ${name} · ${run.selected?.call??'in QSO'}`:run.state==='manual'?`Strategy ${name} · your QSO`:`Strategy ${name} waiting${run.reason?` · ${words_(run.reason)}`:''}`;
+  // WstxStrategy::FreeTxSlot: no free slot keeps the current one and says so.
+  const slot=run.tx_slot?.free===false?' · no free Tx slot':'';
+  statusNode.textContent=!strategyRun()?`Strategy ${name} stopped${run.reason?` · ${words_(run.reason)}`:''}`:run.state==='contact_active'?`Strategy ${name} · ${run.selected?.call??'in QSO'}${slot}`:run.state==='manual'?`Strategy ${name} · your QSO`:`Strategy ${name} waiting${run.reason?` · ${words_(run.reason)}`:''}${slot}`;
 }
 function show(){
   const c=config();

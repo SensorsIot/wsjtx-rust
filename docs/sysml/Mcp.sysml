@@ -285,7 +285,7 @@ package WstxMcp {
              run (null or {id, state, reason, mode, completed_contacts, unanswered_periods,
              contact_id, selected (null or {source_id, job_id, generation, sequence, call}),
              last_decision, given_up (calls the operator gave up in a strategy run), rested (the call a
-             strategy run left after calls_per_station, or null), pounce (null or
+             strategy run left after calls_per_station, or null), tx_slot (null or {hz, free}, WstxStrategy::FreeTxSlot), pounce (null or
              {call, band}, #42)), strategy_refusal (null or why the last selection started no run,
              WstxStrategy::StrategyRun)}; existing auth and Origin rules of GET routes.
              POST /automation/command (AutomationCommand): exactly {v, profile_id, boot_id,
