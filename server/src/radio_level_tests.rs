@@ -835,3 +835,71 @@ fn a_reading_without_swr_keeps_the_fault_entry() {
     );
     assert!(recording.tx_level.swr_fault());
 }
+
+async fn select_band(f: &Fixture, band: &str) -> (StatusCode, Value, Value) {
+    let (_, sel, _, _) = f.call("GET", "/receive/selection", None).await;
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
+        "profile_revision":sel["profile_revision"],"generation":sel["generation"],
+        "operating_revision":sel["operating_revision"],"action":"band","band":band});
+    let (s, v, _, _) = f.call("POST", "/receive/select", Some(body)).await;
+    (s, v, sel)
+}
+
+// Proves: CL-044-16; TC-044-023 (a). A band change that meets a poll waits for the lease.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_band_change_waits_for_the_lease_of_a_poll_and_is_accepted() {
+    let (f, _) = station(radio(fixed([0, 0])));
+    let lease = actor(&f)
+        .reserve_transition(Instant::now() + Duration::from_secs(1))
+        .unwrap();
+    let holder = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        drop(lease);
+    });
+    let start = Instant::now();
+    let (s, v, _) = select_band(&f, "20m").await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    assert!(start.elapsed() >= Duration::from_millis(250));
+    holder.join().unwrap();
+}
+
+// Proves: CL-044-16; TC-044-023 (b). The wait is bounded; a refusal changes nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing() {
+    let (f, _) = station(radio(fixed([0, 0])));
+    let lease = actor(&f)
+        .reserve_transition(Instant::now() + Duration::from_secs(1))
+        .unwrap();
+    let start = Instant::now();
+    let (s, v, before) = select_band(&f, "20m").await;
+    let waited = start.elapsed();
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (StatusCode::CONFLICT, Some("busy"))
+    );
+    assert!(
+        waited >= Duration::from_millis(2900) && waited < Duration::from_millis(4500),
+        "{waited:?}"
+    );
+    let (_, after, _, _) = f.call("GET", "/receive/selection", None).await;
+    assert_eq!(after["operating_revision"], before["operating_revision"]);
+    assert_eq!(
+        after["selection"], before["selection"],
+        "the band stays as it was"
+    );
+    drop(lease);
+}
+
+// Proves: CL-044-16; TC-044-023 (c). The hold of a transmission refuses at once: it lasts
+// far longer than the wait.
+#[test]
+fn a_transmit_hold_refuses_the_lease_at_once() {
+    let (f, _) = station(radio(fixed([0, 0])));
+    hold(&f);
+    let start = Instant::now();
+    assert!(matches!(
+        actor(&f).reserve_transition(Instant::now() + Duration::from_secs(3)),
+        Err(cat::Error::Busy)
+    ));
+    assert!(start.elapsed() < Duration::from_millis(500));
+}

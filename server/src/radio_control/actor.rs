@@ -471,13 +471,24 @@ impl Actor {
     pub fn execute(&self, request: Request) -> Result<Observation> {
         self.execute_inner(request, None)
     }
-    pub fn reserve_transition(self: &Arc<Self>) -> Result<TransitionLease> {
+    /// CL-044-16 waits until `deadline` for a poll or exchange to give up the lease; a
+    /// transmit hold refuses at once, it lasts far longer than the wait.
+    pub fn reserve_transition(self: &Arc<Self>, deadline: Instant) -> Result<TransitionLease> {
         if self.shutdown.load(Ordering::Acquire) {
             return Err(Error::Unavailable);
         }
-        self.lease
-            .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| Error::Busy)?;
+        while let Err(holder) =
+            self.lease
+                .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
+        {
+            if holder == TRANSMIT_HOLD || Instant::now() >= deadline {
+                return Err(Error::Busy);
+            }
+            if self.shutdown.load(Ordering::Acquire) {
+                return Err(Error::Unavailable);
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
         Ok(TransitionLease {
             actor: self.clone(),
             released: Arc::new(AtomicBool::new(false)),

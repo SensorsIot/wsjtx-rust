@@ -333,6 +333,10 @@ test('TC-009-005 browser preferred selection and Stop fence a genuinely delayed 
   await page.selectOption('#operating-band','40m');await page.locator('#operating-selection-status').filter({hasText:'audio_unconfigured'}).waitFor();
   await page.locator('#exception-chips [data-chip=selection]').filter({hasText:'audio_unconfigured'}).waitFor();
   assert.match(await page.locator('#operating-radio').textContent(),/Nominal 7\.074000 MHz.*manual, actual rig unconfirmed/);
+  // Proves: CL-044-16; TC-044-023 (d). A refused band change leaves the control on the station's band.
+  await page.route('**/receive/select',route=>route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({error:{code:'busy',field:null}})}),{times:1});
+  await page.selectOption('#operating-band','20m');await page.locator('#operating-selection-status').filter({hasText:'Selection refused · busy'}).waitFor();
+  await page.waitForFunction(()=>document.querySelector('#operating-band').value==='40m'&&!mutationPending);
   await page.selectOption('#operating-mode','ft4');await page.waitForFunction(()=>document.querySelector('#op-dial').value==='7.047500');
   await page.locator('#operating-mode:enabled').waitFor();
   const before=(await request('/receive/selection')).body;
