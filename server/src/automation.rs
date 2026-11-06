@@ -1115,7 +1115,13 @@ impl Owner {
                     return manual(&mut inner);
                 }
                 if arm != Some(wstx_rust::transmit::service::ArmState::Armed) {
-                    return stop(&mut inner, disarmed, false);
+                    // Unattended the stop at N is back for this reason: the run names it.
+                    let reason = match disarmed {
+                        "tx_watchdog" if run_limit => "run_limit",
+                        "tx_watchdog" if no_client => "no_client",
+                        other => other,
+                    };
+                    return stop(&mut inner, reason, false);
                 }
                 if run.config.strategy
                     && strategy_watchdog(

@@ -588,18 +588,22 @@ package WstxStrategy {
              slot near the frequencies the target decodes and goes on. A message of the partner
              addressed to my call in this contact also makes it known to hear us: it has
              proved the slot, spot or no spot, so Tx never leaves a slot in an exchange the
-             partner has answered. The new slot is
+             partner has answered; this keeps the slot only: such a partner without a spot
+             is still left after its calls, because an answer does not expire and a partner
+             gone QRT would hold the run for hours. The new slot is
              FreeTxSlot's choice with the slot it leaves also occupied and those frequencies
              preferred, so this is the one case in which Tx moves within a contact; no free
              slot keeps the current one and says so in the status. A refused move
              changes nothing and is checked again N repetitions later. The Rep goes on over a
              move: the message is the same; a station the run left and came back to keeps
-             the new slot, since FreeTxSlot stays on a current slot that is free. A target known to hear us is also not left
+             the new slot, since FreeTxSlot stays on a current slot that is free. A target with a spot is also not left
              for another candidate after its calls ("we are in the queue"), but only while the
              run may go on: with no client (CLIENT_GONE) or past the run limit its
              calls_per_station count again, so the contact ends and the run stops no_client
              or run_limit; and the stop at N is back at once for the contact, so that the run ends
-             even when no publication arrives (it then stops tx_watchdog). A caller of my call
+             even when no publication arrives, and also ends an exchange already past N; the
+             run names no_client or run_limit, the watchdog's tx_expired stays until a new
+             selection. A caller of my call
              (CallerOfMyCall) in a publication counts those calls as well: it outranks the queue
              (D5), and a period without one holds the count without resetting it. The run shows the last check as slot_check {repetitions, hears_us,
              hz, free} and tx_slot {hz, free}. WD:n counts down to the next check. */

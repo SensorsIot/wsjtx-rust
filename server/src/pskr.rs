@@ -833,7 +833,8 @@ fn accept(shared: &Shared, my_call: &str, payload: &[u8]) {
     };
     let now = utc_s();
     let mut i = shared.lock();
-    if spot.sender != my_call && i.target.as_deref() != Some(spot.receiver.as_str()) {
+    if !i.enabled || (spot.sender != my_call && i.target.as_deref() != Some(spot.receiver.as_str()))
+    {
         return;
     }
     let time = spot.utc_s.min(now);

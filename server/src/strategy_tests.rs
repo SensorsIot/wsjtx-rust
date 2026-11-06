@@ -3216,6 +3216,8 @@ async fn tc_039_022_the_repetitions_reaching_n_in_a_strategy_run() {
             |feed| {
                 feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
                 feed.switch(false);
+                // A spot already read when the switch went off says nothing either.
+                feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
             },
             false,
             1400,
@@ -3371,7 +3373,10 @@ async fn tc_039_022_an_answer_keeps_the_slot_without_a_spot() {
 // so the run cannot go on transmitting even when no publication ever arrives to end its contact.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_022_unattended_the_stop_at_n_is_back_without_a_publication() {
-    for skew in [crate::automation::CLIENT_GONE.as_secs(), 9 * 3600] {
+    for (skew, reason) in [
+        (crate::automation::CLIENT_GONE.as_secs(), "no_client"),
+        (9 * 3600, "run_limit"),
+    ] {
         let (f, e) = run_at_limit(2, 20, |feed| {
             feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
         })
@@ -3389,7 +3394,7 @@ async fn tc_039_022_unattended_the_stop_at_n_is_back_without_a_publication() {
         let keys = f.keys();
         not_keyed_in(&f, e + 105_000).await;
         assert_eq!(f.keys(), keys, "never keyed again");
-        assert_eq!(quiet_run(&f), ("stopped".into(), json!("tx_watchdog")));
+        assert_eq!(quiet_run(&f), ("stopped".into(), json!(reason)));
     }
 }
 // Proves: CL-039-20; CL-039-21; TC-039-022. Only a strategy run's own contact subscribes to its

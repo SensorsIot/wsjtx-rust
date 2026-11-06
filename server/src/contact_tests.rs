@@ -929,8 +929,6 @@ fn tc_008_001_the_watchdog_stops_at_n_repetitions_whatever_the_partner_or_browse
     assert_eq!(reps(&s), vec![(true, 1), (false, 4), (true, 3), (true, 1)]);
 }
 
-// Proves: CL-010-10; TC-008-001: a different message starts at 1 again, also when the
-// partner advances just before the send beyond the limit is due.
 // Proves: CL-039-21; TC-039-022. The strategy run's own contact sends past the limit and counts
 // down to the next check; the same contact without the exemption stops at N, and another
 // contact's exemption does not help it.
@@ -967,6 +965,8 @@ fn tc_039_022_only_the_runs_own_contact_sends_past_the_limit() {
     assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
 }
 
+// Proves: CL-010-10; TC-008-001: a different message starts at 1 again, also when the
+// partner advances just before the send beyond the limit is due.
 #[test]
 fn tc_008_001_the_partner_advancing_at_the_limit_sends_the_next_message() {
     let mut s = station();
