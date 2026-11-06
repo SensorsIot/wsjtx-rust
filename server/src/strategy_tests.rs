@@ -2488,7 +2488,7 @@ async fn tc_039_010_a_new_live_job_counts_from_its_first_record() {
     f.state.recording.fixture_band("40m");
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     publish(&f, e - 15_000, &[busy(600.0)]);
     f.state.recording.fixture_band("20m");
     publish(
