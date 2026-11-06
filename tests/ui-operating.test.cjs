@@ -304,9 +304,9 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
  assert.match(await page.locator('#radio-toolbar').innerText(),/Band \u27F3[\s\S]*Mode \u27F3/,'band and mode are marked as restart changes');
  assert.equal(await page.locator('#op-dial').isDisabled(),true);assert.equal(await page.locator('#op-dial').inputValue(),'');
  assert.match(await page.locator('#signal .op-signal-heading').innerText(),/Sensitivity/,'Sensitivity stays in the waterfall corner');
- // #39: without a saved strategy only None, the editor and Value are offered.
+ // #39: without a saved strategy None, the built-ins, the editor and Value are offered.
  await page.waitForFunction(()=>!document.querySelector('#strategy-edit').disabled,null,{timeout:15000});
- assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None']);
+ assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None','New DXCC','New DXCC on band','DXCC slots','New calls','DX hunting'],'None and the built-ins');
  for(const id of ['#strategy-highlight','#strategy-auto'])assert.equal(await page.locator(id).count(),0,`${id} is gone`);
  assert.equal(await page.locator('#activity-value').isVisible(),true,'the Value control is visible');
  assert.equal(await page.locator('#station-automation').textContent(),'Automation idle');
@@ -2562,6 +2562,7 @@ test('TC-042-001 Editor offers the goals and the station saves them unselected',
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
   await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
+  await page.locator('#se-new').click();
   assert.deepEqual(await page.locator('.se-goals label').evaluateAll(l=>l.map(x=>x.textContent)),['DXCC','DXCC per band','DXCC slot (band and mode)','WAZ (CQ zones)','WPX (prefixes)','Grids','New call']);
   await page.locator('[data-goal=dxcc_slot]').check();await page.locator('[data-goal=waz]').check();
   const saved=page.waitForResponse(r=>r.url().endsWith('/strategy')&&r.request().method()==='PUT');
@@ -2569,6 +2570,49 @@ test('TC-042-001 Editor offers the goals and the station saves them unselected',
   assert.deepEqual([reply.revision,reply.configuration.active,reply.configuration.strategies],[1,null,[{name:'Strategy 1',class:'award',goals:['dxcc','dxcc_slot','waz'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:true,window:{kind:'all'}}]]);
   await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
   assert.deepEqual(errors,[]);
+});
+// Proves: CL-039-11; TC-039-032 on the actual isolated station: a built-in is read-only in the
+// editor, Duplicate copies it to a user strategy, a colliding name is refused with its field.
+test('TC-039-032 Built-in strategies are read-only in the editor and copy to a user strategy',{timeout:40000},async t=>{
+  const {page,errors}=await fixture(t,{width:1366,height:768});
+  await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
+  const puts=[];page.on('request',r=>{if(r.url().endsWith('/strategy')&&r.method()==='PUT')puts.push(JSON.parse(r.postData()));});
+  await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
+  assert.deepEqual(await page.locator('#se-which option').allTextContents(),['New DXCC (built-in)','New DXCC on band (built-in)','DXCC slots (built-in)','New calls (built-in)','DX hunting (built-in)']);
+  // No user strategy: the first built-in, read-only; Save with nothing stores nothing and selects nothing.
+  assert.equal(await page.inputValue('#se-name'),'New DXCC');
+  assert.equal(await page.locator('#se-name').isDisabled(),true);
+  const none=page.waitForResponse(r=>r.url().endsWith('/strategy')&&r.request().method()==='PUT');
+  await page.locator('#se-save').click();const noneReply=await (await none).json();
+  assert.deepEqual([noneReply.configuration.active,noneReply.configuration.strategies],[null,[]]);
+  await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
+  assert.equal(await page.inputValue('#se-name'),'New DXCC');
+  await page.selectOption('#se-which',{label:'DX hunting (built-in)'});
+  assert.equal(await page.inputValue('#se-name'),'DX hunting');
+  assert.equal(await page.inputValue('#se-region'),'dx');
+  assert.deepEqual(await page.locator('#se-body').evaluate(b=>[...b.querySelectorAll('input,select')].every(e=>e.disabled)),true,'read-only');
+  assert.equal(await page.locator('#se-delete').isDisabled(),true);
+  // Duplicate: a user strategy with the same settings, editable, saved without the key.
+  await page.selectOption('#se-which',{label:'New DXCC (built-in)'});
+  await page.locator('#se-copy').click();
+  assert.equal(await page.inputValue('#se-name'),'New DXCC copy');
+  assert.equal(await page.locator('#se-name').isDisabled(),false);
+  await page.locator('#se-save').click();await page.locator('#se-result').filter({hasText:'revision 2'}).waitFor();
+  assert.deepEqual(puts.at(-1).configuration.strategies.map(s=>[s.name,s.goals,s.builtin]),[['New DXCC copy',['dxcc'],undefined]],'only the copy; no built-in is sent');
+  assert.equal(puts.at(-1).configuration.active,null,'Save never selects');
+  // A name that collides is refused by the station.
+  await page.locator('#se-name').fill('new calls');
+  await page.locator('#se-save').click();
+  await page.locator('#se-result').filter({hasText:'invalid_request'}).waitFor();
+  assert.match(await page.locator('#se-result').textContent(),/strategies\[\d\]\.name/);
+  await page.locator('#strategy-editor button[value=cancel]').click();
+  // Selecting a built-in from the selector.
+  assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None','New DXCC','New DXCC on band','DXCC slots','New calls','DX hunting','New DXCC copy']);
+  const saved=page.waitForResponse(r=>r.url().endsWith('/strategy')&&r.request().method()==='PUT');
+  await page.selectOption('#strategy-name','DXCC slots');const reply=await (await saved).json();
+  assert.equal(reply.configuration.active,'DXCC slots');
+  assert.equal(reply.configuration.strategies.some(s=>s.name==='DXCC slots'),false);
+  assert.deepEqual(errors.filter(e=>!/400/.test(e)),[]);
 });
 // Proves: CL-039-04; TC-039-006 review 6683200740 finding 5: rows published during an evaluation are
 // evaluated when it ends, without a timer. Station replies are hand-written fixtures.

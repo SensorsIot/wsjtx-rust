@@ -981,7 +981,8 @@ const nameSelect=$('strategy-name'),editButton=$('strategy-edit'),valueButton=$(
 if(!nameSelect)return;
 let view=null,viewLoading=null,viewAgain=false,strategyMissing=false,run=null,refusal=null,pounceConfirmed=false,verdicts=new Map(),evaluatedKey='',evaluating=false,evaluateAgain=false;
 const config=()=>view?.configuration??null;
-const active=()=>{const c=config();return c?.strategies.find(s=>s.name===c.active)??null;};
+const builtins=()=>view?.builtin_strategies??[];
+const active=()=>{const c=config();return [...(c?.strategies??[]),...builtins()].find(s=>s.name===c?.active)??null;};
 const runActive=()=>!!run&&run.state!=='stopped';
 const strategyRun=()=>runActive()&&run.strategy;
 function loadStrategy(){
@@ -1015,7 +1016,7 @@ function showRun(){
 }
 function show(){
   const c=config();
-  const options=[['','None'],...(c?.strategies??[]).map(s=>[s.name,s.name])];
+  const options=[['','None'],...builtins().map(s=>[s.name,s.name]),...(c?.strategies??[]).map(s=>[s.name,s.name])];
   const key=options.map(o=>o[0]).join('\n');
   if(nameSelect.dataset.key!==key){nameSelect.dataset.key=key;nameSelect.replaceChildren(...options.map(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;return o;}));}
   // Always the station's: a HALT's None must show also while the selector has the focus.
@@ -1298,8 +1299,9 @@ editor.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="strategy
 document.querySelector('main').append(editor);
 let drafts=[],current=0,previewTimer=null,previewSeq=0;
 function editorOpen(){
-  const c=config();drafts=structuredClone(c?.strategies??[]);current=Math.max(0,drafts.findIndex(s=>s.name===c?.active));
-  if(!drafts.length)drafts.push(newStrategy('Strategy 1'));
+  const c=config();drafts=structuredClone(c?.strategies??[]);
+  // WstxStrategy::BuiltinStrategies: after the user's, read-only; Save never sends them.
+  drafts.push(...structuredClone(builtins()));current=Math.max(0,drafts.findIndex(s=>s.name===c?.active));
   editor.querySelector('#strategy-editor-halt').disabled=document.querySelector('#halt-tx')?.disabled??true;
   $('se-result').textContent=c?`My continent ${view.my_continent??'unknown'} (Settings > General) · Save applies at once, selecting starts a strategy`:'Saved strategies unreadable: Save replaces them';
   renderEditor();editor.showModal();
@@ -1310,7 +1312,8 @@ editor.querySelector('#strategy-editor-halt').addEventListener('click',()=>{edit
 function option(value,label,selected){return `<option value="${value}"${selected?' selected':''}>${label}</option>`;}
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function renderEditor(){
-  $('se-which').innerHTML=drafts.map((s,i)=>option(i,esc(s.name),i===current)).join('');
+  $('se-which').innerHTML=drafts.map((s,i)=>option(i,esc(s.name)+(s.builtin?' (built-in)':''),i===current)).join('');
+  $('se-delete').disabled=!drafts[current]||!!drafts[current].builtin;
   const s=drafts[current];if(!s){$('se-body').innerHTML='<p class="op-muted">No strategy. Choose New.</p>';preview();return;}
   const w=s.window,continents=s.region.continents??[];
   $('se-body').innerHTML=`<label>Name<input id="se-name" maxlength="32" value="${esc(s.name)}" autocomplete="off"></label>
@@ -1323,13 +1326,16 @@ ${s.region.kind==='selected'?`<span class="se-continents" role="group" aria-labe
 <label class="op-check"><input type="checkbox" id="se-73"${s.treat_73_as_cq?' checked':''}>Treat 73 as CQ (answer a station that just ended a QSO; my Tx frequency is held)</label>
 <label>Worked window<select id="se-window">${[['all','All time'],['today','Today (UTC)'],['from_to','From - to (UTC dates)']].map(([v,l])=>option(v,l,w.kind===v)).join('')}</select></label>
 ${w.kind==='from_to'?`<label>From<input id="se-from" type="date" min="1930-01-01" max="2099-12-31" value="${esc(w.from)}"></label><label>To<input id="se-to" type="date" min="1930-01-01" max="2099-12-31" value="${esc(w.to)}"></label>`:''}</div>
-<p class="op-muted">Stations calling me are always answered, whatever these settings say. CQs directed elsewhere (another continent, CQ DX from my own, any other word) are never called.</p>`;
+<p class="op-muted">${s.builtin?'Built-in: read-only; Duplicate makes your own copy. ':''}Stations calling me are always answered, whatever these settings say. CQs directed elsewhere (another continent, CQ DX from my own, any other word) are never called.</p>`;
+  if(s.builtin)for(const e of $('se-body').querySelectorAll('input,select'))e.disabled=true;
   preview();
 }
 function words(text,lower){return text.split(/[\s,]+/).map(w=>lower?w.toLowerCase():w.toUpperCase()).filter(Boolean);}
 const todayUtc=()=>new Date().toISOString().slice(0,10);
 editor.addEventListener('input',event=>{
   const s=drafts[current];if(!s)return;const t=event.target;
+  if(t.id==='se-which'){current=Number(t.value);renderEditor();return;}
+  if(s.builtin)return;
   if(t.dataset.goal){s.goals=GOALS.map(g=>g[0]).filter(g=>editor.querySelector(`[data-goal="${g}"]`).checked);}
   else if(t.dataset.continent){s.region={kind:'selected',continents:[...editor.querySelectorAll('[data-continent]')].filter(b=>b.checked).map(b=>b.dataset.continent)};}
   else if(t.id==='se-name')s.name=t.value;
@@ -1341,16 +1347,17 @@ editor.addEventListener('input',event=>{
   else if(t.id==='se-window'){s.window=t.value==='from_to'?{kind:'from_to',from:todayUtc(),to:todayUtc()}:{kind:t.value};renderEditor();return;}
   else if(t.id==='se-from')s.window.from=t.value;
   else if(t.id==='se-to')s.window.to=t.value;
-  else if(t.id==='se-which'){current=Number(t.value);renderEditor();return;}
   schedulePreview();
 });
 editor.addEventListener('click',event=>{
   const b=event.target.closest('#se-new,#se-copy,#se-delete');if(!b)return;const s=drafts[current];
-  if(b.id==='se-new'){let n=1;while(drafts.some(d=>d.name.toLowerCase()===`strategy ${n}`))n++;drafts.push(newStrategy(`Strategy ${n}`));current=drafts.length-1;}
-  else if(b.id==='se-copy'&&s){const copy=structuredClone(s);copy.name=`${s.name} copy`.slice(0,32);drafts.push(copy);current=drafts.length-1;}
-  else if(b.id==='se-delete'&&s){drafts.splice(current,1);current=Math.max(0,current-1);}
+  if(b.id==='se-new'){let n=1;while(drafts.some(d=>d.name.toLowerCase()===`strategy ${n}`))n++;addDraft(newStrategy(`Strategy ${n}`));}
+  else if(b.id==='se-copy'&&s){const {builtin,...copy}=structuredClone(s);copy.name=`${s.name} copy`.slice(0,32);addDraft(copy);}
+  else if(b.id==='se-delete'&&s&&!s.builtin){drafts.splice(current,1);current=Math.max(0,current-1);}
   renderEditor();
 });
+// The user's strategies come first, the built-ins after them.
+function addDraft(draft){const at=drafts.filter(d=>!d.builtin).length;drafts.splice(at,0,draft);current=at;}
 function schedulePreview(){clearTimeout(previewTimer);previewTimer=setTimeout(preview,400);}
 async function preview(){
   const body=$('se-preview'),status=$('se-preview-status'),s=drafts[current],id=identity();
@@ -1358,7 +1365,7 @@ async function preview(){
   if(!s||!latest||!view){body.replaceChildren();status.textContent=!latest?'No decoded period yet: the preview follows the latest period.':'';return;}
   const seq=++previewSeq,[,,source_id,job_id,generation]=id.split('/');
   try{
-    const response=await stationFetch('/strategy/evaluate',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,source_id,job_id,generation:Number(generation),first_sequence:latest.first_sequence,next_sequence:latest.next_sequence,strategy:s,explain:true}),signal:AbortSignal.timeout(10000)});
+    const response=await stationFetch('/strategy/evaluate',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,source_id,job_id,generation:Number(generation),first_sequence:latest.first_sequence,next_sequence:latest.next_sequence,strategy:(({builtin,...draft})=>draft)(s),explain:true}),signal:AbortSignal.timeout(10000)});
     const data=await response.json().catch(()=>null);if(seq!==previewSeq)return;
     if(!response.ok||data?.v!==1){status.textContent=`Preview unavailable · ${data?.error?.code??response.status}${data?.error?.field?` (${data.error.field})`:''}`;return;}
     const text=new Map(resultRows.map(r=>[r.sequence,r.text]));
@@ -1370,10 +1377,10 @@ async function preview(){
 $('se-save').addEventListener('click',async()=>{
   const c=config()??{continent:null,active:null,ignore_calls:[],session_ignore_minutes:30};
   // Save never selects: selecting starts a strategy. A deleted active one is None.
-  const names=drafts.map(d=>d.name);
-  const ok=await saveConfiguration({...c,continent:c.continent??null,active:names.includes(c.active)?c.active:null,strategies:drafts},'Strategies');
+  const mine=drafts.filter(d=>!d.builtin),names=[...mine,...builtins()].map(d=>d.name);
+  const ok=await saveConfiguration({...c,continent:c.continent??null,active:names.includes(c.active)?c.active:null,strategies:mine},'Strategies');
   $('se-result').textContent=ok?`Saved · revision ${view.revision} · applies now`:statusNode.textContent;
-  if(ok){drafts=structuredClone(config().strategies);renderEditor();}
+  if(ok){const name=drafts[current]?.name;drafts=[...structuredClone(config().strategies),...structuredClone(builtins())];current=Math.max(0,drafts.findIndex(d=>d.name===name));renderEditor();}
 });
 // Read once per socket (a status refresh on the same socket reads nothing: Thin link).
 let strategySocket=null;

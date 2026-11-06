@@ -388,11 +388,11 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
     f.tick();
     // The browser's strategy store (#39), active as a selection leaves it; no run: the
     // run's own behaviour is in strategy_tests (this test reads views and verdicts).
-    let new_calls = crate::strategy::tests::strategy_json("New calls");
+    let new_calls = crate::strategy::tests::strategy_json("Test calls");
     let saved = f.state.recording.contact.get().unwrap().strategy.put(
         &f.state,
         json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"expected_revision":0,
-                "configuration":{"continent":null,"active":"New calls","strategies":[new_calls],
+                "configuration":{"continent":null,"active":"Test calls","strategies":[new_calls],
                     "ignore_calls":[],"session_ignore_minutes":30}}),
     );
     assert!(saved.is_ok());
@@ -509,7 +509,7 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
             strategy["configuration"]["active"].clone(),
             strategy["my_continent"].clone()
         ),
-        (json!("New calls"), json!("EU")),
+        (json!("Test calls"), json!("EU")),
         "the browser's saved strategy; continent from JN47AA"
     );
     // The browser's verdicts: both CQs are new calls of one entity, strongest first.
