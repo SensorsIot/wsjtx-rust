@@ -283,6 +283,8 @@ pub struct Recording {
     pub(crate) clock: std::sync::OnceLock<Arc<crate::clock_http::Clock>>,
     /// #44 radio detection of this station (one at a time).
     pub(crate) radio_setup: crate::radio_setup::Owner,
+    /// #44 the station-managed radio AGC (CL-044-10).
+    pub(crate) agc: crate::radio_agc::Owner,
     /// Bumped at each latest_decode publication so Detailed WebSocket peers announce it at
     /// once instead of on the 2 s receive tick (#57 CL-057-01).
     pub(crate) publication: tokio::sync::watch::Sender<u64>,
@@ -2124,6 +2126,14 @@ impl Recording {
                     data: true,
                     data_filter: 1,
                 }))?;
+                // #44 CL-044-10: the managed AGC on each FT8/FT4 selection.
+                if matches!(op.requested.mode, "ft8" | "ft4") {
+                    crate::radio_agc::on_selection(
+                        &self,
+                        actor,
+                        snapshot.authority.connection_generation,
+                    );
+                }
                 Ok::<_, wstx_rust::radio_control::Error>(())
             })();
             self.refresh_radio_cache();
@@ -3351,6 +3361,7 @@ impl Recording {
                 udp: std::sync::OnceLock::new(),
                 clock: std::sync::OnceLock::new(),
                 radio_setup: Default::default(),
+                agc: Default::default(),
                 publication: tokio::sync::watch::Sender::new(0),
                 hashes: Default::default(),
                 startup,
@@ -3424,6 +3435,7 @@ impl Recording {
             udp: std::sync::OnceLock::new(),
             clock: std::sync::OnceLock::new(),
             radio_setup: Default::default(),
+            agc: Default::default(),
             publication: tokio::sync::watch::Sender::new(0),
             hashes: Default::default(),
             startup,

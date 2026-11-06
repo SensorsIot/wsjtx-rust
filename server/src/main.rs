@@ -28,6 +28,7 @@ mod mcp_tests;
 mod profile;
 #[cfg(test)]
 mod protocol_tests;
+mod radio_agc;
 mod radio_http;
 #[cfg(all(test, not(debug_assertions)))]
 mod radio_http_tests;
@@ -671,7 +672,7 @@ async fn put_profile(
             return profile_error(StatusCode::PAYLOAD_TOO_LARGE, "request_too_large", None);
         };
         let mut deserializer = serde_json::Deserializer::from_slice(&body);
-        let edit: profile::Edit = match serde_path_to_error::deserialize(&mut deserializer) {
+        let mut edit: profile::Edit = match serde_path_to_error::deserialize(&mut deserializer) {
             Ok(value) => value,
             Err(error) => {
                 let path = error.path().to_string();
@@ -689,6 +690,8 @@ async fn put_profile(
                     "settings.control.mode",
                     "settings.control.endpoint",
                     "settings.control.ptt",
+                    "settings.radio",
+                    "settings.radio.agc",
                 ];
                 return profile_error(
                     StatusCode::BAD_REQUEST,
@@ -703,6 +706,7 @@ async fn put_profile(
         {
             return profile_error(StatusCode::BAD_REQUEST, "invalid_settings", None);
         }
+        edit.settings.complete_radio(store.document.radio);
         if let Err(field) = edit.settings.validate() {
             return profile_error(StatusCode::BAD_REQUEST, "invalid_settings", Some(field));
         } // CL-044-05: a saved audio device is a WASAPI endpoint ID, never a friendly name.
@@ -1075,6 +1079,9 @@ async fn connection(
     // #40 WstxUdp::UdpDisplayEvent udp.display: the current highlights and clear floors once
     // a Highlight Callsign or Clear was applied since boot, then after each change.
     let mut udp_seen: u64 = 0;
+    // #44 CL-044-11 radio.agc: the managed AGC and its last read-back, once known, then
+    // after each change (the first event is this peer's snapshot).
+    let mut agc_seen: u64 = 0;
     let mut last_station_tick: Option<Instant> = None;
     let mut tick_transmitting: Option<bool> = None;
     // Events pace by the peer's display subscription; a peer that never chose one
@@ -1160,6 +1167,14 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{udp_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},
+                        Err(_)=>break,
+                    }
+                }
+                if r.agc.revision()!=agc_seen {
+                    let (revision,text)=radio_agc::event(r);
+                    match optional_write(&mut socket,Message::Text(text.into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{agc_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},
                         Err(_)=>break,
                     }
                 }

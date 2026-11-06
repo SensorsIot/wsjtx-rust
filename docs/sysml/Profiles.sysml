@@ -64,8 +64,16 @@ package WstxProfiles {
             ptt == PttMode::cat implies mode == ControlMode::cat
         }
     }
+    enum def AgcSetting { enum FAST; enum MID; enum SLOW; }
+    attribute def RadioSettings {
+        doc /* #44 CL-044-10: the radio settings the station manages over CAT, exactly
+             agc (FAST|MID|SLOW, default SLOW for FT8/FT4 on the IC-7300). Present only
+             while control is CAT on an IC-7300 CI-V endpoint, absent otherwise; separate
+             from ControlSelection, which is the receive-only confirmation's identity. */
+        attribute agc : AgcSetting = AgcSetting::SLOW;
+    }
     attribute def Settings {
-        doc /* Exactly these five required fields. display_name: 1..64 UTF-8 bytes,
+        doc /* Exactly these five required fields and the optional radio (CL-044-10). display_name: 1..64 UTF-8 bytes,
              no leading/trailing whitespace or control characters (U+0000..001F,
              U+007F..009F). callsign empty or 3..12 ASCII uppercase letters/digits/slash,
              with >=1 letter and >=1 digit. locator empty or 4/6/8 Maidenhead:
@@ -78,6 +86,9 @@ package WstxProfiles {
         attribute locator : String = "";
         attribute audio : AudioSelection;
         attribute control : ControlSelection;
+        /* #44 CL-044-10: optional sixth key radio, present exactly for a managed radio;
+           an edit without it keeps the saved value. */
+        attribute radio : RadioSettings[0..1];
     }
     attribute def Endpoint {
         doc /* Exactly bind/origin. bind numeric socket IP+port 1..65535; default
@@ -94,7 +105,7 @@ package WstxProfiles {
     }
     attribute def ProfileDocument {
         doc /* Exact JSON keys: schema_version, profile_id, revision, display_name,
-             callsign, locator, endpoint, connection_type, audio, control. Settings
+             callsign, locator, endpoint, connection_type, audio, control (and radio for a managed radio, CL-044-10). Settings
              below groups five flat JSON fields semantically, NOT a nested settings
              field in profile.json. UTF-8 JSON object <=16384 bytes; reject malformed
              UTF-8/JSON, duplicate/unknown/missing keys, wrong types and domains.
