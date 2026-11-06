@@ -410,11 +410,6 @@ fn update_reads_a_log4om_shaped_export_keeps_only_log_fields_and_marks_the_sourc
         log.worked(&calls[2..], "40M", "SSB").unwrap(),
         ["worked_this_band_and_mode"]
     );
-    assert_eq!(
-        log.worked_grids(&["fn42".into(), "JN37".into()], "30m", "FT8")
-            .unwrap(),
-        ["worked_this_band_and_mode", "not_worked"]
-    );
     // MODE FT4 (no submode) 30 s later is the same QSO as MFSK/FT4: already present.
     let ft4 = format!(
         "{LOG4OM_HEADER}<CALL:6>DL1ABC <BAND:3>20m <MODE:3>FT4 <QSO_DATE:8>20250219 <TIME_ON:6>101530 <eor>\n"
@@ -1375,6 +1370,47 @@ fn update_rerun_upgrades_confirmations_of_present_records_and_never_removes_one(
     let records = parse_records(&dir.file().unwrap(), &limits()).unwrap();
     assert_eq!(field(&records[0], "lotw_qsl_rcvd"), some("Y"));
     assert_eq!(log.put(changed, GATE).unwrap(), LogOutcome::AlreadySaved);
+}
+
+// Proves: TC-039-010 WstxStrategy::WorkedWindow: only the records of the window, cached until
+// the log changes, a record without a date only for all time.
+#[test]
+fn worked_window_reads_only_the_dated_records_and_is_cached_per_revision() {
+    let dir = Dir::new();
+    let log = Logbook::open(&dir.0);
+    let file = format!(
+        "{CONFIRM_HEADER}<CALL:6>DL1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20250101 <TIME_ON:4>1000 <eor>\n\
+         <CALL:5>F1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20250103 <TIME_ON:4>1000 <eor>\n"
+    );
+    import(&log, file.as_bytes()).0.unwrap();
+    let worked = |w: &crate::dxcc::Worked, c: &str| w.call_standing(c).worked;
+    let first = log.worked_window(20250101, 20250102).unwrap();
+    assert!(worked(&first, "DL1ABC") && !worked(&first, "F1ABC"));
+    let second = log.worked_window(20250103, 20250103).unwrap();
+    assert!(!worked(&second, "DL1ABC") && worked(&second, "F1ABC"));
+    let all = log.worked_set().unwrap();
+    assert!(worked(&all, "DL1ABC") && worked(&all, "F1ABC"));
+    assert!(
+        std::sync::Arc::ptr_eq(&first, &log.worked_window(20250101, 20250102).unwrap()),
+        "not rebuilt per evaluation"
+    );
+    // At most four windows are kept: a fifth drops the oldest.
+    for day in 4..8 {
+        log.worked_window(20250100 + day, 20250100 + day).unwrap();
+    }
+    assert!(!std::sync::Arc::ptr_eq(
+        &first,
+        &log.worked_window(20250101, 20250102).unwrap()
+    ));
+    // The log changes: the window is rebuilt.
+    let cached = log.worked_window(20250103, 20250110).unwrap();
+    let more = format!(
+        "{CONFIRM_HEADER}<CALL:5>G1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20250104 <TIME_ON:4>1000 <eor>\n"
+    );
+    import(&log, more.as_bytes()).0.unwrap();
+    let rebuilt = log.worked_window(20250103, 20250110).unwrap();
+    assert!(!std::sync::Arc::ptr_eq(&cached, &rebuilt));
+    assert!(worked(&rebuilt, "G1ABC"));
 }
 
 // Proves: CL-010-04; TC-011-002 #10 (2026-11-04) the award query layer: worked vs confirmed

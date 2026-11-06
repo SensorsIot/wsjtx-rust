@@ -91,8 +91,10 @@ attribute def ActivityOrdering {
          #55 (operator 2026-11-03, CL-055-04): the default field is value, chosen again
          by the DXCC column header (one direction only): within each period first by
          BandActivityValue, then by SNR descending (unavailable last), ties by
-         publication sequence ascending; with Highlight on the strategy hits (value 2)
-         keep the station's verdict order among themselves. A different validated
+         publication sequence ascending; with a strategy active the rows with a rank (value 2)
+         keep the station's verdict order among themselves (WstxStrategy::ValueView). The
+         visible "Value" control of the strategy element returns to this field after a
+         column click. A different validated
          profile resets to value. */
 }
 
@@ -493,11 +495,11 @@ attribute def ActivityOrdering {
              three the same width; at most 75em wide that column goes below Band Activity,
              still the same vertical stack, at most 48em everything stacks (a phone
              scrolls the workspace, never horizontally).
-             Strategy element: `Strategy [name] [edit] [Highlight | Auto]` (#39,
-             WstxStrategy): the name chooses the active strategy (None: none), edit opens
-             the StrategyEditor popup, Highlight marks matches in Band Activity
-             (HighlightView) and Auto starts or stops an Auto strategy run
-             (AutoStrategyRun); beside them the WstxMcp automation run state.
+             Strategy element: `Strategy [name] [edit] [Value]` (#39, WstxStrategy): the name
+             selects the active strategy, which starts it, None stops it
+             (StrategySelector, StrategyRun); edit opens the StrategyEditor popup; Value returns
+             Band Activity to the value order (ValueView); beside them the run state. HALT
+             is always on screen.
              There is no Monitor and no Enable Tx control on the screen: receive follows
              the band/mode selection; transmission follows SetEnableTx (#37). The legacy
              receive start/stop is an Expert action. Status texts of a healthy station
@@ -570,7 +572,7 @@ attribute def ActivityOrdering {
              adds slots). A row without a flag has no colour: there is no cq slot (#50). A row
              to my call keeps mycall on top. A row with a reason of its colour carries the reason
              tip of BandActivityHover (#50 CL-050-08). Settings > General > Display lists the slots with their
-             colours; the choice is per browser (browser storage). The #39 strategy Highlight is an
+             colours; the choice is per browser (browser storage). The #39 strategy mark is an
              accent (a left bar and the message text), never a row background.
              UDP highlight (#40, CL-040-08, operator 2026-11-04): a Highlight Callsign from a UDP
              target with accept_commands on (GridTracker, JTAlert; WstxUdp::InboundRules,
@@ -634,7 +636,7 @@ attribute def ActivityOrdering {
         doc /* #55 (operator 2026-11-03, CL-055-04). The value of a Band Activity row, best
              first: 1 calling me (a decoded message to the profile callsign, matched as for the
              mycall slot, also a filled-in hash <MYCALL> or a nonstandard i3=4 'to', #24); 2 a strategy
-             hit (Highlight on, WstxStrategy::HighlightView rank not null); 3 new DXCC or new
+             hit (a strategy active, WstxStrategy::ValueView rank not null); 3 new DXCC or new
              continent (flags new_dxcc, new_continent); 4 new DXCC or continent on this band
              (new_dxcc_band, new_continent_band); 5 new CQ or ITU zone, ever or on this band;
              6 new grid, ever or on this band; 7 new call, ever or on this band; 8 no flag.
@@ -656,7 +658,7 @@ attribute def ActivityOrdering {
              on <band> <MODE>)", WstxContact::WorkedBeforeQuery answers, no further query). An
              overall flag implies its on-band flag, so the on-band text appears only without
              it. Then "UDP highlight" for an accepted UDP highlight (CL-040-08) and the #39
-             strategy verdict ("Strategy <name>: rule <n>" or "Directed CQ, not calling us: the
+             strategy verdict ("Strategy <name>: #<rank>" or "Directed CQ, not calling us: the
              strategy skips it, a double-click warns"). The reasons form one line joined by " · ", for
              example "New DXCC · New call", "New on 40m (worked on another band or mode)",
              "New CQ zone 10". A partner row carries no flag reason (its marker shows it). A
@@ -711,8 +713,8 @@ attribute def ActivityOrdering {
              height 1.25 at the unchanged font size (at most 24 px per row), period dividers 1 px,
              so more stations fit; with a coarse pointer (touch) rows keep 8 px padding, and the
              stacked narrow layout keeps its card rows, so rows stay tappable at 360 px and 200 %
-             zoom; with Highlight on the strategy accent of
-             WstxStrategy::HighlightView (matches first in their period, greyed directed
+             zoom; with a strategy active the strategy accent of
+             WstxStrategy::ValueView (ranked rows first in their period under the value sort, greyed directed
              CQs not for my continent). A selection of a CQ that is not answerable first shows the
              WstxStrategy::DirectedCqRule warning; only its confirmation selects. Pointer: click selects (SelectDecodedRow, prepares, never
              transmits; another station while a contact is active only offers "Change
@@ -1016,7 +1018,9 @@ attribute def ActivityOrdering {
              ignore lists of WstxStrategy::IgnoreLists: permanent calls, session expiry
              minutes, the session list with remove controls; #42 the Alerts section of
              WstxStrategy::Alert: Sound and Browser notification checkboxes, both off by
-             default, and the alert history newest first with Clear), clock
+             default, and the alert history newest first with Clear; #39 the Most Wanted
+             section of WstxStrategy::MostWantedList: status with the source attribution,
+             upload and Download now), clock
              (the SNTP state, and #43 CL-043-01 the clock source NTP / From the air /
              Both with the air estimate, read with GET /clock when the drawer opens,
              saved on change with POST /clock, a plain setting without restart mark),

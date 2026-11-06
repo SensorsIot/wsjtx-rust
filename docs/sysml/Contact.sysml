@@ -492,8 +492,7 @@ package WstxContact {
              auto_tx_mode(true); AutoRespondPeriod.cpp ~11-32
              isDirectAutoRespondCandidate: addressed to my call, a callsign sender other
              than me, an exchange that is not R+report, RRR, RR73 or 73): while the
-             contact is calling (an own CQ started by the operator; a CQ of station
-             automation is answered by its strategy instead, WstxMcp) with Enable Tx,
+             contact is calling (an own CQ started by the operator; an MCP run keeps its own rules, WstxMcp; a strategy never calls CQ) with Enable Tx,
              Auto Seq and Call 1st on (WSJT-X AutoRespondPeriod.cpp observePeriod opens
              the respond period only while Enable Tx is on), the first decoded row of the step, in decode order (row
              sequence), that is a standard message to my call from a concrete call in the
@@ -995,7 +994,7 @@ package WstxContact {
              (from EntityOfCall of each logged call; a logged call without an entity
              counts for nothing); each with its _band form: not on this band in any mode
              (WSJT-X LogBook::match with highlight by mode off, its default; the
-             strategy's new_call/new_grid conditions keep band and mode). The worked set
+             strategy goals are WstxStrategy::GoalNeeded). The worked set
              is rebuilt only when the log or the country table changes; the annotation
              runs off the async runtime. Band: the CAT dial
              band, else the operating selection band; without a band no _band flag is

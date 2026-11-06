@@ -7,6 +7,7 @@
 //! per station profile (`cty.dat` beside contacts.adi).
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::{Arc, OnceLock};
 
 #[cfg(test)]
@@ -244,6 +245,11 @@ impl Cty {
     pub fn entity_count(&self) -> usize {
         self.entities.len()
     }
+    /// The entity full names, for the Most Wanted mapping's test.
+    #[cfg(test)]
+    pub fn entity_names(&self) -> impl Iterator<Item = &str> {
+        self.entities.iter().map(|e| e.name.as_str())
+    }
     fn resolve(&self, p: &Prefix, call: &str) -> Resolved {
         // AD1CCty lookup_entity: KG4 2x1 and 2x3 calls are mainland US, not Guantanamo.
         let id = if call.starts_with("KG4") && call.len() != 5 && call.len() != 3 {
@@ -397,30 +403,73 @@ pub struct Logged {
     pub mode: Option<String>,
     /// #10 the contact is confirmed (logbook::Record::confirmed).
     pub confirmed: bool,
+    /// #39 QSO_DATE as YYYYMMDD (None: counts only for the all-time window).
+    pub date: Option<u32>,
 }
 /// #10 award standing of a key (for example a DXCC entity) in a scope: worked by any
 /// logged contact, and confirmed by at least one of them.
-/// The award query layer the #39 strategies read; no station route uses it yet.
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Standing {
     pub worked: bool,
     pub confirmed: bool,
 }
-#[allow(dead_code)]
 impl Standing {
     /// #39 award strategies: needed when not worked or not confirmed.
     pub fn needed(self) -> bool {
         !self.worked || !self.confirmed
     }
 }
-/// #42 the entity categories of the strategy's New matrix (WstxStrategy::NewEntity).
+/// The entity categories a WstxStrategy::GoalNeeded reads (their index follows `keys`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Category {
     Dxcc,
-    Continent,
     CqZone,
-    ItuZone,
+}
+impl Category {
+    fn index(self) -> usize {
+        match self {
+            Category::Dxcc => 2,
+            Category::CqZone => 4,
+        }
+    }
+}
+/// WstxStrategy::WpxPrefix: the CQ WPX prefix of a call.
+pub fn wpx_prefix(call: &str) -> String {
+    /// Letters and digits up to the last digit; without a digit two letters and a zero.
+    fn prefix_of(part: &str) -> String {
+        match part.rfind(|c: char| c.is_ascii_digit()) {
+            Some(last) => part[..=last].to_owned(),
+            None => format!("{}0", part.get(..2).unwrap_or(part)),
+        }
+    }
+    let call = call.trim().to_ascii_uppercase();
+    let parts: Vec<&str> = call
+        .split('/')
+        .filter(|p| {
+            !p.is_empty()
+                && !matches!(
+                    *p,
+                    "P" | "M" | "MM" | "AM" | "A" | "E" | "J" | "QRP" | "B" | "R"
+                )
+        })
+        .collect();
+    match parts.as_slice() {
+        [] => String::new(),
+        [only] => prefix_of(only),
+        // A single digit replaces the call's last digit (N8BJQ/3 is N3).
+        [home, digit] if digit.len() == 1 && digit.as_bytes()[0].is_ascii_digit() => {
+            let mut p = prefix_of(home);
+            p.pop();
+            p.push_str(digit);
+            p
+        }
+        // Otherwise the shorter part is the designator (the left one when equally long).
+        [left, right, ..] => prefix_of(if right.len() < left.len() {
+            right
+        } else {
+            left
+        }),
+    }
 }
 /// WorkedBefore with highlight by mode off (the WSJT-X default): what the log holds per
 /// category, ever and per band. Calls compare upper case, grids by their 4-character
@@ -434,6 +483,10 @@ pub struct Worked {
     band: HashMap<(u8, String, String), bool>,
     /// #42 per band and mode (the strategy's scope), for the entity categories.
     band_mode: HashMap<(u8, String, String, String), bool>,
+    /// #39 the CQ WPX prefixes (WstxStrategy::WpxPrefix) with their confirmation.
+    wpx: HashMap<String, bool>,
+    /// #39 calls with a logged contact that has no grid: their grid status is unknown.
+    gridless: HashSet<String>,
 }
 impl std::fmt::Debug for Worked {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -454,10 +507,26 @@ fn keys(call: &str, grid: Option<&str>, r: Option<&Resolved>) -> [Option<String>
         r.map(|r| r.itu_zone.to_string()),
     ]
 }
+fn standing(confirmed: Option<&bool>) -> Standing {
+    Standing {
+        worked: confirmed.is_some(),
+        confirmed: confirmed.copied().unwrap_or(false),
+    }
+}
 impl Worked {
     pub fn from_log(table: &Table, logged: &[Logged]) -> Self {
+        Self::from_log_window(table, logged, None)
+    }
+    /// #39 WstxStrategy::WorkedWindow: only the records dated in `window` (first and last
+    /// date as YYYYMMDD, inclusive), if given; a record without a date counts only without.
+    pub fn from_log_window(table: &Table, logged: &[Logged], window: Option<(u32, u32)>) -> Self {
         let mut w = Self::default();
         for l in logged {
+            if let Some((first, last)) = window
+                && !l.date.is_some_and(|d| (first..=last).contains(&d))
+            {
+                continue;
+            }
             let r = table.lookup(&l.call);
             for (i, key) in keys(&l.call, l.grid.as_deref(), r.as_ref())
                 .into_iter()
@@ -474,29 +543,31 @@ impl Worked {
                 }
                 *w.ever.entry((i as u8, key)).or_default() |= l.confirmed;
             }
+            *w.wpx.entry(wpx_prefix(&l.call)).or_default() |= l.confirmed;
+            if l.grid.as_deref().and_then(square).is_none() {
+                w.gridless.insert(l.call.to_ascii_uppercase());
+            }
         }
         w
     }
-    /// #42 WstxStrategy::NewEntity: no logged contact has this entity's key of the
-    /// category, ever (`band_mode` None) or on that band and mode.
-    pub fn entity_new(&self, c: Category, r: &Resolved, band_mode: Option<(&str, &str)>) -> bool {
-        let i = 2 + c as usize;
-        let Some(key) = keys("", None, Some(r)).into_iter().nth(i).flatten() else {
-            return false;
-        };
-        match band_mode {
-            None => !self.ever.contains_key(&(i as u8, key)),
-            Some((b, m)) => !self.band_mode.contains_key(&(
-                i as u8,
-                key,
-                b.to_ascii_lowercase(),
-                m.to_ascii_uppercase(),
-            )),
-        }
+    /// #39 the standing of a call, ever.
+    pub fn call_standing(&self, call: &str) -> Standing {
+        standing(self.ever.get(&(0, call.to_ascii_uppercase())))
+    }
+    /// #39 the standing of a grid's 4-character square, ever.
+    pub fn grid_standing(&self, grid: &str) -> Standing {
+        standing(square(grid).and_then(|g| self.ever.get(&(1, g))))
+    }
+    /// #39 the standing of a call's CQ WPX prefix, ever.
+    pub fn wpx_standing(&self, call: &str) -> Standing {
+        standing(self.wpx.get(&wpx_prefix(call)))
+    }
+    /// #39 the call has a logged contact without a grid (WstxStrategy D13).
+    pub fn gridless(&self, call: &str) -> bool {
+        self.gridless.contains(&call.to_ascii_uppercase())
     }
     /// #10 worked and confirmed standing of an entity's key of the category: ever (no
     /// band), on a band in any mode, or on a band and mode. One lookup per query.
-    #[allow(dead_code)]
     pub fn entity_standing(
         &self,
         c: Category,
@@ -504,7 +575,7 @@ impl Worked {
         band: Option<&str>,
         mode: Option<&str>,
     ) -> Standing {
-        let i = 2 + c as usize;
+        let i = c.index();
         let Some(key) = keys("", None, Some(r)).into_iter().nth(i).flatten() else {
             return Standing::default();
         };
@@ -516,10 +587,7 @@ impl Worked {
                     .get(&(i as u8, key, b.to_ascii_lowercase(), m.to_ascii_uppercase()))
             }
         };
-        Standing {
-            worked: confirmed.is_some(),
-            confirmed: confirmed.copied().unwrap_or(false),
-        }
+        standing(confirmed)
     }
     /// The FLAGS that hold for a decoded sender; the _band flags only with a known band,
     /// the grid flags only with a message grid, the entity flags only with an entity.
