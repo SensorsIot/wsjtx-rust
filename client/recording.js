@@ -1387,7 +1387,7 @@ window.wstxWaterfallAxis=wstxWaterfallAxis;
 function nativeProfile(){return profileData?.connection_type==='native_flex';}
 function receiveInputConfigured(){return nativeProfile()||!!profileData?.settings.audio.input_device;}
 let nativeState=null;
-const nativeStatus=document.createElement('p');nativeStatus.id='native-status';nativeStatus.setAttribute('role','status');nativeStatus.hidden=true;document.querySelector('#radio-toolbar').append(nativeStatus);
+const nativeStatus=document.createElement('p');nativeStatus.id='native-status';nativeStatus.setAttribute('role','status');nativeStatus.hidden=true;document.querySelector('#operating-radio').after(nativeStatus);
 function validNativeEvent(d){
   return operatingShape(d,'profile_id,boot_id,state,error,radio_code,session,radio,slice,retry_after_ms,transmit')&&operatingUuid(d.profile_id)&&operatingUuid(d.boot_id)&&
     ['unauthorized','discovering','connecting','ready','unavailable','conflict','stopped'].includes(d.state)&&operatingNullable(d.error,v=>typeof v==='string'&&/^[a-z_]{1,32}$/.test(v))&&operatingCounter(d.session)&&
@@ -1409,3 +1409,4 @@ window.wstxNativeProblem=()=>nativeProfile()&&nativeState&&nativeState.state!=='
 addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='radio.native'||!validNativeEvent(message.data))return;
   if(profileData&&(message.data.profile_id!==profileData.profile_id||message.data.boot_id!==profileData.boot_id))return;nativeState=message.data;nativeShow();});
 addEventListener('station-ready',()=>{if(nativeState&&nativeState.boot_id!==profileData?.boot_id)nativeState=null;nativeShow();});
+addEventListener('station-stale',nativeShow);

@@ -104,6 +104,7 @@ pub enum Error {
     ClientIdentityInUse,
     OwnershipAmbiguous,
     SliceOwnership,
+    DaxChannelConflict,
     AntennaUnavailable,
     RadioRefused,
     TransportLost,
@@ -129,6 +130,7 @@ impl Error {
             Self::ClientIdentityInUse => "client_identity_in_use",
             Self::OwnershipAmbiguous => "ownership_ambiguous",
             Self::SliceOwnership => "slice_ownership",
+            Self::DaxChannelConflict => "dax_channel_conflict",
             Self::AntennaUnavailable => "antenna_unavailable",
             Self::RadioRefused => "radio_refused",
             Self::TransportLost => "transport_lost",
@@ -153,9 +155,10 @@ impl Error {
     }
     fn state(self) -> State {
         match self {
-            Self::ClientIdentityInUse | Self::OwnershipAmbiguous | Self::SliceOwnership => {
-                State::Conflict
-            }
+            Self::ClientIdentityInUse
+            | Self::OwnershipAmbiguous
+            | Self::SliceOwnership
+            | Self::DaxChannelConflict => State::Conflict,
             _ => State::Unavailable,
         }
     }
@@ -240,6 +243,9 @@ struct Shared {
     shutdown: AtomicBool,
     /// A current browser grant exists (CL-022-03): nothing reaches a radio without one.
     allowed: AtomicBool,
+    /// The last frequency the radio confirmed for the selection (0: none yet). A new
+    /// session's new slice goes back there, because the selection still names it.
+    tuned_hz: AtomicU64,
     /// Counts changes of what is pushed to the client; packet counters are not pushed.
     revision: AtomicU64,
 }
@@ -307,7 +313,11 @@ impl Pushed {
             radio_code: s.radio_code,
             session: s.session,
             radio: s.radio.clone(),
-            slice: s.slice.clone(),
+            // When a status arrived is not a change of what it says.
+            slice: s.slice.clone().map(|slice| SliceFacts {
+                observed_at: None,
+                ..slice
+            }),
             retry_after_ms: s.retry_after_ms,
         }
     }
@@ -339,6 +349,7 @@ impl Session {
             attachments: Mutex::new(0),
             shutdown: AtomicBool::new(false),
             allowed: AtomicBool::new(false),
+            tuned_hz: AtomicU64::new(0),
             revision: AtomicU64::new(1),
         });
         let (tunes, requests) = sync_channel(1);
@@ -603,6 +614,9 @@ fn attempt(
     radio.protocol = conn.version.map(|v| v.to_string());
     shared.update(|s| s.radio = Some(radio.clone()));
     conn.expect_ok("sub client all")?;
+    // Replies come in order, so the next reply also proves the client list has arrived,
+    // whichever way round the radio sends a subscription's reply and its statuses.
+    conn.expect_ok("client start_persistence off")?;
     let own = conn.own.ok_or(Error::ProtocolError)?;
     // The saved client identity already connected elsewhere is occupied, never taken over:
     // registering a duplicate identity could disconnect that other session.
@@ -614,7 +628,6 @@ fn attempt(
     }) {
         return Err(Error::ClientIdentityInUse);
     }
-    conn.expect_ok("client start_persistence off")?;
     conn.expect_ok(&format!("client gui {}", intent.client_id))?;
     conn.expect_ok("sub slice all")?;
     conn.expect_ok("sub dax all")?;
@@ -701,6 +714,10 @@ fn attempt(
         return Err(Error::ProtocolError);
     }
     conn.stream = Some(stream);
+    let tuned = shared.tuned_hz.load(Ordering::Acquire);
+    if tuned != 0 {
+        conn.apply_frequency(index, tuned, Instant::now() + STEP)?;
+    }
     *reached = true;
     shared.update(|s| {
         s.state = State::Ready;
@@ -1106,6 +1123,17 @@ impl<'a> Conn<'a> {
         {
             return Err(Error::ResourceLost);
         }
+        // Two stations choosing together can pick one channel. The lower slice keeps it;
+        // the other session closes and chooses again.
+        if let (Some(index), Some(channel)) = (self.slice, slice.and_then(|s| s.dax))
+            && self
+                .view
+                .slices
+                .iter()
+                .any(|(other, s)| *other < index && s.dax == Some(channel))
+        {
+            return Err(Error::DaxChannelConflict);
+        }
         Ok(())
     }
     fn slice_facts(&self) -> Option<SliceFacts> {
@@ -1128,8 +1156,25 @@ impl<'a> Conn<'a> {
             return Err(Error::Cancelled);
         }
         let deadline = request.deadline.min(Instant::now() + STEP);
-        let wanted = request.frequency_hz;
-        // Read first: each setting is written only when the slice's status differs.
+        let observed = self.apply_frequency(index, request.frequency_hz, deadline);
+        if request.cancelled.load(Ordering::Acquire) {
+            return Err(Error::Cancelled);
+        }
+        if observed.is_ok() {
+            self.shared
+                .tuned_hz
+                .store(request.frequency_hz, Ordering::Release);
+        }
+        observed
+    }
+    /// Read first: each setting is written only when the slice's status differs, and
+    /// success needs the radio's own status for this slice, not only the reply.
+    fn apply_frequency(
+        &mut self,
+        index: u32,
+        wanted: u64,
+        deadline: Instant,
+    ) -> Result<u64, Error> {
         let current = self.view.slices.get(&index).cloned().unwrap_or_default();
         if current.mode.as_deref() != Some("DIGU") {
             self.expect_ok(&format!("slice set {index} mode=DIGU"))?;
@@ -1137,17 +1182,12 @@ impl<'a> Conn<'a> {
         if current.frequency_hz != Some(wanted) {
             self.expect_ok(&format!("slice tune {index} {}", megahertz_text(wanted)))?;
         }
-        // Success needs the radio's own status for this slice, not only the reply.
-        let observed = self.wait(deadline, |v| {
+        self.wait(deadline, |v| {
             v.slices
                 .get(&index)
                 .filter(|s| s.frequency_hz == Some(wanted) && s.mode.as_deref() == Some("DIGU"))
                 .and_then(|s| s.frequency_hz)
-        });
-        if request.cancelled.load(Ordering::Acquire) {
-            return Err(Error::Cancelled);
-        }
-        observed
+        })
     }
 }
 

@@ -52,8 +52,9 @@ async function station(t, {name, native = true, discovery, granted = true}) {
     : {schema_version: 1, ...common, connection_type: 'standard'};
   const text = JSON.stringify(document);
   await fs.writeFile(path.join(dir, 'profile.json'), text);
-  const app = await server({WSTX_TLS_CERT: path.join(dir, 'cert.pem'), WSTX_TLS_KEY: path.join(dir, 'key.pem'), WSTX_TOKEN: token,
-    ...(discovery ? {WSTX_FLEX_DISCOVERY: `127.0.0.1:${discovery}`} : {})}, ['--profile', dir]);
+  const env = {WSTX_TLS_CERT: path.join(dir, 'cert.pem'), WSTX_TLS_KEY: path.join(dir, 'key.pem'), WSTX_TOKEN: token,
+    ...(discovery ? {WSTX_FLEX_DISCOVERY: `127.0.0.1:${discovery}`} : {})};
+  let app = await server(env, ['--profile', dir]);
   t.after(() => app.close());
   let cookie = '';
   const request = (route, method = 'GET', body, extra = {}) => new Promise((resolve, reject) => {
@@ -63,10 +64,14 @@ async function station(t, {name, native = true, discovery, granted = true}) {
     });
     req.on('error', reject); if (body !== undefined) req.write(typeof body === 'string' ? body : JSON.stringify(body)); req.end();
   });
-  const authorize = async () => { const g = await grant(origin, token, (route, method, body, extra) => request(route, method, body, extra)); cookie = g.cookie; return g; };
+  let granted_ = null;
+  const authorize = async () => { granted_ = await grant(origin, token, (route, method, body, extra) => request(route, method, body, extra)); cookie = granted_.cookie; return granted_; };
+  // A process restart keeps the profile and its grant; the browser side proves it again.
+  const restart = async () => { await app.close(); app = await server(env, ['--profile', dir]); cookie = await granted_.prove(); };
+  const stop = () => app.close();
   if (granted) await authorize();
   const flex = async () => (await request('/native-flex')).body;
-  return {name, dir, origin, id, clientId, token, cert, request, flex, text, app, native, authorize};
+  return {name, dir, origin, id, clientId, token, cert, request, flex, text, native, authorize, restart, stop};
 }
 const state = async (s, wanted, timeout) => waitFor(async () => { const v = await s.flex(); return v?.state === wanted && v; }, async () => `${s.name} ${wanted}: ${JSON.stringify(await s.flex())}`, timeout);
 const failure = async (s, code, timeout) => waitFor(async () => { const v = await s.flex(); return v?.error === code && v; }, async () => `${s.name} ${code}: ${JSON.stringify(await s.flex())}`, timeout);
@@ -102,6 +107,7 @@ test('TC-023-001 four direct native stations route control, status and samples o
     assert.equal(emulator.log.filter(e => e.command === `client gui ${s.clientId}`).length, 1);
   }
   assert.equal(new Set(owned.map(o => o[0].index)).size, 4);
+  assert.equal(new Set(owned.map(o => o[0].dax)).size, 4, 'each station its own DAX channel');
   // Samples: each station's accepted channel-0 peak is its own slice's tone amplitude;
   // the loud 0.95 interference carrying other clients' stream IDs is never accepted.
   for (const [i, s] of stations.entries()) {
@@ -143,6 +149,15 @@ test('TC-023-001 four direct native stations route control, status and samples o
     const newest = Date.parse(clock.utc_anchor) + (source.next_frame - clock.canonical_anchor_frame) / 12;
     assert.ok(Math.abs(newest - Date.now()) < 2000, `anchor ${clock.utc_anchor} frame ${source.next_frame}`);
   }
+  // Only the radio's address counts: the own stream ID from another host is never accepted.
+  emulator.strangerOnly = true;
+  await new Promise(r => setTimeout(r, 500));
+  const held = await stations[0].flex();
+  await new Promise(r => setTimeout(r, 1000));
+  const later = await stations[0].flex();
+  assert.equal(later.packets.accepted, held.packets.accepted, 'a stranger cannot feed the station');
+  assert.ok(later.packets.foreign > held.packets.foreign + 50);
+  emulator.strangerOnly = false;
   onlyOwnSlices(emulator);
 });
 
@@ -181,6 +196,7 @@ test('TC-023-002 persisted intent reconciles restarted radios, changed handles a
   // The operator's job continued by itself on a new source epoch of the new session.
   const resumed = await waitFor(async () => { const r = (await a.request('/receive')).body; return r.job?.state === 'running' && r.audio.state === 'running' && r.source && r.source.id !== firstFrames.source.id && r.source.next_frame > 12000 && r; }, async () => `job after the restart: ${JSON.stringify((await a.request('/receive')).body)}`);
   assert.equal(resumed.job.mode, 'spectrum');
+  assert.ok(resumed.audio.loss_epochs >= 1, 'the gap is counted'); assert.equal(resumed.audio.last_loss, 'native_discontinuity');
   // Occupied identity: A's saved client identity is already connected elsewhere.
   await restart({externalClients: [a.clientId]});
   const occupied = await failure(a, 'client_identity_in_use', 30000);
@@ -192,6 +208,12 @@ test('TC-023-002 persisted intent reconciles restarted radios, changed handles a
   emulator.removeExternal(a.clientId);
   await state(a, 'ready', 30000);
   onlyOwnSlices(emulator);
+  // The same when the radio answers the subscription before it lists the clients.
+  await restart({externalClients: [a.clientId], replyFirst: true});
+  await failure(a, 'client_identity_in_use', 30000);
+  assert.equal(emulator.log.filter(e => e.command === `client gui ${a.clientId}`).length, 0, 'no takeover registration');
+  emulator.removeExternal(a.clientId);
+  await state(a, 'ready', 30000);
   // Ambiguous ownership: a slice is already attributed to A's fresh handle.
   await restart({preassignOnGui: a.clientId});
   assert.equal((await failure(a, 'ownership_ambiguous', 30000)).state, 'conflict');
@@ -214,6 +236,10 @@ test('TC-023-002 persisted intent reconciles restarted radios, changed handles a
   await restart({silent: true});
   await failure(a, 'radio_not_found', 30000); await failure(b, 'radio_not_found', 30000);
   assert.equal(emulator.connections, 0);
+  // Without a session a new receive start is refused, visibly.
+  const idle = (await b.request('/receive')).body;
+  const noSession = await b.request('/receive/start', 'POST', {v: 1, profile_id: b.id, boot_id: idle.boot_id, generation: idle.generation, profile_revision: 0, mode: 'spectrum'});
+  assert.equal(noSession.body.error.code, 'radio_unavailable', noSession.text);
   // The persisted intent is unchanged and holds no radio identity, index, handle or stream ID.
   for (const s of [a, b]) {
     const saved = await fs.readFile(path.join(s.dir, 'profile.json'), 'utf8');
@@ -221,6 +247,67 @@ test('TC-023-002 persisted intent reconciles restarted radios, changed handles a
     assert.deepEqual(Object.keys(JSON.parse(saved).native).sort(), ['client_id', 'rx_antenna']);
     assert.doesNotMatch(saved, /serial/);
   }
+});
+
+test('TC-023-002 a new session goes back to the selected frequency', {timeout: 60000}, async t => {
+  const port = await udpPort();
+  let emulator = await new FlexEmulator({discoveryPorts: [port]}).start();
+  t.after(() => emulator.stop());
+  const s = await station(t, {name: 'Retune', discovery: port});
+  await state(s, 'ready');
+  assert.equal((await selectBand(s, '40m')).operation.result, 'success');
+  await emulator.stop();
+  emulator = await new FlexEmulator({discoveryPorts: [port], handleBase: 0x30000000}).start();
+  await failure(s, 'transport_lost');
+  await state(s, 'ready', 30000);
+  assert.equal(emulator.slicesOf(s.clientId)[0].hz, FT8['40m'], 'the radio is where the selection says');
+  assert.equal((await s.flex()).slice.frequency_hz, FT8['40m']);
+  assert.equal((await s.request('/receive/selection')).body.selection.origin, 'native_readback');
+});
+
+test('TC-023-001 stations racing for one DAX channel end on different channels', {timeout: 60000}, async t => {
+  const ports = await Promise.all([0, 1].map(udpPort));
+  const emulator = await new FlexEmulator({discoveryPorts: ports, daxStatusDelay: 300}).start();
+  t.after(() => emulator.stop());
+  const [a, b] = await Promise.all(ports.map((discovery, i) => station(t, {name: `Race ${i}`, discovery})));
+  const settled = () => waitFor(async () => { const [x, y] = await Promise.all([a.flex(), b.flex()]); return x.state === 'ready' && y.state === 'ready' && [x, y]; }, async () => JSON.stringify([await a.flex(), await b.flex()]), 30000);
+  await settled();
+  await new Promise(r => setTimeout(r, 1500));
+  const [x, y] = await settled();
+  assert.notEqual(x.slice.dax_channel, y.slice.dax_channel);
+  assert.deepEqual(new Set(emulator.slicesOf(a.clientId).concat(emulator.slicesOf(b.clientId)).map(v => v.dax)).size, 2);
+});
+
+test('CL-045-02 a native station resumes its receive at startup, waiting a bounded time for its session', {timeout: 150000}, async t => {
+  const port = await udpPort();
+  let emulator = await new FlexEmulator({discoveryPorts: [port]}).start();
+  t.after(() => emulator.stop());
+  const s = await station(t, {name: 'Resume', discovery: port});
+  await state(s, 'ready');
+  const resume = async () => (await s.request('/receive/startup')).body.resume;
+  const resumed = wanted => waitFor(async () => (await resume()).state === wanted, async () => `resume ${wanted}: ${JSON.stringify(await resume())}`, 40000);
+  // A choice without a band waits for the session too.
+  const before = (await s.request('/receive')).body;
+  assert.equal((await s.request('/receive/start', 'POST', {v: 1, profile_id: s.id, boot_id: before.boot_id, generation: before.generation, profile_revision: 0, mode: 'spectrum'})).status, 202);
+  await s.restart();
+  await resumed('started');
+  assert.equal((await s.request('/receive')).body.job.mode, 'spectrum');
+  // A band choice tunes the new slice through the selection.
+  await state(s, 'ready');
+  assert.equal((await selectBand(s, '40m')).operation.result, 'success');
+  await s.restart();
+  await resumed('started');
+  assert.equal(emulator.slicesOf(s.clientId)[0].hz, FT8['40m']);
+  // No radio: it fails after the 20 s of the clause, not twice that.
+  await s.stop();
+  await emulator.stop();
+  emulator = await new FlexEmulator({discoveryPorts: [port], silent: true}).start();
+  const begun = Date.now();
+  await s.restart();
+  await resumed('failed');
+  assert.equal((await resume()).error, 'radio_unavailable');
+  assert.ok(Date.now() - begun < 30000, `resume took ${Date.now() - begun} ms`);
+  assert.ok(Date.now() - begun > 15000, `resume took ${Date.now() - begun} ms`);
 });
 
 test('TC-023-002 a native station reaches no radio without a grant and leaves it when the grant goes', {timeout: 60000}, async t => {
@@ -271,7 +358,12 @@ test('TC-023-003 capacity, incompatible API and mixed standard/native profiles t
   assert.ok(newer.connections >= 1); assert.equal(newer.log.length, 0, 'zero commands to an unadmitted API');
 
   // Mixed set: a standard station keeps its own path and never touches the native API.
-  const standard = await station(t, {name: 'Standard', native: false});
+  const standardPort = await udpPort();
+  const heard = await new FlexEmulator({discoveryPorts: [standardPort]}).start();
+  t.after(() => heard.stop());
+  const standard = await station(t, {name: 'Standard', native: false, discovery: standardPort});
+  await new Promise(r => setTimeout(r, 2000));
+  assert.equal(heard.connections, 0, 'a standard station ignores an announced radio');
   const nativeOne = served[0];
   assert.equal((await standard.request('/native-flex')).status, 404);
   assert.equal((await standard.request('/profile')).body.connection_type, 'standard');
@@ -328,9 +420,12 @@ test('TC-023-003 capacity, incompatible API and mixed standard/native profiles t
   await emulator.stop(); emulator.stop = async () => {};
   await nativePage.locator('#native-status[data-state="unavailable"], #native-status[data-state="discovering"]').waitFor({state: 'attached', timeout: 20000});
   await nativePage.locator('#exception-chips [data-chip=native]').waitFor({timeout: 20000});
+  assert.equal(await nativePage.locator('#exception-chips').filter({hasText: 'No audio input'}).count(), 0, 'a native profile needs no audio input');
   assert.equal(nativePage.polls + standardPage.polls, 0, 'no client request for the native status');
   assert.deepEqual([...standardPage.errors, ...nativePage.errors], []);
-  for (const s of [standard]) for (const e of emulator.log) assert.notEqual(e.clientId, s.clientId);
+  // A lost station link is not shown as the radio's last state.
+  await nativeOne.stop();
+  await waitFor(async () => /status stale/.test(await nativePage.locator('#native-status').textContent()), 'stale native status');
   onlyOwnSlices(emulator);
 });
 

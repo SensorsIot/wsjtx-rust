@@ -1760,7 +1760,10 @@ package WstxRequirements {
              test's own clock. Read first: repeating a selection whose slice already reports the
              frequency sends no slice tune and no mode write (command log count unchanged); an
              emulator that does not report the new frequency makes the selection fail visibly with
-             error radio_timeout and leaves no native_readback origin. No slice command targets another
+             error radio_timeout and leaves no native_readback origin. Two stations whose DAX
+             status arrives 300 ms late end on different channels, the emulator's audio following
+             the channel, not the owner. Datagrams with the own stream ID from another address
+             (127.0.0.2, amplitude 0.95) are never accepted. No slice command targets another
              client's slice and no transmit, disconnect or persistence command is sent. Rust unit
              tests check the pinned independent narrow48 vector field by field, its negative cases,
              documented control lines and the 4096-byte line bound; the emulator encoder reproduces
@@ -1802,6 +1805,11 @@ package WstxRequirements {
              from A. Missing: nothing is announced; both report radio_not_found with zero TCP
              connections. Next available: of two emulators on one discovery port, the one announcing
              available_clients=0 receives no connection and the station becomes ready on the other.
+             A selected frequency returns on the new slice after a restart, and the same occupied
+             case holds when the radio answers before it lists the clients. Without a session a
+             new receive start is refused radio_unavailable. Startup resume (CL-045-02): a
+             spectrum and a band choice resume started, the band on the slice, and with no radio
+             the resume ends failed/radio_unavailable after 15 to 30 s.
              Authorization: a native station without a grant makes no TCP connection and, after
              its only grant is revoked, its client and slice leave the emulator.
              profile.json bytes stay unchanged and hold no radio identity (no serial key). */
@@ -1839,7 +1847,7 @@ package WstxRequirements {
              identical. Announced available_clients=0 yields capacity_clients with zero connections;
              API version 1.5.0.0 yields incompatible_api with zero commands. A schema-1 standard
              station on the same PC returns 404 for /native-flex, control manual and the unchanged
-             audio_unconfigured receive refusal and never reaches the emulator, while the native
+             audio_unconfigured receive refusal and makes no connection to a radio it could hear, while the native
              station reports control native and starts receive. Safety: on both, transmit capability
              is unsupported, Enable Tx is refused with the same error, and HALT answers with the same
              status and halt state; no transmit command reaches the radio. A native settings edit
@@ -1847,7 +1855,8 @@ package WstxRequirements {
              profile.json. One real browser shows Standard and Native FlexRadio as read-only
              connection types. The native status line and error-field entry arrive only by the
              radio.native WebSocket push: the page sends no /native-flex request, and stopping the
-             emulator changes the line without a request or reload. No page errors. */
+             emulator changes the line without a request or reload. The error field never shows
+             No audio input for it. Stopping the station turns the line stale. No page errors. */
         attribute automation : AutomationState = AutomationState::implemented;
         attribute executable : String = "tests/native-flex.test.cjs";
         objective {

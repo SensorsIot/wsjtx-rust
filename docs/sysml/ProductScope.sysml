@@ -243,7 +243,7 @@ package WstxProductScope {
              profile therefore never reaches a radio. Monitor-off and receive state do not
              affect the session. States: unauthorized, discovering, connecting, ready,
              unavailable, conflict, stopped. Conflict is client_identity_in_use,
-             ownership_ambiguous or slice_ownership; every other error is unavailable:
+             ownership_ambiguous, slice_ownership or dax_channel_conflict; every other error is unavailable:
              discovery_unavailable, radio_not_found, incompatible_api, capacity_clients,
              capacity_slices, capacity_dax, antenna_unavailable, radio_refused, transport_lost,
              protocol_error, timeout, resource_lost.
@@ -261,9 +261,9 @@ package WstxProductScope {
              codes hexadecimal. Only API protocol V1.4.0.0 is admitted; any other version
              refuses before the first command (incompatible_api). Firmware/model are displayed,
              not qualified.
-             Session: sub client all, then refuse if the saved client identity is already
-             connected (client_identity_in_use, no takeover); client start_persistence off;
-             client gui <saved client identity>; sub slice all; sub dax all; any slice already
+             Session: sub client all; client start_persistence off, whose reply proves the client
+             list has arrived; then refuse if the saved client identity is already connected
+             (client_identity_in_use, no takeover); client gui <saved client identity>; sub slice all; sub dax all; any slice already
              attributed to the fresh handle is ownership_ambiguous and untouched; client udpport
              <own UDP port>; slice create rxant=<saved antenna> mode=DIGU (no frequency: the
              radio's choice until the station operation tunes); success needs the slice status
@@ -271,7 +271,11 @@ package WstxProductScope {
              different reported antenna releases the own slice (antenna_unavailable); DAX channel
              = lowest of 1..8 unused by any visible slice (else capacity_dax); slice set dax;
              stream create type=dax_rx; ready only with the stream status of the own handle and
-             channel.
+             channel, and with the slice on the frequency of the last confirmed selection when
+             there is one (read first, a read-back failure ends the attempt), so the selection
+             stays true after a reconnect. Stations choosing together can pick one channel: while
+             a lower slice shows the own channel, the session closes (dax_channel_conflict) and
+             chooses again.
              Read first (CL-044 rule): a slice setting (mode, frequency, DAX channel) is compared
              with the slice's current status and written only on a difference, then read back
              from the radio's status for that slice; a read-back that does not arrive by the step
@@ -315,7 +319,9 @@ package WstxProductScope {
              {accepted,foreign,invalid,lost} and last_peak, for diagnosis and tests, 404 for standard
              profiles; no request accepts a slice, stream or handle as authority. A session that is
              not ready shows the ErrorFieldEntry nativeRadio with its state and error; the
-             "No audio input" entry does not apply to a native profile.
+             "No audio input" entry does not apply to a native profile. The status line stands
+             below the operating radio line in the receive details, never in the top bar; on a
+             lost station link it reads stale instead of the last radio state.
              Transmit: not offered (capability unsupported, TC-023-006 later and separately
              approved). HALT, the Tx watchdog and Abort stay in the server's one transmit owner
              with no native key path, so they answer as on an unconfigured standard station and

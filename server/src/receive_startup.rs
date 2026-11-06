@@ -205,8 +205,9 @@ impl Recording {
                 Err(_) => {}
             }
         }
-        // FR-023: a native session still has discovery and its slice ahead of it.
-        if let Some(session) = self.flex.get() {
+        // FR-023: a native session still has discovery and its slice ahead of it. A band
+        // resume has already spent the wait in its selection.
+        if let Some(session) = self.flex.get().filter(|_| tune.is_none()) {
             let deadline = Instant::now() + wait;
             while !session.ready() && Instant::now() < deadline {
                 std::thread::sleep(Duration::from_millis(100));

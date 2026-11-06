@@ -52,6 +52,8 @@ class FlexEmulator {
     this.announceClients = options.announceClients; // overrides available_clients
     this.silent = options.silent ?? false; // announces nothing
     this.ignoreTune = options.ignoreTune ?? false; // accepts slice tune, never reports it
+    this.replyFirst = options.replyFirst ?? false; // answers sub client before its statuses
+    this.daxStatusDelay = options.daxStatusDelay ?? 0; // ms until a DAX change takes effect
     this.discoveryPorts = options.discoveryPorts ?? [];
     this.handleBase = options.handleBase ?? 0x10000000;
     this.sliceOrder = options.sliceOrder ?? [0, 1, 2, 3, 4, 5, 6, 7];
@@ -73,6 +75,9 @@ class FlexEmulator {
     this.server.listen(0, '127.0.0.1'); await once(this.server, 'listening');
     this.port = this.server.address().port;
     this.udp = dgram.createSocket('udp4'); this.udp.bind(0, '127.0.0.1'); await once(this.udp, 'listening');
+    // Another host on the network sending the station's own stream ID.
+    this.stranger = dgram.createSocket('udp4'); this.stranger.bind(0, '127.0.0.2'); await once(this.stranger, 'listening');
+    this.stranger.unref();
     // Unreferenced: a failed test that never reaches stop() cannot keep node --test alive.
     this.discoveryTimer = setInterval(() => this.announce(), 250).unref();
     this.server.unref(); this.udp.unref();
@@ -86,6 +91,7 @@ class FlexEmulator {
     for (const c of this.clients.values()) c.socket.destroy();
     await new Promise(resolve => this.server.close(resolve));
     await new Promise(resolve => this.udp.close(resolve));
+    await new Promise(resolve => this.stranger.close(resolve));
   }
   guiCount() { return [...this.clients.values()].filter(c => c.gui).length + this.external.size; }
   announce() {
@@ -103,11 +109,13 @@ class FlexEmulator {
       for (const [id, s] of owned) {
         const client = this.clients.get(s.owner), slice = this.sliceOf(s);
         if (!client?.udpPort || !slice) continue;
-        this.udp.send(vita({type: 1, stream: id, packetClass: DAX48, count: s.count++, integer: 1, payload: daxPayload(128, slice.amplitude, s.phase)}), client.udpPort, '127.0.0.1');
+        const sender = this.strangerOnly ? this.stranger : this.udp;
+        sender.send(vita({type: 1, stream: id, packetClass: DAX48, count: s.count++, integer: 1, payload: daxPayload(128, slice.amplitude, s.phase)}), client.udpPort, '127.0.0.1');
         s.phase += 128;
         // Interference every 8th packet: another client's stream ID and any stale old-session
         // ID, at a loud amplitude a correctly routed station must never accept.
         if (s.count % 8 === 0) {
+          this.stranger.send(vita({type: 1, stream: id, packetClass: DAX48, payload: daxPayload(128, 0.95, 0)}), client.udpPort, '127.0.0.1');
           for (const foreign of [...owned.filter(([other]) => other !== id).map(([other]) => other), ...this.staleStreams]) {
             this.udp.send(vita({type: 1, stream: foreign, packetClass: DAX48, payload: daxPayload(128, 0.95, 0)}), client.udpPort, '127.0.0.1');
           }
@@ -115,7 +123,8 @@ class FlexEmulator {
       }
     }
   }
-  sliceOf(stream) { return [...this.slices.values()].find(v => v.owner === stream.owner && v.dax === stream.channel); }
+  // The audio of a DAX channel comes from the lowest slice on it, whoever owns the stream.
+  sliceOf(stream) { return [...this.slices.entries()].sort(([a], [b]) => a - b).map(([, v]) => v).find(v => v.dax === stream.channel); }
   publish(topic, line) {
     for (const c of this.clients.values()) if (c.subs.has(topic)) c.socket.write(line + '\n');
   }
@@ -161,9 +170,11 @@ class FlexEmulator {
     const kv = Object.fromEntries(words.filter(w => w.includes('=')).map(w => w.split('=')));
     if (text === 'sub client all') {
       client.subs.add('client');
+      if (this.replyFirst) reply(0);
       for (const [h, id] of this.external) client.socket.write(`S0|client 0x${hex(h)} connected client_id=${id} program=External station=Other\n`);
       for (const [h, c] of this.clients) if (c.gui) client.socket.write(`S0|client 0x${hex(h)} connected client_id=${c.clientId} program=WSTX station=Station\n`);
-      return reply(0);
+      if (!this.replyFirst) reply(0);
+      return;
     }
     if (text === 'client start_persistence off' || text === 'ping') return reply(0);
     if (words[0] === 'client' && words[1] === 'gui' && words.length === 3) {
@@ -195,6 +206,10 @@ class FlexEmulator {
       if (!s) return reply('5000000D');
       if (words[1] === 'remove' || words[1] === 'r') { this.slices.delete(index); this.publish('slice', `S${hex(handle)}|slice ${index} in_use=0`); return reply(0); }
       if (words[1] === 'tune' || words[1] === 't') { const hz = hertz(words[3] ?? ''); if (hz === null) return reply('50000016'); if (this.ignoreTune) return reply(0); s.hz = hz; }
+      else if (kv.dax !== undefined && this.daxStatusDelay) {
+        setTimeout(() => { s.dax = Number(kv.dax); this.publish('slice', this.sliceLine(index, s, handle)); }, this.daxStatusDelay);
+        return reply(0);
+      }
       else { if (kv.dax !== undefined) s.dax = Number(kv.dax); if (kv.mode !== undefined) s.mode = kv.mode; }
       this.publish('slice', this.sliceLine(index, s, handle));
       return reply(0);
