@@ -508,7 +508,8 @@ package WstxStrategy {
              No bounds: max_contacts and max_run_minutes do not apply and read null. The run
              checks the grant, not the transport of the selecting request: a page load, a
              second tab or a 401 recovery (a new proof) and the transport's 8 h deadline do
-             not end it; a revoked grant or a safety edit does (authority_lost). The
+             not end it; a revoked grant or a safety edit does (authority_lost). So
+             with every browser closed a strategy keeps calling until HALT (also MCP or UDP), None, a revoked grant, a refused command or a Tx watchdog stop. The
              run ends only by a HALT, a selection, the grant (authority_lost), the Tx
              watchdog (tx_watchdog) or a refused command (transmit_refused, provider_error):
              the strategy stays selected with the stop reason shown, and only a new
