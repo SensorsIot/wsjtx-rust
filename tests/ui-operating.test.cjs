@@ -2573,8 +2573,7 @@ test('TC-039-032 Built-in strategies are read-only in the editor and copy to a u
   await page.locator('#se-copy').click();
   assert.equal(await page.inputValue('#se-name'),'New DXCC copy');
   assert.equal(await page.locator('#se-name').isDisabled(),false);
-  const copied=page.waitForResponse(r=>r.url().endsWith('/strategy')&&r.request().method()==='PUT');
-  await page.locator('#se-save').click();await copied;
+  await page.locator('#se-save').click();await page.locator('#se-result').filter({hasText:'revision 2'}).waitFor();
   assert.deepEqual(puts.at(-1).configuration.strategies.map(s=>[s.name,s.goals,s.builtin]),[['New DXCC copy',['dxcc'],undefined]],'only the copy; no built-in is sent');
   assert.equal(puts.at(-1).configuration.active,null,'Save never selects');
   // A name that collides is refused by the station.
