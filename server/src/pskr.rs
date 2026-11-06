@@ -496,6 +496,9 @@ pub(crate) struct Feed {
     directory: PathBuf,
     profile: String,
     boot: String,
+    /// Test seam: the dial when the fixture has no CAT actor.
+    #[cfg(test)]
+    pub(crate) dial: Mutex<Option<u64>>,
 }
 impl Drop for Feed {
     fn drop(&mut self) {
@@ -550,7 +553,20 @@ impl Feed {
             directory: directory.to_path_buf(),
             profile: profile.to_owned(),
             boot: boot.to_owned(),
+            #[cfg(test)]
+            dial: Mutex::new(None),
         })
+    }
+    /// Test seam: a payload as the session accepts it.
+    #[cfg(test)]
+    pub(crate) fn inject(&self, payload: &str) {
+        let my_call = self.shared.lock().my_call.clone().unwrap();
+        accept(&self.shared, &my_call, payload.as_bytes());
+    }
+    #[cfg(test)]
+    pub(crate) fn switch(&self, enabled: bool) {
+        let (profile, boot) = (self.profile.clone(), self.boot.clone());
+        self.set_enabled(&profile, &boot, enabled).unwrap();
     }
     /// My call and the current target, from the station step. Changing the target replaces
     /// its subscription and forgets what the previous target decoded.
@@ -831,10 +847,14 @@ pub(crate) fn hearing_of(
         decoder::Mode::Ft8 => "FT8",
         decoder::Mode::Ft4 => "FT4",
     };
-    let offsets = contact_http::confirmed_dial(r).map_or_else(Vec::new, |dial| {
-        feed.decoded_offsets(name, &band, dial, freeslot::band(mode))
+    #[cfg(test)]
+    let dial = (*feed.dial.lock().unwrap()).or_else(|| contact_http::confirmed_dial(r));
+    #[cfg(not(test))]
+    let dial = contact_http::confirmed_dial(r);
+    let offsets = dial.map_or_else(Vec::new, |dial| {
+        feed.decoded_offsets(name, band, dial, freeslot::band(mode))
     });
-    (feed.hears_us(target, name, &band), offsets)
+    (feed.hears_us(target, name, band), offsets)
 }
 
 #[derive(Deserialize)]

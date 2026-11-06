@@ -4159,6 +4159,20 @@ package WstxRequirements {
     }
     dependency CL_039_21_to_FR_007 from 'CL-039-21' to 'FR-007';
     dependency CL_039_21_to_FR_008 from 'CL-039-21' to 'FR-008';
+    verification 'TC-039-022' {
+        doc /* TC-039-022 — The repetitions reaching N in a strategy run
+             CL-039-21
+             Setup: the actual station router, contact engine, automation and #9 transmit owner on the recording hardware double, virtual UTC, a feed without a connection fed hand-authored spots, a dial of 7074000 Hz; Tx watchdog 2; a strategy run on 40 m calling K1ABC (CQ at 1800 Hz) from Tx 1500.
+             Steps: send 4 repetitions with: no spot; a spot of my call to K1ABC 60 s old, 590 s old, 601 s old, on 20 m; a spot of my call and then the feed off; a spot to K1ABC from DL1XYZ at 7075000 Hz. Then calls_per_station 1 with the spot of my call and without. The engine alone: the run's own contact past the limit, then another contact's exemption. A slot choice leaving a slot the target decodes, and with none free.
+             Expected (hand-worked from WstxStrategy::FreeTxSlot): every repetition keyed, armed, tx_expired false and the run in contact_active in every row. Heard (60 s, 590 s): Tx stays 1500, slot_check hears_us true. No spot, 601 s, 20 m, feed off: 1400 at the 2nd, 1300 at the 4th, hears_us false. DL1XYZ's frequency: 1000 at the 2nd, 900 at the 4th. Calls per station 1: heard, rested null and K1ABC still armed; not heard, rested K1ABC. Engine: remaining calls count down to the next check, repetitions 4 sent; another contact's exemption stops at N without a send (cause tx_watchdog). The slot choice: never the slot it leaves; none free keeps it, free false. Manual stop at N: TC-008-001; a pounce stops at N: TC-039-005.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF, no network. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-21';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs; server/src/contact_tests.rs; server/src/freeslot_tests.rs";
+    }
+    dependency CL_039_21_verified_by_TC_039_022 from 'CL-039-21' to 'TC-039-022';
     requirement 'CL-039-20' {
         doc /* A read-only PSK Reporter MQTT feed tells the station whether the current target hears my call and which frequencies it decodes: two exact subscriptions (my call as sender; the strategy target as receiver, replaced when the target changes), never a wildcard from a decoded call, TLS against compiled-in roots, an identifiable client id, bounded reconnect backoff, bounded memory, spots expiring after 600 s, a spot of another band or mode ignored. Settings shows the switch (on by default) and the status, pushed. It sends nothing but the handshake, keep-alive and subscriptions; everything works without it: no connection is unknown, never an operator error, and receive and the 50 ms station step never wait on it. Details: WstxStrategy::HearingFeed. */
         attribute coverage : ImplementationState = ImplementationState::implemented;

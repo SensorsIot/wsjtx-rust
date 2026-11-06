@@ -498,9 +498,7 @@ impl Owner {
         self.lock()
             .run
             .as_ref()
-            .filter(|run| {
-                run.config.strategy && run.state == RunState::ContactActive
-            })
+            .filter(|run| run.config.strategy && run.state == RunState::ContactActive)
             .and_then(|run| run.contact_id.clone())
     }
     pub(crate) fn running(&self) -> bool {
