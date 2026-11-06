@@ -91,11 +91,15 @@ function onlyOwnSlices(emulator) {
 
 test('TC-023-001 four direct native stations route control, status and samples only to their own slice', {timeout: 120000}, async t => {
   const ports = await Promise.all([0, 1, 2, 3].map(udpPort));
-  const emulator = await new FlexEmulator({discoveryPorts: ports, sliceOrder: [5, 2, 7, 0, 1, 3, 4, 6]}).start();
+  const emulator = await new FlexEmulator({discoveryPorts: ports, sliceOrder: [5, 2, 7, 0, 1, 3, 4, 6], daxStatusDelay: 300}).start();
   t.after(() => emulator.stop());
   const stations = await Promise.all(ports.map((discovery, i) => station(t, {name: `Native ${i + 1}`, discovery})));
-  for (const s of stations) await state(s, 'ready');
-  const owned = stations.map(s => emulator.slicesOf(s.clientId));
+  // Stations choosing a DAX channel together may have to separate first.
+  const owned = await waitFor(async () => {
+    const views = await Promise.all(stations.map(s => s.flex()));
+    const slices = stations.map(s => emulator.slicesOf(s.clientId));
+    return views.every(v => v.state === 'ready') && slices.every(o => o.length === 1) && new Set(slices.map(o => o[0].dax)).size === 4 && slices;
+  }, async () => JSON.stringify(await Promise.all(stations.map(s => s.flex()))), 40000);
   for (const [i, s] of stations.entries()) {
     assert.equal(owned[i].length, 1, `${s.name} owns exactly one slice`);
     assert.equal(emulator.streamsOf(s.clientId).length, 1, `${s.name} owns exactly one stream`);
@@ -104,7 +108,7 @@ test('TC-023-001 four direct native stations route control, status and samples o
     assert.equal(v.slice.index, owned[i][0].index);
     assert.equal(v.slice.stream_id, emulator.streamsOf(s.clientId)[0]);
     assert.equal(v.radio.protocol, '1.4.0.0'); assert.equal(v.transmit, 'unsupported');
-    assert.equal(emulator.log.filter(e => e.command === `client gui ${s.clientId}`).length, 1);
+    assert.equal([...emulator.clients.values()].filter(c => c.clientId === s.clientId).length, 1, 'one connected client holds the identity');
   }
   assert.equal(new Set(owned.map(o => o[0].index)).size, 4);
   assert.equal(new Set(owned.map(o => o[0].dax)).size, 4, 'each station its own DAX channel');
@@ -416,11 +420,23 @@ test('TC-023-003 capacity, incompatible API and mixed standard/native profiles t
   assert.match(await nativePage.locator('#native-status').textContent(), /^Native FlexRadio ready .*FLEX-6600.*transmit unsupported$/);
   assert.equal(await standardPage.locator('#native-status').isHidden(), true);
   await nativePage.locator('#operating-radio').waitFor({state: 'attached'});
+  // A native station with no receive job is offered Start, never told it lacks an audio input.
+  const idleContext = await browser.newContext({ignoreHTTPSErrors: true, viewport: {width: 1280, height: 900}});
+  const idlePage = await idleContext.newPage();
+  await loginPage(idlePage, served[1].origin, served[1].token);
+  await idlePage.locator('#exception-chips [data-chip=receive]').filter({hasText: 'Receive stopped'}).waitFor({timeout: 20000});
+  assert.equal(await idlePage.locator('#exception-chips').filter({hasText: 'No audio input'}).count(), 0, 'a native profile needs no audio input');
+  // The status line stands in the receive details, not in the top bar of the fixed screen.
+  assert.equal(await nativePage.locator('#receive-details #native-status').count(), 1);
+  assert.equal(await nativePage.locator('#station-bar #native-status').count(), 0);
+  await nativePage.setViewportSize({width: 1366, height: 768});
+  assert.equal(await nativePage.evaluate(() => document.documentElement.scrollHeight <= innerHeight), true, 'no page scroll at 1366x768');
   // The push alone reports a lost radio, visibly, without a request or a reload.
   await emulator.stop(); emulator.stop = async () => {};
   await nativePage.locator('#native-status[data-state="unavailable"], #native-status[data-state="discovering"]').waitFor({state: 'attached', timeout: 20000});
   await nativePage.locator('#exception-chips [data-chip=native]').waitFor({timeout: 20000});
-  assert.equal(await nativePage.locator('#exception-chips').filter({hasText: 'No audio input'}).count(), 0, 'a native profile needs no audio input');
+  await nativePage.locator('#exception-chips [data-chip=native]').click();
+  await nativePage.locator('#native-status').waitFor({state: 'visible', timeout: 10000});
   assert.equal(nativePage.polls + standardPage.polls, 0, 'no client request for the native status');
   assert.deepEqual([...standardPage.errors, ...nativePage.errors], []);
   // A lost station link is not shown as the radio's last state.
