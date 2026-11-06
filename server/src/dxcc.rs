@@ -353,6 +353,22 @@ impl Table {
     pub fn continent(&self, call: &str) -> Option<&'static str> {
         self.lookup(call).map(|r| r.continent)
     }
+    /// WstxStrategy::MyContinent's locator fallback: the continent of the entity whose
+    /// cty.dat centre is nearest to this point (lat, lon east), by the haversine term.
+    pub fn nearest_continent(&self, (lat, lon): (f64, f64)) -> Option<&'static str> {
+        let rad = std::f64::consts::PI / 180.0;
+        let term = |e: &Entity| {
+            let dlat = (e.lat - lat) * rad;
+            let dlon = (-e.lon_west - lon) * rad;
+            (dlat / 2.0).sin().powi(2)
+                + (lat * rad).cos() * (e.lat * rad).cos() * (dlon / 2.0).sin().powi(2)
+        };
+        self.cty
+            .entities
+            .iter()
+            .min_by(|a, b| term(a).total_cmp(&term(b)))
+            .map(|e| e.continent)
+    }
 }
 
 /// The WSJT-X decode highlighting categories as decoded-record flags, each ever and on

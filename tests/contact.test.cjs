@@ -6,6 +6,7 @@
 // Proves: CL-010-01, CL-010-02, CL-010-03, CL-010-06, CL-010-11, CL-010-14; TC-007-001,
 // TC-007-003, TC-007-004, TC-010-008, TC-010-009; CL-050-01, TC-050-001; CL-050-04, TC-050-004.
 // Proves: CL-055-02; TC-055-004 (DXCC column, approximate distance, QSO header).
+// Proves: CL-039-03; TC-039-002 (the directive warning).
 const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
@@ -130,6 +131,23 @@ test('TC-007-001 double-click starts transmission, partner report advances to Tx
   const s=await snapshot();assert.equal(s.transmit.arm_state,'disarmed');assert.equal(s.contact.dx_call,null);
   const keys=await (await fetch(control+'/keys')).json();assert.ok(keys.length===0||keys.at(-1)===false,'PTT released after halt');
   await page.locator('.op-secondary:not([hidden]) .return-operate').click();
+  assert.deepEqual(page.errors,[]);
+});
+
+// Proves: TC-039-002
+test('TC-039-002 a double-click on a CQ not for me warns and only the confirmation selects it',{timeout:60000},async()=>{
+  await publish(evenNow(),[{text:'CQ NA W9XYZ EN52',hz:1500,snr:-3}]);
+  const row=page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:'CQ NA W9XYZ EN52'});
+  await row.first().waitFor();
+  await row.first().dblclick();await page.locator('#op-confirm[open]').waitFor();
+  assert.match(await page.locator('#op-confirm-text').textContent(),/CQ NA \u2014 not for EU/);
+  await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);
+  assert.notEqual((await snapshot()).contact.dx_call,'W9XYZ','declined: nothing selected');
+  await row.first().dblclick();await page.locator('#op-confirm[open]').waitFor();
+  await page.locator('#op-confirm-ok').click();
+  await waitFor(async()=>(await snapshot()).contact.dx_call==='W9XYZ','confirmed: selected');
+  await page.keyboard.press('Escape');
+  await waitFor(async()=>['cancelled','idle'].includes((await snapshot()).contact.state),'contact ended');
   assert.deepEqual(page.errors,[]);
 });
 

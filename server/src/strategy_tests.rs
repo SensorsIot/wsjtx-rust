@@ -115,11 +115,18 @@ fn tc_039_002_continent_distance_and_directed_cq_rule() {
         ("DX", Some("EU"), Some("EU"), false),
         ("DX", Some("EU"), Some("AS"), true),
         ("DX", Some("EU"), None, false),
-        ("TEST", Some("EU"), Some("NA"), true),
-        ("POTA", None, None, true),
+        // #39 2026-11-04: every other directive excludes me.
+        ("TEST", Some("EU"), Some("NA"), false),
+        ("POTA", None, None, false),
+        ("JA", Some("EU"), Some("AS"), false),
+        // A non-EU profile (K1ABC, NA).
+        ("NA", Some("NA"), Some("NA"), true),
+        ("EU", Some("NA"), Some("EU"), false),
+        ("DX", Some("NA"), Some("AS"), true),
+        ("DX", Some("NA"), Some("NA"), false),
     ] {
         assert_eq!(
-            addressed_to_me(target, mine, sender),
+            answerable(Some(target), mine, sender),
             expected,
             "CQ {target} mine {mine:?} sender {sender:?}"
         );
@@ -149,26 +156,26 @@ fn tc_039_002_rules_rank_grey_and_order() {
             (5, Some(1), false),
             (6, None, false),
             (7, None, false),
-            (8, Some(0), false),
+            (8, None, true),
         ]
     );
-    assert_eq!(sorted(&s, &records, &st), [8, 0, 1, 3, 5], "strongest");
+    assert_eq!(sorted(&s, &records, &st), [0, 1, 3, 5], "strongest");
     let weak = Strategy {
         sort: Sort::Weakest,
         ..s.clone()
     };
-    assert_eq!(sorted(&weak, &records, &st), [0, 8, 5, 3, 1]);
+    assert_eq!(sorted(&weak, &records, &st), [0, 5, 3, 1]);
     let newest = Strategy {
         sort: Sort::Newest,
         ..s.clone()
     };
-    assert_eq!(sorted(&newest, &records, &st), [8, 0, 5, 3, 1]);
+    assert_eq!(sorted(&newest, &records, &st), [0, 5, 3, 1]);
     // Berlin JO62 705 km, London IO91 823 km, Tokyo PM95 9618 km from JN47AA.
     let far = Strategy {
         sort: Sort::Furthest,
         ..s.clone()
     };
-    assert_eq!(sorted(&far, &records, &st)[2..], [5, 3, 1]);
+    assert_eq!(sorted(&far, &records, &st)[1..], [5, 3, 1]);
     // Treat 73 as CQ: K1ABC's RR73 counts as calling; without a grid its continent is
     // still known from cty.dat (#55), so it matches rule 1.
     let s73 = strat(vec![vec![cq(), na], vec![cq()]], Sort::Strongest, true);
@@ -186,7 +193,7 @@ fn tc_039_002_rules_rank_grey_and_order() {
             .filter(|r| r.1.is_none())
             .map(|r| r.0)
             .collect::<Vec<_>>(),
-        [2, 4]
+        [2, 4, 8]
     );
     // My continent unknown: every continent-directed CQ and CQ DX is greyed.
     let lost = Station {
@@ -199,8 +206,64 @@ fn tc_039_002_rules_rank_grey_and_order() {
             .filter(|r| r.2)
             .map(|r| r.0)
             .collect::<Vec<_>>(),
-        [2, 3, 4, 5]
+        [2, 3, 4, 5, 8]
     );
+    // A non-EU profile: the same rows, seen from North America.
+    let us = Station {
+        my_call: "K2XYZ".into(),
+        my_grid: Some("FN31".into()),
+        my_continent: Some("NA".into()),
+        ..me()
+    };
+    assert_eq!(
+        ranks(&any, &records, &us)
+            .iter()
+            .filter(|r| r.2)
+            .map(|r| r.0)
+            .collect::<Vec<_>>(),
+        [3, 8],
+        "CQ NA is for NA, CQ DX from Finland and Japan too; CQ EU and CQ TEST are not"
+    );
+}
+
+// Proves: TC-039-002
+#[test]
+fn tc_039_002_my_continent_from_config_call_and_locator() {
+    let table = crate::dxcc::Table::default();
+    let open = Config::default();
+    let set = Config {
+        continent: Some("OC".into()),
+        ..Config::default()
+    };
+    assert_eq!(
+        my_continent(&set, Some("HB9BLA"), Some("JN37"), &table).as_deref(),
+        Some("OC"),
+        "configured first"
+    );
+    assert_eq!(
+        my_continent(&open, Some("HB9BLA"), Some("FN42"), &table).as_deref(),
+        Some("EU"),
+        "the callsign before the locator"
+    );
+    assert_eq!(
+        my_continent(&open, Some("K1ABC"), None, &table).as_deref(),
+        Some("NA")
+    );
+    // A call without an entity: the nearest cty.dat entity to the locator.
+    for (grid, continent) in [
+        ("JN37", "EU"),
+        ("FN42", "NA"),
+        ("PM95", "AS"),
+        ("QF56", "OC"),
+        ("GG87", "SA"),
+    ] {
+        assert_eq!(
+            my_continent(&open, Some("K1ABC/MM"), Some(grid), &table).as_deref(),
+            Some(continent),
+            "{grid}"
+        );
+    }
+    assert_eq!(my_continent(&open, None, None, &table), None);
 }
 
 // Proves: TC-039-002
@@ -321,28 +384,7 @@ fn tc_039_002_each_condition_and_its_negation() {
     );
     let v = evaluate(&s, &records, &st);
     assert_eq!(v[0].why, "no match (rule 1: SNR 0.. dB)");
-    assert_eq!(v[2].why, "CQ NA is not addressed to my continent (EU)");
-    // Auto: a CQ TEST is answered only when the matched rule asks for TEST.
-    let plain = strat(vec![vec![cq()]], Sort::Newest, false);
-    let asks = strat(
-        vec![vec![
-            cq(),
-            json!({"kind":"cq_target","negate":false,"values":["TEST"]}),
-        ]],
-        Sort::Newest,
-        false,
-    );
-    let row = |s: &Strategy, n: u64| {
-        evaluate(s, &records, &st)
-            .into_iter()
-            .find(|v| v.facts.sequence == n)
-            .unwrap()
-    };
-    assert!(!auto_target_ok(&plain, &row(&plain, 8)) && auto_target_ok(&asks, &row(&asks, 8)));
-    assert!(
-        auto_target_ok(&plain, &row(&plain, 3)),
-        "CQ EU for my continent stays answerable"
-    );
+    assert_eq!(v[2].why, "CQ NA — not for EU");
     assert!(sane_call("K1ABC") && !sane_call("K1") && !sane_call("ABCDE") && !sane_call("W1AW/R"));
 }
 
@@ -1002,6 +1044,180 @@ async fn tc_039_004_auto_cq_answers_a_caller_and_alternates_after_n_tries() {
 
 /// Moves the bench to 30 ms before the own period `own` and ticks until the transmitter
 /// is disarmed (the Tx watchdog refuses to key it).
+// Proves: TC-039-004
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_004_a_double_click_is_a_manual_intervention_and_the_strategy_resumes() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    let run_state =
+        async |f: &Mcp| f.browser("GET", "/automation", None).await.json["run"]["state"].clone();
+    // The run selects K1ABC. The operator double-clicks another station.
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-3.0))]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    publish(&f, e + 15_000, &[("CQ DL1XYZ JO62", 1200.0, Some(-5.0))]);
+    let identity = live_row(&f, "CQ DL1XYZ JO62");
+    let reply = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":identity,"replace":true})).await),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{}", reply.json);
+    f.tick();
+    assert_eq!(run_state(&f).await, json!("manual"));
+    assert_eq!(
+        contact(&f).await.0,
+        json!("DL1XYZ"),
+        "the manual contact stands"
+    );
+    assert_eq!(
+        f.browser("GET", "/strategy", None).await.json["configuration"]["active"],
+        json!("NA first")
+    );
+    // While manual the strategy selects nothing.
+    publish(&f, e + 30_000, &[("CQ W1AW FN31", 1000.0, Some(-1.0))]);
+    assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
+    // The manual QSO ends: the strategy resumes and answers the next match.
+    let cancel = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "cancel", json!({})).await),
+        )
+        .await;
+    assert_eq!(cancel.status, StatusCode::ACCEPTED);
+    f.tick();
+    assert_eq!(run_state(&f).await, json!("waiting"));
+    publish(&f, e + 60_000, &[("CQ W1AW FN31", 1000.0, Some(-1.0))]);
+    assert_eq!(contact(&f).await.0, json!("W1AW"));
+    assert_eq!(run_state(&f).await, json!("contact_active"));
+    // Cancelling the run's own contact gives that station up; the strategy goes on.
+    let cancel = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "cancel", json!({})).await),
+        )
+        .await;
+    assert_eq!(cancel.status, StatusCode::ACCEPTED);
+    f.tick();
+    f.tick();
+    assert_eq!(run_state(&f).await, json!("waiting"));
+    publish(&f, e + 90_000, &[("CQ W1AW FN31", 1000.0, Some(-1.0))]);
+    assert_eq!(
+        contact(&f).await.1,
+        json!("cancelled"),
+        "W1AW is not selected again"
+    );
+    publish(&f, e + 120_000, &[("CQ G4ABC IO91", 1000.0, Some(-9.0))]);
+    assert_eq!(contact(&f).await.0, json!("G4ABC"));
+}
+
+// Proves: TC-039-002
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_002_a_selection_of_a_cq_not_for_me_is_a_warning_only_the_browser_confirms() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ NA W1AW FN31", 1000.0, Some(-1.0)),
+            ("CQ EU G4ABC IO91", 1100.0, Some(-2.0)),
+        ],
+    );
+    let (na, eu) = (
+        live_row(&f, "CQ NA W1AW FN31"),
+        live_row(&f, "CQ EU G4ABC IO91"),
+    );
+    let w = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":na,"replace":false})).await),
+        )
+        .await;
+    assert_eq!(w.status, StatusCode::CONFLICT, "{}", w.json);
+    assert_eq!(w.json["error"]["code"], "directive_not_answerable");
+    assert_eq!(w.json["error"]["reason"], "CQ NA — not for EU");
+    assert_eq!(
+        contact(&f).await.0,
+        Value::Null,
+        "nothing selected by the warning"
+    );
+    // A client that is not the browser cannot confirm it.
+    let m = mcp_contact(
+        &f,
+        "select_row",
+        json!({"row":na,"replace":false,"directive_confirmed":true}),
+    )
+    .await;
+    assert_eq!(m["error"]["code"], "directive_not_answerable", "{m}");
+    assert_eq!(contact(&f).await.0, Value::Null);
+    // The operator's confirmation selects it; a CQ for my continent asks nothing.
+    let c = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(
+                browser_command(
+                    &f,
+                    "select_row",
+                    json!({"row":na,"replace":false,"directive_confirmed":true}),
+                )
+                .await,
+            ),
+        )
+        .await;
+    assert_eq!(c.status, StatusCode::ACCEPTED, "{}", c.json);
+    assert_eq!(contact(&f).await.0, json!("W1AW"));
+    let c = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":eu,"replace":true})).await),
+        )
+        .await;
+    assert_eq!(c.status, StatusCode::ACCEPTED, "{}", c.json);
+    assert_eq!(contact(&f).await.0, json!("G4ABC"));
+    // The body key is optional and exact.
+    let bad = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(
+                browser_command(
+                    &f,
+                    "select_row",
+                    json!({"row":eu,"replace":true,"directive_confirmed":"yes"}),
+                )
+                .await,
+            ),
+        )
+        .await;
+    assert_eq!(bad.status, StatusCode::BAD_REQUEST);
+}
+
+/// The ContactCommand row of the live record with this text.
+fn live_row(f: &Mcp, text: &str) -> Value {
+    let (identity, _, records) = f.state.recording.live_records_after(None, 0).unwrap();
+    let record = records.iter().find(|r| r["text"] == text).unwrap();
+    json!({"source_id":identity.0,"job_id":identity.1,"generation":identity.2,"sequence":record["sequence"]})
+}
+async fn browser_command(f: &Mcp, action: &str, extra: Value) -> Value {
+    let revision = f.read("contact").await["contact_revision"].clone();
+    let mut b = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),"contact_revision":revision,"action":action});
+    b.as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    b
+}
+
 async fn not_keyed_in(f: &Mcp, own: i64) {
     let service = &f.state.recording.transmit.get().unwrap().service;
     f.bench

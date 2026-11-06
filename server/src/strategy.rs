@@ -727,18 +727,40 @@ impl Session {
             .collect()
     }
 }
-/// WstxStrategy::DirectedCqRule: is a CQ with this target addressed to my station?
-/// A continent target only to that continent; DX only from another, known continent
-/// than mine; any other target (TEST, POTA, a number, a country) is not continent-
-/// directed and is left to the strategy's cq_target conditions.
-pub(crate) fn addressed_to_me(target: &str, mine: Option<&str>, sender: Option<&str>) -> bool {
-    if CONTINENTS.contains(&target) {
-        return mine == Some(target);
+/// WstxStrategy::DirectedCqRule, the one directive rule of strategies and the operator:
+/// a plain CQ, CQ <my continent> or CQ DX from another known continent. Every other
+/// directive excludes me.
+pub(crate) fn answerable(target: Option<&str>, mine: Option<&str>, sender: Option<&str>) -> bool {
+    match target {
+        None => true,
+        Some("DX") => mine.zip(sender).is_some_and(|(m, s)| m != s),
+        Some(t) => mine == Some(t),
     }
-    if target == "DX" {
-        return mine.zip(sender).is_some_and(|(m, s)| m != s);
-    }
-    true
+}
+/// The DirectedCqRule text of a CQ that is not answerable.
+fn not_for_me(target: &str, mine: Option<&str>) -> String {
+    format!("CQ {target} — not for {}", mine.unwrap_or("this station"))
+}
+/// The DirectedCqRule verdict of an operator's selection of this record: the warning text
+/// when it is a CQ that is not answerable.
+pub(crate) fn selection_warning(state: &ProfileState, record: &Value) -> Option<String> {
+    let f = facts(record)?;
+    let (call, locator) = contact_http::profile_facts(state);
+    let (dxcc, _) = state.logbook.dxcc();
+    let config = state
+        .recording
+        .contact
+        .get()?
+        .strategy
+        .config(state)
+        .unwrap_or_default();
+    let mine = my_continent(&config, call.as_deref(), locator.as_deref(), &dxcc);
+    (!answerable(
+        f.target.as_deref(),
+        mine.as_deref(),
+        dxcc.continent(&f.from),
+    ))
+    .then(|| not_for_me(f.target.as_deref().unwrap_or(""), mine.as_deref()))
 }
 fn within(r: &Range, x: Option<f64>, wraps: bool) -> bool {
     let Some(x) = x else { return false };
@@ -806,16 +828,13 @@ impl Station {
             && f.signoff
             && f.to_call.as_deref().is_some_and(|t| t != self.my_call))
     }
-    /// The hard directed-CQ rule: a directed CQ not addressed to me is greyed and never
-    /// matches (Highlight) nor is answered (Auto).
+    /// A CQ that is not answerable is greyed and never matches nor is answered by a run.
     pub(crate) fn greyed(&self, f: &Facts) -> bool {
-        f.target.as_deref().is_some_and(|t| {
-            !addressed_to_me(
-                t,
-                self.my_continent.as_deref(),
-                self.dxcc.continent(&f.from),
-            )
-        })
+        !answerable(
+            f.target.as_deref(),
+            self.my_continent.as_deref(),
+            self.dxcc.continent(&f.from),
+        )
     }
 }
 /// WstxStrategy::Verdict of one record.
@@ -867,11 +886,10 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
             continue;
         }
         if st.greyed(&f) {
-            let target = f.target.clone().unwrap_or_default();
             out.push(Verdict {
-                why: format!(
-                    "CQ {target} is not addressed to my continent ({})",
-                    st.my_continent.as_deref().unwrap_or("unknown")
+                why: not_for_me(
+                    f.target.as_deref().unwrap_or(""),
+                    st.my_continent.as_deref(),
                 ),
                 facts: f,
                 rank: None,
@@ -932,22 +950,6 @@ pub(crate) fn order(list: &mut [Verdict], sort: Sort) {
             .then(a.facts.sequence.cmp(&b.facts.sequence))
     });
 }
-/// Auto answers a CQ with a target that DirectedCqRule leaves open (TEST, POTA, a
-/// country or a number) only when the matched rule asks for that target with a
-/// non-negated cq_target condition: a country-directed CQ is never answered by default.
-pub(crate) fn auto_target_ok(s: &Strategy, v: &Verdict) -> bool {
-    let Some(target) = v.facts.target.as_deref() else {
-        return true;
-    };
-    if CONTINENTS.contains(&target) || target == "DX" {
-        return true; // DirectedCqRule already decided (not greyed here).
-    }
-    v.rank.and_then(|r| s.rules.get(r)).is_some_and(|rule| {
-        rule.iter().any(|c| {
-            !c.negate && matches!(&c.cond, Cond::CqTarget(l) if l.iter().any(|t| t == target))
-        })
-    })
-}
 /// The callsign guard before Auto answers (WSJT-Z): at least 3 characters with a digit
 /// and a letter, not a rover (/R).
 pub(crate) fn sane_call(call: &str) -> bool {
@@ -956,16 +958,24 @@ pub(crate) fn sane_call(call: &str) -> bool {
         && call.bytes().any(|b| b.is_ascii_uppercase())
         && !call.ends_with("/R")
 }
-/// The station's continent: the configured one, else the cty.dat continent of my call.
+/// WstxStrategy::MyContinent: the configured one, else the cty.dat continent of my call,
+/// else that of the entity nearest to my locator.
 pub(crate) fn my_continent(
     config: &Config,
     call: Option<&str>,
+    locator: Option<&str>,
     dxcc: &crate::dxcc::Table,
 ) -> Option<String> {
     config
         .continent
         .clone()
         .or_else(|| call.and_then(|c| dxcc.continent(c)).map(str::to_owned))
+        .or_else(|| {
+            locator
+                .and_then(maidenhead)
+                .and_then(|p| dxcc.nearest_continent(p))
+                .map(str::to_owned)
+        })
 }
 /// Builds the evaluation facts for these records from the profile, the station band and
 /// the internal log.
@@ -1011,7 +1021,7 @@ pub(crate) fn station(state: &ProfileState, config: &Config, records: &[Value]) 
     }
     Station {
         ignored,
-        my_continent: my_continent(config, call.as_deref(), &dxcc),
+        my_continent: my_continent(config, call.as_deref(), locator.as_deref(), &dxcc),
         my_call: call.unwrap_or_default(),
         my_grid: locator,
         band,
@@ -1256,7 +1266,7 @@ impl Owner {
     /// StrategySnapshot.
     pub(crate) fn snapshot(&self, state: &ProfileState) -> Value {
         let r = &state.recording;
-        let (call, _) = contact_http::profile_facts(state);
+        let (call, locator) = contact_http::profile_facts(state);
         let (dxcc, _) = state.logbook.dxcc();
         let session: Vec<Value> = self
             .session_entries(Instant::now())
@@ -1267,7 +1277,7 @@ impl Owner {
         let mine = inner
             .config
             .as_ref()
-            .and_then(|c| my_continent(c, call.as_deref(), &dxcc));
+            .and_then(|c| my_continent(c, call.as_deref(), locator.as_deref(), &dxcc));
         json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"revision":inner.revision,
             "configuration":inner.config.as_ref().map(Config::json),
             "configuration_error":inner.error,"my_continent":mine,
