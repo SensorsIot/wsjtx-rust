@@ -241,7 +241,7 @@ package WstxRequirements {
     }
     dependency CL_013_01_to_FR_023 from 'CL-013-01' to 'FR-023';
     requirement 'CL-013-02' {
-        doc /* This independence concerns desktop applications. Compatible radio-side firmware and its API remain required; this specification does not promise a FlexRadio operating without its SmartSDR radio firmware or an unrestricted firmware compatibility range. Pin supported models, firmware/API versions and selected stream formats before implementation. */
+        doc /* This independence concerns desktop applications. Compatible radio-side firmware and its API remain required; this specification does not promise a FlexRadio operating without its SmartSDR radio firmware or an unrestricted firmware compatibility range. Pin supported models and firmware before a hardware acceptance claim; the API version and stream format are pinned in WstxProductScope::NativeFlexWireSubset. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/flex/wire.rs; server/src/flex/session.rs";
     }
@@ -1760,7 +1760,7 @@ package WstxRequirements {
              test's own clock. Read first: repeating a selection whose slice already reports the
              frequency sends no slice tune and no mode write (command log count unchanged); an
              emulator that does not report the new frequency makes the selection fail visibly with
-             error timeout and leaves no native_readback origin. No slice command targets another
+             error radio_timeout and leaves no native_readback origin. No slice command targets another
              client's slice and no transmit, disconnect or persistence command is sent. Rust unit
              tests check the pinned independent narrow48 vector field by field, its negative cases,
              documented control lines and the 4096-byte line bound; the emulator encoder reproduces
@@ -1802,6 +1802,8 @@ package WstxRequirements {
              from A. Missing: nothing is announced; both report radio_not_found with zero TCP
              connections. Next available: of two emulators on one discovery port, the one announcing
              available_clients=0 receives no connection and the station becomes ready on the other.
+             Authorization: a native station without a grant makes no TCP connection and, after
+             its only grant is revoked, its client and slice leave the emulator.
              profile.json bytes stay unchanged and hold no radio identity (no serial key). */
         attribute automation : AutomationState = AutomationState::implemented;
         attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
@@ -1843,7 +1845,7 @@ package WstxRequirements {
              status and halt state; no transmit command reaches the radio. A native settings edit
              naming an audio device or CAT control and Detect radio are refused without changing
              profile.json. One real browser shows Standard and Native FlexRadio as read-only
-             connection types. The native status line and exception chip arrive only by the
+             connection types. The native status line and error-field entry arrive only by the
              radio.native WebSocket push: the page sends no /native-flex request, and stopping the
              emulator changes the line without a request or reload. No page errors. */
         attribute automation : AutomationState = AutomationState::implemented;
@@ -3251,7 +3253,7 @@ package WstxRequirements {
     dependency CL_045_01_to_FR_016 from 'CL-045-01' to 'FR-016';
     dependency CL_045_01_to_FR_003 from 'CL-045-01' to 'FR-003';
     requirement 'CL-045-02' {
-        doc /* When the station starts with its profile, and monitor_off_at_startup is false and last_receive is stored, it resumes that receive once, without a browser or operator action, using the profile's current audio input (none configured: resume failed audio_unconfigured). An FT4/FT8 choice with a band is resumed as the same band selection the band button makes (receive-only CAT setup under configured CAT; nominal dial from the preferred table); with configured CAT it waits up to 20 s for the CAT lifecycle (CL-022-03/04) to report the radio ready, retrying the transient admission refusals radio_unavailable, busy and state_conflict every 250 ms within that wait, and if the radio is not ready in time or the selection fails it starts receive on the stored mode on the radio's present dial (resume started_untuned) and keeps the stored band. A spectrum choice or a choice without a band starts receive on the stored mode. A missing audio device follows the existing live-audio error/retry state of the started job; the resume never exits or restarts the process. With monitor_off_at_startup true (resume off) or nothing stored (resume idle) no receive starts; a receive, selection or import that exists before the resume acts (operator or MCP) is never replaced (resume skipped). */
+        doc /* When the station starts with its profile, and monitor_off_at_startup is false and last_receive is stored, it resumes that receive once, without a browser or operator action, using the profile's current audio input (none configured: resume failed audio_unconfigured; a native FlexRadio profile's input is its session, for which it waits up to the same 20 s, then fails radio_unavailable). An FT4/FT8 choice with a band is resumed as the same band selection the band button makes (receive-only CAT setup under configured CAT; nominal dial from the preferred table); with configured CAT it waits up to 20 s for the CAT lifecycle (CL-022-03/04) to report the radio ready, retrying the transient admission refusals radio_unavailable, busy and state_conflict every 250 ms within that wait, and if the radio is not ready in time or the selection fails it starts receive on the stored mode on the radio's present dial (resume started_untuned) and keeps the stored band. A spectrum choice or a choice without a band starts receive on the stored mode. A missing audio device follows the existing live-audio error/retry state of the started job; the resume never exits or restarts the process. With monitor_off_at_startup true (resume off) or nothing stored (resume idle) no receive starts; a receive, selection or import that exists before the resume acts (operator or MCP) is never replaced (resume skipped). */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/receive_startup.rs; server/src/main.rs";
     }

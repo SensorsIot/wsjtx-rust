@@ -140,6 +140,15 @@ pub(crate) fn cat_tick(state: &ProfileState, now: Instant) {
     };
     let gate = cat_gate(&store, owner.as_ref());
     state.recording.cat_maintain(&gate, now);
+    // FR-023: like automatic CAT, the native session reaches a radio only under a grant.
+    if let Some(session) = state.recording.flex.get() {
+        session.set_allowed(owner.as_ref().is_some_and(|service| {
+            service
+                .authority
+                .automatic_cat(&store.document.control)
+                .is_some()
+        }));
+    }
     // #44 CL-044-10 the saved AGC, applied once per ready connection.
     let agc = store.document.radio.map(|r| r.agc);
     crate::radio_agc::tick(&state.recording, agc, now);

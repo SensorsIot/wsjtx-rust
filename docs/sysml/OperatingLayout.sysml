@@ -440,6 +440,8 @@ attribute def ActivityOrdering {
         enum stationUpdated; enum stationDataRejected;
         // #44 CL-044-14: persistent Tx trouble from the meter read of each transmission.
         enum txAlcHigh; enum txPowerLow; enum txSwrHigh; enum txSwrFault;
+        // FR-023: the native session is not ready; "No audio input" never applies to it.
+        enum nativeRadio;
     }
     enum def SettingsSection { enum general; enum radio; enum loggingReporting; enum expert; }
     enum def ChangeKind { enum operative; enum restart; }

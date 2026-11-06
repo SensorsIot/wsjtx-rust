@@ -209,8 +209,7 @@ package WstxProductScope {
         doc /* Phase2 optional native radio path retains standard independent audio/CAT
              and browser/DSP/QSO/MCP boundaries, without external SmartSDR desktop,
              CAT or DAX bridges. Radio-side firmware/API support still matters. Audio
-             and control may reference one managed session; ownership/sharing/lifetime,
-             API/stream formats, capacity and leases remain implementation prerequisites.
+             and control may reference one managed session, settled in NativeFlexWireSubset.
              Persist profile intent without a radio identity (#22, 2026-11-06);
              reconcile transient handles on connection, never guess another slice or
              replay transmit intent. One effective arbitration authority spans shared
@@ -233,7 +232,21 @@ package WstxProductScope {
              created and confirmed under its current client handle and never sends client
              disconnect, start_persistence on, load_from, tx, xmit or other transmit or
              global commands. A common cross-process connector stays unimplemented; the
-             radio's GUI-client limit is therefore a visible capacity limit.
+             radio's GUI-client limit is therefore a visible capacity limit. The session is
+             owned by the station's receive owner and started with the process; a band
+             selection tunes through it inside the selection's own operation, one at a time,
+             without a CAT transition lease.
+             Authorization (mirrors CL-022-03): the session sends and opens nothing on the radio
+             until the HTTPS profile holds a current grant for its scope (state unauthorized);
+             no commissioning applies, because no port opens and nothing can key. Losing the
+             last grant closes the session, whose slice the radio then releases. A plaintext
+             profile therefore never reaches a radio. Monitor-off and receive state do not
+             affect the session. States: unauthorized, discovering, connecting, ready,
+             unavailable, conflict, stopped. Conflict is client_identity_in_use,
+             ownership_ambiguous or slice_ownership; every other error is unavailable:
+             discovery_unavailable, radio_not_found, incompatible_api, capacity_clients,
+             capacity_slices, capacity_dax, antenna_unavailable, radio_refused, transport_lost,
+             protocol_error, timeout, resource_lost.
              Discovery: passive listening on UDP 4992 shared with address reuse, never a
              broadcast or any datagram sent (WSTX_FLEX_DISCOVERY may name another IPv4 bind
              address, which the tests use with loopback); VITA type 3, OUI 0x001C2D, class
@@ -262,13 +275,22 @@ package WstxProductScope {
              Read first (CL-044 rule): a slice setting (mode, frequency, DAX channel) is compared
              with the slice's current status and written only on a difference, then read back
              from the radio's status for that slice; a read-back that does not arrive by the step
-             deadline fails the operation (timeout) and a band selection then keeps no
-             native_readback origin. Equal status sends no command.
+             deadline fails the operation. A band selection then fails with radio_timeout (a
+             radio refusal with radio_rejected, a lost session with radio_unavailable) and keeps
+             no native_readback origin. Equal status sends no command. All BANDS stay admitted:
+             the radio's refusal decides. The radio object of /receive/selection keeps its shape:
+             connection_generation is the session number, state ready / connecting (discovering,
+             connecting) / closed (stopped, unauthorized) / unavailable (unavailable, conflict),
+             error the session error, frequency the own slice's status while ready, every other
+             observation null.
              Samples: only datagrams from the radio address with the own stream ID and packet
              class 0x03E4 (stereo big-endian float32, 48 kHz) enter the existing native
              queue/converter/epoch path, channel 0 only; other IDs are counted foreign, 24/96 kHz
-             and reduced-bandwidth classes are refused as invalid. The 4-bit packet count only
-             marks visible gaps as discontinuities. Timing: each packet carries its host arrival
+             and reduced-bandwidth classes are refused as invalid. A gap in the 4-bit packet count
+             advances the frame position by the missing packets, keeping the timeline; an arrival
+             gap above 200 ms is unknown loss (native_discontinuity) because the count may have
+             wrapped. The receive socket asks for a 1 MiB buffer, and packets enter the queue in
+             groups of at least 10 ms, as an audio device delivers them. Timing: each packet carries its host arrival
              time less its own duration, so the epoch is correlated to the system clock; network
              and radio latency are not measured, VITA timestamps are not used until a live
              qualification, and drift follows the same filtered clock tracking as an audio device.
@@ -278,20 +300,30 @@ package WstxProductScope {
              release of a GUI client's resources on disconnect is assumed and must be confirmed
              live. Retry backoff 1, 2, 4 s (cap 4 s), reset after ready. A receive job started on
              the native input survives a lost session: its audio status shows unavailable, and the
-             new session's first packet opens a new source epoch (capture_loss). A new receive
-             start while the session is not ready is refused radio_unavailable, except that the
-             startup resume waits its bounded time like a CAT band resume.
+             new session's first packet opens a new source epoch (reason capture_loss, trigger
+             native_discontinuity, counted in loss_epochs and last_loss). A new receive start while
+             the session is not ready is refused radio_unavailable. Startup resume (CL-045-02)
+             uses the session as its input and waits up to the same 20 s for it.
              Push: state, error, radio facts and own slice facts reach the client only as the
-             radio.native WebSocket event, sent once per peer as its snapshot and then on each
-             change, never for packet counters; the client sends no request for them. GET
-             /native-flex is the read-only snapshot with packet counters for diagnosis and tests,
-             404 for standard profiles; no request accepts a slice, stream or handle as authority.
+             radio.native WebSocket event under the PushedStationState subscription rule, sent once
+             per peer as its snapshot and then on each change, never for packet counters; the client
+             sends no request for them. Exact data {profile_id,boot_id,state,error,radio_code,
+             session,radio,slice,retry_after_ms,transmit}, radio null or {serial,model,firmware,
+             protocol,address}, slice null or {index,letter,frequency_hz,mode,rx_antenna,
+             dax_channel,stream_id}, transmit always unsupported, at most 4096
+             encoded bytes. GET /native-flex is the read-only snapshot, the same keys plus v, packets
+             {accepted,foreign,invalid,lost} and last_peak, for diagnosis and tests, 404 for standard
+             profiles; no request accepts a slice, stream or handle as authority. A session that is
+             not ready shows the ErrorFieldEntry nativeRadio with its state and error; the
+             "No audio input" entry does not apply to a native profile.
              Transmit: not offered (capability unsupported, TC-023-006 later and separately
              approved). HALT, the Tx watchdog and Abort stay in the server's one transmit owner
              with no native key path, so they answer as on an unconfigured standard station and
              nothing can key the radio. CAT, Detect radio, radio settings and the Tx level do not
              apply and are refused or inert; the standard path is unaffected and never opens a
              native socket.
+             Pinning: CL-013-02's model/firmware pin is deferred to the first hardware acceptance
+             (TC-023-004), which records the actual values; V1.4.0.0 may have to widen then.
              Profile: the connection type is chosen at creation (--create-native-flex-profile
              <dir> <rx antenna>) and is read-only in the browser. Remaining: hardware/firmware,
              24 kHz DAX, latency/timestamps, >= 4 usable slices, broadcast discovery and resource

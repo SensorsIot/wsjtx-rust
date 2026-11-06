@@ -1317,7 +1317,10 @@ package WstxArchitecture {
              and outcomes MUST retain request/resource identity through that authority
              to the selected CAT driver. Audio and CAT MUST be separate direct station parts,
              with no combined radio-backend wrapper or variation. Both adapters MUST
-             attach to the same selected radio and MUST NOT bypass the common authority. */
+             attach to the same selected radio and MUST NOT bypass the common authority.
+             A native FlexRadio profile instead reaches its radio through the one native
+             session of its station (WstxProductScope::NativeFlexWireSubset), owned by the
+             station's receive owner, with no CAT driver in the path. */
     }
     requirement ResponsibilityAndExchangeBoundaries {
         doc /* Architectural refinement of WstxProductScope::SharedDataOwnership,
