@@ -108,7 +108,7 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `operating-layout` | Operating screen, settings drawer, receive races, logbook, strategy, UDP editor, transmit status | Router and the HTTP owners the operating page calls; page, recording, contact and logbook clients; its test file |
 | `contact-browser` | Contact engine, QSO sequencing, logging and halt through the browser | Router, contact/logbook/transmit owners, contact/logbook/recording clients, contact test |
 | `radio-selection` | H1 compression negotiation, commissioning, browser selection cases | Router, compression, selection/radio/CAT/receive/source owners, status and recording clients, selection test |
-| `radio-selection-thin` | Timing: the 75 s native/CAT/TLS two-browser Thin and Off workload | Timing inputs: router, compression, selection/CAT/receive/source/audio/spectrum owners, status and recording clients, its Rust and browser test files and link helpers |
+| `radio-selection-thin` | Timing: the 75 s native/CAT/TLS two-browser Thin and Off workload | Timing inputs: router, compression, selection/receive/spectrum owners, status and recording clients, its Rust test file and link helpers |
 | `native-flex` | FR-023 native FlexRadio against the loopback emulator: route isolation, reconciliation, capacity, mixed profiles, push-only status | Native session and status (`flex/`, `flex_http.rs`), router, authorization, profile, radio setup, recording, receive, selection and startup owners, page, recording and contact clients, its test and emulator |
 | `mcp` | MCP client grant and refusals | Router, MCP/automation/authorization owners, authorization client, MCP test and credential helper |
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, plus Node package metadata |
@@ -142,10 +142,12 @@ The gate lists a timing suite the change reads but does not time as `TIMING ... 
 The timing inputs are, per suite: the router `main.rs` (status websocket, thin anchors
 and detail cadence) and HTTP compression for the three link suites; the status client
 (`app.js`, `index.html`, `style.css`) for `protocol-thin`, and the status and receive
-clients (`app.js`, `index.html`, `recording.js`, `recording.css`) for the two others,
-because those assets cross the 32 kbit/s link cold (the #55 cold-load red came from a
-client-only change); the recording/spectrum producers for `recording-thin`; the
-selection, CAT, receive, source, audio and spectrum owners for `radio-selection-thin`;
+clients (`app.js`, `index.html`, `recording.js`) for the two others, because those clients
+read over the 32 kbit/s link and cross it cold (the #55 cold-load red came from a
+client-only change; `recording.js` re-reading `/audio/endpoints` every 5 s, 1b4706c36, was
+the one real catch of 481 green minutes); the recording/spectrum producers for
+`recording-thin`; the selection, receive and spectrum owners for `radio-selection-thin`,
+but not CAT or capture, whose native setup and Off bounds rerun on request (harness#38);
 the receive/source/audio/decoder pipeline and the recording client that polls and paints
 the rows for `live-station-latency`; the production decoder sources (every one sets the
 checkpoint spacing, per-item work or budgets the quantum, latency and matrix measure),
@@ -155,7 +157,11 @@ times (the jt9 parity corpus, baselines, vectors) runs only the functional
 `decoder-correctness`, beside other groups: the same passes except the 50 ms quantum and
 the busy-period latency. Each suite's own test files
 and the link simulator (`tests/support.cjs`, `tests/peer.cjs`) are timing inputs, and so
-are the Rust toolchain and dependency pins (and the Node pins for the browser suites).
+are the Rust toolchain and dependency pins (and the Node pins for the browser suites);
+for `recording-thin` and `radio-selection-thin` (harness#38) only `tests/support.cjs` and
+`Cargo.lock` of these, `recording-thin`'s test file, and `radio-selection-thin`'s Rust test
+file: a CR that edits TC-009-005 in `tests/radio-selection.test.cjs` carries
+`Harness-Timing: yes`.
 The contact, logbook, authorization, MCP, strategy, profile and UDP code, the SysML
 model and the other groups' tests are not: their changes run functional groups only.
 
