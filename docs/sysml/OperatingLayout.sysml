@@ -720,9 +720,10 @@ attribute def ActivityOrdering {
              WstxStrategy::HighlightView (matches first in their period, greyed directed
              CQs not for my continent). Pointer: click selects (SelectDecodedRow, prepares, never
              transmits; while a contact is active a row that can start a contact for me, a
-             CQ/QRZ or a row addressed to my call, only offers "Change contact to <call>",
-             naming its sender, whose replacement keeps Enable Tx as it is, and a row of a QSO
-             between others offers nothing (#37, CL-037-05); double-click
+             CQ/QRZ complying with WstxStrategy::DirectedCqRule or a row addressed to my call,
+             only offers "Change contact to <call>", naming its sender, whose replacement keeps
+             Enable Tx as it is, and a row of a QSO between others or a CQ directed elsewhere
+             offers nothing (#37, CL-037-05); double-click
              replies (select, then SetEnableTx on; on a row of a QSO between others the command
              line reads "Call <sender>"), and on another station while a contact
              is active, or during an own CQ, it is itself the explicit

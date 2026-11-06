@@ -577,9 +577,9 @@ async function selectRow(tr){
   const row=rowIdentity(tr);if(!row)return null;
   const reply=await send('select_row',{row,replace:false},'Select station');
   if(reply?.refused==='contact_active'){
-    // #37: only a row that can start a contact for me offers the change; a foreign QSO's row offers nothing.
-    if(tr.dataset.foreign){changeTarget?.remove();changeTarget=null;resultText.textContent='';}
-    else offerChange(()=>send('select_row',{row,replace:true},'Change contact'),tr.dataset.sender??tr.children[4]?.textContent??'');
+    // #37: only a row that can start a contact for me offers the change; a foreign QSO's row or a CQ directed elsewhere offers nothing.
+    if(tr.dataset.foreign||window.wstxCqNotForMe?.(tr)){changeTarget?.remove();changeTarget=null;resultText.textContent='';}
+    else offerChange(()=>send('select_row',{row,replace:true},'Change contact'),tr.dataset.sender);
   }
   return reply;
 }
@@ -1016,6 +1016,14 @@ function decorate(){
   for(const tr of [...tbody.children]){if(tr.classList.contains('ba-divider')){flush();block=[];}else if(tr.dataset.sequence)block.push(tr);}
   flush();observer.takeRecords();reordering=false;
 }
+// #37: WstxStrategy::DirectedCqRule (addressed_to_me, server/src/strategy.rs) for a row the operator
+// clicks; the verdicts above exist only with Highlight on and an active strategy.
+window.wstxCqNotForMe=tr=>{
+  const target=tr.children[4]?.textContent.match(/^CQ (\S+) /)?.[1];if(!target||target===tr.dataset.sender)return false;
+  const mine=config()?.continent??view?.derived_continent??null;
+  if(['AF','AN','AS','EU','NA','OC','SA'].includes(target))return mine!==target;
+  return target==='DX'&&!(mine&&tr.dataset.continent&&mine!==tr.dataset.continent);
+};
 function wanted(){
   // The sequences shown for the current receive identity, evaluated once each.
   const id=identity();if(!highlightOn()||!id)return null;

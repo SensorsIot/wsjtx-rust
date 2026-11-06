@@ -3134,9 +3134,9 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
 // "makes no sense"): only a row that can start a contact for me offers the change, by its sender's call.
 test('TC-037-004 a contact change is offered only for a row that can start a contact for me',{timeout:60000},async t=>{
   const period='2026-10-27T12:00:15.0000000Z',commands=[];
-  const tok=['CQ','QRZ'],records=['CQ K1ABC FN42','QRZ W1XYZ FN31','HB9BLA DL1ABC JO31','W4WFC DL1FRH JO30'].map((text,sequence)=>{const [to,from,grid]=text.split(' ');
-    return {sequence,start_frame:6000,frequency_hz:600+sequence*300,snr_db:-5,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,period_start_utc:period,
-      fields:{type:'standard',to:{kind:tok.includes(to)?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}}};});
+  const records=[['CQ K1ABC FN42'],['QRZ W1XYZ FN31'],['HB9BLA DL1ABC JO31'],['W4WFC DL1FRH JO30'],['CQ EU G4ABC IO91','EU'],['CQ DX K2DX FN42','NA'],['CQ NA K3NA FN42','NA'],['CQ DX DL2DX JO31','EU']].map(([text,cont],sequence)=>{const w=text.split(' '),[from,grid]=w.slice(-2),to=w.slice(0,-2).join(' '),token=/^(CQ|QRZ)/.test(to);
+    return {sequence,...(cont?{dxcc:{name:'Fixture',cont,cq:1,itu:1}}:{}),start_frame:6000,frequency_hz:600+sequence*300,snr_db:-5,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,period_start_utc:period,
+      fields:{type:'standard',to:{kind:token?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}}};});
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
     const state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
@@ -3148,16 +3148,20 @@ test('TC-037-004 a contact change is offered only for a row that can start a con
     await p.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());commands.push(b);
       if(b.action==='select_row'&&!b.replace)await route.fulfill({status:409,json:{error:{code:'contact_active'}}});else await route.fulfill({status:202,json:{v:1,accepted:true}});});
   }});
-  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===4&&window.wstxContact?.snapshot(),null,{timeout:25000});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===8&&window.wstxContact?.snapshot()&&document.querySelector('#continent-derived')?.textContent.includes('EU'),null,{timeout:25000});
   const row=text=>page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:text});
   const change=page.locator('#contact-change'),result=page.locator('#contact-result');
   const click=async text=>{const n=commands.length;await row(text).click();for(let i=0;i<60&&commands.length<n+1;i++)await page.waitForTimeout(50);assert.equal(commands.length,n+1,text);};
-  for(const [text,call] of [['CQ K1ABC FN42','K1ABC'],['QRZ W1XYZ FN31','W1XYZ'],['HB9BLA DL1ABC JO31','DL1ABC']]){
+  for(const [text,call] of [['CQ K1ABC FN42','K1ABC'],['QRZ W1XYZ FN31','W1XYZ'],['HB9BLA DL1ABC JO31','DL1ABC'],['CQ EU G4ABC IO91','G4ABC'],['CQ DX K2DX FN42','K2DX']]){
     await click(text);await change.filter({hasText:`Change contact to ${call}`}).waitFor({timeout:5000});assert.equal(await change.textContent(),`Change contact to ${call}`);
   }
-  // A row of a QSO between others: the earlier offer goes, no new one, no refusal text.
+  // A row of a QSO between others or a CQ directed elsewhere: the earlier offer goes, no new one, no refusal text.
+  for(const text of ['CQ NA K3NA FN42','CQ DX DL2DX JO31','W4WFC DL1FRH JO30']){
+    await click(text);await change.waitFor({state:'detached',timeout:5000});
+    await page.waitForFunction(()=>document.querySelector('#contact-result').textContent==='',null,{timeout:5000});
+    await click('CQ K1ABC FN42');await change.waitFor({timeout:5000});
+  }
   await click('W4WFC DL1FRH JO30');await change.waitFor({state:'detached',timeout:5000});
-  await page.waitForFunction(()=>document.querySelector('#contact-result').textContent==='',null,{timeout:5000});
   // A deliberate double-click calls the sender and names it.
   const m=commands.length;await row('W4WFC DL1FRH JO30').dblclick();for(let i=0;i<60&&commands.length<m+2;i++)await page.waitForTimeout(50);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.row?.sequence??c.enabled,c.replace]),[['select_row',3,true],['enable_tx',true,undefined]]);

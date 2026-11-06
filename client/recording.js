@@ -702,6 +702,7 @@ function activityRow(record,period,context,mode){
   if(senderOnly)row.classList.add('ba-sender');
   if(udp)row.dataset.udp=udp.call;else if(hl.length)row.dataset.hl=hl.join(' ');
   const grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value:null,km=grid?window.wstxDistanceKm?.(profileData?.settings?.locator,grid)??null:null,dx=record.dxcc,approx=km===null&&Number.isInteger(dx?.km);
+  if(dx?.cont)row.dataset.continent=dx.cont;
   if(!isPartner)row.dataset.reasons=JSON.stringify(activityHover(record));
   const cells=[periodLabel(record.period_start_utc,mode),record.snr_db===null?'\u2014':record.snr_db.toFixed(1),record.dt_seconds===null?'\u2014':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),decoded?record.text:`Payload ${record.status}`,dx?dx.name:'\u2014',approx?`~${dx.km} km`:km===null?'\u2014':`${km} km`];
   for(const [index,text] of cells.entries()){
