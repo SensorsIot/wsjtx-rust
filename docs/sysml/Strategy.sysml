@@ -415,6 +415,62 @@ package WstxStrategy {
              (halted, context, authority, time, contact changed, transmit stopped) are
              unchanged; a disarm by the Tx watchdog stops tx_watchdog. */
     }
+    attribute def HearingFeed {
+        attribute heardWindowSeconds : Integer = 600;
+        doc /* The read-only PSK Reporter MQTT feed (#39, the operator's agreement of
+             2026-11-04): whether the current target hears my call and which frequencies it
+             decodes. Everything works without it: no connection is unknown, never an error
+             for the operator, and receive and the 50 ms station step never wait on it (its
+             own thread does all network waiting; the station reads a short-held lock).
+             Broker: mqtt.pskreporter.info port 1884, MQTT 3.1.1 over TLS, trusting only the
+             compiled-in ISRG Root X1 and X2 with the name checked (that chain validated on
+             2026-11-06); a broker moved to another CA shows an error in Settings and needs
+             a new build. The broker's page states no formal terms and no rate limit, says
+             "No account and no polling", is provided by Tom M0LTE, and says the feed
+             originates from Philip Gladstone at pskreporter.info, used with permission.
+             Client id: wstx, my call and 4 characters of the boot id (alphanumeric, at most
+             23 bytes), so that the operator of the broker can identify the station. No
+             user name, password or will. QoS 0, clean session.
+             The station sends only the MQTT handshake, keep-alive pings every 45 s of
+             silence (keep-alive 60 s), its subscriptions and DISCONNECT. Exactly two filters
+             of the filtered feed, never the raw feeds: pskr/filter/v2/+/+/<my call>/+/#
+             and, only while a strategy run has a contact with a DX call,
+             pskr/filter/v2/+/+/+/<target>/#, replaced when the target changes. A call
+             forms a topic segment only as 1..16 of A-Z 0-9; any other call, such as one
+             with a slash or anything decoded with an MQTT wildcard, gets no subscription and
+             stays unknown (the broker documents no form for it).
+             Reconnect: 5 s after every session end, doubling to 300 s; it starts over only
+             after a session of 60 s, and no change of a setting skips the wait. 90 s without
+             any packet ends a session. A packet over 4096 bytes or outside the subset is a
+             protocol error and ends the session; a payload that is no spot is dropped.
+             A spot: f (Hz), md, b, sc, rc and t_tx (or t when absent), fields of 1..16
+             characters. The payload decides, not the topic: a spot neither from my call nor
+             to the current target is dropped. A time ahead of the station counts as now.
+             Hearing: the target hears us when a spot from my call to that receiver on the
+             station's mode and band is at most heardWindowSeconds old. 600 s because
+             reporters upload in batches up to about 5 minutes late, so a spot can only be
+             expected within that delay plus one more upload; an older spot no longer
+             describes this path. Newest time per (receiver, band, mode), at most 256 entries,
+             the oldest going first.
+             Frequencies the target decodes: spots to the current target from other senders
+             (at most 128, forgotten when the target changes), as audio offset = f minus the
+             radio's confirmed dial of this band, only for the station's mode and band, at most
+             heardWindowSeconds old, inside the free slot range of the mode, newest first and
+             distinct, at most 32. A spot on another band or mode is ignored. An unknown dial
+             or band gives none.
+             Setting: on by default, because the operator agreed to this read-only
+             subscription; pskr.json {schema_version 1, profile_id, enabled} beside
+             profile.json (a foreign or broken file reads as on, naming invalid_pskr). Off
+             disconnects and forgets everything the feed said.
+             GET /pskr {v 1, profile_id, boot_id, enabled, state off|connecting|connected|error,
+             error (code or null), last_spot_utc_s, storage_error}, read once on each
+             connection; POST /pskr {v 1, profile_id, boot_id, enabled} (operating access,
+             the browser only) saves the switch; a display-subscribed peer receives pskr.state
+             with the same data on a change, for spots at most once per 30 s, and renders the
+             age from station.tick. No polling (WstxStationProtocol::PushedStationState).
+             Tests: WSTX_PSKR=off opens no connection; WSTX_PSKR=tcp:<loopback>:<port> speaks
+             plain MQTT to a local peer; nothing else can replace the broker. */
+    }
     calc def SaneCall {
         in call : String;
         return sane : Boolean;
@@ -454,5 +510,6 @@ package WstxStrategy {
     dependency autoClause from AutoStrategyRun to WstxRequirements::'CL-039-05';
     dependency watchdogClause from WatchdogFromOperator to WstxRequirements::'CL-039-06';
     dependency automationPath from AutoStrategyRun to WstxMcp::OperatingAutomation;
+    dependency hearingClause from HearingFeed to WstxRequirements::'CL-039-20';
     dependency watchdogOwner from WatchdogFromOperator to WstxContact::TxWatchdog;
 }
