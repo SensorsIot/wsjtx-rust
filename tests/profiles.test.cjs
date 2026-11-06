@@ -64,6 +64,10 @@ async function refusal(args, category, env = {}, cwd) {
   try {const [code, signal] = await app.done; assert.equal(signal, null, 'must fail explicitly, not time out'); assert.notEqual(code, 0); assert.match(app.output, new RegExp(`\\b${category}\\b`)); assert.doesNotMatch(app.output, /WSTX listening/);}
   finally {clearTimeout(timer); await app.close();}
 }
+// node:test runs t.after hooks in registration order, so the fixture's stop would come before a
+// later context.close(): an open page could then call a route handler whose route.fetch meets a
+// stopped station, an unhandled rejection after the test ended. Windows close before stations.
+const beforeStationsStop = new WeakMap();
 async function fixture(t, secured = false) {
   const base = await fs.mkdtemp(path.join(root, 'case-')), selectedPorts = await ports(4);
   const profiles = [];
@@ -74,7 +78,8 @@ async function fixture(t, secured = false) {
     const env = secured ? {...tls, WSTX_TOKEN: crypto.randomBytes(32).toString('hex')} : {};
     profiles.push({dir, origin, document, env});
   }
-  const apps = []; t.after(async () => {await Promise.all(apps.map(app => app.close())); for (const p of profiles) if (p.env.WSTX_TOKEN && p.app) {assert.equal(p.app.output.includes(p.env.WSTX_TOKEN), false); assert.equal((await fs.readFile(path.join(p.dir, 'profile.json'), 'utf8')).includes(p.env.WSTX_TOKEN), false);}});
+  const closing = []; beforeStationsStop.set(t, closing);
+  const apps = []; t.after(async () => {await Promise.all(closing.map(close => close())); await Promise.all(apps.map(app => app.close())); for (const p of profiles) if (p.env.WSTX_TOKEN && p.app) {assert.equal(p.app.output.includes(p.env.WSTX_TOKEN), false); assert.equal((await fs.readFile(path.join(p.dir, 'profile.json'), 'utf8')).includes(p.env.WSTX_TOKEN), false);}});
   for (const p of profiles) {const app = await start(p, p.env); apps.push(app); p.app = app;}
   return {profiles, apps, base};
 }
@@ -111,7 +116,9 @@ function request(origin, method = 'GET', body, headers = {}, pathname = '/profil
 }
 const edit = (i, revision, value = settings(i), id = uuid(i)) => ({profile_id: id, revision, settings: value});
 async function browserWindows(t, profiles) {
-  const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
+  const context = await browser.newContext({ignoreHTTPSErrors: true});
+  // Only at the test's end: a handler failure during the test still fails it.
+  beforeStationsStop.get(t).push(async () => {await context.unrouteAll({behavior: 'ignoreErrors'}); await context.close();});
   // CL-044-08: the audio selects offer only listed endpoints; the fixture endpoints are listed by a
   // route (no audio device is read for them), in place of the station's own listing.
   await context.route('**/audio/endpoints', async route => {
@@ -2058,6 +2065,14 @@ test('TC-022-005: status readiness survives held settings HTTP with bounded refr
 // UUID in the run's own account-local data, never in the account's shared one: the same
 // UUID held there by a concurrent run (another checkout's suite or gate, started with the
 // account's environment) does not refuse it with profile_in_use.
+// Proves the suite's teardown order: no page can reach a route handler after its station stopped.
+test('suite browser windows close before their stations stop', async t => {
+  const {profiles} = await fixture(t);
+  let pages;
+  t.after(() => assert.equal(pages.every(page => page.isClosed()), true, 'windows were still open when the stations had stopped'));
+  ({pages} = await browserWindows(t, profiles));
+});
+
 test('suite stations own profile UUIDs in per-run station data', {timeout: 30000}, async t => {
   const base = await fs.mkdtemp(path.join(root, 'isolation-')), [heldPort, ownPort] = await ports(2), id = crypto.randomUUID();
   const profile = async (name, port) => {
