@@ -3154,6 +3154,8 @@ test('TC-061-003 CQ retries a stale_revision refusal with the reloaded snapshot'
       if(stale>0){stale--;revision++;await route.fulfill({status:409,json:{v:1,error:{code:'stale_revision'}}});}else await route.fulfill({status:202,json:{v:1,accepted:true}});});
   }});
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-cq').disabled,null,{timeout:25000});
+  // WstxTransmit late start (live 2026-11-06, #10): a click 10 s into my Tx period keys at once for the rest.
+  assert.equal(await page.locator('#qso-cq').getAttribute('title'),'Call CQ: keys at once when under 75 % of my Tx period has passed (the rest of the message), otherwise from my next Tx period');
   const sent=async(m,count)=>{for(let i=0;i<80&&commands.length<m+count;i++)await page.waitForTimeout(50);await page.waitForTimeout(300);return commands.slice(m).map(c=>[c.action,c.enabled,c.contact_revision]);};
   stale=1;let m=commands.length;await page.locator('#qso-cq').click();
   assert.deepEqual(await sent(m,2),[['enable_tx',true,3],['enable_tx',true,4]],'CQ: refused once, sent again with the reloaded revision');
