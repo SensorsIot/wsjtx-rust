@@ -136,7 +136,7 @@ test('TC-007-001 double-click starts transmission, partner report advances to Tx
 
 // Proves: TC-039-002
 test('TC-039-002 a double-click on a CQ not for me warns and only the confirmation selects it',{timeout:60000},async()=>{
-  await publish(evenNow(),[{text:'CQ NA W9XYZ EN52',hz:1500,snr:-3}]);
+  await publish(evenNow(),[{text:'CQ NA W9XYZ EN52',hz:1650,snr:-3}]);
   const row=page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:'CQ NA W9XYZ EN52'});
   await row.first().waitFor();
   await row.first().dblclick();await page.locator('#op-confirm[open]').waitFor();
