@@ -73,8 +73,8 @@ package WstxStrategy {
     }
     enum def Goal { enum dxcc; enum dxcc_band; enum dxcc_slot; enum waz; enum wpx; enum grid; enum new_call; }
     enum def Needed { enum not_worked; enum not_confirmed; }
-    enum def RegionKind { enum all; enum dx; enum selected; }
-    enum def WindowKind { enum all; enum today; enum from_to; }
+    enum def RegionKind { enum 'all'; enum dx; enum selected; }
+    enum def WindowKind { enum 'all'; enum today; enum from_to; }
     attribute def Strategy {
         attribute name : String;
         attribute strategyClass : StrategyClass;

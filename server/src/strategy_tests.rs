@@ -48,7 +48,14 @@ fn award(goals: &[Goal]) -> Strategy {
     }
 }
 /// (call, band, mode, grid, confirmed).
-fn worked(log: &[(&str, Option<&str>, Option<&str>, Option<&str>, bool)]) -> Arc<Worked> {
+type LogRow<'a> = (
+    &'a str,
+    Option<&'a str>,
+    Option<&'a str>,
+    Option<&'a str>,
+    bool,
+);
+fn worked(log: &[LogRow]) -> Arc<Worked> {
     let logged: Vec<Logged> = log
         .iter()
         .map(|(call, band, mode, grid, confirmed)| Logged {
