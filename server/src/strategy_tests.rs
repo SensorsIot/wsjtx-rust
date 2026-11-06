@@ -4254,9 +4254,13 @@ async fn tc_063_003_the_contests_route() {
         .expect("a clock")
         .as_millis() as i64;
     assert!(end > now);
-    // A query is refused; POST has no route.
+    // No credentials: 401; a query is refused; POST has no route.
+    let u = f.http("GET", "/strategy/contests", &[], None).await;
+    assert_eq!(u.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(u.json["error"]["code"], "unauthorized");
     let q = f.browser("GET", "/strategy/contests?x=1", None).await;
     assert_eq!(q.status, StatusCode::BAD_REQUEST);
+    assert_eq!(q.json["error"]["code"], "invalid_request");
     assert_eq!(
         f.browser("POST", "/strategy/contests", Some(json!({})))
             .await

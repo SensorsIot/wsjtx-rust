@@ -129,6 +129,11 @@ fn tc_063_001_the_profile_table_holds_the_rule_facts() {
     assert_eq!(bands("ft8_activity"), ["2m", "70cm", "23cm"]);
     assert!(bands("arrl_vhf_jun").contains(&"6m") && !bands("arrl_vhf_jun").contains(&"10m"));
     assert!(bands("arrl_field_day").contains(&"40m") && !bands("arrl_field_day").contains(&"30m"));
+    // "All bands 50 MHz and above" (AFD 2), "any band above 50 MHz" (AVHF 2.1).
+    for band in ["6m", "5m", "4m", "2m", "submm"] {
+        assert!(bands("arrl_field_day").contains(&band), "Field Day {band}");
+        assert!(bands("arrl_vhf_jun").contains(&band), "VHF {band}");
+    }
     // RTTY Roundup is dropped (operator 2026-11-06); no id twice.
     assert!(profile("rtty").is_none() && profile("arrl_rtty").is_none());
     let mut ids: Vec<&str> = PROFILES.iter().map(|p| p.id).collect();

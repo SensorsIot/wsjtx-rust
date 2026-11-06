@@ -136,12 +136,12 @@ const HOUR: i64 = 60;
 const HF: &[&str] = &["160m", "80m", "40m", "20m", "15m", "10m"];
 const HF_6M: &[&str] = &["160m", "80m", "40m", "20m", "15m", "10m", "6m"];
 const VHF: &[&str] = &[
-    "6m", "4m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm",
-    "6mm", "4mm", "2.5mm", "2mm", "1mm",
+    "6m", "5m", "4m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm",
+    "6mm", "4mm", "2.5mm", "2mm", "1mm", "submm",
 ];
 const FIELD_DAY: &[&str] = &[
-    "160m", "80m", "40m", "20m", "15m", "10m", "6m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm",
-    "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm",
+    "160m", "80m", "40m", "20m", "15m", "10m", "6m", "5m", "4m", "2m", "1.25m", "70cm", "33cm",
+    "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm", "submm",
 ];
 const FORBIDDEN_ARRL: &str = "Each contact must include contemporaneous direct initiation by both operators making a contact. Initiation of a contact may be by either local or remote control. Fully automated contacts are prohibited.";
 const FORBIDDEN_VHF: &str = "Each contact must include contemporaneous direct initiation by both operators making a contact. Initiation of a contact may be by either local or remote control.";

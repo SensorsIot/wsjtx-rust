@@ -5490,7 +5490,7 @@ package WstxRequirements {
              CL-063-01
              Setup: the profile table as compiled; an expected table written by hand from the rule sources listed on #63.
              Steps: read id, activity, dupes, points, multipliers, automation clause, bands, Cabrillo mark and the notes of each profile.
-             Expected: the nine ids in selector order; WW Digi bands 160 to 10 m, dupes per band, 1 + 1 per 3000 km, grid field per band, forbidden; ARRL Digi with 6 m, 1 + 1 per 500 km rounded up, no multiplier, forbidden; Field Day per band and mode class, forbidden, check-log note, Cabrillo unconfirmed; the three VHF per band and grid, grid per band, forbidden, W/VE note; IARU 6 m and 4 m, kilometres, grid per band, silent, 6 hours note; FT8 Activity 2 m, 70 cm, 23 cm, one per call, silent; no RTTY Roundup; no id twice.
+             Expected: the nine ids in selector order; WW Digi bands 160 to 10 m, dupes per band, 1 + 1 per 3000 km, grid field per band, forbidden; ARRL Digi with 6 m, 1 + 1 per 500 km rounded up, no multiplier, forbidden; Field Day per band and mode class, forbidden, check-log note, Cabrillo unconfirmed; the three VHF per band and grid, grid per band, forbidden, W/VE note; Field Day and VHF with every ADIF band from 50 MHz (6 m, 5 m, 4 m, 2 m up to submm); IARU 6 m and 4 m, kilometres, grid per band, silent, 6 hours note; FT8 Activity 2 m, 70 cm, 23 cm, one per call, silent; no RTTY Roundup; no id twice.
              2 — Isolated automated tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -5517,8 +5517,8 @@ package WstxRequirements {
         doc /* TC-063-003 — GET /strategy/contests
              CL-063-01
              Setup: the pure list at 2026-08-01; the actual station router on a disposable selected HTTPS profile with one grant.
-             Steps: the list; GET with the browser cookie and with a query; POST.
-             Expected: the nine ids in order, WW Digi with period {2026-08-29T12:00Z, 2026-08-30T12:00Z, band null}, its activity and rule names; January VHF period null; the route returns v 1, the profile id and the list with a period that has not ended; 400; 405.
+             Steps: the list; GET with the browser cookie, without credentials and with a query; POST.
+             Expected: the nine ids in order, WW Digi with period {2026-08-29T12:00Z, 2026-08-30T12:00Z, band null}, its activity and rule names; January VHF period null; the route returns v 1, the profile id and the list with a period that has not ended; 401 unauthorized; 400 invalid_request; 405.
              2 — Isolated automated tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
