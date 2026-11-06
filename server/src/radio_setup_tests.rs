@@ -322,7 +322,8 @@ fn apply_refusals_and_failures_stop_without_keying() {
     assert_never_keyed(&radio);
 }
 
-struct Double {
+pub(crate) struct Double {
+    reserved: Mutex<Vec<u16>>,
     ports: Vec<PortInfo>,
     endpoints: Vec<AudioEndpoint>,
     radios: HashMap<u16, (u8, u32)>,
@@ -384,6 +385,14 @@ impl radio_setup::Hardware for Double {
     fn endpoints(&self) -> Result<Vec<AudioEndpoint>, cat::Error> {
         Ok(self.endpoints.clone())
     }
+    fn reserve(&self, port: u16) -> bool {
+        let mut reserved = self.reserved.lock().unwrap();
+        if reserved.contains(&port) {
+            return false;
+        }
+        reserved.push(port);
+        true
+    }
     fn open(
         &self,
         port: u16,
@@ -411,7 +420,7 @@ fn under(hub: &str) -> Topology {
         usb_parent: Some(hub.into()),
     }
 }
-fn port(n: u16, hub: &str) -> PortInfo {
+pub(crate) fn port(n: u16, hub: &str) -> PortInfo {
     PortInfo {
         port: n,
         instance_id: format!("USB\\VID_10C4&PID_EA60\\RADIO{n}"),
@@ -419,8 +428,13 @@ fn port(n: u16, hub: &str) -> PortInfo {
         topology: under(hub),
     }
 }
-fn double(ports: Vec<PortInfo>, radios: HashMap<u16, (u8, u32)>, in_use: Vec<u16>) -> Arc<Double> {
+pub(crate) fn double(
+    ports: Vec<PortInfo>,
+    radios: HashMap<u16, (u8, u32)>,
+    in_use: Vec<u16>,
+) -> Arc<Double> {
     Arc::new(Double {
+        reserved: Mutex::new(Vec::new()),
         ports,
         endpoints: vec![
             AudioEndpoint {
@@ -830,6 +844,9 @@ struct Listing {
     endpoints: Mutex<Option<Vec<AudioEndpoint>>>,
 }
 impl radio_setup::Hardware for Listing {
+    fn reserve(&self, _: u16) -> bool {
+        true
+    }
     fn ports(&self) -> Result<Vec<PortInfo>, cat::Error> {
         Ok(self.ports.clone())
     }
@@ -963,12 +980,15 @@ async fn audio_endpoints_list_names_remember_saved_names_and_name_the_receive_in
 
 /// The saved control of a fixture: IC-7300 CAT on `port`, saved once.
 fn saved_on(f: &Fixture, port: u16) {
+    saved_with(f, port, "cat");
+}
+fn saved_with(f: &Fixture, port: u16, ptt: &str) {
     let mut store = f.state.store.lock().unwrap();
     let mut settings = store.document.settings();
     settings.control = profile::Control {
         mode: "cat".into(),
         endpoint: Some(format!("COM{port}")),
-        ptt: "cat".into(),
+        ptt: ptt.into(),
     };
     settings.radio = Some(profile::Radio {
         agc: wstx_rust::radio_control::setup::Agc::Mid,
@@ -1016,8 +1036,9 @@ fn discovery_keeps_a_saved_radio_that_answers() {
 #[test]
 fn discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held() {
     let f = fixture("http://127.0.0.1:18048", false);
-    saved_on(&f, 3);
+    saved_with(&f, 3, "disabled");
     std::fs::write(f.dir.join(crate::radio_level::LEVEL_FILE), "{}").unwrap();
+    std::fs::write(f.dir.join(radio_setup::UNDO_FILE), "{}").unwrap();
     let revision = saved_control(&f).1;
     let hw = double(
         vec![
@@ -1043,7 +1064,7 @@ fn discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held
         profile::Control {
             mode: "cat".into(),
             endpoint: Some("icom7300://COM6?baud=19200&radio=94&controller=e0".into()),
-            ptt: "cat".into(),
+            ptt: "disabled".into(),
         }
     );
     let store = f.state.store.lock().unwrap();
@@ -1059,14 +1080,8 @@ fn discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held
         "the Tx level belonged to the other radio"
     );
     assert!(
-        !matches!(
-            crate::authorization_http::cat_gate(
-                &store,
-                f.state.authorization.lock().unwrap().as_ref()
-            ),
-            crate::cat_lifecycle::Gate::Eligible { .. }
-        ),
-        "no CAT before the operator confirms this radio"
+        !f.dir.join(radio_setup::UNDO_FILE).exists(),
+        "the settings undo belonged to the other radio"
     );
     drop(store);
     assert_eq!(*hw.opened.lock().unwrap(), vec![3, 4, 5, 6]);
@@ -1139,4 +1154,35 @@ fn discovery_sets_up_a_profile_never_saved() {
     assert_eq!(control.ptt, "cat");
     assert_eq!(*hw.opened.lock().unwrap(), vec![5, 6], "no FTDI board");
     only_id_reads(&hw);
+}
+
+// Proves: CL-044-15; TC-044-020 (f). A radio chosen but not yet confirmed counts as taken:
+// two stations set up one after the other take one radio each, however long apart.
+#[test]
+fn a_second_station_passes_over_a_radio_the_first_reserved() {
+    let hw = double(
+        vec![port(3, "USB\\HUB\\A"), port(6, "USB\\HUB\\IC7300")],
+        HashMap::from([(3, (0x94, 19200)), (6, (0x94, 19200))]),
+        vec![],
+    );
+    let a = fixture("http://127.0.0.1:18052", false);
+    hardware_of(&a, &hw);
+    assert!(
+        radio_setup::discover_on_start(&a.state)
+            .unwrap()
+            .contains("COM3")
+    );
+    let b = fixture("http://127.0.0.1:18053", false);
+    hardware_of(&b, &hw);
+    assert!(
+        radio_setup::discover_on_start(&b.state)
+            .unwrap()
+            .contains("COM6")
+    );
+    // A saved radio another station reserved is no longer this station's.
+    let c = fixture("http://127.0.0.1:18054", false);
+    saved_on(&c, 3);
+    hardware_of(&c, &hw);
+    assert_eq!(radio_setup::discover_on_start(&c.state), None);
+    assert_eq!(saved_control(&c).0.endpoint.as_deref(), Some("COM3"));
 }

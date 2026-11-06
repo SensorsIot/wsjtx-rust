@@ -2089,6 +2089,55 @@ mod automatic_cat {
             .await;
         assert_eq!(reply.status, StatusCode::OK);
     }
+    // Proves: CL-044-15; TC-044-020 (b). The actual authorization owner: a commissioned
+    // station moved to another radio needs the confirmation again.
+    #[tokio::test]
+    async fn discovery_moving_to_another_radio_requires_the_confirmation_again() {
+        use crate::radio_setup_tests::{double, port};
+        let f = HttpFixture::new("https://localhost:8080");
+        let state = f.app().profile.as_ref().unwrap().clone();
+        let g = f.authorize().await;
+        assert_eq!(
+            put_control(&f, &g.cookie, ENDPOINT).await.status,
+            StatusCode::OK
+        );
+        let cookie = f.renew(&g).await;
+        let before = status(&f, &cookie).await;
+        commission(&f, &cookie, &before["scope"]).await;
+        let eligible = |state: &ProfileState| {
+            let store = state.store.lock().unwrap();
+            let service = state.authorization.lock().unwrap();
+            authorization_http::cat_gate(&store, service.as_ref())
+        };
+        assert!(matches!(
+            eligible(&state),
+            crate::cat_lifecycle::Gate::Eligible { .. }
+        ));
+        let saved = wstx_rust::radio_control::Configuration::parse(ENDPOINT)
+            .unwrap()
+            .port;
+        let free = saved + 1;
+        let hw = double(
+            vec![port(saved, "USB\\HUB\\A"), port(free, "USB\\HUB\\B")],
+            std::collections::HashMap::from([(free, (0x94, 19200))]),
+            vec![saved],
+        );
+        *state.recording.radio_setup.hardware.lock().unwrap() = Some(hw);
+        assert!(radio_setup::discover_on_start(&state).is_some());
+        assert!(matches!(
+            eligible(&state),
+            crate::cat_lifecycle::Gate::CommissioningRequired
+        ));
+        let store = state.store.lock().unwrap();
+        let service = state.authorization.lock().unwrap();
+        let record = service.as_ref().unwrap().authority.record();
+        assert!(record.commissioning.is_none());
+        assert_eq!(
+            record.current_scope.as_ref().unwrap().wire.safety_revision,
+            before["scope"]["safety_revision"].as_u64().unwrap() + 1
+        );
+        assert_eq!(record.checked_control, store.document.control);
+    }
     fn ticks(f: &HttpFixture, n: usize) {
         let state = f.app().profile.as_ref().unwrap();
         for _ in 0..n {

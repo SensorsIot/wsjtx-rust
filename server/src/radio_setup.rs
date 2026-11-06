@@ -29,9 +29,15 @@ pub(crate) trait Hardware: Send + Sync {
         deadline: Instant,
         cancel: &AtomicBool,
     ) -> Result<Box<dyn Transport>, cat::Error>;
+    /// CL-044-15 claims a radio for this process's lifetime, before its CAT connects:
+    /// false when another station process claimed it.
+    fn reserve(&self, port: u16) -> bool;
 }
 #[cfg(windows)]
 struct Native;
+/// The radios this process discovered; the locks end with the process.
+#[cfg(windows)]
+static RESERVED: Mutex<Vec<std::fs::File>> = Mutex::new(Vec::new());
 #[cfg(windows)]
 impl Hardware for Native {
     fn ports(&self) -> Result<Vec<PortInfo>, cat::Error> {
@@ -60,6 +66,30 @@ impl Hardware for Native {
         };
         cat::windows::SerialTransport::open(&configuration, &lock_root, deadline, cancel)
             .map(|t| Box::new(t) as Box<dyn Transport>)
+    }
+    fn reserve(&self, port: u16) -> bool {
+        let root = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("WstxRust")
+            .join("radio-reservation");
+        // Without a usable lock file discovery works as if nobody else had reserved.
+        let Ok(file) = std::fs::create_dir_all(&root).and_then(|()| {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .write(true)
+                .open(root.join(format!("COM{port}.lock")))
+        }) else {
+            return true;
+        };
+        if matches!(file.try_lock(), Err(std::fs::TryLockError::WouldBlock)) {
+            return false;
+        }
+        if let Ok(mut held) = RESERVED.lock() {
+            held.push(file);
+        }
+        true
     }
 }
 #[cfg(windows)]
@@ -369,6 +399,7 @@ pub(crate) fn discover_on_start(state: &ProfileState) -> Option<String> {
     if let Some(saved) = &saved
         && ports.iter().any(|p| p.port == saved.port)
         && matches!(identify(&*hardware, saved.port), Ok(Some(_)))
+        && hardware.reserve(saved.port)
     {
         return None;
     }
@@ -378,7 +409,10 @@ pub(crate) fn discover_on_start(state: &ProfileState) -> Option<String> {
         .take(64)
         .filter(|p| radio_bridge(p) && saved.as_ref().is_none_or(|s| s.port != p.port))
         .take_while(|_| started.elapsed() < DETECT_BUDGET)
-        .find_map(|p| Some((p, identify(&*hardware, p.port).ok().flatten()?)));
+        .find_map(|p| {
+            let radio = identify(&*hardware, p.port).ok().flatten()?;
+            hardware.reserve(p.port).then_some((p, radio))
+        });
     let (port, radio) = found?;
     let endpoints = hardware.endpoints().unwrap_or_default();
     let pick = |flow| match setup::match_audio(port, &endpoints, flow) {
@@ -404,7 +438,9 @@ pub(crate) fn discover_on_start(state: &ProfileState) -> Option<String> {
     settings.radio = Some(store.document.radio.unwrap_or(profile::Radio::DEFAULT));
     settings.validate().ok()?;
     store.save(settings).ok()?;
+    // The Tx level and the settings undo belonged to the other radio.
     let _ = store.remove_document_file(crate::radio_level::LEVEL_FILE);
+    let _ = store.remove_document_file(UNDO_FILE);
     if let Ok(mut authorization) = state.authorization.lock()
         && let Some(service) = authorization.as_mut()
     {
