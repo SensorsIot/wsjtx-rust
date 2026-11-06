@@ -610,7 +610,8 @@
   - client/index.html
   - tests/native-flex.test.cjs
   - tests/flex-emulator.cjs
-  needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; real candidate stations with disposable HTTPS profiles against the independent loopback native-API emulator (TCP/UDP on 127.0.0.1 only, discovery on per-test loopback ports). No FlexRadio, SmartSDR/CAT/DAX program, audio device, broadcast, LAN discovery or network service.
+  - tests/flex-live-check.cjs
+  needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; real candidate stations with disposable HTTPS profiles against the independent loopback native-API emulator (TCP/UDP on 127.0.0.1 only, discovery on per-test loopback ports) and the verified WSTX_DECODER_VECTORS for one FT8 period. No FlexRadio, SmartSDR/CAT/DAX program, audio device, broadcast, LAN discovery or network service.
 
 - suite: operating-layout
   cost: 2

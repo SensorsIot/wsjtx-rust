@@ -7,6 +7,37 @@ fn bytes(hex: &str) -> Vec<u8> {
         .collect()
 }
 
+// Proves: TC-023-001. The form of a real FLEX-6600's reply (2026-11-06), other values changed.
+#[test]
+fn info_reply_of_a_real_radio_gives_its_facts() {
+    let found = parse_info(
+        r#"model="FLEX-6600",chassis_serial="0000-1111-6600-2222",name="",callsign="TEST",gps="Not Present",atu_present=1,num_scu=2,num_slice=4,num_tx=1,software_ver=4.3.16.42034,ip=192.0.2.10"#,
+    );
+    assert_eq!(found.model.as_deref(), Some("FLEX-6600"));
+    assert_eq!(found.serial, "0000-1111-6600-2222");
+    assert_eq!(found.firmware.as_deref(), Some("4.3.16.42034"));
+    assert_eq!(parse_info("").serial, "");
+}
+
+// Proves: TC-023-001. One DAX packet exactly as a real FLEX-6600 sent it on 2026-11-06. It
+// carries no address or serial. Expected values were read from the capture with a separate tool.
+#[test]
+fn dax_packet_of_a_real_radio_decodes() {
+    let raw = bytes(include_str!("dax_rx_6600.hex").trim());
+    let p = parse_vita(&raw).unwrap();
+    assert_eq!((p.packet_type, p.tsi, p.tsf, p.words), (3, 1, 1, 263));
+    assert_eq!(p.stream_id, Some(0x0400_0008));
+    assert_eq!(p.packet_class, Some(DAX_FLOAT_24K));
+    assert_eq!(p.integer_time, Some(0xA5A5_A0A5), "a filler, not a time");
+    let samples = dax_samples(&p).unwrap();
+    assert_eq!(samples.len(), 256);
+    assert_eq!(samples[0], 0.037_232_06);
+    assert_eq!(samples[2], 0.024_338_486);
+    assert!(samples.chunks(2).all(|f| f[0] == f[1]));
+    let peak = samples.iter().fold(0.0_f32, |p, v| p.max(v.abs()));
+    assert_eq!(peak, 0.075_415_015);
+}
+
 // Proves: TC-023-001. Independently authored issue-13 preparation vector
 // (hb9bla-progress/flex-readiness/independent-protocol-vectors.json, SHA256
 // d706e67b6bf78ae46ddc8c7b7a3331d8fdde5c15e2a1446eb0110586fa893f3e), not vendor output.
@@ -33,7 +64,8 @@ fn independent_narrow48_vector_decodes_field_by_field() {
         (Some(7213), Some(21324), Some(996))
     );
     assert_eq!((p.integer_time, p.fractional_time), (Some(1), Some(0)));
-    assert_eq!(dax_samples(&p).unwrap(), vec![0.5, -0.5, 1.0, -1.0]);
+    // A form this radio does not send (type 1, 48 kHz class) is parsed, not admitted.
+    assert_eq!(dax_samples(&p), Err(WireError::NotDaxAudio));
 }
 
 // Proves: TC-023-001. The vector's negative cases with their expected refusals.
@@ -48,24 +80,23 @@ fn independent_negative_vectors_are_refused() {
         Err(WireError::TruncatedPacket)
     );
     let nonfinite = bytes(
-        "18ef000b8100000100001c2d534c03e40000000100000000000000003f000000bf0000003f8000007fc00000",
+        "38ef000b8100000100001c2d534c03e30000000100000000000000003f000000bf0000003f8000007fc00000",
     );
     assert_eq!(
         dax_samples(&parse_vita(&nonfinite).unwrap()),
         Err(WireError::NonfiniteSample)
     );
-    // 24 kHz float (class 0x03E3) is a known but unadmitted format.
-    let mut other = bytes(
-        "18ef000b8100000100001c2d534c03e40000000100000000000000003f000000bf0000003f800000bf800000",
+    // 48 kHz float (class 0x03E4) is a known but unadmitted format.
+    let other = bytes(
+        "38ef000b8100000100001c2d534c03e40000000100000000000000003f000000bf0000003f800000bf800000",
     );
-    other[15] = 0xe3;
     assert_eq!(
         dax_samples(&parse_vita(&other).unwrap()),
         Err(WireError::UnsupportedFormat)
     );
     // An odd float count cannot form stereo frames: header words 10, one sample less.
     let mut odd =
-        bytes("18ef000a8100000100001c2d534c03e40000000100000000000000003f000000bf0000003f800000");
+        bytes("38ef000a8100000100001c2d534c03e30000000100000000000000003f000000bf0000003f800000");
     assert_eq!(
         dax_samples(&parse_vita(&odd).unwrap()),
         Err(WireError::InvalidPacketLength)

@@ -9,11 +9,14 @@ const net = require('node:net');
 const dgram = require('node:dgram');
 const {once} = require('node:events');
 
-const OUI = 0x001c2d, INFO = 0x534c, DAX48 = 0x03e4, DISCOVERY = 0xffff;
+const OUI = 0x001c2d, INFO = 0x534c, DAX24 = 0x03e3, DISCOVERY = 0xffff;
+// A real FLEX-6600 (2026-11-06) sends DAX as type 3 with frozen filler timestamps.
+const FROZEN = {tsi: 1, tsf: 1, integer: 0xa5a5a0a5, fraction: 0x8d88c152a5a5a0a5n};
+const fs = require('node:fs');
 
 // VITA-49 header: type 31..28, C 27, T 26, TSI 23..22, TSF 21..20, count 19..16, words 15..0.
-function vita({type, stream, packetClass, count = 0, integer = 0, payload}) {
-  const tsi = type === 1 ? 3 : 0, tsf = type === 1 ? 2 : 0;
+function vita({type, stream, packetClass, count = 0, time = {tsi: 0, tsf: 0, integer: 0, fraction: 0n}, payload}) {
+  const {tsi, tsf, integer, fraction} = time;
   const preamble = 4 + 4 + 8 + (tsi ? 4 : 0) + (tsf ? 8 : 0);
   const padded = Math.ceil(payload.length / 4) * 4, out = Buffer.alloc(preamble + padded);
   const words = out.length / 4;
@@ -23,16 +26,25 @@ function vita({type, stream, packetClass, count = 0, integer = 0, payload}) {
   out.writeUInt32BE(((INFO << 16) | packetClass) >>> 0, 12);
   let at = 16;
   if (tsi) { out.writeUInt32BE(integer >>> 0, at); at += 4; }
-  if (tsf) { out.writeUInt32BE(0, at); out.writeUInt32BE(0, at + 4); at += 8; }
+  if (tsf) { out.writeBigUInt64BE(fraction, at); at += 8; }
   payload.copy(out, at);
   return out;
 }
-// Stereo big-endian float32 frames; channel 0 carries the slice's tone, channel 1 silence.
+// Stereo big-endian float32 frames at 24 kHz, both channels equal as the radio sends them.
 function daxPayload(frames, amplitude, phase) {
   const out = Buffer.alloc(frames * 8);
   for (let i = 0; i < frames; i++) {
-    out.writeFloatBE(amplitude * Math.sin(2 * Math.PI * 1000 * (phase + i) / 48000), i * 8);
-    out.writeFloatBE(0, i * 8 + 4);
+    const value = amplitude * Math.sin(2 * Math.PI * 1000 * (phase + i) / 24000);
+    out.writeFloatBE(value, i * 8); out.writeFloatBE(value, i * 8 + 4);
+  }
+  return out;
+}
+// The same frames from a 12 kHz PCM16 mono WAV of one FT8 period, on the wall clock's period.
+function periodPayload(frames, pcm, wallMs) {
+  const out = Buffer.alloc(frames * 8), first = Math.floor((wallMs % 15000) * 24);
+  for (let i = 0; i < frames; i++) {
+    const at = ((first + i) >> 1) * 2 + 44, value = at + 1 < pcm.length ? pcm.readInt16LE(at) / 32768 : 0;
+    out.writeFloatBE(value, i * 8); out.writeFloatBE(value, i * 8 + 4);
   }
   return out;
 }
@@ -52,8 +64,15 @@ class FlexEmulator {
     this.maxGui = options.maxGui ?? 4;
     this.announceClients = options.announceClients; // overrides available_clients
     this.silent = options.silent ?? false; // announces nothing
+    this.periodWav = options.periodWav ? fs.readFileSync(options.periodWav) : null; // stream audio
+    this.needRegister = options.needRegister ?? false; // sends a stream only to a registered source, as a NAT would
+    this.registered = []; // {text, port, at}
     this.ignoreTune = options.ignoreTune ?? false; // accepts slice tune, never reports it
     this.replyFirst = options.replyFirst ?? false; // answers sub client before its statuses
+    this.dropEvery = options.dropEvery ?? 0; // loses every Nth stream packet on the way
+    this.keepOnDisconnect = options.keepOnDisconnect ?? false; // does not release a lost client's slice
+    this.refuseList = options.refuseList ?? false; // refuses slice list
+    this.pausedUntil = 0; // a stall: no packet leaves until then, the backlog follows at once
     this.daxStatusDelay = options.daxStatusDelay ?? 0; // ms until a DAX change takes effect
     this.discoveryPorts = options.discoveryPorts ?? [];
     this.handleBase = options.handleBase ?? 0x10000000;
@@ -77,12 +96,14 @@ class FlexEmulator {
     this.port = this.server.address().port;
     this.udp = dgram.createSocket('udp4'); this.udp.bind(0, '127.0.0.1'); await once(this.udp, 'listening');
     // Another host on the network sending the station's own stream ID.
+    this.udp.on('message', (data, from) => this.registered.push({text: data.toString('latin1'), port: from.port, at: performance.now()}));
+    this.udpPort = this.udp.address().port;
     this.stranger = dgram.createSocket('udp4'); this.stranger.bind(0, '127.0.0.2'); await once(this.stranger, 'listening');
     this.stranger.unref();
     // Unreferenced: a failed test that never reaches stop() cannot keep node --test alive.
     this.discoveryTimer = setInterval(() => this.announce(), 250).unref();
     this.server.unref(); this.udp.unref();
-    this.started = performance.now(); this.sentFrames = 0;
+    this.started = performance.now(); this.startedWall = Date.now(); this.sentFrames = 0;
     this.audioTimer = setInterval(() => this.audio(), 10).unref();
     this.announce();
     return this;
@@ -103,22 +124,29 @@ class FlexEmulator {
     for (const port of this.discoveryPorts) this.udp.send(packet, port, '127.0.0.1');
   }
   audio() {
-    const due = Math.floor((performance.now() - this.started) * 48) - this.sentFrames;
+    if (performance.now() < this.pausedUntil) return;
+    const due = Math.floor((performance.now() - this.started) * 24) - this.sentFrames;
     for (let left = due; left >= 128; left -= 128) {
+      const wall = this.startedWall + this.sentFrames / 24;
       this.sentFrames += 128;
       const owned = [...this.streams.entries()];
       for (const [id, s] of owned) {
         const client = this.clients.get(s.owner), slice = this.sliceOf(s);
         if (!client?.udpPort || !slice) continue;
+        if (this.needRegister && !this.registered.some(r => r.port === client.udpPort && r.text === `client udp_register handle=0x${hex(s.owner)}`)) continue;
         const sender = this.strangerOnly ? this.stranger : this.udp;
-        sender.send(vita({type: 1, stream: id, packetClass: DAX48, count: s.count++, integer: 1, payload: daxPayload(128, slice.amplitude, s.phase)}), client.udpPort, '127.0.0.1');
+        s.sent = (s.sent ?? 0) + 1;
+        const dropped = this.dropEvery && s.sent % this.dropEvery === 0;
+        const payload = this.periodWav ? periodPayload(128, this.periodWav, wall) : daxPayload(128, slice.amplitude, s.phase);
+        const packet = vita({type: 3, stream: id, packetClass: DAX24, count: s.count++, time: FROZEN, payload});
+        if (!dropped) sender.send(packet, client.udpPort, '127.0.0.1');
         s.phase += 128;
         // Interference every 8th packet: another client's stream ID and any stale old-session
         // ID, at a loud amplitude a correctly routed station must never accept.
         if (s.count % 8 === 0) {
-          this.stranger.send(vita({type: 1, stream: id, packetClass: DAX48, payload: daxPayload(128, 0.95, 0)}), client.udpPort, '127.0.0.1');
+          this.stranger.send(vita({type: 3, stream: id, packetClass: DAX24, time: FROZEN, payload: daxPayload(128, 0.95, 0)}), client.udpPort, '127.0.0.1');
           for (const foreign of [...owned.filter(([other]) => other !== id).map(([other]) => other), ...this.staleStreams]) {
-            this.udp.send(vita({type: 1, stream: foreign, packetClass: DAX48, payload: daxPayload(128, 0.95, 0)}), client.udpPort, '127.0.0.1');
+            this.udp.send(vita({type: 3, stream: foreign, packetClass: DAX24, time: FROZEN, payload: daxPayload(128, 0.95, 0)}), client.udpPort, '127.0.0.1');
           }
         }
       }
@@ -156,7 +184,7 @@ class FlexEmulator {
     this.clients.delete(handle);
     // A GUI client's resources leave with its connection.
     for (const [id, s] of [...this.streams]) if (s.owner === handle) { this.streams.delete(id); this.publish('dax', `S${hex(handle)}|stream 0x${hex(id)} removed`); }
-    for (const [i, s] of [...this.slices]) if (s.owner === handle) { this.slices.delete(i); this.publish('slice', `S${hex(handle)}|slice ${i} in_use=0`); }
+    if (!this.keepOnDisconnect) for (const [i, s] of [...this.slices]) if (s.owner === handle) { this.slices.delete(i); this.publish('slice', `S${hex(handle)}|slice ${i} in_use=0`); }
     this.publish('client', `S0|client 0x${hex(handle)} disconnected forced=0`);
   }
   removeExternal(clientId) {
@@ -178,6 +206,10 @@ class FlexEmulator {
       return;
     }
     if (text === 'client start_persistence off' || text === 'ping') return reply(0);
+    if (text === 'slice list' && this.refuseList) return reply('50000016');
+    if (text === 'slice list') return reply(0, [...this.slices.keys()].join(' '));
+    // The form of a real FLEX-6600's reply, recorded 2026-11-06.
+    if (text === 'info') return reply(0, `model="${this.model}",chassis_serial="${this.serial}",name="",callsign="TEST",gps="Not Present",num_slice=${this.maxSlices},num_tx=1,software_ver=4.3.16.42034,ip=127.0.0.1`);
     if (words[0] === 'client' && words[1] === 'gui' && words.length === 3) {
       if (this.guiCount() >= this.maxGui) return reply('50000005');
       client.gui = true; client.clientId = words[2];
@@ -208,11 +240,12 @@ class FlexEmulator {
       if (words[1] === 'remove' || words[1] === 'r') { this.slices.delete(index); this.publish('slice', `S${hex(handle)}|slice ${index} in_use=0`); return reply(0); }
       if (words[1] === 'tune' || words[1] === 't') { const hz = hertz(words[3] ?? ''); if (hz === null) return reply('50000016'); if (this.ignoreTune) return reply(0); s.hz = hz; }
       else if (kv.dax !== undefined && this.daxStatusDelay) {
-        setTimeout(() => { s.dax = Number(kv.dax); this.publish('slice', this.sliceLine(index, s, handle)); }, this.daxStatusDelay);
+        setTimeout(() => { s.dax = Number(kv.dax); this.publish('slice', `S${hex(handle)}|slice ${index} dax=${s.dax} dax_clients=0`); }, this.daxStatusDelay);
         return reply(0);
       }
       else { if (kv.dax !== undefined) s.dax = Number(kv.dax); if (kv.mode !== undefined) s.mode = kv.mode; }
-      this.publish('slice', this.sliceLine(index, s, handle));
+      // A real radio reports only what changed, without the owner.
+      this.publish('slice', kv.dax !== undefined ? `S${hex(handle)}|slice ${index} dax=${s.dax} dax_clients=0` : this.sliceLine(index, s, handle));
       return reply(0);
     }
     if (words[0] === 'stream' && words[1] === 'create' && kv.type === 'dax_rx' && /^[1-8]$/.test(kv.dax_channel ?? '')) {
@@ -220,7 +253,7 @@ class FlexEmulator {
       const s = {owner: handle, channel: Number(kv.dax_channel), count: 0, phase: 0};
       this.streams.set(id, s);
       this.publish('dax', this.streamLine(id, s, handle));
-      return reply(0, '0x' + hex(id));
+      return reply(0, id.toString(16));
     }
     return reply('50000016');
   }
@@ -239,4 +272,4 @@ class FlexEmulator {
   streamsOf(clientId) { const h = this.ownerOf(clientId); return [...this.streams].filter(([, s]) => s.owner === h).map(([id]) => id); }
   commandsOf(clientId) { return this.log.filter(e => e.clientId?.toLowerCase() === clientId.toLowerCase()); }
 }
-module.exports = {FlexEmulator, vita, daxPayload, hertz, mhz};
+module.exports = {FlexEmulator, vita, daxPayload, hertz, mhz, FROZEN};

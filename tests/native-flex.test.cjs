@@ -9,14 +9,15 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises'), os = require('node:os'), path = require('node:path');
-const https = require('node:https'), dgram = require('node:dgram');
+const https = require('node:https'), dgram = require('node:dgram'), net = require('node:net');
 const {once} = require('node:events');
 const {randomUUID} = require('node:crypto');
 const {gunzipSync} = require('node:zlib');
 const selfsigned = require('selfsigned');
 const {chromium} = require('playwright');
 const {server, grant, loginPage, browserPort} = require('./support.cjs');
-const {FlexEmulator, vita, daxPayload} = require('./flex-emulator.cjs');
+const {FlexEmulator, vita, daxPayload, FROZEN} = require('./flex-emulator.cjs');
+const {run: liveCheck} = require('./flex-live-check.cjs');
 
 const FT8 = {'40m': 7074000, '30m': 10136000, '20m': 14074000, '17m': 18100000};
 // Commands that could transmit or disturb other clients are never acceptable here.
@@ -36,9 +37,9 @@ async function waitFor(predicate, label, timeout = 20000) {
   }
 }
 
-async function station(t, {name, native = true, discovery, granted = true}) {
-  // A native station without a loopback discovery port would listen on the LAN's UDP 4992.
-  assert.ok(!native || discovery, 'a native test station needs its loopback discovery port');
+async function station(t, {name, native = true, discovery, granted = true, radioAddress, registerPort}) {
+  // A native station without an address or loopback discovery port would listen on the LAN.
+  assert.ok(!native || discovery || (radioAddress && registerPort), 'a native test station needs loopback ports');
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wstx-flex-'));
   t.after(() => fs.rm(dir, {recursive: true, force: true}));
   const port = await browserPort();
@@ -48,12 +49,13 @@ async function station(t, {name, native = true, discovery, granted = true}) {
   const common = {profile_id: id, revision: 0, display_name: name, callsign: 'HB9BLA', locator: 'JN47AA', endpoint: {bind: `127.0.0.1:${port}`, origin},
     audio: {input_device: null, output_device: null}, control: {mode: 'disabled', endpoint: null, ptt: 'disabled'}};
   const document = native
-    ? {schema_version: 2, ...common, connection_type: 'native_flex', native: {client_id: clientId, rx_antenna: 'ANT1'}}
+    ? {schema_version: 2, ...common, connection_type: 'native_flex', native: {client_id: clientId, rx_antenna: 'ANT1', ...(radioAddress ? {radio_address: radioAddress} : {})}}
     : {schema_version: 1, ...common, connection_type: 'standard'};
   const text = JSON.stringify(document);
   await fs.writeFile(path.join(dir, 'profile.json'), text);
   const env = {WSTX_TLS_CERT: path.join(dir, 'cert.pem'), WSTX_TLS_KEY: path.join(dir, 'key.pem'), WSTX_TOKEN: token,
-    ...(discovery ? {WSTX_FLEX_DISCOVERY: `127.0.0.1:${discovery}`} : {})};
+    ...(discovery ? {WSTX_FLEX_DISCOVERY: `127.0.0.1:${discovery}`} : {}),
+    ...(registerPort ? {WSTX_FLEX_REGISTER_PORT: String(registerPort)} : {})};
   let app = await server(env, ['--profile', dir]);
   t.after(() => app.close());
   let cookie = '';
@@ -170,7 +172,9 @@ test('TC-023-002 persisted intent reconciles restarted radios, changed handles a
   let emulator = await new FlexEmulator({discoveryPorts: ports}).start();
   t.after(() => emulator.stop());
   const [a, b] = await Promise.all(ports.map((discovery, i) => station(t, {name: `Native ${'AB'[i]}`, discovery})));
-  await state(a, 'ready'); await state(b, 'ready');
+  // Stations choosing a DAX channel together may have to separate first.
+  const separated = () => waitFor(async () => { const [x, y] = await Promise.all([a.flex(), b.flex()]); return x.state === 'ready' && y.state === 'ready' && x.slice.dax_channel !== y.slice.dax_channel; }, 'two ready stations on separate channels', 30000);
+  await separated();
   const before = {a: await a.flex(), b: await b.flex()};
   // A's receive job runs through the restart.
   const running = (await a.request('/receive')).body;
@@ -186,7 +190,7 @@ test('TC-023-002 persisted intent reconciles restarted radios, changed handles a
   await restart({handleBase: 0x7a000000, sliceOrder: [7, 6, 5, 4, 3, 2, 1, 0], streamBase: 0x08000000, staleStreams: oldStreams});
   await failure(a, 'transport_lost'); await failure(b, 'transport_lost');
   await waitFor(async () => (await a.request('/receive')).body.audio.state === 'unavailable', 'the running job shows its input unavailable');
-  await state(a, 'ready', 30000); await state(b, 'ready', 30000);
+  await separated();
   for (const s of [a, b]) {
     const v = await s.flex(), own = emulator.slicesOf(s.clientId);
     assert.equal(own.length, 1); assert.equal(v.slice.index, own[0].index);
@@ -230,7 +234,7 @@ test('TC-023-002 persisted intent reconciles restarted radios, changed handles a
   await restart({announceClients: 0});
   const second = await new FlexEmulator({discoveryPorts: ports, serial: '9999-0000-0000-0000', handleBase: 0x20000000}).start();
   t.after(() => second.stop());
-  await state(a, 'ready', 30000); await state(b, 'ready', 30000);
+  await separated();
   assert.equal(emulator.connections, 0, 'no connection to the full radio');
   assert.equal(second.slicesOf(a.clientId).length, 1);
   assert.equal((await a.flex()).radio.serial, '9999-0000-0000-0000');
@@ -263,6 +267,165 @@ test('TC-023-001 another model on the admitted API connects, with its announced 
   assert.equal(v.radio.firmware, '4.1.3.39644');
 });
 
+test('TC-023-001 a saved address reaches a radio no announcement crosses, and the keep-alive holds its stream', {timeout: 60000}, async t => {
+  const emulator = await new FlexEmulator({silent: true, needRegister: true, model: 'FLEX-8400', serial: '0000-1111-6600-2222'}).start();
+  t.after(() => emulator.stop());
+  const s = await station(t, {name: 'Routed', radioAddress: `127.0.0.1:${emulator.port}`, registerPort: emulator.udpPort});
+  const v = await state(s, 'ready');
+  assert.equal(v.radio.serial, '0000-1111-6600-2222', 'the radio told us itself');
+  assert.equal(v.radio.model, 'FLEX-8400'); assert.equal(v.radio.firmware, '4.3.16.42034');
+  assert.equal(emulator.slicesOf(s.clientId).length, 1);
+  await waitFor(async () => (await s.flex()).packets.accepted > 50, 'the stream arrives only after the registration');
+  const client = [...emulator.clients.values()][0];
+  const own = emulator.registered.filter(r => r.port === client.udpPort);
+  assert.ok(own.length >= 1, 'registered from the port the stream goes to');
+  assert.doesNotMatch(emulator.log.map(e => e.command).join('\n'), /127\.0\.0\.1|\bip=/, 'no local address is ever told');
+  const before = own.length;
+  await waitFor(() => emulator.registered.filter(r => r.port === client.udpPort).length > before, 'the keep-alive repeats', 8000);
+});
+
+test('TC-023-001 the live check script decodes real FT8 through the real packet form with some loss and leaves nothing behind', {timeout: 120000}, async t => {
+  const vectors = process.env.WSTX_DECODER_VECTORS;
+  assert.ok(vectors, 'WSTX_DECODER_VECTORS names the verified vector cache');
+  const emulator = await new FlexEmulator({silent: true, dropEvery: 64, periodWav: path.join(vectors, 'ft8-cq', '000000_000000.wav')}).start();
+  t.after(() => emulator.stop());
+  const out = await fs.mkdtemp(path.join(os.tmpdir(), 'wstx-flex-check-test-'));
+  t.after(() => fs.rm(out, {recursive: true, force: true}));
+  const report = await liveCheck({address: `127.0.0.1:${emulator.port}`, seconds: 40, out, registerPort: emulator.udpPort});
+  assert.equal(report.status, 'measured', JSON.stringify(report));
+  assert.deepEqual([report.before.clients, report.before.slices], [0, '']);
+  assert.deepEqual([report.after.clients, report.after.slices], [0, ''], 'released at the end');
+  assert.equal(report.packets.invalid, 0);
+  assert.ok(Math.abs(report.loss_percent - 100 / 64) < 0.5, `loss ${report.loss_percent}`);
+  assert.ok(report.received_ratio > 0.8, `received ${report.received_ratio}`);
+  // Independent oracle: the vector's own manifest text, and a signal on the UTC period.
+  const manifest = JSON.parse(await fs.readFile(path.join(__dirname, '..', 'fixtures', 'decoder', 'independent-vectors', 'manifest.json')));
+  const expected = manifest.vectors.find(v => v.mode === 'ft8' && v.id === 'cq').expected_receive.text;
+  assert.ok(report.texts.includes(expected), JSON.stringify(report.texts));
+  // The vector starts 0.5 s into its period, which FT8 calls DT 0; arrival time may add a little.
+  assert.ok(Math.abs(report.dt_seconds.median) < 0.3, JSON.stringify(report.dt_seconds));
+  assert.equal(typeof report.arrival.jitter_mean_ms, 'number');
+  assert.ok((await fs.readdir(path.join(out, 'windows'))).length > 0, 'the windows are saved for offline analysis');
+  assert.doesNotMatch(emulator.log.map(e => e.command).join('\n'), /xmit|transmit/);
+});
+
+test('TC-023-002 the live check stops when anyone holds the radio or nothing can be verified', {timeout: 60000}, async t => {
+  const out = await fs.mkdtemp(path.join(os.tmpdir(), 'wstx-flex-check-test-'));
+  t.after(() => fs.rm(out, {recursive: true, force: true}));
+  const check = async (options, prepare = () => {}) => {
+    const emulator = await new FlexEmulator({silent: true, ...options}).start();
+    t.after(() => emulator.stop());
+    prepare(emulator);
+    const report = await liveCheck({address: `127.0.0.1:${emulator.port}`, seconds: 1, out, registerPort: emulator.udpPort});
+    assert.equal(emulator.connections, 1, 'only the plain look connected');
+    assert.equal(emulator.log.filter(e => /^client gui|^slice create|^stream create/.test(e.command)).length, 0, 'it became no client and created nothing');
+    return report;
+  };
+  assert.equal((await check({externalClients: [randomUUID()]})).status, 'occupied');
+  assert.equal((await check({externalClients: [randomUUID()], replyFirst: true})).status, 'occupied', 'whatever the order of the replies');
+  assert.equal((await check({}, e => e.createSlice(0, 'ANT1'))).status, 'occupied');
+  assert.equal((await check({refuseList: true})).status, 'unverified');
+});
+
+test('TC-023-002 the live check waits for late replies and reads an 8-digit zero code', {timeout: 90000}, async t => {
+  const out = await fs.mkdtemp(path.join(os.tmpdir(), 'wstx-flex-check-test-'));
+  t.after(() => fs.rm(out, {recursive: true, force: true}));
+  const late = async text => {
+    let connections = 0;
+    const stub = net.createServer(socket => {
+      connections++; socket.on('error', () => {});
+      socket.write('V1.4.0.0\nH00000001\n');
+      socket.once('data', () => { socket.write('R1|00000000|\n'); setTimeout(() => socket.destroyed || socket.write(text), 3000); });
+    }).listen(0, '127.0.0.1');
+    await once(stub, 'listening');
+    t.after(() => stub.close());
+    const report = await liveCheck({address: `127.0.0.1:${stub.address().port}`, seconds: 1, out});
+    assert.equal(connections, 1, 'only the plain look connected');
+    return report;
+  };
+  assert.equal((await late('S0|client 0x00000002 connected client_id=x\nR2|00000000|\nR3|00000000|\n')).status, 'occupied');
+  assert.equal((await late('')).status, 'unverified');
+});
+
+test('TC-023-002 the live check reports a slice left on the radio', {timeout: 60000}, async t => {
+  const emulator = await new FlexEmulator({silent: true, keepOnDisconnect: true}).start();
+  t.after(() => emulator.stop());
+  const out = await fs.mkdtemp(path.join(os.tmpdir(), 'wstx-flex-check-test-'));
+  t.after(() => fs.rm(out, {recursive: true, force: true}));
+  const report = await liveCheck({address: `127.0.0.1:${emulator.port}`, seconds: 2, out, registerPort: emulator.udpPort});
+  assert.equal(report.status, 'not_released', JSON.stringify(report.after));
+});
+
+test('TC-023-002 the live check does not call a run clean when its closing look fails', {timeout: 60000}, async t => {
+  const emulator = await new FlexEmulator({silent: true}).start();
+  t.after(() => emulator.stop());
+  const out = await fs.mkdtemp(path.join(os.tmpdir(), 'wstx-flex-check-test-'));
+  t.after(() => fs.rm(out, {recursive: true, force: true}));
+  // The station never sends slice list, so this refusal reaches only the closing look.
+  const refuse = setInterval(() => { if (emulator.slices.size) { emulator.refuseList = true; clearInterval(refuse); } }, 50);
+  t.after(() => clearInterval(refuse));
+  const report = await liveCheck({address: `127.0.0.1:${emulator.port}`, seconds: 2, out, registerPort: emulator.udpPort});
+  assert.equal(report.after.verified, false);
+  assert.equal(report.status, 'not_released');
+});
+
+test('TC-023-001 the live check reports the loss it saw', {timeout: 60000}, async t => {
+  const emulator = await new FlexEmulator({silent: true, dropEvery: 8}).start();
+  t.after(() => emulator.stop());
+  const out = await fs.mkdtemp(path.join(os.tmpdir(), 'wstx-flex-check-test-'));
+  t.after(() => fs.rm(out, {recursive: true, force: true}));
+  const report = await liveCheck({address: `127.0.0.1:${emulator.port}`, seconds: 4, out, registerPort: emulator.udpPort});
+  assert.equal(report.status, 'measured', JSON.stringify(report.after));
+  assert.ok(Math.abs(report.loss_percent - 12.5) < 2, `loss ${report.loss_percent}`);
+});
+
+test('TC-023-001 a stall above 200 ms with packets missing opens a new epoch', {timeout: 60000}, async t => {
+  const port = await udpPort();
+  const emulator = await new FlexEmulator({discoveryPorts: [port], dropEvery: 2}).start();
+  t.after(() => emulator.stop());
+  const s = await station(t, {name: 'Stalled', discovery: port});
+  await state(s, 'ready');
+  const r0 = (await s.request('/receive')).body;
+  assert.equal((await s.request('/receive/start', 'POST', {v: 1, profile_id: s.id, boot_id: r0.boot_id, generation: r0.generation, profile_revision: 0, mode: 'spectrum'})).status, 202);
+  const running = await waitFor(async () => { const r = (await s.request('/receive')).body; return r.source?.next_frame > 12000 && r; }, 'receive runs');
+  assert.equal(running.audio.loss_epochs, 0, 'known gaps alone open no epoch');
+  emulator.pausedUntil = performance.now() + 400;
+  const after = await waitFor(async () => { const r = (await s.request('/receive')).body; return r.audio.loss_epochs >= 1 && r; }, 'a new epoch after the stall', 5000);
+  assert.equal(after.audio.last_loss, 'native_discontinuity');
+});
+
+test('TC-023-001 lost packets keep the timeline and are counted, and a stall shows as jitter', {timeout: 60000}, async t => {
+  const port = await udpPort();
+  const emulator = await new FlexEmulator({discoveryPorts: [port], dropEvery: 4}).start();
+  t.after(() => emulator.stop());
+  const s = await station(t, {name: 'Lossy', discovery: port});
+  await state(s, 'ready');
+  const r0 = (await s.request('/receive')).body;
+  assert.equal((await s.request('/receive/start', 'POST', {v: 1, profile_id: s.id, boot_id: r0.boot_id, generation: r0.generation, profile_revision: 0, mode: 'spectrum'})).status, 202);
+  const first = await waitFor(async () => { const r = (await s.request('/receive')).body; return r.source?.next_frame > 12000 && {at: Date.now(), frame: r.source.next_frame, packets: (await s.flex()).packets}; }, 'receive runs');
+  await new Promise(r => setTimeout(r, 5000));
+  const r1 = (await s.request('/receive')).body, f = await s.flex();
+  // One packet in four is missing and becomes silence, so time keeps its full rate.
+  const lost = f.packets.lost - first.packets.lost, accepted = f.packets.accepted - first.packets.accepted;
+  assert.ok(Math.abs(lost / (lost + accepted) - 0.25) < 0.03, `lost ${lost} accepted ${accepted}`);
+  const rate = (r1.source.next_frame - first.frame) / ((Date.now() - first.at) / 1000);
+  assert.ok(rate > 12000 * 0.9, `canonical frames/s ${rate}`);
+  assert.equal(r1.audio.loss_epochs, 0, 'a known gap opens no new epoch');
+  const quiet = f.arrival.jitter_max_ms;
+  emulator.pausedUntil = performance.now() + 120;
+  const stalled = await waitFor(async () => { const x = await s.flex(); return x.arrival.jitter_max_ms >= 90 && x; }, async () => `jitter ${JSON.stringify((await s.flex()).arrival)} before ${quiet}`, 5000);
+  assert.ok(stalled.arrival.jitter_mean_ms < stalled.arrival.jitter_max_ms);
+});
+
+test('TC-023-003 a full radio on a saved address is refused visibly', {timeout: 60000}, async t => {
+  const emulator = await new FlexEmulator({silent: true, maxGui: 0}).start();
+  t.after(() => emulator.stop());
+  const s = await station(t, {name: 'Full', radioAddress: `127.0.0.1:${emulator.port}`, registerPort: emulator.udpPort});
+  const v = await failure(s, 'radio_refused');
+  assert.equal(v.radio_code, '50000005');
+  assert.equal(emulator.slices.size, 0);
+});
+
 test('TC-023-001 the VITA measurement is reported and belongs to its session', {timeout: 60000}, async t => {
   const port = await udpPort();
   let emulator = await new FlexEmulator({discoveryPorts: [port]}).start();
@@ -270,9 +433,10 @@ test('TC-023-001 the VITA measurement is reported and belongs to its session', {
   const s = await station(t, {name: 'Measured', discovery: port});
   await state(s, 'ready');
   const measured = await waitFor(async () => { const x = await s.flex(); return x.packets.accepted > 50 && x; }, 'packets');
-  // The emulator stamps integer second 1 and fraction 0, so the offset is the clock since then.
-  assert.equal(measured.vita.tsi, 3);
-  assert.ok(Math.abs(measured.vita.host_minus_radio_ms - (Date.now() - 1000)) < 5000, JSON.stringify(measured.vita));
+  // The emulator stamps what the radio stamped, a frozen filler, so the offset shows it plainly.
+  assert.equal(measured.vita.tsi, 1);
+  assert.ok(Math.abs(measured.vita.host_minus_radio_ms - (Date.now() - FROZEN.integer * 1000)) < 5000, JSON.stringify(measured.vita));
+  assert.equal(typeof measured.arrival.jitter_mean_ms, 'number'); assert.ok(measured.arrival.jitter_max_ms >= measured.arrival.jitter_mean_ms);
   // A new session whose own packets never arrive shows no measurement from the old one.
   await emulator.stop();
   emulator = await new FlexEmulator({discoveryPorts: [port]}).start();
@@ -280,6 +444,7 @@ test('TC-023-001 the VITA measurement is reported and belongs to its session', {
   await failure(s, 'transport_lost');
   const fresh = await state(s, 'ready', 30000);
   assert.deepEqual(fresh.vita, {tsi: null, host_minus_radio_ms: null});
+  assert.deepEqual(fresh.arrival, {jitter_mean_ms: null, jitter_max_ms: null});
 });
 
 test('TC-023-002 a new session goes back to the selected frequency', {timeout: 60000}, async t => {
@@ -475,11 +640,13 @@ test('TC-023-003 capacity, incompatible API and mixed standard/native profiles t
   onlyOwnSlices(emulator);
 });
 
-test('TC-023-001 emulator encoder reproduces the independent narrow48 preparation vector', () => {
-  // The emulator's VITA encoder is checked against the pinned hand-authored bytes, so the
-  // candidate is never compared with an emulator that drifted from the fixture truth.
-  const payload = Buffer.from('3f000000bf0000003f800000bf800000', 'hex');
-  const packet = vita({type: 1, stream: 0x81000001, packetClass: 0x03e4, count: 15, integer: 1, payload});
-  assert.equal(packet.toString('hex'), '18ef000b8100000100001c2d534c03e40000000100000000000000003f000000bf0000003f800000bf800000');
-  assert.equal(daxPayload(2, 0.5, 12).readFloatBE(0), 0.5);
+test('TC-023-001 the emulator sends what a real FLEX-6600 sent', async () => {
+  // Its encoder must reproduce the captured packet byte for byte, so the candidate is never
+  // compared with an emulator that drifted from what the radio does.
+  const real = Buffer.from((await fs.readFile(path.join(__dirname, '..', 'server', 'src', 'flex', 'dax_rx_6600.hex'), 'utf8')).trim(), 'hex');
+  const packet = vita({type: 3, stream: 0x04000008, packetClass: 0x03e3, count: 0, time: FROZEN, payload: real.subarray(28)});
+  assert.equal(packet.toString('hex'), real.toString('hex'));
+  // 1 kHz at 24 kHz: sample 6 is the quarter period's peak, equal in both channels.
+  const tone = daxPayload(7, 0.5, 0);
+  assert.ok(Math.abs(tone.readFloatBE(6 * 8) - 0.5) < 1e-6); assert.equal(tone.readFloatBE(6 * 8), tone.readFloatBE(6 * 8 + 4));
 });

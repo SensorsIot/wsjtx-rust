@@ -121,18 +121,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Some(directory)
         }
-        [command, directory, antenna] if command == "--create-native-flex-profile" => {
+        [command, directory, antenna, address @ ..]
+            if command == "--create-native-flex-profile" && address.len() <= 1 =>
+        {
             let directory = PathBuf::from(directory);
+            let address = match address.first().map(|a| a.to_str()) {
+                Some(None) => {
+                    return Err(startup_error("invalid_runtime_configuration", &directory).into());
+                }
+                other => other.flatten().map(str::to_owned),
+            };
             let Some(antenna) = antenna.to_str() else {
                 return Err(startup_error("invalid_runtime_configuration", &directory).into());
             };
             let (target, antenna) = (directory.clone(), antenna.to_owned());
-            tokio::task::spawn_blocking(move || profile::Store::create_native(&target, &antenna))
+            tokio::task::spawn_blocking(move || {
+                profile::Store::create_native(&target, &antenna, address.as_deref())
+            })
                 .await?
                 .map_err(|code| startup_error(code, &directory))?;
             return Ok(());
         }
-        _ => return Err("invalid_runtime_configuration: expected --profile <directory>, --create-profile <directory> or --create-native-flex-profile <directory> <rx antenna>".into()),
+        _ => return Err("invalid_runtime_configuration: expected --profile <directory>, --create-profile <directory> or --create-native-flex-profile <directory> <rx antenna> [<radio address:port>]".into()),
     };
     let error = |code: &str, legacy: &str| -> Box<dyn std::error::Error> {
         if let Some(path) = &selected {
@@ -342,6 +352,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     config.discovery = value
                         .parse()
                         .map_err(|_| error("invalid_runtime_configuration", ""))?;
+                }
+                if let Ok(value) = env::var("WSTX_FLEX_REGISTER_PORT") {
+                    let port = value
+                        .parse()
+                        .map_err(|_| error("invalid_runtime_configuration", ""))?;
+                    config.register_ports = [port, port];
                 }
                 let session = wstx_rust::flex::Session::start(native.intent(), config)
                     .map_err(|_| error("resource_unavailable", ""))?;

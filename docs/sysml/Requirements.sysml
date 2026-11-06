@@ -247,7 +247,7 @@ package WstxRequirements {
     }
     dependency CL_013_02_to_FR_023 from 'CL-013-02' to 'FR-023';
     requirement 'CL-013-03' {
-        doc /* Each native FlexRadio profile MUST persist its receive intent: its own client identity and receive antenna, and no radio identity (operator decision 2026-11-06 on #22: the station uses whichever radio discovery finds available). On every connection/reconnection the system MUST reconcile that intent with authoritative discovery/status and current runtime handles. A changed/transient slice index MUST NOT redirect a station to another station's slice. Unresolvable associations MUST produce a visible unavailable/conflict state rather than guessing a replacement. */
+        doc /* Each native FlexRadio profile MUST persist its receive intent: its own client identity and receive antenna, and no radio identity (operator decision 2026-11-06 on #22: the station uses whichever radio discovery finds available). Where discovery cannot reach the radio, the profile may also save the radio's address (operator decision 2026-11-06 on #13): a locator for that one radio, not compared with anything. On every connection/reconnection the system MUST reconcile that intent with authoritative discovery/status and current runtime handles. A changed/transient slice index MUST NOT redirect a station to another station's slice. Unresolvable associations MUST produce a visible unavailable/conflict state rather than guessing a replacement. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/flex/session.rs; server/src/profile.rs";
     }
@@ -1747,7 +1747,9 @@ package WstxRequirements {
 
              **Level-2 realization:** tests/native-flex.test.cjs starts the independent loopback
              emulator tests/flex-emulator.cjs (TCP command/status, unicast loopback discovery and
-             VITA-49 DAX float 48 kHz streams; no code shared with the candidate) and four real
+             VITA-49 DAX float 24 kHz streams at the radio's 187.5 packets/s in the form a real
+             FLEX-6600 sent, its encoder checked byte for byte against that captured packet; no code
+             shared with the candidate) and four real
              station servers with disposable schema-2 HTTPS profiles. Each emulated slice carries
              a 1 kHz tone of a slice-specific amplitude, and every eighth packet another client's
              stream ID is sent at amplitude 0.95. Oracle: the emulator's own slice/stream/owner
@@ -1765,12 +1767,25 @@ package WstxRequirements {
              the channel, not the owner. Datagrams with the own stream ID from another address
              (127.0.0.2, amplitude 0.95) are never accepted. No slice command targets another
              client's slice and no transmit, disconnect or persistence command is sent. Rust unit
-             tests check the pinned independent narrow48 vector field by field, its negative cases,
-             documented control lines and the 4096-byte line bound; the emulator encoder reproduces
-             the same vector bytes. Another model on the admitted API connects and its announced
+             tests check the captured packet and the pinned independent vector field by field, their
+             negative cases, documented control lines and the 4096-byte line bound. The live check
+             script tests/flex-live-check.cjs, run against the emulator streaming the verified FT8
+             vector on the UTC period at 24 kHz with one packet in 64 lost, measures that loss, reports jitter, shows the
+             vector's expected text from the station's decoder with DT within 0.3 s from arrival
+             anchoring, saves the windows and leaves no slice or client. It stops as occupied with a
+             client or slice present, whichever way round the replies come, as unverified when a
+             reply is refused, reports not_released for a slice left behind or a closing look it cannot
+             verify, and reports the loss it saw. One packet in four
+             lost is counted at 25% and filled with silence, with the canonical frame rate kept and no new epoch, and a
+             120 ms stall reads as at least 90 ms of jitter; a 400 ms stall with packets missing opens a
+             new epoch (native_discontinuity). Another model on the admitted API connects and its announced
              model, serial and firmware are shown. GET /native-flex reports the packet's timestamp
              kind and this host's clock minus its time, which a new session without own packets
-             shows as null. */
+             shows as null. A saved address connects with nothing announced and no discovery
+             listener; model, serial and firmware then come from the radio's info reply; the stream
+             arrives only after client udp_register from the stream's port, which repeats, and no
+             command names a local address. A full radio on a saved address reports
+             radio_refused. */
         attribute automation : AutomationState = AutomationState::implemented;
         attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
         objective {
