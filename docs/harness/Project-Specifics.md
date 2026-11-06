@@ -295,8 +295,8 @@ itself. Andreas pushes its reviewed tip to the issue branch and hands it in on H
 The `queue:` section of `.harness/config.yaml` names the tools the gate needs (Node 24
 or later, npm, Cargo, rustc, `gh`, the MSVC linker), 20 GB free on every drive the gate uses, the
 input environment of the [HB9BLA handover](HB9BLA-HANDOFF.md) and the `npm ci` setup of
-the queue's worktree. Before a long build or test run outside the gate, an agent runs
-`python harness/core/tools/merge_queue.py busy --wait`.
+the queue's worktree. A long build or test run outside the gate does not wait for `busy`;
+it runs beside the gate under the priorities below and reruns a timing-sensitive failure once.
 
 Priorities on HB9BLA ([harness#28](https://github.com/SensorsIot/harness/issues/28)): the
 station task `WSTX Rust Station HB9BLA` runs at High, above the gate; the gate runs at

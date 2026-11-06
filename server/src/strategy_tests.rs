@@ -7,7 +7,7 @@
 // Integration cases use the actual station router, contact engine and #9 transmit owner
 // on the recording hardware double (virtual UTC; no audio, PTT or radio).
 use super::*;
-use crate::automation_tests::{at_even, publish, run_state, transmit_own_period};
+use crate::automation_tests::{at_even, not_keyed_in, publish, run_state, transmit_own_period};
 use crate::contact_http_tests::{period_text, record};
 use crate::dxcc::Logged;
 use crate::mcp_tests::{Mcp, station};
@@ -2028,21 +2028,6 @@ async fn browser_command(f: &Mcp, action: &str, extra: Value) -> Value {
 
 /// Moves the bench to 30 ms before the own period `own` and ticks until the transmitter
 /// is disarmed (the Tx watchdog refuses to key it).
-async fn not_keyed_in(f: &Mcp, own: i64) {
-    let service = &f.state.recording.transmit.get().unwrap().service;
-    f.bench
-        .offset
-        .fetch_add(own - 30 - f.bench.now_utc_ms(), Ordering::SeqCst);
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while service.view().arm_state == wstx_rust::transmit::service::ArmState::Armed {
-        assert!(Instant::now() < deadline, "{:?}", service.view());
-        f.tick();
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    assert!(!service.view().transmitting);
-    f.tick();
-}
-
 // Proves: TC-039-005
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_005_automation_never_resets_the_tx_watchdog() {
@@ -2157,17 +2142,16 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
         "{v}"
     );
     assert!(!armed());
-    // (1) Limit 1 from the browser; an MCP Enable Tx calls CQ, which counts 1.
+    // (1) Limit 1 from the browser; an MCP Enable Tx calls CQ, which is Rep 1.
     browser_watchdog(&f, 1).await;
     assert!(!spent());
     let v = mcp_contact(&f, "enable_tx", json!({"enabled":true,"safety_revision":3})).await;
     assert_eq!(v["status"], 202, "{v}");
     transmit_own_period(&f, e + 15_000).await;
-    assert!(spent());
-    // MCP commands never reset it, and MCP may not lengthen it.
+    assert!(!spent(), "only a stop spends it");
+    // MCP commands never restart it, and MCP may not lengthen it.
     let v = mcp_contact(&f, "set_frequency", json!({"rx_hz":1200,"tx_hz":null})).await;
     assert_eq!(v["status"], 202, "{v}");
-    assert!(spent(), "an MCP command is no operator action");
     let v = mcp_contact(
         &f,
         "set_watchdogs",
@@ -2179,6 +2163,7 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
     let keys = f.keys();
     not_keyed_in(&f, e + 45_000).await;
     assert_eq!(f.keys(), keys);
+    assert!(spent());
     // A station calling me after the stop is no human: the watchdog stays spent.
     publish(&f, e + 30_000, &[("HB9BLA DL1XYZ JO62", 900.0, Some(-7.0))]);
     assert!(spent(), "an answer after the stop does not re-open arming");
@@ -2222,8 +2207,17 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
     );
     assert!(!armed());
     assert_eq!(f.keys(), keys);
-    // (3) A browser action resets it: MCP may arm again.
+    // (3) Another browser request ends nothing; a browser Enable Tx does: MCP may arm again.
     browser_watchdog(&f, 1).await;
+    assert!(spent());
+    let c = f.browser("GET", "/contact", None).await.json;
+    let body = f.command(
+        c["contact_revision"].as_u64().unwrap(),
+        "enable_tx",
+        json!({"enabled":true,"safety_revision":3}),
+    );
+    let r = f.browser("POST", "/contact/command", Some(body)).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.json);
     assert!(!spent());
     let v = mcp_contact(&f, "enable_tx", json!({"enabled":true,"safety_revision":3})).await;
     assert_eq!(v["status"], 202, "{v}");

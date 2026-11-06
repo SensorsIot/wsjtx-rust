@@ -57,13 +57,13 @@ package WstxMcp {
             orders stations; it has no contact or time limit and never stops no_answer. An
             MCP client cannot select one: the configuration key strategy true is refused
             operator_required, PUT /strategy has no MCP tool. For every run
-            (D6 included) the Tx watchdog counts unanswered own transmissions; only an
-            answer or a human action in the browser resets it, never the run's commands,
+            (D6 included) the Tx watchdog limits the repetitions of one message; only an
+            Enable Tx or a strategy selection from the browser ends its stop, never the run's commands,
             an MCP request (including starting or restarting a run) or a UDP command
             (WstxStrategy::WatchdogFromOperator, coordinator default for the operator's
-            rule, recorded on #39/#12, 2026-11-02, amending D5/D7; count form 2026-11-04);
-            an MCP Enable Tx or run arm is refused tx_watchdog when the count is used up
-            or no browser action was seen this boot; set_watchdogs through MCP is refused operator_required (only the
+            rule, recorded on #39/#12, 2026-11-02, amending D5/D7; repetition form 2026-11-06);
+            an MCP Enable Tx or run arm is refused tx_watchdog after a stop
+            or when no browser action was seen this boot; set_watchdogs through MCP is refused operator_required (only the
             browser sets the watchdog); a watchdog disarm stops tx_watchdog. */
 
     attribute def McpEndpoint {
@@ -262,7 +262,7 @@ package WstxMcp {
              WstxStrategy::Pounce instead of CandidateSelection, its completion and no_answer
              rules, and stops band_changed on a station band change; a disarm by the Tx watchdog stops
              tx_watchdog for every run; a refused enable_tx with code tx_watchdog stops
-             tx_watchdog. Run commands are automatic: they never reset the Tx watchdog. */
+             tx_watchdog. Run commands are automatic: they never end a Tx watchdog stop. */
     }
     attribute def AutomationIndicator {
         doc /* Browser station bar, read-only, beside the transmit state: while a run is

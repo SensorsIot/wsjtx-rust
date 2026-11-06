@@ -530,20 +530,20 @@ package WstxStrategy {
         doc /* At least 3 characters with a digit and a letter, not ending /R (rover). */
     }
     attribute def WatchdogFromOperator {
-        doc /* The Tx watchdog counts unanswered own transmissions (WstxContact::TxWatchdog,
-             operator redefinition 2026-11-04) and is never paused or reset by
-             automation. Only an answer (a decoded message addressed to my call from the
-             partner, or from anyone to my CQ) or a human action in the browser resets
-             it: an Enable Tx, any accepted ContactCommand or a strategy selection sent by the
-             browser (principal browser, WstxProfiles::RequestPrincipalRule: read from
-             the credential at the auth boundary, so an MCP client is never one on any
-             route, #58). Never operator actions: commands of a run (select_row,
+        doc /* The Tx watchdog limits the repetitions of one message
+             (WstxContact::TxWatchdog, operator rule 2026-11-06) and is never paused by
+             automation; a new message or station restarts the repetition count, so it
+             bounds a run per message, not in total (max_run_minutes bounds a policy run; a
+             strategy run has no time limit but its grant). A
+             human action in the browser is an accepted ContactCommand or a strategy selection
+             sent by the browser (principal browser, WstxProfiles::RequestPrincipalRule:
+             read from the credential at the auth boundary, so an MCP client is never one
+             on any route, #58). Only an Enable Tx or a strategy selection from the browser ends
+             a watchdog stop. Never operator actions: commands of a run (select_row,
              set_frequency, enable_tx, cancel, disarm), any MCP request (also starting or
              restarting a run) and any UDP command (Reply, Free Text). Such an enable_tx
-             arms with the count kept and is refused tx_watchdog when the limit is used
-             up or no browser action was seen this boot (until a human acts in the
-             browser; after a watchdog stop an answer no longer resets it); a run selecting a new station does not reset
-             it; only the browser may change the watchdog setting (set_watchdogs from any
+             is refused tx_watchdog after a watchdog stop or when no browser action was
+             seen this boot; only the browser may change the watchdog setting (set_watchdogs from any
              other source is refused operator_required). At the limit Enable Tx goes off
              without a halt and a run stops tx_watchdog.
              Halt from any source stops the run; grant, clock, period and safety-revision

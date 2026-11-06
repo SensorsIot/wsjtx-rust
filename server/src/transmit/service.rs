@@ -285,12 +285,13 @@ pub struct Core<H: Hardware> {
     refusal: Option<TransmitRefusal>,
     outcomes: VecDeque<Outcome>,
     outcome_sequence: u64,
-    /// WstxTransmit::TransmitWatchdog: the limit of consecutive unanswered own
-    /// transmissions (#39, 2026-11-04).
+    /// WstxTransmit::TransmitWatchdog: the limit of repetitions of one message (#39,
+    /// 2026-11-06).
     tx_calls: u32,
     tune_seconds: u32,
-    /// Own transmissions started since the last answer or operator action.
-    unanswered: u32,
+    /// The contact dialogue's Rep of the message due next, as its consumer reports it
+    /// (no count of its own): only tx_remaining_calls reads it.
+    tx_repetitions: u32,
     /// #39: an operator action (operator arm or accepted browser activity) was seen this
     /// boot; automation never sets it.
     operator_seen: bool,
@@ -379,7 +380,7 @@ impl<H: Hardware> Core<H> {
             outcome_sequence: 0,
             tx_calls: 6,
             tune_seconds: 90,
-            unanswered: 0,
+            tx_repetitions: 0,
             operator_seen: false,
             tx_expired: false,
             ever_keyed: false,
@@ -509,42 +510,51 @@ impl<H: Hardware> Core<H> {
         self.armed_revision = Some(safety_revision);
         self.refusal = None;
         self.tx_expired = false;
-        self.unanswered = 0;
+        self.tx_repetitions = 0;
         self.operator_seen = true;
         Ok(())
     }
-    /// #39 (WstxStrategy::WatchdogFromOperator): an arm requested by automation. The
-    /// unanswered count is kept; automation never resets the Tx watchdog.
+    /// #39 (WstxStrategy::WatchdogFromOperator): an arm requested by automation records
+    /// no operator action.
     pub fn arm_automatic(&mut self, safety_revision: u64) -> Result<(), TransmitRefusal> {
-        let (unanswered, seen) = (self.unanswered, self.operator_seen);
+        let seen = self.operator_seen;
         self.arm(safety_revision)?;
-        self.unanswered = unanswered;
         self.operator_seen = seen;
         Ok(())
     }
-    /// True when no operator action is recorded this boot or the Tx watchdog's count of
-    /// unanswered transmissions is used up: automation may then not arm.
+    /// True when no operator action is recorded this boot or the Tx watchdog has stopped
+    /// the station: automation may then not arm.
     pub fn watchdog_spent(&self) -> bool {
-        !self.operator_seen || self.unanswered >= self.tx_calls
+        !self.operator_seen || self.tx_expired
     }
     /// Operator or contact disarm; no new request is sent.
     pub fn disarm(&mut self, cause: DisarmCause) {
         self.disarm_with(cause);
         self.cancel_unstarted(OutcomeKind::Refused, Some(TransmitRefusal::NotArmed));
     }
-    /// Accepted operator activity in the browser (WstxContact::TxWatchdog): a human is
-    /// present, so the unanswered count starts again.
+    /// Accepted operator activity in the browser: a human was seen this boot. It changes
+    /// nothing of the Tx watchdog's limit, repetitions or stop (WstxContact::TxWatchdog).
     pub fn activity(&mut self) {
         self.operator_seen = true;
-        self.unanswered = 0;
     }
-    /// The contact consumer decoded an answer to my transmission (a message addressed
-    /// to my call from the current partner, or from anyone while no partner is set).
-    /// After a watchdog stop only an operator action restarts it (#39 review).
-    pub fn answered(&mut self) {
-        if !self.tx_expired {
-            self.unanswered = 0;
-        }
+    /// A browser Auto start: the explicit operator decision to transmit again after a stop.
+    pub fn operator_restart(&mut self) {
+        self.operator_seen = true;
+        self.tx_expired = false;
+    }
+    /// The limit of repetitions of one message (WstxContact::TxWatchdog).
+    pub fn tx_limit(&self) -> u32 {
+        self.tx_calls
+    }
+    /// The contact consumer's Rep of the message due next, for tx_remaining_calls.
+    pub fn report_tx_repetitions(&mut self, repetitions: u32) {
+        self.tx_repetitions = repetitions;
+    }
+    /// The next send would exceed the limit: Enable Tx goes off without a halt; a keyed
+    /// or started transmission finishes.
+    pub fn watchdog_stop(&mut self) {
+        self.tx_expired = true;
+        self.disarm(DisarmCause::TxWatchdog);
     }
     pub fn set_watchdogs(
         &mut self,
@@ -866,13 +876,6 @@ impl<H: Hardware> Core<H> {
                 return;
             }
             if !job.keyed {
-                // Tx watchdog (#39): the next transmission is never keyed after the
-                // limit of unanswered ones; Enable Tx goes off without a halt.
-                if self.arm == ArmState::Armed && self.unanswered >= self.tx_calls {
-                    self.tx_expired = true;
-                    self.disarm(DisarmCause::TxWatchdog);
-                    return;
-                }
                 // Key at the period start (audio delay before the first sample), or at
                 // once for a late admitted start; output is opened before PTT.
                 if let Err(e) = plan_start(mode, now, self.hardware.clock(), period, SAMPLE_RATE_HZ)
@@ -947,7 +950,6 @@ impl<H: Hardware> Core<H> {
                 self.fail_current(failure, DisarmCause::DeviceLost);
                 return;
             }
-            self.unanswered = self.unanswered.saturating_add(1);
             self.last_text = Some(text);
             self.last_period = Some(period);
             let remaining = (job_len - start.skipped_samples as usize) as i64 * 1000
@@ -1081,7 +1083,7 @@ impl<H: Hardware> Core<H> {
                     .map(|j| j.prepared.request.request_sequence)
             });
         let tx_remaining_calls = match self.arm {
-            ArmState::Armed => self.tx_calls.saturating_sub(self.unanswered),
+            ArmState::Armed => self.tx_calls.saturating_sub(self.tx_repetitions),
             _ => 0,
         };
         View {

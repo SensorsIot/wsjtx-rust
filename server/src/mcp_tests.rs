@@ -1395,6 +1395,7 @@ async fn tc_020_004_mcp_never_resets_the_tx_watchdog_on_any_route() {
         .await;
     assert_eq!(v["status"], 202, "{v}");
     crate::automation_tests::transmit_own_period(&f, e + 15_000).await;
+    crate::automation_tests::not_keyed_in(&f, e + 45_000).await;
     assert!(spent());
     // MCP-principal commands, through the tool and straight to the browser route, are
     // accepted but never reset it.

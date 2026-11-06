@@ -368,7 +368,7 @@ async fn live_native_selection_tls_thin_and_off() {
     assert!(released);
 }
 
-// Proves: CL-022-03; TC-022-007. Confirmation alone has zero native effects.
+// Proves: CL-022-03; TC-022-009. Confirmation alone has zero native effects.
 #[tokio::test]
 async fn live_native_selection_commission_has_zero_native_effects() {
     crate::auth_tests::commission_zero_native_io_case().await;
