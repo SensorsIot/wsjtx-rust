@@ -1505,8 +1505,8 @@ impl Engine {
                 tx_calls,
                 tune_seconds,
             } => {
-                // #39: only the operator in the browser may change the watchdogs; an MCP,
-                // UDP or automation source could otherwise lengthen a spent watchdog.
+                // #39: only the operator in the browser may change the watchdogs; an MCP
+                // or automation source could otherwise lengthen a spent watchdog.
                 if ctx.automatic {
                     return Err("operator_required");
                 }

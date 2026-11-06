@@ -1,11 +1,12 @@
 #![forbid(unsafe_code)]
 //! WstxUdp::UdpWire: the WSJT-X NetworkMessage datagram format (Network/NetworkMessage.hpp),
-//! Qt QDataStream big-endian. Pure encoding and parsing; no socket, station or clock.
+//! Qt QDataStream big-endian. Pure encoding and the Heartbeat header read; no socket, station
+//! or clock. Send-only: the station parses no inbound command.
 
 pub const MAGIC: u32 = 0xADBC_CBDA;
-/// Header schema of outbound datagrams before a target's own datagram negotiates 3.
+/// Header schema of outbound datagrams before a target's own Heartbeat negotiates 3.
 pub const SCHEMA_OUT: u32 = 2;
-/// The maximum schema this station reads and advertises in Heartbeat.
+/// The maximum schema this station accepts from a target and advertises in Heartbeat.
 pub const SCHEMA_MAX: u32 = 3;
 pub const INBOUND_BYTES_MAX: usize = 4096;
 /// Qt QDate::toJulianDay of 1970-01-01.
@@ -17,17 +18,9 @@ pub mod kind {
     pub const STATUS: u32 = 1;
     pub const DECODE: u32 = 2;
     pub const CLEAR: u32 = 3;
-    pub const REPLY: u32 = 4;
     pub const QSO_LOGGED: u32 = 5;
     pub const CLOSE: u32 = 6;
-    pub const REPLAY: u32 = 7;
-    pub const HALT_TX: u32 = 8;
-    pub const FREE_TEXT: u32 = 9;
-    pub const LOCATION: u32 = 11;
     pub const LOGGED_ADIF: u32 = 12;
-    pub const HIGHLIGHT_CALLSIGN: u32 = 13;
-    pub const SWITCH_CONFIGURATION: u32 = 14;
-    pub const CONFIGURE: u32 = 15;
 }
 
 /// A QDateTime in UTC (timespec 1) from Unix milliseconds.
@@ -235,189 +228,31 @@ pub fn logged_adif(schema: u32, id: &str, adif: &str) -> Vec<u8> {
         .finish()
 }
 
-/// A QColor read from the wire: None is an invalid colour (spec 0) or an unsupported spec.
-pub type Color = Option<(u8, u8, u8)>;
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Inbound {
-    Heartbeat {
-        max_schema: u32,
-        version: String,
-        revision: String,
-    },
-    Clear {
-        window: u8,
-    },
-    Reply {
-        time_ms: u32,
-        snr: i32,
-        delta_time: f64,
-        delta_frequency: u32,
-        mode: String,
-        message: String,
-        low_confidence: bool,
-        modifiers: u8,
-    },
-    Close,
-    Replay,
-    HaltTx {
-        auto_only: bool,
-    },
-    FreeText {
-        text: String,
-        send: bool,
-    },
-    Location {
-        location: String,
-    },
-    Highlight {
-        call: String,
-        background: Color,
-        foreground: Color,
-        last_only: bool,
-    },
-    SwitchConfiguration,
-    Configure,
-    /// A type this station does not handle (protocol rule 1: ignored silently).
-    Other(u32),
-}
-#[derive(Clone, Debug, PartialEq)]
-pub struct Datagram {
+/// The header of a target's Heartbeat: all this station reads (schema negotiation).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Heartbeat {
     pub schema: u32,
     pub id: String,
-    pub message: Inbound,
 }
-
-struct Reader<'a> {
-    bytes: &'a [u8],
-    at: usize,
-}
-impl<'a> Reader<'a> {
-    fn take(&mut self, n: usize) -> Option<&'a [u8]> {
-        let end = self.at.checked_add(n)?;
-        let slice = self.bytes.get(self.at..end)?;
-        self.at = end;
-        Some(slice)
-    }
-    fn done(&self) -> bool {
-        self.at >= self.bytes.len()
-    }
-    fn u8(&mut self) -> Option<u8> {
-        Some(self.take(1)?[0])
-    }
-    fn bool(&mut self) -> Option<bool> {
-        self.u8().map(|b| b != 0)
-    }
-    fn u16(&mut self) -> Option<u16> {
-        Some(u16::from_be_bytes(self.take(2)?.try_into().ok()?))
-    }
-    fn u32(&mut self) -> Option<u32> {
-        Some(u32::from_be_bytes(self.take(4)?.try_into().ok()?))
-    }
-    fn i32(&mut self) -> Option<i32> {
-        Some(i32::from_be_bytes(self.take(4)?.try_into().ok()?))
-    }
-    fn f64(&mut self) -> Option<f64> {
-        Some(f64::from_be_bytes(self.take(8)?.try_into().ok()?))
-    }
-    /// utf8: 0xFFFFFFFF is the null string (read as empty); invalid UTF-8 is malformed.
-    fn utf8(&mut self) -> Option<String> {
-        let n = self.u32()?;
-        if n == u32::MAX {
-            return Some(String::new());
-        }
-        let bytes = self.take(usize::try_from(n).ok()?)?;
-        String::from_utf8(bytes.to_vec()).ok()
-    }
-    /// QColor (Qt 5): qint8 spec, quint16 alpha, red, green, blue, pad.
-    fn color(&mut self) -> Option<Color> {
-        let spec = self.u8()?;
-        let _alpha = self.u16()?;
-        let (r, g, b) = (self.u16()?, self.u16()?, self.u16()?);
-        let _pad = self.u16()?;
-        Some((spec == 1).then_some(((r >> 8) as u8, (g >> 8) as u8, (b >> 8) as u8)))
-    }
-}
-
-/// Parses one inbound datagram. None: refused (size, magic, schema other than 2 or 3, a
-/// malformed header or a truncated or malformed field of a handled type). Trailing bytes
-/// after the known fields are ignored (protocol rule 2).
-pub fn parse(bytes: &[u8]) -> Option<Datagram> {
+/// None: not a Heartbeat with a valid header (size, magic, schema other than 2 or 3, an empty,
+/// null, truncated or invalid UTF-8 id) or any other message type. The Heartbeat's fields after
+/// the header are not read (protocol rule 2 allows more of them).
+pub fn heartbeat_of(bytes: &[u8]) -> Option<Heartbeat> {
     if bytes.len() > INBOUND_BYTES_MAX {
         return None;
     }
-    let mut r = Reader { bytes, at: 0 };
-    if r.u32()? != MAGIC {
+    let field = |at: usize| Some(u32::from_be_bytes(bytes.get(at..at + 4)?.try_into().ok()?));
+    let schema = field(4)?;
+    if field(0)? != MAGIC
+        || !(SCHEMA_OUT..=SCHEMA_MAX).contains(&schema)
+        || field(8)? != kind::HEARTBEAT
+    {
         return None;
     }
-    let schema = r.u32()?;
-    if !(SCHEMA_OUT..=SCHEMA_MAX).contains(&schema) {
-        return None;
-    }
-    let kind = r.u32()?;
-    let id = r.utf8()?;
-    if id.is_empty() {
-        return None;
-    }
-    let message = match kind {
-        kind::HEARTBEAT => {
-            if r.done() {
-                Inbound::Heartbeat {
-                    max_schema: 2,
-                    version: String::new(),
-                    revision: String::new(),
-                }
-            } else {
-                Inbound::Heartbeat {
-                    max_schema: r.u32()?,
-                    version: r.utf8()?,
-                    revision: r.utf8()?,
-                }
-            }
-        }
-        kind::CLEAR => {
-            let window = if r.done() { 0 } else { r.u8()? };
-            if window > 2 {
-                return None;
-            }
-            Inbound::Clear { window }
-        }
-        kind::REPLY => Inbound::Reply {
-            time_ms: r.u32()?,
-            snr: r.i32()?,
-            delta_time: r.f64()?,
-            delta_frequency: r.u32()?,
-            mode: r.utf8()?,
-            message: r.utf8()?,
-            low_confidence: r.bool()?,
-            modifiers: if r.done() { 0 } else { r.u8()? },
-        },
-        kind::CLOSE => Inbound::Close,
-        kind::REPLAY => Inbound::Replay,
-        // Halt Tx acts even without its Auto Tx Only field (WstxUdp::InboundRules).
-        kind::HALT_TX => Inbound::HaltTx {
-            auto_only: r.bool().unwrap_or(false),
-        },
-        kind::FREE_TEXT => Inbound::FreeText {
-            text: r.utf8()?,
-            send: r.bool()?,
-        },
-        kind::LOCATION => Inbound::Location {
-            location: r.utf8()?,
-        },
-        kind::HIGHLIGHT_CALLSIGN => Inbound::Highlight {
-            call: r.utf8()?,
-            background: r.color()?,
-            foreground: r.color()?,
-            last_only: r.bool()?,
-        },
-        kind::SWITCH_CONFIGURATION => Inbound::SwitchConfiguration,
-        kind::CONFIGURE => Inbound::Configure,
-        other => Inbound::Other(other),
-    };
-    Some(Datagram {
+    let end = usize::try_from(field(12)?).ok()?.checked_add(16)?;
+    let id = std::str::from_utf8(bytes.get(16..end)?).ok()?;
+    (!id.is_empty()).then(|| Heartbeat {
         schema,
-        id,
-        message,
+        id: id.to_owned(),
     })
 }

@@ -430,8 +430,8 @@ package WstxStrategy {
              read from the credential at the auth boundary, so an MCP client is never one
              on any route, #58). Only an Enable Tx or an Auto start from the browser ends
              a watchdog stop. Never operator actions: commands of a run (select_row,
-             set_frequency, enable_tx, cancel, disarm), any MCP request (also starting or
-             restarting a run) and any UDP command (Reply, Free Text). Such an enable_tx
+             set_frequency, enable_tx, cancel, disarm) and any MCP request (also starting or
+             restarting a run). Such an enable_tx
              is refused tx_watchdog after a watchdog stop or when no browser action was
              seen this boot; only the browser may change the watchdog setting (set_watchdogs from any
              other source is refused operator_required). At the limit Enable Tx goes off

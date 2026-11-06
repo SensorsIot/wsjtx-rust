@@ -57,8 +57,8 @@ package WstxMcp {
             candidates (Auto Call), call CQ and answer callers (Auto CQ) or alternate; such
             a run skips an unanswered station instead of stopping no_answer. For every run
             (D6 included) the Tx watchdog limits the repetitions of one message; only an
-            Enable Tx or Auto start from the browser ends its stop, never the run's commands,
-            an MCP request (including starting or restarting a run) or a UDP command
+            Enable Tx or Auto start from the browser ends its stop, never the run's commands
+            or an MCP request (including starting or restarting a run)
             (WstxStrategy::WatchdogFromOperator, coordinator default for the operator's
             rule, recorded on #39/#12, 2026-11-02, amending D5/D7; repetition form 2026-11-06);
             an MCP Enable Tx or run arm is refused tx_watchdog after a stop
