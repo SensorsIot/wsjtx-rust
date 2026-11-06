@@ -264,8 +264,9 @@ package WstxRadioIO {
              physicalUSB SEND/CW/RTTY OFF or independentlyverifiedinhibit beforeopen.
              #44 CL-044-09: every setting change is read, compare, write, verify: read
              first, no write when the value already fits, write only with the radio in
-             RX, ACK, then readback (the transmit switch is a keying action, not a
-             setting). Menu/AGC exchanges run under the same single lease. */
+             RX (checked per write for 16 12 and 1A 05, once per selection for the 05, 06
+             and 1A 06 of its receive setup), ACK, then readback (the transmit switch is
+             a keying action, not a setting). Menu/AGC exchanges run under the same single lease. */
     }
     action capture : CaptureAudio;
     action convertReceive : ConvertAndReceive;

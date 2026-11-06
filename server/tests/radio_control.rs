@@ -800,6 +800,47 @@ fn setters_read_first_and_send_no_write_when_the_value_fits() {
     }
 }
 
+// Proves: CL-044-09; TC-044-012. A setter whose read is refused (FA) sends no write and
+// keeps the connection.
+#[test]
+fn setter_with_a_refused_read_sends_no_write() {
+    for (operation, read) in [
+        (
+            Operation::SetFrequency {
+                frequency_hz: 14_074_000,
+            },
+            vec![3],
+        ),
+        (
+            Operation::SetMode {
+                mode: Sideband::Usb,
+                filter: 2,
+            },
+            vec![4],
+        ),
+        (
+            Operation::SetData {
+                data: true,
+                filter: 2,
+            },
+            vec![0x1a, 6],
+        ),
+    ] {
+        let (executor, state) = service(vec![Action::Bytes(NG.to_vec())]);
+        assert_eq!(
+            executor.execute(req(operation.clone())),
+            Err(Error::Rejected)
+        );
+        let script = state.lock().unwrap();
+        let mut expected = vec![0xfe, 0xfe, 0x94, 0xe0];
+        expected.extend(read);
+        expected.push(0xfd);
+        assert_eq!(script.writes[1..], [expected], "{operation:?}");
+        assert_eq!(script.closed, 0, "{operation:?}");
+        assert_eq!(executor.snapshot().unwrap().state, State::Ready);
+    }
+}
+
 // Proves: CL-044-09; TC-044-012. A menu (1A 05) write whose item already fits sends
 // only its read; a differing one is read, RX-checked, written and read back.
 #[test]
