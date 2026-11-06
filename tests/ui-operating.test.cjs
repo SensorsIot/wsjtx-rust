@@ -1960,7 +1960,7 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
   assert.equal(saved.status,201);
   state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
-  Object.assign(state.job,{first_sequence:0,next_sequence:6,available_count:6,latest_decode:{id:1,first_sequence:0,next_sequence:6,period_start_utc:period,complete:true}});
+  Object.assign(state.job,{first_sequence:0,next_sequence:4,available_count:4,latest_decode:{id:1,first_sequence:0,next_sequence:4,period_start_utc:period,complete:true}});
   await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
   await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
   await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:4,available_count:4,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
@@ -2146,7 +2146,7 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
   state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
-  Object.assign(state.job,{first_sequence:0,next_sequence:6,available_count:6,latest_decode:{id:1,first_sequence:0,next_sequence:6,period_start_utc:period,complete:true}});
+  Object.assign(state.job,{first_sequence:0,next_sequence:4,available_count:4,latest_decode:{id:1,first_sequence:0,next_sequence:4,period_start_utc:period,complete:true}});
   await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
   await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
   await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:4,available_count:4,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
@@ -3105,7 +3105,7 @@ test('TC-024-004 Tx5 free text and <MYCALL> rows in the operating screen',{timeo
       record(2,'<...> PJ4/K1ABC',nonstandard(call('hash',null,12),'PJ4/K1ABC',false),1200,4),
       record(3,'<HB9BLA> K1ABC -12',standard(call('hash','HB9BLA',22),call('call','K1ABC')),1300,1),
     ];
-    Object.assign(state.job,{first_sequence:0,next_sequence:6,available_count:6,latest_decode:{id:1,first_sequence:0,next_sequence:6,period_start_utc:period,complete:true}});
+    Object.assign(state.job,{first_sequence:0,next_sequence:4,available_count:4,latest_decode:{id:1,first_sequence:0,next_sequence:4,period_start_utc:period,complete:true}});
     await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
     await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact,settings})}));
