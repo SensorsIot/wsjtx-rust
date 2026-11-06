@@ -5,7 +5,9 @@
 //! steps the level up until the radio's ALC first rises, backs off one step, stores it
 //! and stops Tune. A manual level exists only for a radio that reports no ALC over CI-V.
 //! Meters are read under the transmit hold (`Actor::read_meters`); the state is pushed to
-//! the WebSocket peers as `radio.tx_level` on change (no polling).
+//! the WebSocket peers as `radio.tx_level` on change (no polling). In normal operation
+//! (CL-044-14) one burst in the middle of each transmission corrects the level by at most
+//! one step for the next transmission and reports persistent trouble in the error field.
 use crate::recording::Recording;
 use crate::*;
 use axum::extract::RawQuery;
@@ -77,6 +79,68 @@ pub(crate) fn assistant_step(level: i32, meters: &Meters, limit: Option<u8>) -> 
     }
 }
 
+/// CL-044-14 ALC at or above this is too high: half the ALC zone (0120 is its top).
+pub(crate) const ALC_HIGH_RAW: u16 = 60;
+/// CL-044-14 SWR 2.0: a warning when it persists; SWR_FAULT_RAW stops transmitting.
+pub(crate) const SWR_HIGH_RAW: u16 = 80;
+/// CL-044-14 consecutive transmissions before an entry appears in the error field.
+pub(crate) const PERSISTENT: u8 = 3;
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Counts {
+    alc_high: u8,
+    po_low: u8,
+    swr_high: u8,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Verdict {
+    pub level_db: i32,
+    pub fault: bool,
+    pub warnings: Vec<&'static str>,
+}
+/// One transmission's judgement: at most one level step, never above the profile power.
+/// Po is judged against the profile power only; without one it is neither low nor over.
+pub(crate) fn monitor_step(
+    level: i32,
+    meters: &Meters,
+    limit: Option<u8>,
+    counts: &mut Counts,
+) -> Verdict {
+    let po = limit
+        .zip(meters.po)
+        .map(|(l, p)| (po_percent(p), u32::from(l)));
+    let alc_high = meters.alc.is_some_and(|a| a >= ALC_HIGH_RAW);
+    let over = po.is_some_and(|(p, l)| p > l);
+    let low = po.is_some_and(|(p, l)| p * 5 < l * 4);
+    let very_low = po.is_some_and(|(p, l)| p * 2 < l);
+    let swr_high = meters.swr.is_some_and(|s| s >= SWR_HIGH_RAW);
+    let count = |n: &mut u8, on: bool| *n = if on { n.saturating_add(1) } else { 0 };
+    count(&mut counts.alc_high, alc_high);
+    count(&mut counts.po_low, very_low);
+    count(&mut counts.swr_high, swr_high);
+    let level_db = if alc_high || over {
+        (level - 1).max(LEVEL_MIN_DB)
+    } else if meters.alc == Some(0) && low {
+        (level + 1).min(LEVEL_MAX_DB)
+    } else {
+        level
+    };
+    let mut warnings = Vec::new();
+    for (entry, n) in [
+        ("alc_high", counts.alc_high),
+        ("po_low", counts.po_low),
+        ("swr_high", counts.swr_high),
+    ] {
+        if n >= PERSISTENT {
+            warnings.push(entry);
+        }
+    }
+    Verdict {
+        level_db,
+        fault: meters.swr.is_some_and(|s| s >= SWR_FAULT_RAW),
+        warnings,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub(crate) enum Alc {
     #[default]
@@ -97,6 +161,10 @@ struct Inner {
     meters: Option<Meters>,
     reading: bool,
     read_at: Option<Instant>,
+    counts: Counts,
+    warnings: Vec<&'static str>,
+    /// SWR stopped transmitting; held until a later reading or Set level shows it clear.
+    swr_fault: bool,
     revision: u64,
 }
 #[derive(Default)]
@@ -120,6 +188,14 @@ impl Owner {
     #[cfg(test)]
     pub(crate) fn assistant_running(&self) -> bool {
         self.lock().assistant
+    }
+    #[cfg(test)]
+    pub(crate) fn warnings(&self) -> Vec<&'static str> {
+        self.lock().warnings.clone()
+    }
+    #[cfg(test)]
+    pub(crate) fn swr_fault(&self) -> bool {
+        self.lock().swr_fault
     }
     #[cfg(test)]
     pub(crate) fn alc(&self) -> Alc {
@@ -167,7 +243,16 @@ fn store_level(state: &ProfileState, level_db: i32) -> Result<(), &'static str> 
         .map_err(|_| "storage_unavailable")
 }
 /// The stored level at startup; a missing or invalid file leaves the unattenuated default.
-pub(crate) fn startup(state: &ProfileState) {
+/// Also connects the transmit step's mid-transmission call to the meter read.
+pub(crate) fn startup(state: &Arc<ProfileState>) {
+    if let Some(t) = state.recording.transmit.get() {
+        let weak = Arc::downgrade(state);
+        t.set_meter_sink(Arc::new(move || {
+            if let Some(state) = weak.upgrade() {
+                let _ = on_meter_due(&state);
+            }
+        }));
+    }
     let record = state.store.lock().ok().and_then(|s| {
         let bytes = s.read_document_file(LEVEL_FILE, LEVEL_FILE_MAX).ok()??;
         serde_json::from_slice::<Record>(&bytes).ok()
@@ -233,6 +318,69 @@ pub(crate) fn tick(recording: &Arc<Recording>, radio: Option<profile::Radio>, no
         });
     if spawned.is_err() {
         recording.tx_level.lock().reading = false;
+    }
+}
+
+/// CL-044-14 the transmit step's call in the middle of a transmission. It returns at once
+/// and the burst runs on its own thread, so the transmit step, its audio and its release
+/// never wait for the radio. Nothing is read while Set level runs.
+pub(crate) fn on_meter_due(state: &Arc<ProfileState>) -> Option<std::thread::JoinHandle<()>> {
+    let recording = &state.recording;
+    if recording.tx_level.lock().assistant {
+        return None;
+    }
+    let actor = recording.radio_actor()?;
+    let running = state.clone();
+    std::thread::Builder::new()
+        .name("tx-monitor".into())
+        .spawn(move || {
+            if let Ok(meters) = actor.read_meters(Instant::now() + METER_READ) {
+                monitor(&running, &meters);
+            }
+        })
+        .ok()
+}
+/// One transmission's reading: a level change waits for the next transmission (the
+/// transmit owner keeps the running one's level); a clear fault stops transmitting.
+fn monitor(state: &Arc<ProfileState>, meters: &Meters) {
+    let recording = &state.recording;
+    let Some(station) = recording.transmit.get() else {
+        return;
+    };
+    recording.tx_level.record(*meters);
+    let verdict = {
+        let mut i = recording.tx_level.lock();
+        // Set level started during the burst: the level is its own.
+        if i.assistant {
+            return;
+        }
+        let mut counts = i.counts;
+        let verdict = monitor_step(i.level_db, meters, i.power_limit, &mut counts);
+        i.counts = counts;
+        verdict
+    };
+    if verdict.fault {
+        // A fresh command id: a repeated one would answer from the receipt, not stop.
+        let command = profile::new_uuid().unwrap_or_else(|_| recording.boot.clone());
+        station.service.halt(&command);
+        station.service.with(|c| c.require_operator());
+    }
+    // CL-044-12: a level counts only once it is on disk; a failed store leaves the prior one.
+    let level = verdict.level_db;
+    let changed = level != recording.tx_level.level_db() && store_level(state, level).is_ok();
+    if changed {
+        station.service.with(|c| c.set_tx_level(level));
+    }
+    let mut i = recording.tx_level.lock();
+    let swr_fault = verdict.fault;
+    if changed || i.warnings != verdict.warnings || i.swr_fault != swr_fault {
+        if changed {
+            i.level_db = level;
+            i.stored = true;
+        }
+        i.warnings = verdict.warnings;
+        i.swr_fault = swr_fault;
+        i.revision += 1;
     }
 }
 
@@ -365,6 +513,9 @@ fn assistant(
         i.result = Some(result);
         i.level_db = kept.unwrap_or(prior);
         i.stored |= kept.is_some();
+        if kept.is_some() {
+            i.swr_fault = false;
+        }
     });
 }
 /// The manual level, offered only for a radio that reports no ALC over CI-V; also live
@@ -400,6 +551,10 @@ pub(crate) fn event(recording: &Recording) -> (u64, String) {
     let meters = i
         .meters
         .map(|m| json!({"alc":m.alc,"po_pct":m.po.map(po_percent),"swr_x10":m.swr.map(swr_x10)}));
+    let mut warnings = i.warnings.clone();
+    if i.swr_fault {
+        warnings.push("swr_fault");
+    }
     let alc = match i.alc {
         Alc::Unknown => "unknown",
         Alc::Available => "available",
@@ -407,7 +562,8 @@ pub(crate) fn event(recording: &Recording) -> (u64, String) {
     };
     let data = json!({"profile_id":recording.profile,"boot_id":recording.boot,
         "managed":i.managed,"level_db":i.level_db,"stored":i.stored,"alc":alc,
-        "assistant":i.assistant,"result":i.result,"meters":meters,"power_limit_pct":i.power_limit});
+        "assistant":i.assistant,"result":i.result,"meters":meters,"power_limit_pct":i.power_limit,
+        "warnings":warnings});
     (
         i.revision,
         json!({"v":1,"type":"radio.tx_level","data":data}).to_string(),

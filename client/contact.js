@@ -835,6 +835,8 @@ window.wstxChipsShow=function(){
   if(connected){
     const refusal=snap?.transmit?.refusal;
     if(refusal&&!transientRefusals.has(refusal))list.push(chip('transmit','error',`Tx refused \u00b7 ${refusal.replace(/_/g,' ')}`,open('settings-radio')));
+    const txWarnings={alc_high:['warn','ALC too high \u00b7 Tx level lowered'],po_low:['warn','Tx power low'],swr_high:['warn','SWR high'],swr_fault:['error','SWR too high \u00b7 Tx stopped, check the antenna']};
+    for(const w of window.wstxTxWarnings?.()??[])if(txWarnings[w])list.push(chip(`tx-${w}`,txWarnings[w][0],txWarnings[w][1],open('settings-audio')));
     const mode=profileData?.settings.control.mode,radio=operatingState?.radio.state;
     if(mode==='cat'&&catStatus?.condition==='commissioningRequired')list.push(chip('cat','warn','CAT setup not confirmed',open('settings-cat')));
     else if(mode==='cat'&&catStatus&&catStatus.condition!=='ready')list.push(chip('cat','error',document.querySelector('#cat-status').textContent,open('settings-cat')));

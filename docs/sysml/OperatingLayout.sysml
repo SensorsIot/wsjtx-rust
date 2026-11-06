@@ -436,6 +436,8 @@ attribute def ActivityOrdering {
         // #43 CL-043-03: transmit refused while the air clock is unknown; NTP/air disagree.
         enum clockUnknown; enum clockDisagree;
         enum stationUpdated; enum stationDataRejected;
+        // #44 CL-044-14: persistent Tx trouble from the meter read of each transmission.
+        enum txAlcHigh; enum txPowerLow; enum txSwrHigh; enum txSwrFault;
     }
     enum def SettingsSection { enum general; enum radio; enum loggingReporting; enum expert; }
     enum def ChangeKind { enum operative; enum restart; }
@@ -930,7 +932,8 @@ attribute def ActivityOrdering {
              · <reason>", while the contact snapshot's transmit refusal names a reason the
              operator must fix (transmit unsupported or unavailable, radio unavailable or lost,
              clock not synchronized, frequency out of range, the message not packable, PTT or
-             audio failures), until the next accepted Enable Tx clears it; stationUpdated and
+             audio failures), until the next accepted Enable Tx clears it; txAlcHigh, txPowerLow,
+             txSwrHigh and txSwrFault from the radio.tx_level warnings (CL-044-14); stationUpdated and
              stationDataRejected. Informational or transient events (a refused request that is
              retried, busy, a stale revision or period, a receive restart, a completed action)
              are no entries. With no entry the block shows one muted line "No problems".

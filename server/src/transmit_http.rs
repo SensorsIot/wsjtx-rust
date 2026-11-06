@@ -24,6 +24,8 @@ pub(crate) struct Inputs {
     /// The current CL-022 safety revision while the automatic CAT gate is eligible.
     safety_revision: Option<u64>,
     actor: Option<Arc<Actor>>,
+    /// #44 CL-044-14 starts the one meter read of a transmission (never blocks).
+    meter_sink: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 type Stopper = Arc<dyn Fn() + Send + Sync>;
 pub(crate) struct StationHardware {
@@ -38,6 +40,17 @@ pub(crate) struct StationHardware {
     level_db: i32,
 }
 impl Hardware for StationHardware {
+    fn meter_due(&mut self) {
+        let sink = self
+            .inputs
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .meter_sink
+            .clone();
+        if let Some(sink) = sink {
+            sink();
+        }
+    }
     fn set_level_db(&mut self, level_db: i32) {
         self.level_db = level_db;
         #[cfg(windows)]
@@ -213,6 +226,13 @@ impl Station {
             receipts: Mutex::new(VecDeque::new()),
             revision: Mutex::new((None, 0)),
         }))
+    }
+    /// #44 CL-044-14 what the transmit step calls in the middle of a transmission.
+    pub(crate) fn set_meter_sink(&self, sink: Arc<dyn Fn() + Send + Sync>) {
+        self.inputs
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .meter_sink = Some(sink);
     }
     /// Shares the station's call hash table with the transmit owner (CL-024-01).
     pub(crate) fn attach_hashes(&self, hashes: Arc<Mutex<wstx_rust::decoder::HashTable>>) {

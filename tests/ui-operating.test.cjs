@@ -906,7 +906,7 @@ test('TC-044-015 Tx level in Settings > Radio > Audio',{timeout:60000},async t=>
   const section=page.locator('#settings-audio'),line=section.locator('#tx-level-line'),button=section.locator('#tx-level-set'),slider=section.locator('#tx-level-manual'),meters=section.locator('#tx-meters');
   await button.scrollIntoViewIfNeeded();assert.equal(await button.isVisible(),true,'Set level is in the Audio section');
   assert.equal(await slider.isVisible(),false,'no manual level while the radio may report ALC');
-  const base={managed:true,level_db:0,stored:false,alc:'unknown',assistant:false,result:null,meters:null,power_limit_pct:null};
+  const base={managed:true,level_db:0,stored:false,alc:'unknown',assistant:false,result:null,meters:null,power_limit_pct:null,warnings:[]};
   const inject=data=>page.evaluate(d=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'radio.tx_level',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,...d}}}})),data);
   await inject(base);assert.equal(await line.textContent(),'Tx level not set yet');assert.equal(await meters.isVisible(),false);
   await inject({...base,assistant:true,level_db:-25,alc:'available',meters:{alc:0,po_pct:12,swr_x10:11}});
@@ -927,6 +927,14 @@ test('TC-044-015 Tx level in Settings > Radio > Audio',{timeout:60000},async t=>
   await section.locator('#control-power-limit').fill('10');await page.locator('#settings-save').click();
   await page.locator('#settings-result').filter({hasText:/Saved revision/}).waitFor();
   assert.deepEqual((await (await fetch(app.origin+'/profile')).json()).settings.radio,{agc:'SLOW',power_limit_pct:10});
+  // Proves: CL-044-14; TC-044-018. Persistent Tx trouble is an entry in the error field, gone when cleared.
+  const field=page.locator('#error-field');
+  await inject({...base,warnings:['alc_high','po_low','swr_high','swr_fault']});
+  for(const [key,severity,text] of [['tx-alc_high','warn','ALC too high'],['tx-po_low','warn','Tx power low'],['tx-swr_high','warn','SWR high'],['tx-swr_fault','error','SWR too high']]){
+    const chip=field.locator(`[data-chip="${key}"]`);await chip.waitFor({timeout:5000});assert.equal(await chip.getAttribute('data-severity'),severity);assert.match(await chip.textContent(),new RegExp(text));
+  }
+  await inject({...base,warnings:[]});
+  await field.locator('[data-chip^="tx-"]').first().waitFor({state:'detached',timeout:5000});
   await page.setViewportSize({width:360,height:740});
   assert.equal(await page.evaluate(()=>{const d=document.querySelector('#settings-audio');return d.scrollWidth<=d.clientWidth+1;}),true,'fits 360 px');
   await page.setViewportSize({width:1366,height:768});

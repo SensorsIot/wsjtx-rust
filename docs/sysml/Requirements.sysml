@@ -3828,6 +3828,55 @@ package WstxRequirements {
     }
     dependency CL_044_13_to_FR_019 from 'CL-044-13' to 'FR-019';
     dependency CL_044_13_to_FR_009 from 'CL-044-13' to 'FR-009';
+    // Operator decision 2026-11-04 (#44 comment 6628026397): monitoring in normal operation.
+    requirement 'CL-044-14' {
+        doc /* In normal operation the station reads the radio's meters exactly once per transmission, in the middle of its audio: the transmit step calls the read when half of the audio remaining at audio start has played, once per transmission, on no Tune, and not at all when less than 2 s of audio remained at audio start. The call returns at once and the burst (CL-044-12: 15 13, 15 11, 15 12) runs on its own thread, so the transmit step, the audio and the release never wait for the radio, and a PTT exchange cancels the burst. Nothing is read while Set level runs. From the reading the level moves by at most one step, stored like CL-044-12 and taken by the next transmission's audio start only: ALC at or above raw 0060 (half the ALC zone) or Po above the profile power: one down, not below -40 dB; else ALC exactly 0 and Po below 80 % of the profile power: one up, not above 0 dB; otherwise unchanged. Without a profile power Po is neither over nor low, so there is no step up. Persistent trouble is an entry in the error field, from the third transmission in a row until a reading without it: alc_high (ALC at or above 0060), po_low (Po below half the profile power), swr_high (SWR at or above 2.0, raw 0080). A clear fault, SWR at or above 3.0 (raw 0120), stops transmitting at once through the priority halt (DisarmCause halt) with the entry swr_fault, and automation may not arm again until an operator action (WatchdogFromOperator); the entry stays until a later reading below 3.0 or a stored Set level. The radio.tx_level data carries these as warnings [...]. A failed read judges nothing. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_level.rs; server/src/transmit/service.rs; server/src/transmit_http.rs; client/recording.js; client/contact.js";
+    }
+    dependency CL_044_14_to_FR_009 from 'CL-044-14' to 'FR-009';
+    verification 'TC-044-017' {
+        doc /* TC-044-017 — One meter read per transmission and its bounded correction
+             CL-044-14
+             Setup: the actual transmit core on a virtual clock; the actual Recording, transmit owner on a recording double and CAT actor on a scripted IC-7300 reporting set meter values.
+             Steps: (a) the decision table; (b) two FT8 transmissions and a Tune on the virtual clock; (c) the call without the hold, then with ALC 0060; (d) three transmissions in a row, then a good one; (e) SWR 0120, then the operator arms and SWR is clear; (f) the call while Set level runs.
+             Expected: (a) one down at ALC 0060, none at 0059, the floor and 0 dB hold, one up only with ALC 0 and Po below 80 %, none without a profile power, one down above it, none without ALC, fault at 0120 and not at 0119, warnings from the third reading, cleared by one good reading; (b) due exactly once at period + 6 820 ms in each, none for Tune; (c) no byte without the hold; with it exactly 15 13, 15 11, 15 12, level -11 stored, nothing handed to the running audio; (d) alc_high from the third, level -13, gone with the good one; (e) one halt, disarmed halt, automation refused, entry swr_fault; after the clear reading no entry and still armed; (f) no byte.
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-14';
+        }
+        attribute executable : String = "server/src/radio_level_tests.rs; server/tests/transmit_service.rs";
+    }
+    dependency CL_044_14_verified_by_TC_044_017 from 'CL-044-14' to 'TC-044-017';
+    verification 'TC-044-018' {
+        doc /* TC-044-018 — Tx trouble in the error field
+             CL-044-14
+             Setup: candidate server and Chromium; radio.tx_level events injected.
+             Steps: inject the four warnings, then none.
+             Expected: one error field entry each, swr_fault with error severity and the others warn, all gone after the empty list.
+             2 — Isolated automated browser test; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-14';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_044_14_verified_by_TC_044_018 from 'CL-044-14' to 'TC-044-018';
+    verification 'TC-044-019' {
+        doc /* TC-044-019 — Monitoring on HB9BLA
+             CL-044-14
+             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, 1 W on 40 m.
+             Steps: transmit during normal operation, compare the frame count in the CI-V log and the transmit timing; check the thresholds against the radio's own meters.
+             Expected: three meter frames per transmission, in the middle; decode by another station unaffected; the ALC and SWR thresholds match the radio's display; a mismatched antenna stops at SWR 3.0.
+             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-044-14';
+        }
+    }
+    dependency CL_044_14_verified_by_TC_044_019 from 'CL-044-14' to 'TC-044-019';
     verification 'TC-044-013' {
         doc /* TC-044-013 — Meter burst under the transmit hold; level timing
              CL-044-12
