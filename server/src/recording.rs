@@ -279,6 +279,8 @@ pub struct Recording {
     pub(crate) contact: std::sync::OnceLock<Arc<crate::contact_http::Station>>,
     /// FR-023 native session of a native profile, started once by the process.
     pub(crate) flex: std::sync::OnceLock<Arc<wstx_rust::flex::Session>>,
+    /// #39 who is connected, for WstxStrategy::StrategyRun's rule without a client.
+    pub(crate) clients: crate::automation::Clients,
     /// WstxUdp interface of this station (#40), opened once by the process.
     pub(crate) udp: std::sync::OnceLock<Arc<crate::udp::Owner>>,
     /// The station clock and its saved source (#43), started once by the process.
@@ -3422,6 +3424,7 @@ impl Recording {
                 tx: Default::default(),
                 contact: std::sync::OnceLock::new(),
                 flex: std::sync::OnceLock::new(),
+                clients: Default::default(),
                 udp: std::sync::OnceLock::new(),
                 clock: std::sync::OnceLock::new(),
                 radio_setup: Default::default(),
@@ -3498,6 +3501,7 @@ impl Recording {
             tx: Default::default(),
             contact: std::sync::OnceLock::new(),
             flex: std::sync::OnceLock::new(),
+            clients: Default::default(),
             udp: std::sync::OnceLock::new(),
             clock: std::sync::OnceLock::new(),
             radio_setup: Default::default(),

@@ -220,6 +220,7 @@ fn tc_055_002_new_dxcc_band_continent_and_zone_against_the_log() {
         band: band.map(Into::into),
         mode: None,
         confirmed: false,
+        date: None,
     };
     let logged = vec![
         log("DL1ABC", Some("JO62"), Some("20m")),
@@ -586,4 +587,80 @@ fn tc_055_002_worked_set_follows_each_uploaded_table() {
         );
     }
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// Proves: TC-039-030 WstxStrategy::WpxPrefix, the examples of the CQ WPX Contest rules.
+#[test]
+fn tc_039_030_wpx_prefix_table() {
+    for (call, prefix) in [
+        ("N8BJQ", "N8"),
+        ("W8AA", "W8"),
+        ("WD8XX", "WD8"),
+        ("HG1A", "HG1"),
+        ("HG19ABC", "HG19"),
+        ("KC2XYZ", "KC2"),
+        ("OE2XX", "OE2"),
+        ("OE25A", "OE25"),
+        ("LY1000X", "LY1000"),
+        ("3DA0RU", "3DA0"),
+        ("9A1A", "9A1"),
+        ("1A0KM", "1A0"),
+        ("4U1ITU", "4U1"),
+        // Without a number: a zero after the first two letters.
+        ("XEFTJW", "XE0"),
+        // Portable.
+        ("N8BJQ/KH9", "KH9"),
+        ("KH9/N8BJQ", "KH9"),
+        ("PA/N8BJQ", "PA0"),
+        ("N8BJQ/3", "N3"),
+        // Class and mobile markers do not count.
+        ("N8BJQ/P", "N8"),
+        ("N8BJQ/MM", "N8"),
+        ("N8BJQ/A", "N8"),
+        ("N8BJQ/QRP", "N8"),
+        ("KH9/N8BJQ/P", "KH9"),
+        ("n8bjq", "N8"),
+    ] {
+        assert_eq!(wpx_prefix(call), prefix, "{call}");
+    }
+}
+
+// Proves: TC-039-030 the per-call and per-prefix facts of the worked set.
+#[test]
+fn tc_039_030_worked_set_keeps_call_grid_prefix_standing_and_gridless_calls() {
+    let t = bundled();
+    let log = |call: &str, grid: Option<&str>, confirmed: bool| Logged {
+        call: call.into(),
+        grid: grid.map(Into::into),
+        band: Some("40m".into()),
+        mode: Some("FT8".into()),
+        confirmed,
+        date: None,
+    };
+    let w = Worked::from_log(
+        &t,
+        &[
+            log("DL1ABC", Some("JO62AB"), false),
+            log("DL1XYZ", Some("JO62"), true),
+            log("K1ABC", None, false),
+            log("K1ABC", Some("FN42"), true),
+            log("F1ABC", Some("JN"), false),
+        ],
+    );
+    let st = |worked, confirmed| Standing { worked, confirmed };
+    assert_eq!(w.call_standing("dl1abc"), st(true, false));
+    assert_eq!(
+        w.call_standing("K1ABC"),
+        st(true, true),
+        "any confirmed QSO"
+    );
+    assert_eq!(w.call_standing("G4ABC"), st(false, false));
+    assert_eq!(w.grid_standing("JO62XX"), st(true, true), "by its square");
+    assert_eq!(w.grid_standing("IO91"), st(false, false));
+    assert_eq!(w.wpx_standing("DL1QQQ"), st(true, true), "the prefix DL1");
+    assert_eq!(w.wpx_standing("DL2QQQ"), st(false, false));
+    assert!(w.gridless("k1abc"), "one QSO without a grid is enough");
+    assert!(w.gridless("F1ABC"), "no 4-character square");
+    assert!(!w.gridless("DL1ABC"));
+    assert!(!w.gridless("G4ABC"), "not logged");
 }

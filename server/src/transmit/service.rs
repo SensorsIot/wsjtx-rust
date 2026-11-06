@@ -577,7 +577,7 @@ impl<H: Hardware> Core<H> {
     pub fn activity(&mut self) {
         self.operator_seen = true;
     }
-    /// A browser Auto start: the explicit operator decision to transmit again after a stop.
+    /// A browser strategy selection or run start: the explicit operator decision to transmit again after a stop.
     pub fn operator_restart(&mut self) {
         self.operator_seen = true;
         self.tx_expired = false;

@@ -22,7 +22,7 @@ const strip=document.createElement('section');strip.id='rxtx-strip';strip.classN
 const workspace=document.createElement('div');workspace.id='operating-workspace';
 const sortHeader=(field,label)=>`<th scope="col" data-sort="${field}" aria-sort="none" tabindex="0" class="op-sort" title="Sort by ${label}">${label}</th>`;
 workspace.innerHTML=`<div class="operating-grid op-desk">
-<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div></header><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">UTC</th>${sortHeader('signal','dB')}${sortHeader('dt','DT')}${sortHeader('frequency','Freq')}${sortHeader('message','Message')}<th scope="col" data-sort="value" aria-sort="none" tabindex="0" class="op-sort" title="Sort by value: calling me, strategy, new DXCC, zone, grid, call, then strongest">DXCC</th><th scope="col">Dist</th></tr></thead><tbody role="rowgroup"><tr><td colspan="7" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div></section>
+<section id="band-activity" class="message-pane op-card op-activity" aria-labelledby="activity-heading"><header><div><h3 id="activity-heading">Band Activity <span class="op-count">0</span></h3><span class="op-muted">Latest decode period</span></div></header><div class="op-table-wrap"><table role="table" aria-label="Decoded messages"><thead role="rowgroup"><tr role="row"><th scope="col">UTC</th>${sortHeader('signal','dB')}${sortHeader('dt','DT')}${sortHeader('frequency','Freq')}${sortHeader('message','Message')}<th scope="col" data-sort="value" aria-sort="none" tabindex="0" class="op-sort" title="Sort by value: calling me, what the strategy would call, new DXCC, zone, grid, call, then strongest">DXCC</th><th scope="col">Dist</th></tr></thead><tbody role="rowgroup"><tr><td colspan="7" class="empty-messages"><strong>Decoder unavailable</strong><span>No decoded messages are available from this server.</span></td></tr></tbody></table></div></section>
 <section id="rx-focus" class="message-pane op-card op-qso" aria-labelledby="focus-heading"><header class="op-qso-head"><div class="op-contact-identity"><div><h3 id="focus-heading">QSO</h3><strong>No station selected</strong><span>Select a decoded station or enter a DX call.</span></div></div><span class="op-contact-badge">Unavailable</span></header>
 <div class="op-contact-body">
 <p id="contact-state" class="ct-state" role="status">Contact state unavailable</p>
@@ -401,7 +401,7 @@ async function sync(current=socket) {
     const data=await request('/recording');if(!stationContext(current,authEpoch)) return;
     const previousImport=snapshot?.import?.id,previousGeneration=snapshot?.generation;
     if(identity(data)!==identity(snapshot)&&!(data.job?.kind==='live'&&snapshot?.job?.kind==='live'&&data.boot_id===snapshot.boot_id)){rows=[];resetLevels();paint();}snapshot=data; // #61: receiveSync decides a live identity change
-    if(data.job?.kind!=='live'&&live?.job){live=undefined;resultRows=[];renderResults();receiveShow();}
+    if(data.job?.kind!=='live'&&live?.job){live=undefined;resultRows=[];resultView=null;activityHistory=[];renderResults();receiveShow();}
     if(previousImport && !data.import && previousGeneration===data.generation){
       try{const outcome=await request(`/recording/imports/${previousImport}`);if(!stationContext(current,authEpoch))return;importOutcome={...outcome,generation:data.generation};}catch{if(current===socket)progress.textContent='Import outcome unavailable · current source state refreshed';}
     }
@@ -588,7 +588,7 @@ async function receiveSync(current=socket){
     const data=await request('/receive');
     if(!stationContext(current,authEpoch)||epoch!==receiveMutationEpoch)return;
     if(!validLiveSnapshot(data)){stationData('receive',false);throw new Error('Invalid receive snapshot');}stationData('receive',true);
-    if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||data.generation<(live?.generation??0))return;
+    if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||(data.boot_id===live?.boot_id&&data.generation<live.generation))return;// a new boot counts its generations from 0
     if(liveIdentity(data)!==liveIdentity(live)){
       const carry=lossEpoch(data);activityHistory=carry?[...(resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[]),...activityHistory].slice(0,2):[];
       resultRows=[];resultView=null;resultCursor=data.job?.first_sequence??0;historyIncomplete=false;if(carry)keepWaterfall();else if(data.job||live?.job){rows=[];resetLevels();paint();}
@@ -1310,7 +1310,7 @@ function keepWaterfall(){
 }
 
 // #55 CL-055-04 WstxOperatingLayout::BandActivityValue (1 calling me .. 8 no flag; 2, the strategy
-// hits, is applied by the Highlight in contact.js) and BandActivityHover (title and aria-description).
+// hits, is applied by the value view in contact.js) and BandActivityHover (title and aria-description).
 // #24 S1b: the call a decoded message is addressed to, also as a filled-in hash <MYCALL> or the
 // 'to' call of a nonstandard i3=4 message; shared by the my-call colour and value 1 (#55).
 function recordTo(f){return f?.type==='nonstandard'?(f.cq?null:(f.hash_second?f.full_call:f.hashed_call)?.text??null):['call','hash'].includes(f?.to?.kind)?f.to.text:null;}
