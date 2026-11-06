@@ -299,7 +299,8 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 /* Themes (WstxOperatingLayout::ThemeChoice): Dark is the base; Day and Night re-map it for this browser only. */
 html[data-theme=day] body{background:#f3f6f8}
 html[data-theme=day] main.op-app{filter:invert(.92) hue-rotate(180deg)}
-html[data-theme=day] main.op-app canvas{filter:invert(1) hue-rotate(180deg)}
+/* #61 CL-061-05: needs the id, or #signal canvas{filter:none} wins and the waterfall (black, Tx rows) turns pale under the page's inversion. */
+html[data-theme=day] main.op-app #signal canvas{filter:invert(1) hue-rotate(180deg)}
 html[data-theme=night] body{background:#000}
 html[data-theme=night] main.op-app{filter:grayscale(1) sepia(1) saturate(6) hue-rotate(-50deg) brightness(.62)}
 @media(max-width:900px){#station-bar.op-topbar{flex-wrap:wrap}#station-bar #radio-toolbar{flex-wrap:wrap}.op-chips{order:3;flex-basis:100%;justify-content:flex-start}}

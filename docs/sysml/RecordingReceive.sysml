@@ -654,6 +654,7 @@ package WstxRecordingReceive {
              at y=floor((T-t)*p*H/C)/DPR, omitting negative source times and colliding labels less
              than16CSSpx apart. The time scale and native/projected readouts use this same mapping;
              labels do not imply observations in unmeasured areas. Label elapsed source seconds, never synthetic UTC/RF frequency/dBm.
+             A run of Tx rows (#61 CL-061-05) takes one band of 4 CSSpx instead of its source time; every other row keeps p, and the mapping and labels of times beyond the band stay exact: T-t counts without the run's source time, plus the band.
              Profile changes still clear browser history/old-profile frames; existing bounded history,
              source identities and one pending repaint remain unchanged.
 
@@ -769,7 +770,7 @@ package WstxRecordingReceive {
              `{v:1,type:"spectrum.detail.frame",data:{boot_id,source_id,job_id,generation,sequence,first_frame,end_frame,levels_b64}}`.
              A live row of a Tx period (#61 CL-061-04) carries "tx": true in data, in Thin and
              Detailed frames alike; the key is absent otherwise, and the browser paints such a
-             row as a Tx row RGB(90,20,30), not with its levels.
+             row as a Tx row RGB(90,20,30), not with its levels; a run of such rows is collapsed to a thin band (CL-061-05).
              The UUID/safe-integer identity rules are unchanged, first=2400*sequence,
              end=min(first+2400,source_frames), sequence0..599. levels_b64 is canonical RFC4648
              standard base64 with padding: exactly1368 ASCII characters decoding to1024 bytes,
@@ -885,6 +886,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              at y=floor((T-t)*p*H/C)/DPR, omitting negative source times and colliding labels less
              than16CSSpx apart. The time scale and native/projected readouts use this same mapping;
              labels do not imply observations in unmeasured areas. Label elapsed source seconds, never synthetic UTC/RF frequency/dBm.
+             A run of Tx rows (#61 CL-061-05) takes one band of 4 CSSpx instead of its source time; every other row keeps p, and the mapping and labels of times beyond the band stay exact: T-t counts without the run's source time, plus the band.
              Profile changes still clear browser history/old-profile frames; existing bounded history,
              source identities and one pending repaint remain unchanged.
 
