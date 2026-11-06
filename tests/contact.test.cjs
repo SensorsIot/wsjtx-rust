@@ -502,6 +502,38 @@ test('TC-007-005 the Tune countdown is paced by the display profile on the socke
   }
 });
 
+// Proves: CL-008-07, CL-010-15; TC-009-005 case7, TC-007-005 (#10 pushed operating selection).
+// The socket's first event holds the whole snapshot, a later one what changed, and the browser
+// shows a change from outside without any timer read on Detailed or Thin.
+test('TC-009-005 operating selection is pushed: the event carries it, no timer read of GET /receive/selection',{timeout:90000},async()=>{
+  const frames=[];page.on('websocket',ws=>ws.on('framereceived',e=>{try{const m=JSON.parse(e.payload);if(m.type==='selection.state')frames.push({at:performance.now(),data:m.data,bytes:Buffer.byteLength(e.payload)});}catch{}}));
+  const reads=(a,b=Infinity)=>requests.filter(r=>r.method==='GET'&&r.path==='/receive/selection'&&r.at>=a&&r.at<b);
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  const band=value=>fetch(control+'/band',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({band:value})});
+  await band('20m');
+  const loaded=performance.now();await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
+  await waitFor(()=>frames.some(f=>f.at>=loaded),'selection.state at the first step',5000);
+  const first=frames.find(f=>f.at>=loaded);
+  const read=await (await fetch(origin+'/receive/selection')).json();
+  for(const key of ['profile_revision','generation','operating_revision','control','selection','available_bands','operation','cancellation','receive','radio'])assert.deepEqual(first.data.changed[key],read[key],`the first event has ${key} as the read gives it`);
+  assert.equal(first.data.boot_id,read.boot_id);assert.ok(first.bytes<=2048);
+  await waitFor(()=>page.evaluate(()=>document.querySelector('#operating-band').value==='20m'),'shown after the load',8000);
+  await page.waitForFunction(()=>!operatingReadPending);
+  // On Detailed the timer read every 2 s, on Thin every 8 s.
+  const quiet0=performance.now();await sleep(9000);assert.equal(reads(quiet0).length,0,'no timer read on Detailed');
+  const changed=performance.now();await band('40m');
+  await waitFor(()=>page.evaluate(()=>document.querySelector('#operating-band').value==='40m'),'pushed change shown',5000);
+  const event=frames.find(f=>f.at>=changed);assert.ok(event&&event.at-changed<=2000,'the change is pushed within the 1 s check');
+  assert.deepEqual(Object.keys(event.data.changed),['selection'],'only what changed');
+  assert.equal(event.data.changed.selection.nominal_hz,7074000);
+  assert.ok(event.data.snapshot_sequence>first.data.snapshot_sequence);
+  await page.evaluate(()=>{profileSelect.value='thin';profileSelect.dispatchEvent(new Event('change'));});
+  const quiet1=performance.now();await sleep(9000);assert.equal(reads(quiet1).length,0,'no timer read on Thin');
+  await band('20m');await waitFor(()=>page.evaluate(()=>document.querySelector('#operating-band').value==='20m'),'pushed on Thin too',5000);
+  await page.evaluate(()=>{profileSelect.value='detail';profileSelect.dispatchEvent(new Event('change'));});
+  assert.deepEqual(page.errors,[]);
+});
+
 test('TC-050-004 mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO completes, and CQ right after it calls',{timeout:420000},async()=>{
   // Mid-QSO: calling K1ABC (armed), K1ABC does not answer, double-click DL1ABC.
   let mark=await dblclickRow('CQ K1ABC FN42',1234.6,-12);

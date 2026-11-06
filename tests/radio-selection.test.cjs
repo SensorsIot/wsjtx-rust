@@ -45,72 +45,32 @@ test('TC-009-005 network lifetime and correlated Off oracle reject true violatio
   const frames=[{socket:2,type:'spectrum.frame',at:13},{socket:2,type:'heartbeat',at:15}];assert.deepEqual(optionalAfterOff(frames,ack),[]);frames.push({socket:2,type:'spectrum.detail.frame',at:15});assert.equal(optionalAfterOff(frames,ack).length,1);
 });
 
-test('TC-009-005 frozen automatic cadence fault controls',async t=>{
-  const body=(result='pending')=>({profile_id:'profile-A',boot_id:'boot-A',profile_revision:3,operating_revision:7,generation:11,snapshot_sequence:21,receive:{job_id:'old-job'},operation:{command_id:'command-A',result,new_job_id:null}});
-  const previous=()=>({station:'https://station-A',started:1000,ended:1800,kind:'explicit/reconciliation',body:body()});
-  const successor=()=>({station:'https://station-A',started:5000,ended:5800,kind:'automatic',body:{...body('success'),snapshot_sequence:22}});
-  const pair=(p=previous(),c=successor(),mutations=[])=>cadencePair(p,c,mutations);
-  const refused=(p,c,mutations=[])=>{try{assert.equal(pair(p,c,mutations).eligible,false);}catch(error){if(error.code!=='ERR_ASSERTION')throw error;if(!/spacing|transport/.test(error.message))throw error;}};
-  await t.test('pending to terminal uses prior state',()=>assert.equal(pair().pendingCoverage,true));
-  await t.test('pending to pending remains coverage',()=>{const c=successor();c.body.operation.result='pending';assert.equal(pair(previous(),c).pendingCoverage,true);});
-  await t.test('pending below3950 refused',()=>{const c=successor();c.started=4949;assert.throws(()=>pair(previous(),c),/spacing/);});
-  await t.test('applied prior state at4s refused',()=>{const p=previous();p.body.operation.result='success';assert.throws(()=>pair(p),/spacing/);});
-  await t.test('wrong command refused',()=>{const c=successor();c.body.operation.command_id='command-B';refused(previous(),c);});
-  await t.test('each fixed identity refused',()=>{for(const key of ['profile_id','boot_id','profile_revision','operating_revision']){const c=successor();c.body[key]='changed';refused(previous(),c);}const c=successor();c.station='https://station-B';refused(previous(),c);});
-  await t.test('explicit and reconcile cannot prove timer coverage',()=>{const c=successor();c.kind='explicit/reconciliation';assert.equal(pair(previous(),c).eligible,false);assert.throws(()=>assertCadenceCoverage([pair(previous(),c)],'explicit'),/missing/);});
-  await t.test('overlap refused using network lifetime',()=>{const p=previous();p.ended=5001;assert.throws(()=>pair(p),/transport/);});
-  await t.test('same command owns new receive generation',()=>{const c=successor();c.body.generation=12;c.body.receive.job_id='new-job';c.body.operation.new_job_id='new-job';assert.equal(pair(previous(),c).pendingCoverage,true);});
-  await t.test('unowned new generation refused',()=>{const c=successor();c.body.generation=12;c.body.receive.job_id='unrelated';refused(previous(),c);c.body.operation.new_job_id='unrelated';c.body.operation.command_id='command-B';refused(previous(),c);});
-  await t.test('intervening mutation refused',()=>refused(previous(),successor(),[{started:2000}]));
-  await t.test('delayed pending is lawful but cannot prove4s regime',()=>{const c=successor();c.started=9000;assert.equal(pair(previous(),c).eligible,true);assert.equal(pair(previous(),c).pendingCoverage,false);});
-  await t.test('every browser and profile needs both regimes',()=>{
-    const p=previous();p.body.operation.result='success';const c=successor();c.started=9000;const passive=pair(p,c),pending=pair();
-    for(const profile of ['thin','off'])for(const browser of [0,1]){assertCadenceCoverage([pending,passive],`${profile}${browser}`);assert.throws(()=>assertCadenceCoverage([passive],`${profile}${browser}`),/pending-context/);assert.throws(()=>assertCadenceCoverage([pending],`${profile}${browser}`),/passive-context/);}
-  });
-  await t.test('actual frozen source and exact caller stack',async()=>{
+test('TC-009-005 no timer reads the selection: source and caller fault controls',async t=>{
+  await t.test('actual source: every selection read has an explicit caller, an unknown stack is refused',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
     const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:mapping.fetchLine},{url:origin+'/recording.js',lineNumber:line}]}});
-    assert.ok(mapping.explicitLines.length>0&&!mapping.explicitLines.includes(mapping.timerLine),'timer and explicit callers are distinct');
-    assert.equal(cadenceCaller(initiator(mapping.timerLine),origin,mapping),'automatic');for(const line of mapping.explicitLines)assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');
-    assert.ok(!mapping.explicitLines.includes(mapping.timerLine-1));assert.throws(()=>cadenceCaller(initiator(mapping.timerLine-1),origin,mapping),/unknown selection caller.*review the cadence caller mapping/);
-    const wrongFetch=initiator(mapping.timerLine);wrongFetch.stack.callFrames[0].lineNumber=mapping.fetchLine+1;assert.throws(()=>cadenceCaller(wrongFetch,origin,mapping),/review the cadence caller mapping/);
-    const wrapped={type:'script',stack:{callFrames:[{url:origin+'/authorization.js',functionName:'protectedFetch',lineNumber:1},{url:origin+'/app.js',functionName:'stationFetch',lineNumber:1},...initiator(mapping.timerLine).stack.callFrames]}};
-    assert.equal(cadenceCaller(wrapped,origin,mapping),'automatic');
+    assert.ok(mapping.explicitLines.length>0,'the reconnect and explicit reads stay');
+    for(const line of mapping.explicitLines)assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');
+    const unknown=mapping.explicitLines[0]-1;assert.ok(!mapping.explicitLines.includes(unknown));assert.throws(()=>cadenceCaller(initiator(unknown),origin,mapping),/unknown selection caller.*review the cadence/);
+    const wrongFetch=initiator(mapping.explicitLines[0]);wrongFetch.stack.callFrames[0].lineNumber=mapping.fetchLine+1;assert.throws(()=>cadenceCaller(wrongFetch,origin,mapping),/review the cadence/);
+    const wrapped={type:'script',stack:{callFrames:[{url:origin+'/authorization.js',functionName:'protectedFetch',lineNumber:1},{url:origin+'/app.js',functionName:'stationFetch',lineNumber:1},...initiator(mapping.explicitLines[0]).stack.callFrames]}};
+    assert.equal(cadenceCaller(wrapped,origin,mapping),'explicit/reconciliation');
     wrapped.stack.callFrames[1].functionName='other';assert.throws(()=>cadenceCaller(wrapped,origin,mapping));
-    assert.throws(()=>cadenceJoin({transfers:[],reads:[{}]},origin,mapping),/complete ordered/);
   });
   await t.test('caller mapping is derived from the source and line-ending neutral',async()=>{
     const lf=(await fs.readFile(path.join(__dirname,'../client/recording.js'),'utf8')).replace(/\r\n/g,'\n'),crlf=lf.replace(/\n/g,'\r\n');
-    const lines=({fetchLine,timerLine,explicitLines})=>({fetchLine,timerLine,explicitLines}),base=lines(cadenceSource(Buffer.from(lf)));
+    const lines=({fetchLine,explicitLines})=>({fetchLine,explicitLines}),base=lines(cadenceSource(Buffer.from(lf)));
     assert.notEqual(lf,crlf);assert.deepEqual(lines(cadenceSource(Buffer.from(crlf))),base);
     // A change that only moves lines (a comment above the fetch) moves the mapping with it (#8).
     const at=lf.indexOf("    const response=await stationFetch('/receive/selection'"),shifted=lines(cadenceSource(Buffer.from(lf.slice(0,at)+'    // shifted\n'+lf.slice(at))));
-    assert.deepEqual(shifted,{fetchLine:base.fetchLine+1,timerLine:base.timerLine+1,explicitLines:base.explicitLines.map(n=>n+1)});
-    // A change that makes the mapping ambiguous or loses a site needs review, not a renewal.
-    const src=lf.split('\n'),timer=src[base.timerLine],fetch=src[base.fetchLine];
+    assert.deepEqual(shifted,{fetchLine:base.fetchLine+1,explicitLines:base.explicitLines.map(n=>n+1)});
+    // A timer read coming back, or an ambiguous or lost fetch, needs review, not a renewal.
+    const src=lf.split('\n'),fetch=src[base.fetchLine];
     const variant=(index,replacement)=>Buffer.from([...src.slice(0,index),...replacement,...src.slice(index+1)].join('\n'));
-    assert.throws(()=>cadenceSource(variant(base.timerLine,[timer,timer])),/review the cadence caller mapping: the automatic timer caller matched 2 lines/);
-    assert.throws(()=>cadenceSource(variant(base.timerLine,['  lastOperatingRead=0;'])),/review the cadence caller mapping: the automatic timer caller matched 0 lines/);
+    assert.throws(()=>cadenceSource(Buffer.from(lf+'\nsetInterval(()=>operatingSync(false),2000);\n')),/a timer reads the selection/);
+    assert.throws(()=>cadenceSource(Buffer.from(lf+'\nsetInterval(()=>{\n  if(ok)operatingSync(false);\n},250);\n')),/a timer reads the selection/);
     assert.throws(()=>cadenceSource(variant(base.fetchLine,['    const response=await fetch(\'/x\'),text=await response.text();'])),/review the cadence caller mapping: the selection fetch matched 0 lines/);
     assert.throws(()=>cadenceSource(variant(base.fetchLine,[fetch,fetch])),/review the cadence caller mapping: the selection fetch matched 2 lines/);
-  });
-  await t.test('source acceptance guards refuse discarded valid-shaped snapshots',async()=>{
-    const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js')));
-    const uuid='00000000-0000-4000-8000-000000000001',unknown={value:null,query_sequence:null,observed_at_ms:null,confirmed:false};
-    const snapshot={v:1,profile_id:uuid,boot_id:uuid,profile_revision:3,generation:11,operating_revision:7,snapshot_sequence:21,monotonic_ms:100,control:'manual',selection:{mode:'ft8',band:null,nominal_hz:null,origin:'unknown',confirmed_command_id:null},available_bands:[],operation:null,cancellation:null,receive:{job_id:null,mode:null,state:null,audio_state:'closed',owner_released:true},radio:{connection_generation:0,state:'closed',error:null,observations:{frequency:unknown,mode:unknown,data:unknown,rx_tx:unknown,split:unknown}}};
-    assert.equal(mapping.valid(snapshot),true,'negative controls begin with a fully valid browser schema');
-    const expected={profile_id:uuid,boot_id:uuid,profile_revision:3};
-    const event={at:900,epoch:0,connected:true,sameSocket:true,acceptedSequence:20,...expected};
-    const q=()=>({expected,events:[event,{...event,at:6000,acceptedSequence:21}]});
-    const request={wallStarted:1000,wallEnded:1800},next={wallStarted:5000};
-    assert.equal(cadenceAccepted(snapshot,request,next,q()).acceptedSequence,21);
-    for(const key of ['profile_id','boot_id','profile_revision']){const wrong=structuredClone(snapshot);wrong[key]=key==='profile_revision'?4:'00000000-0000-4000-8000-000000000002';assert.equal(mapping.valid(wrong),true);assert.throws(()=>cadenceAccepted(wrong,request,next,q()),/expected/);}
-    const invalid=q();invalid.events.splice(1,0,{...event,at:1500,epoch:1,acceptedSequence:20});assert.throws(()=>cadenceAccepted(snapshot,request,next,invalid),/discarded|unproven/);
-    const socket=q();socket.events.splice(1,0,{...event,at:1500,sameSocket:false});assert.throws(()=>cadenceAccepted(snapshot,request,next,socket),/socket/);
-    const unproven=q();unproven.events[1].acceptedSequence=20;assert.throws(()=>cadenceAccepted(snapshot,request,null,unproven),/unproven/);
-    const after=q();after.events.splice(1,0,{...event,at:2000,epoch:1,acceptedSequence:21});assert.equal(cadenceAccepted(snapshot,request,next,after).proof,'accepted state at invalidating action');
-    const stale=structuredClone(snapshot);stale.snapshot_sequence=19;assert.equal(mapping.valid(stale),true);
-    assert.throws(()=>cadenceAccepted(stale,request,next,q()),/stale sequence/);
   });
   const coldSockets=()=>[{index:0,opened:10,closed:12},{index:1,opened:20,closed:22},{index:2,opened:30,closed:null}];
   const socketBaseline=()=>({index:2,count:3,at:40,end:120});
@@ -143,7 +103,7 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
   // (net::ERR_ABORTED) before the baseline and failed the join, though the page superseded it.
   await t.test('Cold selection read the page timed out before baseline is superseded, not a failure',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
-    const initiator={type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:mapping.fetchLine},{url:origin+'/recording.js',lineNumber:mapping.timerLine}]}};
+    const initiator={type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:mapping.fetchLine},{url:origin+'/recording.js',lineNumber:mapping.explicitLines[0]}]}};
     const uuid='00000000-0000-4000-8000-000000000001',unknown={value:null,query_sequence:null,observed_at_ms:null,confirmed:false};
     const snapshot={v:1,profile_id:uuid,boot_id:uuid,profile_revision:3,generation:11,operating_revision:7,snapshot_sequence:21,monotonic_ms:100,control:'manual',selection:{mode:'ft8',band:null,nominal_hz:null,origin:'unknown',confirmed_command_id:null},available_bands:[],operation:null,cancellation:null,receive:{job_id:null,mode:null,state:null,audio_state:'closed',owner_released:true},radio:{connection_generation:0,state:'closed',error:null,observations:{frequency:unknown,mode:unknown,data:unknown,rx_tx:unknown,split:unknown}}};
     const seen=(abort={})=>{
@@ -500,17 +460,16 @@ function cadenceSource(bytes){
   // CDP line numbers are 0-based, the same as these indices.
   const single=(what,hits)=>{assert.equal(hits.length,1,`review the cadence caller mapping: ${what} matched ${hits.length} lines of recording.js (${hits.map(n=>n+1).join(',')||'none'})`);return hits[0];};
   const fetchLine=single('the selection fetch',lines.flatMap((line,n)=>line.includes("stationFetch('/receive/selection'")?[n]:[]));
-  // Every call of operatingSync (not its definition). The automatic one is the operatingSync(false)
-  // inside a top-level setInterval( timer: its statement starts at the nearest unindented line.
+  // Every call of operatingSync (not its definition); selection.state carries the state, so none
+  // may sit inside a top-level setInterval( timer (its statement starts at the nearest unindented line).
   const callers=lines.flatMap((line,n)=>/(?<!function )\boperatingSync\(/.test(line)?[n]:[]);
   const inTimer=n=>{while(n>0&&/^\s/.test(lines[n]))n--;return lines[n].startsWith('setInterval(');};
-  const timerLine=single('the automatic timer caller',callers.filter(n=>lines[n].includes('operatingSync(false)')&&inTimer(n)));
-  const explicitLines=callers.filter(n=>n!==timerLine);
+  const timers=callers.filter(inTimer);assert.equal(timers.length,0,`review the cadence caller mapping: a timer reads the selection (${timers.map(n=>n+1)})`);
   assert.ok(source.includes("stationFetch('/receive/selection',{signal:AbortSignal.timeout(10000)})"),'frozen 10 s selection read timeout');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
   // The digest is report evidence of which source was served, not a gate.
   const sha256=require('node:crypto').createHash('sha256').update(source,'utf8').digest('hex');
-  return {sha256,valid,fetchLine,timerLine,explicitLines};
+  return {sha256,valid,fetchLine,explicitLines:callers};
 }
 function cadenceCaller(initiator,origin,mapping){
   let frames=initiator?.stack?.callFrames;
@@ -523,54 +482,10 @@ function cadenceCaller(initiator,origin,mapping){
   assert.ok(frames?.length>=2,'complete selection caller stack');
   assert.equal(frames[0].url,origin+'/recording.js');assert.equal(frames[0].functionName,'operatingSync');assert.equal(frames[0].lineNumber,mapping.fetchLine,`selection read from line ${frames[0].lineNumber}, not the selection fetch ${mapping.fetchLine}: review the cadence caller mapping`);
   const caller=frames[1];assert.equal(caller.url,origin+'/recording.js');
-  // Every other operatingSync call of the served source is explicit or reconciliation.
+  // Every operatingSync call of the served source is explicit or reconciliation.
   // Unknown stacks fail closed. catSync never reads selection (CL-022-03).
-  if(caller.lineNumber===mapping.timerLine)return 'automatic';
   assert.ok(mapping.explicitLines.includes(caller.lineNumber),`unknown selection caller line ${caller.lineNumber}: review the cadence caller mapping`);
   return 'explicit/reconciliation';
-}
-function cadencePair(previous,current,mutations){
-  const gap=current.started-previous.started,p=previous.body,c=current.body;
-  const pending=p.operation?.result==='pending';
-  const pair={previous,current,gap,priorResult:p.operation?.result??null,minimum:pending?3950:7950,eligible:false,reason:null};
-  if(current.kind!=='automatic'){pair.reason='explicit/reconciliation';return pair;}
-  assert.ok(previous.ended<=current.started,'sequential actual selection transport');
-  // These lower bounds apply to EVERY automatic dispatch, even across an identity change.
-  assert.ok(gap>=pair.minimum,`automatic ${pair.priorResult} start spacing ${gap}`);
-  if(!c){pair.reason='incomplete trailing response';return pair;}
-  const fixed=['station','profile_id','boot_id','profile_revision','operating_revision'];
-  if(fixed.some(key=>(key==='station'?previous.station:p[key])!==(key==='station'?current.station:c[key]))||p.operation?.command_id!==c.operation?.command_id){pair.reason='identity/command changed';return pair;}
-  if(p.operation&&['base_revision','revision','action','requested','old_job_id'].some(key=>JSON.stringify(p.operation[key])!==JSON.stringify(c.operation[key]))){pair.reason='command context changed';return pair;}
-  if(p.radio?.connection_generation!==c.radio?.connection_generation){pair.reason='radio connection changed';return pair;}
-  if(mutations.some(m=>m.started>previous.started&&m.started<=current.started)){pair.reason='intervening mutation';return pair;}
-  if(c.snapshot_sequence<p.snapshot_sequence){pair.reason='stale successor';return pair;}
-  const changed=p.generation!==c.generation||p.receive.job_id!==c.receive.job_id;
-  // Only the same owning operation may introduce its newly created receive context.
-  if(changed&&!(pending&&c.operation?.command_id===p.operation.command_id&&c.operation.new_job_id&&c.receive.job_id===c.operation.new_job_id&&c.generation>=p.generation)){
-    pair.reason='unrelated receive context';return pair;
-  }
-  pair.eligible=true;pair.pendingCoverage=pending&&gap<7950;pair.passiveCoverage=!pending;return pair;
-}
-function cadenceAccepted(body,request,next,qualification){
-  const {expected,events}=qualification;
-  for(const key of ['profile_id','boot_id','profile_revision'])assert.equal(body[key],expected[key],`source acceptance expected ${key}`);
-  const before=events.filter(e=>e.at<=request.wallStarted).at(-1);
-  assert.ok(before&&before.connected&&before.sameSocket,'proven connected socket at dispatch');
-  assert.ok(before.acceptedSequence===null||body.snapshot_sequence>=before.acceptedSequence,'source stale sequence guard');
-  const boundary=next?.wallStarted??events.at(-1).at;
-  const during=events.filter(e=>e.at>request.wallStarted&&e.at<=boundary);
-  for(const event of during){
-    assert.ok(event.connected&&event.sameSocket,'source socket context invalidated');
-    if(event.epoch!==before.epoch){
-      // A synchronous action checkpoint can prove acceptance BEFORE that action
-      // increments the epoch. Otherwise network completion alone is insufficient.
-      assert.equal(event.acceptedSequence,body.snapshot_sequence,'source epoch discarded or acceptance unproven');
-      assert.ok(request.wallEnded!==null&&request.wallEnded<=event.at,'mutation before response completion');
-      return {epoch:before.epoch,proof:'accepted state at invalidating action',acceptedSequence:event.acceptedSequence};
-    }
-  }
-  assert.ok(next||events.at(-1).acceptedSequence===body.snapshot_sequence,'final response acceptance unproven');
-  return {epoch:before.epoch,proof:next?'frozen guards and next sequential dispatch':'accepted final checkpoint',acceptedSequence:body.snapshot_sequence};
 }
 function cadenceQualification(seen){
   const q=seen.acceptance,events=q.events;
@@ -613,15 +528,8 @@ function cadenceJoin(seen,origin,mapping){
     const previous=network[index-1];if(previous)assert.ok(previous.ended!==null&&previous.ended<=transfer.started,'no transport overlap');
     const priorBody=seen.reads[index-1]?.body;
     if(priorBody&&read.body&&priorBody.boot_id===read.body.boot_id)assert.ok(read.body.snapshot_sequence>=priorBody.snapshot_sequence,'fail closed on a snapshot the browser would reject as old');
-    // The source cannot dispatch the next read until response.text, validation and
-    // operatingState assignment finish. Observer JSON callbacks may finish later.
-    const acceptance=read.body&&transfer.wallStarted>=seen.acceptance.events[0].at?cadenceAccepted(read.body,transfer,network[index+1],seen.acceptance):null;
-    return {...transfer,station:origin,kind:cadenceCaller(transfer.initiator,origin,mapping),body:read.body,acceptance,observerParsedAt:read.ended};
+    return {...transfer,station:origin,kind:cadenceCaller(transfer.initiator,origin,mapping),body:read.body,observerParsedAt:read.ended};
   });
-}
-function assertCadenceCoverage(pairs,label){
-  assert.ok(pairs.some(p=>p.eligible&&p.pendingCoverage),`${label}: missing automatic4s pending-context pair`);
-  assert.ok(pairs.some(p=>p.eligible&&p.passiveCoverage),`${label}: missing automatic8s passive-context pair`);
 }
 function correlatedOffAck(requests,acks,after){
   for(const request of requests.filter(r=>r.profile==='off'&&r.at>=after)){
@@ -672,7 +580,7 @@ function liveSelectionFixture(){
     for(let i=0;i<2;i++){
       const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}});contexts.push(context);
       const page=await context.newPage();pages.push(page);
-      const seen={reads:[],profileBodies:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[],subscriptionRequests:[],subscriptionAcks:[],navigations:[],abandonedBodies:[]};observations.push(seen);
+      const seen={selectionEvents:[],reads:[],profileBodies:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[],subscriptionRequests:[],subscriptionAcks:[],navigations:[],abandonedBodies:[]};observations.push(seen);
       page.on('framenavigated',frame=>{if(frame===page.mainFrame())seen.navigations.push({url:frame.url(),at:performance.now()});});
       const cdp=await context.newCDPSession(page),transfers=new Map();await cdp.send('Network.enable');
       cdp.on('Network.requestWillBeSent',event=>{const transfer={id:event.requestId,route:new URL(event.request.url).pathname,method:event.request.method,started:performance.now(),browserStarted:event.timestamp,wallStarted:event.wallTime*1000,wallEnded:null,ended:null,encodedBytes:null,initiator:event.initiator};transfers.set(event.requestId,transfer);seen.transfers.push(transfer);});
@@ -697,7 +605,7 @@ function liveSelectionFixture(){
         if(!['/receive/selection','/receive','/receive/results'].includes(route)){if((response.headers()['content-type']||'').includes('application/json')){try{entry.bodyBytes=(await response.body()).length;}catch(error){entry.bodyError=error.message;}}return;}
         await observeReceiveResponse(response,entry,seen,reads,errors);
       });
-      page.on('websocket',socket=>{const session={index:seen.sockets.length,opened:performance.now(),closed:null,messages:[],receivedBytes:0};seen.sockets.push(session);socket.on('close',()=>session.closed=performance.now());socket.on('socketerror',error=>session.error=String(error));socket.on('framesent',event=>{try{const m=JSON.parse(event.payload);if(['spectrum.off','spectrum.thin','spectrum.detail'].includes(m.type)&&Number.isSafeInteger(m.id))seen.subscriptionRequests.push({socket:session.index,at:performance.now(),id:m.id,profile:m.type.slice(9)});}catch{}});socket.on('framereceived',event=>{session.receivedBytes+=Buffer.byteLength(event.payload);try{const m=JSON.parse(event.payload),at=performance.now();seen.wireFrames.push({socket:session.index,at,type:m.type,bytes:Buffer.byteLength(event.payload)});if(m.type==='spectrum.subscription')seen.subscriptionAcks.push({socket:session.index,at,id:m.id,profile:m.data?.profile});if(m.type==='spectrum.frame')seen.frames.push({socket:session.index,at,data:m.data});else session.messages.push({at,type:m.type,id:m.id,radio:m.data?.radio});}catch{}});});
+      page.on('websocket',socket=>{const session={index:seen.sockets.length,opened:performance.now(),closed:null,messages:[],receivedBytes:0};seen.sockets.push(session);socket.on('close',()=>session.closed=performance.now());socket.on('socketerror',error=>session.error=String(error));socket.on('framesent',event=>{try{const m=JSON.parse(event.payload);if(['spectrum.off','spectrum.thin','spectrum.detail'].includes(m.type)&&Number.isSafeInteger(m.id))seen.subscriptionRequests.push({socket:session.index,at:performance.now(),id:m.id,profile:m.type.slice(9)});}catch{}});socket.on('framereceived',event=>{session.receivedBytes+=Buffer.byteLength(event.payload);try{const m=JSON.parse(event.payload),at=performance.now();seen.wireFrames.push({socket:session.index,at,type:m.type,bytes:Buffer.byteLength(event.payload)});if(m.type==='selection.state')seen.selectionEvents.push({at,socket:session.index,bytes:Buffer.byteLength(event.payload),data:m.data});if(m.type==='spectrum.subscription')seen.subscriptionAcks.push({socket:session.index,at,id:m.id,profile:m.data?.profile});if(m.type==='spectrum.frame')seen.frames.push({socket:session.index,at,data:m.data});else session.messages.push({at,type:m.type,id:m.id,radio:m.data?.radio});}catch{}});});
     }
     const coldStarted=performance.now(),coldDeadline=coldStarted+230000;
     const coldRemaining=()=>{const remaining=Math.floor(coldDeadline-performance.now());assert.ok(remaining>0,'shared 230s Cold phase deadline');return remaining;};
@@ -798,8 +706,9 @@ function liveSelectionFixture(){
         const records=seen.results.filter(p=>p.job_id===identity.job&&p.source_id===identity.source).flatMap(p=>p.records??[]);
         assert.ok(records.length>0,'actual manager result page supplied the displayed row');
         for(const record of records){assert.equal(record.payload77,oracle[mode].payload77);assert.equal(record.text,'CQ K1ABC FN42');assert.deepEqual(record.fields,oracle[mode].fields);assert.ok(Math.abs(record.frequency_hz-oracle[mode].expected_receive.frequency_hz)<=oracle[mode].expected_receive.frequency_tolerance_hz);}
-        const snapshots=seen.reads.filter(r=>r.body?.operation?.command_id===ack.command_id);const last=snapshots.at(-1)?.body;
-        assert.ok(last,'actual operating snapshot retained this command');assert.equal(last.selection.nominal_hz,hz);assert.equal(last.radio.observations.frequency.value,hz);assert.equal(last.radio.observations.mode.value.mode,'USB');assert.equal(last.radio.observations.data.value.enabled,true);
+        // The state this browser holds (selection.state or its own read) retained the command.
+        await pages[i].waitForFunction(({command,hz})=>operatingState?.operation?.command_id===command&&operatingState.selection.nominal_hz===hz&&operatingState.radio.observations.frequency.value===hz,{command:ack.command_id,hz},{timeout:15000});
+        const last=await pages[i].evaluate(()=>operatingState);assert.equal(last.radio.observations.mode.value.mode,'USB');assert.equal(last.radio.observations.data.value.enabled,true);
       }
       report.contexts=identities;await save();console.log(`Actual ${mode} CQ context ${identities.length}/5 at ${hz}Hz`);
       return ack.command_id;
@@ -821,20 +730,11 @@ function liveSelectionFixture(){
       for(const [index,page]of pages.entries()){observations[index].acceptance.events=await page.evaluate(()=>window.__cadenceAcceptanceCheckpoint());observations[index].acceptance.socketBaseline.end=performance.now();}
       report.phases[profile].cadenceRaw=observations.map(seen=>({sourceBase64:seen.cadenceSource?.toString('base64'),acceptance:seen.acceptance,profileBodies:seen.profileBodies,reads:seen.reads,transfers:seen.transfers,sockets:seen.sockets.map(({messages,...s})=>({...s,messages:messages.length,lastMessageAt:messages.at(-1)?.at??null}))}));await save();
       const evidence=observations.map(seen=>{
-        const evidence={joined:[],pairs:[],errors:[]};
+        const evidence={joined:[],errors:[]};
         try{
           const mapping=cadenceSource(seen.cadenceSource);evidence.sourceSha256=mapping.sha256;
           cadenceQualification(seen);
           evidence.joined=cadenceJoin(seen,origin,mapping);
-          const mutations=observations.flatMap(o=>o.transfers).filter(stationMutation);
-          for(let n=1;n<evidence.joined.length;n++){
-            const previous=evidence.joined[n-1],current=evidence.joined[n];
-            if(previous.started<start||current.started>=start+seconds*1000)continue;
-            assert.ok(previous.acceptance,'prior selection acceptance proven');
-            if(current.body)assert.ok(current.acceptance,'successor selection acceptance proven');
-            try{evidence.pairs.push(cadencePair(previous,current,mutations));}
-            catch(error){evidence.errors.push({message:error.message,previous,current});}
-          }
         }catch(error){evidence.errors.push({message:error.message});}
         return evidence;
       });
@@ -843,11 +743,19 @@ function liveSelectionFixture(){
         const network=selectionNetworkSummary(seen.transfers,start,start+seconds*1000);assert.equal(network.maxActive,1,'one actual CDP network selection read pending per browser');
         const proof=evidence[index];assert.deepEqual(proof.errors,[],'complete validated cadence evidence');
         const reads=proof.joined.filter(r=>r.started>=start&&r.started<start+seconds*1000&&r.body);
-        const pending=commands.map(id=>reads.filter(r=>r.body.operation?.command_id===id&&r.body.operation.result==='pending'));
-        for(const [n,polls]of pending.entries())assert.ok(polls.length>=1,`${profile} browser${index} command${n}: actual pending reads ${polls.length}`);
-        assertCadenceCoverage(proof.pairs,`${profile} browser${index}`);
-        return {reads,pending:pending.map(p=>p.length),passivePairs:proof.pairs.filter(p=>p.eligible&&p.passiveCoverage).length,pendingPairs:proof.pairs.filter(p=>p.eligible&&p.pendingCoverage).length,frames:seen.frames.length-frameStarts[index]};
+        // What this browser saw of each command while pending, from a read or an event (a whole view per socket).
+        const held=new Map(),views=seen.selectionEvents.filter(e=>e.at>=start).map(e=>{const view={...held.get(e.socket),...e.data.changed};held.set(e.socket,view);return view;});
+        const pending=commands.map(id=>reads.filter(r=>r.body.operation?.command_id===id&&r.body.operation.result==='pending').length+views.filter(v=>v.operation?.command_id===id&&v.operation.result==='pending').length);
+        // No timer: reads only come from an operator's gesture, one each (a click during a read follows it).
+        const gestures=seen.gestures.filter(at=>at>=start&&at<start+seconds*1000).length;
+        assert.ok(reads.length<=gestures,`${profile} browser${index}: ${reads.length} selection reads for ${gestures} gestures`);
+        const events=seen.selectionEvents.filter(e=>e.at>=start&&e.at<start+seconds*1000);
+        assert.ok(events.every(e=>e.bytes<=2048),`${profile} browser${index}: selection.state over 2048 B`);
+        assert.ok(events.length<=Math.ceil(seconds)+1,`${profile} browser${index}: ${events.length} selection.state in ${seconds} s`);
+        return {reads,pending,gestures,events:events.length,eventBytes:events.reduce((sum,e)=>sum+e.bytes,0),frames:seen.frames.length-frameStarts[index]};
       });
+      // A short command may end between two 1 s checks of one browser, not unseen by both.
+      for(const n of commands.keys())assert.ok(polling.some(p=>p.pending[n]>=1),`${profile} command${n}: pending seen by neither browser`);
       if(profile==='thin')assert.ok(polling.every(p=>p.frames>0),'real optional live spectrum was present, not an idle body-size exercise');
       if(profile==='off'){assert.equal(offProofs.length,2);for(const [index,ack]of offProofs.entries()){assert.ok(ack.ackAt<=start);assert.deepEqual(optionalAfterOff(observations[index].wireFrames,ack),[],'no optional frame after its correlated Off ACK');assert.equal(polling[index].frames,0,'no optional spectrum during actual Off window');}}
       report.phases[profile]={...report.phases[profile],state:'passed',seconds,sharedBytesPerSecond:traffic,statusMs:latencies,polling,commands,endedUtc:new Date().toISOString()};activePhase=null;await save();console.log(`Actual ${profile} workload completed ${seconds.toFixed(3)}s ${JSON.stringify(traffic)}`);

@@ -2,6 +2,8 @@
 // Cost 2: actual isolated station server and Chromium, no radio or external network.
 const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict');
+// A fixture's selection stays: selection.state events carry a lower snapshot_sequence, which the page refuses.
+const KEEP_SELECTION=Number.MAX_SAFE_INTEGER;
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const os=require('node:os');
@@ -1962,7 +1964,7 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
   Object.assign(state.job,{first_sequence:0,next_sequence:4,available_count:4,latest_decode:{id:1,first_sequence:0,next_sequence:4,period_start_utc:period,complete:true}});
   await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
-  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
+  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.snapshot_sequence=KEEP_SELECTION;s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
   await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:4,available_count:4,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
   page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(JSON.parse(r.postData()));});
  }});
@@ -2009,7 +2011,7 @@ test('TC-011-003 QSO pane callers show worked-before status and only interesting
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
   Object.assign(state.job,{first_sequence:0,next_sequence:3,available_count:3,latest_decode:{id:1,first_sequence:0,next_sequence:3,period_start_utc:period,complete:true}});
   await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
-  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
+  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.snapshot_sequence=KEEP_SELECTION;s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
   await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:3,available_count:3,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
   await page.route('**/contact',route=>route.fulfill({json:contactSnapshot(profile,{contact:null,transmit:{},log:null,settings:{}})}));
   page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(JSON.parse(r.postData()));});
@@ -2066,7 +2068,7 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
   Object.assign(state.job,{first_sequence:0,next_sequence:n,available_count:n,latest_decode:{id:1,first_sequence:0,next_sequence:n,period_start_utc:period,complete:true}});
   await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
-  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
+  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.snapshot_sequence=KEEP_SELECTION;s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
   await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:n,available_count:n,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
   await page.route('**/strategy',route=>route.fulfill({json:view}));
   // The strategy hits the 73 from W2CD (no flag): value 2, under the row to my call.
@@ -2148,7 +2150,7 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
   Object.assign(state.job,{first_sequence:0,next_sequence:4,available_count:4,latest_decode:{id:1,first_sequence:0,next_sequence:4,period_start_utc:period,complete:true}});
   await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
-  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
+  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.snapshot_sequence=KEEP_SELECTION;s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
   await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:4,available_count:4,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
   await page.route('**/contact/worked',async route=>{const q=JSON.parse(route.request().postData());queries.push(q);await route.fulfill({json:{v:1,statuses:q.calls.map(c=>({call:c,status:statuses[c]}))}});});
  }});
@@ -2176,7 +2178,7 @@ test('TC-050-008 a kept row keeps its worked-before status in the tip',{timeout:
     state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-11-06T10:50:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
     Object.assign(state.job,{next_sequence:1,available_count:1,latest_decode:{id:1,first_sequence:0,next_sequence:1,period_start_utc:a,complete:true}});
     await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
-    await p.route('**/receive/selection',async route=>{const s=await (await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
+    await p.route('**/receive/selection',async route=>{const s=await (await route.fetch()).json();s.snapshot_sequence=KEEP_SELECTION;s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),next=state.job.next_sequence;await route.fulfill({json:{...emptyResults(state),next_sequence:next,available_count:next,next,records:records.slice(cursor,next)}});});
     await p.route('**/contact/worked',async route=>{const body=JSON.parse(route.request().postData());asked.push(body.calls);await route.fulfill({json:{v:1,statuses:body.calls.map(call=>({call,status:'worked_other_band_or_mode'}))}});});
   }});
@@ -2226,7 +2228,7 @@ test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, C
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
   publish(1,periods[0],kept);
   await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
-  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'40m',nominal_hz:7074000,origin:'manual'};await route.fulfill({json:s});});
+  await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.snapshot_sequence=KEEP_SELECTION;s.selection={...s.selection,band:'40m',nominal_hz:7074000,origin:'manual'};await route.fulfill({json:s});});
   await page.route('**/receive/results?*',async route=>{const q=new URL(route.request().url()).searchParams,cursor=Number(q.get('cursor')),limit=Number(q.get('limit'))||64,batch=records.slice(cursor,cursor+limit),next=cursor+batch.length;
    await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:next<records.length,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
   await page.route('**/contact/worked',async route=>{const q=JSON.parse(route.request().postData());queries.push(q);await route.fulfill({json:{v:1,statuses:q.calls.map(c=>({call:c,status:statuses[c]}))}});});

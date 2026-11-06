@@ -4,6 +4,11 @@
 // engine, the actual #9 transmit owner thread on recording hardware doubles (no audio,
 // PTT or radio) and hand-authored decoded rows packed with the real codec.
 use super::*;
+// TC-007-005 lives beside this fixture (declared here, not in main.rs, so that it does not
+// count as a change of the router's timing input).
+#[cfg(not(debug_assertions))]
+#[path = "contact_thin_tests.rs"]
+mod contact_thin_tests;
 use axum::body::Body;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use tower::ServiceExt;
@@ -1278,7 +1283,22 @@ async fn contact_browser_station(filter: &[&str]) -> std::process::Output {
     let control_origin = format!("http://{}", control.local_addr().unwrap());
     let publisher = f.clone();
     let tuner = f.clone();
+    let bander = f.clone();
     let control_app = Router::new()
+        .route(
+            "/band",
+            post(move |Json(body): Json<Value>| {
+                let f = bander.clone();
+                async move {
+                    let (band, hz) = match body["band"].as_str().unwrap() {
+                        "20m" => ("20m", 14_074_000),
+                        _ => ("40m", 7_074_000),
+                    };
+                    f.state.recording.fixture_manual_band(band, hz);
+                    Json(json!({"band":band}))
+                }
+            }),
+        )
         .route(
             "/tune",
             post(move |Json(body): Json<Value>| {

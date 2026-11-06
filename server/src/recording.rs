@@ -731,6 +731,15 @@ impl Recording {
             live.device_id = id.into();
         }
     }
+    /// Fixture: a complete manual operating selection (band with its nominal frequency, origin
+    /// manual) as the browser validates it; no radio command.
+    #[cfg(test)]
+    pub(crate) fn fixture_manual_band(&self, band: &'static str, nominal_hz: u64) {
+        let mut s = self.state.lock().unwrap();
+        s.operating.nominal.band = Some(band);
+        s.operating.nominal.nominal_hz = Some(nominal_hz);
+        s.operating.nominal.origin = "manual";
+    }
     /// Test seam: an injected running live job whose result records the test publishes
     /// itself (hand-authored rows; no decoder). Returns (source, job, generation).
     #[cfg(test)]

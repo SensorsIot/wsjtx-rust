@@ -249,8 +249,9 @@ package WstxStationProtocol {
              clock, log changes), each throttled per peer by that peer's
              display subscription (Detailed, Thin, Off), so an idle Off peer receives
              almost nothing beyond heartbeat and station.tick. HTTP carries commands and
-             one snapshot read per state on (re)connect. transmit.state and contact.state
-             carry their state (WstxTransmit::TransmitWire, WstxContact::ContactStateEvent);
+             one snapshot read per state on (re)connect. transmit.state, contact.state and
+             selection.state carry their state (WstxTransmit::TransmitWire,
+             WstxContact::ContactStateEvent, WstxOperatingReceive::SelectionStateEvent);
              a state not yet carried is read after its announcement event (one pending read
              per state and browser) and after the browser's own mutation; a browser does not
              poll on a timer, except a safety read of a state not yet carried no more often
@@ -264,7 +265,8 @@ package WstxStationProtocol {
              after its first subscription and then when the saved revision changes, checked
              once per second; the browser reads GET /profile once per socket for its first
              status and on a newer announced revision, not on a later status of the socket),
-             operating selection and radio; until a read is migrated its existing cadence rules apply. */
+             operating selection (WstxOperatingReceive::SelectionStateEvent) and radio; until a read
+             is migrated its existing cadence rules apply. */
     }
     attribute def IndependentLinkAccounting {
         attribute payloadBytesPerSecond : Integer = 4000;

@@ -1105,9 +1105,9 @@ package WstxRequirements {
     verification 'TC-007-005' {
         doc /* TC-007-005 — Thin-link and local presentation
              CL-010-06, CL-010-08, CL-010-15
-             Setup: calibrated TLS 32,000 bit/s per direction, 300 ms RTT, two-client fixture for 60 s with the active result/display workload, contact status, worked-before queries and log page/import/export traffic.
-             Steps: filter/sort, resize, switch panes, scroll the Rx Frequency pane, run one contact.
-             Expected: the request recorder shows no traffic from local presentation, at most one worked-before query of at most 64 calls per period per client and station.tick at 1/s Detailed and 1/5 s Thin/Off, contact.state at most 1/s with one pending GET /contact; another client's change reaches the page in transmit.state and contact.state, only what changed, with no GET /transmit and no GET /contact, the dialogue rows in order including rows following at the same sequence, an older read never replacing a pushed change, and a contact client loading after the socket's first event having the whole state from it, with no read succeeding, and the next event following; a Tune countdown alone at most once per 5 s below Detailed; with Off and two idle clients the total stays within 1000 B/s per direction, with Thin within 3000 B/s; existing byte envelopes and bounded queues hold; connected status within 2 s and first status within 10 s after page load; overhead counted from the simulator, not packet capture.
+             Setup: calibrated TLS 32,000 bit/s per direction, 300 ms RTT, two-client fixture with the active result/display workload, contact status, worked-before queries and log page/import/export traffic. Both clients share the simulator's counted link; a control peer outside it publishes periods and makes the contact.state burst.
+             Steps: reload both pages and time the load event to Connected. Detailed, 15 s: publish a 71-call period. Local presentation: an 8 s idle window, the same 8 s with filter/sort, resize, pane switches and Rx Frequency scrolling, a second idle window. Thin, 80 s: publish a period every 15 s, run one contact, open the log page and export, update the log, and press Refresh on both clients every 5.5 s (28 samples, click to changed #updated). The control peer makes at least 20 Hold Tx revisions 100 ms apart. Off, 60 s idle.
+             Expected: the request recorder shows no traffic from local presentation, at most one worked-before query of at most 64 calls per period per client and station.tick at 1/s Detailed and 1/5 s Thin/Off, contact.state at most 1/s with one pending GET /contact; another client's change reaches the page in transmit.state and contact.state, only what changed, with no GET /transmit and no GET /contact, the dialogue rows in order including rows following at the same sequence, an older read never replacing a pushed change, and a contact client loading after the socket's first event having the whole state from it, with no read succeeding, and the next event following; a Tune countdown alone at most once per 5 s below Detailed; with Off and two idle clients the total stays within 1000 B/s per direction, with Thin within 3000 B/s; existing byte envelopes and bounded queues hold; connected status within 2 s and first status within 10 s after page load; overhead counted from the simulator, not packet capture. Local presentation: no frame type and no route absent from both idle windows, and at most one read above the idle baseline, except a read at most 2 s after its announcement event and GET /receive/results when 29.5-33 s after that route's previous read (its 30 s safety cadence). Those excepted reads are recorded with the reason and are not counted as baseline. The burst: per client at most ceil(burst seconds)+1 events and at most a third of the revisions, the last revision announced within 3.5 s of its end. Pending GET /contact is counted from each request's start to end; a read a reload dropped has no end and does not count. station.tick spacing is taken from utc_ms: Detailed count within 1 of the seconds and spacing at least 900 ms; Thin steady spacing at least 4.9 s, with extra ticks for each transmission's transmitting change; Off 11-13 ticks. Events: tick at most 224 B, contact.state at most 2048 B. Each run records every socket's close on both sides: the browser's caller and code, the station's reason, and the WebSocket bytes per event type. A missed bound fails the test at the end, listing all of them.
              2 — Isolated automated functional tests; Windows development PC, real browser/server and the existing thin-link simulator; no radio. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
@@ -2211,41 +2211,24 @@ package WstxRequirements {
                 boot/pre-intent reads never clear newer intent. Test profile edit/intervening fence.
              7. New server/old strict client keeps all old shapes; old server/new client disables
                 only unsupported operating controls. Invalid schema/identity is stale/error, never
-                manual fallback. Include actual allowed8s passive/4s pending Thin/Off selection
-                polls, normal receive/results/status, mode/band traffic, stalls and explicit Stop
+                manual fallback. Include the pushed selection.state (WstxOperatingReceive::SelectionStateEvent),
+                normal receive/results/status, mode/band traffic, stalls and explicit Stop
                 in the existing two-browser32kbit/s TLS workload. Assert each-direction mean<=3000B/s,
                 visible status<=2s, one pending selection read/ordinary mutation, status/control
-                priority and no backlog. Detailed2s/500ms is separately labelled fast-link coverage.
+                priority and no backlog. Without a timer read: the first selection.state of a socket
+                holds what GET /receive/selection gives, a later one the changed fields (at most 2048 B,
+                at most one per second), a change from outside shown with no read, and the radio
+                facts' new dates alone at most every 2 s on Detailed and every 30 s below it.
 
-                Cadence evidence classifies actual interval dispatch separately from explicit user/
-                reconciliation reads using recorded CDP initiators and the caller mapping derived
-                from the served client source (its single selection fetch, its single interval-timer
-                caller, every other caller explicit; a missing, ambiguous or unmapped site refuses),
-                joined to validated request/response identity. A pending-context pair is
-                the last accepted pending snapshot for commandX followed by an automatic interval
-                GET while that remains the accepted state, with matching station/profile/boot,
-                saved-profile/operating revision and command context, sequential actual transport,
-                and no intervening accepted snapshot or unrelated mutation/identity change. Its
-                successor may report pending OR terminal for commandX; a fresh receive job/generation
-                produced by that same command is permitted. Explicit reconciliation never supplies
-                positive automatic-cadence coverage; a broad gesture-time exclusion cannot hide
-                an interval request.
-
-                Every measured command/browser must really observe pending at least once and finish
-                its fresh known-answer CQ context. For EACH browser in EACH unchanged75s Thin/Off
-                window, require at least one actual automatic pending-context pair with start gap
-                >=3950ms and<7950ms and at least one automatic passive-context pair with gap>=7950ms.
-                The50ms observation tolerance checks the existing4000/8000ms gates; the pending
-                upper bound is only a fixture coverage discriminator proving the faster regime,
-                not a new maximum product dispatch latency. Priority may lawfully defer a poll.
-                ALL classified automatic pairs retain the applicable pending>=3950ms or passive
-                >=7950ms lower spacing; a terminal successor does not retroactively reclassify
-                its dispatch as passive. Record starts/completions, prior accepted state, timer
-                provenance, identity and successor outcome. Missing coverage fails rather than
-                fabricating pending values or forcing a legal short command to last longer.
-                Frozen negative controls accept pending->terminal and pending->pending in context;
-                reject<3950ms, passive-at4s, wrong command/identity, explicit-only, overlap and
-                missing qualifying pairs in either browser/window. Preserve all five CQ contexts,
+                Read evidence classifies each selection read using recorded CDP initiators and the
+                caller mapping derived from the served client source (its single selection fetch, every
+                caller explicit; a caller inside a timer, a missing, ambiguous or unmapped site refuses),
+                joined to validated responses. In EACH unchanged75s Thin/Off window a browser makes at
+                most one selection read per operator gesture, and each command's pending state is
+                seen by at least one browser through an event or a read; each browser ends holding the
+                command's result. Missing coverage fails rather than fabricating pending values or
+                forcing a legal short command to last longer. Frozen negative controls refuse a timer
+                caller, an unknown stack and a lost or doubled fetch. Preserve all five CQ contexts,
                 two transitions/window,26 status refreshes, original bytes/deadlines/Off ACK/frame
                 oracles and all75s windows; no product delay, padding or traffic reduction.
 
@@ -2253,12 +2236,10 @@ package WstxRequirements {
                 A. Real application/router + normal TLS/session: authenticate once through existing /session; for each allowlisted successful GET gzip decode must equal identity logical JSON exactly on immutable state, exact shape/caps preserved. Use independent standard decoder (Node zlib) and assert actual raw gzip magic/header/trailer + body rather than fetch auto-decoded size. Check Content-Type/Vary/Content-Length correctness; existing Vary/cache/security headers retained. Mutable facts compare frozen fixture context, never pretend two temporally distinct snapshots must match timestamps.
                 B. Table: absent/empty, identity, gzip, GZip case-insensitivity, gzip;q=0, gzip;q=0.5 vs identity;q=1, identity;q=0 with gzip acceptable, br-only, wildcard and explicit exclusions, invalid q/token/multiple header instances. Expected outcomes are frozen in the ordered12.1.1 negotiation table from the pinned source; malformed headers must follow the frozen ordered12.1.1 negotiation table without panic/leak; duplicate/wildcard selection follows the exact table, not a blanket last-q or any-q0 rule. Both gzip+identity explicitly forbidden=>406 only eligible successful GET. Preserve original401/403/404/400/409/500 on excluded error paths even with forbidden encodings.
                 C. Every excluded method/path including POST/session, PUT/profile, POST/receive/select and /radio operations remains unencoded and byte/schema compatible; no duplicate mutation effects. Authenticate cookies/tokens never appear in body/debug logs. Authenticated eligible snapshots contain no credential fields; malicious literal decoded text is unchanged. Oversized logical result rejected/capped BEFORE gzip, encoded size cannot admit extra rows; valid max logical result still decodes within original cap. Request Content-Encoding:gzip must not add support or bypass request body limit. HEAD/no-body/range/already-encoded cases must not be double-compressed or misframed.
-                D. Actual two Chromium browsers on unchanged shared4000B/s/direction+150ms TLS model, actual native FT4/FT8 + CAT transitions and mode-appropriate fixtures, actual status, pending/passive reads, records and source/operation identities. Preserve all Thin75s/Off75s windows and >=60 checks, five CQ records, status/pending/cadence/original WS oracles. Record Content-Encoding from real response headers, raw encoded sizes via CDP as attribution, and unchanged actual proxy TLS/model counters as sole bandwidth oracle; BOTH directions <=3000B/s and existing Off requirement, all status<=2s. No arithmetic compression estimate counts as PASS. Run original14+new15 suite through ordinary integration/prepush as selected; separate old10s Connected-after-load remains required. Identity path correctness is mandatory; identity workload bandwidth remains unproven unless separately measured.
-                The pending/passive cadence proof in7 applies unchanged to8D: an automatic poll
-                dispatched from the last accepted pending state may return terminal completion
-                for the same command. Preserve per-command pending observation and per-browser/
-                profile positive4s and passive8s evidence, exact initiator/identity correlation,
-                all lower spacing and negative controls; do not demand two pending-valued replies.
+                D. Actual two Chromium browsers on unchanged shared4000B/s/direction+150ms TLS model, actual native FT4/FT8 + CAT transitions and mode-appropriate fixtures, actual status, pushed selection state and reads, records and source/operation identities. Preserve all Thin75s/Off75s windows and >=60 checks, five CQ records, status/pending/original WS oracles. Record Content-Encoding from real response headers, raw encoded sizes via CDP as attribution, and unchanged actual proxy TLS/model counters as sole bandwidth oracle; BOTH directions <=3000B/s and existing Off requirement, all status<=2s. No arithmetic compression estimate counts as PASS. Run original14+new15 suite through ordinary integration/prepush as selected; separate old10s Connected-after-load remains required. Identity path correctness is mandatory; identity workload bandwidth remains unproven unless separately measured.
+                The read and event proof in7 applies unchanged to8D: preserve per-command pending
+                observation, exact initiator correlation and its negative controls; do not demand
+                two pending-valued replies.
                 Include tiny `{}` (2bytes) with `identity;q=0,gzip`; selected gzip must encode
                 it despite a default library minimum-size predicate. HEAD/204/304/range/already-
                 encoded responses bypass negotiation even when all encodings are forbidden.

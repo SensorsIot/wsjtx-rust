@@ -501,7 +501,9 @@ profileSelect.addEventListener('change',()=>{const id=displayPreferenceId();if(i
 if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.state==='connected')sync(socket);
 
 let live,liveFailed=false,resultsAnnounced=null,livePending=false,liveAgain=null,resultPending=false,resultFailed=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
-let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingIntent=null,lastOperatingRead=-Infinity,operatingSocket=null;
+let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingIntent=null,operatingSocket=null;
+// What this socket's selection.state events hold (WstxOperatingReceive::SelectionStateEvent).
+let operatingHeld=null,operatingHeldSocket=null;
 let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 
 // Mutations supersede earlier reads; accepted snapshots supersede pending pages.
@@ -893,10 +895,20 @@ function operatingShow(){
   const o=s.operation;
   operatingStatus.textContent=operatingFailure||(operatingUnknown?'Selection outcome unknown · refresh or press Monitor to cancel/fence before another action':mutationPending&&operatingIntent?'Selection request pending · waiting for server admission':o?`${o.result==='pending'?'Switching':o.phase} · ${o.requested.mode.toUpperCase()} ${o.requested.band}${o.error?' · '+o.error:''}`:`${s.selection.mode.toUpperCase()} · choose a band to establish nominal frequency`);
 }
+// A read or an event is accepted when it is not older than the state shown. Only an explicit
+// read or the read after an unknown outcome (reconcile) can clear that outcome's barrier.
+function operatingAccept(s,reconcile){
+  if(operatingState?.boot_id===s.boot_id&&s.snapshot_sequence<operatingState.snapshot_sequence)return;
+  const resolved=operatingUnknown&&reconcile&&(s.boot_id!==operatingUnknown.boot_id||s.operation?.command_id===operatingUnknown.command_id||s.operating_revision>operatingUnknown.base_revision);
+  if(resolved)operatingUnknown=null;
+  if(operatingIntent&&(s.operation?.command_id===operatingIntent.command_id||s.operating_revision>operatingIntent.base_revision))operatingIntent=null;
+  const catKey=o=>o&&JSON.stringify([o.boot_id,o.profile_revision,o.radio.connection_generation,o.radio.state,o.radio.error]),changed=catKey(operatingState)!==catKey(s);
+  operatingState=s;operatingSupported=true;if(changed||!catStatus)catSync();if(resolved||operatingFailure.startsWith('Operating state stale')||operatingFailure==='Disconnected · operating data stale')operatingFailure='';
+}
 async function operatingSync(reconcile=false){
   if(connection.dataset.state!=='connected'||!profileData)return;
   if(operatingReadPending){if(reconcile)operatingReadAgain=true;return;}
-  operatingReadPending=true;lastOperatingRead=performance.now();const epoch=operatingEpoch,current=socket,authEpoch=authorization?.snapshot().epoch;
+  operatingReadPending=true;const epoch=operatingEpoch,current=socket,authEpoch=authorization?.snapshot().epoch;
   try{
     const response=await stationFetch('/receive/selection',{signal:AbortSignal.timeout(10000)}),text=await response.text();
     if(epoch!==operatingEpoch||!stationContext(current,authEpoch)||connection.dataset.state!=='connected')return;
@@ -905,12 +917,7 @@ async function operatingSync(reconcile=false){
     if(!response.ok)throw new Error(s.error?.code||'Operating state unavailable');
     if(new TextEncoder().encode(text).length>3072||!validOperatingState(s)){stationData('selection',false);throw new Error('Invalid operating snapshot');}stationData('selection',true);
     if(s.profile_id!==profileData.profile_id||s.boot_id!==profileData.boot_id||s.profile_revision!==profileData.revision)throw new Error('Operating identity is stale');
-    if(operatingState?.boot_id===s.boot_id&&s.snapshot_sequence<operatingState.snapshot_sequence)return;
-    const resolved=operatingUnknown&&reconcile&&(s.boot_id!==operatingUnknown.boot_id||s.operation?.command_id===operatingUnknown.command_id||s.operating_revision>operatingUnknown.base_revision);
-    if(resolved)operatingUnknown=null;
-    if(operatingIntent&&(s.operation?.command_id===operatingIntent.command_id||s.operating_revision>operatingIntent.base_revision))operatingIntent=null;
-    const catKey=o=>o&&JSON.stringify([o.boot_id,o.profile_revision,o.radio.connection_generation,o.radio.state,o.radio.error]),changed=catKey(operatingState)!==catKey(s);
-    operatingState=s;operatingSupported=true;if(changed||!catStatus)catSync();if(resolved||operatingFailure.startsWith('Operating state stale')||operatingFailure==='Disconnected · operating data stale')operatingFailure='';
+    operatingAccept(s,reconcile);
   }catch(error){if(epoch===operatingEpoch&&current===socket){operatingFailure=`Operating state stale · ${error.message}`;operatingSupported=null;}}
   finally{operatingReadPending=false;operatingShow();receiveShow();if(operatingReadAgain){operatingReadAgain=false;operatingSync(true);}}
 }
@@ -926,7 +933,7 @@ async function operatingSelect(action,value){
     if(!response.ok){operatingFailure=`Selection refused · ${ack.error?.code??'request_failed'}`;operatingIntent=null;return;}
     if(new TextEncoder().encode(text).length>384||!operatingShape(ack,'v,profile_id,boot_id,command_id,operating_revision,accepted,phase')||ack.v!==1||ack.profile_id!==s.profile_id||ack.boot_id!==s.boot_id||ack.command_id!==command_id||ack.accepted!==true||!operatingCounter(ack.operating_revision)||ack.operating_revision<=s.operating_revision||!['releasing','applying','restarting','applied','failed','release_blocked'].includes(ack.phase))throw new Error('Invalid admission receipt');
   }catch(error){if(epoch===operatingEpoch){operatingUnknown=operatingIntent;operatingFailure=`Selection outcome unknown · ${error.message} · refresh or press Monitor to cancel/fence`;}}
-  finally{if(epoch===operatingEpoch){mutationPending=false;receiveShow();await operatingSync(true);await receiveSync();}}
+  finally{if(epoch===operatingEpoch){mutationPending=false;receiveShow();if(operatingUnknown)await operatingSync(true);await receiveSync();}}
 }
 async function operatingStop(){
   const s=operatingState,target=operatingUnknown??operatingIntent??(s?.operation?{command_id:s.operation.command_id,base_revision:s.operation.base_revision,boot_id:s.boot_id}:null);
@@ -940,7 +947,7 @@ async function operatingStop(){
     if(new TextEncoder().encode(text).length>384||!operatingShape(ack,'v,profile_id,boot_id,command_id,operating_revision,accepted,phase')||ack.v!==1||ack.profile_id!==profileData.profile_id||ack.boot_id!==target.boot_id||ack.command_id!==command_id||ack.accepted!==true||ack.phase!=='cancelled'||!operatingCounter(ack.operating_revision))throw new Error('Invalid cancellation receipt');
     if(epoch===operatingEpoch){operatingUnknown=null;operatingIntent=null;}
   }catch(error){if(epoch===operatingEpoch){operatingUnknown=target;operatingFailure=`Stop outcome unknown · ${error.message} · refresh before another action`;}}
-  finally{if(epoch===operatingEpoch){mutationPending=false;await operatingSync(true);await receiveSync();receiveShow();}}
+  finally{if(epoch===operatingEpoch){mutationPending=false;if(operatingUnknown)await operatingSync(true);await receiveSync();receiveShow();}}
 }
 // Selects synchronously when nothing is in progress so the epoch moves within the change event.
 function restartBusy(){const s=window.wstxContact?.snapshot?.(),c=s?.contact;return (c&&!['idle','completed','cancelled'].includes(c.state))||s?.transmit?.arm_state==='armed'||s?.transmit?.tune;}
@@ -970,11 +977,19 @@ addEventListener('station-ready',event=>{
   operatingShow();
 });
 addEventListener('station-stale',()=>{operatingFailure='Disconnected · operating data stale';operatingShow();});
-setInterval(()=>{
-  if(operatingSupported===false||operatingReadPending||livePending||resultPending||syncPending||mutationPending||uncertainMutation||refresh.disabled||connection.dataset.state!=='connected')return;
-  const pending=operatingState?.operation?.result==='pending',slow=profileSelect.value!=='detail',interval=slow?(pending?4000:8000):(pending?500:2000);
-  if(performance.now()-lastOperatingRead>=interval)operatingSync(false);
-},250);
+// WstxOperatingReceive::SelectionStateEvent (#10): the socket's first event holds every field,
+// each later one what changed. Only events build this view, so a read never mixes into it.
+addEventListener('station-message',event=>{
+  const {current,message}=event.detail;if(current!==socket||message.type!=='selection.state'||!message.data?.changed)return;
+  const d=message.data;if(operatingHeldSocket!==current){operatingHeldSocket=current;operatingHeld=null;}
+  operatingHeld={...operatingHeld,...d.changed,v:1,profile_id:d.profile_id,boot_id:d.boot_id,snapshot_sequence:d.snapshot_sequence,monotonic_ms:d.monotonic_ms};
+  // A snapshot near its cap comes whole in two events.
+  if(Object.keys(operatingHeld).length<15)return;
+  const valid=validOperatingState(operatingHeld);stationData('selection',valid);
+  // Another identity than the status shown waits for the read station-ready makes for it.
+  if(!valid||operatingHeld.profile_id!==profileData?.profile_id||operatingHeld.boot_id!==profileData?.boot_id||operatingHeld.profile_revision!==profileData?.revision)return;
+  operatingAccept(operatingHeld,false);operatingShow();receiveShow();
+});
 if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state==='connected'){operatingSocket=socket;operatingSync(false);}
 
 // CL-022-03/05: automatic CAT health is read from the additive authorization status

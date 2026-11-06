@@ -373,3 +373,92 @@ async fn live_native_selection_tls_thin_and_off() {
 async fn live_native_selection_commission_has_zero_native_effects() {
     crate::auth_tests::commission_zero_native_io_case().await;
 }
+
+// Proves: CL-010-15; TC-009-005 case7 (#10). What selection.state carries and when: the top-level
+// fields that changed, the radio facts' new dates alone at most every 2 s on Detailed and every
+// 30 s below it, a new value at once.
+#[test]
+fn selection_state_paces_only_new_dates_of_the_radio_facts() {
+    let fact = |value: Value, seq: u64, at: u64| json!({"value":value,"query_sequence":seq,"observed_at_ms":at,"confirmed":true});
+    let view = |hz: u64, seq: u64, at: u64| {
+        json!({"v":1,"profile_id":"p","boot_id":"b","snapshot_sequence":seq,"monotonic_ms":at+1,"generation":1,
+        "radio":{"connection_generation":1,"state":"ready","error":null,"observations":{"frequency":fact(json!(hz),seq,at)}}})
+    };
+    let (a, dated, tuned) = (
+        view(14_074_000, 1, 10),
+        view(14_074_000, 2, 1010),
+        view(7_074_000, 2, 1010),
+    );
+    let whole = selection_http::state_changes(&Value::Null, &a);
+    assert_eq!(
+        whole.keys().collect::<Vec<_>>(),
+        ["generation", "radio"],
+        "a new socket gets every field; the identity stands beside `changed`"
+    );
+    assert!(selection_http::state_due(
+        "off",
+        &whole,
+        &Value::Null,
+        &a,
+        Duration::ZERO
+    ));
+    assert!(selection_http::state_changes(&a, &a).is_empty());
+    let changed = selection_http::state_changes(&a, &dated);
+    assert_eq!(changed.keys().collect::<Vec<_>>(), ["radio"]);
+    for (profile, held, goes) in [
+        ("detail", 1_999, 2_000),
+        ("thin", 29_999, 30_000),
+        ("off", 29_999, 30_000),
+    ] {
+        assert!(
+            !selection_http::state_due(profile, &changed, &a, &dated, Duration::from_millis(held)),
+            "{profile} holds new dates"
+        );
+        assert!(
+            selection_http::state_due(profile, &changed, &a, &dated, Duration::from_millis(goes)),
+            "{profile} sends new dates"
+        );
+    }
+    let changed = selection_http::state_changes(&a, &tuned);
+    assert!(
+        selection_http::state_due("off", &changed, &a, &tuned, Duration::ZERO),
+        "a new value goes at once"
+    );
+}
+
+// Proves: CL-010-15; TC-009-005 case7 (#10). The largest valid snapshot reaches the peer through the
+// 2048 B optional write, which would never send a larger event. Hand-built at every field's maximum.
+#[test]
+fn selection_state_of_the_largest_snapshot_passes_the_optional_write() {
+    let id = "00000000-0000-4000-8000-000000000000";
+    let counter = 9_007_199_254_740_991u64;
+    let code = "a".repeat(32);
+    let fact = |value: Value| json!({"value":value,"query_sequence":counter,"observed_at_ms":counter,"confirmed":false});
+    let now = json!({"v":1,"profile_id":id,"boot_id":id,"profile_revision":counter,"generation":counter,"operating_revision":counter,
+        "snapshot_sequence":counter,"monotonic_ms":counter,"control":"manual",
+        "selection":{"mode":"ft8","band":"160m","nominal_hz":74_800_000,"origin":"cat_readback","confirmed_command_id":id},
+        "available_bands":selection::BANDS,
+        "operation":{"command_id":id,"base_revision":counter,"revision":counter,"action":"mode",
+            "requested":{"mode":"ft8","band":"160m","nominal_hz":74_800_000},"phase":"release_blocked","result":"cancelled","error":code,
+            "monitor_before":false,"monitor_wanted":false,"old_job_id":id,"new_job_id":id},
+        "cancellation":{"command_id":id,"target_command_id":id,"revision":counter,"result":"already_cancelled"},
+        "receive":{"job_id":id,"mode":"spectrum","state":"cancelling","audio_state":"unavailable","owner_released":false},
+        "radio":{"connection_generation":counter,"state":"unavailable","error":code,"observations":{
+            "frequency":fact(json!(74_800_000)),"mode":fact(json!({"mode":"USB","filter":255})),
+            "data":fact(json!({"enabled":false,"filter":3})),"rx_tx":fact(json!("TX")),"split":fact(json!(false))}}});
+    let (first, holds) = selection_http::state_event(
+        &Value::Null,
+        &now,
+        selection_http::state_changes(&Value::Null, &now),
+    );
+    assert!(first.len() <= 2048, "first event {} B", first.len());
+    let (second, holds) =
+        selection_http::state_event(&holds, &now, selection_http::state_changes(&holds, &now));
+    assert!(second.len() <= 2048, "second event {} B", second.len());
+    assert!(
+        selection_http::state_changes(&holds, &now).is_empty(),
+        "two events hold every field"
+    );
+    let wire: Value = serde_json::from_str(&second).unwrap();
+    assert!(!wire["data"]["changed"].as_object().unwrap().is_empty());
+}
