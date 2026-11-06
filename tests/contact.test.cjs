@@ -76,9 +76,11 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
   const texts=await page.locator('#contact-messages .ct-text').evaluateAll(inputs=>inputs.map(i=>i.value));
   assert.deepEqual(texts,['K1ABC HB9BLA JN47','K1ABC HB9BLA -12','K1ABC HB9BLA R-12','K1ABC HB9BLA RRR','K1ABC HB9BLA 73','CQ HB9BLA JN47']);
   assert.equal(await page.locator('input[name=contact-next][value=tx1]').isChecked(),true);
-  assert.equal(await page.locator('#contact-rx').inputValue(),'1235');assert.equal(await page.locator('#contact-tx').inputValue(),'1235');
+  // Proves: CL-039-08; TC-039-009: Hold Tx is on with no explicit choice; the selection moves Rx only.
+  assert.equal(await page.locator('#contact-hold').isChecked(),true);
+  assert.equal(await page.locator('#contact-rx').inputValue(),'1235');assert.equal(await page.locator('#contact-tx').inputValue(),'1500');
   assert.equal(await page.locator('#contact-parity').inputValue(),'odd');
-  assert.deepEqual(await page.locator('#waterfall-wrap .ct-marker').evaluateAll(ms=>ms.map(m=>[m.dataset.key,m.getAttribute('aria-valuenow'),m.textContent])),[['rx','1235',''],['tx','1235','']],'#50: unlabelled lines at the selected frequency');
+  assert.deepEqual(await page.locator('#waterfall-wrap .ct-marker').evaluateAll(ms=>ms.map(m=>[m.dataset.key,m.getAttribute('aria-valuenow'),m.textContent])),[['rx','1235',''],['tx','1500','']],'#50: unlabelled lines; Tx held at its slot');
   assert.equal((await snapshot()).transmit.arm_state,'disarmed','selection alone never arms');
   assert.equal(requests.some(r=>r.method==='POST'&&r.path.startsWith('/transmit')),false,'no transmit request from selection');
   assert.equal(commands().some(c=>c.action==='enable_tx'),false);
