@@ -575,7 +575,7 @@ package WstxStrategy {
              #24 S2a; a contest strategy: any other than its own, WstxContest::ContestRun); it selects nothing until the reason is gone.
              Waiting: on each fresh complete publication the list is the verdicts with a rank,
              not completed in this run on this band and mode and not given up by the operator
-             (ManualIntervention), one per call, in ValueOrder (no CQ is ever called). A candidate the
+             (ManualIntervention), one per call, in ValueOrder (an award strategy calls no CQ; a contest Run, WstxContest::ContestRun). A candidate the
              run left after calls_per_station on this band and mode is passed over when any other
              is listed; a
              caller never is (D5).

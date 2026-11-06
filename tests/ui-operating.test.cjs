@@ -2668,6 +2668,14 @@ test('TC-063-012 Fully automatic: the warning, the confirmation and the run stat
   automation={...automation,runRevision:3,run:{...automation.run,state:'stopped',reason:'run_limit'}};
   await announce('automation.state',{policy_revision:1,run_revision:3});
   await page.locator('#station-automation').filter({hasText:'stopped · run limit'}).waitFor();
+  // Start after a stop: None, then the same selection, so that the station starts a new run.
+  await open();
+  const before=puts.length;
+  await page.locator('#cp-go').click();
+  await page.locator('#op-confirm[open]').waitFor();
+  await page.locator('#op-confirm-ok').click();
+  await page.waitForFunction(()=>!document.querySelector('#contest-prompt').open);
+  assert.deepEqual(puts.slice(before).map(b=>[b.expected_revision,b.configuration.contest?.operation??null]),[[puts[before].expected_revision,null],[puts[before].expected_revision+1,'run']]);
   // Where the rules are silent: no warning, the clause is on the prompt; no confirmation sent.
   await open();
   assert.equal(await page.locator('input[name=cp-operation]:checked').inputValue(),'run','the operation in force');

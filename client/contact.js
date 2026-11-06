@@ -1355,7 +1355,11 @@ $('cp-go').addEventListener('click',async()=>{
   const automatic=operation!=='colouring',forbidden=automatic&&clause?.automation==='forbidden';
   if(forbidden&&!await window.wstxConfirm(`The rules of ${clause.name} forbid automatic operation: ${clause.automation_text} Transmit automatically anyway?`,'Transmit automatically'))return;
   contestSummary=null;
-  const ok=await saveConfiguration({...c,active:null,contest:{profile,start:utc(start),end:utc(end),operation,...(forbidden?{automation_confirmed:true}:{})}},'Contest');
+  const contest={profile,start:utc(start),end:utc(end),operation,...(forbidden?{automation_confirmed:true}:{})},now=selection();
+  // Start after a stop is a new selection: None, then this one (a save of the same contest starts nothing).
+  const same=now&&automatic&&!strategyRun()&&['profile','start','end','operation'].every(k=>now[k]===contest[k]);
+  if(same){const {contest:_,...rest}=c;if(!await saveConfiguration({...rest,active:null},'Contest')){$('cp-result').textContent=statusNode.textContent;return;}}
+  const ok=await saveConfiguration({...(same?(({contest:_,...rest})=>rest)(config()):c),active:null,contest},'Contest');
   if(ok)contestPrompt.close('ok');else $('cp-result').textContent=statusNode.textContent;
 });
 const newStrategy=name=>({name,class:'award',goals:['dxcc'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:true,window:{kind:'all'}});

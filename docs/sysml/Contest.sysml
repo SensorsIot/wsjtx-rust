@@ -143,7 +143,8 @@ package WstxContest {
              ARRL Digi digital except RTTY; Field Day and ARRL VHF any mode; IARU MGM and FT8 Activity
              digital. Phone is SSB, USB, LSB, AM, FM, DIGITALVOICE; CW is CW; every other mode is
              digital. In time order; a QSO that is a dupe by the DupeRule counts nothing. Band and
-             mode are the record's effective values, the grid its first four characters. band_grid
+             mode are the record's effective values, the grid its first four characters; a record without
+             a band (logged without a confirmed CAT dial, WstxContact::DirectLog) counts for nothing. band_grid
              with no grid: a logged QSO without a grid dupes every grid of that call on the band, a
              decoded message without a grid is a dupe when the call is logged on that band. The
              tally: qsos, multipliers (distinct keys of the MultiplierRule), points (the PointsRule;
@@ -239,16 +240,23 @@ package WstxContest {
              or no_client disarm and cancel the CQ at once and stop (there is no exchange to
              end); an operator's selection or cancel makes it manual; a disarm stops it with
              the cause (tx_watchdog, transmit_stopped): the Tx watchdog counts a repeated CQ like
-             any message, so a Run on a silent band stops at its limit until a new selection.
-             The log: ContestLog of the last build on the station step (a build behind the log
-             runs on its own thread), built at the selection first; a QSO not yet in it is held off
-             by this run's own completed list. Band Activity follows ContestView; the status
+             any message, so a Run on a silent band stops at its limit until a new selection (the
+             step that sees the disarm stops it tx_watchdog, and an automatic enable_tx after a
+             watchdog stop is refused besides, WatchdogFromOperator). Every stop
+             and a selection cancel a CQ of the run: none is left to read as the operator's contact.
+             Esc on the run's own CQ ends that CQ; the run calls again.
+             The log: ContestLog of the last build on the station step, built at the selection
+             first; each step of the run asks for it, so a build behind the log runs on its own
+             thread as soon as a QSO is logged, also a manual one, well before the next
+             publication; until it is done a QSO is held off by this run's own completed list. Band Activity follows ContestView; the status
              names "calling CQ", "<call>", "your QSO", "waiting · <reason>", "stopped · <reason>"
              or "not started · <reason>" from GET /automation on automation.state only, never a
              timer. The prompt offers both beside colouring only; AutomationClause forbidden asks
              WstxOperatingLayout's confirmation with the clause's text and sends
              automation_confirmed true on Transmit automatically, sends nothing when declined;
-             silent asks nothing, the clause is on the prompt. No band hopping. */
+             silent asks nothing, the clause is on the prompt. Start of the selection in force after
+             its run stopped sends None and then the selection, a new selection by the contract
+             (a save of the same contest starts nothing). No band hopping. */
     }
     attribute def ContestDirective {
         doc /* WstxStrategy::DirectedCqRule in a contest activity: the word of the station's

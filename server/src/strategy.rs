@@ -1223,6 +1223,15 @@ impl Owner {
         }
         last
     }
+    /// Test seam: how many QSOs the ContestLog last built holds, starting no build.
+    #[cfg(test)]
+    pub(crate) fn contest_log_built_qsos(&self) -> Option<u64> {
+        self.contest_log
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            .map(|(_, l)| l.qsos)
+    }
     /// The saved configuration (None while the file is unreadable).
     pub(crate) fn config(&self, state: &ProfileState) -> Option<Config> {
         self.lock(state).config.clone()

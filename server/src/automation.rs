@@ -750,10 +750,14 @@ impl Owner {
                 }
                 // Future dispatch ends before the acknowledgement; a contact armed by
                 // this run is disarmed through the same Enable Tx path (not a Halt).
-                let armed = run.state.armed();
+                let (armed, own_cq) = (run.state.armed(), run.state == RunState::CallingCq);
                 Self::finish(&mut inner, "stopped");
                 if armed {
                     disarm(&contact, state);
+                }
+                // A run's CQ is never left behind (it would read as the operator's contact).
+                if own_cq {
+                    cancel(&contact, state);
                 }
             }
         }
@@ -794,12 +798,12 @@ impl Owner {
             .run
             .as_ref()
             .filter(|run| run.state != RunState::Stopped)
-            .map(|run| run.state.armed());
+            .map(|run| (run.state.armed(), run.state == RunState::CallingCq));
         if running.is_some() {
             Self::finish(&mut inner, "stopped");
         }
-        if running == Some(true) {
-            if active {
+        if let Some((true, own_cq)) = running {
+            if active || own_cq {
                 cancel(contact, state);
             }
             disarm(contact, state);
@@ -948,11 +952,16 @@ impl Owner {
             return;
         }
         let armed = run.state.armed();
+        let own_cq = run.state == RunState::CallingCq;
         let is_strategy = run.config.strategy;
         let stop = |inner: &mut Inner, reason: &'static str, disarm_now: bool| {
             Self::finish(inner, reason);
             if disarm_now {
                 disarm(contact, state);
+            }
+            // A run's CQ is never left behind (it would read as the operator's contact).
+            if own_cq {
+                cancel(contact, state);
             }
         };
         // Halt (browser button, Alt+H or MCP) ends the run in every state.
@@ -1008,6 +1017,13 @@ impl Owner {
         // WstxStrategy::WorkedWindow: keeps the worked set current off the step.
         if let Some((_, s)) = &chosen {
             strategy::worked_of(state, s.window);
+        }
+        // WstxContest::ContestRun likewise: the next evaluation after a QSO counts that QSO.
+        if let Some(c) = &contest {
+            let (_, locator) = contact_http::profile_facts(state);
+            contact
+                .strategy
+                .contest_log_latest(state, c, locator.as_deref());
         }
         // The records before this sequence belong to complete publications.
         let settled = publication.as_ref().map(|p| if p.3 { p.2 } else { p.1 });
@@ -1078,13 +1094,11 @@ impl Owner {
                 }
                 // Nothing new at the limit or with nobody here: the CQ ends at once.
                 if run_limit || no_client {
-                    stop(
+                    return stop(
                         &mut inner,
                         if run_limit { "run_limit" } else { "no_client" },
                         true,
                     );
-                    cancel(contact, state);
-                    return;
                 }
                 // The band, the activity or the period no longer fit: back to waiting.
                 if waiting_reason.is_some() {
