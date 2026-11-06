@@ -1774,7 +1774,8 @@ package WstxRequirements {
              vector's expected text from the station's decoder with DT within 0.3 s from arrival
              anchoring, saves the windows and leaves no slice or client. It stops as occupied with a
              client or slice present, whichever way round the replies come, as unverified when a
-             reply is refused, and reports not_released for a slice left behind. One packet in four
+             reply is refused, reports not_released for a slice left behind or a closing look it cannot
+             verify, and reports the loss it saw. One packet in four
              lost is counted at 25% with the canonical frame rate kept and no new epoch, and a
              120 ms stall reads as at least 90 ms of jitter. Another model on the admitted API connects and its announced
              model, serial and firmware are shown. GET /native-flex reports the packet's timestamp

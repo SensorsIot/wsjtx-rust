@@ -335,6 +335,29 @@ test('TC-023-002 the live check reports a slice left on the radio', {timeout: 60
   assert.equal(report.status, 'not_released', JSON.stringify(report.after));
 });
 
+test('TC-023-002 the live check does not call a run clean when its closing look fails', {timeout: 60000}, async t => {
+  const emulator = await new FlexEmulator({silent: true}).start();
+  t.after(() => emulator.stop());
+  const out = await fs.mkdtemp(path.join(os.tmpdir(), 'wstx-flex-check-test-'));
+  t.after(() => fs.rm(out, {recursive: true, force: true}));
+  // The station never sends slice list, so this refusal reaches only the closing look.
+  const refuse = setInterval(() => { if (emulator.slices.size) { emulator.refuseList = true; clearInterval(refuse); } }, 50);
+  t.after(() => clearInterval(refuse));
+  const report = await liveCheck({address: `127.0.0.1:${emulator.port}`, seconds: 2, out, registerPort: emulator.udpPort});
+  assert.equal(report.after.verified, false);
+  assert.equal(report.status, 'not_released');
+});
+
+test('TC-023-001 the live check reports the loss it saw', {timeout: 60000}, async t => {
+  const emulator = await new FlexEmulator({silent: true, dropEvery: 8}).start();
+  t.after(() => emulator.stop());
+  const out = await fs.mkdtemp(path.join(os.tmpdir(), 'wstx-flex-check-test-'));
+  t.after(() => fs.rm(out, {recursive: true, force: true}));
+  const report = await liveCheck({address: `127.0.0.1:${emulator.port}`, seconds: 4, out, registerPort: emulator.udpPort});
+  assert.equal(report.status, 'measured', JSON.stringify(report.after));
+  assert.ok(Math.abs(report.loss_percent - 12.5) < 2, `loss ${report.loss_percent}`);
+});
+
 test('TC-023-001 lost packets keep the timeline and are counted, and a stall shows as jitter', {timeout: 60000}, async t => {
   const port = await udpPort();
   const emulator = await new FlexEmulator({discoveryPorts: [port], dropEvery: 4}).start();
