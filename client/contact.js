@@ -1017,7 +1017,11 @@ function showRun(){
   const contest=selection();
   if(contest){
     const when=t=>`${t.slice(5,10)} ${t.slice(11,16)}`,tally=contestSummary?` · ${contestSummary.qsos} QSOs · ${contestSummary.multipliers} mult · score ${contestSummary.score}`:'';
-    statusNode.dataset.active='false';statusNode.textContent=`Contest ${selectedProfile()?.name??contest.profile} · ${when(contest.start)} to ${when(contest.end)} UTC · colouring only${tally}`;
+    const automatic=contest.operation!=='colouring',on=automatic&&!refusal&&strategyRun();
+    // WstxContest::ContestRun: the run state from GET /automation, read on automation.state only.
+    const state=!automatic?'colouring only':refusal?`not started · ${words_(refusal)}`:!run?.strategy?{sp:'S&P',run:'Run'}[contest.operation]:!on?`stopped${run.reason?` · ${words_(run.reason)}`:''}`:run.state==='contact_active'?run.selected?.call??'in QSO':run.state==='calling_cq'?'calling CQ':run.state==='manual'?'your QSO':`waiting${run.reason?` · ${words_(run.reason)}`:''}`;
+    const slot=on&&run.tx_slot?.free===false?' · no free Tx slot':'';
+    statusNode.dataset.active=String(!!on);statusNode.textContent=`Contest ${selectedProfile()?.name??contest.profile} · ${when(contest.start)} to ${when(contest.end)} UTC · ${state}${slot}${tally}`;
     return;
   }
   // None: a run the HALT or a selection ended (the generic text is for other runs).
@@ -1320,12 +1324,13 @@ const contestPrompt=document.createElement('dialog');contestPrompt.id='contest-p
 contestPrompt.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="contest-prompt-title">Contest strategy</h2><button type="button" class="op-halt-small" id="contest-prompt-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button></header>
 <div class="se-options"><label>Contest<select id="cp-profile"></select></label><label>Start (UTC)<input id="cp-start" type="datetime-local" step="60"></label><label>End (UTC)<input id="cp-end" type="datetime-local" step="60"></label></div>
 <p id="cp-schedule" class="op-muted"></p><p id="cp-activity" class="op-muted"></p>
-<fieldset class="se-options"><legend>Operation</legend><label class="op-check"><input type="radio" name="cp-operation" value="colouring" checked>Colouring only: Band Activity by the contest rules, you operate</label></fieldset>
+<fieldset class="se-options"><legend>Operation</legend><label class="op-check"><input type="radio" name="cp-operation" value="colouring" checked>Colouring only: Band Activity by the contest rules, you operate</label><label class="op-check"><input type="radio" name="cp-operation" value="sp">Fully automatic, search and pounce</label><label class="op-check"><input type="radio" name="cp-operation" value="run">Fully automatic, Run: calls CQ</label></fieldset>
 <ul id="cp-notes" class="op-muted"></ul><p id="cp-result" class="op-muted" role="status"></p><menu><button value="cancel" type="submit">Cancel</button><button type="button" class="op-primary" id="cp-go">Start</button></menu></form>`;
 document.querySelector('main').append(contestPrompt);
 function contestFill(keep){
   const p=contests.find(x=>x.id===$('cp-profile').value)??contests[0];if(!p)return;
   const minute=t=>t?t.slice(0,16):'';
+  const wanted=keep?.operation??'colouring';for(const r of contestPrompt.querySelectorAll('input[name=cp-operation]'))r.checked=r.value===wanted;
   $('cp-start').value=minute(keep?.start??p.period?.start);$('cp-end').value=minute(keep?.end??p.period?.end);
   $('cp-schedule').textContent=`${p.schedule}${p.period?.band?` · this round ${p.period.band}`:''}${p.period?'':' · enter the date'}`;
   const on=window.wstxContact?.snapshot()?.settings?.activity??'none';
@@ -1345,7 +1350,12 @@ $('cp-go').addEventListener('click',async()=>{
   const c=config();if(!c)return;const start=$('cp-start').value,end=$('cp-end').value;
   if(!start||!end){$('cp-result').textContent='Enter the start and the end of the contest period';return;}
   const utc=t=>`${t.slice(0,16)}Z`;contestSummary=null;
-  const ok=await saveConfiguration({...c,active:null,contest:{profile:$('cp-profile').value,start:utc(start),end:utc(end),operation:'colouring'}},'Contest');
+  // WstxContest::AutomationClause: a warning to confirm where the rules forbid it; the clause is on screen where they are silent.
+  const profile=$('cp-profile').value,operation=contestPrompt.querySelector('input[name=cp-operation]:checked').value,clause=contests.find(p=>p.id===profile);
+  const automatic=operation!=='colouring',forbidden=automatic&&clause?.automation==='forbidden';
+  if(forbidden&&!await window.wstxConfirm(`The rules of ${clause.name} forbid automatic operation: ${clause.automation_text} Transmit automatically anyway?`,'Transmit automatically'))return;
+  contestSummary=null;
+  const ok=await saveConfiguration({...c,active:null,contest:{profile,start:utc(start),end:utc(end),operation,...(forbidden?{automation_confirmed:true}:{})}},'Contest');
   if(ok)contestPrompt.close('ok');else $('cp-result').textContent=statusNode.textContent;
 });
 const newStrategy=name=>({name,class:'award',goals:['dxcc'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:true,window:{kind:'all'}});

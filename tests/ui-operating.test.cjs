@@ -2621,6 +2621,68 @@ test('TC-063-008 The contest prompt, colouring only, the callable list and Show 
   assert.deepEqual(errors,[]);
 });
 
+// Proves: CL-063-05; TC-063-012. Automatic operation: the warning to confirm where the rules forbid
+// it, a note where they are silent; the run state comes with the automation.state push. Station
+// replies are hand-written fixtures; the expected requests are written here.
+test('TC-063-012 Fully automatic: the warning, the confirmation and the run state',{timeout:60000},async t=>{
+  let view,automation={policy:0,runRevision:0,run:null,refusal:null},automationReads=0;const puts=[];
+  const profile=(id,name,extra)=>({id,name,cabrillo:null,cabrillo_confirmed:false,activity:'none',bands:['20m'],modes:'',exchange:'',dupes:'band',points:'one_per_call',multipliers:'none',score:'',automation:'silent',automation_text:'The rules do not address automatic operation.',schedule:`${name} schedule`,notes:[],source:'',period:{start:'2026-08-29T12:00Z',end:'2026-08-30T12:00Z',band:null},...extra});
+  const profiles=[profile('ww_digi','WW Digi',{activity:'ww_digi',automation:'forbidden',automation_text:'A human operator must initiate calling each QSO partner.'}),profile('ft8_activity','FT8 Activity')];
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:1,configuration:{continent:null,active:null,strategies:[],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[],most_wanted:null,most_wanted_unreadable:false,most_wanted_attribution:''};
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base)}));
+    await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());puts.push(b);view={...view,revision:view.revision+1,configuration:b.configuration};}await route.fulfill({json:view});});
+    await p.route('**/strategy/contests',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,profiles}}));
+    await p.route('**/automation',route=>{automationReads++;return route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,policy_revision:automation.policy,run_revision:automation.runRevision,configuration:automation.policy?{strategy:true}:null,run:automation.run,strategy_refusal:automation.refusal}});});
+  }});
+  await page.waitForFunction(()=>document.querySelector('#strategy-contest')?.disabled===false,null,{timeout:25000});
+  const announce=(type,data)=>page.evaluate(([type,data])=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type,data}}})),[type,data]);
+  const open=async op=>{await page.locator('#strategy-contest').click();await page.locator('#contest-prompt[open]').waitFor();if(op)await page.check(`input[name=cp-operation][value=${op}]`);};
+  // Where the rules forbid it: a warning; declined sends nothing, the prompt stays.
+  await open('run');
+  assert.equal(await page.locator('input[name=cp-operation]:checked').inputValue(),'run');
+  await page.locator('#cp-go').click();
+  await page.locator('#op-confirm[open]').waitFor();
+  assert.match(await page.locator('#op-confirm-text').textContent(),/forbid automatic operation.*A human operator must initiate/);
+  await page.screenshot({path:'test-results/ui-operating/contest-warning-1366.png'});
+  await page.locator('#op-confirm button[value=cancel]').click();
+  await page.waitForFunction(()=>!document.querySelector('#op-confirm').open);
+  assert.deepEqual(puts,[],'declined: nothing sent');
+  assert.equal(await page.locator('#contest-prompt[open]').count(),1);
+  // Confirmed: one PUT that says so.
+  await page.locator('#cp-go').click();
+  await page.locator('#op-confirm[open]').waitFor();
+  await page.locator('#op-confirm-ok').click();
+  await page.waitForFunction(()=>!document.querySelector('#contest-prompt').open);
+  assert.deepEqual(puts.at(-1).configuration.contest,{profile:'ww_digi',start:'2026-08-29T12:00Z',end:'2026-08-30T12:00Z',operation:'run',automation_confirmed:true});
+  // The run state: only on the push, no polling.
+  await page.waitForTimeout(200);const reads=automationReads;await page.waitForTimeout(1500);assert.equal(automationReads,reads,'no client polling');
+  automation={policy:1,runRevision:1,refusal:null,run:{id:crypto.randomUUID(),state:'calling_cq',reason:null,mode:'ft8',given_up:[],rested:null}};
+  await announce('automation.state',{policy_revision:1,run_revision:1});
+  await page.locator('#station-automation').filter({hasText:'Contest WW Digi · 08-29 12:00 to 08-30 12:00 UTC · calling CQ'}).waitFor();
+  assert.equal(await page.locator('#station-automation').getAttribute('data-active'),'true');
+  automation={...automation,runRevision:2,run:{...automation.run,state:'waiting',reason:'outside_period'}};
+  await announce('automation.state',{policy_revision:1,run_revision:2});
+  await page.locator('#station-automation').filter({hasText:'waiting · outside period'}).waitFor();
+  automation={...automation,runRevision:3,run:{...automation.run,state:'stopped',reason:'run_limit'}};
+  await announce('automation.state',{policy_revision:1,run_revision:3});
+  await page.locator('#station-automation').filter({hasText:'stopped · run limit'}).waitFor();
+  // Where the rules are silent: no warning, the clause is on the prompt; no confirmation sent.
+  await open();
+  assert.equal(await page.locator('input[name=cp-operation]:checked').inputValue(),'run','the operation in force');
+  await page.selectOption('#cp-profile','ft8_activity');
+  assert.equal(await page.locator('input[name=cp-operation]:checked').inputValue(),'colouring','colouring only is the default for every contest');
+  assert.match(await page.locator('#cp-notes').textContent(),/do not address automatic operation/);
+  await page.check('input[name=cp-operation][value=sp]');
+  await page.locator('#cp-go').click();
+  await page.waitForFunction(()=>!document.querySelector('#contest-prompt').open);
+  assert.equal(await page.locator('#op-confirm[open]').count(),0);
+  assert.equal('automation_confirmed' in puts.at(-1).configuration.contest,false);
+  assert.equal(puts.at(-1).configuration.contest.operation,'sp');
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-039-01; TC-039-006 the continent is a station setting now.
 test('TC-039-006 Settings > General continent saves to the station strategy store',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});

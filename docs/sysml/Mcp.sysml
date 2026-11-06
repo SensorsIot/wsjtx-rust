@@ -214,7 +214,7 @@ package WstxMcp {
              Exact published values; no tolerance or epsilon. The first candidate is
              chosen, once per publication. */
     }
-    enum def RunState { enum waiting; enum contact_active; enum manual; enum stopped; }
+    enum def RunState { enum waiting; enum contact_active; enum calling_cq; enum manual; enum stopped; }
     enum def StopReason {
         enum stopped; enum completed; enum limit_reached; enum no_answer; enum halted;
         enum transmit_stopped; enum contact_changed; enum authority_lost;
@@ -309,7 +309,7 @@ package WstxMcp {
              unstopped run id, else 409 stale_request; dispatch ends before the receipt,
              then the run's contact is disarmed. Accepted: 202 {v:1, profile_id, boot_id,
              command_id, accepted:true, policy_revision, run_revision, run_id, state
-             off|waiting|contact_active|manual|stopped}. run_revision also advances on every run
+             off|waiting|contact_active|calling_cq|manual|stopped} (calling_cq: only a contest Run, WstxContest::ContestRun). run_revision also advances on every run
              change (selection, contact transition, counters, stop). Counters at
              9007199254740991 refuse counter_exhausted. Accepted means admitted, not keyed. */
     }

@@ -501,7 +501,8 @@ attribute def ActivityOrdering {
              three the same width; at most 75em wide that column goes below Band Activity,
              still the same vertical stack, at most 48em everything stacks (a phone
              scrolls the workspace, never horizontally).
-             Strategy element: `Strategy [name] [edit] [Value]` (#39, WstxStrategy): the name
+             Strategy element: `Strategy [name] [edit] [Value] [Contest] [Show all]` (#39, WstxStrategy;
+             Contest opens WstxContest::ContestPrompt, Show all only with a contest, ContestView): the name
              selects the active strategy, which starts it, None stops it
              (StrategySelector, StrategyRun); edit opens the StrategyEditor popup; Value returns
              Band Activity to the value order (ValueView); beside them the run state. HALT

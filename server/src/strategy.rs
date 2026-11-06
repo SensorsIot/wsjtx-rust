@@ -473,6 +473,27 @@ impl Config {
         }
         v
     }
+    /// A contest strategy that transmits (WstxContest::ContestRun).
+    pub(crate) fn automatic_contest(&self) -> Option<crate::contest::Selection> {
+        self.contest.filter(crate::contest::Selection::automatic)
+    }
+    /// What a run follows: the active award strategy, or the automatic contest as the bounds of
+    /// a strategy run (its calls per station; the contest evaluates, not the goals).
+    pub(crate) fn run_strategy(&self) -> Option<Strategy> {
+        match self.automatic_contest() {
+            Some(c) => Some(Strategy {
+                name: c.profile.name.to_owned(),
+                goals: Vec::new(),
+                needed: Needed::NotWorked,
+                region: Region::All,
+                min_snr_db: None,
+                calls_per_station: crate::contest::RUN_CALLS_PER_STATION,
+                treat_73_as_cq: true,
+                window: Window::All,
+            }),
+            None => self.active_strategy().cloned(),
+        }
+    }
     pub(crate) fn active_strategy(&self) -> Option<&Strategy> {
         let name = self.active.as_deref()?;
         self.strategies
@@ -1003,14 +1024,34 @@ pub(crate) fn station(state: &ProfileState, config: &Config, window: Window) -> 
         my_locator: locator,
     }
 }
-/// #63 WstxContest::ContestLog of a selection, from the stored log; None when it is unreadable.
+/// (log revision, profile, start, end, my locator) of a built ContestLog.
+type ContestKey = (u64, &'static str, i64, i64, Option<String>);
+type ContestCache = Mutex<Option<(ContestKey, Arc<crate::contest::Log>)>>;
+/// #63 WstxContest::ContestLog of a selection from the stored log, kept for the station step;
+/// None when it is unreadable. On a blocking thread (routes, the build of a later step).
 fn contest_log(
-    state: &ProfileState,
+    log: &logbook::Logbook,
+    cache: &ContestCache,
     s: &crate::contest::Selection,
     my_locator: Option<&str>,
-) -> Option<crate::contest::Log> {
-    let list = state.logbook.contest_qsos(s.start_ms, s.end_ms).ok()?;
-    Some(crate::contest::Log::of(s, my_locator, &list))
+) -> Option<Arc<crate::contest::Log>> {
+    let (revision, list) = log.contest_qsos(s.start_ms, s.end_ms).ok()?;
+    let key = (
+        revision,
+        s.profile.id,
+        s.start_ms,
+        s.end_ms,
+        my_locator.map(str::to_owned),
+    );
+    let mut held = cache.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some((k, built)) = held.as_ref()
+        && *k == key
+    {
+        return Some(built.clone());
+    }
+    let built = Arc::new(crate::contest::Log::of(s, my_locator, &list));
+    *held = Some((key, built.clone()));
+    Some(built)
 }
 
 // ------------------------------------------------------------------ alerts
@@ -1072,6 +1113,9 @@ pub(crate) struct Owner {
     alert_revision: std::sync::atomic::AtomicU64,
     /// The store revision, read without the lock by the strategy.state event.
     revision_seen: std::sync::atomic::AtomicU64,
+    /// #63 the ContestLog last built, for the station step, which never builds it.
+    contest_log: Arc<ContestCache>,
+    contest_building: Arc<std::sync::atomic::AtomicBool>,
     /// The HaltTransmit count the selection has seen (a change sets active to None).
     halts_seen: std::sync::atomic::AtomicU64,
     /// WstxStrategy::MostWantedList: a leaf lock over the parsed list; the file is read
@@ -1132,6 +1176,52 @@ impl Owner {
             }
         }
         inner
+    }
+    /// #63 WstxContest::ContestLog on a blocking thread: waits until it is current.
+    pub(crate) fn contest_log_now(
+        &self,
+        state: &ProfileState,
+        s: &crate::contest::Selection,
+        my_locator: Option<&str>,
+    ) -> Option<Arc<crate::contest::Log>> {
+        contest_log(&state.logbook, &self.contest_log, s, my_locator)
+    }
+    /// #63 WstxContest::ContestLog for the station step: the last built one of this contest at
+    /// once; one behind the log is built on its own thread for a later step.
+    pub(crate) fn contest_log_latest(
+        &self,
+        state: &ProfileState,
+        s: &crate::contest::Selection,
+        my_locator: Option<&str>,
+    ) -> Option<Arc<crate::contest::Log>> {
+        use std::sync::atomic::Ordering;
+        let same = |k: &ContestKey| {
+            (k.1, k.2, k.3, k.4.as_deref()) == (s.profile.id, s.start_ms, s.end_ms, my_locator)
+        };
+        let (behind, last) = {
+            let held = self.contest_log.lock().unwrap_or_else(|p| p.into_inner());
+            match held.as_ref().filter(|(k, _)| same(k)) {
+                // A busy log keeps the last one: the step never waits for it.
+                Some((k, built)) => (
+                    state.logbook.revision_now().is_some_and(|r| r != k.0),
+                    Some(built.clone()),
+                ),
+                None => (true, None),
+            }
+        };
+        if behind && !self.contest_building.swap(true, Ordering::AcqRel) {
+            let (log, cache, building) = (
+                state.logbook.clone(),
+                self.contest_log.clone(),
+                self.contest_building.clone(),
+            );
+            let (selection, locator) = (*s, my_locator.map(str::to_owned));
+            std::thread::spawn(move || {
+                contest_log(&log, &cache, &selection, locator.as_deref());
+                building.store(false, Ordering::Release);
+            });
+        }
+        last
     }
     /// The saved configuration (None while the file is unreadable).
     pub(crate) fn config(&self, state: &ProfileState) -> Option<Config> {
@@ -1305,10 +1395,19 @@ impl Owner {
         }
         let mut inner = self.lock(state);
         let revision = inner.revision + 1;
-        let Some(config) = inner.config.as_mut().filter(|c| c.active.is_some()) else {
+        let Some(config) = inner
+            .config
+            .as_mut()
+            .filter(|c| c.active.is_some() || c.automatic_contest().is_some())
+        else {
             return;
         };
         config.active = None;
+        // #63 WstxContest::ContestRun: the contest stays, colouring only: it transmits nothing.
+        if let Some(c) = config.contest.as_mut() {
+            c.operation = crate::contest::Operation::Colouring;
+            c.automation_confirmed = false;
+        }
         inner.revision = revision;
         self.revision_seen.store(revision, Ordering::Release);
     }
@@ -1659,9 +1758,9 @@ impl Owner {
                 return Err(("not_configured", Some("strategy".into())));
             };
             let st = station(state, &config, Window::All);
-            let log = contest_log(state, &selection, st.my_locator.as_deref());
+            let log = self.contest_log_now(state, &selection, st.my_locator.as_deref());
             let verdicts: Vec<Value> =
-                crate::contest::evaluate(&selection, &records, &st, log.as_ref())
+                crate::contest::evaluate(&selection, &records, &st, log.as_deref())
                     .iter()
                     .filter(|v| {
                         explain || v.rank.is_some() || v.grey || v.contest.is_some_and(|c| c.dupe)
@@ -1778,13 +1877,16 @@ pub async fn put(
         let (snapshot, changed) = station.strategy.put(&state, body)?;
         if changed {
             station.strategy.most_wanted_load(&state);
-            if let Some(s) = station
-                .strategy
-                .config(&state)
-                .as_ref()
-                .and_then(Config::active_strategy)
-            {
+            let config = station.strategy.config(&state);
+            if let Some(s) = config.as_ref().and_then(Config::active_strategy) {
                 worked_build(&state, s.window);
+            }
+            // #63 the run's first step finds the contest's log.
+            if let Some(c) = config.as_ref().and_then(Config::automatic_contest) {
+                let (_, locator) = contact_http::profile_facts(&state);
+                station
+                    .strategy
+                    .contest_log_now(&state, &c, locator.as_deref());
             }
             // Taken after the strategy lock is free: the automation lock comes first.
             station.automation.selected(&station, &state, access);

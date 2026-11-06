@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+// Proves: CL-063-05; TC-063-009.
 // Proves: CL-063-01, CL-063-03, CL-063-04; TC-063-001, TC-063-002, TC-063-005, TC-063-006. Hand tables from the rule sources listed on #63
 // (the dates by a calendar, not by the schedule code).
 use super::*;
@@ -665,4 +666,56 @@ fn tc_063_007_a_selection_is_parsed_exactly() {
         parse_selection(&json!(1), "contest").err().as_deref(),
         Some("contest")
     );
+}
+
+// Proves: TC-063-009
+#[test]
+fn tc_063_009_automatic_needs_the_confirmation_only_where_the_rules_forbid_it() {
+    let form = |id: &str, operation: &str, confirmed: Option<bool>| {
+        let mut v = json!({"profile":id,"start":"2026-08-29T12:00Z","end":"2026-08-30T12:00Z",
+            "operation":operation});
+        if let Some(c) = confirmed {
+            v["automation_confirmed"] = json!(c);
+        }
+        parse_selection(&v, "contest")
+    };
+    let refused = Some("contest.automation_confirmed");
+    for id in ["ww_digi", "arrl_digi", "arrl_field_day", "arrl_vhf_jun"] {
+        for op in ["sp", "run"] {
+            assert_eq!(form(id, op, None).err().as_deref(), refused, "{id} {op}");
+            assert_eq!(form(id, op, Some(false)).err().as_deref(), refused);
+            assert!(form(id, op, Some(true)).is_ok(), "{id} {op}");
+        }
+        assert!(
+            form(id, "colouring", None).is_ok(),
+            "colouring asks nothing"
+        );
+    }
+    // Where the rules are silent it is a note: nothing to confirm.
+    for id in ["iaru_50_mgm", "ft8_activity"] {
+        assert!(form(id, "run", None).is_ok(), "{id}");
+    }
+    // A confirmation is a boolean, and it reads back.
+    assert_eq!(
+        parse_selection(
+            &json!({"profile":"ww_digi","start":"2026-08-29T12:00Z","end":"2026-08-30T12:00Z",
+                "operation":"sp","automation_confirmed":"yes"}),
+            "contest"
+        )
+        .err()
+        .as_deref(),
+        refused
+    );
+    let s = form("ww_digi", "run", Some(true)).expect("a selection");
+    assert_eq!(s.json()["automation_confirmed"], true);
+    assert!(s.automatic());
+    assert!(
+        !form("ww_digi", "colouring", None)
+            .expect("a selection")
+            .automatic()
+    );
+    // The period holds its start and not its end.
+    assert!(s.in_period(at("2026-08-29T12:00:00Z")));
+    assert!(!s.in_period(at("2026-08-30T12:00:00Z")));
+    assert!(!s.in_period(at("2026-08-29T11:59:59Z")));
 }

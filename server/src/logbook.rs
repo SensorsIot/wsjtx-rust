@@ -1457,14 +1457,19 @@ impl Logbook {
         }
         last.map(|(_, _, w)| w)
     }
-    /// #63 WstxContest::ContestLog: the contacts that started in [start, end) (Unix ms).
+    /// The log revision now; None while the log is busy (the station step never waits).
+    pub fn revision_now(&self) -> Option<u64> {
+        self.inner.try_lock().ok().map(|inner| inner.revision)
+    }
+    /// #63 WstxContest::ContestLog: the log revision and the contacts that started in [start,
+    /// end) (Unix ms).
     pub fn contest_qsos(
         &self,
         start_ms: i64,
         end_ms: i64,
-    ) -> Result<Vec<crate::contest::Qso>, StoreError> {
+    ) -> Result<(u64, Vec<crate::contest::Qso>), StoreError> {
         let inner = self.lock()?;
-        Ok(inner
+        let list = inner
             .records
             .iter()
             .filter_map(|r| {
@@ -1477,7 +1482,8 @@ impl Logbook {
                     ms,
                 })
             })
-            .collect())
+            .collect();
+        Ok((inner.revision, list))
     }
     /// #55 the country table in use and whether an uploaded file was unreadable.
     pub fn dxcc(&self) -> (crate::dxcc::Table, bool) {
