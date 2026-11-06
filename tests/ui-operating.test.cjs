@@ -2538,6 +2538,7 @@ test('TC-042-001 Editor offers the goals and the station saves them unselected',
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
   await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
+  await page.locator('#se-new').click();
   assert.deepEqual(await page.locator('.se-goals label').evaluateAll(l=>l.map(x=>x.textContent)),['DXCC','DXCC per band','DXCC slot (band and mode)','WAZ (CQ zones)','WPX (prefixes)','Grids','New call']);
   await page.locator('[data-goal=dxcc_slot]').check();await page.locator('[data-goal=waz]').check();
   const saved=page.waitForResponse(r=>r.url().endsWith('/strategy')&&r.request().method()==='PUT');
@@ -2553,7 +2554,15 @@ test('TC-039-032 Built-in strategies are read-only in the editor and copy to a u
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
   const puts=[];page.on('request',r=>{if(r.url().endsWith('/strategy')&&r.method()==='PUT')puts.push(JSON.parse(r.postData()));});
   await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
-  assert.deepEqual(await page.locator('#se-which option').allTextContents(),['Strategy 1','New DXCC (built-in)','New DXCC on band (built-in)','DXCC slots (built-in)','New calls (built-in)','DX hunting (built-in)']);
+  assert.deepEqual(await page.locator('#se-which option').allTextContents(),['New DXCC (built-in)','New DXCC on band (built-in)','DXCC slots (built-in)','New calls (built-in)','DX hunting (built-in)']);
+  // No user strategy: the first built-in, read-only; Save with nothing stores nothing and selects nothing.
+  assert.equal(await page.inputValue('#se-name'),'New DXCC');
+  assert.equal(await page.locator('#se-name').isDisabled(),true);
+  const none=page.waitForResponse(r=>r.url().endsWith('/strategy')&&r.request().method()==='PUT');
+  await page.locator('#se-save').click();const noneReply=await (await none).json();
+  assert.deepEqual([noneReply.configuration.active,noneReply.configuration.strategies],[null,[]]);
+  await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
+  assert.equal(await page.inputValue('#se-name'),'New DXCC');
   await page.selectOption('#se-which',{label:'DX hunting (built-in)'});
   assert.equal(await page.inputValue('#se-name'),'DX hunting');
   assert.equal(await page.inputValue('#se-region'),'dx');
@@ -2564,8 +2573,9 @@ test('TC-039-032 Built-in strategies are read-only in the editor and copy to a u
   await page.locator('#se-copy').click();
   assert.equal(await page.inputValue('#se-name'),'New DXCC copy');
   assert.equal(await page.locator('#se-name').isDisabled(),false);
-  await page.locator('#se-save').click();await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
-  assert.deepEqual(puts.at(-1).configuration.strategies.map(s=>[s.name,s.goals,s.builtin]),[['Strategy 1',['dxcc'],undefined],['New DXCC copy',['dxcc'],undefined]],'no built-in is sent');
+  const copied=page.waitForResponse(r=>r.url().endsWith('/strategy')&&r.request().method()==='PUT');
+  await page.locator('#se-save').click();await copied;
+  assert.deepEqual(puts.at(-1).configuration.strategies.map(s=>[s.name,s.goals,s.builtin]),[['New DXCC copy',['dxcc'],undefined]],'only the copy; no built-in is sent');
   assert.equal(puts.at(-1).configuration.active,null,'Save never selects');
   // A name that collides is refused by the station.
   await page.locator('#se-name').fill('new calls');
@@ -2574,7 +2584,7 @@ test('TC-039-032 Built-in strategies are read-only in the editor and copy to a u
   assert.match(await page.locator('#se-result').textContent(),/strategies\[\d\]\.name/);
   await page.locator('#strategy-editor button[value=cancel]').click();
   // Selecting a built-in from the selector.
-  assert.deepEqual((await page.locator('#strategy-name option').allTextContents()).slice(0,3),['None','New DXCC','New DXCC on band']);
+  assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None','New DXCC','New DXCC on band','DXCC slots','New calls','DX hunting','New DXCC copy']);
   const saved=page.waitForResponse(r=>r.url().endsWith('/strategy')&&r.request().method()==='PUT');
   await page.selectOption('#strategy-name','DXCC slots');const reply=await (await saved).json();
   assert.equal(reply.configuration.active,'DXCC slots');

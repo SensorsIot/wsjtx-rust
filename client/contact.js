@@ -1291,7 +1291,6 @@ document.querySelector('main').append(editor);
 let drafts=[],current=0,previewTimer=null,previewSeq=0;
 function editorOpen(){
   const c=config();drafts=structuredClone(c?.strategies??[]);
-  if(!drafts.length)drafts.push(newStrategy('Strategy 1'));
   // WstxStrategy::BuiltinStrategies: after the user's, read-only; Save never sends them.
   drafts.push(...structuredClone(builtins()));current=Math.max(0,drafts.findIndex(s=>s.name===c?.active));
   editor.querySelector('#strategy-editor-halt').disabled=document.querySelector('#halt-tx')?.disabled??true;

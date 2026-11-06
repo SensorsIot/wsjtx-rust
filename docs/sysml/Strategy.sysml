@@ -507,7 +507,8 @@ package WstxStrategy {
              400 ms after an edit, one request per edit, no timer otherwise) and shows each
              decode's rank and why. Save sends one PUT /strategy, applies at once (also to a
              running strategy) and never selects a strategy. A built-in strategy is listed read-only with
-             its settings shown and its preview; only Duplicate acts on it. My continent is set in
+             its settings shown and its preview; only Duplicate acts on it. With no user strategy the
+             popup opens on the first built-in and Save stores none. My continent is set in
              Settings > General (StrategyConfiguration continent, saved by PUT /strategy). */
     }
     attribute def StrategySelector {
