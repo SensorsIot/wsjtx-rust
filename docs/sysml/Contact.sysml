@@ -704,7 +704,9 @@ package WstxContact {
              halt_state unchanged), a transmission already keyed finishes, the contact
              state is kept and the station shows "Tx watchdog: N unanswered calls" until
              the next Enable Tx. A partner message decoded before that moment still changes
-             the message due next, sent by a late start as below the limit. The repetitions left are shown while Enable Tx is on
+             the message due next, sent by a late start as below the limit. A request still pending when
+             the send due next is at the limit (the limit lowered, or a Tx button going back to
+             a message at its limit) would key, so Enable Tx goes off at once. The repetitions left are shown while Enable Tx is on
              (WD:n, watchdog tx_remaining_calls = limit - Rep).
              Automation (WstxStrategy::WatchdogFromOperator): an automatic Enable Tx is
              refused tx_watchdog after a stop or while no browser action was seen this
@@ -1341,7 +1343,7 @@ package WstxContact {
              repeating while I repeat keeps both Reps counting) increments that entry's
              count instead, except the first transmission after an operator Enable Tx
              from off, which opens a new entry; selecting a row of the current partner keeps
-             the dialogue (its
+             the dialogue and, once a Tx2 or Tx3 was sent, the report whatever the row's SNR (its
              period_utc_ms stays the first period; its snr becomes the repeat's SNR when
              that is not null, so it is the latest decode's, #60); beyond 16 the oldest entry is dropped;
              empty for a new contact and cleared by CancelContact)

@@ -1048,16 +1048,34 @@ impl Engine {
         let (Some(call), Some(grid4)) = (ctx.call.clone(), ctx.grid4()) else {
             return Err("profile_incomplete");
         };
-        let tx4 = tx4_default(mode);
-        let messages = self
-            .generate(&call, &grid4, Some(&dx), report, tx4)
-            .ok_or("invalid_call")?;
         // The same partner in the other mode is a different contact (ContactMode).
         let same = self
             .contact
             .as_ref()
             .is_some_and(|c| c.dx_call.as_deref() == Some(dx.as_str()) && c.mode == mode);
         let active = self.contact.as_ref().is_some_and(|c| c.state.active());
+        // A report already sent to the same active partner stays: another SNR on a click
+        // must not make a new message, whose Rep would restart the Tx watchdog.
+        let report_sent = self
+            .contact
+            .as_ref()
+            .filter(|_| active && same)
+            .is_some_and(|c| {
+                [Slot::Tx2, Slot::Tx3].iter().any(|slot| {
+                    c.messages[slot.index()]
+                        .as_deref()
+                        .is_some_and(|m| c.dialogue.iter().any(|e| e.tx && e.text == m))
+                })
+            });
+        let report = if report_sent {
+            self.settings.report
+        } else {
+            report
+        };
+        let tx4 = tx4_default(mode);
+        let messages = self
+            .generate(&call, &grid4, Some(&dx), report, tx4)
+            .ok_or("invalid_call")?;
         // Re-selecting a decoded row of the same partner without a grid (e.g. their
         // report) keeps the grid already known, as WSJT-X keeps its DX Grid (#11); a
         // manual entry sets exactly the grid entered.
@@ -2005,12 +2023,13 @@ impl Engine {
         let mode = c.mode;
         let next = c.next;
         // WstxContact::TxWatchdog: nothing is planned for a send beyond the limit; a
-        // partner message may still change the next message until that send is due.
+        // partner message may still change the next message until 1.2 s into its period.
+        // A request still pending would key, so it stops at once; after the Nth send none is.
         if c.repetitions(&text) >= core.tx_limit() {
             let due = self.last_started_period.map_or(now, |p| {
                 transmit::next_period(mode, p + period_ms(mode), self.settings.parity)
             });
-            if now >= due + WATCHDOG_STOP_AFTER_DUE_MS {
+            if self.pending.is_some() || now >= due + WATCHDOG_STOP_AFTER_DUE_MS {
                 core.watchdog_stop();
             }
             return;
