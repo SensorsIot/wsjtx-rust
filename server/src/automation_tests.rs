@@ -268,9 +268,10 @@ pub(crate) async fn run_state(f: &Mcp) -> (String, Value) {
 /// One own (odd) transmission of the pending request in period `own`, run to completion.
 pub(crate) async fn not_keyed_in(f: &Mcp, own: i64) {
     let service = &f.state.recording.transmit.get().unwrap().service;
+    // The Tx watchdog stops 1.2 s into the due period.
     f.bench
         .offset
-        .fetch_add(own - 30 - f.bench.now_utc_ms(), Ordering::SeqCst);
+        .fetch_add(own + 1_300 - f.bench.now_utc_ms(), Ordering::SeqCst);
     let deadline = Instant::now() + Duration::from_secs(5);
     while service.view().arm_state == wstx_rust::transmit::service::ArmState::Armed {
         assert!(Instant::now() < deadline, "{:?}", service.view());

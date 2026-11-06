@@ -849,7 +849,8 @@ fn tc_008_001_the_partner_advancing_at_the_limit_sends_the_next_message() {
     s.run(period(2) + 13 * SECOND);
     let report = s.row(period(2), "HB9BLA K1ABC -09", 1500.0, Some(-9.0));
     s.deliver(&[report]);
-    s.run(period(6) + 13 * SECOND);
+    // The live first decode comes at about +14.2 s, after the start window's lead.
+    s.run(period(6) + 14_200);
     assert_eq!(s.core.view().tx_remaining_calls, 0, "R+report sent twice");
     assert!(s.armed(), "the send beyond the limit is not due yet");
     let rr73 = s.row(period(6), "HB9BLA K1ABC RR73", 1500.0, Some(-9.0));
@@ -862,6 +863,44 @@ fn tc_008_001_the_partner_advancing_at_the_limit_sends_the_next_message() {
         s.core.view().last_disarm_cause,
         DisarmCause::ContactCompleted
     );
+}
+
+// Proves: CL-010-10; TC-008-001: selecting a row of the current partner and Enable Tx
+// while armed are clicks: neither restarts the count.
+#[test]
+fn tc_008_001_clicks_on_the_partner_and_enable_tx_while_armed_restart_nothing() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, Some(-9.0));
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::SetWatchdogs {
+        tx_calls: 2,
+        tune_seconds: 90,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 13 * SECOND);
+    let report = s.row(period(2), "HB9BLA K1ABC -09", 1500.0, Some(-9.0));
+    s.deliver(std::slice::from_ref(&report));
+    s.run(period(3) + 2 * SECOND);
+    assert_eq!(s.core.view().tx_remaining_calls, 1);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(s.core.view().tx_remaining_calls, 1, "Enable Tx while armed");
+    s.run(period(5) + 2 * SECOND);
+    assert_eq!(s.core.view().tx_remaining_calls, 0);
+    s.command(Command::SelectRow {
+        row: report,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(s.core.view().tx_remaining_calls, 0, "the partner's row");
+    assert_eq!(s.engine.contact.as_ref().unwrap().dialogue.len(), 3);
+    s.run(period(7) + 2 * SECOND);
+    assert_eq!(s.sent_in(period(7)), None, "the third is never sent");
+    assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
 }
 
 // Proves: CL-010-10; TC-008-001: N identical CQs stop; a caller answered by Call 1st is a

@@ -694,17 +694,17 @@ package WstxContact {
              ContactSnapshot dialogue, the count of the newest tx entry when that entry
              holds the message due next, otherwise 0. Whatever restarts that Rep is the
              only restart: a different message (the exchange advanced), a new contact, and
-             one addition for the operator: an operator Enable Tx makes the next
-             transmission open a new tx entry, so a stopped station may send the same
-             message again. Partner messages, browser clicks, settings, Auto Seq, MCP, UDP
+             one addition for the operator: an operator Enable Tx while Enable Tx
+             is off makes the next transmission open a new tx entry, so a stopped station
+             may send the same message again; while it is on it restarts nothing. Partner messages, browser clicks, settings, Auto Seq, MCP, UDP
              and automation requests restart nothing by themselves.
              Stop: when the send due next would exceed the limit it is never planned or
-             keyed: at the latest LEAD_MS before its period Enable Tx goes off (cause
-             txWatchdog), PTT stays released, nothing is halted (no HaltTransmit,
+             keyed: 1.2 s into its period (past the latest live decode measured, #47) Enable
+             Tx goes off (cause txWatchdog), PTT stays released, nothing is halted (no HaltTransmit,
              halt_state unchanged), a transmission already keyed finishes, the contact
              state is kept and the station shows "Tx watchdog: N unanswered calls" until
              the next Enable Tx. A partner message decoded before that moment still changes
-             the message due next. The repetitions left are shown while Enable Tx is on
+             the message due next, sent by a late start as below the limit. The repetitions left are shown while Enable Tx is on
              (WD:n, watchdog tx_remaining_calls = limit - Rep).
              Automation (WstxStrategy::WatchdogFromOperator): an automatic Enable Tx is
              refused tx_watchdog after a stop or while no browser action was seen this
@@ -1339,8 +1339,9 @@ package WstxContact {
              whose audio started (the text as sent, snr null); a message equal in text to the
              newest entry of its dir (also across an entry of the other dir, #39: a partner
              repeating while I repeat keeps both Reps counting) increments that entry's
-             count instead, except the first transmission after an operator Enable Tx,
-             which opens a new entry (its
+             count instead, except the first transmission after an operator Enable Tx
+             from off, which opens a new entry; selecting a row of the current partner keeps
+             the dialogue (its
              period_utc_ms stays the first period; its snr becomes the repeat's SNR when
              that is not null, so it is the latest decode's, #60); beyond 16 the oldest entry is dropped;
              empty for a new contact and cleared by CancelContact)

@@ -37,6 +37,10 @@ pub const STOP_TOLERANCE_HZ: f64 = 50.0;
 /// A request is planned for the first period whose start window is still open this
 /// long from now, so it never turns stale between admission and keying.
 pub const LEAD_MS: i64 = 1000;
+/// WstxContact::TxWatchdog: the stop waits this long into the due period, past the latest
+/// live decode measured (#47: up to 1.1 s after the FT8 period start), so a partner
+/// message that changes the next message still counts. Nothing is planned meanwhile.
+const WATCHDOG_STOP_AFTER_DUE_MS: i64 = 1200;
 const COUNTED_KEYS: usize = 4096;
 
 pub fn period_ms(mode: Mode) -> i64 {
@@ -1086,6 +1090,12 @@ impl Engine {
             first
         };
         let state = State::of_slot(first);
+        // The same active partner keeps its dialogue: its Rep is the Tx watchdog's count.
+        let dialogue = self
+            .contact
+            .as_mut()
+            .filter(|_| active && same)
+            .map_or_else(VecDeque::new, |c| std::mem::take(&mut c.dialogue));
         self.contact = Some(Contact {
             id,
             origin,
@@ -1111,7 +1121,7 @@ impl Engine {
             logged_on_completion: false,
             suggested: None,
             last_rcvd: None,
-            dialogue: VecDeque::new(),
+            dialogue,
         });
         self.settings.report = report;
         Ok(())
@@ -1514,6 +1524,7 @@ impl Engine {
                 if ctx.automatic && core.watchdog_spent() {
                     return Err("tx_watchdog");
                 }
+                let was_armed = core.view().arm_state == ArmState::Armed;
                 let armed = if ctx.automatic {
                     core.arm_automatic(revision)
                 } else {
@@ -1559,6 +1570,7 @@ impl Engine {
                     });
                 }
                 if !ctx.automatic
+                    && !was_armed
                     && let Some(last) = self
                         .contact
                         .as_mut()
@@ -1998,7 +2010,7 @@ impl Engine {
             let due = self.last_started_period.map_or(now, |p| {
                 transmit::next_period(mode, p + period_ms(mode), self.settings.parity)
             });
-            if now + LEAD_MS >= due {
+            if now >= due + WATCHDOG_STOP_AFTER_DUE_MS {
                 core.watchdog_stop();
             }
             return;
