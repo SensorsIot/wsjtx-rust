@@ -1395,7 +1395,7 @@ function validNativeEvent(d){
 }
 function nativeText(v){
   const slice=v.slice?` · slice ${v.slice.letter??v.slice.index} ${operatingFrequency(v.slice.frequency_hz)?(v.slice.frequency_hz/1e6).toFixed(6)+' MHz':'frequency unknown'} ${v.slice.mode??''} ${v.slice.rx_antenna??''}`:'';
-  const radio=v.radio?` · ${v.radio.model??'radio'} ${v.radio.serial} ${v.radio.address}${v.radio.protocol?' API '+v.radio.protocol:''}`:'';
+  const radio=v.radio?` · ${v.radio.model??'radio'}${v.radio.firmware?' '+v.radio.firmware:''} ${v.radio.serial} ${v.radio.address}${v.radio.protocol?' API '+v.radio.protocol:''}`:'';
   return `Native FlexRadio ${v.state}${v.error?' · '+v.error:''}${radio}${slice} · transmit unsupported`;
 }
 function nativeShow(){

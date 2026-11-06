@@ -386,6 +386,25 @@ pub struct Discovery {
     pub available_slices: Option<u32>,
 }
 
+/// Radio facts from the reply to `info`: `model="FLEX-6600",chassis_serial="...",software_ver=...`.
+pub fn parse_info(reply: &str) -> Discovery {
+    let mut found = Discovery::default();
+    for pair in reply.split(',') {
+        let Some((key, value)) = pair.split_once('=') else {
+            continue;
+        };
+        let value = value.trim_matches('"');
+        let bounded = (!value.is_empty() && value.len() <= 64).then(|| value.to_owned());
+        match key {
+            "chassis_serial" => found.serial = bounded.unwrap_or_default(),
+            "model" => found.model = bounded,
+            "software_ver" => found.firmware = bounded,
+            _ => {}
+        }
+    }
+    found
+}
+
 pub fn parse_discovery(bytes: &[u8]) -> Result<Discovery, WireError> {
     let packet = parse_vita(bytes)?;
     if packet.packet_type != 3

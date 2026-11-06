@@ -47,6 +47,7 @@ class FlexEmulator {
   constructor(options = {}) {
     this.serial = options.serial ?? '1234-5678-9012-3456';
     this.protocol = options.protocol ?? '1.4.0.0';
+    this.model = options.model ?? 'FLEX-6600';
     this.maxSlices = options.maxSlices ?? 8;
     this.maxGui = options.maxGui ?? 4;
     this.announceClients = options.announceClients; // overrides available_clients
@@ -97,7 +98,7 @@ class FlexEmulator {
   announce() {
     if (this.silent) return;
     const available = this.announceClients ?? Math.max(0, this.maxGui - this.guiCount());
-    const text = `model=FLEX-6600 serial=${this.serial} version=4.1.3.39644 nickname=Emulator ip=127.0.0.1 port=${this.port} available_clients=${available} available_slices=${this.maxSlices - this.slices.size}`;
+    const text = `model=${this.model} serial=${this.serial} version=4.1.3.39644 nickname=Emulator ip=127.0.0.1 port=${this.port} available_clients=${available} available_slices=${this.maxSlices - this.slices.size}`;
     const packet = vita({type: 3, stream: 0x800, packetClass: DISCOVERY, payload: Buffer.from(text)});
     for (const port of this.discoveryPorts) this.udp.send(packet, port, '127.0.0.1');
   }
@@ -177,6 +178,8 @@ class FlexEmulator {
       return;
     }
     if (text === 'client start_persistence off' || text === 'ping') return reply(0);
+    // The shape of a real FLEX-6600's reply, recorded 2026-11-06.
+    if (text === 'info') return reply(0, `model="${this.model}",chassis_serial="${this.serial}",name="",callsign="TEST",gps="Not Present",num_slice=${this.maxSlices},num_tx=1,software_ver=4.3.16.42034,ip=127.0.0.1`);
     if (words[0] === 'client' && words[1] === 'gui' && words.length === 3) {
       if (this.guiCount() >= this.maxGui) return reply('50000005');
       client.gui = true; client.clientId = words[2];

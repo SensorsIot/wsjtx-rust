@@ -81,5 +81,6 @@ pub async fn snapshot(
     value["packets"] =
         json!({"accepted":c.accepted,"foreign":c.foreign,"invalid":c.invalid,"lost":c.lost});
     value["last_peak"] = json!(s.last_peak);
+    value["vita"] = json!({"tsi":s.vita_tsi,"host_minus_radio_ms":s.vita_offset_ms});
     Json(value).into_response()
 }

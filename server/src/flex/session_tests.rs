@@ -40,6 +40,34 @@ fn view_tracks_ownership_and_removal_from_status_lines() {
     assert!(view.streams.len() <= MAX_TRACKED);
 }
 
+// Proves: TC-023-001. The measurement is this host's clock minus the packet's own time, with
+// the sub-second part only where the timestamp kind carries real time.
+#[test]
+fn vita_offset_measures_host_clock_minus_packet_time() {
+    let packet = |tsf, integer_time, fractional_time| wire::Vita {
+        packet_type: 1,
+        class_present: true,
+        trailer_present: false,
+        tsi: 1,
+        tsf,
+        packet_count: 0,
+        words: 0,
+        stream_id: None,
+        oui: None,
+        information_class: None,
+        packet_class: None,
+        integer_time,
+        fractional_time,
+        payload: &[],
+    };
+    let real_time = packet(2, Some(100), Some(250_000_000_000));
+    assert_eq!(vita_offset_ms(&real_time, 100_500), Some(250));
+    assert_eq!(vita_offset_ms(&real_time, 99_000), Some(-1250));
+    let sample_count = packet(1, Some(100), Some(250_000_000_000));
+    assert_eq!(vita_offset_ms(&sample_count, 100_500), Some(500));
+    assert_eq!(vita_offset_ms(&packet(2, None, None), 100_500), None);
+}
+
 #[test]
 fn intent_domains() {
     let valid = Intent {

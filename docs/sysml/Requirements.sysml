@@ -241,7 +241,7 @@ package WstxRequirements {
     }
     dependency CL_013_01_to_FR_023 from 'CL-013-01' to 'FR-023';
     requirement 'CL-013-02' {
-        doc /* This independence concerns desktop applications. Compatible radio-side firmware and its API remain required; this specification does not promise a FlexRadio operating without its SmartSDR radio firmware or an unrestricted firmware compatibility range. Pin supported models and firmware before a hardware acceptance claim; the API version and stream format are pinned in WstxProductScope::NativeFlexWireSubset. */
+        doc /* This independence concerns desktop applications. Compatible radio-side firmware and its API remain required; this specification does not promise a FlexRadio operating without its SmartSDR radio firmware or an unrestricted firmware compatibility range. Pin supported models, firmware/API versions and selected stream formats before implementation. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/flex/wire.rs; server/src/flex/session.rs";
     }
@@ -1767,7 +1767,9 @@ package WstxRequirements {
              client's slice and no transmit, disconnect or persistence command is sent. Rust unit
              tests check the pinned independent narrow48 vector field by field, its negative cases,
              documented control lines and the 4096-byte line bound; the emulator encoder reproduces
-             the same vector bytes. */
+             the same vector bytes. Another model on the admitted API connects, and model, serial
+             and firmware come from the radio's info reply, whose recorded real form a unit test
+             checks. */
         attribute automation : AutomationState = AutomationState::implemented;
         attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
         objective {
@@ -1856,7 +1858,9 @@ package WstxRequirements {
              connection types. The native status line and error-field entry arrive only by the
              radio.native WebSocket push: the page sends no /native-flex request, and stopping the
              emulator changes the line without a request or reload. The error field never shows
-             No audio input for it. Stopping the station turns the line stale. No page errors. */
+             No audio input for it. The line stands in the receive details, not in the top bar, and
+             opens from its error-field entry; the screen has no page scroll at 1366x768. Stopping
+             the station turns the line stale. No page errors. */
         attribute automation : AutomationState = AutomationState::implemented;
         attribute executable : String = "tests/native-flex.test.cjs";
         objective {

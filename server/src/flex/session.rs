@@ -205,6 +205,10 @@ pub struct Snapshot {
     pub counters: Counters,
     /// Peak |channel 0| of the last accepted own packet (route diagnosis).
     pub last_peak: Option<f32>,
+    /// The last own packet's VITA timestamp kind and this host's clock minus that timestamp:
+    /// a measurement of whether the radio's time could serve, not used for timing.
+    pub vita_tsi: Option<u8>,
+    pub vita_offset_ms: Option<i64>,
     pub retry_after_ms: Option<u64>,
 }
 
@@ -257,6 +261,12 @@ impl Shared {
             if Pushed::of(&s) != before {
                 self.revision.fetch_add(1, Ordering::AcqRel);
             }
+        }
+    }
+    fn update_vita(&self, tsi: u8, offset: Option<i64>) {
+        if let Ok(mut s) = self.snapshot.lock() {
+            s.vita_tsi = Some(tsi);
+            s.vita_offset_ms = offset;
         }
     }
     /// Packet rate: the counters and the peak only, never a pushed change.
@@ -343,6 +353,8 @@ impl Session {
                 slice: None,
                 counters: Counters::default(),
                 last_peak: None,
+                vita_tsi: None,
+                vita_offset_ms: None,
                 retry_after_ms: None,
             }),
             sink: Mutex::new(None),
@@ -578,6 +590,7 @@ fn attempt(
         s.retry_after_ms = None;
     });
     let (found, address) = discover(shared, config)?;
+    let target = SocketAddr::new(address, found.port.unwrap_or(wire::CONTROL_PORT));
     if !shared.allowed() {
         return Err(Error::Unauthorized);
     }
@@ -592,7 +605,6 @@ fn attempt(
         s.state = State::Connecting;
         s.radio = Some(radio.clone());
     });
-    let target = SocketAddr::new(address, found.port.unwrap_or(wire::CONTROL_PORT));
     let tcp = TcpStream::connect_timeout(&target, STEP).map_err(|_| Error::TransportLost)?;
     tcp.set_read_timeout(Some(Duration::from_millis(10)))
         .map_err(|_| Error::TransportLost)?;
@@ -612,6 +624,15 @@ fn attempt(
         }
     }
     radio.protocol = conn.version.map(|v| v.to_string());
+    // What the radio says of itself, also where no announcement was heard.
+    if let Ok((0, reply)) = conn.request("info") {
+        let info = wire::parse_info(&reply);
+        if !info.serial.is_empty() {
+            radio.serial = info.serial;
+        }
+        radio.model = info.model.or(radio.model.take());
+        radio.firmware = info.firmware.or(radio.firmware.take());
+    }
     shared.update(|s| s.radio = Some(radio.clone()));
     conn.expect_ok("sub client all")?;
     // Replies come in order, so the next reply also proves the client list has arrived,
@@ -725,6 +746,8 @@ fn attempt(
         s.session += 1;
         s.slice = conn.slice_facts();
         s.last_peak = None;
+        s.vita_tsi = None;
+        s.vita_offset_ms = None;
     });
     loop {
         if shared.stopping() {
@@ -987,6 +1010,11 @@ impl<'a> Conn<'a> {
                 continue;
             };
             // The 4-bit count only reveals some losses; it never proves continuity.
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis() as i128);
+            let (tsi, offset) = (vita.tsi, vita_offset_ms(&vita, now_ms));
+            self.shared.update_vita(tsi, offset);
             let missed = self
                 .last_count
                 .map_or(0, |c| u64::from(count.wrapping_sub(c).wrapping_sub(1) & 15));
@@ -1189,6 +1217,16 @@ impl<'a> Conn<'a> {
                 .and_then(|s| s.frequency_hz)
         })
     }
+}
+
+fn vita_offset_ms(packet: &wire::Vita<'_>, now_ms: i128) -> Option<i64> {
+    let seconds = i128::from(packet.integer_time?);
+    // TSF 2 is real time in picoseconds; anything else adds no sub-second fact.
+    let fraction = packet
+        .fractional_time
+        .filter(|_| packet.tsf == 2)
+        .map_or(0, |ps| i128::from(ps) / 1_000_000_000);
+    i64::try_from(now_ms - seconds * 1000 - fraction).ok()
 }
 
 /// This host's arrival time of a packet on the capture timeline (QPC, 100 ns).

@@ -255,7 +255,8 @@ package WstxProductScope {
              available_clients=0 gets no connection, and when only such radios are heard the
              result is capacity_clients; nothing heard is radio_not_found. The serial in an
              announcement is shown, never saved or compared. This inbound radio traffic is not
-             the WSJT-X UDP interface, which stays send-only (#40).
+             the WSJT-X UDP interface, which stays send-only (#40). A radio on a routed path,
+             which no announcement crosses, is therefore not reachable from this slice.
              Control: TCP to the announced ip/port (default 4992), connect/step deadline 5 s,
              lines <= 4096 bytes incoming and <= 1024 outgoing, one outstanding command, reply
              codes hexadecimal. Only API protocol V1.4.0.0 is admitted; any other version
@@ -297,7 +298,8 @@ package WstxProductScope {
              groups of at least 10 ms, as an audio device delivers them. Timing: each packet carries its host arrival
              time less its own duration, so the epoch is correlated to the system clock; network
              and radio latency are not measured, VITA timestamps are not used until a live
-             qualification, and drift follows the same filtered clock tracking as an audio device.
+             qualification (GET /native-flex reports the radio's timestamp kind and this host's
+             clock minus it, for that measurement), and drift follows the same filtered clock tracking as an audio device.
              Tuning: the station operation's band selection on the own slice (origin
              native_readback).
              Loss: closing the own TCP session is the only cleanup of a lost session; the radio's
@@ -316,7 +318,8 @@ package WstxProductScope {
              protocol,address}, slice null or {index,letter,frequency_hz,mode,rx_antenna,
              dax_channel,stream_id}, transmit always unsupported, at most 4096
              encoded bytes. GET /native-flex is the read-only snapshot, the same keys plus v, packets
-             {accepted,foreign,invalid,lost} and last_peak, for diagnosis and tests, 404 for standard
+             {accepted,foreign,invalid,lost}, last_peak and vita {tsi,host_minus_radio_ms}, reset
+             per session, for diagnosis and tests, 404 for standard
              profiles; no request accepts a slice, stream or handle as authority. A session that is
              not ready shows the ErrorFieldEntry nativeRadio with its state and error; the
              "No audio input" entry does not apply to a native profile. The status line stands
@@ -328,8 +331,10 @@ package WstxProductScope {
              nothing can key the radio. CAT, Detect radio, radio settings and the Tx level do not
              apply and are refused or inert; the standard path is unaffected and never opens a
              native socket.
-             Pinning: CL-013-02's model/firmware pin is deferred to the first hardware acceptance
-             (TC-023-004), which records the actual values; V1.4.0.0 may have to widen then.
+             Pinned (CL-013-02), read from the station's radio on 2026-11-06: model FLEX-6600,
+             firmware SmartSDR 4.3.16.42034, API V1.4.0.0, 4 slices. Admission is by API version;
+             another model or firmware speaking it connects and is displayed but not claimed as
+             supported. The session reads info for model, serial and firmware.
              Profile: the connection type is chosen at creation (--create-native-flex-profile
              <dir> <rx antenna>) and is read-only in the browser. Remaining: hardware/firmware,
              24 kHz DAX, latency/timestamps, >= 4 usable slices, broadcast discovery and resource
