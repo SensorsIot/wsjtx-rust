@@ -204,7 +204,6 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 .op-strategy-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid #253c4c;background:#0f1e29}
 .op-strategy-label{font-size:var(--op-font-secondary);color:#7e9bad;letter-spacing:.08em;text-transform:uppercase}
 .op-strategy-bar select,.op-strategy-bar button{padding:3px 8px;font-size:var(--op-font-secondary)}
-.op-segmented{display:inline-flex}.op-segmented button:first-child{border-radius:7px 0 0 7px}.op-segmented button:last-child{border-radius:0 7px 7px 0;margin-left:-1px}
 .op-automation{margin-left:auto;font-size:var(--op-font-secondary);color:#8ba4b6}.op-automation[data-active=true]{color:var(--op-warn)}
 #band-activity td{font-family:var(--op-mono)}
 #band-activity td:nth-child(6){min-width:5ch}#band-activity td:nth-child(7){min-width:7ch}
@@ -335,7 +334,7 @@ body[data-profile=true] main:not(.op-app) #login{display:none!important}
 #qso-more .ct-dx{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin:6px 0}#qso-more .ct-dx label{display:flex;align-items:center;gap:6px;margin:0}#qso-more .ct-dx input{width:9ch;font-family:var(--op-mono);text-transform:uppercase;padding:3px 6px}.ct-more-row{margin:4px 0}
 .op-drawer .op-warning{border-left:4px solid var(--op-warn);padding:6px 10px;margin:6px 0}.udp-target{border:1px solid currentColor;border-radius:6px;padding:8px 10px;margin:8px 0;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:end}.udp-target>legend{font-weight:600}.udp-messages{border:0;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:4px 12px;flex-basis:100%}.udp-target [data-f=status]{flex-basis:100%;margin:0}.op-actions{display:flex;flex-wrap:wrap;gap:8px}
 .udp-target,.udp-messages{min-inline-size:0;max-width:100%;box-sizing:border-box}.udp-target>label{max-width:100%}.udp-target input:not([type=checkbox]){width:100%;box-sizing:border-box}
-/* #39 WstxStrategy: Highlight marks in Band Activity and the strategy editor popup. */
+/* #39 WstxStrategy: marks in Band Activity and the strategy editor popup. */
 #band-activity tr.ba-strategy td:first-child{box-shadow:inset 3px 0 var(--op-accent,#99e1c3)}#band-activity tr.ba-strategy td[data-col=message]{color:#c9f2df;font-weight:600}
 #band-activity td[data-ap]::after{content:' ' attr(data-ap);font-size:.75em;opacity:.7}
 #band-activity tr.ba-grey td{opacity:.45}#band-activity tr.ba-grey td[data-col=message]{text-decoration:line-through;text-decoration-thickness:1px}
@@ -348,10 +347,10 @@ body[data-profile=true] main:not(.op-app) #login{display:none!important}
 #band-activity tbody tr.ba-partner-stripe{padding:0;border:0}#band-activity tr.ba-partner-stripe td{padding:0;height:3px;line-height:0;font-size:0;background:#ff4040}
 #band-activity .ba-from{border-radius:3px;padding:0 2px}
 .op-tip{position:fixed;z-index:40;max-width:calc(100vw - 8px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;padding:2px 8px;border:1px solid #567;border-radius:4px;background:#0b1620;color:#e6eef3;font:var(--op-font-secondary)/1.4 'Segoe UI',system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.5)}
-.op-app .op-segmented button[aria-pressed=true]{background:#1d4a3c;border-color:#3f8a6e;color:#c9f2df}.op-app #strategy-auto[aria-pressed=true]{background:#5a3a14;border-color:#c58a2e;color:#ffe2b3}
+.op-app #activity-value[aria-pressed=true]{background:#1d4a3c;border-color:#3f8a6e;color:#c9f2df}
 .op-strategy-editor{max-width:min(60rem,calc(100vw - 32px));width:60rem;max-height:calc(100dvh - 32px);overflow:auto}.op-strategy-editor form{display:flex;flex-direction:column;gap:10px}.op-strategy-editor h2{font-size:1.25rem;margin:0}.op-strategy-editor h3{font-size:var(--op-font-normal);margin:0}
 .se-head,.se-pick,.op-strategy-editor .op-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:end;justify-content:space-between}.se-pick{justify-content:flex-start}.op-strategy-editor label{display:flex;flex-direction:column;gap:3px}.op-strategy-editor label.op-check{flex-direction:row;align-items:center}
-.se-rules,.se-conditions{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}.se-rules fieldset{border:1px solid #2a4151;border-radius:8px;padding:8px 10px;margin:0;min-inline-size:0}.se-condition{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.se-condition input:not([type=checkbox]){width:8rem}.se-condition input[data-f=values]{width:16rem;max-width:100%;font-family:var(--op-mono)}.se-continents{display:flex;flex-wrap:wrap;gap:4px 10px}
+.se-continents{display:flex;flex-wrap:wrap;gap:4px 10px}
 .se-options{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:end}.se-options input[type=number]{width:6rem}.se-preview-wrap{max-height:14rem;overflow:auto;border:1px solid #223848;border-radius:8px}.se-preview table{width:100%;border-collapse:collapse;font:var(--op-font-secondary)/1.4 var(--op-mono)}.se-preview td{padding:3px 8px;border-bottom:1px solid #203342;overflow-wrap:anywhere}.se-preview tr.ba-strategy td{background:rgba(153,225,195,.14)}.se-preview tr.ba-grey td{opacity:.5}
 @media(min-width:900px){.op-strategy-editor form{display:grid;grid-template-columns:minmax(0,1fr) minmax(16rem,22rem);align-items:start;column-gap:16px}.op-strategy-editor form>*{grid-column:1/-1}.op-strategy-editor #se-body{grid-column:1;grid-row:3}.op-strategy-editor .se-preview{grid-column:2;grid-row:3;position:sticky;top:0}.op-strategy-editor .se-preview-wrap{max-height:28rem}}
 .se-preview td:first-child{white-space:nowrap}
@@ -429,6 +428,7 @@ main.op-app{--hl-lotw:rgba(153,0,0,.35);--hl-new_call_band:rgba(153,255,255,.2);
    the top-bar HALT shows whenever the QSO pane HALT is not fully on screen (contact.js). */
 body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #halt-tx,body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #abort-qso{display:none}
 #contact-messages .ct-now{padding:1px 8px;min-height:0}
+.se-goals{display:flex;flex-wrap:wrap;gap:4px 12px;margin:8px 0;border:1px solid #223848;border-radius:4px;padding:6px 10px}.se-goals legend{font-size:var(--op-font-secondary);color:#8ba4b6}
 .op-app .op-header-actions button.op-abort{background:#2e2a1c;border-color:#7a6a3a;color:#f0d79a;padding:8px 12px;font-weight:600}
 /* #37 QsoPane item 8 (operator 2026-11-04, "fixed in size that the things below it do not move
    all the time up and down"; "make this section big enough to accommodate also longer QSOs"):
