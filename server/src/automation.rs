@@ -1469,7 +1469,10 @@ fn strategy_watchdog(
         )
     };
     run.slot_check = Some(json!({"repetitions":repetitions,"hears_us":hears,"hz":hz,"free":free}));
-    run.tx_slot = Some(json!({"hz":hz,"free":free}));
+    // A kept slot was not looked at again: the status of its last choice stands.
+    if !hears {
+        run.tx_slot = Some(json!({"hz":hz,"free":free}));
+    }
     if hz != facts.tx_hz {
         let (revision, _, _) = contact.facts();
         let body = contact_body(

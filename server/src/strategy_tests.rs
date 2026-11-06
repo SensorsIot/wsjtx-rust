@@ -3370,6 +3370,18 @@ async fn tc_039_022_an_answer_keeps_the_slot_without_a_spot() {
         json!({"repetitions":2,"hears_us":true,"hz":1500,"free":true})
     );
 }
+// Proves: CL-039-21; TC-039-022. An answer keeps the slot only: without a spot the partner is still
+// left after its calls, since an answer does not expire and a partner gone QRT would hold the run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_an_answer_without_a_spot_is_still_left_after_its_calls() {
+    let (f, e) = run_at_limit(6, 3, |_| {}).await;
+    publish(&f, e + 30_000, &[("HB9BLA K1ABC -09", 1800.0, Some(-9.0))]);
+    assert_eq!(f.read("automation").await["run"]["rested"], Value::Null);
+    for period in [60_000, 90_000, 120_000, 150_000] {
+        publish(&f, e + period, &[]);
+    }
+    assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
+}
 // Proves: CL-039-21; TC-039-022. With no client, or past the run limit, the stop at N is back at once,
 // so the run cannot go on transmitting even when no publication ever arrives to end its contact.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

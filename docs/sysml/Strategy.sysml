@@ -637,7 +637,7 @@ package WstxStrategy {
              decision 2026-11-06; the constant automation::STRATEGY_RUN_MAX, no setting): a run lasts
              at most 8 hours from its selection, also with a browser open; a new selection
              starts a new 8 hours. At the limit it selects no new station: a contact in progress
-             ends its normal way, a manual one is left alone, and when it next waits the run
+             ends its normal way (or by the stop at N, StrategyWatchdog), a manual one is left alone, and when it next waits the run
              stops run_limit; the strategy stays selected with the reason shown and only a
              selection restarts it. The run checks the grant, not the transport of the selecting request: a page load, a
              second tab or a 401 recovery (a new proof) and the transport's own 8 h deadline do
@@ -645,15 +645,17 @@ package WstxStrategy {
              Unattended (operator decision 2026-11-06, #39 comment 6685226511; the
              constant automation::CLIENT_GONE, no setting): when no authenticated client has
              been there for 60 s, the run selects no new station: a contact in progress ends
-             its normal way (completed, calls_per_station), a manual one is
+             its normal way (completed, calls_per_station, or the stop at N that is back for an
+             unattended run, StrategyWatchdog), a manual one is
              left alone, and when it next waits the run stops no_client; the strategy stays
              selected with the reason shown and only a selection restarts it. A client is
              there while a status WebSocket session is open (authenticated at its upgrade), and
              at each authenticated POST /mcp, which has only per-request authentication: its
              last request within the 60 s; the selection itself counts. A client back before the
              stop continues the run. So with every browser closed it does not go on calling. The
-             run ends only by a HALT, a selection, the grant (authority_lost), no client (no_client), the run limit (run_limit)
-             or a refused command (transmit_refused, provider_error):
+             run ends only by a HALT, a selection, the grant (authority_lost), no client (no_client), the run limit (run_limit),
+             a Tx watchdog stop left by a manual contact, which refuses the run's next enable_tx
+             (tx_watchdog), or a refused command (transmit_refused, provider_error):
              the strategy stays selected with the stop reason shown, and only a new
              selection (None, then the strategy) starts it again: an AutomationCommand start
              of a configuration a strategy run left is refused 409 operator_required strategy,

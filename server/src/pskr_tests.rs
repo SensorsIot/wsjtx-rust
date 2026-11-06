@@ -112,6 +112,22 @@ fn hears_us_expires_and_ignores_other_band_and_mode() {
         1000,
     );
     assert!(!h.hears_us("K1ABC", "FT8", "40m", 1001 + HEARD_WINDOW_S));
+    // Any time the broker sends is only a time: no overflow, too old or counted as now.
+    let mut h = Hearing::default();
+    h.record(
+        "HB9BLA",
+        None,
+        spot("HB9BLA", "K1ABC", 7075512, i64::MIN),
+        1000,
+    );
+    assert!(!h.hears_us("K1ABC", "FT8", "40m", 1000));
+    h.record(
+        "HB9BLA",
+        None,
+        spot("HB9BLA", "K1ABC", 7075512, i64::MAX),
+        1000,
+    );
+    assert!(h.hears_us("K1ABC", "FT8", "40m", 1000));
     // A spot of someone else to the target is no hearing of me.
     let mut h = Hearing::default();
     h.record(

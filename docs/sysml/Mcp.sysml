@@ -66,7 +66,8 @@ package WstxMcp {
             rule, recorded on #39/#12, 2026-11-02, amending D5/D7; repetition form 2026-11-06);
             an MCP Enable Tx or run arm is refused tx_watchdog after a stop
             or when no browser action was seen this boot; set_watchdogs through MCP is refused operator_required (only the
-            browser sets the watchdog); a watchdog disarm stops tx_watchdog. */
+            browser sets the watchdog); a watchdog disarm stops tx_watchdog, for an unattended strategy
+            run no_client or run_limit (WstxStrategy::StrategyWatchdog). */
 
     attribute def McpEndpoint {
         attribute route : String = "POST /mcp";
@@ -263,7 +264,8 @@ package WstxMcp {
              its context_changed stop and the no_answer stop; a run with pounce follows
              WstxStrategy::Pounce instead of CandidateSelection, its completion and no_answer
              rules, and stops band_changed on a station band change; a disarm by the Tx watchdog stops
-             tx_watchdog for every run; a refused enable_tx with code tx_watchdog stops
+             tx_watchdog for every run, an unattended strategy run naming no_client or run_limit
+             instead (WstxStrategy::StrategyWatchdog); a refused enable_tx with code tx_watchdog stops
              tx_watchdog. Run commands are automatic: they never end a Tx watchdog stop. */
     }
     attribute def AutomationIndicator {

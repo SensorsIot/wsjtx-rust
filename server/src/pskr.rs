@@ -177,7 +177,8 @@ pub(crate) struct Hearing {
 }
 impl Hearing {
     pub(crate) fn record(&mut self, my: &str, target: Option<&str>, mut spot: Spot, now_s: i64) {
-        if now_s - spot.utc_s > HEARD_WINDOW_S {
+        // Saturating: the time comes from the broker, whatever its value.
+        if now_s.saturating_sub(spot.utc_s) > HEARD_WINDOW_S {
             return;
         }
         // A reporter's clock ahead of ours must not stretch the window.
@@ -190,7 +191,8 @@ impl Hearing {
                 Some(h) => h.utc_s = h.utc_s.max(spot.utc_s),
                 None => {
                     if self.heard.len() >= HEARD_MAX {
-                        self.heard.retain(|h| now_s - h.utc_s <= HEARD_WINDOW_S);
+                        self.heard
+                            .retain(|h| now_s.saturating_sub(h.utc_s) <= HEARD_WINDOW_S);
                     }
                     if self.heard.len() >= HEARD_MAX
                         && let Some(oldest) =
@@ -214,7 +216,7 @@ impl Hearing {
             h.receiver == target
                 && h.mode == mode
                 && h.band == band
-                && now_s - h.utc_s <= HEARD_WINDOW_S
+                && now_s.saturating_sub(h.utc_s) <= HEARD_WINDOW_S
         })
     }
     /// Audio offsets (spot frequency minus my dial) of what the current target decoded on
@@ -230,7 +232,7 @@ impl Hearing {
     ) -> Vec<u32> {
         let mut out: Vec<u32> = Vec::new();
         for s in self.decoded.iter().rev() {
-            if s.mode != mode || s.band != band || now_s - s.utc_s > HEARD_WINDOW_S {
+            if s.mode != mode || s.band != band || now_s.saturating_sub(s.utc_s) > HEARD_WINDOW_S {
                 continue;
             }
             let offset =
@@ -838,6 +840,9 @@ fn accept(shared: &Shared, my_call: &str, payload: &[u8]) {
         return;
     }
     let time = spot.utc_s.min(now);
+    if now.saturating_sub(time) > HEARD_WINDOW_S {
+        return;
+    }
     let target = i.target.clone();
     i.hearing.record(my_call, target.as_deref(), spot, now);
     if i.last_spot_s.is_none_or(|last| last < time) {
