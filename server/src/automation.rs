@@ -330,8 +330,12 @@ struct Run {
     skipped: Vec<String>,
     /// #42 Pounce: the call and the station band captured at start.
     pounce: Option<(String, String)>,
-    /// #39 WstxStrategy::FreeTxSlot: the last slot decision {hz, free}, for the status.
+    /// #39 WstxStrategy::FreeTxSlot: the last slot decision {hz, free}, for the status; the
+    /// station band last seen on a fresh publication, and the first sequence of that band
+    /// (a retune on the radio keeps the live job).
     tx_slot: Option<Value>,
+    slot_band: Option<&'static str>,
+    slot_from: u64,
 }
 #[derive(Default)]
 struct Inner {
@@ -351,6 +355,9 @@ pub(crate) struct Owner {
     /// Test seam: runs between select_row and enable_tx (a racing Halt).
     #[cfg(test)]
     pub(crate) before_enable: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    /// Test seam: runs before a run moves Tx to its free slot (a racing operator).
+    #[cfg(test)]
+    pub(crate) before_slot_move: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 /// The descriptor of the latest receive publication, read before the contact step so
@@ -399,6 +406,19 @@ impl Owner {
     }
     #[cfg(not(test))]
     fn before_enable(&self) {}
+    #[cfg(test)]
+    fn before_slot_move(&self) {
+        let hook = self
+            .before_slot_move
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+    #[cfg(not(test))]
+    fn before_slot_move(&self) {}
     /// (policy_revision, run_revision): the automation.state event cursor.
     pub(crate) fn revisions(&self) -> (u64, u64) {
         let inner = self.lock();
@@ -648,6 +668,8 @@ impl Owner {
                     skipped: Vec::new(),
                     pounce,
                     tx_slot: None,
+                    slot_band: None,
+                    slot_from: 0,
                 });
                 inner.run_revision += 1;
             }
@@ -775,8 +797,15 @@ impl Owner {
                 .is_some_and(|ms| wstx_rust::transmit::parity(mode, ms) != c.parity)
         });
         let run = inner.run.as_mut().expect("checked");
-        if let Some((id, _, _, _)) = &fresh {
+        if let Some((id, _, next, _)) = &fresh {
             run.last_decode = *id;
+            if let Some(band) = strategy::station_band(r) {
+                // The publication that shows the change may hold either band: not counted.
+                if run.slot_band.is_some_and(|seen| seen != band) {
+                    run.slot_from = *next;
+                }
+                run.slot_band = Some(band);
+            }
         }
         if let Some((_, s)) = &chosen
             && s.role != strategy::Role::Alternate
@@ -1099,6 +1128,15 @@ impl Owner {
                         revision,
                     );
                     let Some(taken) = taken else {
+                        // As for enable_tx: another contact is the operator's.
+                        if run.config.strategy
+                            && contact
+                                .facts()
+                                .1
+                                .is_some_and(|c| c.active && Some(&c.id) != prepared.as_ref())
+                        {
+                            return manual(&mut inner);
+                        }
                         cancel(contact, state);
                         return stop(&mut inner, "provider_error", false);
                     };
@@ -1234,8 +1272,8 @@ fn refused(code: &str) -> &'static str {
 /// up to 2048).
 const SLOT_RECORDS: u64 = 1024;
 /// #39 WstxStrategy::FreeTxSlot: decide the slot, name it in the run's status and set the
-/// Tx there when it is not there. No free slot keeps `current`. The next contact revision,
-/// or None when the engine refused the command.
+/// Tx there when it is not there. The next contact revision, or None when the engine refused
+/// the command.
 fn take_slot(
     run: &mut Run,
     contact: &contact_http::Station,
@@ -1249,17 +1287,15 @@ fn take_slot(
     let mode = contact_http::mode_of(run.mode);
     let facts = contact.status_facts();
     let records = settled.map_or_else(Vec::new, |next| {
-        fresh_records(r, &run.identity, next.saturating_sub(SLOT_RECORDS), next)
+        let first = next.saturating_sub(SLOT_RECORDS).max(run.slot_from);
+        fresh_records(r, &run.identity, first, next)
     });
-    let width = freeslot::width_hz(mode);
-    let mut occupied = freeslot::recent_signals(&records, mode, facts.parity);
-    occupied.extend(called.map(|hz| (hz, width)));
-    let slot = freeslot::choose(&occupied, freeslot::band(mode), width, current, &[]);
-    let hz = slot.unwrap_or(current);
-    run.tx_slot = Some(json!({"hz":hz,"free":slot.is_some()}));
+    let (hz, free) = freeslot::decide(&records, mode, facts.parity, current, called);
+    run.tx_slot = Some(json!({"hz":hz,"free":free}));
     if facts.tx_hz == hz {
         return Some(revision);
     }
+    contact.automation.before_slot_move();
     let body = contact_body(
         r,
         revision,

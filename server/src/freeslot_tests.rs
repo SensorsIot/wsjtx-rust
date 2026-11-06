@@ -110,18 +110,123 @@ fn tc_039_010_recent_means_four_decoding_periods_of_my_parity() {
         decode("2026-11-06T12:02:45.000Z", Value::Null),
     ];
     assert_eq!(
-        recent_signals(&records, Mode::Ft8, Parity::Odd),
+        recent_signals(&records, Mode::Ft8, Parity::Odd, 4),
         [(200, 50), (300, 50), (310, 50), (400, 50), (500, 50)]
     );
     assert_eq!(
-        recent_signals(&records, Mode::Ft8, Parity::Even),
+        recent_signals(&records, Mode::Ft8, Parity::Odd, 1),
+        [(500, 50)]
+    );
+    assert_eq!(
+        recent_signals(&records, Mode::Ft8, Parity::Even, 4),
         [(250, 50)]
     );
-    assert_eq!(recent_signals(&[], Mode::Ft8, Parity::Odd), []);
+    assert_eq!(recent_signals(&[], Mode::Ft8, Parity::Odd, 4), []);
     // FT4: 7.5 s periods; :07.5 is odd and its signal 90 Hz wide.
     let ft4 = [
         decode("2026-11-06T12:00:00.000Z", json!(700.0)),
         decode("2026-11-06T12:00:07.500Z", json!(800.0)),
     ];
-    assert_eq!(recent_signals(&ft4, Mode::Ft4, Parity::Odd), [(800, 90)]);
+    assert_eq!(recent_signals(&ft4, Mode::Ft4, Parity::Odd, 4), [(800, 90)]);
+}
+
+/// One odd FT8 period per entry, the oldest first; `FULL` is a whole band of signals.
+const FULL: &[f64] = &[
+    300.0, 490.0, 680.0, 870.0, 1060.0, 1250.0, 1440.0, 1630.0, 1820.0, 2010.0, 2200.0, 2390.0,
+    2580.0,
+];
+fn periods(list: &[&[f64]]) -> Vec<Value> {
+    list.iter()
+        .enumerate()
+        .flat_map(|(i, signals)| {
+            let period = format!("2026-11-06T12:{:02}:15.000Z", i);
+            signals.iter().map(move |hz| decode(&period, json!(hz)))
+        })
+        .collect()
+}
+
+// Proves: TC-039-010. Worked by hand: an FT8 signal at f forbids f-100 < slot < f+100.
+#[test]
+fn tc_039_010_a_busy_band_looks_at_fewer_periods_and_never_at_the_called_station() {
+    // (odd periods, current, called, expected, what the row shows)
+    type Row<'a> = (&'a [&'a [f64]], u32, Option<u32>, (u32, bool), &'a str);
+    let table: &[Row] = &[
+        (
+            &[&[1500.0]],
+            1500,
+            None,
+            (1400, true),
+            "one period, the tie",
+        ),
+        (
+            &[FULL, &[1350.0], &[2000.0], &[1500.0]],
+            1500,
+            None,
+            (1600, true),
+            "4 fill: 3 forbid 1250..1600, 1900..2100",
+        ),
+        (
+            &[FULL, FULL, &[1350.0], &[1500.0]],
+            1500,
+            None,
+            (1600, true),
+            "4 and 3 fill: 2 forbid 1250..1600",
+        ),
+        (
+            &[FULL, FULL, FULL, &[1500.0]],
+            1500,
+            None,
+            (1400, true),
+            "4, 3 and 2 fill: the latest forbids 1400..1600",
+        ),
+        (
+            &[&[1500.0], FULL],
+            1600,
+            None,
+            (1600, false),
+            "the latest fills: Tx keeps its frequency",
+        ),
+        (
+            &[FULL],
+            250,
+            None,
+            (250, false),
+            "no called station: also outside the band",
+        ),
+        (
+            &[FULL],
+            1500,
+            Some(2400),
+            (1500, false),
+            "the called station is far away",
+        ),
+        (
+            &[FULL],
+            1500,
+            Some(1500),
+            (1400, false),
+            "never on the called station: the tie",
+        ),
+        (
+            &[FULL],
+            1500,
+            Some(1450),
+            (1550, false),
+            "never next to it: 1350 < slot < 1550 forbidden",
+        ),
+        (
+            &[&[1500.0]],
+            1500,
+            Some(1600),
+            (1400, true),
+            "the called station counts in every look",
+        ),
+    ];
+    for (list, current, called, expected, why) in table {
+        assert_eq!(
+            decide(&periods(list), Mode::Ft8, Parity::Odd, *current, *called),
+            *expected,
+            "{why}"
+        );
+    }
 }

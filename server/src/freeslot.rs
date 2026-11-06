@@ -14,7 +14,8 @@ mod tests;
 /// The gap to every occupied signal, and the edges my signal stays inside.
 const MARGIN_HZ: i64 = 50;
 const PASSBAND_HZ: (u32, u32) = (300, 2700);
-/// How many decoding periods of my Tx parity count as recent.
+/// How many decoding periods of my Tx parity count as recent; when these fill the band,
+/// fewer are looked at, down to the latest one.
 const RECENT_PERIODS: usize = 4;
 
 /// A signal: its frequency (the lowest tone) and its width, in Hz.
@@ -33,16 +34,42 @@ pub(crate) fn band(mode: Mode) -> (u32, u32) {
         (PASSBAND_HZ.1 - width_hz(mode)).min(tx_max_hz(mode)),
     )
 }
-/// The signals of the last RECENT_PERIODS periods of `tx_parity` that decoded anything.
-pub(crate) fn recent_signals(records: &[Value], mode: Mode, tx_parity: Parity) -> Vec<Signal> {
+/// The slot Tx takes and whether it is free: free of the signals of the last RECENT_PERIODS
+/// decoding periods of `tx_parity` or, when these fill the band, of fewer, and of the called
+/// station. No free slot: `current`, or the nearest slot clear of the called station alone.
+pub(crate) fn decide(
+    records: &[Value],
+    mode: Mode,
+    tx_parity: Parity,
+    current: u32,
+    called: Option<u32>,
+) -> (u32, bool) {
+    let (bounds, width) = (band(mode), width_hz(mode));
+    let station = called.map(|hz| (hz, width));
+    let free = (1..=RECENT_PERIODS).rev().find_map(|periods| {
+        let mut occupied = recent_signals(records, mode, tx_parity, periods);
+        occupied.extend(station);
+        choose(&occupied, bounds, width, current, &[])
+    });
+    match (free, station) {
+        (Some(slot), _) => (slot, true),
+        (None, Some(station)) => (
+            choose(&[station], bounds, width, current, &[]).unwrap_or(current),
+            false,
+        ),
+        (None, None) => (current, false),
+    }
+}
+/// The signals of the last `periods` periods of `tx_parity` that decoded anything.
+fn recent_signals(records: &[Value], mode: Mode, tx_parity: Parity, periods: usize) -> Vec<Signal> {
     let period = |v: &Value| {
         v["period_start_utc"]
             .as_str()
             .and_then(parse_utc)
             .filter(|ms| parity(mode, *ms) == tx_parity)
     };
-    let periods: BTreeSet<i64> = records.iter().filter_map(period).collect();
-    let recent: Vec<i64> = periods.into_iter().rev().take(RECENT_PERIODS).collect();
+    let decoding: BTreeSet<i64> = records.iter().filter_map(period).collect();
+    let recent: Vec<i64> = decoding.into_iter().rev().take(periods).collect();
     records
         .iter()
         .filter(|v| period(v).is_some_and(|ms| recent.contains(&ms)))

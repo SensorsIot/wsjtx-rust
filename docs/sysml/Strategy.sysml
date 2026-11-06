@@ -454,7 +454,13 @@ package WstxStrategy {
              complete publications; a period I transmitted in decodes nothing and is not
              counted, so older periods are used rather than none. Fewer periods: those
              there are. Auto Call and a pounce add the called station's frequency, which is
-             not on my parity.
+             not on my parity. When these 4 periods leave no free slot (a busy band), the 3,
+             then 2, then the 1 most recent are looked at, with the called station in each
+             look; a free slot found so is free.
+             Band: a retune on the radio keeps the live job, so on each fresh publication
+             the run compares the station band (station_band); from a change on, only
+             publications after the one that showed it count. A retune before the run or
+             within a band is not seen: the old signals age out with the periods.
              Signal width, from the record's frequency_hz upwards: FT8 50 Hz, FT4 90 Hz,
              mine alike. A slot is free when 50 Hz or more separate my signal from every
              occupied signal, and my whole signal lies inside 300..2700 Hz within the Tx
@@ -463,9 +469,12 @@ package WstxStrategy {
              current Tx is kept and a new slot is chosen only when the current one has
              become busy. The decision may instead be asked for the free slot nearest a list
              of preferred frequencies, then nearest the current Tx, then the lowest.
-             No free slot: Tx keeps the current frequency, the call still goes out (no
-             refusal), and the status says so: the run's tx_slot {hz, free} (WstxMcp), and
-             "no free Tx slot" in the station bar's automation text.
+             No free slot even in the latest period: Tx keeps the current frequency unless it
+             is too near the called station (Tx is never on the called station: then the
+             slot nearest the current Tx, then the lowest, that is free of that station
+             alone), the call still goes out (no refusal), and the status says so: the run's
+             tx_slot {hz, free false} (WstxMcp), and "no free Tx slot" in the station bar's
+             automation text.
              Tx is moved with set_frequency only when it is not on the slot (with Hold Tx
              off the selection has moved it to the station: it goes back). The Tx stays on
              the slot for the whole QSO: answering a caller of my CQ never moves it, also
