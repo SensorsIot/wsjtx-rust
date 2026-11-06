@@ -997,6 +997,16 @@ fn rx_level_is_round_10_log10_mean_square_in_16_bit_units() {
 async fn transmit_state_revision_follows_the_read_view_only() {
     let f = fixture("http://127.0.0.1:18077", true);
     let r = &f.state.recording;
+    // The service's first tick settles the startup release, a real change of the view.
+    let service = &r.transmit.get().unwrap().service;
+    let started = std::time::Instant::now();
+    while transmit_http::view_json(r, &service.view())["startup_release"] == "pending" {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "startup release"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
     let first = transmit_http::state_revision(r).unwrap();
     std::thread::sleep(Duration::from_millis(1100));
     assert_eq!(transmit_http::state_revision(r), Some(first), "time alone");
