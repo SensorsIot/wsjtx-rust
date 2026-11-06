@@ -483,6 +483,7 @@ async fn tc_055_002_every_decoded_sender_call_resolves() {
         "2026-11-06T10:00:00.0000000Z",
         vec![
             record("CQ HF6FIRAC", nonstandard("HF6FIRAC", None, false, true)),
+            record("CQ HF6FIRAC", nonstandard("HF6FIRAC", None, true, true)),
             record("OH2DKQ <CT9/DL7VXX> -02", hashed_from),
             record(
                 "<K1ABC> HF6FIRAC",
@@ -515,6 +516,7 @@ async fn tc_055_002_every_decoded_sender_call_resolves() {
         names,
         [
             ("CQ HF6FIRAC", Some("Poland")),
+            ("CQ HF6FIRAC", Some("Poland")),
             ("OH2DKQ <CT9/DL7VXX> -02", Some("Madeira Is.")),
             ("<K1ABC> HF6FIRAC", Some("Poland")),
             ("HF6FIRAC <CT9/DL7VXX> 73", Some("Madeira Is.")),
@@ -537,7 +539,7 @@ async fn tc_055_002_every_decoded_sender_call_resolves() {
         "no grid in the message"
     );
     assert_eq!(
-        records[7].get("flags"),
+        records[8].get("flags"),
         None,
         "the browser has no sender to colour"
     );

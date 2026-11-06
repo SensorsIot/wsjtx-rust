@@ -542,11 +542,6 @@ pub fn compact(r: &Resolved, me: Option<(f64, f64)>) -> Value {
     v
 }
 
-/// #55 DecodedEntity: adds to each decoded standard record with a resolved sender its
-/// `dxcc` (compact, when the call has an entity) and `flags` (only the FLAGS that hold,
-/// against the cached worked set of the log; omitted when none holds or the log is
-/// unreadable). Band: the CAT dial band, else the operating selection band; without a
-/// band no `_band` flag is set. Blocking (log lock): call it off the async runtime.
 /// The concrete call that sent a decoded record, also a filled-in hash; None for a hash
 /// nobody heard and for a message without a sender (free text, telemetry).
 fn sender(record: &Value) -> Option<String> {
@@ -564,6 +559,11 @@ fn sender(record: &Value) -> Option<String> {
         .then(|| call["text"].as_str().map(str::to_owned))
         .flatten()
 }
+/// #55 DecodedEntity: adds to each decoded record with a resolved sender call its
+/// `dxcc` (compact, when the call has an entity) and `flags` (only the FLAGS that hold,
+/// against the cached worked set of the log; omitted when none holds or the log is
+/// unreadable). Band: the CAT dial band, else the operating selection band; without a
+/// band no `_band` flag is set. Blocking (log lock): call it off the async runtime.
 pub(crate) fn annotate(state: &crate::ProfileState, records: &mut [Value]) {
     if !records.iter().any(|r| sender(r).is_some()) {
         return;
