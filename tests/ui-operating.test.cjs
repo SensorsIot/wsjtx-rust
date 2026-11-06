@@ -704,6 +704,10 @@ test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherw
   await page.evaluate(()=>window.wstxContact.load());
   r=await tickAndRead(page,offset,true);
   assert.deepEqual([r.label,r.next,r.countdown],['▶ TX now:','Tune','80 s left']);
+  // The Tx watchdog's stop states its rule.
+  transmit={arm_state:'disarmed'};watchdog={tx_remaining_calls:0,tx_expired:true,tune_remaining_seconds:0};
+  await page.evaluate(()=>window.wstxContact.load());
+  assert.match(await page.locator('#contact-watchdog').textContent(),/^Tx watchdog: same message sent \d+ times$/);
   transmit={arm_state:'armed'};watchdog=null;await page.evaluate(()=>window.wstxContact.load());
   clock.offset=offset+11000;r=await tickAndRead(page,offset+11000,false);
   assert.deepEqual([r.label,r.next],['▸ next:','CQ HB9BLA JN47']);
@@ -2351,7 +2355,7 @@ test('TC-039-006 Highlight marks and sorts, the editor previews and saves, Auto 
   await page.locator('#strategy-editor button[value=cancel]').click();assert.equal(await page.locator('#strategy-editor').evaluate(d=>d.open),false);
   // Auto: the first use asks; Cancel sends nothing; Start sends configure then start.
   await page.locator('#strategy-auto').click();await page.locator('#op-confirm[open]').waitFor();
-  assert.match(await page.locator('#op-confirm-text').textContent(),/Auto transmits without asking: it answers only stations that match "DX first" \(Auto Call and Auto CQ, switching after 3 tries\)\. The Tx watchdog stops it after 6 unanswered calls; Auto never resets it\. HALT or Esc stops it\./);
+  assert.match(await page.locator('#op-confirm-text').textContent(),/Auto transmits without asking: it answers only stations that match "DX first" \(Auto Call and Auto CQ, switching after 3 tries\)\. The Tx watchdog stops it when one message would be sent more than 6 times; a new message or station starts that count again, so Auto can run until its limit of 8 hours\. HALT or Esc stops it\./);
   await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);assert.deepEqual(autos,[],'cancelled: no automation request');
   await page.locator('#strategy-auto').click();await page.locator('#op-confirm[open]').waitFor();await page.locator('#op-confirm-ok').click();
   for(let i=0;i<60&&autos.length<2;i++)await page.waitForTimeout(50);
@@ -2500,7 +2504,7 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
   await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
   assert.deepEqual(await items(),['Reply','Select','Set Rx here','Pounce K1ABC','Ignore K1ABC']);
   await page.locator('#ba-menu [data-menu=pounce]').click();await page.locator('#op-confirm[open]').waitFor();
-  assert.match(await page.locator('#op-confirm-text').textContent(),/^Pounce transmits without asking: it answers K1ABC when it calls CQ or ends a QSO with 73 on this band\. The Tx watchdog stops it after 6 unanswered calls; automation never resets it\. HALT or Esc stops it\.$/);
+  assert.match(await page.locator('#op-confirm-text').textContent(),/^Pounce transmits without asking: it answers K1ABC when it calls CQ or ends a QSO with 73 on this band\. The Tx watchdog stops it when one message would be sent more than 6 times\. HALT or Esc stops it\.$/);
   await page.locator('#op-confirm-ok').click();
   for(let i=0;i<60&&autos.length<2;i++)await page.waitForTimeout(50);
   assert.deepEqual(autos.map(b=>[b.action,b.expected_policy_revision,b.expected_run_revision,b.mode,b.safety_revision]),[['configure',0,undefined,undefined,undefined],['start',1,0,'ft8',7]]);
