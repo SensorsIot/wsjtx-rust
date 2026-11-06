@@ -1254,7 +1254,7 @@ async fn tc_039_004_selecting_starts_a_run_that_calls_by_value_and_never_calls_c
             c["settings"]["rx_hz"].clone()
         ),
         (tx, json!(1700)),
-        "Hold Tx after a 73"
+        "after a 73 Tx stays on its free slot"
     );
     // It comes back: K1ABC given its calls, DL1XYZ again; then K1ABC alone is called again.
     publish(&f, e + 120_000, &[]);
@@ -2341,6 +2341,40 @@ async fn tc_039_010_signals_of_the_previous_band_do_not_count() {
     );
 }
 
+// Proves: CL-039-09; TC-039-010. A strategy run outlives its live job: after a retune (the slot
+// reads from a sequence of that job) and a receive restart, the new job counts from its first record.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_a_new_live_job_counts_from_its_first_record() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    select(&f, config(Some("New calls"))).await;
+    publish(&f, e - 15_000, &[busy(600.0)]);
+    f.state.recording.fixture_band("20m");
+    publish(
+        &f,
+        e,
+        &[
+            busy(700.0),
+            busy(800.0),
+            busy(900.0),
+            busy(1000.0),
+            busy(1100.0),
+            busy(2000.0),
+        ],
+    );
+    f.state.recording.fixture_live_job("ft8");
+    f.tick();
+    // Odd, the new job's sequence 0: on my Tx. 1400 and 1600 tie for 1500, the lower.
+    publish(&f, e + 15_000, &[busy(1500.0)]);
+    publish(&f, e + 30_000, &[("CQ K1ABC FN42", 2400.0, Some(-5.0))]);
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(2400), json!(1400), json!({"hz":1400,"free":true}))
+    );
+}
+
 // Proves: CL-039-05, CL-039-09; TC-039-010. Between the run's select_row and its Tx
 // move the operator replaces the contact: the set_frequency is refused stale and the operator's
 // contact stands.
@@ -2444,12 +2478,9 @@ async fn tc_039_010_a_caller_is_answered_from_a_free_slot_and_stays_there() {
         &[("HB9BLA DL1XYZ JO62", 1400.0, Some(-10.0))],
     );
     assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
-    let (rx, tx, slot) = frequencies(&f).await;
-    assert_eq!(rx, json!(1400));
-    assert_eq!(slot["hz"], tx);
-    assert!(
-        (tx.as_f64().unwrap() - 1400.0).abs() >= 100.0,
-        "Tx {tx} clear of the caller"
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(1400), json!(1300), json!({"hz":1300,"free":true}))
     );
 }
 
@@ -3621,7 +3652,7 @@ async fn tc_042_004_pounce_answers_a_73_holding_tx_and_never_an_ignored_or_direc
         ignore(&f, json!("K1ABC"), json!(true)).await.status,
         StatusCode::OK
     );
-    // Hold Tx off: "Hold Tx after a 73" below is the automation's own rule, not the default.
+    // Hold Tx off: "after a 73 Tx stays on its free slot" below is the automation's own rule, not the default.
     mcp_contact(&f, "set_hold_tx", json!({"enabled":false})).await;
     assert_eq!(f.read("contact").await["settings"]["hold_tx"], json!(false));
     assert_eq!(pounce(&f, "K1ABC", 5).await.status, StatusCode::ACCEPTED);
@@ -3656,7 +3687,7 @@ async fn tc_042_004_pounce_answers_a_73_holding_tx_and_never_an_ignored_or_direc
             tx,
             json!(1700)
         ),
-        "Hold Tx after a 73"
+        "after a 73 Tx stays on its free slot"
     );
     assert_eq!(f.keys(), 0);
 }

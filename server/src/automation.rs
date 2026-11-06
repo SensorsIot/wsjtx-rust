@@ -878,6 +878,8 @@ impl Owner {
                 }
                 None => run.identity = Default::default(),
             }
+            // A new live job counts from its first record (WstxStrategy::FreeTxSlot).
+            run.slot_from = 0;
             run.last_decode = r.latest_publication().map_or(0, |p| p.0);
             if armed {
                 run.state = RunState::Waiting;
