@@ -1664,7 +1664,7 @@ impl Hardware for Metered {
 }
 
 // Proves: CL-044-14; TC-044-017. Exactly one meter read per transmission, in the middle of
-// its audio; none for Tune; none for a late start too short to read clear of its release.
+// its audio; none for Tune.
 #[test]
 fn the_meter_read_is_due_once_in_the_middle_of_each_transmission() {
     let f = Fake::new();
@@ -1700,4 +1700,22 @@ fn the_meter_read_is_due_once_in_the_middle_of_each_transmission() {
     core.set_tune(true, 1500).unwrap();
     step(&mut core, P + 50_000);
     assert_eq!(due.lock().unwrap().len(), 2);
+}
+
+// Proves: CL-044-14; TC-044-017 (b). A late start too short to read clear of its release
+// has no read: audio at about period + 11 200 ms leaves under 2 s of the 13 140 ms.
+#[test]
+fn a_late_start_with_under_two_seconds_of_audio_has_no_meter_read() {
+    let f = Fake::new();
+    let due = Arc::new(Mutex::new(Vec::new()));
+    let mut core = Core::new(Metered(f.clone(), due.clone()));
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    let mut t = P + 11_200;
+    while t <= P + 12_500 {
+        f.at(t);
+        core.tick();
+        t += 1;
+    }
+    assert!(due.lock().unwrap().is_empty());
 }

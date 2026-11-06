@@ -776,3 +776,61 @@ fn nothing_is_read_for_a_transmission_while_set_level_runs() {
     assert!(on_meter_due(&f.state).is_none());
     assert!(r.lock().unwrap().writes.is_empty());
 }
+
+// TC-044-017 (g): startup connects the transmit step's call to the burst.
+#[test]
+fn startup_connects_the_meter_call_to_one_burst() {
+    let (f, r) = station(radio(fixed([0, 0x10])));
+    startup(&f.state);
+    hold(&f);
+    r.lock().unwrap().writes.clear();
+    let sink = f.state.recording.transmit.get().unwrap().meter_sink();
+    sink.expect("startup installs the sink")();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while meter_frames(&r).len() < 3 {
+        assert!(Instant::now() < deadline, "no burst");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+// TC-044-017 (h): a level that cannot be stored is not applied.
+#[test]
+fn a_correction_that_cannot_be_stored_leaves_the_level() {
+    let (f, r) = station(radio(fixed([0, 0x60])));
+    let recording = &f.state.recording;
+    let service = &recording.transmit.get().unwrap().service;
+    recording.tx_level.update(|i| i.level_db = -10);
+    service.with(|c| c.set_tx_level(-10));
+    std::fs::create_dir(f.dir.join(LEVEL_FILE)).unwrap();
+    hold(&f);
+    one_transmission(&f, &r);
+    assert_eq!(recording.tx_level.level_db(), -10);
+    let v: Value = serde_json::from_str(&event(recording).1).unwrap();
+    assert_eq!(v["data"]["stored"], json!(false));
+    service.with(|c| {
+        c.arm(3).unwrap();
+        c.set_tune(true, 1500).unwrap();
+    });
+    assert_eq!(f.bench.levels.lock().unwrap().last(), Some(&-10));
+    service.with(|c| c.set_tune(false, 0).unwrap());
+}
+
+// TC-044-017 (e): a reading without SWR does not clear the fault.
+#[test]
+fn a_reading_without_swr_keeps_the_fault_entry() {
+    let (f, r) = station(radio(fixed([0, 0])));
+    let recording = &f.state.recording;
+    hold(&f);
+    r.lock().unwrap().swr = [0x01, 0x20];
+    one_transmission(&f, &r);
+    assert!(recording.tx_level.swr_fault());
+    monitor(
+        &f.state,
+        &Meters {
+            alc: Some(0),
+            po: Some(143),
+            swr: None,
+        },
+    );
+    assert!(recording.tx_level.swr_fault());
+}

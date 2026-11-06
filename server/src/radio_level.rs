@@ -362,8 +362,9 @@ fn monitor(state: &Arc<ProfileState>, meters: &Meters) {
     if verdict.fault {
         // A fresh command id: a repeated one would answer from the receipt, not stop.
         let command = profile::new_uuid().unwrap_or_else(|_| recording.boot.clone());
-        station.service.halt(&command);
+        // First: no automation may arm in the moment after the halt.
         station.service.with(|c| c.require_operator());
+        station.service.halt(&command);
     }
     // CL-044-12: a level counts only once it is on disk; a failed store leaves the prior one.
     let level = verdict.level_db;
@@ -372,7 +373,8 @@ fn monitor(state: &Arc<ProfileState>, meters: &Meters) {
         station.service.with(|c| c.set_tx_level(level));
     }
     let mut i = recording.tx_level.lock();
-    let swr_fault = verdict.fault;
+    // A reading without SWR says nothing about the fault.
+    let swr_fault = verdict.fault || (i.swr_fault && meters.swr.is_none());
     if changed || i.warnings != verdict.warnings || i.swr_fault != swr_fault {
         if changed {
             i.level_db = level;

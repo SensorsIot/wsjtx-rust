@@ -234,6 +234,14 @@ impl Station {
             .unwrap_or_else(|p| p.into_inner())
             .meter_sink = Some(sink);
     }
+    #[cfg(test)]
+    pub(crate) fn meter_sink(&self) -> Option<Arc<dyn Fn() + Send + Sync>> {
+        self.inputs
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .meter_sink
+            .clone()
+    }
     /// Shares the station's call hash table with the transmit owner (CL-024-01).
     pub(crate) fn attach_hashes(&self, hashes: Arc<Mutex<wstx_rust::decoder::HashTable>>) {
         self.service.with(|c| c.attach_hashes(hashes));
