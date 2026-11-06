@@ -673,6 +673,12 @@ fn monitor_decides_one_bounded_step_and_warns_only_when_persistent() {
         monitor_step(-10, &m(Some(60), 143, 0), None, &mut counts).warnings,
         ["alc_high"]
     );
+    // The entry stays at half the ALC zone: 0059 is routine, however long it lasts.
+    let mut counts = Counts::default();
+    for _ in 0..3 {
+        let v = monitor_step(-10, &m(Some(59), 143, 0), None, &mut counts);
+        assert!(v.warnings.is_empty());
+    }
     // Low Po warns below half the profile power: 0143 is 50 %.
     let mut counts = Counts::default();
     for _ in 0..2 {
@@ -708,7 +714,31 @@ fn alc_zero_and_above_the_limit_on_neighbouring_levels_settle_on_the_lower() {
     assert_eq!(settled_level(-10, 1, alc), -9);
     assert_eq!(settled_level(-10, 2, alc), -10);
     assert_eq!(settled_level(-10, 40, alc), -10);
+    // From above: down, the one step up that finds out, down for good.
+    assert_eq!(settled_level(-9, 1, alc), -10);
+    assert_eq!(settled_level(-9, 2, alc), -9);
+    assert_eq!(settled_level(-9, 3, alc), -10);
     assert_eq!(settled_level(-9, 40, alc), -10);
+}
+
+// TC-044-017 (m): a lowering alone leaves the level free to follow the drive back up.
+#[test]
+fn a_lowering_without_a_step_up_before_it_keeps_the_step_up() {
+    let m = |alc| Meters {
+        alc: Some(alc),
+        po: Some(143),
+        swr: Some(0),
+    };
+    let mut counts = Counts::default();
+    let mut step = |level, alc| monitor_step(level, &m(alc), Some(100), &mut counts).level_db;
+    assert_eq!(step(-12, 13), -13);
+    // The drive fell (RF power, Tx audio frequency).
+    assert_eq!(step(-13, 0), -12);
+    assert_eq!(step(-12, 0), -11);
+    // A reading between the step up and the lowering breaks the sequence.
+    assert_eq!(step(-11, 5), -11);
+    assert_eq!(step(-11, 13), -12);
+    assert_eq!(step(-12, 0), -11);
 }
 
 // TC-044-017 (j): the live reading of 2026-11-06, ALC 31 at -9 dB and about 6 per dB: routine.
@@ -760,29 +790,33 @@ fn the_ceiling_ends_with_a_changed_profile_power_and_a_stored_set_level() {
     recording.tx_level.update(|i| i.level_db = -10);
     hold(&f);
     let set_alc = |data| r.lock().unwrap().alc = fixed(data);
+    // One step up, then lowered: -9 dB is the ceiling.
+    let up_and_down = || {
+        set_alc([0, 0]);
+        one_transmission(&f, &r);
+        assert_eq!(recording.tx_level.level_db(), -9);
+        set_alc([0, 0x11]);
+        one_transmission(&f, &r);
+        assert_eq!(recording.tx_level.level_db(), -10);
+        set_alc([0, 0]);
+    };
+    up_and_down();
     one_transmission(&f, &r);
-    assert_eq!(recording.tx_level.level_db(), -11);
-    set_alc([0, 0]);
-    one_transmission(&f, &r);
-    assert_eq!(recording.tx_level.level_db(), -11, "held below the ceiling");
+    assert_eq!(recording.tx_level.level_db(), -10, "held below the ceiling");
     // The same profile power keeps it, another one ends it.
     tick(recording, settings(100), Instant::now());
     one_transmission(&f, &r);
-    assert_eq!(recording.tx_level.level_db(), -11);
-    tick(recording, settings(90), Instant::now());
-    one_transmission(&f, &r);
     assert_eq!(recording.tx_level.level_db(), -10);
-    set_alc([0, 0x11]);
-    one_transmission(&f, &r);
-    assert_eq!(recording.tx_level.level_db(), -11);
-    // Set level stores -10, the level that was lowered: a new measurement, a new ceiling.
-    rising(&f, &r, -9);
+    tick(recording, settings(90), Instant::now());
+    up_and_down();
+    // Set level stores the level of the ceiling: a new measurement, no ceiling.
+    rising(&f, &r, -8);
     start_assistant(&f.state, 1500).unwrap();
     assert_eq!(finished(&f), "stored");
-    assert_eq!(recording.tx_level.level_db(), -10);
+    assert_eq!(recording.tx_level.level_db(), -9);
     set_alc([0, 0]);
     one_transmission(&f, &r);
-    assert_eq!(recording.tx_level.level_db(), -9);
+    assert_eq!(recording.tx_level.level_db(), -8);
 }
 
 /// Starts the burst of one transmission and waits for its reading to be judged.

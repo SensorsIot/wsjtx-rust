@@ -94,9 +94,12 @@ pub(crate) struct Counts {
     alc_high: u8,
     po_low: u8,
     swr_high: u8,
-    /// The last level that was lowered: no step up reaches it again, so a reading of 0 one
-    /// step below a reading above the limit settles. Until a stored Set level, a changed
-    /// profile power or a restart.
+    /// The last reading stepped the level up.
+    raised: bool,
+    /// A level lowered right after its step up: no step up reaches it again, so a reading
+    /// of 0 one step below a reading above the limit settles, while any other lowering
+    /// keeps following the drive. Until a stored Set level, a changed profile power or a
+    /// restart.
     ceiling: Option<i32>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -125,10 +128,14 @@ pub(crate) fn monitor_step(
     count(&mut counts.alc_high, alc_high);
     count(&mut counts.po_low, very_low);
     count(&mut counts.swr_high, swr_high);
+    let raised = std::mem::take(&mut counts.raised);
     let level_db = if meters.alc.is_some_and(|a| a > ALC_LIMIT_RAW) || over {
-        counts.ceiling = Some(level);
+        if raised {
+            counts.ceiling = Some(level);
+        }
         (level - 1).max(LEVEL_MIN_DB)
     } else if meters.alc == Some(0) && low && counts.ceiling.is_none_or(|c| level + 1 < c) {
+        counts.raised = true;
         (level + 1).min(LEVEL_MAX_DB)
     } else {
         level
