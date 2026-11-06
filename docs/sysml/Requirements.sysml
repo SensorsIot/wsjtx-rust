@@ -2629,7 +2629,9 @@ package WstxRequirements {
              and exposes that same recovery action; no normal Connect/Disconnect CAT
              buttons. CAT disabled remains disabled. No serial enumeration/fallback.
              Missing/revoked/mismatched grant, missing/invalid commissioning, disabled
-             CAT and corrupt authorization store cause zero automatic native open,
+             CAT and corrupt authorization store cause zero automatic native open (the sole
+             exception is the read-only discovery of CL-044-15, after its persisted keying
+             confirmation),
              query, setter or PTT bytes. One matching unrevoked grant plus valid
              commissioning authorizes the station's automatic read-only CAT lifecycle
              even when that browser is closed; it does not authorize another browser's
@@ -3879,17 +3881,17 @@ package WstxRequirements {
     dependency CL_044_14_verified_by_TC_044_019 from 'CL-044-14' to 'TC-044-019';
     // Operator requirement 2026-11-06 (#44 comment 6679345317, from #22): pragmatic discovery.
     requirement 'CL-044-15' {
-        doc /* On start, before the CAT lifecycle first runs, the station discovers its radio read-only: the same port opening as Detect radio (the per-device ownership claim, DTR and RTS low) and the same probe (CI-V 19 00 only, CL-044-01). A profile with control cat whose saved endpoint's port is present and answers with a radio this station has CAT for keeps its radio, and no other port is opened. Otherwise (the port is held by another station process or another program, is absent or silent), and on a profile never saved (revision 0, control disabled), the ports on a known radio USB bridge are tried in port order, without the saved one and within the 40 s detection budget: a port that cannot be opened is passed over, which is how a radio another station process holds is recognised, and a radio discovery chose or kept is also reserved for the life of the process (a lock per port under radio-reservation), so a station waiting for its confirmation holds it too; a port reserved by another process is passed over, so each process takes the next free radio and more than one transceiver on one PC works. The first that answers with such a radio is saved as the profile's control (icom7300://COMn?baud=b&radio=aa&controller=e0, ptt kept from a CAT control, otherwise cat), with the capture and render endpoints that match it and none otherwise (never the old radio's audio); settings.radio stays or takes the default; its stored Tx level (CL-044-12) and settings undo (CL-044-03) are removed, they belonged to the other radio. This is a profile save, so the revision advances and the receive-only confirmation (CL-022-03) binds to the new control: CAT opens only after the operator confirmed this radio. Nothing is found: nothing changes and the lifecycle keeps retrying the saved endpoint. A control of an operator's saved Disabled, or an endpoint that does not parse, is left alone and no port is opened. Discovery runs once per process start, before the station listens and before anything loads the Tx level or the audio names, so a port that does not answer delays listening by its probe and at most the detection budget. It does not write a radio setting. WSTX_RADIO_DISCOVERY=off turns it off, for the test stations. Limit: a saved radio reserved by another process with no other radio free changes nothing, and the lifecycle retries it. */
+        doc /* Coordinator default pending the operator (#44 comment 6682191117): the keying risk of an open is not accepted, so nothing opens automatically without the persisted confirmation. Discovery opens no port at all until the operator has confirmed keying inhibit once: the tick and press of Detect radio (CL-044-01) stores it in radio-keying-confirmed.json of the profile, and Settings > Radio says so until then (radio.tx_level data keying_confirmed). A commissioned saved radio still opens under CL-022-03 through the CAT lifecycle regardless. With the confirmation, on start, before the CAT lifecycle first runs, the station discovers its radio read-only: the same port opening as Detect radio (the per-device ownership claim, DTR and RTS low) and the same probe (CI-V 19 00 only, CL-044-01). A profile with control cat whose saved endpoint's port is present and answers with a radio this station has CAT for keeps its radio, and no other port is opened. Otherwise (the port is held by another station process or another program, is absent or silent), and on a profile never saved (revision 0, control disabled), the ports on a known radio USB bridge are tried in port order, without the saved one and within the budget: a port that cannot be opened is passed over, which is how a radio another station process holds is recognised, and a radio discovery chose or kept is also reserved for the life of the process (a lock per port under radio-reservation), so a station waiting for its confirmation holds it too; a port reserved by another process is passed over, so each process takes the next free radio and more than one transceiver on one PC works. The first that answers with such a radio is saved as the profile's control (icom7300://COMn?baud=b&radio=aa&controller=e0, ptt kept from a CAT control, otherwise cat), with the capture and render endpoints that match it and none otherwise (never the old radio's audio); settings.radio stays or takes the default; its stored Tx level (CL-044-12) and settings undo (CL-044-03) are removed, they belonged to the other radio. This is a profile save, so the revision advances and the receive-only confirmation (CL-022-03) binds to the new control: CAT opens only after the operator confirmed this radio. Nothing is found: nothing changes and the lifecycle keeps retrying the saved endpoint. A control of an operator's saved Disabled, or an endpoint that does not parse, is left alone and no port is opened. Discovery runs once per process start, before the station listens and before anything loads the Tx level or the audio names, so a port that does not answer delays listening by its probe; all of discovery, saved port included, ends within 40 s (each probe is cut at that bound). It does not write a radio setting. WSTX_RADIO_DISCOVERY=off turns it off, for the test stations. Limit: a saved radio reserved by another process with no other radio free changes nothing, and the lifecycle retries it. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/radio_setup.rs; server/src/main.rs";
+        attribute implementation : String = "server/src/radio_setup.rs; server/src/radio_level.rs; server/src/main.rs; client/recording.js";
     }
     dependency CL_044_15_to_FR_009 from 'CL-044-15' to 'FR-009';
     verification 'TC-044-020' {
         doc /* TC-044-020 — Discovery on start
              CL-044-15
              Setup: the actual profile store and authorization owner, a detection hardware double of ports, held ports, radios and audio endpoints, recording every frame.
-             Steps: (a) saved COM3 answers, COM5 too; (b) saved COM3 held, COM4 held, COM5 silent, COM6 an IC-7300 with matching audio; (c) saved silent, the other held; (d) an operator's saved Disabled with a radio present; (e) a profile never saved with an FTDI board, an IC-705 and an IC-7300; (f) three stations in turn on two free radios, the third with a saved one already reserved.
-             Expected: (a) nothing saved, only COM3 opened; (b) control COM6 with the probed rate and address, a disabled ptt kept, the matching endpoints, settings.radio kept, the Tx level and undo files gone, revision +1, ports opened 3, 4, 5, 6; on the actual authorization owner, a commissioned control moved this way gives CommissioningRequired, no commissioning, safety revision +1 and the new checked control; (c) nothing saved; (d) no port opened; (e) COM6, ptt cat, the FTDI board never opened; (f) COM3, then COM6, and the third keeps its saved control; in all of them only 19 00 frames are written.
+             Steps: (a) saved COM3 answers, COM5 too; (b) saved COM3 held, COM4 held, COM5 silent, COM6 an IC-7300 with matching audio; (c) saved silent, the other held; (d) an operator's saved Disabled with a radio present; (e) a profile never saved with an FTDI board, an IC-705 and an IC-7300; (f) three stations in turn on two free radios, the third with a saved one already reserved; (g) no confirmation with a radio present, never saved and saved, then Detect radio without and with the tick; (h) three silent ports with a 200 ms budget.
+             Expected: (a) nothing saved, only COM3 opened; (b) control COM6 with the probed rate and address, a disabled ptt kept, the matching endpoints, settings.radio kept, the Tx level and undo files gone, revision +1, ports opened 3, 4, 5, 6; on the actual authorization owner, a commissioned control moved this way gives CommissioningRequired, no commissioning, safety revision +1 and the new checked control; (c) nothing saved; (d) no port opened; (e) COM6, ptt cat, the FTDI board never opened; (f) COM3, then COM6, and the third keeps its saved control; (g) no port opened, keying_confirmed false; no file after the refused Detect, the file and keying_confirmed true after the other, and only then the saved port is opened; (h) only the first opened, over in under 2 s; in all of them only 19 00 frames are written.
              2 — Isolated automated tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -3898,10 +3900,24 @@ package WstxRequirements {
         attribute executable : String = "server/src/radio_setup_tests.rs; server/src/auth_tests.rs";
     }
     dependency CL_044_15_verified_by_TC_044_020 from 'CL-044-15' to 'TC-044-020';
+    verification 'TC-044-022' {
+        doc /* TC-044-022 — The one-time confirmation in Settings
+             CL-044-15
+             Setup: candidate server and Chromium; radio.tx_level events injected.
+             Steps: inject keying_confirmed false, then true.
+             Expected: the Detect radio section says discovery is off until confirmed once, then that it is on.
+             2 — Isolated automated browser test; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-15';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_044_15_verified_by_TC_044_022 from 'CL-044-15' to 'TC-044-022';
     verification 'TC-044-021' {
         doc /* TC-044-021 — Discovery on HB9BLA
              CL-044-15
-             Setup: the gated candidate on HB9BLA, the IC-7300 on COM3; a second station process on its own profile; the operator's consent.
+             Setup: the gated candidate on HB9BLA, the IC-7300 on COM3, keying inhibit confirmed through Detect radio; a second station process on its own profile; the operator's consent.
              Steps: start the station with COM3 saved; start a second process with COM3 saved while the first holds it; start it with a second transceiver connected, if one is available.
              Expected: the first keeps COM3; the second reports port_in_use with nothing changed when no other radio is free, and takes the second transceiver when one is.
              4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */

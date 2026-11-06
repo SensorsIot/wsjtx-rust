@@ -1013,6 +1013,7 @@ fn only_id_reads(hw: &Double) {
 #[test]
 fn discovery_keeps_a_saved_radio_that_answers() {
     let f = fixture("http://127.0.0.1:18047", false);
+    radio_setup::confirm_keying(&f.state);
     saved_on(&f, 3);
     let before = saved_control(&f);
     let hw = double(
@@ -1036,6 +1037,7 @@ fn discovery_keeps_a_saved_radio_that_answers() {
 #[test]
 fn discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held() {
     let f = fixture("http://127.0.0.1:18048", false);
+    radio_setup::confirm_keying(&f.state);
     saved_with(&f, 3, "disabled");
     std::fs::write(f.dir.join(crate::radio_level::LEVEL_FILE), "{}").unwrap();
     std::fs::write(f.dir.join(radio_setup::UNDO_FILE), "{}").unwrap();
@@ -1093,6 +1095,7 @@ fn discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held
 fn discovery_changes_nothing_without_a_free_radio_or_against_a_saved_disabled() {
     // Nothing else free: the saved radio stays for the lifecycle's retries.
     let f = fixture("http://127.0.0.1:18049", false);
+    radio_setup::confirm_keying(&f.state);
     saved_on(&f, 3);
     let before = saved_control(&f);
     let hw = double(
@@ -1105,6 +1108,7 @@ fn discovery_changes_nothing_without_a_free_radio_or_against_a_saved_disabled() 
     assert_eq!(saved_control(&f), before);
     // An operator's saved Disabled opens nothing.
     let f = fixture("http://127.0.0.1:18050", false);
+    radio_setup::confirm_keying(&f.state);
     {
         let mut store = f.state.store.lock().unwrap();
         let settings = store.document.settings();
@@ -1125,6 +1129,7 @@ fn discovery_changes_nothing_without_a_free_radio_or_against_a_saved_disabled() 
 #[test]
 fn discovery_sets_up_a_profile_never_saved() {
     let f = fixture("http://127.0.0.1:18051", false);
+    radio_setup::confirm_keying(&f.state);
     assert_eq!(saved_control(&f).1, 0);
     let hw = double(
         vec![
@@ -1166,6 +1171,7 @@ fn a_second_station_passes_over_a_radio_the_first_reserved() {
         vec![],
     );
     let a = fixture("http://127.0.0.1:18052", false);
+    radio_setup::confirm_keying(&a.state);
     hardware_of(&a, &hw);
     assert!(
         radio_setup::discover_on_start(&a.state)
@@ -1173,6 +1179,7 @@ fn a_second_station_passes_over_a_radio_the_first_reserved() {
             .contains("COM3")
     );
     let b = fixture("http://127.0.0.1:18053", false);
+    radio_setup::confirm_keying(&b.state);
     hardware_of(&b, &hw);
     assert!(
         radio_setup::discover_on_start(&b.state)
@@ -1181,8 +1188,80 @@ fn a_second_station_passes_over_a_radio_the_first_reserved() {
     );
     // A saved radio another station reserved is no longer this station's.
     let c = fixture("http://127.0.0.1:18054", false);
+    radio_setup::confirm_keying(&c.state);
     saved_on(&c, 3);
     hardware_of(&c, &hw);
     assert_eq!(radio_setup::discover_on_start(&c.state), None);
     assert_eq!(saved_control(&c).0.endpoint.as_deref(), Some("COM3"));
+}
+
+// Proves: CL-044-15; TC-044-020 (g). No automatic open without the persisted confirmation,
+// neither of the saved port nor of another; Detect radio with the tick stores it, once.
+#[tokio::test]
+async fn discovery_opens_nothing_until_detect_radio_stored_the_confirmation() {
+    let f = fixture("http://127.0.0.1:18055", false);
+    let hw = double(
+        vec![port(3, "USB\\HUB\\A")],
+        HashMap::from([(3, (0x94, 19200))]),
+        vec![],
+    );
+    hardware_of(&f, &hw);
+    let keying = || {
+        let v: Value =
+            serde_json::from_str(&crate::radio_level::event(&f.state.recording).1).unwrap();
+        v["data"]["keying_confirmed"].clone()
+    };
+    assert_eq!(radio_setup::discover_on_start(&f.state), None);
+    saved_on(&f, 3);
+    assert_eq!(radio_setup::discover_on_start(&f.state), None);
+    assert!(hw.opened.lock().unwrap().is_empty(), "no automatic open");
+    assert_eq!(keying(), json!(false));
+    let body = |confirmed| json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"keying_inhibit_confirmed":confirmed});
+    let (s, _, _, _) = f.call("POST", "/radio/detect", Some(body(false))).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    assert!(!f.dir.join(radio_setup::KEYING_FILE).exists());
+    let (s, v, _, _) = f.call("POST", "/radio/detect", Some(body(true))).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert!(f.dir.join(radio_setup::KEYING_FILE).exists());
+    assert_eq!(keying(), json!(true));
+    hw.opened.lock().unwrap().clear();
+    assert_eq!(radio_setup::discover_on_start(&f.state), None);
+    assert_eq!(
+        *hw.opened.lock().unwrap(),
+        vec![3],
+        "now the saved port answers"
+    );
+}
+
+// Proves: CL-044-15; TC-044-020 (h). The whole discovery stays inside its budget however
+// many silent ports there are.
+#[test]
+fn silent_ports_stay_within_the_budget() {
+    let f = fixture("http://127.0.0.1:18056", false);
+    radio_setup::confirm_keying(&f.state);
+    let hw = double(
+        vec![
+            port(3, "USB\\HUB\\A"),
+            port(4, "USB\\HUB\\B"),
+            port(5, "USB\\HUB\\C"),
+        ],
+        HashMap::new(),
+        vec![],
+    );
+    hardware_of(&f, &hw);
+    let started = Instant::now();
+    assert_eq!(
+        radio_setup::discover_within(&f.state, Duration::from_millis(200)),
+        None
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(
+        *hw.opened.lock().unwrap(),
+        vec![3],
+        "no port opened past the budget"
+    );
 }

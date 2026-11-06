@@ -2123,6 +2123,7 @@ mod automatic_cat {
             vec![saved],
         );
         *state.recording.radio_setup.hardware.lock().unwrap() = Some(hw);
+        radio_setup::confirm_keying(&state);
         assert!(radio_setup::discover_on_start(&state).is_some());
         assert!(matches!(
             eligible(&state),
