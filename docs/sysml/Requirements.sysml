@@ -3721,6 +3721,96 @@ package WstxRequirements {
     dependency CL_044_04_verified_by_TC_044_004 from 'CL-044-04' to 'TC-044-004';
     dependency CL_044_05_verified_by_TC_044_004 from 'CL-044-05' to 'TC-044-004';
 
+    // #44 AGC as a station-managed radio setting (operator decision 2026-11-04 on #44,
+    // comment 6626074726: AGC SLOW removed the IC-7300 AGC recovery line between FT8
+    // periods, #54) and the operator rule of 2026-11-04: CI-V reads first and changes a
+    // setting only when it does not fit. IC-7300 AGC: Icom IC-7300 Full Manual section 19,
+    // command table "16 12 AGC" (01 FAST, 02 MID, 03 SLOW; read: the command without data).
+    requirement 'CL-044-09' {
+        doc /* Every CI-V change of a radio setting by the station is read, compare, write, verify: the station first reads the setting's current value; when it already equals the wanted value no write frame is sent and the read is the confirmation; otherwise it sends the write only after the radio reports RX (1C 00 00), requires its ACK (FB; FA is refused radio_rejected) and reads the setting back, a different value being readback_mismatch and a failed readback indeterminate. No write is sent while this station's transmit hold is taken (the CAT owner's single lease excludes it). The transmit switch 1C 00 is a keying action, not a setting, and is not subject to this rule (CL-009 PTT readback). */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_control/executor.rs; server/src/radio_control/actor.rs";
+    }
+    dependency CL_044_09_to_FR_009 from 'CL-044-09' to 'FR-009';
+    requirement 'CL-044-10' {
+        doc /* The radio profile holds the radio settings the station manages: settings.radio {agc FAST|MID|SLOW}, present exactly when settings.control is CAT with an endpoint that is a supported IC-7300 CI-V configuration (the only radio with a known CI-V AGC command; every other control has no settings.radio key and the setting is hidden). GET /profile and the PUT response carry it; PUT /profile refuses settings.radio for an unmanaged control (400 invalid_settings, field radio) and settings.radio.agc outside FAST/MID/SLOW (400 invalid_settings, field settings.radio.agc); a PUT without settings.radio keeps the saved value, or takes SLOW for a newly managed radio. settings.radio is not part of settings.control, so changing it never changes the receive-only CAT confirmation's checked control (CL-022-03); like every profile save it advances the revision, which reconnects CAT. Migration: a profile saved without radio whose control is IC-7300 CAT is read with agc SLOW (the FT8/FT4 default); other profiles stay without it; the file is rewritten only by a later save. The station applies the saved AGC with one read-compare-write-verify exchange (CL-044-09; CI-V read FE FE <address> E0 16 12 FD, write FE FE <address> E0 16 12 <01|02|03> FD) through its CAT owner: once per ready connection (a refusal busy, e.g. the lease held or the radio reporting TX, is tried again after 2 s; any other outcome ends the attempt for that connection) and on each FT8 or FT4 mode selection inside the selection's CAT reservation, after its receive setup and before receive restarts. Nothing is sent while the transmitter is armed, tuning or transmitting (the connection attempt waits for disarm). An AGC failure never fails the selection. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/profile.rs; server/src/main.rs; server/src/radio_agc.rs; server/src/radio_control/setup.rs; server/src/radio_control/executor.rs; server/src/radio_control/actor.rs; server/src/recording.rs; server/src/authorization_http.rs";
+    }
+    dependency CL_044_10_to_FR_009 from 'CL-044-10' to 'FR-009';
+    dependency CL_044_10_to_FR_001 from 'CL-044-10' to 'FR-001';
+    requirement 'CL-044-11' {
+        doc /* The server pushes the AGC state (client-server rule of #10): each WebSocket peer with a display subscription receives radio.agc {v 1, type radio.agc, data {profile_id, boot_id, target, connection_generation, value, result, trigger}} once the station has an AGC target and then after each change (target the saved AGC or null; value the AGC the radio reported last or null; result unchanged, written or the radio error code, null before the first exchange; trigger connect or selection); nothing is polled. Settings > Radio, CAT group: an AGC select FAST/MID/SLOW, shown only while the form's control is CAT with an IC-7300 endpoint, saved with Apply ⟳ as settings.radio.agc (a hidden select sends no radio key), and below it the read-back line from radio.agc: "Radio AGC <value> · read back, already as set", "Radio AGC <value> · set to <target> and read back", "Radio AGC <target> not applied · <result>". Detect radio (CL-044-02) proposes radio {agc SLOW} with the IC-7300 proposal, shows the row "AGC SLOW · recommended for FT8/FT4", and "Use this setup" sets the AGC select. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_agc.rs; server/src/main.rs; server/src/radio_setup.rs; client/index.html; client/app.js; client/recording.js";
+    }
+    dependency CL_044_11_to_FR_019 from 'CL-044-11' to 'FR-019';
+    dependency CL_044_11_to_FR_009 from 'CL-044-11' to 'FR-009';
+    verification 'TC-044-008' {
+        doc /* TC-044-008 — AGC CI-V read, compare, write, verify on the scripted IC-7300
+             CL-044-09, CL-044-10
+             Setup: the actual CAT actor and executor on a scripted IC-7300 transport (echo of each frame, hand-written replies) holding AGC 01, 02 or 03; independent byte expectations from the IC-7300 command table.
+             Steps: (a) EnsureAgc SLOW with the radio at SLOW; (b) with the radio at MID; (c) with the radio reporting TX and MID; (d) a radio that answers FA to the write; (e) a radio that acknowledges but stays MID; (f) a radio that answers FA to the read; (h) the codec: frames and decoding of 16 12 replies, an unknown code 04.
+             Expected: (a) exactly one written frame FE FE 94 E0 16 12 FD, reply SLOW, written false; (b) frames FE FE 94 E0 16 12 FD, FE FE 94 E0 1C 00 FD, FE FE 94 E0 16 12 03 FD, FE FE 94 E0 16 12 FD in this order, written true; (c) busy after the read and the RX check, no 16 12 03 frame; (d) radio_rejected; (e) readback_mismatch; (f) radio_rejected and no write; (h) FAST 01, MID 02, SLOW 03; 04 is no AGC. CAT stays ready in (a)-(f).
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-09';
+            verify 'CL-044-10';
+        }
+        attribute executable : String = "server/src/radio_agc_tests.rs";
+    }
+    dependency CL_044_09_verified_by_TC_044_008 from 'CL-044-09' to 'TC-044-008';
+    dependency CL_044_10_verified_by_TC_044_008 from 'CL-044-10' to 'TC-044-008';
+    verification 'TC-044-009' {
+        doc /* TC-044-009 — AGC applied on connect and FT8/FT4 selection, never while transmitting; profile field and migration
+             CL-044-10, CL-044-11
+             Setup: the actual router, Recording owner, CAT lifecycle tick and CAT actor on a disposable profile with a scripted IC-7300 on COM3.
+             Steps: (a) profile with IC-7300 CAT and agc SLOW, radio at MID: AGC tick after ready, then another tick; (b) radio already at SLOW; (c) radio reporting TX: tick, then RX after 2 s; (d) the transmitter armed: tick; (e) FT8 band selection with the radio changed to FAST meanwhile; (f) FT4 mode selection with the radio at SLOW; (g) radio.agc event before and after (a); (h) profile files: IC-7300 CAT without radio, CAT disabled without radio, GET /profile; PUT without radio, with agc MID, with agc LOW, with radio for a disabled control; (i) Detect radio proposal.
+             Expected: (a) one 16 12 03 write after the read, read back, status written SLOW, the second tick sends nothing; (b) only the read, status unchanged; (c) no write while TX (busy), the write after RX; (d) no AGC frame at all; (e) a 16 12 03 write inside the selection after the dial setter, trigger selection; (f) only the AGC read, result unchanged, trigger selection; (g) target SLOW with result null, then value SLOW result written; (h) settings.radio {agc SLOW} for IC-7300, no radio key for disabled, the file unchanged; PUT keeps SLOW, saves MID, 400 settings.radio.agc, 400 radio; (i) proposal radio {agc SLOW}.
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-10';
+            verify 'CL-044-11';
+        }
+        attribute executable : String = "server/src/radio_agc_tests.rs";
+    }
+    dependency CL_044_10_verified_by_TC_044_009 from 'CL-044-10' to 'TC-044-009';
+    dependency CL_044_11_verified_by_TC_044_009 from 'CL-044-11' to 'TC-044-009';
+    verification 'TC-044-010' {
+        doc /* TC-044-010 — AGC field and read-back in Settings > Radio
+             CL-044-11
+             Setup: actual candidate server on a disposable plaintext profile with IC-7300 CAT (not authorized, so no CAT owner opens anything) and Chromium; radio.agc events injected into the page's station-message stream as the server sends them; /radio/detect answered by a route fixture with the IC-7300 proposal.
+             Steps: open Settings > Radio; read the AGC select; deliver radio.agc written SLOW, then a busy result; choose MID and Apply ⟳; GET /profile; set control Disabled; restore CAT, Detect radio with the proposal and Use this setup; 360 px width.
+             Expected: the AGC select in the CAT group shows SLOW (migrated default); the read-back line "Radio AGC SLOW · set to SLOW and read back", then "Radio AGC SLOW not applied · busy"; the saved profile holds settings.radio.agc MID; with control Disabled the select and line are hidden; the proposal row "AGC SLOW · recommended for FT8/FT4" and the select set to SLOW; no horizontal scroll at 360 px; no page error.
+             2 — Isolated automated browser test; Windows development PC, no radio, serial port or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-11';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_044_11_verified_by_TC_044_010 from 'CL-044-11' to 'TC-044-010';
+    verification 'TC-044-011' {
+        doc /* TC-044-011 — AGC on HB9BLA
+             CL-044-09, CL-044-10, CL-044-11
+             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator present.
+             Steps: set the radio's AGC to FAST by hand; restart CAT (Apply ⟳); read the Settings line and the radio display; select FT8 40 m; select FT4; watch the waterfall between periods.
+             Expected: the radio shows AGC SLOW after connect and the line reads "set to SLOW and read back"; the following selections read "already as set" with no write; no AGC recovery line between periods.
+             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-044-09';
+            verify 'CL-044-10';
+            verify 'CL-044-11';
+        }
+    }
+    dependency CL_044_09_verified_by_TC_044_011 from 'CL-044-09' to 'TC-044-011';
+    dependency CL_044_10_verified_by_TC_044_011 from 'CL-044-10' to 'TC-044-011';
+    dependency CL_044_11_verified_by_TC_044_011 from 'CL-044-11' to 'TC-044-011';
+
     // #57 Decode display speed (operator 2026-11-02; defaults recorded on issue #57).
     requirement 'CL-057-01' {
         doc /* Band Activity on the Detailed display profile shows a published decode view without waiting for a refresh cadence: each new or grown latest_decode publication is announced to every Detailed WebSocket peer at once as a receive.state event (unchanged exact data; Thin and Off peers keep the 2 s receive tick), and a Detailed browser then reads GET /receive and fetches the view's records immediately, page after page (limit 16), until its cursor reaches the view's frozen end, instead of at most once per 4 s. A failed result read (which falls back to at most once per 4 s until a page succeeds) and the Thin rules (one pending request, limit 1, at most once per 4 s, page at most 3072 bytes) are unchanged; with no announced or unread view and no failed GET /receive or result read, the idle read on every display profile is only a safety read at most once per 30 s (#10 WstxStationProtocol::PushedStationState), so the two-browser 32 kbit/s budget still holds. On a LAN every row of a published view is painted at most 0.3 s after its publication; "Loading results" shows only while records of the view are still being fetched. */
@@ -5074,5 +5164,39 @@ package WstxRequirements {
         }
     }
     dependency CL_061_04_verified_by_TC_061_007 from 'CL-061-04' to 'TC-061-007';
+    requirement 'CL-061-05' {
+        doc /* A Tx period takes only a thin marker band in the waterfall (operator 2026-11-04 and 2026-11-06, #61: "the Tx area in the waterfall can be much shorter", "we still have a white band when the TX runs"). The browser collapses each run of consecutive rows the station marked tx (CL-061-04; it adds no polling and no new station data, #10 client-server rule) to one band of 4 CSS pixels in RGB(90,20,30), whatever the run's source time: while the station transmits the picture holds still once the band stands; receive rows keep the Speed scale. The time ruler stays exact: T at the top, no label inside a band, and a source time t beyond a band at floor((T-t)*p*H/C) less the collapsed source time of the bands above it, plus their height; the readout's projected source range over a band names the whole Tx run. A row the station did not deliver between two Tx rows at most 7.5 s apart is a Tx row of that band, never a grey gap stripe; a longer hole stays a gap. In the Day theme the signal canvases keep their colours: the waterfall's background stays dark and the Tx band dark red, never pale (the canvas counter-filter was overridden by #signal canvas{filter:none}, so the page's inversion turned both nearly white). */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js; client/recording.css";
+    }
+    dependency CL_061_05_to_FR_019 from 'CL-061-05' to 'FR-019';
+    verification 'TC-061-008' {
+        doc /* TC-061-008 — A Tx period is a thin band, the time axis stays exact, nothing pale
+             CL-061-05
+             Setup: actual station Router and browser client at 1366x768 (device scale 1) with a scripted correlated live receive and Detailed frames, Speed 1 (10 CSS px/s) (explicit presentation fixtures).
+             Steps: deliver 12 s of receive rows; one Tx row; the rest of a 15 s Tx period with two missing rows; 12 s of receive rows; read the canvas column and the time ruler; hover the band; set the Day theme and read the rendered page pixels; deliver Tx rows after a 7.4 s hole and after a 7.6 s hole.
+             Expected (independent: computed from the 0.2 s rows and 10 px/s with y(s)=floor(s*10*H/C)): after the first Tx row the band covers rows 0-3 and the receive rows start at 4; the remaining Tx rows leave that picture unchanged; after the 12 s of receive the band covers rows y(12) to y(12)+3, receive rows above and below it and no grey row; labels 39.0 s at 0, 35.0 s at y(4), 30.0 s at y(9), then 10.0 s at y(14)+4, none of 25, 20, 15 s; the band's readout names the source range 12.0-27.000 s; the Day page pixels of the band are dark red; the 7.4 s hole is part of the band and the 7.6 s hole stays grey. On the parent client the Tx rows take 150 px, the labels ignore the band and the Day pixels are pale.
+             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). Live acceptance: TC-061-009. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-061-05';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_061_05_verified_by_TC_061_008 from 'CL-061-05' to 'TC-061-008';
+    verification 'TC-061-009' {
+        doc /* TC-061-009 — The Tx band on HB9BLA
+             CL-061-05
+             Setup: the installed station on HB9BLA, IC-7300, the operator's browser in its usual theme.
+             Steps: run a QSO with several Tx periods and look at the waterfall during and after them.
+             Expected: each Tx period shows only a thin dark red band; no white or grey band appears while transmitting; the time labels below a band are the source times of those rows.
+             3 — Live on the station with transmission; with the operator at acceptance. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-061-05';
+        }
+    }
+    dependency CL_061_05_verified_by_TC_061_009 from 'CL-061-05' to 'TC-061-009';
 
 }

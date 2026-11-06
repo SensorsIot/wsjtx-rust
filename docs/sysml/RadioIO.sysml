@@ -261,7 +261,11 @@ package WstxRadioIO {
              it creates no second owner and never retries a setter or resumes audio.
              Validateimmutableboundedcatalogue separately fromcompiledoperations/state.
              Failed close retains owner. No guarantee of no initial USB-line glitch:
-             physicalUSB SEND/CW/RTTY OFF or independentlyverifiedinhibit beforeopen. */
+             physicalUSB SEND/CW/RTTY OFF or independentlyverifiedinhibit beforeopen.
+             #44 CL-044-09: every setting change is read, compare, write, verify: read
+             first, no write when the value already fits, write only with the radio in
+             RX, ACK, then readback (the transmit switch is a keying action, not a
+             setting). Menu/AGC exchanges run under the same single lease. */
     }
     action capture : CaptureAudio;
     action convertReceive : ConvertAndReceive;
