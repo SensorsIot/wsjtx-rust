@@ -88,6 +88,23 @@ async function fetchSnapshot(){
     if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence||value.contact_revision>=snap.contact_revision)){snap=value;render();}}
   }catch{}
 }
+// WstxContact::ContactStateEvent (#10): the station's events build the same snapshot, from every
+// field in the socket's first one and what changed after it; newer ones replace what is shown.
+let heldSocket=null,held=null;
+function stateApply(current,d){
+  if(heldSocket!==current){heldSocket=current;held=null;}
+  const {changed,...identity}=d,view={v:1,contact:null,log:null,...held,...identity};
+  for(const [key,value] of Object.entries(changed)){
+    if(key==='contact'&&value){
+      const whole=value.id!==undefined,{dialogue_from,...rest}=value;
+      view.contact=whole?rest:{...view.contact,...rest};
+      if(dialogue_from!==undefined)view.contact.dialogue=[...(whole?[]:held?.contact?.dialogue??[]).slice(0,dialogue_from),...value.dialogue];
+    }else view[key]=value&&key!=='log'&&view[key]?{...view[key],...value}:value;
+  }
+  held=view;
+  window.wstxStationData?.('contact',valid(view));
+  if(valid(view)){stationSample(view.utc_ms);if(!snap||snap.boot_id!==view.boot_id||view.snapshot_sequence>snap.snapshot_sequence){snap=view;render();}}
+}
 const ids=()=>snap&&{v:1,profile_id:snap.profile_id,boot_id:snap.boot_id};
 // Commands are sent one at a time, each with the revision of the latest snapshot.
 let sendChain=Promise.resolve();
@@ -775,7 +792,7 @@ addEventListener('station-stale',()=>{displays();});
 addEventListener('station-message',event=>{
   const {message,current}=event.detail;if(current!==socket)return;
   const d=message.data;
-  if(message.type==='contact.state'&&d&&(!snap||d.contact_revision!==snap.contact_revision||d.boot_id!==snap.boot_id))load();
+  if(message.type==='contact.state'&&d?.changed)stateApply(current,d);
   else if(message.type==='automation.state'&&d)loadAutomation();
   else if(message.type==='station.tick'&&d&&Number.isSafeInteger(d.utc_ms)&&[15000,7500].includes(d.period_ms)){
     const changed=tick?.transmitting!==d.transmitting;stationSample(d.utc_ms);

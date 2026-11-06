@@ -1061,6 +1061,71 @@ async fn transmit_state_revision_follows_the_read_view_only() {
     ));
 }
 
+// Proves: CL-010-15; TC-007-005 (#10 contact.state carries the changed fields).
+#[test]
+fn contact_state_carries_only_what_the_peer_lacks() {
+    let row = |n: u32| json!({"dir":"rx","text":format!("HB9BLA K1ABC R-{n:02} padding padding padding padding"),"snr":-7,"period_utc_ms":n,"count":1});
+    let view = |contact: Value, hold: bool| {
+        json!({"v":1,"profile_id":"p","boot_id":"b","contact_revision":1,"snapshot_sequence":1,"monotonic_ms":1,"utc_ms":1,
+            "transmit":{"capability":"unsupported","tune":false},"settings":{"hold_tx":hold,"rx_hz":1500},
+            "contact":contact,"log":null,"watchdog":{"tx_expired":false,"tune_remaining_seconds":0}})
+    };
+    // A peer holding nothing gets every field that has a value; null fields stay out.
+    let first = view(Value::Null, false);
+    let (changed, holds) = contact_http::state_changes(&Value::Null, &first);
+    assert_eq!(
+        Value::Object(changed),
+        json!({"transmit":first["transmit"],"settings":first["settings"],"watchdog":first["watchdog"]})
+    );
+    assert_eq!(holds, first);
+    assert!(contact_http::state_changes(&first, &first).0.is_empty());
+    // Only the changed member, and not the time fields.
+    let mut held = view(Value::Null, true);
+    held["utc_ms"] = json!(99);
+    let (changed, _) = contact_http::state_changes(&first, &held);
+    assert_eq!(Value::Object(changed), json!({"settings":{"hold_tx":true}}));
+    // A contact goes whole; the same contact's next row goes alone, from its index.
+    let one = view(
+        json!({"id":"c","state":"calling","dialogue":[row(1)]}),
+        true,
+    );
+    let (changed, sent) = contact_http::state_changes(&held, &one);
+    assert_eq!(changed["contact"]["id"], json!("c"));
+    assert_eq!(changed["contact"]["dialogue_from"], json!(0));
+    assert_eq!(changed["contact"]["dialogue"], json!([row(1)]));
+    let two = view(
+        json!({"id":"c","state":"rogers","dialogue":[row(1),row(2)]}),
+        true,
+    );
+    let (changed, _) = contact_http::state_changes(&sent, &two);
+    assert_eq!(
+        Value::Object(changed),
+        json!({"contact":{"state":"rogers","dialogue_from":1,"dialogue":[row(2)]}})
+    );
+    // A changed last row (a repeat's count) sends the dialogue again from its start.
+    let mut repeat = two.clone();
+    repeat["contact"]["dialogue"][1]["count"] = json!(2);
+    let (changed, _) = contact_http::state_changes(&two, &repeat);
+    assert_eq!(changed["contact"]["dialogue_from"], json!(0));
+    assert_eq!(changed["contact"]["dialogue"].as_array().unwrap().len(), 2);
+    // Over the frame budget the rest of the rows follow, none lost and none sent twice.
+    let rows: Vec<Value> = (0..60).map(row).collect();
+    let long = view(json!({"id":"c","state":"rogers","dialogue":rows}), true);
+    let (mut holds, mut received, mut frames) = (held.clone(), Vec::new(), 0);
+    while holds["contact"] != long["contact"] {
+        let (changed, next) = contact_http::state_changes(&holds, &long);
+        let event = contact_http::state_event(&long, changed.clone());
+        assert!(event.len() <= 2048, "{}", event.len());
+        assert_eq!(changed["contact"]["dialogue_from"], json!(received.len()));
+        received.extend(changed["contact"]["dialogue"].as_array().unwrap().clone());
+        holds = next;
+        frames += 1;
+        assert!(frames < 10);
+    }
+    assert!(frames > 1);
+    assert_eq!(json!(received), long["contact"]["dialogue"]);
+}
+
 /// TC-007-001/003/004, TC-010-008/009, TC-050-004 in the real browser: launches
 /// tests/contact.test.cjs against this router with a request-recording peer.
 /// Mandatory release execution is registered as the contact-browser suite.

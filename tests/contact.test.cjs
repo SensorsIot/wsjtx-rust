@@ -337,6 +337,25 @@ test('TC-007-005 transmit state is pushed: the event carries it, no GET /transmi
   assert.deepEqual(page.errors,[]);
 });
 
+// Proves: CL-010-15; TC-007-005 (#10 pushed contact state, browser subset). Another client's change
+// reaches this page in contact.state: only what changed, shown without a GET /contact.
+test('TC-007-005 contact state is pushed: only what changed, no GET /contact',{timeout:60000},async()=>{
+  const frames=[];page.on('websocket',ws=>ws.on('framereceived',e=>{try{const m=JSON.parse(e.payload);if(m.type==='contact.state')frames.push({at:performance.now(),data:m.data});}catch{}}));
+  const loaded=performance.now();await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
+  await waitFor(()=>frames.some(f=>f.at>=loaded),'contact.state at the first step',5000);
+  const first=frames.find(f=>f.at>=loaded).data.changed;
+  for(const key of ['transmit','settings','watchdog'])assert.ok(key in first,`the first event has ${key}`);
+  await new Promise(r=>setTimeout(r,1500));
+  const before=await snapshot(),hold=!before.settings.hold_tx,changed=performance.now();
+  const sent=await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:before.profile_id,boot_id:before.boot_id,command_id:crypto.randomUUID(),contact_revision:before.contact_revision,action:'set_hold_tx',enabled:hold})});
+  assert.ok([200,202].includes(sent.status),await sent.text());
+  await waitFor(async()=>await page.evaluate(h=>window.wstxContact.snapshot()?.settings?.hold_tx===h,hold),'the change is shown',5000);
+  const event=frames.find(f=>f.at>=changed);assert.ok(event&&event.at-changed<=2000,'pushed within the 1 s check');
+  assert.deepEqual(event.data.changed,{settings:{hold_tx:hold}},'only what changed');
+  assert.equal(requests.filter(r=>r.method==='GET'&&r.path==='/contact'&&r.at>=changed).length,0,'another client\'s change needs no GET /contact');
+  assert.deepEqual(page.errors,[]);
+});
+
 test('TC-050-004 mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO completes, and CQ right after it calls',{timeout:420000},async()=>{
   // Mid-QSO: calling K1ABC (armed), K1ABC does not answer, double-click DL1ABC.
   let mark=await dblclickRow('CQ K1ABC FN42',1234.6,-12);

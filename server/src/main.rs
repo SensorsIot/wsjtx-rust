@@ -838,7 +838,7 @@ async fn upgrade(State(app): State<App>, headers: HeaderMap, ws: WebSocketUpgrad
         .max_write_buffer_size(4096)
         .on_upgrade(move |socket| async move {
             let _permit = permit;
-            connection(socket, app.profile.map(|p| p.recording.clone()), authority).await
+            connection(socket, app.profile, authority).await
         })
 }
 
@@ -1045,9 +1045,10 @@ impl ConnectionAuthority {
 }
 async fn connection(
     mut socket: WebSocket,
-    recording: Option<Arc<recording::Recording>>,
+    profile: Option<Arc<ProfileState>>,
     authority: Option<ConnectionAuthority>,
 ) {
+    let recording = profile.as_ref().map(|p| p.recording.clone());
     let mut heartbeat = interval(Duration::from_secs(5));
     heartbeat.tick().await;
     let mut last_pong = Instant::now();
@@ -1069,7 +1070,10 @@ async fn connection(
     // WstxContact::ContactStateEvent / StationTickEvent pacing (optional writes).
     let mut contact_tick = interval(Duration::from_secs(1));
     contact_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut contact_seen: Option<u64> = None;
+    let mut contact_seen: Option<(u64, Option<u64>)> = None;
+    // What this peer holds of the contact snapshot, and when it was last sent.
+    let mut contact_sent = Value::Null;
+    let mut contact_sent_at = Instant::now();
     // WstxTransmit::TransmitWire transmit.state (pushed state, coalesced like contact.state).
     let mut transmit_seen: Option<u64> = None;
     // What this peer holds: the fields it was last sent, and when.
@@ -1138,12 +1142,21 @@ async fn connection(
                     match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break }
                 }
                 let r=recording.as_ref().unwrap();
-                let revision=r.contact.get().map_or(0,|c|c.revision());
+                // The snapshot holds the transmit view as well; a peer still lacking dialogue rows gets them on the next tick.
+                let revision=(r.contact.get().map_or(0,|c|c.revision()),transmit_http::state_revision(r));
                 if contact_seen!=Some(revision) {
-                    match optional_write(&mut socket,Message::Text(contact_http::state_event(r,revision).into())) {
-                        Ok(None)=>{},
-                        Ok(Some(flushed))=>{contact_seen=Some(revision);if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break,
+                    let snapshot=profile.as_ref().zip(r.contact.get()).and_then(|(p,c)|c.snapshot(p).ok()).and_then(|bytes|serde_json::from_slice::<Value>(&bytes).ok());
+                    if let Some(snapshot)=snapshot {
+                        let (changed,holds)=contact_http::state_changes(&contact_sent,&snapshot);
+                        let complete=holds["contact"]==snapshot["contact"];
+                        if changed.is_empty() {contact_seen=Some(revision);}
+                        else if display_profile=="detail" || !transmit_http::countdown_only(&changed) || contact_sent_at.elapsed()>=Duration::from_secs(5) {
+                            match optional_write(&mut socket,Message::Text(contact_http::state_event(&snapshot,changed).into())) {
+                                Ok(None)=>{},
+                                Ok(Some(flushed))=>{if complete {contact_seen=Some(revision);}contact_sent=holds;contact_sent_at=Instant::now();if !flushed {optional_since=Some(Instant::now());continue;}},
+                                Err(_)=>break,
+                            }
+                        }
                     }
                 }
                 if let Some(revision)=transmit_http::state_revision(r) && transmit_seen!=Some(revision) {
