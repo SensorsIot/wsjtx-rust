@@ -396,6 +396,7 @@ struct Run {
     pounce: Option<(String, String)>,
     /// #39 WstxStrategy::StrategyWatchdog: the Rep of the last check, and that check.
     rep_mark: u32,
+    check_every: u32,
     slot_check: Option<Value>,
     /// #39 WstxStrategy::FreeTxSlot: the last slot decision {hz, free}, for the status; the
     /// station band last seen on a fresh publication, and the first sequence of that band
@@ -493,19 +494,14 @@ impl Owner {
         let inner = self.lock();
         (inner.policy_revision, inner.run_revision)
     }
-    /// WstxStrategy::StrategyWatchdog: the contact that sends past the Tx watchdog limit.
-    pub(crate) fn repeat_exempt(&self) -> Option<String> {
+    /// WstxStrategy::StrategyWatchdog: the strategy run's own contact, which sends past the
+    /// Tx watchdog limit, and the repetitions between its checks.
+    pub(crate) fn repeat_exempt(&self) -> Option<(String, u32)> {
         self.lock()
             .run
             .as_ref()
             .filter(|run| run.config.strategy && run.state == RunState::ContactActive)
-            .and_then(|run| run.contact_id.clone())
-    }
-    pub(crate) fn running(&self) -> bool {
-        self.lock()
-            .run
-            .as_ref()
-            .is_some_and(|run| run.state != RunState::Stopped)
+            .and_then(|run| Some((run.contact_id.clone()?, run.check_every)))
     }
     /// AutomationSnapshot.
     pub(crate) fn snapshot(&self, r: &recording::Recording) -> Value {
@@ -742,6 +738,7 @@ impl Owner {
                     client_seen: self.now(),
                     pounce,
                     rep_mark: 0,
+                    check_every: u32::MAX,
                     slot_check: None,
                     tx_slot: None,
                     slot_band: None,
@@ -862,6 +859,7 @@ impl Owner {
                 client_seen: self.now(),
                 pounce: None,
                 rep_mark: 0,
+                check_every: u32::MAX,
                 slot_check: None,
                 tx_slot: None,
                 slot_band: None,
@@ -1128,9 +1126,12 @@ impl Owner {
                 // Only a publication of the partner's period parity can answer.
                 if partner_period {
                     let progress = (c.state.to_owned(), c.report_rcvd);
-                    // WstxStrategy::StrategyWatchdog: a target that hears us is not left.
-                    let queued =
-                        run.config.strategy && pskr::hearing_of(r, c.dx_call.as_deref(), mode).0;
+                    // WstxStrategy::StrategyWatchdog: a target that hears us is not left, while
+                    // the run may go on at all: nothing else would end this contact unattended.
+                    let queued = run.config.strategy
+                        && !no_client
+                        && !run_limit
+                        && pskr::hearing_of(r, c.dx_call.as_deref(), mode).0;
                     if run.progress.as_ref() == Some(&progress) && !queued {
                         run.unanswered += 1;
                         let limit = chosen
@@ -1424,6 +1425,7 @@ fn strategy_watchdog(
     let limit = calls_per_station
         .and_then(|calls| u32::try_from(calls).ok())
         .map_or(limit, |calls| limit.min(calls));
+    run.check_every = limit;
     let repetitions = contact.repetitions_due();
     // A new message or contact restarts the Rep.
     run.rep_mark = run.rep_mark.min(repetitions);
@@ -1448,6 +1450,7 @@ fn strategy_watchdog(
         )
     };
     run.slot_check = Some(json!({"repetitions":repetitions,"hears_us":hears,"hz":hz,"free":free}));
+    run.tx_slot = Some(json!({"hz":hz,"free":free}));
     if hz != facts.tx_hz {
         let (revision, _, _) = contact.facts();
         let body = contact_body(

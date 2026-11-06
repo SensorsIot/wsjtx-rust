@@ -3109,6 +3109,11 @@ async fn tc_039_022_the_repetitions_reaching_n_in_a_strategy_run() {
             json!({"repetitions":2,"hears_us":hears,"hz":first,"free":true}),
             "{name}"
         );
+        assert_eq!(
+            f.read("automation").await["run"]["tx_slot"],
+            json!({"hz":first,"free":true}),
+            "{name}: the status follows the move"
+        );
         // N more on the slot: checked again, and Tx still never stops.
         transmit_own_period(&f, e + 105_000).await;
         f.tick();
@@ -3160,6 +3165,93 @@ async fn tc_039_022_the_check_comes_before_the_run_leaves_the_station() {
     assert_eq!(f.keys(), 10, "every call is keyed and released");
 }
 
+// Proves: CL-039-21; TC-039-022. The unattended bounds hold for a target that hears us: with no
+// client it is left after its calls and the run stops no_client, and likewise at the run limit.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_a_target_that_hears_us_does_not_outlive_the_run_bounds() {
+    for (skew, reason) in [
+        (crate::automation::CLIENT_GONE.as_secs(), "no_client"),
+        (9 * 3600, "run_limit"),
+    ] {
+        let (f, e) = run_at_limit(2, 2, |feed| {
+            feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+        })
+        .await;
+        // Heard and attended: it stays.
+        publish(&f, e + 30_000, &[]);
+        publish(&f, e + 60_000, &[]);
+        publish(&f, e + 90_000, &[]);
+        assert_eq!(contact(&f).await.2, json!("armed"), "{reason}");
+        // That read counted as a client: this step takes it, and none comes after it.
+        f.tick();
+        at_skew(&f, skew);
+        publish(&f, e + 120_000, &[]);
+        publish(&f, e + 150_000, &[]);
+        publish(&f, e + 180_000, &[]);
+        f.tick();
+        assert_eq!(quiet_run(&f), ("stopped".into(), json!(reason)));
+        assert_eq!(quiet_contact(&f).await.2, json!("disarmed"), "{reason}");
+    }
+}
+// Proves: CL-039-20; CL-039-21; TC-039-022. Only a strategy run's own contact subscribes to its
+// target: not a pounce, nor the same contact after the run ended.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_only_a_strategy_run_subscribes_to_its_target() {
+    let (f, _) = run_at_limit(2, 20, |feed| {
+        assert_eq!(feed.target().as_deref(), Some("K1ABC"), "the run's contact");
+    })
+    .await;
+    let feed = f.state.recording.pskr.get().unwrap().clone();
+    halt(&f).await;
+    f.tick();
+    assert_eq!(feed.target(), None, "the run ended, the contact stays");
+
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let dir = std::env::temp_dir().join(format!("wstx-pskr-{}", profile::new_uuid().unwrap()));
+    std::fs::create_dir(&dir).unwrap();
+    let feed = crate::pskr::Feed::start(&dir, &f.id, &f.boot, None, crate::pskr::Timing::BROKER);
+    f.state.recording.pskr.set(feed.clone()).ok().unwrap();
+    assert_eq!(pounce(&f, "K1ABC", 20).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ K1ABC FN42", 1800.0, Some(-10.0))]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    f.tick();
+    assert_eq!(feed.target(), None, "a pounce reads no spots");
+}
+// Proves: CL-039-21; TC-039-022. WD:n counts down to the next check, at min(N, calls per station),
+// and a check without a free slot keeps the slot and tells the status the browser reads.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_the_status_shows_the_next_check_and_no_free_slot() {
+    let (f, e) = run_at_limit(6, 3, |_| {}).await;
+    f.tick();
+    let left = |c: &Value| c["watchdog"]["tx_remaining_calls"].clone();
+    assert_eq!(
+        left(&f.read("contact").await),
+        3,
+        "3 calls to the first check"
+    );
+    transmit_own_period(&f, e + 15_000).await;
+    f.tick();
+    assert_eq!(left(&f.read("contact").await), 2);
+    // The own period's band is full: every slot of 300..2650 is within a signal's gap.
+    let full: Vec<(&str, f64, Option<f64>)> = (0..24)
+        .map(|n| ("CQ DL1XYZ JO62", f64::from(300 + n * 100), Some(0.0)))
+        .collect();
+    publish(&f, e + 15_000, &full);
+    transmit_own_period(&f, e + 45_000).await;
+    f.tick();
+    assert_eq!(left(&f.read("contact").await), 1);
+    transmit_own_period(&f, e + 75_000).await;
+    f.tick();
+    let c = f.read("contact").await;
+    assert_eq!(left(&c), 3, "the check came: the next one is 3 away");
+    assert_eq!(c["settings"]["tx_hz"], 1500, "no free slot keeps the slot");
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(run["tx_slot"], json!({"hz":1500,"free":false}));
+    assert_eq!(run["slot_check"]["free"], false);
+}
 // Proves: CL-039-21; TC-039-022. A target known to hear us is not left after its calls ("we are in
 // the queue"); without that spot the run goes on to the next candidate as before.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

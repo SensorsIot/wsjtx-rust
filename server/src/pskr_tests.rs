@@ -528,6 +528,61 @@ fn reconnect_backs_off_against_a_failing_peer_and_recovers() {
     }
 }
 
+// Proves: CL-039-20; TC-039-020. The switch on is never shown as off: connecting during the backoff,
+// and off and on again faster than the session looks ends that session, so connected is true.
+#[test]
+fn the_status_follows_the_switch() {
+    let dir = Dir::new();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (accepted_tx, accepted) = mpsc::channel::<u32>();
+    std::thread::spawn(move || {
+        for n in 0.. {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            std::thread::spawn(move || {
+                while let Some((first, _)) = read_packet(&mut stream) {
+                    if first == 0x10 {
+                        stream.write_all(&[0x20, 2, 0, 0]).unwrap();
+                    } else if first == 0x82 {
+                        stream.write_all(&[0x90, 3, 0, 1, 0]).unwrap();
+                    }
+                }
+            });
+            if accepted_tx.send(n).is_err() {
+                return;
+            }
+        }
+    });
+    let slow = Timing {
+        poll: Duration::from_millis(100),
+        backoff_first: Duration::from_millis(600),
+        backoff_max: Duration::from_millis(600),
+        ..FAST
+    };
+    let feed = Feed::start(&dir.0, "p", "b", Some(local_connector(port)), slow);
+    feed.observe(Some("HB9BLA"), None);
+    until("connected", || feed.view()["state"] == "connected");
+    assert_eq!(accepted.recv_timeout(Duration::from_secs(5)), Ok(0));
+    // Off and on inside one poll: the session must not go on as if nothing happened.
+    feed.set_enabled("p", "b", false).unwrap();
+    let view = feed.set_enabled("p", "b", true).unwrap();
+    assert_eq!(view["state"], "connecting", "the switch is on");
+    // It stays connecting through the backoff, never off, then connects again.
+    until("reconnected", || {
+        let state = feed.view()["state"].clone();
+        assert_ne!(state, "off");
+        state == "connected"
+    });
+    assert_eq!(accepted.recv_timeout(Duration::from_secs(5)), Ok(1));
+    // Without a connector nothing can connect: the switch on still shows off.
+    let dir = Dir::new();
+    let none = Feed::start(&dir.0, "p", "b", None, FAST);
+    none.set_enabled("p", "b", false).unwrap();
+    assert_eq!(none.set_enabled("p", "b", true).unwrap()["state"], "off");
+}
+
 // Proves: CL-039-20; TC-039-020. Refused and broken brokers: a named error, never a panic.
 #[test]
 fn a_refusing_or_broken_peer_is_a_named_error() {

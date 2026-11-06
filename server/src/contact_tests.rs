@@ -950,7 +950,7 @@ fn tc_039_022_only_the_runs_own_contact_sends_past_the_limit() {
     .unwrap();
     s.command(Command::EnableTx(true, Some(7))).unwrap();
     let id = s.engine.contact.as_ref().unwrap().id.clone();
-    s.engine.repeat_exempt = Some(id);
+    s.engine.repeat_exempt = Some((id, u32::MAX));
     for (own, left) in [(1, 1), (3, 2), (5, 1), (7, 2)] {
         s.run(period(own) + 2 * SECOND);
         assert!(s.sent_in(period(own)).is_some(), "period {own}");
@@ -960,7 +960,7 @@ fn tc_039_022_only_the_runs_own_contact_sends_past_the_limit() {
     assert_eq!(s.core.view().arm_state, ArmState::Armed);
     assert!(!s.core.view().tx_expired);
     // Another contact's exemption, then none: the stop at N is back at once.
-    s.engine.repeat_exempt = Some("another".into());
+    s.engine.repeat_exempt = Some(("another".into(), u32::MAX));
     s.run(period(9) + 2 * SECOND);
     assert!(s.sent_in(period(9)).is_none(), "beyond the limit");
     assert_eq!(s.core.view().arm_state, ArmState::Disarmed);

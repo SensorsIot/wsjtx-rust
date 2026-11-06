@@ -1210,12 +1210,13 @@ pub(crate) fn station_tick(state: &ProfileState) {
         s.tick(state);
         s.automation.tick(s, state, publication);
         if let Some(feed) = state.recording.pskr.get() {
-            // Only a running strategy reads the target's spots: no subscription without one.
+            // Only a strategy run's own contact reads the target's spots: no other subscribes.
+            let own = s.automation.repeat_exempt().map(|(id, _)| id);
             let target = s
-                .automation
-                .running()
-                .then(|| s.facts().1?.dx_call)
-                .flatten();
+                .facts()
+                .1
+                .filter(|c| own.as_ref() == Some(&c.id))
+                .and_then(|c| c.dx_call);
             feed.observe(my_call(state).as_deref(), target.as_deref());
         }
     }

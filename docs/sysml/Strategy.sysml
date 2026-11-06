@@ -511,7 +511,8 @@ package WstxStrategy {
              The station sends only the MQTT handshake, keep-alive pings every 45 s of
              silence (keep-alive 60 s), its subscriptions and DISCONNECT. Exactly two filters
              of the filtered feed, never the raw feeds: pskr/filter/v2/+/+/<my call>/+/#
-             and, only while a strategy run has a contact with a DX call,
+             and, only while a strategy run's own contact has a DX call (not a pounce, an MCP
+             policy run or a manual contact),
              pskr/filter/v2/+/+/+/<target>/#, replaced when the target changes. A call
              forms a topic segment only as 1..16 of A-Z 0-9; any other call, such as one
              with a slash or anything decoded with an MQTT wildcard, gets no subscription and
@@ -538,7 +539,10 @@ package WstxStrategy {
              Setting: on by default, because the operator agreed to this read-only
              subscription; pskr.json {schema_version 1, profile_id, enabled} beside
              profile.json (a foreign or broken file reads as on, naming invalid_pskr). Off
-             disconnects and forgets everything the feed said.
+             disconnects and forgets everything the feed said. Each change of the switch ends the
+             session of the earlier setting; the status shows connecting while the switch
+             is on and the station waits for its next attempt, and off only when no connection
+             can be made.
              GET /pskr {v 1, profile_id, boot_id, enabled, state off|connecting|connected|error,
              error (code or null), last_spot_utc_s, storage_error}, read once on each
              connection; POST /pskr {v 1, profile_id, boot_id, enabled} (operating access,
@@ -569,8 +573,11 @@ package WstxStrategy {
              changes nothing and is checked again N repetitions later. The Rep goes on over a
              move: the message is the same; a station the run left and came back to keeps
              the new slot, since FreeTxSlot stays on a current slot that is free. A target known to hear us is also not left
-             for another candidate after its calls: "we are in the queue". The run shows the
-             last check as slot_check {repetitions, hears_us, hz, free}. */
+             for another candidate after its calls ("we are in the queue"), but only while the
+             run may go on: with no client (CLIENT_GONE) or past the run limit its
+             calls_per_station count again, so the contact ends and the run stops no_client
+             or run_limit. The run shows the last check as slot_check {repetitions, hears_us,
+             hz, free} and tx_slot {hz, free}. WD:n counts down to the next check. */
     }
     attribute def StrategySelector {
         doc /* The strategy element in the operating view: a selector with None and the
@@ -639,7 +646,8 @@ package WstxStrategy {
              keeps waiting. A contact the run did not select: ManualIntervention.
              In a contact: completion counts and returns to waiting; calls_per_station partner
              periods without progress disarm and cancel the contact and return to waiting with
-             that call passed over once; no stop. The browser itself never sends enable_tx
+             that call passed over once; no stop. A target known to hear us is not left this
+             way while the run may go on (StrategyWatchdog). The browser itself never sends enable_tx
              for a strategy. */
     }
     attribute def FreeTxSlot {

@@ -455,6 +455,11 @@ struct Inner {
     revision: u64,
     hearing: Hearing,
     stopping: bool,
+    /// A thread exists to connect.
+    connects: bool,
+    /// Bumped by each change of the switch: a session of an earlier one ends, even when the
+    /// switch is back on before it looks.
+    switched: u64,
 }
 struct Shared {
     inner: Mutex<Inner>,
@@ -538,6 +543,8 @@ impl Feed {
                 revision: 0,
                 hearing: Hearing::default(),
                 stopping: false,
+                connects: connector.is_some(),
+                switched: 0,
             }),
             wake: Condvar::new(),
         });
@@ -556,6 +563,10 @@ impl Feed {
             #[cfg(test)]
             dial: Mutex::new(None),
         })
+    }
+    #[cfg(test)]
+    pub(crate) fn target(&self) -> Option<String> {
+        self.shared.lock().target.clone()
     }
     /// Test seam: a payload as the session accepts it.
     #[cfg(test)]
@@ -644,10 +655,13 @@ impl Feed {
                 // Off is unknown: nothing the feed said before may still decide.
                 i.hearing = Hearing::default();
                 i.last_spot_s = None;
-                if !enabled {
-                    i.link = Link::Off;
-                    i.error = None;
-                }
+                i.switched += 1;
+                i.error = None;
+                i.link = if enabled && i.connects {
+                    Link::Connecting
+                } else {
+                    Link::Off
+                };
             }
         }
         self.shared.wake.notify_all();
@@ -759,6 +773,7 @@ fn session(
         }
         fill(stream, &mut buffer)?;
     }
+    let switched = shared.lock().switched;
     shared.set_link(Link::Connected, None);
     let mut ids = PacketIds(0);
     if let Some(filter) = sender_filter(my_call) {
@@ -770,7 +785,10 @@ fn session(
         let (stop, wanted) = {
             let i = shared.lock();
             (
-                i.stopping || !i.enabled || i.my_call.as_deref() != Some(my_call),
+                i.stopping
+                    || !i.enabled
+                    || i.switched != switched
+                    || i.my_call.as_deref() != Some(my_call),
                 i.target.as_deref().and_then(receiver_filter),
             )
         };
