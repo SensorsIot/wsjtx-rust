@@ -575,9 +575,12 @@ function rowIdentity(row){
 }
 async function selectRow(tr){
   const row=rowIdentity(tr);if(!row)return null;
-  const text=tr.children[4]?.textContent??'';
   const reply=await send('select_row',{row,replace:false},'Select station');
-  if(reply?.refused==='contact_active')offerChange(()=>send('select_row',{row,replace:true},'Change contact'),text);
+  if(reply?.refused==='contact_active'){
+    // #37: only a row that can start a contact for me offers the change; a foreign QSO's row offers nothing.
+    if(tr.dataset.foreign){changeTarget?.remove();changeTarget=null;resultText.textContent='';}
+    else offerChange(()=>send('select_row',{row,replace:true},'Change contact'),tr.dataset.sender??tr.children[4]?.textContent??'');
+  }
   return reply;
 }
 // A double-click (or the Reply menu) is the explicit ChangeContact (#50, WSJT-X
@@ -588,8 +591,10 @@ async function selectRow(tr){
 async function sendExplicit(run){let reply=await run();for(let i=0;i<2&&reply?.refused==='stale_revision';i++)reply=await run();return reply;}
 async function replyRow(tr){
   const row=rowIdentity(tr);if(!row)return;
-  const reply=await sendExplicit(()=>send('select_row',{row,replace:true},'Reply'));
-  if(reply&&!reply.refused&&transmitCapable())await sendExplicit(()=>arm('Reply'));
+  // #37: a deliberate double-click on a foreign QSO's row calls its sender, and says so.
+  const label=tr.dataset.foreign?`Call ${tr.dataset.sender}`:'Reply';
+  const reply=await sendExplicit(()=>send('select_row',{row,replace:true},label));
+  if(reply&&!reply.refused&&transmitCapable())await sendExplicit(()=>arm(label));
 }
 let clickTimer=null;
 // The double-click is the row's second press (click count 2), not the dblclick event: the
@@ -636,17 +641,10 @@ function callerText(record){
   const my=myCall(),w=(record.text??'').trim().split(/\s+/),mine=x=>x===my||x===`<${my}>`;
   return w.length>=2&&mine(w[0])&&isCall(w[1])?w[1]:w.length>=2&&mine(w[1])&&isCall(w[0])?w[0]:recordFrom(record.fields)??'';
 }
-// The compact caller tip, the #50 BandActivityHover rule: per kind (continent, DXCC, zone, grid,
-// call) the strongest reason whose slot is enabled in Settings, joined by " · "; the on-band call
-// reason carries the worked-before status. No country, continent or distance text (the line shows
-// the country); a line without such a reason has no tip.
-const TIP_KINDS=[['new_continent','new_continent_band'],['new_dxcc','new_dxcc_band'],['new_cq_zone','new_itu_zone','new_cq_zone_band','new_itu_zone_band'],['new_grid','new_grid_band'],['new_call','new_call_band']];
+// The compact caller tip: the #50 BandActivityHover rule of Band Activity; the line shows the country.
 function callerTip(record,w){
-  const f=record.flags??{},dx=record.dxcc,band=(typeof operatingState!=='undefined'&&operatingState?.selection?.band)||'this band',ex=record.fields?.exchange,grid=ex?.kind==='grid'&&typeof ex.value==='string'?ex.value.slice(0,4).toUpperCase():'';
-  const on=new Set((document.querySelector('#band-activity')?.dataset.hlOn??'').split(' '));
   const worked=w?.status==='worked_this_band_and_mode'?`on ${w.on}`:w?.status==='worked_other_band_or_mode'?'on another band or mode':'';
-  const text={new_continent:`New continent ${dx?.cont??''}`,new_continent_band:`New continent on ${band}`,new_dxcc:'New DXCC',new_dxcc_band:`New DXCC on ${band}`,new_cq_zone:`New CQ zone ${dx?.cq??''}`,new_itu_zone:`New ITU zone ${dx?.itu??''}`,new_cq_zone_band:`New CQ zone on ${band}`,new_itu_zone_band:`New ITU zone on ${band}`,new_grid:`New grid ${grid}`,new_grid_band:`New grid on ${band}`,new_call:'New call',new_call_band:`New on ${band}`};
-  return TIP_KINDS.map(kind=>{const k=kind.find(k=>f[k]===true&&on.has(k));return !k?'':k==='new_call_band'&&worked?`${text[k].trim()} (worked ${worked})`:text[k].trim();}).filter(Boolean).join(' · ');
+  return hoverReasons(activityHover(record),worked).join(' · ');
 }
 function othersShow(){
   const rx=snap?.settings?.rx_hz,tx=snap?.settings?.tx_hz,c=snap?.contact,qso=running(c),dx=qso?c.dx_call:lastPartner,my=myCall();
@@ -673,7 +671,7 @@ function othersShow(){
     const tr=document.createElement('tr');
     for(const cell of [`${callerText(record)}${warn?' ⚠':''}`,signedDb(record.snr_db),grid,record.dxcc?.name??'']){const td=document.createElement('td');td.textContent=cell;tr.append(td);}
     tr.tabIndex=0;tr.dataset.kind=warn?'warn':'candidate';tr.dataset.qso=String(qso);
-    tr.dataset.row=JSON.stringify(rowOf(context,record.sequence));tr.dataset.text=record.text;
+    tr.dataset.row=JSON.stringify(rowOf(context,record.sequence));tr.dataset.text=record.text;tr.dataset.call=callerText(record);
     const hl=bandFlags.filter(k=>record.flags?.[k]===true),w=workedOf(record);if(hl.length)tr.dataset.hl=hl.join(' ');
     if(w)tr.dataset.worked=w.status;
     // #50 BandActivityHover rule (operator 2026-11-04, "too much information"): only the colour
@@ -688,7 +686,7 @@ function rowOf(context,sequence){const [,,source_id,job_id,generation]=context.s
 async function answerOther(li){
   const row=JSON.parse(li.dataset.row),qso=li.dataset.qso==='true';
   const reply=await send('select_row',{row,replace:qso},qso?'Change contact':'Select station');
-  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitCapable())arm('Reply');}),li.dataset.text);return;}
+  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitCapable())arm('Reply');}),li.dataset.call);return;}
   if(reply&&!reply.refused&&transmitCapable())arm('Reply');
 }
 othersList.addEventListener('mousedown',event=>{const li=secondPress(event,'tr[data-row]');if(li)answerOther(li);});

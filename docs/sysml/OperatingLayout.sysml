@@ -716,12 +716,15 @@ attribute def ActivityOrdering {
              message and the country, wrapping only between whole fields at the readable text
              size (usually two lines, about 45 px, still tappable), so at least six rows are on
              screen at 360x800 (TC-037-003); at most 48em wide Band Activity, above the QSO
-             pane, has a fixed height (28rem) and scrolls inside; with Highlight on the strategy accent of
+             pane, has a fixed height (29rem) and scrolls inside; with Highlight on the strategy accent of
              WstxStrategy::HighlightView (matches first in their period, greyed directed
              CQs not for my continent). Pointer: click selects (SelectDecodedRow, prepares, never
-             transmits; another station while a contact is active only offers "Change
-             contact to <call>", whose replacement keeps Enable Tx as it is); double-click
-             replies (select, then SetEnableTx on), and on another station while a contact
+             transmits; while a contact is active a row that can start a contact for me, a
+             CQ/QRZ or a row addressed to my call, only offers "Change contact to <call>",
+             naming its sender, whose replacement keeps Enable Tx as it is, and a row of a QSO
+             between others offers nothing (#37, CL-037-05); double-click
+             replies (select, then SetEnableTx on; on a row of a QSO between others the command
+             line reads "Call <sender>"), and on another station while a contact
              is active, or during an own CQ, it is itself the explicit
              WstxContact::ChangeContact (replace true, no confirmation, as WSJT-X
              handleDecodeSelection widgets/mainwindow.cpp ~9122-9229 with quick_call on,

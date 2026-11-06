@@ -4959,6 +4959,26 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_037_04_verified_by_TC_037_003 from 'CL-037-04' to 'TC-037-003';
+    requirement 'CL-037-05' {
+        doc /* (#37, operator 2026-11-04: the QSO area offered "Change contact to W4WFC DL1FRH JO30", "This makes no sense") While a contact is active, a click on a Band Activity row offers a contact change only for a row that can start a contact for me, a CQ/QRZ or a row addressed to my call, and the offer names the sender ("Change contact to K1ABC"); a click on a row of a QSO between others offers nothing and leaves no refusal text. A deliberate double-click on such a row calls its sender and its command line reads "Call <sender>", never the foreign message. Details: WstxOperatingLayout::BandActivityView. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.js";
+    }
+    dependency CL_037_05_to_FR_007 from 'CL-037-05' to 'FR-007';
+    verification 'TC-037-004' {
+        doc /* TC-037-004 — A contact change is offered only for a row that can start a contact for me
+             CL-037-05
+             Setup: actual candidate server and Chromium at 1366x768; routed live rows "CQ K1ABC FN42", "QRZ W1XYZ FN31", "HB9BLA DL1ABC JO31" and "W4WFC DL1FRH JO30"; a running contact with IW9FRA; a routed POST /contact/command that refuses select_row without replace as contact_active and accepts everything else.
+             Steps: click each row and read the change button and the command line; double-click the foreign row and read the commands and the command line.
+             Expected (independent oracle: the operator's report of 2026-11-04 on #37): CQ, QRZ and addressed rows offer "Change contact to K1ABC", "Change contact to W1XYZ" and "Change contact to DL1ABC"; the foreign row removes the offer, shows none and leaves the command line empty; its double-click sends select_row with replace true, then enable_tx, and the command line reads "Call DL1FRH: accepted".
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-037-05';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_037_05_verified_by_TC_037_004 from 'CL-037-05' to 'TC-037-004';
     // Found in the #61 gate (TC-050-004, CQ right after a completed contact refused stale_revision).
     requirement 'CL-061-02' {
         doc /* The QSO pane CQ button is an explicit operator choice like the double-click (CL-050-04): a stale_revision refusal of its enable_tx (the contact revision moves with every transmit step, also when the last period of a just completed contact ends) is retried at most twice with the reloaded snapshot; a third refusal stays shown. */

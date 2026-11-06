@@ -127,8 +127,8 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 @container (max-width:44em){
  #band-activity table,#band-activity tbody{display:block;width:100%}
  #band-activity thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
- #band-activity tbody tr:not(:has(.empty-messages)):not(.ba-divider){display:flex;flex-wrap:wrap;align-items:baseline;padding:2px 8px;border-bottom:1px solid #203342;line-height:1.25}
- #band-activity td:not(.empty-messages){display:block;flex:none;min-width:0;width:auto;border:0;padding:0 .4em 0 0;white-space:nowrap}
+ #band-activity tbody tr:not(:has(.empty-messages)):not(.ba-divider){display:flex;flex-wrap:wrap;align-items:baseline;padding:0 8px;border-bottom:1px solid #203342;line-height:1.25}
+ #band-activity td:not(.empty-messages){display:block;flex:none;min-width:0;width:auto;border:0;padding:1px .4em 1px 0;white-space:nowrap}
  #band-activity td:nth-child(7){order:1}
  #band-activity td:nth-child(5){order:2;flex:0 1 auto;white-space:normal;color:#d6e4ec}
  #band-activity td:nth-child(6){order:3;color:#8ba4b6}#band-activity td:nth-child(7){color:#8ba4b6}
@@ -500,7 +500,7 @@ body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #s
  #rx-focus .ct-calling-area{height:calc(6 * var(--ct-row) + 2px)}
  /* Band Activity above the QSO pane has a fixed height too and scrolls inside, so new decodes
     do not move the QSO pane and the Control panel. */
- #band-activity{height:28rem;min-height:0}
+ #band-activity{height:29rem;min-height:0}
 }
 /* The visually hidden Control heading and the narrow Band Activity header row are positioned
    inside their cards; positioned against the page they made it scroll past the screen at 360 px,
