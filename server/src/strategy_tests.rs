@@ -1980,7 +1980,7 @@ async fn tc_039_033_a_real_status_websocket_keeps_a_strategy_and_its_close_ends_
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let app = f.app.clone();
