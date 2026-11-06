@@ -5126,5 +5126,39 @@ package WstxRequirements {
         }
     }
     dependency CL_061_04_verified_by_TC_061_007 from 'CL-061-04' to 'TC-061-007';
+    requirement 'CL-061-05' {
+        doc /* A Tx period takes only a thin marker band in the waterfall (operator 2026-11-04 and 2026-11-06, #61: "the Tx area in the waterfall can be much shorter", "we still have a white band when the TX runs"). The browser collapses each run of consecutive rows the station marked tx (CL-061-04; it adds no polling and no new station data, #10 client-server rule) to one band of 4 CSS pixels in RGB(90,20,30), whatever the run's source time: while the station transmits the picture holds still once the band stands; receive rows keep the Speed scale. The time ruler stays exact: T at the top, no label inside a band, and a source time t beyond a band at floor((T-t)*p*H/C) less the collapsed source time of the bands above it, plus their height; the readout's projected source range over a band names the whole Tx run. A row the station did not deliver between two Tx rows at most 7.5 s apart is a Tx row of that band, never a grey gap stripe; a longer hole stays a gap. In the Day theme the signal canvases keep their colours: the waterfall's background stays dark and the Tx band dark red, never pale (the canvas counter-filter was overridden by #signal canvas{filter:none}, so the page's inversion turned both nearly white). */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/recording.js; client/recording.css";
+    }
+    dependency CL_061_05_to_FR_019 from 'CL-061-05' to 'FR-019';
+    verification 'TC-061-008' {
+        doc /* TC-061-008 — A Tx period is a thin band, the time axis stays exact, nothing pale
+             CL-061-05
+             Setup: actual station Router and browser client at 1366x768 (device scale 1) with a scripted correlated live receive and Detailed frames, Speed 1 (10 CSS px/s) (explicit presentation fixtures).
+             Steps: deliver 12 s of receive rows; one Tx row; the rest of a 15 s Tx period with two missing rows; 12 s of receive rows; read the canvas column and the time ruler; hover the band; set the Day theme and read the rendered page pixels; deliver a Tx row after a 50 s hole.
+             Expected (independent: computed from the 0.2 s rows and 10 px/s with y(s)=floor(s*10*H/C)): after the first Tx row the band covers rows 0-3 and the receive rows start at 4; the remaining Tx rows leave that picture unchanged; after the 12 s of receive the band covers rows y(12) to y(12)+3, receive rows above and below it and no grey row; labels 39.0 s at 0, 35.0 s at y(4), 30.0 s at y(9), then 10.0 s at y(14)+4, none of 25, 20, 15 s; the band's readout names the source range 12.0-27.000 s; the Day page pixels of the band are dark red; the 50 s hole stays grey. On the parent client the Tx rows take 150 px, the labels ignore the band and the Day pixels are pale.
+             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). Live acceptance: TC-061-009. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-061-05';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_061_05_verified_by_TC_061_008 from 'CL-061-05' to 'TC-061-008';
+    verification 'TC-061-009' {
+        doc /* TC-061-009 — The Tx band on HB9BLA
+             CL-061-05
+             Setup: the installed station on HB9BLA, IC-7300, the operator's browser in its usual theme.
+             Steps: run a QSO with several Tx periods and look at the waterfall during and after them.
+             Expected: each Tx period shows only a thin dark red band; no white or grey band appears while transmitting; the time labels below a band are the source times of those rows.
+             3 — Live on the station with transmission; with the operator at acceptance. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-061-05';
+        }
+    }
+    dependency CL_061_05_verified_by_TC_061_009 from 'CL-061-05' to 'TC-061-009';
 
 }
