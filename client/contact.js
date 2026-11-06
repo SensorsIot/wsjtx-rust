@@ -97,7 +97,7 @@ async function fetchSnapshot(){
     const response=await stationFetch('/contact',{cache:'no-store',signal:AbortSignal.timeout(10000)});
     contactMissing=response.status===404;
     // #51: a contact snapshot this page cannot validate shows the reload chip.
-    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence)){snap=value;if(!held||heldSocket!==socket){held=value;heldSocket=socket;heldRead=true;}render();}}
+    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence)){snap=value;if(!held||heldSocket!==socket||(heldRead&&value.snapshot_sequence>=held.snapshot_sequence)){held=value;heldSocket=socket;heldRead=true;}render();}}
   }catch{}
 }
 // WstxContact::ContactStateEvent (#10): the station's events build the same snapshot: every field
@@ -107,7 +107,7 @@ async function fetchSnapshot(){
 let heldSocket=null,held=null,heldRead=false;
 function stateApply(current,d){
   if(heldSocket!==current){heldSocket=current;held=null;heldRead=false;}
-  const {changed,...identity}=d;if(!held&&!changed.transmit){load();return;}
+  const {changed,...identity}=d;if(!held&&!(changed.transmit&&changed.settings&&changed.watchdog)){load();return;}
   const view={v:1,contact:null,log:null,...held,...identity};
   for(const [key,value] of Object.entries(changed)){
     if(key==='contact'&&value){

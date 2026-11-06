@@ -11,6 +11,7 @@ const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
 const crypto=require('node:crypto');
+const WebSocket=require('ws');
 const origin=process.env.WSTX_CONTACT_FIXTURE_ORIGIN,control=process.env.WSTX_CONTACT_FIXTURE_CONTROL;
 let browser,page,requests=[];
 const publish=async(period_ms,rows)=>(await fetch(control+'/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({period_ms,rows})})).json();
@@ -455,6 +456,49 @@ test('TC-007-005 a failed first read after a missed first event recovers on the 
     await waitFor(async()=>await page.evaluate(h=>window.wstxContact.snapshot()?.settings?.hold_tx===h,!s.settings.hold_tx),'state after the next event',5000);
   }finally{await page.unroute('**/contact.js');await page.unroute('**/contact');}
   const s=await snapshot();await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'set_hold_tx',enabled:false})});
+});
+
+// Proves: CL-010-15; TC-007-005. A page built on its own read follows a newer read and keeps a pushed change.
+test('TC-007-005 a read after a missed first event keeps later pushed changes',{timeout:60000},async()=>{
+  const start=await snapshot();
+  const send=async(url,body)=>{const r=await fetch(origin+url,{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:start.profile_id,boot_id:start.boot_id,command_id:crypto.randomUUID(),...body})});assert.ok([200,202].includes(r.status),await r.text());};
+  const hold=async enabled=>send('/contact/command',{contact_revision:(await snapshot()).contact_revision,action:'set_hold_tx',enabled});
+  const shown=expr=>page.evaluate(expr);
+  let release,fetched,first=true;const held=new Promise(r=>{release=r;}),read=new Promise(r=>{fetched=r;});
+  const frame=new Promise(resolve=>{page.on('websocket',ws=>ws.on('framereceived',e=>{try{if(JSON.parse(e.payload).type==='contact.state')resolve();}catch{}}));});
+  await page.route('**/contact.js',async route=>{const response=await route.fetch();await frame;await new Promise(r=>setTimeout(r,200));await route.fulfill({response});});
+  await page.route('**/contact',async route=>{if(!first)return route.continue();first=false;const response=await route.fetch();fetched();await held;await route.fulfill({response});});
+  try{
+    page.reload().catch(()=>{});
+    await read;
+    await hold(true);await new Promise(r=>setTimeout(r,1500));
+    release();
+    await waitFor(()=>shown(()=>window.wstxContact?.snapshot()?.settings?.hold_tx===true),'the queued read shows the change',8000);
+    await send('/transmit/command',{action:'set_watchdogs',tx_calls:8,tune_seconds:90});
+    await waitFor(()=>shown(()=>window.wstxContact.snapshot()?.settings?.tx_calls===8),'the pushed change is shown',5000);
+    assert.equal(await shown(()=>window.wstxContact.snapshot().settings.hold_tx),true,'an earlier change stays');
+    assert.equal(await page.locator('#station-notice').isVisible().catch(()=>false),false,'the page understood the station');
+  }finally{release();await page.unroute('**/contact.js');await page.unroute('**/contact');await send('/transmit/command',{action:'set_watchdogs',tx_calls:6,tune_seconds:90});await hold(false);}
+});
+
+// Proves: CL-010-15; TC-007-005. On the actual socket: a running Tune's countdown alone at most once per
+// 5 s on Thin and about once per second on Detailed.
+test('TC-007-005 the Tune countdown is paced by the display profile on the socket',{timeout:60000},async()=>{
+  const peer=async command=>{const ws=new WebSocket(origin.replace('http','ws')+'/ws','wstx.v1',{origin});const log=[];ws.on('message',d=>{const m=JSON.parse(String(d));if(m.type==='transmit.state')log.push({at:performance.now(),changed:m.data.changed});});await new Promise((ok,no)=>{ws.once('open',ok);ws.once('error',no);});ws.send(JSON.stringify({v:1,type:command,id:1}));return {ws,log};};
+  const countdown=c=>Object.keys(c).length===1&&c.watchdog&&Object.keys(c.watchdog).join()==='tune_remaining_seconds';
+  const thin=await peer('spectrum.thin'),detail=await peer('spectrum.detail');
+  const s=await snapshot();
+  const tune=async body=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),action:'tune',...body})});assert.equal(r.status,200,await r.text());return r.json();};
+  await new Promise(r=>setTimeout(r,1500));
+  try{
+    const started=await tune({enabled:true,tx_offset_hz:1500});assert.notEqual(started.result?.accepted,false,JSON.stringify(started));
+    await new Promise(r=>setTimeout(r,11000));
+  }finally{await tune({enabled:false});}
+  const ticks=peer=>peer.log.filter(e=>countdown(e.changed));
+  assert.ok(ticks(detail).length>=7,`Detailed ${ticks(detail).length} countdown events`);
+  const paced=ticks(thin);assert.ok(paced.length>=1&&paced.length<=3,`Thin ${paced.length} countdown events`);
+  for(let n=1;n<paced.length;n++)assert.ok(paced[n].at-paced[n-1].at>=4900,'Thin countdown at most once per 5 s');
+  thin.ws.close();detail.ws.close();
 });
 
 test('TC-050-004 mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO completes, and CQ right after it calls',{timeout:420000},async()=>{

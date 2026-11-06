@@ -1408,8 +1408,8 @@ package WstxContact {
              with dialogue_from, the index of its first row, and only the rows the peer
              lacks: all rows when an earlier row changed; rows over the frame budget follow
              on the next tick. The browser builds the snapshot from these events, on its own
-             read when it loaded after the first one, and shows a newer snapshot_sequence or
-             contact_revision; it reads GET /contact once per socket and after
+             read when it loaded after the first one or lacks a whole first event, and shows a snapshot_sequence
+             not older than its own; it reads GET /contact once per socket and after
              its own command, whose next command needs the revision at once, with one
              pending GET per browser. It is not a StatusReply:
              station.status stays exactly {v,type,id,data{version,radio}}. Control and
