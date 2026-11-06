@@ -354,6 +354,7 @@ fn tc_063_005_the_points_rules_by_hand() {
         ("23cm", 4, 3),
         ("13cm", 8, 4),
         ("3cm", 8, 4),
+        ("submm", 8, 4),
     ] {
         assert_eq!(Points::VhfJanuary.of(None, None, band, D), Some(january));
         assert_eq!(Points::VhfJuneSeptember.of(None, None, band, D), Some(june));
@@ -591,6 +592,40 @@ fn tc_063_006_verdicts_callable_by_value() {
         evaluate(&fta, &rover, &st, Some(&Log::default()))[0].why,
         "callsign guard"
     );
+}
+
+// Proves: TC-063-006
+#[test]
+fn tc_063_006_a_field_day_exchange_to_my_call_is_a_caller() {
+    let s = selection("arrl_field_day", "2026-06-27T18:00Z", "2026-06-28T21:00Z");
+    let log = Log::of(
+        &s,
+        None,
+        &[qso("K1OLD", None, "20m", "FT8", "2026-06-27T19:00:00Z")],
+    );
+    let exchange = |sequence: u64, from: &str, to: &str| {
+        json!({"status":"decoded","sequence":sequence,"snr_db":-5.0,"fields":{"type":"field_day",
+            "to":{"kind":"call","text":to},"from":{"kind":"call","text":from},"ack":false,
+            "transmitters":6,"class":"A","section":"WI"}})
+    };
+    let records = [
+        exchange(0, "K1OLD", "HB9BLA"),
+        exchange(1, "W9XYZ", "HB9BLA"),
+        exchange(2, "W9ABC", "K1ABC"),
+    ];
+    let mut st = contest_station("20m");
+    st.activity = Activity::FieldDay;
+    let list = evaluate(&s, &records, &st, Some(&log));
+    let of = |seq: u64| {
+        list.iter()
+            .find(|v| v.facts.sequence == seq)
+            .expect("a verdict")
+    };
+    assert_eq!((of(1).rank, of(1).kind), (Some(0), Some(Kind::Caller)));
+    assert_eq!(of(1).contest.map(|c| c.points), Some(Some(2)), "AFD 7.1.3");
+    assert_eq!((of(0).rank, of(0).why.as_str()), (None, "dupe"));
+    assert_eq!(of(0).contest.map(|c| c.dupe), Some(true));
+    assert_eq!((of(2).rank, of(2).why.as_str()), (None, "not a CQ"));
 }
 
 // Proves: TC-063-007

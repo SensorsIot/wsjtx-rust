@@ -1028,6 +1028,7 @@ function show(){
   // Always the station's: a HALT's None must show also while the selector has the focus.
   nameSelect.value=contestValue??c?.active??'';
   contestButton.disabled=!c||!contests.length;contestButton.title=contests.length?'Choose a contest strategy and its period':'Contest strategies unavailable';
+  if(window.wstxContestOn!==!!contest){window.wstxContestOn=!!contest;if(typeof bandColoursApply==='function')bandColoursApply();}
   showAllButton.hidden=!contest;showAllButton.setAttribute('aria-pressed',String(showAll));
   nameSelect.disabled=!c;nameSelect.title=c?'Selecting a strategy starts it; None stops it':(view?.configuration_error?`Saved strategies unreadable (${view.configuration_error}); the editor's Save replaces them`:'Strategies unavailable');
   editButton.disabled=!view;editButton.title='Edit strategies (the station keeps receiving)';

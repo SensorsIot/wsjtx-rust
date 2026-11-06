@@ -621,9 +621,8 @@ impl Points {
         let vhf = |high: u64, top: u64| match band {
             "1.25m" | "70cm" => 2,
             "33cm" | "23cm" => high,
-            "13cm" | "9cm" | "6cm" | "3cm" | "1.25cm" | "6mm" | "4mm" | "2.5mm" | "2mm" | "1mm" => {
-                top
-            }
+            "13cm" | "9cm" | "6cm" | "3cm" | "1.25cm" | "6mm" | "4mm" | "2.5mm" | "2mm" | "1mm"
+            | "submm" => top,
             _ => 1,
         };
         Some(match self {
@@ -844,6 +843,27 @@ fn classify(
         Some(value),
     )
 }
+/// What the evaluator reads of a record: a standard one, or a Field Day exchange to a call (its
+/// own message type; ContestVerdict).
+fn record_facts(record: &Value) -> Option<Facts> {
+    let f = &record["fields"];
+    if record["status"] != "decoded" || f["type"] != "field_day" {
+        return crate::strategy::facts(record);
+    }
+    if f["from"]["kind"] != "call" || f["to"]["kind"] != "call" {
+        return None;
+    }
+    Some(Facts {
+        sequence: record["sequence"].as_u64()?,
+        from: f["from"]["text"].as_str()?.to_owned(),
+        to_call: f["to"]["text"].as_str().map(str::to_owned),
+        cq: false,
+        target: None,
+        signoff: false,
+        grid: None,
+        snr: record["snr_db"].as_f64(),
+    })
+}
 /// WstxContest::ContestVerdict: in display order, by ContestValueOrder.
 pub(crate) fn evaluate(
     s: &Selection,
@@ -853,7 +873,7 @@ pub(crate) fn evaluate(
 ) -> Vec<Verdict> {
     let (mut ranked, rest): (Vec<Verdict>, Vec<Verdict>) = records
         .iter()
-        .filter_map(crate::strategy::facts)
+        .filter_map(record_facts)
         .map(|f| {
             let (kind, grey, why, contest) = classify(s, &f, st, log);
             Verdict {

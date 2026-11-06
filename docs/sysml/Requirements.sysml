@@ -5575,14 +5575,14 @@ package WstxRequirements {
              CL-063-03, CL-063-04
              Setup: hand-written QSO lists and decoded records for HB9BLA JN37 in EU on 20 m with activity ww_digi.
              Steps: a WW Digi log with a QSO before the period, one at its exclusive end, a repeat in FT4, another band, SSB and 30 m; ARRL VHF with a rover and without a grid; Field Day SSB; FT8 Activity on another band; ARRL Digi with RTTY. Verdicts for a known field, a new far field, a new near field, a dupe, CQ NA, no CQ, another station's RR73, a weak caller, a dupe caller; on 30 m; without a log; a /R CQ in ARRL VHF and IARU.
-             Expected: 2 QSOs, 2 multipliers, 4 points, score 8, nothing outside the period counted; VHF dupe on the same grid only, every grid without a logged grid; Field Day digital no dupe of SSB; FT8 Activity a dupe on another band; ARRL Digi 1 QSO, 13 points, score 13. Rank order caller, far new multiplier, near new multiplier, the known field, the RR73; the dupes rank null with dupe true, also the caller; greyed CQ NA; nothing ranked on 30 m or without a log; the wire form of a verdict; the rover ranked in ARRL VHF, refused callsign guard in IARU.
+             Expected: 2 QSOs, 2 multipliers, 4 points, score 8, nothing outside the period counted; VHF dupe on the same grid only, every grid without a logged grid; Field Day digital no dupe of SSB; a Field Day exchange to my call a caller with 2 points or a dupe, to another call not a CQ; FT8 Activity a dupe on another band; ARRL Digi 1 QSO, 13 points, score 13. Rank order caller, far new multiplier, near new multiplier, the known field, the RR73; the dupes rank null with dupe true, also the caller; greyed CQ NA; nothing ranked on 30 m or without a log; the wire form of a verdict; the rover ranked in ARRL VHF, refused callsign guard in IARU.
              2 \— Isolated automated tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-063-03';
             verify 'CL-063-04';
         }
-        attribute executable : String = "server/src/contest_tests.rs::tc_063_006_only_the_period_counts_and_each_dupe_rule; server/src/contest_tests.rs::tc_063_006_verdicts_callable_by_value";
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_006_only_the_period_counts_and_each_dupe_rule; server/src/contest_tests.rs::tc_063_006_verdicts_callable_by_value; server/src/contest_tests.rs::tc_063_006_a_field_day_exchange_to_my_call_is_a_caller";
     }
     dependency CL_063_03_verified_by_TC_063_006 from 'CL-063-03' to 'TC-063-006';
     dependency CL_063_04_verified_by_TC_063_006 from 'CL-063-04' to 'TC-063-006';
@@ -5606,8 +5606,8 @@ package WstxRequirements {
         doc /* TC-063-008 \— The contest prompt, the callable list and Show all in the browser
              CL-063-03, CL-063-04
              Setup: actual browser with hand-written station replies for the receive results, GET and PUT /strategy, GET /strategy/contests and POST /strategy/evaluate.
-             Steps: no contest; the prompt on WW Digi; ARRL January VHF without a date; Start; Show all on and off; 1.5 s of silence; reopen; None; the prompt at 360 px.
-             Expected: the toggle hidden, the selector unchanged and nothing evaluated without a contest; the rule's period pre-filled, the clause, the activity line, colouring only checked; January empty and refused with no request; one PUT with active null and the contest; one evaluation; only JA1XYZ with the multiplier colour and K1ABC listed, the status with period and tally; Show all adds the dupe and the directed CQ dimmed with no new request; no request during the silence; the period in force on reopening; None sends no contest and shows every row; no sideways overflow on the phone.
+             Steps: no contest; the prompt on WW Digi; ARRL January VHF without a date; Start, with a row to my call that is a dupe, rows carrying all-time flags (new call, new DXCC) and a row of the partner; the partner's contact prepared and ended; Show all on and off; 1.5 s of silence; reopen; None; the prompt at 360 px.
+             Expected: the toggle hidden, the selector unchanged and nothing evaluated without a contest; the rule's period pre-filled, the clause, the activity line, colouring only checked; January empty and refused with no request; one PUT with active null and the contest; one evaluation; the row to my call stays beside JA1XYZ with the multiplier colour and K1ABC, the status with period and tally; no all-time slot colour and no new-call or new-DXCC reason on any row; a partner row is listed first while its contact stands, and hidden after; Show all adds the dupe and the directed CQ dimmed, without a slot colour, with no new request; no request during the silence; the period in force on reopening; None sends no contest, shows every row and brings the slot colour back; no sideways overflow on the phone.
              2 \— Isolated automated browser test; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {

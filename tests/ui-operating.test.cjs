@@ -1960,7 +1960,7 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
   assert.equal(saved.status,201);
   state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
-  Object.assign(state.job,{first_sequence:0,next_sequence:4,available_count:4,latest_decode:{id:1,first_sequence:0,next_sequence:4,period_start_utc:period,complete:true}});
+  Object.assign(state.job,{first_sequence:0,next_sequence:6,available_count:6,latest_decode:{id:1,first_sequence:0,next_sequence:6,period_start_utc:period,complete:true}});
   await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
   await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
   await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:4,available_count:4,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
@@ -2146,7 +2146,7 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
   state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
-  Object.assign(state.job,{first_sequence:0,next_sequence:4,available_count:4,latest_decode:{id:1,first_sequence:0,next_sequence:4,period_start_utc:period,complete:true}});
+  Object.assign(state.job,{first_sequence:0,next_sequence:6,available_count:6,latest_decode:{id:1,first_sequence:0,next_sequence:6,period_start_utc:period,complete:true}});
   await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
   await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
   await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:4,available_count:4,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
@@ -2501,11 +2501,11 @@ test('TC-039-006 Selecting starts it, marks and value order from the verdicts, a
 // lists what the station's verdicts call callable, and never evaluates. Station replies are
 // hand-written fixtures; the expected requests and rows are written here.
 test('TC-063-008 The contest prompt, colouring only, the callable list and Show all',{timeout:60000},async t=>{
-  let state,view;const puts=[],evaluations=[],contestReads=[];
+  let state,view,contact=null;const puts=[],evaluations=[],contestReads=[];
   const period='2026-10-27T12:00:00.0000000Z';
   const standard=(from,to='CQ',grid='FN42')=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}});
   const record=(sequence,text,from,hz,to,grid)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to,grid),period_start_utc:period});
-  const records=[record(0,'CQ WW K1ABC FN42','K1ABC',1000,'CQ WW','FN42'),record(1,'CQ WW W1DUP EM12','W1DUP',1200,'CQ WW','EM12'),record(2,'CQ WW JA1XYZ PM95','JA1XYZ',1400,'CQ WW','PM95'),record(3,'CQ POTA W1AW FN31','W1AW',1600,'CQ POTA','FN31')];
+  const records=[{...record(0,'CQ WW K1ABC FN42','K1ABC',1000,'CQ WW','FN42'),flags:{new_call:true,new_call_band:true}},record(1,'CQ WW W1DUP EM12','W1DUP',1200,'CQ WW','EM12'),record(2,'CQ WW JA1XYZ PM95','JA1XYZ',1400,'CQ WW','PM95'),{...record(3,'CQ POTA W1AW FN31','W1AW',1600,'CQ POTA','FN31'),flags:{new_dxcc:true,new_dxcc_band:true}},record(4,'HB9BLA W1OLD EM12','W1OLD',1800,'HB9BLA','EM12'),record(5,'CQ WW K1PT FN42','K1PT',2000,'CQ WW','FN42')];
   const profile=(id,name,extra)=>({id,name,cabrillo:null,cabrillo_confirmed:false,activity:'none',bands:['20m'],modes:'',exchange:'',dupes:'band',points:'one_per_call',multipliers:'none',score:'',automation:'silent',automation_text:'The rules do not address automatic operation.',schedule:`${name} schedule`,notes:[`${name} note`],source:'',period:null,...extra});
   const profiles=[profile('ww_digi','WW Digi',{activity:'ww_digi',automation:'forbidden',automation_text:'A human operator must initiate calling each QSO partner.',period:{start:'2026-08-29T12:00Z',end:'2026-08-30T12:00Z',band:null}}),profile('arrl_vhf_jan','ARRL January VHF',{activity:'na_vhf'})];
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -2513,22 +2513,25 @@ test('TC-063-008 The contest prompt, colouring only, the callable list and Show 
     view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:4,configuration:{continent:null,active:null,strategies:[],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[],most_wanted:null,most_wanted_unreadable:false,most_wanted_attribution:''};
     state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
     state.clock={basis:'system_utc',correlated:true,utc_anchor:period,canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
-    Object.assign(state.job,{first_sequence:0,next_sequence:4,available_count:4,latest_decode:{id:1,first_sequence:0,next_sequence:4,period_start_utc:period,complete:true}});
+    Object.assign(state.job,{first_sequence:0,next_sequence:6,available_count:6,latest_decode:{id:1,first_sequence:0,next_sequence:6,period_start_utc:period,complete:true}});
     await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
-    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base)}));
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact})}));
     await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());puts.push(b);view={...view,revision:view.revision+1,configuration:b.configuration};}await route.fulfill({json:view});});
     await p.route('**/strategy/contests',route=>{contestReads.push(1);return route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,profiles}});});
     await p.route('**/strategy/evaluate',async route=>{const b=JSON.parse(route.request().postData());evaluations.push(b);
-      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'WW Digi',my_continent:'EU',contest:{qsos:12,multipliers:7,points:30,score:210},verdicts:[{sequence:2,rank:0,grey:false,dupe:false,new_multiplier:true,points:4},{sequence:0,rank:1,grey:false,dupe:false,new_multiplier:false,points:2},{sequence:1,rank:null,grey:false,dupe:true,new_multiplier:false,points:null},{sequence:3,rank:null,grey:true}]}});});
+      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'WW Digi',my_continent:'EU',contest:{qsos:12,multipliers:7,points:30,score:210},verdicts:[{sequence:2,rank:0,grey:false,dupe:false,new_multiplier:true,points:4},{sequence:0,rank:1,grey:false,dupe:false,new_multiplier:false,points:2},{sequence:1,rank:null,grey:false,dupe:true,new_multiplier:false,points:null},{sequence:4,rank:null,grey:false,dupe:true,new_multiplier:false,points:null},{sequence:3,rank:null,grey:true}]}});});
   }});
-  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===4&&document.querySelector('#strategy-contest')?.disabled===false,null,{timeout:25000});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===6&&document.querySelector('#strategy-contest')?.disabled===false,null,{timeout:25000});
   const shown=()=>page.locator('#band-activity tr[data-sequence]').evaluateAll(rows=>rows.filter(r=>getComputedStyle(r).display!=='none').map(r=>[r.children[4].textContent,r.className.split(' ').filter(c=>c.startsWith('ba-')&&c!=='ba-cq').join(' ')]));
   // Without a contest the toggle is hidden, the selector unchanged, nothing evaluated.
   assert.equal(await page.locator('#activity-show-all').isVisible(),false);
   assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None']);
-  assert.equal((await shown()).length,4);
+  assert.equal((await shown()).length,6);
   assert.deepEqual(evaluations,[]);
+  const message=text=>page.locator('#band-activity tr[data-sequence]',{hasText:text}).locator('td[data-col=message]');
+  const none='rgba(0, 0, 0, 0)',background=text=>message(text).evaluate(e=>getComputedStyle(e).backgroundColor);
+  assert.notEqual(await background('CQ WW K1ABC'),none,'the all-time colour without a contest');
   // The prompt: pre-filled from the rule; a contest without a computed period asks and refuses empty.
   await page.locator('#strategy-contest').click();
   await page.locator('#contest-prompt[open]').waitFor();
@@ -2550,9 +2553,19 @@ test('TC-063-008 The contest prompt, colouring only, the callable list and Show 
   assert.deepEqual(puts.map(b=>[b.expected_revision,b.configuration.active,b.configuration.contest]),[[4,null,{profile:'ww_digi',start:'2026-08-29T12:00Z',end:'2026-08-30T12:00Z',operation:'colouring'}]]);
   // Only what can be called, by value; the new multiplier stands out, the dupe and the directed CQ are gone.
   for(let i=0;i<60&&!evaluations.length;i++)await page.waitForTimeout(50);
-  assert.deepEqual(evaluations.map(b=>[b.first_sequence,b.next_sequence,b.strategy,b.explain]),[[0,4,null,false]]);
-  await page.waitForFunction(()=>document.querySelector('#band-activity tr[data-sequence]').children[4].textContent==='CQ WW JA1XYZ PM95');
-  assert.deepEqual(await shown(),[['CQ WW JA1XYZ PM95','ba-strategy ba-contest-mult'],['CQ WW K1ABC FN42','ba-strategy']]);
+  assert.deepEqual(evaluations.map(b=>[b.first_sequence,b.next_sequence,b.strategy,b.explain]),[[0,6,null,false]]);
+  await page.waitForFunction(()=>[...document.querySelectorAll('#band-activity tr[data-sequence]')].filter(r=>getComputedStyle(r).display!=='none').length===3);
+  // The row to my call stays although it is a dupe; the all-time colours and reasons are off.
+  assert.deepEqual(await shown(),[['HB9BLA W1OLD EM12','ba-tome ba-dupe'],['CQ WW JA1XYZ PM95','ba-strategy ba-contest-mult'],['CQ WW K1ABC FN42','ba-strategy']]);
+  assert.equal(await background('CQ WW K1ABC'),none,'QSOs outside the period colour nothing');
+  assert.doesNotMatch(await page.locator('#band-activity tr[data-sequence]',{hasText:'CQ WW K1ABC'}).getAttribute('aria-description')??'',/New call/);
+  // The partner of a manual QSO is listed first while its contact stands.
+  contact=partner('replying',{dx_call:'K1PT'});await page.evaluate(()=>window.wstxContact.load());
+  await page.locator('#band-activity tr.ba-partner-stripe').waitFor();
+  assert.equal((await shown())[0][0],'CQ WW K1PT FN42');
+  contact=null;await page.evaluate(()=>window.wstxContact.load());
+  await page.waitForFunction(()=>!document.querySelector('#band-activity tr.ba-partner-stripe'));
+  assert.equal((await shown()).length,3,'the rest stays hidden');
   assert.equal(await page.inputValue('#strategy-name'),'contest:ww_digi');
   await page.locator('#station-automation').filter({hasText:'Contest WW Digi · 08-29 12:00 to 08-30 12:00 UTC · colouring only · 12 QSOs · 7 mult · score 210'}).waitFor();
   await page.screenshot({path:'test-results/ui-operating/contest-list-1366.png'});
@@ -2560,9 +2573,11 @@ test('TC-063-008 The contest prompt, colouring only, the callable list and Show 
   const asked=evaluations.length;
   await page.locator('#activity-show-all').click();
   assert.equal(await page.locator('#activity-show-all').getAttribute('aria-pressed'),'true');
-  assert.deepEqual(await shown(),[['CQ WW JA1XYZ PM95','ba-strategy ba-contest-mult'],['CQ WW K1ABC FN42','ba-strategy'],['CQ WW W1DUP EM12','ba-dupe'],['CQ POTA W1AW FN31','ba-grey']]);
+  assert.deepEqual((await shown()).map(r=>r[1]).filter(c=>c.includes('ba-dupe')||c.includes('ba-grey')).sort(),['ba-dupe','ba-grey','ba-tome ba-dupe']);
+  assert.equal((await shown()).length,6);
+  assert.equal(await background('CQ POTA W1AW'),none,'a directed CQ of a new DXCC: no slot colour');
   await page.locator('#activity-show-all').click();
-  assert.equal((await shown()).length,2);
+  assert.equal((await shown()).length,3);
   // No client polling: nothing is asked while nothing is published.
   const reads=contestReads.length;await page.waitForTimeout(1500);assert.equal(contestReads.length,reads);assert.equal(evaluations.length,asked);
   // Reopening edits the period in force; None ends the contest and shows every row again.
@@ -2573,6 +2588,7 @@ test('TC-063-008 The contest prompt, colouring only, the callable list and Show 
   await page.waitForFunction(()=>document.querySelectorAll('#band-activity tr[data-sequence].ba-hidden').length===0);
   const last=puts.at(-1).configuration;assert.equal(last.active,null);assert.equal('contest' in last,false,'None drops the contest');
   assert.equal(await page.locator('#activity-show-all').isVisible(),false);
+  assert.notEqual(await background('CQ WW K1ABC'),none,'the colours are back');
   // A phone: the prompt fits without a sideways page.
   await page.setViewportSize({width:360,height:740});
   await page.locator('#strategy-contest').scrollIntoViewIfNeeded();await page.locator('#strategy-contest').click();await page.locator('#contest-prompt[open]').waitFor();
@@ -3089,7 +3105,7 @@ test('TC-024-004 Tx5 free text and <MYCALL> rows in the operating screen',{timeo
       record(2,'<...> PJ4/K1ABC',nonstandard(call('hash',null,12),'PJ4/K1ABC',false),1200,4),
       record(3,'<HB9BLA> K1ABC -12',standard(call('hash','HB9BLA',22),call('call','K1ABC')),1300,1),
     ];
-    Object.assign(state.job,{first_sequence:0,next_sequence:4,available_count:4,latest_decode:{id:1,first_sequence:0,next_sequence:4,period_start_utc:period,complete:true}});
+    Object.assign(state.job,{first_sequence:0,next_sequence:6,available_count:6,latest_decode:{id:1,first_sequence:0,next_sequence:6,period_start_utc:period,complete:true}});
     await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
     await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact,settings})}));

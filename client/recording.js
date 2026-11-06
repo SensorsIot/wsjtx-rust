@@ -107,7 +107,8 @@ displaySettings.append(bandColours);
 function bandColoursApply(){
   let saved=null;try{saved=JSON.parse(localStorage.getItem('wstx.band-colours.v1'));}catch{}
   const on=bandSlots.filter(([k,,d])=>typeof saved?.[k]==='boolean'?saved[k]:d).map(([k])=>k);
-  document.querySelector('#band-activity').dataset.hlOn=on.join(' ');
+  // WstxContest::ContestView: with a contest in force only my call keeps its slot; the rest is the all-time log.
+  document.querySelector('#band-activity').dataset.hlOn=(window.wstxContestOn?on.filter(k=>k==='mycall'):on).join(' ');
   for(const box of bandColours.querySelectorAll('[data-hl-slot]'))box.checked=on.includes(box.dataset.hlSlot);
   for(const row of document.querySelectorAll('#band-activity tr[data-sequence]'))activityWhy(row);
 }

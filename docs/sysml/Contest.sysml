@@ -147,13 +147,14 @@ package WstxContest {
              it scans the records without copying those outside the period. */
     }
     attribute def ContestVerdict {
-        doc /* WstxStrategy::Verdict with a contest in force, one per decoded standard record with
-             a resolved sender, in this order of tests: ignored (IgnoreLists, as a strategy); greyed
+        doc /* WstxStrategy::Verdict with a contest in force, one per decoded record with a resolved
+             sender that is standard, or a Field Day exchange (type field_day) to a call, in this
+             order of tests: ignored (IgnoreLists, as a strategy); greyed
              (DirectedCqRule); "my own message"; "band unknown"; "band not in the contest"; "log
              unreadable"; "dupe" (DupeRule for the station band, mode class Digital; rank null,
              dupe true, also when it calls my call: operator #63 "non-dupe", the one difference from
-             WstxStrategy D5); a caller of my call (CallerOfMyCall, also what a contest's exchange
-             is sent as); else the callsign guard (SaneCall; a /R rover passes where a new grid counts,
+             WstxStrategy D5); a caller of my call (CallerOfMyCall, also a grid or Field Day
+             exchange to it); else the callsign guard (SaneCall; a /R rover passes where a new grid counts,
              band_grid); else "not a CQ": a CQ or an RR73/73 to someone else counts as calling, in
              every contest. So the callable records have a rank by ContestValueOrder; every other has
              rank null. The reply's verdicts carry dupe, new_multiplier (the record's key is not
@@ -190,7 +191,10 @@ package WstxContest {
              element, visible only with a contest, off at each page load, kept in the page only)
              shows them all again without a new request: a dupe and a greyed row dimmed, no colour; a
              row with a new multiplier has its own colour beside the strategy mark
-             (WstxOperatingLayout::BandActivityColours: only interesting stations). The hover names "#n",
+             (WstxOperatingLayout::BandActivityColours: only interesting stations). The colour slots of the
+             all-time log (new call, DXCC, zone, grid and LotW) are off while a contest is in force,
+             their reasons leave the hover too, and they come back with its end: QSOs outside the
+             period do not count (the My call slot stays; the Settings choice is unchanged). The hover names "#n",
              new multiplier and points, or the dupe. The status beside it: "Contest <name> \· <MM-DD
              HH:MM> to <MM-DD HH:MM> UTC \· colouring only" and, once evaluated, " \· <n> QSOs \· <m>
              mult \· score <s>". Manual operation stays as it is: every row selects as ever, the
