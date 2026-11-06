@@ -204,3 +204,122 @@ fn save_failures_and_interruptions_preserve_the_defined_commit_point() {
         fs::remove_dir_all(directory).unwrap();
     }
 }
+
+fn native_document() -> serde_json::Value {
+    let mut value = serde_json::to_value(independent_document()).unwrap();
+    value["schema_version"] = 2.into();
+    value["connection_type"] = "native_flex".into();
+    value["audio"] = serde_json::json!({"input_device":null,"output_device":null});
+    value["control"] = serde_json::json!({"mode":"disabled","endpoint":null,"ptt":"disabled"});
+    value.as_object_mut().unwrap().remove("radio");
+    value["native"] =
+        serde_json::json!({"client_id":"72e8c7f3-5766-4ade-9286-ebf2f525c77a","rx_antenna":"ANT1"});
+    value
+}
+
+// Proves: TC-023-002. The native intent is a separate schema-2 document without a radio
+// identity; standard schema-1 bytes, refusals and the absence of a runtime handle are preserved.
+#[test]
+fn native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged() {
+    let accept = |value: &serde_json::Value| {
+        serde_json::from_value::<Document>(value.clone())
+            .map_err(|_| "invalid_profile")
+            .and_then(|d| d.validate().map(|_| d))
+    };
+    let native = accept(&native_document()).unwrap();
+    assert_eq!(serde_json::to_value(&native).unwrap(), native_document());
+    let standard = serde_json::to_value(independent_document()).unwrap();
+    assert!(
+        standard.get("native").is_none(),
+        "standard bytes gain no key"
+    );
+    let mut cases = Vec::new();
+    let mut with = |change: &dyn Fn(&mut serde_json::Value), expected: &'static str| {
+        let mut value = native_document();
+        change(&mut value);
+        cases.push((value, expected));
+    };
+    with(
+        &|v| v["native"] = serde_json::Value::Null,
+        "invalid_profile",
+    );
+    for transient in ["radio_serial", "slice_index", "stream_id"] {
+        let key = transient.to_owned();
+        with(&move |v| v["native"][&key] = "1".into(), "invalid_profile");
+    }
+    with(
+        &|v| v["native"]["client_id"] = "00000000-0000-4000-8000-0000000000C1".into(),
+        "invalid_profile",
+    );
+    with(
+        &|v| v["native"]["rx_antenna"] = "ant1".into(),
+        "invalid_profile",
+    );
+    with(
+        &|v| v["audio"]["input_device"] = "X".into(),
+        "invalid_profile",
+    );
+    with(&|v| v["control"]["mode"] = "cat".into(), "invalid_profile");
+    with(
+        &|v| v["connection_type"] = "standard".into(),
+        "invalid_profile",
+    );
+    with(
+        &|v| v["schema_version"] = 1.into(),
+        "unsupported_connection_type",
+    );
+    with(&|v| v["schema_version"] = 3.into(), "unsupported_schema");
+    with(
+        &|v| {
+            v.as_object_mut().unwrap().remove("native");
+        },
+        "unsupported_schema",
+    );
+    for (value, expected) in cases {
+        assert_eq!(accept(&value).err(), Some(expected), "{value}");
+    }
+    let mut legacy = standard.clone();
+    legacy["connection_type"] = "native_flex".into();
+    assert_eq!(accept(&legacy).err(), Some("unsupported_connection_type"));
+    let mut extra = standard;
+    extra["native"] = native_document()["native"].clone();
+    assert_eq!(accept(&extra).err(), Some("invalid_profile"));
+    let settings = native.settings();
+    assert_eq!(settings.validate_native(), Ok(()));
+    let mut device = settings.clone();
+    device.audio.input_device = Some("X".into());
+    assert_eq!(device.validate_native(), Err("audio.input_device"));
+    let mut cat = settings;
+    cat.control.ptt = "cat".into();
+    assert_eq!(cat.validate_native(), Err("control.ptt"));
+}
+
+// Proves: TC-023-002. Creation persists only the intent and a fresh client identity, and
+// no writer can give the native profile a device or CAT selection afterwards.
+#[test]
+fn native_profile_creation_persists_intent_without_runtime_handles() {
+    let directory = std::env::temp_dir().join(format!("wstx-native-{}", new_uuid().unwrap()));
+    assert_eq!(
+        Store::create_native(&directory, "ant 1"),
+        Err("invalid_runtime_configuration")
+    );
+    assert!(!directory.exists());
+    Store::create_native(&directory, "ANT1").unwrap();
+    let text = fs::read_to_string(directory.join("profile.json")).unwrap();
+    let (mut store, _) = Store::open(&directory).unwrap();
+    let native = store.document.native.clone().unwrap();
+    assert_eq!(native.rx_antenna, "ANT1");
+    assert!(valid_uuid(&native.client_id));
+    for transient in ["serial", "slice", "stream", "handle", "dax", "frequency"] {
+        assert!(!text.contains(transient), "{transient} persisted");
+    }
+    let mut settings = store.document.settings();
+    settings.audio.output_device = Some("X".into());
+    assert!(store.save(settings).is_err());
+    assert_eq!(
+        fs::read_to_string(directory.join("profile.json")).unwrap(),
+        text
+    );
+    drop(store);
+    fs::remove_dir_all(directory).unwrap();
+}

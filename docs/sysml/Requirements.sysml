@@ -135,8 +135,9 @@ package WstxRequirements {
     }
     requirement 'FR-023' {
         doc /* Optional direct FlexRadio integration — phase 2 target
-             Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist intended radio/slice associations and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Phase-two target; not implemented. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+             Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist their receive intent (never a radio identity, slice index or handle) and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Receive and control at isolated level 2 are delivered (WstxProductScope::NativeFlexWireSubset); live hardware qualification TC-023-004/005 and transmit TC-023-006 remain open. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/session.rs; server/src/flex/wire.rs; server/src/flex_http.rs; server/src/profile.rs; client/recording.js";
     }
     requirement 'FR-024' {
         doc /* Contest, special-activity and DXpedition operation — phase three
@@ -227,7 +228,7 @@ package WstxRequirements {
     dependency CL_005_04_to_FR_021 from 'CL-005-04' to 'FR-021';
     dependency CL_005_04_to_FR_022 from 'CL-005-04' to 'FR-022';
     requirement 'CL-005-05' {
-        doc /* Standard audio with optional CAT/PTT remains the default. Audio and control selections MUST persist independently without claiming hardware availability. Native FlexRadio is reserved and refused in this phase. */
+        doc /* Standard audio with optional CAT/PTT remains the default. Audio and control selections MUST persist independently without claiming hardware availability. A schema-1 document naming native_flex stays refused; a native profile is a separate schema-2 document chosen at profile creation (FR-023, WstxProfiles::NativeProfileDocument). */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/profile.rs; client/app.js";
     }
@@ -235,34 +236,40 @@ package WstxRequirements {
     dependency CL_005_05_to_FR_022 from 'CL-005-05' to 'FR-022';
     requirement 'CL-013-01' {
         doc /* Phase 2 MUST offer direct native-network integration as an optional profile connection type for the selected radio control, status and sample-stream functions. When selected, that native path MUST NOT require the external SmartSDR desktop application, SmartSDR CAT or DAX applications to be installed/running as bridges. This restriction does not prohibit those tools as operator-selected infrastructure for the standard connection path. A Rust implementation may coordinate shared radio access internally without forcing one hardware GUI-client session per logical station server. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/session.rs; server/src/main.rs";
     }
     dependency CL_013_01_to_FR_023 from 'CL-013-01' to 'FR-023';
     requirement 'CL-013-02' {
         doc /* This independence concerns desktop applications. Compatible radio-side firmware and its API remain required; this specification does not promise a FlexRadio operating without its SmartSDR radio firmware or an unrestricted firmware compatibility range. Pin supported models, firmware/API versions and selected stream formats before implementation. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/wire.rs; server/src/flex/session.rs";
     }
     dependency CL_013_02_to_FR_023 from 'CL-013-02' to 'FR-023';
     requirement 'CL-013-03' {
-        doc /* Each native FlexRadio profile MUST persist its intended radio and slice association. On every connection/reconnection the system MUST reconcile that intent with authoritative discovery/status and current runtime handles. A changed/transient slice index MUST NOT redirect a station to another station's slice. Unresolvable associations MUST produce a visible unavailable/conflict state rather than guessing a replacement. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        doc /* Each native FlexRadio profile MUST persist its receive intent: its own client identity and receive antenna, and no radio identity (operator decision 2026-11-06 on #22: the station uses whichever radio discovery finds available). On every connection/reconnection the system MUST reconcile that intent with authoritative discovery/status and current runtime handles. A changed/transient slice index MUST NOT redirect a station to another station's slice. Unresolvable associations MUST produce a visible unavailable/conflict state rather than guessing a replacement. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/session.rs; server/src/profile.rs";
     }
     dependency CL_013_03_to_FR_023 from 'CL-013-03' to 'FR-023';
     requirement 'CL-013-04' {
         doc /* Control responses and received stream data MUST be routed to the associated station. Capacity shortages, occupied resources and incompatible API behavior MUST be reported without stealing another profile's slice or silently reducing the requested independence. Four-slice hardware validation requires a model/configuration that actually provides at least four usable slices. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/session.rs";
     }
     dependency CL_013_04_to_FR_023 from 'CL-013-04' to 'FR-023';
     requirement 'CL-013-05' {
         doc /* Shared-radio transmit, tuning and other constrained-resource authority MUST be coordinated under FR-008/FR-009 before those operations are enabled. Four station profiles do not confer simultaneous independent transmit authority. Reconnect/profile restoration MUST NOT replay an old transmit request or bypass the future ownership policy. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/session.rs; server/src/transmit_http.rs";
     }
     dependency CL_013_05_to_FR_008 from 'CL-013-05' to 'FR-008';
     dependency CL_013_05_to_FR_009 from 'CL-013-05' to 'FR-009';
     dependency CL_013_05_to_FR_023 from 'CL-013-05' to 'FR-023';
     requirement 'CL-013-06' {
         doc /* The native path MUST reuse the common browser, station-operation, DSP/modem and future MCP interfaces. The default standard connection remains usable without FlexRadio hardware or native-profile fields. A mixed set of instances MUST preserve each profile's selected path, configuration and routing independently. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/recording.rs; server/src/receive_http.rs; server/src/selection_http.rs; client/recording.js; client/contact.js";
     }
     dependency CL_013_06_to_FR_023 from 'CL-013-06' to 'FR-023';
     requirement 'CL-006-01' {
@@ -526,7 +533,7 @@ package WstxRequirements {
              clock steps of +-100/+-101/+-2000 ms after the measurement; plan FT8 and
              FT4 starts with each derived state; read the state while a measurement
              blocks; GET /transmit before and after measurements; the browser transmit
-             status with a GET /transmit fixture.
+             status with a transmit.state fixture.
              Oracles: RFC 4330/5905 arithmetic by hand (590/20 ms, -705/10 ms, 495/10
              ms); every invalid reply refused, stratum 1 and 15 accepted; servers asked
              once each in order, none after the first valid answer, none answering
@@ -1107,7 +1114,7 @@ package WstxRequirements {
              CL-010-06, CL-010-08, CL-010-15
              Setup: calibrated TLS 32,000 bit/s per direction, 300 ms RTT, two-client fixture for 60 s with the active result/display workload, contact status, worked-before queries and log page/import/export traffic.
              Steps: filter/sort, resize, switch panes, scroll the Rx Frequency pane, run one contact.
-             Expected: the request recorder shows no traffic from local presentation, at most one worked-before query of at most 64 calls per period per client and station.tick at 1/s Detailed and 1/5 s Thin/Off, contact.state at most 1/s with one pending GET /contact; with Off and two idle clients the total stays within 1000 B/s per direction, with Thin within 3000 B/s; existing byte envelopes and bounded queues hold; connected status within 2 s and first status within 10 s after page load; overhead counted from the simulator, not packet capture.
+             Expected: the request recorder shows no traffic from local presentation, at most one worked-before query of at most 64 calls per period per client and station.tick at 1/s Detailed and 1/5 s Thin/Off, contact.state at most 1/s with one pending GET /contact; another client's change reaches the page in transmit.state and contact.state, only what changed, with no GET /transmit and no GET /contact, the dialogue rows in order including rows following at the same sequence, an older read never replacing a pushed change, and a contact client loading after the socket's first event having the whole state from it, with no read succeeding, and the next event following; a Tune countdown alone at most once per 5 s below Detailed; with Off and two idle clients the total stays within 1000 B/s per direction, with Thin within 3000 B/s; existing byte envelopes and bounded queues hold; connected status within 2 s and first status within 10 s after page load; overhead counted from the simulator, not packet capture.
              2 — Isolated automated functional tests; Windows development PC, real browser/server and the existing thin-link simulator; no radio. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
@@ -1546,7 +1553,7 @@ package WstxRequirements {
              With the target stopped, test missing file, truncated JSON, malformed UTF-8, duplicate/
              unknown/missing fields, invalid UUID, schema 0/2, port 0/65536 and a 16,385-byte file;
              an otherwise valid 16,384-byte file padded with whitespace is accepted. Also try
-             `native_flex` and require `unsupported_connection_type`, without an attempted radio
+             a schema-1 document naming `native_flex` and require `unsupported_connection_type`, without an attempted radio
              connection or a change to the standard profile's stored settings.
              Each invalid launch fails nonzero with the defined category and no listener or file rewrite;
              others remain usable. Restore the original bytes and restart successfully. During a
@@ -1736,8 +1743,36 @@ package WstxRequirements {
              **Expected results:** The Rust system connects directly to the emulated API without a
              desktop bridge. Each response/state update/stream reaches the intended station and no
              other station. Operations change only the associated emulated resource. The oracle uses
-             independently specified protocol fixtures, not packets generated by the code under test. */
-        attribute automation : AutomationState = AutomationState::planned;
+             independently specified protocol fixtures, not packets generated by the code under test.
+
+             **Level-2 realization:** tests/native-flex.test.cjs starts the independent loopback
+             emulator tests/flex-emulator.cjs (TCP command/status, unicast loopback discovery and
+             VITA-49 DAX float 48 kHz streams; no code shared with the candidate) and four real
+             station servers with disposable schema-2 HTTPS profiles. Each emulated slice carries
+             a 1 kHz tone of a slice-specific amplitude, and every eighth packet another client's
+             stream ID is sent at amplitude 0.95. Oracle: the emulator's own slice/stream/owner
+             records and command log. Each station owns exactly one slice and stream whose index
+             and ID its /native-flex snapshot repeats; its accepted channel-0 peak equals its own
+             slice amplitude within 1e-4 with foreign packets counted. Four concurrent band
+             selections through /receive/select tune only the selecting client's slice and return
+             control native/origin native_readback; the restarted live receive runs on device
+             native_flex with advancing source frames and a correlated UTC anchor within 2 s of the
+             test's own clock. Read first: repeating a selection whose slice already reports the
+             frequency sends no slice tune and no mode write (command log count unchanged); an
+             emulator that does not report the new frequency makes the selection fail visibly with
+             error radio_timeout and leaves no native_readback origin. Two stations whose DAX
+             status arrives 300 ms late end on different channels, the emulator's audio following
+             the channel, not the owner. Datagrams with the own stream ID from another address
+             (127.0.0.2, amplitude 0.95) are never accepted. No slice command targets another
+             client's slice and no transmit, disconnect or persistence command is sent. Rust unit
+             tests check the pinned independent narrow48 vector field by field, its negative cases,
+             documented control lines and the 4096-byte line bound; the emulator encoder reproduces
+             the same vector bytes. Another model on the admitted API connects and its announced
+             model, serial and firmware are shown. GET /native-flex reports the packet's timestamp
+             kind and this host's clock minus its time, which a new session without own packets
+             shows as null. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
         objective {
             verify 'CL-013-01';
             verify 'CL-013-04';
@@ -1750,15 +1785,39 @@ package WstxRequirements {
              **Promise:** FR-023; CL-013-03, CL-013-04, CL-013-05. **Level: 2 — Isolated automated tests.**
              **Where it runs:** Windows PC, disposable persisted profiles and a local radio emulator.
 
-             **Inputs/actions:** Save intended radio/slice associations, disconnect/restart the
+             **Inputs/actions:** Save the native receive intent, disconnect/restart the
              emulated radio and assign different runtime handles before reconnecting. Also present
              missing, ambiguous or occupied intended resources and stale status updates.
 
              **Expected results:** Each profile reconciles its intent with current authoritative
              resources; transient indices do not route it to another station. Unresolved intent is
              reported as unavailable/conflicting without stealing a resource, replaying transmit
-             requests or accepting stale handles as authority. */
-        attribute automation : AutomationState = AutomationState::planned;
+             requests or accepting stale handles as authority.
+
+             **Level-2 realization:** two native stations on the loopback emulator. The emulator is
+             stopped and restarted with new client handles, reversed slice indices, new stream IDs
+             and the old stream IDs replayed: each station reports transport_lost, then a new session
+             reaches ready on its own newly created slice (emulator owner record), the old stream
+             IDs are only counted as foreign, the accepted peak follows the new own slice, and a
+             receive job running before the restart stays the operator's running job and advances
+             again after a new source epoch, without an operator action. Occupied: an external
+             connected client carries station A's saved client identity; A shows
+             conflict/client_identity_in_use, sends no client gui and creates no slice while B is
+             ready, and recovers once the identity disappears. Ambiguous: a slice already attributed
+             to A's fresh handle yields conflict/ownership_ambiguous with no slice/stream command
+             from A. Missing: nothing is announced; both report radio_not_found with zero TCP
+             connections. Next available: of two emulators on one discovery port, the one announcing
+             available_clients=0 receives no connection and the station becomes ready on the other.
+             A selected frequency returns on the new slice after a restart, and the same occupied
+             case holds when the radio answers before it lists the clients. Without a session a
+             new receive start is refused radio_unavailable. Startup resume (CL-045-02): a
+             spectrum and a band choice resume started, the band on the slice, and with no radio
+             the resume ends failed/radio_unavailable after 15 to 30 s.
+             Authorization: a native station without a grant makes no TCP connection and, after
+             its only grant is revoked, its client and slice leave the emulator.
+             profile.json bytes stay unchanged and hold no radio identity (no serial key). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
         objective {
             verify 'CL-013-03';
             verify 'CL-013-04';
@@ -1784,8 +1843,27 @@ package WstxRequirements {
              policy. Four server instances never imply four independently authorized transmitters.
              Standard profiles continue through their selected audio/rig-control path without native
              FlexRadio settings; native profiles use the direct API. Both are presented through the
-             same browser and shared station-operation interfaces, with no cross-profile routing. */
-        attribute automation : AutomationState = AutomationState::planned;
+             same browser and shared station-operation interfaces, with no cross-profile routing.
+
+             **Level-2 realization:** emulator capacity two slices with three native stations: two
+             become ready, the third reports capacity_slices, and the two owners' slice records stay
+             identical. Announced available_clients=0 yields capacity_clients with zero connections;
+             API version 1.5.0.0 yields incompatible_api with zero commands. A schema-1 standard
+             station on the same PC returns 404 for /native-flex, control manual and the unchanged
+             audio_unconfigured receive refusal and makes no connection to a radio it could hear, while the native
+             station reports control native and starts receive. Safety: on both, transmit capability
+             is unsupported, Enable Tx is refused with the same error, and HALT answers with the same
+             status and halt state; no transmit command reaches the radio. A native settings edit
+             naming an audio device or CAT control and Detect radio are refused without changing
+             profile.json. One real browser shows Standard and Native FlexRadio as read-only
+             connection types. The native status line and error-field entry arrive only by the
+             radio.native WebSocket push: the page sends no /native-flex request, and stopping the
+             emulator changes the line without a request or reload. The error field never shows
+             No audio input for it. The line stands in the receive details, not in the top bar, and
+             opens from its error-field entry; the screen has no page scroll at 1366x768. Stopping
+             the station turns the line stale. No page errors. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        attribute executable : String = "tests/native-flex.test.cjs";
         objective {
             verify 'CL-013-02';
             verify 'CL-013-04';
@@ -3198,7 +3276,7 @@ package WstxRequirements {
     dependency CL_045_01_to_FR_016 from 'CL-045-01' to 'FR-016';
     dependency CL_045_01_to_FR_003 from 'CL-045-01' to 'FR-003';
     requirement 'CL-045-02' {
-        doc /* When the station starts with its profile, and monitor_off_at_startup is false and last_receive is stored, it resumes that receive once, without a browser or operator action, using the profile's current audio input (none configured: resume failed audio_unconfigured). An FT4/FT8 choice with a band is resumed as the same band selection the band button makes (receive-only CAT setup under configured CAT; nominal dial from the preferred table); with configured CAT it waits up to 20 s for the CAT lifecycle (CL-022-03/04) to report the radio ready, retrying the transient admission refusals radio_unavailable, busy and state_conflict every 250 ms within that wait, and if the radio is not ready in time or the selection fails it starts receive on the stored mode on the radio's present dial (resume started_untuned) and keeps the stored band. A spectrum choice or a choice without a band starts receive on the stored mode. A missing audio device follows the existing live-audio error/retry state of the started job; the resume never exits or restarts the process. With monitor_off_at_startup true (resume off) or nothing stored (resume idle) no receive starts; a receive, selection or import that exists before the resume acts (operator or MCP) is never replaced (resume skipped). */
+        doc /* When the station starts with its profile, and monitor_off_at_startup is false and last_receive is stored, it resumes that receive once, without a browser or operator action, using the profile's current audio input (none configured: resume failed audio_unconfigured; a native FlexRadio profile's input is its session, for which it waits up to the same 20 s, then fails radio_unavailable). An FT4/FT8 choice with a band is resumed as the same band selection the band button makes (receive-only CAT setup under configured CAT; nominal dial from the preferred table); with configured CAT it waits up to 20 s for the CAT lifecycle (CL-022-03/04) to report the radio ready, retrying the transient admission refusals radio_unavailable, busy and state_conflict every 250 ms within that wait, and if the radio is not ready in time or the selection fails it starts receive on the stored mode on the radio's present dial (resume started_untuned) and keeps the stored band. A spectrum choice or a choice without a band starts receive on the stored mode. A missing audio device follows the existing live-audio error/retry state of the started job; the resume never exits or restarts the process. With monitor_off_at_startup true (resume off) or nothing stored (resume idle) no receive starts; a receive, selection or import that exists before the resume acts (operator or MCP) is never replaced (resume skipped). */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/receive_startup.rs; server/src/main.rs";
     }
@@ -3425,7 +3503,7 @@ package WstxRequirements {
              CL-043-01, CL-043-03, CL-009-05
              Setup: the actual station router on a disposable profile directory with the
              station clock as main wires it (SNTP monitor that never measures); the actual
-             transmit owner; the actual server and Chromium with GET /transmit and GET
+             transmit owner; the actual server and Chromium with transmit.state and GET
              /clock fixtures where stated.
              Steps: load clock.json missing, air, both, gps, AIR, a foreign profile,
              schema 2, an extra key, 1024 padding bytes and malformed JSON; GET /clock;
@@ -3791,8 +3869,9 @@ package WstxRequirements {
     dependency CL_044_13_to_FR_019 from 'CL-044-13' to 'FR-019';
     dependency CL_044_13_to_FR_009 from 'CL-044-13' to 'FR-009';
     // Operator decision 2026-11-04 (#44 comment 6628026397): monitoring in normal operation.
+    // Operator decision 2026-11-06 (#44, live ALC 31-32 at Po 102 %): the level lowers above ALC 10.
     requirement 'CL-044-14' {
-        doc /* In normal operation the station reads the radio's meters exactly once per transmission, in the middle of its audio: the transmit step calls the read when half of the audio remaining at audio start has played, once per transmission, on no Tune, and not at all when less than 2 s of audio remained at audio start. The call returns at once and the burst (CL-044-12: 15 13, 15 11, 15 12) runs on its own thread, so the transmit step, the audio and the release never wait for the radio, and a PTT exchange cancels the burst. Nothing is read while Set level runs. From the reading the level moves by at most one step, stored like CL-044-12 and taken by the next transmission's audio start only: ALC at or above raw 0060 (half the ALC zone) or Po above the profile power: one down, not below -40 dB; else ALC exactly 0 and Po below 80 % of the profile power: one up, not above 0 dB; otherwise unchanged. Without a profile power Po is neither over nor low, so there is no step up. Persistent trouble is an entry in the error field, from the third transmission in a row until a reading without it: alc_high (ALC at or above 0060), po_low (Po below half the profile power), swr_high (SWR at or above 2.0, raw 0080). A clear fault, SWR at or above 3.0 (raw 0120), stops transmitting at once through the priority halt (DisarmCause halt) with the entry swr_fault, and automation may not arm again until an operator action (WatchdogFromOperator); the entry stays until a later reading below 3.0 or a stored Set level. The radio.tx_level data carries these as warnings [...]. A failed read judges nothing. */
+        doc /* In normal operation the station reads the radio's meters exactly once per transmission, in the middle of its audio: the transmit step calls the read when half of the audio remaining at audio start has played, once per transmission, on no Tune, and not at all when less than 2 s of audio remained at audio start. The call returns at once and the burst (CL-044-12: 15 13, 15 11, 15 12) runs on its own thread, so the transmit step, the audio and the release never wait for the radio, and a PTT exchange cancels the burst. Nothing is read while Set level runs. From the reading the level moves by at most one step, stored like CL-044-12 and taken by the next transmission's audio start only: ALC above raw 0010 or Po above the profile power: one down, not below -40 dB; else ALC exactly 0 and Po below 80 % of the profile power: one up, not above 0 dB and not back to the ceiling; otherwise unchanged. A lowering on the reading right after a step up makes the level just left the ceiling, so a level reading 0 below a level reading above 0010 settles on the lower one; any other lowering leaves the step up free, so the level follows a drive that falls later. The ceiling lives in memory until a stored Set level, a changed profile power or a restart. Set level's stop (CL-044-12, ALC 0, one step below the first rise) is inside this window, and one step up from it, the ALC onset (reads 4-7, about 6 per dB on the IC-7300), stays inside it. Without a profile power Po is neither over nor low, so there is no step up. Persistent trouble is an entry in the error field, from the third transmission in a row until a reading without it: alc_high (ALC at or above raw 0060, half the ALC zone; lowering below that is routine and shows no entry), po_low (Po below half the profile power), swr_high (SWR at or above 2.0, raw 0080). A clear fault, SWR at or above 3.0 (raw 0120), stops transmitting at once through the priority halt (DisarmCause halt) with the entry swr_fault, and automation may not arm again until an operator action (WatchdogFromOperator); the entry stays until a later reading below 3.0 or a stored Set level. The radio.tx_level data carries these as warnings [...]. A failed read judges nothing. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/radio_level.rs; server/src/transmit/service.rs; server/src/transmit_http.rs; client/recording.js; client/contact.js";
     }
@@ -3801,8 +3880,8 @@ package WstxRequirements {
         doc /* TC-044-017 — One meter read per transmission and its bounded correction
              CL-044-14
              Setup: the actual transmit core on a virtual clock; the actual Recording, transmit owner on a recording double and CAT actor on a scripted IC-7300 reporting set meter values.
-             Steps: (a) the decision table; (b) two FT8 transmissions and a Tune on the virtual clock; (c) the call without the hold, then with ALC 0060; (d) three transmissions in a row, then a good one; (e) SWR 0120, a reading without SWR, then the operator arms and SWR is clear; (f) the call while Set level runs; (g) the transmit step's call through the station's boxed hardware to the sink, and the sink startup installs; (h) ALC 0060 with the level file unwritable.
-             Expected: (a) one down at ALC 0060, none at 0059, the floor and 0 dB hold, one up only with ALC 0 and Po below 80 %, none without a profile power, one down above it, none without ALC, fault at 0120 and not at 0119, warnings from the third reading, cleared by one good reading; (b) due exactly once at period + 6 820 ms in each, none for Tune, none for audio starting at period + 11 200 ms; (c) no byte without the hold; with it exactly 15 13, 15 11, 15 12, level -11 stored, nothing handed to the running audio; (d) alc_high from the third, level -13, gone with the good one; (e) one halt, disarmed halt, automation refused, entry swr_fault; the entry stays with the reading without SWR; after the clear reading no entry and still armed; (f) no byte; (g) one call reaches the sink, one burst from the installed sink; (h) the level stays -10, stored false, and the next Tune plays -10.
+             Steps: (a) the decision table; (b) two FT8 transmissions and a Tune on the virtual clock; (c) the call without the hold, then with ALC 0060; (d) three transmissions in a row, then a good one; (e) SWR 0120, a reading without SWR, then the operator arms and SWR is clear; (f) the call while Set level runs; (g) the transmit step's call through the station's boxed hardware to the sink, and the sink startup installs; (h) ALC 0060 with the level file unwritable; (i) a radio reading ALC 0 at -10 dB and 0011 at -9 dB with low Po, 40 transmissions; (j) ALC 0031 at -9 dB moving 6 per dB, 40 transmissions; (k) Set level and then the correction on a radio with ALC 0 up to -9 dB and 0007 at -8 dB, rising 6 per dB, with low Po; (l) a step up, ALC 0011 and then 0 with low Po, the same profile power and then a changed one, again a step up and ALC 0011, and a stored Set level at the ceiling; (m) ALC 0013 with no step up before it, then ALC 0 twice with low Po, then 0005, 0013 and 0.
+             Expected: (a) one down at ALC 0011, none at 0010, no warning from three readings of 0059, the floor and 0 dB hold, one up only with ALC 0 and Po below 80 %, none without a profile power, one down above it, none without ALC, fault at 0120 and not at 0119, warnings from the third reading, cleared by one good reading; (b) due exactly once at period + 6 820 ms in each, none for Tune, none for audio starting at period + 11 200 ms; (c) no byte without the hold; with it exactly 15 13, 15 11, 15 12, level -11 stored, nothing handed to the running audio; (d) alc_high from the third, level -13, gone with the good one; (e) one halt, disarmed halt, automation refused, entry swr_fault; the entry stays with the reading without SWR; after the clear reading no entry and still armed; (f) no byte; (g) one call reaches the sink, one burst from the installed sink; (h) the level stays -10, stored false, and the next Tune plays -10; (i) -10 dB for good after at most two transmissions from -10 dB and three from -9 dB, no warning; (j) -10, -11, -12, -13 dB and then unchanged, no warning; (k) Set level stores -9 dB, the correction takes it to -8 dB and stays, from -7 dB it comes back to -8 dB and stays; (l) the level stays with ALC 0 and the same profile power, and goes up one after the changed profile power and after the stored Set level; (m) -13, -12, -11, -11, -12, -11 dB.
              2 — Isolated automated tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -3829,8 +3908,8 @@ package WstxRequirements {
         doc /* TC-044-019 — Monitoring on HB9BLA
              CL-044-14
              Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, 1 W on 40 m.
-             Steps: transmit during normal operation, compare the frame count in the CI-V log and the transmit timing; check the thresholds against the radio's own meters.
-             Expected: three meter frames per transmission, in the middle; decode by another station unaffected; the ALC and SWR thresholds match the radio's display; a mismatched antenna stops at SWR 3.0.
+             Steps: transmit during normal operation, compare the frame count in the CI-V log and the transmit timing; check the thresholds against the radio's own meters; transmit with ALC above 0010.
+             Expected: three meter frames per transmission, in the middle; decode by another station unaffected; ALC above 0010 goes down one step at the next transmission until it reads 0010 or less, with no entry below 0060; the ALC and SWR thresholds match the radio's display; a mismatched antenna stops at SWR 3.0.
              4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
@@ -4231,6 +4310,26 @@ package WstxRequirements {
         attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_039_10_verified_by_TC_039_031 from 'CL-039-10' to 'TC-039-031';
+    requirement 'CL-039-11' {
+        doc /* Read-only built-in strategies are offered beside the user's: New DXCC, New DXCC on band, DXCC slots, New calls and DX hunting (new call, region DX), all needed not worked, calls per station 3, Treat 73 as CQ on, window all time. They come from one server table, are listed with builtin true in the snapshot, can be selected like any strategy, cannot be edited through PUT /strategy (a user strategy with such a name is refused) and can be copied to a user strategy in the editor. Details: WstxStrategy::BuiltinStrategies, StrategyEditor, StrategySelector. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/strategy.rs; client/contact.js";
+    }
+    dependency CL_039_11_to_FR_007 from 'CL-039-11' to 'FR-007';
+    verification 'TC-039-032' {
+        doc /* TC-039-032 — Built-in strategies: the table, selection, refusal and copy
+             CL-039-11
+             Setup: the expected table written in the test; the actual station router on a disposable HTTPS profile with the contact engine and #9 transmit owner on the recording hardware double; a browser case on the actual isolated station.
+             Steps: GET /strategy; parse a configuration with active "DX hunting", with "dx hunting", with a user strategy "New DXCC" and "new dxcc", with the key builtin; PUT active "DX hunting" and publish CQ DL1XYZ JO62 and CQ K1ABC FN42; read strategy.json; open a new owner; a saved file with a strategy named "New calls"; HALT. Browser: the selector; open the editor with no user strategy; Save; open a built-in; try to change it; Duplicate; Save; rename the copy to "new calls" and Save.
+             Expected: exactly the five of the table with builtin true, none in configuration.strategies; active accepted exact only, refused active; strategies[0].name refused; strategies[0] refused; the run answers K1ABC (region DX), never DL1XYZ; the file holds no built-in and active null; the new owner reads None; the saved strategy is dropped and the built-in stays; HALT sets None. Browser: None and the five names; the editor shows the first built-in, Save sends no strategy and active null; the built-in's fields disabled, Delete disabled, no PUT of a built-in; the copy "New DXCC copy" the only user strategy saved; the colliding rename refused with its field shown.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-11';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs; tests/ui-operating.test.cjs";
+    }
+    dependency CL_039_11_verified_by_TC_039_032 from 'CL-039-11' to 'TC-039-032';
     verification 'TC-039-033' {
         doc /* TC-039-033 — A strategy without a client and its run limit
              CL-039-05
@@ -4423,7 +4522,7 @@ package WstxRequirements {
     verification 'TC-039-004' {
         doc /* TC-039-004 — Strategy runs
              CL-039-03, CL-039-05
-             Setup: as TC-039-003 with the contact engine and #9 transmit owner on the recording hardware double (virtual UTC set 1 s after an even FT8 period E; own periods odd); the strategy selected from the browser path (cookie grant) with "New calls" (goal new_call, Treat 73 as CQ, calls per station 2).
+             Setup: as TC-039-003 with the contact engine and #9 transmit owner on the recording hardware double (virtual UTC set 1 s after an even FT8 period E; own periods odd); the strategy selected from the browser path (cookie grant) with "Test calls" (goal new_call, Treat 73 as CQ, calls per station 2).
              Steps: (a) PUT with active: the run starts, no CQ; publish CQ NA W1AW (strongest), CQ JA JA1XYZ, CQ 290 N1MM, CQ DL1XYZ, CQ K1ABC; two empty partner periods; CQ K1ABC and W1AW DL1XYZ RR73 at 1700 Hz; CQ K1ABC alone afterwards; PUT None; PUT active again; HALT; Esc. (b) A QSO to its end, then the next station, repeatedly past the former limits; the deadline seam moved past 480 minutes. (c) A caller against a candidate; a browser select_row and enable_tx during the run's contact and while it waits; the partner's RR73; a new CQ; a run contact cancelled by the browser followed by the same station's CQ and its call to me; a browser selection racing the run's select_row and enable_tx; stop and Halt while manual. (d) Selecting with no receive; receive starts; the live identity changes during a contact; a browser selection without a grant; an MCP configure with strategy true; an MCP stop then start; a station restart. (e) A candidate left after its calls that then calls me beside a stronger CQ; a station completed on 40m, as a caller on 40m and as a CQ and a caller on 20m; a retune with a station left and with a station the operator gave up. (f) A new proof of the grant during a contact; past the transport's 8 h; the grant revoked.
              Expected: (a) no CQ is ever armed; DL1XYZ or K1ABC selected by value (W1AW, JA1XYZ and N1MM never); after two unanswered periods disarmed, waiting, no stop reason; the next publication goes to the other station with Rx 1700 and Tx unchanged; the left station is called again when alone; None stops the run and disarms; HALT stops halted and sets active None with a new revision; Esc leaves active and the run. (b) The run stays waiting after each completion, no limit_reached, no time_limit. (c) the caller first, whatever goal, region or SNR; a double-click during the run: the run is manual, the strategy stays active, the run neither disarms nor cancels; the manual QSO completed: the run waits and answers the next match; the operator's cancel of the run's contact: that station is not selected again, also not as a caller; the race leaves the operator's contact and the state manual, no stop; Halt while manual stops halted. (d) waiting with reason no_receive and no contact; waiting without a reason after receive starts and it answers; the contact disarmed and cancelled and the run waiting on the new identity; strategy_refusal transmit_unavailable with the strategy still selected; operator_required strategy, also for the start, nothing armed, an MCP policy of its own starts as ever; active None after the restart. (e) the caller is answered; not answered again on 40m, called and answered on 20m; the left one is called again on another band, the given-up one is not. (f) the run and its contact go on through the proof and the deadline; the revocation stops authority_lost and disarms. No PTT exchange.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */

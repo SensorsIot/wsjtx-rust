@@ -17,6 +17,7 @@ mod contact_http_tests;
 #[cfg(test)]
 mod contact_tests;
 mod dxcc;
+mod flex_http;
 mod freeslot;
 mod http_compression;
 #[cfg(test)]
@@ -120,7 +121,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Some(directory)
         }
-        _ => return Err("invalid_runtime_configuration: expected --profile <directory> or --create-profile <directory>".into()),
+        [command, directory, antenna] if command == "--create-native-flex-profile" => {
+            let directory = PathBuf::from(directory);
+            let Some(antenna) = antenna.to_str() else {
+                return Err(startup_error("invalid_runtime_configuration", &directory).into());
+            };
+            let (target, antenna) = (directory.clone(), antenna.to_owned());
+            tokio::task::spawn_blocking(move || profile::Store::create_native(&target, &antenna))
+                .await?
+                .map_err(|code| startup_error(code, &directory))?;
+            return Ok(());
+        }
+        _ => return Err("invalid_runtime_configuration: expected --profile <directory>, --create-profile <directory> or --create-native-flex-profile <directory> <rx antenna>".into()),
     };
     let error = |code: &str, legacy: &str| -> Box<dyn std::error::Error> {
         if let Some(path) = &selected {
@@ -322,6 +334,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             recording.sync_transmit_mode();
             // WstxContact: one contact engine per station, consuming the transmit owner.
             let _ = recording.contact.set(contact_http::Station::start());
+            // FR-023: a native profile starts its own direct radio session; a standard
+            // profile never opens a native socket.
+            if let Some(native) = &store.document.native {
+                let mut config = wstx_rust::flex::Config::default();
+                if let Ok(value) = env::var("WSTX_FLEX_DISCOVERY") {
+                    config.discovery = value
+                        .parse()
+                        .map_err(|_| error("invalid_runtime_configuration", ""))?;
+                }
+                let session = wstx_rust::flex::Session::start(native.intent(), config)
+                    .map_err(|_| error("resource_unavailable", ""))?;
+                let _ = recording.flex.set(session);
+            }
             let log_base = selected.clone().ok_or("profile directory absent")?;
             let logbook = Arc::new(
                 tokio::task::spawn_blocking(move || logbook::Logbook::open(&log_base)).await?,
@@ -405,7 +430,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (device, cat) = {
                 let store = state.store.lock().unwrap();
                 (
-                    store.document.audio.input_device.clone(),
+                    profile::receive_device(&store.document),
                     store.document.control.mode == "cat",
                 )
             };
@@ -479,6 +504,7 @@ fn router(state: App) -> Router {
         .route("/receive/diagnostics", get(receive_http::diagnostics).post(receive_http::diagnostics_update).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/selection", get(selection_http::snapshot))
         .route("/receive/select", post(selection_http::select).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/native-flex", get(flex_http::snapshot))
         .route("/radio", get(radio_http::snapshot))
         .route("/radio/connect", post(radio_http::connect).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/radio/disconnect", post(radio_http::disconnect).layer(axum::extract::DefaultBodyLimit::max(1024)))
@@ -726,7 +752,13 @@ async fn put_profile(
             return profile_error(StatusCode::BAD_REQUEST, "invalid_settings", None);
         }
         edit.settings.complete_radio(store.document.radio);
-        if let Err(field) = edit.settings.validate() {
+        if let Err(field) = edit.settings.validate().and_then(|()| {
+            if store.document.native.is_some() {
+                edit.settings.validate_native()
+            } else {
+                Ok(())
+            }
+        }) {
             return profile_error(StatusCode::BAD_REQUEST, "invalid_settings", Some(field));
         } // CL-044-05: a saved audio device is a WASAPI endpoint ID, never a friendly name.
         if let Err(field) = edit.settings.audio.validate_endpoints() {
@@ -859,7 +891,7 @@ async fn upgrade(State(app): State<App>, headers: HeaderMap, ws: WebSocketUpgrad
             let _permit = permit;
             // #39 an authenticated client is here (WstxStrategy::StrategyRun).
             let _client = app.profile.as_ref().map(|p| p.recording.clients.session());
-            connection(socket, app.profile.map(|p| p.recording.clone()), authority).await
+            connection(socket, app.profile, authority).await
         })
 }
 
@@ -1066,9 +1098,10 @@ impl ConnectionAuthority {
 }
 async fn connection(
     mut socket: WebSocket,
-    recording: Option<Arc<recording::Recording>>,
+    profile: Option<Arc<ProfileState>>,
     authority: Option<ConnectionAuthority>,
 ) {
+    let recording = profile.as_ref().map(|p| p.recording.clone());
     let mut heartbeat = interval(Duration::from_secs(5));
     heartbeat.tick().await;
     let mut last_pong = Instant::now();
@@ -1090,9 +1123,15 @@ async fn connection(
     // WstxContact::ContactStateEvent / StationTickEvent pacing (optional writes).
     let mut contact_tick = interval(Duration::from_secs(1));
     contact_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut contact_seen: Option<u64> = None;
+    let mut contact_seen: Option<(u64, Option<u64>)> = None;
+    // What this peer holds of the contact snapshot, and when it was last sent.
+    let mut contact_sent = Value::Null;
+    let mut contact_sent_at = Instant::now();
     // WstxTransmit::TransmitWire transmit.state (pushed state, coalesced like contact.state).
     let mut transmit_seen: Option<u64> = None;
+    // What this peer holds: the fields it was last sent, and when.
+    let mut transmit_sent = Value::Null;
+    let mut transmit_sent_at = Instant::now();
     // WstxMcp::AutomationStateEvent: only after a change since boot (no event while unused).
     let mut automation_seen: Option<(u64, u64)> = Some((0, 0));
     // #39 WstxStrategy::StrategyHttp strategy.state: only after a change since this peer subscribed.
@@ -1104,6 +1143,8 @@ async fn connection(
     let mut agc_seen: u64 = 0;
     // #44 CL-044-13 radio.tx_level: after each change of the level, assistant or meters.
     let mut tx_level_seen: u64 = 0;
+    // FR-023 radio.native: this peer's snapshot, then each change of the native session.
+    let mut native_seen: u64 = 0;
     // Pushed recording.state: its comparison key (without received_bytes), the last data and when.
     let mut recording_tick = interval(Duration::from_secs(1));
     recording_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -1157,19 +1198,35 @@ async fn connection(
                     match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break }
                 }
                 let r=recording.as_ref().unwrap();
-                let revision=r.contact.get().map_or(0,|c|c.revision());
+                // The snapshot holds the transmit view as well; a peer still lacking dialogue rows gets them on the next tick.
+                let revision=(r.contact.get().map_or(0,|c|c.revision()),transmit_http::state_revision(r));
                 if contact_seen!=Some(revision) {
-                    match optional_write(&mut socket,Message::Text(contact_http::state_event(r,revision).into())) {
-                        Ok(None)=>{},
-                        Ok(Some(flushed))=>{contact_seen=Some(revision);if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break,
+                    let snapshot=profile.as_ref().zip(r.contact.get()).and_then(|(p,c)|c.snapshot(p).ok()).and_then(|bytes|serde_json::from_slice::<Value>(&bytes).ok());
+                    if let Some(snapshot)=snapshot {
+                        let (changed,holds)=contact_http::state_changes(&contact_sent,&snapshot);
+                        let complete=holds["contact"]==snapshot["contact"];
+                        // A new revision or sequence without a changed field still goes: the next command needs the
+                        // revision, and a read may have caught a value that is gone again.
+                        if changed.is_empty() && contact_sent["contact_revision"]==snapshot["contact_revision"] && contact_sent["snapshot_sequence"]==snapshot["snapshot_sequence"] {contact_seen=Some(revision);}
+                        else if transmit_http::due(display_profile,&changed,contact_sent_at.elapsed()) {
+                            match optional_write(&mut socket,Message::Text(contact_http::state_event(&snapshot,changed).into())) {
+                                Ok(None)=>{},
+                                Ok(Some(flushed))=>{if complete {contact_seen=Some(revision);}contact_sent=holds;contact_sent_at=Instant::now();if !flushed {optional_since=Some(Instant::now());continue;}},
+                                Err(_)=>break,
+                            }
+                        }
                     }
                 }
                 if let Some(revision)=transmit_http::state_revision(r) && transmit_seen!=Some(revision) {
-                    match optional_write(&mut socket,Message::Text(transmit_http::state_event(r,revision).into())) {
-                        Ok(None)=>{},
-                        Ok(Some(flushed))=>{transmit_seen=Some(revision);if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break,
+                    let now=transmit_http::pushed_view(r).unwrap_or(Value::Null);
+                    let changed=transmit_http::changed_fields(&transmit_sent,&now);
+                    if changed.is_empty() {transmit_seen=Some(revision);}
+                    else if transmit_http::due(display_profile,&changed,transmit_sent_at.elapsed()) {
+                        match optional_write(&mut socket,Message::Text(transmit_http::state_event(r,revision,changed).into())) {
+                            Ok(None)=>{},
+                            Ok(Some(flushed))=>{transmit_seen=Some(revision);transmit_sent=now;transmit_sent_at=Instant::now();if !flushed {optional_since=Some(Instant::now());continue;}},
+                            Err(_)=>break,
+                        }
                     }
                 }
                 let automation=r.contact.get().map(|c|c.automation.revisions());
@@ -1211,6 +1268,14 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{tx_level_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},
+                        Err(_)=>break,
+                    }
+                }
+                if let Some(session)=r.flex.get() && session.revision()!=native_seen {
+                    let (revision,text)=flex_http::event(r,session);
+                    match optional_write(&mut socket,Message::Text(text.into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{native_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},
                         Err(_)=>break,
                     }
                 }

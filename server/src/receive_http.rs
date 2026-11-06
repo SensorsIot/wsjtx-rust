@@ -262,12 +262,7 @@ pub async fn start(
         if store.document.revision != b.profile_revision {
             return Err("state_conflict");
         }
-        let device = store
-            .document
-            .audio
-            .input_device
-            .clone()
-            .ok_or("audio_unconfigured")?;
+        let device = profile::receive_device(&store.document).ok_or("audio_unconfigured")?;
         drop(store);
         r.receive_start(
             &b.profile_id,

@@ -748,7 +748,7 @@ async function receiveResults(){
 }
 async function receiveStart(){
   const active=live?.job&&['running','cancelling'].includes(live.job.state);
-  if(!live||active||mutationPending||uncertainMutation||operatingBlocked()||!profileData?.settings.audio.input_device)return;
+  if(!live||active||mutationPending||uncertainMutation||operatingBlocked()||!receiveInputConfigured())return;
   receiveMutationEpoch++;mutationPending=true;ownReceiveMutationAt=performance.now();receiveShow();
   try{await request('/receive/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,generation:live.generation,profile_revision:profileData.revision,mode:operatingState?.selection.mode??'ft8'})});await sync();await receiveSync();}
   catch(error){receiveMutationEpoch++;uncertainMutation=true;receiveFailure=`Start outcome unknown · ${error.message} · refresh before another action`;}
@@ -842,10 +842,10 @@ const operatingFrequency=v=>Number.isSafeInteger(v)&&v>=30000&&v<=74800000;
 function operatingSelectionBlocked(){return !!operatingUnknown||!!operatingIntent||operatingState?.operation?.result==='pending';}
 function operatingBlocked(){return operatingSelectionBlocked();}
 function validOperatingState(s){
-  if(!operatingShape(s,'v,profile_id,boot_id,profile_revision,generation,operating_revision,snapshot_sequence,monotonic_ms,control,selection,available_bands,operation,cancellation,receive,radio')||s.v!==1||!operatingUuid(s.profile_id)||!operatingUuid(s.boot_id)||!['manual','cat'].includes(s.control))return false;
+  if(!operatingShape(s,'v,profile_id,boot_id,profile_revision,generation,operating_revision,snapshot_sequence,monotonic_ms,control,selection,available_bands,operation,cancellation,receive,radio')||s.v!==1||!operatingUuid(s.profile_id)||!operatingUuid(s.boot_id)||!['manual','cat','native'].includes(s.control))return false;
   for(const key of ['profile_revision','generation','operating_revision','snapshot_sequence','monotonic_ms'])if(!operatingCounter(s[key]))return false;
   const n=s.selection;
-  if(!operatingShape(n,'mode,band,nominal_hz,origin,confirmed_command_id')||!operatingModeValid(n.mode)||!operatingNullable(n.band,v=>operatingBands.includes(v))||!operatingNullable(n.nominal_hz,operatingFrequency)||!['unknown','manual','cat_readback'].includes(n.origin)||!operatingNullable(n.confirmed_command_id,operatingUuid)||(n.band===null)!==(n.nominal_hz===null))return false;
+  if(!operatingShape(n,'mode,band,nominal_hz,origin,confirmed_command_id')||!operatingModeValid(n.mode)||!operatingNullable(n.band,v=>operatingBands.includes(v))||!operatingNullable(n.nominal_hz,operatingFrequency)||!['unknown','manual','cat_readback','native_readback'].includes(n.origin)||!operatingNullable(n.confirmed_command_id,operatingUuid)||(n.band===null)!==(n.nominal_hz===null))return false;
   if(n.band===null&&(n.origin!=='unknown'||n.confirmed_command_id!==null))return false;
   if(!Array.isArray(s.available_bands)||new Set(s.available_bands).size!==s.available_bands.length||s.available_bands.some((v,i)=>!operatingBands.includes(v)||(i&&operatingBands.indexOf(s.available_bands[i-1])>=operatingBands.indexOf(v))))return false;
   if(s.operation!==null){const o=s.operation;
@@ -887,10 +887,10 @@ function operatingShow(){
   operatingBand.value=s.selection.band??'';
   const frequency=s.radio.observations.frequency;
   const observed=frequency.value===null?'Actual rig frequency unknown':`Observed ${(frequency.value/1e6).toFixed(6)} MHz · ${connected&&frequency.confirmed?'confirmed query':'stale/unconfirmed'} at ${frequency.observed_at_ms} ms`;
-  const nominal=s.selection.nominal_hz===null?'Nominal frequency unknown':`Nominal ${(s.selection.nominal_hz/1e6).toFixed(6)} MHz · ${s.selection.origin==='manual'?'manual, actual rig unconfirmed':'CAT readback at selection'}`;
-  document.querySelector('#operating-radio').textContent=`CAT ${s.radio.state}${s.radio.error?' · '+s.radio.error:''} · ${observed} · ${nominal}`;
+  const nominal=s.selection.nominal_hz===null?'Nominal frequency unknown':`Nominal ${(s.selection.nominal_hz/1e6).toFixed(6)} MHz · ${s.selection.origin==='manual'?'manual, actual rig unconfirmed':s.selection.origin==='native_readback'?'native slice readback at selection':'CAT readback at selection'}`;
+  document.querySelector('#operating-radio').textContent=`${s.control==='native'?'Native':'CAT'} ${s.radio.state}${s.radio.error?' · '+s.radio.error:''} · ${observed} · ${nominal}`;
   const dial=document.querySelector('#op-dial');dial.value=frequency.value!==null?(frequency.value/1e6).toFixed(6):s.selection.nominal_hz!==null?(s.selection.nominal_hz/1e6).toFixed(6):'';dial.title=`${observed}. ${nominal}`;const fresh=connected&&frequency.confirmed;dial.dataset.fresh=String(fresh);dial.setAttribute('aria-label',frequency.value!==null?(fresh?'Observed dial frequency':'Last observed dial frequency, stale/unconfirmed'):'Nominal dial frequency, actual rig unconfirmed');
-  const capabilities=document.querySelectorAll('#operating-capabilities dd');capabilities[1].textContent=!connected?'Unavailable · status stale':s.radio.state==='ready'?'Ready · IC-7300 readback':`Unavailable · ${s.radio.error??s.radio.state}`;
+  const capabilities=document.querySelectorAll('#operating-capabilities dd');capabilities[1].textContent=!connected?'Unavailable · status stale':s.radio.state==='ready'?(s.control==='native'?'Ready · FlexRadio slice readback':'Ready · IC-7300 readback'):`Unavailable · ${s.radio.error??s.radio.state}`;
   const o=s.operation;
   operatingStatus.textContent=operatingFailure||(operatingUnknown?'Selection outcome unknown · refresh or press Monitor to cancel/fence before another action':mutationPending&&operatingIntent?'Selection request pending · waiting for server admission':o?`${o.result==='pending'?'Switching':o.phase} · ${o.requested.mode.toUpperCase()} ${o.requested.band}${o.error?' · '+o.error:''}`:`${s.selection.mode.toUpperCase()} · choose a band to establish nominal frequency`);
 }
@@ -951,7 +951,7 @@ operatingBand.addEventListener('change',()=>{if(operatingBand.value)restartSelec
 function receiveTarget(){const s=operatingState;return operatingUnknown?.command_id||operatingIntent?.command_id||((s?.operation?.result==='pending')?s.operation.command_id:null);}
 function receiveToggleAvailable(){
   const connected=connection.dataset.state==='connected',active=live?.job&&['running','cancelling'].includes(live.job.state);
-  return connected&&(!!receiveTarget()||(!!live&&!mutationPending&&!uncertainMutation&&(active?live.job.state!=='cancelling':(!!live.audio&&!!profileData?.settings.audio.input_device&&operatingState?.receive.owner_released!==false))));
+  return connected&&(!!receiveTarget()||(!!live&&!mutationPending&&!uncertainMutation&&(active?live.job.state!=='cancelling':(!!live.audio&&receiveInputConfigured()&&operatingState?.receive.owner_released!==false))));
 }
 function receiveToggle(){
   if(!receiveToggleAvailable())return;
@@ -1209,36 +1209,40 @@ function transmitShow(){
   status.textContent=`${t.capability} · ${t.arm_state} (${t.last_disarm_cause}) · PTT ${v.ptt}${v.transmitting?' · TRANSMITTING':''}${t.tune?' · TUNE':''} · clock ${v.clock}${clock} · halt ${t.halt_state}${t.refusal?' · '+t.refusal:''}${t.last_text?' · last '+t.last_text:''} · WD ${v.watchdog.tx_remaining_calls} calls`;
   const tune=document.querySelector('#tx-tune');if(tune)tune.textContent=t.tune?'Tune off':'Tune';
 }
-// WstxStationProtocol::PushedStationState / WstxTransmit::TransmitWire (#10): the station
-// pushes transmit.state on change; this browser reads GET /transmit once per socket, on an
-// announced revision it has not read, after its own requests and otherwise at most once per
-// 30 s as a safety read. One read pending, at most one queued; no 1 s poll.
-let transmitRead=null,transmitAgain=false,transmitReadAt=-Infinity,transmitRevision=null,transmitSocket=null,transmitEventSocket=null;
-function transmitSync(){
-  if(!transmitConfigured()||!profileData){transmitView=null;transmitShow();return Promise.resolve();}
-  if(transmitRead){transmitAgain=true;return transmitRead;}
-  transmitRead=(async()=>{
-    do{
-      transmitAgain=false;transmitReadAt=performance.now();
-      try{const response=await stationFetch('/transmit',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(response.ok){transmitView=await response.json();transmitViewAt=performance.now();}}catch{}
-      transmitShow();
-    }while(transmitAgain&&transmitConfigured());
-  })().finally(()=>{transmitRead=null;});
-  return transmitRead;
+// WstxStationProtocol::PushedStationState / WstxTransmit::TransmitWire (#10): the browser holds
+// the transmit state from transmit.state: the socket's first event has every field, each later
+// one what changed. It does not read GET /transmit. Ages advance locally; HALT is enabled as
+// soon as the station is ready (#57).
+let transmitEventSocket=null;
+// WstxContact::ContactStateEvent (#10): this client is loaded before the socket opens and the
+// contact client is not, so the contact state from the events is held here: every field in the
+// socket's first event, what changed after it.
+let contactHeld=null,contactHeldSocket=null;
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='contact.state'||!message.data?.changed)return;
+  if(contactHeldSocket!==current){contactHeldSocket=current;contactHeld=null;}
+  const {changed,...identity}=message.data,view={v:1,contact:null,log:null,...contactHeld,...identity};
+  for(const [key,value] of Object.entries(changed)){
+    if(key==='contact'&&value){
+      const whole=value.id!==undefined,{dialogue_from,...rest}=value;
+      view.contact=whole?rest:{...view.contact,...rest};
+      if(dialogue_from!==undefined)view.contact.dialogue=[...(whole?[]:contactHeld?.contact?.dialogue??[]).slice(0,dialogue_from),...value.dialogue];
+    }else view[key]=value&&key!=='log'&&view[key]?{...view[key],...value}:value;
+  }
+  contactHeld=view;});
+function transmitApply(changed){
+  const view=transmitView??{};
+  for(const [key,value] of Object.entries(changed))view[key]=['transmit','watchdog'].includes(key)&&view[key]?{...view[key],...value}:value;
+  transmitView=view;if('clock_measurement' in changed)transmitViewAt=performance.now();
 }
-function transmitPoll(){if(transmitConfigured()&&connection.dataset.state==='connected'&&performance.now()-transmitReadAt>=30000)transmitSync();transmitShow();}
-setInterval(transmitPoll,2000);
-// #57: HALT is enabled as soon as the station is ready. A new socket reads the snapshot once:
-// at its first transmit.state (sent at the peer's first step) or, without one, by the safety
-// read 3-5 s after it became ready.
-addEventListener('station-ready',event=>{transmitShow();if(event.detail===transmitSocket)return;transmitSocket=event.detail;transmitReadAt=Math.max(transmitReadAt,performance.now()-27000);});
+setInterval(transmitShow,2000);
+addEventListener('station-ready',()=>transmitShow());
 addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='transmit.state')return;
-  const d=message.data;if(!d||!Number.isSafeInteger(d.transmit_revision)||d.profile_id!==profileData?.profile_id)return;
-  if(transmitEventSocket!==current||d.transmit_revision!==transmitRevision){transmitEventSocket=current;transmitRevision=d.transmit_revision;transmitSync();}});
+  const d=message.data;if(!d?.changed||d.profile_id!==profileData?.profile_id)return;
+  if(transmitEventSocket!==current){transmitEventSocket=current;transmitView=null;}
+  transmitApply(d.changed);transmitShow();});
 halt.addEventListener('click',async()=>{
   const result=document.querySelector('#transmit-result');
   try{const r=await transmitPost('/transmit/halt',{});result.textContent=`Halt: ${r.halt_state}`;}catch(error){result.textContent=`Halt not confirmed · ${error.message}`;}
-  transmitSync();
 });
 // WstxContact::HaltTx: Alt+H sends #9's priority halt (the emergency stop) from this
 // always-loaded script, in every page state and focused field. Skipped only when the
@@ -1253,7 +1257,7 @@ addEventListener('keydown',event=>{
   const done=reply=>window.dispatchEvent(new CustomEvent('keyboard-halt',{detail:{reply}}));
   if(!profileData||keyboardHaltSkipped()){done(null);return;}
   const result=document.querySelector('#transmit-result');
-  transmitPost('/transmit/halt',{}).then(r=>{result.textContent=`Halt: ${r.halt_state}`;done(r);},error=>{result.textContent=`Halt not confirmed · ${error.message}`;done(null);}).finally(transmitSync);
+  transmitPost('/transmit/halt',{}).then(r=>{result.textContent=`Halt: ${r.halt_state}`;done(r);},error=>{result.textContent=`Halt not confirmed · ${error.message}`;done(null);});
 },true);
 new ResizeObserver(()=>main.style.setProperty('--op-topbar',`${stationBar.offsetHeight}px`)).observe(stationBar);
 document.documentElement.dataset.theme='dark';try{const saved=JSON.parse(localStorage.getItem('wstx.theme.v1'));if(saved?.mode==='manual'&&['day','dark','night'].includes(saved.theme))document.documentElement.dataset.theme=saved.theme;}catch{}
@@ -1382,3 +1386,32 @@ const wstxWaterfallAxis={low:0,high:3000,
   x(hz,container){const c=waterfall.getBoundingClientRect(),o=container.getBoundingClientRect();return c.left-o.left-container.clientLeft+(hz-this.low)*c.width/(this.high-this.low);},
   hz(clientX){const c=waterfall.getBoundingClientRect();return Math.max(this.low,Math.min(this.high,Math.round(this.low+(clientX-c.left)*(this.high-this.low)/Math.max(c.width,1))));}};
 window.wstxWaterfallAxis=wstxWaterfallAxis;
+// FR-023 native FlexRadio status. A native profile receives from its own session stream, so it
+// needs no audio device selection. The state arrives as the server's radio.native push; nothing is
+// polled, and a standard profile never receives it.
+function nativeProfile(){return profileData?.connection_type==='native_flex';}
+function receiveInputConfigured(){return nativeProfile()||!!profileData?.settings.audio.input_device;}
+let nativeState=null;
+const nativeStatus=document.createElement('p');nativeStatus.id='native-status';nativeStatus.setAttribute('role','status');nativeStatus.hidden=true;document.querySelector('#operating-radio').after(nativeStatus);
+function validNativeEvent(d){
+  return operatingShape(d,'profile_id,boot_id,state,error,radio_code,session,radio,slice,retry_after_ms,transmit')&&operatingUuid(d.profile_id)&&operatingUuid(d.boot_id)&&
+    ['unauthorized','discovering','connecting','ready','unavailable','conflict','stopped'].includes(d.state)&&operatingNullable(d.error,v=>typeof v==='string'&&/^[a-z_]{1,32}$/.test(v))&&operatingCounter(d.session)&&
+    d.transmit==='unsupported'&&operatingNullable(d.radio,v=>typeof v==='object')&&operatingNullable(d.slice,v=>typeof v==='object');
+}
+function nativeText(v){
+  const slice=v.slice?` · slice ${v.slice.letter??v.slice.index} ${operatingFrequency(v.slice.frequency_hz)?(v.slice.frequency_hz/1e6).toFixed(6)+' MHz':'frequency unknown'} ${v.slice.mode??''} ${v.slice.rx_antenna??''}`:'';
+  const radio=v.radio?` · ${v.radio.model??'radio'}${v.radio.firmware?' '+v.radio.firmware:''} ${v.radio.serial} ${v.radio.address}${v.radio.protocol?' API '+v.radio.protocol:''}`:'';
+  return `Native FlexRadio ${v.state}${v.error?' · '+v.error:''}${radio}${slice} · transmit unsupported`;
+}
+function nativeShow(){
+  const stale=connection.dataset.state!=='connected';
+  nativeStatus.hidden=!nativeProfile();
+  nativeStatus.textContent=!nativeProfile()?'':stale?'Native FlexRadio status stale · station disconnected':nativeState?nativeText(nativeState):'Native FlexRadio status not received yet';
+  nativeStatus.dataset.state=stale||!nativeState?'unknown':nativeState.state;
+  chipsShow();
+}
+window.wstxNativeProblem=()=>nativeProfile()&&nativeState&&nativeState.state!=='ready'?`FlexRadio ${nativeState.state}${nativeState.error?' · '+nativeState.error.replace(/_/g,' '):''}`:null;
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='radio.native'||!validNativeEvent(message.data))return;
+  if(profileData&&(message.data.profile_id!==profileData.profile_id||message.data.boot_id!==profileData.boot_id))return;nativeState=message.data;nativeShow();});
+addEventListener('station-ready',()=>{if(nativeState&&nativeState.boot_id!==profileData?.boot_id)nativeState=null;nativeShow();});
+addEventListener('station-stale',nativeShow);

@@ -404,7 +404,6 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     assert_eq!(contact_http::admit(&over), Err("snapshot_limit"));
     // Event payloads stay within 192 bytes.
     let r = &f.state.recording;
-    assert!(contact_http::state_event(r, MAX_SAFE_TEST).len() <= 192);
     // station.tick with its exact keys is at least 220 bytes at maximum values (two
     // UUIDs, a 13-digit utc_ms); the model's StationTickEvent bound is 224 (#10 NOTES).
     let tick = contact_http::tick_event(r).0;
@@ -1036,13 +1035,174 @@ async fn transmit_state_revision_follows_the_read_view_only() {
         transmit_http::view_digest(view),
         transmit_http::view_digest(keyed)
     );
-    let event = transmit_http::state_event(r, MAX_SAFE_TEST);
-    assert!(event.len() <= 192, "{event}");
+    // The first event holds the whole pushed view; each later one only what changed.
+    let first_view = transmit_http::pushed_view(r).unwrap();
+    assert!(first_view.get("outcomes").is_none() && first_view.get("profile_id").is_none());
+    let whole = transmit_http::changed_fields(&Value::Null, &first_view);
+    assert_eq!(Value::Object(whole.clone()), first_view);
+    let event = transmit_http::state_event(r, MAX_SAFE_TEST, whole);
+    assert!(event.len() <= 1024, "{event}");
     let event: Value = serde_json::from_str(&event).unwrap();
+    assert_eq!(event["data"]["transmit_revision"], json!(MAX_SAFE_TEST));
+    assert_eq!(event["data"]["profile_id"], json!(f.id));
+    assert_eq!(event["data"]["boot_id"], json!(f.boot));
+    assert!(transmit_http::changed_fields(&first_view, &first_view).is_empty());
+    let mut later = first_view.clone();
+    later["watchdog"]["tx_calls"] = json!(3);
+    later["transmit"]["tune"] = json!(true);
+    later["ptt"] = json!("keyed");
     assert_eq!(
-        event,
-        json!({"v":1,"type":"transmit.state","data":{"profile_id":f.id,"boot_id":f.boot,"transmit_revision":MAX_SAFE_TEST}})
+        Value::Object(transmit_http::changed_fields(&first_view, &later)),
+        json!({"watchdog":{"tx_calls":3},"transmit":{"tune":true},"ptt":"keyed"})
     );
+    // The measurement's age alone is no change; a new measurement goes whole.
+    let mut measured = first_view.clone();
+    measured["clock_measurement"] =
+        json!({"server":"a","offset_ms":1,"round_trip_ms":2,"age_ms":10});
+    let mut older = measured.clone();
+    older["clock_measurement"]["age_ms"] = json!(5000);
+    assert!(transmit_http::changed_fields(&measured, &older).is_empty());
+    assert_eq!(
+        Value::Object(transmit_http::changed_fields(&first_view, &measured)),
+        json!({"clock_measurement":{"server":"a","offset_ms":1,"round_trip_ms":2,"age_ms":10}})
+    );
+    let mut counting = first_view.clone();
+    counting["watchdog"]["tune_remaining_seconds"] = json!(44);
+    assert!(transmit_http::countdown_only(
+        &transmit_http::changed_fields(&first_view, &counting)
+    ));
+    assert!(!transmit_http::countdown_only(
+        &transmit_http::changed_fields(&first_view, &later)
+    ));
+}
+
+// Proves: CL-010-15; TC-007-005 (#10 contact.state carries the changed fields).
+#[test]
+fn contact_state_carries_only_what_the_peer_lacks() {
+    let row = |n: u32| json!({"dir":"rx","text":format!("HB9BLA K1ABC R-{n:02} padding padding padding padding"),"snr":-7,"period_utc_ms":n,"count":1});
+    let view = |contact: Value, hold: bool| {
+        json!({"v":1,"profile_id":"p","boot_id":"b","contact_revision":1,"snapshot_sequence":1,"monotonic_ms":1,"utc_ms":1,
+            "transmit":{"capability":"unsupported","tune":false},"settings":{"hold_tx":hold,"rx_hz":1500},
+            "contact":contact,"log":null,"watchdog":{"tx_expired":false,"tune_remaining_seconds":0}})
+    };
+    // A peer holding nothing gets every field, null too.
+    let first = view(Value::Null, false);
+    let (changed, holds) = contact_http::state_changes(&Value::Null, &first);
+    assert_eq!(
+        Value::Object(changed),
+        json!({"transmit":first["transmit"],"settings":first["settings"],"contact":null,"log":null,"watchdog":first["watchdog"]})
+    );
+    assert_eq!(holds, first);
+    assert!(contact_http::state_changes(&first, &first).0.is_empty());
+    // Only the changed member, and not the time fields.
+    let mut held = view(Value::Null, true);
+    held["utc_ms"] = json!(99);
+    let (changed, _) = contact_http::state_changes(&first, &held);
+    assert_eq!(Value::Object(changed), json!({"settings":{"hold_tx":true}}));
+    // A contact goes whole; the same contact's next row goes alone, from its index.
+    let one = view(
+        json!({"id":"c","state":"calling","dialogue":[row(1)]}),
+        true,
+    );
+    let (changed, sent) = contact_http::state_changes(&held, &one);
+    assert_eq!(changed["contact"]["id"], json!("c"));
+    assert_eq!(changed["contact"]["dialogue_from"], json!(0));
+    assert_eq!(changed["contact"]["dialogue"], json!([row(1)]));
+    let two = view(
+        json!({"id":"c","state":"rogers","dialogue":[row(1),row(2)]}),
+        true,
+    );
+    let (changed, _) = contact_http::state_changes(&sent, &two);
+    assert_eq!(
+        Value::Object(changed),
+        json!({"contact":{"state":"rogers","dialogue_from":1,"dialogue":[row(2)]}})
+    );
+    // A changed last row (a repeat's count) sends the dialogue again from its start.
+    let mut repeat = two.clone();
+    repeat["contact"]["dialogue"][1]["count"] = json!(2);
+    let (changed, _) = contact_http::state_changes(&two, &repeat);
+    assert_eq!(changed["contact"]["dialogue_from"], json!(0));
+    assert_eq!(changed["contact"]["dialogue"].as_array().unwrap().len(), 2);
+    // Over the frame budget the rest of the rows follow, none lost and none sent twice.
+    let rows: Vec<Value> = (0..60).map(row).collect();
+    let long = view(json!({"id":"c","state":"rogers","dialogue":rows}), true);
+    let (mut holds, mut received, mut frames) = (held.clone(), Vec::new(), 0);
+    while holds["contact"] != long["contact"] {
+        let (changed, next) = contact_http::state_changes(&holds, &long);
+        let event = contact_http::state_event(&long, changed.clone());
+        assert!(event.len() <= 2048, "{}", event.len());
+        assert_eq!(changed["contact"]["dialogue_from"], json!(received.len()));
+        received.extend(changed["contact"]["dialogue"].as_array().unwrap().clone());
+        holds = next;
+        frames += 1;
+        assert!(frames < 10);
+    }
+    assert!(frames > 1);
+    assert_eq!(json!(received), long["contact"]["dialogue"]);
+    // The whole first event of a socket fits as well, with real ids, a log and a long dialogue.
+    let id = "12345678-1234-4234-8234-123456789012";
+    let mut reload = view(
+        json!({"id":id,"origin":"manual","dx_call":"K1ABC/P","dx_grid":"FN42","report_sent":"-07","report_rcvd":"R-09",
+        "exchange_sent":null,"exchange_rcvd":null,"state":"rogers","next_slot":"tx4","tx4":"rr73",
+        "messages":{"tx1":"K1ABC/P HB9BLA JN37","tx2":"K1ABC/P HB9BLA -07","tx3":"K1ABC/P HB9BLA R-07","tx4":"K1ABC/P HB9BLA RR73","tx5":"K1ABC/P HB9BLA 73","tx6":"CQ HB9BLA JN37"},
+        "start_utc":"2026-11-06T10:00:00Z","end_utc":null,"saved":false,"suggested_slot":null,
+        "last_rcvd":{"text":"HB9BLA K1ABC/P R-09","snr":-9,"period_utc_ms":1793962997000i64,"count":1},
+        "dialogue":(0..16).map(row).collect::<Vec<_>>()}),
+        true,
+    );
+    reload["profile_id"] = json!(id);
+    reload["boot_id"] = json!(id);
+    reload["contact_revision"] = json!(9007199254740991i64);
+    reload["snapshot_sequence"] = json!(9007199254740991i64);
+    reload["monotonic_ms"] = json!(9007199254740991i64);
+    reload["utc_ms"] = json!(1793962997000i64);
+    reload["log"] =
+        json!({"contact_id":id,"call":"K1ABC/P","outcome":"unsaved","error":"storage_unavailable"});
+    reload["transmit"] = json!({"capability":"available","arm_state":"disarmed","last_disarm_cause":"tx_watchdog_expired","tune":false,"pending_sequence":null,"last_text":"K1ABC/P HB9BLA R-07","last_period_utc":1793962997000i64,"halt_state":"idle","safety_revision":7,"refusal":"tune_active"});
+    reload["settings"] = json!({"auto_seq":true,"call_first":true,"tx1_skip":false,"tx_calls":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":false,"parity":"odd","report":-15,"activity":"none","exchange":null,"serial":1});
+    reload["watchdog"] =
+        json!({"tx_remaining_calls":6,"tx_expired":false,"tune_remaining_seconds":0});
+    let (mut holds, mut received, mut frames) = (Value::Null, 0, 0);
+    while holds["contact"] != reload["contact"] {
+        let (changed, next) = contact_http::state_changes(&holds, &reload);
+        let event = contact_http::state_event(&reload, changed.clone());
+        assert!(event.len() <= 2048, "frame {frames}: {} bytes", event.len());
+        received += changed["contact"]["dialogue"].as_array().unwrap().len();
+        holds = next;
+        frames += 1;
+        assert!(frames < 10);
+    }
+    assert_eq!(received, 16);
+}
+// Proves: CL-010-15; TC-007-005. Below Detailed a running Tune countdown alone goes at most every 5 s.
+#[test]
+fn pushed_state_paces_a_countdown_by_display_profile() {
+    use std::time::Duration;
+    let of = |v: Value| v.as_object().cloned().unwrap();
+    let countdown = of(json!({"watchdog":{"tune_remaining_seconds":44}}));
+    let other = of(json!({"watchdog":{"tx_calls":3}}));
+    assert!(transmit_http::due(
+        "detail",
+        &countdown,
+        Duration::from_secs(1)
+    ));
+    for profile in ["thin", "off"] {
+        assert!(!transmit_http::due(
+            profile,
+            &countdown,
+            Duration::from_millis(4900)
+        ));
+        assert!(transmit_http::due(
+            profile,
+            &countdown,
+            Duration::from_secs(5)
+        ));
+        assert!(transmit_http::due(
+            profile,
+            &other,
+            Duration::from_millis(1)
+        ));
+    }
 }
 
 /// TC-007-001/003/004, TC-010-008/009, TC-050-004 in the real browser: launches
@@ -1117,7 +1277,29 @@ async fn contact_browser_station(filter: &[&str]) -> std::process::Output {
     let control = crate::test_ports::browser_listener();
     let control_origin = format!("http://{}", control.local_addr().unwrap());
     let publisher = f.clone();
+    let tuner = f.clone();
     let control_app = Router::new()
+        .route(
+            "/tune",
+            post(move |Json(body): Json<Value>| {
+                let f = tuner.clone();
+                async move {
+                    let station = f.state.recording.transmit.get().unwrap();
+                    let enabled = body["enabled"].as_bool().unwrap();
+                    let result = station.service.with(|c| {
+                        if !enabled {
+                            let stopped = c.set_tune(false, 0);
+                            c.disarm(wstx_rust::transmit::service::DisarmCause::Operator);
+                            return stopped;
+                        }
+                        let revision = c.hardware().context().safety_revision.unwrap_or(1);
+                        c.arm(revision)?;
+                        c.set_tune(true, 1500)
+                    });
+                    Json(json!({"accepted":result.is_ok(),"refusal":format!("{result:?}")}))
+                }
+            }),
+        )
         .route(
             "/publish",
             post(move |Json(body): Json<Value>| {

@@ -304,9 +304,9 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
  assert.match(await page.locator('#radio-toolbar').innerText(),/Band \u27F3[\s\S]*Mode \u27F3/,'band and mode are marked as restart changes');
  assert.equal(await page.locator('#op-dial').isDisabled(),true);assert.equal(await page.locator('#op-dial').inputValue(),'');
  assert.match(await page.locator('#signal .op-signal-heading').innerText(),/Sensitivity/,'Sensitivity stays in the waterfall corner');
- // #39: without a saved strategy only None, the editor and Value are offered.
+ // #39: without a saved strategy None, the built-ins, the editor and Value are offered.
  await page.waitForFunction(()=>!document.querySelector('#strategy-edit').disabled,null,{timeout:15000});
- assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None']);
+ assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None','New DXCC','New DXCC on band','DXCC slots','New calls','DX hunting'],'None and the built-ins');
  for(const id of ['#strategy-highlight','#strategy-auto'])assert.equal(await page.locator(id).count(),0,`${id} is gone`);
  assert.equal(await page.locator('#activity-value').isVisible(),true,'the Value control is visible');
  assert.equal(await page.locator('#station-automation').textContent(),'Automation idle');
@@ -2310,16 +2310,41 @@ test('TC-006-003 transmit status shows the SNTP clock measurement',{timeout:4500
   let view;
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
     view=await (await fetch(app.origin+'/transmit')).json();
-    await p.route('**/transmit',route=>route.request().method()==='GET'?route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(view)}):route.continue());
   }});
   assert.equal(view.clock,'unknown','isolated server never measured');assert.equal(view.clock_measurement,null);
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
-  const status=async()=>page.evaluate(async()=>{profileData.settings.control.ptt='cat';await transmitSync();return document.querySelector('#transmit-status').textContent;});
+  const status=async()=>page.evaluate(v=>{profileData.settings.control.ptt='cat';transmitView=null;transmitApply(v);transmitShow();return document.querySelector('#transmit-status').textContent;},view);
   assert.match(await status(),/ · clock unknown · halt /,'no measurement: state only');
   view={...view,clock:'synchronized',clock_measurement:{server:'ch.pool.ntp.org',offset_ms:12,round_trip_ms:20,age_ms:34400}};
   assert.match(await status(),/ · clock synchronized \+12 ms ch\.pool\.ntp\.org 34 s ago · halt /);
   view={...view,clock:'unsynchronized',clock_measurement:{server:'time.windows.com',offset_ms:-2089,round_trip_ms:22,age_ms:5600}};
   assert.match(await status(),/ · clock unsynchronized -2089 ms time\.windows\.com 6 s ago · halt /);
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-010-15; TC-007-005. contact.state builds the snapshot: a contact and its dialogue rows
+// in order, the rows that follow on the next tick at the same sequence shown too, and no read.
+test('TC-007-005 contact.state rows arrive in order and a continuation is shown',{timeout:45000},async t=>{
+  const {page,errors}=await fixture(t,{width:1440,height:900});
+  await page.waitForFunction(()=>!!window.wstxContact?.snapshot()?.settings,null,{timeout:30000});
+  const reads=[];page.on('request',r=>{const u=new URL(r.url());if(u.pathname==='/contact'&&r.method()==='GET')reads.push(u.pathname);});
+  const base=await page.evaluate(()=>window.wstxContact.snapshot());
+  const row=n=>({dir:n%2?'tx':'rx',text:`HB9BLA K1ABC R-${String(n).padStart(2,'0')}`,snr:-7,period_utc_ms:1793962997000+n*15000,count:1});
+  const contact={id:'12345678-1234-4234-8234-123456789012',origin:'manual',dx_call:'K1ABC',dx_grid:'FN42',report_sent:null,report_rcvd:null,exchange_sent:null,exchange_rcvd:null,state:'calling',next_slot:'tx1',tx4:'rrr',messages:{},start_utc:null,end_utc:null,saved:false,suggested_slot:null,last_rcvd:null};
+  const feed=(sequence,changed)=>page.evaluate(data=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'contact.state',data}}})),{profile_id:base.profile_id,boot_id:base.boot_id,contact_revision:base.contact_revision+1,snapshot_sequence:sequence,monotonic_ms:2000,utc_ms:Date.now(),changed});
+  const rows=()=>page.evaluate(()=>window.wstxContact.snapshot().contact?.dialogue?.map(d=>d.text));
+  // The socket's own first event already came; these follow it. A whole contact, then the rest of its rows.
+  const sequence=base.snapshot_sequence+1,all=Array.from({length:16},(_,n)=>row(n));
+  await feed(sequence,{contact:{...contact,dialogue_from:0,dialogue:all.slice(0,13)}});
+  assert.deepEqual(await rows(),all.slice(0,13).map(r=>r.text));
+  await feed(sequence,{contact:{dialogue_from:13,dialogue:all.slice(13)}});
+  assert.deepEqual(await rows(),all.map(r=>r.text),'the continuation at the same sequence is shown, in order');
+  // A member change keeps the rows; a repeat's count resends them from the start, replacing them.
+  await feed(sequence+1,{contact:{state:'rogers'}});
+  assert.equal(await page.evaluate(()=>window.wstxContact.snapshot().contact.state),'rogers');
+  assert.equal((await rows()).length,16);
+  await feed(sequence+2,{contact:{dialogue_from:0,dialogue:all.slice(0,2)}});
+  assert.deepEqual(await rows(),all.slice(0,2).map(r=>r.text));
+  assert.deepEqual(reads,[],'no GET /contact');
   assert.deepEqual(errors,[]);
 });
 // Proves: CL-043-01, CL-009-05; TC-043-003. Settings > General > Clock reads GET /clock only
@@ -2330,7 +2355,6 @@ test('TC-043-003 the clock source and the clock from the air are shown in Settin
   let view;
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     view=await (await fetch(app.origin+'/transmit')).json();
-    await p.route('**/transmit',route=>route.request().method()==='GET'?route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(view)}):route.continue());
   }});
   const requests=[],posts=[];
   page.on('request',r=>{const p=new URL(r.url()).pathname;requests.push(`${r.method()} ${p}`);if(r.method()==='POST'&&p==='/clock')posts.push(JSON.parse(r.postData()));});
@@ -2360,7 +2384,7 @@ test('TC-043-003 the clock source and the clock from the air are shown in Settin
   assert.equal(await page.locator('#clock-source').inputValue(),'both','a refusal restores the shown source');
   await page.locator('#settings-drawer .return-operate').click();
   // Chips from the GET /transmit view (CAT PTT set in the page only).
-  const chips=async next=>{view={...view,...next};return page.evaluate(async()=>{profileData.settings.control.ptt='cat';await transmitSync();window.wstxChipsShow();return [...document.querySelectorAll('#exception-chips [data-chip^=clock]')].map(b=>b.textContent);});};
+  const chips=async next=>{view={...view,...next};return page.evaluate(v=>{profileData.settings.control.ptt='cat';transmitView=null;transmitApply(v);transmitShow();window.wstxChipsShow();return [...document.querySelectorAll('#exception-chips [data-chip^=clock]')].map(b=>b.textContent);},view);};
   assert.deepEqual(await chips({clock:'unknown',clock_source:'air',clock_warning:null}),['✖ Clock unknown · Tx blocked'],'air without enough stations refuses transmit');
   assert.match(await page.locator('#clock-setting').textContent(),/^Station clock: system UTC corrected from the air, unknown/);
   assert.deepEqual(await chips({clock:'unknown',clock_source:'ntp'}),[],'NTP unknown keeps no chip, as before');
@@ -2638,6 +2662,7 @@ test('TC-042-001 Editor offers the goals and the station saves them unselected',
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
   await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
+  await page.locator('#se-new').click();
   assert.deepEqual(await page.locator('.se-goals label').evaluateAll(l=>l.map(x=>x.textContent)),['DXCC','DXCC per band','DXCC slot (band and mode)','WAZ (CQ zones)','WPX (prefixes)','Grids','New call']);
   await page.locator('[data-goal=dxcc_slot]').check();await page.locator('[data-goal=waz]').check();
   const saved=page.waitForResponse(r=>r.url().endsWith('/strategy')&&r.request().method()==='PUT');
@@ -2645,6 +2670,49 @@ test('TC-042-001 Editor offers the goals and the station saves them unselected',
   assert.deepEqual([reply.revision,reply.configuration.active,reply.configuration.strategies],[1,null,[{name:'Strategy 1',class:'award',goals:['dxcc','dxcc_slot','waz'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:true,window:{kind:'all'}}]]);
   await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
   assert.deepEqual(errors,[]);
+});
+// Proves: CL-039-11; TC-039-032 on the actual isolated station: a built-in is read-only in the
+// editor, Duplicate copies it to a user strategy, a colliding name is refused with its field.
+test('TC-039-032 Built-in strategies are read-only in the editor and copy to a user strategy',{timeout:40000},async t=>{
+  const {page,errors}=await fixture(t,{width:1366,height:768});
+  await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
+  const puts=[];page.on('request',r=>{if(r.url().endsWith('/strategy')&&r.method()==='PUT')puts.push(JSON.parse(r.postData()));});
+  await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
+  assert.deepEqual(await page.locator('#se-which option').allTextContents(),['New DXCC (built-in)','New DXCC on band (built-in)','DXCC slots (built-in)','New calls (built-in)','DX hunting (built-in)']);
+  // No user strategy: the first built-in, read-only; Save with nothing stores nothing and selects nothing.
+  assert.equal(await page.inputValue('#se-name'),'New DXCC');
+  assert.equal(await page.locator('#se-name').isDisabled(),true);
+  const none=page.waitForResponse(r=>r.url().endsWith('/strategy')&&r.request().method()==='PUT');
+  await page.locator('#se-save').click();const noneReply=await (await none).json();
+  assert.deepEqual([noneReply.configuration.active,noneReply.configuration.strategies],[null,[]]);
+  await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
+  assert.equal(await page.inputValue('#se-name'),'New DXCC');
+  await page.selectOption('#se-which',{label:'DX hunting (built-in)'});
+  assert.equal(await page.inputValue('#se-name'),'DX hunting');
+  assert.equal(await page.inputValue('#se-region'),'dx');
+  assert.deepEqual(await page.locator('#se-body').evaluate(b=>[...b.querySelectorAll('input,select')].every(e=>e.disabled)),true,'read-only');
+  assert.equal(await page.locator('#se-delete').isDisabled(),true);
+  // Duplicate: a user strategy with the same settings, editable, saved without the key.
+  await page.selectOption('#se-which',{label:'New DXCC (built-in)'});
+  await page.locator('#se-copy').click();
+  assert.equal(await page.inputValue('#se-name'),'New DXCC copy');
+  assert.equal(await page.locator('#se-name').isDisabled(),false);
+  await page.locator('#se-save').click();await page.locator('#se-result').filter({hasText:'revision 2'}).waitFor();
+  assert.deepEqual(puts.at(-1).configuration.strategies.map(s=>[s.name,s.goals,s.builtin]),[['New DXCC copy',['dxcc'],undefined]],'only the copy; no built-in is sent');
+  assert.equal(puts.at(-1).configuration.active,null,'Save never selects');
+  // A name that collides is refused by the station.
+  await page.locator('#se-name').fill('new calls');
+  await page.locator('#se-save').click();
+  await page.locator('#se-result').filter({hasText:'invalid_request'}).waitFor();
+  assert.match(await page.locator('#se-result').textContent(),/strategies\[\d\]\.name/);
+  await page.locator('#strategy-editor button[value=cancel]').click();
+  // Selecting a built-in from the selector.
+  assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None','New DXCC','New DXCC on band','DXCC slots','New calls','DX hunting','New DXCC copy']);
+  const saved=page.waitForResponse(r=>r.url().endsWith('/strategy')&&r.request().method()==='PUT');
+  await page.selectOption('#strategy-name','DXCC slots');const reply=await (await saved).json();
+  assert.equal(reply.configuration.active,'DXCC slots');
+  assert.equal(reply.configuration.strategies.some(s=>s.name==='DXCC slots'),false);
+  assert.deepEqual(errors.filter(e=>!/400/.test(e)),[]);
 });
 // Proves: CL-039-04; TC-039-006 review 6683200740 finding 5: rows published during an evaluation are
 // evaluated when it ends, without a timer. Station replies are hand-written fixtures.
@@ -3295,7 +3363,7 @@ test('TC-007-002 the transmit controls and badge follow the pushed transmit capa
   }});
   await page.waitForFunction(()=>window.wstxContact?.snapshot()?.transmit.capability==='available',null,{timeout:25000});
   const read=()=>page.evaluate(()=>({cq:document.querySelector('#qso-cq').disabled,tune:document.querySelector('#contact-tune').disabled,auto:document.querySelector('#contact-auto').disabled,now:[...document.querySelectorAll('.ct-now')].some(b=>!b.disabled),badge:document.querySelector('.op-contact-badge').textContent,reason:document.querySelector('#transmit-unavailable').hidden?null:document.querySelector('#transmit-unavailable').textContent,control:document.querySelector('#qso-control').getBoundingClientRect().top,pane:document.querySelector('#rx-focus').getBoundingClientRect().height}));
-  const pushed=async next=>{capability=next;revision++;await page.evaluate(r=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{type:'contact.state',data:{contact_revision:r,boot_id:window.wstxContact.snapshot().boot_id}}}})),revision);await page.waitForFunction(c=>window.wstxContact.snapshot().transmit.capability===c,next);};
+  const pushed=async next=>{capability=next;revision++;await page.evaluate(([r,c,t])=>{const s=window.wstxContact.snapshot();dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'contact.state',data:{profile_id:s.profile_id,boot_id:s.boot_id,contact_revision:r,snapshot_sequence:r,monotonic_ms:2000,utc_ms:Date.now(),changed:{transmit:{...s.transmit,capability:c,tune:t},settings:s.settings,contact:s.contact&&{...s.contact,dialogue_from:0,dialogue:s.contact.dialogue??[]},log:s.log,watchdog:s.watchdog}}}}}));},[revision,capability,tune]);await page.waitForFunction(c=>window.wstxContact.snapshot().transmit.capability===c,next);};
   const ready=await read();
   assert.deepEqual([ready.cq,ready.tune,ready.auto,ready.now,ready.badge,ready.reason],[false,false,false,true,'Ready',null],'available');
   await pushed('unavailable');

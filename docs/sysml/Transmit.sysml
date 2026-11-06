@@ -585,19 +585,20 @@ package WstxTransmit {
              in the compressed GET allowlist); no StatusReply change. Pushed state
              (WstxStationProtocol::PushedStationState, #10 2026-11-04): a versioned
              WebSocket event exactly {v:1,type:"transmit.state",data:{profile_id,boot_id,
-             transmit_revision}}, at most 192 bytes, sent to each peer with a display
-             subscription when the transmit read view changes (every field of GET
-             /transmit except clock_measurement.age_ms; transmit_revision a station-wide
-             counter, safe integer, increasing at each such change), coalesced to at most
-             one per second per peer and sent within 1 s of a change, at the first contact
-             step of a subscribed peer as well. A browser of a transmit-configured profile
-             reads GET /transmit once per socket at its first transmit.state (or, with
-             none, 3-5 s after the socket is ready), on each later transmit.state whose
-             revision it has not read (one pending read, at most one queued), after its
-             own transmit or halt request, and otherwise at most once per 30 s as a safety
-             read; it runs no 1 s poll. Ages it shows (clock_measurement.age_ms) advance
-             locally from the read. HALT, PTT keying/release and the watchdogs are decided by the owner
-             and never wait for a browser read; the keyed/transmitting indication also
+             transmit_revision,changed}}, at most 1024 bytes, sent to each peer with a display
+             subscription when the fields below change (transmit_revision a station-wide
+             counter, safe integer, increasing at each change of GET /transmit except
+             clock_measurement.age_ms), coalesced to at most one per second per peer and
+             sent within 1 s of a change; below Detailed a change of only
+             watchdog.tune_remaining_seconds at most once per 5 s. changed: on a peer's
+             first event every field of GET /transmit except v, profile_id, boot_id and
+             outcomes; later only the changed fields, of transmit and watchdog only the
+             changed members, clock_measurement whole and not for its age_ms alone (#10
+             2026-11-06, operator rule 2026-11-04). A browser of a transmit-configured
+             profile holds this state from the events and reads no GET /transmit; GET
+             /transmit stays for other clients. Ages it shows (clock_measurement.age_ms) advance
+             locally from the event. HALT, PTT keying/release and the watchdogs are decided by the owner
+             and never wait for a browser; the keyed/transmitting indication also
              follows station.tick (one extra tick at each transmit start/stop).
              GET /transmit: exactly {v:1,profile_id,boot_id,transmit,ptt,transmitting,
              clock,clock_measurement,clock_source,clock_warning,watchdog,outcomes,startup_release} with transmit exactly the WstxContact read view

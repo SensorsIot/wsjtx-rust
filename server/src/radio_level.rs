@@ -79,7 +79,11 @@ pub(crate) fn assistant_step(level: i32, meters: &Meters, limit: Option<u8>) -> 
     }
 }
 
-/// CL-044-14 ALC at or above this is too high: half the ALC zone (0120 is its top).
+/// CL-044-14 ALC above this lowers the level. Onset reads 4-7 and ALC moves about 6 per dB
+/// (live 2026-11-06), so the level one step above Set level's stop stays inside it.
+pub(crate) const ALC_LIMIT_RAW: u16 = 10;
+/// CL-044-14 ALC at or above this counts for the warning: half the ALC zone (0120 is its
+/// top). Lowering from the limit up to here is routine and shows no entry.
 pub(crate) const ALC_HIGH_RAW: u16 = 60;
 /// CL-044-14 SWR 2.0: a warning when it persists; SWR_FAULT_RAW stops transmitting.
 pub(crate) const SWR_HIGH_RAW: u16 = 80;
@@ -90,6 +94,13 @@ pub(crate) struct Counts {
     alc_high: u8,
     po_low: u8,
     swr_high: u8,
+    /// The last reading stepped the level up.
+    raised: bool,
+    /// A level lowered right after its step up: no step up reaches it again, so a reading
+    /// of 0 one step below a reading above the limit settles, while any other lowering
+    /// keeps following the drive. Until a stored Set level, a changed profile power or a
+    /// restart.
+    ceiling: Option<i32>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Verdict {
@@ -117,9 +128,14 @@ pub(crate) fn monitor_step(
     count(&mut counts.alc_high, alc_high);
     count(&mut counts.po_low, very_low);
     count(&mut counts.swr_high, swr_high);
-    let level_db = if alc_high || over {
+    let raised = std::mem::take(&mut counts.raised);
+    let level_db = if meters.alc.is_some_and(|a| a > ALC_LIMIT_RAW) || over {
+        if raised {
+            counts.ceiling = Some(level);
+        }
         (level - 1).max(LEVEL_MIN_DB)
-    } else if meters.alc == Some(0) && low {
+    } else if meters.alc == Some(0) && low && counts.ceiling.is_none_or(|c| level + 1 < c) {
+        counts.raised = true;
         (level + 1).min(LEVEL_MAX_DB)
     } else {
         level
@@ -289,6 +305,9 @@ pub(crate) fn tick(recording: &Arc<Recording>, radio: Option<profile::Radio>, no
         let mut i = recording.tx_level.lock();
         if i.managed != managed || i.power_limit != limit {
             i.managed = managed;
+            if i.power_limit != limit {
+                i.counts.ceiling = None;
+            }
             i.power_limit = limit;
             i.revision += 1;
         }
@@ -525,6 +544,7 @@ fn assistant(
         i.stored |= kept.is_some();
         if kept.is_some() {
             i.swr_fault = false;
+            i.counts.ceiling = None;
         }
     });
 }
