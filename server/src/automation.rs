@@ -399,6 +399,12 @@ impl Owner {
         let inner = self.lock();
         (inner.policy_revision, inner.run_revision)
     }
+    pub(crate) fn running(&self) -> bool {
+        self.lock()
+            .run
+            .as_ref()
+            .is_some_and(|run| run.state != RunState::Stopped)
+    }
     /// AutomationSnapshot.
     pub(crate) fn snapshot(&self, r: &recording::Recording) -> Value {
         let inner = self.lock();

@@ -1174,5 +1174,14 @@ pub(crate) fn station_tick(state: &ProfileState) {
         s.strategy.alert_step(state);
         s.tick(state);
         s.automation.tick(s, state, publication);
+        if let Some(feed) = state.recording.pskr.get() {
+            // Only a running strategy reads the target's spots: no subscription without one.
+            let target = s
+                .automation
+                .running()
+                .then(|| s.facts().1?.dx_call)
+                .flatten();
+            feed.observe(my_call(state).as_deref(), target.as_deref());
+        }
     }
 }

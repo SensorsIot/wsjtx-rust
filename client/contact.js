@@ -15,7 +15,7 @@ block('settings-log','Log',document.querySelector('#settings-logging'),'<p>Each 
 // #10 logbook.js (loaded first) made Update logbook from ADIF; it belongs below the Log block.
 {const update=document.querySelector('#settings-update-log');if(update)document.querySelector('#settings-log')?.after(update);}
 block('settings-udp','WSJT-X UDP interface',document.querySelector('#settings-logging'),'<p id="udp-warning" class="op-warning">Accept commands lets that program select a QSO (like a click) and edit the Tx5 text. It can never key the transmitter; Halt Tx from any program always halts.</p><label>Instance name<input id="udp-instance" maxlength="64" autocomplete="off" disabled></label><h4 id="udp-targets-title">UDP targets</h4><div id="udp-targets" role="list" aria-labelledby="udp-targets-title"></div><p class="op-actions"><button type="button" id="udp-add" disabled>Add target</button><button type="button" id="udp-reload">Reload</button><button type="button" id="udp-save" class="op-primary" disabled>Save UDP settings</button></p><p id="udp-result" class="op-muted" role="status">Read when Settings opens</p><p class="op-muted">Applies on Save; it does not restart receive.</p>');
-block('settings-pskreporter','PSK Reporter',document.querySelector('#settings-logging'),'<p class="op-muted">Not available yet.</p>');
+block('settings-pskreporter','PSK Reporter',document.querySelector('#settings-logging'),'<label class="op-check"><input type="checkbox" id="pskr-enabled" disabled>Listen to PSK Reporter spots</label><p id="pskr-status" class="op-muted" role="status">PSK Reporter status unknown</p><p id="pskr-result" class="op-muted" role="status"></p><p class="op-muted">Read-only, from mqtt.pskreporter.info: spots of my call and of the current strategy target. The station sends only its call in the client id and these two subscriptions. A strategy run uses them to choose between keeping and changing its Tx slot; everything works without them.</p>');
 const stepper=(key,label,min,max)=>`<label class="op-strip-field">${label}<input id="contact-${key}" type="number" min="${min}" max="${max}" step="1" disabled inputmode="numeric" aria-label="${label} audio frequency, Hz"><span>Hz</span></label><button type="button" data-strip-step="${key}:-1" aria-label="${label} down 1 Hz (Shift: 10 Hz)" disabled>&minus;</button><button type="button" data-strip-step="${key}:1" aria-label="${label} up 1 Hz (Shift: 10 Hz)" disabled>+</button>`;
 document.querySelector('#rxtx-strip').innerHTML=stepper('rx','Rx',0,3000)+stepper('tx','Tx',200,2950)+'<button type="button" id="strip-tx-from-rx" disabled>Tx=Rx</button><button type="button" id="strip-rx-from-tx" disabled>Rx=Tx</button>';
 const qsoButton=(id,label,title,extra='')=>`<button type="button" id="${id}" disabled title="${title}"${extra}>${label}</button>`;
@@ -498,6 +498,29 @@ function startupShow(){
   const last=v.last_receive,choice=last?` · last ${[last.band,last.mode.toUpperCase()].filter(Boolean).join(' ')}`:'';
   $('startup-resume').textContent=`${resumeText[v.resume.state]??v.resume.state}${v.resume.error?` · ${v.resume.error}`:''}${choice}${v.storage_error?` · ${v.storage_error}`:''}`;
 }
+// #39 WstxStrategy::HearingFeed: one snapshot per connection, then pskr.state events; the
+// age counts on with the station tick. Nothing is polled and no state here is an error chip.
+let pskrView=null,pskrUtcMs=null;
+function pskrShow(){
+  const v=pskrView,box=$('pskr-enabled');box.disabled=!v;if(!v)return;box.checked=v.enabled;
+  const age=v.last_spot_utc_s===null||pskrUtcMs===null?null:Math.floor((pskrUtcMs/1000-v.last_spot_utc_s)/60);
+  const spot=v.last_spot_utc_s===null?'no spot yet':age===null||age<1?'last spot under 1 min ago':`last spot ${age} min ago`;
+  const text={off:'Off',connecting:v.error?`Connecting · last try ${v.error}`:'Connecting',connected:`Connected · ${spot}`,error:`Not connected · ${v.error} · retrying`}[v.state]??v.state;
+  $('pskr-status').textContent=`${text}${v.storage_error?` · ${v.storage_error}`:''}`;$('pskr-status').dataset.state=v.state;
+}
+function loadPskr(){stationFetch('/pskr',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(v?.v===1){pskrView=v;pskrShow();}}).catch(()=>{});}
+$('pskr-enabled').addEventListener('change',async event=>{
+  const box=event.target,v=pskrView;if(!v)return;box.disabled=true;$('pskr-result').textContent='Saving';
+  try{
+    const response=await stationFetch('/pskr',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:v.profile_id,boot_id:v.boot_id,enabled:box.checked}),signal:AbortSignal.timeout(10000)});
+    const data=await response.json();if(!response.ok)throw new Error(data?.error?.code||'connection error');
+    pskrView=data;$('pskr-result').textContent='Saved';
+  }catch(error){$('pskr-result').textContent=`Not saved · ${error.message}`;}
+  pskrShow();
+});
+addEventListener('station-message',event=>{const m=event.detail?.message;
+  if(m?.type==='station.tick'&&Number.isSafeInteger(m.data?.utc_ms)){pskrUtcMs=m.data.utc_ms;if(pskrView?.state==='connected')pskrShow();}
+  else if(m?.type==='pskr.state'&&m.data?.v===1&&m.data.boot_id===profileData?.boot_id){pskrView=m.data;pskrShow();}});
 function loadStartup(){
   if(startupLoading)return startupLoading;
   startupLoading=stationFetch('/receive/startup',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(v?.v===1){startupView=v;startupShow();}}).catch(()=>{}).finally(()=>{startupLoading=null;});
@@ -770,7 +793,7 @@ setInterval(displays,250);setInterval(countdown,100);
 // same socket does not (contact.state announces every change).
 let readySocket=null;
 // The automation state is read once per socket (then announced by automation.state).
-addEventListener('station-ready',event=>{const fresh=event.detail!==readySocket;if(!fresh&&(contactMissing||snap&&snap.boot_id===profileData?.boot_id))return;readySocket=event.detail;load();if(fresh){loadAutomation();loadStartup();}});
+addEventListener('station-ready',event=>{const fresh=event.detail!==readySocket;if(!fresh&&(contactMissing||snap&&snap.boot_id===profileData?.boot_id))return;readySocket=event.detail;load();if(fresh){loadAutomation();loadStartup();loadPskr();}});
 addEventListener('station-stale',()=>{displays();});
 addEventListener('station-message',event=>{
   const {message,current}=event.detail;if(current!==socket)return;
@@ -784,7 +807,7 @@ addEventListener('station-message',event=>{
   }
 });
 render();
-if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){readySocket=socket;load();loadAutomation();loadStartup();}
+if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){readySocket=socket;load();loadAutomation();loadStartup();loadPskr();}
 // WstxTransmit::TransmitWire: explicit requests only; the server plans, keys and halts.
 document.querySelector('#transmit-status').insertAdjacentHTML('afterend','<label>Message<input id="tx-message" maxlength="37" value="CQ"></label><label>Mode<select id="tx-mode" disabled title="Follows the station operating mode"><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label><label>Tx offset Hz<input id="tx-offset" type="number" min="200" max="2950" value="1500"></label><label>Period<select id="tx-parity"><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><p><button type="button" id="tx-arm">Arm (Enable Tx)</button> <button type="button" id="tx-disarm">Disarm</button> <button type="button" id="tx-send">Send next period</button> <button type="button" id="tx-tune">Tune</button></p>');
 let transmitSequence=0;

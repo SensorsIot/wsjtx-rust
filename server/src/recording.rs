@@ -279,6 +279,9 @@ pub struct Recording {
     pub(crate) contact: std::sync::OnceLock<Arc<crate::contact_http::Station>>,
     /// WstxUdp interface of this station (#40), opened once by the process.
     pub(crate) udp: std::sync::OnceLock<Arc<crate::udp::Owner>>,
+    /// The read-only PSK Reporter feed (#39 WstxStrategy::HearingFeed), started once by the
+    /// process; absent in in-process tests, so none of them can reach the network.
+    pub(crate) pskr: std::sync::OnceLock<Arc<crate::pskr::Feed>>,
     /// The station clock and its saved source (#43), started once by the process.
     pub(crate) clock: std::sync::OnceLock<Arc<crate::clock_http::Clock>>,
     /// #44 radio detection of this station (one at a time).
@@ -3359,6 +3362,7 @@ impl Recording {
                 tx: Default::default(),
                 contact: std::sync::OnceLock::new(),
                 udp: std::sync::OnceLock::new(),
+                pskr: std::sync::OnceLock::new(),
                 clock: std::sync::OnceLock::new(),
                 radio_setup: Default::default(),
                 agc: Default::default(),
@@ -3433,6 +3437,7 @@ impl Recording {
             tx: Default::default(),
             contact: std::sync::OnceLock::new(),
             udp: std::sync::OnceLock::new(),
+            pskr: std::sync::OnceLock::new(),
             clock: std::sync::OnceLock::new(),
             radio_setup: Default::default(),
             agc: Default::default(),
