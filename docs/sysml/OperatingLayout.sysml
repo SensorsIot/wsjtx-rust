@@ -822,7 +822,10 @@ attribute def ActivityOrdering {
              reports sent and received; idle: "No contact selected"; while an own CQ runs
              (contact state calling) "Calling CQ" with the detail line "Tx even (1st)" or
              "Tx odd (2nd)", the Tx period, whatever the receive display shows (#37,
-             operator 2026-11-02); the badge Ready, Tx on, Transmitting or Receive only.
+             operator 2026-11-02); the badge Ready, Tx on, Transmitting or Receive only (Receive only, with CQ, Tune,
+             Now and Auto Seq disabled and the reason beside them, while the transmit capability
+             is not available: #22, it follows the pushed contact snapshot; only a running Tune
+             can be turned off).
              2. Last partner message, while a QSO runs: the contact's ContactSnapshot
              last_rcvd as one line "<text>  <SNR>" with "×N" when the identical message was
              counted N > 1 times in a row; a new text replaces it.
