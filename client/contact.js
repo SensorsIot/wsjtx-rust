@@ -9,7 +9,7 @@ block('settings-startup','Receive at startup',document.querySelector('#settings-
 block('settings-startup-resume','Startup resume',document.querySelector('#settings-expert'),'<p id="startup-resume" class="op-muted" role="status">Startup resume unknown</p>');
 // #52 CL-052-01: off by default; read when Settings opens (at most every 30 s) or on Refresh, never polled.
 block('settings-window-diagnostics','Decode window diagnostics',document.querySelector('#settings-expert'),'<label class="op-check"><input type="checkbox" id="window-dump" disabled>Save FT8 decode windows</label><p id="window-diagnostics" class="op-muted" role="status">Window counters unknown</p><button type="button" id="window-diagnostics-refresh">Refresh</button><p class="op-muted">Keeps the last 20 FT8 prompt windows (12 kHz WAV and JSON) in the profile folder diagnostic-windows. Saved at once; it acts from the next window.</p>');
-block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station: a strategy selected in the strategy element, or an MCP client. Its state shows beside the strategy element; HALT ends it; Esc aborts the current QSO. A strategy keeps running through a page reload; with no browser or MCP client connected for 60 s it starts nothing new, ends the QSO in progress and stops (select it again to restart). The Tx watchdog stops transmitting when one message would be sent more often than its limit. A different message or a new contact starts the count again; after a stop only Enable Tx or a new strategy selection in this browser transmits again, automation never does.</p>');
+block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station: a strategy selected in the strategy element, or an MCP client. Its state shows beside the strategy element; HALT ends it; Esc aborts the current QSO. A strategy keeps running through a page reload; with no browser or MCP client connected for 60 s, or 8 hours after its selection also with a browser open, it starts nothing new, ends the QSO in progress and stops (select it again to restart). The Tx watchdog stops transmitting when one message would be sent more often than its limit. A different message or a new contact starts the count again; after a stop only Enable Tx or a new strategy selection in this browser transmits again, automation never does.</p>');
 block('settings-transmit','Transmit',document.querySelector('#settings-radio'),'<label>Tx watchdog (repetitions of one message)<input id="watchdog-tx" type="number" min="1" max="99" step="1" disabled></label><label>Tune watchdog (seconds)<input id="watchdog-tune" type="number" min="1" max="300" step="1" disabled></label><p id="watchdog-result" class="op-muted" role="status"></p><p class="op-muted">Watchdogs apply at once, as in WSJT-X. Tx power is set on the transceiver; this station sends no power command. PTT is chosen under CAT.</p>');
 block('settings-log','Log',document.querySelector('#settings-logging'),'<p>Each completed QSO is logged at once, as in WSJT-X: saved in this station profile’s contacts.adi (ADIF) and sent to the UDP targets that select QSO Logged / Logged ADIF. There is no review step; Log QSO logs the current contact now.</p><button type="button" data-region="logbook">&#9776; Open Logbook</button>');
 // #10 logbook.js (loaded first) made Update logbook from ADIF; it belongs below the Log block.
@@ -1260,26 +1260,23 @@ pounceItem.addEventListener('click',()=>{const call=pounceItem.dataset.call;if(!
 // ---------------------------------------------------------------- #39 Most Wanted list
 // WstxStrategy::MostWantedList in Settings > General: status with the source attribution, an upload
 // the station validates, and Download now, one fetch on the operator's click. No automatic refresh.
-if(typeof block==='function'&&document.querySelector('#settings-general'))block('settings-most-wanted','Most Wanted list',document.querySelector('#settings-general'),'<p id="mw-status" class="op-muted" role="status">No list</p><label>List file (JSON)<input id="mw-file" type="file" accept=".json,application/json,text/plain"></label><p class="op-actions"><button type="button" id="mw-upload">Upload list</button> <button type="button" id="mw-download" title="Fetches the list from clublog.org once, now">Download now</button> <button type="button" id="mw-remove">Remove list</button></p><p id="mw-result" class="op-muted" role="status"></p><p id="mw-attribution" class="op-muted"></p><p class="op-muted">Strategies rank the stations they would call by this list, then by new DXCC; they work without it. It is only fetched when you click: Club Log states no terms for it.</p>');
+if(typeof block==='function'&&document.querySelector('#settings-general'))block('settings-most-wanted','Most Wanted list',document.querySelector('#settings-general'),'<p class="op-actions"><span id="mw-status" class="op-muted" role="status">No list</span> <button type="button" id="mw-update" title="Fetches the list from clublog.org once, now">Update Most Wanted</button></p><p id="mw-result" class="op-muted" role="status"></p><p id="mw-attribution" class="op-muted"></p><p class="op-muted">A strategy calls the stations on this list first, by their rank, then the strongest; without a list the strongest first. It only changes when you click: Club Log states no terms for it.</p>');
 function showMostWanted(){
   const status=$('mw-status');if(!status)return;const m=view?.most_wanted;
-  status.textContent=m?`List of ${m.date} · ${m.source==='download'?'downloaded':'uploaded'} · ${m.entries} entries${m.unmapped?` · ${m.unmapped} not mapped to an entity`:''}`:view?.most_wanted_unreadable?'The stored list is unreadable; strategies work without it':'No list; strategies rank by new DXCC';
-  $('mw-attribution').textContent=view?.most_wanted_attribution??'';$('mw-remove').disabled=!m;
+  status.textContent=m?`List from ${m.date} · ${m.entries} entries${m.unmapped?` · ${m.unmapped} not mapped to an entity`:''}`:view?.most_wanted_unreadable?'The stored list is unreadable; strategies call the strongest first':'No list; strategies call the strongest first';
+  $('mw-attribution').textContent=view?.most_wanted_attribution??'';
 }
-async function mostWanted(path,extra,label){
-  if(!view)return;const result=$('mw-result');
+$('mw-update')?.addEventListener('click',async()=>{
+  if(!view)return;const result=$('mw-result'),button=$('mw-update');button.disabled=true;result.textContent='';
   try{
-    const response=await stationFetch(path,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,...extra}),signal:AbortSignal.timeout(40000)});
+    const response=await stationFetch('/strategy/most-wanted/download',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id}),signal:AbortSignal.timeout(40000)});
     const data=await response.json().catch(()=>null);
-    if(!response.ok||data?.v!==1){const c=data?.error?.code??response.status;result.textContent=c==='invalid_most_wanted'?'Refused · not a Most Wanted list; nothing changed':c==='download_failed'?'Download failed; nothing changed':`Refused · ${c}; nothing changed`;return;}
-    view=data;verdicts=new Map();evaluatedKey='';show();evaluateShown();result.textContent=label;
-  }catch(error){result.textContent=`Outcome unknown · ${error.message}`;}
-}
-$('mw-upload')?.addEventListener('click',async()=>{const file=$('mw-file').files[0];if(!file){$('mw-result').textContent='Choose a list file first';return;}if(file.size===0||file.size>30000){$('mw-result').textContent='Refused · the file must hold 1 byte to 30 kB';return;}mostWanted('/strategy/most-wanted',{text:await file.text()},`Uploaded ${file.name}`);});
-$('mw-download')?.addEventListener('click',()=>mostWanted('/strategy/most-wanted/download',{},'Downloaded'));
-$('mw-remove')?.addEventListener('click',()=>mostWanted('/strategy/most-wanted',{text:null},'List removed'));
-// Station settings, not profile fields: they never mark the profile form unsaved.
-for(const type of ['input','change'])$('mw-file')?.addEventListener(type,event=>event.stopPropagation());
+    // A failure keeps the list and says why, in one line.
+    if(!response.ok||data?.v!==1){result.textContent=`Update failed · ${data?.error?.reason??data?.error?.code??response.status}; the list stays as it was`;return;}
+    view=data;verdicts=new Map();evaluatedKey='';show();evaluateShown();result.textContent='Updated';
+  }catch(error){result.textContent=`Update failed · ${error.message}; the list stays as it was`;}
+  finally{button.disabled=false;}
+});
 // ---------------------------------------------------------------- editor popup
 const CONTINENTS=[['AF','Africa'],['AN','Antarctica'],['AS','Asia'],['EU','Europe'],['NA','North America'],['OC','Oceania'],['SA','South America']];
 const GOALS=[['dxcc','DXCC'],['dxcc_band','DXCC per band'],['dxcc_slot','DXCC slot (band and mode)'],['waz','WAZ (CQ zones)'],['wpx','WPX (prefixes)'],['grid','Grids'],['new_call','New call']];

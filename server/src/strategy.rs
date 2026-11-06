@@ -5,7 +5,7 @@
 //! never evaluates a strategy itself. Routes: GET /strategy (StrategySnapshot), PUT
 //! /strategy (configuration; a changed active starts or stops a run), POST
 //! /strategy/evaluate (verdicts of retained live rows), #42 GET /strategy/alerts and POST
-//! /strategy/alerts/clear (WstxStrategy::Alert), POST /strategy/most-wanted[/download]
+//! /strategy/alerts/clear (WstxStrategy::Alert), POST /strategy/most-wanted/download
 //! (WstxStrategy::MostWantedList).
 use crate::*;
 use axum::extract::RawQuery;
@@ -712,32 +712,6 @@ impl Station {
             }
         }
     }
-    /// The DXCC-new rank of ValueOrder: 0 not worked ever, 1 not on this band, 2 not on
-    /// this band and mode, 3 anything else.
-    fn dxcc_new_rank(&self, f: &Facts) -> u8 {
-        let (Some(w), Some(r)) = (&self.worked, self.dxcc.lookup(&f.from)) else {
-            return 3;
-        };
-        if !w.entity_standing(Category::Dxcc, &r, None, None).worked {
-            return 0;
-        }
-        let Some(band) = self.band.as_deref() else {
-            return 3;
-        };
-        if !w
-            .entity_standing(Category::Dxcc, &r, Some(band), None)
-            .worked
-        {
-            1
-        } else if !w
-            .entity_standing(Category::Dxcc, &r, Some(band), Some(&self.mode))
-            .worked
-        {
-            2
-        } else {
-            3
-        }
-    }
 }
 /// What a ranked record is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -814,8 +788,8 @@ fn classify(s: &Strategy, f: &Facts, st: &Station) -> (Option<Kind>, bool, Strin
         format!("needed: {}", needed.join(", ")),
     )
 }
-/// WstxStrategy::ValueOrder of ranked records, smaller first: callers, the Most Wanted list,
-/// the DXCC-new rank, then the strongest and the sequence.
+/// WstxStrategy::ValueOrder of ranked records, smaller first: callers, the Most Wanted list by
+/// its rank, then the strongest and the sequence.
 fn value_key(v: &Verdict, st: &Station) -> (u8, u32, f64, u64) {
     let snr = v.facts.snr.map_or(f64::INFINITY, |s| -s);
     if v.kind == Some(Kind::Caller) {
@@ -827,12 +801,7 @@ fn value_key(v: &Verdict, st: &Station) -> (u8, u32, f64, u64) {
         .and_then(|l| st.dxcc.lookup(&v.facts.from).and_then(|r| l.rank(&r.name)));
     match listed {
         Some(rank) => (1, rank, snr, v.facts.sequence),
-        None => (
-            2,
-            u32::from(st.dxcc_new_rank(&v.facts)),
-            snr,
-            v.facts.sequence,
-        ),
+        None => (2, 0, snr, v.facts.sequence),
     }
 }
 /// WstxStrategy::Verdict: one per decoded standard record with a resolved sender, in display
@@ -1148,13 +1117,7 @@ impl Owner {
                 .filter(|v| {
                     v["schema_version"] == 1 && v["profile_id"] == state.recording.profile.as_str()
                 })
-                .and_then(|v| {
-                    crate::most_wanted::List::from_value(
-                        &v["list"],
-                        v["date"].as_str()?,
-                        v["source"].as_str()?,
-                    )
-                })
+                .and_then(|v| crate::most_wanted::List::from_value(&v["list"], v["date"].as_str()?))
                 .map(Some)
                 .ok_or(()),
             Err(_) => Err(()),
@@ -1166,11 +1129,11 @@ impl Owner {
             most.list = parsed.ok().flatten().map(std::sync::Arc::new);
         }
     }
-    /// Stores (or with None removes) the list; the state changes only after the file.
+    /// Stores the list; the state changes only after the file.
     fn most_wanted_store(
         &self,
         state: &ProfileState,
-        list: Option<crate::most_wanted::List>,
+        list: crate::most_wanted::List,
     ) -> Result<(), Refusal> {
         let r = &state.recording;
         {
@@ -1178,23 +1141,18 @@ impl Owner {
                 .store
                 .lock()
                 .map_err(|_| ("storage_unavailable", None))?;
-            match &list {
-                Some(l) => store
-                    .write_document_file(
-                        crate::most_wanted::FILE_NAME,
-                        &json!({"schema_version":1,"profile_id":r.profile,"date":l.date,
-                            "source":l.source,"list":l.list_json()}),
-                    )
-                    .map_err(|_| ("storage_unavailable", None))?,
-                None => store
-                    .remove_document_file(crate::most_wanted::FILE_NAME)
-                    .map_err(|_| ("storage_unavailable", None))?,
-            }
+            store
+                .write_document_file(
+                    crate::most_wanted::FILE_NAME,
+                    &json!({"schema_version":1,"profile_id":r.profile,"date":list.date,
+                        "list":list.list_json()}),
+                )
+                .map_err(|_| ("storage_unavailable", None))?;
         }
         let mut most = self.most_wanted.lock().unwrap_or_else(|p| p.into_inner());
         most.loaded = true;
         most.unreadable = false;
-        most.list = list.map(std::sync::Arc::new);
+        most.list = Some(std::sync::Arc::new(list));
         Ok(())
     }
     /// The exact envelope of the small station commands: {v, profile_id, boot_id} plus `more`.
@@ -1231,28 +1189,8 @@ impl Owner {
         }
         Ok(())
     }
-    /// POST /strategy/most-wanted after the route checks: text validated and stored; null
-    /// removes the list.
-    pub(crate) fn most_wanted_put(
-        &self,
-        state: &ProfileState,
-        body: Value,
-    ) -> Result<Value, Refusal> {
-        Self::envelope_shape(&body, &["text"])?;
-        Self::envelope_context(state, &body)?;
-        let list = match &body["text"] {
-            Value::Null => None,
-            Value::String(text) => Some(
-                crate::most_wanted::List::parse(text, &date_text(utc_date()), "upload")
-                    .ok_or(("invalid_most_wanted", Some("text".to_owned())))?,
-            ),
-            _ => return Err(("invalid_request", Some("text".into()))),
-        };
-        self.most_wanted_store(state, list)?;
-        Ok(self.snapshot(state))
-    }
-    /// POST /strategy/most-wanted/download after the route checks: one fetch, on the
-    /// operator's click; a failure or a refused list changes nothing.
+    /// POST /strategy/most-wanted/download after the route checks: one fetch, on the operator's
+    /// click; a failure keeps the list and names the reason (Refusal field).
     pub(crate) fn most_wanted_download(
         &self,
         state: &ProfileState,
@@ -1265,12 +1203,13 @@ impl Owner {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .take()
-            .unwrap_or_else(crate::most_wanted::fetch);
-        let list = text
-            .ok()
-            .and_then(|t| crate::most_wanted::List::parse(&t, &date_text(utc_date()), "download"));
-        let list = list.ok_or(("download_failed", None))?;
-        self.most_wanted_store(state, Some(list))?;
+            .unwrap_or_else(crate::most_wanted::fetch)
+            .map_err(|reason| ("download_failed", Some(reason)))?;
+        let list = crate::most_wanted::List::parse(&text, &date_text(utc_date())).ok_or((
+            "download_failed",
+            Some("the reply is not a Most Wanted list".to_owned()),
+        ))?;
+        self.most_wanted_store(state, list)?;
         Ok(self.snapshot(state))
     }
     /// A HaltTransmit from any source since the last step sets active to None (memory only:
@@ -1652,10 +1591,7 @@ fn refusal(code: &str, field: Option<&str>) -> Response {
         "not_found" => StatusCode::NOT_FOUND,
         "request_too_large" => StatusCode::PAYLOAD_TOO_LARGE,
         "unsupported_media_type" => StatusCode::UNSUPPORTED_MEDIA_TYPE,
-        "invalid_request" | "unsupported_version" | "invalid_most_wanted" => {
-            StatusCode::BAD_REQUEST
-        }
-        "download_failed" => StatusCode::BAD_GATEWAY,
+        "invalid_request" | "unsupported_version" => StatusCode::BAD_REQUEST,
         "storage_unavailable" => StatusCode::SERVICE_UNAVAILABLE,
         _ => StatusCode::CONFLICT,
     };
@@ -1806,24 +1742,6 @@ pub async fn clear_alerts_route(
         Err((code, field)) => refusal(code, field.as_deref()),
     }
 }
-/// POST /strategy/most-wanted.
-pub async fn most_wanted_route(
-    State(app): State<App>,
-    headers: HeaderMap,
-    RawQuery(query): RawQuery,
-    body: Result<Bytes, BytesRejection>,
-) -> Response {
-    let (station, state, body) = match body_of(&app, &headers, query, body).await {
-        Ok(v) => v,
-        Err(e) => return *e,
-    };
-    match tokio::task::spawn_blocking(move || station.strategy.most_wanted_put(&state, body)).await
-    {
-        Ok(Ok(v)) => Json(v).into_response(),
-        Ok(Err((code, field))) => refusal(code, field.as_deref()),
-        Err(_) => refusal("storage_unavailable", None),
-    }
-}
 /// POST /strategy/most-wanted/download.
 pub async fn most_wanted_download_route(
     State(app): State<App>,
@@ -1839,6 +1757,11 @@ pub async fn most_wanted_download_route(
         .await
     {
         Ok(Ok(v)) => Json(v).into_response(),
+        Ok(Err(("download_failed", reason))) => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({"error":{"code":"download_failed","reason":reason}})),
+        )
+            .into_response(),
         Ok(Err((code, field))) => refusal(code, field.as_deref()),
         Err(_) => refusal("storage_unavailable", None),
     }

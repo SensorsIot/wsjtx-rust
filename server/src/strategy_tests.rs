@@ -306,8 +306,8 @@ fn tc_039_030_each_goal_in_both_needed_settings() {
     }
     // Multiple goals: needed when at least one is.
     let both = award(&[Dxcc, DxccBand]);
-    // In value order: Australia new ever; Japan and the U.S. new on this band, by SNR.
-    assert_eq!(called(&both, &goal_rows(), &st), vec![G4, G3, G5]);
+    // In value order: without a list the strongest first.
+    assert_eq!(called(&both, &goal_rows(), &st), vec![G3, G4, G5]);
     // The station band unknown: the band goals never hold, the others unchanged.
     let unknown = Station {
         band: None,
@@ -391,7 +391,7 @@ fn tc_039_030_region_min_snr_for_an_eu_and_a_non_eu_profile() {
     let all = |list: &[&str]| list.iter().map(|c| c.to_string()).collect::<Vec<_>>();
     assert_eq!(
         region(Region::All, &eu),
-        all(&["JA2ABC", "DL2XYZ", "K1ABC", "XX1ABC"])
+        all(&["XX1ABC", "JA2ABC", "DL2XYZ", "K1ABC"])
     );
     // dx: another continent than mine, an unknown continent never.
     assert_eq!(region(Region::Dx, &eu), all(&["JA2ABC", "K1ABC"]));
@@ -419,7 +419,7 @@ fn tc_039_030_region_min_snr_for_an_eu_and_a_non_eu_profile() {
 // Proves: TC-039-030
 #[test]
 fn tc_039_030_a_caller_beats_a_most_wanted_station_and_ignores_goal_region_and_snr() {
-    let list = crate::most_wanted::List::parse(r#"{"1":"150"}"#, "2026-11-06", "upload");
+    let list = crate::most_wanted::List::parse(r#"{"1":"150"}"#, "2026-11-06");
     let st = Station {
         // The caller is worked and confirmed on every goal; Australia is rank 1.
         worked: Some(worked(&[(
@@ -489,23 +489,19 @@ fn tc_039_030_value_order_with_and_without_a_list() {
     };
     assert_eq!(
         called(&s, &records, &plain),
-        vec!["JA2ABC", "VK2ABC", "DL2XYZ", "F5ABC", "G4XYZ"],
-        "DXCC new first (ever, band, band and mode), then SNR"
+        vec!["G4XYZ", "F5ABC", "DL2XYZ", "JA2ABC", "VK2ABC"],
+        "no list: the strongest first, whatever is new"
     );
-    // ADIF 230 Germany, 150 Australia: on the list first, by rank; the others as before.
+    // ADIF 230 Germany, 150 Australia: on the list first, by rank; the others after, strongest.
     let listed = Station {
         worked: Some(log),
-        most_wanted: crate::most_wanted::List::parse(
-            r#"{"1":"230","2":"150","3":"999"}"#,
-            "d",
-            "upload",
-        )
-        .map(Arc::new),
+        most_wanted: crate::most_wanted::List::parse(r#"{"1":"230","2":"150","3":"999"}"#, "d")
+            .map(Arc::new),
         ..me()
     };
     assert_eq!(
         called(&s, &records, &listed),
-        vec!["DL2XYZ", "VK2ABC", "JA2ABC", "F5ABC", "G4XYZ"]
+        vec!["DL2XYZ", "VK2ABC", "G4XYZ", "F5ABC", "JA2ABC"]
     );
     // Same entity, same rank: the SNR decides, then the sequence.
     assert_eq!(
@@ -1419,7 +1415,7 @@ async fn tc_039_004_a_run_goes_on_after_each_qso_without_a_limit() {
     let e = at_even(&f);
     select(&f, config(Some("Test calls"))).await;
     let _client = f.state.recording.clients.session();
-    // No time_limit (a policy deadline would be the start); only the grant binds it.
+    // No limit on the contacts, and the run goes on before its 8 hours.
     *f.state
         .recording
         .contact
@@ -2042,6 +2038,58 @@ async fn tc_039_033_a_real_status_websocket_keeps_a_strategy_and_its_close_ends_
     server.abort();
 }
 
+// Proves: TC-039-033 (operator decision 2026-11-06): a run lasts at most 8 hours from its
+// selection, also with a client connected throughout; a new selection starts again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_033_a_strategy_run_lasts_at_most_8_hours_from_its_selection() {
+    const H8: u64 = 8 * 3600;
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    select(&f, config(Some("New calls"))).await;
+    // Just before: it still selects.
+    at_skew(&f, H8 - 1);
+    assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
+    assert_eq!(quiet_contact(&f).await.0, json!("K1ABC"));
+    assert_eq!(quiet_contact(&f).await.2, json!("armed"));
+    // At 8 h: the exchange in progress runs on to its end, then the run stops.
+    at_skew(&f, H8);
+    assert_eq!(quiet_run(&f), ("contact_active".into(), Value::Null));
+    publish(&f, e + 30_000, &[("HB9BLA K1ABC -05", 1505.0, Some(-6.0))]);
+    assert_eq!(quiet_run(&f).0, "contact_active");
+    publish(&f, e + 60_000, &[("HB9BLA K1ABC RR73", 1505.0, Some(-6.0))]);
+    transmit_own_period(&f, e + 15_000).await;
+    assert_eq!(quiet_contact(&f).await.1, json!("completed"));
+    f.tick();
+    f.tick();
+    assert_eq!(quiet_run(&f), ("stopped".into(), json!("run_limit")));
+    assert_eq!(
+        f.browser("GET", "/strategy", None).await.json["configuration"]["active"],
+        json!("New calls"),
+        "it stays selected with the reason"
+    );
+    // No new station.
+    publish(&f, e + 150_000, &[("CQ DL1XYZ JO62", 1200.0, Some(9.0))]);
+    assert_eq!(quiet_contact(&f).await.2, json!("disarmed"));
+    assert_eq!(quiet_contact(&f).await.0, json!("K1ABC"));
+    // A new selection starts a new 8 hours, also from here on.
+    save(&f, config(None)).await;
+    select(&f, config(Some("New calls"))).await;
+    at_skew(&f, H8 + H8 - 1);
+    assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
+    publish(&f, e + 180_000, &[("CQ DL1XYZ JO62", 1200.0, Some(9.0))]);
+    assert_eq!(quiet_contact(&f).await.0, json!("DL1XYZ"));
+    // Waiting at the limit: it stops at once.
+    browser_ok(&f, "cancel", json!({})).await;
+    f.tick();
+    f.tick();
+    assert_eq!(quiet_run(&f).0, "waiting");
+    at_skew(&f, H8 + H8);
+    assert_eq!(quiet_run(&f), ("stopped".into(), json!("run_limit")));
+}
+
 // Proves: TC-039-033
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_033_waiting_stops_at_60_s_and_a_client_or_reload_keeps_it() {
@@ -2162,14 +2210,12 @@ async fn tc_039_030_today_and_from_to_read_the_log_of_the_window() {
 
 // Proves: TC-039-031
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_031_most_wanted_upload_download_status_and_mcp_refusal() {
+async fn tc_039_031_update_most_wanted_status_failures_and_mcp_refusal() {
     let f = station(true).await;
-    let post = async |path: &str, extra: Value| {
-        let mut b = json!({"v":1,"profile_id":f.id,"boot_id":f.boot});
-        b.as_object_mut()
-            .unwrap()
-            .extend(extra.as_object().unwrap().clone());
-        f.browser("POST", path, Some(b)).await
+    let update = async || {
+        let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot});
+        f.browser("POST", "/strategy/most-wanted/download", Some(body))
+            .await
     };
     let g = f.browser("GET", "/strategy", None).await.json;
     assert_eq!(
@@ -2184,21 +2230,8 @@ async fn tc_039_031_most_wanted_upload_download_status_and_mcp_refusal() {
             json!("Club Log Most Wanted list, Club Log (c) Michael Wells G7VJR, clublog.org")
         )
     );
-    // A refused list changes nothing.
-    let r = post("/strategy/most-wanted", json!({"text":"{\"1\":\"x\"}"})).await;
-    assert_eq!(
-        (
-            r.status.as_u16(),
-            r.json["error"]["code"].clone(),
-            r.json["error"]["field"].clone()
-        ),
-        (400, json!("invalid_most_wanted"), json!("text"))
-    );
-    let r = post("/strategy/most-wanted", json!({"text":5})).await;
-    assert_eq!(r.status, StatusCode::BAD_REQUEST);
-    let r = post("/strategy/most-wanted", json!({"text":null,"x":1})).await;
-    assert_eq!(r.status, StatusCode::BAD_REQUEST);
-    // Upload: status with the unknown number counted; a new owner reads the file.
+    let owner = f.state.recording.contact.get().unwrap();
+    // Status with the unknown number counted; a new owner reads the file.
     let today = utc_date();
     let today = format!(
         "{:04}-{:02}-{:02}",
@@ -2206,15 +2239,19 @@ async fn tc_039_031_most_wanted_upload_download_status_and_mcp_refusal() {
         today / 100 % 100,
         today % 100
     );
-    let r = post(
-        "/strategy/most-wanted",
-        json!({"text":"{\"1\":\"150\",\"2\":\"9999\"}"}),
-    )
-    .await;
+    *owner.strategy.fetch.lock().unwrap() = Some(Ok("{\"1\":\"150\",\"2\":\"9999\"}".into()));
+    let r = update().await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.json);
     assert_eq!(
         r.json["most_wanted"],
-        json!({"date":today,"source":"upload","entries":2,"unmapped":1})
+        json!({"date":today,"entries":2,"unmapped":1})
+    );
+    let file: Value =
+        serde_json::from_slice(&std::fs::read(f.dir.join(crate::most_wanted::FILE_NAME)).unwrap())
+            .unwrap();
+    assert_eq!(
+        file,
+        json!({"schema_version":1,"profile_id":f.id,"date":today,"list":{"1":"150","2":"9999"}})
     );
     let reopened = Owner::default();
     reopened.most_wanted_load(&f.state);
@@ -2226,43 +2263,47 @@ async fn tc_039_031_most_wanted_upload_download_status_and_mcp_refusal() {
         reopened.most_wanted_read().unwrap().rank("Australia"),
         Some(1)
     );
-    // Download now: a failed fetch and a refused body change nothing; a good one replaces.
-    let owner = f.state.recording.contact.get().unwrap();
-    *owner.strategy.fetch.lock().unwrap() = Some(Err("offline".into()));
-    let d = post("/strategy/most-wanted/download", json!({})).await;
+    // A failed fetch and a reply that is no list keep the list and name the reason.
+    *owner.strategy.fetch.lock().unwrap() = Some(Err("status 503".into()));
+    let d = update().await;
     assert_eq!(
-        (d.status.as_u16(), d.json["error"]["code"].clone()),
-        (502, json!("download_failed"))
+        (d.status.as_u16(), d.json["error"].clone()),
+        (502, json!({"code":"download_failed","reason":"status 503"}))
     );
     *owner.strategy.fetch.lock().unwrap() = Some(Ok("<html>".into()));
-    let d = post("/strategy/most-wanted/download", json!({})).await;
-    assert_eq!(d.status.as_u16(), 502);
+    let d = update().await;
     assert_eq!(
-        f.browser("GET", "/strategy", None).await.json["most_wanted"]["source"],
-        json!("upload")
+        (d.status.as_u16(), d.json["error"]["reason"].clone()),
+        (502, json!("the reply is not a Most Wanted list"))
     );
-    *owner.strategy.fetch.lock().unwrap() = Some(Ok("{\"1\":\"339\"}".into()));
-    let d = post("/strategy/most-wanted/download", json!({})).await;
-    assert_eq!(d.status, StatusCode::OK, "{}", d.json);
     assert_eq!(
-        d.json["most_wanted"],
-        json!({"date":today,"source":"download","entries":1,"unmapped":0})
+        f.browser("GET", "/strategy", None).await.json["most_wanted"]["entries"],
+        json!(2),
+        "the list stays"
     );
-    let file: Value =
-        serde_json::from_slice(&std::fs::read(f.dir.join(crate::most_wanted::FILE_NAME)).unwrap())
-            .unwrap();
-    assert_eq!(
-        file,
-        json!({"schema_version":1,"profile_id":f.id,"date":today,"source":"download","list":{"1":"339"}})
-    );
+    // Exact keys.
+    let extra = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"x":1});
+    let r = f
+        .browser("POST", "/strategy/most-wanted/download", Some(extra))
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    // There is no upload route.
+    let r = f
+        .browser(
+            "POST",
+            "/strategy/most-wanted",
+            Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"text":"{\"1\":\"150\"}"})),
+        )
+        .await;
+    assert!(matches!(r.status.as_u16(), 404 | 405), "{}", r.status);
     // The MCP principal may not change it.
     let internal = crate::mcp_tests::internal_transport(&f, &f.mcp);
     let m = crate::mcp_tests::with_cookie(
         &f,
         "POST",
-        "/strategy/most-wanted",
+        "/strategy/most-wanted/download",
         &internal,
-        Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"text":null})),
+        Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot})),
     )
     .await;
     assert_eq!(m.status, StatusCode::UNAUTHORIZED);
@@ -2278,13 +2319,6 @@ async fn tc_039_031_most_wanted_upload_download_status_and_mcp_refusal() {
         ),
         (Value::Null, json!(true))
     );
-    // Removal.
-    let d = post("/strategy/most-wanted", json!({"text":null})).await;
-    assert_eq!(
-        (d.status.as_u16(), d.json["most_wanted"].clone()),
-        (200, Value::Null)
-    );
-    assert!(!f.dir.join(crate::most_wanted::FILE_NAME).exists());
 }
 
 /// A station that is neither calling nor calling me, on `hz`.

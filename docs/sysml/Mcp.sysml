@@ -55,7 +55,7 @@ package WstxMcp {
             automation is shown read-only in the browser station bar (AutomationIndicator).
          D8 Strategy runs (#39, WstxStrategy::StrategyRun): selecting a strategy in the
             browser starts a run of this owner in which the active strategy chooses and
-            orders stations; it has no contact or time limit and never stops no_answer. An
+            orders stations; it has no contact limit, its own limit of 8 hours (run_limit) and never stops no_answer. An
             MCP client cannot select one: the configuration key strategy true is refused
             operator_required, PUT /strategy has no MCP tool. For every run
             (D6 included) the Tx watchdog limits the repetitions of one message; only an
@@ -219,7 +219,7 @@ package WstxMcp {
         enum stopped; enum completed; enum limit_reached; enum no_answer; enum halted;
         enum transmit_stopped; enum contact_changed; enum authority_lost;
         enum context_changed; enum transmit_refused; enum provider_error;
-        enum time_limit; enum tx_watchdog; enum strategy_missing; enum band_changed; enum no_client;
+        enum time_limit; enum tx_watchdog; enum strategy_missing; enum band_changed; enum no_client; enum run_limit;
     }
     attribute def OperatingAutomation {
         attribute runState : RunState;

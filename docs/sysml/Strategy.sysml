@@ -22,8 +22,10 @@ package WstxStrategy {
             the run answers from its free Tx slot (FreeTxSlot) so the answer never lands on the
             final 73.
          D4 An award strategy never calls CQ. It waits for the next opportunity and goes on
-            after each QSO without a limit (no QSO or time limit; the WstxMcp run bounds
-            and the transport's 8 h do not apply to it). The grant and every safety check still apply.
+            after each QSO without a limit (no QSO limit; the WstxMcp run bounds and the
+            transport's 8 h do not apply to it; its own limit is 8 hours from the selection,
+            operator decision 2026-11-06, StrategyRun, which replaces the former "no time limit").
+            The grant and every safety check still apply.
          D5 Stations calling my callsign are always answered, independent of goal, region
             and SNR, and come first (CallerOfMyCall).
          D6 No skip: a station is never skipped after N calls. calls_per_station is the
@@ -54,8 +56,11 @@ package WstxStrategy {
          D12 Most Wanted list (#39 6626483800, MostWantedList): the operator asked for
             "download and refresh like cty.dat". This project's cty.dat has no automatic
             download (bundled file plus Settings upload, WstxContact country file), so the
-            list has the same shape: a Settings section with status and upload, and a
-            Download now button that fetches it once on the operator's click.
+            list is kept simple (operator 2026-11-06: "Most wanted countries stay forever. They do
+            not change a lot. We have to find an extremely simple way to update it from time to
+            time."): a Settings section with one button "Update Most Wanted" beside the list's
+            date that fetches it once on the operator's click. There is no upload (operator:
+            "Why would we upload something?"); a failed download keeps the list.
             Terms check (2026-11-06): the clublog.org pages mostwanted.php, need_api and
             requestapikey state no terms and no limits; the footer says "Club Log (c)
             Michael Wells G7VJR"; need_api says "You do not need a key unless you write
@@ -214,37 +219,39 @@ package WstxStrategy {
              browser's partner rows), then callers (CallerOfMyCall), candidates most valuable
              first, then the rest. Callers among themselves: SNR strongest (unknown last), then
              sequence. Candidates: on the Most Wanted list first, by its rank ascending; then
-             the others (or all, without a list) by their DXCC-new rank: 0 the entity not
-             worked ever, 1 not on this band, 2 not on this band and mode, 3 anything else (the
-             same window as the goals); then SNR strongest, then sequence. */
+             the others, and all of them without a list, SNR strongest (operator 2026-11-06, which
+             replaces a DXCC-new rank); then sequence. */
     }
     attribute def MostWantedList {
         attribute entriesMax : Integer = 1000;
         doc /* D12. Source https://clublog.org/mostwanted.php?api=1: JSON {"1":"344","2":"123",
              ...}, rank to ADIF DXCC number (340 entries, verified 2026-11-06). Parsed exactly:
              an object of 1..1000 keys, each a positive integer in text, each value a positive
-             integer below 10000 in text or as a number, no number twice; else refused 400
-             invalid_most_wanted field text, nothing changed. Stored in the profile folder as
-             most_wanted.json {schema_version 1, profile_id, date (UTC date of the upload or
-             download), source (upload | download), list}. cty.dat has no ADIF numbers: the
+             integer below 10000 in text or as a number, no number twice; else the update fails,
+             nothing changed. Stored in the profile folder as
+             most_wanted.json {schema_version 1, profile_id, date (UTC date of the download), list}. cty.dat has no ADIF numbers: the
              table most_wanted::ENTITIES maps cty.dat entity full names to ADIF numbers (the
              340 current entities; WAE-only entities, Sicily, African Italy, Bear Island,
              Shetland Islands, European Turkey and Vienna Intl Ctr, carry their DXCC parent's
              number). A number of the list without a table entry is ignored and counted as
              unmapped in the status. An entity not in the table or not on the list has no rank
-             (ValueOrder falls back). The file is read off the station step (the first
+             (ValueOrder sorts it after the listed ones). A list once fetched stays until the next
+             update. The file is read off the station step (the first
              GET /strategy, POST /strategy/evaluate or selection, on a blocking thread); the
              step only reads a parsed Arc behind a leaf lock. An unreadable file: no list,
              most_wanted_unreadable true.
-             Status in the GET /strategy snapshot: most_wanted null or {date, source, entries,
+             Status in the GET /strategy snapshot: most_wanted null or {date, entries,
              unmapped}, most_wanted_unreadable, most_wanted_attribution "Club Log Most Wanted
              list, Club Log (c) Michael Wells G7VJR, clublog.org".
-             POST /strategy/most-wanted {v, profile_id, boot_id, text}: text is the list as JSON
-             text, null removes it. POST /strategy/most-wanted/download {v, profile_id, boot_id}:
+             Browser, Settings > General: "List from <date> · <entries> entries" (and how many
+             are not mapped), or "No list; strategies call the strongest first", with beside it one
+             button "Update Most Wanted"; one click does everything. A failure keeps the list and shows the
+             reason in one line.
+             POST /strategy/most-wanted/download {v, profile_id, boot_id}:
              the station fetches the source once on the operator's click, with the User-Agent
-             of most_wanted::USER_AGENT naming this project; a failure is 502 download_failed,
-             nothing changed. Both exact keys, with the refusals of POST /strategy/ignore, and
-             return the snapshot; no MCP tool dispatches to them. There is no automatic
+             of most_wanted::USER_AGENT naming this project; a failure or a reply that is no list is 502 download_failed with
+             error.reason, nothing changed. Exact keys, with the refusals of POST /strategy/ignore, and
+             it returns the snapshot; no MCP tool dispatches to it. There is no automatic
              refresh. */
     }
     attribute def IgnoreLists {
@@ -524,9 +531,14 @@ package WstxStrategy {
              the selection. Without a grant transport or transmit owner no run starts:
              the strategy stays selected and the snapshot's strategy_refusal names the reason
              (transmit_unavailable) until the next selection.
-             No bounds: max_contacts and max_run_minutes do not apply and read null. The run
-             checks the grant, not the transport of the selecting request: a page load, a
-             second tab or a 401 recovery (a new proof) and the transport's 8 h deadline do
+             max_contacts and max_run_minutes do not apply and read null. Run limit (operator
+             decision 2026-11-06; the constant automation::STRATEGY_RUN_MAX, no setting): a run lasts
+             at most 8 hours from its selection, also with a browser open; a new selection
+             starts a new 8 hours. At the limit it selects no new station: a contact in progress
+             ends its normal way, a manual one is left alone, and when it next waits the run
+             stops run_limit; the strategy stays selected with the reason shown and only a
+             selection restarts it. The run checks the grant, not the transport of the selecting request: a page load, a
+             second tab or a 401 recovery (a new proof) and the transport's own 8 h deadline do
              not end it; a revoked grant or a safety edit does (authority_lost).
              Unattended (coordinator default 2026-11-06, for the operator to confirm; the
              constant automation::CLIENT_GONE, no setting): when no authenticated client has
@@ -538,7 +550,7 @@ package WstxStrategy {
              at each authenticated POST /mcp, which has only per-request authentication: its
              last request within the 60 s; the selection itself counts. A client back before the
              stop continues the run. So with every browser closed it does not go on calling. The
-             run ends only by a HALT, a selection, the grant (authority_lost), no client (no_client), the Tx
+             run ends only by a HALT, a selection, the grant (authority_lost), no client (no_client), the run limit (run_limit), the Tx
              watchdog (tx_watchdog) or a refused command (transmit_refused, provider_error):
              the strategy stays selected with the stop reason shown, and only a new
              selection (None, then the strategy) starts it again: an AutomationCommand start
