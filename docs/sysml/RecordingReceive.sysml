@@ -744,8 +744,8 @@ package WstxRecordingReceive {
              5 s. It is an optional write that a full socket defers and never loses. The browser sends no
              recording.get: it reads GET /recording once per socket (the snapshot), after its own mutation
              and when the event differs from its snapshot in identity, job state or import identity;
-             the rest of the import updates its view without a read. A failed read after an event closes
-             the socket: the event is sent once and no timer reads, so the reconnect reads again. Thin/detail/off acknowledge
+             the rest of the import updates its view without a read. A failed read on a subscribed socket closes
+             the socket: an event is sent once and no timer reads, so the reconnect reads again; an upload in progress then stops with its reservation left to cancel. Thin/detail/off acknowledge
              `{v:1,type:"spectrum.subscription",id,data:{profile:"thin"|"detail"|"off"}}`. Selected-profile
              absence returns recoverable `unavailable` for these commands. Every new connection starts
              off; legacy peers receive only existing status/heartbeat messages. New browser obtains

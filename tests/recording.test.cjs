@@ -440,7 +440,7 @@ test('TC-010-002 recording state and import progress are pushed on change, witho
   await sleep(1100);const beforeImport=watcher.log.length,bytes=wav(1),op=await f.reserve();
   await p.waitForFunction(id=>snapshot?.import?.id===id,op.id,{timeout:5000});await sleep(300);const readsAfterReserve=reads.length;
   const put=(from,to)=>f.req(`/recording/imports/${op.id}`,'PUT',bytes.subarray(from,to),{'Content-Type':'audio/wav','Content-Range':`bytes ${from}-${to-1}/${bytes.length}`});
-  assert.equal((await put(0,2048)).status,202);await sleep(1200);assert.equal((await put(2048,4096)).status,202);
+  assert.equal((await put(0,2048)).status,202);await sleep(2200);assert.equal((await put(2048,4096)).status,202);
   await p.waitForFunction(()=>snapshot?.import?.received_bytes===4096,null,{timeout:8000});
   // Each socket checks on its own timer: this peer's event can follow the browser's.
   for(let n=0;n<40&&watcher.log.at(-1).value.data.import?.received_bytes!==4096;n++)await sleep(100);

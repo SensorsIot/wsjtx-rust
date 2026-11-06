@@ -1490,12 +1490,12 @@ package WstxRequirements {
              leaves memory/revision/file unchanged and shows its field/error outcome; valid boundary
              saves persist exactly. Revision exhaustion refuses another save. Test a second window
              saving from an old revision: one save wins, one receives 409, no silent merge/lost update.
-             Also hold a Refresh GET response, begin and hold a PUT, then release the GET while the
+             Also hold an announced revision's GET response, begin and hold a PUT, then release the GET while the
              save remains pending. Save stays disabled and even a repeated form submission sends
              no second PUT. Release the PUT: exactly one revision advances, editable controls and
              Save recover their usable state, and permanently read-only controls remain disabled.
              Repeat with the opposite response order on an unchanged revision-0 station: hold the
-             Refresh response, complete the PUT and its follow-up revision-1 GET, then release the
+             announced revision's GET response, complete the PUT and its follow-up revision-1 GET, then release the
              old response. Visible revision, saved fields and acknowledged-save feedback remain at
              revision 1. A changed boot identity still permits restart/recovery resynchronization.
 
@@ -1554,7 +1554,7 @@ package WstxRequirements {
              no acknowledgement, no revision advance, previous complete JSON and current settings
              remain authoritative. At crash-before/after-replacement fault points require either
              complete old or complete new JSON, never a partial file; a lost response is reconciled
-             by GET without replay. After a lost save response, ordinary Refresh/background GET or
+             by GET without replay. After a lost save response, ordinary Refresh, an announced GET or
              reconnect MUST NOT permit a second save: Save remains disabled until an explicit reload
              successfully validates the current authoritative profile. A failed explicit reload keeps
              that guard; a successful one recovers the committed revision without a second PUT.
