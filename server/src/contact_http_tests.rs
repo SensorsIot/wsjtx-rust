@@ -1286,8 +1286,17 @@ async fn contact_browser_station(filter: &[&str]) -> std::process::Output {
                 async move {
                     let station = f.state.recording.transmit.get().unwrap();
                     let enabled = body["enabled"].as_bool().unwrap();
-                    let accepted = station.service.with(|c| c.set_tune(enabled, 1500)).is_ok();
-                    Json(json!({"accepted":accepted}))
+                    let result = station.service.with(|c| {
+                        if !enabled {
+                            let stopped = c.set_tune(false, 0);
+                            c.disarm(wstx_rust::transmit::service::DisarmCause::Operator);
+                            return stopped;
+                        }
+                        let revision = c.hardware().context().safety_revision.unwrap_or(1);
+                        c.arm(revision)?;
+                        c.set_tune(true, 1500)
+                    });
+                    Json(json!({"accepted":result.is_ok(),"refusal":format!("{result:?}")}))
                 }
             }),
         )

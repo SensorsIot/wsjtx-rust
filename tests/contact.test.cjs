@@ -490,7 +490,7 @@ test('TC-007-005 the Tune countdown is paced by the display profile on the socke
   const tune=async enabled=>{const r=await fetch(control+'/tune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});return r.json();};
   try{
     await new Promise(r=>setTimeout(r,1500));
-    assert.equal((await tune(true)).accepted,true,'Tune starts');
+    const started=await tune(true);assert.equal(started.accepted,true,`Tune starts: ${started.refusal}`);
     await new Promise(r=>setTimeout(r,11000));
     await tune(false);
   }finally{thin.ws.close();detail.ws.close();}
