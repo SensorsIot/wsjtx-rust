@@ -488,7 +488,7 @@ test('TC-007-005 the Tune countdown is paced by the display profile on the socke
   const countdown=c=>Object.keys(c).length===1&&c.watchdog&&Object.keys(c.watchdog).join()==='tune_remaining_seconds';
   const thin=await peer('spectrum.thin'),detail=await peer('spectrum.detail');
   const s=await snapshot();
-  const tune=async body=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),action:'tune',...body})});assert.equal(r.status,200,await r.text());return r.json();};
+  const tune=async body=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),action:'tune',...body})});const text=await r.text();assert.equal(r.status,200,text);return JSON.parse(text);};
   try{
     await new Promise(r=>setTimeout(r,1500));
     const started=await tune({enabled:true,tx_offset_hz:1500});assert.notEqual(started.result?.accepted,false,JSON.stringify(started));
