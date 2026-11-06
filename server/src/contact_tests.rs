@@ -937,6 +937,43 @@ fn tc_008_001_a_partner_row_with_another_snr_restarts_nothing() {
     assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
 }
 
+// Proves: CL-010-10; TC-008-001: selecting the partner's row keeps a message already sent as
+// edited, so its count stays.
+#[test]
+fn tc_008_001_a_partner_row_keeps_an_edited_message_and_its_count() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, Some(-9.0));
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::SetWatchdogs {
+        tx_calls: 2,
+        tune_seconds: 90,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 13 * SECOND);
+    let report = s.row(period(2), "HB9BLA K1ABC -09", 1500.0, Some(-9.0));
+    s.deliver(std::slice::from_ref(&report));
+    s.command(Command::EditMessage(Slot::Tx3, "K1ABC HB9BLA R-05".into()))
+        .unwrap();
+    s.run(period(5) + 2 * SECOND);
+    assert_eq!(s.sent_in(period(5)).as_deref(), Some("K1ABC HB9BLA R-05"));
+    assert_eq!(s.core.view().tx_remaining_calls, 0);
+    let again = s.row(period(4), "HB9BLA K1ABC -09", 1500.0, Some(-9.0));
+    s.command(Command::SelectRow {
+        row: again,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(s.core.view().tx_remaining_calls, 0, "the partner's row");
+    s.run(period(7) + 2 * SECOND);
+    assert_eq!(s.sent_in(period(7)), None, "never a third send");
+    assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
+}
+
 // Proves: CL-010-10; TC-008-001: a limit lowered under a pending send stops before it keys.
 #[test]
 fn tc_008_001_a_pending_send_beyond_a_lowered_limit_is_never_keyed() {

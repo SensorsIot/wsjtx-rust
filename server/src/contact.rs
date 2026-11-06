@@ -1073,9 +1073,20 @@ impl Engine {
             report
         };
         let tx4 = tx4_default(mode);
-        let messages = self
+        let mut messages = self
             .generate(&call, &grid4, Some(&dx), report, tx4)
             .ok_or("invalid_call")?;
+        // A text already sent to the same active partner stays, also when it was edited:
+        // regenerating it would make a new message, whose Rep restarts the Tx watchdog.
+        if let Some(c) = self.contact.as_ref().filter(|_| active && same) {
+            for (new, old) in messages.iter_mut().zip(&c.messages) {
+                if let Some(old) = old
+                    && c.dialogue.iter().any(|e| e.tx && e.text == *old)
+                {
+                    *new = Some(old.clone());
+                }
+            }
+        }
         // Re-selecting a decoded row of the same partner without a grid (e.g. their
         // report) keeps the grid already known, as WSJT-X keeps its DX Grid (#11); a
         // manual entry sets exactly the grid entered.

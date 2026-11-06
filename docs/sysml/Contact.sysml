@@ -53,7 +53,9 @@ package WstxContact {
              asprintf("%+2.2d") (MW genStdMsgs ~9738): -05, +03, +00, -15, +49.
              The value after selecting a decoded row is round-half-away-from-zero of its
              snr_db, clamped to this range; a row with null SNR, and manual DX entry,
-             use the current report value, initially manualDefaultDb. */
+             use the current report value, initially manualDefaultDb. Once the current Tx2
+             or Tx3 text of the active contact was sent, selecting its partner again keeps
+             the report (WstxContact::TxWatchdog). */
     }
     attribute def StandardMessageSet {
         attribute dxCall : String;
@@ -417,7 +419,7 @@ package WstxContact {
              dxCall = the row's 'from' call; dxGrid = the row's grid exchange if any
              (a row without a grid of the same partner and mode keeps the known dxGrid,
              as WSJT-X's DX Grid, #11; EnterDxStation sets exactly the grid entered);
-             report from the row SNR (ReportRange); rxOffsetHz = row frequency rounded
+             report from the row SNR, with the exception stated there (ReportRange); rxOffsetHz = row frequency rounded
              to integer Hz; txOffsetHz = the same, unless Hold Tx is on or the row's
              'to' call is my call (replying to me keeps my Tx frequency, DMR ~320-333);
              txParity = opposite of the row's period parity; message set generated;
@@ -1343,7 +1345,8 @@ package WstxContact {
              repeating while I repeat keeps both Reps counting) increments that entry's
              count instead, except the first transmission after an operator Enable Tx
              from off, which opens a new entry; selecting a row of the current partner keeps
-             the dialogue and, once a Tx2 or Tx3 was sent, the report whatever the row's SNR (its
+             the dialogue, every message text already sent, also an edited one, and, once the
+             current Tx2 or Tx3 text was sent, the report whatever the row's SNR (its
              period_utc_ms stays the first period; its snr becomes the repeat's SNR when
              that is not null, so it is the latest decode's, #60); beyond 16 the oldest entry is dropped;
              empty for a new contact and cleared by CancelContact)
