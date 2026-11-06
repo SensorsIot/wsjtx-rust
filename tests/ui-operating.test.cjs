@@ -183,8 +183,8 @@ test('receive snapshot race preserves unknown mutation until a later read',{time
   await chip.filter({hasText:'Receive stopped'}).waitFor();
   assert.deepEqual(errors,[]);
 });
-// WstxContact::HaltTx D5 / OperatingLayout escapeClosesRegion=false: Escape halts and
-// aborts the contact but closes no panel or drawer; its Back/Close control returns.
+// WstxContact::AbortQso (#39) / OperatingLayout escapeClosesRegion=false: Escape aborts
+// the QSO but closes no panel or drawer; its Back/Close control returns.
 async function returnToOperation(page){
   const open=await page.locator('.op-secondary:not([hidden])').count();
   await page.keyboard.press('Escape');
@@ -201,7 +201,7 @@ test('TC-007-002 operating screen exposes literal identity and truthful unsuppor
   assert.equal(await page.locator('#operating-station station').count(),0);
   assert.match(await page.locator('#band-activity').innerText(),/Decoder unavailable/);assert.match(await page.locator('#rx-focus').innerText(),/No station selected/);assert.equal(await page.locator('tr[data-result-id]').count(),0);
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot(),null,{timeout:25000});
-  for(const name of ['CQ','Tune','HALT','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
+  for(const name of ['CQ','Tune','HALT','Abort QSO (Esc)','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true,name);
   assert.equal(await page.locator('#contact-auto').isDisabled(),true);assert.equal(await page.locator('#contact-auto').getAttribute('aria-label'),'Auto sequence unavailable');
   assert.equal(await page.locator('#transmit-unavailable').isVisible(),true,'the reason is next to the disabled transmit buttons');
   await page.locator('#open-server-settings').click();await page.locator('#tab-expert').click();
@@ -479,6 +479,10 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
   for(const selector of ['#qso-heard','#qso-others tr:last-child','#qso-dialogue tr:last-child','#qso-next','#qso-cq','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible`);
   await page.screenshot({path:'test-results/ui-operating/qso-dialogue-1366x768.png'});
+  // #39 Abort QSO: with five direct buttons the partner's message keeps its room and the longest
+  // badge stays inside the pane.
+  const headFit=await page.evaluate(()=>{const pane=document.querySelector('#rx-focus').getBoundingClientRect(),badge=document.querySelector('#rx-focus .op-contact-badge');badge.textContent='Transmitting';const b=badge.getBoundingClientRect();return {heard:document.querySelector('#qso-heard').getBoundingClientRect().width,inside:b.right<=pane.right+0.5&&b.right<=innerWidth};});
+  assert.ok(headFit.heard>=50,`the partner's message has room: ${headFit.heard} px`);assert.equal(headFit.inside,true,'the Transmitting badge stays inside the pane');
   // Item 8 (#37, operator 2026-11-04): the pane has a fixed height with the QSO section (12
   // rows, here all ten entries without scrolling) and Calling me; TC-037-003 proves that nothing
   // below it moves. At 1920x1080 the height below the column stays free.
@@ -820,7 +824,7 @@ test('TC-007-009 the Settings drawer has four sections holding every control mov
   assert.equal(await page.locator('#settings-drawer #transmit-details #transmit-panel').count(),1,'the raw #9 transmit panel is an Expert section');
   // #44 CL-044-08: opening the drawer lists the endpoints by name; listing is not an Apply.
   assert.ok(requests.includes('GET /audio/endpoints'));assert.equal(requests.includes('GET /audio/devices'),false);assert.equal(requests.includes('PUT /profile'),false,'listing inputs is not an Apply');
-  await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'Esc halts and closes no panel');
+  await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'Esc closes no panel');
   await page.locator('#band-activity').click({position:{x:40,y:200}});assert.equal(await page.locator('#settings-drawer').isVisible(),false,'a pointer action outside closes the drawer');
   await page.keyboard.press('F2');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'F2 opens Settings');
   await page.locator('#settings-drawer .return-operate').click();
@@ -1334,7 +1338,7 @@ test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Ac
   // next and turns Enable Tx on, as WSJT-X Next/Now. No Reply button either since the #50
   // double-click fix is installed: the double-click above replies.
   assert.equal(await page.locator('#qso-rr73,#qso-73,#qso-reply').count(),0,'no Reply, RR73 or 73 button');
-  assert.deepEqual(await page.locator('#rx-focus .op-qso-buttons button').allTextContents(),['CQ','Tune','HALT','Log QSO']);
+  assert.deepEqual(await page.locator('#rx-focus .op-qso-buttons button').allTextContents(),['CQ','Tune','HALT','Abort QSO (Esc)','Log QSO']);
   await page.locator('#qso-more summary').click();
   const now=slot=>page.locator(`#contact-messages .ct-now[data-slot=${slot}]`);
   m=commands.length;await now('tx4').click();for(let i=0;i<60&&commands.length<m+2;i++)await page.waitForTimeout(50);
@@ -1448,10 +1452,9 @@ test('TC-007-002 in-page navigation preserves unsaved profile and selected recor
  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();assert.equal(await page.locator('#display-name').inputValue(),'Unsaved operator edit');
  await page.locator('#tab-expert').click();
  assert.equal(await page.locator('#recording-file').evaluate(el=>el.files[0].name),'selected-but-not-imported.wav');
- // Escape is the keyboard Halt Tx (WstxContact::HaltTx D5): until the contact snapshot
- // shows a receive-only station it sends the idempotent #9 halt, never anything else.
- assert.deepEqual(mutations.filter(m=>new URL(m.url).pathname!=='/transmit/halt'),[],'navigation does not save/import or issue station mutations');
- assert.ok(mutations.every(m=>m.method==='POST'),'only the keyboard halt POST');
+ // Escape is Abort QSO (WstxContact::AbortQso, #39): with no contact in progress it sends
+ // nothing, and it is never a halt.
+ assert.deepEqual(mutations,[],'navigation does not save/import or issue station mutations, and Esc sends no halt');
  assert.deepEqual(errors,[]);
 });
 
@@ -2398,7 +2401,7 @@ test('TC-039-006 Highlight marks and sorts, the editor previews and saves, Auto 
   await page.locator('#strategy-editor button[value=cancel]').click();assert.equal(await page.locator('#strategy-editor').evaluate(d=>d.open),false);
   // Auto: the first use asks; Cancel sends nothing; Start sends configure then start.
   await page.locator('#strategy-auto').click();await page.locator('#op-confirm[open]').waitFor();
-  assert.match(await page.locator('#op-confirm-text').textContent(),/Auto transmits without asking: it answers only stations that match "DX first" \(Auto Call and Auto CQ, switching after 3 tries\)\. The Tx watchdog stops it when one message would be sent more than 6 times; a new message or station starts that count again, so Auto can run until its limit of 8 hours\. HALT or Esc stops it\./);
+  assert.match(await page.locator('#op-confirm-text').textContent(),/Auto transmits without asking: it answers only stations that match "DX first" \(Auto Call and Auto CQ, switching after 3 tries\)\. The Tx watchdog stops it when one message would be sent more than 6 times; a new message or station starts that count again, so Auto can run until its limit of 8 hours\. HALT stops it; Esc aborts the current QSO\./);
   await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);assert.deepEqual(autos,[],'cancelled: no automation request');
   await page.locator('#strategy-auto').click();await page.locator('#op-confirm[open]').waitFor();await page.locator('#op-confirm-ok').click();
   for(let i=0;i<60&&autos.length<2;i++)await page.waitForTimeout(50);
@@ -2547,7 +2550,7 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
   await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
   assert.deepEqual(await items(),['Reply','Select','Set Rx here','Pounce K1ABC','Ignore K1ABC']);
   await page.locator('#ba-menu [data-menu=pounce]').click();await page.locator('#op-confirm[open]').waitFor();
-  assert.match(await page.locator('#op-confirm-text').textContent(),/^Pounce transmits without asking: it answers K1ABC when it calls CQ or ends a QSO with 73 on this band\. The Tx watchdog stops it when one message would be sent more than 6 times\. HALT or Esc stops it\.$/);
+  assert.match(await page.locator('#op-confirm-text').textContent(),/^Pounce transmits without asking: it answers K1ABC when it calls CQ or ends a QSO with 73 on this band\. The Tx watchdog stops it when one message would be sent more than 6 times\. HALT stops it; Esc aborts the current QSO\.$/);
   await page.locator('#op-confirm-ok').click();
   for(let i=0;i<60&&autos.length<2;i++)await page.waitForTimeout(50);
   assert.deepEqual(autos.map(b=>[b.action,b.expected_policy_revision,b.expected_run_revision,b.mode,b.safety_revision]),[['configure',0,undefined,undefined,undefined],['start',1,0,'ft8',7]]);

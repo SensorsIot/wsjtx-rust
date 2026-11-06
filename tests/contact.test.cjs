@@ -88,7 +88,7 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
   assert.deepEqual(page.errors,[]);
 });
 
-test('TC-007-001 double-click starts transmission, partner report advances to Tx3, Esc halts first and cancels with a panel open',{timeout:90000},async()=>{
+test('TC-007-001 double-click starts transmission, partner report advances to Tx3, Esc aborts the QSO (no halt) with a panel open',{timeout:90000},async()=>{
   // #37 WstxContact::SetEnableTx: no Enable Tx control and no Reply button (gone since the #50
   // double-click fix); a double-click on the decoded row selects it again and arms.
   assert.equal(await page.locator('#contact-enable,#qso-reply').count(),0);
@@ -117,26 +117,55 @@ test('TC-007-001 double-click starts transmission, partner report advances to Tx
   assert.equal(await page.locator('#op-confirm[open]').count(),0,'HALT closes the popup');
   await new Promise(r=>setTimeout(r,300));
   assert.deepEqual(requests.slice(popupMark).filter(r=>r.method==='POST').map(r=>r.path),['/transmit/halt'],'the popup HALT sends only the halt; the CQ is not sent');
-  // A panel is open; Esc in a text field halts (priority route) before cancelling and closes nothing.
+  // #39 Abort QSO: a panel is open; Esc in a text field aborts the QSO (one contact
+  // command, no halt) and closes nothing.
   await page.locator('#station-bar [data-region=help]').click();
   assert.equal(await page.locator('#region-help').isVisible(),true);
   await page.locator('[data-region=operate]').first().focus();
-  const mark=requests.length;
+  const mark=requests.length,haltBefore=(await snapshot()).transmit.halt_state;
   await page.keyboard.press('Escape');
   await waitFor(async()=>(await snapshot()).contact.state==='cancelled','cancelled');
   await waitFor(()=>requests.slice(mark).some(r=>r.path==='/contact/command'),'cancel request observed');
   const after=requests.slice(mark).filter(r=>r.method==='POST');
-  assert.deepEqual(after.map(r=>r.path),['/transmit/halt','/contact/command']);
-  assert.equal(JSON.parse(after[1].body).action,'cancel');
+  assert.deepEqual(after.map(r=>r.path),['/contact/command'],'Esc sends no halt');
+  assert.equal(JSON.parse(after[0].body).action,'abort');
   assert.equal(await page.locator('#region-help').isVisible(),true,'Esc closes no panel');
+  assert.equal((await snapshot()).transmit.halt_state,haltBefore,'not halted');
   assert.equal(await page.getByRole('button',{name:'Halt Tx',exact:true}).isVisible(),true);
   const s=await snapshot();assert.equal(s.transmit.arm_state,'disarmed');assert.equal(s.contact.dx_call,null);
-  const keys=await (await fetch(control+'/keys')).json();assert.ok(keys.length===0||keys.at(-1)===false,'PTT released after halt');
+  const keys=await (await fetch(control+'/keys')).json();assert.ok(keys.length===0||keys.at(-1)===false,'PTT released after the abort');
   await page.locator('.op-secondary:not([hidden]) .return-operate').click();
+  // #39 Abort QSO: the visible button beside HALT does the same, and the station stays ready.
+  await publish(evenNow(),[{text:'CQ K2ABC FN31',hz:1300,snr:-4}]);
+  const fresh=page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:'CQ K2ABC FN31'}).first();
+  await fresh.waitFor();await fresh.dblclick();
+  await waitFor(async()=>(await snapshot()).transmit.arm_state==='armed','armed again');
+  // An open dialog or menu takes Esc first: it closes, and the QSO runs on.
+  const aborts=()=>commands().filter(c=>c.action==='abort').length,abortsBefore=aborts();
+  await page.locator('#qso-cq').click();await page.locator('#op-confirm[open]').waitFor();
+  await page.keyboard.press('Escape');await waitFor(async()=>await page.locator('#op-confirm[open]').count()===0,'dialog closed by Esc');
+  await fresh.click({button:'right'});await page.locator('#ba-menu').waitFor();
+  await page.keyboard.press('Escape');await page.locator('#ba-menu').waitFor({state:'hidden'});
+  await new Promise(r=>setTimeout(r,300));
+  assert.equal(aborts(),abortsBefore,'Esc on a dialog or menu aborts nothing');
+  assert.equal((await snapshot()).transmit.arm_state,'armed','the QSO runs on');
+  const button=page.getByRole('button',{name:'Abort QSO (Esc)',exact:true}).locator('visible=true');
+  await button.first().waitFor();assert.equal(await button.first().isEnabled(),true);
+  const buttonMark=requests.length;
+  await button.first().click();
+  await waitFor(async()=>(await snapshot()).contact.state==='cancelled','cancelled by the button');
+  const sent=requests.slice(buttonMark).filter(r=>r.method==='POST');
+  assert.deepEqual(sent.map(r=>r.path),['/contact/command'],'the button sends no halt');assert.equal(JSON.parse(sent[0].body).action,'abort');
+  assert.equal((await snapshot()).transmit.arm_state,'disarmed');
+  await fresh.dblclick();
+  await waitFor(async()=>(await snapshot()).transmit.arm_state==='armed','ready: the next QSO arms');
+  await page.keyboard.press('Escape');
+  await waitFor(async()=>(await snapshot()).transmit.arm_state==='disarmed','disarmed by Esc');
   assert.deepEqual(page.errors,[]);
 });
 
 test('TC-010-008 TC-050-001 waterfall click sets Tx, double-click sets Rx and Tx, 3 px lines and numeric inputs',{timeout:60000},async()=>{
+  const enabledBefore=commands().filter(x=>x.action==='enable_tx'&&x.enabled).length;
   const canvas=page.locator('#waterfall');
   // Measured at every action: station-bar text changes may move the signal area.
   let box;const at=hz=>({x:box.x+box.width*hz/3000,y:box.y+box.height/2});
@@ -174,7 +203,7 @@ test('TC-010-008 TC-050-001 waterfall click sets Tx, double-click sets Rx and Tx
     await page.locator('#contact-result').filter({hasText:ok?'Tx frequency: accepted':'out_of_range'}).waitFor();
   }
   assert.equal(commands().some(x=>x.action==='enable_tx'&&x.enabled),true,'only the earlier explicit Enable Tx');
-  assert.equal(commands().filter(x=>x.action==='enable_tx'&&x.enabled).length,1,'no pointer action enables Tx');
+  assert.equal(commands().filter(x=>x.action==='enable_tx'&&x.enabled).length,enabledBefore,'no pointer action enables Tx');
   assert.deepEqual(page.errors,[]);
 });
 
@@ -214,16 +243,16 @@ test('TC-007-004 manual DX entry and Log QSO log the contact at once without hid
 });
 
 // Review finding P2-2: with the contact snapshot unavailable (GET /contact failing),
-// Esc still sends the #9 halt; only a station known to be receive-only skips it.
-test('TC-007-004 Esc halts even when the contact snapshot is unavailable',{timeout:60000},async()=>{
+// Alt+H still sends the #9 halt; only a station known to be receive-only skips it.
+test('TC-007-004 Alt+H halts even when the contact snapshot is unavailable',{timeout:60000},async()=>{
   await page.route('**/contact',route=>route.abort('failed'));
   await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   const mark=requests.length;
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Alt+h');
   await waitFor(()=>requests.slice(mark).some(r=>r.method==='POST'&&r.path==='/transmit/halt'),'halt without snapshot');
   await new Promise(r=>setTimeout(r,500));
-  assert.equal(requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/transmit/halt').length,1,'exactly one halt per Esc');
+  assert.equal(requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/transmit/halt').length,1,'exactly one halt per Alt+H');
   const halt=JSON.parse(requests.slice(mark).find(r=>r.path==='/transmit/halt').body);
   const live=await (await fetch(origin+'/receive')).json();
   assert.equal(halt.profile_id,live.profile_id);assert.equal(halt.boot_id,live.boot_id);
@@ -244,8 +273,8 @@ test('TC-007-002 a pointer action outside the Settings drawer returns to operati
 });
 
 // Re-check item 2: the keyboard halt does not wait for contact.js (loaded after the first
-// state reads); one Esc sends exactly one halt before and after that load.
-test('TC-007-004 Esc halts once before and once after the contact client loads',{timeout:60000},async()=>{
+// state reads); one Alt+H sends exactly one halt before and after that load.
+test('TC-007-004 Alt+H halts once before and once after the contact client loads',{timeout:60000},async()=>{
   // Hold /contact.js so the first Esc happens deterministically before it loads.
   let release;const held=new Promise(r=>release=r);
   await page.route('**/contact.js',route=>held.then(()=>route.continue()).catch(()=>{}));
@@ -253,7 +282,7 @@ test('TC-007-004 Esc halts once before and once after the contact client loads',
   await waitFor(()=>requests.some(r=>r.path==='/contact.js'&&r.end===null),'contact.js requested and held');
   assert.equal(await page.evaluate(()=>!!window.wstxContact),false,'contact.js not loaded yet');
   const start=requests.length;
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Alt+h');
   await waitFor(()=>requests.slice(start).some(r=>r.method==='POST'&&r.path==='/transmit/halt'),'halt before contact.js');
   await new Promise(r=>setTimeout(r,500));
   assert.equal(requests.slice(start).filter(r=>r.method==='POST'&&r.path==='/transmit/halt').length,1);
@@ -262,7 +291,7 @@ test('TC-007-004 Esc halts once before and once after the contact client loads',
   await page.unroute('**/contact.js');
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   const mark=requests.length;
-  await page.keyboard.press('Escape');
+  await page.keyboard.press('Alt+h');
   await waitFor(()=>requests.slice(mark).some(r=>r.method==='POST'&&r.path==='/transmit/halt'),'halt after contact.js');
   await new Promise(r=>setTimeout(r,800));
   assert.equal(requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/transmit/halt').length,1,'contact.js sends no second halt');
