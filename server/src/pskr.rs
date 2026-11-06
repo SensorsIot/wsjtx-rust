@@ -823,8 +823,7 @@ pub(crate) fn hearing_of(
     target: Option<&str>,
     mode: decoder::Mode,
 ) -> (bool, Vec<u32>) {
-    let (Some(feed), Some(target), Some(band)) =
-        (r.pskr.get(), target, strategy::station_band(r))
+    let (Some(feed), Some(target), Some(band)) = (r.pskr.get(), target, strategy::station_band(r))
     else {
         return (false, Vec::new());
     };

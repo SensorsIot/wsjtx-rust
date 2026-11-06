@@ -277,6 +277,8 @@ pub struct Recording {
     pub(crate) tx: Mutex<TxPeriods>,
     /// WstxContact engine of this station (#10), started once by the process.
     pub(crate) contact: std::sync::OnceLock<Arc<crate::contact_http::Station>>,
+    /// #39 who is connected, for WstxStrategy::StrategyRun's rule without a client.
+    pub(crate) clients: crate::automation::Clients,
     /// WstxUdp interface of this station (#40), opened once by the process.
     pub(crate) udp: std::sync::OnceLock<Arc<crate::udp::Owner>>,
     /// The read-only PSK Reporter feed (#39 WstxStrategy::HearingFeed), started once by the
@@ -3362,6 +3364,7 @@ impl Recording {
                 transmit: std::sync::OnceLock::new(),
                 tx: Default::default(),
                 contact: std::sync::OnceLock::new(),
+                clients: Default::default(),
                 udp: std::sync::OnceLock::new(),
                 pskr: std::sync::OnceLock::new(),
                 clock: std::sync::OnceLock::new(),
@@ -3438,6 +3441,7 @@ impl Recording {
             transmit: std::sync::OnceLock::new(),
             tx: Default::default(),
             contact: std::sync::OnceLock::new(),
+            clients: Default::default(),
             udp: std::sync::OnceLock::new(),
             pskr: std::sync::OnceLock::new(),
             clock: std::sync::OnceLock::new(),

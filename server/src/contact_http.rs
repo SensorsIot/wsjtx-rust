@@ -1200,7 +1200,9 @@ pub(crate) fn station_tick(state: &ProfileState) {
     if let Some(s) = state.recording.contact.get() {
         // Read before the contact step: the engine then has every record of it.
         let publication = state.recording.latest_publication();
-        // #42 IgnoreLists: a station band change empties the session list before Auto.
+        // WstxStrategy::StrategyRun: a HALT from any source sets active to None.
+        s.strategy.halt_step(state);
+        // #42 IgnoreLists: a station band change empties the session list before a run step.
         s.strategy
             .observe_band(crate::strategy::station_band(&state.recording));
         // #42 Alert: every new live decode once, whether or not a browser is connected.

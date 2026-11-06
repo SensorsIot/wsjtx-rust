@@ -5,8 +5,12 @@ use super::*;
 // and the called station, and lands nearest what the target decodes; none free keeps it.
 #[test]
 fn decide_away_prefers_what_the_target_decodes() {
-    let row = |hz: f64| json!({"period_start_utc":"2026-11-06T12:00:00.0000000Z","frequency_hz":hz});
-    let parity = parity(Mode::Ft8, parse_utc("2026-11-06T12:00:00.0000000Z").unwrap());
+    let row =
+        |hz: f64| json!({"period_start_utc":"2026-11-06T12:00:00.0000000Z","frequency_hz":hz});
+    let parity = parity(
+        Mode::Ft8,
+        parse_utc("2026-11-06T12:00:00.0000000Z").unwrap(),
+    );
     let records = [row(1000.0)];
     assert_eq!(
         decide_away(&records, Mode::Ft8, parity, 1500, Some(2000), &[1020]),

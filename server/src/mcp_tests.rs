@@ -26,7 +26,7 @@ pub(crate) struct Mcp {
     pub(crate) mcp: String,
     pub(crate) scope: authorization::WireScope,
     key: Option<ring::signature::EcdsaKeyPair>,
-    gid: String,
+    pub(crate) gid: String,
 }
 pub(crate) struct Reply {
     pub(crate) status: StatusCode,
@@ -386,20 +386,17 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
         ],
     );
     f.tick();
-    // The browser saves an active strategy (#39): rule 1 CQ from NA, rule 2 any CQ.
-    let na_first = json!({"name":"NA first","rules":[{"conditions":[{"kind":"message","negate":false,"value":"cq"},
-        {"kind":"continent","negate":false,"values":["NA"]}]},{"conditions":[{"kind":"message","negate":false,"value":"cq"}]}],
-        "sort":"strongest","treat_73_as_cq":true,"apply_to_callers":false,"skip_after":2,"auto_role":"call","switch_after":2});
-    let saved = f
-        .browser(
-            "PUT",
-            "/strategy",
-            Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"expected_revision":0,
-                "configuration":{"continent":null,"active":"NA first","highlight":true,"strategies":[na_first],
-                    "ignore_calls":[],"session_ignore_minutes":30}})),
-        )
-        .await;
-    assert_eq!(saved.status, StatusCode::OK, "{}", saved.json);
+    // The browser's strategy store (#39), active as a selection leaves it; no run: the
+    // run's own behaviour is in strategy_tests (this test reads views and verdicts).
+    let new_calls = crate::strategy::tests::strategy_json("New calls");
+    let saved = f.state.recording.contact.get().unwrap().strategy.put(
+        &f.state,
+        json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"expected_revision":0,
+                "configuration":{"continent":null,"active":"New calls","strategies":[new_calls],
+                    "ignore_calls":[],"session_ignore_minutes":30}}),
+    );
+    assert!(saved.is_ok());
+    f.state.logbook.worked_set().unwrap();
     // Modern discovery and the fixed WstxMcp::ToolCatalog.
     let d = f.modern("server/discover", json!({})).await;
     assert_eq!(d.status, StatusCode::OK);
@@ -512,10 +509,10 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
             strategy["configuration"]["active"].clone(),
             strategy["my_continent"].clone()
         ),
-        (json!("NA first"), json!("EU")),
+        (json!("New calls"), json!("EU")),
         "the browser's saved strategy; continent from JN47AA"
     );
-    // The browser's verdicts (Highlight): both CQs from NA match rule 1, strongest first.
+    // The browser's verdicts: both CQs are new calls of one entity, strongest first.
     let evaluate = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"source_id":source,"job_id":job,
         "generation":generation,"first_sequence":sequences[0],"next_sequence":sequences[1] + 1,
         "strategy":null,"explain":false});
@@ -525,7 +522,7 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
     assert_eq!(verdicts["status"], 200, "{verdicts}");
     assert_eq!(
         verdicts["result"]["verdicts"],
-        json!([{"sequence":sequences[1],"rank":0,"grey":false},{"sequence":sequences[0],"rank":0,"grey":false}])
+        json!([{"sequence":sequences[1],"rank":0,"grey":false},{"sequence":sequences[0],"rank":1,"grey":false}])
     );
     assert_eq!(
         verdicts["result"],
