@@ -287,8 +287,8 @@ package WstxProfiles {
              missing/unreadable directory/file -> resource_unavailable; malformed JSON/
              UTF-8, duplicates/extra/missing keys/types/domains, >16384 bytes, invalid
              UUID, bind port 0/65536, malformed origin or port mismatch -> invalid_profile;
-             integer schema !=1 -> unsupported_schema; native_flex ->
-             unsupported_connection_type. Validate before accepting requests.
+             any other integer schema than 1 or a schema 2 NativeProfileDocument ->
+             unsupported_schema; schema 1 naming native_flex -> unsupported_connection_type. Validate before accepting requests.
              Acquire OS-backed exclusive directory AND account-local UUID ownership;
              canonical aliases and copies of a currently owned UUID -> profile_in_use;
              denied lock acquisition -> resource_unavailable. Hold through lifetime.
@@ -436,7 +436,8 @@ package WstxProfiles {
              GET absent Origin is valid; supplied wrong Origin 403, no CORS permission.
              Form edits whole Settings only, expected revision and selected profile_id.
              UUID/schema/endpoint/connection type/revision read-only. Standard selected;
-             Native FlexRadio reserved/disabled. All selections Saved; not activated;
+             Native FlexRadio is shown as the saved read-only type of a native profile
+             (NativeProfileDocument). All selections Saved; not activated;
              radio stays unconfigured; audio/control selection availability independent.
              PUT validates exact body shape/JSON/UTF8, media type/size before applying.
              Disable form controls while saving, preserving their read-only state;
@@ -1073,4 +1074,20 @@ package WstxProfiles {
         out receipt : AuthOperationReceipt;
     }
 
+    requirement NativeProfileDocument {
+        doc /* FR-023 native profile persistence. A standard profile remains the exact
+             schema-1 document; a schema-1 document naming native_flex stays refused with
+             unsupported_connection_type. A native profile is a schema-2 document with the
+             same keys plus connection_type native_flex and required native object
+             {client_id: lowercase v4 UUID generated at creation (this station's GUI-client
+             identity, not a radio identity), rx_antenna: 1..16 uppercase
+             letters/digits/underscore}; an explicit null or unknown key is invalid_profile, a
+             schema-2 document without the native object stays unsupported_schema, and older
+             binaries refuse it as unsupported_schema. Its audio selections stay null, control
+             and PTT disabled and it has no managed radio settings; a PUT naming them is
+             invalid_settings with that field. Radio serial or address, slice index/letter, DAX
+             channel, stream ID, client handle and tuning are never persisted. GET/PUT /profile
+             shapes are unchanged; connection type is not editable. */
+    }
+    dependency nativeProfileDocument from NativeProfileDocument to WstxRequirements::'FR-023';
 }

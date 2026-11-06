@@ -226,6 +226,10 @@ fn radio_bridge(port: &PortInfo) -> bool {
 }
 /// CL-044-01..03: POST /radio/detect. Read-only; never opens the station's CAT port.
 pub(crate) fn detect(state: &ProfileState) -> Result<Value, &'static str> {
+    // FR-023: a native profile has no COM port or audio device to detect.
+    if state.recording.flex.get().is_some() {
+        return Err("invalid_request");
+    }
     let owner = &state.recording.radio_setup;
     if owner
         .busy
@@ -433,7 +437,7 @@ pub(crate) fn discover_on_start(state: &ProfileState) -> Option<String> {
 }
 pub(crate) fn discover_within(state: &ProfileState, budget: Duration) -> Option<String> {
     // Opening a port can pulse DTR/RTS (CL-044-01): nothing opens without the confirmation.
-    if !keying_confirmed(state) {
+    if !keying_confirmed(state) || state.recording.flex.get().is_some() {
         return None;
     }
     let until = Instant::now() + budget;

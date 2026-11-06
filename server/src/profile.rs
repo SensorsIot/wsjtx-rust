@@ -80,6 +80,15 @@ impl Radio {
 }
 /// True when the control is CAT on a radio whose CI-V AGC command is known: every
 /// station CAT endpoint is an IC-7300 CI-V configuration (CL-022, catalogue).
+/// The live receive input of a profile: its native session stream or its audio device.
+pub fn receive_device(document: &Document) -> Option<String> {
+    if document.native.is_some() {
+        Some(NATIVE_DEVICE.to_owned())
+    } else {
+        document.audio.input_device.clone()
+    }
+}
+pub const NATIVE_DEVICE: &str = "native_flex";
 pub fn manages_radio(control: &Control) -> bool {
     control.mode == "cat"
         && control
@@ -107,6 +116,29 @@ pub struct Endpoint {
     #[serde(deserialize_with = "nullable")]
     pub origin: Option<String>,
 }
+/// FR-023 persisted native intent (schema 2 only). A radio identity, slice indices,
+/// stream IDs and client handles are never stored (#22, NativeProfileDocument).
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Native {
+    pub client_id: String,
+    pub rx_antenna: String,
+}
+impl Native {
+    pub fn intent(&self) -> wstx_rust::flex::Intent {
+        wstx_rust::flex::Intent {
+            client_id: self.client_id.clone(),
+            rx_antenna: self.rx_antenna.clone(),
+        }
+    }
+    fn valid(&self) -> bool {
+        self.intent().valid() && valid_uuid(&self.client_id)
+    }
+}
+// Present means an object: an explicit null is refused, absence is the standard path.
+fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Native>, D::Error> {
+    Native::deserialize(d).map(Some)
+}
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Document {
@@ -122,6 +154,12 @@ pub struct Document {
     pub control: Control,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub radio: Option<Radio>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub native: Option<Native>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -191,6 +229,28 @@ impl Settings {
     }
 }
 
+impl Settings {
+    /// A native profile takes audio and control from its session, not from the
+    /// standard device/CAT selections, which therefore stay empty.
+    pub fn validate_native(&self) -> Result<(), &'static str> {
+        if self.audio.input_device.is_some() {
+            return Err("audio.input_device");
+        }
+        if self.audio.output_device.is_some() {
+            return Err("audio.output_device");
+        }
+        if self.control.mode != "disabled" {
+            return Err("control.mode");
+        }
+        if self.control.endpoint.is_some() {
+            return Err("control.endpoint");
+        }
+        if self.control.ptt != "disabled" {
+            return Err("control.ptt");
+        }
+        Ok(())
+    }
+}
 impl Control {
     pub fn validate(&self) -> Result<(), &'static str> {
         let text = |s: &str, maximum| {
@@ -268,6 +328,7 @@ impl Document {
                 ptt: "disabled".into(),
             },
             radio: None,
+            native: None,
         })
     }
     pub fn settings(&self) -> Settings {
@@ -319,14 +380,22 @@ impl Document {
         }
     }
     fn validate(&self) -> Result<SocketAddr, &'static str> {
-        if self.schema_version != 1 {
-            return Err("unsupported_schema");
+        match (self.schema_version, &self.native) {
+            // Schema 1 keeps refusing the formerly reserved spelling without an intent.
+            (1, _) if self.connection_type == "native_flex" => {
+                return Err("unsupported_connection_type");
+            }
+            (1, None) if self.connection_type == "standard" => {}
+            (2, Some(native))
+                if self.connection_type == "native_flex"
+                    && native.valid()
+                    && self.settings().validate_native().is_ok() => {}
+            // Schema 2 defines only the native document; anything else stays unsupported.
+            (2, None) => return Err("unsupported_schema"),
+            (1 | 2, _) => return Err("invalid_profile"),
+            _ => return Err("unsupported_schema"),
         }
-        if self.connection_type == "native_flex" {
-            return Err("unsupported_connection_type");
-        }
-        if self.connection_type != "standard"
-            || !valid_uuid(&self.profile_id)
+        if !valid_uuid(&self.profile_id)
             || self.revision > MAX_REVISION
             || self.settings().validate().is_err()
         {
@@ -437,6 +506,21 @@ impl Store {
         let document = Document::defaults().map_err(|_| "resource_unavailable")?;
         atomic_write(directory, &document).map_err(|_| "resource_unavailable")
     }
+    /// FR-023: the connection type is chosen once, when the profile is created.
+    pub fn create_native(directory: &Path, rx_antenna: &str) -> Result<(), &'static str> {
+        let mut document = Document::defaults().map_err(|_| "resource_unavailable")?;
+        document.schema_version = 2;
+        document.connection_type = "native_flex".into();
+        document.native = Some(Native {
+            client_id: new_uuid().map_err(|_| "resource_unavailable")?,
+            rx_antenna: rx_antenna.into(),
+        });
+        document
+            .validate()
+            .map_err(|_| "invalid_runtime_configuration")?;
+        fs::create_dir(directory).map_err(|_| "resource_unavailable")?;
+        atomic_write(directory, &document).map_err(|_| "resource_unavailable")
+    }
     pub fn open(directory: &Path) -> Result<(Self, SocketAddr), &'static str> {
         let directory = directory
             .canonicalize()
@@ -524,6 +608,10 @@ impl Store {
         }
     }
     pub fn save(&mut self, settings: Settings) -> std::io::Result<()> {
+        // No writer can give a native profile a device or CAT selection.
+        if self.document.native.is_some() && settings.validate_native().is_err() {
+            return Err(std::io::Error::other("native profile selection"));
+        }
         let mut next = self.document.clone();
         next.revision = next
             .revision

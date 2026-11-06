@@ -901,6 +901,8 @@ window.wstxChipsShow=function(){
     if(mode==='cat'&&catStatus?.condition==='commissioningRequired')list.push(chip('cat','warn','CAT setup not confirmed',open('settings-cat')));
     else if(mode==='cat'&&catStatus&&catStatus.condition!=='ready')list.push(chip('cat','error',document.querySelector('#cat-status').textContent,open('settings-cat')));
     else if(mode==='cat'&&!catStatus&&radio&&radio!=='ready')list.push(chip('cat','error',`CAT ${radio}`,open('receive-details')));
+    const nativeProblem=window.wstxNativeProblem?.();
+    if(nativeProblem)list.push(chip('native','error',nativeProblem,open('receive-details')));
     const a=live?.audio,active=live?.job&&['running','cancelling'].includes(live.job.state);
     if(a?.state==='unavailable')list.push(chip('audio','error',`Audio unavailable${a.error?' \u00b7 '+a.error:''}`,open('settings-audio')));
     const level=document.querySelector('#settings-audio .op-input-meter')?.dataset.level;
@@ -914,7 +916,7 @@ window.wstxChipsShow=function(){
     else if(operatingUnknown)list.push(chip('selection','warn','Band/mode outcome unknown',open('receive-details')));
     else if(operatingState?.operation?.result==='failed')list.push(chip('selection','error',`Band/mode change failed${operatingState.operation.error?' \u00b7 '+operatingState.operation.error:''}`,open('receive-details')));
     else if(live&&!active&&!mutationPending&&!receiveTarget()&&a?.state!=='unavailable'){
-      if(profileData?.settings.audio.input_device)list.push(chip('receive','warn','Receive stopped \u00b7 start',()=>receiveToggle()));
+      if(receiveInputConfigured())list.push(chip('receive','warn','Receive stopped \u00b7 start',()=>receiveToggle()));
       else list.push(chip('receive','warn','No audio input',open('settings-audio')));
     }
   }

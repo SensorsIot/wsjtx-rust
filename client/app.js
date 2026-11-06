@@ -238,6 +238,8 @@ async function loadProfile(reload, current = socket) {
   if (typeof data.profile_id !== 'string' || typeof data.boot_id !== 'string' || !Number.isSafeInteger(data.revision) || !data.settings) throw new Error('Invalid profile');
   if (profileData && data.boot_id === profileData.boot_id && data.revision < profileData.revision) return true;
   profileData = data; document.querySelector('#profile-panel').hidden = false;
+  // FR-023: the connection type is read-only and shown as saved.
+  document.querySelector('#settings select:not([id])').value = data.connection_type === 'native_flex' ? 'native_flex' : 'standard';
   for (const [id, text] of [['#profile-id', data.profile_id], ['#profile-name', data.settings.display_name], ['#profile-endpoint', data.endpoint], ['#profile-boot', data.boot_id], ['#profile-revision', String(data.revision)]]) document.querySelector(id).textContent = text;
   document.title = `${data.settings.display_name} - ${location.port || (location.protocol === 'https:' ? 443 : 80)} - WSTX`;
   if (reload || !dirty) {
