@@ -504,6 +504,7 @@
   - client/
   - tests/receive-integration.test.cjs
   - tests/receive-latency.test.cjs
+  - tests/receive-page.test.cjs
   - fixtures/radio/native_ft8_fixture.rs
   - fixtures/decoder/
   - server/Cargo.toml
@@ -528,6 +529,7 @@
   - client/
   - tests/receive-integration.test.cjs
   - tests/receive-latency.test.cjs
+  - tests/receive-page.test.cjs
   - fixtures/radio/native_ft8_fixture.rs
   - fixtures/decoder/
   - server/Cargo.toml
@@ -537,7 +539,7 @@
   - package.json
   - package-lock.json
   build: cargo test --release --locked --bin wstx-rust --no-run
-  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; actual isolated Router and production source/converter/receive owner/modem/browser with independently verified native packets. WSTX_DECODER_VECTORS must name the pinned 38-case frozen cache; verify-only, no gate-time download. Missing inputs fail closed. No physical audio device, CAT or network service. Cheap seeded manager/epoch/ring cases remain in debug. The #57 busy-period latency case runs in live-station-latency."
+  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; actual isolated Router and production source/converter/receive owner/modem/browser with independently verified native packets. WSTX_DECODER_VECTORS must name the pinned 38-case frozen cache; verify-only, no gate-time download. Missing inputs fail closed. No physical audio device, CAT or network service. WSTX_SAMPLE_DIR names the busy recording of the page kept across a restart and periods (tests/receive-page.test.cjs, its own loopback server, no transmit). Cheap seeded manager/epoch/ring cases remain in debug. The #57 busy-period latency case runs in live-station-latency."
 
 - suite: live-station-latency
   cost: 2
