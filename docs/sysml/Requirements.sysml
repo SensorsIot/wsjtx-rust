@@ -4143,6 +4143,13 @@ package WstxRequirements {
         }
     }
     dependency CL_039_07_verified_by_TC_039_008 from 'CL-039-07' to 'TC-039-008';
+    requirement 'CL-039-21' {
+        doc /* A strategy run never stops transmitting for the Tx watchdog. When the Rep of the message due next has grown by N: a target known to hear us (a PSK Reporter spot at most 600 s old on this band and mode) keeps the same slot with no limit; a target not known to hear us (no spot, the feed off or unreachable) takes a new free slot near the frequencies the target decodes, and the run goes on. Manual operation, a pounce and an MCP policy run keep the stop at N. Details: WstxStrategy::StrategyWatchdog, HearingFeed, FreeTxSlot; WstxContact::TxWatchdog. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/automation.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/freeslot.rs; server/src/pskr.rs";
+    }
+    dependency CL_039_21_to_FR_007 from 'CL-039-21' to 'FR-007';
+    dependency CL_039_21_to_FR_008 from 'CL-039-21' to 'FR-008';
     requirement 'CL-039-20' {
         doc /* A read-only PSK Reporter MQTT feed tells the station whether the current target hears my call and which frequencies it decodes: two exact subscriptions (my call as sender; the strategy target as receiver, replaced when the target changes), never a wildcard from a decoded call, TLS against compiled-in roots, an identifiable client id, bounded reconnect backoff, bounded memory, spots expiring after 600 s, a spot of another band or mode ignored. Settings shows the switch (on by default) and the status, pushed. It sends nothing but the handshake, keep-alive and subscriptions; everything works without it: no connection is unknown, never an operator error, and receive and the 50 ms station step never wait on it. Details: WstxStrategy::HearingFeed. */
         attribute coverage : ImplementationState = ImplementationState::implemented;

@@ -330,6 +330,9 @@ struct Run {
     skipped: Vec<String>,
     /// #42 Pounce: the call and the station band captured at start.
     pounce: Option<(String, String)>,
+    /// #39 WstxStrategy::StrategyWatchdog: the Rep of the last check, and that check.
+    rep_mark: u32,
+    slot_check: Option<Value>,
     /// #39 WstxStrategy::FreeTxSlot: the last slot decision {hz, free}, for the status; the
     /// station band last seen on a fresh publication, and the first sequence of that band
     /// (a retune on the radio keeps the live job).
@@ -424,6 +427,17 @@ impl Owner {
         let inner = self.lock();
         (inner.policy_revision, inner.run_revision)
     }
+    /// WstxStrategy::StrategyWatchdog: the contact that sends past the Tx watchdog limit.
+    pub(crate) fn repeat_exempt(&self) -> Option<String> {
+        self.lock()
+            .run
+            .as_ref()
+            .filter(|run| {
+                run.config.strategy
+                    && matches!(run.state, RunState::ContactActive | RunState::CallingCq)
+            })
+            .and_then(|run| run.contact_id.clone())
+    }
     pub(crate) fn running(&self) -> bool {
         self.lock()
             .run
@@ -438,7 +452,7 @@ impl Owner {
                 "completed_contacts":run.completed,"unanswered_periods":run.unanswered,
                 "contact_id":run.contact_id,"selected":run.selected,"last_decision":run.last_decision,
                 "role":run.role.map(|r| if r == strategy::Role::Cq {"cq"} else {"call"}),"tries":run.tries,
-                "skipped":run.skipped,"tx_slot":run.tx_slot,
+                "skipped":run.skipped,"tx_slot":run.tx_slot,"slot_check":run.slot_check,
                 "pounce":run.pounce.as_ref().map(|(call, band)| json!({"call":call,"band":band}))})
         });
         json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"policy_revision":inner.policy_revision,
@@ -673,6 +687,8 @@ impl Owner {
                     tries: 0,
                     skipped: Vec::new(),
                     pounce,
+                    rep_mark: 0,
+                    slot_check: None,
                     tx_slot: None,
                     slot_band: None,
                     slot_from: 0,
@@ -879,10 +895,19 @@ impl Owner {
                 if arm != Some(wstx_rust::transmit::service::ArmState::Armed) {
                     return stop(&mut inner, disarmed, false);
                 }
+                if run.config.strategy
+                    && strategy_watchdog(run, contact, state, settled, c.dx_call.as_deref())
+                {
+                    inner.run_revision += 1;
+                }
+                let run = inner.run.as_mut().expect("checked");
                 // Only a publication of the partner's period parity can answer.
                 if partner_period {
                     let progress = (c.state.to_owned(), c.report_rcvd);
-                    if run.progress.as_ref() == Some(&progress) {
+                    // WstxStrategy::StrategyWatchdog: a target that hears us is not left.
+                    let queued = run.config.strategy
+                        && pskr::hearing_of(r, c.dx_call.as_deref(), mode).0;
+                    if run.progress.as_ref() == Some(&progress) && !queued {
                         run.unanswered += 1;
                         let limit = chosen
                             .as_ref()
@@ -1277,6 +1302,63 @@ fn refused(code: &str) -> &'static str {
 /// The records of a slot decision: 8 periods of up to 128 decodes (the live job retains
 /// up to 2048).
 const SLOT_RECORDS: u64 = 1024;
+/// #39 WstxStrategy::StrategyWatchdog: when the Rep has grown by N since the last check, a
+/// target known to hear us keeps the slot; any other takes a new one near what it decodes.
+/// True when it checked.
+fn strategy_watchdog(
+    run: &mut Run,
+    contact: &contact_http::Station,
+    state: &ProfileState,
+    settled: Option<u64>,
+    target: Option<&str>,
+) -> bool {
+    let r = &state.recording;
+    let Some(limit) = r.transmit.get().map(|t| t.service.with(|c| c.tx_limit())) else {
+        return false;
+    };
+    let repetitions = contact.repetitions_due();
+    // A new message or contact restarts the Rep.
+    run.rep_mark = run.rep_mark.min(repetitions);
+    if repetitions < run.rep_mark.saturating_add(limit) || repetitions == 0 {
+        return false;
+    }
+    run.rep_mark = repetitions;
+    let mode = contact_http::mode_of(run.mode);
+    let (hears, preferred) = pskr::hearing_of(r, target, mode);
+    let facts = contact.status_facts();
+    let (hz, free) = if hears {
+        (facts.tx_hz, true)
+    } else {
+        let records = slot_records(run, r, settled);
+        freeslot::decide_away(
+            &records,
+            mode,
+            facts.parity,
+            facts.tx_hz,
+            Some(facts.rx_hz),
+            &preferred,
+        )
+    };
+    run.slot_check = Some(json!({"repetitions":repetitions,"hears_us":hears,"hz":hz,"free":free}));
+    if hz != facts.tx_hz {
+        let (revision, _, _) = contact.facts();
+        let body = contact_body(
+            r,
+            revision,
+            "set_frequency",
+            json!({"rx_hz":null,"tx_hz":hz}),
+        );
+        // Refused: the check comes again N repetitions later; the run never stops for it.
+        let _ = contact.operate_as(state, body, true, AUTOMATION);
+    }
+    true
+}
+fn slot_records(run: &Run, r: &recording::Recording, settled: Option<u64>) -> Vec<Value> {
+    settled.map_or_else(Vec::new, |next| {
+        let first = next.saturating_sub(SLOT_RECORDS).max(run.slot_from);
+        fresh_records(r, &run.identity, first, next)
+    })
+}
 /// #39 WstxStrategy::FreeTxSlot: decide the slot, name it in the run's status and set the
 /// Tx there when it is not there. The next contact revision, or None when the engine refused
 /// the command.
@@ -1292,10 +1374,7 @@ fn take_slot(
     let r = &state.recording;
     let mode = contact_http::mode_of(run.mode);
     let facts = contact.status_facts();
-    let records = settled.map_or_else(Vec::new, |next| {
-        let first = next.saturating_sub(SLOT_RECORDS).max(run.slot_from);
-        fresh_records(r, &run.identity, first, next)
-    });
+    let records = slot_records(run, r, settled);
     let (hz, free) = freeslot::decide(&records, mode, facts.parity, current, called);
     run.tx_slot = Some(json!({"hz":hz,"free":free}));
     if facts.tx_hz == hz {

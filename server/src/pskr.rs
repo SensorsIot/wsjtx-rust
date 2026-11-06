@@ -815,6 +815,29 @@ fn accept(shared: &Shared, my_call: &str, payload: &[u8]) {
     }
 }
 
+/// What the feed knows of `target` on the station's band and `mode`: known to hear us, and
+/// the audio offsets it decodes inside the free slot range. Unknown is (false, none): the
+/// feed off or absent, the band or dial unknown, no target.
+pub(crate) fn hearing_of(
+    r: &recording::Recording,
+    target: Option<&str>,
+    mode: decoder::Mode,
+) -> (bool, Vec<u32>) {
+    let (Some(feed), Some(target), Some(band)) =
+        (r.pskr.get(), target, strategy::station_band(r))
+    else {
+        return (false, Vec::new());
+    };
+    let name = match mode {
+        decoder::Mode::Ft8 => "FT8",
+        decoder::Mode::Ft4 => "FT4",
+    };
+    let offsets = contact_http::confirmed_dial(r).map_or_else(Vec::new, |dial| {
+        feed.decoded_offsets(name, &band, dial, freeslot::band(mode))
+    });
+    (feed.hears_us(target, name, &band), offsets)
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Edit {

@@ -351,6 +351,9 @@ impl Station {
     }
     /// What the WstxUdp Status message reads: (DX call, DX grid, report, Rx Hz, Tx Hz,
     /// the contact's next message).
+    pub(crate) fn repetitions_due(&self) -> u32 {
+        self.lock().engine.repetitions_due()
+    }
     pub(crate) fn status_facts(&self) -> StatusFacts {
         let inner = self.lock();
         let e = &inner.engine;
@@ -418,8 +421,11 @@ impl Station {
     pub(crate) fn tick(&self, state: &ProfileState) {
         let r = &state.recording;
         let (call, locator) = profile_facts(state);
+        // Automation's lock first, as its own step takes them.
+        let repeat_exempt = self.automation.repeat_exempt();
         let mut guard = self.lock();
         let inner = &mut *guard;
+        inner.engine.repeat_exempt = repeat_exempt;
         let cursor = inner.rows.clone();
         let mut rows = Vec::new();
         let mode = Some(mode_of(r.operating_mode()));

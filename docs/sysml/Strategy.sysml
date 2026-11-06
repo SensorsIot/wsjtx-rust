@@ -444,7 +444,8 @@ package WstxStrategy {
              cq); skip_after partner periods without progress give the station up (D6),
              disarm and cancel the contact and count a try. All other WstxMcp stops
              (halted, context, authority, time, transmit stopped) are
-             unchanged; a disarm by the Tx watchdog stops tx_watchdog. */
+             unchanged; a strategy run's own contact never stops for the Tx watchdog
+             (StrategyWatchdog), any other disarm by it stops tx_watchdog. */
     }
     attribute def HearingFeed {
         attribute heardWindowSeconds : Integer = 600;
@@ -501,6 +502,25 @@ package WstxStrategy {
              age from station.tick. No polling (WstxStationProtocol::PushedStationState).
              Tests: WSTX_PSKR=off opens no connection; WSTX_PSKR=tcp:<loopback>:<port> speaks
              plain MQTT to a local peer; nothing else can replace the broker. */
+    }
+    attribute def StrategyWatchdog {
+        doc /* In a strategy run (not a pounce, an MCP policy run, a contact the run did not
+             select, or manual operation, which keep the stop at N) the Tx watchdog never
+             stops transmitting (operator decisions 6626745310, 6626799951 on #39). The engine
+             sends past the limit for the run's own contact only, and the status counts down
+             to the next check. Each time the Rep of the message due next (WstxContact::TxWatchdog)
+             has grown by N, the Tx watchdog limit, since the last check of this message:
+             the target known to hear us (HearingFeed, on this band and mode) keeps the same
+             slot, with no limit; a target not known to hear us (no spot, the feed off or
+             unreachable, the band unknown, a call without a subscription) takes a new free
+             slot near the frequencies the target decodes and goes on. The new slot is
+             FreeTxSlot's choice with the slot it leaves also occupied and those frequencies
+             preferred, so this is the one case in which Tx moves within a contact; no free
+             slot keeps the current one and says so in the status. A refused move
+             changes nothing and is checked again N repetitions later. The Rep goes on over a
+             move: the message is the same. A target known to hear us is also not left
+             for another candidate after its calls: "we are in the queue". The run shows the
+             last check as slot_check {repetitions, hears_us, hz, free}. */
     }
     attribute def FreeTxSlot {
         doc /* A strategy run or a pounce (not a plain MCP policy run, not manual operation)
@@ -585,5 +605,9 @@ package WstxStrategy {
     dependency watchdogClause from WatchdogFromOperator to WstxRequirements::'CL-039-06';
     dependency automationPath from AutoStrategyRun to WstxMcp::OperatingAutomation;
     dependency hearingClause from HearingFeed to WstxRequirements::'CL-039-20';
+    dependency strategyWatchdogClause from StrategyWatchdog to WstxRequirements::'CL-039-21';
+    dependency strategyWatchdogHearing from StrategyWatchdog to HearingFeed;
+    dependency strategyWatchdogSlot from StrategyWatchdog to FreeTxSlot;
+    dependency strategyWatchdogOwner from StrategyWatchdog to WstxContact::TxWatchdog;
     dependency watchdogOwner from WatchdogFromOperator to WstxContact::TxWatchdog;
 }

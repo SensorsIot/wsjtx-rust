@@ -282,7 +282,7 @@ package WstxMcp {
              run (null or {id, state, reason, mode, completed_contacts, unanswered_periods,
              contact_id, selected (null or {source_id, job_id, generation, sequence, call}),
              last_decision, role (null, call or cq), tries, skipped (calls), tx_slot (null or
-             {hz, free}, WstxStrategy::FreeTxSlot), pounce (null or {call, band}, #42))}; existing auth and Origin rules of GET routes.
+             {hz, free}, WstxStrategy::FreeTxSlot), slot_check (null or {repetitions, hears_us, hz, free}, WstxStrategy::StrategyWatchdog), pounce (null or {call, band}, #42))}; existing auth and Origin rules of GET routes.
              POST /automation/command (AutomationCommand): exactly {v, profile_id, boot_id,
              command_id, action} plus configure {expected_policy_revision, configuration};
              start {expected_policy_revision, expected_run_revision, mode ft8|ft4,
