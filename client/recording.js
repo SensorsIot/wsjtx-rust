@@ -109,6 +109,7 @@ function bandColoursApply(){
   const on=bandSlots.filter(([k,,d])=>typeof saved?.[k]==='boolean'?saved[k]:d).map(([k])=>k);
   document.querySelector('#band-activity').dataset.hlOn=on.join(' ');
   for(const box of bandColours.querySelectorAll('[data-hl-slot]'))box.checked=on.includes(box.dataset.hlSlot);
+  for(const row of document.querySelectorAll('#band-activity tr[data-sequence]'))activityWhy(row);
 }
 bandColours.addEventListener('change',()=>{const value=Object.fromEntries([...bandColours.querySelectorAll('[data-hl-slot]')].map(b=>[b.dataset.hlSlot,b.checked]));try{localStorage.setItem('wstx.band-colours.v1',JSON.stringify(value));}catch{}bandColoursApply();});
 bandColoursApply();
@@ -652,7 +653,7 @@ function renderResults(){
   if(own){
     const marker=document.createElement('tr'),cell=document.createElement('td');marker.className='ba-tx';marker.dataset.period='tx';marker.setAttribute('role','row');
     cell.colSpan=7;cell.setAttribute('role','cell');cell.textContent=`Tx ${periodLabel(resultView.period_start_utc,mode)} \u00b7 this station transmitted \u00b7 no decode`;marker.append(cell);
-    body.replaceChildren(marker);window.wstxRenderHistory?.(body);return;
+    body.replaceChildren(marker);window.wstxRenderHistory?.(body);partnerFirst(body);return;
   }
   if(!shownRows.length){
     body.innerHTML='<tr><td colspan="7" class="empty-messages"><strong></strong><span></span></td></tr>';
@@ -664,11 +665,19 @@ function renderResults(){
       message=['running','cancelling'].includes(job.state)?'No verified messages decoded yet.':'No verified messages were decoded.';
       if(resultView&&!own){heading=loading?'Loading latest decode':resultView.complete?'No stations decoded':'No stations decoded in partial attempt';message=loading?'Latest-period results are being received.':'No verified stations were decoded in this period.';}
     }
-    body.querySelector('strong').textContent=heading;body.querySelector('span').textContent=message;window.wstxRenderHistory?.(body);return;
+    body.querySelector('strong').textContent=heading;body.querySelector('span').textContent=message;window.wstxRenderHistory?.(body);partnerFirst(body);return;
   }
   body.replaceChildren();
   for(const record of ordered)body.append(activityRow(record,'latest',liveIdentity(live),live.job.mode));
-  window.wstxRenderHistory?.(body);
+  window.wstxRenderHistory?.(body);partnerFirst(body);
+}
+// #50 CL-050-08: the partner rows of every shown period go to the top, newest period first, above one
+// red stripe; a period divider left without rows is dropped.
+function partnerFirst(body){
+  const rows=[...body.querySelectorAll('tr.ba-partner')];if(!rows.length)return;
+  const stripe=document.createElement('tr');stripe.className='ba-divider ba-partner-stripe';stripe.setAttribute('role','row');stripe.setAttribute('aria-label','End of the QSO partner rows');
+  const cell=document.createElement('td');cell.colSpan=7;cell.setAttribute('role','cell');stripe.append(cell);body.prepend(...rows,stripe);
+  for(const divider of body.querySelectorAll('tr.ba-divider:not(.ba-partner-stripe)')){const next=divider.nextElementSibling;if(!next||next.classList.contains('ba-divider'))divider.remove();}
 }
 function activityRow(record,period,context,mode){
   const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);
@@ -676,17 +685,28 @@ function activityRow(record,period,context,mode){
   const f=record.fields,decoded=record.status==='decoded',to=recordTo(f),my=(profileData?.settings?.callsign??'').trim().toUpperCase();
   // #50 BandActivityColours: the slots this row matches; the new_* slots from the #55 record flags of
   // every decoded sender (operator decision CL-055-04; WSJT-X: CQ/QRZ lines only). No CQ slot (#50).
-  const hl=decoded?bandFlags.filter(k=>record.flags?.[k]===true):[];row.dataset.value=String(activityValue(record));row.dataset.why=activityReasons(record).join('\n');
+  // #50 CL-050-08 BandActivityScheme (operator 2026-11-04): the QSO partner's rows carry the partner
+  // marker and no slot; a row to my call from another station is red as a whole; a CQ/QRZ of interest
+  // is coloured as a whole; any other row of interest colours only its sender's call.
+  const from=decoded?recordFrom(f)?.replace(/^<(.+)>$/,'$1').toUpperCase()??null:null,partner=window.wstxPartner?.()??null,isPartner=!!(partner&&from===partner);
+  const hl=decoded&&!isPartner?bandFlags.filter(k=>record.flags?.[k]===true):[];row.dataset.value=String(activityValue(record));
   if(decoded&&/^CQ\b/.test(record.text))row.classList.add('ba-cq');
-  if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
+  if(isPartner)row.classList.add('ba-partner');
+  else if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
   const udp=udpHighlight(record);
+  const senderOnly=!udp&&hl.length>0&&!row.classList.contains('ba-tome')&&!/^(CQ|QRZ)\b/.test(record.text)&&!(f?.type==='nonstandard'&&f.cq);
+  if(senderOnly)row.classList.add('ba-sender');
   if(udp)row.dataset.udp=udp.call;else if(hl.length)row.dataset.hl=hl.join(' ');
   const grid=record.fields?.exchange?.kind==='grid'?record.fields.exchange.value:null,km=grid?window.wstxDistanceKm?.(profileData?.settings?.locator,grid)??null:null,dx=record.dxcc,approx=km===null&&Number.isInteger(dx?.km);
+  if(!isPartner)row.dataset.reasons=JSON.stringify(activityHover(record));
   const cells=[periodLabel(record.period_start_utc,mode),record.snr_db===null?'\u2014':record.snr_db.toFixed(1),record.dt_seconds===null?'\u2014':`${Math.abs(record.dt_seconds)<0.05?'+':record.dt_seconds<0?'-':'+'}${Math.abs(record.dt_seconds).toFixed(1)}`,record.frequency_hz.toFixed(1),decoded?record.text:`Payload ${record.status}`,dx?dx.name:'\u2014',approx?`~${dx.km} km`:km===null?'\u2014':`${km} km`];
   for(const [index,text] of cells.entries()){
     const cell=document.createElement('td');cell.setAttribute('role','cell');cell.dataset.label=labels[index];cell.textContent=text;
     if(udp){if(udp.background)cell.style.backgroundColor=udp.background;if(udp.foreground)cell.style.color=udp.foreground;}
     if(index===4){cell.dataset.col='message';
+      // The sender's call word (also in < >) of a sender-only row is its own span; the text stays the message.
+      const words=text.split(' '),at=senderOnly&&from?[...words.keys()].sort((a,b)=>(a===0)-(b===0)).find(i=>words[i].replace(/^<(.+)>$/,'$1').toUpperCase()===from):undefined;
+      if(at!==undefined){const mark=document.createElement('span');mark.className='ba-from';mark.textContent=words[at];cell.replaceChildren(words.slice(0,at).map(w=>w+' ').join(''),mark,words.slice(at+1).map(w=>' '+w).join(''));}
       // #56: WSJT-X's a-priori marker (aN), shown after the message but not part of its text.
       if(decoded&&Number.isInteger(record.a_priori)){cell.dataset.ap=`a${record.a_priori}`;cell.title=`A-priori decode (WSJT-X a${record.a_priori})`;}}
     if(index===5&&dx)cell.title=`${dx.name} \u00b7 ${dx.cont} \u00b7 CQ zone ${dx.cq} \u00b7 ITU zone ${dx.itu} (cty.dat)`;if(index===6&&approx)cell.title='Approximate: from the country position (cty.dat), no grid in the message';
@@ -1256,12 +1276,45 @@ function activityReasons(r){
   const text={new_continent:`New continent ${dx?.cont??''}`,new_continent_band:`New continent on ${band}`,new_dxcc:`New DXCC: ${dx?.name??''}`,new_dxcc_band:`New DXCC on ${band}`,new_cq_zone:`New CQ zone ${dx?.cq??''}`,new_cq_zone_band:`New CQ zone on ${band}`,new_itu_zone:`New ITU zone ${dx?.itu??''}`,new_itu_zone_band:`New ITU zone on ${band}`,new_grid:`New grid ${grid}`,new_grid_band:`New grid on ${band}`,new_call:'New call',new_call_band:`New call on ${band}`};
   return Object.keys(text).filter(k=>r.flags[k]===true).map(k=>text[k].replace(/:?\s+$/,''));
 }
-function activityWhy(row){
-  const worked=row.dataset.worked==='worked_this_band_and_mode'?`Worked before on ${row.dataset.workedOn||'this band and mode'}`:row.dataset.worked==='worked_other_band_or_mode'?'Worked before on another band or mode':'';
-  const parts=[row.classList.contains('ba-tome')?'Calling me':'',row.dataset.whyStrategy??'',...(row.dataset.why?row.dataset.why.split('\n'):[]),worked].filter(Boolean);
-  if(parts.length){row.title=parts.join('\n');row.setAttribute('aria-description',parts.join('; '));}
-  else{row.removeAttribute('title');row.removeAttribute('aria-description');}
+// #50 CL-050-08 BandActivityHover (operator 2026-11-04): the row's tip names only the reasons of its
+// colour that the row does not show (no country, continent, distance or "Calls you"): per kind
+// (continent, DXCC, zone, grid, call) the strongest enabled slot, so "New call" never also says
+// "New on 40m"; the call reason carries the worked-before status in parentheses.
+function activityHover(r){
+  if(r?.status!=='decoded'||!r.flags)return {};
+  const dx=r.dxcc,band=operatingState?.selection?.band||'this band',ex=r.fields?.exchange,grid=ex?.kind==='grid'&&typeof ex.value==='string'?ex.value.slice(0,4).toUpperCase():'';
+  const text={new_continent:`New continent ${dx?.cont??''}`,new_continent_band:`New continent on ${band}`,new_dxcc:'New DXCC',new_dxcc_band:`New DXCC on ${band}`,new_cq_zone:`New CQ zone ${dx?.cq??''}`,new_itu_zone:`New ITU zone ${dx?.itu??''}`,new_cq_zone_band:`New CQ zone on ${band}`,new_itu_zone_band:`New ITU zone on ${band}`,new_grid:`New grid ${grid}`,new_grid_band:`New grid on ${band}`,new_call:'New call',new_call_band:`New on ${band}`};
+  return Object.fromEntries(Object.entries(text).filter(([k])=>r.flags[k]===true).map(([k,t])=>[k,t.trim()]));
 }
+const HOVER_KINDS=[['new_continent','new_continent_band'],['new_dxcc','new_dxcc_band'],['new_cq_zone','new_itu_zone','new_cq_zone_band','new_itu_zone_band'],['new_grid','new_grid_band'],['new_call','new_call_band']];
+// One line, " · " between reasons (operator: "line them up horizontally"), then "UDP highlight" for an
+// accepted UDP highlight and the strategy verdict. A row without such a reason has no tip. Shown in
+// the compact Band Activity tip (data-tip) and as aria-description; no native title, which wraps.
+function activityWhy(row){
+  let reasons={};try{reasons=JSON.parse(row.dataset.reasons??'{}')??{};}catch{}
+  const on=new Set((document.querySelector('#band-activity')?.dataset.hlOn??'').split(' '));
+  const worked=row.dataset.worked==='worked_this_band_and_mode'?`on ${row.dataset.workedOn||'this band and mode'}`:row.dataset.worked==='worked_other_band_or_mode'?'on another band or mode':'';
+  const parts=HOVER_KINDS.map(kind=>{const k=kind.find(k=>reasons[k]&&on.has(k));return !k?'':k==='new_call_band'&&worked?`${reasons[k]} (worked ${worked})`:reasons[k];});
+  parts.push(row.dataset.udp?'UDP highlight':'',row.dataset.whyStrategy??'');
+  const tip=parts.filter(Boolean).join(' · ');
+  if(tip){row.dataset.tip=tip;row.setAttribute('aria-description',tip);}else{delete row.dataset.tip;row.removeAttribute('aria-description');}
+  const t=window.wstxActivityTip;if(t?.row===row)t.show(row);
+}
+// The compact one-line tip: at the pointer over a row (not over a cell with its own title: DXCC,
+// Distance, an a-priori message), under the row while it has keyboard focus; gone when the row leaves or is redrawn.
+{const tip=document.createElement('div');tip.id='ba-tip';tip.className='op-tip';tip.hidden=true;tip.setAttribute('aria-hidden','true');document.querySelector('main').append(tip);
+ const state={row:null,show(row,x,y){
+  if(!row?.isConnected||!row.dataset.tip){tip.hidden=true;state.row=null;return;}
+  state.row=row;tip.textContent=row.dataset.tip;tip.hidden=false;
+  if(x===undefined){const b=row.getBoundingClientRect();x=b.left+8;y=b.bottom-16;}
+  tip.style.left=`${Math.max(4,Math.min(x+12,innerWidth-tip.offsetWidth-4))}px`;tip.style.top=`${Math.max(4,Math.min(y+16,innerHeight-tip.offsetHeight-4))}px`;}};
+ window.wstxActivityTip=state;
+ const tbody=document.querySelector('#band-activity tbody');
+ tbody.addEventListener('pointermove',event=>{const cell=event.target.closest?.('td'),row=event.target.closest?.('tr[data-sequence]');if(!row||cell?.title)state.show(null);else state.show(row,event.clientX,event.clientY);});
+ tbody.addEventListener('pointerleave',()=>state.show(null));
+ tbody.addEventListener('focusin',event=>state.show(event.target.closest?.('tr[data-sequence]')));
+ tbody.addEventListener('focusout',()=>state.show(null));
+ new MutationObserver(()=>{if(state.row&&!state.row.isConnected)state.show(null);}).observe(tbody,{childList:true});}
 window.wstxActivityWhy=activityWhy;
 
 // WstxOperatingLayout::RxTxStrip frequency mapping (#50, CL-050-07): the waterfall canvas's own
