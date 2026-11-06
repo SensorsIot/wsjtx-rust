@@ -422,7 +422,7 @@ package WstxContact {
              report from the row SNR, with the exception stated there (ReportRange); rxOffsetHz = row frequency rounded
              to integer Hz; txOffsetHz = the same, unless Hold Tx is on or the row's
              'to' call is my call (replying to me keeps my Tx frequency, DMR ~320-333);
-             txParity = opposite of the row's period parity; message set generated;
+             txParity = opposite of the row's period parity; message set generated, except the texts kept for the same active partner (ContactSnapshot dialogue);
              nextSlot and state per FirstSlotOnSelection. Unresolved hashes (<...>), rows
              without a concrete call, a DX call that would pair two nonstandard calls,
              old/wrong-profile tuples and other families are refused with a reason.
@@ -1344,8 +1344,9 @@ package WstxContact {
              newest entry of its dir (also across an entry of the other dir, #39: a partner
              repeating while I repeat keeps both Reps counting) increments that entry's
              count instead, except the first transmission after an operator Enable Tx
-             from off, which opens a new entry; selecting a row of the current partner keeps
-             the dialogue, every message text already sent, also an edited one, and, once the
+             from off, which opens a new entry; selecting a row of the current partner, or entering
+             it again, keeps the dialogue, each slot's current text when it was already sent,
+             also an edited one, and, once the
              current Tx2 or Tx3 text was sent, the report whatever the row's SNR (its
              period_utc_ms stays the first period; its snr becomes the repeat's SNR when
              that is not null, so it is the latest decode's, #60); beyond 16 the oldest entry is dropped;
