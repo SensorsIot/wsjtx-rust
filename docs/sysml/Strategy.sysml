@@ -66,8 +66,8 @@ package WstxStrategy {
             Michael Wells G7VJR"; need_api says "You do not need a key unless you write
             software which integrates with Club Log", requestapikey says "A developer API
             key is no longer required". Permission to redistribute or fetch automatically
-            is therefore not established: no automatic refresh and no bundled copy until
-            the operator rules on the terms. Everything works without a list.
+            is not established, and the operator ruled (#39 comment 6685317139): no automatic
+            refresh and nothing bundled. Everything works without a list.
          D14 Built-in strategies (operator 6626205191 (5)) are the slice presets, the next slice
             on #39; until it lands the selector offers None and the user's strategies.
          D13 Grids are a known-unknown: only 6,729 of the operator's 26,902 Log4OM QSOs carry
@@ -186,7 +186,7 @@ package WstxStrategy {
         doc /* A decoded standard message with a resolved sender, addressed to my call, other
              than the sender's RR73/73, whose sender is not ignored (IgnoreLists). It is always
              answered: no goal, region, SNR or callsign guard applies. In a run it is only
-             excluded when completed in this run or given up by the operator
+             excluded when completed in this run on this band and mode, or given up by the operator
              (ManualIntervention). */
     }
     attribute def Candidate {
@@ -522,7 +522,7 @@ package WstxStrategy {
              selection restarts it. The run checks the grant, not the transport of the selecting request: a page load, a
              second tab or a 401 recovery (a new proof) and the transport's own 8 h deadline do
              not end it; a revoked grant or a safety edit does (authority_lost).
-             Unattended (coordinator default 2026-11-06, for the operator to confirm; the
+             Unattended (operator decision 2026-11-06, #39 comment 6685226511; the
              constant automation::CLIENT_GONE, no setting): when no authenticated client has
              been there for 60 s, the run selects no new station: a contact in progress ends
              its normal way (completed, calls_per_station, the Tx watchdog), a manual one is
@@ -549,9 +549,10 @@ package WstxStrategy {
              off), call (a nonstandard own call, #24 S1b), activity (a contest activity or Hound,
              #24 S2a); it selects nothing until the reason is gone.
              Waiting: on each fresh complete publication the list is the verdicts with a rank,
-             not completed in this run and not given up by the operator
+             not completed in this run on this band and mode and not given up by the operator
              (ManualIntervention), one per call, in ValueOrder (no CQ is ever called). A candidate the
-             run left after calls_per_station is passed over when any other is listed; a
+             run left after calls_per_station on this band and mode is passed over when any other
+             is listed; a
              caller never is (D5).
              The first is selected (select_row {replace false}), Tx takes its free slot (FreeTxSlot)
              and it is armed (enable_tx). Nothing listed: it
@@ -611,7 +612,7 @@ package WstxStrategy {
              (WstxContact::TxWatchdog, operator rule 2026-11-06) and is never paused by
              automation; a new message or station restarts the repetition count, so it
              bounds a run per message, not in total (max_run_minutes bounds a policy run; a
-             strategy run has no time limit but its grant). A
+             strategy run is bounded by its 8 hour run limit and its grant). A
              human action in the browser is an accepted ContactCommand or a strategy selection
              sent by the browser (principal browser, WstxProfiles::RequestPrincipalRule:
              read from the credential at the auth boundary, so an MCP client is never one
