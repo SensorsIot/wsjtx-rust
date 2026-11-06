@@ -502,8 +502,7 @@ package WstxContact {
              of that row (prepareReply: report Tx2 after their grid, roger report Tx3
              after their report, as FirstSlotOnSelection; Hold Tx and the to-my-call rule
              keep my Tx offset). Enable Tx keeps its state, so the next own period answers
-             that caller; the answer is automatic, not operator activity (no Tx watchdog
-             reset). At most one caller is answered: the contact is then no longer
+             that caller; the answer is automatic, not operator activity. At most one caller is answered: the contact is then no longer
              calling. With Call 1st off a calling contact moves only on an operator
              selection (#12). */
     }
@@ -684,31 +683,35 @@ package WstxContact {
         attribute maximumCalls : Integer = 99;
         attribute remainingCalls : Integer;
         assert constraint limitDomain { limitCalls >= minimumCalls and limitCalls <= maximumCalls }
-        doc /* Operator redefinition #39, 2026-11-04 (replaces the WSJT-X time watchdog,
-             CFG TxWatchdog ~3749, MW tx_watchdog ~14646): the Tx watchdog counts
-             consecutive own transmissions that got no answer, in manual operation and
-             under automation alike, whatever the message (CQ, Tx1..Tx5, free text).
-             Server-owned station-session setting: limit 1..99 unanswered calls, default 6
-             at each station start (about 3 min of FT8 with alternate periods). DIFFERENT:
-             WSJT-X 0 = disabled is not offered; a safety bound always applies.
-             Counting: every own transmission whose audio starts adds one. An answer
-             resets the count to 0: a decoded message addressed to my call from the
-             contact's partner (dxCall), or from any station while no partner is set
-             (my CQ answered by anyone), decoded in a period after my last transmission
-             started; after a watchdog stop answers no longer reset it, only the next
-             operator Enable Tx does. A human action in the browser (an operator Enable Tx or any
-             accepted operating request of this station from the browser) also resets it
-             (a human is present). Automation, MCP requests (including a run start) and
-             UDP commands never reset it (WstxStrategy::WatchdogFromOperator); their
-             Enable Tx keeps the count, and is refused tx_watchdog when the limit is used
-             up or no browser action was seen this boot; only the browser may set the
-             watchdogs (set_watchdogs from another source is refused operator_required).
-             Stop: the next transmission after the limit is never keyed: Enable Tx goes
-             off (cause txWatchdog) before keying, PTT stays released, nothing is halted
-             (no HaltTransmit, halt_state unchanged), the contact state is
-             kept and the station shows "Tx watchdog: N unanswered calls" until the next
-             Enable Tx. The remaining calls are shown while Enable Tx is on (WD:n). Mouse
-             movement the server cannot observe is not activity. */
+        doc /* Operator rule #39, 2026-11-06 (replaces the WSJT-X time watchdog, CFG
+             TxWatchdog ~3749, MW tx_watchdog ~14646, and the unanswered count of
+             2026-11-04): the Tx watchdog limits how often one message is repeated, in
+             manual operation and under automation alike, whatever the message (CQ,
+             Tx1..Tx5, free text). Server-owned station-session setting: limit 1..99
+             repetitions, default 6 at each station start. DIFFERENT: WSJT-X 0 = disabled
+             is not offered; a safety bound always applies.
+             It keeps no count of its own: the repetition count is the Rep of the
+             ContactSnapshot dialogue, the count of the newest tx entry when that entry
+             holds the message due next, otherwise 0. Whatever restarts that Rep is the
+             only restart: a different message (the exchange advanced), a new contact, and
+             one addition for the operator: an operator Enable Tx makes the next
+             transmission open a new tx entry, so a stopped station may send the same
+             message again. Partner messages, browser clicks, settings, Auto Seq, MCP, UDP
+             and automation requests restart nothing by themselves.
+             Stop: when the send due next would exceed the limit it is never planned or
+             keyed: at the latest LEAD_MS before its period Enable Tx goes off (cause
+             txWatchdog), PTT stays released, nothing is halted (no HaltTransmit,
+             halt_state unchanged), a transmission already keyed finishes, the contact
+             state is kept and the station shows "Tx watchdog: N unanswered calls" until
+             the next Enable Tx. A partner message decoded before that moment still changes
+             the message due next. The repetitions left are shown while Enable Tx is on
+             (WD:n, watchdog tx_remaining_calls = limit - Rep).
+             Automation (WstxStrategy::WatchdogFromOperator): an automatic Enable Tx is
+             refused tx_watchdog after a stop or while no browser action was seen this
+             boot; only the browser may set the watchdogs (set_watchdogs from another
+             source is refused operator_required). A new message or target chosen by a run
+             restarts the Rep like any other, so a run is bounded per message, not in
+             total. Mouse movement the server cannot observe is not activity. */
     }
     attribute def TuneWatchdog {
         attribute limitSeconds : Integer = 90;
@@ -1333,8 +1336,11 @@ package WstxContact {
              period_utc_ms,count}, oldest first: "rx" each partner message the engine
              counted for this contact (as last_rcvd, including the selected row addressed
              to me) with its rounded SNR or null, "tx" each transmission of this contact
-             whose audio started (the text as sent, snr null); a message equal in dir and
-             text to the newest entry increments that entry's count instead (its
+             whose audio started (the text as sent, snr null); a message equal in text to the
+             newest entry of its dir (also across an entry of the other dir, #39: a partner
+             repeating while I repeat keeps both Reps counting) increments that entry's
+             count instead, except the first transmission after an operator Enable Tx,
+             which opens a new entry (its
              period_utc_ms stays the first period; its snr becomes the repeat's SNR when
              that is not null, so it is the latest decode's, #60); beyond 16 the oldest entry is dropped;
              empty for a new contact and cleared by CancelContact)

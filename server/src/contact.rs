@@ -686,8 +686,12 @@ pub struct Exchanged {
     pub snr: Option<i32>,
     /// The first period of this entry (Unix ms).
     pub period_ms: i64,
-    /// Consecutive equal messages (same direction and text) merged into this entry.
+    /// Repetitions merged into this entry: a message equal to the newest entry of its
+    /// direction, also across a message of the other direction (shown as Rep).
     pub count: u32,
+    /// An operator Enable Tx closed this entry: the next equal transmission opens a new
+    /// one, so a station stopped by the Tx watchdog may send the same message again.
+    pub closed: bool,
 }
 /// A partner message to my call as the QSO pane shows it (#37).
 #[derive(Clone, Debug, PartialEq)]
@@ -700,9 +704,9 @@ pub struct Heard {
 }
 impl Contact {
     fn exchanged(&mut self, tx: bool, text: &str, snr: Option<i32>, period_ms: i64) {
-        if let Some(last) = self.dialogue.back_mut()
-            && last.tx == tx
+        if let Some(last) = self.dialogue.iter_mut().rev().find(|e| e.tx == tx)
             && last.text == text
+            && !last.closed
         {
             last.count = last.count.saturating_add(1);
             // #60: the QSO pane shows the latest decode's SNR of a repeated message.
@@ -720,7 +724,18 @@ impl Contact {
             snr,
             period_ms,
             count: 1,
+            closed: false,
         });
+    }
+    /// WstxContact::TxWatchdog: the Rep of the transmitted `text`, 0 when the next
+    /// transmission of it opens a new entry.
+    fn repetitions(&self, text: &str) -> u32 {
+        self.dialogue
+            .iter()
+            .rev()
+            .find(|e| e.tx)
+            .filter(|e| e.text == text && !e.closed)
+            .map_or(0, |e| e.count)
     }
     fn heard(&mut self, row: &Row, period_ms: i64) {
         let snr = row.snr_db.map(|s| s.round() as i32);
@@ -1494,8 +1509,8 @@ impl Engine {
                 } else {
                     None
                 };
-                // #39: automation arms only within the watchdog time of the last
-                // operator action and never restarts the watchdog.
+                // #39: automation arms only after an operator action this boot and never
+                // after a watchdog stop.
                 if ctx.automatic && core.watchdog_spent() {
                     return Err("tx_watchdog");
                 }
@@ -1543,6 +1558,14 @@ impl Engine {
                         dialogue: VecDeque::new(),
                     });
                 }
+                if !ctx.automatic
+                    && let Some(last) = self
+                        .contact
+                        .as_mut()
+                        .and_then(|c| c.dialogue.iter_mut().rev().find(|e| e.tx))
+                {
+                    last.closed = true;
+                }
             }
             Command::Tune(enabled) => {
                 if enabled && (capability == Capability::Unsupported || !ctx.granted) {
@@ -1575,10 +1598,12 @@ impl Engine {
                 self.to_log.push((LogKind::LogQso, c.clone()));
             }
         }
-        // Accepted operating activity resets the Tx watchdog (WstxContact::TxWatchdog);
-        // automation is not operating activity (#39).
-        if let Some(core) = core.filter(|_| !ctx.automatic) {
-            core.activity();
+        // A human was seen (WstxContact::TxWatchdog); automation is no operator (#39).
+        if let Some(core) = core {
+            if !ctx.automatic {
+                core.activity();
+            }
+            self.report_repetitions(core);
         }
         Ok(())
     }
@@ -1727,7 +1752,6 @@ impl Engine {
                 }
             }
         }
-        self.answer_resets_watchdog(core.as_deref_mut(), ctx, rows);
         let hound = self.is_hound();
         if hound {
             self.hound_rows(core.as_deref_mut(), ctx, rows);
@@ -1851,6 +1875,7 @@ impl Engine {
             if view.arm_state == ArmState::Armed {
                 self.submit(core, ctx);
             }
+            self.report_repetitions(core);
         }
         let fingerprint = self.fingerprint(core.as_deref());
         if fingerprint != self.fingerprint {
@@ -1967,6 +1992,17 @@ impl Engine {
         let now = ctx.now_utc_ms;
         let mode = c.mode;
         let next = c.next;
+        // WstxContact::TxWatchdog: nothing is planned for a send beyond the limit; a
+        // partner message may still change the next message until that send is due.
+        if c.repetitions(&text) >= core.tx_limit() {
+            let due = self.last_started_period.map_or(now, |p| {
+                transmit::next_period(mode, p + period_ms(mode), self.settings.parity)
+            });
+            if now + LEAD_MS >= due {
+                core.watchdog_stop();
+            }
+            return;
+        }
         let floor = self
             .last_started_period
             .map_or(now + LEAD_MS, |p| (now + LEAD_MS).max(p + period_ms(mode)));
@@ -2140,31 +2176,14 @@ impl Engine {
         self.hound.reply = HoundReply::Pending;
         self.hound.reply_deadline = Some(ctx.now_utc_ms + 11 * period_ms(mode));
     }
-    /// WstxContact::TxWatchdog (#39): a decoded message addressed to my call from the
-    /// contact's partner (from anyone while no partner is set, e.g. my CQ), sent after
-    /// my last transmission started, is an answer and resets the unanswered count.
-    fn answer_resets_watchdog<H: Hardware>(
-        &self,
-        core: Option<&mut Core<H>>,
-        ctx: &Ctx,
-        rows: &[Row],
-    ) {
-        let (Some(core), Some(my), Some(last)) =
-            (core, ctx.call.as_deref(), self.last_started_period)
-        else {
-            return;
-        };
-        let partner = self.contact.as_ref().and_then(|c| c.dx_call.as_deref());
-        let answer = rows.iter().any(|row| {
-            row.period_start_ms.is_some_and(|p| p > last)
-                && row.standard.as_ref().is_some_and(|std| {
-                    std.to.call() == Some(my)
-                        && partner.is_none_or(|dx| std.from.call() == Some(dx))
-                })
+    /// tx_remaining_calls reads the Rep of the message due next.
+    fn report_repetitions<H: Hardware>(&self, core: &mut Core<H>) {
+        let repetitions = self.contact.as_ref().map_or(0, |c| {
+            c.messages[c.next.index()]
+                .as_deref()
+                .map_or(0, |text| c.repetitions(text))
         });
-        if answer {
-            core.answered();
-        }
+        core.report_tx_repetitions(repetitions);
     }
     /// The reply timeout (MW stopWRTimeout) and the Hound watchdog (HWD) turn Enable Tx off.
     fn hound_timeouts<H: Hardware>(&mut self, core: Option<&mut Core<H>>, now: i64) {

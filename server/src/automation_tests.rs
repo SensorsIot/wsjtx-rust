@@ -266,6 +266,20 @@ pub(crate) async fn run_state(f: &Mcp) -> (String, Value) {
     )
 }
 /// One own (odd) transmission of the pending request in period `own`, run to completion.
+pub(crate) async fn not_keyed_in(f: &Mcp, own: i64) {
+    let service = &f.state.recording.transmit.get().unwrap().service;
+    f.bench
+        .offset
+        .fetch_add(own - 30 - f.bench.now_utc_ms(), Ordering::SeqCst);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while service.view().arm_state == wstx_rust::transmit::service::ArmState::Armed {
+        assert!(Instant::now() < deadline, "{:?}", service.view());
+        f.tick();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(!service.view().transmitting);
+    f.tick();
+}
 pub(crate) async fn transmit_own_period(f: &Mcp, own: i64) {
     let service = &f.state.recording.transmit.get().unwrap().service;
     f.bench

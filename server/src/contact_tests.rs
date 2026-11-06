@@ -730,6 +730,185 @@ fn auto_seq_off_cancel_halt_and_watchdog_while_calling() {
     assert_eq!(s.state().0, State::Idle);
 }
 
+// Proves: CL-010-10; TC-008-001 (#39, 2026-11-06). The live reports: SV1DZB repeated -09
+// while we repeated R+06 (partner messages), and J88IH sent one report while the operator
+// clicked in the page: 13 R-07 at limit 6 (browser requests).
+#[test]
+fn tc_008_001_the_watchdog_stops_at_n_repetitions_whatever_the_partner_or_browser_does() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, None);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::SetWatchdogs {
+        tx_calls: 3,
+        tune_seconds: 90,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 13 * SECOND);
+    let report = s.row(period(2), "HB9BLA K1ABC -09", 1500.0, Some(-9.0));
+    s.deliver(&[report]);
+    assert_eq!(s.core.view().tx_remaining_calls, 3, "a different message");
+    let halts = s.core.view().halt_state;
+    // R+report in periods 3, 5 and 7; the partner repeats and the browser clicks around it.
+    for (own, left) in [(3, 2), (5, 1), (7, 0)] {
+        s.run(period(own) + 2 * SECOND);
+        let sent = s.sent_in(period(own)).expect("the repetition is sent");
+        assert!(sent.starts_with("K1ABC HB9BLA R"), "{sent}");
+        assert_eq!(s.core.view().tx_remaining_calls, left, "period {own}");
+        s.command(Command::SetHoldTx(false)).unwrap();
+        s.command(Command::SetFrequency {
+            rx: Some(1400 + own as u32),
+            tx: None,
+        })
+        .unwrap();
+        s.command(Command::SetWatchdogs {
+            tx_calls: 3,
+            tune_seconds: 90,
+        })
+        .unwrap();
+        assert_eq!(s.core.view().tx_remaining_calls, left, "browser requests");
+        s.run(period(own + 1) + 13 * SECOND);
+        let repeat = s.row(period(own + 1), "HB9BLA K1ABC -09", 1500.0, Some(-9.0));
+        s.deliver(&[repeat]);
+        assert_eq!(s.core.view().tx_remaining_calls, left, "partner repeat");
+    }
+    s.run(period(9) + 2 * SECOND);
+    let v = s.core.view();
+    assert_eq!(
+        (
+            v.arm_state,
+            v.last_disarm_cause,
+            v.tx_expired,
+            v.halt_state,
+            v.ptt
+        ),
+        (
+            ArmState::Disarmed,
+            DisarmCause::TxWatchdog,
+            true,
+            halts,
+            PttState::Released
+        ),
+        "stopped without a halt"
+    );
+    assert_eq!(s.sent_in(period(9)), None, "the fourth is never sent");
+    let reps = |s: &Station| {
+        s.engine
+            .contact
+            .as_ref()
+            .unwrap()
+            .dialogue
+            .iter()
+            .map(|e| (e.tx, e.count))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        reps(&s),
+        vec![(true, 1), (false, 4), (true, 3)],
+        "the dialogue's Rep is the count"
+    );
+    // A browser request does not end the stop; an operator Enable Tx sends it again.
+    s.command(Command::SetHoldTx(false)).unwrap();
+    assert!(s.core.view().tx_expired);
+    s.run(period(10) + 2 * SECOND);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(
+        (s.core.view().tx_expired, s.core.view().tx_remaining_calls),
+        (false, 3)
+    );
+    s.run(period(11) + 2 * SECOND);
+    assert!(
+        s.sent_in(period(11))
+            .is_some_and(|t| t.starts_with("K1ABC HB9BLA R"))
+    );
+    assert_eq!(s.core.view().tx_remaining_calls, 2);
+    assert_eq!(reps(&s), vec![(true, 1), (false, 4), (true, 3), (true, 1)]);
+}
+
+// Proves: CL-010-10; TC-008-001: a different message starts at 1 again, also when the
+// partner advances just before the send beyond the limit is due.
+#[test]
+fn tc_008_001_the_partner_advancing_at_the_limit_sends_the_next_message() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, None);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::SetWatchdogs {
+        tx_calls: 2,
+        tune_seconds: 90,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 13 * SECOND);
+    let report = s.row(period(2), "HB9BLA K1ABC -09", 1500.0, Some(-9.0));
+    s.deliver(&[report]);
+    s.run(period(6) + 13 * SECOND);
+    assert_eq!(s.core.view().tx_remaining_calls, 0, "R+report sent twice");
+    assert!(s.armed(), "the send beyond the limit is not due yet");
+    let rr73 = s.row(period(6), "HB9BLA K1ABC RR73", 1500.0, Some(-9.0));
+    s.deliver(&[rr73]);
+    assert_eq!(s.core.view().tx_remaining_calls, 2, "a different message");
+    s.run(period(7) + 14 * SECOND);
+    assert!(s.sent_in(period(7)).is_some_and(|t| t.ends_with(" 73")));
+    assert_eq!(s.state().0, State::Completed);
+    assert_eq!(
+        s.core.view().last_disarm_cause,
+        DisarmCause::ContactCompleted
+    );
+}
+
+// Proves: CL-010-10; TC-008-001: N identical CQs stop; a caller answered by Call 1st is a
+// new contact, which starts at the limit again.
+#[test]
+fn tc_008_001_identical_cqs_stop_and_an_answered_cq_starts_again() {
+    let mut s = station();
+    s.command(Command::SetWatchdogs {
+        tx_calls: 2,
+        tune_seconds: 90,
+    })
+    .unwrap();
+    s.command(Command::SetCallFirst(false)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    let start = s.now();
+    while s.core.view().tx_remaining_calls == 2 && s.now() < start + 40 * SECOND {
+        s.run(s.now() + SECOND);
+    }
+    assert_eq!(s.core.view().tx_remaining_calls, 1, "one CQ sent");
+    let last = s.core.view().last_period_utc_ms.unwrap();
+    let caller = s.row(last + 15 * SECOND, "HB9BLA DL1XYZ JO62", 900.0, Some(-7.0));
+    s.deliver(&[caller]);
+    assert_eq!(
+        s.core.view().tx_remaining_calls,
+        1,
+        "with Call 1st off the CQ goes on: an answer restarts nothing"
+    );
+    s.run(s.now() + 90 * SECOND);
+    assert!(!s.armed());
+    assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
+    assert_eq!(s.state().0, State::Idle, "the stop ends the CQ");
+    // Call 1st on: one CQ, then the caller.
+    s.command(Command::SetCallFirst(true)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(s.core.view().tx_remaining_calls, 2);
+    let start = s.now();
+    while s.core.view().tx_remaining_calls == 2 && s.now() < start + 40 * SECOND {
+        s.run(s.now() + SECOND);
+    }
+    assert_eq!(s.core.view().tx_remaining_calls, 1, "one CQ sent");
+    let last = s.core.view().last_period_utc_ms.unwrap();
+    let caller = s.row(last + 15 * SECOND, "HB9BLA DL1XYZ JO62", 900.0, Some(-7.0));
+    s.deliver(&[caller]);
+    assert_eq!(s.state().0, State::Report, "Call 1st answered");
+    assert_eq!(s.core.view().tx_remaining_calls, 2, "a new contact");
+}
+
 #[test]
 fn receive_only_station_prepares_and_logs_but_refuses_transmit() {
     let mut s = station();
@@ -875,7 +1054,7 @@ fn tc_008_001_tx_watchdog_counts_unanswered_calls_and_tune_ends_at_its_limit() {
         "contact state kept"
     );
     // Re-enable clears the expiry (a late start in period 5, then period 7); the
-    // partner's answer resets the count.
+    // partner's report makes the next message a different one.
     s.command(Command::EnableTx(true, Some(7))).unwrap();
     assert!(!s.core.view().tx_expired);
     s.run(period(7) + 2 * SECOND);
@@ -891,7 +1070,7 @@ fn tc_008_001_tx_watchdog_counts_unanswered_calls_and_tune_ends_at_its_limit() {
     s.run(period(8) + 13 * SECOND);
     let report = s.row(period(8), "HB9BLA K1ABC -05", 1500.0, Some(-5.0));
     s.deliver(&[report]);
-    assert_eq!(s.core.view().tx_remaining_calls, 2, "answered: reset");
+    assert_eq!(s.core.view().tx_remaining_calls, 2, "a different message");
     s.run(period(11) + 2 * SECOND);
     assert!(
         s.sent_in(period(9))
@@ -902,14 +1081,13 @@ fn tc_008_001_tx_watchdog_counts_unanswered_calls_and_tune_ends_at_its_limit() {
     let stranger = s.row(period(10), "HB9BLA W1AW FN31", 1800.0, Some(-9.0));
     s.deliver(&[stranger]);
     assert_eq!(s.core.view().tx_remaining_calls, 0);
-    // An accepted browser request resets it (a human is present).
+    // An accepted browser request changes nothing: the third reply is never sent.
     s.command(Command::SetHoldTx(false)).unwrap();
-    assert_eq!(s.core.view().tx_remaining_calls, 2);
-    s.run(period(17) + 2 * SECOND);
+    assert_eq!(s.core.view().tx_remaining_calls, 0);
+    s.run(period(13) + 2 * SECOND);
     assert!(!s.armed());
     assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
-    assert!(s.sent_in(period(15)).is_some() && s.sent_in(period(17)).is_none());
-    // My CQ answered by anyone resets it.
+    assert!(s.sent_in(period(11)).is_some() && s.sent_in(period(13)).is_none());
     s.command(Command::Cancel).unwrap();
     s.command(Command::SetCallFirst(false)).unwrap();
     s.command(Command::EnableTx(true, Some(7))).unwrap();
@@ -919,10 +1097,6 @@ fn tc_008_001_tx_watchdog_counts_unanswered_calls_and_tune_ends_at_its_limit() {
         s.run(s.now() + SECOND);
     }
     assert_eq!(s.core.view().tx_remaining_calls, 1, "one CQ sent");
-    let last = s.core.view().last_period_utc_ms.unwrap();
-    let caller = s.row(last + 15 * SECOND, "HB9BLA DL1XYZ JO62", 900.0, Some(-7.0));
-    s.deliver(&[caller]);
-    assert_eq!(s.core.view().tx_remaining_calls, 2, "CQ answered by anyone");
     s.command(Command::EnableTx(false, None)).unwrap();
     s.run(s.now() + 15 * SECOND);
     assert!(!s.core.view().transmitting);

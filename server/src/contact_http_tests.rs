@@ -1598,10 +1598,8 @@ async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
         snap["contact"]["dialogue"],
         json!([
             {"dir":"tx","text":"IW9FRA HB9BLA JN47","snr":null,"period_utc_ms":p(1),"count":1},
-            {"dir":"rx","text":"HB9BLA IW9FRA +10","snr":10,"period_utc_ms":p(2),"count":1},
-            {"dir":"tx","text":"IW9FRA HB9BLA R+10","snr":null,"period_utc_ms":p(3),"count":1},
-            {"dir":"rx","text":"HB9BLA IW9FRA +10","snr":15,"period_utc_ms":p(4),"count":1},
-            {"dir":"tx","text":"IW9FRA HB9BLA R+10","snr":null,"period_utc_ms":p(5),"count":1},
+            {"dir":"rx","text":"HB9BLA IW9FRA +10","snr":15,"period_utc_ms":p(2),"count":2},
+            {"dir":"tx","text":"IW9FRA HB9BLA R+10","snr":null,"period_utc_ms":p(3),"count":2},
             {"dir":"rx","text":"HB9BLA IW9FRA RR73","snr":17,"period_utc_ms":p(6),"count":1},
             {"dir":"tx","text":"IW9FRA HB9BLA 73","snr":null,"period_utc_ms":p(7),"count":1}
         ]),
