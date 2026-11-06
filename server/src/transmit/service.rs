@@ -111,6 +111,8 @@ pub enum OutcomeKind {
     Halted,
     Refused,
     Failed,
+    /// #39 Abort QSO: stopped by the operator's abort, not by a halt.
+    Aborted,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Outcome {
@@ -721,6 +723,28 @@ impl<H: Hardware> Core<H> {
             HaltState::Pending
         };
         self.halt_state
+    }
+    /// Abort QSO (#39, 2026-11-04, WstxTransmit::AbortTransmission): stop the current
+    /// transmission or Tune now (audio stopped, PTT released with readback), drop every
+    /// request and disarm with `cause`. Not a halt: halt_state and the halt count stay.
+    pub fn abort(&mut self, cause: DisarmCause) {
+        let active = self.current.as_ref().is_some_and(|j| j.keyed)
+            || self.tune.is_some()
+            || self.ptt != PttState::Released;
+        self.hardware.stop_audio();
+        // A release that failed is reported, as for a halt: the operator must not read
+        // "stopped" while the switch is indeterminate.
+        if active && !self.release() {
+            self.refusal = Some(TransmitRefusal::RadioUnavailable);
+        }
+        self.tune = None;
+        if let Some(job) = self.current.take() {
+            self.emit(job.prepared.request.request_sequence, OutcomeKind::Aborted);
+        }
+        if let Some(next) = self.next.take() {
+            self.emit(next.request.request_sequence, OutcomeKind::Aborted);
+        }
+        self.disarm_with(cause);
     }
     /// Releases PTT with readback; on failure the switch is indeterminate.
     fn release(&mut self) -> bool {

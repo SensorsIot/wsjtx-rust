@@ -353,6 +353,22 @@ impl Table {
     pub fn continent(&self, call: &str) -> Option<&'static str> {
         self.lookup(call).map(|r| r.continent)
     }
+    /// WstxStrategy::MyContinent's locator fallback: the continent of the entity whose
+    /// cty.dat centre is nearest to this point (lat, lon east), by the haversine term.
+    pub fn nearest_continent(&self, (lat, lon): (f64, f64)) -> Option<&'static str> {
+        let rad = std::f64::consts::PI / 180.0;
+        let term = |e: &Entity| {
+            let dlat = (e.lat - lat) * rad;
+            let dlon = (-e.lon_west - lon) * rad;
+            (dlat / 2.0).sin().powi(2)
+                + (lat * rad).cos() * (e.lat * rad).cos() * (dlon / 2.0).sin().powi(2)
+        };
+        self.cty
+            .entities
+            .iter()
+            .min_by(|a, b| term(a).total_cmp(&term(b)))
+            .map(|e| e.continent)
+    }
 }
 
 /// The WSJT-X decode highlighting categories as decoded-record flags, each ever and on
@@ -542,13 +558,30 @@ pub fn compact(r: &Resolved, me: Option<(f64, f64)>) -> Value {
     v
 }
 
-/// #55 DecodedEntity: adds to each decoded standard record with a resolved sender its
+/// The concrete call that sent a decoded record, also a filled-in hash; None for a hash
+/// nobody heard and for a message without a sender (free text, telemetry).
+fn sender(record: &Value) -> Option<String> {
+    if record["status"] != "decoded" {
+        return None;
+    }
+    let f = &record["fields"];
+    let call = match f["type"].as_str()? {
+        "nonstandard" if f["hash_second"] == true && f["cq"] != true => &f["hashed_call"],
+        "nonstandard" => &f["full_call"],
+        "dxpedition" => &f["hashed"],
+        _ => &f["from"],
+    };
+    matches!(call["kind"].as_str(), Some("call" | "hash"))
+        .then(|| call["text"].as_str().map(str::to_owned))
+        .flatten()
+}
+/// #55 DecodedEntity: adds to each decoded record with a resolved sender call its
 /// `dxcc` (compact, when the call has an entity) and `flags` (only the FLAGS that hold,
 /// against the cached worked set of the log; omitted when none holds or the log is
 /// unreadable). Band: the CAT dial band, else the operating selection band; without a
 /// band no `_band` flag is set. Blocking (log lock): call it off the async runtime.
 pub(crate) fn annotate(state: &crate::ProfileState, records: &mut [Value]) {
-    if !records.iter().any(|r| crate::strategy::facts(r).is_some()) {
+    if !records.iter().any(|r| sender(r).is_some()) {
         return;
     }
     let (table, _) = state.logbook.dxcc();
@@ -559,16 +592,26 @@ pub(crate) fn annotate(state: &crate::ProfileState, records: &mut [Value]) {
         .and_then(crate::strategy::maidenhead);
     let band = crate::strategy::station_band(&state.recording);
     for record in records.iter_mut() {
-        let Some(f) = crate::strategy::facts(record) else {
+        let Some(from) = sender(record) else {
             continue;
         };
-        let entity = table.lookup(&f.from);
+        let entity = table.lookup(&from);
         if let Some(r) = &entity {
             record["dxcc"] = compact(r, me);
         }
-        let flags = worked.as_ref().map_or_else(Vec::new, |w| {
-            w.flags(&f.from, f.grid.as_deref(), entity.as_ref(), band)
-        });
+        // The browser colours a row by its sender; a DXpedition message names none for it,
+        // so a flag here would be a reason without a colour.
+        if record["fields"]["type"] == "dxpedition" {
+            continue;
+        }
+        let exchange = &record["fields"]["exchange"];
+        let grid = (exchange["kind"] == "grid")
+            .then(|| exchange["value"].as_str())
+            .flatten()
+            .filter(|g| crate::strategy::maidenhead(g).is_some());
+        let flags = worked
+            .as_ref()
+            .map_or_else(Vec::new, |w| w.flags(&from, grid, entity.as_ref(), band));
         if !flags.is_empty() {
             record["flags"] = Value::Object(
                 flags

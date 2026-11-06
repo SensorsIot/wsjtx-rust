@@ -469,6 +469,7 @@ async fn contact_command_wire_is_strict_replays_receipts_and_checks_revisions() 
     );
     for (action, extra) in [
         ("cancel", json!({})),
+        ("abort", json!({})),
         ("enable_tx", json!({"enabled":false,"safety_revision":null})),
         ("tune", json!({"enabled":false})),
     ] {
@@ -814,7 +815,7 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
             assert!(at - period < 11_250, "key at {at} after the start window");
         }
     }
-    // Esc: halt (priority #9 route) first, then cancel.
+    // Halt (priority #9 route) first, then cancel.
     let (s, v, _, _) = f.call("POST", "/transmit/halt", Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap()}))).await;
     assert_eq!(s, StatusCode::ACCEPTED, "{v}");
     let (s, _) = f.send("cancel", json!({})).await;

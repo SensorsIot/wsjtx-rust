@@ -9,7 +9,7 @@ block('settings-startup','Receive at startup',document.querySelector('#settings-
 block('settings-startup-resume','Startup resume',document.querySelector('#settings-expert'),'<p id="startup-resume" class="op-muted" role="status">Startup resume unknown</p>');
 // #52 CL-052-01: off by default; read when Settings opens (at most every 30 s) or on Refresh, never polled.
 block('settings-window-diagnostics','Decode window diagnostics',document.querySelector('#settings-expert'),'<label class="op-check"><input type="checkbox" id="window-dump" disabled>Save FT8 decode windows</label><p id="window-diagnostics" class="op-muted" role="status">Window counters unknown</p><button type="button" id="window-diagnostics-refresh">Refresh</button><p class="op-muted">Keeps the last 20 FT8 prompt windows (12 kHz WAV and JSON) in the profile folder diagnostic-windows. Saved at once; it acts from the next window.</p>');
-block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station: Auto in the strategy element or an MCP client. Its state shows beside the strategy element; HALT and Esc end it. The Tx watchdog stops transmitting when one message would be sent more often than its limit. A different message or a new contact starts the count again; after a stop only Enable Tx or Auto in this browser transmits again, automation never does.</p>');
+block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station: Auto in the strategy element or an MCP client. Its state shows beside the strategy element; HALT ends it; Esc aborts the current QSO. The Tx watchdog stops transmitting when one message would be sent more often than its limit. A different message or a new contact starts the count again; after a stop only Enable Tx or Auto in this browser transmits again, automation never does.</p>');
 block('settings-transmit','Transmit',document.querySelector('#settings-radio'),'<label>Tx watchdog (repetitions of one message)<input id="watchdog-tx" type="number" min="1" max="99" step="1" disabled></label><label>Tune watchdog (seconds)<input id="watchdog-tune" type="number" min="1" max="300" step="1" disabled></label><p id="watchdog-result" class="op-muted" role="status"></p><p class="op-muted">Watchdogs apply at once, as in WSJT-X. Tx power is set on the transceiver; this station sends no power command. PTT is chosen under CAT.</p>');
 block('settings-log','Log',document.querySelector('#settings-logging'),'<p>Each completed QSO is logged at once, as in WSJT-X: saved in this station profile’s contacts.adi (ADIF) and sent to the UDP targets that select QSO Logged / Logged ADIF. There is no review step; Log QSO logs the current contact now.</p><button type="button" data-region="logbook">&#9776; Open Logbook</button>');
 // #10 logbook.js (loaded first) made Update logbook from ADIF; it belongs below the Log block.
@@ -30,8 +30,8 @@ document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<p id="q
 // call except the partner). The lines above them take the rest of the pane and scroll inside.
 focus.querySelector('.op-contact-body').insertAdjacentHTML('afterend',`<section id="qso-section" class="ct-section" aria-label="QSO dialogue"><div id="qso-area" class="ct-qso-area"><table id="qso-table" class="ct-qso-table" hidden><thead><tr><th scope="col">UTC</th><th scope="col" data-short="Dir">Direction</th><th scope="col" data-short="Exch">Exchange</th><th scope="col" title="How often the identical message repeated">Rep</th><th scope="col" title="Our measured SNR of the partner's latest decode at or before this line" data-short="Rx">Rx SNR</th><th scope="col" title="The partner's latest report on us at or before this line" data-short="Tx">Tx SNR</th></tr></thead><tbody id="qso-dialogue" class="ct-dialogue" aria-label="QSO dialogue"></tbody></table><p id="qso-none" class="op-muted ct-placeholder">No QSO</p></div></section>
 <section id="qso-calling" class="ct-section" aria-labelledby="calling-heading"><div id="calling-area" class="ct-calling-area"><table id="calling-table" class="ct-qso-table ct-calling-table"><thead><tr><th scope="col" id="calling-heading" title="Double-click a station to answer it (during a QSO: switch the contact to it)">Calling me</th><th scope="col">SNR</th><th scope="col">Grid</th><th scope="col">Country</th></tr></thead><tbody id="qso-others" class="ct-others" aria-label="Stations calling me (double-click or Enter answers)"></tbody></table><p id="qso-others-none" class="op-muted ct-placeholder">Nobody is calling</p></div></section>
-<div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: transmits from the next period')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx (Esc, Alt+H)">HALT</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>`);
-const confirmDialog=document.createElement('dialog');confirmDialog.id='op-confirm';confirmDialog.className='op-dialog';confirmDialog.innerHTML='<form method="dialog"><p id="op-confirm-text"></p><menu><button type="button" class="op-halt-small" id="op-confirm-halt" title="Halt Tx (Esc, Alt+H)">HALT</button><button value="cancel" type="submit">Cancel</button><button value="ok" type="submit" class="op-primary" id="op-confirm-ok">Continue</button></menu></form>';
+<div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: keys at once for the rest of my Tx period when it is early enough, otherwise from my next Tx period')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx: emergency stop (Alt+H)">HALT</button><button type="button" id="qso-abort" disabled title="Abort QSO (Esc): stop the transmission now and cancel the contact, without HALT">Abort QSO (Esc)</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>`);
+const confirmDialog=document.createElement('dialog');confirmDialog.id='op-confirm';confirmDialog.className='op-dialog';confirmDialog.innerHTML='<form method="dialog"><p id="op-confirm-text"></p><menu><button type="button" class="op-halt-small" id="op-confirm-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button><button value="cancel" type="submit">Cancel</button><button value="ok" type="submit" class="op-primary" id="op-confirm-ok">Continue</button></menu></form>';
 window.wstxConfirm=function(text,okLabel='Continue'){
   confirmDialog.querySelector('#op-confirm-text').textContent=text;confirmDialog.querySelector('#op-confirm-ok').textContent=okLabel;
   return new Promise(resolve=>{confirmDialog.returnValue='';confirmDialog.querySelector('#op-confirm-halt').disabled=halt.disabled;confirmDialog.addEventListener('close',()=>resolve(confirmDialog.returnValue==='ok'),{once:true});confirmDialog.showModal();confirmDialog.querySelector('#op-confirm-ok').focus();});
@@ -56,6 +56,8 @@ qsoColumn.insertAdjacentHTML('beforeend',`<section id="qso-control" class="op-ca
 <section id="error-field" class="op-card op-lower" aria-labelledby="error-heading"><h3 id="error-heading" class="op-lower-head">Problems</h3><div class="op-error-body"><p class="op-muted op-error-none" role="status">No problems</p></div></section>`);
 // WstxOperatingLayout::ErrorField (CL-037-02): the former top-bar exception chips, current only.
 const errorBody=qsoColumn.querySelector('#error-field .op-error-body');
+// A wheel notch moves by at most the visible height, so no line is skipped where the block has only one (1366x768).
+errorBody.addEventListener('wheel',event=>{if(errorBody.scrollHeight<=errorBody.clientHeight||errorBody.clientHeight>=Math.abs(event.deltaY))return;event.preventDefault();errorBody.scrollTop+=Math.sign(event.deltaY)*errorBody.clientHeight;},{passive:false});
 chips.setAttribute('role','list');chips.setAttribute('aria-label','Problems the operator must act on');chips.className='op-error-list';
 errorBody.prepend(chips);const notice=document.querySelector('#station-notice');if(notice)errorBody.prepend(notice);
 const body=focus.querySelector('.op-contact-body'),identity=focus.querySelector('.op-contact-identity');
@@ -114,19 +116,25 @@ async function sendNow(action,params={},label=action){
     if(response.status===202||response.status===200){resultText.textContent=`${label}: accepted`;return data;}
     const code=data?.error?.code??`http_${response.status}`;
     resultText.textContent=`${label}: refused · ${code}${code==='stale_revision'?' · station state changed, review and retry':''}`;
-    return {refused:code};
+    return {refused:code,reason:data?.error?.reason};
   }catch(error){resultText.textContent=`${label}: outcome unknown · ${error.message}`;return null;}
   // A command that ended the QSO (Log QSO) leaves no accepted result in the idle pane.
   finally{sending=false;await load();if(before&&!running(snap?.contact)&&/: accepted$/.test(resultText.textContent))resultText.textContent='';}
 }
-// The keyboard halt itself (Esc, Alt+H) is sent by recording.js, which is loaded at
-// once; this client only shows its outcome and adds the Esc contact cancellation.
+// The keyboard halt itself (Alt+H) is sent by recording.js, which is loaded at once;
+// this client only shows its outcome.
 addEventListener('keyboard-halt',event=>{
   const h=event.detail?.reply?.halt_state;
   if(h)resultText.textContent=`Halt: ${h==='stopped'?'stopped (confirmed)':h==='idle'?'nothing was transmitting':'pending · not yet confirmed'}`;
-  const c=snap?.contact;
-  if(event.detail?.escape&&c&&!['idle','cancelled','completed'].includes(c.state))send('cancel',{},'Cancel contact');else load();
+  load();
 });
+// WstxContact::AbortQso (#39): Esc and the Abort QSO button stop the transmission now
+// and cancel the contact; the station is not halted. The server decides what stops.
+const abortButton=document.createElement('button');abortButton.type='button';abortButton.id='abort-qso';abortButton.className='op-abort';abortButton.textContent='Abort QSO (Esc)';abortButton.title='Abort QSO (Esc): stop the transmission now and cancel the contact, without HALT';abortButton.disabled=true;
+document.querySelector('#halt-tx')?.after(abortButton);
+const abortable=()=>{const c=snap?.contact,t=snap?.transmit;return !!snap&&((c&&!['idle','cancelled','completed'].includes(c.state))||t?.arm_state==='armed'||!!tick?.transmitting);};
+function abortQso(){if(abortable())send('abort',{},'Abort QSO');}
+abortButton.addEventListener('click',abortQso);
 // ---------------------------------------------------------------- render
 const transmitting=c=>!!c&&!['idle','completed','cancelled'].includes(c.state);
 // #37 QsoPane: a running QSO is a contact with a partner in replying..signoff; a completed,
@@ -180,6 +188,7 @@ function render(){
   $('transmit-unavailable').textContent=!snap?'Transmission unavailable: contact state unknown.':t?.capability==='unavailable'?'Transmission unavailable: radio/authorization not ready.':'Transmission unavailable: this server does not offer transmit control.';
   const tune=$('contact-tune');tune.disabled=!ready&&!t?.tune;tune.setAttribute('aria-pressed',String(!!t?.tune));tune.textContent=t?.tune?`Tune on · ${snap.watchdog.tune_remaining_seconds} s`:'Tune';
   $('contact-cancel').disabled=!c||['idle','cancelled'].includes(c.state);
+  abortButton.disabled=!abortable();$('qso-abort').disabled=abortButton.disabled;
   // Log QSO while a QSO runs (it also closes it); a finished contact is gone from the pane.
   // The reason stays the disabled button's description without taking a line.
   const log=$('contact-log');log.disabled=!qso;$('contact-unavailable').hidden=true;
@@ -294,7 +303,7 @@ function loadAutomation(){
     const run=a?.v===1?a.run:null,active=run&&run.state!=='stopped';
     automationNode.dataset.active=String(!!active);
     // #42 a pounce run names its call (WstxStrategy::Pounce).
-    automationNode.textContent=active&&run.pounce?`Pounce ${run.pounce.call} ${run.state==='waiting'?'waiting':'in QSO'} · HALT ends it`:active?`Automation ${{waiting:'waiting',calling_cq:'calling CQ'}[run.state]??'in contact'} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
+    automationNode.textContent=active&&run.pounce?`Pounce ${run.pounce.call} ${run.state==='waiting'?'waiting':'in QSO'} · HALT ends it`:active?`Automation ${{waiting:'waiting',calling_cq:'calling CQ',manual:'paused for your QSO'}[run.state]??'in contact'} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
     if(a?.v===1)dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));
   }).catch(()=>{}).finally(()=>{automationLoading=null;});
   return automationLoading;
@@ -332,6 +341,7 @@ $('qso-cq').addEventListener('click',async()=>{
   sendExplicit(()=>arm('CQ'));
 });
 $('qso-halt').addEventListener('click',()=>halt.click());$('qso-halt').disabled=halt.disabled;
+$('qso-abort').addEventListener('click',abortQso);
 // #37 one HALT: the top-bar HALT hides only while the QSO pane HALT is fully on screen.
 new IntersectionObserver(([entry])=>{document.body.dataset.qsoHaltShown=String(entry.isIntersecting&&entry.intersectionRatio>=0.99);},{threshold:[0,0.99,1]}).observe($('qso-halt'));
 // #37 fold-out Now (operator 2026-11-03, WSJT-X Next/Now): choose the line next and turn Enable
@@ -548,11 +558,13 @@ $('window-dump').addEventListener('change',async event=>{
 // Log QSO: log the current contact now, without a form (DirectLog).
 async function logQso(){if(running(snap?.contact))await send('open_log',{},'Log QSO');}
 $('contact-log').addEventListener('click',logQso);
-// WstxOperatingLayout::KeyboardShortcuts (WSJT-X keys where the function exists). Esc and
+// WstxOperatingLayout::KeyboardShortcuts (WSJT-X keys where the function exists). Esc is Abort QSO;
+// Alt+H (the emergency halt) is sent by recording.js.
 const typing=target=>!!target?.closest?.('input:not([type=checkbox]):not([type=radio]):not([type=range]),textarea,select,[contenteditable=true]');
 function nudge(rx,tx,label){const s=snap?.settings;if(!s)return;send('set_frequency',{rx_hz:rx===null?null:Math.max(0,Math.min(3000,s.rx_hz+rx)),tx_hz:tx===null?null:s.tx_hz+tx},label);}
 addEventListener('keydown',event=>{
-  if(event.key==='Escape'){event.preventDefault();return;}
+  // Esc first closes an open dialog or menu; only otherwise it aborts the QSO.
+  if(event.key==='Escape'){if(event.defaultPrevented||document.querySelector('dialog[open],#ba-menu:not([hidden])'))return;event.preventDefault();abortQso();return;}
   if(event.key==='F4'){event.preventDefault();if(snap?.contact&&!['idle','cancelled'].includes(snap.contact.state))send('cancel',{},'Clear DX');return;}
   if(event.key==='F11'||event.key==='F12'){
     event.preventDefault();const sign=event.key==='F11'?-1:1,ft4=tick?.period===7500;
@@ -575,13 +587,21 @@ function rowIdentity(row){
 }
 async function selectRow(tr){
   const row=rowIdentity(tr);if(!row)return null;
-  const reply=await send('select_row',{row,replace:false},'Select station');
-  if(reply?.refused==='contact_active'){
-    // #37: only a row that can start a contact for me offers the change; a foreign QSO's row or a CQ directed elsewhere offers nothing.
-    if(tr.dataset.foreign||window.wstxCqNotForMe?.(tr)){changeTarget?.remove();changeTarget=null;resultText.textContent='';}
-    else offerChange(()=>send('select_row',{row,replace:true},'Change contact'),tr.dataset.sender);
-  }
+  // #37: during a contact only a row that can start a contact for me offers the change; a foreign
+  // QSO's row or a CQ directed elsewhere (the station's refusal, DirectedCqRule) offers nothing.
+  const qso=running(snap?.contact);
+  const reply=qso?await send('select_row',{row,replace:false},'Select station'):await selectConfirmed(row,false,'Select station');
+  if(qso&&(reply?.refused==='directive_not_answerable'||(reply?.refused==='contact_active'&&tr.dataset.foreign))){changeTarget?.remove();changeTarget=null;resultText.textContent='';}
+  else if(reply?.refused==='contact_active')offerChange(()=>send('select_row',{row,replace:true,directive_confirmed:true},'Change contact'),tr.dataset.sender);
   return reply;
+}
+// WstxStrategy::DirectedCqRule: the station decides; a CQ that is not answerable is a warning
+// the operator may confirm (a declined warning sends nothing further).
+async function selectConfirmed(row,replace,label){
+  const reply=await sendExplicit(()=>send('select_row',{row,replace},label));
+  if(reply?.refused!=='directive_not_answerable')return reply;
+  if(!await window.wstxConfirm(`${reply.reason}. Answer anyway?`,'Answer anyway'))return {refused:'declined'};
+  return sendExplicit(()=>send('select_row',{row,replace,directive_confirmed:true},label));
 }
 // A double-click (or the Reply menu) is the explicit ChangeContact (#50, WSJT-X
 // handleDecodeSelection with quick_call): replace true, no confirmation, then Enable Tx on;
@@ -593,7 +613,7 @@ async function replyRow(tr){
   const row=rowIdentity(tr);if(!row)return;
   // #37: a deliberate double-click on a foreign QSO's row calls its sender, and says so.
   const label=tr.dataset.foreign?`Call ${tr.dataset.sender}`:'Reply';
-  const reply=await sendExplicit(()=>send('select_row',{row,replace:true},label));
+  const reply=await selectConfirmed(row,true,label);
   if(reply&&!reply.refused&&transmitReady())await sendExplicit(()=>arm(label));
 }
 let clickTimer=null;
@@ -617,7 +637,7 @@ menu.addEventListener('click',event=>{
   if(item.dataset.menu==='reply')replyRow(tr);else if(item.dataset.menu==='select')selectRow(tr);
   else if(item.dataset.menu==='rx'){const hz=Math.round(Number(tr.children[3].textContent));if(Number.isFinite(hz))send('set_frequency',{rx_hz:hz,tx_hz:null},'Rx frequency');}
 });
-menu.addEventListener('keydown',event=>{if(event.key==='Escape'){closeMenu();}});
+menu.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();closeMenu();}});
 document.addEventListener('pointerdown',event=>{if(!menu.hidden&&!menu.contains(event.target))closeMenu();},true);
 // WstxOperatingLayout::QsoPane Calling me (#37, operator 2026-11-04): every station calling my
 // call from the latest two published periods except the partner, one line per station (its
@@ -684,8 +704,8 @@ function othersShow(){
 function rowOf(context,sequence){const [,,source_id,job_id,generation]=context.split('/');return {source_id,job_id,generation:Number(generation),sequence};}
 async function answerOther(li){
   const row=JSON.parse(li.dataset.row),qso=li.dataset.qso==='true';
-  const reply=await send('select_row',{row,replace:qso},qso?'Change contact':'Select station');
-  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitReady())arm('Reply');}),li.dataset.call);return;}
+  const reply=await selectConfirmed(row,qso,qso?'Change contact':'Select station');
+  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true,directive_confirmed:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitReady())arm('Reply');}),li.dataset.call);return;}
   if(reply&&!reply.refused&&transmitReady())arm('Reply');
 }
 othersList.addEventListener('mousedown',event=>{const li=secondPress(event,'tr[data-row]');if(li)answerOther(li);});
@@ -983,7 +1003,7 @@ function show(){
   autoButton.setAttribute('aria-pressed',String(strategyRun()));
   autoButton.title=strategyRun()?'Stop Auto':runActive()&&run.pounce?`Pouncing on ${run.pounce.call}: stop the pounce first`:runActive()?'An MCP automation run is active; HALT ends it':!active()?'Choose a strategy first':!capable?'Transmission unavailable':'Answer only stations matching the strategy (transmits)';
   showContinent();showIgnore();showPounce();
-  autoButton.textContent=strategyRun()?`Auto · ${run.state==='calling_cq'?'CQ':run.state==='contact_active'?(run.selected?.call??'QSO'):'waiting'}`:'Auto';
+  autoButton.textContent=strategyRun()?`Auto · ${run.state==='calling_cq'?'CQ':run.state==='contact_active'?(run.selected?.call??'QSO'):run.state==='manual'?'your QSO':'waiting'}`:'Auto';
   decorate();
 }
 // ---------------------------------------------------------------- Highlight
@@ -999,7 +1019,7 @@ function decorate(){
     tr.classList.toggle('ba-strategy',v?.rank!==null&&v?.rank!==undefined);tr.classList.toggle('ba-grey',!!v?.grey);
     if(v&&v.rank!==null)tr.dataset.rank=String(v.rank+1);else delete tr.dataset.rank;
     // #55 BandActivityHover: the verdict joins the row's other reasons.
-    if(v?.grey)tr.dataset.whyStrategy='Directed CQ not addressed to my continent: never answered';else if(v&&v.rank!==null)tr.dataset.whyStrategy=`Strategy ${config().active}: rule ${v.rank+1}`;else delete tr.dataset.whyStrategy;window.wstxActivityWhy?.(tr);
+    if(v?.grey)tr.dataset.whyStrategy='Directed CQ, not calling us: the strategy skips it, a double-click warns';else if(v&&v.rank!==null)tr.dataset.whyStrategy=`Strategy ${config().active}: rule ${v.rank+1}`;else delete tr.dataset.whyStrategy;window.wstxActivityWhy?.(tr);
   }
   if(!on)return;
   // Matches go to the top of their period block in the station's order.
@@ -1016,14 +1036,6 @@ function decorate(){
   for(const tr of [...tbody.children]){if(tr.classList.contains('ba-divider')){flush();block=[];}else if(tr.dataset.sequence)block.push(tr);}
   flush();observer.takeRecords();reordering=false;
 }
-// #37: WstxStrategy::DirectedCqRule (addressed_to_me, server/src/strategy.rs) for a row the operator
-// clicks; the verdicts above exist only with Highlight on and an active strategy.
-window.wstxCqNotForMe=tr=>{
-  const target=tr.children[4]?.textContent.match(/^CQ (\S+) /)?.[1];if(!target||target===tr.dataset.sender)return false;
-  const mine=config()?.continent??view?.derived_continent??null;
-  if(['AF','AN','AS','EU','NA','OC','SA'].includes(target))return mine!==target;
-  return target==='DX'&&!(mine&&tr.dataset.continent&&mine!==tr.dataset.continent);
-};
 function wanted(){
   // The sequences shown for the current receive identity, evaluated once each.
   const id=identity();if(!highlightOn()||!id)return null;
@@ -1068,9 +1080,9 @@ autoButton.addEventListener('click',async()=>{
   if(runActive()){if(!strategyRun())return;try{await automationCommand('stop',{run_id:run.id});}catch(error){statusNode.textContent=`Auto stop refused · ${error.message}`;}return;}
   const s=active(),c=window.wstxContact?.snapshot(),mode=typeof live!=='undefined'?live?.job?.mode:null;
   if(!s||!c||!['ft8','ft4'].includes(mode)){statusNode.textContent='Auto needs a strategy and FT8/FT4 receive';return;}
-  // First use in this page session asks once; HALT and Esc stop Auto at any time.
+  // First use in this page session asks once; HALT stops Auto at any time.
   if(!autoConfirmed){
-    const ok=await window.wstxConfirm(`Auto transmits without asking: it answers only stations that match "${s.name}" (${{call:'Auto Call',cq:'Auto CQ',alternate:`Auto Call and Auto CQ, switching after ${s.switch_after} tries`}[s.auto_role]}). The Tx watchdog stops it when one message would be sent more than ${c.settings.tx_calls} times; a new message or station starts that count again, so Auto can run until its limit of 8 hours. HALT or Esc stops it.`,'Start Auto');
+    const ok=await window.wstxConfirm(`Auto transmits without asking: it answers only stations that match "${s.name}" (${{call:'Auto Call',cq:'Auto CQ',alternate:`Auto Call and Auto CQ, switching after ${s.switch_after} tries`}[s.auto_role]}). The Tx watchdog stops it when one message would be sent more than ${c.settings.tx_calls} times; a new message or station starts that count again, so Auto can run until its limit of 8 hours. HALT stops it; Esc aborts the current QSO.`,'Start Auto');
     if(!ok)return;autoConfirmed=true;
   }
   autoButton.disabled=true;
@@ -1234,7 +1246,7 @@ async function startPounce(call){
   if(!c||!['ft8','ft4'].includes(mode)){statusNode.textContent='Pounce needs FT8/FT4 receive';return;}
   // The page session's one confirmation, shared with Auto.
   if(!autoConfirmed){
-    const ok=await window.wstxConfirm(`Pounce transmits without asking: it answers ${call} when it calls CQ or ends a QSO with 73 on this band. The Tx watchdog stops it when one message would be sent more than ${c.settings.tx_calls} times. HALT or Esc stops it.`,'Pounce');
+    const ok=await window.wstxConfirm(`Pounce transmits without asking: it answers ${call} when it calls CQ or ends a QSO with 73 on this band. The Tx watchdog stops it when one message would be sent more than ${c.settings.tx_calls} times. HALT stops it; Esc aborts the current QSO.`,'Pounce');
     if(!ok)return;autoConfirmed=true;
   }
   try{
@@ -1255,7 +1267,7 @@ const NEW_KINDS=['new_call','new_grid','new_dxcc','new_continent','new_cq_zone',
 const fresh=kind=>NEW_KINDS.includes(kind)?{value:'ever'}:({message:{value:'cq'},continent:{values:['EU']},call:{values:['DL']},cq_target:{values:['DX']},band:{values:['40m']}}[kind]??{min:null,max:null});
 const newStrategy=name=>({name,rules:[{conditions:[{kind:'message',negate:false,value:'cq'}]}],sort:'strongest',treat_73_as_cq:false,apply_to_callers:false,skip_after:5,auto_role:'call',switch_after:3});
 const editor=document.createElement('dialog');editor.id='strategy-editor';editor.className='op-dialog op-strategy-editor';editor.setAttribute('aria-labelledby','strategy-editor-title');
-editor.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="strategy-editor-title">Strategies</h2><button type="button" class="op-halt-small" id="strategy-editor-halt" title="Halt Tx (Esc, Alt+H)">HALT</button></header>
+editor.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="strategy-editor-title">Strategies</h2><button type="button" class="op-halt-small" id="strategy-editor-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button></header>
 <div class="se-pick"><label>Edit<select id="se-which"></select></label><button type="button" id="se-new">New</button><button type="button" id="se-copy">Duplicate</button><button type="button" id="se-delete">Delete</button></div>
 <div id="se-body"></div>
 <section class="se-preview" aria-labelledby="se-preview-title"><h3 id="se-preview-title">Live preview · latest period</h3><p id="se-preview-status" class="op-muted" role="status"></p><div class="se-preview-wrap"><table><tbody id="se-preview"></tbody></table></div></section>
@@ -1287,7 +1299,7 @@ function renderEditor(){
   $('se-which').innerHTML=drafts.map((s,i)=>option(i,esc(s.name),i===current)).join('');
   const s=drafts[current];if(!s){$('se-body').innerHTML='<p class="op-muted">No strategy. Choose New.</p>';preview();return;}
   $('se-body').innerHTML=`<label>Name<input id="se-name" maxlength="32" value="${esc(s.name)}" autocomplete="off"></label>
-<p class="op-muted">A decode matches when every condition of a rule holds; rule 1 has the highest priority. Directed CQs not for my continent never match.</p>
+<p class="op-muted">A decode matches when every condition of a rule holds; rule 1 has the highest priority. CQs directed elsewhere (another continent, CQ DX from my own, any other word) never match.</p>
 <ol class="se-rules">${s.rules.map((r,ri)=>`<li><fieldset><legend>Rule ${ri+1}${ri===0?' (highest priority)':''}</legend><label class="op-check se-alert" title="Sound or browser notification when a decode matches this rule (Settings &gt; General); never transmits"><input type="checkbox" data-alert="${ri}"${r.alert?' checked':''}>Alert</label><ul class="se-conditions">${r.conditions.map((c,ci)=>conditionMarkup(c,ri,ci)).join('')}</ul><p class="op-actions"><button type="button" data-act="add-condition" data-rule="${ri}">Add condition</button>${ri?`<button type="button" data-act="up" data-rule="${ri}">Higher priority</button>`:''}${s.rules.length>1?`<button type="button" data-act="remove-rule" data-rule="${ri}">Remove rule</button>`:''}</p></fieldset></li>`).join('')}</ol>
 <p class="op-actions"><button type="button" data-act="add-rule"${s.rules.length>=8?' disabled':''}>Add rule</button></p>
 <div class="se-options"><label>Sort matches<select id="se-sort">${[['strongest','Strongest first'],['weakest','Weakest first'],['furthest','Furthest first'],['newest','Newest first']].map(([v,l])=>option(v,l,s.sort===v)).join('')}</select></label>

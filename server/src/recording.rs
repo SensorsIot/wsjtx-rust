@@ -1977,7 +1977,7 @@ impl Recording {
             Some(
                 self.radio_actor()
                     .ok_or("radio_unavailable")?
-                    .reserve_transition()
+                    .reserve_transition(Instant::now() + selection::LEASE_WAIT)
                     .map_err(selection::radio_error)?,
             )
         } else {
@@ -3511,6 +3511,30 @@ impl Recording {
             v
         });
         json!({"v":1,"profile_id":self.profile,"boot_id":self.boot,"generation":s.generation,"recording":recording,"source_error":s.source_error,"storage_error":s.storage_error,"import":import,"job":s.job})
+    }
+    /// WstxStationProtocol::PushedStationState profile.state: the saved revision this station runs.
+    pub(crate) fn profile_state_event(&self) -> (u64, String) {
+        let revision = self.state.lock().unwrap().operating.profile_revision;
+        (
+            revision,
+            json!({"v":1,"type":"profile.state","data":{"profile_id":self.profile,"boot_id":self.boot,"revision":revision}})
+                .to_string(),
+        )
+    }
+    /// RecordingReceive pushed recording.state data (WstxStationProtocol::PushedStationState).
+    pub fn state_event_data(&self) -> Value {
+        let s = self.snapshot();
+        let source = if s["job"]["kind"] == "live" {
+            &s["job"]["source_id"]
+        } else {
+            &s["recording"]["id"]
+        };
+        let import = if s["import"].is_null() {
+            Value::Null
+        } else {
+            json!({"id":s["import"]["id"],"state":s["import"]["state"],"received_bytes":s["import"]["received_bytes"],"total_bytes":s["import"]["total_bytes"],"error":s["import"]["error"]})
+        };
+        json!({"generation":s["generation"],"source_id":source,"job_id":s["job"]["id"],"state":s["job"]["state"],"import":import})
     }
     fn admit(s: &mut State) -> Result<u64> {
         Self::admit_for(s, None)

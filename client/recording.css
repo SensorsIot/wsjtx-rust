@@ -237,7 +237,7 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #rx-focus .ct-qso-table td:is(:first-child,:nth-child(2)){white-space:nowrap}
 #rx-focus .ct-qso-table :is(th,td):nth-child(n+4){text-align:right;white-space:nowrap}
 #rx-focus .ct-others:empty{display:none}
-@media (max-width:30em){#rx-focus .ct-qso-table th[data-short]{font-size:0}#rx-focus .ct-qso-table th[data-short]::after{content:attr(data-short);font-size:var(--op-font-secondary)}#rx-focus .ct-qso-table :is(th,td){padding:0 2px}#rx-focus .ct-qso-table td:nth-child(2){white-space:normal}}/* #60 Rep column: at phone width the two calls may wrap at their spaces */
+@media (max-width:30em){#rx-focus .ct-qso-table th[data-short]{font-size:0}#rx-focus .ct-qso-table th[data-short]::after{content:attr(data-short);font-size:var(--op-font-secondary);vertical-align:top}/* on the baseline of the font-size 0 strut it made the header 20 px */#rx-focus .ct-qso-table :is(th,td){padding:0 2px}#rx-focus .ct-qso-table td:nth-child(2){white-space:normal}}/* #60 Rep column: at phone width the two calls may wrap at their spaces */
 #rx-focus .ct-dialogue:not([hidden])+.ct-others tr:first-child td{border-top:1px solid #355065}
 #rx-focus .ct-others tr{cursor:pointer}
 #rx-focus .ct-others tr[data-kind=warn]{color:#f2c14e;background:rgba(242,193,78,.1)}
@@ -427,8 +427,9 @@ main.op-app{--hl-lotw:rgba(153,0,0,.35);--hl-new_call_band:rgba(153,255,255,.2);
 @container (max-width:75em){#qso-column{grid-row:2}#rx-focus{grid-row:auto}}
 /* #37 (operator 2026-11-03): one HALT at a time. In the operating view the QSO pane HALT is it;
    the top-bar HALT shows whenever the QSO pane HALT is not fully on screen (contact.js). */
-body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #halt-tx{display:none}
+body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #halt-tx,body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #abort-qso{display:none}
 #contact-messages .ct-now{padding:1px 8px;min-height:0}
+.op-app .op-header-actions button.op-abort{background:#2e2a1c;border-color:#7a6a3a;color:#f0d79a;padding:8px 12px;font-weight:600}
 /* #37 QsoPane item 8 (operator 2026-11-04, "fixed in size that the things below it do not move
    all the time up and down"; "make this section big enough to accommodate also longer QSOs"):
    the pane height depends on the screen width and the text size only, never on its content.
@@ -441,7 +442,7 @@ body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #s
    strip, the workspace and the Control panel. Text wraps rather than being cut off. */
 #rx-focus{--ct-row:.9375rem;--ct-line:1.125rem;--ct-head:calc(var(--ct-line) + 1.9375rem);--ct-lines:calc(var(--ct-line) + .25rem);position:relative;flex:none;gap:0}
 #qso-column>#rx-focus{flex:none}
-#controls #rx-focus>header.op-qso-head{flex:none;display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"id id id" "heard tools badge";align-items:center;gap:2px 8px;height:var(--ct-head);box-sizing:border-box;padding:2px 10px 3px;overflow:visible;position:static}
+#controls #rx-focus>header.op-qso-head{flex:none;display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"id id badge" "heard tools tools";align-items:center;gap:2px 8px;height:var(--ct-head);box-sizing:border-box;padding:2px 10px 3px;overflow:visible;position:static}
 #rx-focus .op-qso-head .op-contact-identity{grid-area:id;min-width:0;max-height:var(--ct-line);overflow:hidden auto}/* a longer partner line wraps and scrolls in its own line; the buttons never move */
 #rx-focus .op-qso-head .op-contact-badge{grid-area:badge;padding:0 6px;line-height:var(--ct-line);white-space:nowrap}
 #rx-focus .op-contact-identity>div{display:flex;flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:0 10px;min-width:0}
@@ -489,6 +490,9 @@ body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #s
 #qso-control :is(input:not([type=checkbox]),select,button){height:1.375rem;box-sizing:border-box;padding-top:0;padding-bottom:0}
 #error-field{padding:2px 12px}
 #error-field .op-error-none,#error-field .op-lower-head{line-height:1.125rem;padding-top:0}
+/* One fixed screen: the Control panel never moves, so a long problem scrolls inside what is left
+   of the column instead of running past the screen (#37, live 2026-11-06). */
+@container (min-width:75em){#qso-column>#error-field{flex:0 1 auto;flex-wrap:nowrap;min-height:0}#error-field .op-error-body{align-self:stretch;min-height:0}}
 @container (max-width:48em){
  #rx-focus{--ct-head:calc(3 * var(--ct-line) + 2.25rem);--ct-lines:calc(2 * var(--ct-line) + .375rem)}
  #rx-focus .op-contact-identity>div{flex-direction:column;gap:0}

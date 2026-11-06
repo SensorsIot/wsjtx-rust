@@ -323,8 +323,9 @@ attribute def ActivityOrdering {
              Persistent Halt stays reachable.
              A secondary region closes with its labelled close control (keyboard
              reachable) or a pointer action outside it, returning to operation and
-             restoring opener focus. Escape never closes a region: it is Halt Tx plus
-             contact cancellation (WstxContact::HaltTx, CL-010-03, #10 decision 5),
+             restoring opener focus. Escape never closes a region: it is Abort QSO
+             (WstxContact::AbortQso, #39 2026-11-04; earlier Halt Tx plus contact
+             cancellation, CL-010-03, #10 decision 5),
              replacing the earlier Escape-closes-region behaviour; existing TC-007-002
              tests asserting Escape-to-close must be updated with that implementation.
              No radio/QSO/strategy mutation or settings autosave from navigation. */
@@ -340,7 +341,7 @@ attribute def ActivityOrdering {
              desktop two-pane order (#37 OperatingScreen), compact top bar, no overflow,
              typography/breakpoint/native canvas/full-space/splitter assertions,
              pointer/keyboard region routes,F2/close-control/outside-click/focus (Escape
-             halts, CL-010-03), real profile/recording
+             aborts the QSO, CL-010-03), real profile/recording
              behavior and request recorder refusing invented RF/QSO/strategy work.
              Same1200x800 target/actual screenshots show design correspondence.
              Cost2 Windows isolated real server/Chromium; no radio. */
@@ -383,8 +384,9 @@ attribute def ActivityOrdering {
              order (station bar, toolbar, signal canvas, separator, band strip, cards);
              the signal area, its 0..3000 Hz span, palette, Speed/Sensitivity and split
              (CL-010-05, SplitGeometry) are unchanged.
-             Station bar: Halt Tx (always visible, Alt+H, Esc; disabled with reason on a
-             receive-only station, where Esc only cancels the contact) and a compact
+             Station bar: Halt Tx (always visible, Alt+H; disabled with reason on a
+             receive-only station), beside it Abort QSO (Esc, WstxContact::AbortQso,
+             enabled while a contact is in progress, armed or transmitting) and a compact
              transmit state with the last transmitted text, Tx watchdog remaining calls WD:n
              or "Tx watchdog: same message sent N times", visible in every region. Radio toolbar (its period
              and level slots): UTC clock, Tx progress v/15 with Transmitting label, Rx
@@ -480,7 +482,7 @@ attribute def ActivityOrdering {
              whenever it is not (a page such as Logbook or "?" or the Settings drawer covers
              the workspace, or the stacked QSO pane at most 75em wide or on a phone is scrolled
              out of view), the top-bar HALT is shown, so a pointer HALT is always on screen; both are the same action and enabled
-             state, and Esc / Alt+H halt everywhere. The exception chips
+             state, and Alt+H halts everywhere (Esc is Abort QSO). The exception chips
              that stood in the top bar are the ErrorField below the QSO pane since #37
              (operator 2026-11-03). A link that is connected shows no entry; the accessible
              status stays. There is no
@@ -567,7 +569,8 @@ attribute def ActivityOrdering {
              new_call_band. Worked before on this band and mode has no colour.
              Operator decision (#55, 2026-11-03, CL-055-04), deviating from WSJT-X, which colours
              only CQ/QRZ and calling-me lines: the new_* slots apply to the sender of every decoded
-             standard message (CQ, replies to others, reports, R-reports, RR73, 73), and they match
+             message (CQ, replies to others, reports, R-reports, RR73, 73; the sender call of
+             WstxContact::DecodedEntity), and they match
              only the record's flags (WstxContact::DecodedEntity; the worked-before query no longer
              adds slots). A row without a flag has no colour: there is no cq slot (#50). A row
              to my call keeps mycall on top. A row with a reason of its colour carries the reason
@@ -628,8 +631,8 @@ attribute def ActivityOrdering {
              continent (flags new_dxcc, new_continent); 4 new DXCC or continent on this band
              (new_dxcc_band, new_continent_band); 5 new CQ or ITU zone, ever or on this band;
              6 new grid, ever or on this band; 7 new call, ever or on this band; 8 no flag.
-             The flags are those of WstxContact::DecodedEntity for any decoded standard
-             sender, CQ or not. */
+             The flags are those of WstxContact::DecodedEntity for its sender call, CQ or
+             not. */
     }
     attribute def BandActivityHover {
         doc /* #55 (CL-055-04), #50 (operator 2026-11-04, CL-050-08: "too much information",
@@ -643,11 +646,12 @@ attribute def ActivityOrdering {
              zone on <band>", else "New ITU zone on <band>"; grid "New grid <square>", else "New
              grid on <band>"; call "New call", else "New on <band>" followed by the sender's
              worked-before status in parentheses ("(worked on another band or mode)" or "(worked
-             on <band> <MODE>)", WstxContact::WorkedBeforeQuery answers, no further query). An
+             on <band> <MODE>)", WstxContact::WorkedBeforeQuery answers, no further query; the
+             status stays on the row while it is shown, also as a kept period, #50). An
              overall flag implies its on-band flag, so the on-band text appears only without
              it. Then the #39
-             strategy verdict ("Strategy <name>: rule <n>" or "Directed CQ not addressed to my
-             continent: never answered"). The reasons form one line joined by " · ", for
+             strategy verdict ("Strategy <name>: rule <n>" or "Directed CQ, not calling us: the
+             strategy skips it, a double-click warns"). The reasons form one line joined by " · ", for
              example "New DXCC · New call", "New on 40m (worked on another band or mode)",
              "New CQ zone 10". A partner row carries no flag reason (its marker shows it). A
              row without such a reason has no tip; a worked-before status alone gives none.
@@ -705,7 +709,9 @@ attribute def ActivityOrdering {
              screen at 360x800 (TC-037-003); at most 48em wide Band Activity, above the QSO
              pane, has a fixed height (29rem) and scrolls inside; with Highlight on the strategy accent of
              WstxStrategy::HighlightView (matches first in their period, greyed directed
-             CQs not for my continent). Pointer: click selects (SelectDecodedRow, prepares, never
+             CQs not for my continent). A selection of a CQ that is not answerable first shows the
+             WstxStrategy::DirectedCqRule warning; only its confirmation selects (during a contact a
+             click on it offers nothing). Pointer: click selects (SelectDecodedRow, prepares, never
              transmits; while a contact is active a row that can start a contact for me, a
              CQ/QRZ complying with WstxStrategy::DirectedCqRule or a row addressed to my call,
              only offers "Change contact to <call>", naming its sender, whose replacement keeps
@@ -787,9 +793,10 @@ attribute def ActivityOrdering {
              content, so the ControlPanel and the ErrorField below it (LowerPanel) never move
              when a QSO starts or ends, dialogue rows or callers are added or a line such as
              NEXT appears. From top to bottom: the header (item 1: the partner line, which
-             wraps and scrolls in its own fixed line when longer; then the last partner message
-             of item 2, cut to the line since the dialogue repeats it, the direct buttons of
-             item 5, the Tx1-Tx6 fold-out and the badge), the message lines (item 4 NEXT first,
+             wraps and scrolls in its own fixed line when longer, with the badge beside it; then
+             the last partner message of item 2, cut to the line since the dialogue repeats
+             it, the direct buttons of item 5 and the Tx1-Tx6 fold-out; at most 48em wide the
+             badge follows the buttons), the message lines (item 4 NEXT first,
              then items 6, the exception status, Pounce and Auto Seq off; one fixed line, two at
              most 48em wide, scrolling inside), the QSO section
              (the #60 dialogue table, item 7: its header row and qsoAreaRows (12) rows without
@@ -872,13 +879,13 @@ attribute def ActivityOrdering {
              it is red, as the waterfall Tx marker rgb(255,64,64), in a period of my Tx
              parity while Enable Tx is on and whenever the station reports transmitting,
              and green, as the Rx marker rgb(48,208,80), in every other (receive) period.
-             5. Direct buttons: CQ, Tune, HALT, Log QSO (SetEnableTx (#37). Operator
+             5. Direct buttons: CQ, Tune, HALT, Abort QSO (Esc), Log QSO (SetEnableTx (#37). Operator
              2026-11-03 ("We have two HALT buttons ... I do not understand why we need a Reply
              and an RR73 and a 73 button there"): RR73 and 73 are gone, Auto Seq sends them
              and the fold-out Next/Now overrides by hand as in WSJT-X; Reply, kept only as the
              operator's workaround until the #50 double-click fix was installed, is gone too:
              a double-click on a Band Activity row or a Calling me row, or the row menu Reply,
-             starts the reply;
+             starts the reply (with the WstxStrategy::DirectedCqRule warning for a CQ not answerable);
              this HALT is the one HALT of the operating view (OperatingScreen);
              Log QSO, offered (button and Alt+Q) while a QSO runs, logs the contact now, WstxContact::DirectLog
              (#41), and closes it, so nothing stays queued). A command's accepted result
@@ -998,9 +1005,9 @@ attribute def ActivityOrdering {
         assert constraint currentOnly { not hasHistory and not hasAcknowledge and showsSince }
         doc /* CL-037-02 (#37, operator 2026-11-03, with the correction "NO history"). A small
              block at the bottom of the right column, below the ControlPanel, that lists only
-             problems that still apply and need the operator to act (ErrorFieldEntry), one line
-             each, naming the cause and "since HH:MM" (UTC, when this page first saw the
-             condition hold). An entry appears while its condition holds and disappears by
+             problems that still apply and need the operator to act (ErrorFieldEntry), each
+             naming the cause and "since HH:MM" (UTC, when this page first saw the condition
+             hold), on one line where it fits. An entry appears while its condition holds and disappears by
              itself when it clears; there is no acknowledge control and no list of past
              problems. A click on an entry opens its detail in the Settings drawer;
              receiveStopped offers the explicit receive start; stationUpdated and
@@ -1022,7 +1029,11 @@ attribute def ActivityOrdering {
              stationDataRejected. Informational or transient events (a refused request that is
              retried, busy, a stale revision or period, a receive restart, a completed action)
              are no entries. With no entry the block shows one muted line "No problems".
-             The block is small: at most about four entry lines high, scrolling inside. */
+             The block is small: at most about four entry lines high and never past the screen
+             where the page does not scroll, scrolling inside, a wheel notch by at most the
+             visible height; the Control panel above it does not move (#37, live 2026-11-06).
+             At 1366x768 about one line of it is visible; a longer entry is read by scrolling
+             inside it, by its hover text or in its Settings detail. */
     }
     attribute def SettingsDrawer {
         attribute sections : Integer = 4;
@@ -1098,13 +1109,14 @@ attribute def ActivityOrdering {
              reconnecting keeps the full screen. */
     }
     action def KeyboardShortcuts {
-        doc /* WSJT-X keys 1:1 where the function exists: Esc and Alt+H halt (Esc also
-             cancels the contact, WstxContact::HaltTx); F1/F3/F5 and "?" open the overview;
+        doc /* WSJT-X keys 1:1 where the function exists: Alt+H halts (the emergency
+             stop, WstxContact::HaltTx); Esc aborts the QSO (WstxContact::AbortQso, #39
+             2026-11-04: transmission stopped now, contact cancelled, no halt); F1/F3/F5 and "?" open the overview;
              F2 Settings; F4 clears the DX call (contact cancel); Alt+1..Alt+6 choose the
              next message Tx1-Tx6 (Now is a fold-out button only); Alt+M receive start/stop; Alt+T Tune;
              Alt+Q Log QSO; F11/F12 Rx -/+1 Hz; Shift+F11/F12 Tx -/+60 Hz FT8 (90 Hz FT4);
              Ctrl+F11/F12 Rx and Tx -/+1 Hz. Letter and "?" keys are inactive while a text
-             field has focus; Esc and Alt+H always act. Alt+N (Enable Tx) has no function. */
+             field has focus; Esc and Alt+H always act (an open dialog or menu takes Esc first). Alt+N (Enable Tx) has no function. */
     }
     verification def operatingScreen009 {
         objective { verify WstxRequirements::'CL-010-16'; }

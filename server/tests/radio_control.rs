@@ -321,7 +321,9 @@ fn transition_lease_excludes_other_operations_and_polling_until_released() {
     while actor.snapshot().unwrap().state == State::Connecting && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(1));
     }
-    let lease = actor.reserve_transition().unwrap();
+    let lease = actor
+        .reserve_transition(Instant::now() + Duration::from_secs(1))
+        .unwrap();
     assert_eq!(actor.execute(req(Operation::ReadMode)), Err(Error::Busy));
     lease.execute(req(Operation::ReadMode)).unwrap();
     lease.execute(req(Operation::ReadData)).unwrap();
