@@ -1969,6 +1969,108 @@ async fn tc_039_033_without_a_client_for_60_s_nothing_new_and_the_exchange_ends(
     assert_eq!(f.keys(), 2, "key on and off of the one own period above");
 }
 
+/// A run with goal dxcc_band and one QSO with K1ABC completed on 40m; the station then on 20m.
+async fn worked_on_40m_now_on_20m() -> (Mcp, i64, crate::automation::ClientSession) {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    f.state.recording.fixture_band("40m");
+    let e = at_even(&f);
+    let client = f.state.recording.clients.session();
+    let mut c = config(Some("Test calls"));
+    c["strategies"][0]["goals"] = json!(["dxcc_band"]);
+    select(&f, c).await;
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
+    publish(&f, e + 30_000, &[("HB9BLA K1ABC -05", 1505.0, Some(-6.0))]);
+    publish(&f, e + 60_000, &[("HB9BLA K1ABC RR73", 1505.0, Some(-6.0))]);
+    transmit_own_period(&f, e + 15_000).await;
+    assert_eq!(quiet_contact(&f).await.1, json!("completed"));
+    f.tick();
+    f.tick();
+    f.state.logbook.worked_set().unwrap();
+    (f, e, client)
+}
+
+// Proves: TC-039-004. Review 6685870468 finding 1: a station completed in a run is left out on
+// that band and mode only: after a retune it is a candidate again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_004_a_station_completed_on_one_band_is_called_on_another() {
+    let (f, e, _client) = worked_on_40m_now_on_20m().await;
+    // A caller of the same station on the same band: completed here, not answered again.
+    publish(
+        &f,
+        e + 120_000,
+        &[("HB9BLA K1ABC FN42", 1500.0, Some(-1.0))],
+    );
+    assert_eq!(
+        quiet_run(&f).0,
+        "waiting",
+        "completed on this band and mode"
+    );
+    f.state.recording.fixture_band("20m");
+    publish(&f, e + 150_000, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
+    assert_eq!(quiet_run(&f).0, "contact_active");
+    assert_eq!(
+        quiet_contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+}
+
+// Proves: TC-039-004. The same for a caller: always answered on the new band.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_004_a_station_completed_on_one_band_is_answered_on_another() {
+    let (f, e, _client) = worked_on_40m_now_on_20m().await;
+    f.state.recording.fixture_band("20m");
+    publish(
+        &f,
+        e + 150_000,
+        &[("HB9BLA K1ABC FN42", 1500.0, Some(-1.0))],
+    );
+    assert_eq!(
+        quiet_contact(&f).await,
+        (json!("K1ABC"), json!("report"), json!("armed"))
+    );
+}
+
+// Proves: TC-039-004. The station left after calls_per_station is passed over on that band only;
+// the station the operator gave up stays given up for the rest of the run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_004_a_retune_ends_the_pass_over_not_the_operators_give_up() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    f.state.recording.fixture_band("40m");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    select(&f, config(Some("Test calls"))).await;
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
+    publish(&f, e + 30_000, &[]);
+    publish(&f, e + 60_000, &[]);
+    assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
+    f.state.recording.fixture_band("20m");
+    publish(
+        &f,
+        e + 90_000,
+        &[
+            ("CQ K1ABC FN42", 1500.0, Some(9.0)),
+            ("CQ DL1XYZ JO62", 1200.0, Some(-9.0)),
+        ],
+    );
+    assert_eq!(
+        quiet_contact(&f).await.0,
+        json!("K1ABC"),
+        "the strongest: nothing was left on this band"
+    );
+    browser_ok(&f, "cancel", json!({})).await;
+    f.tick();
+    f.tick();
+    f.state.recording.fixture_band("15m");
+    publish(&f, e + 120_000, &[("CQ K1ABC FN42", 1500.0, Some(9.0))]);
+    assert_eq!(
+        quiet_run(&f).0,
+        "waiting",
+        "given up for the rest of the run"
+    );
+}
+
 // Proves: TC-039-033: the status WebSocket itself is what counts: an actual upgrade over the
 // served router with the browser's cookie holds a run past 60 s, its close lets the 60 s run.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

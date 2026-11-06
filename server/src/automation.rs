@@ -18,7 +18,7 @@ const MAX_SAFE: u64 = 9_007_199_254_740_991;
 const AUTOMATION: authorization::Principal = authorization::Principal::Automation;
 pub const RECEIPTS: usize = 16;
 pub const CALLS_MAX: usize = 16;
-/// #39 WstxStrategy::StrategyRun (coordinator default, for the operator to confirm): with no
+/// #39 WstxStrategy::StrategyRun (operator decision, #39 comment 6685226511): with no
 /// authenticated client for this long a strategy starts nothing new.
 pub const CLIENT_GONE: Duration = Duration::from_secs(60);
 /// #39 WstxStrategy::StrategyRun (operator decision 2026-11-06): the longest a strategy run lasts
@@ -362,6 +362,8 @@ impl RunState {
         }
     }
 }
+/// A call on the station band and mode it was worked or left on (a strategy run outlives both).
+type OnBand = (String, Option<&'static str>, &'static str);
 struct Run {
     id: String,
     state: RunState,
@@ -382,12 +384,12 @@ struct Run {
     contact_id: Option<String>,
     progress: Option<(String, Option<i32>)>,
     selected: Option<Value>,
-    worked: Vec<String>,
+    worked: Vec<OnBand>,
     last_decision: Option<Value>,
     /// #39 strategy runs: the stations the operator cancelled or aborted (never again in
     /// this run), and the one left after calls_per_station (passed over once).
     given_up: Vec<String>,
-    rested: Option<String>,
+    rested: Option<OnBand>,
     /// When a client was last there (WstxStrategy::StrategyRun; a selection counts).
     client_seen: Instant,
     /// #42 Pounce: the call and the station band captured at start.
@@ -495,7 +497,7 @@ impl Owner {
             json!({"id":run.id,"state":run.state.name(),"reason":run.reason,"mode":run.mode,
                 "completed_contacts":run.completed,"unanswered_periods":run.unanswered,
                 "contact_id":run.contact_id,"selected":run.selected,"last_decision":run.last_decision,
-                "given_up":run.given_up,"rested":run.rested,"tx_slot":run.tx_slot,
+                "given_up":run.given_up,"rested":run.rested.as_ref().map(|c| &c.0),"tx_slot":run.tx_slot,
                 "pounce":run.pounce.as_ref().map(|(call, band)| json!({"call":call,"band":band}))})
         });
         json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"policy_revision":inner.policy_revision,
@@ -1047,7 +1049,7 @@ impl Owner {
                 if c.state == "completed" {
                     run.completed += 1;
                     if let Some(call) = c.dx_call {
-                        run.worked.push(call);
+                        run.worked.push((call, strategy::station_band(r), run.mode));
                     }
                     // #42 a pounce ends on its success.
                     if run.pounce.is_some() {
@@ -1114,7 +1116,9 @@ impl Owner {
                             }
                             // WstxStrategy D6: on to the best other candidate of the next
                             // publication; it may come back (no skip, no stop).
-                            run.rested = c.dx_call;
+                            run.rested = c
+                                .dx_call
+                                .map(|call| (call, strategy::station_band(r), run.mode));
                             run.state = RunState::Waiting;
                             run.contact_id = None;
                             run.progress = None;
@@ -1179,18 +1183,23 @@ impl Owner {
                             .into_iter()
                             .collect()
                     }
-                    (None, None) => candidates(&records, &run.config, &my, &run.worked)
-                        .into_iter()
-                        .map(|c| (c.call, c.sequence))
-                        .collect(),
+                    (None, None) => {
+                        // A policy run: not again in this run, on any band.
+                        let worked: Vec<String> = run.worked.iter().map(|w| w.0.clone()).collect();
+                        candidates(&records, &run.config, &my, &worked)
+                            .into_iter()
+                            .map(|c| (c.call, c.sequence))
+                            .collect()
+                    }
                     (None, Some((config, s))) => {
                         let st = strategy::station(state, config, s.window);
+                        let band = strategy::station_band(r);
                         // Callers, then candidates by value; one per call. Nobody the
-                        // operator gave up or completed in this run.
+                        // operator gave up, or completed on this band and mode in this run.
                         let mut seen: Vec<String> = Vec::new();
                         let list: Vec<(String, u64, bool)> = strategy::evaluate(s, &records, &st)
                             .into_iter()
-                            .filter(|v| v.rank.is_some() && eligible(run, &v.facts.from))
+                            .filter(|v| v.rank.is_some() && eligible(run, &v.facts.from, band))
                             .filter(|v| {
                                 let first = !seen.contains(&v.facts.from);
                                 seen.push(v.facts.from.clone());
@@ -1203,8 +1212,12 @@ impl Owner {
                             .collect();
                         // D6: the candidate left after calls_per_station only when alone; a
                         // caller is always answered (D5).
-                        let keep =
-                            |c: &(String, u64, bool)| c.2 || Some(&c.0) != run.rested.as_ref();
+                        let keep = |c: &(String, u64, bool)| {
+                            c.2 || run
+                                .rested
+                                .as_ref()
+                                .is_none_or(|r| r.0 != c.0 || r.1 != band || r.2 != run.mode)
+                        };
                         let passed = list.iter().any(keep);
                         list.into_iter()
                             .filter(|c| !passed || keep(c))
@@ -1388,9 +1401,13 @@ fn take_slot(
     let (_, receipt) = contact.operate_as(state, body, true, AUTOMATION).ok()?;
     Some(receipt["contact_revision"].as_u64().unwrap_or(revision))
 }
-/// A call not completed in this run nor given up by the operator (ManualIntervention).
-fn eligible(run: &Run, call: &str) -> bool {
-    !run.worked.iter().any(|w| w == call) && !run.given_up.iter().any(|w| w == call)
+/// A call not completed in this run on this band and mode, nor given up by the operator for
+/// the rest of the run (ManualIntervention).
+fn eligible(run: &Run, call: &str, band: Option<&str>) -> bool {
+    !run.worked
+        .iter()
+        .any(|w| w.0 == call && w.1 == band && w.2 == run.mode)
+        && !run.given_up.iter().any(|w| w == call)
 }
 /// The records [first, next) of the run's live job.
 fn fresh_records(
