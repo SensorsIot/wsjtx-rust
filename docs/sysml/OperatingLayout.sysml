@@ -385,8 +385,8 @@ attribute def ActivityOrdering {
              (CL-010-05, SplitGeometry) are unchanged.
              Station bar: Halt Tx (always visible, Alt+H, Esc; disabled with reason on a
              receive-only station, where Esc only cancels the contact) and a compact
-             transmit state with the last transmitted text, Tx watchdog remaining WD:nm
-             or "Tx watchdog expired", visible in every region. Radio toolbar (its period
+             transmit state with the last transmitted text, Tx watchdog remaining calls WD:n
+             or "Tx watchdog: N unanswered calls", visible in every region. Radio toolbar (its period
              and level slots): UTC clock, Tx progress v/15 with Transmitting label, Rx
              level meter 0..90 dB with high/low text labels
              (WstxContact::OperatorDisplays); they are not in the station bar because the
@@ -960,7 +960,9 @@ attribute def ActivityOrdering {
              saved on change with POST /receive/startup; it acts at the next station start
              and restarts nothing, so it carries no restart mark).
              Radio (restart): CAT (control, endpoint, PTT, receive-only confirmation),
-             audio (input, output, input listing, Rx level meter), transmit (Tx watchdog
+             audio (one Audio section, #44 CL-044-08: input select with the Rx level meter,
+             output select, both by endpoint name, and the radio's recommendation with
+             Use IC-7300 audio), transmit (Tx watchdog
              minutes and Tune seconds as WSJT-X, power is set on the transceiver).
              Logging & Reporting: the existing log (Logbook page, ADIF), #10 "Update
              logbook from ADIF" (WstxContact::UpdateLogbook: an ADIF file input, the Update
@@ -982,7 +984,7 @@ attribute def ActivityOrdering {
              start/stop, the startup resume state of #45 (resume state and last receive
              choice from GET /receive/startup), the decode window diagnostics of #52 (Save
              FT8 decode windows and the latest window's counters, CL-052-01), selection
-             refresh, connection details,
+             refresh, connection details, the saved audio endpoint IDs (CL-044-08),
              recordings/replay and the
              raw transmit test panel (WstxTransmit, #9).
              Operative changes (display, theme, watchdogs) apply immediately and never

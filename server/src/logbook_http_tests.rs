@@ -644,7 +644,7 @@ async fn adi_import_over_http_reserves_chunks_retries_and_fails_atomically() {
     assert_eq!(reserved.status, StatusCode::CREATED);
     assert_eq!(
         reserved.json(),
-        json!({"v":1,"id":id,"state":"receiving","received_bytes":0,"total_bytes":bytes.len(),"added":0,"present":0,"skipped":0,"reasons":[],"dropped":[],"error":null})
+        json!({"v":1,"id":id,"state":"receiving","received_bytes":0,"total_bytes":bytes.len(),"added":0,"present":0,"confirmed":0,"skipped":0,"reasons":[],"dropped":[],"error":null})
     );
     assert_eq!(
         f.post(

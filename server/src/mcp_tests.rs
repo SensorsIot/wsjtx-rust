@@ -349,7 +349,7 @@ impl Mcp {
         let body = self.command(
             c["contact_revision"].as_u64().unwrap(),
             "set_watchdogs",
-            json!({"tx_minutes":c["settings"]["tx_minutes"],"tune_seconds":c["settings"]["tune_seconds"]}),
+            json!({"tx_calls":c["settings"]["tx_calls"],"tune_seconds":c["settings"]["tune_seconds"]}),
         );
         let r = self.browser("POST", "/contact/command", Some(body)).await;
         assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.json);
@@ -1352,12 +1352,9 @@ async fn tc_020_004_the_mcp_client_token_is_separate_from_the_browser_credential
 async fn tc_020_004_mcp_never_resets_the_tx_watchdog_on_any_route() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
-    crate::automation_tests::at_even(&f);
+    let e = crate::automation_tests::at_even(&f);
     let service = &f.state.recording.transmit.get().unwrap().service;
     let spent = || service.with(|c| c.watchdog_spent());
-    let advance = |ms: i64| {
-        f.bench.offset.fetch_add(ms, Ordering::SeqCst);
-    };
     let internal = internal_transport(&f, &f.mcp);
     let direct = |action: &'static str, extra: Value| {
         let f = &f;
@@ -1376,12 +1373,12 @@ async fn tc_020_004_mcp_never_resets_the_tx_watchdog_on_any_route() {
             .await
         }
     };
-    // A browser action sets the Tx watchdog to 1 minute and starts it.
+    // A browser action sets the Tx watchdog to 1 unanswered call.
     let c = f.browser("GET", "/contact", None).await.json;
     let body = f.command(
         c["contact_revision"].as_u64().unwrap(),
         "set_watchdogs",
-        json!({"tx_minutes":1,"tune_seconds":90}),
+        json!({"tx_calls":1,"tune_seconds":90}),
     );
     assert_eq!(
         f.browser("POST", "/contact/command", Some(body))
@@ -1389,9 +1386,22 @@ async fn tc_020_004_mcp_never_resets_the_tx_watchdog_on_any_route() {
             .status,
         StatusCode::ACCEPTED
     );
-    // MCP-principal commands at 20 s and 40 s, through the tool and straight to the
-    // browser route, are accepted but never extend it.
-    advance(20_000);
+    // An MCP Enable Tx calls CQ; its one unanswered CQ uses the limit up.
+    assert!(!spent());
+    let revision = f.read("contact").await["contact_revision"]
+        .as_u64()
+        .unwrap();
+    let v = f
+        .tool(
+            "wstx_contact_command",
+            json!({"command":f.command(revision, "enable_tx", json!({"enabled":true,"safety_revision":3}))}),
+        )
+        .await;
+    assert_eq!(v["status"], 202, "{v}");
+    crate::automation_tests::transmit_own_period(&f, e + 15_000).await;
+    assert!(spent());
+    // MCP-principal commands, through the tool and straight to the browser route, are
+    // accepted but never reset it.
     let revision = f.read("contact").await["contact_revision"]
         .as_u64()
         .unwrap();
@@ -1402,16 +1412,16 @@ async fn tc_020_004_mcp_never_resets_the_tx_watchdog_on_any_route() {
         )
         .await;
     assert_eq!(v["status"], 202, "{v}");
-    advance(20_000);
     let r = direct("set_frequency", json!({"rx_hz":1250,"tx_hz":null})).await;
     assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.json);
+    assert!(spent(), "MCP commands are no operator action");
     // The MCP-principal transport may not change the watchdog on the browser route.
-    let r = direct("set_watchdogs", json!({"tx_minutes":99,"tune_seconds":90})).await;
+    let r = direct("set_watchdogs", json!({"tx_calls":99,"tune_seconds":90})).await;
     assert_eq!(r.json["error"]["code"], "operator_required", "{}", r.json);
     // Every route no MCP tool dispatches to refuses the MCP principal at the boundary:
     // the transmit watchdog setting, the profile, the strategy, the logbook and the WebSocket.
     let tx = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
-        "action":"set_watchdogs","tx_minutes":99,"tune_seconds":90});
+        "action":"set_watchdogs","tx_calls":99,"tune_seconds":90});
     for (method, uri, body) in [
         ("POST", "/transmit/command", Some(tx)),
         ("PUT", "/profile", Some(json!({}))),
@@ -1439,8 +1449,7 @@ async fn tc_020_004_mcp_never_resets_the_tx_watchdog_on_any_route() {
     )
     .await;
     assert_eq!(r.status, StatusCode::UNAUTHORIZED);
-    advance(21_000);
-    assert!(spent(), "61 s after the only browser action");
+    assert!(spent(), "still used up after every MCP request");
     let r = direct("enable_tx", json!({"enabled":true,"safety_revision":3})).await;
     assert_eq!(r.json["error"]["code"], "tx_watchdog", "{}", r.json);
     let revision = f.read("contact").await["contact_revision"]
@@ -1453,5 +1462,5 @@ async fn tc_020_004_mcp_never_resets_the_tx_watchdog_on_any_route() {
         )
         .await;
     assert_eq!(v["result"]["error"]["code"], "tx_watchdog", "{v}");
-    assert_eq!(f.keys(), 0);
+    assert_eq!(f.keys(), 2, "only the one CQ was keyed (key and release)");
 }

@@ -242,8 +242,14 @@ async function loadProfile(reload, current = socket) {
   document.title = `${data.settings.display_name} - ${location.port || (location.protocol === 'https:' ? 443 : 80)} - WSTX`;
   if (reload || !dirty) {
     const s = data.settings;
-    for (const [id, value] of [['#display-name', s.display_name], ['#callsign', s.callsign], ['#locator', s.locator], ['#audio-input', s.audio.input_device], ['#audio-output', s.audio.output_device], ['#control-mode', s.control.mode], ['#control-endpoint', s.control.endpoint], ['#ptt-mode', s.control.ptt]]) document.querySelector(id).value = value ?? '';
+    for (const [id, value] of [['#display-name', s.display_name], ['#callsign', s.callsign], ['#locator', s.locator], ['#audio-input', s.audio.input_device], ['#audio-output', s.audio.output_device], ['#control-mode', s.control.mode], ['#control-endpoint', s.control.endpoint], ['#ptt-mode', s.control.ptt]]) {
+      const field = document.querySelector(id);
+      // CL-044-08: an audio select keeps a saved endpoint it does not list yet (named later).
+      if (id.startsWith('#audio-') && value && ![...field.options].some(o => o.value === value)) field.add(new Option('Saved device', value));
+      field.value = value ?? '';
+    }
     document.querySelector('#control-agc').value = s.radio?.agc ?? 'SLOW';
+    window.dispatchEvent(new CustomEvent('profile-fields'));
     editingRevision = data.revision; dirty = false; conflict = false;
   }
   document.querySelector('#settings-save').disabled = saving || conflict;

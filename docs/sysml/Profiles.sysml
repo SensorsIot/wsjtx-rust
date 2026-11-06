@@ -47,7 +47,8 @@ package WstxProfiles {
         doc /* JSON object has exactly input_device/output_device, both required and
              nullable. Multiplicity zero means JSON null, NOT an omitted key. A present
              value is opaque nonempty UTF-8, <=256 bytes, no U+0000..001F or 007F..009F.
-             Defaults null/null. Save independently; do not enumerate/open devices. */
+             Defaults null/null. Save independently; do not enumerate/open devices.
+             The UI chooses them by endpoint name (#44 CL-044-08). */
         attribute input_device : String[0..1];
         attribute output_device : String[0..1];
     }
