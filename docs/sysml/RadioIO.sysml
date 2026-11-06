@@ -265,7 +265,8 @@ package WstxRadioIO {
              #44 CL-044-09: every setting change is read, compare, write, verify: read
              first, no write when the value already fits, write only with the radio in
              RX (checked per write for 16 12 and 1A 05, once per selection for the 05, 06
-             and 1A 06 of its receive setup), ACK, then readback (the transmit switch is
+             and 1A 06 of its receive setup; the single setter operations, which no route
+             reaches, have no RX check of their own), ACK, then readback (the transmit switch is
              a keying action, not a setting). Menu/AGC exchanges run under the same single lease. */
     }
     action capture : CaptureAudio;
