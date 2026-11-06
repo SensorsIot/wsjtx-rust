@@ -554,7 +554,11 @@ package WstxStrategy {
              stops transmitting (operator decisions 6626745310, 6626799951 on #39). The engine
              sends past the limit for the run's own contact only, and the status counts down
              to the next check. Each time the Rep of the message due next (WstxContact::TxWatchdog)
-             has grown by N, the Tx watchdog limit, since the last check of this message:
+             has grown by N, the Tx watchdog limit, or by calls_per_station when that is less,
+             since the last check of this message (implementer default, not yet the operator's
+             word: leaving a station restarts its Rep, so a check at N alone would never come
+             with the default 3 calls and N 6, and 6626618984 asks to "immediately call it
+             again, but on a different free slot"):
              the target known to hear us (HearingFeed, on this band and mode) keeps the same
              slot, with no limit; a target not known to hear us (no spot, the feed off or
              unreachable, the band unknown, a call without a subscription) takes a new free
@@ -563,7 +567,8 @@ package WstxStrategy {
              preferred, so this is the one case in which Tx moves within a contact; no free
              slot keeps the current one and says so in the status. A refused move
              changes nothing and is checked again N repetitions later. The Rep goes on over a
-             move: the message is the same. A target known to hear us is also not left
+             move: the message is the same; a station the run left and came back to keeps
+             the new slot, since FreeTxSlot stays on a current slot that is free. A target known to hear us is also not left
              for another candidate after its calls: "we are in the queue". The run shows the
              last check as slot_check {repetitions, hears_us, hz, free}. */
     }

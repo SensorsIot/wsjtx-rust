@@ -1113,7 +1113,14 @@ impl Owner {
                     return stop(&mut inner, disarmed, false);
                 }
                 if run.config.strategy
-                    && strategy_watchdog(run, contact, state, settled, c.dx_call.as_deref())
+                    && strategy_watchdog(
+                        run,
+                        contact,
+                        state,
+                        settled,
+                        c.dx_call.as_deref(),
+                        chosen.as_ref().map(|(_, s)| s.calls_per_station),
+                    )
                 {
                     inner.run_revision += 1;
                 }
@@ -1397,20 +1404,26 @@ fn refused(code: &str) -> &'static str {
 /// The records of a slot decision: 8 periods of up to 128 decodes (the live job retains
 /// up to 2048).
 const SLOT_RECORDS: u64 = 1024;
-/// #39 WstxStrategy::StrategyWatchdog: when the Rep has grown by N since the last check, a
-/// target known to hear us keeps the slot; any other takes a new one near what it decodes.
-/// True when it checked.
+/// #39 WstxStrategy::StrategyWatchdog: when the Rep has grown by N, or by calls_per_station
+/// when that is less, since the last check, a target known to hear us keeps the slot; any
+/// other takes a new one near what it decodes. True when it checked.
 fn strategy_watchdog(
     run: &mut Run,
     contact: &contact_http::Station,
     state: &ProfileState,
     settled: Option<u64>,
     target: Option<&str>,
+    calls_per_station: Option<u64>,
 ) -> bool {
     let r = &state.recording;
     let Some(limit) = r.transmit.get().map(|t| t.service.with(|c| c.tx_limit())) else {
         return false;
     };
+    // The run leaves the station after its calls, which restarts the Rep: the check must
+    // come first or a target that does not hear us would never see another slot.
+    let limit = calls_per_station
+        .and_then(|calls| u32::try_from(calls).ok())
+        .map_or(limit, |calls| limit.min(calls));
     let repetitions = contact.repetitions_due();
     // A new message or contact restarts the Rep.
     run.rep_mark = run.rep_mark.min(repetitions);

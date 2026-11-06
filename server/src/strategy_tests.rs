@@ -3013,14 +3013,14 @@ async fn tc_039_005_automation_never_resets_the_tx_watchdog() {
     assert_eq!(contact(&f).await.2, json!("armed"));
 }
 
-/// A strategy run calling K1ABC at 1800 Hz on 40 m from Tx 1500 with the Tx watchdog at 2, with
-/// the feed `set` prepares once the run has its target. e is the even period of the CQ.
-async fn run_at_limit(calls: u64, set: impl FnOnce(&crate::pskr::Feed)) -> (Mcp, i64) {
+/// A strategy run calling K1ABC at 1800 Hz on 40 m from Tx 1500 with the Tx watchdog at `limit`,
+/// with the feed `set` prepares once the run has its target. e is the even period of the CQ.
+async fn run_at_limit(limit: u64, calls: u64, set: impl FnOnce(&crate::pskr::Feed)) -> (Mcp, i64) {
     let f = station(true).await;
     f.state.recording.fixture_band("40m");
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    browser_watchdog(&f, 2).await;
+    browser_watchdog(&f, limit).await;
     let dir = std::env::temp_dir().join(format!("wstx-pskr-{}", profile::new_uuid().unwrap()));
     std::fs::create_dir(&dir).unwrap();
     let feed = crate::pskr::Feed::start(&dir, &f.id, &f.boot, None, crate::pskr::Timing::BROKER);
@@ -3094,7 +3094,7 @@ async fn tc_039_022_the_repetitions_reaching_n_in_a_strategy_run() {
         ),
     ];
     for (name, set, hears, first, second) in table {
-        let (f, e) = run_at_limit(20, set).await;
+        let (f, e) = run_at_limit(2, 20, set).await;
         for (own, hz, repetitions) in [(15_000, 1500, 1), (45_000, first, 2), (75_000, first, 3)] {
             transmit_own_period(&f, e + own).await;
             f.tick();
@@ -3123,11 +3123,48 @@ async fn tc_039_022_the_repetitions_reaching_n_in_a_strategy_run() {
         assert_eq!(run_state(&f).await, ("contact_active".into(), Value::Null));
     }
 }
+// Proves: CL-039-21; TC-039-022. At the defaults (N 6, 3 calls per station) the check comes at the
+// 3rd call, before the run leaves the station; alone, it comes back and calls from the new slot.
+// A target known to hear us keeps its slot through the same calls.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_the_check_comes_before_the_run_leaves_the_station() {
+    let tx = |c: &Value| c["settings"]["tx_hz"].clone();
+    let (f, e) = run_at_limit(6, 3, |_| {}).await;
+    for (own, hz) in [(15_000, 1500), (45_000, 1500), (75_000, 1400)] {
+        transmit_own_period(&f, e + own).await;
+        f.tick();
+        assert_eq!(tx(&f.read("contact").await), hz, "after the call at {own}");
+        assert_eq!(f.read("automation").await["run"]["rested"], Value::Null);
+        publish(&f, e + own + 15_000, &[]);
+    }
+    assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
+    publish(&f, e + 120_000, &[("CQ K1ABC FN42", 1800.0, Some(-10.0))]);
+    let c = f.read("contact").await;
+    assert_eq!(c["contact"]["dx_call"], "K1ABC", "alone, it comes back");
+    assert_eq!(tx(&c), 1400, "from the new slot");
+    assert_eq!(c["transmit"]["arm_state"], "armed");
+
+    let (f, e) = run_at_limit(6, 3, |feed| {
+        feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+    })
+    .await;
+    for own in [15_000, 45_000, 75_000, 105_000, 135_000] {
+        transmit_own_period(&f, e + own).await;
+        f.tick();
+        publish(&f, e + own + 15_000, &[]);
+    }
+    let c = f.read("contact").await;
+    assert_eq!(tx(&c), 1500);
+    assert_eq!(c["transmit"]["arm_state"], "armed");
+    assert_eq!(f.read("automation").await["run"]["rested"], Value::Null);
+    assert_eq!(f.keys(), 10, "every call is keyed and released");
+}
+
 // Proves: CL-039-21; TC-039-022. A target known to hear us is not left after its calls ("we are in
 // the queue"); without that spot the run goes on to the next candidate as before.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_022_a_target_that_hears_us_is_not_left_after_its_calls() {
-    let (f, e) = run_at_limit(1, |feed| {
+    let (f, e) = run_at_limit(2, 1, |feed| {
         feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
     })
     .await;
@@ -3137,7 +3174,7 @@ async fn tc_039_022_a_target_that_hears_us_is_not_left_after_its_calls() {
     assert_eq!(run["rested"], Value::Null);
     assert_eq!(contact(&f).await.0, json!("K1ABC"));
     assert_eq!(contact(&f).await.2, json!("armed"));
-    let (f, e) = run_at_limit(1, |_| {}).await;
+    let (f, e) = run_at_limit(2, 1, |_| {}).await;
     publish(&f, e + 30_000, &[]);
     publish(&f, e + 60_000, &[]);
     assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
