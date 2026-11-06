@@ -465,6 +465,84 @@ async fn tc_055_006_non_cq_senders_carry_entity_and_flags() {
     assert_eq!(records[2].get("flags"), None, "worked on 20m FT8: no flag");
 }
 
+// Proves: CL-055-02; TC-055-002 (#55, live 2026-11-06): every decoded sender call resolves,
+// also a nonstandard one without a grid and a filled-in hash; a hash nobody heard and a free
+// text have no sender.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_055_002_every_decoded_sender_call_resolves() {
+    let f = crate::mcp_tests::station(false).await;
+    let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
+    f.state.recording.fixture_band("20m");
+    let call = |kind: &str, text: Option<&str>| json!({"kind":kind,"text":text,"hash_bits":null,"hash_value":null});
+    let nonstandard = |full: &str, hashed: Option<&str>, second: bool, cq: bool| json!({"type":"nonstandard","full_call":call("call",Some(full)),"hashed_call":call("hash",hashed),"hash_second":second,"cq":cq,"roger":""});
+    let record = |text: &str, fields: Value| json!({"start_frame":0,"frequency_hz":1000.0,"snr_db":-5.0,"payload77":"0".repeat(77),"i3":4,"n3":null,"status":"decoded","text":text,"fields":fields,"dt_seconds":0.1});
+    let hashed_from = json!({"type":"standard","to":call("call",Some("OH2DKQ")),"from":call("hash",Some("CT9/DL7VXX")),"ack":false,"exchange":{"kind":"report","value":-2}});
+    let unheard_from = json!({"type":"standard","to":call("call",Some("OH2DKQ")),"from":call("hash",None),"ack":false,"exchange":{"kind":"report","value":-2}});
+    let fox = json!({"type":"dxpedition","first":call("call",Some("K1ABC")),"second":call("call",Some("W9XYZ")),"hashed":call("hash",Some("KH1/KH7Z")),"report":-12});
+    f.state.recording.fixture_publish_period(
+        "2026-11-06T10:00:00.0000000Z",
+        vec![
+            record("CQ HF6FIRAC", nonstandard("HF6FIRAC", None, false, true)),
+            record("OH2DKQ <CT9/DL7VXX> -02", hashed_from),
+            record(
+                "<K1ABC> HF6FIRAC",
+                nonstandard("HF6FIRAC", Some("K1ABC"), false, false),
+            ),
+            record(
+                "HF6FIRAC <CT9/DL7VXX> 73",
+                nonstandard("HF6FIRAC", Some("CT9/DL7VXX"), true, false),
+            ),
+            record("R330S <...> 73", nonstandard("R330S", None, true, false)),
+            record("OH2DKQ <...> -02", unheard_from),
+            record(
+                "CQ SA7BKX JO6",
+                json!({"type":"free_text","value":"CQ SA7BKX JO6"}),
+            ),
+            record("K1ABC RR73; W9XYZ <KH1/KH7Z> -12", fox),
+        ],
+    );
+    let uri = format!(
+        "/receive/results?source_id={source}&job_id={job}&generation={generation}&cursor=0&limit=16"
+    );
+    let records = f.browser("GET", &uri, None).await.json["records"].clone();
+    let names: Vec<(&str, Option<&str>)> = records
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| (r["text"].as_str().unwrap(), r["dxcc"]["name"].as_str()))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("CQ HF6FIRAC", Some("Poland")),
+            ("OH2DKQ <CT9/DL7VXX> -02", Some("Madeira Is.")),
+            ("<K1ABC> HF6FIRAC", Some("Poland")),
+            ("HF6FIRAC <CT9/DL7VXX> 73", Some("Madeira Is.")),
+            ("R330S <...> 73", None),
+            ("OH2DKQ <...> -02", None),
+            ("CQ SA7BKX JO6", None),
+            (
+                "K1ABC RR73; W9XYZ <KH1/KH7Z> -12",
+                Some("Baker & Howland Is.")
+            ),
+        ]
+    );
+    assert_eq!(
+        records[0]["flags"]["new_dxcc"], true,
+        "a resolved nonstandard sender carries the new-* flags like any other sender"
+    );
+    assert_eq!(
+        records[0]["flags"].get("new_grid"),
+        None,
+        "no grid in the message"
+    );
+    assert_eq!(
+        records[7].get("flags"),
+        None,
+        "the browser has no sender to colour"
+    );
+}
+
 // Proves: TC-055-002 the cached worked set follows every country-table change: after
 // repeated uploads (freed tables whose memory may be reused) the set is always the one
 // of the current table.
