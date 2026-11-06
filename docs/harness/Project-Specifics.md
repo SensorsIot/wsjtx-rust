@@ -112,7 +112,8 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `native-flex` | FR-023 native FlexRadio against the loopback emulator: route isolation, reconciliation, capacity, mixed profiles, push-only status | Native session and status (`flex/`, `flex_http.rs`), router, authorization, profile, radio setup, recording, receive, selection and startup owners, page, recording and contact clients, its test and emulator |
 | `mcp` | MCP client grant and refusals | Router, MCP/automation/authorization owners, authorization client, MCP test and credential helper |
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, plus Node package metadata |
-| `sysml-documentation` | Canonical catalog/trace checks, one full semantic validation (`sysml.py check`), the model/tool tests `test_[!a]*.py` | Model and tooling changes; bound source remains a complete fingerprint/dirty-guard input |
+| `sysml-documentation` | Canonical catalog/trace checks, one full semantic validation (`sysml.py check`), the tests that read the model `test_[dr]*.py` | Model and tooling changes; bound source remains a complete fingerprint/dirty-guard input |
+| `sysml-tools` | The SysML tool's own unit tests `test_[cst]*.py` on isolated models | The SysML tool and its tests |
 | `sysml-architecture` | TC-DOC-005 architecture integrity: the mutation tests `test_a*.py`, one Pilot validation per mutation | `Architecture.sysml`, the SysML tool, `Validate.java`, the toolchain pin and the test file |
 | `decoder-correctness` | The release `decoder_signal` correctness, #57 thread-parity and #56 jt9-parity passes (all ordinary passes but the 50 ms quantum and busy-period latency) | Decoder fixtures and the library root (a production decoder source selects `decoder-quality`, which runs the same passes) |
 | `decoder-quality` | Timing: all seventeen release decoder passes bound to the artifact, and the owned-Job resource matrix (runs alone) | Timing inputs: the production decoder sources (not its `*_test.rs` or the test-only resource observer), `decoder_signal.rs`, the fixtures and vector tool the timed passes decode, its resource-job tools and the Rust toolchain/dependency pins |
@@ -215,7 +216,8 @@ still repeats its build, which is then up to date. Ports are chosen free per tes
 meet.
 
 The model has an explicit documentation owner. Its edits select the catalog/trace check,
-one full semantic validation and the light tool tests (`sysml-documentation`, about 75 s);
+one full semantic validation and the tests that read the model (`sysml-documentation`, about
+30 s); the tool's own unit tests (`sysml-tools`, about 50 s) run only when the tool changes;
 the architecture mutation tests (`sysml-architecture`, one Pilot JVM per mutation) run
 only when `Architecture.sysml` or the tool that judges it changes, since the companion
 models are validated by `check` itself. Runtime oracles are selected by changed

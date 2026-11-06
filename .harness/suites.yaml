@@ -264,7 +264,7 @@
 
 - suite: sysml-documentation
   cost: 2
-  run: "python tools/sysml.py check && python -m unittest discover -s tools/sysml/tests -p \"test_[!a]*.py\" -q"
+  run: "python tools/sysml.py check && python -m unittest discover -s tools/sysml/tests -p \"test_[dr]*.py\" -q"
   paths:
   - docs/sysml/
   - tools/sysml.py
@@ -277,7 +277,20 @@
   - docs/sysml/
   - tools/sysml.py
   - tools/sysml/
-  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; exclusive authority, catalog/trace checks, one full semantic validation and the model/tool tests except the architecture mutation tests (sysml-architecture); no radio or live service."
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; exclusive authority, catalog/trace checks, one full semantic validation and the tests that read the model itself (test_decoder_mode_traces, test_radio_properties); the tool's unit tests are sysml-tools, the architecture mutation tests sysml-architecture. No radio or live service."
+
+- suite: sysml-tools
+  cost: 2
+  run: "python -m unittest discover -s tools/sysml/tests -p \"test_[cst]*.py\" -q"
+  paths:
+  - docs/sysml/
+  - tools/sysml.py
+  - tools/sysml/
+  - .github/workflows/windows-rust.yml
+  select:
+  - tools/sysml.py
+  - tools/sysml/
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the SysML tool's own unit tests (test_canonical_authority, test_sysml, test_trace_selection), which judge the tool on isolated models: selected only when the tool changes (harness#38). No radio or live service."
 
 - suite: sysml-architecture
   cost: 2
