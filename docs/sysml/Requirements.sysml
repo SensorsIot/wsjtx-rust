@@ -3994,6 +3994,26 @@ package WstxRequirements {
         attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_039_10_verified_by_TC_039_031 from 'CL-039-10' to 'TC-039-031';
+    requirement 'CL-039-11' {
+        doc /* Read-only built-in strategies are offered beside the user's: New DXCC, New DXCC on band, DXCC slots, New calls and DX hunting (new call, region DX), all needed not worked, calls per station 3, Treat 73 as CQ on, window all time. They come from one server table, are listed with builtin true in the snapshot, can be selected like any strategy, cannot be edited through PUT /strategy (a user strategy with such a name is refused) and can be copied to a user strategy in the editor. Details: WstxStrategy::BuiltinStrategies, StrategyEditor, StrategySelector. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/strategy.rs; client/contact.js";
+    }
+    dependency CL_039_11_to_FR_007 from 'CL-039-11' to 'FR-007';
+    verification 'TC-039-032' {
+        doc /* TC-039-032 — Built-in strategies: the table, selection, refusal and copy
+             CL-039-11
+             Setup: the expected table written in the test; the actual station router on a disposable HTTPS profile with the contact engine and #9 transmit owner on the recording hardware double; a browser case on the actual isolated station.
+             Steps: GET /strategy; parse a configuration with active "DX hunting", with "dx hunting", with a user strategy "New DXCC" and "new dxcc", with the key builtin; PUT active "DX hunting" and publish CQ DL1XYZ JO62 and CQ K1ABC FN42; read strategy.json; open a new owner; a saved file with a strategy named "New calls"; HALT. Browser: the selector; open the editor on a built-in; try to change it; Duplicate; Save; rename the copy to "new calls" and Save.
+             Expected: exactly the five of the table with builtin true, none in configuration.strategies; active accepted exact only, refused active; strategies[0].name refused; strategies[0] refused; the run answers K1ABC (region DX), never DL1XYZ; the file holds no built-in and active null; the new owner reads None; the saved strategy is dropped and the built-in stays; HALT sets None. Browser: None and the five names; the built-in's fields disabled, Delete disabled, no PUT of a built-in; the copy "New DXCC copy" saved as a user strategy; the colliding rename refused with its field shown.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-11';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs; tests/ui-operating.test.cjs";
+    }
+    dependency CL_039_11_verified_by_TC_039_032 from 'CL-039-11' to 'TC-039-032';
     requirement 'CL-042-01' {
         doc /* The award goals read the sender's cty.dat entity (#55) against the internal log: DXCC entity ever, on this band, on this band and mode, and CQ zone ever (WstxStrategy::GoalNeeded, #39 2026-11-04, which replaces the former New conditions on continent and ITU zone); a sender without an entity, an unknown station band (for the band forms) or an unreadable log never counts as needed. The editor offers them as goals; the live preview names why. Details: WstxStrategy::GoalNeeded. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -4172,7 +4192,7 @@ package WstxRequirements {
     verification 'TC-039-004' {
         doc /* TC-039-004 — Strategy runs
              CL-039-03, CL-039-05
-             Setup: as TC-039-003 with the contact engine and #9 transmit owner on the recording hardware double (virtual UTC set 1 s after an even FT8 period E; own periods odd); the strategy selected from the browser path (cookie grant) with "New calls" (goal new_call, Treat 73 as CQ, calls per station 2).
+             Setup: as TC-039-003 with the contact engine and #9 transmit owner on the recording hardware double (virtual UTC set 1 s after an even FT8 period E; own periods odd); the strategy selected from the browser path (cookie grant) with "Test calls" (goal new_call, Treat 73 as CQ, calls per station 2).
              Steps: (a) PUT with active: the run starts, no CQ; publish CQ NA W1AW (strongest), CQ JA JA1XYZ, CQ 290 N1MM, CQ DL1XYZ, CQ K1ABC; two empty partner periods; CQ K1ABC and W1AW DL1XYZ RR73 at 1700 Hz; CQ K1ABC alone afterwards; PUT None; PUT active again; HALT; Esc. (b) A QSO to its end, then the next station, repeatedly past the former limits; the deadline seam moved past 480 minutes. (c) A caller against a candidate; a browser select_row and enable_tx during the run's contact and while it waits; the partner's RR73; a new CQ; a run contact cancelled by the browser followed by the same station's CQ and its call to me; a browser selection racing the run's select_row and enable_tx; stop and Halt while manual. (d) Selecting with no receive; receive starts; the live identity changes during a contact; a browser selection without a grant; an MCP configure with strategy true; a station restart.
              Expected: (a) no CQ is ever armed; DL1XYZ or K1ABC selected by value (W1AW, JA1XYZ and N1MM never); after two unanswered periods disarmed, waiting, no stop reason; the next publication goes to the other station with Rx 1700 and Tx unchanged; the left station is called again when alone; None stops the run and disarms; HALT stops halted and sets active None with a new revision; Esc leaves active and the run. (b) The run stays waiting after each completion, no limit_reached, no time_limit. (c) the caller first, whatever goal, region or SNR; a double-click during the run: the run is manual, the strategy stays active, the run neither disarms nor cancels; the manual QSO completed: the run waits and answers the next match; the operator's cancel of the run's contact: that station is not selected again, also not as a caller; the race leaves the operator's contact and the state manual, no stop; Halt while manual stops halted. (d) waiting with reason no_receive and no contact; waiting without a reason after receive starts and it answers; the contact disarmed and cancelled and the run waiting on the new identity; strategy_refusal transmit_unavailable with the strategy still selected; operator_required strategy; active None after the restart. No PTT exchange.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */

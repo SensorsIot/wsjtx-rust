@@ -1,7 +1,7 @@
 package WstxStrategy {
     private import ScalarValues::*;
     doc /* Canonical contract of the strategy engine (issue #39, CL-039-01..07 in
-         WstxRequirements; verification TC-039-001..007 and TC-039-030..031; the ignore
+         WstxRequirements; verification TC-039-001..007 and TC-039-030..032; the ignore
          lists of issue #42, CL-042-02 and TC-042-002..003; Pounce, CL-042-03 and
          TC-042-004..005; Alert, CL-042-04 and TC-042-006..007): the award strategies, the
          directed-CQ rule, the value order in Band Activity, the strategy editor popup and
@@ -94,6 +94,24 @@ package WstxStrategy {
              names its field path (strategies[0].window.to). Nothing else exists: rules,
              conditions, sort, auto role, switch after, skip after and callers are gone. */
     }
+    attribute def BuiltinStrategies {
+        doc /* The read-only presets of the award class (operator 6626205191, names as the operator
+             listed them; the contest preset is #63), one table in the station, listed in
+             the GET /strategy snapshot as builtin_strategies, each a Strategy with
+             builtin true. All have needed not_worked, min_snr_db null, calls_per_station 3,
+             treat_73_as_cq true, window all, region all unless stated:
+             New DXCC (goal dxcc), New DXCC on band (dxcc_band), DXCC slots (dxcc_slot),
+             New calls (new_call), DX hunting (new_call, region dx).
+             They are not part of the configuration and never written to strategy.json. active
+             may name one (exactly as listed): selecting it starts it like any strategy
+             (StrategyRun). A PUT cannot edit one: a configuration strategy with a built-in's
+             name, also differing in case, is refused 400 invalid_request
+             strategies[i].name, and the key builtin is refused like any extra key. In the
+             editor a built-in is shown read-only and Duplicate copies it to a user strategy
+             named "<name> copy" (StrategyEditor). A saved file that holds a strategy with a
+             built-in's name (saved before the presets) reads without it; the built-in keeps
+             the name. */
+    }
     attribute def StrategyConfiguration {
         attribute continent : String[0..1];
         attribute active : String[0..1];
@@ -103,7 +121,7 @@ package WstxStrategy {
         assert constraint sessionMinutesRange { sessionIgnoreMinutes >= 1 and sessionIgnoreMinutes <= 720 }
         doc /* Wire keys exactly continent (null: ContinentOfCall of my callsign, else one of
              the seven codes: my continent for the directed-CQ rule and region dx), active
-             (null or the name of a listed strategy), strategies (0..16 Strategy),
+             (null or the name of a listed or built-in strategy), strategies (0..16 Strategy),
              ignore_calls (#42 the permanent ignore list: 0..100 unique calls of 1..13
              A-Z 0-9 /, IgnoreLists) and session_ignore_minutes (#42 the session list
              expiry, an integer 1..720, default 30). Persisted as strategy.json beside
@@ -417,7 +435,7 @@ package WstxStrategy {
              (configured, else derived; null when unknown), derived_continent,
              session_ignore (#42: the session list in the order added without ended
              entries, each {call, band, remaining_s: whole seconds to its expiry, rounded
-             up}) and the MostWantedList status}.
+             up}), the MostWantedList status and builtin_strategies (BuiltinStrategies)}.
              POST /strategy/ignore {v, profile_id, boot_id, call, ignore} (#42): exact
              keys; same Origin/authorization/media/size rules and refusal codes as PUT
              /strategy (400 invalid_request with the field, unsupported_version, 403
@@ -473,12 +491,13 @@ package WstxStrategy {
              unsaved draft against the latest period (POST /strategy/evaluate with explain,
              400 ms after an edit, one request per edit, no timer otherwise) and shows each
              decode's rank and why. Save sends one PUT /strategy, applies at once (also to a
-             running strategy) and never selects a strategy. My continent is set in
+             running strategy) and never selects a strategy. A built-in strategy is listed read-only with
+             its settings shown and its preview; only Duplicate acts on it. My continent is set in
              Settings > General (StrategyConfiguration continent, saved by PUT /strategy). */
     }
     attribute def StrategySelector {
         doc /* The strategy element in the operating view: a selector with None and the
-             strategy names. A change sends PUT /strategy with the new active and nothing else:
+             names of the built-in and user strategies. A change sends PUT /strategy with the new active and nothing else:
              it asks nothing, it starts or stops (StrategyRun). HALT is always on screen. A
              refused start leaves the selector on the strategy with the reason beside it. The
              element shows the run state from GET /automation, read only on an automation.state
@@ -554,6 +573,7 @@ package WstxStrategy {
     dependency evaluateClause from Verdict to WstxRequirements::'CL-039-02';
     dependency goalClause from GoalNeeded to WstxRequirements::'CL-039-02';
     dependency valueClause from ValueOrder to WstxRequirements::'CL-039-02';
+    dependency builtinClause from BuiltinStrategies to WstxRequirements::'CL-039-11';
     dependency mostWantedClause from MostWantedList to WstxRequirements::'CL-039-10';
     dependency ignoreClause from IgnoreLists to WstxRequirements::'CL-042-02';
     dependency pounceClause from Pounce to WstxRequirements::'CL-042-03';
