@@ -714,6 +714,10 @@ test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherw
   await page.evaluate(()=>window.wstxContact.load());
   r=await tickAndRead(page,offset,true);
   assert.deepEqual([r.label,r.next,r.countdown],['▶ TX now:','Tune','80 s left']);
+  // The Tx watchdog's stop states its rule.
+  transmit={arm_state:'disarmed'};watchdog={tx_remaining_calls:0,tx_expired:true,tune_remaining_seconds:0};
+  await page.evaluate(()=>window.wstxContact.load());
+  assert.match(await page.locator('#contact-watchdog').textContent(),/^Tx watchdog: same message sent \d+ times$/);
   transmit={arm_state:'armed'};watchdog=null;await page.evaluate(()=>window.wstxContact.load());
   clock.offset=offset+11000;r=await tickAndRead(page,offset+11000,false);
   assert.deepEqual([r.label,r.next],['▸ next:','CQ HB9BLA JN47']);

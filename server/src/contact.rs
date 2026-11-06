@@ -1072,7 +1072,12 @@ impl Engine {
         } else {
             report
         };
-        let tx4 = tx4_default(mode);
+        // The same active partner keeps the chosen Tx4 form.
+        let tx4 = self
+            .contact
+            .as_ref()
+            .filter(|_| active && same)
+            .map_or_else(|| tx4_default(mode), |c| c.tx4);
         let mut messages = self
             .generate(&call, &grid4, Some(&dx), report, tx4)
             .ok_or("invalid_call")?;

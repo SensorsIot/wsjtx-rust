@@ -974,6 +974,32 @@ fn tc_008_001_a_partner_row_keeps_an_edited_message_and_its_count() {
     assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
 }
 
+// Proves: CL-010-10; TC-008-001: selecting the partner's row keeps the chosen Tx4 form, so a
+// later report change does not turn RR73 into RRR.
+#[test]
+fn tc_008_001_a_partner_row_keeps_the_tx4_form() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, Some(-9.0));
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::SetTx4(Tx4::Rr73)).unwrap();
+    let report = s.row(P0, "HB9BLA K1ABC -09", 1500.0, Some(-9.0));
+    s.command(Command::SelectRow {
+        row: report,
+        replace: false,
+    })
+    .unwrap();
+    let c = s.engine.contact.as_ref().unwrap();
+    assert_eq!(c.tx4, Tx4::Rr73);
+    assert_eq!(
+        c.messages[Slot::Tx4.index()].as_deref(),
+        Some("K1ABC HB9BLA RR73")
+    );
+}
+
 // Proves: CL-010-10; TC-008-001: a limit lowered under a pending send stops before it keys.
 #[test]
 fn tc_008_001_a_pending_send_beyond_a_lowered_limit_is_never_keyed() {

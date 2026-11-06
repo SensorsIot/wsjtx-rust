@@ -704,7 +704,7 @@ package WstxContact {
              keyed: 1.2 s into its period (past the latest live decode measured, #47) Enable
              Tx goes off (cause txWatchdog), PTT stays released, nothing is halted (no HaltTransmit,
              halt_state unchanged), a transmission already keyed finishes, the contact
-             state is kept and the station shows "Tx watchdog: N unanswered calls" until
+             state is kept and the station shows "Tx watchdog: same message sent N times" until
              the next Enable Tx. A partner message decoded before that moment still changes
              the message due next, sent by a late start as below the limit. A request still pending when
              the send due next is at the limit (the limit lowered, or a Tx button going back to
@@ -1345,7 +1345,7 @@ package WstxContact {
              repeating while I repeat keeps both Reps counting) increments that entry's
              count instead, except the first transmission after an operator Enable Tx
              from off, which opens a new entry; selecting a row of the current partner, or entering
-             it again, keeps the dialogue, each slot's current text when it was already sent,
+             it again, keeps the dialogue, the Tx4 form, each slot's current text when it was already sent,
              also an edited one, and, once the
              current Tx2 or Tx3 text was sent, the report whatever the row's SNR (its
              period_utc_ms stays the first period; its snr becomes the repeat's SNR when
