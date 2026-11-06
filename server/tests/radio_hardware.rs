@@ -305,22 +305,25 @@ fn usb_data_prepare_and_restore_have_independent_icom_bytes_and_readbacks() {
     let lsb = vec![0xfe, 0xfe, 0xe0, 0x94, 4, 0, 1, 0xfd];
     let on = vec![0xfe, 0xfe, 0xe0, 0x94, 0x1a, 6, 1, 1, 0xfd];
     let off = vec![0xfe, 0xfe, 0xe0, 0x94, 0x1a, 6, 0, 0, 0xfd];
+    // CL-044-09: each setter reads first; the frequency already fits and is not written.
     let responses = [
         frequency.clone(),
-        ack.clone(),
-        usb.clone(),
-        ack.clone(),
-        on.clone(),
-        ack.clone(),
-        frequency.clone(),
-        usb,
-        on,
-        frequency.clone(),
-        ack.clone(),
         lsb.clone(),
         ack.clone(),
+        usb.clone(),
         off.clone(),
+        ack.clone(),
+        on.clone(),
+        frequency.clone(),
+        usb.clone(),
+        on.clone(),
+        frequency.clone(),
+        usb,
+        ack.clone(),
+        lsb.clone(),
+        on,
         ack,
+        off.clone(),
         frequency.clone(),
         lsb,
         off,
@@ -367,14 +370,18 @@ fn usb_data_prepare_and_restore_have_independent_icom_bytes_and_readbacks() {
         assert_eq!(measured.frequency_hz, Some(7074000));
     }
     let writes = writes.lock().unwrap();
-    assert_eq!(writes.len(), 19);
+    assert_eq!(writes.len(), 21);
     for (index, body) in [
-        (1, vec![6, 1, 1]),
-        (3, vec![0x1a, 6, 1, 1]),
-        (5, vec![5, 0, 0x40, 7, 7, 0]),
-        (10, vec![6, 0, 1]),
-        (12, vec![0x1a, 6, 0, 0]),
-        (14, vec![5, 0, 0x40, 7, 7, 0]),
+        (1, vec![4]),
+        (2, vec![6, 1, 1]),
+        (4, vec![0x1a, 6]),
+        (5, vec![0x1a, 6, 1, 1]),
+        (7, vec![3]),
+        (11, vec![4]),
+        (12, vec![6, 0, 1]),
+        (14, vec![0x1a, 6]),
+        (15, vec![0x1a, 6, 0, 0]),
+        (17, vec![3]),
     ] {
         assert_eq!(&writes[index][4..writes[index].len() - 1], body);
     }
