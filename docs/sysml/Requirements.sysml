@@ -2540,8 +2540,9 @@ package WstxRequirements {
              Initial migration assigns one UUID to the existing selected configuration,
              but creates NO authorization grant or commissioning acknowledgement.
              Operator decision 2026-11-06 (#22): no explicit radio identity
-             Add/Replace/Remove operation exists; the server is pragmatic and discovers
-             whichever transmitter is available, and that discovery belongs to #44. Fresh
+             Add/Replace/Remove operation exists. Automatic discovery of an available
+             transmitter is requested on #44 and is not delivered or promised by this
+             clause. Fresh
              bootstrap alone grants no control: ReadBootstrapScope provides its read-only
              authority tuple before enrollment. Disable/re-enable never removes or
              changes identity. Endpoint/model/PTT edits
@@ -2760,7 +2761,8 @@ package WstxRequirements {
              WS grant or disconnect CAT/audio, while actual revoke still fences effects
              and closes affected WS. Same-document readiness sharing is not a claimed
              cross-tab lock; keep rate10/60 and all other caps/budgets unchanged.
-             A null scope returns null and enrolls nothing. Authorize A once; preserve ordinary
+             A record with a null scope, which no delivered operation writes, returns null
+             and enrolls nothing (no automated case). Authorize A once; preserve ordinary
              browser profile/key, close actual browser process, remove/expire only its
              transport cookie under test control, advance injected times across28800s
              and browser-cookie retention boundary, restart server/browser. A becomes

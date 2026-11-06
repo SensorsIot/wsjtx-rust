@@ -933,7 +933,9 @@ package WstxProfiles {
              POST is read-only: no identity/grant/receipt/challenge mutation, transport
              issuance, CAT/native I/O or implicit enrollment. After POST/session204,
              a fresh browser reads this response, then enrolls its exact non-null scope.
-             A profile without a selected radio yields null and cannot enroll.
+             Every HTTPS profile receives a scope when its record is first created, whether
+             or not a radio is configured. A persisted record whose current scope is null,
+             which no delivered operation writes, yields null and cannot enroll.
              Scope may race configuration: enrollment still compares authoritative
              scope and bootstrap binding at dispatch; stale tuple409, no effect.
              A read never rebinds a bootstrap context or broadens its enrollment scope. */
