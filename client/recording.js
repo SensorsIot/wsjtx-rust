@@ -420,7 +420,7 @@ addEventListener('station-message',event => {
     const d=message.data,running=d.import??null,shown=snapshot.import??null;
     if(d.generation!==snapshot.generation || d.state!==(snapshot.job?.state??null) || d.source_id!==(snapshot.job?.kind==='live'?snapshot.job.source_id:(snapshot.recording?.id??null)) || d.job_id!==(snapshot.job?.id??null)) sync(current);
     else if(!uploading){
-      if(running?.id!==shown?.id||running?.state!==shown?.state)sync(current);
+      if(running?.id!==shown?.id)sync(current); // the event carries the whole import: only another or an ended one needs the snapshot
       else if(running){snapshot.import={...shown,...running};show();}
     }
     return;
