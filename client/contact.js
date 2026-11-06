@@ -9,8 +9,8 @@ block('settings-startup','Receive at startup',document.querySelector('#settings-
 block('settings-startup-resume','Startup resume',document.querySelector('#settings-expert'),'<p id="startup-resume" class="op-muted" role="status">Startup resume unknown</p>');
 // #52 CL-052-01: off by default; read when Settings opens (at most every 30 s) or on Refresh, never polled.
 block('settings-window-diagnostics','Decode window diagnostics',document.querySelector('#settings-expert'),'<label class="op-check"><input type="checkbox" id="window-dump" disabled>Save FT8 decode windows</label><p id="window-diagnostics" class="op-muted" role="status">Window counters unknown</p><button type="button" id="window-diagnostics-refresh">Refresh</button><p class="op-muted">Keeps the last 20 FT8 prompt windows (12 kHz WAV and JSON) in the profile folder diagnostic-windows. Saved at once; it acts from the next window.</p>');
-block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station: Auto in the strategy element or an MCP client. Its state shows beside the strategy element; HALT ends it; Esc aborts the current QSO. The Tx watchdog stops transmitting after its number of unanswered calls; an answer or your action in this browser resets it, automation never does.</p>');
-block('settings-transmit','Transmit',document.querySelector('#settings-radio'),'<label>Tx watchdog (unanswered calls)<input id="watchdog-tx" type="number" min="1" max="99" step="1" disabled></label><label>Tune watchdog (seconds)<input id="watchdog-tune" type="number" min="1" max="300" step="1" disabled></label><p id="watchdog-result" class="op-muted" role="status"></p><p class="op-muted">Watchdogs apply at once, as in WSJT-X. Tx power is set on the transceiver; this station sends no power command. PTT is chosen under CAT.</p>');
+block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station: Auto in the strategy element or an MCP client. Its state shows beside the strategy element; HALT ends it; Esc aborts the current QSO. The Tx watchdog stops transmitting when one message would be sent more often than its limit. A different message or a new contact starts the count again; after a stop only Enable Tx or Auto in this browser transmits again, automation never does.</p>');
+block('settings-transmit','Transmit',document.querySelector('#settings-radio'),'<label>Tx watchdog (repetitions of one message)<input id="watchdog-tx" type="number" min="1" max="99" step="1" disabled></label><label>Tune watchdog (seconds)<input id="watchdog-tune" type="number" min="1" max="300" step="1" disabled></label><p id="watchdog-result" class="op-muted" role="status"></p><p class="op-muted">Watchdogs apply at once, as in WSJT-X. Tx power is set on the transceiver; this station sends no power command. PTT is chosen under CAT.</p>');
 block('settings-log','Log',document.querySelector('#settings-logging'),'<p>Each completed QSO is logged at once, as in WSJT-X: saved in this station profile’s contacts.adi (ADIF) and sent to the UDP targets that select QSO Logged / Logged ADIF. There is no review step; Log QSO logs the current contact now.</p><button type="button" data-region="logbook">&#9776; Open Logbook</button>');
 // #10 logbook.js (loaded first) made Update logbook from ADIF; it belongs below the Log block.
 {const update=document.querySelector('#settings-update-log');if(update)document.querySelector('#settings-log')?.after(update);}
@@ -195,7 +195,7 @@ function render(){
   // The partner's latest message to me, with SNR and the repeat count (ContactSnapshot last_rcvd).
   const h=qso?c.last_rcvd:null,heard=$('qso-heard');heard.hidden=!h;
   heard.textContent=h?`\u25C2 ${h.text}  ${snrText(h.snr)}${h.count>1?` \u00D7${h.count}`:''}`.trimEnd():'';
-  const wd=snap?.watchdog;$('contact-watchdog').textContent=!wd?'':wd.tx_expired?`Tx watchdog: ${snap.settings.tx_calls} unanswered calls`:armed?`WD:${wd.tx_remaining_calls}`:'';
+  const wd=snap?.watchdog;$('contact-watchdog').textContent=!wd?'':wd.tx_expired?`Tx watchdog: same message sent ${snap.settings.tx_calls} times`:armed?`WD:${wd.tx_remaining_calls}`:'';
   // The status line is for exceptions only: unknown state, a refusal, a pending halt.
   const problems=!snap?['Contact state unavailable']:[t?.refusal?`Refused ${t.refusal}`:'',t?.halt_state==='pending'?'Halt pending (RF stop not confirmed)':''].filter(Boolean);
   $('contact-state').textContent=problems.join(' · ');$('contact-state').hidden=!problems.length;
@@ -307,7 +307,7 @@ function loadAutomation(){
 function stationTx(){
   const t=snap?.transmit,capable=transmitCapable(),wd=snap?.watchdog,armed=t?.arm_state==='armed';
   stationTxNode.hidden=!capable||!(armed||tick?.transmitting||wd?.tx_expired);if(stationTxNode.hidden)return;
-  stationTxNode.textContent=`${tick?.transmitting?'TRANSMITTING':armed?'Tx on':'Tx off'}${armed?` · WD:${wd.tx_remaining_calls}`:wd.tx_expired?` · Tx watchdog: ${snap.settings.tx_calls} unanswered calls`:''}${t.last_text?` · last ${t.last_text}`:''}`;
+  stationTxNode.textContent=`${tick?.transmitting?'TRANSMITTING':armed?'Tx on':'Tx off'}${armed?` · WD:${wd.tx_remaining_calls}`:wd.tx_expired?` · Tx watchdog: same message sent ${snap.settings.tx_calls} times`:''}${t.last_text?` · last ${t.last_text}`:''}`;
 }
 document.addEventListener('pointerdown',event=>{
   if(typeof currentRegion==='undefined'||currentRegion==='operate')return;
@@ -1080,7 +1080,7 @@ autoButton.addEventListener('click',async()=>{
   if(!s||!c||!['ft8','ft4'].includes(mode)){statusNode.textContent='Auto needs a strategy and FT8/FT4 receive';return;}
   // First use in this page session asks once; HALT stops Auto at any time.
   if(!autoConfirmed){
-    const ok=await window.wstxConfirm(`Auto transmits without asking: it answers only stations that match "${s.name}" (${{call:'Auto Call',cq:'Auto CQ',alternate:`Auto Call and Auto CQ, switching after ${s.switch_after} tries`}[s.auto_role]}). The Tx watchdog stops it after ${c.settings.tx_calls} unanswered calls; Auto never resets it. HALT stops it; Esc aborts the current QSO.`,'Start Auto');
+    const ok=await window.wstxConfirm(`Auto transmits without asking: it answers only stations that match "${s.name}" (${{call:'Auto Call',cq:'Auto CQ',alternate:`Auto Call and Auto CQ, switching after ${s.switch_after} tries`}[s.auto_role]}). The Tx watchdog stops it when one message would be sent more than ${c.settings.tx_calls} times; a new message or station starts that count again, so Auto can run until its limit of 8 hours. HALT stops it; Esc aborts the current QSO.`,'Start Auto');
     if(!ok)return;autoConfirmed=true;
   }
   autoButton.disabled=true;
@@ -1244,7 +1244,7 @@ async function startPounce(call){
   if(!c||!['ft8','ft4'].includes(mode)){statusNode.textContent='Pounce needs FT8/FT4 receive';return;}
   // The page session's one confirmation, shared with Auto.
   if(!autoConfirmed){
-    const ok=await window.wstxConfirm(`Pounce transmits without asking: it answers ${call} when it calls CQ or ends a QSO with 73 on this band. The Tx watchdog stops it after ${c.settings.tx_calls} unanswered calls; automation never resets it. HALT stops it; Esc aborts the current QSO.`,'Pounce');
+    const ok=await window.wstxConfirm(`Pounce transmits without asking: it answers ${call} when it calls CQ or ends a QSO with 73 on this band. The Tx watchdog stops it when one message would be sent more than ${c.settings.tx_calls} times. HALT stops it; Esc aborts the current QSO.`,'Pounce');
     if(!ok)return;autoConfirmed=true;
   }
   try{

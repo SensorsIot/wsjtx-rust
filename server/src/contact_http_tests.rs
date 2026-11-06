@@ -998,6 +998,16 @@ fn rx_level_is_round_10_log10_mean_square_in_16_bit_units() {
 async fn transmit_state_revision_follows_the_read_view_only() {
     let f = fixture("http://127.0.0.1:18077", true);
     let r = &f.state.recording;
+    // The service's first tick settles the startup release, a real change of the view.
+    let service = &r.transmit.get().unwrap().service;
+    let started = std::time::Instant::now();
+    while transmit_http::view_json(r, &service.view())["startup_release"] == "pending" {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "startup release"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
     let first = transmit_http::state_revision(r).unwrap();
     std::thread::sleep(Duration::from_millis(1100));
     assert_eq!(transmit_http::state_revision(r), Some(first), "time alone");
@@ -1599,10 +1609,8 @@ async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
         snap["contact"]["dialogue"],
         json!([
             {"dir":"tx","text":"IW9FRA HB9BLA JN47","snr":null,"period_utc_ms":p(1),"count":1},
-            {"dir":"rx","text":"HB9BLA IW9FRA +10","snr":10,"period_utc_ms":p(2),"count":1},
-            {"dir":"tx","text":"IW9FRA HB9BLA R+10","snr":null,"period_utc_ms":p(3),"count":1},
-            {"dir":"rx","text":"HB9BLA IW9FRA +10","snr":15,"period_utc_ms":p(4),"count":1},
-            {"dir":"tx","text":"IW9FRA HB9BLA R+10","snr":null,"period_utc_ms":p(5),"count":1},
+            {"dir":"rx","text":"HB9BLA IW9FRA +10","snr":15,"period_utc_ms":p(2),"count":2},
+            {"dir":"tx","text":"IW9FRA HB9BLA R+10","snr":null,"period_utc_ms":p(3),"count":2},
             {"dir":"rx","text":"HB9BLA IW9FRA RR73","snr":17,"period_utc_ms":p(6),"count":1},
             {"dir":"tx","text":"IW9FRA HB9BLA 73","snr":null,"period_utc_ms":p(7),"count":1}
         ]),
