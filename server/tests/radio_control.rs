@@ -20,6 +20,11 @@ const FREQUENCY: &[u8] = &[0xfe, 0xfe, 0xe0, 0x94, 3, 0, 0x40, 7, 0x14, 0, 0xfd]
 const MODE: &[u8] = &[0xfe, 0xfe, 0xe0, 0x94, 4, 1, 2, 0xfd];
 const DATA: &[u8] = &[0xfe, 0xfe, 0xe0, 0x94, 0x1a, 6, 1, 2, 0xfd];
 const ACK: &[u8] = &[0xfe, 0xfe, 0xe0, 0x94, 0xfb, 0xfd];
+const NG: &[u8] = &[0xfe, 0xfe, 0xe0, 0x94, 0xfa, 0xfd];
+/// 7.074 MHz, USB FIL1 and DATA OFF: a radio not yet at the 14.074 MHz USB-D FIL2 targets.
+const FREQUENCY_7074: &[u8] = &[0xfe, 0xfe, 0xe0, 0x94, 3, 0, 0x40, 7, 7, 0, 0xfd];
+const MODE_FIL1: &[u8] = &[0xfe, 0xfe, 0xe0, 0x94, 4, 1, 1, 0xfd];
+const DATA_OFF: &[u8] = &[0xfe, 0xfe, 0xe0, 0x94, 0x1a, 6, 0, 0, 0xfd];
 enum Action {
     Bytes(Vec<u8>),
     Timeout,
@@ -228,13 +233,16 @@ fn req(operation: Operation) -> Request {
 // sequence expectations distinguish each completed query from the legacy cache.
 #[test]
 fn query_provenance_does_not_freshen_unqueried_facts_and_partial_setup_stales_targets() {
-    let ng = vec![0xfe, 0xfe, 0xe0, 0x94, 0xfa, 0xfd];
+    // CL-044-09: each setter reads first. Mode differs (FIL2 to FIL1): read, set (ACK),
+    // read back; data differs (FIL2 to FIL1): read, set refused (NG).
     let (executor, _) = service(vec![
         Action::Bytes(MODE.to_vec()),
         Action::Bytes(DATA.to_vec()),
-        Action::Bytes(ACK.to_vec()),
         Action::Bytes(MODE.to_vec()),
-        Action::Bytes(ng),
+        Action::Bytes(ACK.to_vec()),
+        Action::Bytes(MODE_FIL1.to_vec()),
+        Action::Bytes(DATA.to_vec()),
+        Action::Bytes(NG.to_vec()),
     ]);
     let initial = executor.snapshot().unwrap();
     assert_eq!(initial.facts.frequency.query_sequence, Some(1));
@@ -257,9 +265,9 @@ fn query_provenance_does_not_freshen_unqueried_facts_and_partial_setup_stales_ta
         executor.execute(req(Operation::ReceiveSetup {
             frequency_hz: 7074000,
             mode: Sideband::Usb,
-            filter: 2,
+            filter: 1,
             data: true,
-            data_filter: 2
+            data_filter: 1
         })),
         Err(Error::Rejected)
     );
@@ -276,13 +284,13 @@ fn query_provenance_does_not_freshen_unqueried_facts_and_partial_setup_stales_ta
     );
     assert_eq!(
         failed.facts.mode.query_sequence,
-        Some(4),
-        "ACK is not a query completion"
+        Some(5),
+        "the read-first query and the readback complete; ACK is not a query completion"
     );
     assert_eq!(
         failed.facts.data.query_sequence,
-        Some(3),
-        "NG is not a query completion"
+        Some(6),
+        "the read-first query completes; NG is not a query completion"
     );
 }
 
@@ -313,7 +321,9 @@ fn transition_lease_excludes_other_operations_and_polling_until_released() {
     while actor.snapshot().unwrap().state == State::Connecting && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(1));
     }
-    let lease = actor.reserve_transition().unwrap();
+    let lease = actor
+        .reserve_transition(Instant::now() + Duration::from_secs(1))
+        .unwrap();
     assert_eq!(actor.execute(req(Operation::ReadMode)), Err(Error::Busy));
     lease.execute(req(Operation::ReadMode)).unwrap();
     lease.execute(req(Operation::ReadData)).unwrap();
@@ -364,7 +374,7 @@ fn service(actions: Vec<Action>) -> (Executor<Fake>, Arc<Mutex<Script>>) {
     (executor, state)
 }
 
-// Proves: CL-008-06; TC-009-001. A workflow retains one lease and truthfully reports radio intervention.
+// Proves: CL-008-06, CL-044-09; TC-009-001, TC-044-012. A workflow retains one lease and truthfully reports radio intervention.
 #[test]
 fn receive_setup_reads_every_setter_and_checks_final_measured_state() {
     let operation = Operation::ReceiveSetup {
@@ -374,7 +384,21 @@ fn receive_setup_reads_every_setter_and_checks_final_measured_state() {
         data: true,
         data_filter: 2,
     };
-    let replies = [ACK, MODE, ACK, DATA, ACK, FREQUENCY, MODE, DATA, FREQUENCY];
+    // CL-044-09: each setter reads first and writes only a differing value.
+    let replies = [
+        MODE_FIL1,
+        ACK,
+        MODE,
+        DATA_OFF,
+        ACK,
+        DATA,
+        FREQUENCY_7074,
+        ACK,
+        FREQUENCY,
+        MODE,
+        DATA,
+        FREQUENCY,
+    ];
     let (executor, state) = service(
         replies
             .into_iter()
@@ -394,10 +418,13 @@ fn receive_setup_reads_every_setter_and_checks_final_measured_state() {
     assert_eq!(
         bodies,
         vec![
+            vec![4],
             vec![6, 1, 2],
             vec![4],
+            vec![0x1a, 6],
             vec![0x1a, 6, 1, 2],
             vec![0x1a, 6],
+            vec![3],
             vec![5, 0, 0x40, 7, 0x14, 0],
             vec![3],
             vec![4],
@@ -407,24 +434,45 @@ fn receive_setup_reads_every_setter_and_checks_final_measured_state() {
     );
     let mut changed = FREQUENCY.to_vec();
     changed[5] = 1; // Manual intervention by one Hz before final verification.
-    let mut actions: Vec<_> = replies[..8]
+    let mut actions: Vec<_> = replies[..11]
         .iter()
         .map(|v| Action::Bytes(v.to_vec()))
         .collect();
     actions.push(Action::Bytes(changed));
     let (executor, state) = service(actions);
     assert_eq!(
-        executor.execute(req(operation)),
+        executor.execute(req(operation.clone())),
         Err(Error::ReadbackMismatch)
     );
     assert_eq!(
         executor.snapshot().unwrap().observation.frequency_hz,
         Some(14_074_001)
     );
-    assert_eq!(state.lock().unwrap().writes.len(), 10); // No rollback or retry.
-    let (executor, state) = service(vec![Action::Bytes(vec![
-        0xfe, 0xfe, 0xe0, 0x94, 0xfa, 0xfd,
-    ])]);
+    assert_eq!(state.lock().unwrap().writes.len(), 13); // No rollback or retry.
+    // A radio already in the target state: three reads, no setter frame.
+    let (executor, state) = service(
+        [MODE, DATA, FREQUENCY]
+            .into_iter()
+            .map(|v| Action::Bytes(v.to_vec()))
+            .collect(),
+    );
+    assert_eq!(
+        executor.execute(req(operation)).unwrap().frequency_hz,
+        Some(14_074_000)
+    );
+    let bodies: Vec<Vec<u8>> = state
+        .lock()
+        .unwrap()
+        .writes
+        .iter()
+        .skip(1)
+        .map(|v| v[4..v.len() - 1].to_vec())
+        .collect();
+    assert_eq!(bodies, vec![vec![4], vec![0x1a, 6], vec![3]]);
+    let (executor, state) = service(vec![
+        Action::Bytes(MODE_FIL1.to_vec()),
+        Action::Bytes(NG.to_vec()),
+    ]);
     assert_eq!(
         executor.execute(req(Operation::SetMode {
             mode: Sideband::Usb,
@@ -432,10 +480,11 @@ fn receive_setup_reads_every_setter_and_checks_final_measured_state() {
         })),
         Err(Error::Rejected)
     );
-    assert_eq!(state.lock().unwrap().writes.len(), 2);
+    assert_eq!(state.lock().unwrap().writes.len(), 3);
     let (executor, _) = service(vec![
+        Action::Bytes(FREQUENCY_7074.to_vec()),
         Action::Bytes(ACK.to_vec()),
-        Action::Bytes(vec![0xfe, 0xfe, 0xe0, 0x94, 0xfa, 0xfd]),
+        Action::Bytes(NG.to_vec()),
     ]);
     assert_eq!(
         executor.execute(req(Operation::SetFrequency {
@@ -654,6 +703,7 @@ fn fragmented_parser_preserves_exact_frame_byte_and_count_limits() {
 #[test]
 fn setters_need_ack_and_independent_readback_and_preserve_actual_mismatch() {
     let (executor, state) = service(vec![
+        Action::Bytes(FREQUENCY_7074.to_vec()),
         Action::Bytes(ACK.to_vec()),
         Action::Bytes(FREQUENCY.to_vec()),
     ]);
@@ -666,11 +716,17 @@ fn setters_need_ack_and_independent_readback_and_preserve_actual_mismatch() {
             .frequency_hz,
         Some(14_074_000)
     );
+    // CL-044-09: read, write, read back.
     assert_eq!(
-        state.lock().unwrap().writes[2],
-        [0xfe, 0xfe, 0x94, 0xe0, 3, 0xfd]
+        state.lock().unwrap().writes[1..],
+        [
+            vec![0xfe, 0xfe, 0x94, 0xe0, 3, 0xfd],
+            vec![0xfe, 0xfe, 0x94, 0xe0, 5, 0, 0x40, 7, 0x14, 0, 0xfd],
+            vec![0xfe, 0xfe, 0x94, 0xe0, 3, 0xfd]
+        ]
     );
     let (executor, _) = service(vec![
+        Action::Bytes(MODE.to_vec()),
         Action::Bytes(ACK.to_vec()),
         Action::Bytes(MODE.to_vec()),
     ]);
@@ -691,7 +747,11 @@ fn setters_need_ack_and_independent_readback_and_preserve_actual_mismatch() {
             .sideband(),
         Some(Sideband::Usb)
     );
-    let (executor, state) = service(vec![Action::Bytes(ACK.to_vec()), Action::Timeout]);
+    let (executor, state) = service(vec![
+        Action::Bytes(DATA_OFF.to_vec()),
+        Action::Bytes(ACK.to_vec()),
+        Action::Timeout,
+    ]);
     assert_eq!(
         executor.execute(req(Operation::SetData {
             data: true,
@@ -701,6 +761,131 @@ fn setters_need_ack_and_independent_readback_and_preserve_actual_mismatch() {
     );
     assert_eq!(executor.snapshot().unwrap().state, State::Unavailable);
     assert_eq!(state.lock().unwrap().closed, 1);
+}
+
+// Proves: CL-044-09; TC-044-012. A setter whose value already fits sends only its read.
+#[test]
+fn setters_read_first_and_send_no_write_when_the_value_fits() {
+    for (operation, reply, read) in [
+        (
+            Operation::SetFrequency {
+                frequency_hz: 14_074_000,
+            },
+            FREQUENCY,
+            vec![3],
+        ),
+        (
+            Operation::SetMode {
+                mode: Sideband::Usb,
+                filter: 2,
+            },
+            MODE,
+            vec![4],
+        ),
+        (
+            Operation::SetData {
+                data: true,
+                filter: 2,
+            },
+            DATA,
+            vec![0x1a, 6],
+        ),
+    ] {
+        let (executor, state) = service(vec![Action::Bytes(reply.to_vec())]);
+        let observed = executor.execute(req(operation.clone())).unwrap();
+        let writes = state.lock().unwrap().writes.clone();
+        let mut expected = vec![0xfe, 0xfe, 0x94, 0xe0];
+        expected.extend(read);
+        expected.push(0xfd);
+        assert_eq!(writes[1..], [expected], "{operation:?}");
+        assert!(observed.observed_at.is_some());
+    }
+}
+
+// Proves: CL-044-09; TC-044-012. A setter whose read is refused (FA) sends no write and
+// keeps the connection.
+#[test]
+fn setter_with_a_refused_read_sends_no_write() {
+    for (operation, read) in [
+        (
+            Operation::SetFrequency {
+                frequency_hz: 14_074_000,
+            },
+            vec![3],
+        ),
+        (
+            Operation::SetMode {
+                mode: Sideband::Usb,
+                filter: 2,
+            },
+            vec![4],
+        ),
+        (
+            Operation::SetData {
+                data: true,
+                filter: 2,
+            },
+            vec![0x1a, 6],
+        ),
+    ] {
+        let (executor, state) = service(vec![Action::Bytes(NG.to_vec())]);
+        assert_eq!(
+            executor.execute(req(operation.clone())),
+            Err(Error::Rejected)
+        );
+        let script = state.lock().unwrap();
+        let mut expected = vec![0xfe, 0xfe, 0x94, 0xe0];
+        expected.extend(read);
+        expected.push(0xfd);
+        assert_eq!(script.writes[1..], [expected], "{operation:?}");
+        assert_eq!(script.closed, 0, "{operation:?}");
+        assert_eq!(executor.snapshot().unwrap().state, State::Ready);
+    }
+}
+
+// Proves: CL-044-09; TC-044-012. A menu (1A 05) write whose item already fits sends
+// only its read; a differing one is read, RX-checked, written and read back.
+#[test]
+fn menu_write_reads_first_and_skips_a_fitting_value() {
+    let usb_send_off = vec![0xfe, 0xfe, 0xe0, 0x94, 0x1a, 5, 0, 0x78, 0, 0xfd];
+    let usb_send_dtr = vec![0xfe, 0xfe, 0xe0, 0x94, 0x1a, 5, 0, 0x78, 1, 0xfd];
+    let rx = vec![0xfe, 0xfe, 0xe0, 0x94, 0x1c, 0, 0, 0xfd];
+    let write = |executor: &Executor<Fake>| {
+        executor.setup(
+            SetupCommand::Write(setup::Setting::UsbSend, 0),
+            Instant::now() + Duration::from_secs(3),
+            &AtomicBool::new(false),
+        )
+    };
+    let (executor, state) = service(vec![Action::Bytes(usb_send_off.clone())]);
+    assert_eq!(write(&executor), Ok(SetupReply::Value(Some(0))));
+    assert_eq!(
+        state.lock().unwrap().writes[1..],
+        [vec![0xfe, 0xfe, 0x94, 0xe0, 0x1a, 5, 0, 0x78, 0xfd]]
+    );
+    // A value the radio refuses to report (FA) is not written blind.
+    let (executor, state) = service(vec![Action::Bytes(NG.to_vec())]);
+    assert_eq!(write(&executor), Err(Error::Rejected));
+    assert_eq!(
+        state.lock().unwrap().writes[1..],
+        [vec![0xfe, 0xfe, 0x94, 0xe0, 0x1a, 5, 0, 0x78, 0xfd]]
+    );
+    let (executor, state) = service(vec![
+        Action::Bytes(usb_send_dtr),
+        Action::Bytes(rx),
+        Action::Bytes(ACK.to_vec()),
+        Action::Bytes(usb_send_off),
+    ]);
+    assert_eq!(write(&executor), Ok(SetupReply::Value(Some(0))));
+    assert_eq!(
+        state.lock().unwrap().writes[1..],
+        [
+            vec![0xfe, 0xfe, 0x94, 0xe0, 0x1a, 5, 0, 0x78, 0xfd],
+            vec![0xfe, 0xfe, 0x94, 0xe0, 0x1c, 0, 0xfd],
+            vec![0xfe, 0xfe, 0x94, 0xe0, 0x1a, 5, 0, 0x78, 0, 0xfd],
+            vec![0xfe, 0xfe, 0x94, 0xe0, 0x1a, 5, 0, 0x78, 0xfd]
+        ]
+    );
 }
 
 // Proves: CL-008-03, CL-008-06; TC-009-001, TC-009-004.

@@ -322,7 +322,8 @@ fn apply_refusals_and_failures_stop_without_keying() {
     assert_never_keyed(&radio);
 }
 
-struct Double {
+pub(crate) struct Double {
+    reserved: Mutex<Vec<u16>>,
     ports: Vec<PortInfo>,
     endpoints: Vec<AudioEndpoint>,
     radios: HashMap<u16, (u8, u32)>,
@@ -384,6 +385,14 @@ impl radio_setup::Hardware for Double {
     fn endpoints(&self) -> Result<Vec<AudioEndpoint>, cat::Error> {
         Ok(self.endpoints.clone())
     }
+    fn reserve(&self, port: u16) -> bool {
+        let mut reserved = self.reserved.lock().unwrap();
+        if reserved.contains(&port) {
+            return false;
+        }
+        reserved.push(port);
+        true
+    }
     fn open(
         &self,
         port: u16,
@@ -411,7 +420,7 @@ fn under(hub: &str) -> Topology {
         usb_parent: Some(hub.into()),
     }
 }
-fn port(n: u16, hub: &str) -> PortInfo {
+pub(crate) fn port(n: u16, hub: &str) -> PortInfo {
     PortInfo {
         port: n,
         instance_id: format!("USB\\VID_10C4&PID_EA60\\RADIO{n}"),
@@ -419,8 +428,13 @@ fn port(n: u16, hub: &str) -> PortInfo {
         topology: under(hub),
     }
 }
-fn double(ports: Vec<PortInfo>, radios: HashMap<u16, (u8, u32)>, in_use: Vec<u16>) -> Arc<Double> {
+pub(crate) fn double(
+    ports: Vec<PortInfo>,
+    radios: HashMap<u16, (u8, u32)>,
+    in_use: Vec<u16>,
+) -> Arc<Double> {
     Arc::new(Double {
+        reserved: Mutex::new(Vec::new()),
         ports,
         endpoints: vec![
             AudioEndpoint {
@@ -830,6 +844,9 @@ struct Listing {
     endpoints: Mutex<Option<Vec<AudioEndpoint>>>,
 }
 impl radio_setup::Hardware for Listing {
+    fn reserve(&self, _: u16) -> bool {
+        true
+    }
     fn ports(&self) -> Result<Vec<PortInfo>, cat::Error> {
         Ok(self.ports.clone())
     }
@@ -959,4 +976,306 @@ async fn audio_endpoints_list_names_remember_saved_names_and_name_the_receive_in
         (s, v["error"]["code"].as_str()),
         (StatusCode::CONFLICT, Some("audio_unavailable"))
     );
+}
+
+/// The saved control of a fixture: IC-7300 CAT on `port`, saved once.
+fn saved_on(f: &Fixture, port: u16) {
+    saved_with(f, port, "cat");
+}
+fn saved_with(f: &Fixture, port: u16, ptt: &str) {
+    let mut store = f.state.store.lock().unwrap();
+    let mut settings = store.document.settings();
+    settings.control = profile::Control {
+        mode: "cat".into(),
+        endpoint: Some(format!("COM{port}")),
+        ptt: ptt.into(),
+    };
+    settings.radio = Some(profile::Radio {
+        agc: wstx_rust::radio_control::setup::Agc::Mid,
+        power_limit_pct: Some(10),
+    });
+    store.save(settings).unwrap();
+}
+fn hardware_of(f: &Fixture, hw: &Arc<Double>) {
+    *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw.clone());
+}
+fn saved_control(f: &Fixture) -> (profile::Control, u64) {
+    let store = f.state.store.lock().unwrap();
+    (store.document.control.clone(), store.document.revision)
+}
+fn only_id_reads(hw: &Double) {
+    for write in hw.writes.lock().unwrap().iter() {
+        assert_eq!(&write[4..write.len() - 1], &[0x19, 0], "{write:02x?}");
+    }
+}
+
+// Proves: CL-044-15; TC-044-020.
+#[test]
+fn discovery_keeps_a_saved_radio_that_answers() {
+    let f = fixture("http://127.0.0.1:18047", false);
+    radio_setup::confirm_keying(&f.state);
+    saved_on(&f, 3);
+    let before = saved_control(&f);
+    let hw = double(
+        vec![port(3, "USB\\HUB\\A"), port(5, "USB\\HUB\\IC7300")],
+        HashMap::from([(3, (0x94, 19200)), (5, (0x94, 19200))]),
+        vec![],
+    );
+    hardware_of(&f, &hw);
+    assert_eq!(radio_setup::discover_on_start(&f.state), None);
+    assert_eq!(saved_control(&f), before);
+    assert_eq!(
+        *hw.opened.lock().unwrap(),
+        vec![3],
+        "no other port is touched"
+    );
+    only_id_reads(&hw);
+}
+
+// Proves: CL-044-15; TC-044-020. Two transceivers on one PC: the second station process
+// takes the next free one; its audio follows; the confirmation is not carried over.
+#[test]
+fn discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held() {
+    let f = fixture("http://127.0.0.1:18048", false);
+    radio_setup::confirm_keying(&f.state);
+    saved_with(&f, 3, "disabled");
+    std::fs::write(f.dir.join(crate::radio_level::LEVEL_FILE), "{}").unwrap();
+    std::fs::write(f.dir.join(radio_setup::UNDO_FILE), "{}").unwrap();
+    let revision = saved_control(&f).1;
+    let hw = double(
+        vec![
+            port(3, "USB\\HUB\\A"),
+            port(4, "USB\\HUB\\B"),
+            port(5, "USB\\HUB\\C"),
+            port(6, "USB\\HUB\\IC7300"),
+        ],
+        // COM3 is the saved one, held; COM4 another station's; COM5 silent; COM6 free.
+        HashMap::from([(6, (0x94, 19200))]),
+        vec![3, 4],
+    );
+    hardware_of(&f, &hw);
+    let line = radio_setup::discover_on_start(&f.state).unwrap();
+    assert_eq!(
+        line,
+        "radio discovery: COM6 (IC-7300) is this station's radio"
+    );
+    let (control, after) = saved_control(&f);
+    assert_eq!(after, revision + 1);
+    assert_eq!(
+        control,
+        profile::Control {
+            mode: "cat".into(),
+            endpoint: Some("icom7300://COM6?baud=19200&radio=94&controller=e0".into()),
+            ptt: "disabled".into(),
+        }
+    );
+    let store = f.state.store.lock().unwrap();
+    assert_eq!(store.document.audio.input_device.as_deref(), Some(CAPTURE));
+    assert_eq!(store.document.audio.output_device.as_deref(), Some(RENDER));
+    assert_eq!(
+        store.document.radio.map(|r| r.power_limit_pct),
+        Some(Some(10)),
+        "the radio settings stay"
+    );
+    assert!(
+        !f.dir.join(crate::radio_level::LEVEL_FILE).exists(),
+        "the Tx level belonged to the other radio"
+    );
+    assert!(
+        !f.dir.join(radio_setup::UNDO_FILE).exists(),
+        "the settings undo belonged to the other radio"
+    );
+    drop(store);
+    assert_eq!(*hw.opened.lock().unwrap(), vec![3, 4, 5, 6]);
+    only_id_reads(&hw);
+}
+
+// Proves: CL-044-15; TC-044-020.
+#[test]
+fn discovery_changes_nothing_without_a_free_radio_or_against_a_saved_disabled() {
+    // Nothing else free: the saved radio stays for the lifecycle's retries.
+    let f = fixture("http://127.0.0.1:18049", false);
+    radio_setup::confirm_keying(&f.state);
+    saved_on(&f, 3);
+    let before = saved_control(&f);
+    let hw = double(
+        vec![port(3, "USB\\HUB\\A"), port(4, "USB\\HUB\\B")],
+        HashMap::new(),
+        vec![4],
+    );
+    hardware_of(&f, &hw);
+    assert_eq!(radio_setup::discover_on_start(&f.state), None);
+    assert_eq!(saved_control(&f), before);
+    // An operator's saved Disabled opens nothing.
+    let f = fixture("http://127.0.0.1:18050", false);
+    radio_setup::confirm_keying(&f.state);
+    {
+        let mut store = f.state.store.lock().unwrap();
+        let settings = store.document.settings();
+        store.save(settings).unwrap();
+    }
+    let hw = double(
+        vec![port(3, "USB\\HUB\\A")],
+        HashMap::from([(3, (0x94, 19200))]),
+        vec![],
+    );
+    hardware_of(&f, &hw);
+    assert_eq!(radio_setup::discover_on_start(&f.state), None);
+    assert!(hw.opened.lock().unwrap().is_empty());
+}
+
+// Proves: CL-044-15; TC-044-020. A profile never saved takes the first radio this station
+// supports; a radio without station CAT and a port without a radio bridge are passed over.
+#[test]
+fn discovery_sets_up_a_profile_never_saved() {
+    let f = fixture("http://127.0.0.1:18051", false);
+    radio_setup::confirm_keying(&f.state);
+    assert_eq!(saved_control(&f).1, 0);
+    let hw = double(
+        vec![
+            PortInfo {
+                port: 2,
+                instance_id: "FTDIBUS\\VID_0403+PID_6001+A1\\0000".into(),
+                friendly_name: None,
+                topology: Topology {
+                    usb_device: Some("USB\\VID_0403&PID_6001\\A1".into()),
+                    ..Default::default()
+                },
+            },
+            port(5, "USB\\HUB\\IC705"),
+            port(6, "USB\\HUB\\IC7300"),
+        ],
+        HashMap::from([(5, (0xa4, 115200)), (6, (0x94, 9600))]),
+        vec![],
+    );
+    hardware_of(&f, &hw);
+    assert!(radio_setup::discover_on_start(&f.state).is_some());
+    let (control, revision) = saved_control(&f);
+    assert_eq!(revision, 1);
+    assert_eq!(
+        control.endpoint.as_deref(),
+        Some("icom7300://COM6?baud=9600&radio=94&controller=e0")
+    );
+    assert_eq!(control.ptt, "cat");
+    assert_eq!(*hw.opened.lock().unwrap(), vec![5, 6], "no FTDI board");
+    only_id_reads(&hw);
+}
+
+// Proves: CL-044-15; TC-044-020 (f). A radio chosen but not yet confirmed counts as taken:
+// two stations set up one after the other take one radio each, however long apart.
+#[test]
+fn a_second_station_passes_over_a_radio_the_first_reserved() {
+    let hw = double(
+        vec![port(3, "USB\\HUB\\A"), port(6, "USB\\HUB\\IC7300")],
+        HashMap::from([(3, (0x94, 19200)), (6, (0x94, 19200))]),
+        vec![],
+    );
+    let a = fixture("http://127.0.0.1:18052", false);
+    radio_setup::confirm_keying(&a.state);
+    hardware_of(&a, &hw);
+    assert!(
+        radio_setup::discover_on_start(&a.state)
+            .unwrap()
+            .contains("COM3")
+    );
+    let b = fixture("http://127.0.0.1:18053", false);
+    radio_setup::confirm_keying(&b.state);
+    hardware_of(&b, &hw);
+    assert!(
+        radio_setup::discover_on_start(&b.state)
+            .unwrap()
+            .contains("COM6")
+    );
+    // A saved radio another station reserved is no longer this station's.
+    let c = fixture("http://127.0.0.1:18054", false);
+    radio_setup::confirm_keying(&c.state);
+    saved_on(&c, 3);
+    hardware_of(&c, &hw);
+    assert_eq!(radio_setup::discover_on_start(&c.state), None);
+    assert_eq!(saved_control(&c).0.endpoint.as_deref(), Some("COM3"));
+}
+
+// Proves: CL-044-15; TC-044-020 (g). No automatic open without the persisted confirmation,
+// neither of the saved port nor of another; Detect radio with the tick stores it, once.
+#[tokio::test]
+async fn discovery_opens_nothing_until_detect_radio_stored_the_confirmation() {
+    let f = fixture("http://127.0.0.1:18055", false);
+    let hw = double(
+        vec![port(3, "USB\\HUB\\A")],
+        HashMap::from([(3, (0x94, 19200))]),
+        vec![],
+    );
+    hardware_of(&f, &hw);
+    let keying = || {
+        let v: Value =
+            serde_json::from_str(&crate::radio_level::event(&f.state.recording).1).unwrap();
+        v["data"]["keying_confirmed"].clone()
+    };
+    assert_eq!(radio_setup::discover_on_start(&f.state), None);
+    saved_on(&f, 3);
+    assert_eq!(radio_setup::discover_on_start(&f.state), None);
+    assert!(hw.opened.lock().unwrap().is_empty(), "no automatic open");
+    assert_eq!(keying(), json!(false));
+    let body = |confirmed| json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"keying_inhibit_confirmed":confirmed});
+    let (s, _, _, _) = f.call("POST", "/radio/detect", Some(body(false))).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    assert!(!f.dir.join(radio_setup::KEYING_FILE).exists());
+    let (s, v, _, _) = f.call("POST", "/radio/detect", Some(body(true))).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert!(f.dir.join(radio_setup::KEYING_FILE).exists());
+    assert_eq!(keying(), json!(true));
+    hw.opened.lock().unwrap().clear();
+    assert_eq!(radio_setup::discover_on_start(&f.state), None);
+    assert_eq!(
+        *hw.opened.lock().unwrap(),
+        vec![3],
+        "now the saved port answers"
+    );
+}
+
+// Proves: CL-044-15; TC-044-020 (h). The whole discovery stays inside its budget however
+// many silent ports there are.
+#[test]
+fn silent_ports_stay_within_the_budget() {
+    let f = fixture("http://127.0.0.1:18056", false);
+    radio_setup::confirm_keying(&f.state);
+    let hw = double(
+        vec![
+            port(3, "USB\\HUB\\A"),
+            port(4, "USB\\HUB\\B"),
+            port(5, "USB\\HUB\\C"),
+        ],
+        HashMap::new(),
+        vec![],
+    );
+    hardware_of(&f, &hw);
+    let started = Instant::now();
+    assert_eq!(
+        radio_setup::discover_within(&f.state, Duration::from_millis(200)),
+        None
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(
+        *hw.opened.lock().unwrap(),
+        vec![3],
+        "no port opened past the budget"
+    );
+}
+
+// Proves: CL-044-15; TC-044-020 (f). The reservation is a real lock that stays held.
+#[cfg(windows)]
+#[test]
+fn the_reservation_lock_stays_held_and_is_per_port() {
+    let root = std::env::temp_dir().join(format!("wstx-reserve-{}", profile::new_uuid().unwrap()));
+    let held = Mutex::new(Vec::new());
+    assert!(radio_setup::reserve_in(&held, &root, 3));
+    assert!(!radio_setup::reserve_in(&Mutex::new(Vec::new()), &root, 3));
+    assert!(radio_setup::reserve_in(&held, &root, 6));
+    held.lock().unwrap().clear();
+    assert!(radio_setup::reserve_in(&Mutex::new(Vec::new()), &root, 3));
+    std::fs::remove_dir_all(root).unwrap();
 }

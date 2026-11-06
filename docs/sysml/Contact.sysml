@@ -53,7 +53,9 @@ package WstxContact {
              asprintf("%+2.2d") (MW genStdMsgs ~9738): -05, +03, +00, -15, +49.
              The value after selecting a decoded row is round-half-away-from-zero of its
              snr_db, clamped to this range; a row with null SNR, and manual DX entry,
-             use the current report value, initially manualDefaultDb. */
+             use the current report value, initially manualDefaultDb. Once the current Tx2
+             or Tx3 text of the active contact was sent, selecting its partner again keeps
+             the report (WstxContact::TxWatchdog). */
     }
     attribute def StandardMessageSet {
         attribute dxCall : String;
@@ -417,10 +419,10 @@ package WstxContact {
              dxCall = the row's 'from' call; dxGrid = the row's grid exchange if any
              (a row without a grid of the same partner and mode keeps the known dxGrid,
              as WSJT-X's DX Grid, #11; EnterDxStation sets exactly the grid entered);
-             report from the row SNR (ReportRange); rxOffsetHz = row frequency rounded
-             to integer Hz; txOffsetHz = the same, unless Hold Tx is on or the row's
+             report from the row SNR, with the exception stated there (ReportRange); rxOffsetHz = row frequency rounded
+             to integer Hz; txOffsetHz = the same, unless Hold Tx is on (the default, CL-039-08) or the row's
              'to' call is my call (replying to me keeps my Tx frequency, DMR ~320-333);
-             txParity = opposite of the row's period parity; message set generated;
+             txParity = opposite of the row's period parity; message set generated, except the texts kept for the same active partner (ContactSnapshot dialogue);
              nextSlot and state per FirstSlotOnSelection. Unresolved hashes (<...>), rows
              without a concrete call, a DX call that would pair two nonstandard calls,
              old/wrong-profile tuples and other families are refused with a reason.
@@ -477,7 +479,8 @@ package WstxContact {
              sent in it; when the new contact has the other parity, the keyed message is
              sent and the new one is queued for the next period of its parity, never
              refused busy, #10). The replacement itself never turns Enable Tx on. During a station
-             automation run (WstxMcp OperatingAutomation) an operator replacement of the
+             automation run without a strategy (WstxMcp OperatingAutomation; a strategy run:
+             WstxStrategy::ManualIntervention, #39) an operator replacement of the
              run's contact ends the run, which disarms (contact_changed, TC-020-003); this
              exception stands until the operator decides otherwise. A
              completed contact is not active and is already logged (DirectLog), so a new
@@ -502,8 +505,7 @@ package WstxContact {
              of that row (prepareReply: report Tx2 after their grid, roger report Tx3
              after their report, as FirstSlotOnSelection; Hold Tx and the to-my-call rule
              keep my Tx offset). Enable Tx keeps its state, so the next own period answers
-             that caller; the answer is automatic, not operator activity (no Tx watchdog
-             reset). At most one caller is answered: the contact is then no longer
+             that caller; the answer is automatic, not operator activity. At most one caller is answered: the contact is then no longer
              calling. With Call 1st off a calling contact moves only on an operator
              selection (#12). */
     }
@@ -618,12 +620,14 @@ package WstxContact {
              auto_sequence(decodedtext,25,50); 50 Hz rule): in replying, or in report
              when the contact started with Tx1 skipped, with Auto Seq on, the DX call's
              decoded message to another call within 50 Hz inclusive of my txOffsetHz
-             disarms and halts a transmission already started; the state is kept. #9
+             disarms and stops a transmission already started by an abort
+             (WstxTransmit::AbortTransmission, never a halt: #39 2026-11-04, normal flow
+             never uses HALT); the state is kept. #9
              has no dedicated DisarmCause for it: the disarm is recorded with cause
              operator (supervisor decision on #10 review, 2026-10-31).
              halt and watchdogExpired turn Enable Tx off and keep the state (the
              contact can resume after an explicit Enable Tx), except in calling where
-             the CQ ends. cancel follows CancelContact. Esc is halt plus cancel. */
+             the CQ ends. cancel follows CancelContact. Esc is Abort QSO (AbortQso), not a halt. */
     }
     attribute def TransmitSubmission {
         attribute contactId : String;
@@ -655,7 +659,9 @@ package WstxContact {
              operator choice like the double-click, retries their enable_tx at most twice after a
              stale_revision refusal with the reloaded snapshot (CL-061-02). Transmission ends by itself
              on completion (Enable Tx off after a completed Tx4 RR73/Tx5 73, see the
-             transition table) or by HALT; there is no other off control. Alt+N has no
+             transition table), by the Tx watchdog, by Cancel contact or F4 (the contact
+             is cancelled, a transmission already on the air finishes), by Abort QSO (Esc,
+             AbortQso: the transmission stops now) or by HALT, the emergency stop. Alt+N has no
              function. Earlier text: Separate explicit operator action (Alt+N where the browser delivers it,
              HT Alt+N). Maps to WstxTransmit::TransmitArming (armed/disarmed is #9
              state). On: transmissions of the next slot start in the contact's parity
@@ -664,17 +670,33 @@ package WstxContact {
              already started finishes (WSJT-X Enable Tx off lets the current Tx finish). */
     }
     action def HaltTx {
-        doc /* Halt Tx button, Alt+H (HT) and Esc. Sends WstxTransmit::HaltTransmit
-             (POST /transmit/halt), stopping a transmission or Tune now and disarming
-             (MW on_stopTxButton_clicked). Esc additionally cancels the active contact
-             as MW keyPressEvent ~3683 (abortQSO); D5: Esc acts on every page state and
-             in every focused field and closes no panel. With no transmit capability
-             (receive-only station) Esc only cancels the contact and sends no halt.
-             Shown as halted only after #9 confirms; until then pending/unknown. The
-             keyboard halt is sent by the always-loaded page script (never waiting for
-             the contact client), skipped only when the station is known receive-only;
-             the Esc cancellation follows the answered halt. Esc on a completed contact
-             only selects Tx6 and keeps its fields (Log QSO still works). */
+        doc /* The operator's emergency stop (operator decision #39, 2026-11-04: HALT is
+             emergency only and only manual): the Halt Tx buttons and Alt+H (HT). Sends
+             WstxTransmit::HaltTransmit (POST /transmit/halt), stopping a transmission
+             or Tune now and disarming (MW on_stopTxButton_clicked). Esc is no longer a
+             halt (AbortQso). Shown as halted only after #9 confirms; until then
+             pending/unknown. The keyboard halt is sent by the always-loaded page script
+             (never waiting for the contact client), skipped only when the station is
+             known receive-only. The remote emergency stops (MCP wstx_transmit_halt, UDP
+             Halt Tx) stay. The station and its automation never send it in normal flow
+             (WstxTransmit::TransmitHaltUse). */
+    }
+    action def AbortQso {
+        doc /* Abort QSO (operator decision #39, 2026-11-04, "stop the transmission and
+             the QSO immediately, but not HALT the system"): Esc and the "Abort QSO"
+             button beside HALT send ContactCommand abort {}. The station stops the
+             current transmission or Tune now (WstxTransmit::AbortTransmission: audio
+             stopped, PTT released with readback, requests dropped, Enable Tx off with
+             cause contactCancelled) and cancels the contact as CancelContact (nothing
+             logged; a completed contact only selects Tx6 and keeps its fields). It is no
+             halt: halt_state and the halt count are unchanged and the station stays
+             ready for the next QSO. Like cancel it is accepted on any older contact
+             revision. Esc (MW keyPressEvent ~3683 abortQSO) acts on every page state and
+             in every focused field and closes no panel; an open dialog or menu takes Esc
+             first. With nothing active (no contact in progress, disarmed, not
+             transmitting) the button is disabled and Esc sends nothing. A running station
+             automation run reacts to the cancelled contact as to any operator contact
+             change. */
     }
 
     // ---------------------------------------------------------------- watchdogs
@@ -684,31 +706,37 @@ package WstxContact {
         attribute maximumCalls : Integer = 99;
         attribute remainingCalls : Integer;
         assert constraint limitDomain { limitCalls >= minimumCalls and limitCalls <= maximumCalls }
-        doc /* Operator redefinition #39, 2026-11-04 (replaces the WSJT-X time watchdog,
-             CFG TxWatchdog ~3749, MW tx_watchdog ~14646): the Tx watchdog counts
-             consecutive own transmissions that got no answer, in manual operation and
-             under automation alike, whatever the message (CQ, Tx1..Tx5, free text).
-             Server-owned station-session setting: limit 1..99 unanswered calls, default 6
-             at each station start (about 3 min of FT8 with alternate periods). DIFFERENT:
-             WSJT-X 0 = disabled is not offered; a safety bound always applies.
-             Counting: every own transmission whose audio starts adds one. An answer
-             resets the count to 0: a decoded message addressed to my call from the
-             contact's partner (dxCall), or from any station while no partner is set
-             (my CQ answered by anyone), decoded in a period after my last transmission
-             started; after a watchdog stop answers no longer reset it, only the next
-             operator Enable Tx does. A human action in the browser (an operator Enable Tx or any
-             accepted operating request of this station from the browser) also resets it
-             (a human is present). Automation, MCP requests (including a run start) and
-             UDP commands never reset it (WstxStrategy::WatchdogFromOperator); their
-             Enable Tx keeps the count, and is refused tx_watchdog when the limit is used
-             up or no browser action was seen this boot; only the browser may set the
-             watchdogs (set_watchdogs from another source is refused operator_required).
-             Stop: the next transmission after the limit is never keyed: Enable Tx goes
-             off (cause txWatchdog) before keying, PTT stays released, nothing is halted
-             (no HaltTransmit, halt_state unchanged), the contact state is
-             kept and the station shows "Tx watchdog: N unanswered calls" until the next
-             Enable Tx. The remaining calls are shown while Enable Tx is on (WD:n). Mouse
-             movement the server cannot observe is not activity. */
+        doc /* Operator rule #39, 2026-11-06 (replaces the WSJT-X time watchdog, CFG
+             TxWatchdog ~3749, MW tx_watchdog ~14646, and the unanswered count of
+             2026-11-04): the Tx watchdog limits how often one message is repeated, in
+             manual operation and under automation alike, whatever the message (CQ,
+             Tx1..Tx5, free text). Server-owned station-session setting: limit 1..99
+             repetitions, default 6 at each station start. DIFFERENT: WSJT-X 0 = disabled
+             is not offered; a safety bound always applies.
+             It keeps no count of its own: the repetition count is the Rep of the
+             ContactSnapshot dialogue, the count of the newest tx entry when that entry
+             holds the message due next, otherwise 0. Whatever restarts that Rep is the
+             only restart: a different message (the exchange advanced), a new contact, and
+             one addition for the operator: an operator Enable Tx while Enable Tx
+             is off makes the next transmission open a new tx entry, so a stopped station
+             may send the same message again; while it is on it restarts nothing. Partner messages, browser clicks, settings, Auto Seq, MCP
+             and automation requests restart nothing by themselves.
+             Stop: when the send due next would exceed the limit it is never planned or
+             keyed: 1.2 s into its period (past the latest live decode measured, #47) Enable
+             Tx goes off (cause txWatchdog), PTT stays released, nothing is halted (no HaltTransmit,
+             halt_state unchanged), a transmission already keyed finishes, the contact
+             state is kept and the station shows "Tx watchdog: same message sent N times" until
+             the next Enable Tx. A partner message decoded before that moment still changes
+             the message due next, sent by a late start as below the limit. A request still pending when
+             the send due next is at the limit (the limit lowered, or a Tx button going back to
+             a message at its limit) would key, so Enable Tx goes off at once. The repetitions left are shown while Enable Tx is on
+             (WD:n, watchdog tx_remaining_calls = limit - Rep).
+             Automation (WstxStrategy::WatchdogFromOperator): an automatic Enable Tx is
+             refused tx_watchdog after a stop or while no browser action was seen this
+             boot; only the browser may set the watchdogs (set_watchdogs from another
+             source is refused operator_required). A new message or target chosen by a run
+             restarts the Rep like any other, so a run is bounded per message, not in
+             total. Mouse movement the server cannot observe is not activity. */
     }
     attribute def TuneWatchdog {
         attribute limitSeconds : Integer = 90;
@@ -754,7 +782,7 @@ package WstxContact {
         assert constraint rxDomain { rxOffsetHz >= 0 and rxOffsetHz <= 3000 }
         assert constraint txDomain { txOffsetHz >= 200 and txOffsetHz <= 2950 }
         doc /* Labelled numeric Rx Hz and Tx Hz inputs (MW RxFreqSpinBox/TxFreqSpinBox),
-             Hold Tx (requested vs confirmed shown separately). Tx<-Rx/Rx<-Tx copy
+             Hold Tx (requested vs confirmed shown separately; on by default, CL-039-08). Tx<-Rx/Rx<-Tx copy
              buttons are not adopted (agent choice 2026-10-31: ctrl-click and the
              numeric inputs cover them); F11/F12 steps are not adopted (D7). FT4-NOTE Tx max 2916. */
     }
@@ -815,8 +843,7 @@ package WstxContact {
              ADIF band enumeration (e.g. 20m), absent when the dial is not confirmed;
              FREQ in MHz with six decimals = confirmed dial + Tx offset (LQ ~384,
              mainwindow_slots.cpp ~545), absent when unconfirmed; STATION_CALLSIGN and
-             MY_GRIDSQUARE the WstxUdp Location session grid when one is set, else the
-             profile locator; TX_PWR watts (decimal >0, optional, D10); COMMENT single
+             MY_GRIDSQUARE the profile locator; TX_PWR watts (decimal >0, optional, D10); COMMENT single
              line, printable ASCII without '<' and '>', at most 1024 characters
              (optional, D10); a COMMENT containing '<' or '>' is refused (DIFFERENT from
              WSJT-X to_adi_text stripping them: a supplied record is never altered).
@@ -881,8 +908,7 @@ package WstxContact {
              without a dupe check). Only the first store of a contactId (saved) is sent
              to the WstxUdp targets as QSO Logged then Logged ADIF, so each contact
              reaches the external programs once; a replacement stays internal. They are
-             sent by the station step, never from inside a command, so a UDP Reply or
-             FreeText that reaches ContactCommand cannot re-enter the UDP owner. Idempotence: a retried command_id has no second
+             sent by the station step, never from inside a command. Idempotence: a retried command_id has no second
              effect, a repeated completion logs once, and a restart starts no contact,
              so it logs nothing again; stored records survive in contacts.adi.
              Storage failure: the record stays pending in the station process, at most 64
@@ -982,8 +1008,13 @@ package WstxContact {
              Vienna Intl Ctr, AF/EU Turkey), as with "Include extra WAE entities" off. */
     }
     attribute def DecodedEntity {
-        doc /* #55 (CL-055-02). GET /receive/results adds to each decoded standard record
-             whose sender resolves two optional keys; other records are unchanged:
+        doc /* #55 (CL-055-02). GET /receive/results adds to each decoded record whose
+             sender call resolves two optional keys; other records are unchanged. The
+             sender call is the 'from' call, also a filled-in hash; of a nonstandard (i3=4)
+             message its full call, or its filled-in hash when that comes second; of a
+             DXpedition message its hashed call, for dxcc only because Band Activity names
+             no sender for that form. A hash nobody heard ("<...>") and a free text have
+             none. The keys:
              dxcc {name (shown name), cont, cq, itu, km (only with a profile locator:
              great circle in whole km to the entity position)} when the sender has an
              entity; flags {name: true ...} holding only the flags that are true, omitted
@@ -1232,6 +1263,7 @@ package WstxContact {
         enum wrong_profile; enum not_found; enum request_too_large; enum unsupported_media_type;
         enum state_conflict; enum stale_revision; enum busy; enum counter_exhausted;
         enum contact_active; enum no_contact; enum row_unavailable; enum row_not_standard;
+        enum directive_not_answerable;
         enum invalid_call; enum invalid_grid; enum invalid_report; enum invalid_message;
         enum out_of_range; enum profile_incomplete; enum transmit_unavailable;
         enum redecode_unavailable; enum log_invalid_field; enum log_conflict;
@@ -1241,7 +1273,7 @@ package WstxContact {
     enum def ContactAction {
         enum select_row; enum enter_dx; enum cancel; enum choose_next; enum edit_message;
         enum set_report; enum set_tx1_skip; enum set_tx4; enum set_frequency; enum set_hold_tx;
-        enum set_parity; enum set_auto_seq; enum set_call_first; enum set_watchdogs;
+        enum set_parity; enum set_auto_seq; enum set_call_first; enum set_watchdogs; enum abort;
         enum set_activity;
         enum enable_tx; enum tune; enum redecode; enum open_log;
         doc /* discard_review is retired (#41, no log review queue) and refused
@@ -1257,7 +1289,9 @@ package WstxContact {
         doc /* POST /contact/command, body at most 1024 UTF-8 bytes, exact keys
              {v,profile_id,boot_id,command_id,contact_revision,action} (commandAction is the JSON key action) plus exactly the
              parameters of its action (all required, nullable where stated):
-             select_row {row:{source_id,job_id,generation,sequence},replace};
+             select_row {row:{source_id,job_id,generation,sequence},replace} plus the optional
+             directive_confirmed boolean (WstxStrategy::DirectedCqRule; refused
+             directive_not_answerable, 409 with error.reason in the browser's case);
              enter_dx {dx_call,dx_grid|null,replace}; cancel {};
              choose_next {slot:"tx1".."tx6"}; edit_message {slot,text};
              set_report {report}; set_tx1_skip {enabled}; set_tx4 {form:"rrr"|"rr73"};
@@ -1333,8 +1367,14 @@ package WstxContact {
              period_utc_ms,count}, oldest first: "rx" each partner message the engine
              counted for this contact (as last_rcvd, including the selected row addressed
              to me) with its rounded SNR or null, "tx" each transmission of this contact
-             whose audio started (the text as sent, snr null); a message equal in dir and
-             text to the newest entry increments that entry's count instead (its
+             whose audio started (the text as sent, snr null); a message equal in text to the
+             newest entry of its dir (also across an entry of the other dir, #39: a partner
+             repeating while I repeat keeps both Reps counting) increments that entry's
+             count instead, except the first transmission after an operator Enable Tx
+             from off, which opens a new entry; selecting a row of the current partner, or entering
+             it again, keeps the dialogue, the Tx4 form, each slot's current text when it was already sent,
+             also an edited one, and, once the
+             current Tx2 or Tx3 text was sent, the report whatever the row's SNR (its
              period_utc_ms stays the first period; its snr becomes the repeat's SNR when
              that is not null, so it is the latest decode's, #60); beyond 16 the oldest entry is dropped;
              empty for a new contact and cleared by CancelContact)

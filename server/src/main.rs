@@ -17,6 +17,7 @@ mod contact_http_tests;
 #[cfg(test)]
 mod contact_tests;
 mod dxcc;
+mod freeslot;
 mod http_compression;
 #[cfg(test)]
 mod http_compression_tests;
@@ -33,6 +34,7 @@ mod radio_agc;
 mod radio_http;
 #[cfg(all(test, not(debug_assertions)))]
 mod radio_http_tests;
+mod radio_level;
 mod radio_setup;
 #[cfg(test)]
 mod radio_setup_tests;
@@ -340,7 +342,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
             // CL-044-07: the saved audio endpoints' names, before the first /receive.
             let named = state.clone();
-            tokio::task::spawn_blocking(move || radio_setup::startup_names(&named)).await?;
+            tokio::task::spawn_blocking(move || {
+                // CL-044-15: the next free radio, before the CAT lifecycle first ticks.
+                if !env::var("WSTX_RADIO_DISCOVERY").is_ok_and(|v| v == "off")
+                    && let Some(line) = radio_setup::discover_on_start(&named)
+                {
+                    eprintln!("{line}");
+                }
+                radio_setup::startup_names(&named);
+                // CL-044-12: the stored Tx level, before anything can transmit.
+                radio_level::startup(&named);
+            })
+            .await?;
             // WstxContact: the station-wide contact step, whether or not a browser is connected.
             let contacts = state.clone();
             tokio::spawn(async move {
@@ -483,6 +496,7 @@ fn router(state: App) -> Router {
         .route("/radio/operation", post(radio_http::execute).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/radio/detect", post(radio_setup::detect_route).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/radio/settings/apply", post(radio_setup::apply_route).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        .route("/radio/tx-level", post(radio_level::route).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/radio/settings/undo", post(radio_setup::undo_route).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/transmit", get(transmit_http::snapshot))
         .route("/transmit/command", post(transmit_http::execute).layer(axum::extract::DefaultBodyLimit::max(1024)))
@@ -706,6 +720,7 @@ async fn put_profile(
                     "settings.control.ptt",
                     "settings.radio",
                     "settings.radio.agc",
+                    "settings.radio.power_limit_pct",
                 ];
                 return profile_error(
                     StatusCode::BAD_REQUEST,
@@ -1090,15 +1105,19 @@ async fn connection(
     let mut automation_seen: Option<(u64, u64)> = Some((0, 0));
     // #42 WstxStrategy::Alert alert.state: only after a change since this peer subscribed.
     let mut alert_seen: Option<u64> = None;
-    // #40 WstxUdp::UdpDisplayEvent udp.display: the current highlights and clear floors once
-    // a Highlight Callsign or Clear was applied since boot, then after each change.
-    let mut udp_seen: u64 = 0;
     // #44 CL-044-11 radio.agc: the managed AGC and its last read-back, once known, then
     // after each change (the first event is this peer's snapshot).
     let mut agc_seen: u64 = 0;
     // #39 WstxStrategy::HearingFeed pskr.state: after a change since this peer subscribed
     // (the first event follows its GET /pskr snapshot).
     let mut pskr_seen: u64 = 0;
+    // #44 CL-044-13 radio.tx_level: after each change of the level, assistant or meters.
+    let mut tx_level_seen: u64 = 0;
+    // Pushed recording.state: its comparison key (without received_bytes), the last data and when.
+    let mut recording_tick = interval(Duration::from_secs(1));
+    recording_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut recording_seen: Option<(Value, Value, Instant)> = None;
+    let mut profile_seen: Option<u64> = None;
     let mut last_station_tick: Option<Instant> = None;
     let mut tick_transmitting: Option<bool> = None;
     // Events pace by the peer's display subscription; a peer that never chose one
@@ -1179,14 +1198,6 @@ async fn connection(
                         Err(_)=>break,
                     }
                 }
-                if let Some(udp)=r.udp.get() && udp.display_revision()!=udp_seen {
-                    let (revision,text)=udp.display_event(r);
-                    match optional_write(&mut socket,Message::Text(text.into())) {
-                        Ok(None)=>{},
-                        Ok(Some(flushed))=>{udp_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break,
-                    }
-                }
                 if r.agc.revision()!=agc_seen {
                     let (revision,text)=radio_agc::event(r);
                     match optional_write(&mut socket,Message::Text(text.into())) {
@@ -1203,6 +1214,14 @@ async fn connection(
                         Err(_)=>break,
                     }
                 }
+                if r.tx_level.revision()!=tx_level_seen {
+                    let (revision,text)=radio_level::event(r);
+                    match optional_write(&mut socket,Message::Text(text.into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{tx_level_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},
+                        Err(_)=>break,
+                    }
+                }
                 let (text,transmitting)=contact_http::tick_event(r);
                 // Detailed 1 per second; Thin and Off 1 per 5 s; plus transmit start/stop.
                 let every=Duration::from_millis(if display_profile=="detail" {950} else {4950});
@@ -1210,6 +1229,31 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{last_station_tick=Some(Instant::now());tick_transmitting=Some(transmitting);if !flushed {optional_since=Some(Instant::now());}},
+                        Err(_)=>break,
+                    }
+                }
+            }
+            _ = recording_tick.tick(), if subscribed && recording.is_some() => {
+                if !auth_ready { continue; }
+                if optional_since.is_some() {
+                    match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break }
+                }
+                let (revision,text)=recording.as_ref().unwrap().profile_state_event();
+                if profile_seen!=Some(revision) {
+                    match optional_write(&mut socket,Message::Text(text.into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{profile_seen=Some(revision);if !flushed {optional_since=Some(Instant::now());continue;}},
+                        Err(_)=>break,
+                    }
+                }
+                let data=recording.as_ref().unwrap().state_event_data();
+                let mut key=data.clone();
+                if let Some(import)=key["import"].as_object_mut() { import.remove("received_bytes"); }
+                let due=recording_seen.as_ref().is_none_or(|(k,d,at)|*k!=key||(*d!=data&&at.elapsed()>=Duration::from_secs(5)));
+                if due {
+                    match optional_write(&mut socket,Message::Text(json!({"v":1,"type":"recording.state","data":data}).to_string().into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{recording_seen=Some((key,data,Instant::now()));if !flushed {optional_since=Some(Instant::now());}},
                         Err(_)=>break,
                     }
                 }

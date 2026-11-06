@@ -1,13 +1,13 @@
 #![forbid(unsafe_code)]
-// Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-042-01, CL-042-02, CL-042-03,
-// CL-042-04; TC-039-001..005, TC-042-001, TC-042-002, TC-042-004, TC-042-006 (each test names its
+// Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-039-09, CL-042-01, CL-042-02, CL-042-03,
+// CL-042-04; TC-039-001..005, TC-039-010, TC-042-001, TC-042-002, TC-042-004, TC-042-006 (each test names its
 // case below). Hand-authored records and strategies; the expected ranks,
 // grey marks, orders, stop reasons and requests are the WstxStrategy tables written in
 // these tests (geography from the locator square centres), not evaluator output.
 // Integration cases use the actual station router, contact engine and #9 transmit owner
 // on the recording hardware double (virtual UTC; no audio, PTT or radio).
 use super::*;
-use crate::automation_tests::{at_even, publish, run_state, transmit_own_period};
+use crate::automation_tests::{at_even, not_keyed_in, publish, run_state, transmit_own_period};
 use crate::contact_http_tests::{period_text, record};
 use crate::mcp_tests::{Mcp, station};
 use std::sync::atomic::Ordering;
@@ -115,11 +115,18 @@ fn tc_039_002_continent_distance_and_directed_cq_rule() {
         ("DX", Some("EU"), Some("EU"), false),
         ("DX", Some("EU"), Some("AS"), true),
         ("DX", Some("EU"), None, false),
-        ("TEST", Some("EU"), Some("NA"), true),
-        ("POTA", None, None, true),
+        // #39 2026-11-04: every other directive excludes me.
+        ("TEST", Some("EU"), Some("NA"), false),
+        ("POTA", None, None, false),
+        ("JA", Some("EU"), Some("AS"), false),
+        // A non-EU profile (K1ABC, NA).
+        ("NA", Some("NA"), Some("NA"), true),
+        ("EU", Some("NA"), Some("EU"), false),
+        ("DX", Some("NA"), Some("AS"), true),
+        ("DX", Some("NA"), Some("NA"), false),
     ] {
         assert_eq!(
-            addressed_to_me(target, mine, sender),
+            answerable(Some(target), mine, sender),
             expected,
             "CQ {target} mine {mine:?} sender {sender:?}"
         );
@@ -149,26 +156,26 @@ fn tc_039_002_rules_rank_grey_and_order() {
             (5, Some(1), false),
             (6, None, false),
             (7, None, false),
-            (8, Some(0), false),
+            (8, None, true),
         ]
     );
-    assert_eq!(sorted(&s, &records, &st), [8, 0, 1, 3, 5], "strongest");
+    assert_eq!(sorted(&s, &records, &st), [0, 1, 3, 5], "strongest");
     let weak = Strategy {
         sort: Sort::Weakest,
         ..s.clone()
     };
-    assert_eq!(sorted(&weak, &records, &st), [0, 8, 5, 3, 1]);
+    assert_eq!(sorted(&weak, &records, &st), [0, 5, 3, 1]);
     let newest = Strategy {
         sort: Sort::Newest,
         ..s.clone()
     };
-    assert_eq!(sorted(&newest, &records, &st), [8, 0, 5, 3, 1]);
+    assert_eq!(sorted(&newest, &records, &st), [0, 5, 3, 1]);
     // Berlin JO62 705 km, London IO91 823 km, Tokyo PM95 9618 km from JN47AA.
     let far = Strategy {
         sort: Sort::Furthest,
         ..s.clone()
     };
-    assert_eq!(sorted(&far, &records, &st)[2..], [5, 3, 1]);
+    assert_eq!(sorted(&far, &records, &st)[1..], [5, 3, 1]);
     // Treat 73 as CQ: K1ABC's RR73 counts as calling; without a grid its continent is
     // still known from cty.dat (#55), so it matches rule 1.
     let s73 = strat(vec![vec![cq(), na], vec![cq()]], Sort::Strongest, true);
@@ -186,7 +193,7 @@ fn tc_039_002_rules_rank_grey_and_order() {
             .filter(|r| r.1.is_none())
             .map(|r| r.0)
             .collect::<Vec<_>>(),
-        [2, 4]
+        [2, 4, 8]
     );
     // My continent unknown: every continent-directed CQ and CQ DX is greyed.
     let lost = Station {
@@ -199,8 +206,64 @@ fn tc_039_002_rules_rank_grey_and_order() {
             .filter(|r| r.2)
             .map(|r| r.0)
             .collect::<Vec<_>>(),
-        [2, 3, 4, 5]
+        [2, 3, 4, 5, 8]
     );
+    // A non-EU profile: the same rows, seen from North America.
+    let us = Station {
+        my_call: "K2XYZ".into(),
+        my_grid: Some("FN31".into()),
+        my_continent: Some("NA".into()),
+        ..me()
+    };
+    assert_eq!(
+        ranks(&any, &records, &us)
+            .iter()
+            .filter(|r| r.2)
+            .map(|r| r.0)
+            .collect::<Vec<_>>(),
+        [3, 8],
+        "CQ NA is for NA, CQ DX from Finland and Japan too; CQ EU and CQ TEST are not"
+    );
+}
+
+// Proves: TC-039-002
+#[test]
+fn tc_039_002_my_continent_from_config_call_and_locator() {
+    let table = crate::dxcc::Table::default();
+    let open = Config::default();
+    let set = Config {
+        continent: Some("OC".into()),
+        ..Config::default()
+    };
+    assert_eq!(
+        my_continent(&set, Some("HB9BLA"), Some("JN37"), &table).as_deref(),
+        Some("OC"),
+        "configured first"
+    );
+    assert_eq!(
+        my_continent(&open, Some("HB9BLA"), Some("FN42"), &table).as_deref(),
+        Some("EU"),
+        "the callsign before the locator"
+    );
+    assert_eq!(
+        my_continent(&open, Some("K1ABC"), None, &table).as_deref(),
+        Some("NA")
+    );
+    // A call without an entity: the nearest cty.dat entity to the locator.
+    for (grid, continent) in [
+        ("JN37", "EU"),
+        ("FN42", "NA"),
+        ("PM95", "AS"),
+        ("QF56", "OC"),
+        ("GG87", "SA"),
+    ] {
+        assert_eq!(
+            my_continent(&open, Some("K1ABC/MM"), Some(grid), &table).as_deref(),
+            Some(continent),
+            "{grid}"
+        );
+    }
+    assert_eq!(my_continent(&open, None, None, &table), None);
 }
 
 // Proves: TC-039-002
@@ -221,7 +284,7 @@ fn tc_039_002_each_condition_and_its_negation() {
         m.sort();
         m
     };
-    let all_cq = [0, 1, 3, 5, 8];
+    let all_cq = [0, 1, 3, 5];
     let negated = |mut c: Value| {
         c["negate"] = json!(true);
         c
@@ -229,15 +292,15 @@ fn tc_039_002_each_condition_and_its_negation() {
     for (c, expected) in [
         (
             json!({"kind":"new_call","negate":false,"value":"ever"}),
-            vec![3, 5, 8],
+            vec![3, 5],
         ),
         (
             json!({"kind":"new_call","negate":false,"value":"band"}),
-            vec![0, 3, 5, 8],
+            vec![0, 3, 5],
         ),
         (
             json!({"kind":"new_grid","negate":false,"value":"ever"}),
-            vec![0, 3, 5, 8],
+            vec![0, 3, 5],
         ),
         (
             json!({"kind":"continent","negate":false,"values":["EU","AS"]}),
@@ -245,15 +308,15 @@ fn tc_039_002_each_condition_and_its_negation() {
         ),
         (
             json!({"kind":"distance_km","negate":false,"min":5000,"max":null}),
-            vec![0, 5, 8],
+            vec![0, 5],
         ),
         (
             json!({"kind":"azimuth_deg","negate":false,"min":250,"max":320}),
-            vec![0, 3, 8],
+            vec![0, 3],
         ),
         (
             json!({"kind":"snr_db","negate":false,"min":-10,"max":-2}),
-            vec![1, 3, 8],
+            vec![1, 3],
         ),
         (
             json!({"kind":"dt_s","negate":false,"min":0,"max":0.2}),
@@ -269,7 +332,7 @@ fn tc_039_002_each_condition_and_its_negation() {
         ),
         (
             json!({"kind":"cq_target","negate":false,"values":["TEST","DX"]}),
-            vec![5, 8],
+            vec![5],
         ),
         (
             json!({"kind":"band","negate":false,"values":["40m"]}),
@@ -281,7 +344,7 @@ fn tc_039_002_each_condition_and_its_negation() {
         ),
         (
             json!({"kind":"message","negate":false,"value":"directed_cq"}),
-            vec![3, 5, 8],
+            vec![3, 5],
         ),
     ] {
         assert_eq!(matching(c.clone()), expected, "{c}");
@@ -321,28 +384,7 @@ fn tc_039_002_each_condition_and_its_negation() {
     );
     let v = evaluate(&s, &records, &st);
     assert_eq!(v[0].why, "no match (rule 1: SNR 0.. dB)");
-    assert_eq!(v[2].why, "CQ NA is not addressed to my continent (EU)");
-    // Auto: a CQ TEST is answered only when the matched rule asks for TEST.
-    let plain = strat(vec![vec![cq()]], Sort::Newest, false);
-    let asks = strat(
-        vec![vec![
-            cq(),
-            json!({"kind":"cq_target","negate":false,"values":["TEST"]}),
-        ]],
-        Sort::Newest,
-        false,
-    );
-    let row = |s: &Strategy, n: u64| {
-        evaluate(s, &records, &st)
-            .into_iter()
-            .find(|v| v.facts.sequence == n)
-            .unwrap()
-    };
-    assert!(!auto_target_ok(&plain, &row(&plain, 8)) && auto_target_ok(&asks, &row(&asks, 8)));
-    assert!(
-        auto_target_ok(&plain, &row(&plain, 3)),
-        "CQ EU for my continent stays answerable"
-    );
+    assert_eq!(v[2].why, "CQ NA — not for EU");
     assert!(sane_call("K1ABC") && !sane_call("K1") && !sane_call("ABCDE") && !sane_call("W1AW/R"));
 }
 
@@ -867,12 +909,21 @@ async fn tc_039_004_auto_call_follows_the_strategy_and_the_directed_cq_rule() {
             ("CQ JA JA1XYZ PM95", 600.0, Some(9.0)),
             ("CQ 290 N1MM FN31", 700.0, Some(8.0)),
             ("CQ DL1XYZ JO62", 1200.0, Some(0.0)),
-            ("CQ K1ABC FN42", 1500.0, Some(-15.0)),
+            ("CQ K1ABC FN42", 1400.0, Some(-15.0)),
         ],
     );
     assert_eq!(
         contact(&f).await,
         (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    // Proves: CL-039-08; TC-039-009: the strategy's pick moves Rx, Tx stays on its slot.
+    let c = f.read("contact").await;
+    assert_eq!(
+        (
+            c["settings"]["rx_hz"].clone(),
+            c["settings"]["tx_hz"].clone()
+        ),
+        (json!(1400), json!(1500))
     );
     let run = f.read("automation").await["run"].clone();
     assert_eq!(
@@ -1000,21 +1051,659 @@ async fn tc_039_004_auto_cq_answers_a_caller_and_alternates_after_n_tries() {
     assert_eq!(f.keys(), 0);
 }
 
+/// A station that is neither calling nor calling me, on `hz`.
+fn busy(hz: f64) -> (&'static str, f64, Option<f64>) {
+    ("W2XX W3YY -05", hz, Some(-5.0))
+}
+/// (Rx, Tx, the run's slot status).
+async fn frequencies(f: &Mcp) -> (Value, Value, Value) {
+    let settings = f.read("contact").await["settings"].clone();
+    let slot = f.read("automation").await["run"]["tx_slot"].clone();
+    (settings["rx_hz"].clone(), settings["tx_hz"].clone(), slot)
+}
+
+// Proves: CL-039-09; TC-039-010. My Tx parity after answering an even station is odd. Slots
+// worked out by hand: an FT8 signal at f forbids the slots strictly between f-100 and f+100.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_auto_call_takes_a_free_slot_keeps_it_and_changes_it_only_when_busy() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    // The 5th period back (would force 1720 Hz) and the other parity (too) do not count.
+    publish(&f, e - 135_000, &[busy(1320.0)]);
+    publish(&f, e - 105_000, &[busy(2000.0)]);
+    publish(&f, e - 75_000, &[busy(1480.0)]);
+    publish(&f, e - 60_000, &[busy(1290.0)]);
+    publish(&f, e - 45_000, &[busy(1620.0)]);
+    publish(&f, e - 15_000, &[busy(2100.0)]);
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    // 1480 and 1620 forbid 1380 < slot < 1720: my Tx 1500 goes to 1380, Rx to the station.
+    publish(&f, e, &[("CQ K1ABC FN42", 2400.0, Some(-5.0))]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(2400), json!(1380), json!({"hz":1380,"free":true}))
+    );
+    // The whole QSO stays there.
+    publish(&f, e + 30_000, &[("HB9BLA K1ABC -10", 2400.0, Some(-10.0))]);
+    assert_eq!(contact(&f).await.1, json!("roger_report"));
+    assert_eq!(frequencies(&f).await.1, json!(1380));
+    publish(
+        &f,
+        e + 60_000,
+        &[("HB9BLA K1ABC RR73", 2400.0, Some(-10.0))],
+    );
+    assert_eq!(contact(&f).await.1, json!("signoff"));
+    transmit_own_period(&f, e + 15_000).await;
+    assert_eq!(contact(&f).await.1, json!("completed"));
+    assert_eq!(frequencies(&f).await.1, json!(1380));
+    f.tick();
+    // The next call: last 4 odd periods 2650, 2100, 1620, 1480 leave 1380 free; it stays.
+    publish(&f, e + 75_000, &[busy(2650.0)]);
+    publish(&f, e + 90_000, &[("CQ DL1XYZ JO62", 900.0, Some(-5.0))]);
+    assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(900), json!(1380), json!({"hz":1380,"free":true}))
+    );
+    // skip_after 2 gives DL1XYZ up. The slot then becomes busy: the last 4 odd periods
+    // 1400, 2650, 2100, 1620 and the station on 1000 forbid 900..1100, 1300..1500,
+    // 1520..1720, 2000..2200, 2550..2750: 1300 is the nearest to 1380.
+    publish(&f, e + 120_000, &[]);
+    publish(&f, e + 150_000, &[]);
+    publish(&f, e + 165_000, &[busy(1400.0)]);
+    publish(&f, e + 180_000, &[("CQ G4ABC IO91", 1000.0, Some(-5.0))]);
+    assert_eq!(contact(&f).await.0, json!("G4ABC"));
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(1000), json!(1300), json!({"hz":1300,"free":true}))
+    );
+}
+
+// Proves: CL-039-09; TC-039-010.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_never_on_the_called_station_also_with_hold_tx_off() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    // A station on my Tx: 1400 and 1600 tie, the lower.
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-5.0))]);
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(1500), json!(1400), json!({"hz":1400,"free":true}))
+    );
+    // skip_after 2 gives K1ABC up. Hold Tx off: the selection moves Tx, the run takes it back.
+    publish(&f, e + 30_000, &[]);
+    publish(&f, e + 60_000, &[]);
+    assert_eq!(contact(&f).await.2, json!("disarmed"));
+    mcp_contact(&f, "set_hold_tx", json!({"enabled":false})).await;
+    publish(&f, e + 90_000, &[("CQ DL1XYZ JO62", 1700.0, Some(-5.0))]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("DL1XYZ"), json!("replying"), json!("armed"))
+    );
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(1700), json!(1400), json!({"hz":1400,"free":true}))
+    );
+    assert_eq!(f.keys(), 0);
+}
+
+// Proves: CL-039-09; TC-039-010. Signals every 190 Hz leave no FT8 slot in 300..2650.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_a_full_band_keeps_the_tx_still_calls_and_says_so() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    let full: Vec<_> = (0..13).map(|i| busy(f64::from(300 + 190 * i))).collect();
+    publish(&f, e - 15_000, &full);
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ K1ABC FN42", 2400.0, Some(-5.0))]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(2400), json!(1500), json!({"hz":1500,"free":false}))
+    );
+    assert_eq!(f.keys(), 0);
+}
+
+// Proves: CL-039-09; TC-039-010. A full band and a station on my Tx: no free slot, and the call
+// still does not go out on the station: 1400 and 1600 tie for 1500, the lower.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_a_full_band_still_never_calls_on_the_called_station() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    let full: Vec<_> = (0..13).map(|i| busy(f64::from(300 + 190 * i))).collect();
+    publish(&f, e - 15_000, &full);
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-5.0))]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(1500), json!(1400), json!({"hz":1400,"free":false}))
+    );
+}
+
+// Proves: CL-039-09; TC-039-010. 4 periods fill the band; the 3 most recent leave a gap: 1350
+// and 1500 forbid 1250..1600, 1600 is nearest 1500 (1250 is 250 away).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_a_band_filled_over_four_periods_looks_at_fewer() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    let full: Vec<_> = (0..13).map(|i| busy(f64::from(300 + 190 * i))).collect();
+    publish(&f, e - 105_000, &full);
+    publish(&f, e - 75_000, &[busy(1350.0)]);
+    publish(&f, e - 45_000, &[busy(2000.0)]);
+    publish(&f, e - 15_000, &[busy(1500.0)]);
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ K1ABC FN42", 900.0, Some(-5.0))]);
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(900), json!(1600), json!({"hz":1600,"free":true}))
+    );
+}
+
+// Proves: CL-039-09; TC-039-010. A retune on the radio keeps the live job: the signals of the old
+// band say nothing about this one, and those of the new band do.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_signals_of_the_previous_band_do_not_count() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    publish(&f, e - 15_000, &[busy(1500.0)]);
+    f.state.recording.fixture_band("20m");
+    publish(&f, e, &[("CQ K1ABC FN42", 2400.0, Some(-5.0))]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(2400), json!(1500), json!({"hz":1500,"free":true}))
+    );
+    // skip_after 2 gives K1ABC up; a signal on this band counts: 1400 and 1600 tie.
+    publish(&f, e + 30_000, &[]);
+    publish(&f, e + 60_000, &[]);
+    publish(&f, e + 75_000, &[busy(1500.0)]);
+    publish(&f, e + 90_000, &[("CQ DL1XYZ JO62", 2200.0, Some(-5.0))]);
+    assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(2200), json!(1400), json!({"hz":1400,"free":true}))
+    );
+}
+
+// Proves: CL-039-05, CL-039-09; TC-039-010. Between the run's select_row and its Tx
+// move the operator replaces the contact: the set_frequency is refused stale and the operator's
+// contact stands.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_a_double_click_racing_the_slot_move_stays_the_operators() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    let state = f.state.clone();
+    let (id, boot) = (f.id.clone(), f.boot.clone());
+    *f.state
+        .recording
+        .contact
+        .get()
+        .unwrap()
+        .automation
+        .before_slot_move
+        .lock()
+        .unwrap() = Some(Box::new(move || {
+        let (identity, _, records) = state.recording.live_records_after(None, 0).unwrap();
+        let record = records
+            .iter()
+            .find(|r| r["text"] == "CQ DL1XYZ JO62")
+            .unwrap();
+        let row = json!({"source_id":identity.0,"job_id":identity.1,"generation":identity.2,"sequence":record["sequence"]});
+        let station = state.recording.contact.get().unwrap();
+        let body = json!({"v":1,"profile_id":id,"boot_id":boot,"command_id":profile::new_uuid().unwrap(),
+                "contact_revision":station.facts().0,"action":"select_row","row":row,"replace":true});
+        station
+            .operate_as(&state, body, true, authorization::Principal::Browser)
+            .unwrap();
+    }));
+    // K1ABC (strongest) is on my Tx 1500, so the run must move it.
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ K1ABC FN42", 1500.0, Some(-3.0)),
+            ("CQ DL1XYZ JO62", 1200.0, Some(-5.0)),
+        ],
+    );
+    assert_eq!(
+        contact(&f).await.0,
+        json!("DL1XYZ"),
+        "the operator's contact stands"
+    );
+    assert_eq!(run_state(&f).await, ("manual".to_owned(), Value::Null));
+}
+
+// Proves: CL-039-09; TC-039-010. A pounce answers as Auto Call does.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_a_pounce_never_calls_on_the_called_station() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    assert_eq!(pounce(&f, "K1ABC", 5).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-5.0))]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(1500), json!(1400), json!({"hz":1400,"free":true}))
+    );
+}
+
+// Proves: CL-039-09; TC-039-010. Own CQ on odd periods (the station's parity).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_auto_cq_goes_out_from_a_free_slot_and_stays_for_a_caller() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "cq")).await;
+    publish(&f, e - 15_000, &[busy(1500.0)]);
+    // An even period does not count; it would forbid the 1400 Hz slot.
+    publish(&f, e, &[busy(1350.0)]);
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    f.tick();
+    assert_eq!(contact(&f).await.2, json!("armed"));
+    assert_eq!(
+        frequencies(&f).await,
+        (json!(1500), json!(1400), json!({"hz":1400,"free":true}))
+    );
+    // A caller on my own slot is answered from there (no new decision during a QSO).
+    publish(
+        &f,
+        e + 30_000,
+        &[("HB9BLA K1ABC FN42", 1400.0, Some(-10.0))],
+    );
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("report"), json!("armed"))
+    );
+    assert_eq!(frequencies(&f).await.1, json!(1400));
+    assert_eq!(f.keys(), 0);
+}
+
 /// Moves the bench to 30 ms before the own period `own` and ticks until the transmitter
 /// is disarmed (the Tx watchdog refuses to key it).
-async fn not_keyed_in(f: &Mcp, own: i64) {
-    let service = &f.state.recording.transmit.get().unwrap().service;
-    f.bench
-        .offset
-        .fetch_add(own - 30 - f.bench.now_utc_ms(), Ordering::SeqCst);
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while service.view().arm_state == wstx_rust::transmit::service::ArmState::Armed {
-        assert!(Instant::now() < deadline, "{:?}", service.view());
-        f.tick();
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    assert!(!service.view().transmitting);
+// Proves: TC-039-004
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_004_a_double_click_is_a_manual_intervention_and_the_strategy_resumes() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    let run_state =
+        async |f: &Mcp| f.browser("GET", "/automation", None).await.json["run"]["state"].clone();
+    // The run selects K1ABC. The operator double-clicks another station.
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-3.0))]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    publish(&f, e + 15_000, &[("CQ DL1XYZ JO62", 1200.0, Some(-5.0))]);
+    let identity = live_row(&f, "CQ DL1XYZ JO62");
+    let reply = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":identity,"replace":true})).await),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{}", reply.json);
     f.tick();
+    assert_eq!(run_state(&f).await, json!("manual"));
+    assert_eq!(
+        contact(&f).await.0,
+        json!("DL1XYZ"),
+        "the manual contact stands"
+    );
+    assert_eq!(
+        f.browser("GET", "/strategy", None).await.json["configuration"]["active"],
+        json!("NA first")
+    );
+    // While manual the strategy selects nothing.
+    publish(&f, e + 30_000, &[("CQ W1AW FN31", 1000.0, Some(-1.0))]);
+    assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
+    // The manual QSO ends: the strategy resumes and answers the next match.
+    let cancel = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "cancel", json!({})).await),
+        )
+        .await;
+    assert_eq!(cancel.status, StatusCode::ACCEPTED);
+    f.tick();
+    assert_eq!(run_state(&f).await, json!("waiting"));
+    publish(&f, e + 60_000, &[("CQ W1AW FN31", 1000.0, Some(-1.0))]);
+    assert_eq!(contact(&f).await.0, json!("W1AW"));
+    assert_eq!(run_state(&f).await, json!("contact_active"));
+    // Cancelling the run's own contact gives that station up; the strategy goes on.
+    let cancel = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "cancel", json!({})).await),
+        )
+        .await;
+    assert_eq!(cancel.status, StatusCode::ACCEPTED);
+    f.tick();
+    f.tick();
+    assert_eq!(run_state(&f).await, json!("waiting"));
+    publish(&f, e + 90_000, &[("CQ W1AW FN31", 1000.0, Some(-1.0))]);
+    assert_eq!(
+        contact(&f).await.1,
+        json!("cancelled"),
+        "W1AW is not selected again"
+    );
+    publish(&f, e + 120_000, &[("CQ G4ABC IO91", 1000.0, Some(-9.0))]);
+    assert_eq!(contact(&f).await.0, json!("G4ABC"));
+}
+
+// Proves: TC-039-002
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_002_a_selection_of_a_cq_not_for_me_is_a_warning_only_the_browser_confirms() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ NA W1AW FN31", 1000.0, Some(-1.0)),
+            ("CQ EU G4ABC IO91", 1100.0, Some(-2.0)),
+        ],
+    );
+    let (na, eu) = (
+        live_row(&f, "CQ NA W1AW FN31"),
+        live_row(&f, "CQ EU G4ABC IO91"),
+    );
+    let w = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":na,"replace":false})).await),
+        )
+        .await;
+    assert_eq!(w.status, StatusCode::CONFLICT, "{}", w.json);
+    assert_eq!(w.json["error"]["code"], "directive_not_answerable");
+    assert_eq!(w.json["error"]["reason"], "CQ NA — not for EU");
+    assert_eq!(
+        contact(&f).await.0,
+        Value::Null,
+        "nothing selected by the warning"
+    );
+    // A client that is not the browser cannot confirm it.
+    let m = mcp_contact(
+        &f,
+        "select_row",
+        json!({"row":na,"replace":false,"directive_confirmed":true}),
+    )
+    .await;
+    assert_eq!(
+        m["result"]["error"]["code"], "directive_not_answerable",
+        "{m}"
+    );
+    assert_eq!(contact(&f).await.0, Value::Null);
+    // The operator's confirmation selects it; a CQ for my continent asks nothing.
+    let c = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(
+                browser_command(
+                    &f,
+                    "select_row",
+                    json!({"row":na,"replace":false,"directive_confirmed":true}),
+                )
+                .await,
+            ),
+        )
+        .await;
+    assert_eq!(c.status, StatusCode::ACCEPTED, "{}", c.json);
+    assert_eq!(contact(&f).await.0, json!("W1AW"));
+    let c = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":eu,"replace":true})).await),
+        )
+        .await;
+    assert_eq!(c.status, StatusCode::ACCEPTED, "{}", c.json);
+    assert_eq!(contact(&f).await.0, json!("G4ABC"));
+    // During a contact the directive is checked before contact_active: a plain click stays silent.
+    publish(&f, e + 30_000, &[("CQ NA W9XYZ EN52", 900.0, Some(-1.0))]);
+    let click = live_row(&f, "CQ NA W9XYZ EN52");
+    let during = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":click,"replace":false})).await),
+        )
+        .await;
+    assert_eq!(during.status, StatusCode::CONFLICT, "{}", during.json);
+    assert_eq!(during.json["error"]["code"], "directive_not_answerable");
+    assert_eq!(contact(&f).await.0, json!("G4ABC"), "the contact stands");
+    // The body key is optional and exact.
+    let bad = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(
+                browser_command(
+                    &f,
+                    "select_row",
+                    json!({"row":eu,"replace":true,"directive_confirmed":"yes"}),
+                )
+                .await,
+            ),
+        )
+        .await;
+    assert_eq!(bad.status, StatusCode::BAD_REQUEST);
+}
+
+// Proves: TC-039-004
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_004_a_manual_qso_while_the_strategy_waits_completes_and_the_strategy_resumes() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    // A row the strategy skips, so the run keeps waiting; the operator confirms and arms it.
+    publish(&f, e, &[("CQ NA W9XYZ EN52", 900.0, Some(-3.0))]);
+    assert_eq!(run_state(&f).await.0, "waiting");
+    browser_ok(
+        &f,
+        "select_row",
+        json!({"row":live_row(&f, "CQ NA W9XYZ EN52"),"replace":false,"directive_confirmed":true}),
+    )
+    .await;
+    let safety = f.read("contact").await["transmit"]["safety_revision"].clone();
+    browser_ok(
+        &f,
+        "enable_tx",
+        json!({"enabled":true,"safety_revision":safety}),
+    )
+    .await;
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "manual");
+    assert_eq!(
+        contact(&f).await,
+        (json!("W9XYZ"), json!("replying"), json!("armed"))
+    );
+    assert_eq!(
+        f.browser("GET", "/strategy", None).await.json["configuration"]["active"],
+        json!("NA first")
+    );
+    // The partner's report and RR73: completed; the strategy waits and answers the next match.
+    publish(&f, e + 30_000, &[("HB9BLA W9XYZ -05", 905.0, Some(-6.0))]);
+    publish(&f, e + 60_000, &[("HB9BLA W9XYZ RR73", 905.0, Some(-6.0))]);
+    transmit_own_period(&f, e + 15_000).await;
+    assert_eq!(contact(&f).await.1, json!("completed"));
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "waiting");
+    publish(&f, e + 120_000, &[("CQ K1ABC FN42", 1500.0, Some(-3.0))]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    assert_eq!(run_state(&f).await.0, "contact_active");
+}
+
+// Proves: TC-039-004
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_004_the_own_cq_a_double_click_a_cancel_and_stop_or_halt_while_manual() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "cq")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "calling_cq");
+    // A cancelled own CQ does not stop the strategy: it calls CQ again.
+    browser_ok(&f, "cancel", json!({})).await;
+    f.tick();
+    f.tick();
+    f.tick();
+    assert_eq!(run_state(&f).await, ("calling_cq".to_owned(), Value::Null));
+    // A double-click during the own CQ: manual, still armed, the new contact stands.
+    publish(&f, e, &[("CQ NA W9XYZ EN52", 900.0, Some(-3.0))]);
+    browser_ok(
+        &f,
+        "select_row",
+        json!({"row":live_row(&f, "CQ NA W9XYZ EN52"),"replace":true,"directive_confirmed":true}),
+    )
+    .await;
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "manual");
+    assert_eq!(contact(&f).await.0, json!("W9XYZ"));
+    assert_eq!(contact(&f).await.2, json!("armed"));
+    // Stop while manual leaves the operator's contact armed.
+    let a = f.browser("GET", "/automation", None).await.json;
+    let stop = f
+        .browser(
+            "POST",
+            "/automation/command",
+            Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,
+        "command_id":profile::new_uuid().unwrap(),"action":"stop","run_id":a["run"]["id"]})),
+        )
+        .await;
+    assert_eq!(stop.status, StatusCode::ACCEPTED, "{}", stop.json);
+    assert_eq!(
+        contact(&f).await.2,
+        json!("armed"),
+        "the run disarms nothing"
+    );
+    // Halt while manual stops the run halted.
+    browser_ok(&f, "cancel", json!({})).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "calling_cq");
+    publish(&f, e + 30_000, &[("CQ NA W8ABC EN80", 950.0, Some(-3.0))]);
+    let row = live_row(&f, "CQ NA W8ABC EN80");
+    browser_ok(
+        &f,
+        "select_row",
+        json!({"row":row,"replace":true,"directive_confirmed":true}),
+    )
+    .await;
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "manual");
+    let halt = f.browser("POST", "/transmit/halt", Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap()}))).await;
+    assert_eq!(halt.status, StatusCode::ACCEPTED);
+    f.tick();
+    assert_eq!(run_state(&f).await, ("stopped".to_owned(), json!("halted")));
+}
+
+// Proves: TC-039-004
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_004_a_double_click_racing_the_run_selection_stays_the_operators() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    let state = f.state.clone();
+    let (id, boot) = (f.id.clone(), f.boot.clone());
+    // Between the run's select_row and enable_tx the operator replaces the contact.
+    *f.state
+        .recording
+        .contact
+        .get()
+        .unwrap()
+        .automation
+        .before_enable
+        .lock()
+        .unwrap() = Some(Box::new(move || {
+        let (identity, _, records) = state.recording.live_records_after(None, 0).unwrap();
+        let record = records
+            .iter()
+            .find(|r| r["text"] == "CQ DL1XYZ JO62")
+            .unwrap();
+        let row = json!({"source_id":identity.0,"job_id":identity.1,"generation":identity.2,"sequence":record["sequence"]});
+        let station = state.recording.contact.get().unwrap();
+        let body = json!({"v":1,"profile_id":id,"boot_id":boot,"command_id":profile::new_uuid().unwrap(),
+                "contact_revision":station.facts().0,"action":"select_row","row":row,"replace":true});
+        station
+            .operate_as(&state, body, true, authorization::Principal::Browser)
+            .unwrap();
+    }));
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ K1ABC FN42", 1500.0, Some(-3.0)),
+            ("CQ DL1XYZ JO62", 1200.0, Some(-5.0)),
+        ],
+    );
+    f.tick();
+    assert_eq!(
+        contact(&f).await.0,
+        json!("DL1XYZ"),
+        "the operator's contact stands"
+    );
+    assert_eq!(run_state(&f).await, ("manual".to_owned(), Value::Null));
+}
+
+async fn browser_ok(f: &Mcp, action: &str, extra: Value) {
+    let body = browser_command(f, action, extra).await;
+    let r = f.browser("POST", "/contact/command", Some(body)).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{action}: {}", r.json);
+}
+/// The ContactCommand row of the live record with this text.
+fn live_row(f: &Mcp, text: &str) -> Value {
+    let (identity, _, records) = f.state.recording.live_records_after(None, 0).unwrap();
+    let record = records.iter().find(|r| r["text"] == text).unwrap();
+    json!({"source_id":identity.0,"job_id":identity.1,"generation":identity.2,"sequence":record["sequence"]})
+}
+async fn browser_command(f: &Mcp, action: &str, extra: Value) -> Value {
+    let revision = f.read("contact").await["contact_revision"].clone();
+    let mut b = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),"contact_revision":revision,"action":action});
+    b.as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    b
 }
 
 // Proves: TC-039-005
@@ -1029,8 +1718,8 @@ async fn tc_039_005_automation_never_resets_the_tx_watchdog() {
     f.tick();
     assert_eq!(contact(&f).await.1, json!("calling"));
     let halt = f.read("contact").await["transmit"]["halt_state"].clone();
-    // The own CQ counts 1; the caller is an answer (0); the run's selection does not
-    // reset it; the report and its repeat count 1 and 2; the next is never keyed.
+    // The own CQ is Rep 1; the run's reply to the caller is a different message; the
+    // report and its repeat are Rep 1 and 2; the next is never keyed.
     transmit_own_period(&f, e + 15_000).await;
     assert_eq!(f.read("contact").await["watchdog"]["tx_remaining_calls"], 1);
     publish(
@@ -1142,17 +1831,16 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
         "{v}"
     );
     assert!(!armed());
-    // (1) Limit 1 from the browser; an MCP Enable Tx calls CQ, which counts 1.
+    // (1) Limit 1 from the browser; an MCP Enable Tx calls CQ, which is Rep 1.
     browser_watchdog(&f, 1).await;
     assert!(!spent());
     let v = mcp_contact(&f, "enable_tx", json!({"enabled":true,"safety_revision":3})).await;
     assert_eq!(v["status"], 202, "{v}");
     transmit_own_period(&f, e + 15_000).await;
-    assert!(spent());
-    // MCP commands never reset it, and MCP may not lengthen it.
+    assert!(!spent(), "only a stop spends it");
+    // MCP commands never restart it, and MCP may not lengthen it.
     let v = mcp_contact(&f, "set_frequency", json!({"rx_hz":1200,"tx_hz":null})).await;
     assert_eq!(v["status"], 202, "{v}");
-    assert!(spent(), "an MCP command is no operator action");
     let v = mcp_contact(
         &f,
         "set_watchdogs",
@@ -1164,6 +1852,7 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
     let keys = f.keys();
     not_keyed_in(&f, e + 45_000).await;
     assert_eq!(f.keys(), keys);
+    assert!(spent());
     // A station calling me after the stop is no human: the watchdog stays spent.
     publish(&f, e + 30_000, &[("HB9BLA DL1XYZ JO62", 900.0, Some(-7.0))]);
     assert!(spent(), "an answer after the stop does not re-open arming");
@@ -1207,8 +1896,17 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
     );
     assert!(!armed());
     assert_eq!(f.keys(), keys);
-    // (3) A browser action resets it: MCP may arm again.
+    // (3) Another browser request ends nothing; a browser Enable Tx does: MCP may arm again.
     browser_watchdog(&f, 1).await;
+    assert!(spent());
+    let c = f.browser("GET", "/contact", None).await.json;
+    let body = f.command(
+        c["contact_revision"].as_u64().unwrap(),
+        "enable_tx",
+        json!({"enabled":true,"safety_revision":3}),
+    );
+    let r = f.browser("POST", "/contact/command", Some(body)).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.json);
     assert!(!spent());
     let v = mcp_contact(&f, "enable_tx", json!({"enabled":true,"safety_revision":3})).await;
     assert_eq!(v["status"], 202, "{v}");
@@ -1842,6 +2540,9 @@ async fn tc_042_004_pounce_answers_a_73_holding_tx_and_never_an_ignored_or_direc
         ignore(&f, json!("K1ABC"), json!(true)).await.status,
         StatusCode::OK
     );
+    // Hold Tx off: "Hold Tx after a 73" below is the automation's own rule, not the default.
+    mcp_contact(&f, "set_hold_tx", json!({"enabled":false})).await;
+    assert_eq!(f.read("contact").await["settings"]["hold_tx"], json!(false));
     assert_eq!(pounce(&f, "K1ABC", 5).await.status, StatusCode::ACCEPTED);
     // The ignore lists win over the pounce.
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-15.0))]);
@@ -1854,7 +2555,8 @@ async fn tc_042_004_pounce_answers_a_73_holding_tx_and_never_an_ignored_or_direc
     publish(&f, e + 30_000, &[("CQ NA K1ABC FN42", 1500.0, Some(-15.0))]);
     assert_eq!(f.read("contact").await["contact"], Value::Null);
     assert_eq!(run_state(&f).await, ("waiting".into(), Value::Null));
-    // K1ABC ends its QSO with W1AW: answered, my Tx frequency held.
+    // K1ABC ends its QSO with W1AW: answered, my Tx frequency held (TC-039-010: a pounce
+    // takes the free slot, and Hold Tx off moved Tx to the station).
     let tx = f.read("contact").await["settings"]["tx_hz"].clone();
     publish(&f, e + 60_000, &[("W1AW K1ABC RR73", 1700.0, Some(-9.0))]);
     let c = f.read("contact").await;

@@ -24,19 +24,20 @@ package WstxStrategy {
             and mode (NewEntity). DXCC and CQ/ITU zone list conditions and the rarest
             sort are not offered yet (CL-039-07).
          D3 Treat 73 as CQ: an RR73 or 73 that ends another station's QSO counts as
-            calling for message type cq, in Highlight and Auto; Auto then keeps my Tx
-            frequency (Hold Tx) so the answer never lands on the final 73.
+            calling for message type cq, in Highlight and Auto; Auto answers from its free
+            Tx slot (FreeTxSlot) so the answer never lands on the final 73.
          D4 Auto roles in the first version: Auto Call (answer the best matching CQ),
             Auto CQ (call CQ, answer the best caller) and Alternate (switch between them
             after switch_after consecutive tries without a contact).
-         D5 No QSO or time limit is offered: the Tx watchdog bounds Auto
+         D5 No QSO or time limit is offered: the Tx watchdog bounds each message of Auto
             (WatchdogFromOperator). The browser's Auto sends the WstxMcp run bounds at
             their maxima (max_contacts 100, max_run_minutes 480).
          D6 Skip after N: a station given up after skip_after partner periods without an
             answer is skipped for the rest of the run; the run goes on (no stop).
-         D7 Manual intervention ends Auto (the existing WstxMcp contact_changed stop); a
-            second Auto click starts it again. The first Auto use in a page session asks
-            for confirmation once.
+         D7 Manual intervention (operator decision #39, 2026-11-04): a double-click is
+            always possible, also during a strategy; the strategy stays selected and resumes
+            after the manual QSO (ManualIntervention). The first Auto use in a page session
+            asks for confirmation once.
          D8 Out (operator decision on #42): band hopping, also as a suggestion; Rapid
             RR73; unauthenticated UDP control; shell-command alerts.
          D9 Ignore lists (#42, IgnoreLists): a permanent list in Settings > General and a
@@ -203,14 +204,11 @@ package WstxStrategy {
              (a contact armed by the run is disarmed).
              Waiting: on each fresh complete publication the candidates are the decoded
              standard records from exactly the pounce call that are a CQ not greyed by
-             DirectedCqRule (my continent as configured in the strategy store, else
-             derived), or an RR73/73 to another call than mine (D3, always for a pounce),
-             and whose sender is not ignored (IgnoreLists, both tiers; the ignore lists
-             win); a CQ with any other target (TEST, POTA, a country, a number) is
-             answered, since the operator chose the station. The first by sequence is
-             answered exactly as Auto Call answers (select_row {replace false}, after an
-             RR73/73 set_frequency keeping my Tx frequency (Hold Tx), enable_tx with the
-             run's safety revision), so the contact engine calls it in the next own period
+             DirectedCqRule (MyContinent), or an RR73/73 to another call than mine (D3, always
+             for a pounce), and whose sender is not ignored (IgnoreLists, both tiers; the
+             ignore lists win). The first by sequence is
+             answered exactly as Auto Call answers (select_row {replace false}, FreeTxSlot,
+             enable_tx with the run's safety revision), so the contact engine calls it in the next own period
              and Auto Seq runs the QSO; last_decision as for every run. Nothing from the
              call: the run keeps waiting (no try is counted, no stop).
              In the contact: completed stops completed (the pounce ends on success,
@@ -293,20 +291,55 @@ package WstxStrategy {
              with both off nothing is announced (the history still lists it). */
     }
     calc def DirectedCqRule {
-        in target : String;
+        in target : String[0..1];
         in myContinent : String[0..1];
         in senderContinent : String[0..1];
-        return addressedToMe : Boolean;
-        doc /* The hard rule, applied before any strategy: a CQ "CQ x" with x one of the
-             seven continent codes is addressed to me only when x is my continent; "CQ DX"
-             only when both continents are known and differ (a CQ DX from my own continent,
-             or from an unknown one, is not for me); any other target (TEST, POTA, a
-             number, a country) is not continent-directed: Highlight leaves it to the
-             rules, and Auto answers it only when the matched rule has a non-negated
-             cq_target condition listing that target (AutoTarget), so a country-directed
-             CQ such as CQ JA is never answered by default. A CQ not addressed to me is greyed in Band Activity, never matches
-             a rule and is never answered by Auto. My continent unknown: every continent-
-             directed CQ and CQ DX is greyed. */
+        return answerable : Boolean;
+        doc /* The one directive rule of strategies and the operator (operator decision #39,
+             2026-11-04), applied before any strategy and one function in the station. A CQ
+             is answerable when its directive does not exclude me: a plain CQ (no target);
+             "CQ x" with x my continent; "CQ DX" when both continents are known and differ.
+             Every other directive is not answerable: another continent or region (NA, JA,
+             SA, ...), any other word (TEST, POTA, a number), CQ DX from my own or an unknown
+             continent, and with my continent unknown every directive. A record that is no
+             CQ has no directive and is answerable. Its text is "CQ x — not for <my continent>"
+             ("not for this station" when unknown).
+             My continent: MyContinent.
+             A strategy skips a CQ that is not answerable: it is greyed in Band Activity,
+             never matches a rule and is never answered by a run or a pounce. An operator's
+             selection of such a row (double-click, Reply, Select, the other-calls list) is
+             refused directive_not_answerable (409 with error.reason = this text); the
+             browser shows it as a warning the operator can confirm, and only then sends
+             select_row again with the optional directive_confirmed true. The directive is checked
+             before contact_active, so during a contact a plain click (select_row without replace) on
+             such a row is refused this way too and offers nothing (CL-037-05); a double-click warns. A command that is
+             not the browser's (automation, MCP, UDP) can never confirm it: its select_row is
+             refused directive_not_answerable also with directive_confirmed. */
+    }
+    calc def MyContinent {
+        in configured : String[0..1];
+        in callsign : String[0..1];
+        in locator : String[0..1];
+        return continent : String[0..1];
+        doc /* The configured continent (StrategyConfiguration continent) when set; else
+             ContinentOfCall of the profile callsign; else, when the call has no entity
+             (/MM, /AM, unknown prefix), the continent of the cty.dat entity whose centre
+             is nearest to the centre of the profile locator; else none. */
+    }
+    attribute def ManualIntervention {
+        doc /* A strategy run (OperatingAutomation with strategy true) and a manual contact
+             (operator decision #39, 2026-11-04). The run never disarms or cancels it and
+             does not stop: when a contact it did not select is on the engine (a double-click,
+             Reply or DX entry replacing its contact, or made while it waits), the run state
+             is manual until that contact is no longer active (completed, cancelled or
+             logged), then waiting: it resumes. While manual it selects nothing. The operator
+             cancelling or aborting the run's own contact (F4, Esc) gives that station up for
+             the rest of the run (it is not selected again) and the run goes on waiting; a
+             cancelled own CQ of a run in role cq or alternate lets the run call CQ again at
+             its next step. A command of the run refused because the operator's contact
+             arrived first (the double-click racing its select_row or enable_tx) makes it
+             manual too: it cancels and disarms nothing.
+             A pounce and an MCP run keep their contact_changed stop. HALT stops every run. */
     }
     attribute def Verdict {
         attribute sequence : Integer;
@@ -316,8 +349,8 @@ package WstxStrategy {
              an ignored sender (IgnoreLists) has rank null, grey false; else grey per
              DirectedCqRule; else rank = index (0-based) of the first rule all of
              whose conditions hold, null when none. why (explain only): "matches rule n",
-             "no match (rule n: <first failing condition>; ...)", "CQ x is not
-             addressed to my continent (c)" or "<call> is ignored (session list)" /
+             "no match (rule n: <first failing condition>; ...)", the DirectedCqRule text
+             "CQ x — not for c" or "<call> is ignored (session list)" /
              "(permanent list)". Display order: rank ascending, then the sort
              (strongest: SNR descending, weakest: SNR ascending, furthest: distance
              descending, newest: sequence descending; unknown values last), then sequence;
@@ -393,26 +426,24 @@ package WstxStrategy {
              starts as Auto Call, Cq as Auto CQ; a saved role other than alternate applies
              at the next step.
              Auto Call (waiting): on each fresh complete publication the candidates are
-             the verdicts with a rank, cq-like (D3), not greyed, a CQ target other than a
-             continent or DX only when the matched rule asks for it with a non-negated
-             cq_target condition, a sane call (SaneCall), not ignored (IgnoreLists: no
+             the verdicts with a rank, cq-like (D3), not greyed (DirectedCqRule), a sane call (SaneCall), not ignored (IgnoreLists: no
              rank),
              not mine, not completed or skipped in this run, one per call, in display
-             order; the first is selected (select_row) and armed (enable_tx); an RR73/73
-             candidate keeps the previous Tx frequency (set_frequency). No candidate: one
-             try.
-             Auto CQ (waiting in role cq): enable_tx with no contact in progress (a new
-             own CQ, calling_cq). On each fresh partner-parity publication the callers are
+             order; the first is selected (select_row), Tx takes its free slot (FreeTxSlot)
+             and it is armed (enable_tx). No candidate: one try.
+             Auto CQ (waiting in role cq): FreeTxSlot, then enable_tx with no contact in
+             progress (a new own CQ, calling_cq). On each fresh partner-parity publication the callers are
              the messages to my call that are not RR73/73 (no tailender after their sign-
              off), from a sane, not ignored (IgnoreLists), not completed or skipped call, matching the strategy only
              when apply_to_callers, in display order (all rank 0 otherwise); the first is
              selected (the armed CQ becomes that contact). No caller: one try.
              Alternate: switch_after consecutive tries switch Call -> CQ or CQ -> Call
              (the CQ is cancelled); a contact resets the tries.
+             A contact the run did not select: ManualIntervention.
              In a contact: completion counts and returns to waiting (CQ again in role
              cq); skip_after partner periods without progress give the station up (D6),
              disarm and cancel the contact and count a try. All other WstxMcp stops
-             (halted, context, authority, time, contact changed, transmit stopped) are
+             (halted, context, authority, time, transmit stopped) are
              unchanged; a disarm by the Tx watchdog stops tx_watchdog. */
     }
     attribute def HearingFeed {
@@ -471,26 +502,64 @@ package WstxStrategy {
              Tests: WSTX_PSKR=off opens no connection; WSTX_PSKR=tcp:<loopback>:<port> speaks
              plain MQTT to a local peer; nothing else can replace the broker. */
     }
+    attribute def FreeTxSlot {
+        doc /* A strategy run or a pounce (not a plain MCP policy run, not manual operation)
+             calls from a free audio slot (operator decision 2026-11-04, #39). Decided once
+             per call, between QSOs: when Auto Call or a pounce has selected its candidate,
+             and when Auto CQ starts a new own CQ; never during a contact or a running CQ.
+             Occupied: every decoded record of the last 4 periods of my Tx parity (the
+             parity after the selection) that decoded anything, among the records of
+             complete publications; a period I transmitted in decodes nothing and is not
+             counted, so older periods are used rather than none. Fewer periods: those
+             there are. Auto Call and a pounce add the called station's frequency, which is
+             not on my parity. When these 4 periods leave no free slot (a busy band), the 3,
+             then 2, then the 1 most recent are looked at, with the called station in each
+             look; a free slot found so is free.
+             Band: a retune on the radio keeps the live job, so on each fresh publication
+             the run compares the station band (station_band); from a change on, only
+             publications after the one that showed it count. A retune before the run or
+             within a band is not seen: the old signals age out with the periods.
+             Signal width, from the record's frequency_hz upwards: FT8 50 Hz, FT4 90 Hz,
+             mine alike. A slot is free when 50 Hz or more separate my signal from every
+             occupied signal, and my whole signal lies inside 300..2700 Hz within the Tx
+             range (FrequencyControls): FT8 slots 300..2650, FT4 300..2610.
+             Choice: the free slot nearest the current Tx, then the lowest, so a free
+             current Tx is kept and a new slot is chosen only when the current one has
+             become busy. The decision may instead be asked for the free slot nearest a list
+             of preferred frequencies, then nearest the current Tx, then the lowest.
+             No free slot even in the latest period: Tx keeps the current frequency unless it
+             is too near the called station (Tx is never on the called station: then the
+             slot nearest the current Tx, then the lowest, that is free of that station
+             alone), the call still goes out (no refusal), and the status says so: the run's
+             tx_slot {hz, free false} (WstxMcp), and "no free Tx slot" in the station bar's
+             automation text.
+             Tx is moved with set_frequency only when it is not on the slot (with Hold Tx
+             off the selection has moved it to the station: it goes back). The Tx stays on
+             the slot for the whole QSO: answering a caller of my CQ never moves it, also
+             when the caller calls on my frequency, and the "may" of the operator's rule (Tx
+             to the partner's frequency once the QSO is established) is not taken, so
+             there is nothing to return from. The next decision starts from the Tx the
+             operator may have set meanwhile. */
+    }
     calc def SaneCall {
         in call : String;
         return sane : Boolean;
         doc /* At least 3 characters with a digit and a letter, not ending /R (rover). */
     }
     attribute def WatchdogFromOperator {
-        doc /* The Tx watchdog counts unanswered own transmissions (WstxContact::TxWatchdog,
-             operator redefinition 2026-11-04) and is never paused or reset by
-             automation. Only an answer (a decoded message addressed to my call from the
-             partner, or from anyone to my CQ) or a human action in the browser resets
-             it: an Enable Tx, any accepted ContactCommand or an Auto start sent by the
-             browser (principal browser, WstxProfiles::RequestPrincipalRule: read from
-             the credential at the auth boundary, so an MCP client is never one on any
-             route, #58). Never operator actions: commands of a run (select_row,
-             set_frequency, enable_tx, cancel, disarm), any MCP request (also starting or
-             restarting a run) and any UDP command (Reply, Free Text). Such an enable_tx
-             arms with the count kept and is refused tx_watchdog when the limit is used
-             up or no browser action was seen this boot (until a human acts in the
-             browser; after a watchdog stop an answer no longer resets it); a run selecting a new station does not reset
-             it; only the browser may change the watchdog setting (set_watchdogs from any
+        doc /* The Tx watchdog limits the repetitions of one message
+             (WstxContact::TxWatchdog, operator rule 2026-11-06) and is never paused by
+             automation; a new message or station restarts the repetition count, so it
+             bounds a run per message, not in total (max_run_minutes bounds the run). A
+             human action in the browser is an accepted ContactCommand or an Auto start
+             sent by the browser (principal browser, WstxProfiles::RequestPrincipalRule:
+             read from the credential at the auth boundary, so an MCP client is never one
+             on any route, #58). Only an Enable Tx or an Auto start from the browser ends
+             a watchdog stop. Never operator actions: commands of a run (select_row,
+             set_frequency, enable_tx, cancel, disarm) and any MCP request (also starting or
+             restarting a run). Such an enable_tx
+             is refused tx_watchdog after a watchdog stop or when no browser action was
+             seen this boot; only the browser may change the watchdog setting (set_watchdogs from any
              other source is refused operator_required). At the limit Enable Tx goes off
              without a halt and a run stops tx_watchdog.
              Halt from any source stops the run; grant, clock, period and safety-revision
@@ -505,9 +574,14 @@ package WstxStrategy {
     dependency pouncePath from Pounce to WstxMcp::OperatingAutomation;
     dependency alertClause from Alert to WstxRequirements::'CL-042-04';
     dependency directedClause from DirectedCqRule to WstxRequirements::'CL-039-03';
+    dependency myContinentClause from MyContinent to WstxRequirements::'CL-039-03';
+    dependency manualClause from ManualIntervention to WstxRequirements::'CL-039-05';
     dependency highlightClause from HighlightView to WstxRequirements::'CL-039-04';
     dependency editorClause from StrategyEditor to WstxRequirements::'CL-039-04';
     dependency autoClause from AutoStrategyRun to WstxRequirements::'CL-039-05';
+    dependency freeSlotClause from FreeTxSlot to WstxRequirements::'CL-039-09';
+    dependency freeSlotRun from AutoStrategyRun to FreeTxSlot;
+    dependency freeSlotPounce from Pounce to FreeTxSlot;
     dependency watchdogClause from WatchdogFromOperator to WstxRequirements::'CL-039-06';
     dependency automationPath from AutoStrategyRun to WstxMcp::OperatingAutomation;
     dependency hearingClause from HearingFeed to WstxRequirements::'CL-039-20';

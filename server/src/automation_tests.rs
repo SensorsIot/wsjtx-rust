@@ -266,6 +266,21 @@ pub(crate) async fn run_state(f: &Mcp) -> (String, Value) {
     )
 }
 /// One own (odd) transmission of the pending request in period `own`, run to completion.
+pub(crate) async fn not_keyed_in(f: &Mcp, own: i64) {
+    let service = &f.state.recording.transmit.get().unwrap().service;
+    // The Tx watchdog stops 1.2 s into the due period.
+    f.bench
+        .offset
+        .fetch_add(own + 1_300 - f.bench.now_utc_ms(), Ordering::SeqCst);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while service.view().arm_state == wstx_rust::transmit::service::ArmState::Armed {
+        assert!(Instant::now() < deadline, "{:?}", service.view());
+        f.tick();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(!service.view().transmitting);
+    f.tick();
+}
 pub(crate) async fn transmit_own_period(f: &Mcp, own: i64) {
     let service = &f.state.recording.transmit.get().unwrap().service;
     f.bench
@@ -727,6 +742,24 @@ fn owner(f: &Mcp) -> Arc<contact_http::Station> {
 }
 fn skew(f: &Mcp, d: Duration) {
     *owner(f).automation.skew.lock().unwrap() = d;
+}
+
+// Proves: CL-039-09; TC-039-010. A plain MCP policy run decides no slot.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_a_plain_policy_run_keeps_its_tx_on_the_called_station() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    run(&f, config_json(), "ft8").await;
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-12.0))]);
+    let c = f.read("contact").await;
+    assert_eq!(c["contact"]["dx_call"], "K1ABC");
+    assert_eq!(c["settings"]["tx_hz"], 1500);
+    assert_eq!(
+        f.read("automation").await["run"]["tx_slot"],
+        Value::Null,
+        "no slot decision"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -37,6 +37,10 @@ pub const STOP_TOLERANCE_HZ: f64 = 50.0;
 /// A request is planned for the first period whose start window is still open this
 /// long from now, so it never turns stale between admission and keying.
 pub const LEAD_MS: i64 = 1000;
+/// WstxContact::TxWatchdog: the stop waits this long into the due period, past the latest
+/// live decode measured (#47: up to 1.1 s after the FT8 period start), so a partner
+/// message that changes the next message still counts. Nothing is planned meanwhile.
+const WATCHDOG_STOP_AFTER_DUE_MS: i64 = 1200;
 const COUNTED_KEYS: usize = 4096;
 
 pub fn period_ms(mode: Mode) -> i64 {
@@ -627,7 +631,8 @@ impl Default for Settings {
             tx1_skip: false,
             rx_hz: 1500,
             tx_hz: 1500,
-            hold_tx: false,
+            // #39 CL-039-08 (operator 2026-11-04): on by default; a selection never moves Tx.
+            hold_tx: true,
             // WSJT-X m_txFirst default false: transmit in the second (odd) period.
             parity: Parity::Odd,
             report: REPORT_DEFAULT,
@@ -686,8 +691,12 @@ pub struct Exchanged {
     pub snr: Option<i32>,
     /// The first period of this entry (Unix ms).
     pub period_ms: i64,
-    /// Consecutive equal messages (same direction and text) merged into this entry.
+    /// Repetitions merged into this entry: a message equal to the newest entry of its
+    /// direction, also across a message of the other direction (shown as Rep).
     pub count: u32,
+    /// An operator Enable Tx closed this entry: the next equal transmission opens a new
+    /// one, so a station stopped by the Tx watchdog may send the same message again.
+    pub closed: bool,
 }
 /// A partner message to my call as the QSO pane shows it (#37).
 #[derive(Clone, Debug, PartialEq)]
@@ -700,9 +709,9 @@ pub struct Heard {
 }
 impl Contact {
     fn exchanged(&mut self, tx: bool, text: &str, snr: Option<i32>, period_ms: i64) {
-        if let Some(last) = self.dialogue.back_mut()
-            && last.tx == tx
+        if let Some(last) = self.dialogue.iter_mut().rev().find(|e| e.tx == tx)
             && last.text == text
+            && !last.closed
         {
             last.count = last.count.saturating_add(1);
             // #60: the QSO pane shows the latest decode's SNR of a repeated message.
@@ -720,7 +729,18 @@ impl Contact {
             snr,
             period_ms,
             count: 1,
+            closed: false,
         });
+    }
+    /// WstxContact::TxWatchdog: the Rep of the transmitted `text`, 0 when the next
+    /// transmission of it opens a new entry.
+    fn repetitions(&self, text: &str) -> u32 {
+        self.dialogue
+            .iter()
+            .rev()
+            .find(|e| e.tx)
+            .filter(|e| e.text == text && !e.closed)
+            .map_or(0, |e| e.count)
     }
     fn heard(&mut self, row: &Row, period_ms: i64) {
         let snr = row.snr_db.map(|s| s.round() as i32);
@@ -787,6 +807,8 @@ pub enum Command {
         replace: bool,
     },
     Cancel,
+    /// #39 Abort QSO (Esc): Cancel, and the current transmission stops now.
+    Abort,
     ChooseNext(Slot),
     EditMessage(Slot, String),
     SetReport(i32),
@@ -1029,16 +1051,50 @@ impl Engine {
         let (Some(call), Some(grid4)) = (ctx.call.clone(), ctx.grid4()) else {
             return Err("profile_incomplete");
         };
-        let tx4 = tx4_default(mode);
-        let messages = self
-            .generate(&call, &grid4, Some(&dx), report, tx4)
-            .ok_or("invalid_call")?;
         // The same partner in the other mode is a different contact (ContactMode).
         let same = self
             .contact
             .as_ref()
             .is_some_and(|c| c.dx_call.as_deref() == Some(dx.as_str()) && c.mode == mode);
         let active = self.contact.as_ref().is_some_and(|c| c.state.active());
+        // A report already sent to the same active partner stays: another SNR on a click
+        // must not make a new message, whose Rep would restart the Tx watchdog.
+        let report_sent = self
+            .contact
+            .as_ref()
+            .filter(|_| active && same)
+            .is_some_and(|c| {
+                [Slot::Tx2, Slot::Tx3].iter().any(|slot| {
+                    c.messages[slot.index()]
+                        .as_deref()
+                        .is_some_and(|m| c.dialogue.iter().any(|e| e.tx && e.text == m))
+                })
+            });
+        let report = if report_sent {
+            self.settings.report
+        } else {
+            report
+        };
+        // The same active partner keeps the chosen Tx4 form.
+        let tx4 = self
+            .contact
+            .as_ref()
+            .filter(|_| active && same)
+            .map_or_else(|| tx4_default(mode), |c| c.tx4);
+        let mut messages = self
+            .generate(&call, &grid4, Some(&dx), report, tx4)
+            .ok_or("invalid_call")?;
+        // A text already sent to the same active partner stays, also when it was edited:
+        // regenerating it would make a new message, whose Rep restarts the Tx watchdog.
+        if let Some(c) = self.contact.as_ref().filter(|_| active && same) {
+            for (new, old) in messages.iter_mut().zip(&c.messages) {
+                if let Some(old) = old
+                    && c.dialogue.iter().any(|e| e.tx && e.text == *old)
+                {
+                    *new = Some(old.clone());
+                }
+            }
+        }
         // Re-selecting a decoded row of the same partner without a grid (e.g. their
         // report) keeps the grid already known, as WSJT-X keeps its DX Grid (#11); a
         // manual entry sets exactly the grid entered.
@@ -1071,6 +1127,12 @@ impl Engine {
             first
         };
         let state = State::of_slot(first);
+        // The same active partner keeps its dialogue: its Rep is the Tx watchdog's count.
+        let dialogue = self
+            .contact
+            .as_mut()
+            .filter(|_| active && same)
+            .map_or_else(VecDeque::new, |c| std::mem::take(&mut c.dialogue));
         self.contact = Some(Contact {
             id,
             origin,
@@ -1096,7 +1158,7 @@ impl Engine {
             logged_on_completion: false,
             suggested: None,
             last_rcvd: None,
-            dialogue: VecDeque::new(),
+            dialogue,
         });
         self.settings.report = report;
         Ok(())
@@ -1157,6 +1219,7 @@ impl Engine {
         let capability = core
             .as_ref()
             .map_or(Capability::Unsupported, |c| c.view().capability);
+        let abort = matches!(command, Command::Abort);
         match command {
             Command::SelectRow { row, replace } => {
                 let Some(std) = row.standard.clone() else {
@@ -1289,8 +1352,14 @@ impl Engine {
                     ctx.mode(),
                 )?;
             }
-            Command::Cancel => {
-                Self::disarm(core.as_deref_mut(), DisarmCause::ContactCancelled);
+            Command::Cancel | Command::Abort => {
+                if abort {
+                    if let Some(core) = core.as_deref_mut() {
+                        core.abort(DisarmCause::ContactCancelled);
+                    }
+                } else {
+                    Self::disarm(core.as_deref_mut(), DisarmCause::ContactCancelled);
+                }
                 if let Some(c) = self.contact.as_mut() {
                     if c.state == State::Completed {
                         // A completed contact keeps its fields (Log QSO can re-log it);
@@ -1446,8 +1515,8 @@ impl Engine {
                 tx_calls,
                 tune_seconds,
             } => {
-                // #39: only the operator in the browser may change the watchdogs; an MCP,
-                // UDP or automation source could otherwise lengthen a spent watchdog.
+                // #39: only the operator in the browser may change the watchdogs; an MCP
+                // or automation source could otherwise lengthen a spent watchdog.
                 if ctx.automatic {
                     return Err("operator_required");
                 }
@@ -1494,11 +1563,12 @@ impl Engine {
                 } else {
                     None
                 };
-                // #39: automation arms only within the watchdog time of the last
-                // operator action and never restarts the watchdog.
+                // #39: automation arms only after an operator action this boot and never
+                // after a watchdog stop.
                 if ctx.automatic && core.watchdog_spent() {
                     return Err("tx_watchdog");
                 }
+                let was_armed = core.view().arm_state == ArmState::Armed;
                 let armed = if ctx.automatic {
                     core.arm_automatic(revision)
                 } else {
@@ -1543,6 +1613,15 @@ impl Engine {
                         dialogue: VecDeque::new(),
                     });
                 }
+                if !ctx.automatic
+                    && !was_armed
+                    && let Some(last) = self
+                        .contact
+                        .as_mut()
+                        .and_then(|c| c.dialogue.iter_mut().rev().find(|e| e.tx))
+                {
+                    last.closed = true;
+                }
             }
             Command::Tune(enabled) => {
                 if enabled && (capability == Capability::Unsupported || !ctx.granted) {
@@ -1575,10 +1654,12 @@ impl Engine {
                 self.to_log.push((LogKind::LogQso, c.clone()));
             }
         }
-        // Accepted operating activity resets the Tx watchdog (WstxContact::TxWatchdog);
-        // automation is not operating activity (#39).
-        if let Some(core) = core.filter(|_| !ctx.automatic) {
-            core.activity();
+        // A human was seen (WstxContact::TxWatchdog); automation is no operator (#39).
+        if let Some(core) = core {
+            if !ctx.automatic {
+                core.activity();
+            }
+            self.report_repetitions(core);
         }
         Ok(())
     }
@@ -1696,7 +1777,7 @@ impl Engine {
                         }
                         self.requests.remove(position);
                     }
-                    OutcomeKind::Halted => {
+                    OutcomeKind::Halted | OutcomeKind::Aborted => {
                         self.requests.remove(position);
                         self.pending = None;
                     }
@@ -1727,7 +1808,6 @@ impl Engine {
                 }
             }
         }
-        self.answer_resets_watchdog(core.as_deref_mut(), ctx, rows);
         let hound = self.is_hound();
         if hound {
             self.hound_rows(core.as_deref_mut(), ctx, rows);
@@ -1811,8 +1891,10 @@ impl Engine {
                         && let Some(core) = core.as_deref_mut()
                     {
                         let view = core.view();
+                        // Normal flow never halts (WstxTransmit::TransmitHaltUse): the
+                        // transmission on top of the partner's QSO stops by an abort.
                         if view.transmitting {
-                            core.halt();
+                            core.abort(DisarmCause::Operator);
                         } else if view.arm_state == ArmState::Armed {
                             core.disarm(DisarmCause::Operator);
                         }
@@ -1851,6 +1933,7 @@ impl Engine {
             if view.arm_state == ArmState::Armed {
                 self.submit(core, ctx);
             }
+            self.report_repetitions(core);
         }
         let fingerprint = self.fingerprint(core.as_deref());
         if fingerprint != self.fingerprint {
@@ -1967,6 +2050,18 @@ impl Engine {
         let now = ctx.now_utc_ms;
         let mode = c.mode;
         let next = c.next;
+        // WstxContact::TxWatchdog: nothing is planned for a send beyond the limit; a
+        // partner message may still change the next message until 1.2 s into its period.
+        // A request still pending would key, so it stops at once; after the Nth send none is.
+        if c.repetitions(&text) >= core.tx_limit() {
+            let due = self.last_started_period.map_or(now, |p| {
+                transmit::next_period(mode, p + period_ms(mode), self.settings.parity)
+            });
+            if self.pending.is_some() || now >= due + WATCHDOG_STOP_AFTER_DUE_MS {
+                core.watchdog_stop();
+            }
+            return;
+        }
         let floor = self
             .last_started_period
             .map_or(now + LEAD_MS, |p| (now + LEAD_MS).max(p + period_ms(mode)));
@@ -2140,31 +2235,14 @@ impl Engine {
         self.hound.reply = HoundReply::Pending;
         self.hound.reply_deadline = Some(ctx.now_utc_ms + 11 * period_ms(mode));
     }
-    /// WstxContact::TxWatchdog (#39): a decoded message addressed to my call from the
-    /// contact's partner (from anyone while no partner is set, e.g. my CQ), sent after
-    /// my last transmission started, is an answer and resets the unanswered count.
-    fn answer_resets_watchdog<H: Hardware>(
-        &self,
-        core: Option<&mut Core<H>>,
-        ctx: &Ctx,
-        rows: &[Row],
-    ) {
-        let (Some(core), Some(my), Some(last)) =
-            (core, ctx.call.as_deref(), self.last_started_period)
-        else {
-            return;
-        };
-        let partner = self.contact.as_ref().and_then(|c| c.dx_call.as_deref());
-        let answer = rows.iter().any(|row| {
-            row.period_start_ms.is_some_and(|p| p > last)
-                && row.standard.as_ref().is_some_and(|std| {
-                    std.to.call() == Some(my)
-                        && partner.is_none_or(|dx| std.from.call() == Some(dx))
-                })
+    /// tx_remaining_calls reads the Rep of the message due next.
+    fn report_repetitions<H: Hardware>(&self, core: &mut Core<H>) {
+        let repetitions = self.contact.as_ref().map_or(0, |c| {
+            c.messages[c.next.index()]
+                .as_deref()
+                .map_or(0, |text| c.repetitions(text))
         });
-        if answer {
-            core.answered();
-        }
+        core.report_tx_repetitions(repetitions);
     }
     /// The reply timeout (MW stopWRTimeout) and the Hound watchdog (HWD) turn Enable Tx off.
     fn hound_timeouts<H: Hardware>(&mut self, core: Option<&mut Core<H>>, now: i64) {

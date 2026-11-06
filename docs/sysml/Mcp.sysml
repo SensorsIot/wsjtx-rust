@@ -56,13 +56,13 @@ package WstxMcp {
             key strategy true lets the station's active strategy choose and order
             candidates (Auto Call), call CQ and answer callers (Auto CQ) or alternate; such
             a run skips an unanswered station instead of stopping no_answer. For every run
-            (D6 included) the Tx watchdog counts unanswered own transmissions; only an
-            answer or a human action in the browser resets it, never the run's commands,
-            an MCP request (including starting or restarting a run) or a UDP command
+            (D6 included) the Tx watchdog limits the repetitions of one message; only an
+            Enable Tx or Auto start from the browser ends its stop, never the run's commands
+            or an MCP request (including starting or restarting a run)
             (WstxStrategy::WatchdogFromOperator, coordinator default for the operator's
-            rule, recorded on #39/#12, 2026-11-02, amending D5/D7; count form 2026-11-04);
-            an MCP Enable Tx or run arm is refused tx_watchdog when the count is used up
-            or no browser action was seen this boot; set_watchdogs through MCP is refused operator_required (only the
+            rule, recorded on #39/#12, 2026-11-02, amending D5/D7; repetition form 2026-11-06);
+            an MCP Enable Tx or run arm is refused tx_watchdog after a stop
+            or when no browser action was seen this boot; set_watchdogs through MCP is refused operator_required (only the
             browser sets the watchdog); a watchdog disarm stops tx_watchdog. */
 
     attribute def McpEndpoint {
@@ -211,7 +211,7 @@ package WstxMcp {
              Exact published values; no tolerance or epsilon. The first candidate is
              chosen, once per publication. */
     }
-    enum def RunState { enum waiting; enum calling_cq; enum contact_active; enum stopped; }
+    enum def RunState { enum waiting; enum calling_cq; enum contact_active; enum manual; enum stopped; }
     enum def StopReason {
         enum stopped; enum completed; enum limit_reached; enum no_answer; enum halted;
         enum transmit_stopped; enum contact_changed; enum authority_lost;
@@ -229,14 +229,15 @@ package WstxMcp {
              publications are never used).
              Each station step (after the contact step, with the publication descriptor
              read before it), in this order: any HaltTransmit since start (browser button,
-             Esc or MCP) stops halted; a different live identity, live mode or operating
+             Alt+H, MCP or UDP) stops halted; a different live identity, live mode or operating
              mode stops context_changed; the starting transport no longer this grant's
              current unexpired transport stops authority_lost; the run deadline stops
              time_limit; a contact armed by the run is disarmed (Enable Tx off, never a
              Halt) on these and on contact_changed (run's contact gone or replaced) and
              no_answer.
              waiting: a contact calling or in progress that the run did not create (an
-             operator's CQ or contact) stops contact_changed and is left as it is; on a
+             operator's CQ or contact) stops contact_changed and is left as it is (a strategy
+             run: state manual, WstxStrategy::ManualIntervention); on a
              fresh publication record last_decision {period_start_utc, candidates,
              selected_call}; with a candidate send ContactCommand select_row {row, replace
              false} then enable_tx {enabled true, safety_revision} with the grant. Refusal
@@ -247,7 +248,8 @@ package WstxMcp {
              contact_active with that contact.
              contact_active: completed adds the call to the run's worked list and counts it;
              reaching max_contacts stops limit_reached, completion_action stop stops
-             completed, else waiting; cancelled or idle stops contact_changed; not armed
+             completed, else waiting; cancelled or idle stops contact_changed (a strategy run:
+             ManualIntervention); not armed
              stops transmit_stopped; each fresh publication of the partner's period parity
              (the opposite of the contact's own; unknown period: not counted) without a
              change of (state, report_rcvd) since the selection or the last change counts
@@ -258,7 +260,7 @@ package WstxMcp {
              WstxStrategy::Pounce instead of CandidateSelection, its completion and no_answer
              rules, and stops band_changed on a station band change; a disarm by the Tx watchdog stops
              tx_watchdog for every run; a refused enable_tx with code tx_watchdog stops
-             tx_watchdog. Run commands are automatic: they never reset the Tx watchdog. */
+             tx_watchdog. Run commands are automatic: they never end a Tx watchdog stop. */
     }
     attribute def AutomationIndicator {
         doc /* Browser station bar, read-only, beside the transmit state: while a run is
@@ -279,8 +281,8 @@ package WstxMcp {
              policy_revision, run_revision, configuration (null or the configuration),
              run (null or {id, state, reason, mode, completed_contacts, unanswered_periods,
              contact_id, selected (null or {source_id, job_id, generation, sequence, call}),
-             last_decision, role (null, call or cq), tries, skipped (calls), pounce (null or
-             {call, band}, #42))}; existing auth and Origin rules of GET routes.
+             last_decision, role (null, call or cq), tries, skipped (calls), tx_slot (null or
+             {hz, free}, WstxStrategy::FreeTxSlot), pounce (null or {call, band}, #42))}; existing auth and Origin rules of GET routes.
              POST /automation/command (AutomationCommand): exactly {v, profile_id, boot_id,
              command_id, action} plus configure {expected_policy_revision, configuration};
              start {expected_policy_revision, expected_run_revision, mode ft8|ft4,
@@ -303,7 +305,7 @@ package WstxMcp {
              unstopped run id, else 409 stale_request; dispatch ends before the receipt,
              then the run's contact is disarmed. Accepted: 202 {v:1, profile_id, boot_id,
              command_id, accepted:true, policy_revision, run_revision, run_id, state
-             off|waiting|contact_active|stopped}. run_revision also advances on every run
+             off|waiting|contact_active|manual|stopped}. run_revision also advances on every run
              change (selection, contact transition, counters, stop). Counters at
              9007199254740991 refuse counter_exhausted. Accepted means admitted, not keyed. */
     }
