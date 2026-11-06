@@ -1020,13 +1020,45 @@ async fn transmit_state_revision_follows_the_read_view_only() {
         transmit_http::view_digest(view),
         transmit_http::view_digest(keyed)
     );
-    let event = transmit_http::state_event(r, MAX_SAFE_TEST);
-    assert!(event.len() <= 192, "{event}");
+    // The first event holds the whole pushed view; each later one only what changed.
+    let first_view = transmit_http::pushed_view(r).unwrap();
+    assert!(first_view.get("outcomes").is_none() && first_view.get("profile_id").is_none());
+    let whole = transmit_http::changed_fields(&Value::Null, &first_view);
+    assert_eq!(Value::Object(whole.clone()), first_view);
+    let event = transmit_http::state_event(r, MAX_SAFE_TEST, whole);
+    assert!(event.len() <= 1024, "{event}");
     let event: Value = serde_json::from_str(&event).unwrap();
+    assert_eq!(event["data"]["transmit_revision"], json!(MAX_SAFE_TEST));
+    assert_eq!(event["data"]["profile_id"], json!(f.id));
+    assert_eq!(event["data"]["boot_id"], json!(f.boot));
+    assert!(transmit_http::changed_fields(&first_view, &first_view).is_empty());
+    let mut later = first_view.clone();
+    later["watchdog"]["tx_calls"] = json!(3);
+    later["transmit"]["tune"] = json!(true);
+    later["ptt"] = json!("keyed");
     assert_eq!(
-        event,
-        json!({"v":1,"type":"transmit.state","data":{"profile_id":f.id,"boot_id":f.boot,"transmit_revision":MAX_SAFE_TEST}})
+        Value::Object(transmit_http::changed_fields(&first_view, &later)),
+        json!({"watchdog":{"tx_calls":3},"transmit":{"tune":true},"ptt":"keyed"})
     );
+    // The measurement's age alone is no change; a new measurement goes whole.
+    let mut measured = first_view.clone();
+    measured["clock_measurement"] =
+        json!({"server":"a","offset_ms":1,"round_trip_ms":2,"age_ms":10});
+    let mut older = measured.clone();
+    older["clock_measurement"]["age_ms"] = json!(5000);
+    assert!(transmit_http::changed_fields(&measured, &older).is_empty());
+    assert_eq!(
+        Value::Object(transmit_http::changed_fields(&first_view, &measured)),
+        json!({"clock_measurement":{"server":"a","offset_ms":1,"round_trip_ms":2,"age_ms":10}})
+    );
+    let mut counting = first_view.clone();
+    counting["watchdog"]["tune_remaining_seconds"] = json!(44);
+    assert!(transmit_http::countdown_only(
+        &transmit_http::changed_fields(&first_view, &counting)
+    ));
+    assert!(!transmit_http::countdown_only(
+        &transmit_http::changed_fields(&first_view, &later)
+    ));
 }
 
 /// TC-007-001/003/004, TC-010-008/009, TC-050-004 in the real browser: launches

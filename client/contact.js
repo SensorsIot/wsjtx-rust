@@ -793,7 +793,6 @@ async function transmitAction(extra,label){
   const result=document.querySelector('#transmit-result');
   try{const reply=await transmitPost('/transmit/command',extra),r=reply.result;result.textContent=`${label}: ${r.kind??(r.accepted?'accepted':'refused')}${r.refusal?' · '+r.refusal:''}${r.failure?' · '+r.failure:''}`;}
   catch(error){result.textContent=`${label} not sent · ${error.message}`;}
-  transmitSync();
 }
 $('tx-arm').addEventListener('click',()=>{const revision=catStatus?.scope?.safety_revision;if(!revision){document.querySelector('#transmit-result').textContent='Arm needs the current setup revision (CAT status)';return;}transmitAction({action:'arm',safety_revision:revision},'Arm');});
 $('tx-disarm').addEventListener('click',()=>transmitAction({action:'disarm'},'Disarm'));

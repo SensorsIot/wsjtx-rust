@@ -1206,36 +1206,25 @@ function transmitShow(){
   status.textContent=`${t.capability} · ${t.arm_state} (${t.last_disarm_cause}) · PTT ${v.ptt}${v.transmitting?' · TRANSMITTING':''}${t.tune?' · TUNE':''} · clock ${v.clock}${clock} · halt ${t.halt_state}${t.refusal?' · '+t.refusal:''}${t.last_text?' · last '+t.last_text:''} · WD ${v.watchdog.tx_remaining_calls} calls`;
   const tune=document.querySelector('#tx-tune');if(tune)tune.textContent=t.tune?'Tune off':'Tune';
 }
-// WstxStationProtocol::PushedStationState / WstxTransmit::TransmitWire (#10): the station
-// pushes transmit.state on change; this browser reads GET /transmit once per socket, on an
-// announced revision it has not read, after its own requests and otherwise at most once per
-// 30 s as a safety read. One read pending, at most one queued; no 1 s poll.
-let transmitRead=null,transmitAgain=false,transmitReadAt=-Infinity,transmitRevision=null,transmitSocket=null,transmitEventSocket=null;
-function transmitSync(){
-  if(!transmitConfigured()||!profileData){transmitView=null;transmitShow();return Promise.resolve();}
-  if(transmitRead){transmitAgain=true;return transmitRead;}
-  transmitRead=(async()=>{
-    do{
-      transmitAgain=false;transmitReadAt=performance.now();
-      try{const response=await stationFetch('/transmit',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(response.ok){transmitView=await response.json();transmitViewAt=performance.now();}}catch{}
-      transmitShow();
-    }while(transmitAgain&&transmitConfigured());
-  })().finally(()=>{transmitRead=null;});
-  return transmitRead;
+// WstxStationProtocol::PushedStationState / WstxTransmit::TransmitWire (#10): the browser holds
+// the transmit state from transmit.state: the socket's first event has every field, each later
+// one what changed. It does not read GET /transmit. Ages advance locally; HALT is enabled as
+// soon as the station is ready (#57).
+let transmitEventSocket=null;
+function transmitApply(changed){
+  const view=transmitView??{};
+  for(const [key,value] of Object.entries(changed))view[key]=['transmit','watchdog'].includes(key)&&view[key]?{...view[key],...value}:value;
+  transmitView=view;if('clock_measurement' in changed)transmitViewAt=performance.now();
 }
-function transmitPoll(){if(transmitConfigured()&&connection.dataset.state==='connected'&&performance.now()-transmitReadAt>=30000)transmitSync();transmitShow();}
-setInterval(transmitPoll,2000);
-// #57: HALT is enabled as soon as the station is ready. A new socket reads the snapshot once:
-// at its first transmit.state (sent at the peer's first step) or, without one, by the safety
-// read 3-5 s after it became ready.
-addEventListener('station-ready',event=>{transmitShow();if(event.detail===transmitSocket)return;transmitSocket=event.detail;transmitReadAt=Math.max(transmitReadAt,performance.now()-27000);});
+setInterval(transmitShow,2000);
+addEventListener('station-ready',()=>transmitShow());
 addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='transmit.state')return;
-  const d=message.data;if(!d||!Number.isSafeInteger(d.transmit_revision)||d.profile_id!==profileData?.profile_id)return;
-  if(transmitEventSocket!==current||d.transmit_revision!==transmitRevision){transmitEventSocket=current;transmitRevision=d.transmit_revision;transmitSync();}});
+  const d=message.data;if(!d?.changed||d.profile_id!==profileData?.profile_id)return;
+  if(transmitEventSocket!==current){transmitEventSocket=current;transmitView=null;}
+  transmitApply(d.changed);transmitShow();});
 halt.addEventListener('click',async()=>{
   const result=document.querySelector('#transmit-result');
   try{const r=await transmitPost('/transmit/halt',{});result.textContent=`Halt: ${r.halt_state}`;}catch(error){result.textContent=`Halt not confirmed · ${error.message}`;}
-  transmitSync();
 });
 // WstxContact::HaltTx: Esc and Alt+H send #9's priority halt from this always-loaded
 // script, in every page state and focused field. Skipped only when the station is known
@@ -1251,7 +1240,7 @@ addEventListener('keydown',event=>{
   const done=reply=>window.dispatchEvent(new CustomEvent('keyboard-halt',{detail:{escape:event.key==='Escape',reply}}));
   if(!profileData||keyboardHaltSkipped()){done(null);return;}
   const result=document.querySelector('#transmit-result');
-  transmitPost('/transmit/halt',{}).then(r=>{result.textContent=`Halt: ${r.halt_state}`;done(r);},error=>{result.textContent=`Halt not confirmed · ${error.message}`;done(null);}).finally(transmitSync);
+  transmitPost('/transmit/halt',{}).then(r=>{result.textContent=`Halt: ${r.halt_state}`;done(r);},error=>{result.textContent=`Halt not confirmed · ${error.message}`;done(null);});
 },true);
 new ResizeObserver(()=>main.style.setProperty('--op-topbar',`${stationBar.offsetHeight}px`)).observe(stationBar);
 document.documentElement.dataset.theme='dark';try{const saved=JSON.parse(localStorage.getItem('wstx.theme.v1'));if(saved?.mode==='manual'&&['day','dark','night'].includes(saved.theme))document.documentElement.dataset.theme=saved.theme;}catch{}

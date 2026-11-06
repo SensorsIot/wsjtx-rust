@@ -1072,6 +1072,9 @@ async fn connection(
     let mut contact_seen: Option<u64> = None;
     // WstxTransmit::TransmitWire transmit.state (pushed state, coalesced like contact.state).
     let mut transmit_seen: Option<u64> = None;
+    // What this peer holds: the fields it was last sent, and when.
+    let mut transmit_sent = Value::Null;
+    let mut transmit_sent_at = Instant::now();
     // WstxMcp::AutomationStateEvent: only after a change since boot (no event while unused).
     let mut automation_seen: Option<(u64, u64)> = Some((0, 0));
     // #42 WstxStrategy::Alert alert.state: only after a change since this peer subscribed.
@@ -1144,10 +1147,15 @@ async fn connection(
                     }
                 }
                 if let Some(revision)=transmit_http::state_revision(r) && transmit_seen!=Some(revision) {
-                    match optional_write(&mut socket,Message::Text(transmit_http::state_event(r,revision).into())) {
-                        Ok(None)=>{},
-                        Ok(Some(flushed))=>{transmit_seen=Some(revision);if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break,
+                    let now=transmit_http::pushed_view(r).unwrap_or(Value::Null);
+                    let changed=transmit_http::changed_fields(&transmit_sent,&now);
+                    if changed.is_empty() {transmit_seen=Some(revision);}
+                    else if display_profile=="detail" || !transmit_http::countdown_only(&changed) || transmit_sent_at.elapsed()>=Duration::from_secs(5) {
+                        match optional_write(&mut socket,Message::Text(transmit_http::state_event(r,revision,changed).into())) {
+                            Ok(None)=>{},
+                            Ok(Some(flushed))=>{transmit_seen=Some(revision);transmit_sent=now;transmit_sent_at=Instant::now();if !flushed {optional_since=Some(Instant::now());continue;}},
+                            Err(_)=>break,
+                        }
                     }
                 }
                 let automation=r.contact.get().map(|c|c.automation.revisions());

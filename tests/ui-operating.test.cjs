@@ -2225,11 +2225,10 @@ test('TC-006-003 transmit status shows the SNTP clock measurement',{timeout:4500
   let view;
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
     view=await (await fetch(app.origin+'/transmit')).json();
-    await p.route('**/transmit',route=>route.request().method()==='GET'?route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(view)}):route.continue());
   }});
   assert.equal(view.clock,'unknown','isolated server never measured');assert.equal(view.clock_measurement,null);
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
-  const status=async()=>page.evaluate(async()=>{profileData.settings.control.ptt='cat';await transmitSync();return document.querySelector('#transmit-status').textContent;});
+  const status=async()=>page.evaluate(v=>{profileData.settings.control.ptt='cat';transmitView=null;transmitApply(v);transmitShow();return document.querySelector('#transmit-status').textContent;},view);
   assert.match(await status(),/ · clock unknown · halt /,'no measurement: state only');
   view={...view,clock:'synchronized',clock_measurement:{server:'ch.pool.ntp.org',offset_ms:12,round_trip_ms:20,age_ms:34400}};
   assert.match(await status(),/ · clock synchronized \+12 ms ch\.pool\.ntp\.org 34 s ago · halt /);
@@ -2245,7 +2244,6 @@ test('TC-043-003 the clock source and the clock from the air are shown in Settin
   let view;
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     view=await (await fetch(app.origin+'/transmit')).json();
-    await p.route('**/transmit',route=>route.request().method()==='GET'?route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(view)}):route.continue());
   }});
   const requests=[],posts=[];
   page.on('request',r=>{const p=new URL(r.url()).pathname;requests.push(`${r.method()} ${p}`);if(r.method()==='POST'&&p==='/clock')posts.push(JSON.parse(r.postData()));});
@@ -2275,7 +2273,7 @@ test('TC-043-003 the clock source and the clock from the air are shown in Settin
   assert.equal(await page.locator('#clock-source').inputValue(),'both','a refusal restores the shown source');
   await page.locator('#settings-drawer .return-operate').click();
   // Chips from the GET /transmit view (CAT PTT set in the page only).
-  const chips=async next=>{view={...view,...next};return page.evaluate(async()=>{profileData.settings.control.ptt='cat';await transmitSync();window.wstxChipsShow();return [...document.querySelectorAll('#exception-chips [data-chip^=clock]')].map(b=>b.textContent);});};
+  const chips=async next=>{view={...view,...next};return page.evaluate(v=>{profileData.settings.control.ptt='cat';transmitView=null;transmitApply(v);transmitShow();window.wstxChipsShow();return [...document.querySelectorAll('#exception-chips [data-chip^=clock]')].map(b=>b.textContent);},view);};
   assert.deepEqual(await chips({clock:'unknown',clock_source:'air',clock_warning:null}),['✖ Clock unknown · Tx blocked'],'air without enough stations refuses transmit');
   assert.match(await page.locator('#clock-setting').textContent(),/^Station clock: system UTC corrected from the air, unknown/);
   assert.deepEqual(await chips({clock:'unknown',clock_source:'ntp'}),[],'NTP unknown keeps no chip, as before');

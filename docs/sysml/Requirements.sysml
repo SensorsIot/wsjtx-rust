@@ -526,7 +526,7 @@ package WstxRequirements {
              clock steps of +-100/+-101/+-2000 ms after the measurement; plan FT8 and
              FT4 starts with each derived state; read the state while a measurement
              blocks; GET /transmit before and after measurements; the browser transmit
-             status with a GET /transmit fixture.
+             status with a transmit.state fixture.
              Oracles: RFC 4330/5905 arithmetic by hand (590/20 ms, -705/10 ms, 495/10
              ms); every invalid reply refused, stratum 1 and 15 accepted; servers asked
              once each in order, none after the first valid answer, none answering
