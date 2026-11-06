@@ -421,9 +421,9 @@ package WstxProfiles {
              After every await captured socket must remain current and OPEN before
              applying HTTP results. Established same-socket correlated status updates
              version/radio/Connected/updated and enables Refresh immediately, independent
-             of settings HTTP. Still refresh saved settings asynchronously: at most one
-             status-triggered GET in flight and one pending follow-up per socket.
-             A repeated Refresh eventually fetches newest settings; no mutation replay.
+             of settings HTTP. A status on an established socket reads no settings; a newer
+             announced revision (WstxStationProtocol profile.state) reads them asynchronously:
+             at most one GET in flight and one pending follow-up per socket; no mutation replay.
              Failed background GET visibly fails and marks socket stale. Old/disconnected
              results cannot restore Connected or mutate newer snapshots/forms.
              GET body exactly ProfileRepresentation, no-store JSON <=8192 bytes.
@@ -445,7 +445,7 @@ package WstxProfiles {
              Invalid field preserves typed input with error, never Saved. Successful save
              updates revision only on durable 200. On 409 prompt reload before another
              save. An unknown outcome also requires explicit reload before another save,
-             without automatic PUT replay or an assumed rollback. Refresh/reconnect reload authoritative settings; preserve in-progress
+             without automatic PUT replay or an assumed rollback. A newer announced revision or a reconnect reloads authoritative settings; preserve in-progress
              edits until explicit reload or successful save. No settings polling/replay.
              Refresh fixture <=2 seconds unshaped loopback. Existing watchdog 12-second
              silence checked each second =>13-second detection (31 seconds while a deferred

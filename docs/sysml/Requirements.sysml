@@ -1699,8 +1699,8 @@ package WstxRequirements {
              independent save makes the station announce the revision and the browser reads once.
              Hold that GET behind a controlled barrier, click Refresh,
              observe its actual correlated WebSocket status and require changed visible updated plus
-             enabled Refresh within 2 seconds before releasing HTTP. Repeat Refresh while held: only
-             one GET is in flight and one follow-up eventually obtains an independently saved newer
+             enabled Refresh within 2 seconds before releasing HTTP. Repeat Refresh while held: it adds no GET; a second independent save while held starts no parallel read, and
+             one follow-up eventually obtains that newer
              revision without overwriting dirty input. On a fresh socket hold initial GET: Connected,
              station-ready and optional display remain withheld until validated success. Close that
              socket with HTTP held, establish a replacement, then release the old response: it cannot

@@ -444,7 +444,7 @@ test('TC-010-002 recording state and import progress are pushed on change, witho
   await p.waitForFunction(()=>snapshot?.import?.received_bytes===4096,null,{timeout:8000});
   const events=watcher.log.slice(beforeImport).map(e=>({at:e.at,...e.value.data.import}));
   assert.equal(events[0].id,op.id);assert.deepEqual(Object.keys(watcher.log.at(-1).value.data.import).sort(),['error','id','received_bytes','state','total_bytes']);
-  const growing=events.filter((e,i)=>i&&e.received_bytes!==events[i-1].received_bytes&&e.state===events[i-1].state);
+  const growing=events.filter(e=>e.state==='receiving');assert.ok(growing.length>=2,'the second chunk is announced');
   for(let n=1;n<growing.length;n++)assert.ok(growing[n].at-growing[n-1].at>=4900,'received_bytes alone at most once per 5 s');
   assert.equal(reads.length,readsAfterReserve,'import progress adds no GET /recording');
   // The import ends: the browser reads again.
@@ -455,6 +455,21 @@ test('TC-010-002 recording state and import progress are pushed on change, witho
 });
 
 // Proves: CL-006-03/04; TC-010-002/003, browser event boundary under loss/late delivery.
+// Proves: FR-010, FR-018; TC-010-002. The event is sent once per change and no timer reads, so a
+// failed read after one must not leave the page stale: the socket closes and its reconnect reads.
+test('TC-010-002 a failed read after an announcement repairs itself on the reconnect',{timeout:60000},async t=>{
+  const f=await fixture(t);await f.upload(wav(1));
+  const p=await f.context.newPage();await p.goto(f.origin);await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});await p.waitForFunction(()=>snapshot?.recording);await sleep(1500);
+  const op=await f.reserve();await p.waitForFunction(id=>snapshot?.import?.id===id,op.id,{timeout:5000});
+  await p.route('**/recording',route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));
+  const failed=p.waitForResponse(r=>new URL(r.url()).pathname==='/recording'&&r.status()===503,{timeout:5000});
+  assert.equal((await f.req('/recording/imports/'+op.id,'DELETE')).status,200);await failed;
+  await p.unroute('**/recording');
+  await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});
+  await refreshStatus(p);
+  await p.waitForFunction(()=>!snapshot?.import,null,{timeout:8000});
+  assert.equal(await p.locator('#recording-import').isDisabled(),false,'the ended import no longer blocks an import');
+});
 test('TC-010-002 browser caps 120 rows, preserves explicit gaps and rejects obsolete identities',{timeout:15000},async t=>{
   const f=await fixture(t);await f.upload(wav(120));const p=await page(f);await p.selectOption('#display-profile','off');await p.evaluate(()=>{document.querySelector('#display-profile').value='thin';});await p.locator('#recording-replay').click();
   await p.locator('#signal-status').filter({hasText:/running/}).waitFor();const s=await f.snapshot();
