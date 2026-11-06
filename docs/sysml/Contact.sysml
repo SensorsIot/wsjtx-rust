@@ -418,7 +418,7 @@ package WstxContact {
              (a row without a grid of the same partner and mode keeps the known dxGrid,
              as WSJT-X's DX Grid, #11; EnterDxStation sets exactly the grid entered);
              report from the row SNR (ReportRange); rxOffsetHz = row frequency rounded
-             to integer Hz; txOffsetHz = the same, unless Hold Tx is on or the row's
+             to integer Hz; txOffsetHz = the same, unless Hold Tx is on (the default, CL-039-08) or the row's
              'to' call is my call (replying to me keeps my Tx frequency, DMR ~320-333);
              txParity = opposite of the row's period parity; message set generated;
              nextSlot and state per FirstSlotOnSelection. Unresolved hashes (<...>), rows
@@ -755,7 +755,7 @@ package WstxContact {
         assert constraint rxDomain { rxOffsetHz >= 0 and rxOffsetHz <= 3000 }
         assert constraint txDomain { txOffsetHz >= 200 and txOffsetHz <= 2950 }
         doc /* Labelled numeric Rx Hz and Tx Hz inputs (MW RxFreqSpinBox/TxFreqSpinBox),
-             Hold Tx (requested vs confirmed shown separately). Tx<-Rx/Rx<-Tx copy
+             Hold Tx (requested vs confirmed shown separately; on by default, CL-039-08). Tx<-Rx/Rx<-Tx copy
              buttons are not adopted (agent choice 2026-10-31: ctrl-click and the
              numeric inputs cover them); F11/F12 steps are not adopted (D7). FT4-NOTE Tx max 2916. */
     }

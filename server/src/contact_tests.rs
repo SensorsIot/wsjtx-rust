@@ -274,9 +274,37 @@ fn period(n: i64) -> i64 {
     P0 + n * 15 * SECOND
 }
 
+// Proves: CL-039-08; TC-039-009 (#39, operator 2026-11-04). A fresh station holds Tx: a selection
+// moves Rx only, and only an explicit choice switches that off.
+#[test]
+fn hold_tx_is_on_by_default_and_a_selection_keeps_tx() {
+    let mut s = station();
+    assert!(s.engine.settings.hold_tx, "on with no explicit choice");
+    let cq = s.row(P0, "CQ K1ABC FN42", 1234.6, Some(-12.4));
+    s.command(Command::SelectRow {
+        row: cq.clone(),
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(
+        (s.engine.settings.rx_hz, s.engine.settings.tx_hz),
+        (1235, 1500),
+        "Rx follows the row, Tx stays"
+    );
+    s.command(Command::SetHoldTx(false)).unwrap();
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: true,
+    })
+    .unwrap();
+    assert_eq!(s.engine.settings.tx_hz, 1235, "explicitly off: Tx follows");
+}
+
 #[test]
 fn selecting_a_cq_row_prepares_the_independent_message_set_without_any_request() {
     let mut s = station();
+    // The WSJT-X rule of FirstSlotOnSelection: with Hold Tx off, Tx follows the selection.
+    s.command(Command::SetHoldTx(false)).unwrap();
     let cq = s.row(P0, "CQ K1ABC FN42", 1234.6, Some(-12.4));
     s.command(Command::SelectRow {
         row: cq,
@@ -386,6 +414,8 @@ fn responder_progresses_tx1_tx3_tx5_and_completes_once_after_the_transmitted_73(
 fn caller_cq_then_selected_reply_reaches_rogers_and_completes_on_73_or_sent_rr73() {
     for rr73 in [false, true] {
         let mut s = station();
+        // Hold Tx off: "a reply to me keeps my Tx frequency" below is the to-my-call rule alone.
+        s.command(Command::SetHoldTx(false)).unwrap();
         // Call 1st off: the reply to my CQ waits for the operator's selection (#12).
         s.command(Command::SetCallFirst(false)).unwrap();
         s.command(Command::SetParity(Parity::Even)).unwrap();
@@ -648,6 +678,8 @@ fn partner_working_another_call_within_50_hz_halts_in_replying_and_skipped_repor
     for skipped in [false, true] {
         for (offset, stops) in [(50.0, true), (51.0, false)] {
             let mut s = station();
+            // Tx on the partner's frequency, the situation this rule is about.
+            s.command(Command::SetHoldTx(false)).unwrap();
             s.command(Command::SetTx1Skip(skipped)).unwrap();
             let cq = s.row(P0, "CQ K1ABC FN42", 1000.0, None);
             s.command(Command::SelectRow {
