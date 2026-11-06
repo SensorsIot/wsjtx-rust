@@ -889,11 +889,12 @@ impl Owner {
                 let Some(c) = facts.filter(|c| Some(&c.id) == run.contact_id.as_ref()) else {
                     return manual(&mut inner);
                 };
-                if arm != Some(wstx_rust::transmit::service::ArmState::Armed) {
-                    return stop(&mut inner, disarmed, false);
-                }
+                // Before the arm check: an operator's cancel also disarms.
                 if c.state != "calling" {
                     return manual(&mut inner);
+                }
+                if arm != Some(wstx_rust::transmit::service::ArmState::Armed) {
+                    return stop(&mut inner, disarmed, false);
                 }
                 let Some((config, s)) = chosen else {
                     return stop(&mut inner, "strategy_missing", true);
@@ -960,6 +961,10 @@ impl Owner {
                     json!({"row":row,"replace":false}),
                 );
                 if contact.operate_as(state, body, true, AUTOMATION).is_err() {
+                    // The operator's double-click won the race: the contact is theirs.
+                    if contact.facts().1.is_some_and(|c| c.state != "calling") {
+                        return manual(&mut inner);
+                    }
                     return stop(&mut inner, "provider_error", true);
                 }
                 let (_, facts, _) = contact.facts();
@@ -1069,8 +1074,12 @@ impl Owner {
                     AUTOMATION,
                 );
                 let Ok((_, receipt)) = selected else {
+                    if run.config.strategy && contact.facts().1.is_some_and(|c| c.active) {
+                        return manual(&mut inner);
+                    }
                     return stop(&mut inner, "provider_error", false);
                 };
+                let prepared = contact.facts().1.map(|c| c.id);
                 let mut revision = receipt["contact_revision"].as_u64().unwrap_or(revision);
                 // #39 Treat 73 as CQ: keep my Tx frequency (Hold Tx) so the answer never
                 // lands on the final 73 of the QSO that just ended.
@@ -1104,6 +1113,16 @@ impl Owner {
                     AUTOMATION,
                 );
                 if let Err((code, _)) = enabled {
+                    // WstxStrategy::ManualIntervention: another contact than the one the run
+                    // prepared is the operator's: it is left alone.
+                    if run.config.strategy
+                        && contact
+                            .facts()
+                            .1
+                            .is_some_and(|c| c.active && Some(&c.id) != prepared.as_ref())
+                    {
+                        return manual(&mut inner);
+                    }
                     // No unarmed selected contact is left behind.
                     cancel(contact, state);
                     return stop(&mut inner, refused(code), false);

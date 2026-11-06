@@ -333,7 +333,11 @@ package WstxStrategy {
              is manual until that contact is no longer active (completed, cancelled or
              logged), then waiting: it resumes. While manual it selects nothing. The operator
              cancelling or aborting the run's own contact (F4, Esc) gives that station up for
-             the rest of the run (it is not selected again) and the run goes on waiting.
+             the rest of the run (it is not selected again) and the run goes on waiting; a
+             cancelled own CQ of a run in role cq or alternate lets the run call CQ again at
+             its next step. A command of the run refused because the operator's contact
+             arrived first (the double-click racing its select_row or enable_tx) makes it
+             manual too: it cancels and disarms nothing.
              A pounce and an MCP run keep their contact_changed stop. HALT stops every run. */
     }
     attribute def Verdict {

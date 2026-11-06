@@ -477,7 +477,8 @@ package WstxContact {
              sent in it; when the new contact has the other parity, the keyed message is
              sent and the new one is queued for the next period of its parity, never
              refused busy, #10). The replacement itself never turns Enable Tx on. During a station
-             automation run (WstxMcp OperatingAutomation) an operator replacement of the
+             automation run without a strategy (WstxMcp OperatingAutomation; a strategy run:
+             WstxStrategy::ManualIntervention, #39) an operator replacement of the
              run's contact ends the run, which disarms (contact_changed, TC-020-003); this
              exception stands until the operator decides otherwise. A
              completed contact is not active and is already logged (DirectLog), so a new
@@ -1232,6 +1233,7 @@ package WstxContact {
         enum wrong_profile; enum not_found; enum request_too_large; enum unsupported_media_type;
         enum state_conflict; enum stale_revision; enum busy; enum counter_exhausted;
         enum contact_active; enum no_contact; enum row_unavailable; enum row_not_standard;
+        enum directive_not_answerable;
         enum invalid_call; enum invalid_grid; enum invalid_report; enum invalid_message;
         enum out_of_range; enum profile_incomplete; enum transmit_unavailable;
         enum redecode_unavailable; enum log_invalid_field; enum log_conflict;
@@ -1257,7 +1259,9 @@ package WstxContact {
         doc /* POST /contact/command, body at most 1024 UTF-8 bytes, exact keys
              {v,profile_id,boot_id,command_id,contact_revision,action} (commandAction is the JSON key action) plus exactly the
              parameters of its action (all required, nullable where stated):
-             select_row {row:{source_id,job_id,generation,sequence},replace};
+             select_row {row:{source_id,job_id,generation,sequence},replace} plus the optional
+             directive_confirmed boolean (WstxStrategy::DirectedCqRule; refused
+             directive_not_answerable, 409 with error.reason in the browser's case);
              enter_dx {dx_call,dx_grid|null,replace}; cancel {};
              choose_next {slot:"tx1".."tx6"}; edit_message {slot,text};
              set_report {report}; set_tx1_skip {enabled}; set_tx4 {form:"rrr"|"rr73"};

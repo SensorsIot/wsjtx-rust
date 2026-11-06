@@ -575,7 +575,7 @@ async function selectRow(tr){
 async function selectConfirmed(row,replace,label){
   const reply=await sendExplicit(()=>send('select_row',{row,replace},label));
   if(reply?.refused!=='directive_not_answerable')return reply;
-  if(!await window.wstxConfirm(`${reply.reason}. This station is not calling you. Answer anyway?`,'Answer anyway'))return {refused:'declined'};
+  if(!await window.wstxConfirm(`${reply.reason}. Answer anyway?`,'Answer anyway'))return {refused:'declined'};
   return sendExplicit(()=>send('select_row',{row,replace,directive_confirmed:true},label));
 }
 // A double-click (or the Reply menu) is the explicit ChangeContact (#50, WSJT-X

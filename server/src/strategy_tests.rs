@@ -1206,6 +1206,172 @@ async fn tc_039_002_a_selection_of_a_cq_not_for_me_is_a_warning_only_the_browser
     assert_eq!(bad.status, StatusCode::BAD_REQUEST);
 }
 
+// Proves: TC-039-004
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_004_a_manual_qso_while_the_strategy_waits_completes_and_the_strategy_resumes() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    // A row the strategy skips, so the run keeps waiting; the operator confirms and arms it.
+    publish(&f, e, &[("CQ NA W9XYZ EN52", 900.0, Some(-3.0))]);
+    assert_eq!(run_state(&f).await.0, "waiting");
+    browser_ok(
+        &f,
+        "select_row",
+        json!({"row":live_row(&f, "CQ NA W9XYZ EN52"),"replace":false,"directive_confirmed":true}),
+    )
+    .await;
+    let safety = f.read("contact").await["transmit"]["safety_revision"].clone();
+    browser_ok(
+        &f,
+        "enable_tx",
+        json!({"enabled":true,"safety_revision":safety}),
+    )
+    .await;
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "manual");
+    assert_eq!(
+        contact(&f).await,
+        (json!("W9XYZ"), json!("replying"), json!("armed"))
+    );
+    assert_eq!(
+        f.browser("GET", "/strategy", None).await.json["configuration"]["active"],
+        json!("NA first")
+    );
+    // The partner's report and RR73: completed; the strategy waits and answers the next match.
+    publish(&f, e + 30_000, &[("HB9BLA W9XYZ -05", 905.0, Some(-6.0))]);
+    publish(&f, e + 60_000, &[("HB9BLA W9XYZ RR73", 905.0, Some(-6.0))]);
+    transmit_own_period(&f, e + 15_000).await;
+    assert_eq!(contact(&f).await.1, json!("completed"));
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "waiting");
+    publish(&f, e + 120_000, &[("CQ K1ABC FN42", 1500.0, Some(-3.0))]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    assert_eq!(run_state(&f).await.0, "contact_active");
+}
+
+// Proves: TC-039-004
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_004_the_own_cq_a_double_click_a_cancel_and_stop_or_halt_while_manual() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "cq")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "calling_cq");
+    // A cancelled own CQ does not stop the strategy: it calls CQ again.
+    browser_ok(&f, "cancel", json!({})).await;
+    f.tick();
+    f.tick();
+    f.tick();
+    assert_eq!(run_state(&f).await, ("calling_cq".to_owned(), Value::Null));
+    // A double-click during the own CQ: manual, still armed, the new contact stands.
+    publish(&f, e, &[("CQ NA W9XYZ EN52", 900.0, Some(-3.0))]);
+    browser_ok(
+        &f,
+        "select_row",
+        json!({"row":live_row(&f, "CQ NA W9XYZ EN52"),"replace":true,"directive_confirmed":true}),
+    )
+    .await;
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "manual");
+    assert_eq!(contact(&f).await.0, json!("W9XYZ"));
+    assert_eq!(contact(&f).await.2, json!("armed"));
+    // Stop while manual leaves the operator's contact armed.
+    let a = f.browser("GET", "/automation", None).await.json;
+    let stop = f
+        .browser(
+            "POST",
+            "/automation/command",
+            Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,
+        "command_id":profile::new_uuid().unwrap(),"action":"stop","run_id":a["run"]["id"]})),
+        )
+        .await;
+    assert_eq!(stop.status, StatusCode::ACCEPTED, "{}", stop.json);
+    assert_eq!(
+        contact(&f).await.2,
+        json!("armed"),
+        "the run disarms nothing"
+    );
+    // Halt while manual stops the run halted.
+    browser_ok(&f, "cancel", json!({})).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "calling_cq");
+    publish(&f, e + 30_000, &[("CQ NA W8ABC EN80", 950.0, Some(-3.0))]);
+    let row = live_row(&f, "CQ NA W8ABC EN80");
+    browser_ok(
+        &f,
+        "select_row",
+        json!({"row":row,"replace":true,"directive_confirmed":true}),
+    )
+    .await;
+    f.tick();
+    assert_eq!(run_state(&f).await.0, "manual");
+    let halt = f.browser("POST", "/transmit/halt", Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap()}))).await;
+    assert_eq!(halt.status, StatusCode::ACCEPTED);
+    f.tick();
+    assert_eq!(run_state(&f).await, ("stopped".to_owned(), json!("halted")));
+}
+
+// Proves: TC-039-004
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_004_a_double_click_racing_the_run_selection_stays_the_operators() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("NA first"), "call")).await;
+    assert_eq!(auto(&f).await.status, StatusCode::ACCEPTED);
+    let state = f.state.clone();
+    let (id, boot) = (f.id.clone(), f.boot.clone());
+    // Between the run's select_row and enable_tx the operator replaces the contact.
+    *f.state
+        .recording
+        .contact
+        .get()
+        .unwrap()
+        .automation
+        .before_enable
+        .lock()
+        .unwrap() = Some(Box::new(move || {
+        let (identity, _, records) = state.recording.live_records_after(None, 0).unwrap();
+        let record = records
+            .iter()
+            .find(|r| r["text"] == "CQ DL1XYZ JO62")
+            .unwrap();
+        let row = json!({"source_id":identity.0,"job_id":identity.1,"generation":identity.2,"sequence":record["sequence"]});
+        let station = state.recording.contact.get().unwrap();
+        let body = json!({"v":1,"profile_id":id,"boot_id":boot,"command_id":profile::new_uuid().unwrap(),
+                "contact_revision":station.facts().0,"action":"select_row","row":row,"replace":true});
+        station
+            .operate_as(&state, body, true, authorization::Principal::Browser)
+            .unwrap();
+    }));
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ K1ABC FN42", 1500.0, Some(-3.0)),
+            ("CQ DL1XYZ JO62", 1200.0, Some(-5.0)),
+        ],
+    );
+    f.tick();
+    assert_eq!(
+        contact(&f).await.0,
+        json!("DL1XYZ"),
+        "the operator's contact stands"
+    );
+    assert_eq!(run_state(&f).await, ("manual".to_owned(), Value::Null));
+}
+
+async fn browser_ok(f: &Mcp, action: &str, extra: Value) {
+    let body = browser_command(f, action, extra).await;
+    let r = f.browser("POST", "/contact/command", Some(body)).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{action}: {}", r.json);
+}
 /// The ContactCommand row of the live record with this text.
 fn live_row(f: &Mcp, text: &str) -> Value {
     let (identity, _, records) = f.state.recording.live_records_after(None, 0).unwrap();

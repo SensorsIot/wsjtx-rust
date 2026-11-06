@@ -143,6 +143,13 @@ test('TC-039-002 a double-click on a CQ not for me warns and only the confirmati
   assert.match(await page.locator('#op-confirm-text').textContent(),/CQ NA \u2014 not for EU/);
   await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);
   assert.notEqual((await snapshot()).contact.dx_call,'W9XYZ','declined: nothing selected');
+  // The row menu's Reply and a single click go through the same warning.
+  await row.first().click({button:'right'});await page.locator('#ba-menu [data-menu=reply]').click();await page.locator('#op-confirm[open]').waitFor();
+  await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);
+  await row.first().click();await page.locator('#op-confirm[open]').waitFor();
+  await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);
+  assert.notEqual((await snapshot()).contact.dx_call,'W9XYZ','declined: nothing selected');
+  assert.equal(commands().some(c=>c.action==='select_row'&&c.directive_confirmed),false,'nothing confirmed yet');
   await row.first().dblclick();await page.locator('#op-confirm[open]').waitFor();
   await page.locator('#op-confirm-ok').click();
   await waitFor(async()=>(await snapshot()).contact.dx_call==='W9XYZ','confirmed: selected');
