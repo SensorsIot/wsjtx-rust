@@ -42,7 +42,7 @@ struct Inner {
     retry_at: Option<Instant>,
     log: Option<LogView>,
     /// Newly saved records for the UDP targets, sent by the station tick only, after the
-    /// station lock is released (a command reached from a UDP Reply holds the UDP lock).
+    /// station lock is released.
     outbox: Vec<logbook::Record>,
     /// WstxStationDecode::APrioriContext of the next decode window, refreshed every tick.
     a_priori: decoder::APriori,

@@ -1068,9 +1068,7 @@ async fn contact_browser_operating_flow() {
 }
 
 /// One isolated station (router, contact step and control peer) running
-/// tests/contact.test.cjs with the given node test filter; with `udp` also the station's
-/// UDP owner and its step (#40), started with no target (the test configures its own
-/// loopback peers through PUT /udp, so nothing is ever sent to 2237).
+/// tests/contact.test.cjs with the given node test filter.
 #[cfg(not(debug_assertions))]
 async fn contact_browser_station(filter: &[&str]) -> std::process::Output {
     let filter: Vec<String> = filter.iter().map(|f| f.to_string()).collect();
