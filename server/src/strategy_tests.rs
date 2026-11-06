@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+// Proves: CL-063-01, CL-063-02; TC-063-003, TC-063-004.
 // Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-039-09, CL-039-10, CL-042-01, CL-042-02,
 // CL-042-03, CL-042-04; TC-039-001..005, TC-039-010, TC-039-030..032, TC-042-001, TC-042-002,
 // TC-042-004, TC-042-006 (each test names its case below). Hand-authored records, logs and
@@ -4302,4 +4303,111 @@ async fn tc_042_006_alert_records_one_alert_per_call_and_band_and_never_transmit
         (Value::Null, json!("disarmed"))
     );
     assert_eq!(f.keys(), 0);
+}
+
+// Proves: TC-063-004
+#[test]
+fn tc_063_004_the_directive_table_in_a_contest_activity() {
+    use crate::contact::Activity as A;
+    for (activity, target, expected) in [
+        (A::None, "TEST", false),
+        (A::NaVhf, "TEST", true),
+        (A::ArrlDigi, "TEST", true),
+        (A::WwDigi, "TEST", false),
+        (A::WwDigi, "WW", true),
+        (A::ArrlDigi, "WW", false),
+        (A::FieldDay, "FD", true),
+        (A::WwDigi, "FD", false),
+        (A::Rtty, "RU", true),
+        (A::Hound, "TEST", false),
+        // The other directives keep their rule in an activity.
+        (A::WwDigi, "NA", false),
+        (A::WwDigi, "EU", true),
+        (A::WwDigi, "POTA", false),
+    ] {
+        assert_eq!(
+            answerable_in(activity, Some(target), Some("EU"), Some("NA")),
+            expected,
+            "CQ {target} in {activity:?}"
+        );
+    }
+    assert!(answerable_in(A::WwDigi, None, Some("EU"), Some("NA")));
+    // With my continent unknown a matching word still holds: it is not about me.
+    assert!(answerable_in(A::WwDigi, Some("WW"), None, None));
+    // The verdict follows: CQ WW is a candidate in WW Digi and greyed without it.
+    let records = rows(&[("CQ WW K1ABC FN42", Some(-5.0))]);
+    let s = award(&[Goal::NewCall]);
+    let plain = evaluate(&s, &records, &me());
+    assert_eq!((plain[0].rank, plain[0].grey), (None, true));
+    let st = Station {
+        activity: A::WwDigi,
+        ..me()
+    };
+    let contest = evaluate(&s, &records, &st);
+    assert_eq!((contest[0].rank, contest[0].grey), (Some(0), false));
+}
+
+// Proves: TC-063-004
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    publish(&f, e, &[("CQ WW K1ABC FN42", 1000.0, Some(-1.0))]);
+    let row = live_row(&f, "CQ WW K1ABC FN42");
+    let refused = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":row,"replace":false})).await),
+        )
+        .await;
+    assert_eq!(refused.status, StatusCode::CONFLICT, "{}", refused.json);
+    assert_eq!(refused.json["error"]["code"], "directive_not_answerable");
+    browser_ok(&f, "set_activity", json!({"activity":"ww_digi"})).await;
+    let selected = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":row,"replace":false})).await),
+        )
+        .await;
+    assert_eq!(selected.status, StatusCode::ACCEPTED, "{}", selected.json);
+    assert_eq!(contact(&f).await.0, "K1ABC");
+}
+
+// Proves: TC-063-003
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_063_003_the_contests_route() {
+    let f = station(true).await;
+    let g = f.browser("GET", "/strategy/contests", None).await;
+    assert_eq!(g.status, StatusCode::OK, "{}", g.json);
+    assert_eq!(g.json["v"], 1);
+    assert_eq!(g.json["profile_id"], f.id.as_str());
+    let list = g.json["profiles"].as_array().expect("a list");
+    assert_eq!(list.len(), crate::contest::PROFILES.len());
+    assert_eq!(list[0]["id"], "ww_digi");
+    assert_eq!(list[0]["automation"], "forbidden");
+    // The period is the rule's, at the station's clock: it has not ended.
+    let end = list[0]["period"]["end"].as_str().expect("a period end");
+    let end = crate::contact::parse_utc(&format!("{}:00Z", end.trim_end_matches('Z')))
+        .expect("a UTC time");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("a clock")
+        .as_millis() as i64;
+    assert!(end > now);
+    // No credentials: 401; a query is refused; POST has no route.
+    let u = f.http("GET", "/strategy/contests", &[], None).await;
+    assert_eq!(u.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(u.json["error"]["code"], "unauthorized");
+    let q = f.browser("GET", "/strategy/contests?x=1", None).await;
+    assert_eq!(q.status, StatusCode::BAD_REQUEST);
+    assert_eq!(q.json["error"]["code"], "invalid_request");
+    assert_eq!(
+        f.browser("POST", "/strategy/contests", Some(json!({})))
+            .await
+            .status,
+        StatusCode::METHOD_NOT_ALLOWED
+    );
 }
