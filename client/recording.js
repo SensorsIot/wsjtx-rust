@@ -903,7 +903,7 @@ function operatingAccept(s,reconcile){
   if(resolved)operatingUnknown=null;
   if(operatingIntent&&(s.operation?.command_id===operatingIntent.command_id||s.operating_revision>operatingIntent.base_revision))operatingIntent=null;
   const catKey=o=>o&&JSON.stringify([o.boot_id,o.profile_revision,o.radio.connection_generation,o.radio.state,o.radio.error]),changed=catKey(operatingState)!==catKey(s);
-  operatingState=s;operatingSupported=true;if(changed||!catStatus)catSync();if(resolved||operatingFailure.startsWith('Operating state stale')||operatingFailure==='Disconnected · operating data stale')operatingFailure='';
+  operatingState=s;operatingSupported=true;if(changed||(!catStatus&&!catPending))catSync();if(resolved||operatingFailure.startsWith('Operating state stale')||operatingFailure==='Disconnected · operating data stale')operatingFailure='';
 }
 async function operatingSync(reconcile=false){
   if(connection.dataset.state!=='connected'||!profileData)return;
