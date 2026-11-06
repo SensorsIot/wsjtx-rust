@@ -153,6 +153,7 @@ test('TC-007-001 double-click starts transmission, partner report advances to Tx
 });
 
 test('TC-010-008 TC-050-001 waterfall click sets Tx, double-click sets Rx and Tx, 3 px lines and numeric inputs',{timeout:60000},async()=>{
+  const enabledBefore=commands().filter(x=>x.action==='enable_tx'&&x.enabled).length;
   const canvas=page.locator('#waterfall');
   // Measured at every action: station-bar text changes may move the signal area.
   let box;const at=hz=>({x:box.x+box.width*hz/3000,y:box.y+box.height/2});
@@ -186,7 +187,7 @@ test('TC-010-008 TC-050-001 waterfall click sets Tx, double-click sets Rx and Tx
     await page.locator('#contact-result').filter({hasText:ok?'Tx frequency: accepted':'out_of_range'}).waitFor();
   }
   assert.equal(commands().some(x=>x.action==='enable_tx'&&x.enabled),true,'only the earlier explicit Enable Tx');
-  assert.equal(commands().filter(x=>x.action==='enable_tx'&&x.enabled).length,1,'no pointer action enables Tx');
+  assert.equal(commands().filter(x=>x.action==='enable_tx'&&x.enabled).length,enabledBefore,'no pointer action enables Tx');
   assert.deepEqual(page.errors,[]);
 });
 
