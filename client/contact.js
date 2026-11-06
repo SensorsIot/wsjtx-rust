@@ -66,6 +66,8 @@ let dxLookup={call:null,entity:null},snap=null,sending=false,tick=null,changeTar
 window.wstxPartner=()=>bandPartner;
 const valid=s=>s&&s.v===1&&Object.keys(s).sort().join(',')==='boot_id,contact,contact_revision,log,monotonic_ms,profile_id,settings,snapshot_sequence,transmit,utc_ms,v,watchdog'&&Number.isSafeInteger(s.contact_revision);
 const transmitCapable=()=>snap&&snap.transmit.capability!=='unsupported';
+// What the station can key now: unavailable is #9's radio/authorization not ready (CL-010-07).
+const transmitReady=()=>snap?.transmit.capability==='available';
 // One GET /contact at a time; a caller during a pending GET waits for a fresh one.
 // contactMissing: this station has no contact engine (404); routine refreshes then skip /contact.
 let loading=null,queued=null,contactMissing=false;
@@ -133,7 +135,7 @@ const running=c=>!!c?.dx_call&&['replying','report','roger_report','rogers','sig
 const snrText=snr=>typeof snr==='number'?`${snr>0?'+':snr<0?'\u2212':''}${Math.abs(Math.round(snr))} dB`:'';
 function setValue(input,value){if(document.activeElement!==input)input.value=value??'';}
 function render(){
-  const c=snap?.contact,t=snap?.transmit,s=snap?.settings,capable=transmitCapable(),armed=t?.arm_state==='armed';
+  const c=snap?.contact,t=snap?.transmit,s=snap?.settings,capable=transmitCapable(),ready=transmitReady(),armed=t?.arm_state==='armed';
   const qso=running(c);
   focus.dataset.contact=qso?'true':c?.state==='calling'?'calling':'';
   // Nothing of a finished contact stays: an accepted command's result goes with it.
@@ -153,7 +155,7 @@ function render(){
   else if(c){const cq=c.state==='calling';strong.textContent=cq?'Calling CQ':'No contact selected';detail.textContent=cq?(s?.parity==='odd'?'Tx odd (2nd)':'Tx even (1st)'):'Select a decoded station or enter a DX call.';}
   for(const id of ['dx-call','dx-grid','dx-generate','contact-activity','contact-exchange','contact-report','contact-parity','contact-tx1-skip','contact-rx','contact-tx','contact-hold','strip-tx-from-rx','strip-rx-from-tx'])$(id).disabled=!snap;
   for(const button of document.querySelectorAll('#rxtx-strip [data-strip-step]'))button.disabled=!snap;
-  focus.querySelector('.op-contact-badge').textContent=!snap?'Unavailable':armed?(tick?.transmitting?'Transmitting':'Tx on'):capable?'Ready':'Receive only';
+  focus.querySelector('.op-contact-badge').textContent=!snap?'Unavailable':armed?(tick?.transmitting?'Transmitting':'Tx on'):ready?'Ready':'Receive only';
   focus.dataset.armed=String(armed);
   for(const [i,slot] of slots.entries()){
     const row=focus.querySelector(`li[data-slot="${slot}"]`),text=row.querySelector('.ct-text'),radio=row.querySelector('input[type=radio]');
@@ -168,15 +170,15 @@ function render(){
   const auto=$('contact-auto');auto.disabled=!capable;auto.setAttribute('aria-label',capable?'Auto sequence':'Auto sequence unavailable');
   // WstxContact::SetEnableTx (#37): no Enable Tx control; CQ or a double-click starts a QSO
   // (no Reply button since the #50 double-click fix).
-  $('qso-cq').disabled=!capable||(armed&&c?.state==='calling');
+  $('qso-cq').disabled=!ready||(armed&&c?.state==='calling');
   // #37: no RR73/73 buttons; a fold-out Now is the manual override. Not on a finished contact:
   // there Enable Tx would start a new CQ.
   const finished=['completed','cancelled'].includes(c?.state);
-  for(const button of focus.querySelectorAll('.ct-now'))button.disabled=!capable||finished||!c?.messages?.[slots.indexOf(button.dataset.slot)];
-  for(const id of ['qso-cq','contact-tune'])if(capable)$(id).removeAttribute('aria-describedby');else $(id).setAttribute('aria-describedby','transmit-unavailable');
-  $('transmit-unavailable').hidden=capable;
+  for(const button of focus.querySelectorAll('.ct-now'))button.disabled=!ready||finished||!c?.messages?.[slots.indexOf(button.dataset.slot)];
+  for(const id of ['qso-cq','contact-tune'])if(ready)$(id).removeAttribute('aria-describedby');else $(id).setAttribute('aria-describedby','transmit-unavailable');
+  $('transmit-unavailable').hidden=ready;
   $('transmit-unavailable').textContent=!snap?'Transmission unavailable: contact state unknown.':t?.capability==='unavailable'?'Transmission unavailable: radio/authorization not ready.':'Transmission unavailable: this server does not offer transmit control.';
-  const tune=$('contact-tune');tune.disabled=!capable;tune.setAttribute('aria-pressed',String(!!t?.tune));tune.textContent=t?.tune?`Tune on · ${snap.watchdog.tune_remaining_seconds} s`:'Tune';
+  const tune=$('contact-tune');tune.disabled=!ready&&!t?.tune;tune.setAttribute('aria-pressed',String(!!t?.tune));tune.textContent=t?.tune?`Tune on · ${snap.watchdog.tune_remaining_seconds} s`:'Tune';
   $('contact-cancel').disabled=!c||['idle','cancelled'].includes(c.state);
   // Log QSO while a QSO runs (it also closes it); a finished contact is gone from the pane.
   // The reason stays the disabled button's description without taking a line.
@@ -264,7 +266,7 @@ function autoSeqShow(c,s){
 $('qso-suggest').addEventListener('click',async()=>{
   const slot=$('qso-suggest').dataset.slot;if(!slot)return;
   const r=await send('choose_next',{slot},`Next ${slot.toUpperCase()}`);if(!r||r.refused)return;
-  if(snap?.transmit.arm_state!=='armed'&&transmitCapable())arm('Reply');
+  if(snap?.transmit.arm_state!=='armed'&&transmitReady())arm('Reply');
 });
 $('qso-autoseq-on').addEventListener('click',()=>send('set_auto_seq',{enabled:true},'Auto sequence'));
 // WstxContact::DirectLog (#41): the server logs each completed QSO and every Log QSO; the
@@ -335,7 +337,7 @@ new IntersectionObserver(([entry])=>{document.body.dataset.qsoHaltShown=String(e
 // #37 fold-out Now (operator 2026-11-03, WSJT-X Next/Now): choose the line next and turn Enable
 // Tx on, so it goes from the next own period (never into a waveform already on the air).
 async function nowMessage(slot){
-  const c=snap?.contact;if(['completed','cancelled'].includes(c?.state)||!transmitCapable())return;
+  const c=snap?.contact;if(['completed','cancelled'].includes(c?.state)||!transmitReady())return;
   const label=`Now ${slot.toUpperCase()}`,r=await send('choose_next',{slot},label);if(!r||r.refused)return;
   if(snap?.transmit.arm_state!=='armed')arm(label);
 }

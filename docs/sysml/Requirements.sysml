@@ -2059,7 +2059,13 @@ package WstxRequirements {
              desktop 200% zoom-equivalent CSS viewport, verify station identity and truthful status,
              signal above separator above workspace, no document horizontal overflow, empty
              Band Activity/contact tables and explicit unsupported explanations. Verify unsupported
-             controls are disabled and produce no requests. Open/close saved settings and recording
+             controls are disabled and produce no requests. With the capability pushed from available
+             to unavailable and back (#22): CQ and Tune disabled, badge Receive only, the reason shown,
+             Auto Seq enabled, Control panel and pane unmoved, a running Tune can be turned off; back
+             to Ready without any action. After a real station restart with no receive job yet (#22, a
+             new boot's generation 0 below the old one): Band Activity heading "Latest decode
+             period", no row or divider of the previous boot, Decoder unavailable.
+             Open/close saved settings and recording
              regions with keyboard; verify existing controls remain reachable in the same page.
              Use separator ArrowUp/Down/Home/End and pointer dragging; verify actual height changes,
              ARIA value changes and the signal remains above the workspace. Disconnect the server
