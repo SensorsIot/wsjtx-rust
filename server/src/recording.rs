@@ -520,7 +520,7 @@ impl Recording {
                 audio::AudioState::Closing => "closing",
                 audio::AudioState::Unavailable => "unavailable",
             };
-            json!({"state":state,"device_id":l.device_id,"device_name":null,
+            json!({"state":state,"device_id":l.device_id,"device_name":self.radio_setup.name(&l.device_id),
                 "error":l.audio.error.map(audio_error),"retry_after_ms":l.audio.retry_after_ms,
                 "loss_epochs":l.loss_epochs,"last_loss":l.last_loss})
         }).unwrap_or_else(|| json!({"state":"closed","device_id":null,"device_name":null,"error":null,"retry_after_ms":null,"loss_epochs":0,"last_loss":null}));
@@ -718,6 +718,13 @@ impl Recording {
     #[cfg(test)]
     pub(crate) fn fixture_band(&self, band: &'static str) {
         self.state.lock().unwrap().operating.nominal.band = Some(band);
+    }
+    /// CL-044-07 test seam: the live receive's input endpoint.
+    #[cfg(test)]
+    pub(crate) fn fixture_live_device(&self, id: &str) {
+        if let Some(live) = self.state.lock().unwrap().live.as_mut() {
+            live.device_id = id.into();
+        }
     }
     /// Test seam: an injected running live job whose result records the test publishes
     /// itself (hand-authored rows; no decoder). Returns (source, job, generation).

@@ -808,7 +808,7 @@ pub enum Command {
         exchange: Option<String>,
     },
     SetWatchdogs {
-        tx_minutes: u32,
+        tx_calls: u32,
         tune_seconds: u32,
     },
     /// Enable Tx on/off; Some(revision) is the CL-022 safety revision the operator saw.
@@ -1452,7 +1452,7 @@ impl Engine {
                 }
             }
             Command::SetWatchdogs {
-                tx_minutes,
+                tx_calls,
                 tune_seconds,
             } => {
                 // #39: only the operator in the browser may change the watchdogs; an MCP,
@@ -1460,11 +1460,11 @@ impl Engine {
                 if ctx.automatic {
                     return Err("operator_required");
                 }
-                if !(1..=99).contains(&tx_minutes) || !(1..=300).contains(&tune_seconds) {
+                if !(1..=99).contains(&tx_calls) || !(1..=300).contains(&tune_seconds) {
                     return Err("out_of_range");
                 }
                 let core = core.as_deref_mut().ok_or("transmit_unavailable")?;
-                core.set_watchdogs(tx_minutes, tune_seconds)
+                core.set_watchdogs(tx_calls, tune_seconds)
                     .map_err(|_| "out_of_range")?;
             }
             Command::EnableTx(false, _) => {
@@ -1736,6 +1736,7 @@ impl Engine {
                 }
             }
         }
+        self.answer_resets_watchdog(core.as_deref_mut(), ctx, rows);
         let hound = self.is_hound();
         if hound {
             self.hound_rows(core.as_deref_mut(), ctx, rows);
@@ -1947,7 +1948,7 @@ impl Engine {
                 v.refusal,
                 v.tune,
                 v.tx_expired,
-                v.tx_remaining_minutes,
+                v.tx_remaining_calls,
                 v.tune_remaining_seconds
             )
         });
@@ -2149,6 +2150,32 @@ impl Engine {
         }
         self.hound.reply = HoundReply::Pending;
         self.hound.reply_deadline = Some(ctx.now_utc_ms + 11 * period_ms(mode));
+    }
+    /// WstxContact::TxWatchdog (#39): a decoded message addressed to my call from the
+    /// contact's partner (from anyone while no partner is set, e.g. my CQ), sent after
+    /// my last transmission started, is an answer and resets the unanswered count.
+    fn answer_resets_watchdog<H: Hardware>(
+        &self,
+        core: Option<&mut Core<H>>,
+        ctx: &Ctx,
+        rows: &[Row],
+    ) {
+        let (Some(core), Some(my), Some(last)) =
+            (core, ctx.call.as_deref(), self.last_started_period)
+        else {
+            return;
+        };
+        let partner = self.contact.as_ref().and_then(|c| c.dx_call.as_deref());
+        let answer = rows.iter().any(|row| {
+            row.period_start_ms.is_some_and(|p| p > last)
+                && row.standard.as_ref().is_some_and(|std| {
+                    std.to.call() == Some(my)
+                        && partner.is_none_or(|dx| std.from.call() == Some(dx))
+                })
+        });
+        if answer {
+            core.answered();
+        }
     }
     /// The reply timeout (MW stopWRTimeout) and the Hound watchdog (HWD) turn Enable Tx off.
     fn hound_timeouts<H: Hardware>(&mut self, core: Option<&mut Core<H>>, now: i64) {

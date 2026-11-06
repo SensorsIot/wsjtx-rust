@@ -6,7 +6,7 @@
 //! The bundled file is `server/third-party/cty/cty.dat`; an uploaded file replaces it
 //! per station profile (`cty.dat` beside contacts.adi).
 use serde_json::{Value, json};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
 #[cfg(test)]
@@ -379,6 +379,24 @@ pub struct Logged {
     pub band: Option<String>,
     /// #42 the effective ADIF mode (MFSK by its SUBMODE), upper case.
     pub mode: Option<String>,
+    /// #10 the contact is confirmed (logbook::Record::confirmed).
+    pub confirmed: bool,
+}
+/// #10 award standing of a key (for example a DXCC entity) in a scope: worked by any
+/// logged contact, and confirmed by at least one of them.
+/// The award query layer the #39 strategies read; no station route uses it yet.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Standing {
+    pub worked: bool,
+    pub confirmed: bool,
+}
+#[allow(dead_code)]
+impl Standing {
+    /// #39 award strategies: needed when not worked or not confirmed.
+    pub fn needed(self) -> bool {
+        !self.worked || !self.confirmed
+    }
 }
 /// #42 the entity categories of the strategy's New matrix (WstxStrategy::NewEntity).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -392,13 +410,14 @@ pub enum Category {
 /// category, ever and per band. Calls compare upper case, grids by their 4-character
 /// square upper case; the entity categories use the logged call's entity (WSJT-X keys
 /// DXCC by the full entity name, WAE entities included). A call without an entity adds
-/// nothing to the entity categories.
+/// nothing to the entity categories. Each key maps to whether a confirmed contact holds
+/// it (#10), so the confirmation costs no extra lookup.
 #[derive(Default)]
 pub struct Worked {
-    ever: HashSet<(u8, String)>,
-    band: HashSet<(u8, String, String)>,
+    ever: HashMap<(u8, String), bool>,
+    band: HashMap<(u8, String, String), bool>,
     /// #42 per band and mode (the strategy's scope), for the entity categories.
-    band_mode: HashSet<(u8, String, String, String)>,
+    band_mode: HashMap<(u8, String, String, String), bool>,
 }
 impl std::fmt::Debug for Worked {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -430,17 +449,14 @@ impl Worked {
             {
                 let Some(key) = key else { continue };
                 if let Some(b) = &l.band {
-                    w.band.insert((i as u8, key.clone(), b.clone()));
+                    *w.band.entry((i as u8, key.clone(), b.clone())).or_default() |= l.confirmed;
                     if let Some(m) = l.mode.as_deref().filter(|_| i >= 2) {
-                        w.band_mode.insert((
-                            i as u8,
-                            key.clone(),
-                            b.clone(),
-                            m.to_ascii_uppercase(),
-                        ));
+                        *w.band_mode
+                            .entry((i as u8, key.clone(), b.clone(), m.to_ascii_uppercase()))
+                            .or_default() |= l.confirmed;
                     }
                 }
-                w.ever.insert((i as u8, key));
+                *w.ever.entry((i as u8, key)).or_default() |= l.confirmed;
             }
         }
         w
@@ -453,13 +469,40 @@ impl Worked {
             return false;
         };
         match band_mode {
-            None => !self.ever.contains(&(i as u8, key)),
-            Some((b, m)) => !self.band_mode.contains(&(
+            None => !self.ever.contains_key(&(i as u8, key)),
+            Some((b, m)) => !self.band_mode.contains_key(&(
                 i as u8,
                 key,
                 b.to_ascii_lowercase(),
                 m.to_ascii_uppercase(),
             )),
+        }
+    }
+    /// #10 worked and confirmed standing of an entity's key of the category: ever (no
+    /// band), on a band in any mode, or on a band and mode. One lookup per query.
+    #[allow(dead_code)]
+    pub fn entity_standing(
+        &self,
+        c: Category,
+        r: &Resolved,
+        band: Option<&str>,
+        mode: Option<&str>,
+    ) -> Standing {
+        let i = 2 + c as usize;
+        let Some(key) = keys("", None, Some(r)).into_iter().nth(i).flatten() else {
+            return Standing::default();
+        };
+        let confirmed = match (band, mode) {
+            (None, _) => self.ever.get(&(i as u8, key)),
+            (Some(b), None) => self.band.get(&(i as u8, key, b.to_ascii_lowercase())),
+            (Some(b), Some(m)) => {
+                self.band_mode
+                    .get(&(i as u8, key, b.to_ascii_lowercase(), m.to_ascii_uppercase()))
+            }
+        };
+        Standing {
+            worked: confirmed.is_some(),
+            confirmed: confirmed.copied().unwrap_or(false),
         }
     }
     /// The FLAGS that hold for a decoded sender; the _band flags only with a known band,
@@ -475,11 +518,11 @@ impl Worked {
         let mut out = Vec::new();
         for (i, key) in keys(call, grid, r).into_iter().enumerate() {
             let Some(key) = key else { continue };
-            if !self.ever.contains(&(i as u8, key.clone())) {
+            if !self.ever.contains_key(&(i as u8, key.clone())) {
                 out.push(FLAGS[2 * i]);
             }
             if let Some(b) = &band
-                && !self.band.contains(&(i as u8, key, b.clone()))
+                && !self.band.contains_key(&(i as u8, key, b.clone()))
             {
                 out.push(FLAGS[2 * i + 1]);
             }

@@ -177,6 +177,8 @@ pub(crate) struct Station {
     slot: Arc<Mutex<Option<Stopper>>>,
     pub(crate) service: Service<Box<dyn Hardware>>,
     receipts: Mutex<VecDeque<(String, Value, Value)>>,
+    /// transmit.state: digest of the last read view seen and its station-wide revision.
+    revision: Mutex<(Option<u64>, u64)>,
 }
 impl Station {
     /// `clock` is the process's station clock (tests pass one whose SNTP monitor never
@@ -199,6 +201,7 @@ impl Station {
             slot,
             service: Service::start(Box::new(hardware) as Box<dyn Hardware>)?,
             receipts: Mutex::new(VecDeque::new()),
+            revision: Mutex::new((None, 0)),
         }))
     }
     /// Shares the station's call hash table with the transmit owner (CL-024-01).
@@ -219,6 +222,7 @@ impl Station {
             slot: Arc::new(Mutex::new(None)),
             service: Service::start(hardware)?,
             receipts: Mutex::new(VecDeque::new()),
+            revision: Mutex::new((None, 0)),
         }))
     }
     /// WstxTransmit::ExitRelease for process exit and panics: stop output and, only if
@@ -306,9 +310,37 @@ pub(crate) fn view_json(r: &recording::Recording, v: &View) -> Value {
         "clock_measurement":v.clock_measurement.as_ref().map(measurement),
         "clock_source":r.clock.get().map_or("ntp",|c|c.station.source().name()),
         "clock_warning":r.clock.get().is_some_and(|c|c.station.view().warning).then_some("ntp_air_disagree"),
-        "watchdog":{"tx_minutes":v.tx_minutes,"tx_remaining_minutes":v.tx_remaining_minutes,"tx_expired":v.tx_expired,
+        "watchdog":{"tx_calls":v.tx_calls,"tx_remaining_calls":v.tx_remaining_calls,"tx_expired":v.tx_expired,
             "tune_seconds":v.tune_seconds,"tune_remaining_seconds":v.tune_remaining_seconds},
         "outcomes":recent,"startup_release":name(v.startup_release)})
+}
+/// WstxTransmit::TransmitWire transmit.state: the station-wide revision of the read view
+/// (every field of GET /transmit except clock_measurement.age_ms). It increases at each
+/// change any peer's step observes; None without a transmit owner.
+pub(crate) fn state_revision(r: &recording::Recording) -> Option<u64> {
+    let s = r.transmit.get()?;
+    let digest = view_digest(view_json(r, &s.service.view()));
+    let mut seen = s.revision.lock().unwrap_or_else(|p| p.into_inner());
+    if seen.0 != Some(digest) {
+        *seen = (Some(digest), seen.1 + 1);
+    }
+    Some(seen.1)
+}
+/// Digest of a GET /transmit view without clock_measurement.age_ms (the one field that
+/// changes with time alone).
+pub(crate) fn view_digest(mut view: Value) -> u64 {
+    use std::hash::{Hash, Hasher};
+    if let Some(m) = view["clock_measurement"].as_object_mut() {
+        m.remove("age_ms");
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    view.to_string().hash(&mut hasher);
+    hasher.finish()
+}
+/// The transmit.state event for `revision` (at most 192 bytes).
+pub(crate) fn state_event(r: &recording::Recording, revision: u64) -> String {
+    json!({"v":1,"type":"transmit.state","data":{"profile_id":r.profile,"boot_id":r.boot,"transmit_revision":revision}})
+        .to_string()
 }
 fn station(r: &recording::Recording) -> Result<Arc<Station>, &'static str> {
     r.transmit.get().cloned().ok_or("not_found")
@@ -453,14 +485,14 @@ fn command(body: &Value, granted: bool) -> Result<Run, &'static str> {
             })
         }
         "set_watchdogs" => {
-            keys(body, &["action", "tx_minutes", "tune_seconds"])?;
-            let tx_minutes = safe(body.get("tx_minutes")).ok_or("invalid_request")?;
+            keys(body, &["action", "tx_calls", "tune_seconds"])?;
+            let tx_calls = safe(body.get("tx_calls")).ok_or("invalid_request")?;
             let tune_seconds = safe(body.get("tune_seconds")).ok_or("invalid_request")?;
-            if !(1..=99).contains(&tx_minutes) || !(1..=300).contains(&tune_seconds) {
+            if !(1..=99).contains(&tx_calls) || !(1..=300).contains(&tune_seconds) {
                 return Err("out_of_range");
             }
             Box::new(move |c| {
-                let _ = c.set_watchdogs(tx_minutes as u32, tune_seconds as u32);
+                let _ = c.set_watchdogs(tx_calls as u32, tune_seconds as u32);
                 c.activity();
                 refusal(Ok(()))
             })

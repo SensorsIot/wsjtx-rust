@@ -1,4 +1,4 @@
-// Proves: CL-044-01; CL-044-02; CL-044-03; CL-044-05; TC-044-001; TC-044-002.
+// Proves: CL-044-01; CL-044-02; CL-044-03; CL-044-05; CL-044-07; TC-044-001; TC-044-002; TC-044-006.
 // Independent hand-written CI-V scripts (IC-7300 Full Manual section 19 command table)
 // drive the probe over a scripted serial port that records every configure and write.
 use super::*;
@@ -512,4 +512,125 @@ fn endpoint_id_syntax_and_friendly_name_migration() {
         Migration::NotFound
     );
     assert_eq!(migrate(RENDER, &list, Flow::Render), Migration::Unchanged);
+}
+
+// Proves: CL-044-07; TC-044-006 (a)-(c). Hand-written names and an expected table.
+#[test]
+fn endpoint_choices_show_names_suffixes_radio_and_missing() {
+    let hub = r"USB\VID_0424&PID_2512\6&1";
+    let port = PortInfo {
+        port: 3,
+        instance_id: r"USB\VID_10C4&PID_EA60\IC-7300".into(),
+        friendly_name: None,
+        topology: topology(None, hub),
+    };
+    let headset_b = "{0.0.1.00000000}.{bbbbbbbb-0000-4000-8000-000000000000}";
+    let headset_a = "{0.0.1.00000000}.{aaaaaaaa-0000-4000-8000-000000000000}";
+    let other = topology(None, r"USB\VID_1395&PID_0300\x");
+    let list = [
+        endpoint(
+            CAPTURE,
+            "Microphone (USB Audio CODEC )",
+            Flow::Capture,
+            topology(None, hub),
+        ),
+        endpoint(
+            RENDER,
+            "Speakers (USB Audio CODEC )",
+            Flow::Render,
+            topology(None, hub),
+        ),
+        endpoint(
+            headset_b,
+            "Headset Microphone (Sennheiser Communication Audio)",
+            Flow::Capture,
+            other.clone(),
+        ),
+        endpoint(
+            headset_a,
+            "Headset  Microphone (Sennheiser Communication Audio)",
+            Flow::Capture,
+            other,
+        ),
+    ];
+    assert_eq!(
+        display_name("  Microphone ( USB Audio CODEC )  "),
+        "Microphone (USB Audio CODEC)"
+    );
+    // (a) control CAT on COM3: the CODEC pair is the radio's, the headsets numbered by ID.
+    let labels = |c: Vec<EndpointChoice>| {
+        c.into_iter()
+            .map(|c| (c.label, c.radio, c.present))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        labels(endpoint_choices(
+            &list,
+            Flow::Capture,
+            Some((&port, "IC-7300")),
+            None
+        )),
+        [
+            (
+                "Microphone (USB Audio CODEC) — IC-7300".to_string(),
+                Some("IC-7300"),
+                true
+            ),
+            (
+                "Headset Microphone (Sennheiser Communication Audio) #2".to_string(),
+                None,
+                true
+            ),
+            (
+                "Headset Microphone (Sennheiser Communication Audio) #1".to_string(),
+                None,
+                true
+            ),
+        ]
+    );
+    let render = endpoint_choices(&list, Flow::Render, Some((&port, "IC-7300")), None);
+    assert_eq!(render.len(), 1);
+    assert_eq!(render[0].label, "Speakers (USB Audio CODEC) — IC-7300");
+    assert_eq!(
+        render[0].name.as_deref(),
+        Some("Speakers (USB Audio CODEC)")
+    );
+    assert_eq!(render[0].id, RENDER);
+    // (b) control disabled: names only.
+    let plain = endpoint_choices(&list, Flow::Capture, None, Some((CAPTURE, None)));
+    assert_eq!(plain[0].label, "Microphone (USB Audio CODEC)");
+    assert_eq!(
+        plain.len(),
+        3,
+        "a present saved endpoint is not listed twice"
+    );
+    assert!(
+        plain
+            .iter()
+            .all(|c| c.radio.is_none() && !c.label.contains('{'))
+    );
+    // (c) the saved input absent, with and without its last known name.
+    let unplugged = &list[1..];
+    let missing = endpoint_choices(
+        unplugged,
+        Flow::Capture,
+        Some((&port, "IC-7300")),
+        Some((CAPTURE, Some("Microphone (USB Audio CODEC )"))),
+    );
+    assert_eq!(
+        missing.last().unwrap(),
+        &EndpointChoice {
+            id: CAPTURE.into(),
+            name: Some("Microphone (USB Audio CODEC)".into()),
+            label: "Microphone (USB Audio CODEC) · not present".into(),
+            present: false,
+            radio: None
+        }
+    );
+    let unknown = endpoint_choices(unplugged, Flow::Capture, None, Some((CAPTURE, None)));
+    assert_eq!(
+        unknown.last().unwrap().label,
+        "Unknown device · not present"
+    );
+    assert_eq!(unknown.last().unwrap().name, None);
 }

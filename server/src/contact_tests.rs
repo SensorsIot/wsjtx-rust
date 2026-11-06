@@ -14,7 +14,7 @@ use std::sync::{
 use wstx_rust::decoder::Mode;
 use wstx_rust::transmit::service::{
     ArmState, AudioError, AudioPoll, Capability, Context, Core, DisarmCause, HaltState, Hardware,
-    OutcomeKind, Program, PttError,
+    OutcomeKind, Program, PttError, PttState,
 };
 use wstx_rust::transmit::{ClockState, Parity};
 
@@ -783,13 +783,13 @@ fn auto_seq_off_cancel_halt_and_watchdog_while_calling() {
     );
     // The Tx watchdog expiring while calling CQ ends the CQ (idle).
     s.command(Command::SetWatchdogs {
-        tx_minutes: 1,
+        tx_calls: 1,
         tune_seconds: 90,
     })
     .unwrap();
     s.command(Command::EnableTx(true, Some(7))).unwrap();
     assert_eq!(s.state(), (State::Calling, Slot::Tx6));
-    // The first CQ differs from the earlier Tx1 text: its start resets the count.
+    // The operator's Enable Tx starts the count; the second CQ is never keyed.
     let start = s.now();
     s.run(start + 100 * SECOND);
     assert!(!s.armed());
@@ -861,34 +861,34 @@ fn receive_only_station_prepares_and_logs_but_refuses_transmit() {
 }
 
 #[test]
-fn tx_watchdog_counts_whole_minutes_from_the_last_reset_and_tune_ends_at_its_limit() {
+fn tc_008_001_tx_watchdog_counts_unanswered_calls_and_tune_ends_at_its_limit() {
     let mut s = station();
     let v = s.core.view();
-    assert_eq!((v.tx_minutes, v.tune_seconds), (6, 90), "startup defaults");
+    assert_eq!((v.tx_calls, v.tune_seconds), (6, 90), "startup defaults");
     assert_eq!(
         s.command(Command::SetWatchdogs {
-            tx_minutes: 0,
+            tx_calls: 0,
             tune_seconds: 90
         }),
         Err("out_of_range")
     );
     assert_eq!(
         s.command(Command::SetWatchdogs {
-            tx_minutes: 100,
+            tx_calls: 100,
             tune_seconds: 90
         }),
         Err("out_of_range")
     );
     assert_eq!(
         s.command(Command::SetWatchdogs {
-            tx_minutes: 6,
+            tx_calls: 6,
             tune_seconds: 0
         }),
         Err("out_of_range")
     );
     assert_eq!(
         s.command(Command::SetWatchdogs {
-            tx_minutes: 6,
+            tx_calls: 6,
             tune_seconds: 301
         }),
         Err("out_of_range")
@@ -900,49 +900,103 @@ fn tx_watchdog_counts_whole_minutes_from_the_last_reset_and_tune_ends_at_its_lim
     })
     .unwrap();
     s.command(Command::SetWatchdogs {
-        tx_minutes: 1,
+        tx_calls: 2,
         tune_seconds: 300,
     })
     .unwrap();
     assert_eq!(
-        s.core.view().tx_remaining_minutes,
+        s.core.view().tx_remaining_calls,
         0,
         "counter 0 while disarmed"
     );
+    // TC-008-001 (#39 2026-11-04): two unanswered Tx1, the third is never keyed.
     s.command(Command::EnableTx(true, Some(7))).unwrap();
-    let armed_at = s.now();
-    assert_eq!(s.core.view().tx_remaining_minutes, 1);
-    // Identical Tx1 text every period does not reset; a refused request does not reset.
-    s.run(armed_at + 50 * SECOND);
-    assert_eq!(s.command(Command::SetReport(99)), Err("invalid_report"));
-    s.run(armed_at + 59 * SECOND);
-    assert!(s.armed());
-    // An accepted operating request at 0:59 resets the count.
-    s.command(Command::SetHoldTx(false)).unwrap();
-    let reset = s.now();
-    s.run(armed_at + 61 * SECOND);
-    assert!(s.armed(), "reset by the accepted request");
-    s.run(reset + 60 * SECOND - 20);
-    let before = s.core.view().arm_state;
-    s.run(reset + 60 * SECOND + 20);
-    assert_eq!(before, ArmState::Armed);
-    assert!(
-        !s.armed(),
-        "expired exactly one whole minute after the last reset"
+    assert_eq!(s.core.view().tx_remaining_calls, 2);
+    s.run(period(1) + 2 * SECOND);
+    assert_eq!(s.core.view().tx_remaining_calls, 1);
+    s.run(period(3) + 2 * SECOND);
+    assert_eq!(s.core.view().tx_remaining_calls, 0);
+    let halts = s.core.view().halt_state;
+    s.run(period(5) + 2 * SECOND);
+    let v = s.core.view();
+    assert_eq!(
+        (
+            v.arm_state,
+            v.last_disarm_cause,
+            v.tx_expired,
+            v.halt_state,
+            v.ptt
+        ),
+        (
+            ArmState::Disarmed,
+            DisarmCause::TxWatchdog,
+            true,
+            halts,
+            PttState::Released
+        ),
+        "stopped before keying, without a halt"
     );
-    assert!(s.core.view().tx_expired);
+    assert_eq!(s.sent_in(period(5)), None, "the third call is never sent");
     assert_eq!(
         s.state(),
         (State::Replying, Slot::Tx1),
         "contact state kept"
     );
-    // Re-enable clears the expiry.
+    // Re-enable clears the expiry (a late start in period 5, then period 7); the
+    // partner's answer resets the count.
     s.command(Command::EnableTx(true, Some(7))).unwrap();
     assert!(!s.core.view().tx_expired);
+    s.run(period(7) + 2 * SECOND);
+    assert!(s.armed());
+    assert_eq!(s.core.view().tx_remaining_calls, 0);
+    let other = s.row(period(6), "DL1XYZ W1AW -03", 1500.0, Some(-3.0));
+    s.deliver(&[other]);
+    assert_eq!(
+        s.core.view().tx_remaining_calls,
+        0,
+        "a message to someone else is no answer"
+    );
+    s.run(period(8) + 13 * SECOND);
+    let report = s.row(period(8), "HB9BLA K1ABC -05", 1500.0, Some(-5.0));
+    s.deliver(&[report]);
+    assert_eq!(s.core.view().tx_remaining_calls, 2, "answered: reset");
+    s.run(period(11) + 2 * SECOND);
+    assert!(
+        s.sent_in(period(9))
+            .is_some_and(|t| t.starts_with("K1ABC HB9BLA R"))
+    );
+    assert_eq!(s.core.view().tx_remaining_calls, 0);
+    // A call to me from another station than the partner is no answer.
+    let stranger = s.row(period(10), "HB9BLA W1AW FN31", 1800.0, Some(-9.0));
+    s.deliver(&[stranger]);
+    assert_eq!(s.core.view().tx_remaining_calls, 0);
+    // An accepted browser request resets it (a human is present).
+    s.command(Command::SetHoldTx(false)).unwrap();
+    assert_eq!(s.core.view().tx_remaining_calls, 2);
+    s.run(period(17) + 2 * SECOND);
+    assert!(!s.armed());
+    assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
+    assert!(s.sent_in(period(15)).is_some() && s.sent_in(period(17)).is_none());
+    // My CQ answered by anyone resets it.
+    s.command(Command::Cancel).unwrap();
+    s.command(Command::SetCallFirst(false)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(s.state().0, State::Calling);
+    let cq_from = s.now();
+    while s.core.view().tx_remaining_calls == 2 && s.now() < cq_from + 40 * SECOND {
+        s.run(s.now() + SECOND);
+    }
+    assert_eq!(s.core.view().tx_remaining_calls, 1, "one CQ sent");
+    let last = s.core.view().last_period_utc_ms.unwrap();
+    let caller = s.row(last + 15 * SECOND, "HB9BLA DL1XYZ JO62", 900.0, Some(-7.0));
+    s.deliver(&[caller]);
+    assert_eq!(s.core.view().tx_remaining_calls, 2, "CQ answered by anyone");
     s.command(Command::EnableTx(false, None)).unwrap();
+    s.run(s.now() + 15 * SECOND);
+    assert!(!s.core.view().transmitting);
     // Tune: limit 1 s, ends through #9 with release.
     s.command(Command::SetWatchdogs {
-        tx_minutes: 6,
+        tx_calls: 6,
         tune_seconds: 1,
     })
     .unwrap();
@@ -3439,9 +3493,15 @@ fn hound_reply_timeout_hound_watchdog_and_tx_watchdog() {
     assert!(s.armed(), "a re-arm ends the reply timeout");
     assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
 
-    // Hound watchdog: 300 s of Tx1 since the operator turned Enable Tx on.
+    // Hound watchdog: 300 s of Tx1 since the operator turned Enable Tx on (the Tx
+    // watchdog's count is raised so it does not end first).
     let mut s = hound_station();
     let mut t = hound_table();
+    s.command(Command::SetWatchdogs {
+        tx_calls: 99,
+        tune_seconds: 90,
+    })
+    .unwrap();
     let cq = fox_says(&mut s, &mut t, P0, "CQ KH7Z BL01", 812.0, -9.0);
     select(&mut s, cq);
     let on = s.now();
@@ -3457,11 +3517,11 @@ fn hound_reply_timeout_hound_watchdog_and_tx_watchdog() {
     );
     assert_eq!(s.state(), (State::Replying, Slot::Tx1));
 
-    // The station's Tx watchdog (1 min) while Tx3 repeats: back to Tx1.
+    // The station's Tx watchdog (1 unanswered call) while Tx3 repeats: back to Tx1.
     let mut s = hound_station();
     let mut t = hound_table();
     s.command(Command::SetWatchdogs {
-        tx_minutes: 1,
+        tx_calls: 1,
         tune_seconds: 90,
     })
     .unwrap();

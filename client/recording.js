@@ -66,7 +66,7 @@ const browserSettings=block('settings-browsers','Access &amp; grants',generalSec
 browserSettings.append(document.querySelector('#authorization-actions'));
 chips.after(document.querySelector('#forget'));
 const profilePanel=document.querySelector('#profile-panel'),profileMetadata=profilePanel.querySelector('dl');
-for(const [name,legendText,ids] of [['radio','CAT &#10227;',['control-mode','control-endpoint','ptt-mode']],['audio','Audio &#10227;',['audio-input','audio-output']]]){
+for(const [name,legendText,ids] of [['radio','CAT &#10227;',['control-mode','control-endpoint','ptt-mode']]]){
   const group=document.createElement('fieldset');group.id='server-fields-'+name;group.className='op-server-fieldset';group.innerHTML=`<legend>${legendText}</legend>`;
   if(name==='radio')group.append(serverForm.querySelector('select:not([id])').closest('label'));
   for(const id of ids)group.append(document.getElementById(id).closest('label'));
@@ -75,7 +75,10 @@ for(const [name,legendText,ids] of [['radio','CAT &#10227;',['control-mode','con
 document.querySelector('#settings-save').textContent='Apply ⟳';
 radioSection.append(profilePanel);
 const catSettings=block('settings-cat','CAT receive-only confirmation',radioSection);
-block('settings-audio','Audio input',radioSection,'<div class="op-input-meter"><span>Rx level <strong>Unknown</strong></span><div></div></div><p class="op-muted">Listing the inputs reads the device names only; it never opens audio.</p><button type="button" id="audio-enumerate">List audio inputs</button><output id="audio-inputs"></output>');
+// #44 CL-044-08: one Audio section; the selects belong to the profile form (Apply ⟳), their values are endpoint IDs.
+const audioSettings=block('settings-audio','Audio &#10227;',radioSection,'<div class="op-audio-input"></div><div class="op-input-meter"><span>Rx level <strong>Unknown</strong></span><div></div></div><div class="op-audio-output"></div><p id="audio-recommend" hidden><span id="audio-recommend-text"></span> <button type="button" id="audio-use-radio">Use IC-7300 audio</button></p><p id="audio-list-status" class="op-muted" role="status"></p>');
+for(const [id,slot] of [['audio-input','.op-audio-input'],['audio-output','.op-audio-output']]){const select=document.getElementById(id);select.setAttribute('form','settings');audioSettings.querySelector(slot).append(select.closest('label'));}
+for(const type of ['input','change'])audioSettings.addEventListener(type,event=>{if(event.target.form===serverForm)serverForm.dispatchEvent(new Event(type));});
 const connectionPanel=document.createElement('div');connectionPanel.append(controls.querySelector('section[aria-label="Station status"]'),profileMetadata);
 const capabilities=document.createElement('dl');capabilities.id='operating-capabilities';capabilities.innerHTML='<div><dt>Audio</dt><dd>Unavailable &#183; capture not offered</dd></div><div><dt>CAT</dt><dd>Unavailable &#183; radio not configured</dd></div><div><dt>Decoder</dt><dd>Unavailable &#183; results not offered</dd></div><div><dt>Transmission</dt><dd>Unavailable &#183; control not offered</dd></div>';connectionPanel.append(capabilities);
 const receivePanel=document.createElement('div');receivePanel.id='receive-diagnostics';
@@ -474,7 +477,7 @@ document.querySelector('#recording-cancel').addEventListener('click',async()=>{
 profileSelect.addEventListener('change',()=>{const id=displayPreferenceId();if(id&&['detail','thin','off'].includes(profileSelect.value))try{localStorage.setItem(displayPreferenceKey(id),profileSelect.value);}catch{}rows=[];fallbackText='';resetLevels();paint();if(socket?.readyState===WebSocket.OPEN)subscribe(socket);});
 if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.state==='connected')sync(socket);
 
-let live,livePending=false,liveAgain=null,resultPending=false,resultFailed=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
+let live,liveFailed=false,resultsAnnounced=null,livePending=false,liveAgain=null,resultPending=false,resultFailed=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
 let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingIntent=null,lastOperatingRead=-Infinity,operatingSocket=null;
 let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 
@@ -482,7 +485,7 @@ let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null;
 let lastReceiveReady=null;
 let activitySortProfile=null,activitySortField='value',activitySortDirection='desc';
-const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
+const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsUnread=()=>resultFailed||liveFailed||resultsAnnounced!==null||(!!resultView&&resultCursor<resultView.next_sequence)||(Number.isSafeInteger(live?.job?.next_sequence)&&live.job.next_sequence>resultCursor)||(!!live?.job?.latest_decode&&live.job.latest_decode.id!==resultView?.id);const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
 const receiveStatus=document.querySelector('#receive-status');
 function validPeriodTime(value,mode){
   return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(Date.parse(value)).toISOString().slice(0,19)===value.slice(0,19)&&(value.endsWith('.0000000Z')||(mode==='ft4'&&value.endsWith('.5000000Z')))&&Date.parse(value)%(mode==='ft8'?15000:7500)===0;
@@ -542,7 +545,7 @@ function receiveShow(){
   if(live){
     receiveStatus.textContent=`Audio ${live.audio.state}${live.audio.error?` · ${live.audio.error}`:''}${live.audio.loss_epochs?` · ${live.audio.loss_epochs} audio loss restart${live.audio.loss_epochs===1?'':'s'} (last ${live.audio.last_loss})`:''}${live.job?` · ${live.job.mode.toUpperCase()} ${live.job.state}${live.job.error?` · ${live.job.error}`:''}`:' · receive stopped'}${historyIncomplete?' · Incomplete result history':''}${live.job&&['failed','cancelled'].includes(live.job.state)?' · Partial results retained':''}${receiveFailure?` · ${receiveFailure}`:''}`;
     const capabilities=document.querySelectorAll('#operating-capabilities dd');
-    capabilities[0].textContent=live.audio.state==='running'?'Running · selected input':`Unavailable · ${live.audio.error??live.audio.state}`;
+    capabilities[0].textContent=live.audio.state==='running'?`Running · ${live.audio.device_name??'selected input'}`:`Unavailable · ${live.audio.error??live.audio.state}`;
     capabilities[2].textContent=live.job&&live.job.mode!=='spectrum'?`${live.job.mode.toUpperCase()} · ${live.job.state}`:'Unavailable · receive stopped';
     document.querySelector('#receive-generation').textContent=`Receive generation ${live.generation} · source ${live.source?.id??'none'} · job ${live.job?.id??'none'}`;
     const c=live.clock;document.querySelector('#clock-detail').textContent=`Clock ${c.basis} · ${c.correlated?`receive periods correlated to UTC anchor ${c.utc_anchor}, uncertainty ${c.uncertainty_ns} ns`:'receive periods not correlated to UTC'} · external accuracy ${c.external_accuracy}`;
@@ -568,8 +571,8 @@ async function receiveSync(current=socket){
       resultRows=[];resultView=null;resultCursor=data.job?.first_sequence??0;historyIncomplete=false;if(carry)keepWaterfall();else if(data.job||live?.job){rows=[];resetLevels();paint();}
       renderResults();
     }
-    live=data;liveOperatingRevision=operatingState?.operating_revision??null;liveRevision++;applyLatestDecode(data.job?.latest_decode??null,data.job?.first_sequence??0);uncertainMutation=false;receiveFailure='';receiveShow();show();
-  }catch(error){if(current===socket&&epoch===receiveMutationEpoch){receiveFailure=`Live receive unavailable · ${error.message}`;receiveStatus.textContent=receiveFailure;}}
+    live=data;liveOperatingRevision=operatingState?.operating_revision??null;liveRevision++;applyLatestDecode(data.job?.latest_decode??null,data.job?.first_sequence??0);uncertainMutation=false;receiveFailure='';liveFailed=false;receiveShow();show();
+  }catch(error){if(current===socket)liveFailed=true;if(current===socket&&epoch===receiveMutationEpoch){receiveFailure=`Live receive unavailable · ${error.message}`;receiveStatus.textContent=receiveFailure;}}
   finally{livePending=false;const again=liveAgain;liveAgain=null;if(again!==null&&again===receiveMutationEpoch)receiveSync(socket);else if(resultsDue())receiveResults();}
 }
 function activityOrdering(records=resultRows){
@@ -703,8 +706,11 @@ function validRecord(r){
 }const FLAG_NAMES=['new_call','new_call_band','new_grid','new_grid_band','new_dxcc','new_dxcc_band','new_continent','new_continent_band','new_cq_zone','new_cq_zone_band','new_itu_zone','new_itu_zone_band'];function validDxcc(d){return !!d&&typeof d==='object'&&!Array.isArray(d)&&Object.keys(d).every(k=>['name','cont','cq','itu','km'].includes(k))&&typeof d.name==='string'&&/^[\x20-\x7e]{1,40}$/.test(d.name)&&['AF','AN','AS','EU','NA','OC','SA'].includes(d.cont)&&Number.isInteger(d.cq)&&d.cq>=0&&d.cq<=40&&Number.isInteger(d.itu)&&d.itu>=0&&d.itu<=90&&(d.km===undefined||(Number.isInteger(d.km)&&d.km>=0&&d.km<=20038));}function validFlags(f){return !!f&&typeof f==='object'&&!Array.isArray(f)&&Object.keys(f).length>0&&Object.entries(f).every(([k,v])=>FLAG_NAMES.includes(k)&&v===true);}
 async function receiveResults(){
   if(resultPending||livePending||mutationPending||uncertainMutation||operatingReadPending||operatingBlocked()||refresh.disabled||connection.dataset.state!=='connected'||!live?.source||!['ft4','ft8'].includes(live.job?.mode))return;
-  const now=performance.now();if(now-lastResultStart<(resultsDue()?0:4000))return;
-  resultPending=true;lastResultStart=now;
+  // #10 PushedStationState: Thin/Off read records of an announced or unread view at most once
+  // per 4 s; with nothing announced or pending they wait for receive.state (the station pushes
+  // each publication) and keep only a safety read at most once per 30 s.
+  const now=performance.now();if(now-lastResultStart<(resultsDue()?0:resultsUnread()?4000:30000))return;
+  resultPending=true;lastResultStart=now;const started=now;
   const context=liveIdentity(live),current=socket,cursor=resultCursor,revision=liveRevision,epoch=receiveMutationEpoch,authEpoch=authorization?.snapshot().epoch;
   const query=new URLSearchParams({source_id:live.source.id,job_id:live.job.id,generation:String(live.generation),cursor:String(cursor),limit:profileSelect.value==='thin'?'1':'16'});
   try{
@@ -731,7 +737,7 @@ async function receiveResults(){
       resultRows.push(...page.records.filter(r=>r.sequence>=resultView.first_sequence&&r.sequence<resultView.next_sequence&&(resultView.period_start_utc===null||r.period_start_utc===resultView.period_start_utc)&&!known.has(r.sequence)));
       resultRows=resultRows.slice(-2048);
     }else resultCursor=page.next;
-    live.job.state=page.state;live.job.error=page.error;resultFailed=false;stationData('results',true);renderResults();receiveShow();
+    live.job.state=page.state;live.job.error=page.error;resultFailed=false;if(resultsAnnounced!==null&&started>=resultsAnnounced&&cursor>=page.next_sequence)resultsAnnounced=null;stationData('results',true);renderResults();receiveShow();
   }catch(error){resultFailed=true;if(current===socket&&context===liveIdentity(live)&&revision===liveRevision&&epoch===receiveMutationEpoch){receiveStatus.textContent=`Result state unavailable · ${error.message}`;if(/^Invalid|descriptor/.test(error.message))stationData('results',false);}}
   finally{resultPending=false;if(resultsDue()&&resultCursor!==cursor)setTimeout(receiveResults,0);}
 }
@@ -750,10 +756,44 @@ async function receiveStop(){
   catch(error){receiveMutationEpoch++;uncertainMutation=true;receiveFailure=`Stop outcome unknown · ${error.message} · refresh before another action`;}
   finally{mutationPending=false;receiveShow();}
 }
-document.querySelector('#audio-enumerate').addEventListener('click',async()=>{
-  const output=document.querySelector('#audio-inputs');
-  try{const data=await request('/audio/devices');output.textContent=data.devices.map(d=>`${d.name} [${d.id}]`).join('\n')||'No audio inputs available';}
-  catch(error){output.textContent=`Audio inputs unavailable · ${error.message}`;}
+// #44 CL-044-08: the pickers name the endpoints (GET /audio/endpoints); the ID is only a hover title and in Expert.
+let audioView=null,audioRead=-Infinity,audioLoading=null,audioRevision=null;
+const audioIds=document.createElement('dl');audioIds.id='audio-endpoint-ids';audioIds.innerHTML='<div><dt>Input</dt><dd id="audio-id-input">none</dd></div><div><dt>Output</dt><dd id="audio-id-output">none</dd></div>';
+secondary('audio-ids','Audio endpoint IDs',audioIds,expertSection).open=true;
+function audioOption(text,value,disabled=false){const option=new Option(text,value);if(value)option.title=value;option.disabled=disabled;return option;}
+function audioRadio(){return [audioView?.inputs.find(e=>e.radio&&e.present),audioView?.outputs.find(e=>e.radio&&e.present)];}
+function audioRender(){
+  for(const [id,list] of [['audio-input',audioView?.inputs],['audio-output',audioView?.outputs]]){
+    const select=document.getElementById(id),current=select.value,options=[audioOption('None','')];
+    for(const e of list??[])options.push(audioOption(e.label,e.id,!e.present));
+    if(current&&!options.some(o=>o.value===current))options.push(audioOption(audioView?'Unknown device · not present':'Saved device',current,!!audioView));
+    select.replaceChildren(...options);select.value=current;
+  }
+  const saved=profileData?.settings.audio;
+  document.getElementById('audio-id-input').textContent=saved?.input_device??'none';document.getElementById('audio-id-output').textContent=saved?.output_device??'none';
+  const [input,output]=audioRadio(),radio=(input??output)?.radio;
+  document.getElementById('audio-recommend').hidden=!radio;
+  if(radio){document.getElementById('audio-recommend-text').textContent=`Recommended: ${input?.label??'no input matched'} / ${output?.label??'no output matched'}`;document.getElementById('audio-use-radio').textContent=`Use ${radio} audio`;}
+}
+function loadAudio(force=false){
+  if(audioLoading||!profileData||(!force&&performance.now()-audioRead<5000))return audioLoading;
+  audioRead=performance.now();const status=document.getElementById('audio-list-status');
+  audioLoading=request('/audio/endpoints',{cache:'no-store'}).then(v=>{
+    const entry=e=>e&&typeof e.id==='string'&&typeof e.label==='string'&&typeof e.present==='boolean';
+    if(v?.v!==1||v.profile_id!==profileData?.profile_id||![v.inputs,v.outputs].every(l=>Array.isArray(l)&&l.every(entry)))throw new Error('invalid_listing');
+    audioView=v;status.textContent='';
+  }).catch(error=>{audioView=null;status.textContent=`Audio devices unavailable · ${error.message}`;}).finally(()=>{audioLoading=null;audioRender();});
+  return audioLoading;
+}
+// A status refresh re-renders only; the listing is read again only for a new saved revision
+// (a save) or Reload saved settings, so an open drawer adds no periodic traffic (Thin budget).
+addEventListener('profile-fields',()=>{audioRender();const revision=profileData?JSON.stringify([profileData.boot_id,profileData.revision]):null,changed=audioRevision!==null&&revision!==audioRevision;audioRevision=revision;if(changed&&!drawer.hidden)loadAudio(true);});
+document.querySelector('#settings-reload').addEventListener('click',()=>{if(!drawer.hidden)loadAudio(true);});
+new MutationObserver(()=>{if(!drawer.hidden)loadAudio();}).observe(drawer,{attributes:true,attributeFilter:['hidden']});
+document.getElementById('audio-use-radio').addEventListener('click',()=>{
+  const [input,output]=audioRadio();
+  for(const [id,e] of [['audio-input',input],['audio-output',output]])if(e){const select=document.getElementById(id);select.value=e.id;select.dispatchEvent(new Event('change',{bubbles:true}));}
+  serverForm.requestSubmit();
 });
 function receiveReadyKey(profile,statusId){
   const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
@@ -774,7 +814,7 @@ function receiveReady(current){
 addEventListener('station-ready',event=>receiveReady(event.detail));
 addEventListener('station-stale',()=>{lastReceiveReady=null;receiveShow();receiveStatus.textContent='Disconnected · live receive data stale';});
 function liveCovered(){return !!(live?.job&&snapshot?.job?.kind==='live'&&snapshot.job.id===live.job.id&&['running','cancelling'].includes(live.job.state));}
-addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;receiveSync(current);
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;resultsAnnounced=performance.now();receiveSync(current);
   const d=message.data;if(snapshot&&d&&(d.generation!==snapshot.generation||d.job_id!==(snapshot.job?.id??null)||d.state!==(snapshot.job?.state??null)))sync(current);});
 setInterval(receiveResults,250);
 if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state==='connected')receiveSync(socket);
@@ -1020,7 +1060,7 @@ async function radioSetupPost(path,body){
   if(!response.ok)throw new Error(value?.error?.code??`request_failed ${response.status}`);
   return value;
 }
-function detectRow(list,term,text){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=term;dd.textContent=text;list.append(dt,dd);}
+function detectRow(list,term,text,title=''){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=term;dd.textContent=text;if(title)dd.title=title;list.append(dt,dd);}
 function detectShow(v){
   const ports=v.ports??[],radios=ports.flatMap(p=>(p.radios??[]).map(r=>`${p.port} ${r.model??'unknown ID '+r.id} ${r.civ_address}h ${r.baud} baud`));
   detectEl('detect-result').textContent=ports.length?`${ports.length} port(s): ${ports.map(p=>`${p.port} ${p.state}`).join(', ')}${radios.length?' · found '+radios.join('; '):' · no radio answered'}${v.proposal?'':v.supported_radios>1?' · several supported radios: no proposal':''}`:'No COM ports found';
@@ -1029,8 +1069,8 @@ function detectShow(v){
     const p=v.proposal,a=p.audio;
     detectRow(fields,'Port',p.port);detectRow(fields,'Model',p.model);detectRow(fields,'CI-V address',`${p.civ_address}h`);detectRow(fields,'Baud',String(p.baud));
     detectRow(fields,'Control endpoint',p.control.endpoint);
-    detectRow(fields,'Audio input',a.input_device?`${a.input_name} · ${a.input_device}`:'not matched (choose manually)');
-    detectRow(fields,'Audio output',a.output_device?`${a.output_name} · ${a.output_device}`:'not matched (choose manually)');
+    detectRow(fields,'Audio input',a.input_device?a.input_name:'not matched (choose manually)',a.input_device??'');
+    detectRow(fields,'Audio output',a.output_device?a.output_name:'not matched (choose manually)',a.output_device??'');
   }
   detectEl('detect-proposal').hidden=!v.proposal;
   const items=detectEl('detect-items');items.replaceChildren();
@@ -1047,9 +1087,9 @@ detectEl('detect-run').addEventListener('click',async()=>{
 });
 detectEl('detect-use').addEventListener('click',()=>{
   const p=detectProposal;if(!p)return;
-  const set=(id,value)=>{const field=document.getElementById(id);if(value===null||value===undefined)return;field.value=value;field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));};
+  const set=(id,value,name)=>{const field=document.getElementById(id);if(value===null||value===undefined)return;if(field.tagName==='SELECT'&&![...field.options].some(o=>o.value===value))field.add(audioOption(name??'Detected device',value));field.value=value;field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));};
   set('control-mode',p.control.mode);set('control-endpoint',p.control.endpoint);set('ptt-mode',p.control.ptt);
-  set('audio-input',p.audio.input_device);set('audio-output',p.audio.output_device);
+  set('audio-input',p.audio.input_device,p.audio.input_name);set('audio-output',p.audio.output_device,p.audio.output_name);
   detectEl('detect-result').textContent='Radio section filled · press Apply ⟳, then confirm the receive-only setup';
   document.querySelector('#settings-save').focus();
 });
@@ -1075,7 +1115,7 @@ addEventListener('station-stale',catShow);
 const transmitPanel=document.createElement('div');transmitPanel.id='transmit-panel';
 transmitPanel.innerHTML='<p id="transmit-status" role="status">Transmit unavailable</p><p id="transmit-result" role="status"></p>';
 const transmitDetails=secondary('transmit-details','Transmit test panel',transmitPanel,expertSection);transmitDetails.hidden=true;
-let transmitView=null,transmitTimer=null;
+let transmitView=null,transmitViewAt=0;
 const transmitConfigured=()=>profileData?.settings.control.ptt==='cat';
 function transmitBody(extra){return JSON.stringify({v:1,profile_id:profileData.profile_id,boot_id:profileData.boot_id,command_id:crypto.randomUUID(),...extra});}
 async function transmitPost(path,extra){
@@ -1087,21 +1127,40 @@ function transmitShow(){
   const on=transmitConfigured();transmitDetails.hidden=!on;halt.disabled=!on;const qsoHalt=document.querySelector('#qso-halt');if(qsoHalt)qsoHalt.disabled=!on;
   if(on)halt.removeAttribute('aria-describedby');else halt.setAttribute('aria-describedby','transmit-unavailable');
   const v=transmitView,status=document.querySelector('#transmit-status');
-  const setting=document.querySelector('#clock-setting'),m0=v?.clock_measurement;
-  setting.textContent=!on||!v?'Station clock: system UTC. Measured offset unavailable (no transmit configuration).':`Station clock: system UTC${{air:' corrected from the air',both:', NTP with air fallback'}[v.clock_source]??''}, ${v.clock}${m0?` · offset ${m0.offset_ms>=0?'+':''}${m0.offset_ms} ms against ${m0.server}, measured ${Math.round(m0.age_ms/1000)} s ago`:' · no SNTP measurement'}`;
+  const setting=document.querySelector('#clock-setting'),m0=v?.clock_measurement,ageS=m=>Math.round((m.age_ms+performance.now()-transmitViewAt)/1000);
+  setting.textContent=!on||!v?'Station clock: system UTC. Measured offset unavailable (no transmit configuration).':`Station clock: system UTC${{air:' corrected from the air',both:', NTP with air fallback'}[v.clock_source]??''}, ${v.clock}${m0?` · offset ${m0.offset_ms>=0?'+':''}${m0.offset_ms} ms against ${m0.server}, measured ${ageS(m0)} s ago`:' · no SNTP measurement'}`;
   chipsShow();
   if(!on||!v){status.textContent='Transmit unavailable';return;}
-  const t=v.transmit,m=v.clock_measurement,clock=m?` ${m.offset_ms>=0?'+':''}${m.offset_ms} ms ${m.server} ${Math.round(m.age_ms/1000)} s ago`:'';
-  status.textContent=`${t.capability} · ${t.arm_state} (${t.last_disarm_cause}) · PTT ${v.ptt}${v.transmitting?' · TRANSMITTING':''}${t.tune?' · TUNE':''} · clock ${v.clock}${clock} · halt ${t.halt_state}${t.refusal?' · '+t.refusal:''}${t.last_text?' · last '+t.last_text:''} · WD ${v.watchdog.tx_remaining_minutes} min`;
+  const t=v.transmit,m=v.clock_measurement,clock=m?` ${m.offset_ms>=0?'+':''}${m.offset_ms} ms ${m.server} ${ageS(m)} s ago`:'';
+  status.textContent=`${t.capability} · ${t.arm_state} (${t.last_disarm_cause}) · PTT ${v.ptt}${v.transmitting?' · TRANSMITTING':''}${t.tune?' · TUNE':''} · clock ${v.clock}${clock} · halt ${t.halt_state}${t.refusal?' · '+t.refusal:''}${t.last_text?' · last '+t.last_text:''} · WD ${v.watchdog.tx_remaining_calls} calls`;
   const tune=document.querySelector('#tx-tune');if(tune)tune.textContent=t.tune?'Tune off':'Tune';
 }
-async function transmitSync(){
-  if(!transmitConfigured()||!profileData){transmitView=null;transmitShow();return;}
-  try{const response=await stationFetch('/transmit',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(response.ok)transmitView=await response.json();}catch{}
-  transmitShow();
+// WstxStationProtocol::PushedStationState / WstxTransmit::TransmitWire (#10): the station
+// pushes transmit.state on change; this browser reads GET /transmit once per socket, on an
+// announced revision it has not read, after its own requests and otherwise at most once per
+// 30 s as a safety read. One read pending, at most one queued; no 1 s poll.
+let transmitRead=null,transmitAgain=false,transmitReadAt=-Infinity,transmitRevision=null,transmitSocket=null,transmitEventSocket=null;
+function transmitSync(){
+  if(!transmitConfigured()||!profileData){transmitView=null;transmitShow();return Promise.resolve();}
+  if(transmitRead){transmitAgain=true;return transmitRead;}
+  transmitRead=(async()=>{
+    do{
+      transmitAgain=false;transmitReadAt=performance.now();
+      try{const response=await stationFetch('/transmit',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(response.ok){transmitView=await response.json();transmitViewAt=performance.now();}}catch{}
+      transmitShow();
+    }while(transmitAgain&&transmitConfigured());
+  })().finally(()=>{transmitRead=null;});
+  return transmitRead;
 }
-function transmitPoll(){if(transmitConfigured()&&!transmitTimer)transmitTimer=setInterval(transmitSync,1000);else if(!transmitConfigured()&&transmitTimer){clearInterval(transmitTimer);transmitTimer=null;}transmitShow();}
-setInterval(transmitPoll,2000);addEventListener('station-ready',()=>transmitPoll()); // #57: HALT is enabled as soon as the station is ready, not on the first 2 s poll.
+function transmitPoll(){if(transmitConfigured()&&connection.dataset.state==='connected'&&performance.now()-transmitReadAt>=30000)transmitSync();transmitShow();}
+setInterval(transmitPoll,2000);
+// #57: HALT is enabled as soon as the station is ready. A new socket reads the snapshot once:
+// at its first transmit.state (sent at the peer's first step) or, without one, by the safety
+// read 3-5 s after it became ready.
+addEventListener('station-ready',event=>{transmitShow();if(event.detail===transmitSocket)return;transmitSocket=event.detail;transmitReadAt=Math.max(transmitReadAt,performance.now()-27000);});
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='transmit.state')return;
+  const d=message.data;if(!d||!Number.isSafeInteger(d.transmit_revision)||d.profile_id!==profileData?.profile_id)return;
+  if(transmitEventSocket!==current||d.transmit_revision!==transmitRevision){transmitEventSocket=current;transmitRevision=d.transmit_revision;transmitSync();}});
 halt.addEventListener('click',async()=>{
   const result=document.querySelector('#transmit-result');
   try{const r=await transmitPost('/transmit/halt',{});result.textContent=`Halt: ${r.halt_state}`;}catch(error){result.textContent=`Halt not confirmed · ${error.message}`;}

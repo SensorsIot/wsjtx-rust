@@ -553,6 +553,86 @@ pub fn match_audio(port: &PortInfo, endpoints: &[AudioEndpoint], flow: Flow) -> 
     }
 }
 
+/// CL-044-07: the operator's name of an endpoint: the Windows friendly name with
+/// whitespace runs collapsed, trimmed and no space inside its parentheses.
+pub fn display_name(name: &str) -> String {
+    name.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace("( ", "(")
+        .replace(" )", ")")
+}
+/// One entry of a picker (CL-044-07): the endpoint ID is the value, `label` the text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EndpointChoice {
+    pub id: String,
+    pub name: Option<String>,
+    pub label: String,
+    pub present: bool,
+    pub radio: Option<&'static str>,
+}
+/// CL-044-07: the choices of one flow. `radio` is the selected radio's port and model
+/// name; `saved` the profile's endpoint of this flow with its last known name.
+pub fn endpoint_choices(
+    endpoints: &[AudioEndpoint],
+    flow: Flow,
+    radio: Option<(&PortInfo, &'static str)>,
+    saved: Option<(&str, Option<&str>)>,
+) -> Vec<EndpointChoice> {
+    let present: Vec<_> = endpoints.iter().filter(|e| e.flow == flow).collect();
+    let radio_id = radio.and_then(|(port, model)| match match_audio(port, endpoints, flow) {
+        Match::One(e) => Some((e.id, model)),
+        _ => None,
+    });
+    let mut choices: Vec<EndpointChoice> = present
+        .iter()
+        .map(|e| {
+            let name = display_name(&e.name);
+            let mut same: Vec<&str> = present
+                .iter()
+                .filter(|o| display_name(&o.name) == name)
+                .map(|o| o.id.as_str())
+                .collect();
+            same.sort_unstable();
+            let mut label = name.clone();
+            if same.len() > 1 {
+                let n = same.iter().position(|id| *id == e.id).unwrap_or(0) + 1;
+                label.push_str(&format!(" #{n}"));
+            }
+            let radio = radio_id
+                .as_ref()
+                .filter(|(id, _)| *id == e.id)
+                .map(|(_, model)| *model);
+            if let Some(model) = radio {
+                label.push_str(&format!(" — {model}"));
+            }
+            EndpointChoice {
+                id: e.id.clone(),
+                name: Some(name),
+                label,
+                present: true,
+                radio,
+            }
+        })
+        .collect();
+    if let Some((id, known)) = saved
+        && !choices.iter().any(|c| c.id == id)
+    {
+        let name = known.map(display_name);
+        choices.push(EndpointChoice {
+            id: id.to_owned(),
+            label: format!(
+                "{} · not present",
+                name.as_deref().unwrap_or("Unknown device")
+            ),
+            name,
+            present: false,
+            radio: None,
+        });
+    }
+    choices
+}
+
 /// CL-044-05: a WASAPI endpoint ID of this flow, {0.0.F.00000000}.{GUID}.
 pub fn endpoint_id(text: &str, flow: Flow) -> bool {
     let prefix = match flow {
