@@ -95,7 +95,7 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
     const load=seen[i].loads[loadsBefore];await p.waitForFunction(()=>!!window.wstxContact&&!!window.wstxLogbook,null,{timeout:120000});
     reloads.push({firstStatusAfterLoadMs:connected-load,display:await p.inputValue('#display-profile'),requests:seen[i].requests.slice(requestsBefore).map(r=>({route:`${r.method} ${r.path}`,startMs:Math.round(r.at-load),endMs:r.end===null?null:Math.round(r.end-load)}))});
   }
-  report.reload=reloads;await save();
+  report.reload=reloads;await save();const reloaded=performance.now();
   for(const r of reloads){bound(r.firstStatusAfterLoadMs<=10000,`first status ${r.firstStatusAfterLoadMs} ms after page load`);assert.equal(r.display,'thin','the explicit Thin choice survives the reload');}
 
   // ---- Detailed: station.tick once per second per client, and the worked-before status of a
@@ -104,8 +104,10 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
   // The window starts on two connected Detailed peers: the reload's contact.js (43 kB, 11-15 s of the shared
   // link) can hold the other client's Ping past the station's 15 s, and that socket then comes back first.
   // Such a close stays recorded in serverSocketCloses; the Thin window below runs with no asset on the link.
+  // A Ping held behind those assets closes its socket up to 15 s plus one 5 s heartbeat later, and the browser
+  // learns of it when the link delivers the close: the window starts after that time, on two connected peers.
   for(const p of pages)await display(p,'detail');
-  await sleep(3000);
+  await sleep(3000);await waitUntil(reloaded+22000);
   await Promise.all(pages.map(p=>p.locator('#connection[data-state=connected]').waitFor({timeout:60000})));
   await sleep(2000);
   {const start=performance.now(),wall0=Date.now();
