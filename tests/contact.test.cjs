@@ -544,6 +544,27 @@ test('TC-007-005 CQ waits for an unanswered selection before it decides',{timeou
   assert.deepEqual(page.errors,[]);
 });
 
+const idleAgain=async()=>{const s=await snapshot();if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
+  await waitFor(async()=>!['replying','calling','report','roger_report','rogers','signoff'].includes((await snapshot()).contact?.state)&&(await snapshot()).transmit.arm_state!=='armed','idle again',10000);};
+// Proves: CL-039-03, CL-010-15; TC-007-005 (#10). A row's selection waits for an unanswered command: after F4
+// clears the running contact, a directed CQ asks for confirmation as with no contact.
+test('TC-007-005 a row selection after an unanswered Clear DX decides on the cleared contact',{timeout:60000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
+  const {sequences}=await publish(evenNow(),[{text:'CQ W1ABC FN42',hz:1999,snr:-5},{text:'CQ NA W9XYZ EN52',hz:2100,snr:-3}]);
+  const first=page.locator(`#band-activity tbody tr[data-sequence="${sequences[0]}"]`),directed=page.locator(`#band-activity tbody tr[data-sequence="${sequences[1]}"]`);
+  await first.waitFor({timeout:30000});await first.click();
+  await waitFor(async()=>(await snapshot()).contact?.dx_call==='W1ABC'&&await page.evaluate(()=>window.wstxContact.snapshot().contact?.dx_call==='W1ABC'),'W1ABC selected and shown',10000);
+  let delayed=false;
+  await page.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());if(!delayed&&b.action==='cancel'){delayed=true;await new Promise(r=>setTimeout(r,800));}await route.continue();});
+  await page.locator('body').click({position:{x:5,y:5}});await page.keyboard.press('F4');await new Promise(r=>setTimeout(r,200));
+  await directed.focus();await page.keyboard.press('Enter');
+  const asked=await page.locator('#op-confirm[open]').waitFor({timeout:5000}).then(()=>true,()=>false);
+  if(asked)await page.locator('#op-confirm button[value=cancel]').click();
+  await page.unroute('**/contact/command');await idleAgain();
+  assert.ok(delayed,'the Clear DX was held');assert.ok(asked,'the directed CQ asks, as with no running contact');
+  assert.deepEqual(page.errors,[]);
+});
+
 // Proves: CL-010-15; TC-007-005. A read older than a pushed change does not replace it.
 test('TC-007-005 an older GET /contact does not replace pushed state',{timeout:60000},async()=>{
   const live=await snapshot();const watchdogs=async tx_calls=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};
