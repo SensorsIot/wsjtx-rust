@@ -2246,6 +2246,11 @@ test('TC-007-005 receive.state carries the job and the audio; only a new state, 
   assert.equal(reads.length,before+1,'a new job state reads GET /receive once');
   assert.equal(await page.evaluate(()=>live.job.state),'cancelling');
   state.job={...state.job,state:'running'};await page.evaluate(()=>receiveSync());await page.waitForFunction(()=>live.job.state==='running'&&!livePending);
+  // An unknown outcome is only cleared by a read: the event reads, and carries nothing until then.
+  await page.evaluate(()=>{uncertainMutation=true;});before=reads.length;
+  await event({next_sequence:2,available_count:2,latest_decode:decode(2)});
+  assert.equal(reads.length,before+1,'an event during an unknown outcome reads GET /receive once');
+  assert.equal(await page.evaluate(()=>uncertainMutation),false);
   // A failed read: the next status reads again, the one after it no more.
   await page.unroute('**/receive');await page.route('**/receive',route=>route.abort(),{times:1});
   await page.evaluate(()=>receiveSync());await page.waitForFunction(()=>liveFailed);

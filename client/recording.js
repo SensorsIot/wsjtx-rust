@@ -826,7 +826,7 @@ addEventListener('station-message',event=>{const {current,message}=event.detail;
   // WstxRecordingReceive: the event carries the job's progress and the audio; GET /receive only for a new identity or state.
   const e=message.data,carried=live?.job&&e?.job&&e.audio&&e.boot_id===live.boot_id&&e.generation===live.generation&&e.job_id===live.job.id&&e.state===live.job.state&&e.source_id===(live.source?.id??null);
   const held=carried&&{...live,audio:e.audio,clock:{...live.clock,...e.clock},job:{...live.job,...e.job}};
-  let shown=false;if(carried&&!mutationPending&&validLiveSnapshot(held)){try{live=held;applyLatestDecode(e.job.latest_decode,e.job.first_sequence);liveFailed=false;receiveShow();shown=true;}catch{}}
+  let shown=false;if(carried&&!mutationPending&&!uncertainMutation&&validLiveSnapshot(held)){try{live=held;applyLatestDecode(e.job.latest_decode,e.job.first_sequence);liveFailed=false;receiveShow();show();shown=true;}catch{}}
   if(!shown)receiveSync(current);
   const d=message.data;if(snapshot&&d&&(d.generation!==snapshot.generation||d.job_id!==(snapshot.job?.id??null)||d.state!==(snapshot.job?.state??null)))sync(current);});
 setInterval(receiveResults,250);
