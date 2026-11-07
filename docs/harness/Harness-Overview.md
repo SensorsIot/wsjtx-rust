@@ -95,9 +95,9 @@ not edited, regenerated or read by the active workflow. Harness instructions, sk
 standards, process, build and gate documentation remain Markdown.
 
 For each functional issue follow the [required sequence](Project-Specifics.md#required-sequence-for-functional-issues):
-settle the canonical requirements and independent verification expectations, obtain
-meaning/readiness review, implement against the reviewed model and verify with independent
-oracles. Reconcile delivered functionality, source bindings and durable cases before
+settle the canonical requirements and independent verification expectations, implement
+against the model, test the function with independent oracles, for real where it matters, and
+only then have the independent review, to find undesired behaviour. Reconcile delivered functionality, source bindings and durable cases before
 manual issue closure. A test's presence, actual execution and live acceptance are distinct.
 
 The [model catalog](../sysml/Requirements.sysml) owns stable FR/CL/TC identities and
@@ -110,8 +110,8 @@ harness rollout process.
 CL-014 and TC-DOC are HOW bindings in
 [Project specifics](Project-Specifics.md#project-model-documentation-contract), not product
 SysML. Full parsing/name checking, architecture integrity and trace checks do not prove
-behavioural equivalence or implementation readiness; independent review and relevant
-application tests supply that evidence.
+behavioural equivalence or implementation readiness; the ready check, independent review
+and relevant application tests supply that evidence.
 
 The active canonical contract and these bindings state the rule that holds now, never
 its history ([documentation](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/documentation.md)).

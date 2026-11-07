@@ -22,18 +22,22 @@ source; do not replace it with a user-level skill or update its pin without its 
 
 ## Working state and rules (2026-11-06)
 
-- **Lifecycle:** every open issue carries one `cr:*` label (preparing … accepted); read
+- **Lifecycle:** every open issue carries one `cr:*` label (recorded … accepted; none counts as
+  recorded), and no product code comes before the issue's `Ready: PASS`; read
   `python harness/core/tools/cr_state.py status` (with `HARNESS_REPO` set inline) before
   anything else. Slices of one issue (e.g. #24, #39, #44) are tracked per slice.
 - **Merge queue:** CRs land only through `harness/core/tools/merge_queue.py` (submit /
   worker / status). Agents never `git push` in this project (the agent guard refuses it
   from CR worktrees); harness pin bumps are pushed by the coordinator from a worktree
   outside `.git/harness-parallel/worktrees`.
-- **CR rules in force:** hand in each reviewed slice at once; agents run fast checks only
-  (build, lint, changed tests, red-on-parent, SysML check) and leave the suites to the
-  gate; merge main only after a conflict bounce, and the re-review reads only the
+- **CR rules in force:** implement and test the function first (for real where it matters),
+  and only when it is OK have the review, to find undesired behaviour (operator 2026-11-06);
+  hand in each reviewed slice at once; agents run fast checks only (build, lint, changed tests,
+  red-on-parent, SysML check) plus that function test, and leave the suites to the gate; merge main only after a conflict bounce, and the re-review reads only the
   resolution (`resolution_diff.py`); the reviewer posts its own verdict — an implementer
   never posts or relays one. Set `HARNESS_REPO` only inline on queue/lifecycle commands.
+- **Radio:** before any agent Tx, `.harness/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <level>` must
+  exit 0 (RF power, one live writer; [handoff](HB9BLA-HANDOFF.md#preserve-the-runtime)).
 - **Operator design rules** (recorded on the issues): clear client–server — the server
   pushes state over one WebSocket, HTTP only for commands and the reconnect snapshot, no
   client polling (#10); Band Activity colours only interesting stations (#50); CI-V

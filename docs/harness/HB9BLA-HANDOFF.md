@@ -19,9 +19,34 @@ verify their availability in the actual agent environment before starting work.
 
 - Station: **https://192.168.0.37:18081**, task `WSTX Rust Station HB9BLA`;
   receipt `%LOCALAPPDATA%\WstxRust\station\station-running.json`.
-- IC-7300: **COM3**, USB Audio CODEC; in use on **20 m FT8 (14.074 MHz USB-D)**, 1 W for
-  agent tests; **AGC SLOW** for FT8/FT4 (operator finding: it removes the AGC line between
-  periods). Read back before changes — CI-V reads first and writes only on a difference.
+- IC-7300: **COM3**, USB Audio CODEC; in use on **20 m FT8 (14.074 MHz USB-D)**; agent tests that
+  make QSOs use at least 30 W, short non-QSO keying 1 W, set by the test; **AGC SLOW**
+  for FT8/FT4 (operator finding: it removes the AGC line between periods). Read back before
+  changes — CI-V reads first and writes only on a difference.
+- RF power is whatever the radio reads, not a fact of this page: each test sets the level it
+  needs (operator 2026-11-07: "the power should be set by the tests"). The value of `14 0A` is the
+  radio's RF POWER control from `0000` to `0255`, not watts, and Po also follows the Tx level and
+  the profile's limit. Measured on 20 m at -12 dB: `0077` gave Po 24-26 %, `0090` gave Po 30-31 %;
+  `0003` showed Po 0 %; no wattmeter. A test that makes QSOs ("for qsos, you need at least 30W")
+  uses `0090` or more and checks Po on its first Tx; short keying without a QSO may use `0003`.
+  **Before keying, an agent runs
+  `.harness/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <value>` and keys only on
+  exit 0, under its lease** (`-Status`, `-Release`). The level is required: nothing keys at an
+  assumed one. It stops an idle station gracefully, because the station holds COM3, reads the
+  power, writes it only if different, reads it back, starts the station again and records the
+  old value. It refuses to key only when the power cannot be read, written or confirmed by the
+  read-back: exit 2, do not key, and report it to the supervisor. **Afterwards
+  `radio-preflight.ps1 -Restore -Holder <run>` puts the old value back and ends the lease**;
+  when that fails the lease stays for another try. With no live lease (it expired, a renewal
+  failed, or `-Release` gave up the old value, which it prints), run `-PowerBcd <old value from
+  preflight.jsonl>`, then `-Release`. Because it restarts the station, do not run it while the operator is operating, unless
+  agreed: it sees only PTT and a contact, not someone watching Band Activity.
+  A contact you did not start, seen while another run's lease is live,
+  is that run's. The station itself does not check this.
+- Function test before review ([CR process](../../harness/core/docs/CR-Process.md), step 2): a
+  few short transmissions on a development build need no prior review (operator 2026-11-06: "If
+  they are short, nobody will complain"). Long or unattended automatic running on the air
+  needs its safety review first.
   The camera microphone belongs to Dictate, not the radio.
 - Station log: `%LOCALAPPDATA%\WstxRust\station\profiles\ic7300\contacts.adi`, updated on
   2026-11-04 from the operator's Log4OM export (26,886 QSOs). A rerun of Update logbook

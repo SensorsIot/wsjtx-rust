@@ -617,7 +617,7 @@ package WstxRequirements {
         doc /* TC-008-002 — Physical controlled FT8 transmit
              CL-009-03, CL-009-04
              Setup: separately approved operation on the HB9BLA IC-7300 (COM3, USB Audio
-             CODEC) into a dummy load or the station antenna at reduced power, profile
+             CODEC) into a dummy load or the station antenna, RF power set low by the test before the first Tx (CI-V 14 0A, value 0003, with the station stopped and idle, because it holds COM3; read back; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported), profile
              with control.ptt cat and the IC-7300 USB output, system clock
              synchronized by the station's SNTP measurement (CL-009-05), the radio's own transmit time-out timer set
              (mandatory, e.g. 3 min) and read back before any keying.
@@ -1127,7 +1127,7 @@ package WstxRequirements {
     verification 'TC-007-007' {
         doc /* TC-007-007 — Live FT8 contact on the IC-7300
              CL-010-01, CL-010-02, CL-010-03, CL-010-04, CL-010-10
-             Setup: deployed candidate on HB9BLA with the IC-7300 (USB audio and CAT, USB-D, 20 m 14.074 MHz or another FT8 dial frequency), operator present at the radio, low power chosen by the operator, Halt Tx and the radio's own power control within reach; transmit authorized by the operator on 2026-10-31 for this test only. An independent receiver (separate WSJT-X station or PSK Reporter reception reports) observes our transmissions.
+             Setup: deployed candidate on HB9BLA with the IC-7300 (USB audio and CAT, USB-D, 20 m 14.074 MHz or another FT8 dial frequency), operator present at the radio, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported), Halt Tx and the radio's own power control within reach; transmit authorized by the operator on 2026-10-31 for this test only; the 30 W instructed by the operator on 2026-11-07. An independent receiver (separate WSJT-X station or PSK Reporter reception reports) observes our transmissions.
              Steps: run a UDP listener on 127.0.0.1:2237 enabled as a WSJT-X UDP target with QSO Logged and Logged ADIF; complete at least one contact answering a real CQ and, if band conditions allow, one by calling CQ, with Auto Seq, without pressing Log QSO; then Enable Tx without operator activity until the Tx watchdog (set to 2 repetitions for the test) stops it; Halt once during a transmission; restart the server.
              Expected: the partner's messages addressed to HB9BLA appear in the Rx Frequency pane with the report we sent echoed back; the independent receiver decodes exactly the transmitted texts in the expected periods and audio offset within 10 Hz; the contact completes per the AutoSequence table with Enable Tx off and logs itself (no review form; the Logbook page lists it); the listener receives one QSO Logged and one Logged ADIF with the same call, reports, times and frequency; contacts.adi contains exactly one record with the independent observations (call, grid, reports, date/time, band, FREQ = dial + Tx offset) after restart; Halt stops RF promptly as observed on the radio; watchdog expiry stops transmission and disarms. Failures are recorded, not reworded as passes.
              5 — Live RF transmission with operator authorization; HB9BLA station PC with the actual IC-7300 and antenna. */
@@ -3551,7 +3551,7 @@ package WstxRequirements {
         doc /* TC-043-004 — Live clock from the air on HB9BLA
              CL-043-01, CL-043-02, CL-043-03, CL-009-05
              Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3, USB Audio
-             CODEC, FT8 receive on a band with at least ten stations heard. Steps (1)-(4)
+             CODEC, FT8 receive on a band with at least ten stations heard; for the transmit steps, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported). Steps (1)-(4)
              keep the PC clock disciplined by NTP and need no administrator rights (agents
              have none); step (5), the issue's offset-clock check, is performed by the
              operator with administrator rights.
@@ -3911,10 +3911,10 @@ package WstxRequirements {
     verification 'TC-044-019' {
         doc /* TC-044-019 — Monitoring on HB9BLA
              CL-044-14
-             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, 1 W on 40 m.
-             Steps: transmit during normal operation, compare the frame count in the CI-V log and the transmit timing; check the thresholds against the radio's own meters; transmit with ALC above 0010.
+             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, 40 m, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported); every transmission into a mismatched antenna instead goes at low power, Po at most 5 %, 14 0A set the same way (coordinator decision 2026-11-07, not the operator's).
+             Steps: transmit during normal operation, compare the frame count in the CI-V log and the transmit timing; check the ALC threshold against the radio's own meter; transmit with ALC above 0010; connect a mismatched antenna at low power, check the SWR thresholds against the radio's display at that power first, then transmit until the SWR 3.0 stop.
              Expected: three meter frames per transmission, in the middle; decode by another station unaffected; ALC above 0010 goes down one step at the next transmission until it reads 0010 or less, with no entry below 0060; the ALC and SWR thresholds match the radio's display; a mismatched antenna stops at SWR 3.0.
-             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
+             5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
         objective {
@@ -4039,10 +4039,10 @@ package WstxRequirements {
     verification 'TC-044-016' {
         doc /* TC-044-016 — Set level on HB9BLA
              CL-044-12, CL-044-13
-             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, a dummy load or the 1 W authorization.
+             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, a dummy load or the station antenna, RF power set low by the test before the first Tx (CI-V 14 0A, value 0003, with the station stopped and idle, because it holds COM3; read back; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported).
              Steps: read 15 13, 15 11, 15 12 during Tune and compare with the radio's own meter; press Set level; press HALT during a second run.
              Expected: the meter values agree with the radio's display and the manual's scales; the run ends with the ALC just below rising, the level stored and Tune off; HALT stops it at once and keeps the stored level.
-             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
+             5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
         objective {
@@ -4632,7 +4632,7 @@ package WstxRequirements {
     verification 'TC-039-007' {
         doc /* TC-039-007 — Live strategy on HB9BLA
              CL-039-03, CL-039-04, CL-039-05, CL-039-06
-             Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 at 1 W on 40 m FT8, operator consent; Tx watchdog 6 repetitions (the profile default).
+             Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 on 40 m FT8, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported), operator consent; Tx watchdog 6 repetitions (the profile default).
              Steps: create an award strategy (goal new_call, region dx, Treat 73 as CQ); select it; let it work two stations; HALT; select it again; Esc during a QSO; select None; in Settings > General click Update Most Wanted once.
              Expected: the stations it would call are marked and on top by value, CQ NA/AS and same-continent CQ DX greyed; no CQ is transmitted; it answers callers first, then the best candidate, to a logged QSO, and goes on; HALT stops at once and the selector shows None; Esc aborts the QSO, gives the station up and the strategy goes on; None stops it; a station restart leaves None; Update Most Wanted fetches the list once and the status shows its date, its entries and how many are not mapped.
              5 — Live with RF on the station, operator consent; not run by the automated gate. */
@@ -5586,10 +5586,10 @@ package WstxRequirements {
     verification 'TC-061-007' {
         doc /* TC-061-007 — Tx periods on HB9BLA
              CL-061-04
-             Setup: the gated candidate installed on HB9BLA, 40 m FT8 and FT4, CQ at 1 W, one browser on the LAN.
+             Setup: the gated candidate installed on HB9BLA, 40 m FT8 and FT4, CQ, RF power set low by the test before the first Tx (CI-V 14 0A, value 0003, with the station stopped and idle, because it holds COM3; read back; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported), the operator's consent, one browser on the LAN.
              Steps: call CQ for at least three own periods; watch Band Activity, the waterfall, the meter and the error field; read GET /receive during a Tx period.
              Expected: each Tx period shows the Tx marker and no empty block, its waterfall rows are Tx rows, no "Audio level low" entry appears in or right after a Tx period, the receive periods decode and show their level; audio.loss_epochs does not grow from the transmissions; HALT stops the transmission as before.
-             3 — Live on the station with transmission; with the operator at acceptance. */
+             5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
         objective {
@@ -5620,10 +5620,10 @@ package WstxRequirements {
     verification 'TC-061-009' {
         doc /* TC-061-009 — The Tx band on HB9BLA
              CL-061-05
-             Setup: the installed station on HB9BLA, IC-7300, the operator's browser in its usual theme.
+             Setup: the installed station on HB9BLA, IC-7300, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported), the operator's consent, the operator's browser in its usual theme.
              Steps: run a QSO with several Tx periods and look at the waterfall during and after them.
              Expected: each Tx period shows only a thin dark red band; no white or grey band appears while transmitting; the time labels below a band are the source times of those rows.
-             3 — Live on the station with transmission; with the operator at acceptance. */
+             5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
         objective {

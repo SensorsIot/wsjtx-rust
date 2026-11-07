@@ -1,0 +1,5 @@
+{
+  "port": "COM3",
+  "baud": 9600,
+  "basis": "The IC-7300's CI-V port, read by radio-preflight.ps1. The power is no setting here: each test names its own level (operator, 2026-11-07)."
+}

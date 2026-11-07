@@ -827,7 +827,7 @@ impl Recording {
     }
     /// Test seam: one Thin spectrum row of the live job, shaped as the receive worker's:
     /// 128 levels of two digits, a frame of about 620 bytes.
-    #[cfg(test)]
+    #[cfg(all(test, not(debug_assertions)))]
     pub(crate) fn fixture_thin_row(&self, sequence: u64) {
         let mut s = self.state.lock().unwrap();
         let Some(job) = s.job.as_ref() else { return };

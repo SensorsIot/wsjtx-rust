@@ -44,7 +44,9 @@ queue:
   trailer: "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   poll: 60
   comments: true
-  flake_issue: null
+  # Each flake's comment goes here instead of to the issue of whichever CR it hit. The count is
+  # `merge_queue.py history --flakes`.
+  flake_issue: 8
   min_free_gb: 20
   build_dirs: [CARGO_TARGET_DIR]
   tools:
