@@ -1218,16 +1218,11 @@ async fn connection(
                 if !auth_ready { continue; }
                 let r=recording.as_ref().unwrap();
                 let s=r.receive_snapshot();
-                let data=json!({"profile_id":s["profile_id"],"boot_id":s["boot_id"],"generation":s["generation"],
-                    "source_id":s["source"]["id"],"job_id":s["job"]["id"],"state":s["job"]["state"],
-                    // WstxRecordingReceive: what a browser with this identity would otherwise read GET /receive for.
-                    "audio":s["audio"],"job":{"error":s["job"]["error"],"first_sequence":s["job"]["first_sequence"],"next_sequence":s["job"]["next_sequence"],
-                        "available_count":s["job"]["available_count"],"last_overrun":s["job"]["last_overrun"],"latest_decode":s["job"]["latest_decode"]}});
-                let observed=data.clone();
+                let data=receive_http::receive_state_data(&s);
                 let notify=!s["job"].is_null() || !receive_seen["job_id"].is_null();
-                if notify && observed!=receive_seen {
+                if notify && data!=receive_seen {
                     if !send_control(&mut socket,Message::Text(json!({"v":1,"type":"receive.state","data":data}).to_string().into()),optional_since).await {break "receive.state write";}
-                    optional_since=None;receive_seen=observed;
+                    optional_since=None;receive_seen=data;
                 }
             }
             _ = contact_tick.tick(), if subscribed && recording.as_ref().is_some_and(|r| r.contact.get().is_some()) => {
@@ -1306,7 +1301,7 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{pskr_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break,
+                        Err(_)=>break "optional write error",
                     }
                 }
                 if r.tx_level.revision()!=tx_level_seen {
@@ -1322,7 +1317,7 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{native_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break,
+                        Err(_)=>break "optional write error",
                     }
                 }
                 let (text,transmitting)=contact_http::tick_event(r);

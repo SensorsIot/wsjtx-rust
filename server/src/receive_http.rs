@@ -46,6 +46,19 @@ fn empty(body: Result<Bytes, BytesRejection>) -> Result<(), &'static str> {
         Err(_) => Err("request_too_large"),
     }
 }
+
+/// The data of receive.state (WstxStationProtocol::PushedStationState): the identity and what a
+/// browser holding it would otherwise read GET /receive for. It leaves out what frames carry.
+pub(crate) fn receive_state_data(s: &Value) -> Value {
+    let (j, c) = (&s["job"], &s["clock"]);
+    json!({"profile_id":s["profile_id"],"boot_id":s["boot_id"],"generation":s["generation"],
+        "source_id":s["source"]["id"],"job_id":j["id"],"state":j["state"],
+        "audio":s["audio"],
+        "clock":{"correlated":c["correlated"],"utc_anchor":c["utc_anchor"],"canonical_anchor_frame":c["canonical_anchor_frame"],"uncertainty_ns":c["uncertainty_ns"]},
+        "job":{"error":j["error"],"first_sequence":j["first_sequence"],"next_sequence":j["next_sequence"],
+            "available_count":j["available_count"],"last_overrun":j["last_overrun"],"latest_decode":j["latest_decode"]}})
+}
+
 pub async fn snapshot(
     State(app): State<App>,
     headers: HeaderMap,

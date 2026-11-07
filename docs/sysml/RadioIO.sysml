@@ -625,9 +625,18 @@ Admission for import/replay/decode still sees busy through the single receive ow
 Live spectrum reuses the exact12.6 frame messages and subscriptions, with the live
 source/job identity; no native PCM crosses the browser link. For a live source the
 receiver checks safe monotonically increasing canonical frame counters and nominal
-row duration instead of a finite recording length. New receive.state identity/state
-events cause snapshot refresh; their exact data is
-`{profile_id,boot_id,generation,source_id,job_id,state}`, nullable IDs/state when idle.
+row duration instead of a finite recording length. receive.state carries the job's
+progress and the audio (#10 WstxStationProtocol::PushedStationState); its exact data is
+`{profile_id,boot_id,generation,source_id,job_id,state,audio,clock,job}`, nullable IDs/state
+when idle, audio as in GET /receive, clock exactly
+`{correlated,utc_anchor,canonical_anchor_frame,uncertainty_ns}` and job exactly
+`{error,first_sequence,next_sequence,available_count,last_overrun,latest_decode}`, at most
+2048 bytes. It is sent when any of these changes. The browser accepts it like a read for
+the identity and job state it holds; only a new identity or job state or a refused event
+causes a GET /receive read. Otherwise it reads GET /receive once per socket, on a saved
+profile revision or boot change, after its own mutation and, on a later status of the socket,
+only after a failed read or an unknown outcome; a read older than an accepted event
+changes nothing. A frame keeps the source's next_frame and the job's processed_frames.
 They carry no samples or result records. Changing between live/file sources resets
 browser history/readouts without changing the fixed0..3000 Hz axis or local sliders.
 

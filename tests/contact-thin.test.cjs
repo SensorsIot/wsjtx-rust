@@ -230,6 +230,7 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
   assert.equal(latencies.length,28);
   for(const [i,c]of thin.entries()){
     bound(c.worked.length===0,`client ${i}: ${c.worked.length} worked-before queries`);
+    bound((c.routes['GET /receive']??0)===0,`client ${i}: ${c.routes['GET /receive']} GET /receive: receive.state carries it`);
     bound(c.maxPendingContactGets<=1,`client ${i}: ${c.maxPendingContactGets} GET /contact pending`);
     // Thin: one tick per 5 s plus at most one per transmit start/stop (three transmissions).
     const steady=c.tickUtcSpacingMs.filter((ms,n)=>c.tickTransmitting[n+1]===c.tickTransmitting[n]);

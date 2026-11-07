@@ -802,16 +802,18 @@ document.getElementById('audio-use-radio').addEventListener('click',()=>{
   for(const [id,e] of [['audio-input',input],['audio-output',output]])if(e){const select=document.getElementById(id);select.value=e.id;select.dispatchEvent(new Event('change',{bubbles:true}));}
   serverForm.requestSubmit();
 });
-function receiveReadyKey(profile,statusId){
+function receiveReadyKey(profile){
   const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
-  if(!profile||!uuid(profile.profile_id)||!uuid(profile.boot_id)||!Number.isSafeInteger(profile.revision)||profile.revision<0||!Number.isSafeInteger(statusId)||statusId<=0)return null;
-  return JSON.stringify([profile.profile_id,profile.boot_id,profile.revision,statusId]);
+  if(!profile||!uuid(profile.profile_id)||!uuid(profile.boot_id)||!Number.isSafeInteger(profile.revision)||profile.revision<0)return null;
+  return JSON.stringify([profile.profile_id,profile.boot_id,profile.revision]);
 }
 function receiveReady(current){
   if(current!==socket||connection.dataset.state!=='connected')return false;
-  const key=receiveReadyKey(profileData,pendingId);
+  const key=receiveReadyKey(profileData);
   if(key!==null){
-    if(lastReceiveReady?.socket===current&&lastReceiveReady.key===key)return false;
+    // WstxRecordingReceive: one read per socket and saved profile; a later status of the socket reads
+    // nothing while receive.state holds the state, only after a failed read or an unknown outcome.
+    if(lastReceiveReady?.socket===current&&lastReceiveReady.key===key&&!liveFailed&&!uncertainMutation)return false;
     // The synchronous receiveSync entry below necessarily starts or queues this
     // read under the same socket/connection checks; failed HTTP is not replayed.
     lastReceiveReady={socket:current,key};
@@ -823,7 +825,7 @@ addEventListener('station-stale',()=>{lastReceiveReady=null;receiveShow();receiv
 addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;resultsAnnounced=performance.now();
   // WstxRecordingReceive: the event carries the job's progress and the audio; GET /receive only for a new identity or state.
   const e=message.data,carried=live?.job&&e?.job&&e.audio&&e.boot_id===live.boot_id&&e.generation===live.generation&&e.job_id===live.job.id&&e.state===live.job.state&&e.source_id===(live.source?.id??null);
-  const held=carried&&{...live,audio:e.audio,job:{...live.job,...e.job}};
+  const held=carried&&{...live,audio:e.audio,clock:{...live.clock,...e.clock},job:{...live.job,...e.job}};
   let shown=false;if(carried&&!mutationPending&&validLiveSnapshot(held)){try{live=held;applyLatestDecode(e.job.latest_decode,e.job.first_sequence);liveFailed=false;receiveShow();shown=true;}catch{}}
   if(!shown)receiveSync(current);
   const d=message.data;if(snapshot&&d&&(d.generation!==snapshot.generation||d.job_id!==(snapshot.job?.id??null)||d.state!==(snapshot.job?.state??null)))sync(current);});

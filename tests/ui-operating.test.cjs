@@ -1634,14 +1634,14 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
   await page.evaluate(()=>document.documentElement.style.fontSize='16px');
   const nextPeriod='2026-10-27T12:00:30.0000000Z';records.push(...Array.from({length:18},(_,i)=>makeRecord(i+19,nextPeriod,0.1)));
   Object.assign(state.job,{next_sequence:37,available_count:37,latest_decode:{id:2,first_sequence:19,next_sequence:37,period_start_utc:nextPeriod,complete:false}});hold=true;
-  await refreshStatus(page);await pending.promise;
+  await page.evaluate(()=>receiveSync());await pending.promise;
   assert.equal(await page.locator('tr[data-period=latest]').count(),16);assert.match(await page.locator('#band-activity header').innerText(),/Partial.*Loading results/);
   assert.doesNotMatch((await page.locator('tr[data-period=latest]').allInnerTexts()).join('\n'),/STATION 1\b/);
   // BandActivityView: the replaced period stays below its divider, never in the latest view.
   assert.equal(await page.locator('tr[data-period=history]').count(),18);assert.match(await page.locator('tr.ba-divider').first().textContent(),/12:00:15 UTC/);
   assert.equal(await page.locator('tr[data-period=history]').filter({hasText:/STATION 1(?!\d)/}).count(),1);
   state.job.latest_decode={id:3,first_sequence:37,next_sequence:37,period_start_utc:'2026-10-27T12:00:45.0000000Z',complete:true};
-  await refreshStatus(page);await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===0);
+  await page.evaluate(()=>receiveSync());await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===0);
   await held.route.fulfill({json:held.response});held=null;hold=false;
   const history=await page.locator('tr[data-period=history]').count();
   await page.waitForTimeout(500);assert.equal(await page.locator('tr[data-period=latest]').count(),0);assert.match(await page.locator('#band-activity').innerText(),/No stations decoded/);
@@ -1824,7 +1824,7 @@ test('TC-004-004 a correlated period view extended in place adds the late starte
   // (DT +1.2 s), and the view completes.
   records.push(makeRecord(2,1.2));
   Object.assign(state.job,{next_sequence:3,available_count:3,latest_decode:{id:1,first_sequence:0,next_sequence:3,period_start_utc:period,complete:true}});
-  await refreshStatus(page);
+  await page.evaluate(()=>receiveSync());
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3,null,{timeout:15000});
   assert.equal(await page.locator('tr[data-period=latest]').filter({hasText:'LATE FIXTURE 2'}).count(),1);
   assert.equal(await page.locator('tr[data-period=history]').count(),0,'an extended view is not a replaced period');
@@ -1833,7 +1833,7 @@ test('TC-004-004 a correlated period view extended in place adds the late starte
   assert.doesNotMatch(await page.locator('#band-activity header').innerText(),/Partial/);
   // A same-id change of anything else stays an error.
   state.job.latest_decode={id:1,first_sequence:1,next_sequence:3,period_start_utc:period,complete:true};
-  await refreshStatus(page);
+  await page.evaluate(()=>receiveSync());
   await page.waitForFunction(()=>/Changed decode descriptor/.test(document.querySelector('#receive-status').textContent),null,{timeout:15000});
   assert.deepEqual(errors,[]);
 });
@@ -1890,7 +1890,7 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
   await clickSort(page,'signal');assert.deepEqual(await sortState(page),['signal','asc']);assert.deepEqual(await order(),[0,3,4,1,2],'unknown SNR stays last when ascending');
   await clickSort(page,'dt');assert.deepEqual(await sortState(page),['dt','asc']);assert.deepEqual(await order(),[0,3,2,4,1]);await clickSort(page,'dt');assert.deepEqual(await order(),[1,4,2,3,0]);
   await clickSort(page,'message');assert.deepEqual(await sortState(page),['message','asc']);assert.deepEqual(await order(),[4,1,2,0,3]);await clickSort(page,'message');assert.deepEqual(await order(),[0,2,1,4,3]);
-  state.job.latest_decode={id:2,first_sequence:5,next_sequence:5,period_start_utc:'2026-10-27T12:00:15.0000000Z',complete:true};await refreshStatus(page);await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===0);
+  state.job.latest_decode={id:2,first_sequence:5,next_sequence:5,period_start_utc:'2026-10-27T12:00:15.0000000Z',complete:true};await page.evaluate(()=>receiveSync());await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===0);
   assert.deepEqual(await sortState(page),['message','desc']);
   state.generation++;state.source.id=crypto.randomUUID();state.job.id=crypto.randomUUID();state.job.mode='ft4';state.job.latest_decode={id:1,first_sequence:0,next_sequence:5,period_start_utc:null,complete:true};records=records.map(r=>({...r,period_start_utc:null,dt_seconds:null}));
   await page.evaluate(()=>socket.close());await page.locator('#connection[data-state=stale]').waitFor();await page.locator('#connection[data-state=connected]').waitFor();await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===5);
@@ -2199,6 +2199,60 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
   ['CQ K1AA FN42','worked_this_band_and_mode',null,'rgba(0, 0, 0, 0)']],'only interesting stations are coloured; My call still applies; rows in value order (#55)');
  assert.deepEqual(queries,[]);
  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-010-15; TC-007-005 browser subset (#10 PushedStationState). The receive snapshot, its result pages and
+// the receive.state events are fixtures; what the browser holds and which reads it makes are the served client's.
+test('TC-007-005 receive.state carries the job and the audio; only a new state, a refused event or a failed read reads GET /receive',{timeout:40000},async t=>{
+  const period='2026-11-06T10:55:30.0000000Z',decode=n=>({id:1,first_sequence:0,next_sequence:n,period_start_utc:period,complete:false});
+  const record=(sequence,call)=>({sequence,start_frame:1000+sequence,frequency_hz:1000+sequence*100,snr_db:-5,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:`CQ ${call} FN42`,fields:{type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:call,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}},period_start_utc:period,dt_seconds:0.1});
+  const records=[record(0,'K1ABC'),record(1,'W1XYZ')];
+  let state,hold=null;const reads=[];
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-11-06T10:50:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    p.on('request',r=>{if(new URL(r.url()).pathname==='/receive')reads.push(r.method());});
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);const json=structuredClone(state);if(hold)await hold;await route.fulfill({json});});
+    await p.route('**/receive/results?*',async route=>{const q=new URL(route.request().url()).searchParams,cursor=Number(q.get('cursor')),next=state.job.next_sequence;await route.fulfill({json:{...emptyResults(state),next_sequence:next,available_count:next,next,records:records.slice(cursor,next)}});});
+  }});
+  await page.waitForFunction(id=>live?.job?.id===id,state.job.id,{timeout:25000});await page.waitForFunction(()=>!livePending);
+  const event=async(job,change={},wait=true)=>{const data={profile_id:state.profile_id,boot_id:state.boot_id,generation:state.generation,source_id:state.source.id,job_id:state.job.id,state:state.job.state,audio:state.audio,clock:{correlated:state.clock.correlated,utc_anchor:state.clock.utc_anchor,canonical_anchor_frame:state.clock.canonical_anchor_frame,uncertainty_ns:state.clock.uncertainty_ns},job:{error:null,first_sequence:0,next_sequence:0,available_count:0,last_overrun:null,latest_decode:null,...job},...change};
+    await page.evaluate(data=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',data}}})),data);await page.waitForTimeout(100);if(wait)await page.waitForFunction(()=>!livePending);};
+  const settled=reads.length;
+  // Progress and audio are carried: the rows follow from the result reads, with no GET /receive.
+  state.job={...state.job,next_sequence:1,available_count:1,latest_decode:decode(1)};
+  await event({next_sequence:1,available_count:1,latest_decode:decode(1)},{audio:{...state.audio,loss_epochs:1,last_loss:'stalled'}});
+  await page.locator('tr[data-sequence="0"]').waitFor({timeout:10000});
+  assert.deepEqual(await page.evaluate(()=>[live.job.next_sequence,live.audio.loss_epochs]),[1,1]);
+  assert.match(await page.locator('#receive-status').textContent(),/1 audio loss restart \(last stalled\)/,'the carried audio is shown');
+  assert.equal(reads.length,settled,'a carried event reads no GET /receive');
+  // A status of the same socket reads nothing while the events hold the state.
+  await refreshStatus(page);await page.waitForTimeout(300);assert.equal(reads.length,settled,'a status of the socket reads no GET /receive');
+  // A read started before an accepted event does not take it back.
+  let release;hold=new Promise(resolve=>release=resolve);
+  await page.evaluate(()=>{receiveSync();});await page.waitForFunction(()=>livePending);await page.waitForTimeout(300);
+  hold=null;state.job={...state.job,next_sequence:2,available_count:2,latest_decode:decode(2)};
+  await event({next_sequence:2,available_count:2,latest_decode:decode(2)},{},false);
+  release();await page.waitForFunction(()=>!livePending);
+  assert.equal(await page.evaluate(()=>live.job.next_sequence),2,'a read older than the event changes nothing');
+  // A refused event (its counters disagree) changes nothing it carries and reads the snapshot once.
+  let before=reads.length;await event({next_sequence:2,available_count:5,latest_decode:decode(2)});
+  assert.equal(reads.length,before+1,'a refused event reads GET /receive once');
+  assert.equal(await page.evaluate(()=>live.job.available_count),2,'the read holds the state, not the refused event');
+  // A new job state is no progress: the snapshot is read.
+  state.job={...state.job,state:'cancelling'};before=reads.length;
+  await event({next_sequence:2,available_count:2,latest_decode:decode(2)},{state:'cancelling'});
+  assert.equal(reads.length,before+1,'a new job state reads GET /receive once');
+  assert.equal(await page.evaluate(()=>live.job.state),'cancelling');
+  state.job={...state.job,state:'running'};await page.evaluate(()=>receiveSync());await page.waitForFunction(()=>live.job.state==='running'&&!livePending);
+  // A failed read: the next status reads again, the one after it no more.
+  await page.unroute('**/receive');await page.route('**/receive',route=>route.abort(),{times:1});
+  await page.evaluate(()=>receiveSync());await page.waitForFunction(()=>liveFailed);
+  await page.route('**/receive',route=>route.fulfill({json:state}));
+  before=reads.length;await refreshStatus(page);await page.waitForFunction(()=>!liveFailed);
+  assert.equal(reads.length,before+1,'a failed read: the next status reads once');
+  await refreshStatus(page);await page.waitForTimeout(300);assert.equal(reads.length,before+1,'then none again');
+  assert.deepEqual(errors,[]);
 });
 
 // Proves: CL-050-08; TC-050-008 (#50, live 2026-11-06, M7OZL UT4PA KO20): the worked-before status of a row

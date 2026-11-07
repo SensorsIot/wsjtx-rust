@@ -349,34 +349,42 @@ test('TC-009-005 browser preferred selection and Stop fence a genuinely delayed 
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-008-03/07; TC-009-005 case7. One actual status response can publish
-// the same readiness twice; unchanged context must not duplicate receive reads.
-test('TC-009-005 one status refresh coalesces unchanged receive readiness',{timeout:30000},async t=>{
+// Proves: CL-008-03/07; TC-009-005 case7. A status of the socket reads no receive snapshot while receive.state
+// holds it; the socket's first status, a changed saved profile and a failed read do, one each.
+test('TC-009-005 a status on the same socket reads no receive snapshot unless the state is in doubt',{timeout:30000},async t=>{
   const {origin,token}=await station(t),{chromium}=require('playwright');const browser=await chromium.launch();t.after(()=>browser.close());
   const context=await browser.newContext({ignoreHTTPSErrors:true}),page=await context.newPage();
-  await loginPage(page,origin,token);await page.locator('#operating-band:enabled').waitFor();await page.waitForTimeout(200);
+  await loginPage(page,origin,token);await page.locator('#operating-band:enabled').waitFor();await page.waitForFunction(()=>!livePending&&!!live);await page.waitForTimeout(200);
   await page.evaluate(()=>{window.__readyReads=[];addEventListener('station-ready',event=>window.__readyReads.push({sameSocket:event.detail===socket,pendingId,profile:profileData.profile_id,boot:profileData.boot_id,revision:profileData.revision}));});
   const reads=[];page.on('request',request=>{if(new URL(request.url()).pathname==='/receive')reads.push({method:request.method(),at:Date.now()});});
   const prior=await page.locator('#updated').textContent();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,prior);await page.waitForFunction(()=>window.__readyReads.length>=1);await page.waitForTimeout(250);
   const ready=await page.evaluate(()=>window.__readyReads);const evidence={reads,ready};await fs.mkdir('test-results/radio-selection',{recursive:true});await fs.writeFile('test-results/radio-selection/receive-ready.json',JSON.stringify(evidence,null,2));
   assert.equal(ready.length,1,'a status refresh on the socket reads no profile: one readiness notification');
-  assert.equal(reads.length,1,'one status refresh needs one receive snapshot');
-  await page.evaluate(()=>{dispatchEvent(new CustomEvent('station-ready',{detail:socket}));dispatchEvent(new CustomEvent('station-ready',{detail:socket}));});await page.waitForTimeout(100);assert.equal(reads.length,1,'the same completed readiness does not refetch');
+  assert.equal(reads.length,0,'a status of the socket needs no receive snapshot');
+  await page.evaluate(()=>{dispatchEvent(new CustomEvent('station-ready',{detail:socket}));dispatchEvent(new CustomEvent('station-ready',{detail:socket}));});await page.waitForTimeout(100);assert.equal(reads.length,0,'the same readiness does not read');
   const keys=await page.evaluate(()=>{
     const p={profile_id:'00000000-0000-4000-8000-000000000001',boot_id:'00000000-0000-4000-8000-000000000002',revision:0};
-    return {base:receiveReadyKey(p,1),profile:receiveReadyKey({...p,profile_id:'00000000-0000-4000-8000-000000000003'},1),boot:receiveReadyKey({...p,boot_id:'00000000-0000-4000-8000-000000000003'},1),revision:receiveReadyKey({...p,revision:1},1),status:receiveReadyKey(p,2),invalid:[receiveReadyKey(null,1),receiveReadyKey(p,null),receiveReadyKey({...p,boot_id:null},1),receiveReadyKey(p,0)],staleAdmitted:receiveReady({})};
+    return {base:receiveReadyKey(p),profile:receiveReadyKey({...p,profile_id:'00000000-0000-4000-8000-000000000003'}),boot:receiveReadyKey({...p,boot_id:'00000000-0000-4000-8000-000000000003'}),revision:receiveReadyKey({...p,revision:1}),invalid:[receiveReadyKey(null),receiveReadyKey({...p,boot_id:null}),receiveReadyKey({...p,revision:-1})],staleAdmitted:receiveReady({})};
   });
-  assert.equal(new Set([keys.base,keys.profile,keys.boot,keys.revision,keys.status]).size,5,'every independently validated context field changes admission identity');assert.deepEqual(keys.invalid,[null,null,null,null]);assert.equal(keys.staleAdmitted,false);
+  assert.equal(new Set([keys.base,keys.profile,keys.boot,keys.revision]).size,4,'every independently validated context field changes admission identity');assert.deepEqual(keys.invalid,[null,null,null]);assert.equal(keys.staleAdmitted,false);
+  // A changed saved profile reads once, also while a read is pending: one follow-up, never a parallel request.
   let release,entered;const gate=new Promise(resolve=>release=resolve),captured=new Promise(resolve=>entered=resolve);t.after(()=>release());
   let held=false;await page.route('**/receive',async route=>{if(!held){held=true;entered();await gate;}await route.continue();});
-  await refreshStatus(page);await captured;await page.waitForFunction(()=>window.__readyReads.length>=2);
-  const secondUpdate=await page.locator('#updated').textContent();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,secondUpdate);await page.waitForFunction(()=>window.__readyReads.length>=3);await page.waitForTimeout(100);
-  assert.equal(reads.length,2,'a changed status while pending queues one follow-up, not another parallel request');release();
-  await page.waitForFunction(()=>!livePending);await page.waitForTimeout(100);assert.equal(reads.length,3,'the single legitimate changed-status follow-up executes');
+  const changed=()=>page.evaluate(()=>{profileData={...profileData,revision:profileData.revision+1};dispatchEvent(new CustomEvent('station-ready',{detail:socket}));});
+  await changed();await captured;
+  await changed();await page.waitForTimeout(100);
+  assert.equal(reads.length,1,'a changed revision while pending queues one follow-up, not another parallel request');release();
+  await page.waitForFunction(()=>!livePending);await page.waitForTimeout(100);assert.equal(reads.length,2,'the single legitimate follow-up executes');
   await page.unroute('**/receive');
-  await page.evaluate(()=>{const id=pendingId;pendingId=null;dispatchEvent(new CustomEvent('station-ready',{detail:socket}));dispatchEvent(new CustomEvent('station-ready',{detail:socket}));pendingId=id;});
-  await page.waitForFunction(()=>!livePending);await page.waitForTimeout(100);assert.equal(reads.length,5,'missing status identity bypasses dedup instead of becoming a global shared key');
-  await page.evaluate(()=>dispatchEvent(new CustomEvent('station-ready',{detail:socket})));await page.waitForTimeout(100);assert.equal(reads.length,5,'invalid context did not poison the prior admitted valid context');
+  // No valid context bypasses the check instead of becoming a shared key.
+  await page.evaluate(()=>{const held=profileData;profileData=null;receiveReady(socket);profileData=held;});
+  await page.waitForFunction(()=>!livePending);await page.waitForTimeout(100);assert.equal(reads.length,3,'no valid context reads rather than sharing a key');
+  await page.evaluate(()=>dispatchEvent(new CustomEvent('station-ready',{detail:socket})));await page.waitForTimeout(100);assert.equal(reads.length,3,'invalid context did not poison the prior admitted valid context');
+  // A failed read: the next status reads again, the one after it no more.
+  await page.route('**/receive',route=>route.abort(),{times:1});
+  await page.evaluate(()=>receiveSync());await page.waitForFunction(()=>liveFailed);
+  const failed=reads.length;await refreshStatus(page);await page.waitForFunction(()=>!liveFailed&&!livePending);assert.equal(reads.length,failed+1,'the next status after a failed read reads once');
+  await refreshStatus(page);await page.waitForTimeout(250);assert.equal(reads.length,failed+1,'then none again');
 });
 
 // Proves: CL-022-03, CL-022-05; TC-022-009. Actual TLS server/browser. COM250 is an
