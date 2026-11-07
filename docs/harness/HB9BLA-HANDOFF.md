@@ -22,16 +22,18 @@ verify their availability in the actual agent environment before starting work.
 - IC-7300: **COM3**, USB Audio CODEC; in use on **20 m FT8 (14.074 MHz USB-D)**; **AGC SLOW**
   for FT8/FT4 (operator finding: it removes the AGC line between periods). Read back before
   changes — CI-V reads first and writes only on a difference.
-- RF power is whatever the radio reads, not a fact of this page: agent Tx is authorized at
-  1 W (`.harness/deploy/radio-authorization.json`), and on 2026-11-06 the radio read `0026`
-  (about 10 W; #44). **Before keying, an agent runs
-  `.harness/deploy/radio-preflight.ps1 -Holder <run>` and keys only on exit 0, under its lease**
-  (`-Status`, `-Release`). It stops an idle station gracefully for the CI-V read, because the
-  station holds COM3, starts it again, and records the value; it writes nothing to the radio.
-  Above the authorization it refuses, with no override: do not key, and report it to the
-  supervisor. The power is lowered only on the supervisor's go-ahead under the #44 write consent
-  (read, write, read back, record the old value, restore it afterwards); otherwise the test
-  waits. Because it restarts the station, do not run it while the operator is operating, unless
+- RF power is whatever the radio reads, not a fact of this page: each test sets the level it
+  needs (operator 2026-11-07: "the power should be set by the tests"). A test that makes QSOs
+  uses 30 W (`14 0A` value `00 77`; "for qsos, you need at least 30W"); short keying without a
+  QSO may use 1 W (`00 03`). **Before keying, an agent runs
+  `.harness/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <0077 or 0003>` and keys only on
+  exit 0, under its lease** (`-Status`, `-Release`). The level is required: nothing keys at an
+  assumed one. It stops an idle station gracefully, because the station holds COM3, reads the
+  power, writes it only if different, reads it back, starts the station again and records the
+  old value. It refuses to key only when the power cannot be read, written or confirmed by the
+  read-back: exit 2, do not key, and report it to the supervisor. **Afterwards
+  `radio-preflight.ps1 -Restore -Holder <run>` puts the old value back and ends the lease**;
+  when that fails the lease stays for another try. Because it restarts the station, do not run it while the operator is operating, unless
   agreed: it sees only PTT and a contact, not someone watching Band Activity.
   A contact you did not start, seen while another run's lease is live,
   is that run's. The station itself does not check this.

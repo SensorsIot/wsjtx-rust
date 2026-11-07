@@ -1,7 +1,0 @@
-{
-  "port": "COM3",
-  "baud": 9600,
-  "rf_power_max_bcd": 3,
-  "authorized_watts": 1,
-  "basis": "Operator's authorization for agent Tx: 1 W. BCD 0003 is the setting wsjtx-rust#44 comment 6683921947 used for it: Po read 0 % at it, so not above about 1 W; no wattmeter has confirmed it. Only the operator changes this file."
-}

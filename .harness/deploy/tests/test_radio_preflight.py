@@ -1,4 +1,4 @@
-"""radio-preflight.ps1: refuses above the authorized RF power, one live writer at a time.
+"""radio-preflight.ps1: sets the level the test names and confirms it, one live writer at a time.
 
 The fake radio is built from the captured reply in wsjtx-rust#44 comment 6683921947
 (`RF power 14 0A -> 14 0A 00 26`, COM3, IC-7300, 2026-11-06); the framing FE FE E0 94 ... FD is
@@ -16,12 +16,17 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOL = os.path.join(HERE, "radio-preflight.ps1")
 
 
-def prelude(log, raw="00 26", running=True, ptt="released", contact="idle", open_fails=False, comes_back=True, stops_after=0):
-    """The fake radio answers 14 0A with `raw`; `log` receives what reached the system."""
-    reply = "" if raw is None else f"0xFE,0xFE,0xE0,0x94,0x14,0x0A,0x{raw[:2]},0x{raw[3:]},0xFD"
+def prelude(log, raw="00 26", running=True, ptt="released", contact="idle", open_fails=False, comes_back=True,
+            stops_after=0, write="takes", reads_answered=99):
+    """The fake radio holds `raw` in 14 0A (None: it never answers) and acknowledges a write:
+    `takes` FB and stored, `ignored` FB and not stored, `refused` FA, `silent` no reply and not
+    stored. It answers the first `reads_answered` reads. `log` receives what reached the system."""
+    bytes_of = "" if raw is None else f"0x{raw[:2]},0x{raw[3:]}"
     return f"""
 $global:Log = {pwsh.ps_quote(log)}
 function Note($t) {{ Add-Content -LiteralPath $global:Log -Value $t }}
+$global:Rf = @({bytes_of})
+$global:Reads = 0
 $global:Up = ${running}
 $global:Started = $false
 $global:DownAt = $null
@@ -45,7 +50,15 @@ function New-Object {{ param($TypeName, [Parameter(ValueFromRemainingArguments=$
     Note "open dtr=$($this.DtrEnable) rts=$($this.RtsEnable)"; $this.IsOpen = $true }}
   $p | Add-Member ScriptMethod Close {{ Note 'close'; $this.IsOpen = $false }}
   $p | Add-Member ScriptMethod DiscardInBuffer {{ }}
-  $p | Add-Member ScriptMethod Write {{ param($b,$o,$c) Note ('write ' + (($b | ForEach-Object {{ $_.ToString('X2') }}) -join ' ')); foreach ($x in @({reply})) {{ $this.Queue.Enqueue($x) }} }}
+  $p | Add-Member ScriptMethod Write {{ param($b,$o,$c) Note ('write ' + (($b | ForEach-Object {{ $_.ToString('X2') }}) -join ' '))
+    if ($b.Count -eq 7) {{
+      $global:Reads++
+      if ($global:Rf.Count -eq 2 -and $global:Reads -le {reads_answered}) {{ foreach ($x in @(0xFE,0xFE,0xE0,0x94,0x14,0x0A,$global:Rf[0],$global:Rf[1],0xFD)) {{ $this.Queue.Enqueue($x) }} }}
+    }} else {{
+      if ('{write}' -eq 'takes') {{ $global:Rf = @($b[6],$b[7]) }}
+      $ack = switch ('{write}') {{ 'refused' {{ 0xFA }} 'silent' {{ $null }} default {{ 0xFB }} }}
+      if ($null -ne $ack) {{ foreach ($x in @(0xFE,0xFE,0xE0,0x94,$ack,0xFD)) {{ $this.Queue.Enqueue($x) }} }}
+    }} }}
   $p | Add-Member ScriptMethod ReadByte {{ $this.Queue.Dequeue() }}
   $p }}
 """
@@ -76,8 +89,11 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         return pwsh.run(TOOL, [*args, "-StateDir", self.state, "-Station", self.station, "-AgentClient", self.client],
                         prelude(self.log, **radio), env={"FAKE_STATION": self.station})
 
-    def preflight(self, holder="cr44-a", **radio):
-        return self.run_tool("-Holder", holder, **radio)
+    def preflight(self, holder="cr44-a", power="0003", **radio):
+        return self.run_tool("-Holder", holder, "-PowerBcd", power, **radio)
+
+    def writes(self):
+        return [line for line in self.system() if line.startswith("write")]
 
     def system(self):
         if not os.path.exists(self.log):
@@ -94,53 +110,117 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         self.assertEqual(rc, 0, out)
         return out.strip()
 
-    def test_refuses_at_0026_prints_and_records_the_old_value(self):
-        rc, out = self.preflight(raw="00 26")
-        self.assertEqual(rc, 1, out)
-        self.assertIn("PREFLIGHT REFUSED", out)
-        self.assertIn("0026 (10.2 %)", out)
-        self.assertIn("above the authorized 0003", out)
-        record = self.records()[-1]
-        self.assertEqual((record["rf_power_bcd"], record["verdict"], record["holder"]), (26, "REFUSED", "cr44-a"))
-        self.assertEqual(self.lease(), "lease: free", "a refusal keeps no lease")
+    READ = "write FE FE 94 E0 14 0A FD"
 
-    def test_full_power_is_refused_and_no_flag_gets_past_the_limit(self):
-        rc, out = self.preflight(raw="02 55")
-        self.assertEqual(rc, 1, out)
-        self.assertIn("PREFLIGHT REFUSED", out)
-        self.assertEqual(self.lease(), "lease: free")
-        other = os.path.join(self.tmp.name, "wide-open.json")
-        with open(other, "w", encoding="utf-8") as f:
-            json.dump({"port": "COM3", "baud": 9600, "rf_power_max_bcd": 255, "authorized_watts": 100}, f)
-        # The script has no CmdletBinding, so PowerShell ignores a flag it does not declare.
-        for flag in (["-Attended"], ["-Authorization", other]):
-            rc, out = self.run_tool("-Holder", "cr44-a", *flag, raw="02 55")
-            self.assertEqual(rc, 1, f"{flag}: {out}")
-            self.assertIn("PREFLIGHT REFUSED", out, flag)
-            self.assertEqual(self.lease(), "lease: free", flag)
-
-    def test_refuses_just_above_and_passes_at_the_authorized_value(self):
-        self.assertEqual(self.preflight(raw="00 04")[0], 1)
-        rc, out = self.preflight(raw="00 03")
+    def test_a_different_level_is_written_read_back_and_the_old_value_recorded(self):
+        rc, out = self.preflight(power="0003", raw="00 26")
         self.assertEqual(rc, 0, out)
         self.assertIn("PREFLIGHT PASS", out)
+        self.assertIn("0003 (1.2 %)", out)
+        self.assertIn("was 0026, written and read back", out)
+        self.assertEqual(self.writes(), [self.READ, "write FE FE 94 E0 14 0A 00 03 FD", self.READ])
+        record = self.records()[-1]
+        self.assertEqual((record["rf_power_old_bcd"], record["rf_power_target_bcd"], record["rf_power_read_bcd"],
+                          record["written"], record["verdict"], record["holder"]),
+                         (26, 3, 3, True, "PASS", "cr44-a"))
         self.assertIn("held by cr44-a", self.lease())
+
+    def test_a_test_that_makes_qsos_sets_30_w_and_power_above_it_is_no_refusal(self):
+        for raw in ("00 03", "02 55"):
+            rc, out = self.preflight(power="0077", raw=raw)
+            self.assertEqual(rc, 0, out)
+            self.assertIn("0077 (30.2 %)", out)
+        self.assertIn("write FE FE 94 E0 14 0A 00 77 FD", self.writes())
+
+    def test_the_same_level_is_read_and_not_written(self):
+        rc, out = self.preflight(power="0077", raw="00 77")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("unchanged, no write", out)
+        self.assertEqual(self.writes(), [self.READ], "read first, write only on a difference")
+        self.assertEqual(self.records()[-1]["written"], False)
+
+    def test_the_level_is_required_and_nothing_is_touched_without_it(self):
+        for args in ((), ("-PowerBcd", "77"), ("-PowerBcd", "0256"), ("-PowerBcd", "00x7"), ("-PowerBcd", "30W")):
+            rc, out = self.run_tool("-Holder", "cr44-a", *args, raw="00 26")
+            self.assertEqual(rc, 2, f"{args}: {out}")
+            self.assertIn("need -PowerBcd", out)
+            self.assertEqual(self.system(), [], args)
+            self.assertEqual(self.lease(), "lease: free", args)
+
+    def test_a_write_that_is_not_confirmed_is_refused_with_the_old_value_recorded(self):
+        for write, text in (("ignored", "wrote 0003, read back 0026"), ("silent", "wrote 0003, read back 0026"),
+                            ("refused", "refused the write of 0003")):
+            rc, out = self.preflight(raw="00 26", write=write)
+            self.assertEqual(rc, 2, f"{write}: {out}")
+            self.assertIn("PREFLIGHT ERROR", out)
+            self.assertIn(text, out)
+            self.assertEqual((self.records()[-1]["rf_power_old_bcd"], self.records()[-1]["rf_power_read_bcd"]), (26, None))
+            self.assertEqual(self.lease(), "lease: free", write)
+            self.assertIn("task-start", self.system(), "the station comes back")
+
+    def test_a_read_back_that_is_lost_is_refused(self):
+        rc, out = self.preflight(raw="00 26", reads_answered=1)
+        self.assertEqual(rc, 2, out)
+        self.assertIn("no RF power reply", out)
+        self.assertEqual(self.lease(), "lease: free")
 
     def test_a_higher_byte_counts(self):
         # BCD: 01 03 is 103, never 3.
-        self.assertEqual(self.preflight(raw="01 03")[0], 1)
+        rc, out = self.preflight(power="0003", raw="01 03")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.records()[-1]["rf_power_old_bcd"], 103)
+        self.assertIn("write FE FE 94 E0 14 0A 00 03 FD", self.writes())
 
-    def test_reads_with_dtr_and_rts_off_and_writes_only_the_read_frame(self):
+    def test_a_port_opened_with_dtr_and_rts_off(self):
         self.preflight(raw="00 03")
-        system = self.system()
-        self.assertIn("open dtr=False rts=False", system)
-        self.assertEqual([line for line in system if line.startswith("write")], ["write FE FE 94 E0 14 0A FD"])
+        self.assertIn("open dtr=False rts=False", self.system())
+
+    def old_in_lease(self):
+        with open(os.path.join(self.state, "lease.json"), encoding="utf-8") as f:
+            return json.load(f)["old_power_bcd"]
+
+    def test_a_renewal_keeps_the_first_old_value(self):
+        self.assertEqual(self.preflight(power="0003", raw="00 26")[0], 0)
+        self.assertEqual(self.old_in_lease(), 26)
+        self.assertEqual(self.preflight(power="0077", raw="00 03")[0], 0)
+        self.assertEqual(self.old_in_lease(), 26, "the test's own level is not what is put back")
+
+    def test_restore_writes_the_old_value_and_ends_the_lease(self):
+        self.assertEqual(self.preflight(power="0077", raw="00 26")[0], 0)
+        os.unlink(self.log)
+        rc, out = self.run_tool("-Restore", "-Holder", "cr44-a", raw="00 77")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("RF power restored", out)
+        self.assertEqual(self.writes(), [self.READ, "write FE FE 94 E0 14 0A 00 26 FD", self.READ])
+        self.assertIn("task-start", self.system())
+        self.assertEqual(self.lease(), "lease: free")
+        self.assertEqual(self.records()[-1]["restore"], True)
+
+    def test_a_restore_that_fails_keeps_the_lease_for_another_try(self):
+        self.assertEqual(self.preflight(power="0077", raw="00 26")[0], 0)
+        rc, out = self.run_tool("-Restore", "-Holder", "cr44-a", raw="00 77", write="ignored")
+        self.assertEqual(rc, 2, out)
+        self.assertIn("held by cr44-a", self.lease())
+        self.assertEqual(self.old_in_lease(), 26)
+        self.assertEqual(self.run_tool("-Restore", "-Holder", "cr44-a", raw="00 77")[0], 0)
+
+    def test_restore_needs_the_holders_own_lease(self):
+        rc, out = self.run_tool("-Restore", "-Holder", "cr44-a", raw="00 77")
+        self.assertEqual(rc, 2, out)
+        self.assertIn("preflight.jsonl", out)
+        self.assertEqual(self.system(), [])
+        self.assertEqual(self.preflight("cr44-a", power="0077", raw="00 26")[0], 0)
+        os.unlink(self.log)
+        rc, out = self.run_tool("-Restore", "-Holder", "cr55-b", raw="00 77")
+        self.assertEqual(rc, 3, out)
+        self.assertEqual(self.system(), [])
+        self.assertIn("held by cr44-a", self.lease())
 
     def test_the_station_is_stopped_read_and_started_again_in_that_order(self):
         self.preflight(raw="00 26")
         system = self.system()
         self.assertEqual([line.split()[0] for line in system if line != "task-stop"],
-                         ["ctrl-c", "open", "write", "close", "task-start"])
+                         ["ctrl-c", "open", "write", "write", "write", "close", "task-start"])
 
     def test_a_station_that_is_not_running_is_read_and_not_started(self):
         rc, out = self.preflight(raw="00 03", running=False)
@@ -215,7 +295,7 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         self.assertEqual(self.preflight("cr44-a", raw="00 03")[0], 0)
         before = self.lease()
         self.set_client(contact="report")
-        rc, out = self.run_tool("-Holder", "cr44-a", "-Minutes", "240", raw="00 03")
+        rc, out = self.run_tool("-Holder", "cr44-a", "-PowerBcd", "0003", "-Minutes", "240", raw="00 03")
         self.assertEqual(rc, 3, out)
         self.assertEqual(self.lease(), before, "its own contact runs: neither dropped nor extended")
         self.assertEqual(self.preflight("cr55-b", raw="00 03")[0], 3, "a second writer stays out")
@@ -225,11 +305,11 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         self.assertEqual(self.preflight("cr44-a", raw="00 03")[0], 3)
         self.assertEqual(self.lease(), "lease: free")
 
-    def test_a_holder_whose_renewal_is_refused_or_unread_loses_its_lease(self):
-        for raw, code in (("00 26", 1), (None, 2)):
+    def test_a_holder_whose_renewal_cannot_be_confirmed_loses_its_lease(self):
+        for radio in ({"raw": "00 26", "write": "ignored"}, {"raw": None}):
             self.assertEqual(self.preflight("cr44-a", raw="00 03")[0], 0)
-            self.assertEqual(self.preflight("cr44-a", raw=raw)[0], code)
-            self.assertEqual(self.lease(), "lease: free", raw)
+            self.assertEqual(self.preflight("cr44-a", **radio)[0], 2)
+            self.assertEqual(self.lease(), "lease: free", radio)
 
     def test_an_expired_lease_is_free(self):
         os.makedirs(self.state)
