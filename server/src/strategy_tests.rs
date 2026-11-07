@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// Proves: CL-063-01, CL-063-02; TC-063-003, TC-063-004.
+// Proves: CL-063-01, CL-063-02, CL-063-03, CL-063-04; TC-063-003, TC-063-004, TC-063-007.
 // Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-039-09, CL-039-10, CL-042-01, CL-042-02,
 // CL-042-03, CL-042-04; TC-039-001..005, TC-039-010, TC-039-030..032, TC-042-001, TC-042-002,
 // TC-042-004, TC-042-006 (each test names its case below). Hand-authored records, logs and
@@ -4743,4 +4743,95 @@ async fn tc_063_003_the_contests_route() {
             .status,
         StatusCode::METHOD_NOT_ALLOWED
     );
+}
+
+// Proves: TC-063-007
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_063_007_a_contest_selection_store_and_evaluation() {
+    let f = station(true).await;
+    let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
+    f.state.recording.fixture_band("40m");
+    // A QSO inside the period and one before it, from the stored log.
+    let adi = "<call:5>W1DUP <gridsquare:4>EM12 <qso_date:8>20260829 <time_on:4>1300 <band:3>40m <mode:3>FT8 <eor>\n<call:5>K1OLD <gridsquare:4>FN20 <qso_date:8>20260829 <time_on:4>1130 <band:3>40m <mode:3>FT8 <eor>\n";
+    let id = crate::profile::new_uuid().unwrap();
+    let open = |p: &mut dyn FnMut() -> std::io::Result<()>| -> Result<std::io::Result<()>, crate::authorization::Error> { Ok(p()) };
+    let sha: String = ring::digest::digest(&ring::digest::SHA256, adi.as_bytes())
+        .as_ref()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let now = std::time::Instant::now();
+    let log = &f.state.logbook;
+    log.reserve(&id, adi.len() as u64, &sha, now).unwrap();
+    log.chunk(&id, 0, adi.len() as u64, adi.as_bytes(), now, &open)
+        .unwrap();
+    let e = at_even(&f);
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ WW W1DUP EM12", 1000.0, Some(-1.0)),
+            ("CQ WW K1OLD FN20", 1100.0, Some(-2.0)),
+            ("CQ WW JA1XYZ PM95", 1200.0, Some(-15.0)),
+        ],
+    );
+    browser_ok(&f, "set_activity", json!({"activity":"ww_digi"})).await;
+    let contest = json!({"profile":"ww_digi","start":"2026-08-29T12:00Z",
+        "end":"2026-08-30T12:00Z","operation":"colouring"});
+    let mut selected = config(None);
+    selected["contest"] = contest.clone();
+    let p = put(&f, json!(0), selected.clone()).await;
+    assert_eq!(p.status, StatusCode::OK, "{}", p.json);
+    assert_eq!(p.json["configuration"]["contest"], contest);
+    // The file never holds it; a new owner reads no contest.
+    let saved: Value =
+        serde_json::from_slice(&std::fs::read(f.dir.join(FILE_NAME)).unwrap()).unwrap();
+    assert_eq!(saved["configuration"], config(None));
+    let reopened = Owner::default();
+    assert!(
+        reopened.snapshot(&f.state)["configuration"]
+            .get("contest")
+            .is_none()
+    );
+    // Colouring only: no run starts.
+    assert_eq!(f.read("automation").await["run"], Value::Null);
+    // Refusals: a strategy and a contest at once; a bad period; a stale revision.
+    let mut both = config(Some("New calls"));
+    both["contest"] = contest.clone();
+    let r = put(&f, json!(1), both).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert_eq!(r.json["error"]["field"], "contest");
+    let mut bad = selected.clone();
+    bad["contest"]["end"] = json!("2026-08-29T12:00Z");
+    let r = put(&f, json!(1), bad).await;
+    assert_eq!(r.json["error"]["field"], "contest.end");
+    // Evaluated by the contest: the dupe of the period is marked, the QSO before it is not.
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"source_id":source,"job_id":job,
+        "generation":generation,"first_sequence":0,"next_sequence":3,"strategy":null,"explain":false});
+    let v = f
+        .browser("POST", "/strategy/evaluate", Some(body.clone()))
+        .await;
+    assert_eq!(v.status, StatusCode::OK, "{}", v.json);
+    assert_eq!(v.json["strategy"], "WW Digi");
+    assert_eq!(
+        v.json["contest"],
+        json!({"qsos":1,"multipliers":1,"points":3,"score":3}),
+        "W1DUP only: JN47-EM12 is 8469.4 km, 3 points"
+    );
+    assert_eq!(
+        v.json["verdicts"],
+        json!([
+            {"sequence":2,"rank":0,"grey":false,"dupe":false,"new_multiplier":true,"points":4},
+            {"sequence":1,"rank":1,"grey":false,"dupe":false,"new_multiplier":true,"points":3},
+            {"sequence":0,"rank":null,"grey":false,"dupe":true,"new_multiplier":false,"points":null}
+        ])
+    );
+    // None ends the contest; a later evaluation has nothing to evaluate.
+    let mut none = selected.clone();
+    none.as_object_mut().unwrap().remove("contest");
+    let r = put(&f, json!(1), none).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
+    assert!(r.json["configuration"].get("contest").is_none());
+    let v = f.browser("POST", "/strategy/evaluate", Some(body)).await;
+    assert_eq!(v.json["error"]["code"], "not_configured");
 }

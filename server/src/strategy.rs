@@ -136,6 +136,8 @@ pub(crate) struct Config {
     /// #42 the permanent ignore list (exact calls) and the session list expiry.
     pub ignore_calls: Vec<String>,
     pub session_ignore_minutes: u64,
+    /// #63 the contest in force (memory only, never with an active award strategy).
+    pub contest: Option<crate::contest::Selection>,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -145,6 +147,7 @@ impl Default for Config {
             strategies: Vec::new(),
             ignore_calls: Vec::new(),
             session_ignore_minutes: SESSION_IGNORE_MINUTES,
+            contest: None,
         }
     }
 }
@@ -319,17 +322,26 @@ fn strategy(v: &Value, field: &str) -> Result<Strategy, Field> {
 }
 /// Exact StrategyConfiguration parsing (field names a refused value).
 pub(crate) fn parse_config(v: &Value) -> Result<Config, Field> {
-    exact(
-        v,
+    // #63 contest is optional: a browser or a file without it selects no contest.
+    let keys: &[&str] = if v.get("contest").is_some() {
         &[
             "continent",
             "active",
             "strategies",
             "ignore_calls",
             "session_ignore_minutes",
-        ],
-        "configuration",
-    )?;
+            "contest",
+        ]
+    } else {
+        &[
+            "continent",
+            "active",
+            "strategies",
+            "ignore_calls",
+            "session_ignore_minutes",
+        ]
+    };
+    exact(v, keys, "configuration")?;
     let continent = match &v["continent"] {
         Value::Null => None,
         c => Some(
@@ -380,7 +392,16 @@ pub(crate) fn parse_config(v: &Value) -> Result<Config, Field> {
         }
         ignore_calls.push(c);
     }
+    // WstxContest::ContestSelection: exactly one strategy is active, or none.
+    let contest = match v.get("contest") {
+        None | Some(Value::Null) => None,
+        Some(c) => Some(crate::contest::parse_selection(c, "contest")?),
+    };
+    if contest.is_some() && active.is_some() {
+        return Err(bad("contest"));
+    }
     Ok(Config {
+        contest,
         continent,
         active,
         strategies,
@@ -444,9 +465,13 @@ impl Strategy {
 }
 impl Config {
     pub(crate) fn json(&self) -> Value {
-        json!({"continent":self.continent,"active":self.active,
+        let mut v = json!({"continent":self.continent,"active":self.active,
             "strategies":self.strategies.iter().map(Strategy::json).collect::<Vec<_>>(),
-            "ignore_calls":self.ignore_calls,"session_ignore_minutes":self.session_ignore_minutes})
+            "ignore_calls":self.ignore_calls,"session_ignore_minutes":self.session_ignore_minutes});
+        if let Some(c) = &self.contest {
+            v["contest"] = c.json();
+        }
+        v
     }
     pub(crate) fn active_strategy(&self) -> Option<&Strategy> {
         let name = self.active.as_deref()?;
@@ -556,6 +581,8 @@ pub(crate) struct Station {
     pub most_wanted: Option<std::sync::Arc<crate::most_wanted::List>>,
     /// #63 the station's activity, for the DirectedCqRule.
     pub activity: Activity,
+    /// #63 the profile locator, for a contest's distance points.
+    pub my_locator: Option<String>,
 }
 /// The list an ignored call is on (the session list wins when on both).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -564,7 +591,7 @@ pub(crate) enum Tier {
     Permanent,
 }
 impl Tier {
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Tier::Session => "session",
             Tier::Permanent => "permanent",
@@ -689,8 +716,15 @@ impl Station {
             self.dxcc.continent(&f.from),
         )
     }
+    /// The DirectedCqRule text of a greyed record.
+    pub(crate) fn directive_text(&self, f: &Facts) -> String {
+        not_for_me(
+            f.target.as_deref().unwrap_or(""),
+            self.my_continent.as_deref(),
+        )
+    }
     /// WstxStrategy::CallerOfMyCall, before the ignore check.
-    fn calls_me(&self, f: &Facts) -> bool {
+    pub(crate) fn calls_me(&self, f: &Facts) -> bool {
         f.to_call.as_deref() == Some(self.my_call.as_str()) && !f.signoff
     }
     fn region_holds(&self, s: &Strategy, f: &Facts) -> bool {
@@ -746,12 +780,19 @@ pub(crate) struct Verdict {
     pub grey: bool,
     pub why: String,
     pub kind: Option<Kind>,
+    /// #63 what a contest adds (WstxContest::ContestVerdict).
+    pub contest: Option<crate::contest::ContestValue>,
 }
 impl Verdict {
     pub(crate) fn json(&self, explain: bool) -> Value {
         let mut v = json!({"sequence":self.facts.sequence,"rank":self.rank,"grey":self.grey});
         if explain {
             v["why"] = json!(self.why);
+        }
+        if let Some(c) = self.contest {
+            v["dupe"] = json!(c.dupe);
+            v["new_multiplier"] = json!(c.new_multiplier);
+            v["points"] = json!(c.points);
         }
         v
     }
@@ -838,6 +879,7 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
                 grey,
                 why,
                 kind,
+                contest: None,
             }
         })
         .collect();
@@ -958,7 +1000,17 @@ pub(crate) fn station(state: &ProfileState, config: &Config, window: Window) -> 
         mode,
         most_wanted,
         activity,
+        my_locator: locator,
     }
+}
+/// #63 WstxContest::ContestLog of a selection, from the stored log; None when it is unreadable.
+fn contest_log(
+    state: &ProfileState,
+    s: &crate::contest::Selection,
+    my_locator: Option<&str>,
+) -> Option<crate::contest::Log> {
+    let list = state.logbook.contest_qsos(s.start_ms, s.end_ms).ok()?;
+    Some(crate::contest::Log::of(s, my_locator, &list))
 }
 
 // ------------------------------------------------------------------ alerts
@@ -1059,8 +1111,10 @@ impl Owner {
                         ok.then(|| parse_config(&configuration).ok())
                             .flatten()
                             .map(|mut c| {
-                                // active never survives a restart (WstxStrategy D2).
+                                // active never survives a restart (WstxStrategy D2), nor
+                                // does a contest (WstxContest::ContestSelection).
                                 c.active = None;
+                                c.contest = None;
                                 (v["revision"].as_u64().unwrap_or(0), c)
                             })
                     });
@@ -1469,7 +1523,8 @@ impl Owner {
             return Err(("stale_revision", Some("expected_revision".into())));
         }
         let before = inner.config.as_ref().and_then(|c| c.active.clone());
-        let changed = config.active != before;
+        let contest_before = inner.config.as_ref().and_then(|c| c.contest);
+        let changed = config.active != before || config.contest != contest_before;
         if inner.revision >= MAX_SAFE {
             return Err(("counter_exhausted", None));
         }
@@ -1477,6 +1532,9 @@ impl Owner {
         // active is never read back: the file holds none (WstxStrategy D2).
         let mut stored = config.json();
         stored["active"] = Value::Null;
+        if let Some(o) = stored.as_object_mut() {
+            o.remove("contest");
+        }
         let document = json!({"schema_version":2,"profile_id":r.profile,"revision":revision,
             "configuration":stored});
         {
@@ -1568,12 +1626,17 @@ impl Owner {
             .config(state)
             .ok_or(("not_configured", Some("configuration".into())))?;
         self.most_wanted_load(state);
+        // WstxContest::ContestVerdict: a draft is a preview; else the contest in force.
+        let contest = config.contest.filter(|_| draft.is_none());
         let chosen = match draft {
-            Some(s) => s,
-            None => config
-                .active_strategy()
-                .cloned()
-                .ok_or(("not_configured", Some("strategy".into())))?,
+            Some(s) => Some(s),
+            None if contest.is_some() => None,
+            None => Some(
+                config
+                    .active_strategy()
+                    .cloned()
+                    .ok_or(("not_configured", Some("strategy".into())))?,
+            ),
         };
         let identity = (
             body["source_id"].as_str().unwrap_or("").to_owned(),
@@ -1590,6 +1653,26 @@ impl Owner {
                 })
                 .collect(),
             _ => return Err(("stale_request", Some("job_id".into()))),
+        };
+        let Some(chosen) = chosen else {
+            let Some(selection) = contest else {
+                return Err(("not_configured", Some("strategy".into())));
+            };
+            let st = station(state, &config, Window::All);
+            let log = contest_log(state, &selection, st.my_locator.as_deref());
+            let verdicts: Vec<Value> =
+                crate::contest::evaluate(&selection, &records, &st, log.as_ref())
+                    .iter()
+                    .filter(|v| {
+                        explain || v.rank.is_some() || v.grey || v.contest.is_some_and(|c| c.dupe)
+                    })
+                    .map(|v| v.json(explain))
+                    .collect();
+            return Ok(
+                json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"strategy":selection.profile.name,
+                "my_continent":st.my_continent,"verdicts":verdicts,
+                "contest":log.as_ref().map(|l| l.summary(&selection))}),
+            );
         };
         worked_build(state, chosen.window);
         let st = station(state, &config, chosen.window);

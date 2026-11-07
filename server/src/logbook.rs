@@ -1457,6 +1457,28 @@ impl Logbook {
         }
         last.map(|(_, _, w)| w)
     }
+    /// #63 WstxContest::ContestLog: the contacts that started in [start, end) (Unix ms).
+    pub fn contest_qsos(
+        &self,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> Result<Vec<crate::contest::Qso>, StoreError> {
+        let inner = self.lock()?;
+        Ok(inner
+            .records
+            .iter()
+            .filter_map(|r| {
+                let ms = r.start_seconds()? * 1000;
+                (ms >= start_ms && ms < end_ms).then(|| crate::contest::Qso {
+                    call: r.values[CALL].as_deref().unwrap_or("").to_ascii_uppercase(),
+                    grid: r.values[GRID].clone(),
+                    band: r.effective_band(),
+                    mode: r.effective_mode(),
+                    ms,
+                })
+            })
+            .collect())
+    }
     /// #55 the country table in use and whether an uploaded file was unreadable.
     pub fn dxcc(&self) -> (crate::dxcc::Table, bool) {
         let d = self.dxcc.lock().unwrap_or_else(|p| p.into_inner());
