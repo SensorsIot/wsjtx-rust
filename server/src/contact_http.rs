@@ -1263,7 +1263,7 @@ pub(crate) fn station_tick(state: &ProfileState) {
     if let Some(s) = state.recording.contact.get() {
         // Read before the contact step: the engine then has every record of it.
         let publication = state.recording.latest_publication();
-        // WstxStrategy::StrategyRun: a HALT from any source sets active to None.
+        // WstxStrategy::StrategyRun: a HALT from any source turns Auto off (the selection stays).
         s.strategy.halt_step(state);
         // #42 IgnoreLists: a station band change empties the session list before a run step.
         s.strategy
@@ -1272,6 +1272,10 @@ pub(crate) fn station_tick(state: &ProfileState) {
         s.strategy.alert_step(state);
         s.tick(state);
         s.automation.tick(s, state, publication);
+        // WstxStrategy::AutoToggle: every run end turns Auto off.
+        let epoch = s.strategy.auto_epoch();
+        s.strategy
+            .auto_step(state, epoch, s.automation.strategy_running());
         if let Some(feed) = state.recording.pskr.get() {
             // Only a strategy run's own contact reads the target's spots: no other subscribes.
             let own = s.automation.repeat_exempt().map(|(id, _)| id);

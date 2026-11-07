@@ -505,27 +505,22 @@ pub(crate) fn profile(id: &str) -> Option<&'static Profile> {
 }
 
 // ------------------------------------------------------------------ the selection
-/// WstxContest::ContestSelection operation.
+/// WstxContest::ContestSelection operation (with Auto on; Auto off only marks, strategydef).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Operation {
-    Colouring,
-    /// Fully automatic: search and pounce.
+    /// Search and pounce.
     Sp,
-    /// Fully automatic: call CQ, answer the most valuable caller.
+    /// Call CQ, answer the most valuable caller.
     Run,
 }
 impl Operation {
     fn name(self) -> &'static str {
         match self {
-            Operation::Colouring => "colouring",
             Operation::Sp => "sp",
             Operation::Run => "run",
         }
     }
 }
-/// WstxContest::ContestRun: consecutive calls of one station before the run goes on (the
-/// operator's Contest preset, #39 comment 6626497059).
-pub(crate) const RUN_CALLS_PER_STATION: u64 = 2;
 /// WstxContest::ContestSelection: the contest in force, in memory only.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Selection {
@@ -533,13 +528,27 @@ pub(crate) struct Selection {
     pub start_ms: i64,
     pub end_ms: i64,
     pub operation: Operation,
-    /// The operator confirmed the warning of a forbidding clause (AutomationClause).
-    pub automation_confirmed: bool,
+    /// x of WstxStrategy::LeaveRule, 1..20.
+    pub repetitions: u64,
+    /// WstxStrategy::QuietTime minutes, 1..120.
+    pub quiet_minutes: u64,
 }
 impl PartialEq for Selection {
     fn eq(&self, o: &Self) -> bool {
         self.profile.id == o.profile.id
-            && (self.start_ms, self.end_ms, self.operation) == (o.start_ms, o.end_ms, o.operation)
+            && (
+                self.start_ms,
+                self.end_ms,
+                self.operation,
+                self.repetitions,
+                self.quiet_minutes,
+            ) == (
+                o.start_ms,
+                o.end_ms,
+                o.operation,
+                o.repetitions,
+                o.quiet_minutes,
+            )
     }
 }
 /// The longest period a selection accepts.
@@ -553,12 +562,23 @@ fn minute(v: &Value) -> Option<i64> {
 /// Exact ContestSelection parsing (the error names the refused field).
 pub(crate) fn parse_selection(v: &Value, field: &str) -> Result<Selection, String> {
     let o = v.as_object().ok_or(field)?;
-    let keys = ["profile", "start", "end", "operation"];
-    let optional = usize::from(o.contains_key("automation_confirmed"));
-    if o.len() != keys.len() + optional || !keys.iter().all(|k| o.contains_key(*k)) {
+    let keys = [
+        "profile",
+        "start",
+        "end",
+        "operation",
+        "repetitions",
+        "quiet_minutes",
+    ];
+    let f = |k: &str| format!("{field}.{k}");
+    // automation_confirmed is gone (the confirmation goes with Auto on, strategydef): refused
+    // by its own path; any other extra key by the selection's.
+    if o.contains_key("automation_confirmed") {
+        return Err(f("automation_confirmed"));
+    }
+    if o.len() != keys.len() || !keys.iter().all(|k| o.contains_key(*k)) {
         return Err(field.to_owned());
     }
-    let f = |k: &str| format!("{field}.{k}");
     let profile = v["profile"]
         .as_str()
         .and_then(profile)
@@ -568,41 +588,25 @@ pub(crate) fn parse_selection(v: &Value, field: &str) -> Result<Selection, Strin
         .filter(|e| *e > start_ms && *e - start_ms <= PERIOD_MAX_MS)
         .ok_or(f("end"))?;
     let operation = match v["operation"].as_str() {
-        Some("colouring") => Operation::Colouring,
         Some("sp") => Operation::Sp,
         Some("run") => Operation::Run,
         _ => return Err(f("operation")),
     };
-    let automation_confirmed = match o.get("automation_confirmed") {
-        None => false,
-        Some(c) => c.as_bool().ok_or(f("automation_confirmed"))?,
-    };
-    // WstxContest::AutomationClause: a warning the operator must confirm, never a block.
-    if operation != Operation::Colouring
-        && profile.automation == AutomationClause::Forbidden
-        && !automation_confirmed
-    {
-        return Err(f("automation_confirmed"));
-    }
+    let bounded = |k: &str, hi: u64| v[k].as_u64().filter(|n| (1..=hi).contains(n)).ok_or(f(k));
     Ok(Selection {
         profile,
         start_ms,
         end_ms,
         operation,
-        automation_confirmed,
+        repetitions: bounded("repetitions", 20)?,
+        quiet_minutes: bounded("quiet_minutes", 120)?,
     })
 }
 impl Selection {
     pub(crate) fn json(&self) -> Value {
-        let mut v = json!({"profile":self.profile.id,"start":utc_text(self.start_ms),
-            "end":utc_text(self.end_ms),"operation":self.operation.name()});
-        if self.automation_confirmed {
-            v["automation_confirmed"] = json!(true);
-        }
-        v
-    }
-    pub(crate) fn automatic(&self) -> bool {
-        self.operation != Operation::Colouring
+        json!({"profile":self.profile.id,"start":utc_text(self.start_ms),
+            "end":utc_text(self.end_ms),"operation":self.operation.name(),
+            "repetitions":self.repetitions,"quiet_minutes":self.quiet_minutes})
     }
     pub(crate) fn in_period(&self, now_ms: i64) -> bool {
         now_ms >= self.start_ms && now_ms < self.end_ms
@@ -898,6 +902,7 @@ fn record_facts(record: &Value) -> Option<Facts> {
         signoff: false,
         grid: None,
         snr: record["snr_db"].as_f64(),
+        hz: record["frequency_hz"].as_f64(),
     })
 }
 /// WstxContest::ContestVerdict: in display order, by ContestValueOrder.
@@ -937,7 +942,8 @@ pub(crate) fn evaluate(
                 let snr = |v: &Verdict| v.facts.snr.map_or(f64::INFINITY, |s| -s);
                 snr(a).total_cmp(&snr(b))
             })
-            .then(a.facts.sequence.cmp(&b.facts.sequence))
+            // An exact tie only: the lower audio frequency, then the call; never decode order.
+            .then_with(|| crate::strategy::exact_tie(&a.facts, &b.facts))
     });
     ranked
         .iter_mut()

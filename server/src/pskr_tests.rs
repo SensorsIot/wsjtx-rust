@@ -11,6 +11,14 @@ use std::sync::mpsc;
 const SPOT: &str = r#"{"sq":30142870791,"f":7075512,"md":"FT8","rp":-5,"t":1000,"t_tx":990,
     "sc":"HB9BLA","sl":"JN37vl","rc":"K1ABC","rl":"FN42","sa":287,"ra":291,"b":"40m"}"#;
 
+/// The FT8 period parity of a time, written here: 15 s periods from the epoch, even first.
+fn ft8_parity(utc_s: i64) -> Parity {
+    if utc_s.div_euclid(15) % 2 == 0 {
+        Parity::Even
+    } else {
+        Parity::Odd
+    }
+}
 fn spot(sender: &str, receiver: &str, hz: u64, utc_s: i64) -> Spot {
     Spot {
         sender: sender.into(),
@@ -19,16 +27,17 @@ fn spot(sender: &str, receiver: &str, hz: u64, utc_s: i64) -> Spot {
         band: "40m".into(),
         hz,
         utc_s,
+        snr_db: None,
+        parity: Some(ft8_parity(utc_s)),
     }
 }
 
 // Proves: CL-039-20; TC-039-020. The payload fields and the choice of t_tx over t.
 #[test]
 fn parse_spot_reads_the_schema_and_refuses_the_rest() {
-    assert_eq!(
-        parse_spot(SPOT.as_bytes()),
-        Some(spot("HB9BLA", "K1ABC", 7075512, 990))
-    );
+    let mut expected = spot("HB9BLA", "K1ABC", 7075512, 990);
+    expected.snr_db = Some(-5);
+    assert_eq!(parse_spot(SPOT.as_bytes()), Some(expected));
     let no_tx = SPOT.replace("\"t_tx\":990,", "");
     assert_eq!(parse_spot(no_tx.as_bytes()).unwrap().utc_s, 1000);
     for bad in [

@@ -14,6 +14,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::sync::Condvar;
+use wstx_rust::transmit::Parity;
 
 #[cfg(test)]
 #[path = "pskr_tests.rs"]
@@ -135,7 +136,8 @@ pub(crate) fn client_id(call: &str, boot: &str) -> String {
     format!("wstx{call}{tail}")
 }
 
-/// One accepted spot (`f`, `md`, `b`, `sc`, `rc` and the transmission time of the payload).
+/// One accepted spot (`f`, `md`, `b`, `sc`, `rc`, `rp` and the transmission time of the
+/// payload).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Spot {
     pub sender: String,
@@ -144,6 +146,10 @@ pub(crate) struct Spot {
     pub band: String,
     pub hz: u64,
     pub utc_s: i64,
+    /// The receiver's reported SNR (`rp`, an integer -99..99); None: unknown.
+    pub snr_db: Option<i32>,
+    /// The parity of the sender's transmission period (`t_tx`, else `t`), for FT8 and FT4.
+    pub parity: Option<Parity>,
 }
 #[derive(Deserialize)]
 struct WireSpot {
@@ -154,18 +160,64 @@ struct WireSpot {
     sc: String,
     rc: String,
     b: String,
+    rp: Option<Value>,
+}
+/// WstxStrategy::HearingFeed rp: an integer -99..99; absent or anything else is unknown.
+fn reported_snr(rp: Option<&Value>) -> Option<i32> {
+    rp.and_then(Value::as_i64)
+        .filter(|n| (-99..=99).contains(n))
+        .and_then(|n| i32::try_from(n).ok())
 }
 pub(crate) fn parse_spot(payload: &[u8]) -> Option<Spot> {
     let wire: WireSpot = serde_json::from_slice(payload).ok()?;
     let field = |s: &str| (!s.is_empty() && s.len() <= FIELD_MAX).then(|| s.to_ascii_uppercase());
+    let mode = field(&wire.md)?;
+    let utc_s = wire.t_tx.unwrap_or(wire.t);
+    let parity = match mode.as_str() {
+        "FT8" => Some(decoder::Mode::Ft8),
+        "FT4" => Some(decoder::Mode::Ft4),
+        _ => None,
+    }
+    .map(|m| wstx_rust::transmit::parity(m, utc_s.saturating_mul(1000)));
     Some(Spot {
         sender: field(&wire.sc)?,
         receiver: field(&wire.rc)?,
-        mode: field(&wire.md)?,
+        mode,
         band: field(&wire.b)?.to_ascii_lowercase(),
         hz: wire.f,
-        utc_s: wire.t_tx.unwrap_or(wire.t),
+        utc_s,
+        snr_db: reported_snr(wire.rp.as_ref()),
+        parity,
     })
+}
+/// WstxStrategy::PskrUse: what the feed knows of whether the target hears us.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HearingState {
+    /// The newest spot of my call at the target, at most 600 s old: its time and rp.
+    Heard { utc_s: i64, snr_db: Option<i32> },
+    /// The feed is connected, the call has a subscription and no such spot is that recent.
+    No,
+    /// Everything else: Use or the feed off, not connected, a call without a subscription.
+    Unknown,
+}
+impl HearingState {
+    /// The run snapshot's hearing {state heard|no|unknown, spot_utc_s, snr_db}.
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "strategydef S2 seam: the run reads it")
+    )]
+    pub(crate) fn json(self) -> Value {
+        match self {
+            HearingState::Heard { utc_s, snr_db } => {
+                json!({"state":"heard","spot_utc_s":utc_s,"snr_db":snr_db})
+            }
+            HearingState::No => json!({"state":"no","spot_utc_s":null,"snr_db":null}),
+            HearingState::Unknown => json!({"state":"unknown","spot_utc_s":null,"snr_db":null}),
+        }
+    }
+    pub(crate) fn hears_us(self) -> bool {
+        matches!(self, HearingState::Heard { .. })
+    }
 }
 
 /// The model: who heard my call, and what the current target decodes. Pure; its memory is
@@ -188,7 +240,13 @@ impl Hearing {
                 h.receiver == spot.receiver && h.band == spot.band && h.mode == spot.mode
             });
             match same {
-                Some(h) => h.utc_s = h.utc_s.max(spot.utc_s),
+                // The newest time with that spot's rp.
+                Some(h) => {
+                    if spot.utc_s >= h.utc_s {
+                        h.utc_s = spot.utc_s;
+                        h.snr_db = spot.snr_db;
+                    }
+                }
                 None => {
                     if self.heard.len() >= HEARD_MAX {
                         self.heard
@@ -211,17 +269,62 @@ impl Hearing {
         }
     }
     /// A spot of my call received by `target` on this band and mode, not older than the window.
+    #[cfg(test)]
     pub(crate) fn hears_us(&self, target: &str, mode: &str, band: &str, now_s: i64) -> bool {
-        self.heard.iter().any(|h| {
-            h.receiver == target
-                && h.mode == mode
-                && h.band == band
-                && now_s.saturating_sub(h.utc_s) <= HEARD_WINDOW_S
-        })
+        self.heard_by(target, mode, band, now_s).is_some()
+    }
+    /// The newest spot of my call received by `target` on this band and mode, not older than
+    /// the window: its time and rp.
+    pub(crate) fn heard_by(
+        &self,
+        target: &str,
+        mode: &str,
+        band: &str,
+        now_s: i64,
+    ) -> Option<(i64, Option<i32>)> {
+        self.heard
+            .iter()
+            .filter(|h| {
+                h.receiver == target
+                    && h.mode == mode
+                    && h.band == band
+                    && now_s.saturating_sub(h.utc_s) <= HEARD_WINDOW_S
+            })
+            .max_by_key(|h| h.utc_s)
+            .map(|h| (h.utc_s, h.snr_db))
     }
     /// Audio offsets (spot frequency minus my dial) of what the current target decoded on
-    /// this mode and band, newest first and distinct, inside `range`. A spot for another
-    /// band or mode says nothing about this one.
+    /// this mode and band with the parity of the sender's period, newest first and distinct
+    /// per (offset, parity), inside `range`, at most PREFERRED_MAX. A spot for another band
+    /// or mode says nothing about this one.
+    pub(crate) fn decoded(
+        &self,
+        mode: &str,
+        band: &str,
+        dial_hz: u64,
+        range: (u32, u32),
+        now_s: i64,
+    ) -> Vec<(u32, Option<Parity>)> {
+        let mut out: Vec<(u32, Option<Parity>)> = Vec::new();
+        for s in self.decoded.iter().rev() {
+            if s.mode != mode || s.band != band || now_s.saturating_sub(s.utc_s) > HEARD_WINDOW_S {
+                continue;
+            }
+            let offset =
+                s.hz.checked_sub(dial_hz)
+                    .and_then(|o| u32::try_from(o).ok());
+            if let Some(o) = offset.filter(|o| (range.0..=range.1).contains(o))
+                && !out.contains(&(o, s.parity))
+            {
+                out.push((o, s.parity));
+                if out.len() == PREFERRED_MAX {
+                    break;
+                }
+            }
+        }
+        out
+    }
+    /// The distinct offsets of `decoded`, of any parity.
     pub(crate) fn decoded_offsets(
         &self,
         mode: &str,
@@ -231,20 +334,9 @@ impl Hearing {
         now_s: i64,
     ) -> Vec<u32> {
         let mut out: Vec<u32> = Vec::new();
-        for s in self.decoded.iter().rev() {
-            if s.mode != mode || s.band != band || now_s.saturating_sub(s.utc_s) > HEARD_WINDOW_S {
-                continue;
-            }
-            let offset =
-                s.hz.checked_sub(dial_hz)
-                    .and_then(|o| u32::try_from(o).ok());
-            if let Some(o) = offset.filter(|o| (range.0..=range.1).contains(o))
-                && !out.contains(&o)
-            {
+        for (o, _) in self.decoded(mode, band, dial_hz, range, now_s) {
+            if !out.contains(&o) {
                 out.push(o);
-                if out.len() == PREFERRED_MAX {
-                    break;
-                }
             }
         }
         out
@@ -446,6 +538,8 @@ enum Link {
 }
 struct Inner {
     enabled: bool,
+    /// WstxStrategy::PskrUse (beneath the Settings switch `enabled`).
+    use_: bool,
     storage_error: Option<&'static str>,
     my_call: Option<String>,
     target: Option<String>,
@@ -490,12 +584,38 @@ impl Shared {
         }
     }
 }
+/// pskr.json, schema_version 2 (WstxStrategy::HearingFeed).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Record {
     schema_version: u8,
     profile_id: String,
     enabled: bool,
+    #[serde(rename = "use")]
+    use_: bool,
+}
+/// A file of schema_version 1 reads with use true (written as 2 by the next change).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecordV1 {
+    schema_version: u8,
+    profile_id: String,
+    enabled: bool,
+}
+/// The saved (enabled, use) of this profile; None: foreign or broken.
+fn read_record(path: &Path, profile: &str) -> Option<(bool, bool)> {
+    let v: Value = recording::bounded_json(path, FILE_LIMIT).ok()?;
+    match v["schema_version"].as_u64()? {
+        1 => serde_json::from_value::<RecordV1>(v)
+            .ok()
+            .filter(|r| r.schema_version == 1 && r.profile_id == profile)
+            .map(|r| (r.enabled, true)),
+        2 => serde_json::from_value::<Record>(v)
+            .ok()
+            .filter(|r| r.profile_id == profile)
+            .map(|r| (r.enabled, r.use_)),
+        _ => None,
+    }
 }
 /// The station's one feed; dropping it ends its thread.
 pub(crate) struct Feed {
@@ -524,17 +644,18 @@ impl Feed {
         timing: Timing,
     ) -> Arc<Self> {
         let path = directory.join(FILE);
-        let (enabled, storage_error) = match fs::metadata(&path) {
-            Err(e) if e.kind() == ErrorKind::NotFound => (true, None),
-            Err(_) => (true, Some("storage_unavailable")),
-            Ok(_) => match recording::bounded_json::<Record>(&path, FILE_LIMIT) {
-                Ok(r) if r.schema_version == 1 && r.profile_id == profile => (r.enabled, None),
-                _ => (true, Some("invalid_pskr")),
+        let ((enabled, use_), storage_error) = match fs::metadata(&path) {
+            Err(e) if e.kind() == ErrorKind::NotFound => ((true, true), None),
+            Err(_) => ((true, true), Some("storage_unavailable")),
+            Ok(_) => match read_record(&path, profile) {
+                Some(saved) => (saved, None),
+                None => ((true, true), Some("invalid_pskr")),
             },
         };
         let shared = Arc::new(Shared {
             inner: Mutex::new(Inner {
                 enabled,
+                use_,
                 storage_error,
                 my_call: None,
                 target: None,
@@ -598,13 +719,40 @@ impl Feed {
     pub(crate) fn revision(&self) -> u64 {
         self.shared.lock().revision
     }
-    /// Known to hear us; false means not known, also with the feed off or unreachable.
-    pub(crate) fn hears_us(&self, target: &str, mode: &str, band: &str) -> bool {
-        self.shared
-            .lock()
-            .hearing
-            .hears_us(target, mode, band, utc_s())
+    /// WstxStrategy::PskrUse in effect: the toggle on beneath the Settings switch on. With it
+    /// off runs use no spot.
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "strategydef S2 seam: the run reads it")
+    )]
+    pub(crate) fn use_on(&self) -> bool {
+        let i = self.shared.lock();
+        i.enabled && i.use_
     }
+    /// Known to hear us; false means not known, also with the feed or Use off or unreachable.
+    pub(crate) fn hears_us(&self, target: &str, mode: &str, band: &str) -> bool {
+        self.hearing(target, mode, band).hears_us()
+    }
+    /// WstxStrategy::PskrUse: whether `target` hears us on this mode and band: heard (the
+    /// newest spot of my call at it, at most 600 s old, with its rp); no (the feed connected,
+    /// the call subscribed as the current target, no such spot); unknown otherwise, also with
+    /// Use off.
+    pub(crate) fn hearing(&self, target: &str, mode: &str, band: &str) -> HearingState {
+        let i = self.shared.lock();
+        if !(i.enabled && i.use_) {
+            return HearingState::Unknown;
+        }
+        if let Some((utc_s, snr_db)) = i.hearing.heard_by(target, mode, band, utc_s()) {
+            return HearingState::Heard { utc_s, snr_db };
+        }
+        let subscribed = i.target.as_deref() == Some(target) && receiver_filter(target).is_some();
+        if i.link == Link::Connected && subscribed {
+            HearingState::No
+        } else {
+            HearingState::Unknown
+        }
+    }
+    /// The audio offsets the current target decodes (any parity); none with Use off.
     pub(crate) fn decoded_offsets(
         &self,
         mode: &str,
@@ -612,10 +760,38 @@ impl Feed {
         dial_hz: u64,
         range: (u32, u32),
     ) -> Vec<u32> {
-        self.shared
-            .lock()
-            .hearing
+        let i = self.shared.lock();
+        if !(i.enabled && i.use_) {
+            return Vec::new();
+        }
+        i.hearing
             .decoded_offsets(mode, band, dial_hz, range, utc_s())
+    }
+    /// The audio offsets the current target decodes from senders of `parity` (his end of my
+    /// Tx parity, WstxStrategy::FreeTxSlot), newest first; none with Use off.
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "strategydef S2 seam: the run reads it")
+    )]
+    pub(crate) fn decoded_of_parity(
+        &self,
+        mode: &str,
+        band: &str,
+        dial_hz: u64,
+        range: (u32, u32),
+        parity: Parity,
+    ) -> Vec<u32> {
+        let i = self.shared.lock();
+        if !(i.enabled && i.use_) {
+            return Vec::new();
+        }
+        let mut out: Vec<u32> = Vec::new();
+        for (o, p) in i.hearing.decoded(mode, band, dial_hz, range, utc_s()) {
+            if p == Some(parity) && !out.contains(&o) {
+                out.push(o);
+            }
+        }
+        out
     }
     pub(crate) fn view(&self) -> Value {
         let i = self.shared.lock();
@@ -626,7 +802,7 @@ impl Feed {
             Link::Error => "error",
         };
         json!({"v":1,"profile_id":self.profile,"boot_id":self.boot,"enabled":i.enabled,
-            "state":state,"error":i.error,"last_spot_utc_s":i.last_spot_s,
+            "use":i.use_,"state":state,"error":i.error,"last_spot_utc_s":i.last_spot_s,
             "storage_error":i.storage_error})
     }
     /// The `pskr.state` event of the current state.
@@ -643,9 +819,10 @@ impl Feed {
             return Err("state_conflict");
         }
         let record = Record {
-            schema_version: 1,
+            schema_version: 2,
             profile_id: self.profile.clone(),
             enabled,
+            use_: self.shared.lock().use_,
         };
         let saved = profile::atomic_json(&self.directory, FILE, &record);
         {
@@ -669,6 +846,39 @@ impl Feed {
         self.shared.wake.notify_all();
         saved.map_err(|_| "storage_unavailable")?;
         Ok(self.view())
+    }
+    /// POST /pskr/use: saves WstxStrategy::PskrUse (pskr.json schema 2) and pushes pskr.state.
+    /// Off ends the target subscription at the session's next look; on subscribes it again.
+    fn set_use(&self, profile: &str, boot: &str, use_: bool) -> Result<Value, &'static str> {
+        if profile != self.profile {
+            return Err("wrong_profile");
+        }
+        if boot != self.boot {
+            return Err("state_conflict");
+        }
+        let record = Record {
+            schema_version: 2,
+            profile_id: self.profile.clone(),
+            enabled: self.shared.lock().enabled,
+            use_,
+        };
+        let saved = profile::atomic_json(&self.directory, FILE, &record);
+        {
+            let mut i = self.shared.lock();
+            i.storage_error = saved.is_err().then_some("storage_unavailable");
+            i.revision += 1;
+            if saved.is_ok() {
+                i.use_ = use_;
+            }
+        }
+        self.shared.wake.notify_all();
+        saved.map_err(|_| "storage_unavailable")?;
+        Ok(self.view())
+    }
+    #[cfg(test)]
+    pub(crate) fn switch_use(&self, use_: bool) {
+        let (profile, boot) = (self.profile.clone(), self.boot.clone());
+        self.set_use(&profile, &boot, use_).unwrap();
     }
 }
 
@@ -791,7 +1001,11 @@ fn session(
                     || !i.enabled
                     || i.switched != switched
                     || i.my_call.as_deref() != Some(my_call),
-                i.target.as_deref().and_then(receiver_filter),
+                // WstxStrategy::PskrUse: the target is subscribed only while Use is on.
+                i.target
+                    .as_deref()
+                    .filter(|_| i.use_)
+                    .and_then(receiver_filter),
             )
         };
         if stop {
@@ -880,6 +1094,64 @@ pub(crate) fn hearing_of(
     });
     (feed.hears_us(target, name, band), offsets)
 }
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "strategydef S2 seam: the run reads it")
+)]
+fn mode_name(mode: decoder::Mode) -> &'static str {
+    match mode {
+        decoder::Mode::Ft8 => "FT8",
+        decoder::Mode::Ft4 => "FT4",
+    }
+}
+/// WstxStrategy::PskrUse for a run (S2's LeaveRule and the run snapshot): whether `target`
+/// hears us on the station band and `mode`. Unknown without the feed, a band or a target, and
+/// with Use off.
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "strategydef S2 seam: the run reads it")
+)]
+pub(crate) fn target_hearing(
+    r: &recording::Recording,
+    target: Option<&str>,
+    mode: decoder::Mode,
+) -> HearingState {
+    match (r.pskr.get(), target, strategy::station_band(r)) {
+        (Some(feed), Some(target), Some(band)) => feed.hearing(target, mode_name(mode), band),
+        _ => HearingState::Unknown,
+    }
+}
+/// WstxStrategy::FreeTxSlot his end: the audio offsets the current target decodes from
+/// senders of `parity` (my Tx parity), inside the free slot range of `mode`. None is unknown:
+/// no feed, Use off, no band or no confirmed dial; Some(empty): no such spot.
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "strategydef S2 seam: the run reads it")
+)]
+pub(crate) fn target_offsets(
+    r: &recording::Recording,
+    mode: decoder::Mode,
+    parity: Parity,
+) -> Option<Vec<u32>> {
+    let (feed, band) = (r.pskr.get()?, strategy::station_band(r)?);
+    if !feed.use_on() {
+        return None;
+    }
+    #[cfg(test)]
+    let dial = (*feed.dial.lock().unwrap()).or_else(|| contact_http::confirmed_dial(r));
+    #[cfg(not(test))]
+    let dial = contact_http::confirmed_dial(r);
+    Some(feed.decoded_of_parity(mode_name(mode), band, dial?, freeslot::band(mode), parity))
+}
+/// WstxStrategy::PskrUse in effect (the toggle and the Settings switch on); false without a
+/// feed.
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "strategydef S2 seam: the run reads it")
+)]
+pub(crate) fn use_on(r: &recording::Recording) -> bool {
+    r.pskr.get().is_some_and(|f| f.use_on())
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -888,6 +1160,48 @@ struct Edit {
     profile_id: String,
     boot_id: String,
     enabled: bool,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UseEdit {
+    v: u64,
+    profile_id: String,
+    boot_id: String,
+    #[serde(rename = "use")]
+    use_: bool,
+}
+/// POST /pskr/use {v 1, profile_id, boot_id, use}: WstxStrategy::PskrUse, with the refusals
+/// of POST /pskr (an MCP principal is refused at the boundary, #58).
+pub async fn update_use(
+    State(app): State<App>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let r = match authorize(&app, &headers, true).await {
+        Ok(r) => r,
+        Err(e) => return error(e),
+    };
+    if query.is_some() {
+        return error("invalid_request");
+    }
+    let b: UseEdit = match parse(&headers, body) {
+        Ok(b) => b,
+        Err(e) => return error(e),
+    };
+    if let Err(e) = syntax(b.v, &b.profile_id, &b.boot_id, 0) {
+        return error(e);
+    }
+    let feed = match feed_of(&r) {
+        Ok(feed) => feed,
+        Err(e) => return error(e),
+    };
+    match tokio::task::spawn_blocking(move || feed.set_use(&b.profile_id, &b.boot_id, b.use_)).await
+    {
+        Ok(Ok(v)) => Json(v).into_response(),
+        Ok(Err(e)) => error(e),
+        Err(_) => error("storage_unavailable"),
+    }
 }
 fn feed_of(r: &recording::Recording) -> Result<Arc<Feed>, &'static str> {
     r.pskr.get().cloned().ok_or("not_found")

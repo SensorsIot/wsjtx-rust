@@ -798,22 +798,25 @@ impl Owner {
             inner.run_revision = inner.run_revision.saturating_add(1).min(MAX_SAFE);
         }
     }
-    /// WstxStrategy::StrategyRun: a browser's PUT /strategy changed active (no strategy lock
+    /// WstxStrategy::StrategyRun: a browser's selection change or Auto on (no strategy lock
     /// held). Any run ends: a contact it armed is disarmed, and cancelled when another
-    /// strategy starts; when one is selected a run starts with the request's grant.
+    /// strategy starts; with `start` (Auto on) and a selection a run starts with the request's
+    /// grant. True when a run started; a refused start names why in strategy_refusal.
     pub(crate) fn selected(
         &self,
         contact: &contact_http::Station,
         state: &ProfileState,
         access: Option<(authorization::Access, String)>,
-    ) {
+        start: bool,
+    ) -> bool {
         let r = &state.recording;
-        // Colouring only starts no run (WstxContest::ContestSelection).
-        let active = contact
-            .strategy
-            .config(state)
-            .and_then(|c| c.run_strategy())
-            .is_some();
+        // WstxStrategy::AutoToggle: with Auto off a selection only marks.
+        let active = start
+            && contact
+                .strategy
+                .config(state)
+                .and_then(|c| c.run_strategy())
+                .is_some();
         let mut inner = self.lock();
         let running = inner
             .run
@@ -823,16 +826,16 @@ impl Owner {
         if running.is_some() {
             Self::finish(&mut inner, "stopped");
         }
-        if let Some((true, own_cq)) = running {
-            if active || own_cq {
-                cancel(contact, state);
-            }
+        // A selection change, None, a contest deselected: the run's contact is disarmed and
+        // cancelled at once (WstxStrategy::StrategyRun "Ends at once").
+        if let Some((true, _)) = running {
+            cancel(contact, state);
             disarm(contact, state);
         }
         inner.strategy_refusal = None;
         inner.run_revision = inner.run_revision.saturating_add(1).min(MAX_SAFE);
         if !active {
-            return;
+            return false;
         }
         let started = (|| {
             let (access, token) = access.ok_or("transmit_unavailable")?;
@@ -889,8 +892,43 @@ impl Owner {
                 inner.configuration = Some(run.config.clone());
                 inner.policy_revision = inner.policy_revision.saturating_add(1).min(MAX_SAFE);
                 inner.run = Some(run);
+                true
             }
-            Err(reason) => inner.strategy_refusal = Some(reason),
+            Err(reason) => {
+                inner.strategy_refusal = Some(reason);
+                false
+            }
+        }
+    }
+    /// A strategy or contest run that has not stopped (WstxStrategy::AutoToggle: every run end
+    /// turns Auto off).
+    pub(crate) fn strategy_running(&self) -> bool {
+        self.lock()
+            .run
+            .as_ref()
+            .is_some_and(|run| run.config.strategy && run.state != RunState::Stopped)
+    }
+    /// Why the last selection or Auto on started no run (the GET /strategy snapshot).
+    pub(crate) fn strategy_refusal(&self) -> Option<&'static str> {
+        self.lock().strategy_refusal
+    }
+    /// WstxStrategy::AutoToggle Auto off: the strategy or contest run ends at once, stopped; a
+    /// contact it armed (its CQ too) is disarmed and cancelled. A pounce or MCP run is not
+    /// Auto's and is left alone.
+    pub(crate) fn end_strategy_run(&self, contact: &contact_http::Station, state: &ProfileState) {
+        let mut inner = self.lock();
+        let Some(armed) = inner
+            .run
+            .as_ref()
+            .filter(|run| run.config.strategy && run.state != RunState::Stopped)
+            .map(|run| run.state.armed())
+        else {
+            return;
+        };
+        Self::finish(&mut inner, "stopped");
+        if armed {
+            cancel(contact, state);
+            disarm(contact, state);
         }
     }
     /// WstxStrategy::StrategyRun: re-identifies on the live identity and returns the reason
@@ -1282,7 +1320,7 @@ impl Owner {
                         state,
                         settled,
                         c.dx_call.as_deref(),
-                        chosen.as_ref().map(|(_, s)| s.calls_per_station),
+                        chosen.as_ref().map(|(_, s)| s.repetitions),
                         &my,
                     )
                 {
@@ -1304,7 +1342,7 @@ impl Owner {
                         run.unanswered += 1;
                         let limit = chosen
                             .as_ref()
-                            .map_or(run.config.max_unanswered, |(_, s)| s.calls_per_station);
+                            .map_or(run.config.max_unanswered, |(_, s)| s.repetitions);
                         if run.unanswered >= limit {
                             if chosen.is_none() && run.pounce.is_some() {
                                 // #42 the pounce stays: wait again for the same call.
