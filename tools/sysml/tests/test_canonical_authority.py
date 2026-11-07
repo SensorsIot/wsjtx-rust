@@ -116,6 +116,13 @@ class CanonicalAuthorityTests(unittest.TestCase):
         for content in ("// Proves: CL-003-01; TC-001-001\ntest('identity',()=>{});", "test('TC-001-001: identity',()=>{});"):
             source.write_text(content, encoding="utf-8")
             self.check()
+        # A Proves comment binds only the test directly under it; with the test deleted it is stale.
+        for content in ("// Proves: TC-001-001\n", "// Proves: TC-001-001\n\nconst helper = 1;\ntest('identity',()=>{});",
+                        "// Proves: TC-001-001\nconst helper = 1;"):
+            with self.subTest(stale=content):
+                source.write_text(content, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "No Proves tag or named-test"):
+                    self.check()
         self.requirements.write_text(partial.replace("tests/case.cjs", "../escape.cjs"), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "out-of-scope"):
             self.check()
@@ -130,6 +137,44 @@ class CanonicalAuthorityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Missing executable test symbol"):
             self.check()
         self.requirements.write_text(partial.replace('server/probe.rs::known_observation', 'server/probe.rs').replace('attribute executable', 'attribute method : String = "manual";\nattribute executable'), encoding="utf-8")
+        self.check()
+
+    def test_proves_comment_binds_only_an_attached_test(self):
+        attached = {
+            "server/probe.rs": ("// Proves: TC-001-001\n// continues\n#[test]\nfn observed() {}",
+                                "// Proves: TC-001-001\n#[tokio::test(flavor = \"current_thread\")]\nasync fn observed() {}",
+                                "    // Proves: TC-001-001\n    #[cfg(windows)]\n    #[test]\n    fn observed() {}"),
+            "tests/probe_test.py": ("    # Proves: TC-001-001\n    @unittest.skipIf(False, 'kept')\n    def test_observed(self):\n        pass",),
+        }
+        # A helper function or a class is not a test, even when it sits where a test was.
+        stale = {
+            "server/probe.rs": ("// Proves: TC-001-001\n", "// Proves: TC-001-001\nconst LIMIT: u32 = 1;\n#[test]\nfn observed() {}",
+                                "// Proves: TC-001-001\nfn helper() {}", "    // Proves: TC-001-001\n    pub async fn helper() {}"),
+            "tests/probe_test.py": ("# Proves: TC-001-001\nLIMIT = 1\ndef test_observed():\n    pass", "# Proves: TC-001-001\ndef helper():\n    pass",
+                                    "# Proves: TC-001-001\nclass ObservedTests:\n    pass"),
+        }
+        for path, contents in attached.items():
+            source = self.root / path
+            partial = MODEL.replace("AutomationState::planned;", f'AutomationState::partial;\nattribute executable : String = "{path}";')
+            self.requirements.write_text(partial, encoding="utf-8")
+            for content in contents:
+                with self.subTest(attached=content):
+                    source.write_text(content, encoding="utf-8")
+                    self.check()
+            for content in stale[path]:
+                with self.subTest(stale=content):
+                    source.write_text(content, encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "No Proves tag or named-test"):
+                        self.check()
+            source.unlink()
+
+    def test_every_listed_file_of_a_case_must_bind_it(self):
+        (self.root / "tests/a.cjs").write_text("// Proves: TC-001-001\ntest('x',()=>{});", encoding="utf-8")
+        (self.root / "tests/b.cjs").write_text("// Proves: TC-001-001\nconst helper = 1;", encoding="utf-8")
+        self.requirements.write_text(MODEL.replace("AutomationState::planned;", 'AutomationState::partial;\nattribute executable : String = "tests/a.cjs; tests/b.cjs";'), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, r"TC-001-001: tests/b\.cjs$"):
+            self.check()
+        (self.root / "tests/b.cjs").write_text("// Proves: TC-001-001\ntest('y',()=>{});", encoding="utf-8")
         self.check()
 
     def test_retired_dependency_and_bad_relative_links_refused(self):

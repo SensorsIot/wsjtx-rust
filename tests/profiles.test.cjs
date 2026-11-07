@@ -20,7 +20,7 @@ let root, browser, tls, retainFixtureRoot = false;
 const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', 'wstx-rust.exe');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const uuid = i => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
-// Proves: CL-044-05; TC-044-002. Saved audio devices are WASAPI endpoint IDs of their flow (capture 0.0.1, render 0.0.0).
+// CL-044-05: saved audio devices are WASAPI endpoint IDs of their flow (capture 0.0.1, render 0.0.0).
 const captureId = i => `{0.0.1.00000000}.{00000000-0000-4000-8000-${String(i).padStart(12, '0')}}`;
 const renderId = i => `{0.0.0.00000000}.{00000000-0000-4000-8000-${String(i).padStart(12, '0')}}`;
 const settings = i => ({display_name: `Station ${i}`, callsign: `TEST${i}`, locator: 'JN47AA', audio: {input_device: captureId(i), output_device: renderId(i)}, control: {mode: 'disabled', endpoint: null, ptt: 'disabled'}});
@@ -1660,6 +1660,7 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
   }
 });
 
+// Proves: CL-044-05; TC-044-002 (f), friendly names and endpoints of the other flow are not saved.
 test('TC-022-001: four real windows, independent edits and HTTP input boundaries', {timeout: 60000}, async t => {
   const {profiles, apps} = await fixture(t), beforeBytes = await savedBytes(profiles);
   const {pages, context} = await browserWindows(t, profiles);

@@ -34,6 +34,7 @@ before(async()=>{
 after(async()=>{await browser?.close();});
 
 const evenNow=()=>Math.floor(Date.now()/30000)*30000;
+// Proves: CL-039-08, CL-050-05; TC-039-009, TC-050-005 (steps inside this test).
 test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',{timeout:90000},async()=>{
   const period=evenNow();
   await publish(period,[
@@ -249,6 +250,7 @@ test('TC-010-009 UTC clock, Tx progress and Rx level from station.tick',{timeout
 });
 
 // #41 DirectLog: Log QSO logs at once on the actual server, without a review form.
+// Proves: CL-010-04; TC-011-001 (the browser Log QSO button).
 test('TC-007-004 manual DX entry and Log QSO log the contact at once without hiding Halt Tx',{timeout:30000},async()=>{
   if(!await page.locator('#qso-more').evaluate(el=>el.open))await page.locator('#qso-more summary').click();
   await page.locator('#dx-call').fill('dl1abc');await page.locator('#dx-grid').fill('JO62');await page.locator('#dx-grid').press('Enter');

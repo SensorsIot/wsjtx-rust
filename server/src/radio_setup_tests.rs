@@ -166,6 +166,7 @@ fn undo_file(f: &Fixture) -> Option<Value> {
         .map(|b| serde_json::from_slice(&b).unwrap())
 }
 
+// Proves: TC-044-003.
 #[test]
 fn apply_writes_recommended_items_with_undo_record_then_undo_restores() {
     let (f, radio) = station(Ic7300 {
@@ -230,6 +231,7 @@ fn apply_writes_recommended_items_with_undo_record_then_undo_restores() {
     assert!(f.bench.keys.lock().unwrap().is_empty(), "PTT never keyed");
 }
 
+// Proves: TC-044-003.
 #[test]
 fn apply_refusals_and_failures_stop_without_keying() {
     // Radio in TX: no menu write at all.
@@ -463,6 +465,7 @@ pub(crate) fn double(
     })
 }
 
+// Proves: TC-044-001, TC-044-002, TC-044-009.
 #[test]
 fn detection_never_opens_station_port_and_proposes_the_station_radio() {
     let (f, radio) = station(Ic7300 {
@@ -577,6 +580,7 @@ fn detection_never_opens_station_port_and_proposes_the_station_radio() {
     assert!(f.bench.keys.lock().unwrap().is_empty());
 }
 
+// Proves: TC-044-002.
 #[test]
 fn detection_of_an_unconfigured_ic7300_probes_it_and_proposes_it() {
     let f = fixture("http://127.0.0.1:18045", false);
@@ -609,6 +613,7 @@ fn detection_of_an_unconfigured_ic7300_probes_it_and_proposes_it() {
     );
 }
 
+// Proves: TC-044-002, TC-044-003.
 #[tokio::test]
 async fn http_detect_and_settings_routes_refuse_like_operating_mutations() {
     let f = fixture("http://127.0.0.1:18046", false);
@@ -727,6 +732,7 @@ async fn http_detect_and_settings_routes_refuse_like_operating_mutations() {
     assert_eq!(v["error"]["code"], "nothing_to_undo");
 }
 
+// Proves: TC-044-002.
 #[tokio::test]
 async fn profile_put_refuses_friendly_names_and_accepts_endpoint_ids() {
     let f = fixture("http://127.0.0.1:18047", false);
@@ -773,6 +779,7 @@ async fn profile_put_refuses_friendly_names_and_accepts_endpoint_ids() {
     assert_eq!(s, StatusCode::OK);
 }
 
+// Proves: TC-044-002.
 #[test]
 fn startup_migration_replaces_unique_friendly_names_only() {
     let dir = std::env::temp_dir().join(format!("wstx-migrate-{}", profile::new_uuid().unwrap()));

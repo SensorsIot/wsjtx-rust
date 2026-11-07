@@ -279,8 +279,6 @@ test('TC-009-005 strict TLS unions, early identity barriers and manual preferred
   const manualClose=await request('/radio/disconnect','POST',{v:1,profile_id:id,boot_id:s.boot_id,connection_generation:0});assert.equal(manualClose.status,409);assert.equal(manualClose.body.error.code,'automatic_lifecycle');
 });
 
-// Proves: CL-008-07; CL-010-05/07/08; TC-009-005 cases1/2/6. Interception only
-// delays a mutation body; all successful replies/state originate in the real server.
 // Proves: CL-008-07; TC-009-005 case6 (#10). selection.state during a held POST (another client's
 // revision, then the command's own) does not take away the barrier of its unknown outcome.
 test('TC-009-005 an event during a pending command keeps the unknown outcome barrier',{timeout:60000},async t=>{
@@ -313,6 +311,9 @@ test('TC-009-005 an event during a pending command keeps the unknown outcome bar
   assert.ok(reads.length>before,'a reconciling read resolved the unknown outcome');
 });
 
+// Proves: CL-008-07; CL-010-05/07/08; TC-009-005 cases1/2/6. Interception only
+// delays a mutation body; all successful replies/state originate in the real server.
+// Proves: CL-044-16; TC-044-023 (d), the step inside this test.
 test('TC-009-005 browser preferred selection and Stop fence a genuinely delayed POST',{timeout:45000},async t=>{
   const {origin,request,token}=await station(t);const {chromium}=require('playwright');
   const browser=await chromium.launch();t.after(()=>browser.close());
