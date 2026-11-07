@@ -905,6 +905,26 @@ fn record_facts(record: &Value) -> Option<Facts> {
         hz: record["frequency_hz"].as_f64(),
     })
 }
+/// WstxContest::ContestValueOrder, smaller first: callers of my call, a new multiplier, more
+/// points, the stronger SNR, then for an exact tie only the lower audio frequency and the call.
+pub(crate) fn order(a: &Verdict, b: &Verdict) -> std::cmp::Ordering {
+    let key = |v: &Verdict| {
+        let c = v.contest.unwrap_or_default();
+        (
+            v.kind != Some(Kind::Caller),
+            !c.new_multiplier,
+            std::cmp::Reverse(c.points.unwrap_or(0)),
+        )
+    };
+    key(a)
+        .cmp(&key(b))
+        .then_with(|| {
+            let snr = |v: &Verdict| v.facts.snr.map_or(f64::INFINITY, |s| -s);
+            snr(a).total_cmp(&snr(b))
+        })
+        // An exact tie only: the lower audio frequency, then the call; never decode order.
+        .then_with(|| crate::strategy::exact_tie(&a.facts, &b.facts))
+}
 /// WstxContest::ContestVerdict: in display order, by ContestValueOrder.
 pub(crate) fn evaluate(
     s: &Selection,
@@ -927,24 +947,7 @@ pub(crate) fn evaluate(
             }
         })
         .partition(|v| v.kind.is_some());
-    ranked.sort_by(|a, b| {
-        let key = |v: &Verdict| {
-            let c = v.contest.unwrap_or_default();
-            (
-                v.kind != Some(Kind::Caller),
-                !c.new_multiplier,
-                std::cmp::Reverse(c.points.unwrap_or(0)),
-            )
-        };
-        key(a)
-            .cmp(&key(b))
-            .then_with(|| {
-                let snr = |v: &Verdict| v.facts.snr.map_or(f64::INFINITY, |s| -s);
-                snr(a).total_cmp(&snr(b))
-            })
-            // An exact tie only: the lower audio frequency, then the call; never decode order.
-            .then_with(|| crate::strategy::exact_tie(&a.facts, &b.facts))
-    });
+    ranked.sort_by(order);
     ranked
         .iter_mut()
         .enumerate()

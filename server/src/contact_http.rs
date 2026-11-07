@@ -351,12 +351,6 @@ impl Station {
     }
     /// What the WstxUdp Status message reads: (DX call, DX grid, report, Rx Hz, Tx Hz,
     /// the contact's next message).
-    pub(crate) fn repetitions_due(&self) -> u32 {
-        self.lock().engine.repetitions_due()
-    }
-    pub(crate) fn partner_answered(&self, my: &str) -> bool {
-        self.lock().engine.partner_answered(my)
-    }
     pub(crate) fn status_facts(&self) -> StatusFacts {
         let inner = self.lock();
         let e = &inner.engine;
@@ -1278,7 +1272,7 @@ pub(crate) fn station_tick(state: &ProfileState) {
             .auto_step(state, epoch, s.automation.strategy_running());
         if let Some(feed) = state.recording.pskr.get() {
             // Only a strategy run's own contact reads the target's spots: no other subscribes.
-            let own = s.automation.repeat_exempt().map(|(id, _)| id);
+            let own = s.automation.own_contact();
             let target = s
                 .facts()
                 .1

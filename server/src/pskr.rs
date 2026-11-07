@@ -202,10 +202,6 @@ pub(crate) enum HearingState {
 }
 impl HearingState {
     /// The run snapshot's hearing {state heard|no|unknown, spot_utc_s, snr_db}.
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "strategydef S2 seam: the run reads it")
-    )]
     pub(crate) fn json(self) -> Value {
         match self {
             HearingState::Heard { utc_s, snr_db } => {
@@ -325,6 +321,7 @@ impl Hearing {
         out
     }
     /// The distinct offsets of `decoded`, of any parity.
+    #[cfg(test)]
     pub(crate) fn decoded_offsets(
         &self,
         mode: &str,
@@ -687,7 +684,7 @@ impl Feed {
             dial: Mutex::new(None),
         })
     }
-    #[cfg(test)]
+    /// The target the feed follows (its receiver subscription), if any.
     pub(crate) fn target(&self) -> Option<String> {
         self.shared.lock().target.clone()
     }
@@ -721,15 +718,12 @@ impl Feed {
     }
     /// WstxStrategy::PskrUse in effect: the toggle on beneath the Settings switch on. With it
     /// off runs use no spot.
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "strategydef S2 seam: the run reads it")
-    )]
     pub(crate) fn use_on(&self) -> bool {
         let i = self.shared.lock();
         i.enabled && i.use_
     }
     /// Known to hear us; false means not known, also with the feed or Use off or unreachable.
+    #[cfg(test)]
     pub(crate) fn hears_us(&self, target: &str, mode: &str, band: &str) -> bool {
         self.hearing(target, mode, band).hears_us()
     }
@@ -753,6 +747,7 @@ impl Feed {
         }
     }
     /// The audio offsets the current target decodes (any parity); none with Use off.
+    #[cfg(test)]
     pub(crate) fn decoded_offsets(
         &self,
         mode: &str,
@@ -769,10 +764,6 @@ impl Feed {
     }
     /// The audio offsets the current target decodes from senders of `parity` (his end of my
     /// Tx parity, WstxStrategy::FreeTxSlot), newest first; none with Use off.
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "strategydef S2 seam: the run reads it")
-    )]
     pub(crate) fn decoded_of_parity(
         &self,
         mode: &str,
@@ -1069,35 +1060,6 @@ fn accept(shared: &Shared, my_call: &str, payload: &[u8]) {
     }
 }
 
-/// What the feed knows of `target` on the station's band and `mode`: known to hear us, and
-/// the audio offsets it decodes inside the free slot range. Unknown is (false, none): the
-/// feed off or absent, the band or dial unknown, no target.
-pub(crate) fn hearing_of(
-    r: &recording::Recording,
-    target: Option<&str>,
-    mode: decoder::Mode,
-) -> (bool, Vec<u32>) {
-    let (Some(feed), Some(target), Some(band)) = (r.pskr.get(), target, strategy::station_band(r))
-    else {
-        return (false, Vec::new());
-    };
-    let name = match mode {
-        decoder::Mode::Ft8 => "FT8",
-        decoder::Mode::Ft4 => "FT4",
-    };
-    #[cfg(test)]
-    let dial = (*feed.dial.lock().unwrap()).or_else(|| contact_http::confirmed_dial(r));
-    #[cfg(not(test))]
-    let dial = contact_http::confirmed_dial(r);
-    let offsets = dial.map_or_else(Vec::new, |dial| {
-        feed.decoded_offsets(name, band, dial, freeslot::band(mode))
-    });
-    (feed.hears_us(target, name, band), offsets)
-}
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "strategydef S2 seam: the run reads it")
-)]
 fn mode_name(mode: decoder::Mode) -> &'static str {
     match mode {
         decoder::Mode::Ft8 => "FT8",
@@ -1107,10 +1069,6 @@ fn mode_name(mode: decoder::Mode) -> &'static str {
 /// WstxStrategy::PskrUse for a run (S2's LeaveRule and the run snapshot): whether `target`
 /// hears us on the station band and `mode`. Unknown without the feed, a band or a target, and
 /// with Use off.
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "strategydef S2 seam: the run reads it")
-)]
 pub(crate) fn target_hearing(
     r: &recording::Recording,
     target: Option<&str>,
@@ -1124,10 +1082,6 @@ pub(crate) fn target_hearing(
 /// WstxStrategy::FreeTxSlot his end: the audio offsets the current target decodes from
 /// senders of `parity` (my Tx parity), inside the free slot range of `mode`. None is unknown:
 /// no feed, Use off, no band or no confirmed dial; Some(empty): no such spot.
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "strategydef S2 seam: the run reads it")
-)]
 pub(crate) fn target_offsets(
     r: &recording::Recording,
     mode: decoder::Mode,
@@ -1145,10 +1099,7 @@ pub(crate) fn target_offsets(
 }
 /// WstxStrategy::PskrUse in effect (the toggle and the Settings switch on); false without a
 /// feed.
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "strategydef S2 seam: the run reads it")
-)]
+#[cfg(test)]
 pub(crate) fn use_on(r: &recording::Recording) -> bool {
     r.pskr.get().is_some_and(|f| f.use_on())
 }

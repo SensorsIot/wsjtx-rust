@@ -853,9 +853,9 @@ pub struct Engine {
     pub settings: Settings,
     pub contact: Option<Contact>,
     /// WstxStrategy::StrategyWatchdog: the strategy run's own contact, which sends past the
-    /// Tx watchdog limit, and the repetitions between its checks. Set by the station before
-    /// every step.
-    pub repeat_exempt: Option<(String, u32)>,
+    /// Tx watchdog limit, and the repetitions left before LeaveRule leaves it (WD:n; None while
+    /// no count applies). Set by the station before every step.
+    pub repeat_exempt: Option<(String, Option<u32>)>,
     /// Contacts due for the log (completed, or Log QSO), taken by the station.
     to_log: Vec<(LogKind, Contact)>,
     /// The last request target refused without a disarm, never resubmitted as is.
@@ -2242,18 +2242,6 @@ impl Engine {
         self.hound.reply = HoundReply::Pending;
         self.hound.reply_deadline = Some(ctx.now_utc_ms + 11 * period_ms(mode));
     }
-    /// The contact's partner sent a message addressed to `my` call.
-    pub fn partner_answered(&self, my: &str) -> bool {
-        self.contact.as_ref().is_some_and(|c| {
-            c.dialogue.iter().any(|e| {
-                !e.tx
-                    && e.text
-                        .split_whitespace()
-                        .next()
-                        .is_some_and(|to| to.trim_matches(['<', '>']) == my)
-            })
-        })
-    }
     /// The Rep of the message due next (WstxContact::TxWatchdog).
     pub fn repetitions_due(&self) -> u32 {
         self.contact.as_ref().map_or(0, |c| {
@@ -2263,19 +2251,16 @@ impl Engine {
         })
     }
     /// tx_remaining_calls (limit - reported) reads the Rep of the message due next; a strategy
-    /// run's own contact has no stop, so it counts down to the next check
-    /// (WstxStrategy::StrategyWatchdog).
+    /// run's own contact has no stop and counts down to the repetition at which LeaveRule
+    /// leaves it (WstxStrategy::StrategyWatchdog).
     fn report_repetitions<H: Hardware>(&self, core: &mut Core<H>) {
-        let repetitions = self.repetitions_due();
-        let limit = core.tx_limit();
-        let every = self
+        core.report_tx_repetitions(self.repetitions_due());
+        let remaining = self
             .repeat_exempt
             .as_ref()
             .filter(|e| self.contact.as_ref().is_some_and(|c| c.id == e.0))
-            .map(|e| e.1.clamp(1, limit.max(1)));
-        core.report_tx_repetitions(every.map_or(repetitions, |every| {
-            limit.saturating_sub(every - repetitions % every)
-        }));
+            .and_then(|e| e.1);
+        core.report_tx_remaining(remaining);
     }
     /// The reply timeout (MW stopWRTimeout) and the Hound watchdog (HWD) turn Enable Tx off.
     fn hound_timeouts<H: Hardware>(&mut self, core: Option<&mut Core<H>>, now: i64) {

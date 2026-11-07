@@ -312,6 +312,9 @@ pub struct Core<H: Hardware> {
     /// The contact dialogue's Rep of the message due next, as its consumer reports it
     /// (no count of its own): only tx_remaining_calls reads it.
     tx_repetitions: u32,
+    /// WstxStrategy::StrategyWatchdog: what a strategy run's own contact counts down to instead
+    /// (the repetitions left before LeaveRule leaves), as its consumer reports it.
+    tx_remaining: Option<u32>,
     /// #39: an operator action (operator arm or accepted browser activity) was seen this
     /// boot; automation never sets it.
     operator_seen: bool,
@@ -404,6 +407,7 @@ impl<H: Hardware> Core<H> {
             tx_calls: 6,
             tune_seconds: 90,
             tx_repetitions: 0,
+            tx_remaining: None,
             operator_seen: false,
             tx_expired: false,
             ever_keyed: false,
@@ -589,6 +593,11 @@ impl<H: Hardware> Core<H> {
     /// The contact consumer's Rep of the message due next, for tx_remaining_calls.
     pub fn report_tx_repetitions(&mut self, repetitions: u32) {
         self.tx_repetitions = repetitions;
+    }
+    /// WstxStrategy::StrategyWatchdog: a strategy run's own contact shows the repetitions left
+    /// before it is left instead of the limit's (None: the limit's).
+    pub fn report_tx_remaining(&mut self, remaining: Option<u32>) {
+        self.tx_remaining = remaining;
     }
     /// The next send would exceed the limit: Enable Tx goes off without a halt; a keyed
     /// or started transmission finishes.
@@ -1160,7 +1169,9 @@ impl<H: Hardware> Core<H> {
                     .map(|j| j.prepared.request.request_sequence)
             });
         let tx_remaining_calls = match self.arm {
-            ArmState::Armed => self.tx_calls.saturating_sub(self.tx_repetitions),
+            ArmState::Armed => self
+                .tx_remaining
+                .unwrap_or_else(|| self.tx_calls.saturating_sub(self.tx_repetitions)),
             _ => 0,
         };
         View {
