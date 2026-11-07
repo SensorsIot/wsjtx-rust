@@ -83,3 +83,36 @@ rules around it. Agent memory only points here.
 - Development and builds run on Windows (x86_64-pc-windows-msvc), with the toolchain of
   `rust-toolchain.toml` ([Project specifics](Project-Specifics.md)).
 - Upstream WSJT-X (`upstream` remote) is read for reference only; nothing is pushed there.
+
+## Agent role additions
+
+This project's layer of the [agent roles](../../harness/core/docs/Parallel-Work.md#agent-roles),
+installed with `python harness/core/tools/install_skills.py --project . --host claude --skill grill-me --skill sysml-authoring --skill test-design --agent definer --agent checker`.
+
+### Role: definer
+
+```yaml
+guard:
+  commands:
+    - 'python tools/sysml\.py (check|traces|fingerprints)'
+```
+
+The model is under `docs/sysml/`; its checks are the `sysml.py` commands of
+[model authoring and validation](Project-Specifics.md#model-authoring-and-validation).
+A browser control that writes to the radio or keys it states what it does before its
+scripts have loaded over the 32 kbit/s link and after they fail to load.
+
+### Role: checker
+
+```yaml
+guard:
+  commands:
+    - 'gh issue comment [0-9]+ --body .*'
+```
+
+The checker posts its verdict as its own issue comment.
+
+### Role: every
+
+The [agent working rules](Agent-Working-Rules.md) hold for every role. Build folders are on
+D: (`gate.cargo_target_root` in `.harness/config.yaml`); a role builds nothing.
