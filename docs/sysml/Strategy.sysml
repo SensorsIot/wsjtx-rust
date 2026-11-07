@@ -671,10 +671,10 @@ package WstxStrategy {
              cancelled) instead of stopping; last_decode restarts at the latest publication.
              Waiting reasons (run.reason while state waiting): no_receive, auto_seq (Auto Seq
              off), call (a nonstandard own call, #24 S1b), activity (a contest activity or Hound,
-             #24 S2a); it selects nothing until the reason is gone.
+             #24 S2a; a contest strategy: any other than its own, WstxContest::ContestRun); it selects nothing until the reason is gone.
              Waiting: on each fresh complete publication the list is the verdicts with a rank,
              not completed in this run on this band and mode and not given up by the operator
-             (ManualIntervention), one per call, in ValueOrder (no CQ is ever called). A candidate the
+             (ManualIntervention), one per call, in ValueOrder (an award strategy calls no CQ; a contest Run, WstxContest::ContestRun). A candidate the
              run left after calls_per_station on this band and mode is passed over when any other
              is listed; a
              caller never is (D5).
@@ -691,7 +691,8 @@ package WstxStrategy {
         doc /* A strategy run or a pounce (not a plain MCP policy run, not manual operation)
              calls from a free audio slot (operator decision 2026-11-04, #39). Decided once
              per call, between QSOs: when a strategy run or a pounce has selected its station, a
-             caller of my call as well (an award strategy never calls CQ); never during a contact
+             caller of my call as well (an award strategy never calls CQ; a contest Run decides it
+             the same way before its CQ, WstxContest::ContestRun); never during a contact
              except by StrategyWatchdog, before the partner has answered.
              Occupied: every decoded record of the last 4 periods of my Tx parity (the
              parity after the selection) that decoded anything, among the records of

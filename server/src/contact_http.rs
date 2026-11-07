@@ -745,7 +745,7 @@ pub(crate) fn admit(value: &Value) -> Result<Vec<u8>, &'static str> {
     }
     Ok(bytes)
 }
-fn wall_ms() -> i64 {
+pub(crate) fn wall_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as i64)

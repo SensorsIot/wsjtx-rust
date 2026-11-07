@@ -4216,7 +4216,7 @@ package WstxRequirements {
     dependency CL_039_04_to_FR_010 from 'CL-039-04' to 'FR-010';
     dependency CL_039_04_to_FR_019 from 'CL-039-04' to 'FR-019';
     requirement 'CL-039-05' {
-        doc /* Selecting a strategy starts it and None stops it, through the existing station automation and contact engine (no second engine), with no confirmation, no Start and no client decision: the browser sends only the selection and HALT is always on screen. A strategy never calls CQ and goes on after each QSO without a contact limit, waiting for the next opportunity, for at most 8 hours from its selection, also with a browser open (operator decision 2026-11-06, replacing "no time limit": a new selection starts a new 8 hours; at the limit it selects no new station, the contact in progress ends its normal way, and it stops with the reason run_limit until a new selection); it answers callers of my call first, then the best candidate; after calls per station consecutive calls without progress it goes to the best other candidate of the next publication and may come back; it never selects a station the operator cancelled or aborted again in that run, nor one completed in that run on this band and mode; a station that calls me is answered also when it was just left. It follows its grant, not the transport of the selecting request: a page reload or a second tab does not stop it, a revoked grant does. Unattended (operator decision, #39 comment 6685226511): with no authenticated client (a status WebSocket session, or an authenticated MCP request) for 60 s it selects no new station, the contact in progress ends its normal way, and it stops with the reason no_client until a new selection; only a selection restarts it, never an AutomationCommand start. It waits instead of stopping across a receive restart; a refused start or a stop leaves the strategy selected with the reason shown. HALT from any source stops the run and sets active to None, pushed to the browser; Esc does not. A double-click is always possible and is a manual intervention: the strategy stays selected, waits for that QSO to end and resumes. An MCP principal cannot select a strategy. Details: WstxStrategy::StrategyRun, StrategySelector, ManualIntervention, SaneCall; WstxMcp::OperatingAutomation. */
+        doc /* Selecting a strategy starts it and None stops it, through the existing station automation and contact engine (no second engine), with no confirmation, no Start and no client decision: the browser sends only the selection and HALT is always on screen. An award strategy never calls CQ (a contest Run does, CL-063-05) and goes on after each QSO without a contact limit, waiting for the next opportunity, for at most 8 hours from its selection, also with a browser open (operator decision 2026-11-06, replacing "no time limit": a new selection starts a new 8 hours; at the limit it selects no new station, the contact in progress ends its normal way, and it stops with the reason run_limit until a new selection); it answers callers of my call first, then the best candidate; after calls per station consecutive calls without progress it goes to the best other candidate of the next publication and may come back; it never selects a station the operator cancelled or aborted again in that run, nor one completed in that run on this band and mode; a station that calls me is answered also when it was just left. It follows its grant, not the transport of the selecting request: a page reload or a second tab does not stop it, a revoked grant does. Unattended (operator decision, #39 comment 6685226511): with no authenticated client (a status WebSocket session, or an authenticated MCP request) for 60 s it selects no new station, the contact in progress ends its normal way, and it stops with the reason no_client until a new selection; only a selection restarts it, never an AutomationCommand start. It waits instead of stopping across a receive restart; a refused start or a stop leaves the strategy selected with the reason shown. HALT from any source stops the run and sets active to None, pushed to the browser; Esc does not. A double-click is always possible and is a manual intervention: the strategy stays selected, waits for that QSO to end and resumes. An MCP principal cannot select a strategy. Details: WstxStrategy::StrategyRun, StrategySelector, ManualIntervention, SaneCall; WstxMcp::OperatingAutomation. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/automation.rs; server/src/strategy.rs; client/contact.js";
     }
@@ -5788,5 +5788,75 @@ package WstxRequirements {
     }
     dependency CL_063_03_verified_by_TC_063_008 from 'CL-063-03' to 'TC-063-008';
     dependency CL_063_04_verified_by_TC_063_008 from 'CL-063-04' to 'TC-063-008';
+    requirement 'CL-063-05' {
+        doc /* Fully automatic is offered beside colouring only as S&P or Run. S&P calls the most valuable callable station, Run calls CQ with the contest's message and answers the most valuable non-dupe caller (new multiplier, QSO points, SNR), not the first decoded. Where the rules forbid automatic operation the browser shows the clause as a warning and transmits only after the operator's confirmation, and the station refuses without it; where they are silent a short note. It waits while the activity, the band or the period do not fit the contest; a contest can still be operated by hand. Details: WstxContest::ContestRun, AutomationClause, ContestSelection. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/automation.rs; server/src/contest.rs; server/src/strategy.rs; server/src/logbook.rs; client/contact.js";
+    }
+    dependency CL_063_05_to_FR_024 from 'CL-063-05' to 'FR-024';
+    dependency CL_063_05_to_FR_020 from 'CL-063-05' to 'FR-020';
+    requirement 'CL-063-06' {
+        doc /* The safety of a contest run stays on the server and is that of an award strategy run: HALT from any source ends it (the contest stays, colouring only), Abort QSO (Esc) ends the QSO only, the Tx watchdog stops it, with no client for 60 s or after 8 hours it starts nothing new and its own CQ ends at once, only a browser's selection starts it, and a double-click is a manual intervention it resumes after. Details: WstxContest::ContestRun, WstxStrategy::StrategyRun, ManualIntervention, WatchdogFromOperator. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/automation.rs; server/src/strategy.rs";
+    }
+    dependency CL_063_06_to_FR_024 from 'CL-063-06' to 'FR-024';
+    dependency CL_063_06_to_FR_020 from 'CL-063-06' to 'FR-020';
+    verification 'TC-063-009' {
+        doc /* TC-063-009 — Search and pounce, and the automation clause
+             CL-063-05
+             Setup: the selection form table; the actual station router (HB9BLA JN47AA) with the contact engine and #9 transmit owner on the recording hardware double, virtual UTC, on 20 m, an imported QSO with W1DUP inside the period; a status session held open.
+             Steps: each forbidding and silent profile with sp and run with and without the confirmation; PUT sp without it; set_activity alone; sp with activity none, on 30 m, then fitting; CQ WW W1DUP (strongest), K1ABC and JA1XYZ (weakest); empty partner periods; W1DUP alone; a selection whose period starts in an hour; a run with a manual replacing QSO with W9XYZ to its end, the log rebuilt, then W9XYZ's CQ alone.
+             Expected: refused contest.automation_confirmed where forbidden, accepted where silent; no run after the refused PUT and after set_activity; reasons activity, band, none; never a CQ; JA1XYZ selected and armed, Tx2 with the grid; after 2 partner periods without progress waiting, disarmed; nothing armed for the dupe alone; outside_period and nothing armed; the manual QSO's station a dupe, nothing armed.
+             2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-05';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_009_automatic_needs_the_confirmation_only_where_the_rules_forbid_it; server/src/strategy_tests.rs::tc_063_009_search_and_pounce_calls_the_most_valuable_and_waits_for_what_it_needs; server/src/strategy_tests.rs::tc_063_009_a_manual_qso_of_the_period_is_a_dupe_for_the_next_evaluation";
+    }
+    dependency CL_063_05_verified_by_TC_063_009 from 'CL-063-05' to 'TC-063-009';
+    verification 'TC-063-010' {
+        doc /* TC-063-010 — Run: CQ and the most valuable caller
+             CL-063-05
+             Setup: as TC-063-009, activity ww_digi, run selected.
+             Steps: a step; callers W1DUP (dupe, strongest), K1ABC (first non-dupe decoded), JA1XYZ (weakest, new multiplier, most points); its R and 73; steps; JA1XYZ again; once the log is rebuilt, callers JA2ABC PM85 (more points) and K1NEW FN42; Abort of that QSO; an empty period; Abort of the run's own CQ; the band leaves the contest and returns; the station clock past the period's end.
+             Expected: calling_cq, armed, Tx6 "CQ WW HB9BLA JN47"; JA1XYZ answered with 2 candidates, not the first, not the strongest, not the dupe; completed, then calling_cq again with 1 completed; not answered again; K1NEW selected, PM being no new multiplier any more; after that Abort calling_cq; the CQ goes on; after Abort of the CQ calling_cq, armed, with a new contact id and operation run; waiting band and disarmed, then calling_cq and armed again; waiting outside_period and disarmed.
+             2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-05';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs::tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller";
+    }
+    dependency CL_063_05_verified_by_TC_063_010 from 'CL-063-05' to 'TC-063-010';
+    verification 'TC-063-011' {
+        doc /* TC-063-011 — The safety of a contest run
+             CL-063-06
+             Setup: as TC-063-010, the run calling CQ.
+             Steps: an MCP configure with strategy true; a browser's replace selection of a CQ; Abort; HALT by route; a new selection, the clock past 8 hours; a new selection, every session gone and the clock past 60 s; a new selection, then colouring, then a new selection; a watchdog limit of 2 with two CQs sent, the third period and a caller; a new selection, Enable Tx off, colouring, a new selection.
+             Expected: operator_required; manual with the operator's contact; after Abort calling_cq with operation run; halted, operation colouring, disarmed; run_limit and no_client, disarmed, the contest selected with its operation; stopped and disarmed for colouring, calling_cq again with no CQ left behind; tx_watchdog, not keyed again, still disarmed with the caller, the contest selected with operation run; transmit_stopped, then calling_cq again.
+             2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-06';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs::tc_063_011_the_safety_of_a_contest_run_stays_on_the_server; server/src/strategy_tests.rs::tc_063_011_the_tx_watchdog_stops_a_run_on_a_silent_band";
+    }
+    dependency CL_063_06_verified_by_TC_063_011 from 'CL-063-06' to 'TC-063-011';
+    verification 'TC-063-012' {
+        doc /* TC-063-012 — Fully automatic in the browser
+             CL-063-05
+             Setup: actual browser with hand-written replies for GET and PUT /strategy, GET /strategy/contests and GET /automation.
+             Steps: Run on WW Digi, Start, decline; Start, confirm; 1.5 s of silence; automation.state pushes for calling_cq, waiting outside_period and stopped run_limit; reopen and Start the same selection; reopen; FT8 Activity with S&P.
+             Expected: the warning with the clause, nothing sent when declined and the prompt still open; one PUT with operation run and automation_confirmed true; no read of /automation during the silence; the status names each; two PUTs, without a contest and then with it; the operation in force on reopening, colouring as the default of another contest, the note; no warning and no automation_confirmed for FT8 Activity.
+             2 — Isolated automated browser test; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-05';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_063_05_verified_by_TC_063_012 from 'CL-063-05' to 'TC-063-012';
 
 }

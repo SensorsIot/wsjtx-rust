@@ -509,14 +509,23 @@ pub(crate) fn profile(id: &str) -> Option<&'static Profile> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Operation {
     Colouring,
+    /// Fully automatic: search and pounce.
+    Sp,
+    /// Fully automatic: call CQ, answer the most valuable caller.
+    Run,
 }
 impl Operation {
     fn name(self) -> &'static str {
         match self {
             Operation::Colouring => "colouring",
+            Operation::Sp => "sp",
+            Operation::Run => "run",
         }
     }
 }
+/// WstxContest::ContestRun: consecutive calls of one station before the run goes on (the
+/// operator's Contest preset, #39 comment 6626497059).
+pub(crate) const RUN_CALLS_PER_STATION: u64 = 2;
 /// WstxContest::ContestSelection: the contest in force, in memory only.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Selection {
@@ -524,6 +533,8 @@ pub(crate) struct Selection {
     pub start_ms: i64,
     pub end_ms: i64,
     pub operation: Operation,
+    /// The operator confirmed the warning of a forbidding clause (AutomationClause).
+    pub automation_confirmed: bool,
 }
 impl PartialEq for Selection {
     fn eq(&self, o: &Self) -> bool {
@@ -543,7 +554,8 @@ fn minute(v: &Value) -> Option<i64> {
 pub(crate) fn parse_selection(v: &Value, field: &str) -> Result<Selection, String> {
     let o = v.as_object().ok_or(field)?;
     let keys = ["profile", "start", "end", "operation"];
-    if o.len() != keys.len() || !keys.iter().all(|k| o.contains_key(*k)) {
+    let optional = usize::from(o.contains_key("automation_confirmed"));
+    if o.len() != keys.len() + optional || !keys.iter().all(|k| o.contains_key(*k)) {
         return Err(field.to_owned());
     }
     let f = |k: &str| format!("{field}.{k}");
@@ -557,19 +569,43 @@ pub(crate) fn parse_selection(v: &Value, field: &str) -> Result<Selection, Strin
         .ok_or(f("end"))?;
     let operation = match v["operation"].as_str() {
         Some("colouring") => Operation::Colouring,
+        Some("sp") => Operation::Sp,
+        Some("run") => Operation::Run,
         _ => return Err(f("operation")),
     };
+    let automation_confirmed = match o.get("automation_confirmed") {
+        None => false,
+        Some(c) => c.as_bool().ok_or(f("automation_confirmed"))?,
+    };
+    // WstxContest::AutomationClause: a warning the operator must confirm, never a block.
+    if operation != Operation::Colouring
+        && profile.automation == AutomationClause::Forbidden
+        && !automation_confirmed
+    {
+        return Err(f("automation_confirmed"));
+    }
     Ok(Selection {
         profile,
         start_ms,
         end_ms,
         operation,
+        automation_confirmed,
     })
 }
 impl Selection {
     pub(crate) fn json(&self) -> Value {
-        json!({"profile":self.profile.id,"start":utc_text(self.start_ms),
-            "end":utc_text(self.end_ms),"operation":self.operation.name()})
+        let mut v = json!({"profile":self.profile.id,"start":utc_text(self.start_ms),
+            "end":utc_text(self.end_ms),"operation":self.operation.name()});
+        if self.automation_confirmed {
+            v["automation_confirmed"] = json!(true);
+        }
+        v
+    }
+    pub(crate) fn automatic(&self) -> bool {
+        self.operation != Operation::Colouring
+    }
+    pub(crate) fn in_period(&self, now_ms: i64) -> bool {
+        now_ms >= self.start_ms && now_ms < self.end_ms
     }
 }
 
