@@ -34,7 +34,7 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
   const origin=`https://localhost:${proxy.port}`,browser=await chromium.launch();t.after(()=>browser.close());
   const report={startedUtc:new Date().toISOString(),model:'actual rustls TLS streams plus unchanged support.cjs shared 4000 B/s, 150 ms one-way, 80+80 B per 512 B segment',phases:{}};
   const save=async()=>{await fs.mkdir('test-results/contact-thin',{recursive:true});await fs.writeFile('test-results/contact-thin/link.json',JSON.stringify(report,null,2));};
-  t.after(async()=>{report.serverSocketCloses=await fetch(control+'/socket-closes').then(r=>r.json(),e=>e.message);report.recorder=seen.map(s=>({sockets:s.sockets,requests:s.requests.map(r=>[r.method,r.path,Math.round(r.at),r.end===null?null:Math.round(r.end),r.failed??null,r.bytes??null,r.status??null]),ticks:s.ticks.length,states:s.states.map(x=>[Math.round(x.at),x.revision])}));report.counters={...proxy.counters};await save();});
+  t.after(async()=>{report.serverSocketCloses=await fetch(control+'/socket-closes').then(r=>r.json(),e=>e.message);report.recorder=seen.map(s=>({sockets:s.sockets,frames:s.frames.map(f=>[Math.round(f.at),f.type,f.bytes]),statusSamples:s.statusSamples,requests:s.requests.map(r=>[r.method,r.path,Math.round(r.at),r.end===null?null:Math.round(r.end),r.failed??null,r.bytes??null,r.status??null]),ticks:s.ticks.length,states:s.states.map(x=>[Math.round(x.at),x.revision])}));report.counters={...proxy.counters};await save();});
   // The request recorder: every HTTP request of each page (start/end), every WebSocket frame
   // sent and every station.tick/contact.state received, on the browser's own clock.
   // Every TC-007-005 bound is checked and the run continues, so that one run measures all of
@@ -46,7 +46,7 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
   for(let i=0;i<2;i++){
     const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900},acceptDownloads:true});t.after(()=>context.close());
     const page=await context.newPage();pages.push(page);
-    const s={requests:[],sent:[],ticks:[],states:[],events:[],loads:[],sockets:[],frames:[]};seen.push(s);
+    const s={requests:[],sent:[],ticks:[],states:[],events:[],loads:[],sockets:[],frames:[],statusSamples:[]};seen.push(s);
     // Every socket's end: who closed it, with what, and the connection states around it (#10).
     await page.exposeFunction('__socketEvent',e=>{s.sockets.push({...e,at:Math.round(performance.now()),utc:Date.now()});});
     await page.addInitScript(()=>{
@@ -79,7 +79,7 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
   // Timed from the explicit status request (Settings > Refresh status) to its display.
   // The drawer is not opened for it: opening Settings reads the station's settings, which is
   // operator traffic of its own and not part of a status read.
-  const status=async(i)=>act(i,async()=>{const p=pages[i],old=await p.locator('#updated').textContent(),began=performance.now();await p.locator('#refresh').evaluate(b=>b.click());const shown=await p.waitForFunction(v=>document.querySelector('#updated').textContent!==v,old,{timeout:15000}).then(()=>true,()=>false);const ms=shown?performance.now()-began:Infinity;latencies.push(ms);bound(ms<=2000,`connected status ${ms} ms`);});
+  const status=async(i)=>act(i,async()=>{const p=pages[i],old=await p.locator('#updated').textContent(),began=performance.now();await p.locator('#refresh').evaluate(b=>b.click());const shown=await p.waitForFunction(v=>document.querySelector('#updated').textContent!==v,old,{timeout:15000}).then(()=>true,()=>false);const ms=shown?performance.now()-began:Infinity;latencies.push(ms);seen[i].statusSamples.push([Math.round(began),Math.round(ms)]);bound(ms<=2000,`connected status ${ms} ms`);});
 
   // ---- Cold load: both uncached browsers enroll through the real token form (CL-022-01).
   const coldStart=performance.now();
