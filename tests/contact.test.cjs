@@ -447,6 +447,40 @@ test('TC-007-005 an own contact command reads no GET /contact; a refusal still s
   assert.deepEqual(page.errors,[]);
 });
 
+// Proves: CL-010-15; TC-007-005 (#10). The next command does not wait for the 1 s contact.state:
+// it goes with the receipt's revision as soon as the previous reply is in (a LAN fixture: well under 200 ms).
+test('TC-007-005 a command right after another goes at once with the receipt revision',{timeout:90000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
+  const gaps=[];
+  for(let n=0;n<10;n++){
+    const from=requests.length;await page.locator('#contact-hold').click();await page.locator('#contact-hold').click();
+    await waitFor(()=>requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command'&&typeof r.end==='number').length>=2,'two answered Hold Tx commands',10000);
+    const [a,b]=requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command');gaps.push(Math.round(b.at-a.end));
+    assert.ok(JSON.parse(b.body).contact_revision>JSON.parse(a.body).contact_revision,'the second has the first one\'s receipt revision');
+    await new Promise(r=>setTimeout(r,300+97*n));
+  }
+  assert.ok(gaps.every(g=>g<200),`the second command follows the first reply at once: ${gaps} ms`);
+  assert.ok(/accepted|^$/.test(await page.locator('#contact-result').textContent()));
+  assert.deepEqual(page.errors,[]);
+});
+
+// Proves: CL-010-15; TC-007-005 (#10). A stale safety_revision is no contact revision: the client reads the
+// snapshot at once and the explicit CQ retries with the station's safety revision (expected well under 1 s).
+test('TC-007-005 a stale safety revision is read at once and the CQ retried',{timeout:60000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot()&&!document.querySelector('#qso-cq').disabled);await new Promise(r=>setTimeout(r,1500));
+  let refused=false;
+  await page.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());if(!refused&&b.action==='enable_tx'&&b.enabled){refused=true;await route.fulfill({status:409,json:{v:1,error:{code:'stale_revision',field:'safety_revision'}}});}else await route.continue();});
+  const from=requests.length;await page.locator('#qso-cq').click();
+  await waitFor(()=>requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command'&&JSON.parse(r.body).action==='enable_tx').length>=2,'the retried Enable Tx',8000);
+  const [a,b]=requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command'&&JSON.parse(r.body).action==='enable_tx');
+  await page.unroute('**/contact/command');
+  const s=await snapshot();
+  await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
+  await waitFor(async()=>(await snapshot()).transmit.arm_state!=='armed','disarmed after the case',10000);
+  assert.ok(b.at-a.end<1000,`the retry ${Math.round(b.at-a.end)} ms after the refusal`);
+  assert.deepEqual(page.errors,[]);
+});
+
 // Proves: CL-010-15; TC-007-005. A read older than a pushed change does not replace it.
 test('TC-007-005 an older GET /contact does not replace pushed state',{timeout:60000},async()=>{
   const live=await snapshot();const watchdogs=async tx_calls=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};

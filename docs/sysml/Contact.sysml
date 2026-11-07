@@ -1415,10 +1415,14 @@ package WstxContact {
              events from the socket's first on, so a contact client loading later misses
              none, and shows a snapshot_sequence not older than its own; it reads GET /contact once per socket, with one
              pending GET per browser. After its own command it shows the command's reply
-             (accepted, or the refusal with its code) and reads nothing: the next command
-             waits until a contact.state holds the receipt's contact_revision (after a
-             stale_revision refusal a newer revision than the one sent), and only when
-             none does within 5 s, or the outcome is unknown, it reads GET /contact (#10). It is not a StatusReply:
+             (accepted, or the refusal with its code) and reads nothing: the next command goes
+             at once with the newer of the held and the last receipt's contact_revision, and
+             GET /contact is read only when no contact.state holds the receipt's revision
+             within 5 s; after a stale_revision refusal of contact_revision it waits up to
+             2.5 s for a newer revision before the retry, after one of another field
+             (safety_revision) or an unknown outcome it reads at once. A choice made from the
+             held state (Log QSO, a row's selection, CQ) waits for a result still on its way;
+             Esc and Abort QSO never wait (#10). It is not a StatusReply:
              station.status stays exactly {v,type,id,data{version,radio}}. Control and
              status keep priority over it as over optional visualization. */
     }
