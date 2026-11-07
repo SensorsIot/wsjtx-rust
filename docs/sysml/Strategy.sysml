@@ -1,7 +1,7 @@
 package WstxStrategy {
     private import ScalarValues::*;
     doc /* Canonical contract of the strategy engine (issue #39, CL-039-01..07 in
-         WstxRequirements; verification TC-039-001..007, TC-039-030..031 and TC-039-033; the ignore
+         WstxRequirements; verification TC-039-001..007 and TC-039-030..033; the ignore
          lists of issue #42, CL-042-02 and TC-042-002..003; Pounce, CL-042-03 and
          TC-042-004..005; Alert, CL-042-04 and TC-042-006..007): the award strategies, the
          directed-CQ rule, the value order in Band Activity, the strategy editor popup and
@@ -68,8 +68,7 @@ package WstxStrategy {
             key is no longer required". Permission to redistribute or fetch automatically
             is not established, and the operator ruled (#39 comment 6685317139): no automatic
             refresh and nothing bundled. Everything works without a list.
-         D14 Built-in strategies (operator 6626205191 (5)) are the slice presets, the next slice
-            on #39; until it lands the selector offers None and the user's strategies.
+         D14 Built-in strategies (operator 6626205191 (5)): BuiltinStrategies.
          D13 Grids are a known-unknown: only 6,729 of the operator's 26,902 Log4OM QSOs carry
             a grid, so a missing grid is unknown, never new (GoalNeeded grid). */
 
@@ -101,6 +100,24 @@ package WstxStrategy {
              names its field path (strategies[0].window.to). Nothing else exists: rules,
              conditions, sort, auto role, switch after, skip after and callers are gone. */
     }
+    attribute def BuiltinStrategies {
+        doc /* The read-only presets of the award class (operator 6626205191, names as the operator
+             listed them; the contest preset is #63), one table in the station, listed in
+             the GET /strategy snapshot as builtin_strategies, each a Strategy with
+             builtin true. All have needed not_worked, min_snr_db null, calls_per_station 3,
+             treat_73_as_cq true, window all, region all unless stated:
+             New DXCC (goal dxcc), New DXCC on band (dxcc_band), DXCC slots (dxcc_slot),
+             New calls (new_call), DX hunting (new_call, region dx).
+             They are not part of the configuration and never written to strategy.json. active
+             may name one (exactly as listed): selecting it starts it like any strategy
+             (StrategyRun). A PUT cannot edit one: a configuration strategy with a built-in's
+             name, also differing in case, is refused 400 invalid_request
+             strategies[i].name, and the key builtin is refused like any extra key. In the
+             editor a built-in is shown read-only and Duplicate copies it to a user strategy
+             named "<name> copy" (StrategyEditor). A saved file that holds a strategy with a
+             built-in's name (saved before the presets) reads without it; the built-in keeps
+             the name. */
+    }
     attribute def StrategyConfiguration {
         attribute continent : String[0..1];
         attribute active : String[0..1];
@@ -110,7 +127,7 @@ package WstxStrategy {
         assert constraint sessionMinutesRange { sessionIgnoreMinutes >= 1 and sessionIgnoreMinutes <= 720 }
         doc /* Wire keys exactly continent (null: ContinentOfCall of my callsign, else one of
              the seven codes: my continent for the directed-CQ rule and region dx), active
-             (null or the name of a listed strategy), strategies (0..16 Strategy),
+             (null or the name of a listed or built-in strategy), strategies (0..16 Strategy),
              ignore_calls (#42 the permanent ignore list: 0..100 unique calls of 1..13
              A-Z 0-9 /, IgnoreLists) and session_ignore_minutes (#42 the session list
              expiry, an integer 1..720, default 30). Persisted as strategy.json beside
@@ -369,8 +386,12 @@ package WstxStrategy {
              2026-11-04), applied before any strategy and one function in the station. A CQ
              is answerable when its directive does not exclude me: a plain CQ (no target);
              "CQ x" with x my continent; "CQ DX" when both continents are known and differ.
+             Contest activity (#63, WstxContest::ContestDirective): the word of the station's
+             special activity (WstxContact::SpecialActivity: na_vhf and arrl_digi TEST, ww_digi WW,
+             field_day FD, rtty RU) is answerable too, whatever the continents.
              Every other directive is not answerable: another continent or region (NA, JA,
-             SA, ...), any other word (TEST, POTA, a number), CQ DX from my own or an unknown
+             SA, ...), any other word (TEST, POTA, a number; a contest word outside its activity),
+             CQ DX from my own or an unknown
              continent, and with my continent unknown every directive. A record that is no
              CQ has no directive and is answerable. Its text is "CQ x — not for <my continent>"
              ("not for this station" when unknown).
@@ -432,7 +453,7 @@ package WstxStrategy {
              (configured, else derived; null when unknown), derived_continent,
              session_ignore (#42: the session list in the order added without ended
              entries, each {call, band, remaining_s: whole seconds to its expiry, rounded
-             up}) and the MostWantedList status}.
+             up}), the MostWantedList status and builtin_strategies (BuiltinStrategies)}.
              POST /strategy/ignore {v, profile_id, boot_id, call, ignore} (#42): exact
              keys; same Origin/authorization/media/size rules and refusal codes as PUT
              /strategy (400 invalid_request with the field, unsupported_version, 403
@@ -489,12 +510,111 @@ package WstxStrategy {
              unsaved draft against the latest period (POST /strategy/evaluate with explain,
              400 ms after an edit, one request per edit, no timer otherwise) and shows each
              decode's rank and why. Save sends one PUT /strategy, applies at once (also to a
-             running strategy) and never selects a strategy. My continent is set in
+             running strategy) and never selects a strategy. A built-in strategy is listed read-only with
+             its settings shown and its preview; only Duplicate acts on it. With no user strategy the
+             popup opens on the first built-in and Save stores none. My continent is set in
              Settings > General (StrategyConfiguration continent, saved by PUT /strategy). */
+    }
+    attribute def HearingFeed {
+        attribute heardWindowSeconds : Integer = 600;
+        doc /* The read-only PSK Reporter MQTT feed (#39, the operator's agreement of
+             2026-11-04): whether the current target hears my call and which frequencies it
+             decodes. Everything works without it: no connection is unknown, never an error
+             for the operator, and receive and the 50 ms station step never wait on it (its
+             own thread does all network waiting; the station reads a short-held lock).
+             Broker: mqtt.pskreporter.info port 1884, MQTT 3.1.1 over TLS, trusting only the
+             compiled-in ISRG Root X1 and X2 with the name checked (that chain validated on
+             2026-11-06); a broker moved to another CA shows an error in Settings and needs
+             a new build. The broker's page states no formal terms and no rate limit, says
+             "No account and no polling", is provided by Tom M0LTE, and says the feed
+             originates from Philip Gladstone at pskreporter.info, used with permission.
+             Client id: wstx, my call and 4 characters of the boot id (alphanumeric, at most
+             23 bytes), so that the operator of the broker can identify the station. No
+             user name, password or will. QoS 0, clean session.
+             The station sends only the MQTT handshake, keep-alive pings every 45 s of
+             silence (keep-alive 60 s), its subscriptions and DISCONNECT. Exactly two filters
+             of the filtered feed, never the raw feeds: pskr/filter/v2/+/+/<my call>/+/#
+             and, only while a strategy run's own contact has a DX call (not a pounce, an MCP
+             policy run or a manual contact),
+             pskr/filter/v2/+/+/+/<target>/#, replaced when the target changes. A call
+             forms a topic segment only as 1..16 of A-Z 0-9; any other call, such as one
+             with a slash or anything decoded with an MQTT wildcard, gets no subscription and
+             stays unknown (the broker documents no form for it).
+             Reconnect: 5 s after every session end, doubling to 300 s; it starts over only
+             after a session of 60 s, and no change of a setting skips the wait. 90 s without
+             any packet ends a session. A packet over 4096 bytes or outside the subset is a
+             protocol error and ends the session; a payload that is no spot is dropped.
+             A spot: f (Hz), md, b, sc, rc and t_tx (or t when absent), fields of 1..16
+             characters. The payload decides, not the topic: a spot neither from my call nor
+             to the current target is dropped. A time ahead of the station counts as now.
+             Hearing: the target hears us when a spot from my call to that receiver on the
+             station's mode and band is at most heardWindowSeconds old. 600 s because
+             reporters upload in batches up to about 5 minutes late, so a spot can only be
+             expected within that delay plus one more upload; an older spot no longer
+             describes this path. Newest time per (receiver, band, mode), at most 256 entries,
+             the oldest going first.
+             Frequencies the target decodes: spots to the current target from other senders
+             (at most 128, forgotten when the target changes), as audio offset = f minus the
+             radio's confirmed dial of this band, only for the station's mode and band, at most
+             heardWindowSeconds old, inside the free slot range of the mode, newest first and
+             distinct, at most 32. A spot on another band or mode is ignored. An unknown dial
+             or band gives none.
+             Setting: on by default, because the operator agreed to this read-only
+             subscription; pskr.json {schema_version 1, profile_id, enabled} beside
+             profile.json (a foreign or broken file reads as on, naming invalid_pskr). Off
+             disconnects and forgets everything the feed said. Each change of the switch ends the
+             session of the earlier setting; the status shows connecting while the switch
+             is on and the station waits for its next attempt, and off only when no connection
+             can be made.
+             GET /pskr {v 1, profile_id, boot_id, enabled, state off|connecting|connected|error,
+             error (code or null), last_spot_utc_s, storage_error}, read once on each
+             connection; POST /pskr {v 1, profile_id, boot_id, enabled} (operating access,
+             the browser only) saves the switch; a display-subscribed peer receives pskr.state
+             with the same data on a change, for spots at most once per 30 s, and renders the
+             age from station.tick. No polling (WstxStationProtocol::PushedStationState).
+             Tests: WSTX_PSKR=off opens no connection; WSTX_PSKR=tcp:<loopback>:<port> speaks
+             plain MQTT to a local peer; nothing else can replace the broker. */
+    }
+    attribute def StrategyWatchdog {
+        doc /* In a strategy run (not a pounce, an MCP policy run, a contact the run did not
+             select, or manual operation, which keep the stop at N) the Tx watchdog never
+             stops transmitting (operator decisions 6626745310, 6626799951 on #39). The engine
+             sends past the limit for the run's own contact only, and the status counts down
+             to the next check. Each time the Rep of the message due next (WstxContact::TxWatchdog)
+             has grown by N, the Tx watchdog limit, or by calls_per_station when that is less,
+             since the last check of this message (implementer default, not yet the operator's
+             word: leaving a station restarts its Rep, so a check at N alone would never come
+             with the default 3 calls and N 6, and 6626618984 asks to "immediately call it
+             again, but on a different free slot"):
+             the target known to hear us (HearingFeed, on this band and mode) keeps the same
+             slot, with no limit; a target not known to hear us (no spot, the feed off or
+             unreachable, the band unknown, a call without a subscription) takes a new free
+             slot near the frequencies the target decodes and goes on. A message of the partner
+             addressed to my call in this contact also makes it known to hear us: it has
+             proved the slot, spot or no spot, so Tx never leaves a slot in an exchange the
+             partner has answered; this keeps the slot only: such a partner without a spot
+             is still left after its calls, because an answer does not expire and a partner
+             gone QRT would hold the run for hours. The new slot is
+             FreeTxSlot's choice with the slot it leaves also occupied and those frequencies
+             preferred, so this is the one case in which Tx moves within a contact; no free
+             slot keeps the current one and says so in the status. A refused move
+             changes nothing and is checked again N repetitions later. The Rep goes on over a
+             move: the message is the same; a station the run left and came back to keeps
+             the new slot, since FreeTxSlot stays on a current slot that is free. A target with a spot is also not left
+             for another candidate after its calls ("we are in the queue"), but only while the
+             run may go on: with no client (CLIENT_GONE) or past the run limit its
+             calls_per_station count again, so the contact ends and the run stops no_client
+             or run_limit; and the stop at N is back at once for the contact, so that the run ends
+             even when no publication arrives, and also ends an exchange already past N; the
+             run names no_client or run_limit, the watchdog's tx_expired stays until a new
+             selection. A caller of my call
+             (CallerOfMyCall) in a publication counts those calls as well: it outranks the queue
+             (D5), and a period without one holds the count without resetting it. The run shows the last check as slot_check {repetitions, hears_us,
+             hz, free} and tx_slot {hz, free}. WD:n counts down to the next check. */
     }
     attribute def StrategySelector {
         doc /* The strategy element in the operating view: a selector with None and the
-             strategy names. A change sends PUT /strategy with the new active and nothing else:
+             names of the built-in and user strategies. A change sends PUT /strategy with the new active and nothing else:
              it asks nothing, it starts or stops (StrategyRun). HALT is always on screen. A
              refused start leaves the selector on the strategy with the reason beside it. The
              element shows the run state from GET /automation, read only on an automation.state
@@ -517,7 +637,7 @@ package WstxStrategy {
              decision 2026-11-06; the constant automation::STRATEGY_RUN_MAX, no setting): a run lasts
              at most 8 hours from its selection, also with a browser open; a new selection
              starts a new 8 hours. At the limit it selects no new station: a contact in progress
-             ends its normal way, a manual one is left alone, and when it next waits the run
+             ends its normal way (or by the stop at N, StrategyWatchdog), a manual one is left alone, and when it next waits the run
              stops run_limit; the strategy stays selected with the reason shown and only a
              selection restarts it. The run checks the grant, not the transport of the selecting request: a page load, a
              second tab or a 401 recovery (a new proof) and the transport's own 8 h deadline do
@@ -525,15 +645,17 @@ package WstxStrategy {
              Unattended (operator decision 2026-11-06, #39 comment 6685226511; the
              constant automation::CLIENT_GONE, no setting): when no authenticated client has
              been there for 60 s, the run selects no new station: a contact in progress ends
-             its normal way (completed, calls_per_station, the Tx watchdog), a manual one is
+             its normal way (completed, calls_per_station, or the stop at N that is back for an
+             unattended run, StrategyWatchdog), a manual one is
              left alone, and when it next waits the run stops no_client; the strategy stays
              selected with the reason shown and only a selection restarts it. A client is
              there while a status WebSocket session is open (authenticated at its upgrade), and
              at each authenticated POST /mcp, which has only per-request authentication: its
              last request within the 60 s; the selection itself counts. A client back before the
              stop continues the run. So with every browser closed it does not go on calling. The
-             run ends only by a HALT, a selection, the grant (authority_lost), no client (no_client), the run limit (run_limit), the Tx
-             watchdog (tx_watchdog) or a refused command (transmit_refused, provider_error):
+             run ends only by a HALT, a selection, the grant (authority_lost), no client (no_client), the run limit (run_limit),
+             a Tx watchdog stop left by a manual contact, which refuses the run's next enable_tx
+             (tx_watchdog), or a refused command (transmit_refused, provider_error):
              the strategy stays selected with the stop reason shown, and only a new
              selection (None, then the strategy) starts it again: an AutomationCommand start
              of a configuration a strategy run left is refused 409 operator_required strategy,
@@ -559,14 +681,16 @@ package WstxStrategy {
              keeps waiting. A contact the run did not select: ManualIntervention.
              In a contact: completion counts and returns to waiting; calls_per_station partner
              periods without progress disarm and cancel the contact and return to waiting with
-             that call passed over once; no stop. The browser itself never sends enable_tx
+             that call passed over once; no stop. A target known to hear us is not left this
+             way while the run may go on (StrategyWatchdog). The browser itself never sends enable_tx
              for a strategy. */
     }
     attribute def FreeTxSlot {
         doc /* A strategy run or a pounce (not a plain MCP policy run, not manual operation)
              calls from a free audio slot (operator decision 2026-11-04, #39). Decided once
              per call, between QSOs: when a strategy run or a pounce has selected its station, a
-             caller of my call as well (an award strategy never calls CQ); never during a contact.
+             caller of my call as well (an award strategy never calls CQ); never during a contact
+             except by StrategyWatchdog, before the partner has answered.
              Occupied: every decoded record of the last 4 periods of my Tx parity (the
              parity after the selection) that decoded anything, among the records of
              complete publications; a period I transmitted in decodes nothing and is not
@@ -596,7 +720,8 @@ package WstxStrategy {
              automation text.
              Tx is moved with set_frequency only when it is not on the slot (with Hold Tx
              off the selection has moved it to the station: it goes back). The Tx stays on
-             the slot for the whole QSO: nothing during the exchange moves it, and the "may" of the operator's rule (Tx
+             the slot for the whole QSO: nothing during the exchange moves it (StrategyWatchdog moves
+             it only while the partner has not answered), and the "may" of the operator's rule (Tx
              to the partner's frequency once the QSO is established) is not taken, so
              there is nothing to return from. A caller of my call is a called station like any other:
              one on my slot is answered from the slot beside it. The next decision starts from the Tx the
@@ -623,7 +748,8 @@ package WstxStrategy {
              is refused tx_watchdog after a watchdog stop or when no browser action was
              seen this boot; only the browser may change the watchdog setting (set_watchdogs from any
              other source is refused operator_required). At the limit Enable Tx goes off
-             without a halt and a run stops tx_watchdog.
+             without a halt and a pounce or MCP policy run stops tx_watchdog; a strategy
+             run's own contact has no stop (StrategyWatchdog).
              Halt from any source stops the run; grant, clock, period and safety-revision
              checks are unchanged. */
     }
@@ -632,6 +758,7 @@ package WstxStrategy {
     dependency evaluateClause from Verdict to WstxRequirements::'CL-039-02';
     dependency goalClause from GoalNeeded to WstxRequirements::'CL-039-02';
     dependency valueClause from ValueOrder to WstxRequirements::'CL-039-02';
+    dependency builtinClause from BuiltinStrategies to WstxRequirements::'CL-039-11';
     dependency mostWantedClause from MostWantedList to WstxRequirements::'CL-039-10';
     dependency ignoreClause from IgnoreLists to WstxRequirements::'CL-042-02';
     dependency pounceClause from Pounce to WstxRequirements::'CL-042-03';
@@ -648,6 +775,11 @@ package WstxStrategy {
     dependency freeSlotRun from StrategyRun to FreeTxSlot;
     dependency freeSlotPounce from Pounce to FreeTxSlot;
     dependency watchdogClause from WatchdogFromOperator to WstxRequirements::'CL-039-06';
+    dependency hearingClause from HearingFeed to WstxRequirements::'CL-039-20';
+    dependency strategyWatchdogClause from StrategyWatchdog to WstxRequirements::'CL-039-21';
+    dependency strategyWatchdogHearing from StrategyWatchdog to HearingFeed;
+    dependency strategyWatchdogSlot from StrategyWatchdog to FreeTxSlot;
+    dependency strategyWatchdogOwner from StrategyWatchdog to WstxContact::TxWatchdog;
     dependency automationPath from StrategyRun to WstxMcp::OperatingAutomation;
     dependency watchdogOwner from WatchdogFromOperator to WstxContact::TxWatchdog;
 }

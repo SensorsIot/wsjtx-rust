@@ -351,6 +351,12 @@ impl Station {
     }
     /// What the WstxUdp Status message reads: (DX call, DX grid, report, Rx Hz, Tx Hz,
     /// the contact's next message).
+    pub(crate) fn repetitions_due(&self) -> u32 {
+        self.lock().engine.repetitions_due()
+    }
+    pub(crate) fn partner_answered(&self, my: &str) -> bool {
+        self.lock().engine.partner_answered(my)
+    }
     pub(crate) fn status_facts(&self) -> StatusFacts {
         let inner = self.lock();
         let e = &inner.engine;
@@ -418,8 +424,11 @@ impl Station {
     pub(crate) fn tick(&self, state: &ProfileState) {
         let r = &state.recording;
         let (call, locator) = profile_facts(state);
+        // Automation's lock first, as its own step takes them.
+        let repeat_exempt = self.automation.repeat_exempt();
         let mut guard = self.lock();
         let inner = &mut *guard;
+        inner.engine.repeat_exempt = repeat_exempt;
         let cursor = inner.rows.clone();
         let mut rows = Vec::new();
         let mode = Some(mode_of(r.operating_mode()));
@@ -1177,7 +1186,8 @@ impl Station {
                     .live_record(source, job, generation, sequence)
                     .ok_or(("row_unavailable", Some("row")))?;
                 // WstxStrategy::DirectedCqRule: only the operator can confirm the warning.
-                if let Some(reason) = strategy::selection_warning(state, &record)
+                if let Some(reason) =
+                    strategy::selection_warning(state, &record, inner.engine.settings.activity)
                     && (automatic || body["directive_confirmed"] != true)
                 {
                     if automatic {
@@ -1262,5 +1272,15 @@ pub(crate) fn station_tick(state: &ProfileState) {
         s.strategy.alert_step(state);
         s.tick(state);
         s.automation.tick(s, state, publication);
+        if let Some(feed) = state.recording.pskr.get() {
+            // Only a strategy run's own contact reads the target's spots: no other subscribes.
+            let own = s.automation.repeat_exempt().map(|(id, _)| id);
+            let target = s
+                .facts()
+                .1
+                .filter(|c| own.as_ref() == Some(&c.id))
+                .and_then(|c| c.dx_call);
+            feed.observe(my_call(state).as_deref(), target.as_deref());
+        }
     }
 }

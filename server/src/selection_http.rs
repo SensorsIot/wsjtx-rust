@@ -286,7 +286,7 @@ pub async fn select(
             return error("state_conflict");
         }
         (
-            store.document.audio.input_device.clone(),
+            profile::receive_device(&store.document),
             store.document.control.mode == "cat",
         )
     };

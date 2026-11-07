@@ -277,10 +277,15 @@ pub struct Recording {
     pub(crate) tx: Mutex<TxPeriods>,
     /// WstxContact engine of this station (#10), started once by the process.
     pub(crate) contact: std::sync::OnceLock<Arc<crate::contact_http::Station>>,
+    /// FR-023 native session of a native profile, started once by the process.
+    pub(crate) flex: std::sync::OnceLock<Arc<wstx_rust::flex::Session>>,
     /// #39 who is connected, for WstxStrategy::StrategyRun's rule without a client.
     pub(crate) clients: crate::automation::Clients,
     /// WstxUdp interface of this station (#40), opened once by the process.
     pub(crate) udp: std::sync::OnceLock<Arc<crate::udp::Owner>>,
+    /// The read-only PSK Reporter feed (#39 WstxStrategy::HearingFeed), started once by the
+    /// process; absent in in-process tests, so none of them can reach the network.
+    pub(crate) pskr: std::sync::OnceLock<Arc<crate::pskr::Feed>>,
     /// The station clock and its saved source (#43), started once by the process.
     pub(crate) clock: std::sync::OnceLock<Arc<crate::clock_http::Clock>>,
     /// #44 radio detection of this station (one at a time).
@@ -462,6 +467,26 @@ pub(crate) trait LiveInput: SampleSource + Send {
     /// The capture's cumulative loss and glitch counters, when known.
     fn capture_diagnostics(&self) -> Option<audio::CaptureDiagnostics> {
         None
+    }
+}
+impl LiveInput for wstx_rust::flex::NativeInput {
+    fn start(&mut self) -> std::result::Result<(), source::SourceError> {
+        self.start()
+    }
+    fn request_stop(&mut self) {
+        self.request_stop();
+    }
+    fn status(&self) -> audio::AudioStatus {
+        self.status()
+    }
+    fn clock_utc(&self) -> Option<(u64, u64)> {
+        wstx_rust::flex::NativeInput::clock_utc(self)
+    }
+    fn marked_frames(&self, from: u64, to: u64) -> Option<(u64, u64)> {
+        Some(wstx_rust::flex::NativeInput::marked_frames(self, from, to))
+    }
+    fn capture_diagnostics(&self) -> Option<audio::CaptureDiagnostics> {
+        Some(wstx_rust::flex::NativeInput::capture_diagnostics(self))
     }
 }
 #[derive(Clone, Copy)]
@@ -896,6 +921,23 @@ impl Recording {
                 return self
                     .receive_start_checked(profile, boot, generation, device, mode, input, guard);
             }
+        }
+        // FR-023: a native profile receives from its own confirmed DAX stream through the
+        // same live source, converter and receive owner as an audio device.
+        if let Some(session) = self.flex.get() {
+            if !session.ready() {
+                return Err("radio_unavailable");
+            }
+            let input = wstx_rust::flex::NativeInput::new(session.clone()).map_err(audio_error)?;
+            return self.receive_start_checked(
+                profile,
+                boot,
+                generation,
+                device,
+                mode,
+                Box::new(input),
+                guard,
+            );
         }
         #[cfg(windows)]
         let input = audio::AudioController::new(device.clone()).map_err(audio_error)?;
@@ -1866,12 +1908,15 @@ impl Recording {
             .filter(|b| selection::frequency(o.nominal.mode, b).is_some())
             .collect();
         let bound = selection::bound_snapshot(r.cached.as_ref(), o.profile_revision);
-        let radio = json!({"connection_generation":r.generation,
-            "state":bound.as_ref().map(|v|selection::state_name(v.state)).unwrap_or(if r.connecting{"connecting"}else if r.error.is_some(){"unavailable"}else{"closed"}),
-            "error":bound.as_ref().and_then(|v|v.last_error.map(selection::radio_error)).or(r.error),
-            "observations":selection::facts(bound.as_ref(),o.boot_at)});
+        let radio = match self.flex.get() {
+            Some(session) => crate::flex_http::selection_radio(session, o.boot_at),
+            None => json!({"connection_generation":r.generation,
+                "state":bound.as_ref().map(|v|selection::state_name(v.state)).unwrap_or(if r.connecting{"connecting"}else if r.error.is_some(){"unavailable"}else{"closed"}),
+                "error":bound.as_ref().and_then(|v|v.last_error.map(selection::radio_error)).or(r.error),
+                "observations":selection::facts(bound.as_ref(),o.boot_at)}),
+        };
         let mut value = json!({"v":1,"profile_id":self.profile,"boot_id":self.boot,"profile_revision":o.profile_revision,
-            "generation":generation,"operating_revision":o.revision,"control":if cat{"cat"}else{"manual"},
+            "generation":generation,"operating_revision":o.revision,"control":if self.flex.get().is_some(){"native"}else if cat{"cat"}else{"manual"},
             "selection":o.nominal,"available_bands":bands,"operation":o.operation,"cancellation":o.cancellation,
             "receive":{"job_id":receive["job"]["id"],"mode":receive["job"]["mode"],"state":receive["job"]["state"],"audio_state":receive["audio"]["state"],"owner_released":owner_released},"radio":radio});
         if o.last_material.as_ref() != Some(&value) {
@@ -1955,6 +2000,9 @@ impl Recording {
             .find(|b| *b == selected_band)
             .ok_or("selection_unavailable")?;
         let nominal_hz = selection::frequency(mode, band).ok_or("selection_unavailable")?;
+        if self.flex.get().is_some_and(|session| !session.ready()) {
+            return Err("radio_unavailable");
+        }
         if cat {
             let snapshot = bound_radio.as_ref().ok_or("radio_unavailable")?;
             if snapshot.state != wstx_rust::radio_control::State::Ready
@@ -2116,6 +2164,21 @@ impl Recording {
             s.operating.operation.as_mut().unwrap().phase = "applying";
         }
         let cat_applied = actor.is_some();
+        // FR-023: the native session reads first, tunes only its own slice on a difference
+        // and returns once the radio's slice status confirms the frequency.
+        let native_applied = if let Some(session) = self.flex.get() {
+            if let Err(error) = session.tune(
+                op.requested.nominal_hz,
+                Instant::now() + Duration::from_secs(5),
+                &op.cancelled,
+            ) {
+                self.selection_failed(&op, error.selection_code(), "failed");
+                return;
+            }
+            true
+        } else {
+            false
+        };
         if let Some(actor) = actor.as_ref() {
             use wstx_rust::radio_control::{Operation, Request, Sideband};
             let result = (|| {
@@ -2163,7 +2226,9 @@ impl Recording {
                 mode: op.requested.mode,
                 band: Some(op.requested.band),
                 nominal_hz: Some(op.requested.nominal_hz),
-                origin: if cat_applied {
+                origin: if native_applied {
+                    "native_readback"
+                } else if cat_applied {
                     "cat_readback"
                 } else {
                     "manual"
@@ -3370,8 +3435,10 @@ impl Recording {
                 transmit: std::sync::OnceLock::new(),
                 tx: Default::default(),
                 contact: std::sync::OnceLock::new(),
+                flex: std::sync::OnceLock::new(),
                 clients: Default::default(),
                 udp: std::sync::OnceLock::new(),
+                pskr: std::sync::OnceLock::new(),
                 clock: std::sync::OnceLock::new(),
                 radio_setup: Default::default(),
                 agc: Default::default(),
@@ -3446,8 +3513,10 @@ impl Recording {
             transmit: std::sync::OnceLock::new(),
             tx: Default::default(),
             contact: std::sync::OnceLock::new(),
+            flex: std::sync::OnceLock::new(),
             clients: Default::default(),
             udp: std::sync::OnceLock::new(),
+            pskr: std::sync::OnceLock::new(),
             clock: std::sync::OnceLock::new(),
             radio_setup: Default::default(),
             agc: Default::default(),

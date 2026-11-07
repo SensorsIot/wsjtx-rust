@@ -709,7 +709,8 @@ package WstxContact {
              TxWatchdog ~3749, MW tx_watchdog ~14646, and the unanswered count of
              2026-11-04): the Tx watchdog limits how often one message is repeated, in
              manual operation and under automation alike, whatever the message (CQ,
-             Tx1..Tx5, free text). Server-owned station-session setting: limit 1..99
+             Tx1..Tx5, free text), except a strategy run's own contact, which has no stop and
+             counts WD:n down to its next check (WstxStrategy::StrategyWatchdog). Server-owned station-session setting: limit 1..99
              repetitions, default 6 at each station start. DIFFERENT: WSJT-X 0 = disabled
              is not offered; a safety bound always applies.
              It keeps no count of its own: the repetition count is the Rep of the

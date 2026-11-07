@@ -74,7 +74,7 @@ package WstxRequirements {
         doc /* Integrations
              Preserve required external protocols and message formats, including baseline UDP integrations and reception-reporting workflows. The WSJT-X UDP interface is specified by issue #40, CL-040-01..04 (send-only, operator 2026-11-06), contract WstxUdp; reception reporting remains target. */
         attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/network_message.rs; server/src/udp.rs";
+        attribute implementation : String = "server/src/network_message.rs; server/src/udp.rs; server/src/pskr.rs";
     }
     requirement 'FR-013' {
         doc /* EME
@@ -135,8 +135,9 @@ package WstxRequirements {
     }
     requirement 'FR-023' {
         doc /* Optional direct FlexRadio integration — phase 2 target
-             Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist intended radio/slice associations and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Phase-two target; not implemented. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+             Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist their receive intent (never a radio identity, slice index or handle) and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Receive and control at isolated level 2 are delivered (WstxProductScope::NativeFlexWireSubset); live hardware qualification TC-023-004/005 and transmit TC-023-006 remain open. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/session.rs; server/src/flex/wire.rs; server/src/flex_http.rs; server/src/profile.rs; client/recording.js";
     }
     requirement 'FR-024' {
         doc /* Contest, special-activity and DXpedition operation — phase three
@@ -227,7 +228,7 @@ package WstxRequirements {
     dependency CL_005_04_to_FR_021 from 'CL-005-04' to 'FR-021';
     dependency CL_005_04_to_FR_022 from 'CL-005-04' to 'FR-022';
     requirement 'CL-005-05' {
-        doc /* Standard audio with optional CAT/PTT remains the default. Audio and control selections MUST persist independently without claiming hardware availability. Native FlexRadio is reserved and refused in this phase. */
+        doc /* Standard audio with optional CAT/PTT remains the default. Audio and control selections MUST persist independently without claiming hardware availability. A schema-1 document naming native_flex stays refused; a native profile is a separate schema-2 document chosen at profile creation (FR-023, WstxProfiles::NativeProfileDocument). */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/profile.rs; client/app.js";
     }
@@ -235,34 +236,40 @@ package WstxRequirements {
     dependency CL_005_05_to_FR_022 from 'CL-005-05' to 'FR-022';
     requirement 'CL-013-01' {
         doc /* Phase 2 MUST offer direct native-network integration as an optional profile connection type for the selected radio control, status and sample-stream functions. When selected, that native path MUST NOT require the external SmartSDR desktop application, SmartSDR CAT or DAX applications to be installed/running as bridges. This restriction does not prohibit those tools as operator-selected infrastructure for the standard connection path. A Rust implementation may coordinate shared radio access internally without forcing one hardware GUI-client session per logical station server. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/session.rs; server/src/main.rs";
     }
     dependency CL_013_01_to_FR_023 from 'CL-013-01' to 'FR-023';
     requirement 'CL-013-02' {
         doc /* This independence concerns desktop applications. Compatible radio-side firmware and its API remain required; this specification does not promise a FlexRadio operating without its SmartSDR radio firmware or an unrestricted firmware compatibility range. Pin supported models, firmware/API versions and selected stream formats before implementation. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/wire.rs; server/src/flex/session.rs";
     }
     dependency CL_013_02_to_FR_023 from 'CL-013-02' to 'FR-023';
     requirement 'CL-013-03' {
-        doc /* Each native FlexRadio profile MUST persist its intended radio and slice association. On every connection/reconnection the system MUST reconcile that intent with authoritative discovery/status and current runtime handles. A changed/transient slice index MUST NOT redirect a station to another station's slice. Unresolvable associations MUST produce a visible unavailable/conflict state rather than guessing a replacement. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        doc /* Each native FlexRadio profile MUST persist its receive intent: its own client identity and receive antenna, and no radio identity (operator decision 2026-11-06 on #22: the station uses whichever radio discovery finds available). Where discovery cannot reach the radio, the profile may also save the radio's address (operator decision 2026-11-06 on #13): a locator for that one radio, not compared with anything. On every connection/reconnection the system MUST reconcile that intent with authoritative discovery/status and current runtime handles. A changed/transient slice index MUST NOT redirect a station to another station's slice. Unresolvable associations MUST produce a visible unavailable/conflict state rather than guessing a replacement. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/session.rs; server/src/profile.rs";
     }
     dependency CL_013_03_to_FR_023 from 'CL-013-03' to 'FR-023';
     requirement 'CL-013-04' {
         doc /* Control responses and received stream data MUST be routed to the associated station. Capacity shortages, occupied resources and incompatible API behavior MUST be reported without stealing another profile's slice or silently reducing the requested independence. Four-slice hardware validation requires a model/configuration that actually provides at least four usable slices. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/session.rs";
     }
     dependency CL_013_04_to_FR_023 from 'CL-013-04' to 'FR-023';
     requirement 'CL-013-05' {
         doc /* Shared-radio transmit, tuning and other constrained-resource authority MUST be coordinated under FR-008/FR-009 before those operations are enabled. Four station profiles do not confer simultaneous independent transmit authority. Reconnect/profile restoration MUST NOT replay an old transmit request or bypass the future ownership policy. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/flex/session.rs; server/src/transmit_http.rs";
     }
     dependency CL_013_05_to_FR_008 from 'CL-013-05' to 'FR-008';
     dependency CL_013_05_to_FR_009 from 'CL-013-05' to 'FR-009';
     dependency CL_013_05_to_FR_023 from 'CL-013-05' to 'FR-023';
     requirement 'CL-013-06' {
         doc /* The native path MUST reuse the common browser, station-operation, DSP/modem and future MCP interfaces. The default standard connection remains usable without FlexRadio hardware or native-profile fields. A mixed set of instances MUST preserve each profile's selected path, configuration and routing independently. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/recording.rs; server/src/receive_http.rs; server/src/selection_http.rs; client/recording.js; client/contact.js";
     }
     dependency CL_013_06_to_FR_023 from 'CL-013-06' to 'FR-023';
     requirement 'CL-006-01' {
@@ -1546,7 +1553,7 @@ package WstxRequirements {
              With the target stopped, test missing file, truncated JSON, malformed UTF-8, duplicate/
              unknown/missing fields, invalid UUID, schema 0/2, port 0/65536 and a 16,385-byte file;
              an otherwise valid 16,384-byte file padded with whitespace is accepted. Also try
-             `native_flex` and require `unsupported_connection_type`, without an attempted radio
+             a schema-1 document naming `native_flex` and require `unsupported_connection_type`, without an attempted radio
              connection or a change to the standard profile's stored settings.
              Each invalid launch fails nonzero with the defined category and no listener or file rewrite;
              others remain usable. Restore the original bytes and restart successfully. During a
@@ -1736,8 +1743,51 @@ package WstxRequirements {
              **Expected results:** The Rust system connects directly to the emulated API without a
              desktop bridge. Each response/state update/stream reaches the intended station and no
              other station. Operations change only the associated emulated resource. The oracle uses
-             independently specified protocol fixtures, not packets generated by the code under test. */
-        attribute automation : AutomationState = AutomationState::planned;
+             independently specified protocol fixtures, not packets generated by the code under test.
+
+             **Level-2 realization:** tests/native-flex.test.cjs starts the independent loopback
+             emulator tests/flex-emulator.cjs (TCP command/status, unicast loopback discovery and
+             VITA-49 DAX float 24 kHz streams at the radio's 187.5 packets/s in the form a real
+             FLEX-6600 sent, its encoder checked byte for byte against that captured packet; no code
+             shared with the candidate) and four real
+             station servers with disposable schema-2 HTTPS profiles. Each emulated slice carries
+             a 1 kHz tone of a slice-specific amplitude, and every eighth packet another client's
+             stream ID is sent at amplitude 0.95. Oracle: the emulator's own slice/stream/owner
+             records and command log. Each station owns exactly one slice and stream whose index
+             and ID its /native-flex snapshot repeats; its accepted channel-0 peak equals its own
+             slice amplitude within 1e-4 with foreign packets counted. Four concurrent band
+             selections through /receive/select tune only the selecting client's slice and return
+             control native/origin native_readback; the restarted live receive runs on device
+             native_flex with advancing source frames and a correlated UTC anchor within 2 s of the
+             test's own clock. Read first: repeating a selection whose slice already reports the
+             frequency sends no slice tune and no mode write (command log count unchanged); an
+             emulator that does not report the new frequency makes the selection fail visibly with
+             error radio_timeout and leaves no native_readback origin. Two stations whose DAX
+             status arrives 300 ms late end on different channels, the emulator's audio following
+             the channel, not the owner. Datagrams with the own stream ID from another address
+             (127.0.0.2, amplitude 0.95) are never accepted. No slice command targets another
+             client's slice and no transmit, disconnect or persistence command is sent. Rust unit
+             tests check the captured packet and the pinned independent vector field by field, their
+             negative cases, documented control lines and the 4096-byte line bound. The live check
+             script tests/flex-live-check.cjs, run against the emulator streaming the verified FT8
+             vector on the UTC period at 24 kHz with one packet in 64 lost, measures that loss, reports jitter, shows the
+             vector's expected text from the station's decoder with DT within 0.3 s from arrival
+             anchoring, saves the windows and leaves no slice or client. It stops as occupied with a
+             client or slice present, whichever way round the replies come, as unverified when a
+             reply is refused, reports not_released for a slice left behind or a closing look it cannot
+             verify, and reports the loss it saw. One packet in four
+             lost is counted at 25% and filled with silence, with the canonical frame rate kept and no new epoch, and a
+             120 ms stall reads as at least 90 ms of jitter; a 400 ms stall with packets missing opens a
+             new epoch (native_discontinuity). Another model on the admitted API connects and its announced
+             model, serial and firmware are shown. GET /native-flex reports the packet's timestamp
+             kind and this host's clock minus its time, which a new session without own packets
+             shows as null. A saved address connects with nothing announced and no discovery
+             listener; model, serial and firmware then come from the radio's info reply; the stream
+             arrives only after client udp_register from the stream's port, which repeats, and no
+             command names a local address. A full radio on a saved address reports
+             radio_refused. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
         objective {
             verify 'CL-013-01';
             verify 'CL-013-04';
@@ -1750,15 +1800,39 @@ package WstxRequirements {
              **Promise:** FR-023; CL-013-03, CL-013-04, CL-013-05. **Level: 2 — Isolated automated tests.**
              **Where it runs:** Windows PC, disposable persisted profiles and a local radio emulator.
 
-             **Inputs/actions:** Save intended radio/slice associations, disconnect/restart the
+             **Inputs/actions:** Save the native receive intent, disconnect/restart the
              emulated radio and assign different runtime handles before reconnecting. Also present
              missing, ambiguous or occupied intended resources and stale status updates.
 
              **Expected results:** Each profile reconciles its intent with current authoritative
              resources; transient indices do not route it to another station. Unresolved intent is
              reported as unavailable/conflicting without stealing a resource, replaying transmit
-             requests or accepting stale handles as authority. */
-        attribute automation : AutomationState = AutomationState::planned;
+             requests or accepting stale handles as authority.
+
+             **Level-2 realization:** two native stations on the loopback emulator. The emulator is
+             stopped and restarted with new client handles, reversed slice indices, new stream IDs
+             and the old stream IDs replayed: each station reports transport_lost, then a new session
+             reaches ready on its own newly created slice (emulator owner record), the old stream
+             IDs are only counted as foreign, the accepted peak follows the new own slice, and a
+             receive job running before the restart stays the operator's running job and advances
+             again after a new source epoch, without an operator action. Occupied: an external
+             connected client carries station A's saved client identity; A shows
+             conflict/client_identity_in_use, sends no client gui and creates no slice while B is
+             ready, and recovers once the identity disappears. Ambiguous: a slice already attributed
+             to A's fresh handle yields conflict/ownership_ambiguous with no slice/stream command
+             from A. Missing: nothing is announced; both report radio_not_found with zero TCP
+             connections. Next available: of two emulators on one discovery port, the one announcing
+             available_clients=0 receives no connection and the station becomes ready on the other.
+             A selected frequency returns on the new slice after a restart, and the same occupied
+             case holds when the radio answers before it lists the clients. Without a session a
+             new receive start is refused radio_unavailable. Startup resume (CL-045-02): a
+             spectrum and a band choice resume started, the band on the slice, and with no radio
+             the resume ends failed/radio_unavailable after 15 to 30 s.
+             Authorization: a native station without a grant makes no TCP connection and, after
+             its only grant is revoked, its client and slice leave the emulator.
+             profile.json bytes stay unchanged and hold no radio identity (no serial key). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
         objective {
             verify 'CL-013-03';
             verify 'CL-013-04';
@@ -1784,8 +1858,27 @@ package WstxRequirements {
              policy. Four server instances never imply four independently authorized transmitters.
              Standard profiles continue through their selected audio/rig-control path without native
              FlexRadio settings; native profiles use the direct API. Both are presented through the
-             same browser and shared station-operation interfaces, with no cross-profile routing. */
-        attribute automation : AutomationState = AutomationState::planned;
+             same browser and shared station-operation interfaces, with no cross-profile routing.
+
+             **Level-2 realization:** emulator capacity two slices with three native stations: two
+             become ready, the third reports capacity_slices, and the two owners' slice records stay
+             identical. Announced available_clients=0 yields capacity_clients with zero connections;
+             API version 1.5.0.0 yields incompatible_api with zero commands. A schema-1 standard
+             station on the same PC returns 404 for /native-flex, control manual and the unchanged
+             audio_unconfigured receive refusal and makes no connection to a radio it could hear, while the native
+             station reports control native and starts receive. Safety: on both, transmit capability
+             is unsupported, Enable Tx is refused with the same error, and HALT answers with the same
+             status and halt state; no transmit command reaches the radio. A native settings edit
+             naming an audio device or CAT control and Detect radio are refused without changing
+             profile.json. One real browser shows Standard and Native FlexRadio as read-only
+             connection types. The native status line and error-field entry arrive only by the
+             radio.native WebSocket push: the page sends no /native-flex request, and stopping the
+             emulator changes the line without a request or reload. The error field never shows
+             No audio input for it. The line stands in the receive details, not in the top bar, and
+             opens from its error-field entry; the screen has no page scroll at 1366x768. Stopping
+             the station turns the line stale. No page errors. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        attribute executable : String = "tests/native-flex.test.cjs";
         objective {
             verify 'CL-013-02';
             verify 'CL-013-04';
@@ -3179,7 +3272,7 @@ package WstxRequirements {
     dependency CL_045_01_to_FR_016 from 'CL-045-01' to 'FR-016';
     dependency CL_045_01_to_FR_003 from 'CL-045-01' to 'FR-003';
     requirement 'CL-045-02' {
-        doc /* When the station starts with its profile, and monitor_off_at_startup is false and last_receive is stored, it resumes that receive once, without a browser or operator action, using the profile's current audio input (none configured: resume failed audio_unconfigured). An FT4/FT8 choice with a band is resumed as the same band selection the band button makes (receive-only CAT setup under configured CAT; nominal dial from the preferred table); with configured CAT it waits up to 20 s for the CAT lifecycle (CL-022-03/04) to report the radio ready, retrying the transient admission refusals radio_unavailable, busy and state_conflict every 250 ms within that wait, and if the radio is not ready in time or the selection fails it starts receive on the stored mode on the radio's present dial (resume started_untuned) and keeps the stored band. A spectrum choice or a choice without a band starts receive on the stored mode. A missing audio device follows the existing live-audio error/retry state of the started job; the resume never exits or restarts the process. With monitor_off_at_startup true (resume off) or nothing stored (resume idle) no receive starts; a receive, selection or import that exists before the resume acts (operator or MCP) is never replaced (resume skipped). */
+        doc /* When the station starts with its profile, and monitor_off_at_startup is false and last_receive is stored, it resumes that receive once, without a browser or operator action, using the profile's current audio input (none configured: resume failed audio_unconfigured; a native FlexRadio profile's input is its session, for which it waits up to the same 20 s, then fails radio_unavailable). An FT4/FT8 choice with a band is resumed as the same band selection the band button makes (receive-only CAT setup under configured CAT; nominal dial from the preferred table); with configured CAT it waits up to 20 s for the CAT lifecycle (CL-022-03/04) to report the radio ready, retrying the transient admission refusals radio_unavailable, busy and state_conflict every 250 ms within that wait, and if the radio is not ready in time or the selection fails it starts receive on the stored mode on the radio's present dial (resume started_untuned) and keeps the stored band. A spectrum choice or a choice without a band starts receive on the stored mode. A missing audio device follows the existing live-audio error/retry state of the started job; the resume never exits or restarts the process. With monitor_off_at_startup true (resume off) or nothing stored (resume idle) no receive starts; a receive, selection or import that exists before the resume acts (operator or MCP) is never replaced (resume skipped). */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/receive_startup.rs; server/src/main.rs";
     }
@@ -3772,8 +3865,9 @@ package WstxRequirements {
     dependency CL_044_13_to_FR_019 from 'CL-044-13' to 'FR-019';
     dependency CL_044_13_to_FR_009 from 'CL-044-13' to 'FR-009';
     // Operator decision 2026-11-04 (#44 comment 6628026397): monitoring in normal operation.
+    // Operator decision 2026-11-06 (#44, live ALC 31-32 at Po 102 %): the level lowers above ALC 10.
     requirement 'CL-044-14' {
-        doc /* In normal operation the station reads the radio's meters exactly once per transmission, in the middle of its audio: the transmit step calls the read when half of the audio remaining at audio start has played, once per transmission, on no Tune, and not at all when less than 2 s of audio remained at audio start. The call returns at once and the burst (CL-044-12: 15 13, 15 11, 15 12) runs on its own thread, so the transmit step, the audio and the release never wait for the radio, and a PTT exchange cancels the burst. Nothing is read while Set level runs. From the reading the level moves by at most one step, stored like CL-044-12 and taken by the next transmission's audio start only: ALC at or above raw 0060 (half the ALC zone) or Po above the profile power: one down, not below -40 dB; else ALC exactly 0 and Po below 80 % of the profile power: one up, not above 0 dB; otherwise unchanged. Without a profile power Po is neither over nor low, so there is no step up. Persistent trouble is an entry in the error field, from the third transmission in a row until a reading without it: alc_high (ALC at or above 0060), po_low (Po below half the profile power), swr_high (SWR at or above 2.0, raw 0080). A clear fault, SWR at or above 3.0 (raw 0120), stops transmitting at once through the priority halt (DisarmCause halt) with the entry swr_fault, and automation may not arm again until an operator action (WatchdogFromOperator); the entry stays until a later reading below 3.0 or a stored Set level. The radio.tx_level data carries these as warnings [...]. A failed read judges nothing. */
+        doc /* In normal operation the station reads the radio's meters exactly once per transmission, in the middle of its audio: the transmit step calls the read when half of the audio remaining at audio start has played, once per transmission, on no Tune, and not at all when less than 2 s of audio remained at audio start. The call returns at once and the burst (CL-044-12: 15 13, 15 11, 15 12) runs on its own thread, so the transmit step, the audio and the release never wait for the radio, and a PTT exchange cancels the burst. Nothing is read while Set level runs. From the reading the level moves by at most one step, stored like CL-044-12 and taken by the next transmission's audio start only: ALC above raw 0010 or Po above the profile power: one down, not below -40 dB; else ALC exactly 0 and Po below 80 % of the profile power: one up, not above 0 dB and not back to the ceiling; otherwise unchanged. A lowering on the reading right after a step up makes the level just left the ceiling, so a level reading 0 below a level reading above 0010 settles on the lower one; any other lowering leaves the step up free, so the level follows a drive that falls later. The ceiling lives in memory until a stored Set level, a changed profile power or a restart. Set level's stop (CL-044-12, ALC 0, one step below the first rise) is inside this window, and one step up from it, the ALC onset (reads 4-7, about 6 per dB on the IC-7300), stays inside it. Without a profile power Po is neither over nor low, so there is no step up. Persistent trouble is an entry in the error field, from the third transmission in a row until a reading without it: alc_high (ALC at or above raw 0060, half the ALC zone; lowering below that is routine and shows no entry), po_low (Po below half the profile power), swr_high (SWR at or above 2.0, raw 0080). A clear fault, SWR at or above 3.0 (raw 0120), stops transmitting at once through the priority halt (DisarmCause halt) with the entry swr_fault, and automation may not arm again until an operator action (WatchdogFromOperator); the entry stays until a later reading below 3.0 or a stored Set level. The radio.tx_level data carries these as warnings [...]. A failed read judges nothing. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/radio_level.rs; server/src/transmit/service.rs; server/src/transmit_http.rs; client/recording.js; client/contact.js";
     }
@@ -3782,8 +3876,8 @@ package WstxRequirements {
         doc /* TC-044-017 — One meter read per transmission and its bounded correction
              CL-044-14
              Setup: the actual transmit core on a virtual clock; the actual Recording, transmit owner on a recording double and CAT actor on a scripted IC-7300 reporting set meter values.
-             Steps: (a) the decision table; (b) two FT8 transmissions and a Tune on the virtual clock; (c) the call without the hold, then with ALC 0060; (d) three transmissions in a row, then a good one; (e) SWR 0120, a reading without SWR, then the operator arms and SWR is clear; (f) the call while Set level runs; (g) the transmit step's call through the station's boxed hardware to the sink, and the sink startup installs; (h) ALC 0060 with the level file unwritable.
-             Expected: (a) one down at ALC 0060, none at 0059, the floor and 0 dB hold, one up only with ALC 0 and Po below 80 %, none without a profile power, one down above it, none without ALC, fault at 0120 and not at 0119, warnings from the third reading, cleared by one good reading; (b) due exactly once at period + 6 820 ms in each, none for Tune, none for audio starting at period + 11 200 ms; (c) no byte without the hold; with it exactly 15 13, 15 11, 15 12, level -11 stored, nothing handed to the running audio; (d) alc_high from the third, level -13, gone with the good one; (e) one halt, disarmed halt, automation refused, entry swr_fault; the entry stays with the reading without SWR; after the clear reading no entry and still armed; (f) no byte; (g) one call reaches the sink, one burst from the installed sink; (h) the level stays -10, stored false, and the next Tune plays -10.
+             Steps: (a) the decision table; (b) two FT8 transmissions and a Tune on the virtual clock; (c) the call without the hold, then with ALC 0060; (d) three transmissions in a row, then a good one; (e) SWR 0120, a reading without SWR, then the operator arms and SWR is clear; (f) the call while Set level runs; (g) the transmit step's call through the station's boxed hardware to the sink, and the sink startup installs; (h) ALC 0060 with the level file unwritable; (i) a radio reading ALC 0 at -10 dB and 0011 at -9 dB with low Po, 40 transmissions; (j) ALC 0031 at -9 dB moving 6 per dB, 40 transmissions; (k) Set level and then the correction on a radio with ALC 0 up to -9 dB and 0007 at -8 dB, rising 6 per dB, with low Po; (l) a step up, ALC 0011 and then 0 with low Po, the same profile power and then a changed one, again a step up and ALC 0011, and a stored Set level at the ceiling; (m) ALC 0013 with no step up before it, then ALC 0 twice with low Po, then 0005, 0013 and 0.
+             Expected: (a) one down at ALC 0011, none at 0010, no warning from three readings of 0059, the floor and 0 dB hold, one up only with ALC 0 and Po below 80 %, none without a profile power, one down above it, none without ALC, fault at 0120 and not at 0119, warnings from the third reading, cleared by one good reading; (b) due exactly once at period + 6 820 ms in each, none for Tune, none for audio starting at period + 11 200 ms; (c) no byte without the hold; with it exactly 15 13, 15 11, 15 12, level -11 stored, nothing handed to the running audio; (d) alc_high from the third, level -13, gone with the good one; (e) one halt, disarmed halt, automation refused, entry swr_fault; the entry stays with the reading without SWR; after the clear reading no entry and still armed; (f) no byte; (g) one call reaches the sink, one burst from the installed sink; (h) the level stays -10, stored false, and the next Tune plays -10; (i) -10 dB for good after at most two transmissions from -10 dB and three from -9 dB, no warning; (j) -10, -11, -12, -13 dB and then unchanged, no warning; (k) Set level stores -9 dB, the correction takes it to -8 dB and stays, from -7 dB it comes back to -8 dB and stays; (l) the level stays with ALC 0 and the same profile power, and goes up one after the changed profile power and after the stored Set level; (m) -13, -12, -11, -11, -12, -11 dB.
              2 — Isolated automated tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -3810,8 +3904,8 @@ package WstxRequirements {
         doc /* TC-044-019 — Monitoring on HB9BLA
              CL-044-14
              Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, 1 W on 40 m.
-             Steps: transmit during normal operation, compare the frame count in the CI-V log and the transmit timing; check the thresholds against the radio's own meters.
-             Expected: three meter frames per transmission, in the middle; decode by another station unaffected; the ALC and SWR thresholds match the radio's display; a mismatched antenna stops at SWR 3.0.
+             Steps: transmit during normal operation, compare the frame count in the CI-V log and the transmit timing; check the thresholds against the radio's own meters; transmit with ALC above 0010.
+             Expected: three meter frames per transmission, in the middle; decode by another station unaffected; ALC above 0010 goes down one step at the next transmission until it reads 0010 or less, with no entry below 0060; the ALC and SWR thresholds match the radio's display; a mismatched antenna stops at SWR 3.0.
              4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
@@ -4090,7 +4184,7 @@ package WstxRequirements {
     dependency CL_039_02_to_FR_007 from 'CL-039-02' to 'FR-007';
     dependency CL_039_02_to_FR_011 from 'CL-039-02' to 'FR-011';
     requirement 'CL-039-03' {
-        doc /* One directive rule before every strategy and for the operator: a CQ is answerable when it is a plain CQ, CQ <my continent> (derived from the profile call via cty.dat, locator fallback) or CQ DX from another continent. Every other directive is not answerable: a strategy skips it (greyed, never matches, never answered by a run or pounce) and an operator's selection shows a warning the operator can confirm ("CQ NA — not for EU"); automation, MCP and UDP cannot confirm it. Details: WstxStrategy::DirectedCqRule, MyContinent, StrategyRun. */
+        doc /* One directive rule before every strategy and for the operator: a CQ is answerable when it is a plain CQ, CQ <my continent> (derived from the profile call via cty.dat, locator fallback) or CQ DX from another continent. Every other directive is not answerable: a strategy skips it (greyed, never matches, never answered by a run or pounce) and an operator's selection shows a warning the operator can confirm ("CQ NA — not for EU"); automation, MCP and UDP cannot confirm it. In a contest activity its own word (CQ TEST, WW, FD, RU) is answerable too (CL-063-02). Details: WstxStrategy::DirectedCqRule, MyContinent, StrategyRun. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/dxcc.rs; client/contact.js";
     }
@@ -4110,7 +4204,7 @@ package WstxRequirements {
     dependency CL_039_05_to_FR_020 from 'CL-039-05' to 'FR-020';
     dependency CL_039_05_to_FR_007 from 'CL-039-05' to 'FR-007';
     requirement 'CL-039-06' {
-        doc /* The Tx watchdog limits the repetitions of one message (WstxContact::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or a strategy selection from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or strategy selection from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run and MCP requests (including starting or restarting a run) never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a run stops tx_watchdog; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxContact::TxWatchdog. */
+        doc /* The Tx watchdog limits the repetitions of one message (WstxContact::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or a strategy selection from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or strategy selection from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run and MCP requests (including starting or restarting a run) never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a pounce or MCP policy run stops tx_watchdog, while a strategy run's own contact has no stop and is bounded by CL-039-21 instead; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxContact::TxWatchdog. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs; server/src/mcp.rs; server/src/authorization.rs";
     }
@@ -4133,6 +4227,62 @@ package WstxRequirements {
         }
     }
     dependency CL_039_07_verified_by_TC_039_008 from 'CL-039-07' to 'TC-039-008';
+    requirement 'CL-039-21' {
+        doc /* A strategy run never stops transmitting for the Tx watchdog. When the Rep of the message due next has grown by N, or by calls_per_station when that is less: a target known to hear us (a PSK Reporter spot at most 600 s old on this band and mode) keeps the same slot with no limit; a target not known to hear us (no spot, the feed off or unreachable) takes a new free slot near the frequencies the target decodes, and the run goes on. Manual operation, a pounce and an MCP policy run keep the stop at N. A target that hears us is called without a limit only while the run may go on: the no-client rule and the run limit still end it, a station calling my call still comes first, and a partner that has answered keeps the slot without a spot, though only a spot keeps it from being left after its calls. Details: WstxStrategy::StrategyWatchdog, HearingFeed, FreeTxSlot; WstxContact::TxWatchdog. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/automation.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/freeslot.rs; server/src/pskr.rs";
+    }
+    dependency CL_039_21_to_FR_007 from 'CL-039-21' to 'FR-007';
+    dependency CL_039_21_to_FR_008 from 'CL-039-21' to 'FR-008';
+    verification 'TC-039-022' {
+        doc /* TC-039-022 — The repetitions reaching N in a strategy run
+             CL-039-21
+             Setup: the actual station router, contact engine, automation and #9 transmit owner on the recording hardware double, virtual UTC, a feed without a connection fed hand-authored spots, a dial of 7074000 Hz; Tx watchdog 2; a strategy run on 40 m calling K1ABC (CQ at 1800 Hz) from Tx 1500.
+             Steps: send 4 repetitions with: no spot; a spot of my call to K1ABC 60 s old, 590 s old, 601 s old, on 20 m; a spot of my call, the feed off and another spot; a spot to K1ABC from DL1XYZ at 7075000 Hz. Then calls_per_station 1 with the spot of my call and without. Then N 6 and calls_per_station 3 with partner periods between the calls, without a spot until the run left and came back, and with the spot of my call. Heard with no client for CLIENT_GONE, and past the run limit. A pounce and a halted run: the target subscription. N 6, 3 calls, the spot of my call, and a station calling my call in four partner periods. N 2, no spot, the partner's report answered with two repetitions; N 6, 3 calls, no spot, the partner's report and then silent partner periods. N 2, heard, 3 sent, then no client or past the run limit with no publication. N 6, 3 calls: WD:n across the check, with the own period's band full. The engine alone: the run's own contact past the limit, then another contact's exemption. A slot choice leaving a slot the target decodes, and with none free.
+             Expected (hand-worked from WstxStrategy::FreeTxSlot): every repetition keyed, armed, tx_expired false and the run in contact_active in every row. Heard (60 s, 590 s): Tx stays 1500, slot_check hears_us true. No spot, 601 s, 20 m, feed off: 1400 at the 2nd, 1300 at the 4th, hears_us false. DL1XYZ's frequency: 1000 at the 2nd, 900 at the 4th. Calls per station 1: heard, rested null and K1ABC still armed; not heard, rested K1ABC. N 6 with 3 calls: Tx 1500 for 2 calls, 1400 at the 3rd, rested K1ABC after the partner period following the 3rd call, then K1ABC armed again from 1400; heard: Tx 1500, rested null and armed after 5 calls. Heard with no client or past the run limit: disarmed, stopped no_client or run_limit. The caller: the contact on DL1XYZ, armed. The answer: Tx 1500, armed, slot_check hears_us true; then rested K1ABC after its calls. Times of i64 MIN and MAX: no overflow, too old or counted as now. Unattended: never keyed again, stopped no_client or run_limit. Subscription: K1ABC in the run, none after HALT, none for a pounce. WD: 3, 2, 1, then 3 after the check; no free slot keeps Tx 1500 with tx_slot free false. Engine: remaining calls count down to the next check, repetitions 4 sent; another contact's exemption stops at N without a send (cause tx_watchdog). The slot choice: never the slot it leaves; none free keeps it, free false. Manual stop at N: TC-008-001; a pounce stops at N: TC-039-005.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF, no network. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-21';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs; server/src/contact_tests.rs; server/src/freeslot_tests.rs";
+    }
+    dependency CL_039_21_verified_by_TC_039_022 from 'CL-039-21' to 'TC-039-022';
+    requirement 'CL-039-20' {
+        doc /* A read-only PSK Reporter MQTT feed tells the station whether the current target hears my call and which frequencies it decodes: two exact subscriptions (my call as sender; the strategy target as receiver, replaced when the target changes), never a wildcard from a decoded call, TLS against compiled-in roots, an identifiable client id, bounded reconnect backoff, bounded memory, spots expiring after 600 s, a spot of another band or mode ignored. Settings shows the switch (on by default) and the status, pushed. It sends nothing but the handshake, keep-alive and subscriptions; everything works without it: no connection is unknown, never an operator error, and receive and the 50 ms station step never wait on it. Details: WstxStrategy::HearingFeed. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/pskr.rs; server/src/main.rs; server/src/contact_http.rs; server/src/recording.rs; client/contact.js";
+    }
+    dependency CL_039_20_to_FR_007 from 'CL-039-20' to 'FR-007';
+    dependency CL_039_20_to_FR_012 from 'CL-039-20' to 'FR-012';
+    verification 'TC-039-020' {
+        doc /* TC-039-020 — The PSK Reporter feed against a local peer
+             CL-039-20
+             Setup: no network. A local TCP peer whose packets are written from the OASIS MQTT 3.1.1 tables; hand-authored payloads in the form of the broker's published schema; the certificate chain the broker presented on 2026-11-06, captured once as a fixture; shortened session timings; the actual station router for the routes.
+             Steps: parse a full spot, one without t_tx, and malformed ones; build filters from my call, a target and hostile calls (wildcards, slash, space, lower case, control and non-ASCII characters, overlong); record spots past the window, on another band or mode, past each bound, repeated and ahead of the clock; read the decoded offsets of a 7074000 Hz dial; encode each packet and parse whole, split and hostile input; step the backoff; run a session and change the target, send a non-spot and spots with another sender and receiver than the topic says, wait for a ping, switch off; a peer that drops five connections and then accepts; peers that refuse CONNECT, refuse SUBSCRIBE, send a reserved packet; the setting by default, after a save, from another profile and broken; WSTX_PSKR values; verify the captured chain against the compiled-in roots, with another name and after it expired; a peer without TLS; GET and POST /pskr with and without a feed, an extra key, a query.
+             Expected: exactly pskr/filter/v2/+/+/HB9BLA/+/# and pskr/filter/v2/+/+/+/K1ABC/#, no filter for any hostile call; hears us exactly up to 600 s, on that band and mode; offsets [1200, 800] for 7075200 and 7074800 Hz, none from another band, mode, receiver or from my own spot, none outside the range; at most 256 and 128 entries, 32 offsets, newest kept; packets equal the hand table; hostile input is protocol_error; delays 5, 10, 20, 40, 80, 160, 300, 300 s, 5 s after a reset; on the wire only CONNECT, SUBSCRIBE, UNSUBSCRIBE, PINGREQ, DISCONNECT; the old target unsubscribed, the hostile one not subscribed; the spot counts by its payload; off forgets everything; attempts at least 40, 80, 160, 160, 160 ms apart with the shortened timing, the status naming the error, recovery without any action; connection_refused, subscribe_refused, protocol_error; on by default, the save kept, invalid_pskr for the other two; only a loopback tcp: value replaces the broker; the chain valid on capture, refused otherwise; tls_failed with TLS spoken first; 404 without a feed, the exact view with one, other requests refused.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF, no network. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-20';
+        }
+        attribute executable : String = "server/src/pskr_tests.rs";
+    }
+    dependency CL_039_20_verified_by_TC_039_020 from 'CL-039-20' to 'TC-039-020';
+    verification 'TC-039-021' {
+        doc /* TC-039-021 — Settings shows the PSK Reporter status, pushed
+             CL-039-20
+             Setup: the actual isolated station with WSTX_PSKR pointing at a local MQTT peer in the test, Chromium at 1366 x 768.
+             Steps: open Settings > Logging; wait for the connection; publish a spot of my call 180 s old; uncheck the switch; drop the peer and check the switch again.
+             Expected: the switch is in view and on by default; "Connected · no spot yet", then "Connected · last spot 3 min ago", with exactly one GET /pskr; "Off" and Saved after the switch, the station stores it and the peer sees DISCONNECT and no packet other than CONNECT, SUBSCRIBE, PINGREQ, DISCONNECT; "Not connected · <code> · retrying" with the broker gone; no page error.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF, no network. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-20';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_039_20_verified_by_TC_039_021 from 'CL-039-20' to 'TC-039-021';
     requirement 'CL-039-08' {
         doc /* Hold Tx is on by default (operator decision 2026-11-04, #39; consistent with the split-frequency rule): a station starts with settings.hold_tx true, in manual operation and for a strategy alike, so selecting or answering a station moves Rx and never Tx; Tx stays on the operator's chosen slot until an explicit Tx action (the Tx input, a waterfall Tx pointer action, the Hound's own rule, a run's free slot: WstxStrategy::FreeTxSlot). The operator may switch it off with set_hold_tx; the choice lasts for the station's running session, since contact settings are not persisted, so no stored value can override the default. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -4154,7 +4304,7 @@ package WstxRequirements {
     }
     dependency CL_039_08_verified_by_TC_039_009 from 'CL-039-08' to 'TC-039-009';
     requirement 'CL-039-09' {
-        doc /* A strategy run or a pounce calls from a free audio slot chosen between QSOs from the last 4 decoding periods of my Tx parity on the current band (when these fill the band, the 3, 2 or 1 most recent), with 50 Hz clear of every occupied signal, inside 300..2700 Hz; the slot nearest the current Tx, then the lowest, so it changes only when the current one has become busy; Tx stays there for the whole QSO. No free slot keeps the current Tx, still calls and says so in the status. In every case Tx is never within 50 Hz of the called station's signal when calling it, also with no free slot. Details: WstxStrategy::FreeTxSlot. */
+        doc /* A strategy run or a pounce calls from a free audio slot chosen between QSOs from the last 4 decoding periods of my Tx parity on the current band (when these fill the band, the 3, 2 or 1 most recent), with 50 Hz clear of every occupied signal, inside 300..2700 Hz; the slot nearest the current Tx, then the lowest, so it changes only when the current one has become busy; Tx stays there for the whole QSO, except that CL-039-21 moves it while the partner has not answered. No free slot keeps the current Tx, still calls and says so in the status. In every case Tx is never within 50 Hz of the called station's signal when calling it, also with no free slot. Details: WstxStrategy::FreeTxSlot. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/freeslot.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js";
     }
@@ -4212,6 +4362,26 @@ package WstxRequirements {
         attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_039_10_verified_by_TC_039_031 from 'CL-039-10' to 'TC-039-031';
+    requirement 'CL-039-11' {
+        doc /* Read-only built-in strategies are offered beside the user's: New DXCC, New DXCC on band, DXCC slots, New calls and DX hunting (new call, region DX), all needed not worked, calls per station 3, Treat 73 as CQ on, window all time. They come from one server table, are listed with builtin true in the snapshot, can be selected like any strategy, cannot be edited through PUT /strategy (a user strategy with such a name is refused) and can be copied to a user strategy in the editor. Details: WstxStrategy::BuiltinStrategies, StrategyEditor, StrategySelector. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/strategy.rs; client/contact.js";
+    }
+    dependency CL_039_11_to_FR_007 from 'CL-039-11' to 'FR-007';
+    verification 'TC-039-032' {
+        doc /* TC-039-032 — Built-in strategies: the table, selection, refusal and copy
+             CL-039-11
+             Setup: the expected table written in the test; the actual station router on a disposable HTTPS profile with the contact engine and #9 transmit owner on the recording hardware double; a browser case on the actual isolated station.
+             Steps: GET /strategy; parse a configuration with active "DX hunting", with "dx hunting", with a user strategy "New DXCC" and "new dxcc", with the key builtin; PUT active "DX hunting" and publish CQ DL1XYZ JO62 and CQ K1ABC FN42; read strategy.json; open a new owner; a saved file with a strategy named "New calls"; HALT. Browser: the selector; open the editor with no user strategy; Save; open a built-in; try to change it; Duplicate; Save; rename the copy to "new calls" and Save.
+             Expected: exactly the five of the table with builtin true, none in configuration.strategies; active accepted exact only, refused active; strategies[0].name refused; strategies[0] refused; the run answers K1ABC (region DX), never DL1XYZ; the file holds no built-in and active null; the new owner reads None; the saved strategy is dropped and the built-in stays; HALT sets None. Browser: None and the five names; the editor shows the first built-in, Save sends no strategy and active null; the built-in's fields disabled, Delete disabled, no PUT of a built-in; the copy "New DXCC copy" the only user strategy saved; the colliding rename refused with its field shown.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-11';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs; tests/ui-operating.test.cjs";
+    }
+    dependency CL_039_11_verified_by_TC_039_032 from 'CL-039-11' to 'TC-039-032';
     verification 'TC-039-033' {
         doc /* TC-039-033 — A strategy without a client and its run limit
              CL-039-05
@@ -4404,7 +4574,7 @@ package WstxRequirements {
     verification 'TC-039-004' {
         doc /* TC-039-004 — Strategy runs
              CL-039-03, CL-039-05
-             Setup: as TC-039-003 with the contact engine and #9 transmit owner on the recording hardware double (virtual UTC set 1 s after an even FT8 period E; own periods odd); the strategy selected from the browser path (cookie grant) with "New calls" (goal new_call, Treat 73 as CQ, calls per station 2).
+             Setup: as TC-039-003 with the contact engine and #9 transmit owner on the recording hardware double (virtual UTC set 1 s after an even FT8 period E; own periods odd); the strategy selected from the browser path (cookie grant) with "Test calls" (goal new_call, Treat 73 as CQ, calls per station 2).
              Steps: (a) PUT with active: the run starts, no CQ; publish CQ NA W1AW (strongest), CQ JA JA1XYZ, CQ 290 N1MM, CQ DL1XYZ, CQ K1ABC; two empty partner periods; CQ K1ABC and W1AW DL1XYZ RR73 at 1700 Hz; CQ K1ABC alone afterwards; PUT None; PUT active again; HALT; Esc. (b) A QSO to its end, then the next station, repeatedly past the former limits; the deadline seam moved past 480 minutes. (c) A caller against a candidate; a browser select_row and enable_tx during the run's contact and while it waits; the partner's RR73; a new CQ; a run contact cancelled by the browser followed by the same station's CQ and its call to me; a browser selection racing the run's select_row and enable_tx; stop and Halt while manual. (d) Selecting with no receive; receive starts; the live identity changes during a contact; a browser selection without a grant; an MCP configure with strategy true; an MCP stop then start; a station restart. (e) A candidate left after its calls that then calls me beside a stronger CQ; a station completed on 40m, as a caller on 40m and as a CQ and a caller on 20m; a retune with a station left and with a station the operator gave up. (f) A new proof of the grant during a contact; past the transport's 8 h; the grant revoked.
              Expected: (a) no CQ is ever armed; DL1XYZ or K1ABC selected by value (W1AW, JA1XYZ and N1MM never); after two unanswered periods disarmed, waiting, no stop reason; the next publication goes to the other station with Rx 1700 and Tx unchanged; the left station is called again when alone; None stops the run and disarms; HALT stops halted and sets active None with a new revision; Esc leaves active and the run. (b) The run stays waiting after each completion, no limit_reached, no time_limit. (c) the caller first, whatever goal, region or SNR; a double-click during the run: the run is manual, the strategy stays active, the run neither disarms nor cancels; the manual QSO completed: the run waits and answers the next match; the operator's cancel of the run's contact: that station is not selected again, also not as a caller; the race leaves the operator's contact and the state manual, no stop; Halt while manual stops halted. (d) waiting with reason no_receive and no contact; waiting without a reason after receive starts and it answers; the contact disarmed and cancelled and the run waiting on the new identity; strategy_refusal transmit_unavailable with the strategy still selected; operator_required strategy, also for the start, nothing armed, an MCP policy of its own starts as ever; active None after the restart. (e) the caller is answered; not answered again on 40m, called and answered on 20m; the left one is called again on another band, the given-up one is not. (f) the run and its contact go on through the proof and the deadline; the revocation stops authority_lost and disarms. No PTT exchange.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
@@ -4421,8 +4591,8 @@ package WstxRequirements {
         doc /* TC-039-005 — The Tx watchdog stop is never ended by automation
              CL-039-06
              Setup: as TC-039-004; for the unit cases the #9 Core on the hardware double; counts per WstxContact::TxWatchdog (#39, 2026-11-06).
-             Steps: (1) browser limit 2; a strategy selected from the browser with calls per station 20; publish CQ K1ABC at E; transmit the call at E+15 s and its repeat at E+45 s; reach E+75 s; cancel, select None and the strategy again from the browser and publish another CQ. (2) MCP and browser: an MCP Enable Tx before any browser action; browser limit 1; an MCP Enable Tx (CQ) transmitted at E+15 s; MCP set_frequency; MCP set_watchdogs 99; reach E+45 s; a station calls HB9BLA in period E+30 s; an MCP Enable Tx; an MCP run start and a matching CQ; a browser action and an MCP Enable Tx. (3) MCP route: browser limit 1, an MCP Enable Tx and its CQ, MCP-principal commands through the tool and straight to /contact/command, then MCP Enable Tx on both. Unit: automatic arm before any operator action; activity, limit 2, automatic arm; operator arm.
-             Expected: (1) remaining calls 1 after the first call (the run's selection does not extend it), the request at E+75 s is never keyed, the run stops tx_watchdog with the strategy still selected, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the new selection arms again. (2) refused tx_watchdog; not spent after the one CQ and the MCP command, set_watchdogs refused operator_required, the next CQ never keyed and spent, still spent after the caller (an answer after a stop ends nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; still spent after an unrelated browser action; after a browser Enable Tx not spent and the MCP Enable Tx arms. (3) after the stop spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
+             Steps: (1) browser limit 2; a pounce on K1ABC started from the browser (a strategy run has no stop: TC-039-022); publish CQ K1ABC at E; transmit the call at E+15 s and its repeat at E+45 s; reach E+75 s; cancel, select a strategy from the browser and publish another CQ. (2) MCP and browser: an MCP Enable Tx before any browser action; browser limit 1; an MCP Enable Tx (CQ) transmitted at E+15 s; MCP set_frequency; MCP set_watchdogs 99; reach E+45 s; a station calls HB9BLA in period E+30 s; an MCP Enable Tx; an MCP run start and a matching CQ; a browser action and an MCP Enable Tx. (3) MCP route: browser limit 1, an MCP Enable Tx and its CQ, MCP-principal commands through the tool and straight to /contact/command, then MCP Enable Tx on both. Unit: automatic arm before any operator action; activity, limit 2, automatic arm; operator arm.
+             Expected: (1) remaining calls 1 after the first call (the run's selection does not extend it), the request at E+75 s is never keyed, the run stops tx_watchdog, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the selection arms again. (2) refused tx_watchdog; not spent after the one CQ and the MCP command, set_watchdogs refused operator_required, the next CQ never keyed and spent, still spent after the caller (an answer after a stop ends nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; still spent after an unrelated browser action; after a browser Enable Tx not spent and the MCP Enable Tx arms. (3) after the stop spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
              2 — Isolated automated functional tests; Windows development PC, transmit double; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -5453,5 +5623,74 @@ package WstxRequirements {
         }
     }
     dependency CL_061_05_verified_by_TC_061_009 from 'CL-061-05' to 'TC-061-009';
+    requirement 'CL-063-01' {
+        doc /* The station holds one profile per contest from the official rules: WW Digi, ARRL Digi, ARRL Field Day, ARRL January, June and September VHF, IARU R1 50 MHz and 70 MHz MGM and FT8 Activity, usable everywhere in the world; a limit that depends on the location or the entry class is a note, not a refusal. Each profile holds the schedule rule, bands, modes, exchange, dupe, points and multiplier rules, the automation clause as the rules word it, notes and the source, as data, so that a new contest is one more entry. Its period is pre-computed from the schedule rule for the current or next occurrence; ARRL January VHF is not computed. GET /strategy/contests reads them. Details: WstxContest::ContestProfile, ScheduleRule, AutomationClause, ProfileTable, ContestHttp. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contest.rs; server/src/strategy.rs; server/src/main.rs";
+    }
+    dependency CL_063_01_to_FR_024 from 'CL-063-01' to 'FR-024';
+    requirement 'CL-063-02' {
+        doc /* In a contest activity a CQ with the activity's own word (na_vhf and arrl_digi CQ TEST, ww_digi CQ WW, field_day CQ FD, rtty CQ RU) is answerable: it is no longer greyed and an operator's selection needs no confirmation. Outside the matching activity it stays not answerable, with the warning of CL-039-03. Details: WstxContest::ContestDirective, WstxStrategy::DirectedCqRule. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/strategy.rs; server/src/contact_http.rs; server/src/contact.rs";
+    }
+    dependency CL_063_02_to_FR_024 from 'CL-063-02' to 'FR-024';
+    dependency CL_063_02_to_FR_007 from 'CL-063-02' to 'FR-007';
+    verification 'TC-063-001' {
+        doc /* TC-063-001 — The profile table
+             CL-063-01
+             Setup: the profile table as compiled; an expected table written by hand from the rule sources listed on #63.
+             Steps: read id, activity, dupes, points, multipliers, automation clause, bands, Cabrillo mark and the notes of each profile.
+             Expected: the nine ids in selector order; WW Digi bands 160 to 10 m, dupes per band, 1 + 1 per 3000 km, grid field per band, forbidden; ARRL Digi with 6 m, 1 + 1 per 500 km rounded up, no multiplier, forbidden; Field Day per band and mode class, forbidden, check-log note, Cabrillo unconfirmed; the three VHF per band and grid, grid per band, forbidden, W/VE note; Field Day and VHF with every ADIF band from 50 MHz (6 m, 5 m, 4 m, 2 m up to submm); IARU 6 m and 4 m, kilometres, grid per band, silent, 6 hours note; FT8 Activity 2 m, 70 cm, 23 cm, one per call, silent; no RTTY Roundup; no id twice.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-01';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_001_the_profile_table_holds_the_rule_facts";
+    }
+    dependency CL_063_01_verified_by_TC_063_001 from 'CL-063-01' to 'TC-063-001';
+    verification 'TC-063-002' {
+        doc /* TC-063-002 — The period from the schedule rule
+             CL-063-01
+             Setup: instants chosen by a calendar, not by the code.
+             Steps: the current or next occurrence of each profile at 2026-01-01; WW Digi during and at the end of its period; WW Digi 2024 and ARRL Digi 2025 for the full-weekend edge; FT8 Activity at the start and between its rounds and across the year end.
+             Expected: WW Digi 2026-08-29 12:00 to 08-30 12:00, ARRL Digi 2026-06-06 18:00 to 06-08 00:00, Field Day 2026-06-27 18:00 to 06-28 21:00, June VHF 2026-06-13 18:00 to 06-15 03:00, September VHF 2026-09-12 18:00 to 09-14 03:00, IARU 2026-04-18 and 2026-05-16 14:00 to 14:00, end exclusive; January VHF none; at the end the next year's 2027-08-28; 2024-08-24 and 2025-06-07; FT8 Activity 2026-11-04 2 m, 11-11 70 cm, 11-18 23 cm, 2027-01-06 2 m, 17:00 to 21:00.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-01';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_002_the_period_comes_from_the_rule";
+    }
+    dependency CL_063_01_verified_by_TC_063_002 from 'CL-063-01' to 'TC-063-002';
+    verification 'TC-063-003' {
+        doc /* TC-063-003 — GET /strategy/contests
+             CL-063-01
+             Setup: the pure list at 2026-08-01; the actual station router on a disposable selected HTTPS profile with one grant.
+             Steps: the list; GET with the browser cookie, without credentials and with a query; POST.
+             Expected: the nine ids in order, WW Digi with period {2026-08-29T12:00Z, 2026-08-30T12:00Z, band null}, its activity and rule names; January VHF period null; the route returns v 1, the profile id and the list with a period that has not ended; 401 unauthorized; 400 invalid_request; 405.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-01';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_003_the_list_names_each_profile_with_its_period; server/src/strategy_tests.rs::tc_063_003_the_contests_route";
+    }
+    dependency CL_063_01_verified_by_TC_063_003 from 'CL-063-01' to 'TC-063-003';
+    verification 'TC-063-004' {
+        doc /* TC-063-004 — The directive rule in a contest activity
+             CL-063-02
+             Setup: a hand table of activity, directive and answerable; the actual router with an injected FT8 live job for the selection.
+             Steps: the table with EU and NA continents and with my continent unknown; the verdict of CQ WW K1ABC with and without the activity; the browser's select_row of that row in none and in ww_digi.
+             Expected: TEST answerable in na_vhf and arrl_digi only, WW in ww_digi, FD in field_day, RU in rtty, not in another activity or hound; NA stays not answerable and EU answerable in an activity; greyed without the activity, rank 0 with it; 409 directive_not_answerable in none, accepted in ww_digi without directive_confirmed.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-02';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs::tc_063_004_the_directive_table_in_a_contest_activity; server/src/strategy_tests.rs::tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation";
+    }
+    dependency CL_063_02_verified_by_TC_063_004 from 'CL-063-02' to 'TC-063-004';
 
 }

@@ -729,7 +729,7 @@ package WstxOperatingReceive {
              Verified partial results remain; stale callbacks cannot publish. */
     }
     enum def Action { enum mode; enum band; enum cancel; }
-    enum def NominalOrigin { enum unknown; enum manual; enum cat_readback; }
+    enum def NominalOrigin { enum unknown; enum manual; enum cat_readback; enum native_readback; }
     enum def OperationResult { enum pending; enum success; enum failed; enum cancelled; }
     enum def CancelResult { enum cancelled; enum fenced; enum already_cancelled; }
     enum def QueryKind { enum frequency; enum mode; enum data; enum rx_tx; enum split; }
@@ -1088,11 +1088,11 @@ connect/capture/reconcile mutation. Encoded response is at most3072UTF-8bytes; o
 returns503snapshot_limit without truncation. Verify the maximum valid shape before
 admitting a candidate; truncating entries is not a size policy.
 
-`control` is exactly `manual|cat` from current saved settings, independent of availability.
+`control` is exactly `manual|cat` from current saved settings, independent of availability, or `native` on a native FlexRadio profile (WstxProductScope::NativeFlexWireSubset).
 `selection` is exactly `{mode,band,nominal_hz,origin,confirmed_command_id}`: mode ft4|ft8;
 band nullable admitted enum; nominal_hz nullable integer30000..74800000; band/nominal
 are both null or both known and name the same admitted row for that mode. Origin is
-unknown|manual|cat_readback. confirmed_command_id is UUID/null for the last successful
+unknown|manual|cat_readback, or native_readback on a native profile. confirmed_command_id is UUID/null for the last successful
 nominal commit, not a claim that the physical dial remains locked. Current digital job
 mode may populate mode without a frequency claim. At startup, fresh readback may resolve
 an explicit action but does not populate committed band/nominal merely from polling;

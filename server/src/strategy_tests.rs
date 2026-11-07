@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
+// Proves: CL-063-01, CL-063-02; TC-063-003, TC-063-004.
 // Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-039-09, CL-039-10, CL-042-01, CL-042-02,
-// CL-042-03, CL-042-04; TC-039-001..005, TC-039-010, TC-039-030, TC-039-031, TC-042-001, TC-042-002,
+// CL-042-03, CL-042-04; TC-039-001..005, TC-039-010, TC-039-030..032, TC-042-001, TC-042-002,
 // TC-042-004, TC-042-006 (each test names its case below). Hand-authored records, logs and
 // strategies; the expected verdicts, orders, stop reasons and requests are the WstxStrategy
 // tables written in these tests (entities from the cited cty.dat columns), not evaluator output.
@@ -613,15 +614,15 @@ pub(crate) fn strategy_json(name: &str) -> Value {
         "min_snr_db":null,"calls_per_station":2,"treat_73_as_cq":true,"window":{"kind":"all"}})
 }
 fn config(active: Option<&str>) -> Value {
-    json!({"continent":null,"active":active,"strategies":[strategy_json("New calls")],
+    json!({"continent":null,"active":active,"strategies":[strategy_json("Test calls")],
         "ignore_calls":[],"session_ignore_minutes":30})
 }
 
 // Proves: TC-039-001, TC-039-030
 #[test]
 fn tc_039_001_configuration_is_exact() {
-    let mut full = config(Some("New calls"));
-    full["strategies"] = json!([{"name":"New calls","class":"award",
+    let mut full = config(Some("Test calls"));
+    full["strategies"] = json!([{"name":"Test calls","class":"award",
         "goals":["dxcc","dxcc_band","dxcc_slot","waz","wpx","grid","new_call"],
         "needed":"not_confirmed","region":{"kind":"selected","continents":["AF","AS"]},
         "min_snr_db":-15,"calls_per_station":20,"treat_73_as_cq":false,
@@ -634,7 +635,7 @@ fn tc_039_001_configuration_is_exact() {
     assert_eq!(parsed.window, Window::FromTo(20_240_229, 20_261_106));
     assert_eq!(parsed.needed, Needed::NotConfirmed);
     let set = |path: &[&str], v: Value| {
-        let mut c = config(Some("New calls"));
+        let mut c = config(Some("Test calls"));
         let mut node = &mut c;
         for k in &path[..path.len() - 1] {
             node = match k.parse::<usize>() {
@@ -903,7 +904,7 @@ async fn tc_039_030_an_old_file_upgrades_and_active_never_survives_a_restart() {
     write(3, 3, config(None));
     assert_eq!(read().2, json!("invalid_configuration"));
     // A current file, even with an active name, reads active None after a restart.
-    write(2, 9, config(Some("New calls")));
+    write(2, 9, config(Some("Test calls")));
     assert_eq!(read().1, config(None));
     assert_eq!(read().0, json!(9));
     std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
@@ -1077,7 +1078,7 @@ async fn tc_039_003_store_routes_and_evaluate() {
     );
     // The same rows with the selected strategy, without the reasons.
     let revision = f.browser("GET", "/strategy", None).await.json["revision"].clone();
-    let selected = put(&f, revision, config(Some("New calls"))).await;
+    let selected = put(&f, revision, config(Some("Test calls"))).await;
     assert_eq!(selected.status, StatusCode::OK, "{}", selected.json);
     let v = f
         .browser("POST", "/strategy/evaluate", Some(body(Value::Null, false)))
@@ -1102,6 +1103,145 @@ async fn tc_039_003_store_routes_and_evaluate() {
         (400, json!("next_sequence"))
     );
     assert_eq!(f.keys(), 0, "evaluation never keys");
+}
+
+// Proves: TC-039-032 (the expected table is written here from the contract).
+#[test]
+fn tc_039_032_the_builtin_table_and_what_a_configuration_may_say() {
+    let common = |name: &str, goal: &str, region: Value| {
+        json!({"name":name,"class":"award","goals":[goal],"needed":"not_worked","region":region,
+            "min_snr_db":null,"calls_per_station":3,"treat_73_as_cq":true,"window":{"kind":"all"}})
+    };
+    assert_eq!(
+        builtins().iter().map(Strategy::json).collect::<Vec<_>>(),
+        vec![
+            common("New DXCC", "dxcc", json!({"kind":"all"})),
+            common("New DXCC on band", "dxcc_band", json!({"kind":"all"})),
+            common("DXCC slots", "dxcc_slot", json!({"kind":"all"})),
+            common("New calls", "new_call", json!({"kind":"all"})),
+            common("DX hunting", "new_call", json!({"kind":"dx"})),
+        ]
+    );
+    let with = |active: Value, strategies: Value| {
+        parse_config(
+            &json!({"continent":null,"active":active,"strategies":strategies,
+            "ignore_calls":[],"session_ignore_minutes":30}),
+        )
+    };
+    let ok = with(json!("DX hunting"), json!([])).unwrap();
+    assert_eq!(ok.active_strategy().unwrap().region, Region::Dx);
+    assert_eq!(
+        with(json!("dx hunting"), json!([])),
+        Err("active".to_owned()),
+        "exactly as listed"
+    );
+    for name in ["New DXCC", "new dxcc"] {
+        assert_eq!(
+            with(Value::Null, json!([strategy_json(name)])),
+            Err("strategies[0].name".to_owned()),
+            "{name}: a built-in cannot be edited"
+        );
+    }
+    let mut marked = strategy_json("Mine");
+    marked["builtin"] = json!(true);
+    assert_eq!(
+        with(Value::Null, json!([marked])),
+        Err("strategies[0]".to_owned())
+    );
+    assert!(with(Value::Null, json!([strategy_json("New DXCC copy")])).is_ok());
+}
+
+// Proves: TC-039-032
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_032_a_builtin_is_selected_like_any_strategy_and_never_stored() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let g = f.browser("GET", "/strategy", None).await.json;
+    assert_eq!(g["configuration"]["strategies"], json!([]));
+    let listed = g["builtin_strategies"].as_array().unwrap();
+    assert_eq!(
+        listed
+            .iter()
+            .map(|b| (b["name"].as_str().unwrap(), b["builtin"].clone()))
+            .collect::<Vec<_>>(),
+        [
+            "New DXCC",
+            "New DXCC on band",
+            "DXCC slots",
+            "New calls",
+            "DX hunting"
+        ]
+        .into_iter()
+        .map(|n| (n, json!(true)))
+        .collect::<Vec<_>>()
+    );
+    let chosen = json!({"continent":null,"active":"DX hunting","strategies":[],
+        "ignore_calls":[],"session_ignore_minutes":30});
+    select(&f, chosen).await;
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ DL1XYZ JO62", 1200.0, Some(9.0)),
+            ("CQ K1ABC FN42", 1500.0, Some(-15.0)),
+        ],
+    );
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed")),
+        "region DX: my own continent is no candidate, although stronger"
+    );
+    let saved: Value =
+        serde_json::from_slice(&std::fs::read(f.dir.join(FILE_NAME)).unwrap()).unwrap();
+    assert_eq!(
+        saved["configuration"]["strategies"],
+        json!([]),
+        "never stored"
+    );
+    assert_eq!(saved["configuration"]["active"], Value::Null);
+    assert_eq!(
+        Owner::default().snapshot(&f.state)["configuration"]["active"],
+        Value::Null,
+        "a restart reads None"
+    );
+    // A PUT cannot edit one.
+    let revision = f.browser("GET", "/strategy", None).await.json["revision"].clone();
+    let r = put(
+        &f,
+        revision,
+        json!({"continent":null,"active":"DX hunting","strategies":[strategy_json("DX hunting")],
+            "ignore_calls":[],"session_ignore_minutes":30}),
+    )
+    .await;
+    assert_eq!(
+        (
+            r.status.as_u16(),
+            r.json["error"]["code"].clone(),
+            r.json["error"]["field"].clone()
+        ),
+        (400, json!("invalid_request"), json!("strategies[0].name"))
+    );
+    // HALT sets None as for any strategy.
+    halt(&f).await;
+    assert_eq!(active_of(&f).await, Value::Null);
+    // A file from before the presets: the strategy with a built-in's name is dropped.
+    std::fs::write(
+        f.dir.join(FILE_NAME),
+        serde_json::to_vec(&json!({"schema_version":2,"profile_id":f.id,"revision":5,
+            "configuration":{"continent":null,"active":null,
+                "strategies":[strategy_json("New calls"),strategy_json("Kept")],
+                "ignore_calls":[],"session_ignore_minutes":30}}))
+        .unwrap(),
+    )
+    .unwrap();
+    let read = Owner::default().snapshot(&f.state);
+    assert_eq!(read["configuration_error"], Value::Null);
+    assert_eq!(
+        read["configuration"]["strategies"],
+        json!([strategy_json("Kept")])
+    );
+    std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
 }
 
 // ------------------------------------------------------------------ strategy runs
@@ -1152,7 +1292,7 @@ async fn tc_039_004_selecting_starts_a_run_that_calls_by_value_and_never_calls_c
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
     // Selecting starts it: no other request; the run waits and no CQ is armed.
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     f.tick();
     f.tick();
     let run = f.read("automation").await;
@@ -1274,7 +1414,7 @@ async fn tc_039_004_a_run_goes_on_after_each_qso_without_a_limit() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     let _client = f.state.recording.clients.session();
     // No limit on the contacts, and the run goes on before its 8 hours.
     *f.state
@@ -1334,14 +1474,14 @@ async fn tc_039_004_halt_sets_none_esc_and_a_cancel_do_not_and_a_new_selection_r
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
     assert_eq!(contact(&f).await.2, json!("armed"));
     // An operator's cancel keeps the strategy and the run.
     browser_ok(&f, "cancel", json!({})).await;
     f.tick();
     f.tick();
-    assert_eq!(active_of(&f).await, json!("New calls"));
+    assert_eq!(active_of(&f).await, json!("Test calls"));
     assert_eq!(run_state(&f).await.0, "waiting");
     // Esc sends abort: the strategy stays selected, the station is given up, the run goes on.
     publish(&f, e + 15_000, &[("CQ G4ABC IO91", 1100.0, Some(-1.0))]);
@@ -1358,7 +1498,7 @@ async fn tc_039_004_halt_sets_none_esc_and_a_cancel_do_not_and_a_new_selection_r
     browser_ok(&f, "abort", json!({})).await;
     f.tick();
     f.tick();
-    assert_eq!(active_of(&f).await, json!("New calls"), "Esc is no HALT");
+    assert_eq!(active_of(&f).await, json!("Test calls"), "Esc is no HALT");
     assert_eq!(
         f.state
             .recording
@@ -1399,18 +1539,18 @@ async fn tc_039_004_halt_sets_none_esc_and_a_cancel_do_not_and_a_new_selection_r
     let r = f.state.recording.contact.get().unwrap().strategy.put(
         &f.state,
         json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"expected_revision":revision,
-                "configuration":config(Some("New calls"))}),
+                "configuration":config(Some("Test calls"))}),
     );
     assert!(r.is_ok());
-    assert_eq!(active_of(&f).await, json!("New calls"));
+    assert_eq!(active_of(&f).await, json!("Test calls"));
     halt(&f).await;
     assert_eq!(active_of(&f).await, Value::Null);
     // A new selection starts it again and it answers (a HALT is answered by the selection).
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     f.tick();
     assert_eq!(
         active_of(&f).await,
-        json!("New calls"),
+        json!("Test calls"),
         "the HALT before it does not count"
     );
     assert_eq!(run_state(&f).await, ("waiting".into(), Value::Null));
@@ -1435,10 +1575,10 @@ async fn tc_039_004_a_strategy_stays_selected_across_receive_and_without_a_grant
     let f = station(true).await;
     let e = at_even(&f);
     // No receive: the strategy is selected and waits with its reason; nothing armed.
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     f.tick();
     assert_eq!(run_state(&f).await, ("waiting".into(), json!("no_receive")));
-    assert_eq!(active_of(&f).await, json!("New calls"));
+    assert_eq!(active_of(&f).await, json!("Test calls"));
     // Receive starts: it identifies and answers.
     f.state.recording.fixture_live_job("ft8");
     f.tick();
@@ -1454,14 +1594,14 @@ async fn tc_039_004_a_strategy_stays_selected_across_receive_and_without_a_grant
     assert_eq!(run_state(&f).await, ("waiting".into(), Value::Null));
     let c = contact(&f).await;
     assert_eq!((c.1, c.2), (json!("cancelled"), json!("disarmed")));
-    assert_eq!(active_of(&f).await, json!("New calls"));
+    assert_eq!(active_of(&f).await, json!("Test calls"));
     publish(&f, e + 30_000, &[("CQ DL1XYZ JO62", 1200.0, Some(-1.0))]);
     assert_eq!(contact(&f).await.0, json!("DL1XYZ"), "on the new identity");
     // Auto Seq off: it finishes nothing new; the reason is shown while it waits.
     save(&f, config(None)).await;
     browser_ok(&f, "cancel", json!({})).await;
     browser_ok(&f, "set_auto_seq", json!({"enabled":false})).await;
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     f.tick();
     assert_eq!(run_state(&f).await, ("waiting".into(), json!("auto_seq")));
     publish(&f, e + 60_000, &[("CQ G4ABC IO91", 1200.0, Some(-1.0))]);
@@ -1480,7 +1620,7 @@ async fn tc_039_004_a_strategy_stays_selected_across_receive_and_without_a_grant
     f.state.recording.fixture_band("40m");
     assert_eq!(start_run(&f).await.status, StatusCode::ACCEPTED);
     assert!(f.read("automation").await["run"]["pounce"].is_object());
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     let a = f.read("automation").await;
     assert_eq!(
         (
@@ -1492,7 +1632,7 @@ async fn tc_039_004_a_strategy_stays_selected_across_receive_and_without_a_grant
     // Without a grant (the plain route) no run starts: selected, the reason named.
     save(&f, config(None)).await;
     let station_owner = f.state.recording.contact.get().unwrap();
-    store_only(&f, config(Some("New calls")));
+    store_only(&f, config(Some("Test calls")));
     station_owner
         .automation
         .selected(station_owner, &f.state, None);
@@ -1506,7 +1646,7 @@ async fn tc_039_004_a_strategy_stays_selected_across_receive_and_without_a_grant
         (
             json!("transmit_unavailable"),
             json!("stopped"),
-            json!("New calls")
+            json!("Test calls")
         )
     );
     // An MCP client cannot select one: strategy true is refused, PUT has no tool (401 guard).
@@ -1534,7 +1674,7 @@ async fn tc_039_004_callers_come_first_and_a_cancelled_station_never_again() {
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
     // A goal nobody below meets, a region that excludes the caller, a high min SNR.
-    let mut c = config(Some("New calls"));
+    let mut c = config(Some("Test calls"));
     c["strategies"][0]["region"] = json!({"kind":"selected","continents":["OC"]});
     c["strategies"][0]["min_snr_db"] = json!(10);
     select(&f, c).await;
@@ -1574,7 +1714,7 @@ async fn tc_039_004_an_mcp_client_cannot_restart_a_stopped_strategy() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     f.tick();
     let auto = |action: &str, extra: Value| {
         let mut b = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),"action":action});
@@ -1656,7 +1796,7 @@ async fn tc_039_004_a_station_left_after_its_calls_is_answered_when_it_calls_me(
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-10.0))]);
     publish(&f, e + 30_000, &[]);
     publish(&f, e + 60_000, &[]);
@@ -1682,7 +1822,7 @@ async fn tc_039_004_a_strategy_run_follows_the_grant_not_the_transport() {
     let mut f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     let client = f.state.recording.clients.session();
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
     assert_eq!(contact(&f).await.2, json!("armed"));
@@ -1781,7 +1921,7 @@ async fn tc_039_033_without_a_client_for_60_s_nothing_new_and_the_exchange_ends(
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     // 59 s: it still calls.
     at_skew(&f, 59);
     assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
@@ -1803,7 +1943,7 @@ async fn tc_039_033_without_a_client_for_60_s_nothing_new_and_the_exchange_ends(
     assert_eq!(quiet_run(&f), ("stopped".into(), json!("no_client")));
     assert_eq!(
         f.browser("GET", "/strategy", None).await.json["configuration"]["active"],
-        json!("New calls"),
+        json!("Test calls"),
         "it stays selected with the reason"
     );
     // Nothing new is selected.
@@ -1823,7 +1963,7 @@ async fn tc_039_033_without_a_client_for_60_s_nothing_new_and_the_exchange_ends(
         .await;
     assert_eq!(r["result"]["error"]["code"], "operator_required", "{r}");
     save(&f, config(None)).await;
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
     publish(&f, e + 180_000, &[("CQ DL1XYZ JO62", 1200.0, Some(9.0))]);
     assert_eq!(quiet_contact(&f).await.0, json!("DL1XYZ"));
@@ -1837,7 +1977,7 @@ async fn worked_on_40m_now_on_20m() -> (Mcp, i64, crate::automation::ClientSessi
     f.state.recording.fixture_band("40m");
     let e = at_even(&f);
     let client = f.state.recording.clients.session();
-    let mut c = config(Some("New calls"));
+    let mut c = config(Some("Test calls"));
     c["strategies"][0]["goals"] = json!(["dxcc_band"]);
     select(&f, c).await;
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
@@ -1901,7 +2041,7 @@ async fn tc_039_004_a_retune_ends_the_pass_over_not_the_operators_give_up() {
     f.state.recording.fixture_band("40m");
     let e = at_even(&f);
     let _client = f.state.recording.clients.session();
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
     publish(&f, e + 30_000, &[]);
     publish(&f, e + 60_000, &[]);
@@ -1939,7 +2079,7 @@ async fn tc_039_033_a_real_status_websocket_keeps_a_strategy_and_its_close_ends_
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let app = f.app.clone();
@@ -2010,7 +2150,7 @@ async fn tc_039_033_a_strategy_run_lasts_at_most_8_hours_from_its_selection() {
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
     let _client = f.state.recording.clients.session();
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     // Just before: it still selects.
     at_skew(&f, H8 - 1);
     assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
@@ -2030,7 +2170,7 @@ async fn tc_039_033_a_strategy_run_lasts_at_most_8_hours_from_its_selection() {
     assert_eq!(quiet_run(&f), ("stopped".into(), json!("run_limit")));
     assert_eq!(
         f.browser("GET", "/strategy", None).await.json["configuration"]["active"],
-        json!("New calls"),
+        json!("Test calls"),
         "it stays selected with the reason"
     );
     // No new station.
@@ -2039,7 +2179,7 @@ async fn tc_039_033_a_strategy_run_lasts_at_most_8_hours_from_its_selection() {
     assert_eq!(quiet_contact(&f).await.0, json!("K1ABC"));
     // A new selection starts a new 8 hours, also from here on.
     save(&f, config(None)).await;
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     at_skew(&f, H8 + H8 - 1);
     assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
     publish(&f, e + 180_000, &[("CQ DL1XYZ JO62", 1200.0, Some(9.0))]);
@@ -2059,7 +2199,7 @@ async fn tc_039_033_waiting_stops_at_60_s_and_a_client_or_reload_keeps_it() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     at_skew(&f, 60);
     assert_eq!(quiet_run(&f), ("stopped".into(), json!("no_client")));
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
@@ -2068,7 +2208,7 @@ async fn tc_039_033_waiting_stops_at_60_s_and_a_client_or_reload_keeps_it() {
     // inside them (a new session) keeps it too.
     at_skew(&f, 0);
     save(&f, config(None)).await;
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     let session = f.state.recording.clients.session();
     at_skew(&f, 120);
     assert_eq!(quiet_run(&f), ("waiting".into(), Value::Null));
@@ -2085,7 +2225,7 @@ async fn tc_039_033_waiting_stops_at_60_s_and_a_client_or_reload_keeps_it() {
     // An authenticated MCP request: its time counts.
     at_skew(&f, 0);
     save(&f, config(None)).await;
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     at_skew(&f, 59);
     f.read("transmit").await;
     f.tick();
@@ -2097,7 +2237,7 @@ async fn tc_039_033_waiting_stops_at_60_s_and_a_client_or_reload_keeps_it() {
     // A client back before the contact's end: no stop.
     at_skew(&f, 0);
     save(&f, config(None)).await;
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     publish(&f, e + 30_000, &[("CQ DL1XYZ JO62", 1200.0, Some(-1.0))]);
     assert_eq!(quiet_contact(&f).await.0, json!("DL1XYZ"));
     at_skew(&f, 61);
@@ -2119,7 +2259,7 @@ async fn tc_039_030_today_and_from_to_read_the_log_of_the_window() {
     let f = station(true).await;
     let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     publish(&f, e, &[("HB9BLA K1ABC FN42", 1500.0, Some(-10.0))]);
     publish(
         &f,
@@ -2302,7 +2442,7 @@ async fn tc_039_010_a_strategy_takes_a_free_slot_keeps_it_and_changes_it_only_wh
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     // The 5th period back (would force 1720 Hz) and the other parity (too) do not count.
     publish(&f, e - 135_000, &[busy(1320.0)]);
     publish(&f, e - 105_000, &[busy(2000.0)]);
@@ -2362,7 +2502,7 @@ async fn tc_039_010_never_on_the_called_station_also_with_hold_tx_off() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     // A station on my Tx: 1400 and 1600 tie, the lower.
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-5.0))]);
     assert_eq!(
@@ -2392,7 +2532,7 @@ async fn tc_039_010_a_full_band_keeps_the_tx_still_calls_and_says_so() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     let full: Vec<_> = (0..13).map(|i| busy(f64::from(300 + 190 * i))).collect();
     publish(&f, e - 15_000, &full);
     publish(&f, e, &[("CQ K1ABC FN42", 2400.0, Some(-5.0))]);
@@ -2414,7 +2554,7 @@ async fn tc_039_010_a_full_band_still_never_calls_on_the_called_station() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     let full: Vec<_> = (0..13).map(|i| busy(f64::from(300 + 190 * i))).collect();
     publish(&f, e - 15_000, &full);
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-5.0))]);
@@ -2435,7 +2575,7 @@ async fn tc_039_010_a_band_filled_over_four_periods_looks_at_fewer() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     let full: Vec<_> = (0..13).map(|i| busy(f64::from(300 + 190 * i))).collect();
     publish(&f, e - 105_000, &full);
     publish(&f, e - 75_000, &[busy(1350.0)]);
@@ -2456,7 +2596,7 @@ async fn tc_039_010_signals_of_the_previous_band_do_not_count() {
     f.state.recording.fixture_band("40m");
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     publish(&f, e - 15_000, &[busy(1500.0)]);
     f.state.recording.fixture_band("20m");
     publish(&f, e, &[("CQ K1ABC FN42", 2400.0, Some(-5.0))]);
@@ -2485,7 +2625,7 @@ async fn tc_039_010_a_new_live_job_counts_from_its_first_record() {
     f.state.recording.fixture_band("40m");
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     publish(&f, e - 15_000, &[busy(600.0)]);
     f.state.recording.fixture_band("20m");
     publish(
@@ -2519,7 +2659,7 @@ async fn tc_039_010_a_double_click_racing_the_slot_move_stays_the_operators() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     let state = f.state.clone();
     let (id, boot) = (f.id.clone(), f.boot.clone());
     *f.state
@@ -2584,7 +2724,7 @@ async fn tc_039_010_a_caller_is_answered_from_a_free_slot_and_stays_there() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     publish(&f, e - 15_000, &[busy(1500.0)]);
     // My parity after answering an even caller is odd: this even period does not count.
     publish(&f, e, &[busy(1350.0)]);
@@ -2628,7 +2768,7 @@ async fn tc_039_004_a_double_click_is_a_manual_intervention_and_the_strategy_res
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     let run_state =
         async |f: &Mcp| f.browser("GET", "/automation", None).await.json["run"]["state"].clone();
     // The run selects K1ABC. The operator double-clicks another station.
@@ -2653,7 +2793,7 @@ async fn tc_039_004_a_double_click_is_a_manual_intervention_and_the_strategy_res
     );
     assert_eq!(
         f.browser("GET", "/strategy", None).await.json["configuration"]["active"],
-        json!("New calls")
+        json!("Test calls")
     );
     // While manual the strategy selects nothing.
     publish(&f, e + 30_000, &[("CQ W1AW FN31", 1000.0, Some(-1.0))]);
@@ -2802,7 +2942,7 @@ async fn tc_039_004_a_manual_qso_while_the_strategy_waits_completes_and_the_stra
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     // A row the strategy skips, so the run keeps waiting; the operator confirms and arms it.
     publish(&f, e, &[("CQ NA W9XYZ EN52", 900.0, Some(-3.0))]);
     assert_eq!(run_state(&f).await.0, "waiting");
@@ -2827,7 +2967,7 @@ async fn tc_039_004_a_manual_qso_while_the_strategy_waits_completes_and_the_stra
     );
     assert_eq!(
         f.browser("GET", "/strategy", None).await.json["configuration"]["active"],
-        json!("New calls")
+        json!("Test calls")
     );
     // The partner's report and RR73: completed; the strategy waits and answers the next match.
     publish(&f, e + 30_000, &[("HB9BLA W9XYZ -05", 905.0, Some(-6.0))]);
@@ -2847,7 +2987,7 @@ async fn tc_039_004_stop_and_halt_while_manual() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     // A double-click while it waits: manual; the operator arms; the contact stands.
     publish(&f, e, &[("CQ NA W9XYZ EN52", 900.0, Some(-3.0))]);
     browser_ok(
@@ -2877,7 +3017,7 @@ async fn tc_039_004_stop_and_halt_while_manual() {
     );
     // Halt while manual stops the run halted.
     browser_ok(&f, "cancel", json!({})).await;
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     f.tick();
     assert_eq!(run_state(&f).await.0, "waiting");
     publish(&f, e + 30_000, &[("CQ NA W8ABC EN80", 950.0, Some(-3.0))]);
@@ -2900,7 +3040,7 @@ async fn tc_039_004_a_double_click_racing_the_run_selection_stays_the_operators(
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     let state = f.state.clone();
     let (id, boot) = (f.id.clone(), f.boot.clone());
     // Between the run's select_row and enable_tx the operator replaces the contact.
@@ -2969,12 +3109,15 @@ async fn browser_command(f: &Mcp, action: &str, extra: Value) -> Value {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_005_automation_never_resets_the_tx_watchdog() {
     let f = station(true).await;
+    f.state.recording.fixture_band("40m");
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
     browser_watchdog(&f, 2).await;
-    let mut c = config(Some("New calls"));
+    let mut c = config(Some("Test calls"));
     c["strategies"][0]["calls_per_station"] = json!(20);
-    select(&f, c.clone()).await;
+    // A pounce keeps the stop at N; a strategy run has none (TC-039-022).
+    let started = pounce(&f, "K1ABC", 20).await;
+    assert_eq!(started.status, StatusCode::ACCEPTED, "{}", started.json);
     let halt_state = f.read("contact").await["transmit"]["halt_state"].clone();
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-10.0))]);
     assert_eq!(
@@ -3003,13 +3146,347 @@ async fn tc_039_005_automation_never_resets_the_tx_watchdog() {
         (json!(true), json!("tx_watchdog"), halt_state),
         "stopped without a halt"
     );
-    assert_eq!(active_of(&f).await, json!("New calls"), "it stays selected");
-    // A new selection from the browser is an operator action: it arms again.
+    // A selection from the browser is an operator action: it arms again.
     browser_ok(&f, "cancel", json!({})).await;
-    save(&f, config(None)).await;
     select(&f, c).await;
     publish(&f, e + 90_000, &[("CQ DL1XYZ JO62", 1200.0, Some(-1.0))]);
     assert_eq!(contact(&f).await.2, json!("armed"));
+}
+
+/// A strategy run calling K1ABC at 1800 Hz on 40 m from Tx 1500 with the Tx watchdog at `limit`,
+/// with the feed `set` prepares once the run has its target. e is the even period of the CQ.
+async fn run_at_limit(limit: u64, calls: u64, set: impl FnOnce(&crate::pskr::Feed)) -> (Mcp, i64) {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    browser_watchdog(&f, limit).await;
+    let dir = std::env::temp_dir().join(format!("wstx-pskr-{}", profile::new_uuid().unwrap()));
+    std::fs::create_dir(&dir).unwrap();
+    let feed = crate::pskr::Feed::start(&dir, &f.id, &f.boot, None, crate::pskr::Timing::BROKER);
+    f.state.recording.pskr.set(feed.clone()).ok().unwrap();
+    let mut c = config(Some("Test calls"));
+    c["strategies"][0]["calls_per_station"] = json!(calls);
+    select(&f, c).await;
+    publish(&f, e, &[("CQ K1ABC FN42", 1800.0, Some(-10.0))]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    assert_eq!(f.read("contact").await["settings"]["tx_hz"], 1500);
+    f.tick();
+    set(&feed);
+    (f, e)
+}
+fn spot(sender: &str, hz: u64, band: &str, age_s: i64) -> String {
+    let t = crate::contact_http_tests::now_ms() / 1000 - age_s;
+    json!({"f":hz,"md":"FT8","t":t,"sc":sender,"rc":"K1ABC","b":band}).to_string()
+}
+// Proves: CL-039-21; TC-039-022. The decision table of the Rep count reaching N in a strategy run;
+// the slots are worked by hand from WstxStrategy::FreeTxSlot: with nothing decoded but the called
+// station at 1800, leaving 1500 gives 1400 (1400 and 1600 equally near, the lower), and then
+// leaving 1400 gives 1300. A spot at 7075000 Hz on the 7074000 Hz dial is 1000 Hz; leaving that
+// gives 900 (900 and 1100 equally near it, the lower).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_the_repetitions_reaching_n_in_a_strategy_run() {
+    type Set = fn(&crate::pskr::Feed);
+    let heard: Set = |feed| feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+    let table: [(&str, Set, bool, u64, u64); 7] = [
+        ("no spot", |_| {}, false, 1400, 1300),
+        ("heard", heard, true, 1500, 1500),
+        (
+            "heard at the end of the window",
+            |feed| feed.inject(&spot("HB9BLA", 7_075_500, "40m", 590)),
+            true,
+            1500,
+            1500,
+        ),
+        (
+            "heard too long ago",
+            |feed| feed.inject(&spot("HB9BLA", 7_075_500, "40m", 601)),
+            false,
+            1400,
+            1300,
+        ),
+        (
+            "heard on another band",
+            |feed| feed.inject(&spot("HB9BLA", 14_075_500, "20m", 60)),
+            false,
+            1400,
+            1300,
+        ),
+        (
+            "the feed off",
+            |feed| {
+                feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+                feed.switch(false);
+                // A spot already read when the switch went off says nothing either.
+                feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+            },
+            false,
+            1400,
+            1300,
+        ),
+        (
+            "not heard, the target decodes 1000 Hz",
+            |feed| {
+                *feed.dial.lock().unwrap() = Some(7_074_000);
+                feed.inject(&spot("DL1XYZ", 7_075_000, "40m", 60));
+            },
+            false,
+            1000,
+            900,
+        ),
+    ];
+    for (name, set, hears, first, second) in table {
+        let (f, e) = run_at_limit(2, 20, set).await;
+        for (own, hz, repetitions) in [(15_000, 1500, 1), (45_000, first, 2), (75_000, first, 3)] {
+            transmit_own_period(&f, e + own).await;
+            f.tick();
+            let c = f.read("contact").await;
+            assert_eq!(c["settings"]["tx_hz"], hz, "{name}, {repetitions} sent");
+            assert_eq!(c["transmit"]["arm_state"], "armed", "{name}");
+            assert_eq!(c["watchdog"]["tx_expired"], false, "{name}");
+        }
+        let check = f.read("automation").await["run"]["slot_check"].clone();
+        assert_eq!(
+            check,
+            json!({"repetitions":2,"hears_us":hears,"hz":first,"free":true}),
+            "{name}"
+        );
+        assert_eq!(
+            f.read("automation").await["run"]["tx_slot"],
+            json!({"hz":first,"free":true}),
+            "{name}: the status follows the move"
+        );
+        // N more on the slot: checked again, and Tx still never stops.
+        transmit_own_period(&f, e + 105_000).await;
+        f.tick();
+        let c = f.read("contact").await;
+        assert_eq!(c["settings"]["tx_hz"], second, "{name}, 4 sent");
+        assert_eq!(c["transmit"]["arm_state"], "armed", "{name}");
+        assert_eq!(
+            f.keys(),
+            8,
+            "{name}: every repetition is keyed and released"
+        );
+        assert_eq!(run_state(&f).await, ("contact_active".into(), Value::Null));
+    }
+}
+// Proves: CL-039-21; TC-039-022. At the defaults (N 6, 3 calls per station) the check comes at the
+// 3rd call, before the run leaves the station; alone, it comes back and calls from the new slot.
+// A target known to hear us keeps its slot through the same calls.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_the_check_comes_before_the_run_leaves_the_station() {
+    let tx = |c: &Value| c["settings"]["tx_hz"].clone();
+    let (f, e) = run_at_limit(6, 3, |_| {}).await;
+    for (own, hz) in [(15_000, 1500), (45_000, 1500), (75_000, 1400)] {
+        transmit_own_period(&f, e + own).await;
+        f.tick();
+        assert_eq!(tx(&f.read("contact").await), hz, "after the call at {own}");
+        assert_eq!(f.read("automation").await["run"]["rested"], Value::Null);
+        publish(&f, e + own + 15_000, &[]);
+    }
+    assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
+    publish(&f, e + 120_000, &[("CQ K1ABC FN42", 1800.0, Some(-10.0))]);
+    let c = f.read("contact").await;
+    assert_eq!(c["contact"]["dx_call"], "K1ABC", "alone, it comes back");
+    assert_eq!(tx(&c), 1400, "from the new slot");
+    assert_eq!(c["transmit"]["arm_state"], "armed");
+
+    let (f, e) = run_at_limit(6, 3, |feed| {
+        feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+    })
+    .await;
+    for own in [15_000, 45_000, 75_000, 105_000, 135_000] {
+        transmit_own_period(&f, e + own).await;
+        f.tick();
+        publish(&f, e + own + 15_000, &[]);
+    }
+    let c = f.read("contact").await;
+    assert_eq!(tx(&c), 1500);
+    assert_eq!(c["transmit"]["arm_state"], "armed");
+    assert_eq!(f.read("automation").await["run"]["rested"], Value::Null);
+    assert_eq!(f.keys(), 10, "every call is keyed and released");
+}
+
+// Proves: CL-039-21; TC-039-022. The unattended bounds hold for a target that hears us: with no
+// client it is left after its calls and the run stops no_client, and likewise at the run limit.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_a_target_that_hears_us_does_not_outlive_the_run_bounds() {
+    for (skew, reason) in [
+        (crate::automation::CLIENT_GONE.as_secs(), "no_client"),
+        (9 * 3600, "run_limit"),
+    ] {
+        let (f, e) = run_at_limit(2, 2, |feed| {
+            feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+        })
+        .await;
+        // Heard and attended: it stays.
+        publish(&f, e + 30_000, &[]);
+        publish(&f, e + 60_000, &[]);
+        publish(&f, e + 90_000, &[]);
+        assert_eq!(contact(&f).await.2, json!("armed"), "{reason}");
+        // That read counted as a client: this step takes it, and none comes after it.
+        f.tick();
+        at_skew(&f, skew);
+        publish(&f, e + 120_000, &[]);
+        publish(&f, e + 150_000, &[]);
+        publish(&f, e + 180_000, &[]);
+        f.tick();
+        assert_eq!(quiet_run(&f), ("stopped".into(), json!(reason)));
+        assert_eq!(quiet_contact(&f).await.2, json!("disarmed"), "{reason}");
+    }
+}
+// Proves: CL-039-21; TC-039-022. A station calling my call outranks the queue (D5): the run leaves
+// the target that hears us after its calls, and answers the caller.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_a_caller_of_my_call_outranks_a_target_that_hears_us() {
+    let (f, e) = run_at_limit(6, 3, |feed| {
+        feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+    })
+    .await;
+    let caller = [("HB9BLA DL1XYZ JO62", 1200.0, Some(-5.0))];
+    for period in [30_000, 60_000, 90_000, 120_000] {
+        publish(&f, e + period, &caller);
+    }
+    assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
+    assert_eq!(contact(&f).await.2, json!("armed"));
+}
+// Proves: CL-039-21; TC-039-022. A partner that answered has proved the slot, spot or no spot: Tx
+// stays through its repetitions (CL-039-09), and the message goes on without a stop.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_an_answer_keeps_the_slot_without_a_spot() {
+    let (f, e) = run_at_limit(2, 20, |_| {}).await;
+    transmit_own_period(&f, e + 15_000).await;
+    publish(&f, e + 30_000, &[("HB9BLA K1ABC -09", 1800.0, Some(-9.0))]);
+    transmit_own_period(&f, e + 45_000).await;
+    f.tick();
+    transmit_own_period(&f, e + 75_000).await;
+    f.tick();
+    let c = f.read("contact").await;
+    assert_eq!(c["settings"]["tx_hz"], 1500);
+    assert_eq!(c["transmit"]["arm_state"], "armed");
+    let check = f.read("automation").await["run"]["slot_check"].clone();
+    assert_eq!(
+        check,
+        json!({"repetitions":2,"hears_us":true,"hz":1500,"free":true})
+    );
+}
+// Proves: CL-039-21; TC-039-022. An answer keeps the slot only: without a spot the partner is still
+// left after its calls, since an answer does not expire and a partner gone QRT would hold the run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_an_answer_without_a_spot_is_still_left_after_its_calls() {
+    let (f, e) = run_at_limit(6, 3, |_| {}).await;
+    publish(&f, e + 30_000, &[("HB9BLA K1ABC -09", 1800.0, Some(-9.0))]);
+    assert_eq!(f.read("automation").await["run"]["rested"], Value::Null);
+    for period in [60_000, 90_000, 120_000, 150_000] {
+        publish(&f, e + period, &[]);
+    }
+    assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
+}
+// Proves: CL-039-21; TC-039-022. With no client, or past the run limit, the stop at N is back at once,
+// so the run cannot go on transmitting even when no publication ever arrives to end its contact.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_unattended_the_stop_at_n_is_back_without_a_publication() {
+    for (skew, reason) in [
+        (crate::automation::CLIENT_GONE.as_secs(), "no_client"),
+        (9 * 3600, "run_limit"),
+    ] {
+        let (f, e) = run_at_limit(2, 20, |feed| {
+            feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+        })
+        .await;
+        for own in [15_000, 45_000, 75_000] {
+            transmit_own_period(&f, e + own).await;
+            f.tick();
+        }
+        assert_eq!(
+            quiet_contact(&f).await.2,
+            json!("armed"),
+            "past N, attended"
+        );
+        at_skew(&f, skew);
+        let keys = f.keys();
+        not_keyed_in(&f, e + 105_000).await;
+        assert_eq!(f.keys(), keys, "never keyed again");
+        assert_eq!(quiet_run(&f), ("stopped".into(), json!(reason)));
+    }
+}
+// Proves: CL-039-20; CL-039-21; TC-039-022. Only a strategy run's own contact subscribes to its
+// target: not a pounce, nor the same contact after the run ended.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_only_a_strategy_run_subscribes_to_its_target() {
+    let (f, _) = run_at_limit(2, 20, |feed| {
+        assert_eq!(feed.target().as_deref(), Some("K1ABC"), "the run's contact");
+    })
+    .await;
+    let feed = f.state.recording.pskr.get().unwrap().clone();
+    halt(&f).await;
+    f.tick();
+    assert_eq!(feed.target(), None, "the run ended, the contact stays");
+
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let dir = std::env::temp_dir().join(format!("wstx-pskr-{}", profile::new_uuid().unwrap()));
+    std::fs::create_dir(&dir).unwrap();
+    let feed = crate::pskr::Feed::start(&dir, &f.id, &f.boot, None, crate::pskr::Timing::BROKER);
+    f.state.recording.pskr.set(feed.clone()).ok().unwrap();
+    assert_eq!(pounce(&f, "K1ABC", 20).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ K1ABC FN42", 1800.0, Some(-10.0))]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    f.tick();
+    assert_eq!(feed.target(), None, "a pounce reads no spots");
+}
+// Proves: CL-039-21; TC-039-022. WD:n counts down to the next check, at min(N, calls per station),
+// and a check without a free slot keeps the slot and tells the status the browser reads.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_the_status_shows_the_next_check_and_no_free_slot() {
+    let (f, e) = run_at_limit(6, 3, |_| {}).await;
+    f.tick();
+    let left = |c: &Value| c["watchdog"]["tx_remaining_calls"].clone();
+    assert_eq!(
+        left(&f.read("contact").await),
+        3,
+        "3 calls to the first check"
+    );
+    transmit_own_period(&f, e + 15_000).await;
+    f.tick();
+    assert_eq!(left(&f.read("contact").await), 2);
+    // The own period's band is full: every slot of 300..2650 is within a signal's gap.
+    let full: Vec<(&str, f64, Option<f64>)> = (0..24)
+        .map(|n| ("CQ DL1XYZ JO62", f64::from(300 + n * 100), Some(0.0)))
+        .collect();
+    publish(&f, e + 15_000, &full);
+    transmit_own_period(&f, e + 45_000).await;
+    f.tick();
+    assert_eq!(left(&f.read("contact").await), 1);
+    transmit_own_period(&f, e + 75_000).await;
+    f.tick();
+    let c = f.read("contact").await;
+    assert_eq!(left(&c), 3, "the check came: the next one is 3 away");
+    assert_eq!(c["settings"]["tx_hz"], 1500, "no free slot keeps the slot");
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(run["tx_slot"], json!({"hz":1500,"free":false}));
+    assert_eq!(run["slot_check"]["free"], false);
+}
+// Proves: CL-039-21; TC-039-022. A target known to hear us is not left after its calls ("we are in
+// the queue"); without that spot the run goes on to the next candidate as before.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_a_target_that_hears_us_is_not_left_after_its_calls() {
+    let (f, e) = run_at_limit(2, 1, |feed| {
+        feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+    })
+    .await;
+    publish(&f, e + 30_000, &[]);
+    publish(&f, e + 60_000, &[]);
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(run["rested"], Value::Null);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    assert_eq!(contact(&f).await.2, json!("armed"));
+    let (f, e) = run_at_limit(2, 1, |_| {}).await;
+    publish(&f, e + 30_000, &[]);
+    publish(&f, e + 60_000, &[]);
+    assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
 }
 
 // Proves: TC-039-005
@@ -3166,7 +3643,7 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
 // and selections are written here from the contract, not evaluator output).
 #[test]
 fn tc_042_002_ignore_configuration_is_exact() {
-    let mut c = config(Some("New calls"));
+    let mut c = config(Some("Test calls"));
     c["ignore_calls"] = json!(["K1ABC", "VK2ABC/P"]);
     c["session_ignore_minutes"] = json!(720);
     let ok = parse_config(&c).unwrap();
@@ -3462,7 +3939,7 @@ async fn tc_042_002_ignore_route_store_and_band_change() {
         .await;
     assert_eq!(foreign.status, StatusCode::FORBIDDEN);
     // The permanent list and the session minutes are saved with PUT /strategy.
-    let mut c = config(Some("New calls"));
+    let mut c = config(Some("Test calls"));
     c["ignore_calls"] = json!(["DL1XYZ"]);
     c["session_ignore_minutes"] = json!(5);
     save(&f, c.clone()).await;
@@ -3530,7 +4007,7 @@ async fn tc_042_002_a_run_never_selects_an_ignored_station() {
     f.state.recording.fixture_band("40m");
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    let mut c = config(Some("New calls"));
+    let mut c = config(Some("Test calls"));
     c["ignore_calls"] = json!(["K1ABC"]);
     select(&f, c).await;
     assert_eq!(
@@ -3563,7 +4040,7 @@ async fn tc_042_002_a_run_never_answers_an_ignored_caller() {
     f.state.recording.fixture_band("40m");
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     assert_eq!(
         ignore(&f, json!("K1ABC"), json!(true)).await.status,
         StatusCode::OK
@@ -3912,7 +4389,7 @@ async fn automation_does_not_start_with_a_nonstandard_own_call() {
         (json!("not_ready"), json!("call"))
     );
     // A strategy waits with the reason instead of being refused.
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     f.tick();
     assert_eq!(run_state(&f).await, ("waiting".into(), json!("call")));
     save(&f, config(None)).await;
@@ -3939,7 +4416,7 @@ async fn automation_does_not_start_in_a_contest_activity() {
         ),
         (json!("not_ready"), json!("activity"))
     );
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     f.tick();
     assert_eq!(run_state(&f).await, ("waiting".into(), json!("activity")));
 }
@@ -3961,7 +4438,7 @@ async fn automation_does_not_start_as_a_hound() {
         ),
         (json!("not_ready"), json!("activity"))
     );
-    select(&f, config(Some("New calls"))).await;
+    select(&f, config(Some("Test calls"))).await;
     f.tick();
     assert_eq!(run_state(&f).await, ("waiting".into(), json!("activity")));
 }
@@ -4159,4 +4636,111 @@ async fn tc_042_006_alert_records_one_alert_per_call_and_band_and_never_transmit
         (Value::Null, json!("disarmed"))
     );
     assert_eq!(f.keys(), 0);
+}
+
+// Proves: TC-063-004
+#[test]
+fn tc_063_004_the_directive_table_in_a_contest_activity() {
+    use crate::contact::Activity as A;
+    for (activity, target, expected) in [
+        (A::None, "TEST", false),
+        (A::NaVhf, "TEST", true),
+        (A::ArrlDigi, "TEST", true),
+        (A::WwDigi, "TEST", false),
+        (A::WwDigi, "WW", true),
+        (A::ArrlDigi, "WW", false),
+        (A::FieldDay, "FD", true),
+        (A::WwDigi, "FD", false),
+        (A::Rtty, "RU", true),
+        (A::Hound, "TEST", false),
+        // The other directives keep their rule in an activity.
+        (A::WwDigi, "NA", false),
+        (A::WwDigi, "EU", true),
+        (A::WwDigi, "POTA", false),
+    ] {
+        assert_eq!(
+            answerable_in(activity, Some(target), Some("EU"), Some("NA")),
+            expected,
+            "CQ {target} in {activity:?}"
+        );
+    }
+    assert!(answerable_in(A::WwDigi, None, Some("EU"), Some("NA")));
+    // With my continent unknown a matching word still holds: it is not about me.
+    assert!(answerable_in(A::WwDigi, Some("WW"), None, None));
+    // The verdict follows: CQ WW is a candidate in WW Digi and greyed without it.
+    let records = rows(&[("CQ WW K1ABC FN42", Some(-5.0))]);
+    let s = award(&[Goal::NewCall]);
+    let plain = evaluate(&s, &records, &me());
+    assert_eq!((plain[0].rank, plain[0].grey), (None, true));
+    let st = Station {
+        activity: A::WwDigi,
+        ..me()
+    };
+    let contest = evaluate(&s, &records, &st);
+    assert_eq!((contest[0].rank, contest[0].grey), (Some(0), false));
+}
+
+// Proves: TC-063-004
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    publish(&f, e, &[("CQ WW K1ABC FN42", 1000.0, Some(-1.0))]);
+    let row = live_row(&f, "CQ WW K1ABC FN42");
+    let refused = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":row,"replace":false})).await),
+        )
+        .await;
+    assert_eq!(refused.status, StatusCode::CONFLICT, "{}", refused.json);
+    assert_eq!(refused.json["error"]["code"], "directive_not_answerable");
+    browser_ok(&f, "set_activity", json!({"activity":"ww_digi"})).await;
+    let selected = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":row,"replace":false})).await),
+        )
+        .await;
+    assert_eq!(selected.status, StatusCode::ACCEPTED, "{}", selected.json);
+    assert_eq!(contact(&f).await.0, "K1ABC");
+}
+
+// Proves: TC-063-003
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_063_003_the_contests_route() {
+    let f = station(true).await;
+    let g = f.browser("GET", "/strategy/contests", None).await;
+    assert_eq!(g.status, StatusCode::OK, "{}", g.json);
+    assert_eq!(g.json["v"], 1);
+    assert_eq!(g.json["profile_id"], f.id.as_str());
+    let list = g.json["profiles"].as_array().expect("a list");
+    assert_eq!(list.len(), crate::contest::PROFILES.len());
+    assert_eq!(list[0]["id"], "ww_digi");
+    assert_eq!(list[0]["automation"], "forbidden");
+    // The period is the rule's, at the station's clock: it has not ended.
+    let end = list[0]["period"]["end"].as_str().expect("a period end");
+    let end = crate::contact::parse_utc(&format!("{}:00Z", end.trim_end_matches('Z')))
+        .expect("a UTC time");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("a clock")
+        .as_millis() as i64;
+    assert!(end > now);
+    // No credentials: 401; a query is refused; POST has no route.
+    let u = f.http("GET", "/strategy/contests", &[], None).await;
+    assert_eq!(u.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(u.json["error"]["code"], "unauthorized");
+    let q = f.browser("GET", "/strategy/contests?x=1", None).await;
+    assert_eq!(q.status, StatusCode::BAD_REQUEST);
+    assert_eq!(q.json["error"]["code"], "invalid_request");
+    assert_eq!(
+        f.browser("POST", "/strategy/contests", Some(json!({})))
+            .await
+            .status,
+        StatusCode::METHOD_NOT_ALLOWED
+    );
 }

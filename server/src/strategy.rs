@@ -6,7 +6,7 @@
 //! /strategy (configuration; a changed active starts or stops a run), POST
 //! /strategy/evaluate (verdicts of retained live rows), #42 GET /strategy/alerts and POST
 //! /strategy/alerts/clear (WstxStrategy::Alert), POST /strategy/most-wanted/download
-//! (WstxStrategy::MostWantedList).
+//! (WstxStrategy::MostWantedList), GET /strategy/contests (WstxContest::ContestHttp).
 use crate::*;
 use axum::extract::RawQuery;
 use recording_http::authorize;
@@ -31,6 +31,7 @@ pub const ALERT_HISTORY_MAX: usize = 100;
 pub const ALERT_DEDUPE_MS: i64 = 10 * 60_000;
 const FILE_BYTES_MAX: u64 = 262_144;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
+use crate::contact::Activity;
 pub use crate::dxcc::CONTINENTS;
 use crate::dxcc::{Category, Standing, Worked};
 
@@ -96,6 +97,35 @@ pub(crate) struct Strategy {
     pub calls_per_station: u64,
     pub treat_73_as_cq: bool,
     pub window: Window,
+}
+/// WstxStrategy::BuiltinStrategies: the one table (name, goal, DX only).
+const BUILTINS: [(&str, Goal, bool); 5] = [
+    ("New DXCC", Goal::Dxcc, false),
+    ("New DXCC on band", Goal::DxccBand, false),
+    ("DXCC slots", Goal::DxccSlot, false),
+    ("New calls", Goal::NewCall, false),
+    ("DX hunting", Goal::NewCall, true),
+];
+pub(crate) fn builtins() -> &'static [Strategy] {
+    static TABLE: std::sync::OnceLock<Vec<Strategy>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        BUILTINS
+            .iter()
+            .map(|(name, goal, dx)| Strategy {
+                name: (*name).to_owned(),
+                goals: vec![*goal],
+                needed: Needed::NotWorked,
+                region: if *dx { Region::Dx } else { Region::All },
+                min_snr_db: None,
+                calls_per_station: 3,
+                treat_73_as_cq: true,
+                window: Window::All,
+            })
+            .collect()
+    })
+}
+fn is_builtin(name: &str) -> bool {
+    builtins().iter().any(|b| b.name.eq_ignore_ascii_case(name))
 }
 /// WstxStrategy::StrategyConfiguration.
 #[derive(Clone, Debug, PartialEq)]
@@ -316,9 +346,10 @@ pub(crate) fn parse_config(v: &Value) -> Result<Config, Field> {
     let mut strategies: Vec<Strategy> = Vec::new();
     for (i, s) in list.iter().enumerate() {
         let s = strategy(s, &format!("strategies[{i}]"))?;
-        if strategies
-            .iter()
-            .any(|o| o.name.eq_ignore_ascii_case(&s.name))
+        if is_builtin(&s.name)
+            || strategies
+                .iter()
+                .any(|o| o.name.eq_ignore_ascii_case(&s.name))
         {
             return Err(bad(format!("strategies[{i}].name")));
         }
@@ -328,7 +359,10 @@ pub(crate) fn parse_config(v: &Value) -> Result<Config, Field> {
         Value::Null => None,
         a => Some(
             a.as_str()
-                .filter(|a| strategies.iter().any(|s| s.name == *a))
+                .filter(|a| {
+                    strategies.iter().any(|s| s.name == *a)
+                        || builtins().iter().any(|b| b.name == *a)
+                })
                 .ok_or(bad("active"))?
                 .to_owned(),
         ),
@@ -381,6 +415,14 @@ fn upgrade(old: &Value) -> Value {
     }
     v
 }
+/// A saved file from before the presets: a strategy with a built-in's name is dropped.
+fn without_builtin_names(configuration: &Value) -> Value {
+    let mut v = configuration.clone();
+    if let Some(list) = v["strategies"].as_array_mut() {
+        list.retain(|s| !s["name"].as_str().is_some_and(is_builtin));
+    }
+    v
+}
 impl Strategy {
     pub(crate) fn json(&self) -> Value {
         json!({"name":self.name,"class":"award",
@@ -408,7 +450,10 @@ impl Config {
     }
     pub(crate) fn active_strategy(&self) -> Option<&Strategy> {
         let name = self.active.as_deref()?;
-        self.strategies.iter().find(|s| s.name == name)
+        self.strategies
+            .iter()
+            .chain(builtins())
+            .find(|s| s.name == name)
     }
 }
 
@@ -509,6 +554,8 @@ pub(crate) struct Station {
     pub worked: Option<std::sync::Arc<Worked>>,
     pub ignored: HashMap<String, Tier>,
     pub most_wanted: Option<std::sync::Arc<crate::most_wanted::List>>,
+    /// #63 the station's activity, for the DirectedCqRule.
+    pub activity: Activity,
 }
 /// The list an ignored call is on (the session list wins when on both).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -586,13 +633,27 @@ pub(crate) fn answerable(target: Option<&str>, mine: Option<&str>, sender: Optio
         Some(t) => mine == Some(t),
     }
 }
+/// #63 the rule in a contest activity: the activity's own CQ word (CQ TEST, WW, FD, RU) is also
+/// answerable, without a warning.
+pub(crate) fn answerable_in(
+    activity: Activity,
+    target: Option<&str>,
+    mine: Option<&str>,
+    sender: Option<&str>,
+) -> bool {
+    (target.is_some() && target == activity.cq()) || answerable(target, mine, sender)
+}
 /// The DirectedCqRule text of a CQ that is not answerable.
 fn not_for_me(target: &str, mine: Option<&str>) -> String {
     format!("CQ {target} — not for {}", mine.unwrap_or("this station"))
 }
 /// The DirectedCqRule verdict of an operator's selection of this record: the warning text
-/// when it is a CQ that is not answerable.
-pub(crate) fn selection_warning(state: &ProfileState, record: &Value) -> Option<String> {
+/// when it is a CQ that is not answerable in this activity (the caller holds the contact lock).
+pub(crate) fn selection_warning(
+    state: &ProfileState,
+    record: &Value,
+    activity: Activity,
+) -> Option<String> {
     let f = facts(record)?;
     let (call, locator) = contact_http::profile_facts(state);
     let (dxcc, _) = state.logbook.dxcc();
@@ -604,7 +665,8 @@ pub(crate) fn selection_warning(state: &ProfileState, record: &Value) -> Option<
         .config(state)
         .unwrap_or_default();
     let mine = my_continent(&config, call.as_deref(), locator.as_deref(), &dxcc);
-    (!answerable(
+    (!answerable_in(
+        activity,
         f.target.as_deref(),
         mine.as_deref(),
         dxcc.continent(&f.from),
@@ -620,7 +682,8 @@ impl Station {
     }
     /// A CQ that is not answerable is greyed and is never a candidate nor answered by a run.
     pub(crate) fn greyed(&self, f: &Facts) -> bool {
-        !answerable(
+        !answerable_in(
+            self.activity,
             f.target.as_deref(),
             self.my_continent.as_deref(),
             self.dxcc.continent(&f.from),
@@ -876,7 +939,9 @@ pub(crate) fn station(state: &ProfileState, config: &Config, window: Window) -> 
         .map(|c| (c.clone(), Tier::Permanent))
         .collect();
     let mut most_wanted = None;
+    let mut activity = Activity::None;
     if let Some(s) = r.contact.get() {
+        activity = s.status_facts().activity;
         for (c, _, _) in s.strategy.session_entries(Instant::now()) {
             ignored.insert(c, Tier::Session);
         }
@@ -892,6 +957,7 @@ pub(crate) fn station(state: &ProfileState, config: &Config, window: Window) -> 
         worked,
         mode,
         most_wanted,
+        activity,
     }
 }
 
@@ -987,7 +1053,7 @@ impl Owner {
                             && v["revision"].as_u64().is_some_and(|n| n <= MAX_SAFE);
                         let configuration = match v["schema_version"].as_u64() {
                             Some(1) => upgrade(&v["configuration"]),
-                            Some(2) => v["configuration"].clone(),
+                            Some(2) => without_builtin_names(&v["configuration"]),
                             _ => return None,
                         };
                         ok.then(|| parse_config(&configuration).ok())
@@ -1322,6 +1388,11 @@ impl Owner {
             "configuration_error":inner.error,"my_continent":mine,
             "derived_continent":call.as_deref().and_then(|c| dxcc.continent(c)),
             "session_ignore":session,"most_wanted":status,
+            "builtin_strategies":builtins().iter().map(|b| {
+                let mut v = b.json();
+                v["builtin"] = json!(true);
+                v
+            }).collect::<Vec<_>>(),
             "most_wanted_unreadable":unreadable,
             "most_wanted_attribution":crate::most_wanted::ATTRIBUTION})
     }
@@ -1692,6 +1763,28 @@ pub async fn clear_alerts_route(
         Ok(v) => Json(v).into_response(),
         Err((code, field)) => refusal(code, field.as_deref()),
     }
+}
+/// GET /strategy/contests (WstxContest::ContestHttp): the profiles with their current or
+/// next period, read at (re)connect and when the period prompt opens.
+pub async fn contests_route(
+    State(app): State<App>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let r = match authorize(&app, &headers, false).await {
+        Ok(r) => r,
+        Err(e) => return refusal(e, None),
+    };
+    if let Err(e) = empty(query, body) {
+        return refusal(e, None);
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as i64);
+    Json(json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,
+        "profiles":crate::contest::profiles_json(now)}))
+    .into_response()
 }
 /// POST /strategy/most-wanted/download.
 pub async fn most_wanted_download_route(
