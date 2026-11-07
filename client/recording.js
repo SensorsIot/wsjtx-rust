@@ -830,7 +830,7 @@ addEventListener('station-message',event=>{const {current,message}=event.detail;
   if(!shown)receiveSync(current);
   const d=message.data;if(snapshot&&d&&(d.generation!==snapshot.generation||d.job_id!==(snapshot.job?.id??null)||d.state!==(snapshot.job?.state??null)))sync(current);});
 setInterval(receiveResults,250);
-if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state==='connected')receiveSync(socket);
+if(socket?.readyState===WebSocket.OPEN&&profileData)receiveReady(socket);// this script came after the socket's first status
 
 // These controls share the existing station/receive authority. Nominal selection
 // and dated CAT observations remain different values throughout a transition.

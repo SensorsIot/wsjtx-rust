@@ -2211,6 +2211,8 @@ test('TC-007-005 receive.state carries the job and the audio; only a new state, 
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     state=liveFixture(await (await fetch(app.origin+'/receive')).json());
     state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-11-06T10:50:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    // Only the fixture's events: the idle station's own receive.state describes no job of this routed snapshot.
+    await p.addInitScript(()=>addEventListener('station-message',e=>{if(e.detail.message.type==='receive.state'&&e.detail.message.fixture!==true)e.stopImmediatePropagation();}));
     p.on('request',r=>{if(new URL(r.url()).pathname==='/receive')reads.push(r.method());});
     await p.route('**/recording',async route=>{const real=await (await route.fetch()).json();await route.fulfill({json:{...real,generation:state.generation,job:{id:state.job.id,source_id:state.source.id,generation:state.generation,kind:'live',state:state.job.state,processed_frames:0,error:null}}});});
     await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);const json=structuredClone(state);if(hold)await hold;await route.fulfill({json});});
@@ -2218,7 +2220,7 @@ test('TC-007-005 receive.state carries the job and the audio; only a new state, 
   }});
   await page.waitForFunction(id=>live?.job?.id===id,state.job.id,{timeout:25000});await page.waitForFunction(()=>!livePending);
   const event=async(job,change={},wait=true)=>{const data={profile_id:state.profile_id,boot_id:state.boot_id,generation:state.generation,source_id:state.source.id,job_id:state.job.id,state:state.job.state,audio:state.audio,clock:{correlated:state.clock.correlated,utc_anchor:state.clock.utc_anchor,canonical_anchor_frame:state.clock.canonical_anchor_frame,uncertainty_ns:state.clock.uncertainty_ns},job:{error:null,first_sequence:0,next_sequence:0,available_count:0,last_overrun:null,latest_decode:null,...job},...change};
-    await page.evaluate(data=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',data}}})),data);await page.waitForTimeout(100);if(wait)await page.waitForFunction(()=>!livePending);};
+    await page.evaluate(data=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',fixture:true,data}}})),data);await page.waitForTimeout(100);if(wait)await page.waitForFunction(()=>!livePending);};
   const settled=reads.length;
   // Progress and audio are carried: the rows follow from the result reads, with no GET /receive.
   state.job={...state.job,next_sequence:1,available_count:1,latest_decode:decode(1)};
