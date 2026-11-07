@@ -26,7 +26,7 @@ async function display(page,value){if(!await page.locator('#settings-drawer').is
 
 if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
   test('TC-007-005 runs only through contact_http_tests::contact_thin_tests::contact_thin_link_two_clients',{skip:'launched by the Rust fixture'},()=>{});
-}else test('TC-007-005 two clients on the 32 kbit/s 300 ms TLS link: tick and contact.state pacing, bounded worked-before, log traffic, byte budgets and local presentation',{timeout:760000},async t=>{
+}else test('TC-007-005 two clients on the 32 kbit/s 300 ms TLS link: tick and contact.state pacing, no worked-before query and no GET /receive, log traffic, byte budgets and local presentation',{timeout:760000},async t=>{
   assert.ok(control&&token,'control peer and token are mandatory');
   const proxy=await link({host:'127.0.0.2',port:1});proxy.target.port=proxy.port;t.after(()=>proxy.close());
   process.stdout.write(`WSTX_THIN_CONTACT_PROXY ${proxy.port}\n`);
@@ -98,8 +98,8 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
   report.reload=reloads;await save();
   for(const r of reloads){bound(r.firstStatusAfterLoadMs<=10000,`first status ${r.firstStatusAfterLoadMs} ms after page load`);assert.equal(r.display,'thin','the explicit Thin choice survives the reload');}
 
-  // ---- Detailed: station.tick once per second per client, and one bounded worked-before
-  // query for a period of 71 distinct CQ callers (Detailed fetches a published view at once;
+  // ---- Detailed: station.tick once per second per client, and the worked-before status of a
+  // period of 71 distinct CQ callers with no query (Detailed fetches a published view at once;
   // Thin and Off read at most one record per 4 s, CL-057-01).
   for(const p of pages)await display(p,'detail');
   await sleep(3000);

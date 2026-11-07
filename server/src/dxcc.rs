@@ -671,7 +671,9 @@ pub(crate) fn annotate(state: &crate::ProfileState, records: &mut [Value]) {
         if let (Some(band), Some(mode)) = (band, mode.as_deref())
             && record["fields"]["type"] == "standard"
             && record["fields"]["from"]["kind"] == "call"
-            && let Ok(status) = state.logbook.worked(std::slice::from_ref(&from), band, mode)
+            && let Ok(status) = state
+                .logbook
+                .worked(std::slice::from_ref(&from), band, mode)
             && let Some(status) = status.first()
         {
             record["worked_status"] = json!(status);

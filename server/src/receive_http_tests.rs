@@ -886,7 +886,17 @@ fn receive_state_of_the_largest_snapshot_fits_the_event_bound() {
     keys.sort();
     assert_eq!(
         keys,
-        ["audio", "boot_id", "clock", "generation", "job", "job_id", "profile_id", "source_id", "state"]
+        [
+            "audio",
+            "boot_id",
+            "clock",
+            "generation",
+            "job",
+            "job_id",
+            "profile_id",
+            "source_id",
+            "state"
+        ]
     );
     assert_eq!(data["audio"], snapshot["audio"]);
     assert_eq!(
@@ -894,8 +904,14 @@ fn receive_state_of_the_largest_snapshot_fits_the_event_bound() {
         json!({"correlated":true,"utc_anchor":"2026-11-06T10:55:30.0000000Z","canonical_anchor_frame":most,"uncertainty_ns":2000000}),
         "the fixed basis and external accuracy stay in the snapshot"
     );
-    assert_eq!(data["job"]["latest_decode"], snapshot["job"]["latest_decode"]);
+    assert_eq!(
+        data["job"]["latest_decode"],
+        snapshot["job"]["latest_decode"]
+    );
     assert_eq!(data["job"]["available_count"], 2048);
-    assert!(data["job"].get("processed_frames").is_none(), "a frame carries it");
+    assert!(
+        data["job"].get("processed_frames").is_none(),
+        "a frame carries it"
+    );
     assert!(data.get("source").is_none(), "a frame carries next_frame");
 }
