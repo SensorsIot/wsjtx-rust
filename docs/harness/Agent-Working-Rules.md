@@ -55,7 +55,9 @@ rules around it. Agent memory only points here.
 - Every repair gets the review step 3 of the CR process sets. After 10 review rounds on
   one change the session stops and asks the operator whether to continue.
 - A reviewer reads the candidate (`git show`, or a plain copy made with `git archive <rev> | tar -x`)
-  and builds or runs nothing; the author runs a reproduction the reviewer writes out.
+  and edits nothing. It may run the tests of what changed and of its surroundings to reproduce a
+  finding ([CR process step 3](../../harness/core/docs/CR-Process.md#steps)), never the whole suite
+  or a gate.
 
 ## GitHub issues are the memory
 
@@ -87,22 +89,18 @@ rules around it. Agent memory only points here.
 ## Agent role additions
 
 This project's layer of the [agent roles](../../harness/core/docs/Parallel-Work.md#agent-roles),
-installed with `python harness/core/tools/install_skills.py --project . --host claude --skill grill-me --skill sysml-authoring --skill test-design --agent definer --agent checker`.
+installed with `python harness/core/tools/install_skills.py --project . --host claude --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --agent definer --agent checker --agent coder --agent reviewer`.
 
 ### Role: definer
 
 ```yaml
 guard:
-  commands:
-    - 'python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints)'
   writes: [".git/harness-parallel/worktrees/*/docs/**"]
 ```
 
 The model is under `docs/sysml/`; its checks are the `sysml.py` commands of
-[model authoring and validation](Project-Specifics.md#model-authoring-and-validation).
-In a slice worktree, run them from the project folder with the worktree's path, for example
-`python .git/harness-parallel/worktrees/cr39-holdtx/tools/sysml.py check`: the tool checks
-the repository it lives in, and a change of folder is refused.
+[model authoring and validation](Project-Specifics.md#model-authoring-and-validation),
+run in a slice worktree by the worktree path rule under "Role: every" below.
 A browser control that writes to the radio or keys it states what it does before its
 scripts have loaded over the 32 kbit/s link and after they fail to load.
 
@@ -114,10 +112,64 @@ guard:
     - 'gh issue comment [0-9]+ --body .*'
 ```
 
-The checker posts its verdict as its own issue comment, with exactly
-`gh issue comment <number> --body '<text>'`: single quotes, no `$` or backticks, no `--repo`.
+The checker posts its verdict as its own issue comment, in the posting form under
+"Role: every" below.
+
+### Role: coder
+
+```yaml
+guard:
+  commands:
+    - 'node --test( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/\S+)+'
+  model:
+    facts:
+      - '\s*attribute (coverage|automation|executable) : .*;\s*'
+```
+
+- **Builds and tests** use the build and temp folders of the
+  [HB9BLA handover](HB9BLA-HANDOFF.md#inputs-and-unfinished-work) and run beside the gate
+  as [heavy runs yield to the gate](Agent-Working-Rules.md#who-changes-what) says, a timing failure rerun once.
+  In the hook's one-command form: `CARGO_TARGET_DIR=D:/wstx-build/<worktree>
+  TEMP=D:/wstx-tmp/<worktree> TMP=D:/wstx-tmp/<worktree> CARGO_BUILD_JOBS=2 nice -n 10
+  cargo test --manifest-path .git/harness-parallel/worktrees/<worktree>/Cargo.toml …`;
+  under Git Bash `nice -n 10` is BelowNormal.
+- **Delivery facts** in the model are a requirement's `coverage`, a case's `automation`
+  and its `executable` binding
+  ([source bindings](Project-Specifics.md#canonical-model-catalog-and-source-bindings));
+  the hook refuses any other model line.
+- **Proves tags:** this project's tag syntax for test-design step 5 is a `// Proves: <ID>`
+  comment, on a real `#[test]` (or Node `test(...)`) that exercises the promise, never on
+  a helper, a module or a `#[cfg(test)]` block.
+
+### Role: reviewer
+
+```yaml
+guard:
+  commands:
+    - 'node --test( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/\S+)+'
+```
+
+The reviewer reads the candidate as [Reviews](Agent-Working-Rules.md#reviews) says, and posts its verdict in the
+posting form under "Role: every" below.
 
 ### Role: every
 
-The [agent working rules](Agent-Working-Rules.md) hold for every role. Build folders are on
-D: (`gate.cargo_target_root` in `.harness/config.yaml`); a role builds nothing.
+```yaml
+guard:
+  commands:
+    - 'python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints)'
+```
+
+The [agent working rules](Agent-Working-Rules.md) hold for every role. Gate build folders
+are on D: (`gate.cargo_target_root` in `.harness/config.yaml`); a role's own build folders
+are the coder's above.
+
+- **Worktree paths.** A role's session folder is the project folder, and a change of folder
+  is refused. In a slice worktree, run each command from the project folder with the
+  worktree's path in it: `python .git/harness-parallel/worktrees/cr39-holdtx/tools/sysml.py check`
+  (the tool checks the repository it lives in), `git -C .git/harness-parallel/worktrees/cr39-holdtx status`,
+  `cargo test --manifest-path .git/harness-parallel/worktrees/cr39-holdtx/Cargo.toml`, and
+  write its files by that path.
+- **Posting form.** A role that posts on an issue uses exactly
+  `gh issue comment <number> --body '<text>'`: single quotes, no `'`, `$` or backticks in the
+  text, no `--repo`, no `--body-file`.
