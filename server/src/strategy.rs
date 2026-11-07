@@ -3,8 +3,8 @@
 //! Band Activity's marks and value order and the station's strategy runs
 //! (WstxMcp::OperatingAutomation with a strategy) both use these verdicts; the browser
 //! never evaluates a strategy itself. Routes: GET /strategy (StrategySnapshot), PUT
-//! /strategy (configuration; a changed active starts or stops a run), POST
-//! /strategy/evaluate (verdicts of retained live rows), #42 GET /strategy/alerts and POST
+//! /strategy (configuration; a changed selection ends a run and, while Auto is on, starts
+//! the new one), POST /strategy/auto (WstxStrategy::AutoToggle), POST /strategy/evaluate (verdicts of retained live rows), #42 GET /strategy/alerts and POST
 //! /strategy/alerts/clear (WstxStrategy::Alert), POST /strategy/most-wanted/download
 //! (WstxStrategy::MostWantedList), GET /strategy/contests (WstxContest::ContestHttp).
 use crate::*;
@@ -2403,8 +2403,8 @@ pub async fn most_wanted_download_route(
         Err(_) => refusal("storage_unavailable", None),
     }
 }
-/// strategy.state: announces a new store revision (a save, a selection, a HALT's None); the
-/// browser then reads GET /strategy.
+/// strategy.state: announces a new store revision (a save, a selection, an Auto change, a
+/// HALT's or a run end's Auto off); the browser then reads GET /strategy.
 pub(crate) fn state_event(r: &recording::Recording, revision: u64) -> String {
     json!({"v":1,"type":"strategy.state","data":{"profile_id":r.profile,"boot_id":r.boot,
         "strategy_revision":revision}})
