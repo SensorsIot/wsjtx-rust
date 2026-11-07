@@ -4239,15 +4239,15 @@ package WstxRequirements {
     }
     dependency CL_039_07_verified_by_TC_039_008 from 'CL-039-07' to 'TC-039-008';
     requirement 'CL-039-21' {
-        doc /* A strategy or contest run never stops its own contact for the Tx watchdog; the leave rule bounds it instead (CL-039-23). Slot check at every repetition (operator 2026-11-07): while the target has not answered in this contact and is not known to hear us (no spot, Use PSK Reporter off, the feed off or unreachable), Tx takes the quietest slot again (CL-039-09), keeping the current slot when it ties for quietest so that it does not jump between near-equal slots (a tie rule only, no threshold); a target known to hear us keeps its slot, and a target that has answered keeps it for the whole exchange. Manual operation, a pounce and an MCP policy run keep the stop at N, and so does a run's CQ; unattended or past the run limit the stop at N is back at once. Details: WstxStrategy::StrategyWatchdog, HearingFeed, FreeTxSlot; WstxContact::TxWatchdog. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
+        doc /* A strategy or contest run never stops its own contact for the Tx watchdog; the leave rule bounds it instead (CL-039-23). Slot check at every repetition (operator 2026-11-07): while the target has not answered in this contact and is not known to hear us (no spot, Use PSK Reporter off, the feed off or unreachable), Tx takes the quietest slot again (CL-039-09), keeping the current slot when it ties for quietest so that it does not jump between near-equal slots (a tie rule only, no threshold); a target known to hear us keeps its slot, and a target that has answered keeps it for the whole exchange. With Hold Tx on (#39 holdtx, operator 2026-11-07: "if the other station does not hear us we are allowed to change the frequency to a quiet place, but never to the Rx frequency") this is the only move of Tx in the contact and Tx moves alone: Rx stays on the station, and the slot keeps 50 Hz from the called station's signal and from Rx; with Hold Tx off Rx and Tx move together. A pounce has no slot check. Manual operation, a pounce and an MCP policy run keep the stop at N, and so does a run's CQ; unattended or past the run limit the stop at N is back at once. Details: WstxStrategy::StrategyWatchdog, HearingFeed, FreeTxSlot; WstxContact::TxWatchdog. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/automation.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/freeslot.rs; server/src/pskr.rs";
     }
     dependency CL_039_21_to_FR_007 from 'CL-039-21' to 'FR-007';
     dependency CL_039_21_to_FR_008 from 'CL-039-21' to 'FR-008';
     requirement 'CL-039-22' {
-        doc /* Mode (operator grill 2026-11-07, Q5, Q11, Q12, Q17, Q29, Q35, Q40). Auto is a toggle above the QSO pane next to CQ, green on and grey off, not part of a strategy, one toggle for strategies and contests; the station owns it in memory: off after a station restart, after HALT from any source and after every run end, and only the browser switches it (POST /strategy/auto; an MCP principal is refused). With Auto off a selected strategy or contest only marks its candidates; switching it on needs a selection and starts the run, and a contest whose rules forbid automatic operation asks the existing warning and needs its confirmation; switching it off ends the run at once; selecting None turns it off, another selection with Auto on starts that one. CQ when no target is a strategy option, off by default: with it on the run calls CQ after 2 publications with no candidate, answers callers (always, D5) and calls a candidate that appears; the Tx watchdog stops its CQ. Details: WstxStrategy::AutoToggle, CqWhenNoTarget, StrategyRun, PskrUse; WstxOperatingLayout::QsoPane. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
+        doc /* Mode (operator grill 2026-11-07, Q5, Q11, Q12, Q17, Q29, Q35, Q40). Auto is a toggle above the QSO pane next to CQ, green on and grey off, not part of a strategy, one toggle for strategies and contests; the station owns it in memory: off after a station restart, after HALT from any source and after every run end, and only the browser switches it (POST /strategy/auto; an MCP principal is refused). With Auto off a selected strategy or contest only marks its candidates; switching it on needs a selection and starts the run, and a contest whose rules forbid automatic operation asks the existing warning and needs its confirmation; switching it off ends the run at once; selecting None turns it off, another selection with Auto on starts that one. CQ when no target is a strategy option, off by default: with it on the run calls CQ after 2 publications with no candidate, answers callers (always, D5) and calls a candidate that appears; the Tx watchdog stops its CQ. With Hold Tx on (#39 holdtx round 1 Q3) the CQ goes out on the held Tx without a slot decision; with Hold Tx off it takes the slot quiet in both parities (CL-039-09). Details: WstxStrategy::AutoToggle, CqWhenNoTarget, StrategyRun, PskrUse; WstxOperatingLayout::QsoPane. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js";
     }
     dependency CL_039_22_to_FR_007 from 'CL-039-22' to 'FR-007';
@@ -4265,8 +4265,9 @@ package WstxRequirements {
              Setup: the actual station router, contact engine, automation and #9 transmit owner on the recording hardware double, virtual UTC, a feed without a connection fed hand-authored spots, a dial of 14074000 Hz; Tx watchdog 2; a strategy run with Auto on, on 20 m, repetitions 4, calling K1ABC (CQ at 1800 Hz) from Tx 1500; hand-authored waterfall rows whose quietest slot changes between periods.
              Steps: 4 repetitions with: no spot; a spot of my call to K1ABC 60 s old, 590 s old, 601 s old, on 40 m; the spot with Use PSK Reporter off; the spot with the feed off. The quietest slot moving 1400, 1300 between repetitions, and staying tied with the current one. The partner's report after the 2nd repetition, then silent periods. The engine alone: the run's own contact past the watchdog limit, then another contact; a run's CQ at the limit. Unattended (no client 60 s) and past the run limit with the spot: N 2 back at once, also without a publication. A refused move.
              Expected (hand-worked from WstxStrategy::FreeTxSlot): every repetition keyed while the run is attended, tx_expired false. WD (repetitions 4): WD:4, 3, 2, 1, then the leaving; with the spot WD:8 down to 1; in a contest stay (TC-039-044 (c)) WD:∞, and back to a number when the spot ages past 600 s. No spot, 601 s, 40 m, Use off, feed off: Tx and Rx 1400 after the 1st, 1300 after the 2nd, kept when tied, slot_check hears_us false. Heard (60 s, 590 s): Tx stays 1500, hears_us true. After the partner's report Tx never moves again in that exchange. Engine: the run's own contact sends past N; another contact and the run's CQ stop at N (cause tx_watchdog). Unattended: the stop at N back, no further key, stopped no_client or run_limit. A refused move: unchanged, checked again at the next repetition. Manual stop at N: TC-008-001; a pounce stops at N: TC-039-005.
+             #39 holdtx: these steps run with Hold Tx explicitly off (Tx and Rx move together); with Hold Tx on only Tx moves and Rx stays on 1800: TC-039-049.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF, no network. */
-        attribute automation : AutomationState = AutomationState::implemented;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-039-21';
         }
@@ -4309,8 +4310,8 @@ package WstxRequirements {
     }
     dependency CL_039_20_verified_by_TC_039_021 from 'CL-039-20' to 'TC-039-021';
     requirement 'CL-039-08' {
-        doc /* Hold Tx is on by default (operator decision 2026-11-04, #39; consistent with the split-frequency rule): a station starts with settings.hold_tx true, in manual operation and for a strategy alike, so selecting or answering a station moves Rx and never Tx; Tx stays on the operator's chosen slot until an explicit Tx action (the Tx input, a waterfall Tx pointer action, the Hound's own rule, a run's free slot: WstxStrategy::FreeTxSlot). The operator may switch it off with set_hold_tx; the choice lasts for the station's running session, since contact settings are not persisted, so no stored value can override the default. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
+        doc /* Hold Tx is on by default (operator decision 2026-11-04, #39; consistent with the split-frequency rule): a station starts with settings.hold_tx true, in manual operation and for a strategy alike, so selecting or answering a station moves Rx and never Tx; Tx stays on the operator's chosen slot until an explicit Tx action (the Tx input, a waterfall Tx pointer action, MCP set_frequency, the Hound's own rule). Automation (#39 holdtx, operator 2026-11-07: "Hold Tx on: the automation never moves Tx", corrected to "if the other station does not hear us we are allowed to change the frequency to a quiet place, but never to the Rx frequency"; this replaces "a run's free slot" as an explicit Tx action): with Hold Tx on a strategy or contest run or a pounce keeps Tx at a selection, before its CQ and when answering a caller from it, and moves Tx in exactly two cases: the station selected or answered is within 50 Hz of Tx (then Tx goes to the nearest slot 50 Hz away from it, round 1 Q2), and the slot check of a target that does not hear us (CL-039-21); Rx stays on the station. The operator may switch it off with set_hold_tx; the choice lasts for the station's running session, since contact settings are not persisted, so no stored value can override the default; the run reads it at each decision. Details: WstxStrategy::FreeTxSlot. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/contact.rs; client/contact.js";
     }
     dependency CL_039_08_to_FR_007 from 'CL-039-08' to 'FR-007';
@@ -4329,8 +4330,8 @@ package WstxRequirements {
     }
     dependency CL_039_08_verified_by_TC_039_009 from 'CL-039-08' to 'TC-039-009';
     requirement 'CL-039-09' {
-        doc /* A strategy or contest run or a pounce calls from the quietest Tx slot: the slot where the target can answer us, by waterfall power in my Rx periods (his Tx parity) over the last 4 received periods of that parity, compared in whole dB, the lowest power winning; a tie keeps the current Tx when it is among the quietest, else goes nearer the current Tx, then lower; there is no threshold. Where known it is free at his end: at least 50 Hz from every frequency his PSK Reporter spots show him decoding, counting only spots from my Tx parity (ignored when that leaves no slot). While only listening (a CQ, no target) the slot must be quiet in both parities. Rx = Tx: the slot sets both. The slot is decided at each selection, before a CQ, and at each slot check (CL-039-21); the signal lies inside the Tx range (FT8 300..2650, FT4 300..2610) and Tx is never within 50 Hz of the called station's signal; without power data the current Tx is kept. Details: WstxStrategy::FreeTxSlot. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
+        doc /* A strategy or contest run or a pounce calls from the quietest Tx slot: the slot where the target can answer us, judged in my Rx periods (his Tx parity) over the last 4 received periods of that parity, relative to the slot's own usual level (#39 holdtx, operator 2026-11-07 "Relative to its own usual level", so that the receive filter's roll-off cancels out): the slot's power now minus its usual level, the lowest level of that slot over the last 3 counted periods of each parity (operator: "lowest over the last 3 periods", round 2 Q5 "3 of each parity"), periods I transmitted in never counted; compared in whole dB, the lowest rise winning; a tie keeps the current Tx when it is among the quietest, else goes nearer the current Tx, then lower; there is no threshold. Where known it is free at his end: at least 50 Hz from every frequency his PSK Reporter spots show him decoding, counting only spots from my Tx parity (ignored when that leaves no slot). While only listening (a CQ, no target) the slot must be quiet in both parities. Hold Tx off: Rx = Tx, the slot sets both, decided at each selection, before a CQ and at each slot check (CL-039-21). Hold Tx on (CL-039-08): Rx stays on the station and the slot sets Tx alone, only at the slot check of a target that does not hear us, or as the nearest slot 50 Hz away when the station is within 50 Hz of Tx; a CQ goes out on the held Tx. Every slot the run chooses lies inside the Tx range (FT8 300..2650, FT4 300..2610) and at least 50 Hz from the called station's signal and from Rx; without power data the current Tx is kept. Details: WstxStrategy::FreeTxSlot. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/freeslot.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js";
     }
     dependency CL_039_09_to_FR_007 from 'CL-039-09' to 'FR-007';
@@ -4341,8 +4342,9 @@ package WstxRequirements {
              Setup: the pure slot function with hand-authored power tables (levels in dB per 10 Hz candidate, written in the test) and hand-authored spot frequencies; the actual station Router with the contact engine and #9 owner on the hardware double, an injected FT8 live job whose detailed waterfall rows are hand-authored (a flat floor of 20 with raised bands), a selected strategy with Auto on, a pounce, a plain MCP run; virtual UTC.
              Steps: choose on tables: one lowest slot; the current Tx tying the lowest; two lowest without the current Tx, at different distances from it and at equal distances; levels 40.4 and 40.0 (one whole dB, a tie) against 40.6 and 40.0 (no tie); the range edges for FT8 (300..2650) and FT4 (300..2610, width 90); the called station on the quietest slot; his decoded frequencies of my Tx parity and of the other parity near the quietest; his frequencies excluding every candidate; listening only, with one parity quiet and the other loud; no power yet, with the called station on and away from the current Tx. Router: periods of both parities with a quiet band at 1800 Hz only in my Rx parity; the 5th oldest period of the parity quiet at 600 Hz; a period I transmitted in; then a candidate CQ on 1500 Hz; a QSO to its end; a station band change within the job; Hold Tx off; a caller on my slot; a pounce; a plain MCP run.
              Expected (oracle: the operator's rule, hand-computed in the test): that slot; the current Tx kept; the nearer one, then the lower; 40.4 and 40.0 tie and keep the current Tx, 40.6 does not; never outside the range; never within 50 Hz of the called station; his frequency of my Tx parity excludes the slot within 50 Hz and the other parity does not; all excluded: his end ignored, his_end no; listening only: the slot quiet in both; no power: the current Tx kept, or the nearest away from the called station, power_db null. Router: Tx and Rx 1800 before the first call (the 5th period and the transmitted period ignored), tx_slot {hz 1800, power_db 20, his_end unknown}; Tx stays 1800 through the whole QSO; after the band change only the new band's periods count; with Hold Tx off Tx back on its slot; the caller answered from the quietest slot away from it; the pounce calls from the quietest slot; the plain run has tx_slot null and keeps its Tx.
+             #39 holdtx: the Router steps run with Hold Tx explicitly off (the Rx = Tx rule); with Hold Tx on they are TC-039-049. The tables give the compared value (the rise over the usual level) instead of the absolute power, and power_db is that rise (TC-039-050), so the Router's tx_slot reads power_db 0 on the flat floor.
              2 — Isolated automated tests; Windows PC, no radio (wstx-rust, ui-operating suites). */
-        attribute automation : AutomationState = AutomationState::implemented;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-039-09';
         }
@@ -4505,8 +4507,9 @@ package WstxRequirements {
              Setup: as TC-039-042 with Auto on and "Casual 20 m" (new call on band today, value [snr], cq_when_no_target true); the log holds W1AW on 20 m today; Tx watchdog 6.
              Steps: two publications with nothing callable; a third; W1AW (worked today) calls my call; its QSO to the end; two empty publications; CQ DL1XYZ JO62 while calling CQ; callers at 1200 Hz and at 920 Hz with the CQ on 900; the same strategy with cq_when_no_target false for 6 empty publications; Tx watchdog 2 with an unanswered CQ; no client for 60 s while calling CQ; the slot of the CQ with one parity loud.
              Expected: waiting after the first, calling_cq after the second, armed, Tx6 "CQ HB9BLA JN47"; a caller is answered from the CQ's slot: with the CQ on 900 (quiet in both parities) a caller at 1200 Hz keeps Tx and Rx on 900, a caller at 920 Hz moves them to 820, the nearest candidate 50 Hz away from it; W1AW answered (a caller, whatever the filter) with select_row {replace false} and Enable Tx kept; completed, then calling_cq again after two empty publications; DL1XYZ selected and called, the CQ ended; off: never a CQ, nothing armed; watchdog 2: stopped tx_watchdog, Auto off, not keyed again; unattended: the CQ disarmed and cancelled at once, stopped no_client; the CQ's slot quiet in both parities.
+             #39 holdtx: these steps run with Hold Tx explicitly off; with Hold Tx on the CQ goes out on the held Tx and the callers are TC-039-049 (h).
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-039-22';
         }
@@ -4575,6 +4578,57 @@ package WstxRequirements {
     dependency CL_039_20_verified_by_TC_039_048 from 'CL-039-20' to 'TC-039-048';
     dependency CL_039_23_verified_by_TC_039_048 from 'CL-039-23' to 'TC-039-048';
     dependency CL_039_09_verified_by_TC_039_048 from 'CL-039-09' to 'TC-039-048';
+    verification 'TC-039-049' {
+        doc /* TC-039-049 — Hold Tx on in a run: Tx stays, Rx on the station, Tx alone moves when he does not hear us
+             CL-039-08, CL-039-09, CL-039-21, CL-039-22
+             Setup: as TC-039-022 (the actual station router, contact engine, automation and #9 transmit owner on the recording hardware double, virtual UTC, a feed without a connection fed hand-authored spots, a dial of 14074000 Hz, hand-authored waterfall rows), Hold Tx on (the default), Tx 1500, FT8 and FT4; a strategy run with Auto on (repetitions 4), a contest S&P run, a pounce, a plain MCP run; "Casual 20 m" for the CQ.
+             Steps: (a) select K1ABC (CQ at 1800 Hz). (b) 2 repetitions with no spot, the quietest slot 1400, then 1300. (c) A repetition whose quietest slot lies within 50 Hz of Rx (1800 signal). (d) A spot of my call at K1ABC 60 s old. (e) His report after the 1st repetition, then silent periods. (f) Select a station at 1520 Hz (within 50 Hz of the held Tx), and a caller at 1530 Hz. (g) The held Tx at 2700 (FT4), a station at 1000. (h) The CQ when no target from the held Tx 900, one parity loud; callers at 1200 and at 920. (i) Hold Tx switched off during the contact, then the next repetition. (j) Contest S&P: (a) and (b). (k) Pounce on K1ABC. (l) Plain MCP run.
+             Expected (hand-worked from the operator's rule, #39 holdtx round 1): (a) Tx 1500, Rx 1800, no set_frequency of Tx, tx_slot.hz 1500; (b) Tx 1400 then 1300, Rx 1800 both times, slot_check {repetitions, hears_us false, hz}; (c) that slot excluded, the next quietest chosen; (d) Tx stays, hears_us true; (e) Tx never moves after the report; (f) Tx to the nearest slot 50 Hz clear of the station's signal (the lower on a tie), Rx on the station; (g) Tx 2700 kept, Rx 1000; (h) the CQ keyed on 900 with no slot decision; the caller at 1200 answered from 900, Rx 1200; the caller at 920 moves Tx to the nearest slot 50 Hz clear of it, Rx 920; (i) Tx and Rx together on the slot (Hold Tx off rule); (j) as (a) and (b); (k) Tx stays 1500, Rx on K1ABC, never moved; (l) tx_slot null, Tx kept. Red on the parent: (a), (b), (g), (h) and (k) set Rx = Tx on the slot.
+             2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF (wstx-rust). */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-039-08';
+            verify 'CL-039-09';
+            verify 'CL-039-21';
+            verify 'CL-039-22';
+        }
+    }
+    dependency CL_039_08_verified_by_TC_039_049 from 'CL-039-08' to 'TC-039-049';
+    dependency CL_039_09_verified_by_TC_039_049 from 'CL-039-09' to 'TC-039-049';
+    dependency CL_039_21_verified_by_TC_039_049 from 'CL-039-21' to 'TC-039-049';
+    dependency CL_039_22_verified_by_TC_039_049 from 'CL-039-22' to 'TC-039-049';
+    verification 'TC-039-050' {
+        doc /* TC-039-050 — Quietness relative to the slot's usual level
+             CL-039-09
+             Setup: the slot function and the per-period waterfall power with hand-authored detailed rows (levels in dB per bin, written in the test), FT4 and FT8; the actual station router for the status.
+             Steps: an FT4 roll-off table: a floor of 30 dB falling linearly to 15 dB from 2400 to 2700 Hz, and a station 12 dB above the floor at 2621 Hz (width 90) in my Rx parity only, the reproduction of 2026-11-07 (AA3B at 2621 Hz, tx_slot 2610 power_db 29); a mid-band slot at its usual level against an edge slot 3 dB above its usual level; one counted period only; the usual level over 3 periods of each parity: the station at 2621 present in all of my last 4 Rx periods and absent in my last 3 Tx-parity periods (the 4th older Tx-parity period quiet lower still), and the same with only my Rx periods counted since the run started transmitting (the Tx-parity periods from before); a period I transmitted in; listening only with one parity risen; a station band change; rises 0.4 against 0.0 (a tie) and 0.6 against 0.0; no counted period.
+             Expected (hand computation recorded in the test): the roll-off table chooses no slot overlapping the station at 2621 (the parent chooses 2610); the mid-band slot wins; one period: every rise 0, the current Tx kept; the station at 2621 is a rise in both forms (its slot's usual level from the Tx-parity periods) and the 4th older Tx-parity period is not counted; the transmitted period never counted; listening: the larger rise of the two parities counts; after the band change only later periods count; 0.4 ties and keeps the current Tx, 0.6 does not; no period: the current Tx kept, power_db null; tx_slot.power_db is the whole-dB rise of the chosen slot. Red on the parent: absolute power chooses the edge.
+             2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-039-09';
+        }
+    }
+    dependency CL_039_09_verified_by_TC_039_050 from 'CL-039-09' to 'TC-039-050';
+    verification 'TC-039-051' {
+        doc /* TC-039-051 — Live Hold Tx in Auto on HB9BLA
+             CL-039-08, CL-039-09, CL-039-21, CL-039-22
+             Setup: the gated candidate installed on HB9BLA, IC-7300, FT4 or FT8 within the operator's standing transmit consent, Hold Tx on, PSK Reporter on, Auto off at start; contact and run snapshots read from GET /contact and GET /automation at each step.
+             Steps: select "Farthest new on band", Auto on, let it call stations to one logged QSO and through a station that does not answer; note tx_hz and rx_hz before and after each selection and at each repetition; select "Casual 20 m" and let it call CQ; switch Hold Tx off and let it call one station; HALT.
+             Expected: with Hold Tx on tx_hz unchanged by a selection unless the station is within 50 Hz of it, rx_hz the station's decoded frequency; at a repetition with slot_check.hears_us false only tx_hz changes and its signal stays at least 50 Hz from the Rx signal; after an answer or with a spot tx_hz unchanged; the CQ keyed on the held tx_hz; no chosen slot overlapping a station decoded in my Rx periods when a slot with a lower rise and none exists (power_db the rise); with Hold Tx off rx_hz equals tx_hz on the slot.
+             5 — Live with RF on the station, operator consent; not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-039-08';
+            verify 'CL-039-09';
+            verify 'CL-039-21';
+            verify 'CL-039-22';
+        }
+    }
+    dependency CL_039_08_verified_by_TC_039_051 from 'CL-039-08' to 'TC-039-051';
+    dependency CL_039_09_verified_by_TC_039_051 from 'CL-039-09' to 'TC-039-051';
+    dependency CL_039_21_verified_by_TC_039_051 from 'CL-039-21' to 'TC-039-051';
+    dependency CL_039_22_verified_by_TC_039_051 from 'CL-039-22' to 'TC-039-051';
     requirement 'CL-042-01' {
         doc /* The award goals read the sender's cty.dat entity (#55) against the internal log: DXCC entity ever, on this band, on this band and mode, and CQ zone ever (WstxStrategy::GoalNeeded, #39 2026-11-04, which replaces the former New conditions on continent and ITU zone); a sender without an entity, an unknown station band (for the band forms) or an unreadable log never counts as needed. The editor offers them as goals; the live preview names why. Details: WstxStrategy::GoalNeeded. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
