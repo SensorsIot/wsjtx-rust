@@ -126,7 +126,7 @@ async function sendNow(action,params={},label=action){
   try{
     const response=await stationFetch('/contact/command',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
     const data=await response.json().catch(()=>null);
-    if((response.status===202||response.status===200)&&Number.isSafeInteger(data?.contact_revision)){resultText.textContent=`${label}: accepted`;receipt=data;return data;}
+    if(response.status===202||response.status===200){resultText.textContent=`${label}: accepted`;if(Number.isSafeInteger(data?.contact_revision))receipt=data;return data;}
     const code=data?.error?.code??`http_${response.status}`;refused=data?.error?.code??false;
     resultText.textContent=`${label}: refused · ${code}${code==='stale_revision'?' · station state changed, review and retry':''}`;
     return {refused:code,reason:data?.error?.reason};
@@ -134,7 +134,7 @@ async function sendNow(action,params={},label=action){
   // The receipt's revision comes in contact.state; a refusal changed nothing, except that stale_revision
   // waits for the newer revision there before a retry; an unknown outcome is read.
   // A command that ended the QSO (Log QSO) leaves no accepted result in the idle pane.
-  finally{sending=false;const wanted=receipt?receipt.contact_revision:refused==='stale_revision'?body.contact_revision+1:null;if(wanted!==null?!await held(body.boot_id,wanted):!refused)await load();if(before&&!running(snap?.contact)&&/: accepted$/.test(resultText.textContent))resultText.textContent='';}
+  finally{sending=false;const wanted=receipt?receipt.contact_revision:refused==='stale_revision'?body.contact_revision+1:null;if(wanted!==null?!await held(body.boot_id,wanted,receipt?5000:2500):!refused)await load();if(before&&!running(snap?.contact)&&/: accepted$/.test(resultText.textContent))resultText.textContent='';}
 }
 // The keyboard halt itself (Alt+H) is sent by recording.js, which is loaded at once;
 // this client only shows its outcome.
