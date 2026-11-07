@@ -108,12 +108,12 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `operating-layout` | Operating screen, settings drawer, receive races, logbook, strategy, UDP editor, transmit status | Router and the HTTP owners the operating page calls; page, recording, contact and logbook clients; its test file |
 | `contact-browser` | Contact engine, QSO sequencing, logging and halt through the browser | Router, contact/logbook/transmit owners, contact/logbook/recording clients, contact test |
 | `radio-selection` | H1 compression negotiation, commissioning, browser selection cases | Router, compression, selection/radio/CAT/receive/source owners, status and recording clients, selection test |
-| `radio-selection-thin` | Timing: the 75 s native/CAT/TLS two-browser Thin and Off workload | Timing inputs: router, compression, selection/receive/spectrum owners, status and recording clients, its Rust test file and link helpers |
+| `radio-selection-thin` | Timing: the 75 s native/CAT/TLS two-browser Thin and Off workload | Timing inputs: router, compression, selection/CAT/receive/spectrum owners, status and recording clients, its Rust and browser test files and link helpers |
 | `native-flex` | FR-023 native FlexRadio against the loopback emulator: route isolation, reconciliation, capacity, mixed profiles, push-only status | Native session and status (`flex/`, `flex_http.rs`), router, authorization, profile, radio setup, recording, receive, selection and startup owners, page, recording and contact clients, its test and emulator |
 | `mcp` | MCP client grant and refusals | Router, MCP/automation/authorization owners, authorization client, MCP test and credential helper |
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, plus Node package metadata |
 | `sysml-documentation` | Canonical catalog/trace checks, one full semantic validation (`sysml.py check`), the tests that read the model `test_[dr]*.py` | Model and tooling changes; bound source remains a complete fingerprint/dirty-guard input |
-| `sysml-tools` | The SysML tool's own unit tests `test_[cst]*.py` on isolated models | The SysML tool and its tests |
+| `sysml-tools` | The SysML tool's own unit tests `test_[!adr]*.py` on isolated models | The SysML tool and its tests |
 | `sysml-architecture` | TC-DOC-005 architecture integrity: the mutation tests `test_a*.py`, one Pilot validation per mutation | `Architecture.sysml`, the SysML tool, `Validate.java`, the toolchain pin and the test file |
 | `decoder-correctness` | The release `decoder_signal` correctness, #57 thread-parity and #56 jt9-parity passes (all ordinary passes but the 50 ms quantum and busy-period latency) | Decoder fixtures and the library root (a production decoder source selects `decoder-quality`, which runs the same passes) |
 | `decoder-quality` | Timing: all seventeen release decoder passes bound to the artifact, and the owned-Job resource matrix (runs alone) | Timing inputs: the production decoder sources (not its `*_test.rs` or the test-only resource observer), `decoder_signal.rs`, the fixtures and vector tool the timed passes decode, its resource-job tools and the Rust toolchain/dependency pins |
@@ -147,8 +147,8 @@ clients (`app.js`, `index.html`, `recording.js`) for the two others, because tho
 read over the 32 kbit/s link and cross it cold (the #55 cold-load red came from a
 client-only change; `recording.js` re-reading `/audio/endpoints` every 5 s, 1b4706c36, was
 the one real catch of 481 green minutes); the recording/spectrum producers for
-`recording-thin`; the selection, receive and spectrum owners for `radio-selection-thin`,
-but not CAT or capture, whose native setup and Off bounds rerun on request (harness#38);
+`recording-thin`; the selection, CAT, receive and spectrum owners for `radio-selection-thin`,
+but not capture, whose bounds rerun on request (harness#38);
 the receive/source/audio/decoder pipeline and the recording client that polls and paints
 the rows for `live-station-latency`; the production decoder sources (every one sets the
 checkpoint spacing, per-item work or budgets the quantum, latency and matrix measure),
@@ -159,10 +159,9 @@ times (the jt9 parity corpus, baselines, vectors) runs only the functional
 the busy-period latency. Each suite's own test files
 and the link simulator (`tests/support.cjs`, `tests/peer.cjs`) are timing inputs, and so
 are the Rust toolchain and dependency pins (and the Node pins for the browser suites);
-for `recording-thin` and `radio-selection-thin` (harness#38) only `tests/support.cjs` and
-`Cargo.lock` of these, `recording-thin`'s test file, and `radio-selection-thin`'s Rust test
-file: a CR that edits TC-009-005 in `tests/radio-selection.test.cjs` carries
-`Harness-Timing: yes`.
+for `recording-thin` and `radio-selection-thin` (harness#38) only `tests/support.cjs`,
+`rust-toolchain.toml`, `Cargo.lock` and `package-lock.json` of these, their own test files, and
+`tests/peer.cjs` for `recording-thin`.
 The contact, logbook, authorization, MCP, strategy, profile and UDP code, the SysML
 model and the other groups' tests are not: their changes run functional groups only.
 

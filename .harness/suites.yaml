@@ -226,8 +226,9 @@
   timing: true
   # Code that sets what crosses the link: router and status websocket, compression, the
   # recording/spectrum producers, the clients that read over it, its own test file and the link
-  # simulator, and the dependency versions. Not recording.css (no request, no cadence), the
-  # WebSocket test peer or the Cargo.toml, toolchain and Node pins (Harness-Timing: yes reruns it).
+  # simulator and receive peer, the toolchain and the dependency versions. Not recording.css (67 KB
+  # on a cold load, under a wide bound; no cadence) or the Cargo.toml and package.json pins
+  # (Harness-Timing: yes reruns it).
   timing_inputs:
   - server/src/main.rs
   - server/src/recording.rs
@@ -239,10 +240,13 @@
   - client/recording.js
   - tests/recording.test.cjs
   - tests/support.cjs
+  - tests/peer.cjs
   - Cargo.lock
+  - rust-toolchain.toml
+  - package-lock.json
   build: cargo build --workspace --locked
   shared: [link-measurement]
-  needs: "Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR. Windows PC; timing suite (#28): actual TLS/browser and calibrated 32 kbit/s simulator, including full 60-second measurements, the TC-010-005 Detailed peer cadence and the two TC-018 250 ms cancellation bounds. Runs only when the router with the status websocket and detail cadence (main.rs), the recording/spectrum producers that pace the display, compression, the status and receive clients that read over the link (app.js, index.html, recording.js), its test file, the link simulator or the dependency versions change, or on request (Harness-Timing: yes)."
+  needs: "Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR. Windows PC; timing suite (#28): actual TLS/browser and calibrated 32 kbit/s simulator, including full 60-second measurements, the TC-010-005 Detailed peer cadence and the two TC-018 250 ms cancellation bounds. Runs only when the router with the status websocket and detail cadence (main.rs), the recording/spectrum producers that pace the display, compression, the status and receive clients that read over the link (app.js, index.html, recording.js), its test file, the link simulator and peer, the toolchain or the dependency versions change, or on request (Harness-Timing: yes)."
 
 - suite: recording-fixtures
   cost: 2
@@ -281,7 +285,7 @@
 
 - suite: sysml-tools
   cost: 2
-  run: "python -m unittest discover -s tools/sysml/tests -p \"test_[cst]*.py\" -q"
+  run: "python -m unittest discover -s tools/sysml/tests -p \"test_[!adr]*.py\" -q"
   paths:
   - docs/sysml/
   - tools/sysml.py
@@ -290,7 +294,7 @@
   select:
   - tools/sysml.py
   - tools/sysml/
-  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the SysML tool's own unit tests (test_canonical_authority, test_sysml, test_trace_selection), which judge the tool on isolated models: selected only when the tool changes (harness#38). No radio or live service."
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the SysML tool's own unit tests (test_canonical_authority, test_sysml, test_trace_selection and any new test file not named for the other two suites), which judge the tool on isolated models: selected only when the tool changes (harness#38). No radio or live service."
 
 - suite: sysml-architecture
   cost: 2
@@ -773,32 +777,36 @@
   paths: *browser-inputs
   timing: true
   # Code that sets what crosses the link: router, compression, the selection reads, the receive
-  # and spectrum pushes, the clients that read over it, its Rust workload, the link simulator and
-  # the dependency versions. Not CAT (radio_control/, cat_lifecycle.rs) or capture (source.rs,
-  # audio): they reach the link only through the owners above, so their 4230-5000 ms native setup
-  # and 2 s Off bounds rerun on request only. Not recording.css, the browser test file, or the
-  # Cargo.toml, toolchain and Node pins. A CR that edits the workload's browser half (TC-009-005
-  # in tests/radio-selection.test.cjs) carries Harness-Timing: yes.
+  # and spectrum pushes, the clients that read over it, its Rust and browser test files, the link
+  # simulator, the toolchain and the dependency versions, and CAT (radio_control/, cat_lifecycle.rs),
+  # because this suite is the only oracle of the 4230-5000 ms native setup. Not capture (source.rs,
+  # audio): it reaches the link only through the owners above. Not recording.css or the Cargo.toml
+  # and package.json pins.
   timing_inputs:
   - server/src/main.rs
   - server/src/http_compression.rs
   - server/src/selection.rs
   - server/src/selection_http.rs
   - server/src/selection_http_tests.rs
+  - server/src/cat_lifecycle.rs
+  - server/src/radio_control/
   - server/src/receive.rs
   - server/src/receive_http.rs
   - server/src/spectrum.rs
   - client/app.js
   - client/index.html
   - client/recording.js
+  - tests/radio-selection.test.cjs
   - tests/support.cjs
   - Cargo.lock
+  - rust-toolchain.toml
+  - package-lock.json
   build:
   - cargo build --workspace --locked
   - cargo test --release --locked --bin wstx-rust --no-run
   exclusive: [radio-selection-evidence]
   shared: [link-measurement]
-  needs: "Windows PC, pinned Rust/Python/Node/Chromium and verified WSTX_DECODER_VECTORS. Timing suite (#28): actual isolated station/receive owner, independent real-time native FT4/FT8 packets, literal typed serial fixture and two authenticated browsers on the existing32kbit TLS link. Both75s Thin/Off windows, all five known-answer contexts and observed pending polls are mandatory; no physical radio, device or production fault switch. Runs only when the router, compression, the selection, receive or spectrum code that sets the traffic, the status and receive/selection clients that read over the link (app.js, index.html, recording.js), its Rust workload, the link simulator or the dependency versions change, or on request (Harness-Timing: yes)."
+  needs: "Windows PC, pinned Rust/Python/Node/Chromium and verified WSTX_DECODER_VECTORS. Timing suite (#28): actual isolated station/receive owner, independent real-time native FT4/FT8 packets, literal typed serial fixture and two authenticated browsers on the existing32kbit TLS link. Both75s Thin/Off windows, all five known-answer contexts and observed pending polls are mandatory; no physical radio, device or production fault switch. Runs only when the router, compression, the selection, CAT, receive or spectrum code, the status and receive/selection clients that read over the link (app.js, index.html, recording.js), its Rust and browser test files, the link simulator, the toolchain or the dependency versions change, or on request (Harness-Timing: yes)."
 
 - suite: mcp
   cost: 2
