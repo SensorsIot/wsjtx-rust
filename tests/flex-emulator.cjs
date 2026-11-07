@@ -70,7 +70,7 @@ class FlexEmulator {
     this.ignoreTune = options.ignoreTune ?? false; // accepts slice tune, never changes frequency
     this.reorderEvery = options.reorderEvery ?? 0; // delays every Nth stream packet behind later ones
     this.reorderBy = options.reorderBy ?? 1; // by this many packets
-    this.latency = options.latency ?? 0; // ms each way on the control connection, as on a routed path
+    this.latency = options.latency ?? 0; // ms on the way back of the control connection, as on a routed path
     this.replyFirst = options.replyFirst ?? false; // answers sub client before its statuses
     this.dropEvery = options.dropEvery ?? 0; // loses every Nth stream packet on the way
     this.keepOnDisconnect = options.keepOnDisconnect ?? false; // does not release a lost client's slice

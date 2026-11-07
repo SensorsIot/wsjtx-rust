@@ -132,7 +132,7 @@ test('TC-023-001 four direct native stations route control, status and samples o
     assert.equal((await s.flex()).slice.frequency_hz, FT8[bands[i]]);
   }
   // Read first: selecting the same band again finds the slice there and writes nothing.
-  const writes = () => emulator.log.filter(e => /^slice (tune|set) /.test(e.command)).length;
+  const writes = () => emulator.log.filter(e => /^(slice (tune|set) |sub slice all$)/.test(e.command)).length;
   const before = writes();
   const again = await selectBand(stations[0], bands[0]);
   assert.equal(again.operation.result, 'success', JSON.stringify(again.operation));
@@ -392,6 +392,27 @@ test('TC-023-001 a stall above 200 ms with packets missing opens a new epoch', {
   emulator.pausedUntil = performance.now() + 400;
   const after = await waitFor(async () => { const r = (await s.request('/receive')).body; return r.audio.loss_epochs >= 1 && r; }, 'a new epoch after the stall', 5000);
   assert.equal(after.audio.last_loss, 'native_discontinuity');
+});
+
+test('TC-023-001 an outage above 200 ms starts the count over, so no good packet reads as late', {timeout: 60000}, async t => {
+  const port = await udpPort();
+  const emulator = await new FlexEmulator({discoveryPorts: [port]}).start();
+  t.after(() => emulator.stop());
+  const s = await station(t, {name: 'Outage', discovery: port});
+  await state(s, 'ready');
+  const r0 = (await s.request('/receive')).body;
+  assert.equal((await s.request('/receive/start', 'POST', {v: 1, profile_id: s.id, boot_id: r0.boot_id, generation: r0.generation, profile_revision: 0, mode: 'spectrum'})).status, 202);
+  await waitFor(async () => (await s.request('/receive')).body.source?.next_frame > 12000, 'receive runs');
+  const before = (await s.flex()).packets;
+  // A real radio keeps counting through an outage: the count comes back shifted.
+  for (const stream of emulator.streams.values()) stream.count += 9;
+  emulator.pausedUntil = performance.now() + 400;
+  const after = await waitFor(async () => { const r = (await s.request('/receive')).body; return r.audio.loss_epochs >= 1 && r; }, 'a new epoch after the outage', 5000);
+  assert.equal(after.audio.last_loss, 'native_discontinuity');
+  await new Promise(r => setTimeout(r, 200));
+  const packets = (await s.flex()).packets;
+  assert.equal(packets.late, before.late, JSON.stringify({before, packets}));
+  assert.equal(packets.lost, before.lost, JSON.stringify({before, packets}));
 });
 
 test('TC-023-001 a selection is read back on a slow path from a radio that volunteers no tune status', {timeout: 60000}, async t => {

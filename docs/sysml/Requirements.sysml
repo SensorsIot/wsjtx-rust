@@ -1763,9 +1763,13 @@ package WstxRequirements {
              frequency sends no slice tune and no mode write (command log count unchanged); an
              emulator that does not report the new frequency makes the selection fail visibly with
              error radio_timeout and leaves no native_readback origin. The emulator reports a tune
-             only when asked, as the real radio does; a selection is confirmed also over 130 to 260 ms
-             each way. One packet in 60 delayed by 4 places counts neither lost nor late; delayed by 6
-             places it counts lost once and late once. Neither opens an epoch or changes the rate. Two stations whose DAX
+             only when asked, as the real radio does; a selection is confirmed also with its replies
+             and statuses 130 to 260 ms late, and a repeated selection also sends no sub slice all. One packet in 60 delayed by 4 places counts neither lost nor late; delayed by 6
+             places it counts lost once and late once. Neither opens an epoch or changes the rate. A 400 ms
+             outage after which the count comes back shifted by 9 opens an epoch (native_discontinuity)
+             and changes neither lost nor late: the count starts over, and what waited goes on first.
+             Rust unit tests also check that a duplicate is dropped, whether its first copy still waits or
+             its turn has passed, and the burst limit: 7 lost in a row count lost, 8 read as late. Two stations whose DAX
              status arrives 300 ms late end on different channels, the emulator's audio following
              the channel, not the owner. Datagrams with the own stream ID from another address
              (127.0.0.2, amplitude 0.95) are never accepted. No slice command targets another
