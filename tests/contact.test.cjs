@@ -425,6 +425,170 @@ test('TC-007-005 contact state is pushed: only what changed, no GET /contact',{t
   assert.deepEqual(page.errors,[]);
 });
 
+// Proves: CL-010-15; TC-007-005 (#10 PushedStationState). An own contact command reads no GET /contact:
+// the reply shows accepted or the refusal, contact.state carries the result, and two commands in a row
+// both pass (the second waits for the first one's revision). Expected values: the command semantics.
+test('TC-007-005 an own contact command reads no GET /contact; a refusal still shows its code',{timeout:60000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
+  const from=performance.now(),gets=()=>requests.filter(r=>r.method==='GET'&&r.path==='/contact'&&r.at>=from).length;
+  const hold=await page.evaluate(()=>window.wstxContact.snapshot().settings.hold_tx);
+  // Two changes back to back: the second goes with the first one's revision, from contact.state.
+  await page.locator('#contact-hold').click();await page.locator('#contact-hold').click();
+  await waitFor(async()=>commands().filter(c=>c.action==='set_hold_tx').length>=2&&/Hold Tx: accepted|^$/.test(await page.locator('#contact-result').textContent())&&await page.evaluate(()=>!document.querySelector('#contact-result').textContent.includes('pending')),'both Hold Tx commands answered',10000);
+  const sent=commands().filter(c=>c.action==='set_hold_tx').slice(-2);
+  assert.ok(sent[1].contact_revision>sent[0].contact_revision,`the second command has the first one's revision (${sent.map(c=>c.contact_revision)})`);
+  assert.equal((await snapshot()).settings.hold_tx,hold,'both applied: back where it was');
+  await waitFor(async()=>await page.evaluate(h=>window.wstxContact.snapshot().settings.hold_tx===h,hold),'the page holds the result',5000);
+  // A refusal: Tx at 2951 Hz is out of range; its code is shown and nothing is read.
+  await page.locator('#contact-tx').fill('2951');await page.locator('#contact-tx').press('Enter');await page.locator('#contact-tx').blur();
+  await waitFor(async()=>/refused · out_of_range/.test(await page.locator('#contact-result').textContent()),async()=>`result: ${await page.locator('#contact-result').textContent()}`,8000);
+  await new Promise(r=>setTimeout(r,2000));
+  assert.equal(gets(),0,'no GET /contact after an own command');
+  assert.deepEqual(page.errors,[]);
+});
+
+// Proves: CL-010-15; TC-007-005 (#10). The next command does not wait for the 1 s contact.state:
+// it goes with the receipt's revision as soon as the previous reply is in (a LAN fixture: well under 200 ms).
+test('TC-007-005 a command right after another goes at once with the receipt revision',{timeout:90000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
+  const gaps=[];
+  for(let n=0;n<10;n++){
+    const from=requests.length;await page.locator('#contact-hold').click();await page.locator('#contact-hold').click();
+    await waitFor(()=>requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command'&&typeof r.end==='number').length>=2,'two answered Hold Tx commands',10000);
+    const [a,b]=requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command');gaps.push(Math.round(b.at-a.end));
+    assert.ok(JSON.parse(b.body).contact_revision>JSON.parse(a.body).contact_revision,'the second has the first one\'s receipt revision');
+    await new Promise(r=>setTimeout(r,300+97*n));
+  }
+  assert.ok(gaps.every(g=>g<200),`the second command follows the first reply at once: ${gaps} ms`);
+  assert.ok(/accepted|^$/.test(await page.locator('#contact-result').textContent()));
+  assert.deepEqual(page.errors,[]);
+});
+
+// Proves: CL-010-15; TC-007-005 (#10). A stale safety_revision is no contact revision: the client reads the
+// snapshot at once and the explicit CQ retries with the station's safety revision (expected well under 1 s).
+test('TC-007-005 a stale safety revision is read at once and the CQ retried',{timeout:60000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot()&&!document.querySelector('#qso-cq').disabled);await new Promise(r=>setTimeout(r,1500));
+  let refused=false;
+  await page.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());if(!refused&&b.action==='enable_tx'&&b.enabled){refused=true;await route.fulfill({status:409,json:{v:1,error:{code:'stale_revision',field:'safety_revision'}}});}else await route.continue();});
+  const from=requests.length;await page.locator('#qso-cq').click();
+  await waitFor(()=>requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command'&&JSON.parse(r.body).action==='enable_tx').length>=2,'the retried Enable Tx',8000);
+  const [a,b]=requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command'&&JSON.parse(r.body).action==='enable_tx');
+  await page.unroute('**/contact/command');
+  const s=await snapshot();
+  await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
+  await waitFor(async()=>(await snapshot()).transmit.arm_state!=='armed','disarmed after the case',10000);
+  assert.ok(b.at-a.end<1000,`the retry ${Math.round(b.at-a.end)} ms after the refusal`);
+  assert.deepEqual(page.errors,[]);
+});
+
+// Proves: CL-010-03, CL-010-15; TC-007-005 (#10). Esc during a stale-revision retry of a double-click goes at
+// once, and nothing the double-click queued (its retry, its Enable Tx) follows it.
+test('TC-007-005 Esc during a stale-revision retry aborts at once and nothing follows it',{timeout:60000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
+  let refusedAt=null;
+  await page.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());if(refusedAt===null&&b.action==='select_row'){refusedAt=performance.now();await route.fulfill({status:409,json:{v:1,error:{code:'stale_revision',field:'contact_revision'}}});}else await route.continue();});
+  const {sequences}=await publish(evenNow(),[{text:'CQ W1ABC FN42',hz:1777,snr:-4}]);
+  const tr=page.locator(`#band-activity tbody tr[data-sequence="${sequences[0]}"]`);await tr.waitFor({timeout:30000});
+  const from=requests.length;await tr.dblclick();
+  await waitFor(()=>refusedAt!==null,'the refused select_row',8000);
+  await new Promise(r=>setTimeout(r,200));const esc=performance.now();await page.keyboard.press('Escape');
+  await waitFor(()=>requests.slice(from).some(r=>r.method==='POST'&&r.path==='/contact/command'&&JSON.parse(r.body).action==='abort'),'the abort',5000);
+  await new Promise(r=>setTimeout(r,4000));
+  await page.unroute('**/contact/command');
+  const sent=requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command'),abort=sent.findIndex(r=>JSON.parse(r.body).action==='abort');
+  const s=await snapshot();
+  if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
+  assert.ok(sent[abort].at-esc<200,`the abort ${Math.round(sent[abort].at-esc)} ms after Esc`);
+  assert.deepEqual(sent.slice(abort+1).map(r=>JSON.parse(r.body).action),[],'nothing the double-click queued follows the abort');
+  assert.notEqual(s.transmit.arm_state,'armed','not armed after Esc');
+  assert.deepEqual(page.errors,[]);
+});
+
+// Proves: CL-010-03, CL-010-15; TC-007-005 (#10). Esc while a Calling me reply's select_row is on its way:
+// the abort goes and no Enable Tx follows it.
+test('TC-007-005 Esc during a Calling me reply sends no Enable Tx after the abort',{timeout:60000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
+  let delayed=false;
+  await page.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());if(!delayed&&b.action==='select_row'){delayed=true;await new Promise(r=>setTimeout(r,800));}await route.continue();});
+  await publish(evenNow(),[{text:'HB9BLA W1XYZ FN42',hz:1650,snr:-6}]);
+  const li=page.locator('#qso-others tr[data-row]').filter({hasText:'W1XYZ'});await li.first().waitFor({timeout:30000});
+  const from=requests.length;await li.first().dblclick();await new Promise(r=>setTimeout(r,200));await page.keyboard.press('Escape');
+  await new Promise(r=>setTimeout(r,4000));await page.unroute('**/contact/command');
+  const actions=requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command').map(r=>JSON.parse(r.body).action),s=await snapshot();
+  if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
+  assert.ok(actions.includes('abort'),`the abort is sent: ${actions}`);
+  assert.deepEqual(actions.slice(actions.indexOf('abort')+1),[],`nothing after the abort: ${actions}`);
+  assert.notEqual(s.transmit.arm_state,'armed','not armed after Esc');
+  await waitFor(async()=>!['replying','calling','report','signoff'].includes((await snapshot()).contact?.state),'idle again',10000);
+  assert.deepEqual(page.errors,[]);
+});
+
+// Proves: CL-010-15; TC-007-005 (#10). CQ pressed while a row's select_row is still unanswered decides on the
+// state after it: the running contact asks before it is abandoned, nothing is armed toward the row first.
+test('TC-007-005 CQ waits for an unanswered selection before it decides',{timeout:60000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot()&&!document.querySelector('#qso-cq').disabled);await new Promise(r=>setTimeout(r,1500));
+  let delayed=false;
+  await page.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());if(!delayed&&b.action==='select_row'){delayed=true;await new Promise(r=>setTimeout(r,800));}await route.continue();});
+  const {sequences}=await publish(evenNow(),[{text:'CQ W1ABC FN42',hz:1888,snr:-5}]);
+  const tr=page.locator(`#band-activity tbody tr[data-sequence="${sequences[0]}"]`);await tr.waitFor({timeout:30000});
+  const from=requests.length;await tr.click();await new Promise(r=>setTimeout(r,400));await page.locator('#qso-cq').click();
+  const asked=await page.locator('#op-confirm[open]').waitFor({timeout:4000}).then(()=>true,()=>false);
+  const actions=requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command').map(r=>JSON.parse(r.body).action);
+  if(asked)await page.locator('#op-confirm button[value=cancel]').click();
+  await page.unroute('**/contact/command');
+  const s=await snapshot();
+  if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
+  assert.ok(asked,`CQ asks before it abandons the selected contact: ${actions}`);
+  assert.equal(actions.includes('enable_tx'),false,`nothing armed toward the row first: ${actions}`);
+  await waitFor(async()=>!['replying','calling','report','signoff'].includes((await snapshot()).contact?.state),'idle again',10000);
+  assert.deepEqual(page.errors,[]);
+});
+
+const idleAgain=async()=>{const s=await snapshot();if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
+  await waitFor(async()=>!['replying','calling','report','roger_report','rogers','signoff'].includes((await snapshot()).contact?.state)&&(await snapshot()).transmit.arm_state!=='armed','idle again',10000);};
+// Proves: CL-039-03, CL-010-15; TC-007-005 (#10). A row's selection waits for an unanswered command: after F4
+// clears the running contact, a directed CQ asks for confirmation as with no contact.
+test('TC-007-005 a row selection after an unanswered Clear DX decides on the cleared contact',{timeout:60000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
+  const {sequences}=await publish(evenNow(),[{text:'CQ W1ABC FN42',hz:1999,snr:-5},{text:'CQ NA W9XYZ EN52',hz:2100,snr:-3}]);
+  const first=page.locator(`#band-activity tbody tr[data-sequence="${sequences[0]}"]`),directed=page.locator(`#band-activity tbody tr[data-sequence="${sequences[1]}"]`);
+  await first.waitFor({timeout:30000});await first.click();
+  await waitFor(async()=>(await snapshot()).contact?.dx_call==='W1ABC'&&await page.evaluate(()=>window.wstxContact.snapshot().contact?.dx_call==='W1ABC'),'W1ABC selected and shown',10000);
+  let delayed=false;
+  await page.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());if(!delayed&&b.action==='cancel'){delayed=true;await new Promise(r=>setTimeout(r,800));}await route.continue();});
+  await page.locator('body').click({position:{x:5,y:5}});await page.keyboard.press('F4');await new Promise(r=>setTimeout(r,200));
+  await directed.focus();await page.keyboard.press('Enter');
+  const asked=await page.locator('#op-confirm[open]').waitFor({timeout:5000}).then(()=>true,()=>false);
+  if(asked)await page.locator('#op-confirm button[value=cancel]').click();
+  await page.unroute('**/contact/command');await idleAgain();
+  assert.ok(delayed,'the Clear DX was held');assert.ok(asked,'the directed CQ asks, as with no running contact');
+  assert.deepEqual(page.errors,[]);
+});
+
+// Proves: CL-010-03, CL-010-15; TC-007-005 (#10). Esc during the Change contact of a Calling me line that the
+// station refused as contact_active (its selection went before the page showed the new contact): no Enable Tx follows.
+test('TC-007-005 Esc during a Calling me Change contact sends no Enable Tx after the abort',{timeout:60000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
+  const {sequences}=await publish(evenNow(),[{text:'CQ W1ABC FN42',hz:1350,snr:-5},{text:'HB9BLA W2XYZ FN31',hz:1750,snr:-6}]);
+  const cq=page.locator(`#band-activity tbody tr[data-sequence="${sequences[0]}"]`),li=page.locator('#qso-others tr[data-row]').filter({hasText:'W2XYZ'});
+  await cq.waitFor({timeout:30000});await li.first().waitFor({timeout:30000});
+  let held=0;
+  await page.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());if(b.action==='select_row'){held++;await new Promise(r=>setTimeout(r,800));}await route.continue();});
+  const from=requests.length;await cq.click();
+  await waitFor(()=>held>=1,'the W1ABC selection on its way',5000);
+  await li.first().dblclick();
+  const offered=await page.locator('#contact-change').waitFor({timeout:8000}).then(()=>true,()=>false);
+  let after=[];
+  if(offered){const mark=requests.length;await page.locator('#contact-change').click();await new Promise(r=>setTimeout(r,200));await page.keyboard.press('Escape');
+    await new Promise(r=>setTimeout(r,4000));after=requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/contact/command').map(r=>JSON.parse(r.body).action);}
+  await page.unroute('**/contact/command');const s=await snapshot();await idleAgain();
+  assert.ok(offered,`the Change contact button: ${requests.slice(from).filter(r=>r.method==='POST').map(r=>r.body)}`);
+  assert.ok(after.includes('abort'),`the change and the abort: ${after}`);
+  assert.deepEqual(after.slice(after.indexOf('abort')+1),[],`nothing after the abort: ${after}`);
+  assert.notEqual(s.transmit.arm_state,'armed','not armed after Esc');
+  assert.deepEqual(page.errors,[]);
+});
+
 // Proves: CL-010-15; TC-007-005. A read older than a pushed change does not replace it.
 test('TC-007-005 an older GET /contact does not replace pushed state',{timeout:60000},async()=>{
   const live=await snapshot();const watchdogs=async tx_calls=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};
@@ -500,6 +664,50 @@ test('TC-007-005 the Tune countdown is paced by the display profile on the socke
     const paced=ticks(thin);assert.ok(paced.length>=1&&paced.length<=3,`Thin ${type}: ${paced.length} countdown events`);
     for(let n=1;n<paced.length;n++)assert.ok(paced[n].at-paced[n-1].at>=4000,`Thin ${type}: at most once per 5 s, arrival jitter allowed`);
   }
+});
+
+// Proves: CL-008-07, CL-010-15; TC-009-005 case7, TC-007-005 (#10 pushed operating selection).
+// The socket's first event holds the whole snapshot, a later one what changed, and the browser
+// shows a change from outside without any timer read on Detailed or Thin.
+test('TC-009-005 operating selection is pushed: the event carries it, no timer read of GET /receive/selection',{timeout:90000},async()=>{
+  const frames=[];page.on('websocket',ws=>ws.on('framereceived',e=>{try{const m=JSON.parse(e.payload);if(m.type==='selection.state')frames.push({at:performance.now(),data:m.data,bytes:Buffer.byteLength(e.payload)});}catch{}}));
+  const reads=(a,b=Infinity)=>requests.filter(r=>r.method==='GET'&&r.path==='/receive/selection'&&r.at>=a&&r.at<b);
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  const band=value=>fetch(control+'/band',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({band:value})});
+  await band('20m');
+  const loaded=performance.now();await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
+  await waitFor(()=>frames.some(f=>f.at>=loaded),'selection.state at the first step',5000);
+  const first=frames.find(f=>f.at>=loaded);
+  const read=await (await fetch(origin+'/receive/selection')).json();
+  for(const key of ['profile_revision','generation','operating_revision','control','selection','available_bands','operation','cancellation','receive','radio'])assert.deepEqual(first.data.changed[key],read[key],`the first event has ${key} as the read gives it`);
+  assert.equal(first.data.boot_id,read.boot_id);assert.ok(first.bytes<=2048);
+  await waitFor(()=>page.evaluate(()=>document.querySelector('#operating-band').value==='20m'),'shown after the load',8000);
+  await page.waitForFunction(()=>!operatingReadPending);
+  // On Detailed the timer read every 2 s, on Thin every 8 s.
+  const quiet0=performance.now();await sleep(9000);assert.equal(reads(quiet0).length,0,'no timer read on Detailed');
+  const changed=performance.now();await band('40m');
+  await waitFor(()=>page.evaluate(()=>document.querySelector('#operating-band').value==='40m'),'pushed change shown',5000);
+  const event=frames.find(f=>f.at>=changed);assert.ok(event&&event.at-changed<=2000,'the change is pushed within the 1 s check');
+  assert.deepEqual(Object.keys(event.data.changed),['selection'],'only what changed');
+  assert.equal(event.data.changed.selection.nominal_hz,7074000);
+  assert.ok(event.data.snapshot_sequence>first.data.snapshot_sequence);
+  await page.evaluate(()=>{profileSelect.value='thin';profileSelect.dispatchEvent(new Event('change'));});
+  const quiet1=performance.now();await sleep(9000);assert.equal(reads(quiet1).length,0,'no timer read on Thin');
+  await band('20m');await waitFor(()=>page.evaluate(()=>document.querySelector('#operating-band').value==='20m'),'pushed on Thin too',5000);
+  await page.evaluate(()=>{profileSelect.value='detail';profileSelect.dispatchEvent(new Event('change'));});
+  assert.deepEqual(page.errors,[]);
+});
+
+// Proves: CL-008-07; TC-009-005 case7 (#10). The socket's read getting lost on the link leaves the
+// controls on the state its first event gave: there is no timer read to repair them.
+test('TC-009-005 a lost selection read does not disable the controls the socket event holds',{timeout:60000},async()=>{
+  let release,reached;const gate=new Promise(r=>release=r),entered=new Promise(r=>reached=r);
+  await page.route('**/receive/selection',async route=>{reached();await gate;await route.abort('failed');},{times:1});
+  await page.reload();await page.locator('#connection[data-state=connected]').waitFor();await entered;
+  await page.waitForFunction(()=>operatingState&&operatingState===operatingHeld&&operatingHeldSocket===socket,null,{timeout:8000});
+  release();await page.waitForFunction(()=>!operatingReadPending);await new Promise(r=>setTimeout(r,3000));
+  assert.deepEqual(await page.evaluate(()=>({operatingFailure,operatingSupported,disabled:document.querySelector('#operating-band').disabled})),{operatingFailure:'',operatingSupported:true,disabled:false});
+  assert.deepEqual(page.errors,[]);
 });
 
 test('TC-050-004 mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO completes, and CQ right after it calls',{timeout:420000},async()=>{

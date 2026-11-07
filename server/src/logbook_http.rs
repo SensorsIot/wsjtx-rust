@@ -1,5 +1,5 @@
 //! WstxContact::ContactWire log routes: POST/GET /contacts, GET /contacts/export.adi,
-//! POST /contacts/imports, GET/PUT /contacts/imports/{id} and POST /contact/worked.
+//! POST /contacts/imports and GET/PUT /contacts/imports/{id}.
 //! Validation order follows WstxOperatingReceive S2: route, Origin, TLS/session,
 //! size/media/syntax, version/UUIDs/integers, profile, boot, state. Every log mutation
 //! publishes its atomic replace only under the authorization lock with the operating
@@ -463,75 +463,6 @@ pub async fn export(
         Ok(Err(e)) => stored(e),
         Err(_) => error("storage_unavailable", None),
     }
-}
-
-/// POST /contact/worked (WorkedBeforeQuery), read-only.
-pub async fn worked(
-    State(app): State<App>,
-    headers: HeaderMap,
-    body: Result<Bytes, BytesRejection>,
-) -> Response {
-    let state = match authorize(&app, &headers, true).await {
-        Ok(s) => s,
-        Err(r) => return *r,
-    };
-    let value = match json_body(&headers, body, 2048) {
-        Ok(v) => v,
-        Err(r) => return *r,
-    };
-    let object = match envelope(
-        &value,
-        &["v", "profile_id", "boot_id", "band", "mode", "calls"],
-    ) {
-        Ok(o) => o.clone(),
-        Err(r) => return *r,
-    };
-    let Some(band) = object["band"].as_str().filter(|b| logbook::valid_band(b)) else {
-        return error("invalid_request", Some("band"));
-    };
-    let Some(mode) = object["mode"]
-        .as_str()
-        .filter(|m| matches!(*m, "FT8" | "FT4"))
-    else {
-        return error("invalid_request", Some("mode"));
-    };
-    let Some(calls) = object["calls"]
-        .as_array()
-        .filter(|c| c.len() <= logbook::WORKED_CALLS_MAX)
-    else {
-        return error("invalid_request", Some("calls"));
-    };
-    let mut list = Vec::new();
-    for call in calls {
-        match call.as_str() {
-            Some(c)
-                if (1..=13).contains(&c.len())
-                    && c.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'/') =>
-            {
-                list.push(c.to_ascii_uppercase())
-            }
-            _ => return error("invalid_request", Some("calls")),
-        }
-    }
-    let (band, mode) = (band.to_owned(), mode.to_owned());
-    tokio::task::spawn_blocking(move || {
-        if let Err(r) = context(&state, &object) {
-            return *r;
-        }
-        match state.logbook.worked(&list, &band, &mode) {
-            Ok(statuses) => {
-                let statuses: Vec<Value> = list
-                    .iter()
-                    .zip(statuses)
-                    .map(|(call, status)| json!({"call":call,"status":status}))
-                    .collect();
-                Json(json!({"v":1,"band":band,"mode":mode,"statuses":statuses})).into_response()
-            }
-            Err(e) => stored(e),
-        }
-    })
-    .await
-    .unwrap_or_else(|_| error("storage_unavailable", None))
 }
 
 /// #55 WstxDxcc::CountryFile view: which cty.dat the station uses.

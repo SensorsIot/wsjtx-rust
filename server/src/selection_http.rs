@@ -83,6 +83,82 @@ pub async fn snapshot(
         Err(e) => error(e),
     }
 }
+/// The fields of a snapshot that stand in every selection.state, not in its `changed`.
+const STATE_IDENTITY: [&str; 5] = [
+    "v",
+    "profile_id",
+    "boot_id",
+    "snapshot_sequence",
+    "monotonic_ms",
+];
+/// WstxOperatingReceive::SelectionStateEvent: the snapshot GET /receive/selection gives this
+/// station now.
+pub(crate) fn pushed_view(state: &ProfileState) -> Option<Value> {
+    let cat = state.store.lock().ok()?.document.control.mode == "cat";
+    state.recording.selection_snapshot(cat).ok()
+}
+/// The top-level fields of `now` that the peer holding `sent` lacks.
+pub(crate) fn state_changes(sent: &Value, now: &Value) -> serde_json::Map<String, Value> {
+    now.as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(k, v)| !STATE_IDENTITY.contains(&k.as_str()) && sent.get(k.as_str()) != Some(*v))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
+}
+fn radio_without_dates(view: &Value) -> Value {
+    let mut radio = view["radio"].clone();
+    if let Some(facts) = radio["observations"].as_object_mut() {
+        for fact in facts.values_mut().filter_map(Value::as_object_mut) {
+            fact.remove("query_sequence");
+            fact.remove("observed_at_ms");
+        }
+    }
+    radio
+}
+/// Whether a change goes now. Each CAT poll (1 s) dates the radio facts anew with no new value:
+/// that alone goes at most every 2 s on Detailed and every 30 s below it.
+pub(crate) fn state_due(
+    display_profile: &str,
+    changed: &serde_json::Map<String, Value>,
+    sent: &Value,
+    now: &Value,
+    since_last: Duration,
+) -> bool {
+    let dates_only = changed.len() == 1
+        && changed.contains_key("radio")
+        && radio_without_dates(sent) == radio_without_dates(now);
+    !dates_only
+        || since_last >= Duration::from_secs(if display_profile == "detail" { 2 } else { 30 })
+}
+/// The selection.state with as many of the changed fields as fit 2048 B, and what the peer then
+/// holds: a snapshot near its 3072 B cap goes in two events, the rest at the next check.
+pub(crate) fn state_event(
+    sent: &Value,
+    now: &Value,
+    changed: serde_json::Map<String, Value>,
+) -> (String, Value) {
+    let text = |fields: &serde_json::Map<String, Value>| {
+        json!({"v":1,"type":"selection.state","data":{"profile_id":now["profile_id"],"boot_id":now["boot_id"],
+            "snapshot_sequence":now["snapshot_sequence"],"monotonic_ms":now["monotonic_ms"],"changed":fields}})
+        .to_string()
+    };
+    let mut fields = serde_json::Map::new();
+    let mut holds = if sent.is_null() {
+        json!({})
+    } else {
+        sent.clone()
+    };
+    for (key, value) in changed {
+        fields.insert(key.clone(), value.clone());
+        if text(&fields).len() > 2048 {
+            fields.remove(&key);
+        } else {
+            holds[key] = value;
+        }
+    }
+    (text(&fields), holds)
+}
 pub async fn select(
     State(app): State<App>,
     headers: HeaderMap,
