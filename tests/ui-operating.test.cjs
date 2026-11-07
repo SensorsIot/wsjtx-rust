@@ -483,7 +483,7 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
   for(const selector of ['#qso-heard','#qso-others tr:last-child','#qso-dialogue tr:last-child','#qso-next','#qso-cq','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible`);
   await page.screenshot({path:'test-results/ui-operating/qso-dialogue-1366x768.png'});
-  // #39 Abort QSO: with five direct buttons the partner's message keeps its room and the longest
+  // #39 Abort QSO, Auto and PSK: with seven direct buttons the partner's message keeps its room and the longest
   // badge stays inside the pane.
   const headFit=await page.evaluate(()=>{const pane=document.querySelector('#rx-focus').getBoundingClientRect(),badge=document.querySelector('#rx-focus .op-contact-badge');badge.textContent='Transmitting';const b=badge.getBoundingClientRect();return {heard:document.querySelector('#qso-heard').getBoundingClientRect().width,inside:b.right<=pane.right+0.5&&b.right<=innerWidth};});
   assert.ok(headFit.heard>=50,`the partner's message has room: ${headFit.heard} px`);assert.equal(headFit.inside,true,'the Transmitting badge stays inside the pane');
@@ -1061,7 +1061,8 @@ test('TC-039-021 Settings shows the PSK Reporter status, pushed, and saves the s
   drop=true;for(const s of sockets)s.destroy();
   await box.check();await status.filter({hasText:'Not connected'}).waitFor({timeout:30000});
   assert.match(await status.textContent(),/^Not connected \u00b7 connection_(closed|lost) \u00b7 retrying$/);
-  assert.doesNotMatch(await page.locator('#operating-workspace').textContent(),/connection_(closed|lost)|PSK/,'never an error on the operating screen');
+  // #39 strategydef: the PSK toggle is on the operating screen; a PSK Reporter state never is.
+  assert.doesNotMatch(await page.locator('#operating-workspace').textContent(),/connection_(closed|lost)|PSK Reporter/,'never an error on the operating screen');
   assert.deepEqual(errors,[]);
 });
 
@@ -2607,7 +2608,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   assert.equal(await page.evaluate(()=>{const d=document.querySelector('#strategy-editor');return d.scrollWidth<=d.clientWidth+1;}),true,'with the region and window fields too');
   await page.locator('#se-save').click();for(let i=0;i<40&&puts.length<2;i++)await page.waitForTimeout(50);
   const edited={...strategy,goals:['dxcc','waz','new_call'],needed:'not_confirmed',region:{kind:'selected',continents:['EU','SA']},min_snr_db:-15,repetitions:5,treat_73_as_cq:true,window:{kind:'from_to',from:'2026-11-01',to:'2026-11-02'}};
-  assert.deepEqual(puts[1],{v:1,profile_id:view.profile_id,boot_id:view.boot_id,expected_revision:5,configuration:{continent:null,active:'DX first',strategies:[edited],ignore_calls:[],session_ignore_minutes:30}});
+  assert.deepEqual(puts[1],{v:1,profile_id:view.profile_id,boot_id:view.boot_id,expected_revision:6,configuration:{continent:null,active:'DX first',strategies:[edited],ignore_calls:[],session_ignore_minutes:30}});
   await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
   // Save never selects: a new strategy stays unselected, the selected one stays.
   await page.locator('#se-new').click();await page.locator('#se-name').fill('Another');
