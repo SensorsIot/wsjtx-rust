@@ -2,7 +2,7 @@ package WstxStrategy {
     private import ScalarValues::*;
     doc /* Canonical contract of the strategy engine (issue #39, CL-039-01..11 and CL-039-20..23 in
          WstxRequirements; verification TC-039-001..010, TC-039-020..022, TC-039-030..033 and
-         the strategydef cases TC-039-040..048; the ignore
+         the strategydef cases TC-039-040..048, the holdtx cases TC-039-049..051; the ignore
          lists of issue #42, CL-042-02 and TC-042-002..003; Pounce, CL-042-03 and
          TC-042-004..005; Alert, CL-042-04 and TC-042-006..007): the award strategies, the
          directed-CQ rule, the value order in Band Activity, the strategy editor popup and
@@ -51,6 +51,18 @@ package WstxStrategy {
             a repeated message of the target to my call is progress. Out of scope: a combined
             weighted score, the station changing band or mode, calling several targets at
             once.
+         D16 Hold Tx in Auto (slice holdtx, operator report 2026-11-07 "the hold TX does not
+            work and TX is shifted to RX"; decisions "Hold Tx on: the automation never moves
+            Tx", corrected to "if the other station does not hear us we are allowed to change
+            the frequency to a quiet place, but never to the Rx frequency", and "Relative to
+            its own usual level"; round 1 on #39: Q1 yes, Q2 "Move 50 Hz away", Q3 "CQ on the
+            held Tx", Q4 "lowest over the last 3 periods"; round 2 Q5 "3 of each parity"; round 3 Q6 "Move into the range"; the
+            listed defaults D1-D15 of the slice confirmed by the operator). With Hold Tx on a run keeps Tx and
+            puts Rx on the station; Tx alone moves at the slot check of a target that does not
+            hear us, or 50 Hz clear when the station is within 50 Hz of it; a CQ goes out on the
+            held Tx. With Hold Tx off Rx = Tx on the slot as before. Quietness is a slot's rise
+            over its own usual level (FreeTxSlot). It replaces CL-039-08's "a run's free slot"
+            as an explicit Tx action and CL-039-09's "Rx = Tx" for Hold Tx on.
          D7 Manual intervention (#39, 2026-11-04): a double-click is always possible, also
             during a strategy; the strategy stays selected and resumes after the manual
             QSO (ManualIntervention).
@@ -678,7 +690,8 @@ package WstxStrategy {
              calls_per_station repetitions): at each repetition (LeaveRule) of a target that
              has not answered in this contact and is not known to hear us (no spot, PskrUse
              off, the feed off or unreachable, the band unknown, a call without a
-             subscription), Tx takes FreeTxSlot's choice again before the next own period; a
+             subscription), Tx takes FreeTxSlot's choice again before the next own period (with Hold
+             Tx on Tx alone and Rx stays on the target, with it off Rx and Tx together, D16); a
              target known to hear us (HearingFeed, on this band and mode, with PskrUse on)
              keeps its slot. FreeTxSlot keeps the current slot when it ties for quietest, so
              Tx does not jump between near-equal slots; there is no threshold, this is a tie
@@ -770,7 +783,8 @@ package WstxStrategy {
              not completed in this run on this band and mode, not given up by the operator
              (ManualIntervention) and not in QuietTime, one per call, in ValueOrder (callers
              first with callers_first). The first is selected (select_row {replace false}), Tx
-             and Rx take its slot (FreeTxSlot) and it is armed (enable_tx). Nothing listed: it
+             and Rx take their place by FreeTxSlot (with Hold Tx on Tx stays and Rx is on the
+             station, D16) and it is armed (enable_tx). Nothing listed: it
              keeps waiting, or calls CQ (CqWhenNoTarget). A contact the run did not select:
              ManualIntervention.
              In a contact: completion counts and returns to waiting; LeaveRule decides when the
@@ -875,7 +889,8 @@ package WstxStrategy {
              20 m). It is not a special class. With it on, a waiting run with no waiting reason
              that has seen two consecutive fresh complete publications with nothing listed
              (StrategyRun Waiting) calls CQ as a contest Run does (WstxContest::ContestRun):
-             it decides the slot (FreeTxSlot, quiet in both parities) and sends enable_tx with
+             it decides the slot (FreeTxSlot, quiet in both parities; with Hold Tx on the held Tx,
+             no decision, D16) and sends enable_tx with
              no partner, which calls the activity's Tx6 (a plain CQ outside a contest
              activity); state calling_cq. On each fresh complete publication the list of
              StrategyRun Waiting is read again: the first listed station is selected (a caller
@@ -888,6 +903,7 @@ package WstxStrategy {
     }
     attribute def FreeTxSlot {
         attribute periodsPerParity : Integer = 4;
+        attribute usualPeriods : Integer = 3;
         attribute clearanceHz : Integer = 50;
         attribute stepHz : Integer = 10;
         doc /* The Tx slot of a strategy or contest run or a pounce (not a plain MCP policy run,
@@ -898,31 +914,56 @@ package WstxStrategy {
              each bin over the rows of that period; a period I transmitted in is not counted.
              The power of a slot at f is the mean, over the last periodsPerParity (4) counted
              periods of a parity (fewer: those there are), of the mean level of the bins in
-             [f, f + width): FT8 50 Hz, FT4 90 Hz. The parity is my Rx periods (his Tx parity);
-             while only listening (a CQ, no target) the slot must be quiet in both parities: its
-             power is the larger of the two. Power is compared rounded to whole dB.
+             [f, f + width): FT8 50 Hz, FT4 90 Hz. The parity is my Rx periods (his Tx parity).
+             Relative (D16, operator 2026-11-07 "Relative to its own usual level", so that the
+             receive filter's roll-off cancels out): the usual level of a slot is its lowest
+             period level (the mean level of its bins in one counted period) over the last
+             usualPeriods (3) counted periods of each parity, up to 6 periods (operator: "lowest
+             over the last 3 periods", round 2 Q5 "3 of each parity": so a station sitting on a
+             slot through my last Rx periods shows as a rise, since it is silent in my Tx
+             parity; during a call those Tx-parity periods are the ones from before the run
+             transmitted on this band; fewer: those there are); the compared value, its
+             rise, is its power minus its usual level. While only listening (a CQ, no target)
+             the slot must be quiet in both parities: its rise is the larger of the two. The rise
+             is compared rounded to whole dB.
              Candidates: f in stepHz (10 Hz) steps and the current Tx, my whole signal inside
              the Tx range (FrequencyControls): FT8 300..2650, FT4 300..2610; never within
-             clearanceHz (50 Hz) of the called station's signal (Tx is never on the called
-             station). Where known it is free at his end: at least 50 Hz from every frequency
+             clearanceHz (50 Hz) of the called station's signal nor of my Rx signal (Tx is never
+             on the called station, "never to the Rx frequency"). Where known it is free at his
+             end: at least 50 Hz from every frequency
              HearingFeed shows him decoding, counting only spots of my Tx parity (PskrUse on);
              when that leaves no candidate, his end is not used and the status says "· no".
-             Choice: the lowest power wins; a tie keeps the current Tx when it is among the
+             Choice: the lowest rise wins; a tie keeps the current Tx when it is among the
              quietest, else goes nearer the current Tx, then lower. There is no threshold.
              No power yet (no counted period of the parity): Tx keeps the current frequency
              unless it is too near the called station (then the nearest candidate away from
              it), power_db null.
              Band: a retune keeps the live job, so from a station band change on only periods
-             after it count; a new live identity counts from its first period.
-             When: decided once per call, between QSOs, when the run or a pounce has selected
-             its station (a caller of my call as well), before a CQ, and at each slot check
-             (StrategyWatchdog). Rx = Tx: set_frequency moves rx_hz and tx_hz to the slot
-             together, only when either is not on it (with Hold Tx off the selection has moved
-             Tx to the station: it goes back). Nothing else during the exchange moves it; the
+             after it count, for the power and the usual level; a new live identity counts from
+             its first period.
+             Hold Tx (WstxContact::FrequencyControls holdTx, read at each decision; D16):
+             Hold Tx off: decided once per call, between QSOs, when the run or a pounce has
+             selected its station (a caller of my call as well), before a CQ, and at each slot
+             check (StrategyWatchdog). Rx = Tx: set_frequency moves rx_hz and tx_hz to the slot
+             together, only when either is not on it (the selection has moved Tx to the
+             station: it goes back).
+             Hold Tx on: a selection (a caller of my call as well, also from the run's CQ) keeps
+             Tx and leaves Rx on the station where select_row put it; only when the station's
+             signal is within 50 Hz of Tx does Tx go to the nearest candidate clear of it (the
+             candidates above with power not used, the lower on a tie; round 1 Q2 "Move 50 Hz
+             away"). A CQ goes out on the held Tx with no decision (Q3). At each slot check of a
+             target that does not hear us (StrategyWatchdog) Tx alone takes the choice above and
+             Rx stays (set_frequency with tx_hz only). A pounce has no slot check, so with
+             Hold Tx on it moves Tx only by the 50 Hz rule. A held Tx outside the Tx range above is kept at a
+             selection and for a CQ unless it must move by the 50 Hz rule; at the slot check it
+             is no candidate and Tx moves into the range (round 3 Q6 "Move into the range"). Status with Hold Tx on: tx_slot names the held Tx with its rise and his
+             end.
+             Nothing else during the exchange moves it; the
              "may" of the operator's rule (Tx to the partner's frequency once the QSO is
              established) is not taken. A caller of my call is a called station like any
              other. The next decision starts from the Tx the operator may have set meanwhile.
-             Status: the run's tx_slot {hz, power_db, his_end yes|no|unknown} (WstxMcp). */
+             Status: the run's tx_slot {hz, power_db, his_end yes|no|unknown} (WstxMcp), power_db
+             the whole-dB rise of that slot over its usual level (null without power). */
     }
     calc def SaneCall {
         in call : String;

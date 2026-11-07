@@ -1452,7 +1452,8 @@ impl Owner {
                             return;
                         }
                         // StrategyWatchdog slot check: at each repetition of a target that has
-                        // not answered and is not known to hear us, Tx takes the quietest slot.
+                        // not answered and is not known to hear us, Tx takes the quietest slot
+                        // (with Hold Tx on Tx alone, #39 holdtx).
                         let hz = if !run.target.answered && !heard {
                             let (revision, _, _) = contact.facts();
                             let current = contact.status_facts().tx_hz;
@@ -1465,7 +1466,7 @@ impl Owner {
                                 current,
                                 called,
                                 revision,
-                                SlotRule::Call,
+                                SlotRule::Check,
                             );
                             contact.status_facts().tx_hz
                         } else {
@@ -1674,7 +1675,8 @@ impl Owner {
         let prepared = contact.facts().1.map(|c| c.id);
         let mut revision = receipt["contact_revision"].as_u64().unwrap_or(revision);
         // #39 WstxStrategy::FreeTxSlot: the call goes out from the quietest slot, never from the
-        // called station's frequency (the selection's Rx); Rx = Tx.
+        // called station's frequency (the selection's Rx); Rx = Tx. With Hold Tx on (holdtx D16)
+        // Tx stays and Rx stays on the station, unless the station is within 50 Hz of Tx.
         let called = contact.status_facts().rx_hz;
         if run.config.strategy || run.pounce.is_some() {
             let rule = if from_cq {
@@ -1998,17 +2000,22 @@ fn utc_now(r: &recording::Recording) -> i64 {
 /// How a run takes its Tx slot (WstxStrategy::FreeTxSlot).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SlotRule {
-    /// Calling a station: the quietest slot of my Rx parity, free at his end where known.
+    /// Selecting a station to call: the quietest slot of my Rx parity, free at his end where
+    /// known; with Hold Tx on the held Tx, moved only when within 50 Hz of the station.
     Call,
-    /// Its own CQ: the quietest slot in both parities, no his end.
+    /// The slot check at a repetition (StrategyWatchdog): the quietest slot of my Rx parity; with
+    /// Hold Tx on Tx alone moves, clear of my Rx as well.
+    Check,
+    /// Its own CQ: the quietest slot in both parities, no his end; with Hold Tx on the held Tx.
     Listen,
     /// Answering from its own CQ (CqWhenNoTarget, WstxContest::ContestRun): the CQ's slot stays
     /// unless it is within 50 Hz of the called station, then the nearest candidate away.
     KeepCq,
 }
-/// #39 WstxStrategy::FreeTxSlot: decide the slot by `rule`, name it in the run's status and set
-/// Rx and Tx there when either is not there. The next contact revision, or None when the engine
-/// refused the command.
+/// #39 WstxStrategy::FreeTxSlot: decide the slot by `rule`, name it in the run's status and move
+/// there. Hold Tx off: Rx and Tx both, when either is not there. Hold Tx on (#39 holdtx D16): Tx
+/// alone, Rx stays on the station. The next contact revision, or None when the engine refused the
+/// command.
 fn take_slot(
     run: &mut Run,
     contact: &contact_http::Station,
@@ -2033,20 +2040,10 @@ fn take_slot(
         .unwrap_or_else(|p| p.into_inner())
         .periods((&run.identity.1, run.identity.2), utc_now(r));
     let since = run.slot_since_ms;
-    let mine = freeslot::recent(&periods, mode, rx_parity, since);
-    let other = freeslot::recent(&periods, mode, tx_parity, since);
-    let width = freeslot::width_hz(mode);
-    let power = |f: u32| {
-        let rx = freeslot::slot_power(&mine, f, width);
-        if !listening {
-            return rx;
-        }
-        // While only listening the louder parity counts.
-        match (rx, freeslot::slot_power(&other, f, width)) {
-            (Some(a), Some(b)) => Some(a.max(b)),
-            (a, b) => a.or(b),
-        }
-    };
+    // The rise of a slot over its usual level (#39 holdtx); while only listening the larger rise
+    // of the two parities counts.
+    let power = |f: u32| freeslot::rise(&periods, mode, rx_parity, since, f, listening);
+    let hold = facts.hold_tx;
     // His end: the frequencies the target decodes from my Tx parity, only while the feed
     // follows this very target (a pounce, a plain run and a CQ have none).
     let target = facts.dx_call.as_deref().filter(|_| !listening);
@@ -2058,26 +2055,48 @@ fn take_slot(
                 .is_some_and(|f| f == *t)
         })
         .and_then(|_| pskr::target_offsets(r, mode, tx_parity));
-    let slot = if rule == SlotRule::KeepCq {
-        // The rule without power keeps the current slot or moves it nearest away from him; its
-        // power is still shown.
-        let mut slot = freeslot::quietest(mode, current, called, his.as_deref(), &|_| None);
-        slot.power_db = power(slot.hz).map(|p| p.round() as i64);
-        slot
-    } else {
-        freeslot::quietest(mode, current, called, his.as_deref(), &power)
+    // With Hold Tx on Rx stays on the station: Tx keeps 50 Hz from it as from the called station
+    // ("never to the Rx frequency").
+    let avoid: Vec<u32> = called
+        .into_iter()
+        .chain(hold.then_some(facts.rx_hz))
+        .collect();
+    let slot = match (rule, hold) {
+        // Hold Tx on, a CQ: on the held Tx, no decision (round 1 Q3); its rise is shown.
+        (SlotRule::Listen, true) => freeslot::Slot {
+            hz: current,
+            power_db: power(current).map(|p| p.round() as i64),
+            his_end: freeslot::HisEnd::Unknown,
+        },
+        // Hold Tx on, a selection: Tx stays unless within 50 Hz of the station (Q1, Q2, D7).
+        (SlotRule::Call | SlotRule::KeepCq, true) => {
+            freeslot::held(mode, current, &avoid, his.as_deref(), &power)
+        }
+        (SlotRule::KeepCq, false) => {
+            // The rule without power keeps the current slot or moves it nearest away from him;
+            // its power is still shown.
+            let mut slot = freeslot::quietest(mode, current, called, his.as_deref(), &|_| None);
+            slot.power_db = power(slot.hz).map(|p| p.round() as i64);
+            slot
+        }
+        _ => freeslot::quietest_clear(mode, current, &avoid, his.as_deref(), &power),
     };
     run.tx_slot = Some(slot.json());
-    if facts.tx_hz == slot.hz && facts.rx_hz == slot.hz {
+    let unchanged = if hold {
+        facts.tx_hz == slot.hz
+    } else {
+        facts.tx_hz == slot.hz && facts.rx_hz == slot.hz
+    };
+    if unchanged {
         return Some(revision);
     }
     contact.automation.before_slot_move();
-    let body = contact_body(
-        r,
-        revision,
-        "set_frequency",
-        json!({"rx_hz":slot.hz,"tx_hz":slot.hz}),
-    );
+    let frequencies = if hold {
+        json!({"rx_hz":null,"tx_hz":slot.hz})
+    } else {
+        json!({"rx_hz":slot.hz,"tx_hz":slot.hz})
+    };
+    let body = contact_body(r, revision, "set_frequency", frequencies);
     let (_, receipt) = contact.operate_as(state, body, true, AUTOMATION).ok()?;
     Some(receipt["contact_revision"].as_u64().unwrap_or(revision))
 }

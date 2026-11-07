@@ -245,7 +245,8 @@ package WstxContest {
              call, not completed in this run on this band and mode nor given up; the first is selected
              as a strategy run selects, not in its QuietTime. Leaving: WstxStrategy::LeaveRule with
              the contest's repetitions and quiet_minutes; no skip (WstxStrategy D6).
-             run: while waiting and no reason it decides the slot (FreeTxSlot, no called station) and
+             run: while waiting and no reason it decides the slot (FreeTxSlot, no called station;
+             with Hold Tx on the held Tx, no decision, WstxStrategy D16) and
              sends enable_tx with no partner, which calls CQ with the activity's Tx6; state
              calling_cq. WstxContact::CallFirst does not answer a CQ started by automation. On each
              fresh complete publication of the partner's parity the callers of my call
