@@ -1485,6 +1485,9 @@ async fn tc_039_004_selecting_starts_a_run_that_calls_by_value_and_never_calls_c
         ),
         (json!("contact_active"), json!(2), json!("DL1XYZ"))
     );
+    // #39 holdtx: the run's Rx = Tx steps below run with Hold Tx explicitly off (TC-039-004; with
+    // it on: TC-039-049).
+    hold_off(&f).await;
     // Repetitions 2: two partner periods without an answer leave DL1XYZ, quiet for a minute
     // (quiet_minutes 1); no stop.
     publish(&f, e + 30_000, &[]);
@@ -6265,11 +6268,24 @@ async fn contest_leaving_with(
     edit: impl FnOnce(&mut Value),
     before: impl FnOnce(&Mcp, i64),
 ) -> Leaving {
+    contest_leaving_from(true, operation, edit, before).await
+}
+/// `contest_leaving_with` with Hold Tx `hold_tx` before the selection (#39 holdtx: the Rx = Tx
+/// steps of TC-039-044 run with Hold Tx explicitly off).
+async fn contest_leaving_from(
+    hold_tx: bool,
+    operation: &str,
+    edit: impl FnOnce(&mut Value),
+    before: impl FnOnce(&Mcp, i64),
+) -> Leaving {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
     before(&f, e);
     let client = f.state.recording.clients.session();
+    if !hold_tx {
+        hold_off(&f).await;
+    }
     f.state.recording.fixture_band("20m");
     import_adi(&f, &logged_before("W1DUP", "EM12", e));
     browser_ok(&f, "set_activity", json!({"activity":"ww_digi"})).await;
@@ -6393,35 +6409,15 @@ async fn tc_039_044_a_contest_caller_is_answered_at_once() {
     );
 }
 
-/// Even periods quiet at 1800 Hz (10 dB), both parities 25 dB at 900 Hz, odd loud at 1800: a CQ,
-/// quiet in both, takes 900; a call by my Rx parity alone would take 1800.
-fn cq_rows(f: &Mcp, e: i64) {
-    for k in 0..4 {
-        wf_row(
-            f,
-            rep(e, k) - 120_000,
-            40,
-            &[(1800, 1850, 10), (900, 950, 25)],
-            false,
-        );
-        wf_row(
-            f,
-            rep(e, k) - 105_000,
-            40,
-            &[(1800, 1850, 60), (900, 950, 25)],
-            false,
-        );
-    }
-}
-
 // Proves: TC-039-044 (f), (g). Run: the caller K2NEW is answered from the CQ's slot (900 stays, not
 // the quietest of my Rx parity), then silent it is left at the 2nd, the run calls CQ again and does
 // not answer K2NEW in its quiet time. Repetitions 3 and quiet_minutes 1 from the selection: left at
-// the 3rd, answered again after 1 minute.
+// the 3rd, answered again after 1 minute. Hold Tx explicitly off (#39 holdtx; with it on the
+// Run's CQ stays on the held Tx: TC-039-049 (j)); the CQ's table as rises (cq_rise_rows).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_044_run_leaves_a_silent_caller_and_keeps_it_quiet() {
     let k2 = ("HB9BLA K2NEW FN31", 1200.0, Some(-8.0));
-    let t = contest_leaving_with("run", |_| {}, cq_rows).await;
+    let t = contest_leaving_from(false, "run", |_| {}, cq_rise_rows).await;
     let (f, e) = (&t.f, t.e);
     assert_eq!(run_of(f).await["state"], "calling_cq");
     assert_eq!(frequencies(f).await.1, json!(900), "the CQ's slot");
@@ -6451,10 +6447,15 @@ async fn tc_039_044_run_leaves_a_silent_caller_and_keeps_it_quiet() {
     );
     assert_eq!(contact(f).await.1, json!("calling"));
 
-    let t = contest_leaving("run", |c| {
-        c["contest"]["repetitions"] = json!(3);
-        c["contest"]["quiet_minutes"] = json!(1);
-    })
+    let t = contest_leaving_from(
+        false,
+        "run",
+        |c| {
+            c["contest"]["repetitions"] = json!(3);
+            c["contest"]["quiet_minutes"] = json!(1);
+        },
+        |_, _| {},
+    )
     .await;
     let (f, e) = (&t.f, t.e);
     publish(f, e, &[k2]);
@@ -7606,8 +7607,9 @@ fn ft4(e: i64, index: i64) -> i64 {
 // its floor (his Tx-parity periods), its power now the floor plus his share, so its rise is
 // 12 x (his bins in the slot) / (its bins): 0 for every slot ending below 2621 Hz, 1 dB for 2540
 // (3 of 31 bins, 1.16), more above; the floor's roll-off cancels out. From Tx 1500 (rise 0) the
-// tie keeps 1500, power_db 0, on no slot overlapping AA3B. Absolute power instead takes the low
-// floor near the edge.
+// tie keeps exactly 1500, power_db 0, a slot not overlapping AA3B. The parent's absolute power
+// takes the low floor near the edge instead: 2530 at 21 dB, which overlaps AA3B no more than 1500
+// does, so the exact slot is what tells the two apart.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_the_roll_off_cancels_out_and_aa3b_is_a_rise() {
     let rows = |f: &Mcp, e: i64| {
