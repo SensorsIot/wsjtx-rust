@@ -1416,7 +1416,8 @@ package WstxContact {
              none, and shows a snapshot_sequence not older than its own; it reads GET /contact once per socket, with one
              pending GET per browser. After its own command it shows the command's reply
              (accepted, or the refusal with its code) and reads nothing: the next command
-             waits until a contact.state holds the receipt's contact_revision, and only when
+             waits until a contact.state holds the receipt's contact_revision (after a
+             stale_revision refusal a newer revision than the one sent), and only when
              none does within 5 s, or the outcome is unknown, it reads GET /contact (#10). It is not a StatusReply:
              station.status stays exactly {v,type,id,data{version,radio}}. Control and
              status keep priority over it as over optional visualization. */
