@@ -56,7 +56,7 @@ package WstxStrategy {
             Tx", corrected to "if the other station does not hear us we are allowed to change
             the frequency to a quiet place, but never to the Rx frequency", and "Relative to
             its own usual level"; round 1 on #39: Q1 yes, Q2 "Move 50 Hz away", Q3 "CQ on the
-            held Tx", Q4 "lowest over the last 3 periods"; round 2 Q5 "3 of each parity"; the
+            held Tx", Q4 "lowest over the last 3 periods"; round 2 Q5 "3 of each parity"; round 3 Q6 "Move into the range"; the
             listed defaults D1-D15 of the slice confirmed by the operator). With Hold Tx on a run keeps Tx and
             puts Rx on the station; Tx alone moves at the slot check of a target that does not
             hear us, or 50 Hz clear when the station is within 50 Hz of it; a CQ goes out on the
@@ -954,8 +954,9 @@ package WstxStrategy {
              away"). A CQ goes out on the held Tx with no decision (Q3). At each slot check of a
              target that does not hear us (StrategyWatchdog) Tx alone takes the choice above and
              Rx stays (set_frequency with tx_hz only). A pounce has no slot check, so with
-             Hold Tx on it moves Tx only by the 50 Hz rule. A held Tx outside the Tx range above is kept unless it
-             must move. Status with Hold Tx on: tx_slot names the held Tx with its rise and his
+             Hold Tx on it moves Tx only by the 50 Hz rule. A held Tx outside the Tx range above is kept at a
+             selection and for a CQ unless it must move by the 50 Hz rule; at the slot check it
+             is no candidate and Tx moves into the range (round 3 Q6 "Move into the range"). Status with Hold Tx on: tx_slot names the held Tx with its rise and his
              end.
              Nothing else during the exchange moves it; the
              "may" of the operator's rule (Tx to the partner's frequency once the QSO is
