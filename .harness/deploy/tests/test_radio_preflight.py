@@ -116,7 +116,7 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         rc, out = self.preflight(power="0003", raw="00 26")
         self.assertEqual(rc, 0, out)
         self.assertIn("PREFLIGHT PASS", out)
-        self.assertIn("0003 (1.2 %)", out)
+        self.assertIn("0003 (1.2 % of the control)", out)
         self.assertIn("was 0026, written and read back", out)
         self.assertEqual(self.writes(), [self.READ, "write FE FE 94 E0 14 0A 00 03 FD", self.READ])
         record = self.records()[-1]
@@ -129,7 +129,7 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         for raw in ("00 03", "02 55"):
             rc, out = self.preflight(power="0077", raw=raw)
             self.assertEqual(rc, 0, out)
-            self.assertIn("0077 (30.2 %)", out)
+            self.assertIn("0077 (30.2 % of the control)", out)
         self.assertIn("write FE FE 94 E0 14 0A 00 77 FD", self.writes())
 
     def test_the_same_level_is_read_and_not_written(self):
@@ -203,6 +203,28 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         self.assertIn("held by cr44-a", self.lease())
         self.assertEqual(self.old_in_lease(), 26)
         self.assertEqual(self.run_tool("-Restore", "-Holder", "cr44-a", raw="00 77")[0], 0)
+
+    def test_release_says_the_old_value_it_gives_up(self):
+        self.assertEqual(self.preflight(power="0090", raw="00 26")[0], 0)
+        rc, out = self.run_tool("-Release", "-Holder", "cr44-a")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("old RF power 0026 was not restored", out)
+        self.assertEqual(self.lease(), "lease: free")
+
+    def test_no_write_reads_and_passes_when_the_level_is_already_there(self):
+        rc, out = self.run_tool("-Holder", "cr44-a", "-PowerBcd", "0133", "-NoWrite", raw="01 33")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.writes(), [self.READ])
+        self.assertIn("held by cr44-a", self.lease())
+
+    def test_no_write_refuses_another_level_and_writes_nothing(self):
+        rc, out = self.run_tool("-Holder", "cr44-a", "-PowerBcd", "0133", "-NoWrite", raw="00 26")
+        self.assertEqual(rc, 2, out)
+        self.assertIn("reads 0026, not 0133", out)
+        self.assertEqual(self.writes(), [self.READ])
+        self.assertIn("task-start", self.system())
+        self.assertEqual(self.records()[-1]["rf_power_old_bcd"], 26)
+        self.assertEqual(self.lease(), "lease: free")
 
     def test_restore_needs_the_holders_own_lease(self):
         rc, out = self.run_tool("-Restore", "-Holder", "cr44-a", raw="00 77")

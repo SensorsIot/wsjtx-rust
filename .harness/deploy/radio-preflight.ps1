@@ -1,13 +1,16 @@
 # Radio preflight before any agent Tx (harness retrospective 2026-11-06; wsjtx-rust#44 comment
 # 6683921947: 8 Tx periods and 2 Set level runs went out at another level than the test assumed).
 # The test sets its own power (operator, 2026-11-07), so nothing keys at an assumed level.
-#   radio-preflight.ps1 -Holder <run name> -PowerBcd <hhll> [-Minutes 30]    take the lease, set the power
+#   radio-preflight.ps1 -Holder <run name> -PowerBcd <hhll> [-NoWrite] [-Minutes 30]    take the lease, set the power
 #   radio-preflight.ps1 -Restore -Holder <run name>                          put the old power back, end the lease
 #   radio-preflight.ps1 -Status                                              who holds the lease
 #   radio-preflight.ps1 -Release -Holder <run name>                          give the lease back
-# -PowerBcd is the value of CI-V 14 0A the test needs, required, four digits from 0000 to 0255:
-# 0077 is 30 W, which a test that makes QSOs needs; 0003 is 1 W, enough for short keying without
-# a QSO. An agent runs it before it keys and keys only on exit 0, while its lease is live.
+# -PowerBcd is the value of CI-V 14 0A the test needs, required, four digits: the radio's RF POWER
+# control from 0000 to 0255, not watts. Po also follows the Tx level and the profile's limit, so a
+# confirmed value is the control and not the output. Measured on 20 m at -12 dB: 0077 gave Po
+# 24-26 %, 0090 gave Po 30-31 %; 0003 showed Po 0 %; no wattmeter. A test that makes QSOs needs at
+# least 30 W, so it uses 0090 or more and checks Po on its first Tx; short keying without a QSO may
+# use 0003. -NoWrite reads only, and refuses if the radio reads another value. An agent runs it before it keys and keys only on exit 0, while its lease is live.
 # Exit 0: PREFLIGHT PASS, the radio's power reads the level asked for. Exit 2: PREFLIGHT ERROR,
 # it could not read, write or confirm it by the read-back. Exit 3: PREFLIGHT BUSY, another live
 # writer holds the lease, or the station is in use: the station was not stopped.
@@ -18,7 +21,7 @@
 # only on a difference and reads back. The old value is printed, kept in the lease for -Restore
 # (a renewal keeps the first one) and recorded in <git common dir>/harness-parallel/radio/
 # preflight.jsonl beside the lease (lease.json), so every worktree of the repository sees them.
-param([string]$Holder, [string]$PowerBcd, [int]$Minutes = 30, [switch]$Status, [switch]$Release, [switch]$Restore,
+param([string]$Holder, [string]$PowerBcd, [int]$Minutes = 30, [switch]$Status, [switch]$Release, [switch]$Restore, [switch]$NoWrite,
       [string]$StateDir, [string]$Station, [string]$AgentClient,
       [string]$TaskName = 'WSTX Rust Station HB9BLA')
 $ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest
@@ -138,6 +141,7 @@ function Set-RfPower($config, [int]$target) {
     $script:OldRaw = Read-Power $port $config
     if ($script:OldRaw -eq $target) { return $target }
     $digits = '{0:D4}' -f $target
+    if ($NoWrite) { throw "it reads $('{0:D4}' -f $script:OldRaw), not $digits, and -NoWrite writes nothing" }
     $frame = [byte[]](0xFE, 0xFE, 0x94, 0xE0, 0x14, 0x0A, [Convert]::ToByte($digits.Substring(0, 2), 16), [Convert]::ToByte($digits.Substring(2, 2), 16), 0xFD)
     $script:Written = $true
     $ack = Civ-Exchange $port $frame 'FE FE E0 94 (FB|FA) FD'
@@ -163,14 +167,18 @@ try {
   }
   if (-not $Holder -or $Minutes -lt 1 -or $Minutes -gt 240) { Finish 2 'ERROR' 'need -Holder and -Minutes from 1 to 240' }
   if ($Release) {
-    $released = With-LeaseLock { $l = Read-Lease; if ($l -and $l.holder -ne $Holder) { $false } else { Remove-Item -LiteralPath (Join-Path $StateDir 'lease.json') -ErrorAction SilentlyContinue; $true } }
-    if ($released) { Write-Output "lease: released by $Holder"; exit 0 }
+    $script:GivenUp = $null
+    $released = With-LeaseLock { $l = Read-Lease; if ($l -and $l.holder -ne $Holder) { $false } else { $script:GivenUp = Old-Power $l; Remove-Item -LiteralPath (Join-Path $StateDir 'lease.json') -ErrorAction SilentlyContinue; $true } }
+    if ($released) {
+      $note = if ($null -ne $script:GivenUp) { "; old RF power $('{0:D4}' -f [int]$script:GivenUp) was not restored unless it reads that now" } else { '' }
+      Write-Output "lease: released by $Holder$note"; exit 0
+    }
     Finish 3 'BUSY' "the lease is not $Holder's"
   }
   if ($Restore) {
     $target = $null
   } else {
-    if ($PowerBcd -notmatch '^[0-9]{4}$' -or [int]$PowerBcd -gt 255) { Finish 2 'ERROR' "need -PowerBcd, the level this test keys at, four digits from 0000 to 0255 (0077 is 30 W, 0003 is 1 W), not '$PowerBcd'" }
+    if ($PowerBcd -notmatch '^[0-9]{4}$' -or [int]$PowerBcd -gt 255) { Finish 2 'ERROR' "need -PowerBcd, the level this test keys at, four digits from 0000 to 0255 (the radio's control, not watts), not '$PowerBcd'" }
     $target = [int]$PowerBcd
   }
   $config = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'radio-port.json')) | ConvertFrom-Json
@@ -211,7 +219,7 @@ try {
   catch { $code = 2; $word = 'ERROR'; $raw = $null; $why = if ($script:StillRuns) { "$why; THE STATION: $($_.Exception.Message)" } else { "$why; THE STATION IS DOWN: $($_.Exception.Message)" } }
 
   if ($null -ne $raw) {
-    $shown = '{0:D4} ({1:F1} %)' -f $raw, ($raw * 100.0 / 255)
+    $shown = '{0:D4} ({1:F1} % of the control)' -f $raw, ($raw * 100.0 / 255)
     $old = '{0:D4}' -f $script:OldRaw
     $code = 0; $word = 'PASS'
     $what = if ($script:Written) { "was $old, written and read back" } else { 'unchanged, no write' }
