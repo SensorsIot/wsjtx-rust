@@ -947,10 +947,13 @@ impl Owner {
                 .and_then(|c| c.run_strategy())
                 .is_some();
         let mut inner = self.lock();
+        // Auto on ends any run (the operator wins over a pounce or MCP run); a selection with
+        // Auto off ends only a strategy or contest run and leaves a pounce or MCP run and its
+        // contact alone (WstxStrategy::AutoToggle, Pounce).
         let running = inner
             .run
             .as_ref()
-            .filter(|run| run.state != RunState::Stopped)
+            .filter(|run| run.state != RunState::Stopped && (start || run.config.strategy))
             .map(|run| (run.state.armed(), run.state == RunState::CallingCq));
         if running.is_some() {
             Self::finish(&mut inner, "stopped");
@@ -1455,8 +1458,15 @@ impl Owner {
                             let current = contact.status_facts().tx_hz;
                             let called = run.target.hz;
                             // A refused move changes nothing: checked again at the next one.
-                            let _ =
-                                take_slot(run, contact, state, current, called, revision, false);
+                            let _ = take_slot(
+                                run,
+                                contact,
+                                state,
+                                current,
+                                called,
+                                revision,
+                                SlotRule::Call,
+                            );
                             contact.status_facts().tx_hz
                         } else {
                             contact.status_facts().tx_hz
@@ -1613,7 +1623,8 @@ impl Owner {
         let run = inner.run.as_mut().expect("checked");
         let (revision, _, _) = contact.facts();
         let tx = contact.status_facts().tx_hz;
-        let Some(revision) = take_slot(run, contact, state, tx, None, revision, true) else {
+        let Some(revision) = take_slot(run, contact, state, tx, None, revision, SlotRule::Listen)
+        else {
             return manual(inner);
         };
         self.call_cq(inner, contact, state, revision)
@@ -1666,7 +1677,12 @@ impl Owner {
         // called station's frequency (the selection's Rx); Rx = Tx.
         let called = contact.status_facts().rx_hz;
         if run.config.strategy || run.pounce.is_some() {
-            let taken = take_slot(run, contact, state, held_tx, Some(called), revision, false);
+            let rule = if from_cq {
+                SlotRule::KeepCq
+            } else {
+                SlotRule::Call
+            };
+            let taken = take_slot(run, contact, state, held_tx, Some(called), revision, rule);
             let Some(taken) = taken else {
                 if from_cq {
                     return manual(inner);
@@ -1979,9 +1995,20 @@ fn utc_now(r: &recording::Recording) -> i64 {
         t.service.with(|h| h.hardware().now_utc_ms())
     })
 }
-/// #39 WstxStrategy::FreeTxSlot: decide the slot, name it in the run's status and set Rx and Tx
-/// there when either is not there. `listening`: a CQ, quiet in both parities and no his end. The
-/// next contact revision, or None when the engine refused the command.
+/// How a run takes its Tx slot (WstxStrategy::FreeTxSlot).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SlotRule {
+    /// Calling a station: the quietest slot of my Rx parity, free at his end where known.
+    Call,
+    /// Its own CQ: the quietest slot in both parities, no his end.
+    Listen,
+    /// Answering from its own CQ (CqWhenNoTarget, WstxContest::ContestRun): the CQ's slot stays
+    /// unless it is within 50 Hz of the called station, then the nearest candidate away.
+    KeepCq,
+}
+/// #39 WstxStrategy::FreeTxSlot: decide the slot by `rule`, name it in the run's status and set
+/// Rx and Tx there when either is not there. The next contact revision, or None when the engine
+/// refused the command.
 fn take_slot(
     run: &mut Run,
     contact: &contact_http::Station,
@@ -1989,8 +2016,9 @@ fn take_slot(
     current: u32,
     called: Option<u32>,
     revision: u64,
-    listening: bool,
+    rule: SlotRule,
 ) -> Option<u64> {
+    let listening = rule == SlotRule::Listen;
     let r = &state.recording;
     let mode = contact_http::mode_of(run.mode);
     let facts = contact.status_facts();
@@ -2030,7 +2058,15 @@ fn take_slot(
                 .is_some_and(|f| f == *t)
         })
         .and_then(|_| pskr::target_offsets(r, mode, tx_parity));
-    let slot = freeslot::quietest(mode, current, called, his.as_deref(), &power);
+    let slot = if rule == SlotRule::KeepCq {
+        // The rule without power keeps the current slot or moves it nearest away from him; its
+        // power is still shown.
+        let mut slot = freeslot::quietest(mode, current, called, his.as_deref(), &|_| None);
+        slot.power_db = power(slot.hz).map(|p| p.round() as i64);
+        slot
+    } else {
+        freeslot::quietest(mode, current, called, his.as_deref(), &power)
+    };
     run.tx_slot = Some(slot.json());
     if facts.tx_hz == slot.hz && facts.rx_hz == slot.hz {
         return Some(revision);

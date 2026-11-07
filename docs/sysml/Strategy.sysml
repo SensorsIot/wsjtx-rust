@@ -363,8 +363,9 @@ package WstxStrategy {
         doc /* #42 (CL-042-03). A pounce is a WstxMcp::OperatingAutomation run whose
              AutomationConfiguration has pounce = <call> (strategy false): one run at a time,
              so at most one pounce and never beside a strategy run (configure and
-             start are refused state_conflict run while any run is active; selecting a strategy
-             ends a running pounce). Start also
+             start are refused state_conflict run while any run is active; switching Auto on ends a
+             running pounce, WstxStrategy::AutoToggle; a selection with Auto off leaves it and its
+             contact alone). Start also
              needs a known station band (station_band: CAT dial band, else the operating
              selection band; unknown: not_ready band) and captures it with the mode; it
              needs no active strategy. The run snapshot names it: pounce {call, band}
