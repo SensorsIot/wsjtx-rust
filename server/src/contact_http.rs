@@ -710,7 +710,15 @@ impl Station {
             "tx_calls":view.as_ref().map_or(6,|v|v.tx_calls),"tune_seconds":view.as_ref().map_or(90,|v|v.tune_seconds),
             "rx_hz":s.rx_hz,"tx_hz":s.tx_hz,"hold_tx":s.hold_tx,"parity":parity_name(s.parity),"report":s.report,
             "activity":s.activity.name(),"exchange":s.exchange,"serial":s.serial});
-        let watchdog = json!({"tx_remaining_calls":view.as_ref().map_or(0,|v|v.tx_remaining_calls),
+        // WstxStrategy::StrategyWatchdog: null during a contest stay (WD:∞), else the count.
+        let remaining = view.as_ref().map_or(json!(0), |v| {
+            if v.arm_state == wstx_rust::transmit::service::ArmState::Armed && e.staying() {
+                Value::Null
+            } else {
+                json!(v.tx_remaining_calls)
+            }
+        });
+        let watchdog = json!({"tx_remaining_calls":remaining,
             "tx_expired":view.as_ref().is_some_and(|v|v.tx_expired),
             "tune_remaining_seconds":view.as_ref().map_or(0,|v|v.tune_remaining_seconds)});
         let material = json!([transmit, settings, contact, log, watchdog]);

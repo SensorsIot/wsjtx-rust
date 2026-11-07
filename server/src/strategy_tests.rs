@@ -6985,3 +6985,23 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
         json!({"hz":1300,"power_db":10,"his_end":"no"})
     );
 }
+
+// Proves: TC-039-022, TC-039-044 (c). WD in a contest stay: 3 at the 1st repetition with the spot
+// (2x = 4), null (WD:∞) once K1ABC in situation 1 stays at the 2nd, and a number again (1, the
+// next repetition leaves) once the spot is older than 600 s.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_wd_is_infinite_in_a_contest_stay_and_a_number_after_the_spot() {
+    let t = contest_calling(|_| {}).await;
+    let (f, e) = (&t.f, t.e);
+    t.feed.inject(&heard_spot(596));
+    publish(f, rep(e, 1), &[K1ABC_WW]);
+    assert_eq!(wd(f).await, json!(3));
+    publish(f, rep(e, 2), &[K1ABC_WW]);
+    assert_eq!(contact(f).await.2, json!("armed"), "it stays");
+    assert_eq!(wd(f).await, Value::Null, "WD:∞");
+    tokio::time::sleep(Duration::from_secs(6)).await;
+    assert_eq!(wd(f).await, json!(1));
+    assert_eq!(run_of(f).await["hearing"]["state"], "unknown");
+    publish(f, rep(e, 3), &[K1ABC_WW]);
+    assert_eq!(contact(f).await.2, json!("disarmed"));
+}

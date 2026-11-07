@@ -2250,6 +2250,13 @@ impl Engine {
                 .map_or(0, |text| c.repetitions(text))
         })
     }
+    /// WstxStrategy::StrategyWatchdog: the run's own contact is in a contest stay (no count: the
+    /// snapshot's tx_remaining_calls is null, WD:∞).
+    pub fn staying(&self) -> bool {
+        self.repeat_exempt
+            .as_ref()
+            .is_some_and(|e| e.1.is_none() && self.contact.as_ref().is_some_and(|c| c.id == e.0))
+    }
     /// tx_remaining_calls (limit - reported) reads the Rep of the message due next; a strategy
     /// run's own contact has no stop and counts down to the repetition at which LeaveRule
     /// leaves it (WstxStrategy::StrategyWatchdog).

@@ -677,7 +677,7 @@ test('TC-050-003 the period bar follows the station clock and is red in my Tx pe
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-050-05; TC-050-005. #37 (operator 2026-11-02, a CQ run on 40 m): while my CQ
+// Proves: CL-050-05, CL-039-21; TC-050-005, TC-039-022 (WD:∞ for a null count). #37 (operator 2026-11-02, a CQ run on 40 m): while my CQ
 // runs the header says "Calling CQ" with the Tx period, also after a receive refresh; the
 // message line is "▶ TX now" while the station transmits and "▸ next" otherwise; an empty
 // Others list says "nobody calling".
@@ -715,6 +715,13 @@ test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherw
   transmit={arm_state:'disarmed'};watchdog={tx_remaining_calls:0,tx_expired:true,tune_remaining_seconds:0};
   await page.evaluate(()=>window.wstxContact.load());
   assert.match(await page.locator('#contact-watchdog').textContent(),/^Tx watchdog: same message sent \d+ times$/);
+  // TC-039-022: a contest stay has no count: null is WD:∞; a number is WD:n again.
+  transmit={arm_state:'armed'};watchdog={tx_remaining_calls:null,tx_expired:false,tune_remaining_seconds:0};
+  await page.evaluate(()=>window.wstxContact.load());
+  assert.equal(await page.locator('#contact-watchdog').textContent(),'WD:∞');
+  watchdog={tx_remaining_calls:3,tx_expired:false,tune_remaining_seconds:0};
+  await page.evaluate(()=>window.wstxContact.load());
+  assert.equal(await page.locator('#contact-watchdog').textContent(),'WD:3');
   transmit={arm_state:'armed'};watchdog=null;await page.evaluate(()=>window.wstxContact.load());
   clock.offset=offset+11000;r=await tickAndRead(page,offset+11000,false);
   assert.deepEqual([r.label,r.next],['▸ next:','CQ HB9BLA JN47']);

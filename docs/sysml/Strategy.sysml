@@ -691,7 +691,9 @@ package WstxStrategy {
              The run shows the last check as slot_check {repetitions, hears_us, hz} and the slot
              as tx_slot (FreeTxSlot). WD:n counts down to the repetition at which LeaveRule
              leaves (x, or 2x while the target hears us); "WD:∞" while a contest target in
-             situation 1 hears us and nothing more valuable is listed. */
+             situation 1 hears us and nothing more valuable is listed: the contact snapshot's
+             watchdog tx_remaining_calls is then null (WstxContact::ContactSnapshot), and a
+             number again once the stay ends (e.g. the spot older than 600 s). */
     }
     attribute def StrategySelector {
         doc /* The strategy element in the operating view: a selector with None and the
