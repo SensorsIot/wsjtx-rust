@@ -18,10 +18,11 @@ const fs=require('node:fs'),path=require('node:path'),readline=require('node:rea
 fs.writeFileSync(path.join(process.env.WSTX_LIVE_PAGE_CONTROL,'restart'),'');
 let sessions=0;
 readline.createInterface({input:process.stdin}).on('line',line=>{
-  const m=JSON.parse(line.replace(/^﻿/,''));
+  const m=JSON.parse(line.replace(/^\uFEFF/,''));
   console.log('CHECK GOT '+Object.keys(m).join(','));
   if(m.abort)process.exit(3);
-  if(m.cookies&&++sessions===2)process.exit(0);
+  // Once the new boot answers, the restart has given the update lock back.
+  if(m.cookies&&++sessions===2){try{fs.closeSync(fs.openSync(process.env.LPC_LOCK,'r+'));console.log('CHECK LOCK free');}catch{console.log('CHECK LOCK held');}process.exit(0);}
 });
 """
 
@@ -48,13 +49,16 @@ function Agent-Get($c, [string]$Route) {
 def prelude(station):
     exe = pwsh.ps_quote(os.path.join(station, "0d7d5c922", "wstx-rust.exe"))
     down = pwsh.ps_quote(os.path.join(station, "down"))
+    lock = pwsh.ps_quote(os.path.join(station, "logs", "update.lock"))
     return f"""
 function Log($what) {{ Add-Content -LiteralPath $env:LPC_LOG -Value $what }}
 function Get-CimInstance {{ param($ClassName,$Filter) if (-not (Test-Path -LiteralPath {down})) {{ [pscustomobject]@{{ProcessId=4242; ExecutablePath={exe}}} }} }}
 function Start-Process {{ param($FilePath,$ArgumentList,$WindowStyle,[switch]$PassThru,[switch]$Wait) Log 'ctrlc'; Set-Content -LiteralPath {down} -Value ''; [pscustomobject]@{{ExitCode=0}} }}
 function Stop-ScheduledTask {{ param($TaskName,$ErrorAction) }}
 function Get-ScheduledTask {{ param($TaskName) [pscustomobject]@{{State='Ready'}} }}
-function Start-ScheduledTask {{ param($TaskName) Log 'start'; Remove-Item -LiteralPath {down} }}
+function Start-ScheduledTask {{ param($TaskName)
+  try {{ ([IO.File]::Open({lock}, 'OpenOrCreate', 'ReadWrite', 'None')).Dispose(); Log 'start-unlocked' }} catch [IO.IOException] {{ Log 'start-locked' }}
+  Remove-Item -LiteralPath {down} }}
 function Start-Sleep {{ param($Seconds,$Milliseconds) [Threading.Thread]::Sleep(20) }}
 """
 
@@ -87,7 +91,8 @@ class LivePageCheckTests(unittest.TestCase):
             json.dump(state, f)
         rc, out = pwsh.run(SCRIPT, ["-WaitSeconds", "1", "-Station", self.station, "-AgentClient", self.client,
                                     "-RadioDir", self.radio, "-Check", self.check], prelude(self.station),
-                           env={"LPC_LOG": self.log, "LPC_STATE": self.state})
+                           env={"LPC_LOG": self.log, "LPC_STATE": self.state,
+                                "LPC_LOCK": os.path.join(self.station, "logs", "update.lock")})
         with open(self.log, encoding="utf-8") as f:
             return rc, out, f.read().split()
 
@@ -95,7 +100,7 @@ class LivePageCheckTests(unittest.TestCase):
         rc, out, log = self.run_check(state)
         self.assertEqual(rc, 3, out)
         self.assertNotIn("ctrlc", log, out)
-        self.assertNotIn("start", log, out)
+        self.assertFalse([entry for entry in log if entry.startswith("start")], out)
         self.assertIn("CHECK GOT abort", out)
         self.assertIn(why, out)
         self.assertIn("LIVE PAGE CHECK BUSY", out)
@@ -103,7 +108,9 @@ class LivePageCheckTests(unittest.TestCase):
     def test_free_station_is_restarted_once_and_the_new_session_handed_on(self):
         rc, out, log = self.run_check(FREE)
         self.assertEqual(rc, 0, out)
-        self.assertEqual(log, ["ctrlc", "start"], out)
+        # The station starts while this holds the update lock, and gets it back once it answers.
+        self.assertEqual(log, ["ctrlc", "start-locked"], out)
+        self.assertIn("CHECK LOCK free", out)
         self.assertEqual([l for l in out.splitlines() if l.startswith("CHECK GOT")],
                          ["CHECK GOT cookies", "CHECK GOT stopping", "CHECK GOT cookies"], out)
         self.assertNotIn("secret", out)
@@ -135,12 +142,6 @@ class LivePageCheckTests(unittest.TestCase):
     def test_update_running(self):
         with open(os.path.join(self.station, "logs", "update.lock"), "w"):
             self.assert_busy(FREE, "an update is running")
-
-    def test_the_update_lock_is_free_again_after_the_restart(self):
-        rc, out, _ = self.run_check(FREE)
-        self.assertEqual(rc, 0, out)
-        with open(os.path.join(self.station, "logs", "update.lock"), "a"):
-            pass
 
 
 if __name__ == "__main__":

@@ -71,11 +71,11 @@ async function run({origin,control,lines}){
     // Several periods of the new boot, again with a row that moved.
     await watch.until('several periods after the restart',()=>{clean('after the restart');return watch.periods.size>=before.periods+PERIODS&&watch.moved()>before.moved;},4*MINUTES);
     clean('at the end');
-    // Green only with both live triggers on screen: #22 needs the old boot's generation above the
-    // new one's, #50 a worked-before tip on a kept row. Without them nothing was shown wrong, but
-    // nothing was proven either.
+    // Green only with both live triggers on screen: #22 needs the new boot without a receive job
+    // yet (generation null: recording.js sync cleared live) or below the old boot's generation; #50
+    // a worked-before tip on a kept row. Without them nothing was shown wrong, but nothing was proven.
     const generations={old:oldGeneration,new:back.generation},missing=[];
-    if(!(Number.isInteger(oldGeneration)&&Number.isInteger(back.generation)&&oldGeneration>back.generation))missing.push('#22: the old generation was not above the new one');
+    if(!(Number.isInteger(oldGeneration)&&(back.generation===null||back.generation<oldGeneration)))missing.push('#22: the new boot had a job at a generation not below the old one');
     if(!watch.worked.kept)missing.push('#50: no worked-before tip on a kept row');
     return {status:missing.length?'not-exercised':'green',missing,generations,gone:gone.state,before,after:{periods:watch.periods.size,moved:watch.moved()},rowsWatched:watch.tips.size,tipsWatched:[...watch.tips.values()].filter(Boolean).length,worked:watch.worked,commands:[...new Set(watch.commands)]};
   }finally{await browser.close();}
