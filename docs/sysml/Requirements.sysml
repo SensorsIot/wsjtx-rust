@@ -4518,13 +4518,14 @@ package WstxRequirements {
              Status (the station element and the contest status, from pushed automation.state and strategy.state): a waiting run, calling_cq, Auto off, a contest S&P with Auto on and Run with Auto off; the contact snapshot without transmit capability.
              Expected: the strategy element reads "Strategy New calls waiting", "Strategy New calls · calling CQ" and "Strategy New calls · Auto off"; the contest status "Contest WW Digi · <period> UTC · S&P · Auto on" and "· Run · Auto off"; Auto disabled with the reason "Receive only" as its title without transmit capability; Auto disabled with its reason without a selection; selecting sends one PUT and nothing else; the click sends exactly one POST /strategy/auto {auto true}; the button green only after the push and grey after the HALT push; PSK sends POST /pskr/use {use false} and is disabled with "PSK Reporter is off in Settings" when the switch is off; the lines "Hears us: 75 s ago · −12 dB" and "Tx 1420 Hz · open at his end: yes", then "Hears us: 10 min ago · −12 dB", "Hears us: no", "Hears us: unknown", "· no", "· unknown"; no lines with Use off or without a target; no request during the silence (no polling); the editor shows Filter, Value with "then SNR" and Exit, and Save sends exactly value [distance], callers_first false, cq_when_no_target true, repetitions 6, quiet_minutes 15; the prompt offers S&P and Run, repetitions 2 and quiet time 10, no colouring, and Start sends one PUT without automation_confirmed; Auto on for WW Digi shows the clause, sends nothing when declined and one POST with automation_confirmed true when confirmed; no warning for FT8 Activity; no horizontal overflow at 360 px and the QSO pane keeps its height.
              2 — Isolated automated browser test; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-04';
             verify 'CL-039-20';
             verify 'CL-039-22';
             verify 'CL-063-05';
         }
+        attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_039_04_verified_by_TC_039_046 from 'CL-039-04' to 'TC-039-046';
     dependency CL_039_20_verified_by_TC_039_046 from 'CL-039-20' to 'TC-039-046';

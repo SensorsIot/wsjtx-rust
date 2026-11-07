@@ -253,6 +253,9 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 .op-qso-buttons{display:flex;flex-wrap:wrap;gap:6px}
 .op-qso-buttons button{flex:1 1 4.2rem;padding:8px 6px;font-weight:600}
 .op-app .op-qso-buttons #qso-cq{background:#1d4a3c;border-color:#3f8a6e;color:#c9f2df}
+/* #39 AutoToggle, PskrUse: green while the station says on, grey while off. */
+.op-app .op-qso-buttons :is(#qso-auto,#qso-pskr){background:#26323a;border-color:#4a5a64;color:#aab8c0}
+.op-app .op-qso-buttons :is(#qso-auto,#qso-pskr)[aria-pressed=true]{background:#1f7a4d;border-color:#3fbf7f;color:#eafff3}
 .op-app .op-qso-buttons button:disabled{opacity:.45}
 .op-app button.op-halt-small{background:#5a1f1c;border-color:#b84a42;color:#ffd6d1}
 #qso-more summary{cursor:pointer;font-size:var(--op-font-secondary);color:#9fb8c9}
@@ -440,7 +443,12 @@ body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #s
    covers the two sections in place. The Control panel below therefore never moves. The default
    split leaves room for it at 1366x768 (recording.js), helped by the tighter spacing of the
    strip, the workspace and the Control panel. Text wraps rather than being cut off. */
-#rx-focus{--ct-row:.9375rem;--ct-line:1.125rem;--ct-head:calc(var(--ct-line) + 1.9375rem);--ct-lines:calc(var(--ct-line) + .25rem);position:relative;flex:none;gap:0}
+#rx-focus{--ct-row:.9375rem;--ct-line:1.125rem;--ct-head:calc(var(--ct-line) + 1.9375rem);--ct-lines:calc(var(--ct-line) + .25rem);--ct-pskr:0px;position:relative;flex:none;gap:0}
+/* #39 PskrUse: while the two PSK Reporter lines are shown they take their room from the QSO section,
+   so the pane keeps its height and the lines are never clipped. */
+#rx-focus:has(#qso-pskr-lines:not([hidden])){--ct-pskr:calc(2 * var(--ct-line))}
+#rx-focus .ct-pskr-lines{display:flex;flex-direction:column}
+#rx-focus .ct-pskr-lines .ct-line{font-size:var(--op-font-secondary)}
 #qso-column>#rx-focus{flex:none}
 #controls #rx-focus>header.op-qso-head{flex:none;display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"id id badge" "heard tools tools";align-items:center;gap:2px 8px;height:var(--ct-head);box-sizing:border-box;padding:2px 10px 3px;overflow:visible;position:static}
 #rx-focus .op-qso-head .op-contact-identity{grid-area:id;min-width:0;max-height:var(--ct-line);overflow:hidden auto}/* a longer partner line wraps and scrolls in its own line; the buttons never move */
@@ -450,14 +458,16 @@ body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #s
 #rx-focus .op-contact-identity strong{display:block;font-size:var(--op-font-normal);line-height:var(--ct-line)}
 #rx-focus .op-contact-identity div>span{display:block;min-width:0;line-height:var(--ct-line)}
 #rx-focus .op-qso-head #qso-heard{grid-area:heard;min-width:0;margin:0;font-size:var(--op-font-secondary);line-height:var(--ct-line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}/* the full message is the newest received dialogue row */
-#rx-focus .ct-head-tools{grid-area:tools;display:flex;align-items:center;gap:4px;justify-self:end}
-#rx-focus .ct-head-tools .op-qso-buttons{flex-wrap:nowrap}
-#rx-focus .ct-head-tools .op-qso-buttons button,#rx-focus #qso-more>summary{padding:1px 8px;line-height:1.25}
+#rx-focus .ct-head-tools{grid-area:tools;display:flex;align-items:center;gap:3px;justify-self:end}
+#rx-focus .ct-head-tools .op-qso-buttons{flex-wrap:nowrap;gap:3px}
+/* #39 strategydef: Auto and PSK joined the row; the buttons are tighter so that it still fits the pane at
+   1366x768 with room for the partner's message (the text stays at its readable size). */
+#rx-focus .ct-head-tools .op-qso-buttons button,#rx-focus #qso-more>summary{padding:1px 2px;line-height:1.25}
 #rx-focus #qso-more{margin:0;position:static}
 #rx-focus #qso-more>summary{border:1px solid #2c4557;border-radius:6px;white-space:nowrap;font-size:var(--op-font-secondary)}
-#rx-focus #qso-more>.ct-more-body{position:absolute;left:0;right:0;top:calc(var(--ct-head) + var(--ct-lines));bottom:0;z-index:6;overflow:auto;padding:6px 12px;background:#11212d;border-top:1px solid #2a4151}
+#rx-focus #qso-more>.ct-more-body{position:absolute;left:0;right:0;top:calc(var(--ct-head) + var(--ct-lines) + var(--ct-pskr));bottom:0;z-index:6;overflow:auto;padding:6px 12px;background:#11212d;border-top:1px solid #2a4151}
 #rx-focus:has(#qso-more[open]) .ct-section{visibility:hidden}
-#rx-focus .op-contact-body{flex:none;height:var(--ct-lines);box-sizing:border-box;overflow:auto;min-height:0;gap:0;padding:2px 12px}
+#rx-focus .op-contact-body{flex:none;height:calc(var(--ct-lines) + var(--ct-pskr));box-sizing:border-box;overflow:auto;min-height:0;gap:0;padding:2px 12px}
 #rx-focus .op-contact-body .ct-line,#rx-focus .op-contact-body>p{line-height:var(--ct-line)}
 #rx-focus .op-contact-body button{padding:0 6px;min-height:0;line-height:1.1;font-size:var(--op-font-secondary)}/* a line's button fits its line */
 #rx-focus #qso-next{order:-1;position:relative;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 6px;min-width:0;line-height:var(--ct-line);padding-bottom:3px}
@@ -467,7 +477,7 @@ body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #s
 #rx-focus #qso-next .op-qso-progress{position:absolute;left:0;right:0;bottom:0;border-radius:2px;height:3px}
 #controls #rx-focus .ct-section{flex:none;margin:0;border-top:1px solid #253c4c;padding:0 10px;box-sizing:border-box}
 #rx-focus .ct-qso-area,#rx-focus .ct-calling-area{overflow:auto;display:block;max-height:none;font-size:.8125rem}
-#rx-focus .ct-qso-area{height:calc(13 * var(--ct-row) + 2px)}
+#rx-focus .ct-qso-area{height:calc(13 * var(--ct-row) + 2px - var(--ct-pskr))}
 #rx-focus .ct-calling-area{height:calc(6 * var(--ct-row) + 2px)}
 #rx-focus .ct-qso-table{font-size:.8125rem;line-height:var(--ct-row)}
 #rx-focus .ct-qso-table :is(td,th){line-height:var(--ct-row);height:var(--ct-row);box-sizing:border-box;padding-top:0;padding-bottom:0}
@@ -494,14 +504,15 @@ body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #s
    of the column instead of running past the screen (#37, live 2026-11-06). */
 @container (min-width:75em){#qso-column>#error-field{flex:0 1 auto;flex-wrap:nowrap;min-height:0}#error-field .op-error-body{align-self:stretch;min-height:0}}
 @container (max-width:48em){
- #rx-focus{--ct-head:calc(3 * var(--ct-line) + 2.25rem);--ct-lines:calc(2 * var(--ct-line) + .375rem)}
+ #rx-focus{--ct-head:calc(3 * var(--ct-line) + 4rem);/* two rows of direct buttons since #39 strategydef */--ct-lines:calc(2 * var(--ct-line) + .375rem)}
  #rx-focus .op-contact-identity>div{flex-direction:column;gap:0}
  #rx-focus .op-qso-head .op-contact-identity{max-height:calc(2 * var(--ct-line))}
  #rx-focus .ct-head-tools{justify-self:stretch}
  #rx-focus .ct-head-tools .op-qso-buttons{flex:1}
- #controls #rx-focus>header.op-qso-head{grid-template-areas:"id id" "heard heard" "tools badge";grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto auto}
+ /* #39 strategydef: the badge beside the partner line, so the direct buttons have the full width. */
+ #controls #rx-focus>header.op-qso-head{grid-template-areas:"id badge" "heard heard" "tools tools";grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto auto}
  #rx-focus .ct-head-tools,#rx-focus .ct-head-tools .op-qso-buttons{flex-wrap:wrap}
- #rx-focus .ct-qso-area{height:calc(7 * var(--ct-row) + 2px)}
+ #rx-focus .ct-qso-area{height:calc(7 * var(--ct-row) + 2px - var(--ct-pskr))}
  #rx-focus .ct-calling-area{height:calc(6 * var(--ct-row) + 2px)}
  /* Band Activity above the QSO pane has a fixed height too and scrolls inside, so new decodes
     do not move the QSO pane and the Control panel. */
