@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// Proves: CL-010-06, CL-010-08, CL-010-15; TC-007-005. Thin-link and local presentation:
+// TC-007-005 thin-link and local presentation:
 // the actual router with the contact engine, the logbook and the #9 transmit owner on the
 // recording hardware double (no audio, PTT or radio), served over actual rustls TLS behind
 // the tests/support.cjs 32 kbit/s, 300 ms RTT link simulator, with two authenticated
@@ -11,6 +11,8 @@ use crate::contact_http_tests::{Bench, now_ms, period_text, record_exchange};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Command, Stdio};
 
+// Proves: CL-010-06, CL-010-08, CL-010-15; TC-007-005. Runs both browsers through every
+// TC-007-005 phase on the counted link and fails unless both complete them.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn contact_thin_link_two_clients() {
     rustls::crypto::ring::default_provider()

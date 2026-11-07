@@ -1544,6 +1544,7 @@ fn an_operator_disarm_is_not_reported_as_a_refused_transmission() {
 
 // Proves: CL-010-02, CL-010-03; TC-007-001. #49: CQ keeps calling, armed, when every
 // transmission's end is reported 900 ms late (inside the release bound).
+// Proves: TC-008-003.
 #[test]
 fn cq_keeps_calling_armed_when_the_device_reports_each_end_900_ms_late() {
     let mut s = station();

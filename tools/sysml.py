@@ -101,9 +101,28 @@ def source_binding(identifier: str, binding: str, root: Path, manual: bool = Fal
             raise ValueError(f"Missing executable test symbol: {identifier}: {binding}")
         return True
     else:
-        proves = " ".join(re.findall(r"(?m)^\s*(?://|#)\s*Proves:([^\r\n]+)", source))
         named = re.search(r"\btest\s*\(\s*['\"][^'\"\r\n]*\b" + re.escape(identifier) + r"\b", source)
-        return identifier in source_proves(proves) or bool(named)
+        return identifier in source_proves(" ".join(attached_proves(source))) or bool(named)
+
+
+PROVES_TAG = re.compile(r"^\s*(?://|#)\s*Proves:([^\r\n]+)")
+# A Proves comment binds only when the next non-comment line is a test: Rust
+# #[test]/#[tokio::test], JS test( or Python def test_. Other Rust attributes and
+# Python decorators belong to the test they precede.
+ATTACHED_TEST = re.compile(r"\s*(?:#\[(?:tokio::)?test\b|test\s*\(|(?:async\s+)?def\s+test_)")
+SKIPPED_LINE = re.compile(r"\s*(?://|#(?!\[)|#\[(?!(?:tokio::)?test\b)|@)")
+
+
+def attached_proves(source: str) -> list[str]:
+    lines = source.splitlines()
+    tags = []
+    for index, line in enumerate(lines):
+        if not (tag := PROVES_TAG.match(line)):
+            continue
+        following = (code for code in lines[index + 1:] if not SKIPPED_LINE.match(code))
+        if ATTACHED_TEST.match(next(following, "")):
+            tags.append(tag[1])
+    return tags
 
 
 def source_proves(text: str) -> set[str]:
@@ -154,8 +173,9 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
                 raise ValueError("Delivered declaration lacks implementation/test binding: " + identifier)
             matched = [source_binding(identifier, binding.strip(), root, manual=methods == ["manual"])
                        for binding in (bindings[0].split(";") if bindings else [])]
-            if kind == "verification" and bindings and not any(matched):
-                raise ValueError(f"No Proves tag or named-test identity for {identifier}: {bindings[0]}")
+            unbound = [binding.strip() for binding, bound in zip(bindings[0].split(";"), matched) if not bound] if bindings else []
+            if kind == "verification" and unbound:
+                raise ValueError(f"No Proves tag or named-test identity for {identifier}: {'; '.join(unbound)}")
             entries[identifier] = {"kind": kind, "state": states[0], "refs": refs}
     if missing := set(required) - entries.keys():
         raise ValueError("Missing stable canonical identities: " + ", ".join(sorted(missing)))

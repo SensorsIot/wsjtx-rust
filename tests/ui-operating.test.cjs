@@ -809,6 +809,7 @@ test('TC-007-009 exception chips appear only for an exception and start, stop an
 });
 
 // Proves: CL-010-16; TC-007-009 Settings drawer sections and reachability.
+// Proves: TC-007-004 (Esc closes no panel).
 test('TC-007-009 the Settings drawer has four sections holding every control moved off the screen',{timeout:60000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   const requests=[];page.on('request',r=>requests.push(`${r.method()} ${new URL(r.url()).pathname}`));
@@ -900,6 +901,7 @@ test('TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fi
 
 // Proves: CL-044-13; TC-044-015. The Tx level in the Audio section follows the server's radio.tx_level
 // push; Set level and the slider are commands, the slider appears only without ALC over CI-V.
+// Proves: CL-044-14, CL-044-15; TC-044-018, TC-044-022 (steps inside this test).
 test('TC-044-015 Tx level in Settings > Radio > Audio',{timeout:60000},async t=>{
   const endpoint='icom7300://COM250?baud=19200&radio=94&controller=e0',posts=[];
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{control:{mode:'cat',endpoint,ptt:'disabled'},beforeNavigate:async p=>{
@@ -2507,6 +2509,7 @@ test('TC-043-003 the clock source and the clock from the air are shown in Settin
 // station's verdicts (it never evaluates), sends only the selection and the editor's save, and
 // keeps HALT reachable in the popup. Station replies are hand-written fixtures; the expected
 // requests and row order are written here.
+// Proves: CL-039-09; TC-039-010 (steps inside this test).
 test('TC-039-006 Selecting starts it, marks and value order from the verdicts, a column click overrides, the editor holds the settings',{timeout:60000},async t=>{
   let state,view,automation={run:null,refusal:null,policy:0,runRevision:0};const puts=[],evaluations=[],autos=[],commands=[];let automationReads=0;
   const period='2026-10-27T12:00:00.0000000Z';

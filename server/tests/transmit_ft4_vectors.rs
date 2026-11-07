@@ -41,6 +41,7 @@ fn wav(name: &str) -> Vec<f64> {
         .collect()
 }
 
+// Proves: TC-005-002.
 #[test]
 fn tc_005_002_ft4sim_bits_codeword_and_tones_match_exactly() {
     let (mut encoded, mut refused) = (0, 0);
@@ -117,6 +118,7 @@ fn deviation(ours: &[f32], reference: &[f64]) -> f64 {
         .fold(0., f64::max)
 }
 
+// Proves: TC-005-002.
 #[test]
 fn tc_005_002_waveform_matches_zero_noise_ft4sim_within_tolerance() {
     const TOLERANCE: f64 = 1e-3;
@@ -163,6 +165,7 @@ fn tc_005_002_waveform_matches_zero_noise_ft4sim_within_tolerance() {
     }
 }
 
+// Proves: TC-005-002.
 #[test]
 fn tc_005_002_48k_waveform_and_ramps() {
     let tones = encode_ft4("CQ HB9BLA JN47").unwrap().tones;
@@ -194,6 +197,7 @@ fn tc_005_002_48k_waveform_and_ramps() {
     }
 }
 
+// Proves: TC-005-002.
 #[test]
 fn tc_005_002_waveform_refusals() {
     let tones = encode_ft4("CQ K1ABC FN42").unwrap().tones;
@@ -214,6 +218,7 @@ fn tc_005_002_waveform_refusals() {
     );
 }
 
+// Proves: TC-005-002.
 #[test]
 fn tc_005_002_receive_decoder_recovers_generated_waveforms() {
     let decoder = Decoder::new();
@@ -248,6 +253,7 @@ fn tc_005_002_receive_decoder_recovers_generated_waveforms() {
     }
 }
 
+// Proves: TC-006-002.
 #[test]
 fn tc_006_002_ft4_period_selection_and_parity() {
     // 2026-10-31T12:00:00Z is an even FT4 period (multiple of 15 s).
@@ -270,6 +276,7 @@ fn tc_006_002_ft4_period_selection_and_parity() {
     assert_eq!(next_period(Mode::Ft8, t0 + 7_500, Parity::Odd), t0 + 15_000);
 }
 
+// Proves: TC-006-002.
 #[test]
 fn tc_006_002_ft4_start_plan_late_start_and_refusals() {
     let p: i64 = 1_793_448_007_500;

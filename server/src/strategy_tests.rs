@@ -238,7 +238,7 @@ fn tc_039_002_verdicts_grey_reasons_and_treat_73() {
     }
 }
 
-// Proves: TC-039-030, TC-042-001. Entity columns of cty.dat: DL Fed. Rep. of Germany (CQ 14), F
+// Entity columns of cty.dat: DL Fed. Rep. of Germany (CQ 14), F
 // France (14), JA Japan (25), K United States (5), VK Australia (30); XX1ABC has no entity.
 fn goal_log() -> Arc<Worked> {
     worked(&[

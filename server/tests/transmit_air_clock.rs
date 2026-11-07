@@ -25,6 +25,7 @@ fn estimated(s: &[(String, i64)]) -> Option<wstx_rust::transmit::air::Estimate> 
     estimate(s.iter().map(|(c, d)| (c.as_str(), *d)))
 }
 
+// Proves: TC-043-001.
 #[test]
 fn estimates_of_known_dt_distributions() {
     let names = calls(13);
@@ -92,6 +93,7 @@ fn standard(from: &str) -> Fields {
         exchange: Exchange::Grid("FN42".into()),
     }
 }
+// Proves: TC-043-001.
 #[test]
 fn observations_exclude_own_echo_weak_and_implausible_decodes() {
     assert_eq!(sender(&standard("K1ABC")), Some("K1ABC"));
@@ -145,6 +147,7 @@ fn period(air: &mut AirClock, t: i64, raw: &[i64]) {
         air.observe(t, t, call, "HB9BLA", *dt, Some(-5.0));
     }
 }
+// Proves: TC-043-001.
 #[test]
 fn admission_follows_confidence_residual_age_and_steps() {
     let ahead: Vec<i64> = CROWD.iter().map(|d| d + 2000).collect();
@@ -221,6 +224,7 @@ fn admission_follows_confidence_residual_age_and_steps() {
     assert!(plan_start(Mode::Ft8, 0, ClockState::Synchronized, 0, 48000).is_ok());
 }
 
+// Proves: TC-043-001.
 #[test]
 fn clock_source_combines_ntp_and_air() {
     use ClockState::*;
@@ -271,6 +275,7 @@ fn heard(clock: &StationClock) {
         clock.period_done();
     }
 }
+// Proves: TC-043-001.
 #[test]
 fn station_clock_applies_air_by_source_and_warns_on_disagreement() {
     let ntp = Monitor::new();
@@ -350,6 +355,7 @@ fn closed_loop(offset: i64, periods: i64) -> Vec<i64> {
     }
     applied
 }
+// Proves: TC-043-002.
 #[test]
 fn applied_correction_converges_without_oscillation() {
     // -2 s: everything is decodable at once; 2 x 1000 ms then the 25 ms hysteresis.

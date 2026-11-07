@@ -64,6 +64,7 @@ fn to_call(p: &Payload) -> serde_json::Value {
     }
 }
 
+// Proves: TC-024-001.
 #[test]
 fn hashed_calls_fill_in_from_heard_calls_and_stay_unknown_otherwise() {
     let m1 = packed("<PJ4/K1ABC> W9XYZ -05");
@@ -116,6 +117,7 @@ fn hashed_calls_fill_in_from_heard_calls_and_stay_unknown_otherwise() {
     );
 }
 
+// Proves: TC-024-001.
 #[test]
 fn my_call_fills_the_to_slot_even_after_the_list_has_dropped_it() {
     let mut t = HashTable::new();
@@ -163,6 +165,7 @@ fn my_call_fills_the_to_slot_even_after_the_list_has_dropped_it() {
     assert_eq!(shown(&t, &mine), "<...> K1ABC -05");
 }
 
+// Proves: TC-024-001.
 #[test]
 fn the_later_of_two_calls_with_one_hash_wins() {
     let mut seen = std::collections::HashMap::new();
@@ -187,6 +190,7 @@ fn the_later_of_two_calls_with_one_hash_wins() {
     );
 }
 
+// Proves: TC-024-001.
 #[test]
 fn sent_messages_teach_their_calls() {
     let mut t = HashTable::new();
