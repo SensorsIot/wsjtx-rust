@@ -1,265 +1,319 @@
 #![forbid(unsafe_code)]
+// WstxStrategy::FreeTxSlot worked by hand: power tables in dB per candidate written here, the
+// detailed bin of 12000/4096 Hz, and the operator's rule (lowest whole dB, a tie keeps the current
+// Tx, else nearer, then lower; 50 Hz from the called station and from his decoded frequencies).
 use super::*;
 
-// Proves: CL-039-21; TC-039-022. A new slot leaves the current one, stays clear of the signals
-// and the called station, and lands nearest what the target decodes; none free keeps it.
-#[test]
-fn decide_away_prefers_what_the_target_decodes() {
-    let row =
-        |hz: f64| json!({"period_start_utc":"2026-11-06T12:00:00.0000000Z","frequency_hz":hz});
-    let parity = parity(
-        Mode::Ft8,
-        parse_utc("2026-11-06T12:00:00.0000000Z").unwrap(),
-    );
-    let records = [row(1000.0)];
-    assert_eq!(
-        decide_away(&records, Mode::Ft8, parity, 1500, Some(2000), &[1020]),
-        (1100, true),
-        "1020 is on the signal at 1000; the edge of its gap is nearest"
-    );
-    assert_eq!(
-        decide_away(&records, Mode::Ft8, parity, 1500, None, &[1500]),
-        (1400, true),
-        "never the slot it leaves, even when the target decodes there"
-    );
-    assert_eq!(
-        decide_away(&records, Mode::Ft8, parity, 1500, None, &[]),
-        (1400, true),
-        "nothing known: the next free slot"
-    );
-    let full: Vec<Value> = (0..30).map(|n| row(f64::from(300 + n * 100))).collect();
-    assert_eq!(
-        decide_away(&full, Mode::Ft8, parity, 1500, None, &[1000]),
-        (1500, false)
-    );
+/// A power table: `floor` everywhere, the listed candidates at their own level.
+fn table(floor: f64, levels: &[(u32, f64)]) -> impl Fn(u32) -> Option<f64> {
+    let levels = levels.to_vec();
+    move |f| {
+        Some(
+            levels
+                .iter()
+                .find(|(hz, _)| *hz == f)
+                .map_or(floor, |(_, level)| *level),
+        )
+    }
 }
-use serde_json::json;
-
-const FT8: (u32, u32) = (300, 2650);
-
-/// FT8 signals of the given frequencies.
-fn ft8(list: &[u32]) -> Vec<Signal> {
-    list.iter().map(|hz| (*hz, 50)).collect()
+fn ft8(
+    current: u32,
+    called: Option<u32>,
+    his: Option<&[u32]>,
+    power: &dyn Fn(u32) -> Option<f64>,
+) -> Slot {
+    quietest(Mode::Ft8, current, called, his, power)
 }
-
-// Proves: TC-039-010. A FT8 signal at f forbids the slots strictly between f-100 and f+100
-// (50 Hz of mine and the gap below it; 50 Hz of its own and the gap above it).
-#[test]
-fn tc_039_010_the_free_slot_table() {
-    // (occupied, current, expected slot, what the row shows)
-    let table: &[(&[u32], u32, u32, &str)] = &[
-        (&[], 1500, 1500, "an empty band keeps the current Tx"),
-        (&[1400], 1500, 1500, "exactly 50 Hz clear above is free"),
-        (&[1600], 1500, 1500, "exactly 50 Hz clear below is free"),
-        (&[1401], 1500, 1501, "1 Hz less above moves up by 1 Hz"),
-        (&[1599], 1500, 1499, "1 Hz less below moves down by 1 Hz"),
-        (&[1500], 1500, 1400, "a tie takes the lower slot"),
-        (&[1480, 1620], 1500, 1380, "below the merged range"),
-        (&[1540, 1380], 1500, 1640, "above the merged range"),
-        (&[1400, 1600], 1500, 1500, "a slot exactly fitting a gap"),
-        (&[1401, 1600], 1500, 1301, "a gap 1 Hz too small is skipped"),
-        (&[], 250, 300, "under the lower edge moves to it"),
-        (&[], 2800, 2650, "over the upper edge moves to it"),
-        (&[300], 300, 400, "next to the lower edge goes up"),
-        (&[2650], 2650, 2550, "next to the upper edge goes down"),
-        (&[], 2650, 2650, "the highest FT8 slot ends at 2700 Hz"),
-    ];
-    for (occupied, current, expected, why) in table {
-        assert_eq!(
-            choose(&ft8(occupied), FT8, 50, *current, &[]),
-            Some(*expected),
-            "{why}"
-        );
+fn slot(hz: u32, power_db: Option<i64>, his_end: HisEnd) -> Slot {
+    Slot {
+        hz,
+        power_db,
+        his_end,
     }
 }
 
-// Proves: TC-039-010. Signals every 190 Hz leave no slot: each forbids 199 of them.
+// Proves: TC-039-010. One lowest slot wins; the current Tx tying it is kept; two lowest without
+// the current Tx: the nearer to it, at equal distance the lower.
 #[test]
-fn tc_039_010_a_full_band_has_no_slot() {
-    let full: Vec<u32> = (0..13).map(|i| 300 + 190 * i).collect();
-    assert_eq!(choose(&ft8(&full), FT8, 50, 1500, &[]), None);
-    assert_eq!(choose(&ft8(&full), FT8, 50, 1500, &[900, 2000]), None);
-    // Without the signal at 2580 Hz the band above 2490 Hz is free.
-    assert_eq!(choose(&ft8(&full[..12]), FT8, 50, 1500, &[]), Some(2490));
+fn tc_039_010_the_lowest_power_wins_and_a_tie_keeps_the_current_tx() {
+    use HisEnd::Unknown;
+    assert_eq!(
+        ft8(1500, None, None, &table(40.0, &[(1800, 20.0)])),
+        slot(1800, Some(20), Unknown)
+    );
+    assert_eq!(
+        ft8(
+            1500,
+            None,
+            None,
+            &table(40.0, &[(1800, 20.0), (1500, 20.0)])
+        ),
+        slot(1500, Some(20), Unknown),
+        "the current Tx among the quietest stays"
+    );
+    assert_eq!(
+        ft8(
+            1500,
+            None,
+            None,
+            &table(40.0, &[(1800, 20.0), (1300, 20.0)])
+        ),
+        slot(1300, Some(20), Unknown),
+        "200 Hz away before 300 Hz away"
+    );
+    assert_eq!(
+        ft8(
+            1500,
+            None,
+            None,
+            &table(40.0, &[(1700, 20.0), (1300, 20.0)])
+        ),
+        slot(1300, Some(20), Unknown),
+        "equally near: the lower"
+    );
+    // A current Tx off the 10 Hz grid is a candidate itself.
+    assert_eq!(
+        ft8(
+            1505,
+            None,
+            None,
+            &table(40.0, &[(1505, 20.0), (1300, 20.0)])
+        ),
+        slot(1505, Some(20), Unknown)
+    );
 }
 
-// Proves: TC-039-010. The extension for the later #39 slice.
+// Proves: TC-039-010, TC-039-022. Power compares in whole dB: 40.4 and 40.0 are one dB and tie, so
+// the current Tx stays (the slot check keeps a tied slot); 40.6 is 41 dB and loses to 40.0. There is
+// no threshold beyond that.
 #[test]
-fn tc_039_010_preferred_frequencies_win_over_the_current_tx() {
-    // (occupied, current, preferred, expected)
-    let table: &[(&[u32], u32, &[u32], u32)] = &[
-        (&[], 1500, &[900], 900),
-        (&[], 1500, &[100], 300),
-        (&[], 1500, &[3000], 2650),
-        // The first preferred is taken, the second is free.
-        (&[700], 1500, &[700, 1000], 1000),
-        // 900 is busy: 800 and 1000 tie for it; 1000 is nearer the current Tx.
-        (&[900], 1500, &[900], 1000),
-        // The same tie, the current Tx exactly between them: the lowest.
-        (&[900], 900, &[900], 800),
-        // The slot it leaves goes in as occupied: another slot, near the preferred.
-        (&[1500], 1500, &[1500], 1400),
-    ];
-    for (occupied, current, preferred, expected) in table {
-        assert_eq!(
-            choose(&ft8(occupied), FT8, 50, *current, preferred),
-            Some(*expected),
-            "{occupied:?} {current} {preferred:?}"
-        );
-    }
+fn tc_039_010_whole_db_decides_the_tie() {
+    let tied = table(50.0, &[(1500, 40.4), (1800, 40.0)]);
+    assert_eq!(
+        ft8(1500, None, None, &tied),
+        slot(1500, Some(40), HisEnd::Unknown)
+    );
+    let louder = table(50.0, &[(1500, 40.6), (1800, 40.0)]);
+    assert_eq!(
+        ft8(1500, None, None, &louder),
+        slot(1800, Some(40), HisEnd::Unknown)
+    );
+    // 41 dB against 40 dB moves, however close.
+    let one = table(50.0, &[(1500, 41.0), (1510, 40.0)]);
+    assert_eq!(ft8(1500, None, None, &one).hz, 1510);
 }
 
-// Proves: TC-039-010. A FT4 signal is 90 Hz wide: at f it forbids f-140 < slot < f+140.
+// Proves: TC-039-010. The range edges: FT8 300..2650 and FT4 300..2610 (90 Hz wide), my whole
+// signal below 2700 Hz; a quiet slot outside is never taken.
 #[test]
-fn tc_039_010_ft4_width_and_bounds() {
-    assert_eq!(band(Mode::Ft8), FT8);
+fn tc_039_010_never_outside_the_tx_range() {
+    let edges = table(40.0, &[(290, 0.0), (300, 20.0), (2650, 20.0), (2660, 0.0)]);
+    assert_eq!(
+        ft8(2600, None, None, &edges).hz,
+        2650,
+        "the upper edge, nearer"
+    );
+    assert_eq!(
+        ft8(400, None, None, &edges).hz,
+        300,
+        "the lower edge, nearer"
+    );
+    let ft4 = table(40.0, &[(2610, 20.0), (2620, 0.0), (2650, 0.0)]);
+    assert_eq!(
+        quietest(Mode::Ft4, 1500, None, None, &ft4),
+        slot(2610, Some(20), HisEnd::Unknown)
+    );
+    // A current Tx outside the range is no candidate.
+    let outside = table(40.0, &[(2700, 0.0)]);
+    assert_eq!(ft8(2700, None, None, &outside).hz, 2650);
+    assert_eq!(band(Mode::Ft8), (300, 2650));
     assert_eq!(band(Mode::Ft4), (300, 2610));
-    let signal = [(1500, width_hz(Mode::Ft4))];
-    let bounds = band(Mode::Ft4);
-    let width = width_hz(Mode::Ft4);
-    assert_eq!(choose(&signal, bounds, width, 1640, &[]), Some(1640));
-    assert_eq!(choose(&signal, bounds, width, 1639, &[]), Some(1640));
-    assert_eq!(choose(&signal, bounds, width, 1361, &[]), Some(1360));
-    assert_eq!(choose(&[], bounds, width, 2700, &[]), Some(2610));
 }
 
-fn decode(period: &str, hz: Value) -> Value {
-    json!({"period_start_utc":period,"frequency_hz":hz})
-}
-
-// Proves: TC-039-010. :15 and :45 are odd FT8 periods, :00 and :30 even.
+// Proves: TC-039-010. Never within 50 Hz of the called station's signal: an FT8 station at 1800
+// forbids 1710..1890 (my 50 Hz signal keeps 50 Hz from its 50 Hz), so the quietest away from it.
 #[test]
-fn tc_039_010_recent_means_four_decoding_periods_of_my_parity() {
-    let records = [
-        decode("2026-11-06T12:00:15.000Z", json!(100.0)),
-        decode("2026-11-06T12:00:45.000Z", json!(200.4)),
-        decode("2026-11-06T12:01:00.000Z", json!(250.0)),
-        decode("2026-11-06T12:01:15.000Z", json!(299.6)),
-        decode("2026-11-06T12:01:15.000Z", json!(310.0)),
-        // 12:01:45 decoded nothing (my own Tx): the 12:00:45 period still counts.
-        decode("2026-11-06T12:02:15.000Z", json!(400.0)),
-        decode("2026-11-06T12:02:45.000Z", json!(500.0)),
-        decode("not a time", json!(600.0)),
-        decode("2026-11-06T12:02:45.000Z", Value::Null),
-    ];
-    assert_eq!(
-        recent_signals(&records, Mode::Ft8, Parity::Odd, 4),
-        [(200, 50), (300, 50), (310, 50), (400, 50), (500, 50)]
+fn tc_039_010_never_within_50_hz_of_the_called_station() {
+    let quiet_on_him = table(
+        40.0,
+        &[
+            (1800, 10.0),
+            (1760, 10.0),
+            (1850, 10.0),
+            (1700, 20.0),
+            (1900, 20.0),
+        ],
     );
     assert_eq!(
-        recent_signals(&records, Mode::Ft8, Parity::Odd, 1),
-        [(500, 50)]
+        ft8(1500, Some(1800), None, &quiet_on_him),
+        slot(1700, Some(20), HisEnd::Unknown),
+        "1700 and 1900 tie; 1700 is nearer to 1500"
     );
-    assert_eq!(
-        recent_signals(&records, Mode::Ft8, Parity::Even, 4),
-        [(250, 50)]
+    // FT4 is 90 Hz wide: a station at 1800 forbids 1661..1939.
+    let ft4 = table(
+        40.0,
+        &[(1660, 20.0), (1670, 10.0), (1930, 10.0), (1940, 15.0)],
     );
-    assert_eq!(recent_signals(&[], Mode::Ft8, Parity::Odd, 4), []);
-    // FT4: 7.5 s periods; :07.5 is odd and its signal 90 Hz wide.
-    let ft4 = [
-        decode("2026-11-06T12:00:00.000Z", json!(700.0)),
-        decode("2026-11-06T12:00:07.500Z", json!(800.0)),
-    ];
-    assert_eq!(recent_signals(&ft4, Mode::Ft4, Parity::Odd, 4), [(800, 90)]);
+    assert_eq!(quietest(Mode::Ft4, 1500, Some(1800), None, &ft4).hz, 1940);
 }
 
-/// One odd FT8 period per entry, the oldest first; `FULL` is a whole band of signals.
-const FULL: &[f64] = &[
-    300.0, 490.0, 680.0, 870.0, 1060.0, 1250.0, 1440.0, 1630.0, 1820.0, 2010.0, 2200.0, 2390.0,
-    2580.0,
-];
-fn periods(list: &[&[f64]]) -> Vec<Value> {
-    list.iter()
-        .enumerate()
-        .flat_map(|(i, signals)| {
-            let period = format!("2026-11-06T12:{:02}:15.000Z", i);
-            signals.iter().map(move |hz| decode(&period, json!(hz)))
+// Proves: TC-039-010. His end: a frequency he decodes (of my Tx parity, chosen by the feed) within
+// 50 Hz excludes the slot, 50 Hz away does not; when every candidate is excluded his end is not
+// used and the status says no; none known: unknown.
+#[test]
+fn tc_039_010_his_end_excludes_and_is_ignored_when_it_leaves_nothing() {
+    let power = table(40.0, &[(1800, 20.0), (1200, 25.0)]);
+    assert_eq!(
+        ft8(1500, None, Some(&[1830]), &power),
+        slot(1200, Some(25), HisEnd::Yes),
+        "1800 is 30 Hz from 1830: the next quietest"
+    );
+    assert_eq!(
+        ft8(1500, None, Some(&[1850]), &power),
+        slot(1800, Some(20), HisEnd::Yes),
+        "exactly 50 Hz away is free"
+    );
+    let all: Vec<u32> = (300..=2650).step_by(40).collect();
+    assert_eq!(
+        ft8(1500, None, Some(&all), &power),
+        slot(1800, Some(20), HisEnd::No),
+        "everything excluded: his end ignored"
+    );
+    assert_eq!(
+        ft8(1500, None, Some(&[]), &power),
+        slot(1800, Some(20), HisEnd::Unknown)
+    );
+    assert_eq!(ft8(1500, None, None, &power).his_end, HisEnd::Unknown);
+}
+
+// Proves: TC-039-010. No power yet: the current Tx is kept, or when it is too near the called
+// station the nearest candidate away from it (the lower on a tie), power_db null.
+#[test]
+fn tc_039_010_no_power_keeps_the_current_tx() {
+    let none = |_: u32| None;
+    assert_eq!(
+        ft8(1500, Some(2400), None, &none),
+        slot(1500, None, HisEnd::Unknown)
+    );
+    assert_eq!(
+        ft8(1500, Some(1500), None, &none),
+        slot(1400, None, HisEnd::Unknown),
+        "1400 and 1600 are equally near: the lower"
+    );
+    assert_eq!(ft8(1500, Some(1530), None, &none).hz, 1430);
+    assert_eq!(
+        ft8(1500, None, Some(&[1520]), &none),
+        slot(1500, None, HisEnd::No)
+    );
+    assert_eq!(
+        ft8(1500, None, Some(&[1600]), &none),
+        slot(1500, None, HisEnd::Yes)
+    );
+    assert_eq!(
+        slot(1500, None, HisEnd::No).json(),
+        json!({"hz":1500,"power_db":null,"his_end":"no"})
+    );
+}
+
+/// :00 and :30 of an FT8 minute are even periods, :15 and :45 odd.
+const EVEN: i64 = 1_762_430_400_000;
+const ODD: i64 = EVEN + 15_000;
+/// A period's mean levels: `floor` in every bin, `raised` over [from, to) Hz.
+fn levels(floor: u8, raised: Option<(u32, u32, u8)>) -> Vec<f32> {
+    row(floor, raised).into_iter().map(f32::from).collect()
+}
+/// A detailed row: `floor` in every bin, `raised` over [from, to) Hz.
+fn row(floor: u8, raised: Option<(u32, u32, u8)>) -> Vec<u8> {
+    (0..1024)
+        .map(|bin| {
+            let hz = bin as f64 * BIN_HZ;
+            raised
+                .filter(|(from, to, _)| hz >= f64::from(*from) && hz < f64::from(*to))
+                .map_or(floor, |(_, _, level)| level)
         })
         .collect()
 }
 
-// Proves: TC-039-010. Worked by hand: an FT8 signal at f forbids f-100 < slot < f+100.
+// Proves: TC-039-010. The per-period power: the mean level of each bin over the rows of a period;
+// a period I transmitted in is not counted; the last 4 of a parity; a new live job starts empty;
+// the open period counts once it has ended.
 #[test]
-fn tc_039_010_a_busy_band_looks_at_fewer_periods_and_never_at_the_called_station() {
-    // (odd periods, current, called, expected, what the row shows)
-    type Row<'a> = (&'a [&'a [f64]], u32, Option<u32>, (u32, bool), &'a str);
-    let table: &[Row] = &[
-        (
-            &[&[1500.0]],
-            1500,
-            None,
-            (1400, true),
-            "one period, the tie",
-        ),
-        (
-            &[FULL, &[1350.0], &[2000.0], &[1500.0]],
-            1500,
-            None,
-            (1600, true),
-            "4 fill: 3 forbid 1250..1600, 1900..2100",
-        ),
-        (
-            &[FULL, FULL, &[1350.0], &[1500.0]],
-            1500,
-            None,
-            (1600, true),
-            "4 and 3 fill: 2 forbid 1250..1600",
-        ),
-        (
-            &[FULL, FULL, FULL, &[1500.0]],
-            1500,
-            None,
-            (1400, true),
-            "4, 3 and 2 fill: the latest forbids 1400..1600",
-        ),
-        (
-            &[&[1500.0], FULL],
-            1600,
-            None,
-            (1600, false),
-            "the latest fills: Tx keeps its frequency",
-        ),
-        (
-            &[FULL],
-            250,
-            None,
-            (250, false),
-            "no called station: also outside the band",
-        ),
-        (
-            &[FULL],
-            1500,
-            Some(2400),
-            (1500, false),
-            "the called station is far away",
-        ),
-        (
-            &[FULL],
-            1500,
-            Some(1500),
-            (1400, false),
-            "never on the called station: the tie",
-        ),
-        (
-            &[FULL],
-            1500,
-            Some(1450),
-            (1550, false),
-            "never next to it: 1350 < slot < 1550 forbidden",
-        ),
-        (
-            &[&[1500.0]],
-            1500,
-            Some(1600),
-            (1400, true),
-            "the called station counts in every look",
-        ),
-    ];
-    for (list, current, called, expected, why) in table {
-        assert_eq!(
-            decide(&periods(list), Mode::Ft8, Parity::Odd, *current, *called),
-            *expected,
-            "{why}"
-        );
+fn tc_039_010_the_waterfall_counts_received_periods_of_each_parity() {
+    let job = ("job", 1);
+    let mut w = Waterfall::default();
+    // Six even periods: 20 dB, except a 60 dB band 1000..1100 Hz in the oldest two.
+    for n in 0..6 {
+        let start = EVEN + n * 30_000;
+        let raised = (n < 2).then_some((1000, 1100, 60));
+        w.row(job, start, 15_000, &row(20, raised), false);
+        w.row(job, start, 15_000, &row(30, raised), false);
+        // My own odd periods: a loud band, but transmitted in.
+        w.row(job, start + 15_000, 15_000, &row(90, None), true);
     }
+    let all = w.periods(job, EVEN + 6 * 30_000);
+    assert_eq!(all.len(), 6, "the transmitted periods are not counted");
+    assert_eq!(all[0].levels[0], 25.0, "the mean of the two rows");
+    let even = recent(&all, Mode::Ft8, Parity::Even, i64::MIN);
+    assert_eq!(even.len(), 4, "the last 4");
+    assert_eq!(even[0].start_ms, EVEN + 2 * 30_000);
+    assert_eq!(
+        slot_power(&even, 1000, 50),
+        Some(25.0),
+        "the raised band is older"
+    );
+    assert!(recent(&all, Mode::Ft8, Parity::Odd, i64::MIN).is_empty());
+    // After a band change only periods from then on count.
+    assert_eq!(
+        recent(&all, Mode::Ft8, Parity::Even, EVEN + 4 * 30_000).len(),
+        2
+    );
+    // The open period counts once it has ended, and not before.
+    w.row(job, ODD + 6 * 30_000, 15_000, &row(40, None), false);
+    assert_eq!(w.periods(job, ODD + 6 * 30_000 + 14_999).len(), 6);
+    assert_eq!(w.periods(job, ODD + 6 * 30_000 + 15_000).len(), 7);
+    // Another live job reads nothing of this one and starts empty.
+    assert!(w.periods(("other", 1), EVEN + 9 * 30_000).is_empty());
+    w.row(("job", 2), EVEN + 9 * 30_000, 15_000, &row(20, None), false);
+    assert!(w.periods(job, EVEN + 10 * 30_000).is_empty());
+    assert_eq!(w.periods(("job", 2), EVEN + 10 * 30_000).len(), 1);
+}
+
+// Proves: TC-039-010. The power of a slot is over the bins of [f, f + width): a 60 dB band at
+// 1000..1100 Hz on a 20 dB floor; while only listening the louder parity counts.
+#[test]
+fn tc_039_010_slot_power_is_over_its_width_and_listening_takes_the_louder_parity() {
+    let quiet = Period {
+        start_ms: EVEN,
+        levels: levels(20, Some((1000, 1100, 60))),
+    };
+    let periods = [&quiet];
+    assert_eq!(slot_power(&periods, 900, 50), Some(20.0));
+    assert_eq!(slot_power(&periods, 1000, 50), Some(60.0));
+    assert_eq!(
+        slot_power(&periods, 1100, 50),
+        Some(20.0),
+        "the band ends below 1100"
+    );
+    // 1080..1130: bins 369..385 (1081.1..1127.9 Hz), of them 369..375 (to 1098.6 Hz) raised.
+    let raised = (369..=375).count() as f64;
+    let all = (369..=385).count() as f64;
+    let expected = (raised * 60.0 + (all - raised) * 20.0) / all;
+    assert_eq!(slot_power(&periods, 1080, 50), Some(expected));
+    assert_eq!(slot_power(&[], 1000, 50), None, "no period");
+    // Listening: even quiet at 1800, odd loud there: the louder counts, so 1800 is no slot; the
+    // nearest at the 30 dB floor are 1740 (bins to 1787 Hz) and 1860, equally near: the lower.
+    let even = Period {
+        start_ms: EVEN,
+        levels: levels(30, Some((1790, 1860, 10))),
+    };
+    let odd = Period {
+        start_ms: ODD,
+        levels: levels(30, Some((1790, 1860, 70))),
+    };
+    let both = |f: u32| {
+        let a = slot_power(&[&even], f, 50)?;
+        let b = slot_power(&[&odd], f, 50)?;
+        Some(a.max(b))
+    };
+    assert_eq!(quietest(Mode::Ft8, 1800, None, None, &both).hz, 1740);
 }

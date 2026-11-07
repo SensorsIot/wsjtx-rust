@@ -1422,6 +1422,7 @@ async fn tc_039_004_selecting_starts_a_run_that_calls_by_value_and_never_calls_c
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
     // Selecting starts it: no other request; the run waits and no CQ is armed.
     select(&f, config(Some("Test calls"))).await;
     f.tick();
@@ -1465,14 +1466,15 @@ async fn tc_039_004_selecting_starts_a_run_that_calls_by_value_and_never_calls_c
         contact(&f).await,
         (json!("DL1XYZ"), json!("replying"), json!("armed"))
     );
-    // Proves: CL-039-08; TC-039-009: the strategy's pick moves Rx, Tx stays on its slot.
+    // Proves: CL-039-08; TC-039-009: after the strategy's pick Tx stays on its slot (no power yet,
+    // clear of the station) and Rx = Tx (WstxStrategy::FreeTxSlot).
     let c = f.read("contact").await;
     assert_eq!(
         (
             c["settings"]["rx_hz"].clone(),
             c["settings"]["tx_hz"].clone()
         ),
-        (json!(1200), json!(1500))
+        (json!(1500), json!(1500))
     );
     let run = f.read("automation").await["run"].clone();
     assert_eq!(
@@ -1483,8 +1485,8 @@ async fn tc_039_004_selecting_starts_a_run_that_calls_by_value_and_never_calls_c
         ),
         (json!("contact_active"), json!(2), json!("DL1XYZ"))
     );
-    // calls_per_station 2: two partner periods without an answer: on to the best other
-    // candidate of the next publication; DL1XYZ is stronger but passed over, no stop.
+    // Repetitions 2: two partner periods without an answer leave DL1XYZ, quiet for a minute
+    // (quiet_minutes 1); no stop.
     publish(&f, e + 30_000, &[]);
     publish(&f, e + 60_000, &[]);
     assert_eq!(contact(&f).await.2, json!("disarmed"));
@@ -1492,10 +1494,16 @@ async fn tc_039_004_selecting_starts_a_run_that_calls_by_value_and_never_calls_c
     assert_eq!(
         (
             run["state"].clone(),
-            run["rested"].clone(),
+            run["left"].clone(),
+            run["quiet"][0]["call"].clone(),
             run["reason"].clone()
         ),
-        (json!("waiting"), json!("DL1XYZ"), Value::Null)
+        (
+            json!("waiting"),
+            json!({"call":"DL1XYZ","reason":"repetitions"}),
+            json!("DL1XYZ"),
+            Value::Null
+        )
     );
     let tx = f.read("contact").await["settings"]["tx_hz"].clone();
     publish(
@@ -1513,25 +1521,25 @@ async fn tc_039_004_selecting_starts_a_run_that_calls_by_value_and_never_calls_c
             c["contact"]["messages"][0].clone(),
             c["transmit"]["arm_state"].clone()
         ),
-        (json!("K1ABC"), json!("K1ABC HB9BLA JN47"), json!("armed"))
+        (json!("K1ABC"), json!("K1ABC HB9BLA JN47"), json!("armed")),
+        "DL1XYZ is quiet"
     );
     assert_eq!(
         (
             c["settings"]["tx_hz"].clone(),
             c["settings"]["rx_hz"].clone()
         ),
-        (tx, json!(1700)),
-        "after a 73 Tx stays on its free slot"
+        (tx.clone(), tx),
+        "after a 73 Tx stays on its slot, Rx = Tx"
     );
-    // It comes back: K1ABC given its calls, DL1XYZ again; then K1ABC alone is called again.
+    // K1ABC left in turn; its CQ is not called during its quiet minute, and is after it.
     publish(&f, e + 120_000, &[]);
     publish(&f, e + 150_000, &[]);
     publish(&f, e + 180_000, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
-    assert_eq!(
-        contact(&f).await.0,
-        json!("K1ABC"),
-        "the one it left, when alone"
-    );
+    assert_eq!(contact(&f).await.2, json!("disarmed"), "quiet");
+    at_skew(&f, 60);
+    publish(&f, e + 210_000, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"), "after its quiet time");
     // None stops it: the armed contact is disarmed, the run stopped.
     save(&f, config(None)).await;
     assert_eq!(contact(&f).await.2, json!("disarmed"));
@@ -1929,10 +1937,10 @@ async fn tc_039_004_an_mcp_client_cannot_restart_a_stopped_strategy() {
     );
 }
 
-// Proves: TC-039-004. Review finding 2: the station left after calls_per_station answers me: it
-// is a caller, always answered first, not passed over.
+// Proves: TC-039-004, TC-039-043. A station left after its repetitions is quiet (QuietTime): when it
+// calls my call it is not answered, the stronger CQ is called instead.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_004_a_station_left_after_its_calls_is_answered_when_it_calls_me() {
+async fn tc_039_004_a_station_left_is_not_answered_in_its_quiet_time() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
@@ -1940,7 +1948,10 @@ async fn tc_039_004_a_station_left_after_its_calls_is_answered_when_it_calls_me(
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-10.0))]);
     publish(&f, e + 30_000, &[]);
     publish(&f, e + 60_000, &[]);
-    assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
+    assert_eq!(
+        f.read("automation").await["run"]["left"],
+        json!({"call":"K1ABC","reason":"repetitions"})
+    );
     publish(
         &f,
         e + 90_000,
@@ -1950,7 +1961,7 @@ async fn tc_039_004_a_station_left_after_its_calls_is_answered_when_it_calls_me(
         ],
     );
     let c = contact(&f).await;
-    assert_eq!(c.0, json!("K1ABC"), "the caller, not the stronger CQ");
+    assert_eq!(c.0, json!("DL1XYZ"), "the quiet caller is not answered");
     assert_eq!(c.2, json!("armed"));
 }
 
@@ -2172,10 +2183,10 @@ async fn tc_039_004_a_station_completed_on_one_band_is_answered_on_another() {
     );
 }
 
-// Proves: TC-039-004. The station left after calls_per_station is passed over on that band only;
+// Proves: TC-039-004, TC-039-043. The quiet time of a left station holds on its band and mode only;
 // the station the operator gave up stays given up for the rest of the run.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_004_a_retune_ends_the_pass_over_not_the_operators_give_up() {
+async fn tc_039_004_a_retune_leaves_the_quiet_time_behind_not_the_operators_give_up() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     f.state.recording.fixture_band("40m");
@@ -2185,7 +2196,10 @@ async fn tc_039_004_a_retune_ends_the_pass_over_not_the_operators_give_up() {
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
     publish(&f, e + 30_000, &[]);
     publish(&f, e + 60_000, &[]);
-    assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
+    assert_eq!(
+        f.read("automation").await["run"]["quiet"][0]["band"],
+        json!("40m")
+    );
     f.state.recording.fixture_band("20m");
     publish(
         &f,
@@ -2198,7 +2212,7 @@ async fn tc_039_004_a_retune_ends_the_pass_over_not_the_operators_give_up() {
     assert_eq!(
         quiet_contact(&f).await.0,
         json!("K1ABC"),
-        "the strongest: nothing was left on this band"
+        "the strongest: quiet only on 40 m"
     );
     browser_ok(&f, "cancel", json!({})).await;
     f.tick();
@@ -2564,76 +2578,11 @@ async fn tc_039_031_update_most_wanted_status_failures_and_mcp_refusal() {
     );
 }
 
-/// A station that is neither calling nor calling me, on `hz`.
-fn busy(hz: f64) -> (&'static str, f64, Option<f64>) {
-    ("W2XX W3YY -05", hz, Some(-5.0))
-}
 /// (Rx, Tx, the run's slot status).
 async fn frequencies(f: &Mcp) -> (Value, Value, Value) {
     let settings = f.read("contact").await["settings"].clone();
     let slot = f.read("automation").await["run"]["tx_slot"].clone();
     (settings["rx_hz"].clone(), settings["tx_hz"].clone(), slot)
-}
-
-// Proves: CL-039-09; TC-039-010. My Tx parity after answering an even station is odd. Slots
-// worked out by hand: an FT8 signal at f forbids the slots strictly between f-100 and f+100.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_010_a_strategy_takes_a_free_slot_keeps_it_and_changes_it_only_when_busy() {
-    let f = station(true).await;
-    f.state.recording.fixture_live_job("ft8");
-    let e = at_even(&f);
-    select(&f, config(Some("Test calls"))).await;
-    // The 5th period back (would force 1720 Hz) and the other parity (too) do not count.
-    publish(&f, e - 135_000, &[busy(1320.0)]);
-    publish(&f, e - 105_000, &[busy(2000.0)]);
-    publish(&f, e - 75_000, &[busy(1480.0)]);
-    publish(&f, e - 60_000, &[busy(1290.0)]);
-    publish(&f, e - 45_000, &[busy(1620.0)]);
-    publish(&f, e - 15_000, &[busy(2100.0)]);
-    // 1480 and 1620 forbid 1380 < slot < 1720: my Tx 1500 goes to 1380, Rx to the station.
-    publish(&f, e, &[("CQ K1ABC FN42", 2400.0, Some(-5.0))]);
-    assert_eq!(
-        contact(&f).await,
-        (json!("K1ABC"), json!("replying"), json!("armed"))
-    );
-    assert_eq!(
-        frequencies(&f).await,
-        (json!(2400), json!(1380), json!({"hz":1380,"free":true}))
-    );
-    // The whole QSO stays there.
-    publish(&f, e + 30_000, &[("HB9BLA K1ABC -10", 2400.0, Some(-10.0))]);
-    assert_eq!(contact(&f).await.1, json!("roger_report"));
-    assert_eq!(frequencies(&f).await.1, json!(1380));
-    publish(
-        &f,
-        e + 60_000,
-        &[("HB9BLA K1ABC RR73", 2400.0, Some(-10.0))],
-    );
-    assert_eq!(contact(&f).await.1, json!("signoff"));
-    transmit_own_period(&f, e + 15_000).await;
-    assert_eq!(contact(&f).await.1, json!("completed"));
-    assert_eq!(frequencies(&f).await.1, json!(1380));
-    f.tick();
-    // The next call: last 4 odd periods 2650, 2100, 1620, 1480 leave 1380 free; it stays.
-    publish(&f, e + 75_000, &[busy(2650.0)]);
-    publish(&f, e + 90_000, &[("CQ DL1XYZ JO62", 900.0, Some(-5.0))]);
-    assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
-    assert_eq!(
-        frequencies(&f).await,
-        (json!(900), json!(1380), json!({"hz":1380,"free":true}))
-    );
-    // calls_per_station 2 gives DL1XYZ up. The slot then becomes busy: the last 4 odd periods
-    // 1400, 2650, 2100, 1620 and the station on 1000 forbid 900..1100, 1300..1500,
-    // 1520..1720, 2000..2200, 2550..2750: 1300 is the nearest to 1380.
-    publish(&f, e + 120_000, &[]);
-    publish(&f, e + 150_000, &[]);
-    publish(&f, e + 165_000, &[busy(1400.0)]);
-    publish(&f, e + 180_000, &[("CQ G4ABC IO91", 1000.0, Some(-5.0))]);
-    assert_eq!(contact(&f).await.0, json!("G4ABC"));
-    assert_eq!(
-        frequencies(&f).await,
-        (json!(1000), json!(1300), json!({"hz":1300,"free":true}))
-    );
 }
 
 // Proves: CL-039-09; TC-039-010.
@@ -2643,13 +2592,17 @@ async fn tc_039_010_never_on_the_called_station_also_with_hold_tx_off() {
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
     select(&f, config(Some("Test calls"))).await;
-    // A station on my Tx: 1400 and 1600 tie, the lower.
+    // A station on my Tx, no power yet: 1400 and 1600 tie, the lower; Rx = Tx.
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-5.0))]);
     assert_eq!(
         frequencies(&f).await,
-        (json!(1500), json!(1400), json!({"hz":1400,"free":true}))
+        (
+            json!(1400),
+            json!(1400),
+            json!({"hz":1400,"power_db":null,"his_end":"unknown"})
+        )
     );
-    // calls_per_station 2 gives K1ABC up. Hold Tx off: the selection moves Tx, the run takes it back.
+    // Repetitions 2 leave K1ABC. Hold Tx off: the selection moves Tx, the run takes it back.
     publish(&f, e + 30_000, &[]);
     publish(&f, e + 60_000, &[]);
     assert_eq!(contact(&f).await.2, json!("disarmed"));
@@ -2661,134 +2614,13 @@ async fn tc_039_010_never_on_the_called_station_also_with_hold_tx_off() {
     );
     assert_eq!(
         frequencies(&f).await,
-        (json!(1700), json!(1400), json!({"hz":1400,"free":true}))
+        (
+            json!(1400),
+            json!(1400),
+            json!({"hz":1400,"power_db":null,"his_end":"unknown"})
+        )
     );
     assert_eq!(f.keys(), 0);
-}
-
-// Proves: CL-039-09; TC-039-010. Signals every 190 Hz leave no FT8 slot in 300..2650.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_010_a_full_band_keeps_the_tx_still_calls_and_says_so() {
-    let f = station(true).await;
-    f.state.recording.fixture_live_job("ft8");
-    let e = at_even(&f);
-    select(&f, config(Some("Test calls"))).await;
-    let full: Vec<_> = (0..13).map(|i| busy(f64::from(300 + 190 * i))).collect();
-    publish(&f, e - 15_000, &full);
-    publish(&f, e, &[("CQ K1ABC FN42", 2400.0, Some(-5.0))]);
-    assert_eq!(
-        contact(&f).await,
-        (json!("K1ABC"), json!("replying"), json!("armed"))
-    );
-    assert_eq!(
-        frequencies(&f).await,
-        (json!(2400), json!(1500), json!({"hz":1500,"free":false}))
-    );
-    assert_eq!(f.keys(), 0);
-}
-
-// Proves: CL-039-09; TC-039-010. A full band and a station on my Tx: no free slot, and the call
-// still does not go out on the station: 1400 and 1600 tie for 1500, the lower.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_010_a_full_band_still_never_calls_on_the_called_station() {
-    let f = station(true).await;
-    f.state.recording.fixture_live_job("ft8");
-    let e = at_even(&f);
-    select(&f, config(Some("Test calls"))).await;
-    let full: Vec<_> = (0..13).map(|i| busy(f64::from(300 + 190 * i))).collect();
-    publish(&f, e - 15_000, &full);
-    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-5.0))]);
-    assert_eq!(
-        contact(&f).await,
-        (json!("K1ABC"), json!("replying"), json!("armed"))
-    );
-    assert_eq!(
-        frequencies(&f).await,
-        (json!(1500), json!(1400), json!({"hz":1400,"free":false}))
-    );
-}
-
-// Proves: CL-039-09; TC-039-010. 4 periods fill the band; the 3 most recent leave a gap: 1350
-// and 1500 forbid 1250..1600, 1600 is nearest 1500 (1250 is 250 away).
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_010_a_band_filled_over_four_periods_looks_at_fewer() {
-    let f = station(true).await;
-    f.state.recording.fixture_live_job("ft8");
-    let e = at_even(&f);
-    select(&f, config(Some("Test calls"))).await;
-    let full: Vec<_> = (0..13).map(|i| busy(f64::from(300 + 190 * i))).collect();
-    publish(&f, e - 105_000, &full);
-    publish(&f, e - 75_000, &[busy(1350.0)]);
-    publish(&f, e - 45_000, &[busy(2000.0)]);
-    publish(&f, e - 15_000, &[busy(1500.0)]);
-    publish(&f, e, &[("CQ K1ABC FN42", 900.0, Some(-5.0))]);
-    assert_eq!(
-        frequencies(&f).await,
-        (json!(900), json!(1600), json!({"hz":1600,"free":true}))
-    );
-}
-
-// Proves: CL-039-09; TC-039-010. A retune on the radio keeps the live job: the signals of the old
-// band say nothing about this one, and those of the new band do.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_010_signals_of_the_previous_band_do_not_count() {
-    let f = station(true).await;
-    f.state.recording.fixture_band("40m");
-    f.state.recording.fixture_live_job("ft8");
-    let e = at_even(&f);
-    select(&f, config(Some("Test calls"))).await;
-    publish(&f, e - 15_000, &[busy(1500.0)]);
-    f.state.recording.fixture_band("20m");
-    publish(&f, e, &[("CQ K1ABC FN42", 2400.0, Some(-5.0))]);
-    assert_eq!(contact(&f).await.0, json!("K1ABC"));
-    assert_eq!(
-        frequencies(&f).await,
-        (json!(2400), json!(1500), json!({"hz":1500,"free":true}))
-    );
-    // calls_per_station 2 gives K1ABC up; a signal on this band counts: 1400 and 1600 tie.
-    publish(&f, e + 30_000, &[]);
-    publish(&f, e + 60_000, &[]);
-    publish(&f, e + 75_000, &[busy(1500.0)]);
-    publish(&f, e + 90_000, &[("CQ DL1XYZ JO62", 2200.0, Some(-5.0))]);
-    assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
-    assert_eq!(
-        frequencies(&f).await,
-        (json!(2200), json!(1400), json!({"hz":1400,"free":true}))
-    );
-}
-
-// Proves: CL-039-09; TC-039-010. A strategy run outlives its live job: after a retune (the slot
-// reads from a sequence of that job) and a receive restart, the new job counts from its first record.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_010_a_new_live_job_counts_from_its_first_record() {
-    let f = station(true).await;
-    f.state.recording.fixture_band("40m");
-    f.state.recording.fixture_live_job("ft8");
-    let e = at_even(&f);
-    select(&f, config(Some("Test calls"))).await;
-    publish(&f, e - 15_000, &[busy(600.0)]);
-    f.state.recording.fixture_band("20m");
-    publish(
-        &f,
-        e,
-        &[
-            busy(700.0),
-            busy(800.0),
-            busy(900.0),
-            busy(1000.0),
-            busy(1100.0),
-            busy(2000.0),
-        ],
-    );
-    f.state.recording.fixture_live_job("ft8");
-    f.tick();
-    // Odd, the new job's sequence 0: on my Tx. 1400 and 1600 tie for 1500, the lower.
-    publish(&f, e + 15_000, &[busy(1500.0)]);
-    publish(&f, e + 30_000, &[("CQ K1ABC FN42", 2400.0, Some(-5.0))]);
-    assert_eq!(
-        frequencies(&f).await,
-        (json!(2400), json!(1400), json!({"hz":1400,"free":true}))
-    );
 }
 
 // Proves: CL-039-05, CL-039-09; TC-039-010. Between the run's select_row and its Tx
@@ -2853,50 +2685,11 @@ async fn tc_039_010_a_pounce_never_calls_on_the_called_station() {
     assert_eq!(contact(&f).await.0, json!("K1ABC"));
     assert_eq!(
         frequencies(&f).await,
-        (json!(1500), json!(1400), json!({"hz":1400,"free":true}))
-    );
-}
-
-// Proves: CL-039-09; TC-039-010. A caller is a called station like any other: answered from a free
-// slot, which holds for the exchange; a caller on my slot is answered from the slot beside it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_010_a_caller_is_answered_from_a_free_slot_and_stays_there() {
-    let f = station(true).await;
-    f.state.recording.fixture_live_job("ft8");
-    let e = at_even(&f);
-    select(&f, config(Some("Test calls"))).await;
-    publish(&f, e - 15_000, &[busy(1500.0)]);
-    // My parity after answering an even caller is odd: this even period does not count.
-    publish(&f, e, &[busy(1350.0)]);
-    publish(
-        &f,
-        e + 30_000,
-        &[("HB9BLA K1ABC FN42", 2000.0, Some(-10.0))],
-    );
-    assert_eq!(
-        contact(&f).await,
-        (json!("K1ABC"), json!("report"), json!("armed"))
-    );
-    assert_eq!(
-        frequencies(&f).await,
-        (json!(2000), json!(1400), json!({"hz":1400,"free":true}))
-    );
-    // No new decision during the exchange, also with a signal on the slot now.
-    publish(&f, e + 45_000, &[("W2XX W3YY -05", 1400.0, Some(-5.0))]);
-    assert_eq!(frequencies(&f).await.1, json!(1400));
-    browser_ok(&f, "cancel", json!({})).await;
-    f.tick();
-    f.tick();
-    // A caller on my slot: never on the called station (1400 ± 100), the nearest is 1300.
-    publish(
-        &f,
-        e + 60_000,
-        &[("HB9BLA DL1XYZ JO62", 1400.0, Some(-10.0))],
-    );
-    assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
-    assert_eq!(
-        frequencies(&f).await,
-        (json!(1400), json!(1300), json!({"hz":1300,"free":true}))
+        (
+            json!(1400),
+            json!(1400),
+            json!({"hz":1400,"power_db":null,"his_end":"unknown"})
+        )
     );
 }
 
@@ -3319,134 +3112,6 @@ fn spot(sender: &str, hz: u64, band: &str, age_s: i64) -> String {
     let t = crate::contact_http_tests::now_ms() / 1000 - age_s;
     json!({"f":hz,"md":"FT8","t":t,"sc":sender,"rc":"K1ABC","b":band}).to_string()
 }
-// Proves: CL-039-21; TC-039-022. The decision table of the Rep count reaching N in a strategy run;
-// the slots are worked by hand from WstxStrategy::FreeTxSlot: with nothing decoded but the called
-// station at 1800, leaving 1500 gives 1400 (1400 and 1600 equally near, the lower), and then
-// leaving 1400 gives 1300. A spot at 7075000 Hz on the 7074000 Hz dial is 1000 Hz; leaving that
-// gives 900 (900 and 1100 equally near it, the lower).
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_022_the_repetitions_reaching_n_in_a_strategy_run() {
-    type Set = fn(&crate::pskr::Feed);
-    let heard: Set = |feed| feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
-    let table: [(&str, Set, bool, u64, u64); 7] = [
-        ("no spot", |_| {}, false, 1400, 1300),
-        ("heard", heard, true, 1500, 1500),
-        (
-            "heard at the end of the window",
-            |feed| feed.inject(&spot("HB9BLA", 7_075_500, "40m", 590)),
-            true,
-            1500,
-            1500,
-        ),
-        (
-            "heard too long ago",
-            |feed| feed.inject(&spot("HB9BLA", 7_075_500, "40m", 601)),
-            false,
-            1400,
-            1300,
-        ),
-        (
-            "heard on another band",
-            |feed| feed.inject(&spot("HB9BLA", 14_075_500, "20m", 60)),
-            false,
-            1400,
-            1300,
-        ),
-        (
-            "the feed off",
-            |feed| {
-                feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
-                feed.switch(false);
-                // A spot already read when the switch went off says nothing either.
-                feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
-            },
-            false,
-            1400,
-            1300,
-        ),
-        (
-            "not heard, the target decodes 1000 Hz",
-            |feed| {
-                *feed.dial.lock().unwrap() = Some(7_074_000);
-                feed.inject(&spot("DL1XYZ", 7_075_000, "40m", 60));
-            },
-            false,
-            1000,
-            900,
-        ),
-    ];
-    for (name, set, hears, first, second) in table {
-        let (f, e) = run_at_limit(2, 20, set).await;
-        for (own, hz, repetitions) in [(15_000, 1500, 1), (45_000, first, 2), (75_000, first, 3)] {
-            transmit_own_period(&f, e + own).await;
-            f.tick();
-            let c = f.read("contact").await;
-            assert_eq!(c["settings"]["tx_hz"], hz, "{name}, {repetitions} sent");
-            assert_eq!(c["transmit"]["arm_state"], "armed", "{name}");
-            assert_eq!(c["watchdog"]["tx_expired"], false, "{name}");
-        }
-        let check = f.read("automation").await["run"]["slot_check"].clone();
-        assert_eq!(
-            check,
-            json!({"repetitions":2,"hears_us":hears,"hz":first,"free":true}),
-            "{name}"
-        );
-        assert_eq!(
-            f.read("automation").await["run"]["tx_slot"],
-            json!({"hz":first,"free":true}),
-            "{name}: the status follows the move"
-        );
-        // N more on the slot: checked again, and Tx still never stops.
-        transmit_own_period(&f, e + 105_000).await;
-        f.tick();
-        let c = f.read("contact").await;
-        assert_eq!(c["settings"]["tx_hz"], second, "{name}, 4 sent");
-        assert_eq!(c["transmit"]["arm_state"], "armed", "{name}");
-        assert_eq!(
-            f.keys(),
-            8,
-            "{name}: every repetition is keyed and released"
-        );
-        assert_eq!(run_state(&f).await, ("contact_active".into(), Value::Null));
-    }
-}
-// Proves: CL-039-21; TC-039-022. At the defaults (N 6, 3 calls per station) the check comes at the
-// 3rd call, before the run leaves the station; alone, it comes back and calls from the new slot.
-// A target known to hear us keeps its slot through the same calls.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_022_the_check_comes_before_the_run_leaves_the_station() {
-    let tx = |c: &Value| c["settings"]["tx_hz"].clone();
-    let (f, e) = run_at_limit(6, 3, |_| {}).await;
-    for (own, hz) in [(15_000, 1500), (45_000, 1500), (75_000, 1400)] {
-        transmit_own_period(&f, e + own).await;
-        f.tick();
-        assert_eq!(tx(&f.read("contact").await), hz, "after the call at {own}");
-        assert_eq!(f.read("automation").await["run"]["rested"], Value::Null);
-        publish(&f, e + own + 15_000, &[]);
-    }
-    assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
-    publish(&f, e + 120_000, &[("CQ K1ABC FN42", 1800.0, Some(-10.0))]);
-    let c = f.read("contact").await;
-    assert_eq!(c["contact"]["dx_call"], "K1ABC", "alone, it comes back");
-    assert_eq!(tx(&c), 1400, "from the new slot");
-    assert_eq!(c["transmit"]["arm_state"], "armed");
-
-    let (f, e) = run_at_limit(6, 3, |feed| {
-        feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
-    })
-    .await;
-    for own in [15_000, 45_000, 75_000, 105_000, 135_000] {
-        transmit_own_period(&f, e + own).await;
-        f.tick();
-        publish(&f, e + own + 15_000, &[]);
-    }
-    let c = f.read("contact").await;
-    assert_eq!(tx(&c), 1500);
-    assert_eq!(c["transmit"]["arm_state"], "armed");
-    assert_eq!(f.read("automation").await["run"]["rested"], Value::Null);
-    assert_eq!(f.keys(), 10, "every call is keyed and released");
-}
-
 // Proves: CL-039-21; TC-039-022. The unattended bounds hold for a target that hears us: with no
 // client it is left after its calls and the run stops no_client, and likewise at the run limit.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3474,53 +3139,6 @@ async fn tc_039_022_a_target_that_hears_us_does_not_outlive_the_run_bounds() {
         assert_eq!(quiet_run(&f), ("stopped".into(), json!(reason)));
         assert_eq!(quiet_contact(&f).await.2, json!("disarmed"), "{reason}");
     }
-}
-// Proves: CL-039-21; TC-039-022. A station calling my call outranks the queue (D5): the run leaves
-// the target that hears us after its calls, and answers the caller.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_022_a_caller_of_my_call_outranks_a_target_that_hears_us() {
-    let (f, e) = run_at_limit(6, 3, |feed| {
-        feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
-    })
-    .await;
-    let caller = [("HB9BLA DL1XYZ JO62", 1200.0, Some(-5.0))];
-    for period in [30_000, 60_000, 90_000, 120_000] {
-        publish(&f, e + period, &caller);
-    }
-    assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
-    assert_eq!(contact(&f).await.2, json!("armed"));
-}
-// Proves: CL-039-21; TC-039-022. A partner that answered has proved the slot, spot or no spot: Tx
-// stays through its repetitions (CL-039-09), and the message goes on without a stop.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_022_an_answer_keeps_the_slot_without_a_spot() {
-    let (f, e) = run_at_limit(2, 20, |_| {}).await;
-    transmit_own_period(&f, e + 15_000).await;
-    publish(&f, e + 30_000, &[("HB9BLA K1ABC -09", 1800.0, Some(-9.0))]);
-    transmit_own_period(&f, e + 45_000).await;
-    f.tick();
-    transmit_own_period(&f, e + 75_000).await;
-    f.tick();
-    let c = f.read("contact").await;
-    assert_eq!(c["settings"]["tx_hz"], 1500);
-    assert_eq!(c["transmit"]["arm_state"], "armed");
-    let check = f.read("automation").await["run"]["slot_check"].clone();
-    assert_eq!(
-        check,
-        json!({"repetitions":2,"hears_us":true,"hz":1500,"free":true})
-    );
-}
-// Proves: CL-039-21; TC-039-022. An answer keeps the slot only: without a spot the partner is still
-// left after its calls, since an answer does not expire and a partner gone QRT would hold the run.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_022_an_answer_without_a_spot_is_still_left_after_its_calls() {
-    let (f, e) = run_at_limit(6, 3, |_| {}).await;
-    publish(&f, e + 30_000, &[("HB9BLA K1ABC -09", 1800.0, Some(-9.0))]);
-    assert_eq!(f.read("automation").await["run"]["rested"], Value::Null);
-    for period in [60_000, 90_000, 120_000, 150_000] {
-        publish(&f, e + period, &[]);
-    }
-    assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
 }
 // Proves: CL-039-21; TC-039-022. With no client, or past the run limit, the stop at N is back at once,
 // so the run cannot go on transmitting even when no publication ever arrives to end its contact.
@@ -3577,58 +3195,6 @@ async fn tc_039_022_only_a_strategy_run_subscribes_to_its_target() {
     f.tick();
     assert_eq!(feed.target(), None, "a pounce reads no spots");
 }
-// Proves: CL-039-21; TC-039-022. WD:n counts down to the next check, at min(N, calls per station),
-// and a check without a free slot keeps the slot and tells the status the browser reads.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_022_the_status_shows_the_next_check_and_no_free_slot() {
-    let (f, e) = run_at_limit(6, 3, |_| {}).await;
-    f.tick();
-    let left = |c: &Value| c["watchdog"]["tx_remaining_calls"].clone();
-    assert_eq!(
-        left(&f.read("contact").await),
-        3,
-        "3 calls to the first check"
-    );
-    transmit_own_period(&f, e + 15_000).await;
-    f.tick();
-    assert_eq!(left(&f.read("contact").await), 2);
-    // The own period's band is full: every slot of 300..2650 is within a signal's gap.
-    let full: Vec<(&str, f64, Option<f64>)> = (0..24)
-        .map(|n| ("CQ DL1XYZ JO62", f64::from(300 + n * 100), Some(0.0)))
-        .collect();
-    publish(&f, e + 15_000, &full);
-    transmit_own_period(&f, e + 45_000).await;
-    f.tick();
-    assert_eq!(left(&f.read("contact").await), 1);
-    transmit_own_period(&f, e + 75_000).await;
-    f.tick();
-    let c = f.read("contact").await;
-    assert_eq!(left(&c), 3, "the check came: the next one is 3 away");
-    assert_eq!(c["settings"]["tx_hz"], 1500, "no free slot keeps the slot");
-    let run = f.read("automation").await["run"].clone();
-    assert_eq!(run["tx_slot"], json!({"hz":1500,"free":false}));
-    assert_eq!(run["slot_check"]["free"], false);
-}
-// Proves: CL-039-21; TC-039-022. A target known to hear us is not left after its calls ("we are in
-// the queue"); without that spot the run goes on to the next candidate as before.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_022_a_target_that_hears_us_is_not_left_after_its_calls() {
-    let (f, e) = run_at_limit(2, 1, |feed| {
-        feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
-    })
-    .await;
-    publish(&f, e + 30_000, &[]);
-    publish(&f, e + 60_000, &[]);
-    let run = f.read("automation").await["run"].clone();
-    assert_eq!(run["rested"], Value::Null);
-    assert_eq!(contact(&f).await.0, json!("K1ABC"));
-    assert_eq!(contact(&f).await.2, json!("armed"));
-    let (f, e) = run_at_limit(2, 1, |_| {}).await;
-    publish(&f, e + 30_000, &[]);
-    publish(&f, e + 60_000, &[]);
-    assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
-}
-
 // Proves: TC-039-005
 #[test]
 fn tc_039_005_core_watchdog_needs_an_operator_and_keeps_the_count_for_automation() {
@@ -4437,10 +4003,10 @@ async fn tc_042_004_pounce_answers_a_73_holding_tx_and_never_an_ignored_or_direc
             json!("K1ABC"),
             json!("K1ABC HB9BLA JN47"),
             json!("armed"),
-            tx,
-            json!(1700)
+            tx.clone(),
+            tx
         ),
-        "after a 73 Tx stays on its free slot"
+        "after a 73 Tx stays on its slot, and Rx = Tx"
     );
     assert_eq!(f.keys(), 0);
 }
@@ -5137,15 +4703,30 @@ async fn tc_063_009_search_and_pounce_calls_the_most_valuable_and_waits_for_what
         f.read("contact").await["contact"]["messages"][1],
         "JA1XYZ HB9BLA JN47"
     );
-    // After the calls per station it goes to the next; nothing armed for the dupe alone.
+    // At the contest's repetitions (2) JA1XYZ is left and quiet for its 10 minutes (LeaveRule,
+    // QuietTime); nothing armed for the dupe alone, nor for JA1XYZ while quiet.
     publish(&f, e + 30_000, &[]);
     assert_eq!(run_state(&f).await.0, "contact_active");
     publish(&f, e + 60_000, &[]);
     f.tick();
     assert_eq!(run_state(&f).await, ("waiting".into(), Value::Null));
     assert_eq!(contact(&f).await.2, json!("disarmed"));
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(
+        (run["left"].clone(), run["quiet"].clone()),
+        (
+            json!({"call":"JA1XYZ","reason":"repetitions"}),
+            json!([{"call":"JA1XYZ","band":"20m","mode":"ft8","remaining_s":600}])
+        )
+    );
     publish(&f, e + 150_000, &[("CQ WW W1DUP EM12", 900.0, Some(9.0))]);
     assert_eq!(contact(&f).await.2, json!("disarmed"), "a dupe alone");
+    publish(
+        &f,
+        e + 180_000,
+        &[("CQ WW JA1XYZ PM95", 1400.0, Some(-18.0))],
+    );
+    assert_eq!(contact(&f).await.2, json!("disarmed"), "JA1XYZ quiet");
     // Outside the period it waits: selected to start in an hour.
     let revision = f.browser("GET", "/strategy", None).await.json["revision"].clone();
     let p = put(&f, revision, contest_config(e, "sp", 1)).await;
@@ -6267,5 +5848,1140 @@ async fn tc_039_042_a_browser_auto_on_ends_a_watchdog_stop_and_arms() {
     assert_eq!(
         contact(&f).await,
         (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+}
+
+// ------------------------------------------------------------------ strategydef S2: the run
+/// A PSK Reporter feed without a connection (hand-authored spots), on the 14074000 Hz dial.
+fn attach_feed(f: &Mcp) -> Arc<crate::pskr::Feed> {
+    let dir = std::env::temp_dir().join(format!("wstx-pskr-{}", profile::new_uuid().unwrap()));
+    std::fs::create_dir(&dir).unwrap();
+    let feed = crate::pskr::Feed::start(&dir, &f.id, &f.boot, None, crate::pskr::Timing::BROKER);
+    f.state.recording.pskr.set(feed.clone()).ok().unwrap();
+    *feed.dial.lock().unwrap() = Some(14_074_000);
+    feed
+}
+/// A spot from `sender` heard by `receiver` at `hz` on `band` FT8, sent at `t_tx` (UTC s), rp -12.
+fn spot_of(sender: &str, receiver: &str, hz: u64, band: &str, t_tx: i64) -> String {
+    json!({"f":hz,"md":"FT8","t":t_tx + 13,"t_tx":t_tx,"sc":sender,"rc":receiver,"b":band,"rp":-12})
+        .to_string()
+}
+/// A spot of my call at K1ABC on 20 m, `age_s` old.
+fn heard_spot(age_s: i64) -> String {
+    spot_of(
+        "HB9BLA",
+        "K1ABC",
+        14_075_500,
+        "20m",
+        crate::contact_http_tests::now_ms() / 1000 - age_s,
+    )
+}
+/// The run snapshot.
+async fn run_of(f: &Mcp) -> Value {
+    f.read("automation").await["run"].clone()
+}
+/// The WD:n the engine reports: the run's count of this step, reported at the next.
+async fn wd(f: &Mcp) -> Value {
+    f.tick();
+    f.tick();
+    f.read("contact").await["watchdog"]["tx_remaining_calls"].clone()
+}
+/// An attended strategy run with Auto on, on 20 m: "Test calls" (goal new_call, value [snr],
+/// repetitions 4, quiet_minutes 10, callers first) changed by `edit`, the feed attached; `first`
+/// published in the even period e selects the target.
+struct Leaving {
+    f: Mcp,
+    e: i64,
+    feed: Arc<crate::pskr::Feed>,
+    client: Option<crate::automation::ClientSession>,
+}
+async fn leaving(edit: impl FnOnce(&mut Value), first: &[(&str, f64, Option<f64>)]) -> Leaving {
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let client = f.state.recording.clients.session();
+    let feed = attach_feed(&f);
+    let mut c = config(Some("Test calls"));
+    c["strategies"][0]["repetitions"] = json!(4);
+    c["strategies"][0]["quiet_minutes"] = json!(10);
+    edit(&mut c);
+    select(&f, c).await;
+    publish(&f, e, first);
+    // The feed follows the run's target from this step on.
+    f.tick();
+    Leaving {
+        f,
+        e,
+        feed,
+        client: Some(client),
+    }
+}
+const K1ABC_CQ: (&str, f64, Option<f64>) = ("CQ K1ABC FN42", 1800.0, Some(-10.0));
+/// The partner period k after e.
+fn rep(e: i64, k: i64) -> i64 {
+    e + 30_000 * k
+}
+async fn left_and_quiet(f: &Mcp) -> (Value, Value, Value) {
+    let run = run_of(f).await;
+    (
+        run["state"].clone(),
+        run["left"].clone(),
+        run["quiet"].clone(),
+    )
+}
+fn quiet_entry(call: &str, remaining_s: u64) -> Value {
+    json!([{"call":call,"band":"20m","mode":"ft8","remaining_s":remaining_s}])
+}
+
+// Proves: TC-039-043 (a), (b). Situations 1 and 2 count alike: K1ABC silent, or calling CQ again,
+// is armed after 3 repetitions and left at the 4th: disarmed and cancelled, left {K1ABC,
+// repetitions}, quiet for 600 s on 20 m FT8, the run waiting. WD:4, 3, 2, 1 (TC-039-022).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_043_a_silent_or_repeating_target_is_left_at_the_4th() {
+    for again in [false, true] {
+        let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+        let (f, e) = (&t.f, t.e);
+        let rows: &[(&str, f64, Option<f64>)] = if again { &[K1ABC_CQ] } else { &[] };
+        assert_eq!(wd(f).await, json!(4), "again {again}");
+        for k in 1..=3 {
+            publish(f, rep(e, k), rows);
+            assert_eq!(
+                contact(f).await,
+                (json!("K1ABC"), json!("replying"), json!("armed"))
+            );
+            assert_eq!(wd(f).await, json!(4 - k), "again {again}, repetition {k}");
+        }
+        publish(f, rep(e, 4), rows);
+        assert_eq!(
+            contact(f).await,
+            (Value::Null, json!("cancelled"), json!("disarmed"))
+        );
+        assert_eq!(
+            left_and_quiet(f).await,
+            (
+                json!("waiting"),
+                json!({"call":"K1ABC","reason":"repetitions"}),
+                quiet_entry("K1ABC", 600)
+            ),
+            "again {again}"
+        );
+    }
+}
+
+// Proves: TC-039-043 (c). A spot of my call at K1ABC 60 s old doubles x: armed after 7, left at
+// the 8th, WD:8 down to 1; with Use PSK Reporter off the spot is not used: left at the 4th.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_043_a_target_that_hears_us_is_left_at_2x_and_use_off_at_x() {
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    t.feed.inject(&heard_spot(60));
+    assert_eq!(wd(f).await, json!(8));
+    for k in 1..=7 {
+        publish(f, rep(e, k), &[]);
+        assert_eq!(contact(f).await.2, json!("armed"), "repetition {k}");
+        assert_eq!(wd(f).await, json!(8 - k));
+    }
+    assert_eq!(run_of(f).await["hearing"]["state"], "heard");
+    publish(f, rep(e, 8), &[]);
+    assert_eq!(contact(f).await.2, json!("disarmed"));
+    assert_eq!(
+        run_of(f).await["left"],
+        json!({"call":"K1ABC","reason":"repetitions"})
+    );
+
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    t.feed.inject(&heard_spot(60));
+    t.feed.switch_use(false);
+    for k in 1..=3 {
+        publish(f, rep(e, k), &[]);
+        assert_eq!(contact(f).await.2, json!("armed"));
+    }
+    assert_eq!(run_of(f).await["hearing"]["state"], "unknown");
+    publish(f, rep(e, 4), &[]);
+    assert_eq!(contact(f).await.2, json!("disarmed"), "Use off: at x");
+}
+
+// Proves: TC-039-043 (d), the #63 fix. A repeated message of the target to my call is progress:
+// K1ABC answering -05 after the 2nd repetition and repeating it for 6 periods is never left, the
+// count back to 0 at each.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_043_a_repeated_report_is_progress_and_never_leaves() {
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, rep(e, 1), &[]);
+    publish(f, rep(e, 2), &[]);
+    assert_eq!(run_of(f).await["unanswered_periods"], 2);
+    for k in 3..=8 {
+        publish(f, rep(e, k), &[("HB9BLA K1ABC -05", 1800.0, Some(-5.0))]);
+        assert_eq!(contact(f).await.2, json!("armed"), "repeat {k}");
+        assert_eq!(run_of(f).await["unanswered_periods"], 0, "repeat {k}");
+    }
+    assert_eq!(contact(f).await.0, json!("K1ABC"));
+    assert_eq!(run_of(f).await["left"], Value::Null);
+}
+
+// Proves: TC-039-043 (e). A caller selected on its call that repeats that call has not answered:
+// W1AW repeating its first call is left at the 4th.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_043_a_caller_repeating_its_first_call_is_left_at_the_4th() {
+    let call = ("HB9BLA W1AW FN31", 1200.0, Some(-10.0));
+    let t = leaving(|_| {}, &[call]).await;
+    let (f, e) = (&t.f, t.e);
+    assert_eq!(contact(f).await.0, json!("W1AW"));
+    for k in 1..=3 {
+        publish(f, rep(e, k), &[call]);
+        assert_eq!(contact(f).await.2, json!("armed"), "repeat {k}");
+    }
+    publish(f, rep(e, 4), &[call]);
+    assert_eq!(contact(f).await.2, json!("disarmed"));
+    assert_eq!(
+        run_of(f).await["left"],
+        json!({"call":"W1AW","reason":"repetitions"})
+    );
+}
+
+// Proves: TC-039-043 (f). No change before an exit criterion: a stronger new CQ DL1XYZ from the 2nd
+// repetition on never ends the contact with K1ABC; DL1XYZ is selected at the step after the 4th.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_043_a_more_valuable_cq_waits_for_the_exit() {
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    let dl = ("CQ DL1XYZ JO62", 1200.0, Some(9.0));
+    publish(f, rep(e, 1), &[]);
+    for k in 2..=3 {
+        publish(f, rep(e, k), &[dl]);
+        assert_eq!(contact(f).await.0, json!("K1ABC"), "repetition {k}");
+    }
+    publish(f, rep(e, 4), &[dl]);
+    assert_eq!(
+        contact(f).await,
+        (Value::Null, json!("cancelled"), json!("disarmed"))
+    );
+    publish(f, rep(e, 5), &[dl]);
+    assert_eq!(
+        contact(f).await,
+        (json!("DL1XYZ"), json!("replying"), json!("armed"))
+    );
+}
+
+// Proves: TC-039-043 (g). A caller of my call is answered at once while the target has not
+// answered: left {K1ABC, caller} and JA1XYZ selected from the same publication; with Callers of my
+// call first off, with JA1XYZ in its quiet time and after K1ABC has answered K1ABC is kept.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_043_a_caller_is_answered_at_once_unless_off_quiet_or_answered() {
+    let ja = ("HB9BLA JA1XYZ PM95", 1100.0, Some(-15.0));
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, rep(e, 1), &[]);
+    publish(f, rep(e, 2), &[ja]);
+    assert_eq!(
+        contact(f).await,
+        (json!("JA1XYZ"), json!("report"), json!("armed"))
+    );
+    let run = run_of(f).await;
+    assert_eq!(run["left"], json!({"call":"K1ABC","reason":"caller"}));
+    assert_eq!(run["quiet"], quiet_entry("K1ABC", 600));
+
+    let t = leaving(
+        |c| c["strategies"][0]["callers_first"] = json!(false),
+        &[K1ABC_CQ],
+    )
+    .await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, rep(e, 1), &[]);
+    publish(f, rep(e, 2), &[ja]);
+    assert_eq!(contact(f).await.0, json!("K1ABC"), "callers first off");
+
+    // JA1XYZ left first (silent), so in its quiet time.
+    let t = leaving(|_| {}, &[("CQ JA1XYZ PM95", 1100.0, Some(-15.0))]).await;
+    let (f, e) = (&t.f, t.e);
+    for k in 1..=4 {
+        publish(f, rep(e, k), &[]);
+    }
+    assert_eq!(run_of(f).await["left"]["call"], "JA1XYZ");
+    publish(f, rep(e, 5), &[K1ABC_CQ]);
+    assert_eq!(contact(f).await.0, json!("K1ABC"));
+    publish(f, rep(e, 6), &[ja]);
+    assert_eq!(
+        contact(f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed")),
+        "quiet"
+    );
+
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, rep(e, 1), &[("HB9BLA K1ABC -05", 1800.0, Some(-5.0))]);
+    publish(f, rep(e, 2), &[ja]);
+    assert_eq!(contact(f).await.0, json!("K1ABC"), "K1ABC has answered");
+    assert_eq!(contact(f).await.2, json!("armed"));
+}
+
+// Proves: TC-039-043 (h). A left station is quiet for 10 minutes: its call to my call is not
+// answered at 5 min, its CQ is not selected at 9 min 59 s; at 10 min it is selected again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_043_the_quiet_time_excludes_selection_and_answering() {
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    for k in 1..=4 {
+        publish(f, rep(e, k), &[]);
+    }
+    assert_eq!(run_of(f).await["left"]["call"], "K1ABC");
+    at_skew(f, 300);
+    assert_eq!(run_of(f).await["quiet"], quiet_entry("K1ABC", 300));
+    publish(f, rep(e, 5), &[("HB9BLA K1ABC FN42", 1800.0, Some(-10.0))]);
+    assert_eq!(
+        contact(f).await.2,
+        json!("disarmed"),
+        "not answered at 5 min"
+    );
+    assert_eq!(run_of(f).await["state"], "waiting");
+    at_skew(f, 599);
+    publish(f, rep(e, 6), &[K1ABC_CQ]);
+    assert_eq!(
+        contact(f).await.2,
+        json!("disarmed"),
+        "not selected at 9:59"
+    );
+    at_skew(f, 600);
+    assert_eq!(run_of(f).await["quiet"], json!([]));
+    publish(f, rep(e, 7), &[K1ABC_CQ]);
+    assert_eq!(
+        contact(f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+}
+
+// Proves: TC-039-043 (i). Repetitions 1: left at the 1st.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_043_one_repetition_leaves_at_the_first() {
+    let t = leaving(
+        |c| c["strategies"][0]["repetitions"] = json!(1),
+        &[K1ABC_CQ],
+    )
+    .await;
+    let (f, e) = (&t.f, t.e);
+    assert_eq!(wd(f).await, json!(1));
+    publish(f, rep(e, 1), &[]);
+    assert_eq!(contact(f).await.2, json!("disarmed"));
+    assert_eq!(
+        run_of(f).await["left"],
+        json!({"call":"K1ABC","reason":"repetitions"})
+    );
+}
+
+// Proves: TC-039-043 (j). Ends at once, with no quiet time: a band change in the contact, a new
+// live identity (FT4), Auto off and HALT disarm and cancel at the next step, left stays null; after
+// the band change the run waits and selects from the next publication, after Auto off and HALT it
+// has stopped.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_043_band_mode_auto_off_and_halt_end_the_contact_at_once() {
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, rep(e, 1), &[]);
+    f.state.recording.fixture_band("40m");
+    f.tick();
+    assert_eq!(
+        contact(f).await,
+        (Value::Null, json!("cancelled"), json!("disarmed"))
+    );
+    assert_eq!(
+        left_and_quiet(f).await,
+        (json!("waiting"), Value::Null, json!([]))
+    );
+    publish(f, rep(e, 2), &[("CQ DL1XYZ JO62", 1200.0, Some(-5.0))]);
+    assert_eq!(
+        contact(f).await,
+        (json!("DL1XYZ"), json!("replying"), json!("armed"))
+    );
+
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let f = &t.f;
+    f.state.recording.fixture_live_job("ft4");
+    f.tick();
+    assert_eq!(contact(f).await.2, json!("disarmed"));
+    assert_eq!(contact(f).await.1, json!("cancelled"));
+    assert_eq!(
+        left_and_quiet(f).await,
+        (json!("waiting"), Value::Null, json!([]))
+    );
+
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let f = &t.f;
+    assert_eq!(auto(f, false, None).await.status, StatusCode::OK);
+    f.tick();
+    assert_eq!(
+        contact(f).await,
+        (Value::Null, json!("cancelled"), json!("disarmed"))
+    );
+    assert_eq!(run_state(f).await, ("stopped".into(), json!("stopped")));
+    assert_eq!(run_of(f).await["quiet"], json!([]));
+
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let f = &t.f;
+    halt(f).await;
+    assert_eq!(
+        contact(f).await,
+        (Value::Null, json!("cancelled"), json!("disarmed"))
+    );
+    assert_eq!(run_state(f).await, ("stopped".into(), json!("halted")));
+    assert_eq!(run_of(f).await["quiet"], json!([]));
+}
+
+/// A contest run with Auto on (WW Digi, 20 m, the period in force, W1DUP a dupe in the log,
+/// repetitions 2, quiet_minutes 10 unless `edit` changes them), the feed attached.
+async fn contest_leaving(operation: &str, edit: impl FnOnce(&mut Value)) -> Leaving {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let client = f.state.recording.clients.session();
+    f.state.recording.fixture_band("20m");
+    import_adi(&f, &logged_before("W1DUP", "EM12", e));
+    browser_ok(&f, "set_activity", json!({"activity":"ww_digi"})).await;
+    let feed = attach_feed(&f);
+    let mut c = contest_config(e, operation, -1);
+    edit(&mut c);
+    select(&f, c).await;
+    f.tick();
+    Leaving {
+        f,
+        e,
+        feed,
+        client: Some(client),
+    }
+}
+const K1ABC_WW: (&str, f64, Option<f64>) = ("CQ WW K1ABC FN42", 1800.0, Some(-10.0));
+const JA1XYZ_WW: (&str, f64, Option<f64>) = ("CQ WW JA1XYZ PM95", 1100.0, Some(-15.0));
+/// The S&P contest run calling K1ABC (new multiplier), the feed following it.
+async fn contest_calling(edit: impl FnOnce(&mut Value)) -> Leaving {
+    let t = contest_leaving("sp", edit).await;
+    publish(&t.f, t.e, &[K1ABC_WW]);
+    t.f.tick();
+    assert_eq!(contact(&t.f).await.0, json!("K1ABC"));
+    t
+}
+
+// Proves: TC-039-044 (a), (b). A contest leaves at x = 2; a spot of my call at K1ABC doubles it in
+// situation 2 (not decoded): left at the 4th.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_044_a_contest_leaves_at_2_and_at_4_with_a_spot() {
+    let t = contest_calling(|_| {}).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, rep(e, 1), &[]);
+    assert_eq!(contact(f).await.2, json!("armed"));
+    publish(f, rep(e, 2), &[]);
+    assert_eq!(contact(f).await.2, json!("disarmed"));
+    assert_eq!(
+        run_of(f).await["left"],
+        json!({"call":"K1ABC","reason":"repetitions"})
+    );
+
+    let t = contest_calling(|_| {}).await;
+    let (f, e) = (&t.f, t.e);
+    t.feed.inject(&heard_spot(60));
+    for k in 1..=3 {
+        publish(f, rep(e, k), &[]);
+        assert_eq!(contact(f).await.2, json!("armed"), "repetition {k}");
+    }
+    publish(f, rep(e, 4), &[]);
+    assert_eq!(contact(f).await.2, json!("disarmed"));
+}
+
+// Proves: TC-039-044 (c), (d). Situation 1 with the spot: K1ABC calling CQ again stays all 10
+// repetitions while nothing more valuable is listed, and the dupe W1DUP calling my call never ends
+// the stay (the #63 fix); JA1XYZ (more valuable) at the 6th leaves at once and is selected next;
+// JA1XYZ from the 1st: K1ABC kept until the 2nd, then left and JA1XYZ selected.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_044_a_heard_target_stays_until_a_more_valuable_station() {
+    let dupe = ("HB9BLA W1DUP EM12", 900.0, Some(9.0));
+    let t = contest_calling(|_| {}).await;
+    let (f, e) = (&t.f, t.e);
+    t.feed.inject(&heard_spot(60));
+    for k in 1..=10 {
+        publish(f, rep(e, k), &[K1ABC_WW, dupe]);
+        assert_eq!(
+            contact(f).await,
+            (json!("K1ABC"), json!("report"), json!("armed")),
+            "{k}"
+        );
+    }
+    assert_eq!(run_of(f).await["left"], Value::Null);
+    assert_eq!(run_of(f).await["unanswered_periods"], 10);
+
+    let t = contest_calling(|_| {}).await;
+    let (f, e) = (&t.f, t.e);
+    t.feed.inject(&heard_spot(60));
+    for k in 1..=5 {
+        publish(f, rep(e, k), &[K1ABC_WW]);
+    }
+    assert_eq!(contact(f).await.2, json!("armed"));
+    publish(f, rep(e, 6), &[K1ABC_WW, JA1XYZ_WW]);
+    assert_eq!(contact(f).await.2, json!("disarmed"), "left at once");
+    assert_eq!(
+        run_of(f).await["left"],
+        json!({"call":"K1ABC","reason":"repetitions"})
+    );
+    publish(f, rep(e, 7), &[K1ABC_WW, JA1XYZ_WW]);
+    assert_eq!(
+        contact(f).await,
+        (json!("JA1XYZ"), json!("report"), json!("armed"))
+    );
+
+    let t = contest_calling(|_| {}).await;
+    let (f, e) = (&t.f, t.e);
+    t.feed.inject(&heard_spot(60));
+    publish(f, rep(e, 1), &[K1ABC_WW, JA1XYZ_WW]);
+    assert_eq!(
+        contact(f).await.0,
+        json!("K1ABC"),
+        "no change before the exit"
+    );
+    assert_eq!(contact(f).await.2, json!("armed"));
+    publish(f, rep(e, 2), &[K1ABC_WW, JA1XYZ_WW]);
+    assert_eq!(contact(f).await.2, json!("disarmed"));
+    publish(f, rep(e, 3), &[JA1XYZ_WW]);
+    assert_eq!(contact(f).await.0, json!("JA1XYZ"));
+}
+
+// Proves: TC-039-044 (e). A non-dupe caller K2NEW at the 1st repetition: left {K1ABC, caller} at
+// once and K2NEW selected from the same publication.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_044_a_contest_caller_is_answered_at_once() {
+    let t = contest_calling(|_| {}).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, rep(e, 1), &[("HB9BLA K2NEW FN31", 1200.0, Some(-8.0))]);
+    assert_eq!(contact(f).await.0, json!("K2NEW"));
+    assert_eq!(contact(f).await.2, json!("armed"));
+    assert_eq!(
+        run_of(f).await["left"],
+        json!({"call":"K1ABC","reason":"caller"})
+    );
+}
+
+// Proves: TC-039-044 (f), (g). Run: the caller K2NEW answered from the CQ and then silent is left at
+// the 2nd, the run calls CQ again and does not answer K2NEW in its quiet time. Repetitions 3 and
+// quiet_minutes 1 from the selection: left at the 3rd, answered again after 1 minute.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_044_run_leaves_a_silent_caller_and_keeps_it_quiet() {
+    let k2 = ("HB9BLA K2NEW FN31", 1200.0, Some(-8.0));
+    let t = contest_leaving("run", |_| {}).await;
+    let (f, e) = (&t.f, t.e);
+    assert_eq!(run_of(f).await["state"], "calling_cq");
+    publish(f, e, &[k2]);
+    assert_eq!(contact(f).await.0, json!("K2NEW"));
+    assert_eq!(contact(f).await.2, json!("armed"));
+    publish(f, rep(e, 1), &[]);
+    assert_eq!(contact(f).await.2, json!("armed"));
+    publish(f, rep(e, 2), &[]);
+    f.tick();
+    assert_eq!(run_of(f).await["state"], "calling_cq");
+    assert_eq!(
+        run_of(f).await["left"],
+        json!({"call":"K2NEW","reason":"repetitions"})
+    );
+    publish(f, rep(e, 3), &[k2]);
+    assert_eq!(
+        run_of(f).await["state"],
+        "calling_cq",
+        "quiet: not answered"
+    );
+    assert_eq!(contact(f).await.1, json!("calling"));
+
+    let t = contest_leaving("run", |c| {
+        c["contest"]["repetitions"] = json!(3);
+        c["contest"]["quiet_minutes"] = json!(1);
+    })
+    .await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, e, &[k2]);
+    for k in 1..=2 {
+        publish(f, rep(e, k), &[]);
+        assert_eq!(contact(f).await.2, json!("armed"), "{k}");
+    }
+    publish(f, rep(e, 3), &[]);
+    f.tick();
+    assert_eq!(
+        run_of(f).await["quiet"],
+        json!([{"call":"K2NEW","band":"20m","mode":"ft8","remaining_s":60}])
+    );
+    at_skew(f, 60);
+    f.tick();
+    publish(f, rep(e, 4), &[k2]);
+    assert_eq!(contact(f).await.0, json!("K2NEW"), "after 1 minute");
+    assert_eq!(run_of(f).await["state"], "contact_active");
+}
+
+// Proves: TC-039-044 (h). The end of the period in a contact disarms and cancels at once and the run
+// waits outside_period; the contest deselected in a contact stops it, Auto off.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_044_period_end_and_deselect_end_the_contact_at_once() {
+    let t = contest_calling(|_| {}).await;
+    let f = &t.f;
+    f.bench.offset.fetch_add(3 * 3_600_000, Ordering::SeqCst);
+    f.tick();
+    assert_eq!(
+        contact(f).await,
+        (Value::Null, json!("cancelled"), json!("disarmed"))
+    );
+    assert_eq!(
+        run_state(f).await,
+        ("waiting".into(), json!("outside_period"))
+    );
+    assert_eq!(run_of(f).await["quiet"], json!([]));
+
+    let t = contest_calling(|_| {}).await;
+    let f = &t.f;
+    save(f, config(None)).await;
+    f.tick();
+    assert_eq!(contact(f).await.2, json!("disarmed"));
+    assert_eq!(contact(f).await.1, json!("cancelled"));
+    assert_eq!(run_state(f).await, ("stopped".into(), json!("stopped")));
+    assert_eq!(
+        f.browser("GET", "/strategy", None).await.json["auto"],
+        false
+    );
+}
+
+/// "Casual 20 m" with Auto on (new call on band today, value [snr], CQ when no target), W1AW worked
+/// on 20 m today; `cq` false: a user copy with the option off.
+async fn casual(cq: bool) -> Leaving {
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let client = f.state.recording.clients.session();
+    import_adi(&f, &logged_before("W1AW", "FN31", e));
+    f.state.logbook.worked_set().unwrap();
+    let feed = attach_feed(&f);
+    let mut c = config(Some("Casual 20 m"));
+    if !cq {
+        let mut s = strategy_json("Casual copy");
+        s["goals"] = json!(["new_call_band"]);
+        s["window"] = json!({"kind":"today"});
+        s["cq_when_no_target"] = json!(false);
+        c["strategies"] = json!([s]);
+        c["active"] = json!("Casual copy");
+    }
+    select(&f, c).await;
+    f.tick();
+    Leaving {
+        f,
+        e,
+        feed,
+        client: Some(client),
+    }
+}
+
+// Proves: TC-039-045. CQ when no target: waiting after one empty publication, calling CQ (Tx6
+// "CQ HB9BLA JN47", armed) after the second (W1AW, worked today, is not listed); W1AW calling my
+// call is answered from the CQ with Enable Tx kept; after its QSO two empty publications call CQ
+// again; a candidate appearing ends the CQ and is called. Off: never a CQ.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_045_cq_when_no_target_calls_answers_and_calls_a_candidate() {
+    let t = casual(true).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, e, &[]);
+    assert_eq!(run_of(f).await["state"], "waiting");
+    publish(f, rep(e, 1), &[("CQ W1AW FN31", 900.0, Some(-1.0))]);
+    let c = f.read("contact").await;
+    assert_eq!(run_of(f).await["state"], "calling_cq", "nothing listed");
+    assert_eq!(c["contact"]["state"], "calling");
+    assert_eq!(c["contact"]["messages"][5], "CQ HB9BLA JN47");
+    assert_eq!(c["transmit"]["arm_state"], "armed");
+    publish(f, rep(e, 2), &[]);
+    assert_eq!(run_of(f).await["state"], "calling_cq");
+    // The caller is answered from the CQ, whatever the filter.
+    publish(f, rep(e, 3), &[("HB9BLA W1AW FN31", 1200.0, Some(-10.0))]);
+    assert_eq!(
+        contact(f).await,
+        (json!("W1AW"), json!("report"), json!("armed"))
+    );
+    assert_eq!(run_of(f).await["state"], "contact_active");
+    publish(f, rep(e, 4), &[("HB9BLA W1AW R-05", 1200.0, Some(-10.0))]);
+    publish(f, rep(e, 5), &[("HB9BLA W1AW 73", 1200.0, Some(-10.0))]);
+    assert_eq!(contact(f).await.1, json!("completed"));
+    f.tick();
+    assert_eq!(run_of(f).await["state"], "waiting");
+    publish(f, rep(e, 6), &[]);
+    assert_eq!(run_of(f).await["state"], "waiting");
+    publish(f, rep(e, 7), &[]);
+    assert_eq!(run_of(f).await["state"], "calling_cq");
+    publish(f, rep(e, 8), &[("CQ DL1XYZ JO62", 1500.0, Some(-5.0))]);
+    assert_eq!(
+        contact(f).await,
+        (json!("DL1XYZ"), json!("replying"), json!("armed"))
+    );
+    assert_eq!(run_of(f).await["state"], "contact_active");
+
+    let t = casual(false).await;
+    let (f, e) = (&t.f, t.e);
+    for k in 0..6 {
+        publish(f, rep(e, k), &[]);
+        assert_eq!(run_of(f).await["state"], "waiting");
+        assert_eq!(contact(f).await.2, json!("disarmed"));
+    }
+}
+
+/// A detailed waterfall row of the period starting at `start`: `floor` in every bin, each band
+/// [from, to) Hz at its level; `tx`: a period I transmitted in.
+fn wf_row(f: &Mcp, start: i64, floor: u8, bands: &[(u32, u32, u8)], tx: bool) {
+    let levels: Vec<u8> = (0..1024)
+        .map(|bin| {
+            let hz = f64::from(bin) * crate::freeslot::BIN_HZ;
+            bands
+                .iter()
+                .find(|(from, to, _)| hz >= f64::from(*from) && hz < f64::from(*to))
+                .map_or(floor, |b| b.2)
+        })
+        .collect();
+    f.state.recording.fixture_detail_row(start, &levels, tx);
+}
+
+// Proves: TC-039-045. The Tx watchdog stops the run's CQ at its limit (stopped tx_watchdog, Auto off,
+// not keyed again); the CQ's slot is quiet in both parities; unattended the CQ is disarmed and
+// cancelled at once (stopped no_client).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_045_the_watchdog_and_no_client_end_the_cq_and_its_slot_is_quiet_in_both() {
+    let t = casual(true).await;
+    let (f, e) = (&t.f, t.e);
+    browser_watchdog(f, 2).await;
+    // Even: 1800 quietest, 900 next; odd: 1800 loud. The louder parity counts: 900.
+    for k in 0..4 {
+        wf_row(
+            f,
+            rep(e, k) - 120_000,
+            40,
+            &[(1800, 1850, 10), (900, 950, 25)],
+            false,
+        );
+        wf_row(
+            f,
+            rep(e, k) - 105_000,
+            40,
+            &[(1800, 1850, 60), (900, 950, 25)],
+            false,
+        );
+    }
+    publish(f, e, &[]);
+    publish(f, rep(e, 1), &[]);
+    assert_eq!(run_of(f).await["state"], "calling_cq");
+    assert_eq!(
+        frequencies(f).await,
+        (
+            json!(900),
+            json!(900),
+            json!({"hz":900,"power_db":25,"his_end":"unknown"})
+        )
+    );
+    transmit_own_period(f, rep(e, 1) + 15_000).await;
+    transmit_own_period(f, rep(e, 2) + 15_000).await;
+    let keys = f.keys();
+    not_keyed_in(f, rep(e, 3) + 15_000).await;
+    f.tick();
+    f.tick();
+    assert_eq!(run_state(f).await, ("stopped".into(), json!("tx_watchdog")));
+    assert_eq!(
+        f.browser("GET", "/strategy", None).await.json["auto"],
+        false
+    );
+    assert_eq!(f.keys(), keys, "not keyed again");
+
+    let mut t = casual(true).await;
+    let e = t.e;
+    publish(&t.f, e, &[]);
+    publish(&t.f, rep(e, 1), &[]);
+    assert_eq!(run_of(&t.f).await["state"], "calling_cq");
+    drop(t.client.take());
+    let f = &t.f;
+    f.tick();
+    at_skew(f, 60);
+    assert_eq!(quiet_run(f), ("stopped".into(), json!("no_client")));
+    assert_eq!(
+        quiet_contact(f).await,
+        (Value::Null, json!("idle"), json!("disarmed")),
+        "the CQ cancelled"
+    );
+}
+
+// Proves: TC-039-010. The router: my Rx parity (even, K1ABC's) holds a quiet band at 1800..1850 Hz in
+// its last 4 counted periods; the 5th oldest (quiet at 600, loud at 1800) and a transmitted period
+// (quiet at 600) do not count, nor my odd periods (quiet everywhere). Tx and Rx 1800 before the
+// first call, tx_slot {1800, 20, unknown}; the whole QSO stays there; with Hold Tx off the
+// selection's Tx goes back to the slot.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_the_run_calls_from_the_quietest_slot_of_its_rx_parity() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    select(&f, config(Some("Test calls"))).await;
+    let quiet = [(1800, 1850, 20)];
+    wf_row(
+        &f,
+        e - 180_000,
+        40,
+        &[(600, 650, 0), (1800, 1850, 90)],
+        false,
+    );
+    wf_row(&f, e - 165_000, 20, &[], false);
+    for k in 1..=4 {
+        wf_row(&f, e - 180_000 + k * 30_000, 40, &quiet, false);
+        wf_row(&f, e - 165_000 + k * 30_000, 20, &[], false);
+    }
+    wf_row(&f, e - 30_000, 90, &[(600, 650, 0)], true);
+    wf_row(&f, e - 15_000, 20, &[], false);
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-5.0))]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    assert_eq!(
+        frequencies(&f).await,
+        (
+            json!(1800),
+            json!(1800),
+            json!({"hz":1800,"power_db":20,"his_end":"unknown"})
+        )
+    );
+    publish(&f, rep(e, 1), &[("HB9BLA K1ABC -10", 1500.0, Some(-10.0))]);
+    assert_eq!(contact(&f).await.1, json!("roger_report"));
+    assert_eq!(frequencies(&f).await.1, json!(1800));
+    publish(&f, rep(e, 2), &[("HB9BLA K1ABC RR73", 1500.0, Some(-10.0))]);
+    transmit_own_period(&f, e + 15_000).await;
+    assert_eq!(contact(&f).await.1, json!("completed"));
+    assert_eq!(frequencies(&f).await.1, json!(1800));
+    f.tick();
+    // Hold Tx off: the selection moves Tx to the station, the run takes it back to the slot.
+    mcp_contact(&f, "set_hold_tx", json!({"enabled":false})).await;
+    publish(&f, rep(e, 3), &[("CQ DL1XYZ JO62", 1300.0, Some(-5.0))]);
+    assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
+    assert_eq!(frequencies(&f).await.1, json!(1800));
+}
+
+// Proves: TC-039-010. After a station band change within the job only the new band's periods count:
+// no power yet keeps Tx (power_db null); a caller on my quietest slot is answered from the quietest
+// slot away from it; a pounce calls from the quietest slot.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_010_a_band_change_a_caller_on_my_slot_and_a_pounce() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    select(&f, config(Some("Test calls"))).await;
+    for k in 0..4 {
+        wf_row(&f, e - 120_000 + k * 30_000, 40, &[(1800, 1850, 20)], false);
+    }
+    f.tick();
+    f.state.recording.fixture_band("40m");
+    f.tick();
+    // The station clock two minutes on, so that the new band's periods below have ended.
+    f.bench.offset.fetch_add(120_000, Ordering::SeqCst);
+    publish(&f, e, &[("CQ K1ABC FN42", 1000.0, Some(-5.0))]);
+    assert_eq!(
+        frequencies(&f).await,
+        (
+            json!(1500),
+            json!(1500),
+            json!({"hz":1500,"power_db":null,"his_end":"unknown"})
+        ),
+        "the 20 m periods do not count"
+    );
+    browser_ok(&f, "cancel", json!({})).await;
+    f.tick();
+    f.tick();
+    // The new band's periods: quiet at 1200, a 40 dB floor elsewhere.
+    wf_row(&f, rep(e, 2), 40, &[(1200, 1250, 20)], false);
+    wf_row(&f, rep(e, 2) + 15_000, 40, &[], false);
+    // A caller on 1200, my quietest slot: answered from the quietest slot away from it, of the
+    // 40 dB floor beyond 1200 +- 100 the nearest to 1500: 1500 itself.
+    publish(
+        &f,
+        rep(e, 3),
+        &[("HB9BLA DL1XYZ JO62", 1200.0, Some(-10.0))],
+    );
+    assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
+    let s = frequencies(&f).await;
+    assert_eq!(
+        (s.1, s.2),
+        (
+            json!(1500),
+            json!({"hz":1500,"power_db":40,"his_end":"unknown"})
+        )
+    );
+    // A pounce calls from the quietest slot.
+    let p = f.state.recording.contact.get().unwrap();
+    p.automation.end_strategy_run(p, &f.state);
+    f.tick();
+    assert_eq!(pounce(&f, "G4ABC", 5).await.status, StatusCode::ACCEPTED);
+    publish(&f, rep(e, 4), &[("CQ G4ABC IO91", 2000.0, Some(-5.0))]);
+    assert_eq!(contact(&f).await.0, json!("G4ABC"));
+    assert_eq!(
+        frequencies(&f).await,
+        (
+            json!(1200),
+            json!(1200),
+            json!({"hz":1200,"power_db":20,"his_end":"unknown"})
+        )
+    );
+}
+
+/// The TC-039-022 run: Tx watchdog 2, repetitions 4, calling K1ABC (CQ at 1800 Hz) from Tx 1500 on
+/// 20 m with no power yet; `set` prepares the feed. The even (Rx) rows of `slot_rows` move the
+/// quietest slot: 1400 at the 1st repetition, 1300 at the 2nd, tied with 1300 at the 3rd.
+async fn slot_check(set: impl FnOnce(&crate::pskr::Feed)) -> Leaving {
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    browser_watchdog(&t.f, 2).await;
+    assert_eq!(frequencies(&t.f).await.1, json!(1500));
+    set(&t.feed);
+    t
+}
+/// The even row of repetition `k`, in the period before its publication.
+fn slot_rows(f: &Mcp, e: i64, k: i64) {
+    let bands: &[(u32, u32, u8)] = match k {
+        1 => &[(1400, 1450, 20)],
+        2 => &[(1300, 1350, 0), (1400, 1450, 60)],
+        _ => &[(1400, 1450, 0)],
+    };
+    let start = rep(e, k) - 30_000;
+    wf_row(f, start, 40, bands, false);
+    // The period has ended by the station clock, so that it counts.
+    let now = f.bench.now_utc_ms();
+    if now < start + 15_000 {
+        f.bench
+            .offset
+            .fetch_add(start + 15_000 - now, Ordering::SeqCst);
+    }
+}
+
+// Proves: TC-039-022. Without a known hearing (no spot, 601 s, 40 m, Use off, feed off) Tx and Rx
+// move to the quietest slot at each repetition (1400, 1300) and stay on a tie (1300: 27 against
+// 27 dB); every repetition is keyed past the watchdog limit 2 and WD counts 4, 3, 2, 1; a spot 60 s
+// or 590 s old keeps Tx at 1500 and WD counts from 8; slot_check names the repetition and hearing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_the_slot_check_at_every_repetition() {
+    type Set = fn(&crate::pskr::Feed);
+    let table: [(&str, Set, bool); 7] = [
+        ("no spot", |_| {}, false),
+        ("60 s", |feed| feed.inject(&heard_spot(60)), true),
+        ("590 s", |feed| feed.inject(&heard_spot(590)), true),
+        ("601 s", |feed| feed.inject(&heard_spot(601)), false),
+        (
+            "40 m",
+            |feed| {
+                let t = crate::contact_http_tests::now_ms() / 1000 - 60;
+                feed.inject(&spot_of("HB9BLA", "K1ABC", 7_075_500, "40m", t));
+            },
+            false,
+        ),
+        (
+            "Use off",
+            |feed| {
+                feed.inject(&heard_spot(60));
+                feed.switch_use(false);
+            },
+            false,
+        ),
+        (
+            "feed off",
+            |feed| {
+                feed.inject(&heard_spot(60));
+                feed.switch(false);
+            },
+            false,
+        ),
+    ];
+    for (name, set, heard) in table {
+        let t = slot_check(set).await;
+        let (f, e) = (&t.f, t.e);
+        let x = if heard { 8 } else { 4 };
+        assert_eq!(wd(f).await, json!(x), "{name}");
+        let moves = [1400, 1300, 1300];
+        for k in 1..=3 {
+            transmit_own_period(f, rep(e, k - 1) + 15_000).await;
+            slot_rows(f, e, k);
+            publish(f, rep(e, k), &[]);
+            let s = f.read("contact").await;
+            let hz = if heard { 1500 } else { moves[k as usize - 1] };
+            assert_eq!(
+                (
+                    s["settings"]["tx_hz"].clone(),
+                    s["settings"]["rx_hz"].clone()
+                ),
+                (json!(hz), json!(hz)),
+                "{name}, repetition {k}"
+            );
+            assert_eq!(s["transmit"]["arm_state"], "armed", "{name}");
+            assert_eq!(s["watchdog"]["tx_expired"], false, "{name}");
+            assert_eq!(wd(f).await, json!(x - k), "{name}, repetition {k}");
+            assert_eq!(
+                run_of(f).await["slot_check"],
+                json!({"repetitions":k,"hears_us":heard,"hz":hz}),
+                "{name}"
+            );
+        }
+        assert_eq!(f.keys(), 6, "{name}: every repetition keyed and released");
+    }
+}
+
+// Proves: TC-039-022. A target that has answered keeps its slot for the whole exchange: after the
+// partner's report at the 2nd repetition Tx never moves again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_an_answer_keeps_the_slot() {
+    let t = slot_check(|_| {}).await;
+    let (f, e) = (&t.f, t.e);
+    slot_rows(f, e, 1);
+    publish(f, rep(e, 1), &[]);
+    assert_eq!(frequencies(f).await.1, json!(1400));
+    slot_rows(f, e, 2);
+    publish(f, rep(e, 2), &[("HB9BLA K1ABC -09", 1800.0, Some(-9.0))]);
+    for k in 3..=5 {
+        slot_rows(f, e, 2);
+        publish(f, rep(e, k), &[]);
+        assert_eq!(frequencies(f).await.1, json!(1400), "repetition {k}");
+    }
+}
+
+// Proves: TC-039-022. A refused move changes nothing and is checked again at the next repetition.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_a_refused_move_is_checked_again() {
+    let t = slot_check(|_| {}).await;
+    let (f, e) = (&t.f, t.e);
+    let state = f.state.clone();
+    let (id, boot) = (f.id.clone(), f.boot.clone());
+    // The operator's command lands between the decision and the move: the move is stale.
+    *f.state
+        .recording
+        .contact
+        .get()
+        .unwrap()
+        .automation
+        .before_slot_move
+        .lock()
+        .unwrap() = Some(Box::new(move || {
+        let station = state.recording.contact.get().unwrap();
+        let body = json!({"v":1,"profile_id":id,"boot_id":boot,"command_id":profile::new_uuid().unwrap(),
+                "contact_revision":station.facts().0,"action":"set_hold_tx","enabled":true});
+        station
+            .operate_as(&state, body, true, authorization::Principal::Browser)
+            .unwrap();
+    }));
+    slot_rows(f, e, 1);
+    publish(f, rep(e, 1), &[]);
+    assert_eq!(frequencies(f).await.1, json!(1500), "refused");
+    assert_eq!(contact(f).await.2, json!("armed"));
+    publish(f, rep(e, 2), &[]);
+    assert_eq!(frequencies(f).await.1, json!(1400), "checked again");
+}
+
+// Proves: TC-039-033, TC-039-022. Unattended (no client for 60 s): the stop at N is back at once,
+// and K1ABC silent with a spot of my call is left at 4 repetitions, not 8; then the run stops
+// no_client.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_033_unattended_x_is_never_doubled() {
+    let mut t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let e = t.e;
+    t.feed.inject(&heard_spot(60));
+    drop(t.client.take());
+    let f = &t.f;
+    f.tick();
+    at_skew(f, 60);
+    assert_eq!(quiet_run(f).0, "contact_active");
+    f.tick();
+    assert_eq!(
+        f.browser("GET", "/contact", None).await.json["watchdog"]["tx_remaining_calls"],
+        6,
+        "the stop at N is back"
+    );
+    for k in 1..=3 {
+        publish(f, rep(e, k), &[]);
+        assert_eq!(quiet_contact(f).await.2, json!("armed"), "{k}");
+    }
+    publish(f, rep(e, 4), &[]);
+    assert_eq!(quiet_contact(f).await.2, json!("disarmed"));
+    f.tick();
+    assert_eq!(quiet_run(f), ("stopped".into(), json!("no_client")));
+    assert_eq!(f.keys(), 0);
+}
+
+// Proves: TC-039-048. The run snapshot's hearing and his end: heard {t, -12} with a spot of my call,
+// unknown with Use off; his decoded frequency of my Tx parity (odd) at the quietest slot sends Tx to
+// the next quietest with his_end yes, one of the other parity excludes nothing, his frequencies
+// everywhere leave the quietest with his_end no.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    assert_eq!(
+        run_of(f).await["hearing"],
+        json!({"state":"unknown","spot_utc_s":null,"snr_db":null})
+    );
+    let now = crate::contact_http_tests::now_ms() / 1000;
+    t.feed
+        .inject(&spot_of("HB9BLA", "K1ABC", 14_075_500, "20m", now - 60));
+    f.tick();
+    assert_eq!(
+        run_of(f).await["hearing"],
+        json!({"state":"heard","spot_utc_s":now - 60,"snr_db":-12})
+    );
+    t.feed.switch_use(false);
+    f.tick();
+    assert_eq!(run_of(f).await["hearing"]["state"], "unknown");
+    // Use off is also no his end: the slot check (not heard) has the power alone.
+    wf_row(
+        f,
+        e - 30_000,
+        40,
+        &[(1300, 1350, 10), (1600, 1650, 20)],
+        false,
+    );
+    publish(f, rep(e, 1), &[]);
+    assert_eq!(
+        run_of(f).await["tx_slot"],
+        json!({"hz":1300,"power_db":10,"his_end":"unknown"})
+    );
+    // A run not heard: his decoded frequencies of my Tx parity decide.
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    let odd = |s: i64| if s.div_euclid(15) % 2 == 1 { s } else { s - 15 };
+    // 1320 Hz of my Tx parity excludes 1300; 1600 Hz of the other parity excludes nothing.
+    t.feed.inject(&spot_of(
+        "DL1XYZ",
+        "K1ABC",
+        14_075_320,
+        "20m",
+        odd(now) - 30,
+    ));
+    t.feed
+        .inject(&spot_of("G4ABC", "K1ABC", 14_075_600, "20m", odd(now) - 15));
+    wf_row(
+        f,
+        e - 30_000,
+        40,
+        &[(1300, 1350, 10), (1600, 1650, 20)],
+        false,
+    );
+    publish(f, rep(e, 1), &[]);
+    assert_eq!(
+        run_of(f).await["tx_slot"],
+        json!({"hz":1600,"power_db":20,"his_end":"yes"})
+    );
+    // His frequencies of my Tx parity everywhere: his end ignored.
+    // 27 offsets 90 Hz apart (the feed keeps at most 32): every candidate within 45 Hz of one.
+    for hz in (300..=2650).step_by(90) {
+        t.feed.inject(&spot_of(
+            "W1AW",
+            "K1ABC",
+            14_074_000 + hz,
+            "20m",
+            odd(now) - 60,
+        ));
+    }
+    publish(f, rep(e, 2), &[]);
+    assert_eq!(
+        run_of(f).await["tx_slot"],
+        json!({"hz":1300,"power_db":10,"his_end":"no"})
     );
 }

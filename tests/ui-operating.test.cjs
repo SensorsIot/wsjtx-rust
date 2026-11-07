@@ -273,8 +273,7 @@ test('TC-007-002 pointer resize and stale link preserve read-only authority',{ti
 
 
 // Proves: CL-010-05, CL-010-07, CL-010-08, CL-010-16, CL-050-01; TC-007-002, TC-050-001 agreed design and authority-preserving regions.
-// Skipped until the strategydef server lands (needs strategydef server: the eight built-ins of the real station store).
-test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, Band Activity and the QSO pane with truthful state',{timeout:30000,skip:'needs strategydef server'},async t=>{
+test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, Band Activity and the QSO pane with truthful state',{timeout:30000},async t=>{
  const {page,errors,sent}=await fixture(t,{width:1200,height:1200});
  assert.equal(Math.round((await page.locator('#signal').boundingBox()).height),330,'#54: a sufficiently tall desktop starts with the taller signal height (about 2 FT8 periods at 10 px/s)');
  await page.setViewportSize({width:1200,height:800});
@@ -3114,8 +3113,7 @@ test('TC-039-006 Settings > General Most Wanted: one button beside the date, a f
 });
 // Proves: CL-042-01; TC-042-001 the editor offers the goals and the actual isolated station
 // accepts and keeps the saved draft; Save does not start anything. Expected values written here.
-// Skipped until the strategydef server lands (needs strategydef server: the real station store saves schema 3 keys).
-test('TC-042-001 Editor offers the goals and the station saves them unselected',{timeout:40000,skip:'needs strategydef server'},async t=>{
+test('TC-042-001 Editor offers the goals and the station saves them unselected',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
   await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
@@ -3130,8 +3128,7 @@ test('TC-042-001 Editor offers the goals and the station saves them unselected',
 });
 // Proves: CL-039-11; TC-039-032 on the actual isolated station: a built-in is read-only in the
 // editor, Duplicate copies it to a user strategy, a colliding name is refused with its field.
-// Skipped until the strategydef server lands (needs strategydef server: the eight built-ins of the real station).
-test('TC-039-032 Built-in strategies are read-only in the editor and copy to a user strategy',{timeout:40000,skip:'needs strategydef server'},async t=>{
+test('TC-039-032 Built-in strategies are read-only in the editor and copy to a user strategy',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
   const puts=[];page.on('request',r=>{if(r.url().endsWith('/strategy')&&r.method()==='PUT')puts.push(JSON.parse(r.postData()));});
