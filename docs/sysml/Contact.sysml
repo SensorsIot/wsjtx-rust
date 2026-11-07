@@ -1389,7 +1389,10 @@ package WstxContact {
              of the latest attempt: outcome saved (stored, replaced or already stored)
              with error null, or unsaved with error storage_unavailable (pending, retried),
              log_queue_full or log_invalid_field (not retried); watchdog exactly {tx_remaining_calls,
-             tx_expired,tune_remaining_seconds}. contact_revision advances on every
+             tx_expired,tune_remaining_seconds}; tx_remaining_calls is an integer, or null only
+             while Enable Tx is on during a contest stay of a contest run's own contact (situation
+             1, the target hears us, nothing more valuable listed, the run attended;
+             WstxStrategy::StrategyWatchdog), which the browser shows as "WD:∞". contact_revision advances on every
              accepted command and every server-side sequence/transmit/watchdog change;
              snapshot_sequence also on clock-free material changes. No content coding:
              /contact, /contacts and /contacts/* are not in the six-route

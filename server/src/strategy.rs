@@ -3,8 +3,8 @@
 //! Band Activity's marks and value order and the station's strategy runs
 //! (WstxMcp::OperatingAutomation with a strategy) both use these verdicts; the browser
 //! never evaluates a strategy itself. Routes: GET /strategy (StrategySnapshot), PUT
-//! /strategy (configuration; a changed active starts or stops a run), POST
-//! /strategy/evaluate (verdicts of retained live rows), #42 GET /strategy/alerts and POST
+//! /strategy (configuration; a changed selection ends a run and, while Auto is on, starts
+//! the new one), POST /strategy/auto (WstxStrategy::AutoToggle), POST /strategy/evaluate (verdicts of retained live rows), #42 GET /strategy/alerts and POST
 //! /strategy/alerts/clear (WstxStrategy::Alert), POST /strategy/most-wanted/download
 //! (WstxStrategy::MostWantedList), GET /strategy/contests (WstxContest::ContestHttp).
 use crate::*;
@@ -45,8 +45,10 @@ pub(crate) enum Goal {
     Wpx,
     Grid,
     NewCall,
+    /// strategydef: the call on the station band in any mode.
+    NewCallBand,
 }
-const GOALS: [(&str, Goal); 7] = [
+const GOALS: [(&str, Goal); 8] = [
     ("dxcc", Goal::Dxcc),
     ("dxcc_band", Goal::DxccBand),
     ("dxcc_slot", Goal::DxccSlot),
@@ -54,12 +56,49 @@ const GOALS: [(&str, Goal); 7] = [
     ("wpx", Goal::Wpx),
     ("grid", Goal::Grid),
     ("new_call", Goal::NewCall),
+    ("new_call_band", Goal::NewCallBand),
 ];
 impl Goal {
     fn name(self) -> &'static str {
         GOALS.iter().find(|g| g.1 == self).map_or("", |g| g.0)
     }
 }
+/// WstxStrategy::ValueCriterion, the criteria of ValueOrder, wire names exactly.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Criterion {
+    NewDxcc,
+    NewDxccBand,
+    NewDxccSlot,
+    NewGrid,
+    NewGridBand,
+    NewCall,
+    NewCallBand,
+    MostWanted,
+    Distance,
+    Snr,
+}
+const CRITERIA: [(&str, Criterion); 10] = [
+    ("new_dxcc", Criterion::NewDxcc),
+    ("new_dxcc_band", Criterion::NewDxccBand),
+    ("new_dxcc_slot", Criterion::NewDxccSlot),
+    ("new_grid", Criterion::NewGrid),
+    ("new_grid_band", Criterion::NewGridBand),
+    ("new_call", Criterion::NewCall),
+    ("new_call_band", Criterion::NewCallBand),
+    ("most_wanted", Criterion::MostWanted),
+    ("distance", Criterion::Distance),
+    ("snr", Criterion::Snr),
+];
+/// Strategy valueCriteriaMax.
+pub const VALUE_MAX: usize = 10;
+impl Criterion {
+    fn name(self) -> &'static str {
+        CRITERIA.iter().find(|c| c.1 == self).map_or("", |c| c.0)
+    }
+}
+/// The LeaveRule and QuietTime defaults of a strategy (WstxStrategy::Strategy).
+pub const REPETITIONS_DEFAULT: u64 = 4;
+pub const QUIET_MINUTES_DEFAULT: u64 = 10;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Needed {
     NotWorked,
@@ -94,32 +133,106 @@ pub(crate) struct Strategy {
     pub needed: Needed,
     pub region: Region,
     pub min_snr_db: Option<i64>,
-    pub calls_per_station: u64,
+    /// ValueOrder: 0..10 unique criteria in the operator's order.
+    pub value: Vec<Criterion>,
+    /// Callers of my call first (Q4).
+    pub callers_first: bool,
+    /// WstxStrategy::CqWhenNoTarget.
+    pub cq_when_no_target: bool,
+    /// x of WstxStrategy::LeaveRule, "repetitions before leaving", 1..20.
+    pub repetitions: u64,
+    /// WstxStrategy::QuietTime in minutes, 1..120.
+    pub quiet_minutes: u64,
     pub treat_73_as_cq: bool,
     pub window: Window,
 }
-/// WstxStrategy::BuiltinStrategies: the one table (name, goal, DX only).
-const BUILTINS: [(&str, Goal, bool); 5] = [
-    ("New DXCC", Goal::Dxcc, false),
-    ("New DXCC on band", Goal::DxccBand, false),
-    ("DXCC slots", Goal::DxccSlot, false),
-    ("New calls", Goal::NewCall, false),
-    ("DX hunting", Goal::NewCall, true),
+/// One row of the built-in table: name, goal, DX only, window today, value, CQ when no target.
+type Builtin = (&'static str, Goal, bool, bool, Criterion, bool);
+/// WstxStrategy::BuiltinStrategies: the one table, in this order.
+const BUILTINS: [Builtin; 8] = [
+    (
+        "New DXCC",
+        Goal::Dxcc,
+        false,
+        false,
+        Criterion::MostWanted,
+        false,
+    ),
+    (
+        "New DXCC on band",
+        Goal::DxccBand,
+        false,
+        false,
+        Criterion::MostWanted,
+        false,
+    ),
+    (
+        "DXCC slots",
+        Goal::DxccSlot,
+        false,
+        false,
+        Criterion::MostWanted,
+        false,
+    ),
+    (
+        "New calls",
+        Goal::NewCall,
+        false,
+        false,
+        Criterion::MostWanted,
+        false,
+    ),
+    (
+        "DX hunting",
+        Goal::NewCall,
+        true,
+        false,
+        Criterion::MostWanted,
+        false,
+    ),
+    (
+        "Strongest new on band",
+        Goal::NewCallBand,
+        false,
+        false,
+        Criterion::Snr,
+        false,
+    ),
+    (
+        "Farthest new on band",
+        Goal::NewCallBand,
+        false,
+        false,
+        Criterion::Distance,
+        false,
+    ),
+    (
+        "Casual 20 m",
+        Goal::NewCallBand,
+        false,
+        true,
+        Criterion::Snr,
+        true,
+    ),
 ];
 pub(crate) fn builtins() -> &'static [Strategy] {
     static TABLE: std::sync::OnceLock<Vec<Strategy>> = std::sync::OnceLock::new();
     TABLE.get_or_init(|| {
         BUILTINS
             .iter()
-            .map(|(name, goal, dx)| Strategy {
+            .map(|(name, goal, dx, today, value, cq)| Strategy {
                 name: (*name).to_owned(),
                 goals: vec![*goal],
                 needed: Needed::NotWorked,
                 region: if *dx { Region::Dx } else { Region::All },
                 min_snr_db: None,
-                calls_per_station: 3,
+                value: vec![*value],
+                callers_first: true,
+                cq_when_no_target: *cq,
+                repetitions: REPETITIONS_DEFAULT,
+                quiet_minutes: QUIET_MINUTES_DEFAULT,
                 treat_73_as_cq: true,
-                window: Window::All,
+                window: if *today { Window::Today } else { Window::All },
             })
             .collect()
     })
@@ -201,23 +314,30 @@ fn date(v: &Value, field: &str) -> Result<u32, Field> {
 fn date_text(d: u32) -> String {
     format!("{:04}-{:02}-{:02}", d / 10000, d / 100 % 100, d % 100)
 }
+/// The exact keys of WstxStrategy::Strategy.
+const STRATEGY_KEYS: [&str; 13] = [
+    "name",
+    "class",
+    "goals",
+    "needed",
+    "region",
+    "min_snr_db",
+    "value",
+    "callers_first",
+    "cq_when_no_target",
+    "repetitions",
+    "quiet_minutes",
+    "treat_73_as_cq",
+    "window",
+];
 fn strategy(v: &Value, field: &str) -> Result<Strategy, Field> {
-    exact(
-        v,
-        &[
-            "name",
-            "class",
-            "goals",
-            "needed",
-            "region",
-            "min_snr_db",
-            "calls_per_station",
-            "treat_73_as_cq",
-            "window",
-        ],
-        field,
-    )?;
     let f = |k: &str| format!("{field}.{k}");
+    // calls_per_station is gone (strategydef): refused by its own path; any other extra key
+    // by the strategy's.
+    if v.get("calls_per_station").is_some() {
+        return Err(f("calls_per_station"));
+    }
+    exact(v, &STRATEGY_KEYS, field)?;
     let name = v["name"]
         .as_str()
         .filter(|n| {
@@ -286,6 +406,21 @@ fn strategy(v: &Value, field: &str) -> Result<Strategy, Field> {
                 .ok_or(bad(f("min_snr_db")))?,
         ),
     };
+    let list = v["value"]
+        .as_array()
+        .filter(|c| c.len() <= VALUE_MAX)
+        .ok_or(bad(f("value")))?;
+    let mut value = Vec::new();
+    for (i, c) in list.iter().enumerate() {
+        let criterion = CRITERIA
+            .iter()
+            .find(|k| c.as_str() == Some(k.0))
+            .map(|k| k.1)
+            .filter(|k| !value.contains(k))
+            .ok_or(bad(format!("{field}.value[{i}]")))?;
+        value.push(criterion);
+    }
+    let flag = |k: &str| v[k].as_bool().ok_or(bad(f(k)));
     let window_field = f("window");
     let window = match v["window"]["kind"].as_str() {
         Some("all") => {
@@ -313,10 +448,12 @@ fn strategy(v: &Value, field: &str) -> Result<Strategy, Field> {
         needed,
         region,
         min_snr_db,
-        calls_per_station: bounded(&v["calls_per_station"], &f("calls_per_station"), 1, 20)?,
-        treat_73_as_cq: v["treat_73_as_cq"]
-            .as_bool()
-            .ok_or(bad(f("treat_73_as_cq")))?,
+        value,
+        callers_first: flag("callers_first")?,
+        cq_when_no_target: flag("cq_when_no_target")?,
+        repetitions: bounded(&v["repetitions"], &f("repetitions"), 1, 20)?,
+        quiet_minutes: bounded(&v["quiet_minutes"], &f("quiet_minutes"), 1, 120)?,
+        treat_73_as_cq: flag("treat_73_as_cq")?,
         window,
     })
 }
@@ -436,6 +573,33 @@ fn upgrade(old: &Value) -> Value {
     }
     v
 }
+/// A file of schema_version 2 (before strategydef): each strategy's calls_per_station (1..20)
+/// is dropped and the strategydef defaults are added. A strategy without calls_per_station,
+/// with a bad one or with a key of schema 3 already is malformed (None).
+fn upgrade_2(configuration: &Value) -> Option<Value> {
+    let mut v = configuration.clone();
+    if let Some(list) = v.get_mut("strategies").and_then(Value::as_array_mut) {
+        for s in list {
+            let o = s.as_object_mut()?;
+            let old = o.remove("calls_per_station")?;
+            if !old.as_u64().is_some_and(|n| (1..=20).contains(&n)) {
+                return None;
+            }
+            for (k, default) in [
+                ("value", json!(["most_wanted"])),
+                ("callers_first", json!(true)),
+                ("cq_when_no_target", json!(false)),
+                ("repetitions", json!(REPETITIONS_DEFAULT)),
+                ("quiet_minutes", json!(QUIET_MINUTES_DEFAULT)),
+            ] {
+                if o.insert(k.to_owned(), default).is_some() {
+                    return None;
+                }
+            }
+        }
+    }
+    Some(v)
+}
 /// A saved file from before the presets: a strategy with a built-in's name is dropped.
 fn without_builtin_names(configuration: &Value) -> Value {
     let mut v = configuration.clone();
@@ -454,7 +618,10 @@ impl Strategy {
             Region::Dx=>json!({"kind":"dx"}),
             Region::Selected(c)=>json!({"kind":"selected","continents":c}),
         },
-        "min_snr_db":self.min_snr_db,"calls_per_station":self.calls_per_station,
+        "min_snr_db":self.min_snr_db,
+        "value":self.value.iter().map(|c| c.name()).collect::<Vec<_>>(),
+        "callers_first":self.callers_first,"cq_when_no_target":self.cq_when_no_target,
+        "repetitions":self.repetitions,"quiet_minutes":self.quiet_minutes,
         "treat_73_as_cq":self.treat_73_as_cq,
         "window":match self.window {
             Window::All=>json!({"kind":"all"}),
@@ -473,21 +640,36 @@ impl Config {
         }
         v
     }
-    /// A contest strategy that transmits (WstxContest::ContestRun).
+    /// The contest in force (WstxContest::ContestSelection): with Auto on it runs
+    /// (WstxContest::ContestRun), with Auto off it only marks.
     pub(crate) fn automatic_contest(&self) -> Option<crate::contest::Selection> {
-        self.contest.filter(crate::contest::Selection::automatic)
+        self.contest
     }
-    /// What a run follows: the active award strategy, or the automatic contest as the bounds of
-    /// a strategy run (its calls per station; the contest evaluates, not the goals).
+    /// A contest whose WstxContest::AutomationClause is forbidden: Auto on needs the confirmation.
+    pub(crate) fn forbidden_contest(&self) -> bool {
+        self.contest
+            .is_some_and(|c| c.profile.automation == crate::contest::AutomationClause::Forbidden)
+    }
+    /// A selection: an active strategy or a contest (WstxStrategy::AutoToggle).
+    pub(crate) fn selected(&self) -> bool {
+        self.active.is_some() || self.contest.is_some()
+    }
+    /// What a run follows: the active award strategy, or the contest as the bounds of a
+    /// strategy run (its repetitions and quiet time, callers first; the contest evaluates,
+    /// not the goals or the value list).
     pub(crate) fn run_strategy(&self) -> Option<Strategy> {
-        match self.automatic_contest() {
+        match self.contest {
             Some(c) => Some(Strategy {
                 name: c.profile.name.to_owned(),
                 goals: Vec::new(),
                 needed: Needed::NotWorked,
                 region: Region::All,
                 min_snr_db: None,
-                calls_per_station: crate::contest::RUN_CALLS_PER_STATION,
+                value: Vec::new(),
+                callers_first: true,
+                cq_when_no_target: false,
+                repetitions: c.repetitions,
+                quiet_minutes: c.quiet_minutes,
                 treat_73_as_cq: true,
                 window: Window::All,
             }),
@@ -548,6 +730,28 @@ pub(crate) fn great_circle(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
     let az = (y.atan2(x) / r + 360.0) % 360.0;
     (km, az.round())
 }
+/// The great-circle distance in km between two (lat, lon) points, unrounded (haversine on a
+/// sphere of 6371 km, as great_circle).
+fn haversine_km(a: (f64, f64), b: (f64, f64)) -> f64 {
+    let r = std::f64::consts::PI / 180.0;
+    let (la1, la2, dl) = (a.0 * r, b.0 * r, (b.1 - a.1) * r);
+    let h = ((la2 - la1) / 2.0).sin().powi(2) + la1.cos() * la2.cos() * (dl / 2.0).sin().powi(2);
+    12_742.0 * h.sqrt().min(1.0).asin()
+}
+/// WstxStrategy::StationDistance: whole km (truncated) from the centre of the profile locator
+/// to the centre of the 4-character grid in the message, else to the sender's cty.dat entity
+/// centre (the entity distance of DecodedEntity). None without a profile locator, or without
+/// grid and entity.
+pub(crate) fn station_distance(st: &Station, f: &Facts) -> Option<u64> {
+    let me = st.my_locator.as_deref().and_then(maidenhead)?;
+    let theirs = f
+        .grid
+        .as_deref()
+        .and_then(|g| g.get(..4))
+        .and_then(maidenhead)
+        .or_else(|| st.dxcc.lookup(&f.from).map(|e| (e.lat, e.lon)))?;
+    Some(haversine_km(me, theirs).floor() as u64)
+}
 
 // ------------------------------------------------------------------ evaluation
 /// What the evaluator reads of one decoded standard record.
@@ -561,6 +765,8 @@ pub(crate) struct Facts {
     pub signoff: bool,
     pub grid: Option<String>,
     pub snr: Option<f64>,
+    /// The audio frequency (Hz), for an exact tie of ValueOrder.
+    pub hz: Option<f64>,
 }
 pub(crate) fn facts(record: &Value) -> Option<Facts> {
     let f = &record["fields"];
@@ -585,6 +791,7 @@ pub(crate) fn facts(record: &Value) -> Option<Facts> {
             .flatten()
             .filter(|g| maidenhead(g).is_some()),
         snr: record["snr_db"].as_f64(),
+        hz: record["frequency_hz"].as_f64(),
     })
 }
 /// Station facts of one evaluation: my call and continent, the band, the mode, the country
@@ -777,6 +984,9 @@ impl Station {
             Goal::Waz => of(Category::CqZone, None, None),
             Goal::Wpx => s.needed.holds(w.wpx_standing(&f.from)),
             Goal::NewCall => s.needed.holds(w.call_standing(&f.from)),
+            Goal::NewCallBand => {
+                band.is_some_and(|b| s.needed.holds(w.call_band_standing(&f.from, b)))
+            }
             // D13: no grid in the message, or a logged QSO without one: unknown, never new.
             Goal::Grid => {
                 !w.gridless(&f.from)
@@ -786,6 +996,49 @@ impl Station {
             }
         }
     }
+    /// ValueOrder new_grid_band: the message grid not worked on the station band in the
+    /// window, with the rule of D13 (no grid, an unknown grid status or an unknown band is
+    /// not needed).
+    fn grid_band_needed(&self, s: &Strategy, f: &Facts) -> bool {
+        let (Some(w), Some(band), Some(grid)) =
+            (&self.worked, self.band.as_deref(), f.grid.as_deref())
+        else {
+            return false;
+        };
+        !w.gridless(&f.from) && s.needed.holds(w.grid_band_standing(grid, band))
+    }
+    /// The Most Wanted rank of the sender's entity (None: not listed or no list).
+    fn most_wanted_rank(&self, f: &Facts) -> Option<u32> {
+        self.most_wanted
+            .as_ref()
+            .and_then(|l| self.dxcc.lookup(&f.from).and_then(|r| l.rank(&r.name)))
+    }
+    /// One criterion as a key, smaller first: (0 better group, 1 worse or unknown; the value
+    /// inside the group).
+    fn criterion_key(&self, s: &Strategy, c: Criterion, f: &Facts) -> (u8, f64) {
+        let needed = |yes: bool| (u8::from(!yes), 0.0);
+        let known = |v: Option<f64>| v.map_or((1, 0.0), |v| (0, -v));
+        match c {
+            Criterion::NewDxcc => needed(self.goal_needed(s, Goal::Dxcc, f)),
+            Criterion::NewDxccBand => needed(self.goal_needed(s, Goal::DxccBand, f)),
+            Criterion::NewDxccSlot => needed(self.goal_needed(s, Goal::DxccSlot, f)),
+            Criterion::NewGrid => needed(self.goal_needed(s, Goal::Grid, f)),
+            Criterion::NewGridBand => needed(self.grid_band_needed(s, f)),
+            Criterion::NewCall => needed(self.goal_needed(s, Goal::NewCall, f)),
+            Criterion::NewCallBand => needed(self.goal_needed(s, Goal::NewCallBand, f)),
+            Criterion::MostWanted => self
+                .most_wanted_rank(f)
+                .map_or((1, 0.0), |rank| (0, f64::from(rank))),
+            Criterion::Distance => known(station_distance(self, f).map(|km| km as f64)),
+            Criterion::Snr => known(f.snr),
+        }
+    }
+}
+/// The exact tie of ValueOrder (and ContestValueOrder): the lower audio frequency (unknown
+/// last), then the call in character order. Decode order is never a ranking.
+pub(crate) fn exact_tie(a: &Facts, b: &Facts) -> std::cmp::Ordering {
+    let hz = |f: &Facts| f.hz.unwrap_or(f64::INFINITY);
+    hz(a).total_cmp(&hz(b)).then_with(|| a.from.cmp(&b.from))
 }
 /// What a ranked record is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -869,21 +1122,22 @@ fn classify(s: &Strategy, f: &Facts, st: &Station) -> (Option<Kind>, bool, Strin
         format!("needed: {}", needed.join(", ")),
     )
 }
-/// WstxStrategy::ValueOrder of ranked records, smaller first: callers, the Most Wanted list by
-/// its rank, then the strongest and the sequence.
-fn value_key(v: &Verdict, st: &Station) -> (u8, u32, f64, u64) {
-    let snr = v.facts.snr.map_or(f64::INFINITY, |s| -s);
-    if v.kind == Some(Kind::Caller) {
-        return (0, 0, snr, v.facts.sequence);
-    }
-    let listed = st
-        .most_wanted
-        .as_ref()
-        .and_then(|l| st.dxcc.lookup(&v.facts.from).and_then(|r| l.rank(&r.name)));
-    match listed {
-        Some(rank) => (1, rank, snr, v.facts.sequence),
-        None => (2, 0, snr, v.facts.sequence),
-    }
+/// WstxStrategy::ValueOrder of a ranked record, smaller first: with callers_first the callers
+/// before the candidates; then the strategy's criteria in its order; then always the hidden
+/// SNR (stronger first, unknown last). The exact tie follows (exact_tie).
+fn value_key(s: &Strategy, v: &Verdict, st: &Station) -> Vec<(u8, f64)> {
+    let group = u8::from(s.callers_first && v.kind != Some(Kind::Caller));
+    let mut key = vec![(group, 0.0)];
+    key.extend(s.value.iter().map(|c| st.criterion_key(s, *c, &v.facts)));
+    key.push(st.criterion_key(s, Criterion::Snr, &v.facts));
+    key
+}
+fn key_cmp(a: &[(u8, f64)], b: &[(u8, f64)]) -> std::cmp::Ordering {
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| x.0.cmp(&y.0).then(x.1.total_cmp(&y.1)))
+        .find(|o| o.is_ne())
+        .unwrap_or(std::cmp::Ordering::Equal)
 }
 /// WstxStrategy::Verdict: one per decoded standard record with a resolved sender, in display
 /// order: rank (the position in ValueOrder) ascending, then the records without a rank in
@@ -906,19 +1160,17 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
         .collect();
     let (mut ranked, rest): (Vec<Verdict>, Vec<Verdict>) =
         list.drain(..).partition(|v| v.kind.is_some());
-    let mut keyed: Vec<((u8, u32, f64, u64), Verdict)> =
-        ranked.drain(..).map(|v| (value_key(&v, st), v)).collect();
-    keyed.sort_by(|(a, _), (b, _)| {
-        a.0.cmp(&b.0)
-            .then(a.1.cmp(&b.1))
-            .then(a.2.total_cmp(&b.2))
-            .then(a.3.cmp(&b.3))
-    });
+    let mut keyed: Vec<(Vec<(u8, f64)>, Verdict)> = ranked
+        .drain(..)
+        .map(|v| (value_key(s, &v, st), v))
+        .collect();
+    keyed.sort_by(|(a, va), (b, vb)| key_cmp(a, b).then_with(|| exact_tie(&va.facts, &vb.facts)));
+    let ranked_by_list = s.value.contains(&Criterion::MostWanted);
     let mut out = Vec::with_capacity(keyed.len() + rest.len());
-    for (i, (key, mut v)) in keyed.into_iter().enumerate() {
+    for (i, (_, mut v)) in keyed.into_iter().enumerate() {
         v.rank = Some(i);
-        if key.0 == 1 {
-            v.why = format!("{} · Most Wanted #{}", v.why, key.1);
+        if let Some(rank) = st.most_wanted_rank(&v.facts).filter(|_| ranked_by_list) {
+            v.why = format!("{} · Most Wanted #{rank}", v.why);
         }
         out.push(v);
     }
@@ -1099,6 +1351,8 @@ struct Inner {
     revision: u64,
     config: Option<Config>,
     error: Option<&'static str>,
+    /// WstxStrategy::AutoToggle: station memory only, off at start.
+    auto: bool,
 }
 /// The strategy store of one station (strategy.json beside profile.json), read on first
 /// use; one leaf lock.
@@ -1116,8 +1370,11 @@ pub(crate) struct Owner {
     /// #63 the ContestLog last built, for the station step, which never builds it.
     contest_log: Arc<ContestCache>,
     contest_building: Arc<std::sync::atomic::AtomicBool>,
-    /// The HaltTransmit count the selection has seen (a change sets active to None).
+    /// The HaltTransmit count an Auto on has seen (a change turns Auto off).
     halts_seen: std::sync::atomic::AtomicU64,
+    /// Counts each Auto on, so that the station step never turns off an Auto that was switched
+    /// on after it looked at the run (auto_step).
+    auto_epoch: std::sync::atomic::AtomicU64,
     /// WstxStrategy::MostWantedList: a leaf lock over the parsed list; the file is read
     /// off the station step (`most_wanted_load`), the step only clones the Arc.
     most_wanted: Mutex<MostWantedState>,
@@ -1149,7 +1406,8 @@ impl Owner {
                             && v["revision"].as_u64().is_some_and(|n| n <= MAX_SAFE);
                         let configuration = match v["schema_version"].as_u64() {
                             Some(1) => upgrade(&v["configuration"]),
-                            Some(2) => without_builtin_names(&v["configuration"]),
+                            Some(2) => without_builtin_names(&upgrade_2(&v["configuration"])?),
+                            Some(3) => without_builtin_names(&v["configuration"]),
                             _ => return None,
                         };
                         ok.then(|| parse_config(&configuration).ok())
@@ -1387,8 +1645,9 @@ impl Owner {
         self.most_wanted_store(state, list)?;
         Ok(self.snapshot(state))
     }
-    /// A HaltTransmit from any source since the last step sets active to None (memory only:
-    /// active is never read from the file), pushed by strategy.state.
+    /// A HaltTransmit from any source since the last step turns Auto off (WstxStrategy::
+    /// StrategyRun); the selection stays, so the marks stay (a contest keeps its operation).
+    /// Pushed by strategy.state.
     pub(crate) fn halt_step(&self, state: &ProfileState) {
         use std::sync::atomic::Ordering;
         let Some(halts) = state
@@ -1403,22 +1662,53 @@ impl Owner {
             return;
         }
         let mut inner = self.lock(state);
-        let revision = inner.revision + 1;
-        let Some(config) = inner
-            .config
-            .as_mut()
-            .filter(|c| c.active.is_some() || c.automatic_contest().is_some())
-        else {
-            return;
-        };
-        config.active = None;
-        // #63 WstxContest::ContestRun: the contest stays, colouring only: it transmits nothing.
-        if let Some(c) = config.contest.as_mut() {
-            c.operation = crate::contest::Operation::Colouring;
-            c.automation_confirmed = false;
+        self.switch_auto(&mut inner, false);
+    }
+    /// Sets Auto; a change increments the revision (strategy.state). True when it changed.
+    fn switch_auto(&self, inner: &mut Inner, on: bool) -> bool {
+        if inner.auto == on || inner.revision >= MAX_SAFE {
+            return false;
         }
-        inner.revision = revision;
-        self.revision_seen.store(revision, Ordering::Release);
+        inner.auto = on;
+        inner.revision += 1;
+        self.revision_seen
+            .store(inner.revision, std::sync::atomic::Ordering::Release);
+        true
+    }
+    /// WstxStrategy::AutoToggle: whether Auto is on.
+    pub(crate) fn auto(&self, state: &ProfileState) -> bool {
+        self.lock(state).auto
+    }
+    /// The count of Auto on switches (read before the run state, for auto_step).
+    pub(crate) fn auto_epoch(&self) -> u64 {
+        self.auto_epoch.load(std::sync::atomic::Ordering::Acquire)
+    }
+    /// Turns Auto on after its run started: a HaltTransmit before it has been answered.
+    pub(crate) fn auto_on(&self, state: &ProfileState) {
+        use std::sync::atomic::Ordering;
+        if let Some(t) = state.recording.transmit.get() {
+            self.halts_seen
+                .store(t.service.halt_requests(), Ordering::Release);
+        }
+        let mut inner = self.lock(state);
+        self.auto_epoch.fetch_add(1, Ordering::AcqRel);
+        self.switch_auto(&mut inner, true);
+    }
+    /// Turns Auto off (Auto off, a refused start, None); true when it was on.
+    pub(crate) fn auto_off(&self, state: &ProfileState) -> bool {
+        let mut inner = self.lock(state);
+        self.switch_auto(&mut inner, false)
+    }
+    /// The station step after the automation step: every run end turns Auto off (the stop
+    /// reason stays in the run snapshot). `epoch` is auto_epoch read before `running`.
+    pub(crate) fn auto_step(&self, state: &ProfileState, epoch: u64, running: bool) {
+        if running {
+            return;
+        }
+        let mut inner = self.lock(state);
+        if inner.auto && self.auto_epoch() == epoch {
+            self.switch_auto(&mut inner, false);
+        }
     }
     /// #42 WstxStrategy::Alert, once per station step: reads the live records past the
     /// cursor once each and records an alert for each new candidate of the active strategy.
@@ -1540,6 +1830,11 @@ impl Owner {
             let most = self.most_wanted.lock().unwrap_or_else(|p| p.into_inner());
             (most.list.as_ref().map(|l| l.status()), most.unreadable)
         };
+        // Read before the strategy lock: the automation lock comes first.
+        let refusal = r
+            .contact
+            .get()
+            .and_then(|s| s.automation.strategy_refusal());
         let inner = self.lock(state);
         let mine = inner
             .config
@@ -1548,6 +1843,7 @@ impl Owner {
         json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"revision":inner.revision,
             "configuration":inner.config.as_ref().map(Config::json),
             "configuration_error":inner.error,"my_continent":mine,
+            "auto":inner.auto,"strategy_refusal":refusal,
             "derived_continent":call.as_deref().and_then(|c| dxcc.continent(c)),
             "session_ignore":session,"most_wanted":status,
             "builtin_strategies":builtins().iter().map(|b| {
@@ -1584,8 +1880,45 @@ impl Owner {
         }
         Ok(self.snapshot(state))
     }
+    /// POST /strategy/auto {v, profile_id, boot_id, auto, automation_confirmed?} after the
+    /// route checks (WstxStrategy::AutoToggle): the requested value. auto true needs a
+    /// selection (409 not_configured strategy) and, for a contest whose AutomationClause is
+    /// forbidden, automation_confirmed true (400 invalid_request automation_confirmed).
+    pub(crate) fn auto_request(&self, state: &ProfileState, body: &Value) -> Result<bool, Refusal> {
+        let o = body.as_object().ok_or(("invalid_request", None))?;
+        let confirmed = o.contains_key("automation_confirmed");
+        let more: &[&str] = if confirmed {
+            &["auto", "automation_confirmed"]
+        } else {
+            &["auto"]
+        };
+        Self::envelope_shape(body, more)?;
+        let on = body["auto"]
+            .as_bool()
+            .ok_or(("invalid_request", Some("auto".into())))?;
+        let confirmation = match o.get("automation_confirmed") {
+            None => false,
+            Some(c) => c
+                .as_bool()
+                .ok_or(("invalid_request", Some("automation_confirmed".to_owned())))?,
+        };
+        Self::envelope_context(state, body)?;
+        if !on {
+            return Ok(false);
+        }
+        let config = self
+            .config(state)
+            .filter(Config::selected)
+            .ok_or(("not_configured", Some("strategy".into())))?;
+        // WstxContest::AutomationClause: a warning the operator must confirm, never a block.
+        if config.forbidden_contest() && !confirmation {
+            return Err(("invalid_request", Some("automation_confirmed".into())));
+        }
+        Ok(true)
+    }
     /// PUT /strategy after the route checks: the snapshot and whether active changed (the
-    /// route then starts or stops the run, WstxStrategy::StrategyRun).
+    /// route then ends the run and, while Auto is on, starts the new one,
+    /// WstxStrategy::StrategyRun).
     pub(crate) fn put(&self, state: &ProfileState, body: Value) -> Result<(Value, bool), Refusal> {
         let r = &state.recording;
         let keys = [
@@ -1643,7 +1976,7 @@ impl Owner {
         if let Some(o) = stored.as_object_mut() {
             o.remove("contest");
         }
-        let document = json!({"schema_version":2,"profile_id":r.profile,"revision":revision,
+        let document = json!({"schema_version":3,"profile_id":r.profile,"revision":revision,
             "configuration":stored});
         {
             let mut store = state
@@ -1656,6 +1989,10 @@ impl Owner {
         }
         inner.revision = revision;
         inner.error = None;
+        // WstxStrategy::AutoToggle: selecting None turns Auto off (in this revision).
+        if !config.selected() {
+            inner.auto = false;
+        }
         inner.config = Some(config);
         self.revision_seen
             .store(revision, std::sync::atomic::Ordering::Release);
@@ -1865,6 +2202,41 @@ async fn body_of(
         _ => Err(Box::new(refusal("not_found", None))),
     }
 }
+/// WstxStrategy::StrategyRun start and end, on a blocking thread with no strategy lock held:
+/// ends any run and, when `start` and a selection exist, starts the selection's run through
+/// the same internal path as AutomationCommand start (the request's grant; a browser's
+/// selection or Auto on ends a Tx watchdog stop, WatchdogFromOperator). A start that is
+/// refused turns Auto off (strategy_refusal names why). True when a run started.
+fn start_selection(
+    station: &contact_http::Station,
+    state: &ProfileState,
+    access: Option<(authorization::Access, String)>,
+    start: bool,
+) -> bool {
+    let config = station.strategy.config(state);
+    let start = start && config.as_ref().is_some_and(Config::selected);
+    if start {
+        station.strategy.most_wanted_load(state);
+        if let Some(s) = config.as_ref().and_then(Config::active_strategy) {
+            worked_build(state, s.window);
+        }
+        // #63 the run's first step finds the contest's log.
+        if let Some(c) = config.as_ref().and_then(Config::automatic_contest) {
+            let (_, locator) = contact_http::profile_facts(state);
+            station
+                .strategy
+                .contest_log_now(state, &c, locator.as_deref());
+        }
+    }
+    // Taken after the strategy lock is free: the automation lock comes first.
+    let started = station.automation.selected(station, state, access, start);
+    if started {
+        station.strategy.auto_on(state);
+    } else {
+        station.strategy.auto_off(state);
+    }
+    started
+}
 pub async fn put(
     State(app): State<App>,
     headers: HeaderMap,
@@ -1884,23 +2256,57 @@ pub async fn put(
         .zip(authorization_http::transport_token(&headers, &app));
     let reply = tokio::task::spawn_blocking(move || {
         let (snapshot, changed) = station.strategy.put(&state, body)?;
-        if changed {
-            station.strategy.most_wanted_load(&state);
-            let config = station.strategy.config(&state);
-            if let Some(s) = config.as_ref().and_then(Config::active_strategy) {
-                worked_build(&state, s.window);
-            }
-            // #63 the run's first step finds the contest's log.
-            if let Some(c) = config.as_ref().and_then(Config::automatic_contest) {
-                let (_, locator) = contact_http::profile_facts(&state);
-                station
-                    .strategy
-                    .contest_log_now(&state, &c, locator.as_deref());
-            }
-            // Taken after the strategy lock is free: the automation lock comes first.
-            station.automation.selected(&station, &state, access);
+        if !changed {
+            return Ok::<Value, Refusal>(snapshot);
         }
-        Ok::<Value, Refusal>(snapshot)
+        // A changed selection ends any run; while Auto is on the new one starts, except a
+        // contest whose clause is forbidden: Auto goes off, the confirmation goes only with
+        // Auto on (WstxStrategy::AutoToggle).
+        let forbidden = station
+            .strategy
+            .config(&state)
+            .is_some_and(|c| c.forbidden_contest());
+        let auto = station.strategy.auto(&state) && !forbidden;
+        start_selection(&station, &state, access, auto);
+        Ok::<Value, Refusal>(station.strategy.snapshot(&state))
+    })
+    .await;
+    match reply {
+        Ok(Ok(snapshot)) => Json(snapshot).into_response(),
+        Ok(Err((code, field))) => refusal(code, field.as_deref()),
+        Err(_) => refusal("storage_unavailable", None),
+    }
+}
+/// POST /strategy/auto (WstxStrategy::AutoToggle): the browser only (the boundary guard has
+/// refused an MCP principal, #58). Auto on ends any running pounce or MCP run and starts the
+/// selection's run; Auto off ends the run at once. Returns the GET /strategy snapshot.
+pub async fn auto_route(
+    State(app): State<App>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let (station, state, body) = match body_of(&app, &headers, query, body).await {
+        Ok(v) => v,
+        Err(e) => return *e,
+    };
+    let access = authorization_http::operating_access_async(&headers, &app)
+        .await
+        .ok()
+        .flatten()
+        .zip(authorization_http::transport_token(&headers, &app));
+    let reply = tokio::task::spawn_blocking(move || {
+        let on = station.strategy.auto_request(&state, &body)?;
+        if on {
+            // Already on with its run going: nothing to start again.
+            if !(station.strategy.auto(&state) && station.automation.strategy_running()) {
+                start_selection(&station, &state, access, true);
+            }
+        } else {
+            station.strategy.auto_off(&state);
+            station.automation.end_strategy_run(&station, &state);
+        }
+        Ok::<Value, Refusal>(station.strategy.snapshot(&state))
     })
     .await;
     match reply {
@@ -2004,8 +2410,8 @@ pub async fn most_wanted_download_route(
         Err(_) => refusal("storage_unavailable", None),
     }
 }
-/// strategy.state: announces a new store revision (a save, a selection, a HALT's None); the
-/// browser then reads GET /strategy.
+/// strategy.state: announces a new store revision (a save, a selection, an Auto change, a
+/// HALT's or a run end's Auto off); the browser then reads GET /strategy.
 pub(crate) fn state_event(r: &recording::Recording, revision: u64) -> String {
     json!({"v":1,"type":"strategy.state","data":{"profile_id":r.profile,"boot_id":r.boot,
         "strategy_revision":revision}})

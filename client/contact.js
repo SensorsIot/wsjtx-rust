@@ -9,7 +9,7 @@ block('settings-startup','Receive at startup',document.querySelector('#settings-
 block('settings-startup-resume','Startup resume',document.querySelector('#settings-expert'),'<p id="startup-resume" class="op-muted" role="status">Startup resume unknown</p>');
 // #52 CL-052-01: off by default; read when Settings opens (at most every 30 s) or on Refresh, never polled.
 block('settings-window-diagnostics','Decode window diagnostics',document.querySelector('#settings-expert'),'<label class="op-check"><input type="checkbox" id="window-dump" disabled>Save FT8 decode windows</label><p id="window-diagnostics" class="op-muted" role="status">Window counters unknown</p><button type="button" id="window-diagnostics-refresh">Refresh</button><p class="op-muted">Keeps the last 20 FT8 prompt windows (12 kHz WAV and JSON) in the profile folder diagnostic-windows. Saved at once; it acts from the next window.</p>');
-block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station: a strategy selected in the strategy element, or an MCP client. Its state shows beside the strategy element; HALT ends it; Esc aborts the current QSO. A strategy keeps running through a page reload; with no browser or MCP client connected for 60 s, or 8 hours after its selection also with a browser open, it starts nothing new, ends the QSO in progress and stops (select it again to restart). The Tx watchdog stops transmitting when one message would be sent more often than its limit. A different message or a new contact starts the count again; after a stop only Enable Tx or a new strategy selection in this browser transmits again, automation never does.</p>');
+block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station: a strategy or contest selected in the strategy element transmits only while Auto (beside CQ) is on, or an MCP client runs it. Its state shows beside the strategy element; HALT ends it and turns Auto off; Esc aborts the current QSO. A strategy keeps running through a page reload; with no browser or MCP client connected for 60 s, or 8 hours after Auto went on also with a browser open, it starts nothing new, finishes the QSO in progress and stops with Auto off (switch Auto on again to restart). The Tx watchdog stops transmitting when one message would be sent more often than its limit. A different message or a new contact starts the count again; after a stop only Enable Tx, a strategy selection or Auto on in this browser transmits again, automation never does.</p>');
 block('settings-transmit','Transmit',document.querySelector('#settings-radio'),'<label>Tx watchdog (repetitions of one message)<input id="watchdog-tx" type="number" min="1" max="99" step="1" disabled></label><label>Tune watchdog (seconds)<input id="watchdog-tune" type="number" min="1" max="300" step="1" disabled></label><p id="watchdog-result" class="op-muted" role="status"></p><p class="op-muted">Watchdogs apply at once, as in WSJT-X. Tx power is set on the transceiver; this station sends no power command. PTT is chosen under CAT.</p>');
 block('settings-log','Log',document.querySelector('#settings-logging'),'<p>Each completed QSO is logged at once, as in WSJT-X: saved in this station profile’s contacts.adi (ADIF) and sent to the UDP targets that select QSO Logged / Logged ADIF. There is no review step; Log QSO logs the current contact now.</p><button type="button" data-region="logbook">&#9776; Open Logbook</button>');
 // #10 logbook.js (loaded first) made Update logbook from ADIF; it belongs below the Log block.
@@ -21,6 +21,7 @@ document.querySelector('#rxtx-strip').innerHTML=stepper('rx','Rx',0,3000)+steppe
 const qsoButton=(id,label,title,extra='')=>`<button type="button" id="${id}" disabled title="${title}"${extra}>${label}</button>`;
 document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<p id="qso-heard" class="ct-line" hidden></p>
 <p id="qso-autoseq" class="op-warning ct-autoseq" role="status" hidden><span id="qso-autoseq-text"></span> <button type="button" id="qso-suggest" hidden></button> <button type="button" id="qso-autoseq-on" title="Turn Auto Seq on">Auto Seq on</button></p>
+<div id="qso-pskr-lines" class="ct-pskr-lines" role="status" hidden><p id="qso-hears" class="ct-line"></p><p id="qso-txslot" class="ct-line" hidden></p></div>
 <div id="qso-next" class="op-qso-next" hidden><span id="qso-next-label" class="op-eyebrow">&#9656; next:</span><strong id="contact-next">None</strong><span id="qso-countdown" class="op-muted"></span><div class="op-qso-progress" aria-hidden="true"><i id="qso-progress"></i></div></div>
 <p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable" hidden>Log QSO needs a running QSO.</p><p id="contact-result" class="op-muted" role="status"></p><p id="contact-logged" class="op-muted" role="status"></p>
 `);
@@ -30,7 +31,7 @@ document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<p id="q
 // call except the partner). The lines above them take the rest of the pane and scroll inside.
 focus.querySelector('.op-contact-body').insertAdjacentHTML('afterend',`<section id="qso-section" class="ct-section" aria-label="QSO dialogue"><div id="qso-area" class="ct-qso-area"><table id="qso-table" class="ct-qso-table" hidden><thead><tr><th scope="col">UTC</th><th scope="col" data-short="Dir">Direction</th><th scope="col" data-short="Exch">Exchange</th><th scope="col" title="How often the identical message repeated">Rep</th><th scope="col" title="Our measured SNR of the partner's latest decode at or before this line" data-short="Rx">Rx SNR</th><th scope="col" title="The partner's latest report on us at or before this line" data-short="Tx">Tx SNR</th></tr></thead><tbody id="qso-dialogue" class="ct-dialogue" aria-label="QSO dialogue"></tbody></table><p id="qso-none" class="op-muted ct-placeholder">No QSO</p></div></section>
 <section id="qso-calling" class="ct-section" aria-labelledby="calling-heading"><div id="calling-area" class="ct-calling-area"><table id="calling-table" class="ct-qso-table ct-calling-table"><thead><tr><th scope="col" id="calling-heading" title="Double-click a station to answer it (during a QSO: switch the contact to it)">Calling me</th><th scope="col">SNR</th><th scope="col">Grid</th><th scope="col">Country</th></tr></thead><tbody id="qso-others" class="ct-others" aria-label="Stations calling me (double-click or Enter answers)"></tbody></table><p id="qso-others-none" class="op-muted ct-placeholder">Nobody is calling</p></div></section>
-<div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: keys at once for the rest of my Tx period when it is early enough, otherwise from my next Tx period')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx: emergency stop (Alt+H)">HALT</button><button type="button" id="qso-abort" disabled title="Abort QSO (Esc): stop the transmission now and cancel the contact, without HALT">Abort QSO (Esc)</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>`);
+<div class="op-qso-buttons" role="group" aria-label="QSO commands">${qsoButton('qso-cq','CQ','Call CQ: keys at once for the rest of my Tx period when it is early enough, otherwise from my next Tx period')}${qsoButton('qso-auto','Auto','Strategies are loading',' aria-pressed="false"')}${qsoButton('qso-pskr','PSK','Use PSK Reporter',' aria-pressed="false"')}${qsoButton('contact-tune','Tune','Tune (Alt+T)',' aria-pressed="false"')}<button type="button" id="qso-halt" class="op-halt-small" disabled title="Halt Tx: emergency stop (Alt+H)">HALT</button><button type="button" id="qso-abort" disabled title="Abort QSO (Esc): stop the transmission now and cancel the contact, without HALT">Abort QSO (Esc)</button>${qsoButton('contact-log','Log QSO','Log QSO (Alt+Q)',' aria-describedby="contact-unavailable"')}</div>`);
 const confirmDialog=document.createElement('dialog');confirmDialog.id='op-confirm';confirmDialog.className='op-dialog';confirmDialog.innerHTML='<form method="dialog"><p id="op-confirm-text"></p><menu><button type="button" class="op-halt-small" id="op-confirm-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button><button value="cancel" type="submit">Cancel</button><button value="ok" type="submit" class="op-primary" id="op-confirm-ok">Continue</button></menu></form>';
 window.wstxConfirm=function(text,okLabel='Continue'){
   confirmDialog.querySelector('#op-confirm-text').textContent=text;confirmDialog.querySelector('#op-confirm-ok').textContent=okLabel;
@@ -227,7 +228,7 @@ function render(){
   // The partner's latest message to me, with SNR and the repeat count (ContactSnapshot last_rcvd).
   const h=qso?c.last_rcvd:null,heard=$('qso-heard');heard.hidden=!h;
   heard.textContent=h?`\u25C2 ${h.text}  ${snrText(h.snr)}${h.count>1?` \u00D7${h.count}`:''}`.trimEnd():'';
-  const wd=snap?.watchdog;$('contact-watchdog').textContent=!wd?'':wd.tx_expired?`Tx watchdog: same message sent ${snap.settings.tx_calls} times`:armed?`WD:${wd.tx_remaining_calls}`:'';
+  const wd=snap?.watchdog;$('contact-watchdog').textContent=!wd?'':wd.tx_expired?`Tx watchdog: same message sent ${snap.settings.tx_calls} times`:armed?`WD:${wd.tx_remaining_calls??'∞'}`:'';
   // The status line is for exceptions only: unknown state, a refusal, a pending halt.
   const problems=!snap?['Contact state unavailable']:[t?.refusal?`Refused ${t.refusal}`:'',t?.halt_state==='pending'?'Halt pending (RF stop not confirmed)':''].filter(Boolean);
   $('contact-state').textContent=problems.join(' · ');$('contact-state').hidden=!problems.length;
@@ -237,6 +238,8 @@ function render(){
   stationTx();countdown();
   othersShow();if(activity)for(const tr of activity.querySelectorAll('tr[data-sequence]'))if(!tr.hasAttribute('tabindex'))tr.tabIndex=0;
   logShow();
+  // The Auto toggle (strategy client) is disabled without transmit capability.
+  dispatchEvent(new CustomEvent('wstx-contact-render'));
 }
 // #37 QsoPane item 7: the server-owned dialogue of the running QSO, oldest first, kept at
 // its newest line; it scrolls inside its fixed-height section (#qso-area) and goes with the QSO.
@@ -324,7 +327,7 @@ const stationTxNode=document.createElement('span');stationTxNode.id='station-tx'
 document.querySelector('#halt-tx')?.before(stationTxNode);
 // WstxMcp::AutomationIndicator: the run state sits in the strategy element; HALT ends it.
 const automationNode=$('station-automation');
-let automationLoading=null;
+let automationLoading=null,automationView=null;
 function loadAutomation(){
   if(automationLoading)return automationLoading;
   automationLoading=stationFetch('/automation',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(a=>{
@@ -332,17 +335,15 @@ function loadAutomation(){
     automationNode.dataset.active=String(!!active);
     // #42 a pounce run names its call (WstxStrategy::Pounce).
     // A strategy run's state is the strategy client's (WstxStrategy::StrategySelector).
-    // #39 WstxStrategy::FreeTxSlot: no free slot keeps the current one and says so.
-    const slot=active&&run.tx_slot?.free===false?' · no free Tx slot':'';
-    if(!a?.configuration?.strategy&&!a?.strategy_refusal)automationNode.textContent=active&&run.pounce?`Pounce ${run.pounce.call} ${run.state==='waiting'?'waiting':'in QSO'}${slot} · HALT ends it`:active?`Automation ${{waiting:'waiting',manual:'paused for your QSO'}[run.state]??'in contact'}${slot} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
-    if(a?.v===1)dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));
+    if(!a?.configuration?.strategy&&!a?.strategy_refusal)automationNode.textContent=active&&run.pounce?`Pounce ${run.pounce.call} ${run.state==='waiting'?'waiting':'in QSO'} · HALT ends it`:active?`Automation ${{waiting:'waiting',manual:'paused for your QSO'}[run.state]??'in contact'} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
+    if(a?.v===1){automationView=a;pskrLinesShow();dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));}
   }).catch(()=>{}).finally(()=>{automationLoading=null;});
   return automationLoading;
 }
 function stationTx(){
   const t=snap?.transmit,capable=transmitCapable(),wd=snap?.watchdog,armed=t?.arm_state==='armed';
   stationTxNode.hidden=!capable||!(armed||tick?.transmitting||wd?.tx_expired);if(stationTxNode.hidden)return;
-  stationTxNode.textContent=`${tick?.transmitting?'TRANSMITTING':armed?'Tx on':'Tx off'}${armed?` · WD:${wd.tx_remaining_calls}`:wd.tx_expired?` · Tx watchdog: same message sent ${snap.settings.tx_calls} times`:''}${t.last_text?` · last ${t.last_text}`:''}`;
+  stationTxNode.textContent=`${tick?.transmitting?'TRANSMITTING':armed?'Tx on':'Tx off'}${armed?` · WD:${wd.tx_remaining_calls??'∞'}`:wd.tx_expired?` · Tx watchdog: same message sent ${snap.settings.tx_calls} times`:''}${t.last_text?` · last ${t.last_text}`:''}`;
 }
 document.addEventListener('pointerdown',event=>{
   if(typeof currentRegion==='undefined'||currentRegion==='operate')return;
@@ -553,11 +554,43 @@ function startupShow(){
 // age counts on with the station tick. Nothing is polled and no state here is an error chip.
 let pskrView=null,pskrUtcMs=null;
 function pskrShow(){
-  const v=pskrView,box=$('pskr-enabled');box.disabled=!v;if(!v)return;box.checked=v.enabled;
+  const v=pskrView,box=$('pskr-enabled');box.disabled=!v;pskrToggleShow();pskrLinesShow();if(!v)return;box.checked=v.enabled;
   const age=v.last_spot_utc_s===null||pskrUtcMs===null?null:Math.floor((pskrUtcMs/1000-v.last_spot_utc_s)/60);
   const spot=v.last_spot_utc_s===null?'no spot yet':age===null||age<1?'last spot under 1 min ago':`last spot ${age} min ago`;
   const text={off:'Off',connecting:v.error?`Connecting · last try ${v.error}`:'Connecting',connected:`Connected · ${spot}`,error:`Not connected · ${v.error} · retrying`}[v.state]??v.state;
   $('pskr-status').textContent=`${text}${v.storage_error?` · ${v.storage_error}`:''}`;$('pskr-status').dataset.state=v.state;
+}
+// #39 WstxStrategy::PskrUse: the PSK toggle beside Auto shows only the station's pushed use; the
+// Settings switch is the master (off: disabled, counts as off). A click sends one POST /pskr/use.
+const pskrUse=()=>!!pskrView?.enabled&&pskrView.use===true;
+let pskrPosting=false;
+function pskrToggleShow(){
+  const button=$('qso-pskr'),on=pskrUse();button.setAttribute('aria-pressed',String(on));button.dataset.on=String(on);
+  button.disabled=!pskrView||!pskrView.enabled||pskrPosting;
+  button.title=!pskrView?'Use PSK Reporter · status unknown':!pskrView.enabled?'PSK Reporter is off in Settings':'Use PSK Reporter';
+}
+$('qso-pskr').addEventListener('click',async()=>{
+  const v=pskrView;if(!v?.enabled||pskrPosting)return;pskrPosting=true;pskrToggleShow();
+  try{
+    const response=await stationFetch('/pskr/use',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:v.profile_id,boot_id:v.boot_id,use:!(v.use===true)}),signal:AbortSignal.timeout(10000)});
+    // The toggle follows pskr.state; a refusal says why.
+    if(!response.ok){const data=await response.json().catch(()=>null);resultText.textContent=`PSK Reporter use not saved · ${data?.error?.code??response.status}`;}
+  }catch(error){resultText.textContent=`PSK Reporter use not saved · ${error.message}`;}
+  finally{pskrPosting=false;pskrToggleShow();}
+});
+// The two PSK Reporter lines (QsoPane, PskrUse): while Use is on and a strategy or contest run's
+// own contact has a target; from the run snapshot of GET /automation (read on automation.state)
+// and the age from station.tick. Hidden otherwise.
+const pskrAge=s=>s<120?`${s} s`:`${Math.floor(s/60)} min`;
+function pskrLinesShow(){
+  const a=automationView,run=a?.run,lines=$('qso-pskr-lines');
+  const target=pskrUse()&&!!a?.configuration?.strategy&&!!run&&!run.pounce&&run.state==='contact_active'&&!!run.selected?.call;
+  lines.hidden=!target;if(!target)return;
+  const h=run.hearing,now=pskrUtcMs??stationNow();
+  const age=h?.state==='heard'&&Number.isFinite(h.spot_utc_s)&&now!==null?Math.max(0,Math.floor(now/1000-h.spot_utc_s)):null;
+  $('qso-hears').textContent=h?.state==='heard'?`Hears us: ${age===null?'?':pskrAge(age)} ago · ${typeof h.snr_db==='number'?signedDb(h.snr_db):'?'} dB`:h?.state==='no'?'Hears us: no':'Hears us: unknown';
+  const slot=run.tx_slot,tx=$('qso-txslot');tx.hidden=!Number.isInteger(slot?.hz);
+  tx.textContent=tx.hidden?'':`Tx ${slot.hz} Hz · open at his end: ${['yes','no'].includes(slot.his_end)?slot.his_end:'unknown'}`;
 }
 function loadPskr(){stationFetch('/pskr',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(v?.v===1){pskrView=v;pskrShow();}}).catch(()=>{});}
 $('pskr-enabled').addEventListener('change',async event=>{
@@ -570,7 +603,7 @@ $('pskr-enabled').addEventListener('change',async event=>{
   pskrShow();
 });
 addEventListener('station-message',event=>{const m=event.detail?.message;
-  if(m?.type==='station.tick'&&Number.isSafeInteger(m.data?.utc_ms)){pskrUtcMs=m.data.utc_ms;if(pskrView?.state==='connected')pskrShow();}
+  if(m?.type==='station.tick'&&Number.isSafeInteger(m.data?.utc_ms)){pskrUtcMs=m.data.utc_ms;if(pskrView?.state==='connected')pskrShow();else pskrLinesShow();}
   else if(m?.type==='pskr.state'&&m.data?.v===1&&m.data.boot_id===profileData?.boot_id){pskrView=m.data;pskrShow();}});
 function loadStartup(){
   if(startupLoading)return startupLoading;
@@ -1032,9 +1065,12 @@ stateShow();
 const $=id=>document.getElementById(id);
 const nameSelect=$('strategy-name'),editButton=$('strategy-edit'),valueButton=$('activity-value'),statusNode=$('station-automation'),contestButton=$('strategy-contest'),showAllButton=$('activity-show-all');
 if(!nameSelect)return;
+const autoButton=$('qso-auto');let autoPosting=false;
 let view=null,viewLoading=null,viewAgain=false,strategyMissing=false,run=null,refusal=null,pounceConfirmed=false,verdicts=new Map(),evaluatedKey='',evaluating=false,evaluateAgain=false;
 const config=()=>view?.configuration??null;
 const builtins=()=>view?.builtin_strategies??[];
+// WstxStrategy::AutoToggle: station state, read from the snapshot only (never a local guess).
+const auto=()=>view?.auto===true;
 const active=()=>{const c=config();return [...(c?.strategies??[]),...builtins()].find(s=>s.name===c?.active)??null;};
 // #63 WstxContest: the contest in force and the profiles of GET /strategy/contests.
 let contests=[],contestsAsked=false,contestSummary=null,showAll=false;
@@ -1069,24 +1105,25 @@ const words_=t=>String(t).replace(/_/g,' ');
 function showRun(){
   const name=config()?.active;
   // WstxContest::ContestView: the contest, its period and the log inside it.
-  const contest=selection();
+  const contest=selection(),on=auto()&&!refusal&&strategyRun();
+  // A run that ended turned Auto off with its stop reason (StrategyRun); a plain stop says nothing more.
+  const stopped=!auto()&&run?.strategy&&run.state==='stopped'&&run.reason&&run.reason!=='stopped'?` · stopped · ${words_(run.reason)}`:'';
+  const doing=()=>run.state==='contact_active'?run.selected?.call??'in QSO':run.state==='calling_cq'?'calling CQ':run.state==='manual'?'your QSO':null;
   if(contest){
     const when=t=>`${t.slice(5,10)} ${t.slice(11,16)}`,tally=contestSummary?` · ${contestSummary.qsos} QSOs · ${contestSummary.multipliers} mult · score ${contestSummary.score}`:'';
-    const automatic=contest.operation!=='colouring',on=automatic&&!refusal&&strategyRun();
-    // WstxContest::ContestRun: the run state from GET /automation, read on automation.state only.
-    const state=!automatic?'colouring only':refusal?`not started · ${words_(refusal)}`:!run?.strategy?{sp:'S&P',run:'Run'}[contest.operation]:!on?`stopped${run.reason?` · ${words_(run.reason)}`:''}`:run.state==='contact_active'?run.selected?.call??'in QSO':run.state==='calling_cq'?'calling CQ':run.state==='manual'?'your QSO':`waiting${run.reason?` · ${words_(run.reason)}`:''}`;
-    const slot=on&&run.tx_slot?.free===false?' · no free Tx slot':'';
-    statusNode.dataset.active=String(!!on);statusNode.textContent=`Contest ${selectedProfile()?.name??contest.profile} · ${when(contest.start)} to ${when(contest.end)} UTC · ${state}${slot}${tally}`;
+    // WstxContest::ContestView, ContestRun: the operation, Auto (off is colouring only) and the run
+    // state from GET /automation, read on automation.state only.
+    const state=refusal?` · not started · ${words_(refusal)}`:on?` · ${doing()??`waiting${run.reason?` · ${words_(run.reason)}`:''}`}`:stopped;
+    statusNode.dataset.active=String(!!on);statusNode.textContent=`Contest ${selectedProfile()?.name??contest.profile} · ${when(contest.start)} to ${when(contest.end)} UTC · ${{sp:'S&P',run:'Run'}[contest.operation]??contest.operation} · Auto ${auto()?'on':'off'}${state}${tally}`;
     return;
   }
   // None: a run the HALT or a selection ended (the generic text is for other runs).
   if(!name){if(run?.strategy){statusNode.dataset.active='false';statusNode.textContent=run.reason&&run.reason!=='stopped'?`Strategy stopped · ${words_(run.reason)}`:'Strategy None';}return;}
   if(refusal){statusNode.textContent=`Strategy ${name} not started · ${words_(refusal)}`;statusNode.dataset.active='false';return;}
-  if(!run||!run.strategy||runActive()&&run.pounce)return;
-  statusNode.dataset.active=String(strategyRun());
-  // WstxStrategy::FreeTxSlot: no free slot keeps the current one and says so.
-  const slot=run.tx_slot?.free===false?' · no free Tx slot':'';
-  statusNode.textContent=!strategyRun()?`Strategy ${name} stopped${run.reason?` · ${words_(run.reason)}`:''}`:run.state==='contact_active'?`Strategy ${name} · ${run.selected?.call??'in QSO'}${slot}`:run.state==='manual'?`Strategy ${name} · your QSO`:`Strategy ${name} waiting${run.reason?` · ${words_(run.reason)}`:''}${slot}`;
+  if(runActive()&&run.pounce)return;
+  statusNode.dataset.active=String(!!on);
+  // WstxStrategy::StrategySelector: with Auto off a selection only marks.
+  statusNode.textContent=!auto()?`Strategy ${name} · Auto off${stopped}`:!on?`Strategy ${name} · Auto on`:doing()?`Strategy ${name} · ${doing()}`:`Strategy ${name} waiting${run.reason?` · ${words_(run.reason)}`:''}`;
 }
 function show(){
   const c=config();
@@ -1100,11 +1137,39 @@ function show(){
   contestButton.disabled=!c;contestButton.title=c?'Choose a contest strategy and its period':'Contest strategies unavailable';
   if(window.wstxContestOn!==!!contest){window.wstxContestOn=!!contest;if(typeof bandColoursApply==='function')bandColoursApply();}
   showAllButton.hidden=!contest;showAllButton.setAttribute('aria-pressed',String(showAll));
-  nameSelect.disabled=!c;nameSelect.title=c?'Selecting a strategy starts it; None stops it':(view?.configuration_error?`Saved strategies unreadable (${view.configuration_error}); the editor's Save replaces them`:'Strategies unavailable');
+  nameSelect.disabled=!c;nameSelect.title=c?'Selecting a strategy marks its candidates; it transmits only while Auto is on. None turns Auto off':(view?.configuration_error?`Saved strategies unreadable (${view.configuration_error}); the editor's Save replaces them`:'Strategies unavailable');
   editButton.disabled=!view;editButton.title='Edit strategies (the station keeps receiving)';
-  showContinent();showIgnore();showPounce();showMostWanted();showRun();
+  showContinent();showIgnore();showPounce();showMostWanted();showRun();showAuto();
   decorate();
 }
+// ---------------------------------------------------------------- Auto (QsoPane direct buttons)
+// WstxStrategy::AutoToggle: green while the station says on, grey while off; a click sends one
+// POST /strategy/auto with the other value, for a contest whose rules forbid automatic operation
+// after its warning. Switching off is always possible; on needs a selection and transmit.
+const selected=()=>!!config()?.active||!!selection();
+function showAuto(){
+  if(!autoButton)return;const on=auto(),ready=window.wstxContact?.snapshot()?.transmit?.capability==='available';
+  autoButton.setAttribute('aria-pressed',String(on));autoButton.dataset.on=String(on);
+  const reason=!view?'Strategies are loading':on?'':!ready?'Receive only':!selected()?'Select a strategy or a contest first':'';
+  autoButton.disabled=autoPosting||!!reason;
+  autoButton.title=reason||(on?'Auto on: the selection transmits. Click to switch Auto off':'Auto off: the selection only marks. Click to let it transmit');
+}
+addEventListener('wstx-contact-render',showAuto);
+autoButton?.addEventListener('click',async()=>{
+  if(!view||autoPosting)return;const on=!auto();let confirmed=false;
+  if(on&&selection()){
+    // WstxContest::AutomationClause: a contest whose rules forbid it asks first; declined sends nothing.
+    if(!selectedProfile())await loadContests();const p=selectedProfile();
+    if(p?.automation==='forbidden'){if(!await window.wstxConfirm(`The rules of ${p.name} forbid automatic operation: ${p.automation_text} Transmit automatically anyway?`,'Transmit automatically'))return;confirmed=true;}
+  }
+  autoPosting=true;showAuto();
+  try{
+    const response=await stationFetch('/strategy/auto',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,auto:on,...(confirmed?{automation_confirmed:true}:{})}),signal:AbortSignal.timeout(10000)});
+    // The toggle follows strategy.state, not this reply; a refusal says why.
+    if(!response.ok){const e=(await response.json().catch(()=>null))?.error;statusNode.textContent=`Auto not switched · ${e?.code??response.status}${e?.field?` (${e.field})`:''}`;}
+  }catch(error){statusNode.textContent=`Auto not switched · ${error.message}`;}
+  finally{autoPosting=false;showAuto();}
+});
 // ---------------------------------------------------------------- marks and value order
 const tbody=document.querySelector('#band-activity tbody');
 const identity=()=>typeof live!=='undefined'&&live?.job?liveIdentity(live):'';
@@ -1373,20 +1438,27 @@ $('mw-update')?.addEventListener('click',async()=>{
 });
 // ---------------------------------------------------------------- editor popup
 const CONTINENTS=[['AF','Africa'],['AN','Antarctica'],['AS','Asia'],['EU','Europe'],['NA','North America'],['OC','Oceania'],['SA','South America']];
-const GOALS=[['dxcc','DXCC'],['dxcc_band','DXCC per band'],['dxcc_slot','DXCC slot (band and mode)'],['waz','WAZ (CQ zones)'],['wpx','WPX (prefixes)'],['grid','Grids'],['new_call','New call']];
+const GOALS=[['dxcc','DXCC'],['dxcc_band','DXCC per band'],['dxcc_slot','DXCC slot (band and mode)'],['waz','WAZ (CQ zones)'],['wpx','WPX (prefixes)'],['grid','Grids'],['new_call','New call'],['new_call_band','New call on band']];
+// WstxStrategy::ValueCriterion in the model's order, with the editor's labels (StrategyEditor).
+const CRITERIA=[['new_dxcc','New DXCC'],['new_dxcc_band','New DXCC on band'],['new_dxcc_slot','New DXCC on band and mode'],['new_grid','New grid'],['new_grid_band','New grid on band'],['new_call','New call'],['new_call_band','New call on band'],['most_wanted','Most Wanted rank'],['distance','Distance (farther first)'],['snr','SNR (stronger first)']];
+const criterionLabel=v=>CRITERIA.find(c=>c[0]===v)?.[1]??v;
 // WstxContest::ContestPrompt: choose the contest, its period (pre-filled from the schedule rule)
 // and the operation; the station keeps receiving and HALT stays reachable.
 const contestPrompt=document.createElement('dialog');contestPrompt.id='contest-prompt';contestPrompt.className='op-dialog op-strategy-editor';contestPrompt.setAttribute('aria-labelledby','contest-prompt-title');
 contestPrompt.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="contest-prompt-title">Contest strategy</h2><button type="button" class="op-halt-small" id="contest-prompt-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button></header>
 <div class="se-options"><label>Contest<select id="cp-profile"></select></label><label>Start (UTC)<input id="cp-start" type="datetime-local" step="60"></label><label>End (UTC)<input id="cp-end" type="datetime-local" step="60"></label></div>
 <p id="cp-schedule" class="op-muted"></p><p id="cp-activity" class="op-muted"></p>
-<fieldset class="se-options"><legend>Operation</legend><label class="op-check"><input type="radio" name="cp-operation" value="colouring" checked>Colouring only: Band Activity by the contest rules, you operate</label><label class="op-check"><input type="radio" name="cp-operation" value="sp">Fully automatic, search and pounce</label><label class="op-check"><input type="radio" name="cp-operation" value="run">Fully automatic, Run: calls CQ</label></fieldset>
+<fieldset class="se-options"><legend>Operation</legend><label class="op-check"><input type="radio" name="cp-operation" value="sp" checked>S&amp;P: search and pounce</label><label class="op-check"><input type="radio" name="cp-operation" value="run">Run: calls CQ</label></fieldset>
+<fieldset class="se-options"><legend>Exit</legend><label>Repetitions before leaving<input id="cp-repetitions" type="number" min="1" max="20" step="1" value="2"></label><label>Quiet time (minutes)<input id="cp-quiet" type="number" min="1" max="120" step="1" value="10"></label></fieldset>
+<p class="op-muted">Band Activity follows the contest rules. It transmits only while Auto (beside CQ) is on; with Auto off you operate.</p>
 <ul id="cp-notes" class="op-muted"></ul><p id="cp-result" class="op-muted" role="status"></p><menu><button value="cancel" type="submit">Cancel</button><button type="button" class="op-primary" id="cp-go">Start</button></menu></form>`;
 document.querySelector('main').append(contestPrompt);
 function contestFill(keep){
   const p=contests.find(x=>x.id===$('cp-profile').value)??contests[0];if(!p)return;
   const minute=t=>t?t.slice(0,16):'';
-  const wanted=keep?.operation??'colouring';for(const r of contestPrompt.querySelectorAll('input[name=cp-operation]'))r.checked=r.value===wanted;
+  // WstxContest::ContestPrompt: S&P, 2 repetitions and 10 minutes unless a selection in force says otherwise.
+  const wanted=keep?.operation??'sp';for(const r of contestPrompt.querySelectorAll('input[name=cp-operation]'))r.checked=r.value===wanted;
+  $('cp-repetitions').value=String(keep?.repetitions??2);$('cp-quiet').value=String(keep?.quiet_minutes??10);
   $('cp-start').value=minute(keep?.start??p.period?.start);$('cp-end').value=minute(keep?.end??p.period?.end);
   $('cp-schedule').textContent=`${p.schedule}${p.period?.band?` · this round ${p.period.band}`:''}${p.period?'':' · enter the date'}`;
   const on=window.wstxContact?.snapshot()?.settings?.activity??'none';
@@ -1406,19 +1478,15 @@ $('cp-go').addEventListener('click',async()=>{
   const c=config();if(!c)return;const start=$('cp-start').value,end=$('cp-end').value;
   if(!start||!end){$('cp-result').textContent='Enter the start and the end of the contest period';return;}
   const utc=t=>`${t.slice(0,16)}Z`;contestSummary=null;
-  // WstxContest::AutomationClause: a warning to confirm where the rules forbid it; the clause is on screen where they are silent.
-  const profile=$('cp-profile').value,operation=contestPrompt.querySelector('input[name=cp-operation]:checked').value,clause=contests.find(p=>p.id===profile);
-  const automatic=operation!=='colouring',forbidden=automatic&&clause?.automation==='forbidden';
-  if(forbidden&&!await window.wstxConfirm(`The rules of ${clause.name} forbid automatic operation: ${clause.automation_text} Transmit automatically anyway?`,'Transmit automatically'))return;
-  contestSummary=null;
-  const contest={profile,start:utc(start),end:utc(end),operation,...(forbidden?{automation_confirmed:true}:{})},now=selection();
-  // Start after a stop is a new selection: None, then this one (a save of the same contest starts nothing).
-  const same=now&&automatic&&!strategyRun()&&['profile','start','end','operation'].every(k=>now[k]===contest[k]);
-  if(same){const {contest:_,...rest}=c;if(!await saveConfiguration({...rest,active:null},'Contest')){$('cp-result').textContent=statusNode.textContent;return;}}
-  const ok=await saveConfiguration({...(same?(({contest:_,...rest})=>rest)(config()):c),active:null,contest},'Contest');
+  // Start only selects: whether it transmits is the Auto toggle's, which asks a forbidden clause's
+  // warning (WstxStrategy::AutoToggle); the clause is on screen here.
+  const profile=$('cp-profile').value,operation=contestPrompt.querySelector('input[name=cp-operation]:checked').value;
+  const contest={profile,start:utc(start),end:utc(end),operation,repetitions:Number($('cp-repetitions').value),quiet_minutes:Number($('cp-quiet').value)};
+  const ok=await saveConfiguration({...c,active:null,contest},'Contest');
   if(ok)contestPrompt.close('ok');else $('cp-result').textContent=statusNode.textContent;
 });
-const newStrategy=name=>({name,class:'award',goals:['dxcc'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:true,window:{kind:'all'}});
+// WstxStrategy::Strategy: the browser's new strategy.
+const newStrategy=name=>({name,class:'award',goals:['new_call'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,value:['most_wanted'],callers_first:true,cq_when_no_target:false,repetitions:4,quiet_minutes:10,treat_73_as_cq:true,window:{kind:'all'}});
 const editor=document.createElement('dialog');editor.id='strategy-editor';editor.className='op-dialog op-strategy-editor';editor.setAttribute('aria-labelledby','strategy-editor-title');
 editor.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="strategy-editor-title">Strategies</h2><button type="button" class="op-halt-small" id="strategy-editor-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button></header>
 <div class="se-pick"><label>Edit<select id="se-which"></select></label><button type="button" id="se-new">New</button><button type="button" id="se-copy">Duplicate</button><button type="button" id="se-delete">Delete</button></div>
@@ -1432,7 +1500,7 @@ function editorOpen(){
   // WstxStrategy::BuiltinStrategies: after the user's, read-only; Save never sends them.
   drafts.push(...structuredClone(builtins()));current=Math.max(0,drafts.findIndex(s=>s.name===c?.active));
   editor.querySelector('#strategy-editor-halt').disabled=document.querySelector('#halt-tx')?.disabled??true;
-  $('se-result').textContent=c?`My continent ${view.my_continent??'unknown'} (Settings > General) · Save applies at once, selecting starts a strategy`:'Saved strategies unreadable: Save replaces them';
+  $('se-result').textContent=c?`My continent ${view.my_continent??'unknown'} (Settings > General) · Save applies at once; selecting marks, Auto transmits`:'Saved strategies unreadable: Save replaces them';
   renderEditor();editor.showModal();
 }
 editButton.addEventListener('click',editorOpen);
@@ -1444,19 +1512,27 @@ function renderEditor(){
   $('se-which').innerHTML=drafts.map((s,i)=>option(i,esc(s.name)+(s.builtin?' (built-in)':''),i===current)).join('');
   $('se-delete').disabled=!drafts[current]||!!drafts[current].builtin;
   const s=drafts[current];if(!s){$('se-body').innerHTML='<p class="op-muted">No strategy. Choose New.</p>';preview();return;}
-  const w=s.window,continents=s.region.continents??[];
+  const w=s.window,continents=s.region.continents??[],value=Array.isArray(s.value)?s.value:[],left=CRITERIA.filter(([v])=>!value.includes(v));
   $('se-body').innerHTML=`<label>Name<input id="se-name" maxlength="32" value="${esc(s.name)}" autocomplete="off"></label>
+<h3 class="se-part">Filter</h3>
 <fieldset class="se-goals"><legend>Goals (a station is called when at least one is needed)</legend>${GOALS.map(([v,l])=>`<label class="op-check"><input type="checkbox" data-goal="${v}"${s.goals.includes(v)?' checked':''}>${l}</label>`).join('')}</fieldset>
 <div class="se-options"><label>Needed<select id="se-needed">${[['not_worked','Not worked'],['not_confirmed','Not worked or not confirmed']].map(([v,l])=>option(v,l,s.needed===v)).join('')}</select></label>
 <label>Region<select id="se-region">${[['all','All'],['dx','DX only (other continents)'],['selected','Selected continents']].map(([v,l])=>option(v,l,s.region.kind===v)).join('')}</select></label>
 ${s.region.kind==='selected'?`<span class="se-continents" role="group" aria-label="Continents">${CONTINENTS.map(([v,l])=>`<label class="op-check" title="${l}"><input type="checkbox" data-continent="${v}"${continents.includes(v)?' checked':''}>${v}</label>`).join('')}</span>`:''}
 <label>Minimum SNR (dB)<input id="se-snr" type="number" min="-50" max="49" step="1" value="${s.min_snr_db??''}" placeholder="none"></label>
-<label>Calls per station<input id="se-calls" type="number" min="1" max="20" step="1" value="${s.calls_per_station}"></label>
 <label class="op-check"><input type="checkbox" id="se-73"${s.treat_73_as_cq?' checked':''}>Treat 73 as CQ (answer a station that just ended a QSO; my Tx frequency is held)</label>
 <label>Worked window<select id="se-window">${[['all','All time'],['today','Today (UTC)'],['from_to','From - to (UTC dates)']].map(([v,l])=>option(v,l,w.kind===v)).join('')}</select></label>
 ${w.kind==='from_to'?`<label>From<input id="se-from" type="date" min="1930-01-01" max="2099-12-31" value="${esc(w.from)}"></label><label>To<input id="se-to" type="date" min="1930-01-01" max="2099-12-31" value="${esc(w.to)}"></label>`:''}</div>
+<h3 class="se-part">Value</h3>
+<ol id="se-value" class="se-value" aria-label="Value order: the first decides, the next breaks a tie">${value.map((v,i)=>`<li data-criterion="${esc(v)}"><span>${esc(criterionLabel(v))}</span><button type="button" class="se-up" data-index="${i}" aria-label="Move ${esc(criterionLabel(v))} up"${i===0?' disabled':''}>&uarr;</button><button type="button" class="se-down" data-index="${i}" aria-label="Move ${esc(criterionLabel(v))} down"${i===value.length-1?' disabled':''}>&darr;</button><button type="button" class="se-remove" data-index="${i}" aria-label="Remove ${esc(criterionLabel(v))}">&times;</button></li>`).join('')}<li id="se-then" class="se-then op-muted">then SNR</li></ol>
+<div class="se-options"><label>Add a criterion<select id="se-value-new">${left.map(([v,l])=>option(v,l,false)).join('')}</select></label><button type="button" id="se-value-add"${left.length?'':' disabled'}>Add</button>
+<label class="op-check"><input type="checkbox" id="se-callers-first"${s.callers_first?' checked':''}>Callers of my call first</label></div>
+<h3 class="se-part">Exit</h3>
+<div class="se-options"><label>Repetitions before leaving<input id="se-repetitions" type="number" min="1" max="20" step="1" value="${s.repetitions}"></label>
+<label>Quiet time (minutes)<input id="se-quiet" type="number" min="1" max="120" step="1" value="${s.quiet_minutes}"></label></div>
+<label class="op-check" title="Call CQ after two periods with nothing to call; callers are answered"><input type="checkbox" id="se-cq"${s.cq_when_no_target?' checked':''}>CQ when no target</label>
 <p class="op-muted">${s.builtin?'Built-in: read-only; Duplicate makes your own copy. ':''}Stations calling me are always answered, whatever these settings say. CQs directed elsewhere (another continent, CQ DX from my own, any other word) are never called.</p>`;
-  if(s.builtin)for(const e of $('se-body').querySelectorAll('input,select'))e.disabled=true;
+  if(s.builtin)for(const e of $('se-body').querySelectorAll('input,select,button'))e.disabled=true;
   preview();
 }
 function words(text,lower){return text.split(/[\s,]+/).map(w=>lower?w.toLowerCase():w.toUpperCase()).filter(Boolean);}
@@ -1471,7 +1547,11 @@ editor.addEventListener('input',event=>{
   else if(t.id==='se-needed')s.needed=t.value;
   else if(t.id==='se-region'){s.region=t.value==='selected'?{kind:'selected',continents:[view?.my_continent==='EU'?'NA':'EU']}:{kind:t.value};renderEditor();return;}
   else if(t.id==='se-snr')s.min_snr_db=t.value===''?null:Number(t.value);
-  else if(t.id==='se-calls')s.calls_per_station=Number(t.value);
+  else if(t.id==='se-value-new')return;
+  else if(t.id==='se-callers-first')s.callers_first=t.checked;
+  else if(t.id==='se-repetitions')s.repetitions=Number(t.value);
+  else if(t.id==='se-quiet')s.quiet_minutes=Number(t.value);
+  else if(t.id==='se-cq')s.cq_when_no_target=t.checked;
   else if(t.id==='se-73')s.treat_73_as_cq=t.checked;
   else if(t.id==='se-window'){s.window=t.value==='from_to'?{kind:'from_to',from:todayUtc(),to:todayUtc()}:{kind:t.value};renderEditor();return;}
   else if(t.id==='se-from')s.window.from=t.value;
@@ -1479,6 +1559,15 @@ editor.addEventListener('input',event=>{
   schedulePreview();
 });
 editor.addEventListener('click',event=>{
+  // WstxStrategy::ValueOrder in the editor: add, remove, up and down; SNR stays the hidden last.
+  const v=event.target.closest('#se-value-add,.se-up,.se-down,.se-remove'),d=drafts[current];
+  if(v&&d&&!d.builtin&&!v.disabled){
+    const list=[...(d.value??[])],i=Number(v.dataset.index);
+    if(v.id==='se-value-add'){const add=$('se-value-new').value;if(add&&!list.includes(add)&&list.length<10)list.push(add);}
+    else if(v.classList.contains('se-remove'))list.splice(i,1);
+    else{const j=v.classList.contains('se-up')?i-1:i+1;if(j>=0&&j<list.length)[list[i],list[j]]=[list[j],list[i]];}
+    d.value=list;renderEditor();schedulePreview();return;
+  }
   const b=event.target.closest('#se-new,#se-copy,#se-delete');if(!b)return;const s=drafts[current];
   if(b.id==='se-new'){let n=1;while(drafts.some(d=>d.name.toLowerCase()===`strategy ${n}`))n++;addDraft(newStrategy(`Strategy ${n}`));}
   else if(b.id==='se-copy'&&s){const {builtin,...copy}=structuredClone(s);copy.name=`${s.name} copy`.slice(0,32);addDraft(copy);}
@@ -1505,7 +1594,7 @@ async function preview(){
 }
 $('se-save').addEventListener('click',async()=>{
   const c=config()??{continent:null,active:null,ignore_calls:[],session_ignore_minutes:30};
-  // Save never selects: selecting starts a strategy. A deleted active one is None.
+  // Save never selects. A deleted active one is None.
   const mine=drafts.filter(d=>!d.builtin),names=[...mine,...builtins()].map(d=>d.name);
   const ok=await saveConfiguration({...c,continent:c.continent??null,active:names.includes(c.active)?c.active:null,strategies:mine},'Strategies');
   $('se-result').textContent=ok?`Saved · revision ${view.revision} · applies now`:statusNode.textContent;

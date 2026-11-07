@@ -31,7 +31,13 @@ package WstxContest {
             applies unchanged (HALT, Esc, Tx watchdog, 60 s without a client, 8 hours). Implementer's
             defaults on #63: HALT leaves the contest in force as colouring only; S&P and Run are
             the two automatic operations, chosen at the prompt, not both at once (no band or
-            frequency hopping); the Tx watchdog stops a Run on an unanswered CQ like any message. */
+            frequency hopping); the Tx watchdog stops a Run on an unanswered CQ like any message.
+         D10 Strategydef (#39, operator grill 2026-11-07, WstxStrategy D15): colouring only is
+            Auto off (WstxStrategy::AutoToggle, one toggle for strategies and contests); the
+            contest keeps its own value (ContestValueOrder); x and the quiet time are set per
+            contest, defaults 2 and 10 minutes, more aggressive than strategies; in situation 1
+            the run stays while the target hears us and is still the most valuable
+            (WstxStrategy::LeaveRule). HALT turns Auto off and leaves the contest selected. */
 
     enum def DupeRule {
         doc /* band: once per band. band_mode_class: once per band and per Phone, CW or Digital.
@@ -125,16 +131,18 @@ package WstxContest {
         doc /* The optional key contest of WstxStrategy::StrategyConfiguration on PUT /strategy and in
              the GET /strategy snapshot, present only while one is selected: {profile (a profile
              id), start, end (real instants "YYYY-MM-DDTHH:MMZ", end exclusive, start < end, at most
-             31 days apart), operation "colouring", "sp" or "run", and the optional boolean
-             automation_confirmed}. Exact keys; each refusal names its field
-             (contest, contest.profile, contest.start, contest.end, contest.operation,
-             contest.automation_confirmed: sp or run of a forbidden clause without true), 400
-             invalid_request like any other field. null or absent: no contest. Exactly one strategy
+             31 days apart), operation "sp" or "run", repetitions (x of WstxStrategy::LeaveRule,
+             1..20, default 2) and quiet_minutes (WstxStrategy::QuietTime, 1..120, default 10)}.
+             Exact keys; each refusal names its field (contest, contest.profile, contest.start,
+             contest.end, contest.operation, contest.repetitions, contest.quiet_minutes), 400
+             invalid_request like any other field; "colouring" and automation_confirmed are
+             refused like any other value or extra key (colouring only is Auto off, and the
+             confirmation goes with Auto on, WstxStrategy::AutoToggle). null or absent: no contest. Exactly one strategy
              is active or none: active and contest together are refused with field contest. It
              lives in station memory only: the file never holds it and a station restart starts
              without one (as active, WstxStrategy D2). A changed contest is a changed selection
-             (WstxStrategy::StrategyRun: any run ends; colouring starts none, sp and run start
-             one, ContestRun). HALT leaves colouring in force: it transmits nothing. An MCP principal cannot select one (the PUT
+             (WstxStrategy::StrategyRun: any run ends; with Auto on the new one starts, ContestRun).
+             HALT turns Auto off and leaves the contest in force: it then transmits nothing. An MCP principal cannot select one (the PUT
              /strategy principal guard). No alert is recorded for a contest
              (WstxStrategy::Alert follows the active award strategy). */
     }
@@ -175,17 +183,22 @@ package WstxContest {
              multiplier", "<n> points" joined by " \· ", or the reason above. */
     }
     attribute def ContestValueOrder {
-        doc /* Smaller first: callers of my call before the others (WstxStrategy D5); then a new
-             multiplier; then more QSO points (unknown 0); then the strongest SNR (unknown last); then
-             sequence. Replaces WSJT-X's first decoded (operator #63). */
+        doc /* Smaller first: callers of my call before the others (WstxStrategy D5; only callers
+             with a rank, never a dupe); then a new multiplier; then more QSO points (unknown 0);
+             then the strongest SNR (unknown last); then, for an exact tie only, the lower audio
+             frequency, then the call (strategydef Q3, Q9: decode order is never a ranking).
+             Replaces WSJT-X's first decoded (operator #63). */
     }
     attribute def ContestPrompt {
         doc /* The Contest button of the strategy element opens a modal dialog with its own HALT (the
              top-bar HALT's action, as WstxStrategy::StrategyEditor); receive keeps running. It reads
              GET /strategy/contests once at opening, so the pre-fill is current. It offers the
              profiles; Start and End (UTC, to the minute): the selection in force when it matches, else
-             the profile's period, empty when asked; the schedule in words; the operation with
-             colouring only as the default; the automation text and the notes. When the profile's
+             the profile's period, empty when asked; the schedule in words; the operation S&P or
+             Run (S&P the default); "Repetitions before leaving" (default 2) and "Quiet time
+             (minutes)" (default 10); the automation text and the notes. Whether it transmits is
+             the Auto toggle's (WstxStrategy::AutoToggle): a forbidden clause asks its
+             confirmation when Auto is switched on, not at Start. When the profile's
              activity differs from the station's, one line says so. Start with an empty period
              asks for it and sends nothing; else one PUT /strategy with active null and contest. Cancel
              changes nothing. In the selector the contest in force is one more option "<name>
@@ -205,38 +218,42 @@ package WstxContest {
              their reasons leave the hover too, and they come back with its end: QSOs outside the
              period do not count (the My call slot stays; the Settings choice is unchanged). The hover names "#n",
              new multiplier and points, or the dupe. The status beside it: "Contest <name> \· <MM-DD
-             HH:MM> to <MM-DD HH:MM> UTC \· colouring only" and, once evaluated, " \· <n> QSOs \· <m>
+             HH:MM> to <MM-DD HH:MM> UTC \· <S&P or Run> \· Auto <on or off>" (Auto off is colouring only) and, once evaluated, " \· <n> QSOs \· <m>
              mult \· score <s>". Manual operation stays as it is: every row selects as ever, the
              double-click and the directive warning unchanged. */
     }
     attribute def ContestRun {
-        attribute callsPerStation : Integer = 2;
-        doc /* A contest with operation sp or run is a WstxStrategy::StrategyRun: one run at a time, through
-             the same internal path and the same contact engine, selected only by a browser's PUT
-             /strategy. Unchanged: HALT stops every run from any source and sets the operation to
-             colouring (revision + 1, pushed by strategy.state; the contest and period stay); Esc
+        attribute repetitionsDefault : Integer = 2;
+        attribute quietMinutesDefault : Integer = 10;
+        doc /* A contest with Auto on is a WstxStrategy::StrategyRun: one run at a time, through
+             the same internal path and the same contact engine, started only by a browser's
+             selection with Auto on or Auto on (WstxStrategy::AutoToggle). Unchanged: HALT stops
+             every run from any source and turns Auto off (revision + 1, pushed by
+             strategy.state; the contest, its operation and period stay); Esc
              changes neither; ManualIntervention (a double-click always, the run resumes after the
              QSO); WatchdogFromOperator; the 8 hour run limit (run_limit) and 60 s without a client
-             (no_client), with the contest staying selected and the reason shown until a new
-             selection; the grant (authority_lost); FreeTxSlot; an AutomationCommand start of what
-             it left is refused operator_required.
+             (no_client), finishing the QSO first, with the contest staying selected, Auto off
+             and the reason shown; the grant (authority_lost); WstxStrategy::FreeTxSlot; an
+             AutomationCommand start of what it left is refused operator_required. A contact ends
+             at once at the end of the period (the run waits outside_period) and when the
+             contest is deselected (WstxStrategy::StrategyRun "Ends at once").
              Waiting reasons in a contest (run.reason while state waiting), besides no_receive,
              auto_seq and call: activity (the station's activity is not the profile's), band (the
              station band is not in the profile), outside_period (the station clock is outside
              [start, end)). It selects nothing and calls nothing until the reason is gone.
              sp: on each fresh complete publication the list is ContestVerdict with a rank, one per
              call, not completed in this run on this band and mode nor given up; the first is selected
-             as a strategy run selects. Calls per station 2 (the operator's Contest preset, #39
-             comment 6626497059); no skip (D6): it may come back when alone.
+             as a strategy run selects, not in its QuietTime. Leaving: WstxStrategy::LeaveRule with
+             the contest's repetitions and quiet_minutes; no skip (WstxStrategy D6).
              run: while waiting and no reason it decides the slot (FreeTxSlot, no called station) and
              sends enable_tx with no partner, which calls CQ with the activity's Tx6; state
              calling_cq. WstxContact::CallFirst does not answer a CQ started by automation. On each
              fresh complete publication of the partner's parity the callers of my call
              (ContestVerdict kind caller: a dupe has no rank; in ContestValueOrder; not worked in this
-             run on this band and mode, not given up) are read; the first is selected with
+             run on this band and mode, not given up, not in QuietTime) are read; the first is selected with
              select_row {replace false}, which keeps Enable Tx, and Tx stays on its slot
-             (FreeTxSlot with that station). No caller: the CQ goes on. In the contact as sp; after
-             completion or 2 calls without progress it waits, so the next step calls CQ again.
+             (WstxStrategy::FreeTxSlot with that station). No caller: the CQ goes on. In the contact
+             as sp; after completion or a leaving it waits, so the next step calls CQ again.
              In calling_cq: a reason appearing disarms and cancels the CQ and it waits; run_limit
              or no_client disarm and cancel the CQ at once and stop (there is no exchange to
              end); an operator's selection or cancel makes it manual; a disarm stops it with
@@ -245,19 +262,21 @@ package WstxContest {
              step that sees the disarm stops it tx_watchdog, and an automatic enable_tx after a
              watchdog stop is refused besides, WatchdogFromOperator). Every stop
              and a selection cancel a CQ of the run: none is left to read as the operator's contact.
-             Esc on the run's own CQ ends that CQ; the run calls again.
+             Esc on the run's own CQ ends that CQ; the run calls again. A dupe caller has no
+             rank: it is never answered and never ends a stay (the #63 fix: the stay check read
+             the award evaluator, which counts any caller); every check of a contest run reads
+             ContestVerdict.
              The log: ContestLog of the last build on the station step, built at the selection
              first; each step of the run asks for it, so a build behind the log runs on its own
              thread as soon as a QSO is logged, also a manual one, well before the next
              publication; until it is done a QSO is held off by this run's own completed list. Band Activity follows ContestView; the status
              names "calling CQ", "<call>", "your QSO", "waiting · <reason>", "stopped · <reason>"
              or "not started · <reason>" from GET /automation on automation.state only, never a
-             timer. The prompt offers both beside colouring only; AutomationClause forbidden asks
-             WstxOperatingLayout's confirmation with the clause's text and sends
-             automation_confirmed true on Transmit automatically, sends nothing when declined;
-             silent asks nothing, the clause is on the prompt. Start of the selection in force after
-             its run stopped sends None and then the selection, a new selection by the contract
-             (a save of the same contest starts nothing). No band hopping. */
+             timer. The prompt offers S&P and Run; AutomationClause forbidden asks
+             WstxOperatingLayout's confirmation with the clause's text when Auto is switched on
+             and sends automation_confirmed true with POST /strategy/auto, nothing when
+             declined; silent asks nothing, the clause is on the prompt. After a stop only Auto
+             on starts it again. No band hopping. */
     }
     attribute def ContestDirective {
         doc /* WstxStrategy::DirectedCqRule in a contest activity: the word of the station's

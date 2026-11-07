@@ -558,6 +558,17 @@ impl Worked {
     pub fn grid_standing(&self, grid: &str) -> Standing {
         standing(square(grid).and_then(|g| self.ever.get(&(1, g))))
     }
+    /// #39 strategydef: the standing of a call on a band, in any mode (new_call_band).
+    pub fn call_band_standing(&self, call: &str, band: &str) -> Standing {
+        standing(
+            self.band
+                .get(&(0, call.to_ascii_uppercase(), band.to_ascii_lowercase())),
+        )
+    }
+    /// #39 strategydef: the standing of a grid's 4-character square on a band (new_grid_band).
+    pub fn grid_band_standing(&self, grid: &str, band: &str) -> Standing {
+        standing(square(grid).and_then(|g| self.band.get(&(1, g, band.to_ascii_lowercase()))))
+    }
     /// #39 the standing of a call's CQ WPX prefix, ever.
     pub fn wpx_standing(&self, call: &str) -> Standing {
         standing(self.wpx.get(&wpx_prefix(call)))

@@ -281,6 +281,8 @@ pub struct Recording {
     pub(crate) flex: std::sync::OnceLock<Arc<wstx_rust::flex::Session>>,
     /// #39 who is connected, for WstxStrategy::StrategyRun's rule without a client.
     pub(crate) clients: crate::automation::Clients,
+    /// #39 WstxStrategy::FreeTxSlot: the per-period waterfall power of the live receive.
+    pub(crate) waterfall: Mutex<crate::freeslot::Waterfall>,
     /// WstxUdp interface of this station (#40), opened once by the process.
     pub(crate) udp: std::sync::OnceLock<Arc<crate::udp::Owner>>,
     /// The read-only PSK Reporter feed (#39 WstxStrategy::HearingFeed), started once by the
@@ -824,6 +826,29 @@ impl Recording {
         drop(s);
         self.sync_transmit_mode();
         (source_id, id, generation)
+    }
+    /// Test seam: one detailed waterfall row of the live job in the period starting at
+    /// `period_start_ms` (FT8 periods), with its levels per native bin, as the receive worker
+    /// feeds WstxStrategy::FreeTxSlot.
+    #[cfg(test)]
+    pub(crate) fn fixture_detail_row(&self, period_start_ms: i64, levels: &[u8], tx: bool) {
+        let (job, generation, mode) = {
+            let s = self.state.lock().unwrap();
+            let j = s.job.as_ref().unwrap();
+            (
+                j.id.clone(),
+                j.generation,
+                s.live.as_ref().map_or("ft8", |l| l.mode),
+            )
+        };
+        let period_ms = if mode == "ft4" { 7500 } else { 15000 };
+        self.waterfall.lock().unwrap().row(
+            (&job, generation),
+            period_start_ms,
+            period_ms,
+            levels,
+            tx,
+        );
     }
     /// Test seam: one Thin spectrum row of the live job, shaped as the receive worker's:
     /// 128 levels of two digits, a frame of about 620 bytes.
@@ -2637,10 +2662,19 @@ impl LiveWorker {
                 } else {
                     l.accumulate_level(&block.samples, Instant::now());
                 }
+                // #39 WstxStrategy::FreeTxSlot: each row's period, for the per-period power.
+                let drift = l.capture_drift.map_or(0, |(d, _)| d) + l.clock_correction;
+                let period_ms = if l.mode == "ft4" { 7500 } else { 15000 };
                 let tx_rows = frames
                     .iter()
                     .flatten()
-                    .map(|row| keyed || self.owner.tx_period_at(l, (row.first + row.end) / 2))
+                    .map(|row| {
+                        let middle = (row.first + row.end) / 2;
+                        (
+                            keyed || self.owner.tx_period_at(l, middle),
+                            period_start_ms(l.timing.as_ref(), l.mode, middle, drift),
+                        )
+                    })
                     .collect::<Vec<_>>();
                 self.reset |= outcome.as_ref().is_some_and(|o| o.reset_decoder);
                 if self.reset {
@@ -2653,9 +2687,22 @@ impl LiveWorker {
                         levels,
                         detailed,
                     },
-                    tx,
+                    (tx, period),
                 ) in frames.into_iter().flatten().zip(tx_rows)
                 {
+                    if detailed && let Some(start) = period {
+                        self.owner
+                            .waterfall
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner())
+                            .row(
+                                (&self.job.id, self.job.generation),
+                                start,
+                                period_ms,
+                                &levels,
+                                tx,
+                            );
+                    }
                     let sequence = first / if detailed { 2400 } else { 12000 };
                     let kind = if detailed {
                         "spectrum.detail.frame"
@@ -3454,6 +3501,7 @@ impl Recording {
                 contact: std::sync::OnceLock::new(),
                 flex: std::sync::OnceLock::new(),
                 clients: Default::default(),
+                waterfall: Default::default(),
                 udp: std::sync::OnceLock::new(),
                 pskr: std::sync::OnceLock::new(),
                 clock: std::sync::OnceLock::new(),
@@ -3532,6 +3580,7 @@ impl Recording {
             contact: std::sync::OnceLock::new(),
             flex: std::sync::OnceLock::new(),
             clients: Default::default(),
+            waterfall: Default::default(),
             udp: std::sync::OnceLock::new(),
             pskr: std::sync::OnceLock::new(),
             clock: std::sync::OnceLock::new(),

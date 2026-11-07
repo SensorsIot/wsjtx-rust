@@ -351,12 +351,6 @@ impl Station {
     }
     /// What the WstxUdp Status message reads: (DX call, DX grid, report, Rx Hz, Tx Hz,
     /// the contact's next message).
-    pub(crate) fn repetitions_due(&self) -> u32 {
-        self.lock().engine.repetitions_due()
-    }
-    pub(crate) fn partner_answered(&self, my: &str) -> bool {
-        self.lock().engine.partner_answered(my)
-    }
     pub(crate) fn status_facts(&self) -> StatusFacts {
         let inner = self.lock();
         let e = &inner.engine;
@@ -716,7 +710,15 @@ impl Station {
             "tx_calls":view.as_ref().map_or(6,|v|v.tx_calls),"tune_seconds":view.as_ref().map_or(90,|v|v.tune_seconds),
             "rx_hz":s.rx_hz,"tx_hz":s.tx_hz,"hold_tx":s.hold_tx,"parity":parity_name(s.parity),"report":s.report,
             "activity":s.activity.name(),"exchange":s.exchange,"serial":s.serial});
-        let watchdog = json!({"tx_remaining_calls":view.as_ref().map_or(0,|v|v.tx_remaining_calls),
+        // WstxStrategy::StrategyWatchdog: null during a contest stay (WD:∞), else the count.
+        let remaining = view.as_ref().map_or(json!(0), |v| {
+            if v.arm_state == wstx_rust::transmit::service::ArmState::Armed && e.staying() {
+                Value::Null
+            } else {
+                json!(v.tx_remaining_calls)
+            }
+        });
+        let watchdog = json!({"tx_remaining_calls":remaining,
             "tx_expired":view.as_ref().is_some_and(|v|v.tx_expired),
             "tune_remaining_seconds":view.as_ref().map_or(0,|v|v.tune_remaining_seconds)});
         let material = json!([transmit, settings, contact, log, watchdog]);
@@ -1263,7 +1265,7 @@ pub(crate) fn station_tick(state: &ProfileState) {
     if let Some(s) = state.recording.contact.get() {
         // Read before the contact step: the engine then has every record of it.
         let publication = state.recording.latest_publication();
-        // WstxStrategy::StrategyRun: a HALT from any source sets active to None.
+        // WstxStrategy::StrategyRun: a HALT from any source turns Auto off (the selection stays).
         s.strategy.halt_step(state);
         // #42 IgnoreLists: a station band change empties the session list before a run step.
         s.strategy
@@ -1272,9 +1274,13 @@ pub(crate) fn station_tick(state: &ProfileState) {
         s.strategy.alert_step(state);
         s.tick(state);
         s.automation.tick(s, state, publication);
+        // WstxStrategy::AutoToggle: every run end turns Auto off.
+        let epoch = s.strategy.auto_epoch();
+        s.strategy
+            .auto_step(state, epoch, s.automation.strategy_running());
         if let Some(feed) = state.recording.pskr.get() {
             // Only a strategy run's own contact reads the target's spots: no other subscribes.
-            let own = s.automation.repeat_exempt().map(|(id, _)| id);
+            let own = s.automation.own_contact();
             let target = s
                 .facts()
                 .1
