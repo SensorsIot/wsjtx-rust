@@ -481,6 +481,29 @@ test('TC-007-005 a stale safety revision is read at once and the CQ retried',{ti
   assert.deepEqual(page.errors,[]);
 });
 
+// Proves: CL-010-03, CL-010-15; TC-007-005 (#10). Esc during a stale-revision retry of a double-click goes at
+// once, and nothing the double-click queued (its retry, its Enable Tx) follows it.
+test('TC-007-005 Esc during a stale-revision retry aborts at once and nothing follows it',{timeout:60000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
+  let refusedAt=null;
+  await page.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());if(refusedAt===null&&b.action==='select_row'){refusedAt=performance.now();await route.fulfill({status:409,json:{v:1,error:{code:'stale_revision',field:'contact_revision'}}});}else await route.continue();});
+  const {sequences}=await publish(evenNow(),[{text:'CQ W1ABC FN42',hz:1777,snr:-4}]);
+  const tr=page.locator(`#band-activity tbody tr[data-sequence="${sequences[0]}"]`);await tr.waitFor({timeout:30000});
+  const from=requests.length;await tr.dblclick();
+  await waitFor(()=>refusedAt!==null,'the refused select_row',8000);
+  await new Promise(r=>setTimeout(r,200));const esc=performance.now();await page.keyboard.press('Escape');
+  await waitFor(()=>requests.slice(from).some(r=>r.method==='POST'&&r.path==='/contact/command'&&JSON.parse(r.body).action==='abort'),'the abort',5000);
+  await new Promise(r=>setTimeout(r,4000));
+  await page.unroute('**/contact/command');
+  const sent=requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command'),abort=sent.findIndex(r=>JSON.parse(r.body).action==='abort');
+  const s=await snapshot();
+  if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
+  assert.ok(sent[abort].at-esc<200,`the abort ${Math.round(sent[abort].at-esc)} ms after Esc`);
+  assert.deepEqual(sent.slice(abort+1).map(r=>JSON.parse(r.body).action),[],'nothing the double-click queued follows the abort');
+  assert.notEqual(s.transmit.arm_state,'armed','not armed after Esc');
+  assert.deepEqual(page.errors,[]);
+});
+
 // Proves: CL-010-15; TC-007-005. A read older than a pushed change does not replace it.
 test('TC-007-005 an older GET /contact does not replace pushed state',{timeout:60000},async()=>{
   const live=await snapshot();const watchdogs=async tx_calls=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};

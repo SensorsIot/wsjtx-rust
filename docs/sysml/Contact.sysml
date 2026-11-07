@@ -1418,11 +1418,13 @@ package WstxContact {
              (accepted, or the refusal with its code) and reads nothing: the next command goes
              at once with the newer of the held and the last receipt's contact_revision, and
              GET /contact is read only when no contact.state holds the receipt's revision
-             within 5 s; after a stale_revision refusal of contact_revision it waits up to
-             2.5 s for a newer revision before the retry, after one of another field
+             within 5 s; after a stale_revision refusal of contact_revision the explicit
+             gesture (double-click, Reply, CQ) waits up to 2.5 s for a newer revision before
+             its retry, outside the command order, after one of another field
              (safety_revision) or an unknown outcome it reads at once. A choice made from the
-             held state (Log QSO, a row's selection, CQ) waits for a result still on its way;
-             Esc and Abort QSO never wait (#10). It is not a StatusReply:
+             held state (Log QSO, a row's selection, CQ) waits for a command and result still
+             on their way; Esc and Abort QSO never wait, and after them nothing an earlier
+             gesture queued (its retry, its Enable Tx) is sent (#10). It is not a StatusReply:
              station.status stays exactly {v,type,id,data{version,radio}}. Control and
              status keep priority over it as over optional visualization. */
     }

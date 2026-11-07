@@ -135,7 +135,7 @@ async function sendNow(action,params={},label=action){
     if(response.status===202||response.status===200){resultText.textContent=`${label}: accepted`;if(Number.isSafeInteger(data?.contact_revision)){receipt=data;if(!(receiptSeen?.boot===body.boot_id&&receiptSeen.revision>=data.contact_revision))receiptSeen={boot:body.boot_id,revision:data.contact_revision};}return data;}
     const code=data?.error?.code??`http_${response.status}`;refused=data?.error?.code==='stale_revision'?`stale_${data.error.field??'contact_revision'}`:data?.error?.code??false;
     resultText.textContent=`${label}: refused · ${code}${code==='stale_revision'?' · station state changed, review and retry':''}`;
-    return {refused:code,reason:data?.error?.reason};
+    return {refused:code,reason:data?.error?.reason,field:data?.error?.field??null,sent:body.contact_revision,boot:body.boot_id};
   }catch(error){resultText.textContent=`${label}: outcome unknown · ${error.message}`;return null;}
   // The next command goes with the receipt's revision at once; contact.state brings the result, and only
   // when it does not within 5 s is the snapshot read. A refusal changed nothing: a stale contact revision
@@ -144,8 +144,8 @@ async function sendNow(action,params={},label=action){
   finally{sending=false;
     const ended=()=>{if(before&&!running(snap?.contact)&&/: accepted$/.test(resultText.textContent))resultText.textContent='';};
     if(receipt)held(body.boot_id,receipt.contact_revision).then(async ok=>{if(!ok)await load();ended();});
-    else{if(refused==='stale_contact_revision'){if(!await held(body.boot_id,body.contact_revision+1,2500))await load();}
-      else if(!refused||refused.startsWith('stale_'))await load();ended();}}
+    // A stale contact revision waits in sendExplicit, outside this chain, so an abort behind it is not held.
+    else{if(refused!=='stale_contact_revision'&&(!refused||refused.startsWith('stale_')))await load();ended();}}
 }
 // The keyboard halt itself (Alt+H) is sent by recording.js, which is loaded at once;
 // this client only shows its outcome.
@@ -159,7 +159,9 @@ addEventListener('keyboard-halt',event=>{
 const abortButton=document.createElement('button');abortButton.type='button';abortButton.id='abort-qso';abortButton.className='op-abort';abortButton.textContent='Abort QSO (Esc)';abortButton.title='Abort QSO (Esc): stop the transmission now and cancel the contact, without HALT';abortButton.disabled=true;
 document.querySelector('#halt-tx')?.after(abortButton);
 const abortable=()=>{const c=snap?.contact,t=snap?.transmit;return !!snap&&((c&&!['idle','cancelled','completed'].includes(c.state))||t?.arm_state==='armed'||!!tick?.transmitting);};
-function abortQso(){if(abortable()||sending||heldWaiters.length)send('abort',{},'Abort QSO');}
+// Each Esc or Abort QSO counts: what a gesture queued before it (a retry, its Enable Tx) is then not sent.
+let aborts=0;
+function abortQso(){aborts++;if(abortable()||sending||heldWaiters.length)send('abort',{},'Abort QSO');}
 abortButton.addEventListener('click',abortQso);
 // ---------------------------------------------------------------- render
 const transmitting=c=>!!c&&!['idle','completed','cancelled'].includes(c.state);
@@ -300,7 +302,7 @@ function autoSeqShow(c,s){
 }
 $('qso-suggest').addEventListener('click',async()=>{
   const slot=$('qso-suggest').dataset.slot;if(!slot)return;
-  const r=await send('choose_next',{slot},`Next ${slot.toUpperCase()}`);if(!r||r.refused)return;
+  const from=aborts,r=await send('choose_next',{slot},`Next ${slot.toUpperCase()}`);if(!r||r.refused||from!==aborts)return;
   if(snap?.transmit.arm_state!=='armed'&&transmitReady())arm('Reply');
 });
 $('qso-autoseq-on').addEventListener('click',()=>send('set_auto_seq',{enabled:true},'Auto sequence'));
@@ -361,13 +363,13 @@ function offerChange(run,call){
 }
 const arm=label=>send('enable_tx',{enabled:true,safety_revision:snap?.transmit.safety_revision??null},label);
 $('qso-cq').addEventListener('click',async()=>{
-  await settled();const c=snap?.contact;
+  const from=aborts;await settled();const c=snap?.contact;
   if(c?.dx_call&&transmitting(c)){
     if(!await confirmAction(`Abandon the QSO with ${c.dx_call} and call CQ?`,'Call CQ'))return;
     const reply=await send('cancel',{},'Cancel contact');if(!reply||reply.refused)return;
   }
   // #61 CL-061-02: an explicit choice, retried after stale_revision like the double-click.
-  sendExplicit(()=>arm('CQ'));
+  sendExplicit(()=>arm('CQ'),from);
 });
 $('qso-halt').addEventListener('click',()=>halt.click());$('qso-halt').disabled=halt.disabled;
 $('qso-abort').addEventListener('click',abortQso);
@@ -377,7 +379,7 @@ new IntersectionObserver(([entry])=>{document.body.dataset.qsoHaltShown=String(e
 // Tx on, so it goes from the next own period (never into a waveform already on the air).
 async function nowMessage(slot){
   const c=snap?.contact;if(['completed','cancelled'].includes(c?.state)||!transmitReady())return;
-  const label=`Now ${slot.toUpperCase()}`,r=await send('choose_next',{slot},label);if(!r||r.refused)return;
+  const from=aborts,label=`Now ${slot.toUpperCase()}`,r=await send('choose_next',{slot},label);if(!r||r.refused||from!==aborts)return;
   if(snap?.transmit.arm_state!=='armed')arm(label);
 }
 focus.querySelector('#contact-messages').addEventListener('click',event=>{const now=event.target.closest('.ct-now');if(now&&!now.disabled)nowMessage(now.dataset.slot);});
@@ -608,7 +610,7 @@ $('window-dump').addEventListener('change',async event=>{
   diagnosticsShow();
 });
 // Log QSO: log the current contact now, without a form (DirectLog).
-async function logQso(){await settled();if(running(snap?.contact))await send('open_log',{},'Log QSO');}
+async function logQso(){await sendChain;await settled();if(running(snap?.contact))await send('open_log',{},'Log QSO');}
 $('contact-log').addEventListener('click',logQso);
 // WstxOperatingLayout::KeyboardShortcuts (WSJT-X keys where the function exists). Esc is Abort QSO;
 // Alt+H (the emergency halt) is sent by recording.js.
@@ -649,24 +651,32 @@ async function selectRow(tr){
 }
 // WstxStrategy::DirectedCqRule: the station decides; a CQ that is not answerable is a warning
 // the operator may confirm (a declined warning sends nothing further).
-async function selectConfirmed(row,replace,label){
-  const reply=await sendExplicit(()=>send('select_row',{row,replace},label));
+async function selectConfirmed(row,replace,label,from=aborts){
+  const reply=await sendExplicit(()=>send('select_row',{row,replace},label),from);
   if(reply?.refused!=='directive_not_answerable')return reply;
   if(!await window.wstxConfirm(`${reply.reason}. Answer anyway?`,'Answer anyway'))return {refused:'declined'};
-  return sendExplicit(()=>send('select_row',{row,replace,directive_confirmed:true},label));
+  return sendExplicit(()=>send('select_row',{row,replace,directive_confirmed:true},label),from);
 }
 // A double-click (or the Reply menu) is the explicit ChangeContact (#50, WSJT-X
 // handleDecodeSelection with quick_call): replace true, no confirmation, then Enable Tx on;
 // the replacement itself keeps Enable Tx as it is.
 // The contact revision moves with every transmit step: a stale_revision refusal of this
 // explicit choice is retried, at most twice, with the reloaded snapshot (send reloads it).
-async function sendExplicit(run){let reply=await run();for(let i=0;i<2&&reply?.refused==='stale_revision';i++)reply=await run();return reply;}
+async function sendExplicit(run,from=aborts){
+  let reply=from===aborts?await run():null;
+  for(let i=0;i<2&&reply?.refused==='stale_revision'&&from===aborts;i++){
+    // A stale contact revision waits up to 2.5 s for a newer one in contact.state; another field was read at once.
+    if((reply.field??'contact_revision')==='contact_revision'&&!await held(reply.boot,reply.sent+1,2500))await load();
+    reply=from===aborts?await run():{refused:'aborted'};
+  }
+  return reply;
+}
 async function replyRow(tr){
   const row=rowIdentity(tr);if(!row)return;
   // #37: a deliberate double-click on a foreign QSO's row calls its sender, and says so.
   const label=tr.dataset.foreign?`Call ${tr.dataset.sender}`:'Reply';
-  const reply=await selectConfirmed(row,true,label);
-  if(reply&&!reply.refused&&transmitReady())await sendExplicit(()=>arm(label));
+  const from=aborts,reply=await selectConfirmed(row,true,label,from);
+  if(reply&&!reply.refused&&from===aborts&&transmitReady())await sendExplicit(()=>arm(label),from);
 }
 let clickTimer=null;
 // The double-click is the row's second press (click count 2), not the dblclick event: the
