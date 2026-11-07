@@ -99,7 +99,7 @@ async function run({address, seconds = 180, band = '20m', out, registerPort, ant
     }
     const elapsed = (Date.now() - started) / 1000, f = (await request('/native-flex')).body;
     const accepted = f.packets.accepted - before.accepted, lost = f.packets.lost - before.lost;
-    Object.assign(report, {elapsed_s: elapsed, packets: {accepted, lost, foreign: f.packets.foreign - before.foreign, invalid: f.packets.invalid - before.invalid},
+    Object.assign(report, {elapsed_s: elapsed, packets: {accepted, lost, late: f.packets.late - before.late, foreign: f.packets.foreign - before.foreign, invalid: f.packets.invalid - before.invalid},
       loss_percent: accepted + lost ? 100 * lost / (accepted + lost) : null, received_ratio: accepted / (elapsed * PACKETS_PER_SECOND),
       arrival: f.arrival, vita: f.vita, audio: last?.audio, clock: last?.clock, rows, texts, dt_seconds: stats(dts), session_end: {state: f.state, error: f.error}});
     report.status = 'measured';

@@ -1762,7 +1762,10 @@ package WstxRequirements {
              test's own clock. Read first: repeating a selection whose slice already reports the
              frequency sends no slice tune and no mode write (command log count unchanged); an
              emulator that does not report the new frequency makes the selection fail visibly with
-             error radio_timeout and leaves no native_readback origin. Two stations whose DAX
+             error radio_timeout and leaves no native_readback origin. The emulator reports a tune
+             only when asked, as the real radio does; a selection is confirmed also over 130 to 260 ms
+             each way. One packet in 60 delayed by 4 places counts neither lost nor late; delayed by 6
+             places it counts lost once and late once. Neither opens an epoch or changes the rate. Two stations whose DAX
              status arrives 300 ms late end on different channels, the emulator's audio following
              the channel, not the owner. Datagrams with the own stream ID from another address
              (127.0.0.2, amplitude 0.95) are never accepted. No slice command targets another

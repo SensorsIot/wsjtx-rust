@@ -78,8 +78,7 @@ pub async fn snapshot(
     let c = s.counters;
     let mut value = pushed(&r.profile, &r.boot, &s);
     value["v"] = json!(1);
-    value["packets"] =
-        json!({"accepted":c.accepted,"foreign":c.foreign,"invalid":c.invalid,"lost":c.lost});
+    value["packets"] = json!({"accepted":c.accepted,"foreign":c.foreign,"invalid":c.invalid,"lost":c.lost,"late":c.late});
     value["last_peak"] = json!(s.last_peak);
     value["vita"] = json!({"tsi":s.vita_tsi,"host_minus_radio_ms":s.vita_offset_ms});
     value["arrival"] = json!({"jitter_mean_ms":s.jitter_mean_ms,"jitter_max_ms":s.jitter_max_ms});

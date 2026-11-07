@@ -394,6 +394,50 @@ test('TC-023-001 a stall above 200 ms with packets missing opens a new epoch', {
   assert.equal(after.audio.last_loss, 'native_discontinuity');
 });
 
+test('TC-023-001 a selection is read back on a slow path from a radio that volunteers no tune status', {timeout: 60000}, async t => {
+  const emulator = await new FlexEmulator({silent: true, latency: 130}).start();
+  t.after(() => emulator.stop());
+  const s = await station(t, {name: 'Quiet', radioAddress: `127.0.0.1:${emulator.port}`, registerPort: emulator.udpPort});
+  await state(s, 'ready', 30000);
+  const selected = await selectBand(s, '20m');
+  assert.equal(selected.operation.result, 'success', JSON.stringify(selected.operation));
+  assert.equal(selected.selection.origin, 'native_readback');
+  assert.equal(emulator.slicesOf(s.clientId)[0].hz, FT8['20m']);
+  assert.equal((await s.flex()).slice.frequency_hz, FT8['20m']);
+});
+
+// One packet in 60 behind later ones, for 4 s of about 750 packets: `lost` and `late` are what the
+// reordering costs, and the timeline keeps its rate with no new epoch either way.
+async function reorderedRun(t, name, reorderBy) {
+  const port = await udpPort();
+  const emulator = await new FlexEmulator({discoveryPorts: [port], reorderEvery: 60, reorderBy}).start();
+  t.after(() => emulator.stop());
+  const s = await station(t, {name, discovery: port});
+  await state(s, 'ready');
+  const r0 = (await s.request('/receive')).body;
+  assert.equal((await s.request('/receive/start', 'POST', {v: 1, profile_id: s.id, boot_id: r0.boot_id, generation: r0.generation, profile_revision: 0, mode: 'spectrum'})).status, 202);
+  const first = await waitFor(async () => { const r = (await s.request('/receive')).body; return r.source?.next_frame > 12000 && {at: Date.now(), frame: r.source.next_frame}; }, 'receive runs');
+  await new Promise(r => setTimeout(r, 4000));
+  const r1 = (await s.request('/receive')).body, packets = (await s.flex()).packets;
+  assert.ok(packets.accepted > 500, JSON.stringify(packets));
+  assert.equal(r1.audio.loss_epochs, 0, 'reordering opens no epoch');
+  const rate = (r1.source.next_frame - first.frame) / ((Date.now() - first.at) / 1000);
+  assert.ok(Math.abs(rate / 12000 - 1) < 0.1, `canonical frames/s ${rate}`);
+  return packets;
+}
+
+test('TC-023-001 packets delayed within the depth are put back in order, not counted lost', {timeout: 60000}, async t => {
+  const packets = await reorderedRun(t, 'Reordered', 4);
+  assert.equal(packets.lost, 0, JSON.stringify(packets));
+  assert.equal(packets.late, 0, JSON.stringify(packets));
+});
+
+test('TC-023-001 packets delayed past the depth count lost once and are dropped as late', {timeout: 60000}, async t => {
+  const packets = await reorderedRun(t, 'Too late', 6);
+  assert.ok(packets.late >= 10, JSON.stringify(packets));
+  assert.ok(Math.abs(packets.lost - packets.late) <= 1, JSON.stringify(packets));
+});
+
 test('TC-023-001 lost packets keep the timeline and are counted, and a stall shows as jitter', {timeout: 60000}, async t => {
   const port = await udpPort();
   const emulator = await new FlexEmulator({discoveryPorts: [port], dropEvery: 4}).start();
