@@ -1218,7 +1218,7 @@ package WstxRequirements {
         objective {
             verify 'CL-010-13';
         }
-        attribute executable : String = "server/src/logbook_tests.rs; tests/ui-operating.test.cjs";
+        attribute executable : String = "server/src/logbook_tests.rs; server/src/dxcc_tests.rs; tests/ui-operating.test.cjs";
     }
     dependency CL_010_01_verified_by_TC_007_001 from 'CL-010-01' to 'TC-007-001';
     dependency CL_010_01_verified_by_TC_007_003 from 'CL-010-01' to 'TC-007-003';
