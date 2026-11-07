@@ -24,7 +24,11 @@ pub(crate) const PERIODS_PER_PARITY: usize = 4;
 pub(crate) const BIN_HZ: f64 = 12000.0 / 4096.0;
 /// The upper edge my whole signal stays below (FrequencyControls: FT8 300..2650, FT4 300..2610).
 const PASSBAND_TOP_HZ: u32 = 2700;
-/// The counted periods kept per live job, both parities together.
+/// FreeTxSlot usualPeriods: the counted periods of each parity whose lowest level is a slot's usual
+/// level (#39 holdtx, operator round 2 Q5 "3 of each parity").
+pub(crate) const USUAL_PERIODS: usize = 3;
+/// The counted periods kept per live job and parity. Each parity is kept apart, so that during a
+/// long call (my Tx periods never counted) the Tx-parity periods from before it stay (#39 holdtx).
 const PERIODS_KEPT: usize = 4 * PERIODS_PER_PARITY;
 
 pub(crate) fn width_hz(mode: Mode) -> u32 {
@@ -63,7 +67,8 @@ impl HisEnd {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Slot {
     pub hz: u32,
-    /// The whole-dB power of the chosen slot; None before any counted period.
+    /// The whole-dB compared value of the chosen slot (its rise over its usual level, #39 holdtx);
+    /// None before any counted period.
     pub power_db: Option<i64>,
     pub his_end: HisEnd,
 }
@@ -78,6 +83,10 @@ fn clear_of(f: u32, called: Option<u32>, width: u32) -> bool {
         let (f, c, w) = (i64::from(f), i64::from(c), i64::from(width));
         f + w + CLEARANCE_HZ <= c || f >= c + w + CLEARANCE_HZ
     })
+}
+/// My signal at `f` keeps CLEARANCE_HZ from every signal in `avoid` (the called station, my Rx).
+fn clear_of_all(f: u32, avoid: &[u32], width: u32) -> bool {
+    avoid.iter().all(|a| clear_of(f, Some(*a), width))
 }
 /// The slot nearest `current`, the lower on a tie.
 fn nearest(slots: &[u32], current: u32) -> Option<u32> {
@@ -100,16 +109,29 @@ pub(crate) fn quietest(
     his: Option<&[u32]>,
     power: &dyn Fn(u32) -> Option<f64>,
 ) -> Slot {
+    quietest_clear(mode, current, called.as_slice(), his, power)
+}
+/// No frequency he decodes from my Tx parity lies within CLEARANCE_HZ of `f`.
+fn at_his_end(f: u32, his: &[u32]) -> bool {
+    his.iter()
+        .all(|o| (i64::from(f) - i64::from(*o)).abs() >= CLEARANCE_HZ)
+}
+/// `quietest` keeping clear of every signal in `avoid`: the called station and, with Hold Tx on,
+/// my Rx (#39 holdtx, "never to the Rx frequency"). A current Tx outside the Tx range is no
+/// candidate (round 3 Q6).
+pub(crate) fn quietest_clear(
+    mode: Mode,
+    current: u32,
+    avoid: &[u32],
+    his: Option<&[u32]>,
+    power: &dyn Fn(u32) -> Option<f64>,
+) -> Slot {
     let ((low, high), width) = (band(mode), width_hz(mode));
     let mut candidates: Vec<u32> = (low..=high).step_by(STEP_HZ as usize).collect();
     if (low..=high).contains(&current) && !candidates.contains(&current) {
         candidates.push(current);
     }
-    candidates.retain(|f| clear_of(*f, called, width));
-    let at_his_end = |f: u32, his: &[u32]| {
-        his.iter()
-            .all(|o| (i64::from(f) - i64::from(*o)).abs() >= CLEARANCE_HZ)
-    };
+    candidates.retain(|f| clear_of_all(*f, avoid, width));
     let his = his.filter(|h| !h.is_empty());
     let (candidates, his_end) = match his {
         Some(his) => {
@@ -150,22 +172,50 @@ pub(crate) fn quietest(
             }
         }
         None => {
-            let hz = if (low..=high).contains(&current) && clear_of(current, called, width) {
+            let hz = if (low..=high).contains(&current) && clear_of_all(current, avoid, width) {
                 current
             } else {
                 nearest(&candidates, current).unwrap_or(current)
             };
-            let his_end = match his {
-                Some(his) if at_his_end(hz, his) => HisEnd::Yes,
-                Some(_) => HisEnd::No,
-                None => HisEnd::Unknown,
-            };
             Slot {
                 hz,
                 power_db: None,
-                his_end,
+                his_end: his_end_of(hz, his),
             }
         }
+    }
+}
+fn his_end_of(hz: u32, his: Option<&[u32]>) -> HisEnd {
+    match his.filter(|h| !h.is_empty()) {
+        Some(his) if at_his_end(hz, his) => HisEnd::Yes,
+        Some(_) => HisEnd::No,
+        None => HisEnd::Unknown,
+    }
+}
+/// Hold Tx on at a selection (a caller of my call as well, also from the run's CQ; #39 holdtx
+/// round 1 Q1, Q2, D4, D7): Tx stays, also outside the Tx range, unless the station's signal at
+/// `station` (or my Rx) is within CLEARANCE_HZ of it; then the nearest candidate in range clear of
+/// both, free at his end where known, the lower on a tie, no power used. `power` only names the
+/// rise of the slot in the status.
+pub(crate) fn held(
+    mode: Mode,
+    current: u32,
+    avoid: &[u32],
+    his: Option<&[u32]>,
+    power: &dyn Fn(u32) -> Option<f64>,
+) -> Slot {
+    let slot = if clear_of_all(current, avoid, width_hz(mode)) {
+        Slot {
+            hz: current,
+            power_db: None,
+            his_end: his_end_of(current, his),
+        }
+    } else {
+        quietest_clear(mode, current, avoid, his, &|_| None)
+    };
+    Slot {
+        power_db: power(slot.hz).map(|p| p.round() as i64),
+        ..slot
     }
 }
 
@@ -202,7 +252,8 @@ impl Open {
 pub(crate) struct Waterfall {
     job: Option<(String, u64)>,
     open: Option<Open>,
-    closed: VecDeque<Period>,
+    /// The counted periods of the even and of the odd parity, each oldest first.
+    closed: [VecDeque<Period>; 2],
 }
 impl Waterfall {
     /// One detailed row of live job `job` in the period starting at `start_ms`.
@@ -244,11 +295,16 @@ impl Waterfall {
         open.tx |= tx;
     }
     fn close(&mut self) {
-        if let Some(period) = self.open.take().and_then(|o| o.period()) {
-            if self.closed.len() == PERIODS_KEPT {
-                self.closed.pop_front();
+        let Some(open) = self.open.take() else {
+            return;
+        };
+        if let Some(period) = open.period() {
+            let kept = &mut self.closed
+                [usize::from(open.start_ms.div_euclid(open.period_ms.max(1)) % 2 != 0)];
+            if kept.len() == PERIODS_KEPT {
+                kept.pop_front();
             }
-            self.closed.push_back(period);
+            kept.push_back(period);
         }
     }
     /// The counted periods of `job`, oldest first, with the open one once it has ended at `now_ms`.
@@ -260,7 +316,7 @@ impl Waterfall {
         {
             return Vec::new();
         }
-        let mut out: Vec<Period> = self.closed.iter().cloned().collect();
+        let mut out: Vec<Period> = self.closed.iter().flatten().cloned().collect();
         if let Some(open) = self
             .open
             .as_ref()
@@ -269,19 +325,63 @@ impl Waterfall {
         {
             out.push(open);
         }
+        out.sort_by_key(|p| p.start_ms);
         out
     }
 }
 /// The last PERIODS_PER_PARITY periods of `of` that started at or after `since_ms`.
 pub(crate) fn recent(periods: &[Period], mode: Mode, of: Parity, since_ms: i64) -> Vec<&Period> {
+    last(periods, mode, of, since_ms, PERIODS_PER_PARITY)
+}
+/// The last `n` periods of `of` that started at or after `since_ms`, oldest first.
+fn last(periods: &[Period], mode: Mode, of: Parity, since_ms: i64, n: usize) -> Vec<&Period> {
     let mut out: Vec<&Period> = periods
         .iter()
         .rev()
         .filter(|p| p.start_ms >= since_ms && parity(mode, p.start_ms) == of)
-        .take(PERIODS_PER_PARITY)
+        .take(n)
         .collect();
     out.reverse();
     out
+}
+/// The usual level of a slot at `f` (#39 holdtx, FreeTxSlot "Relative"): its lowest period level
+/// (the mean level of its bins in one counted period) over the last USUAL_PERIODS counted periods
+/// of each parity, fewer where there are fewer. None without a period.
+pub(crate) fn usual_level(periods: &[Period], mode: Mode, since_ms: i64, f: u32) -> Option<f64> {
+    let width = width_hz(mode);
+    [Parity::Even, Parity::Odd]
+        .into_iter()
+        .flat_map(|of| last(periods, mode, of, since_ms, USUAL_PERIODS))
+        .filter_map(|p| slot_power(&[p], f, width))
+        .min_by(f64::total_cmp)
+}
+/// The compared value of a slot at `f` (#39 holdtx, FreeTxSlot): its power now, the mean over the
+/// last PERIODS_PER_PARITY counted periods of my Rx parity `rx`, minus its usual level. While only
+/// `listening` the larger rise of the two parities counts (one parity alone where the other has no
+/// period). None without a counted period of the parity (of either parity while listening).
+pub(crate) fn rise(
+    periods: &[Period],
+    mode: Mode,
+    rx: Parity,
+    since_ms: i64,
+    f: u32,
+    listening: bool,
+) -> Option<f64> {
+    let width = width_hz(mode);
+    let now = |of: Parity| slot_power(&recent(periods, mode, of, since_ms), f, width);
+    let power = if listening {
+        let tx = match rx {
+            Parity::Even => Parity::Odd,
+            Parity::Odd => Parity::Even,
+        };
+        match (now(rx), now(tx)) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (a, b) => a.or(b),
+        }
+    } else {
+        now(rx)
+    }?;
+    Some(power - usual_level(periods, mode, since_ms, f)?)
 }
 /// The power of a slot at `f`: the mean over `periods` of the mean level of the bins in
 /// [f, f + width). None without a period or a bin.

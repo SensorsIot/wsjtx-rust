@@ -750,12 +750,14 @@ fn skew(f: &Mcp, d: Duration) {
     *owner(f).automation.skew.lock().unwrap() = d;
 }
 
-// Proves: CL-039-09; TC-039-010. A plain MCP policy run decides no slot.
+// Proves: CL-039-09; TC-039-010, TC-039-049 (l). A plain MCP policy run decides no slot, with Hold
+// Tx on (the default) as before #39 holdtx.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_010_a_plain_policy_run_keeps_its_tx_on_the_called_station() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
+    assert_eq!(f.read("contact").await["settings"]["hold_tx"], true);
     run(&f, config_json(), "ft8").await;
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-12.0))]);
     let c = f.read("contact").await;

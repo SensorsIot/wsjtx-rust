@@ -126,6 +126,8 @@ pub(crate) struct StatusFacts {
     pub tx_hz: u32,
     /// My Tx period parity.
     pub parity: Parity,
+    /// WstxContact::FrequencyControls holdTx, read by a run at each slot decision (#39 holdtx D5).
+    pub hold_tx: bool,
     pub next_message: Option<String>,
     /// GridExchangeContest (#24 S2a).
     pub activity: contact::Activity,
@@ -362,6 +364,7 @@ impl Station {
             rx_hz: e.settings.rx_hz,
             tx_hz: e.settings.tx_hz,
             parity: e.settings.parity,
+            hold_tx: e.settings.hold_tx,
             next_message: c.and_then(|c| c.messages[c.next.index()].clone()),
             activity: e.settings.activity,
         }
