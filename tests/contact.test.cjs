@@ -504,6 +504,46 @@ test('TC-007-005 Esc during a stale-revision retry aborts at once and nothing fo
   assert.deepEqual(page.errors,[]);
 });
 
+// Proves: CL-010-03, CL-010-15; TC-007-005 (#10). Esc while a Calling me reply's select_row is on its way:
+// the abort goes and no Enable Tx follows it.
+test('TC-007-005 Esc during a Calling me reply sends no Enable Tx after the abort',{timeout:60000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
+  let delayed=false;
+  await page.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());if(!delayed&&b.action==='select_row'){delayed=true;await new Promise(r=>setTimeout(r,800));}await route.continue();});
+  await publish(evenNow(),[{text:'HB9BLA W1XYZ FN42',hz:1650,snr:-6}]);
+  const li=page.locator('#qso-others tr[data-row]').filter({hasText:'W1XYZ'});await li.first().waitFor({timeout:30000});
+  const from=requests.length;await li.first().dblclick();await new Promise(r=>setTimeout(r,200));await page.keyboard.press('Escape');
+  await new Promise(r=>setTimeout(r,4000));await page.unroute('**/contact/command');
+  const actions=requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command').map(r=>JSON.parse(r.body).action),s=await snapshot();
+  if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
+  assert.ok(actions.includes('abort'),`the abort is sent: ${actions}`);
+  assert.deepEqual(actions.slice(actions.indexOf('abort')+1),[],`nothing after the abort: ${actions}`);
+  assert.notEqual(s.transmit.arm_state,'armed','not armed after Esc');
+  await waitFor(async()=>!['replying','calling','report','signoff'].includes((await snapshot()).contact?.state),'idle again',10000);
+  assert.deepEqual(page.errors,[]);
+});
+
+// Proves: CL-010-15; TC-007-005 (#10). CQ pressed while a row's select_row is still unanswered decides on the
+// state after it: the running contact asks before it is abandoned, nothing is armed toward the row first.
+test('TC-007-005 CQ waits for an unanswered selection before it decides',{timeout:60000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot()&&!document.querySelector('#qso-cq').disabled);await new Promise(r=>setTimeout(r,1500));
+  let delayed=false;
+  await page.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());if(!delayed&&b.action==='select_row'){delayed=true;await new Promise(r=>setTimeout(r,800));}await route.continue();});
+  const {sequences}=await publish(evenNow(),[{text:'CQ W1ABC FN42',hz:1888,snr:-5}]);
+  const tr=page.locator(`#band-activity tbody tr[data-sequence="${sequences[0]}"]`);await tr.waitFor({timeout:30000});
+  const from=requests.length;await tr.click();await new Promise(r=>setTimeout(r,400));await page.locator('#qso-cq').click();
+  const asked=await page.locator('#op-confirm[open]').waitFor({timeout:4000}).then(()=>true,()=>false);
+  const actions=requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command').map(r=>JSON.parse(r.body).action);
+  if(asked)await page.locator('#op-confirm button[value=cancel]').click();
+  await page.unroute('**/contact/command');
+  const s=await snapshot();
+  if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
+  assert.ok(asked,`CQ asks before it abandons the selected contact: ${actions}`);
+  assert.equal(actions.includes('enable_tx'),false,`nothing armed toward the row first: ${actions}`);
+  await waitFor(async()=>!['replying','calling','report','signoff'].includes((await snapshot()).contact?.state),'idle again',10000);
+  assert.deepEqual(page.errors,[]);
+});
+
 // Proves: CL-010-15; TC-007-005. A read older than a pushed change does not replace it.
 test('TC-007-005 an older GET /contact does not replace pushed state',{timeout:60000},async()=>{
   const live=await snapshot();const watchdogs=async tx_calls=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};

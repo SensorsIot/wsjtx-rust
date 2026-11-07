@@ -363,7 +363,7 @@ function offerChange(run,call){
 }
 const arm=label=>send('enable_tx',{enabled:true,safety_revision:snap?.transmit.safety_revision??null},label);
 $('qso-cq').addEventListener('click',async()=>{
-  const from=aborts;await settled();const c=snap?.contact;
+  const from=aborts;await sendChain;await settled();const c=snap?.contact;
   if(c?.dx_call&&transmitting(c)){
     if(!await confirmAction(`Abandon the QSO with ${c.dx_call} and call CQ?`,'Call CQ'))return;
     const reply=await send('cancel',{},'Cancel contact');if(!reply||reply.refused)return;
@@ -640,7 +640,7 @@ function rowIdentity(row){
   return {source_id,job_id,generation:Number(generation),sequence};
 }
 async function selectRow(tr){
-  const row=rowIdentity(tr);if(!row)return null;await settled();
+  const row=rowIdentity(tr);if(!row)return null;await sendChain;await settled();
   // #37: during a contact only a row that can start a contact for me offers the change; a foreign
   // QSO's row or a CQ directed elsewhere (the station's refusal, DirectedCqRule) offers nothing.
   const qso=running(snap?.contact);
@@ -765,9 +765,10 @@ function othersShow(){
 }
 function rowOf(context,sequence){const [,,source_id,job_id,generation]=context.split('/');return {source_id,job_id,generation:Number(generation),sequence};}
 async function answerOther(li){
-  const row=JSON.parse(li.dataset.row),qso=li.dataset.qso==='true';
-  const reply=await selectConfirmed(row,qso,qso?'Change contact':'Select station');
-  if(reply?.refused==='contact_active'){offerChange(()=>send('select_row',{row,replace:true,directive_confirmed:true},'Change contact').then(r=>{if(r&&!r.refused&&transmitReady())arm('Reply');}),li.dataset.call);return;}
+  const row=JSON.parse(li.dataset.row),qso=li.dataset.qso==='true',from=aborts;
+  const reply=await selectConfirmed(row,qso,qso?'Change contact':'Select station',from);
+  if(from!==aborts)return;
+  if(reply?.refused==='contact_active'){offerChange(()=>{const confirmed=aborts;return send('select_row',{row,replace:true,directive_confirmed:true},'Change contact').then(r=>{if(r&&!r.refused&&confirmed===aborts&&transmitReady())arm('Reply');});},li.dataset.call);return;}
   if(reply&&!reply.refused&&transmitReady())arm('Reply');
 }
 othersList.addEventListener('mousedown',event=>{const li=secondPress(event,'tr[data-row]');if(li)answerOther(li);});
