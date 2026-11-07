@@ -7,19 +7,9 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {chromium}=require('playwright');
+const {watchPage,tipChange}=require('./page-watch.cjs');
 const origin=process.env.WSTX_PAGE_ORIGIN,control=process.env.WSTX_PAGE_CONTROL;
 const LIVE_STATION_PORT='18081';
-
-// What a page shows must never read like a programming accident (#22, "Latest undefined period").
-const ACCIDENT=/\bundefined\b|\bNaN\b/;
-// A row keeps its tip while it is on screen. The worked-before status joins it once, when the
-// period's one query is answered; nothing else in this test can change a tip (no QSO, no setting).
-const WORKED=/ \(worked [^)]*\)/;
-function tipChange(before,after){
-  if(before===after)return null;
-  const bare=t=>(t??'').replace(WORKED,'');
-  return bare(before)===bare(after)&&!WORKED.test(before??'')?null:`"${before}" -> "${after}"`;
-}
 
 // Proves: CL-057-03; TC-007-002 (#22, live 2026-11-06, "Latest undefined period"): after a real restart with
 // no receive job yet the page shows nothing of the previous boot and no undefined or NaN anywhere.
@@ -33,40 +23,8 @@ test('TC-007-002 TC-050-008 a page kept across a restart and periods shows no ac
   const browser=await chromium.launch();
   try{
     const context=await browser.newContext({viewport:{width:1440,height:900}}),page=await context.newPage();
-    const errors=[],accidents=new Map(),tips=new Map(),changes=[],worked={latest:0,kept:0},commands=[];
     await context.route('**/*',route=>route.request().url().startsWith(origin)?route.continue():route.abort());
-    page.on('pageerror',e=>errors.push(e.message));
-    page.on('request',r=>{if(r.method()!=='GET')commands.push(new URL(r.url()).pathname);});
-    const read=()=>page.evaluate(()=>({
-      text:document.body.innerText,
-      heading:document.querySelector('#band-activity header')?.innerText??'',
-      attributes:[...document.querySelectorAll('[title],[aria-label],[aria-description],[data-tip]')].flatMap(el=>['title','aria-label','aria-description','data-tip'].map(a=>el.getAttribute(a)).filter(Boolean)),
-      rows:[...document.querySelectorAll('#band-activity tbody tr[data-sequence]')].map(row=>({period:row.dataset.period,tip:row.dataset.tip??null,when:row.querySelector('td')?.textContent,message:row.querySelector('td[data-col=message]')?.textContent})),
-      band:typeof operatingState==='undefined'?null:operatingState?.selection?.band??null,on:document.querySelector('#band-activity')?.dataset.hlOn,
-      boot:typeof profileData==='undefined'?null:profileData?.boot_id,
-      state:document.querySelector('#connection')?.dataset.state,
-      job:typeof live==='undefined'?null:live?.job?.id??null,
-    }));
-    const sample=async()=>{
-      const seen=await read();
-      for(const text of [seen.text,...seen.attributes])if(ACCIDENT.test(text)){const line=text.split('\n').find(l=>ACCIDENT.test(l)).trim();accidents.set(line,(accidents.get(line)??0)+1);}
-      for(const row of seen.rows){
-        const key=`${row.when} ${row.message}`,change=tips.has(key)?tipChange(tips.get(key),row.tip):null;
-        if(change)changes.push(`${key} (${row.period}): ${change}`);
-        tips.set(key,row.tip);
-        if(WORKED.test(row.tip??''))worked[row.period==='latest'?'latest':'kept']++;
-      }
-      return seen;
-    };
-    const until=async(what,done,timeout)=>{
-      const deadline=Date.now()+timeout;
-      for(;;){
-        const seen=await sample();
-        if(done(seen))return seen;
-        assert.ok(Date.now()<deadline,`${what}: ${JSON.stringify({changes:changes.slice(0,4),accidents:[...accidents.keys()],heading:seen.heading,state:seen.state,job:seen.job,rows:seen.rows.length,sample:seen.rows.filter(r=>r.tip).slice(0,4),worked,periods:[...new Set(seen.rows.map(r=>r.period))],band:seen.band,on:seen.on})}`);
-        await page.waitForTimeout(500);
-      }
-    };
+    const {sample,until,accidents,changes,worked,errors,commands}=watchPage(page);
     const start=async band=>{
       await page.locator('#operating-band:enabled').waitFor({timeout:30000});
       await page.selectOption('#operating-band',band);
@@ -103,5 +61,27 @@ test('TC-007-002 TC-050-008 a page kept across a restart and periods shows no ac
     assert.deepEqual(errors,[]);
     // Starting receive and the worked-before query, nothing else: no transmit, contact or radio command.
     assert.deepEqual([...new Set(commands)].filter(p=>!['/receive/select','/contact/worked'].includes(p)),[],'commands the page sent');
+  }finally{await browser.close();}
+});
+
+// The oracle itself goes red: a fixture page with the accident and the changed tip it must find.
+test('the page watch fails on undefined and on a changing tip, and passes what may change',{timeout:60000},async()=>{
+  const n='New on 20m',w=`${n} (worked on another band or mode)`;
+  assert.equal(tipChange(n,w),null,'the worked-before status joins once');
+  assert.ok(tipChange(w,n),'#50: it must not go again');
+  assert.ok(tipChange(null,n),'a reason must not appear');
+  assert.equal(tipChange(`New call · Strategy New calls: #2`,`New call · Strategy New calls: #4`),null,'the rank moves with the rows on screen');
+  assert.equal(tipChange(null,'Strategy New calls: #1'),null,'the verdict joins after the evaluation');
+  assert.ok(tipChange(`New call · Strategy New calls: #2`,`Strategy New calls: #2`),'a reason beside the verdict must not go');
+  const browser=await chromium.launch();
+  try{
+    const page=await browser.newPage(),watch=watchPage(page);
+    await page.setContent(`<section id="band-activity"><table><tbody><tr data-sequence="1" data-period="latest" data-tip="${n}"><td>08:00:00</td><td data-col="message">CQ K1ABC FN42</td></tr></tbody></table></section>`);
+    await watch.sample();
+    assert.equal(watch.verdict(),null,'the plain page passes');
+    await page.evaluate(()=>{document.querySelector('tr').dataset.tip='New on undefined';});
+    await watch.sample();
+    assert.match(watch.verdict(),/undefined/);
+    assert.equal(watch.changes.length,1);
   }finally{await browser.close();}
 });

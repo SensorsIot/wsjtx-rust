@@ -505,6 +505,7 @@
   - tests/receive-integration.test.cjs
   - tests/receive-latency.test.cjs
   - tests/receive-page.test.cjs
+  - tests/page-watch.cjs
   - fixtures/radio/native_ft8_fixture.rs
   - fixtures/decoder/
   - server/Cargo.toml
@@ -530,6 +531,7 @@
   - tests/receive-integration.test.cjs
   - tests/receive-latency.test.cjs
   - tests/receive-page.test.cjs
+  - tests/page-watch.cjs
   - fixtures/radio/native_ft8_fixture.rs
   - fixtures/decoder/
   - server/Cargo.toml
