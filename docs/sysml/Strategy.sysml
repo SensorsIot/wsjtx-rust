@@ -2,7 +2,7 @@ package WstxStrategy {
     private import ScalarValues::*;
     doc /* Canonical contract of the strategy engine (issue #39, CL-039-01..11 and CL-039-20..23 in
          WstxRequirements; verification TC-039-001..010, TC-039-020..022, TC-039-030..033 and
-         the strategydef cases TC-039-040..047; the ignore
+         the strategydef cases TC-039-040..048; the ignore
          lists of issue #42, CL-042-02 and TC-042-002..003; Pounce, CL-042-03 and
          TC-042-004..005; Alert, CL-042-04 and TC-042-006..007): the award strategies, the
          directed-CQ rule, the value order in Band Activity, the strategy editor popup and
