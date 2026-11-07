@@ -4247,14 +4247,14 @@ package WstxRequirements {
     dependency CL_039_21_to_FR_008 from 'CL-039-21' to 'FR-008';
     requirement 'CL-039-22' {
         doc /* Mode (operator grill 2026-11-07, Q5, Q11, Q12, Q17, Q29, Q35, Q40). Auto is a toggle above the QSO pane next to CQ, green on and grey off, not part of a strategy, one toggle for strategies and contests; the station owns it in memory: off after a station restart, after HALT from any source and after every run end, and only the browser switches it (POST /strategy/auto; an MCP principal is refused). With Auto off a selected strategy or contest only marks its candidates; switching it on needs a selection and starts the run, and a contest whose rules forbid automatic operation asks the existing warning and needs its confirmation; switching it off ends the run at once; selecting None turns it off, another selection with Auto on starts that one. CQ when no target is a strategy option, off by default: with it on the run calls CQ after 2 publications with no candidate, answers callers (always, D5) and calls a candidate that appears; the Tx watchdog stops its CQ. Details: WstxStrategy::AutoToggle, CqWhenNoTarget, StrategyRun, PskrUse; WstxOperatingLayout::QsoPane. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js";
     }
     dependency CL_039_22_to_FR_007 from 'CL-039-22' to 'FR-007';
     dependency CL_039_22_to_FR_020 from 'CL-039-22' to 'FR-020';
     requirement 'CL-039-23' {
         doc /* Exit (operator grill 2026-11-07, Q6, Q7, Q13-Q16, Q19-Q28). A repetition is a fresh complete publication of the target's parity after an own transmission without progress; any message of the target to my call is progress, also a repeated one, except a selected caller repeating the message it was selected on. Both situations count alike: he repeats, because he does not hear us (decoded, a CQ again or another station), and we repeat, because we do not hear him (not decoded). x, repetitions before leaving, is a strategy setting (default 4) and a contest setting (default 2); a fresh PSK Reporter spot that he hears us doubles it. A strategy run leaves at x (2x); a contest run too, except that in the first situation it stays while he hears us and is still the most valuable. Nothing changes before an exit criterion, even for a more valuable station; a caller of my call (in a contest only a non-dupe caller) is answered at once while the target has not answered, with Callers of my call first on. After every leaving the station gets a quiet time (strategy and contest setting, default 10 min) before it is called or answered again. Unattended or past the run limit x is never doubled and there is no contest stay. A contest dupe caller never ends a stay. Details: WstxStrategy::LeaveRule, QuietTime, StrategyRun; WstxContest::ContestRun. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/automation.rs; server/src/strategy.rs; server/src/contest.rs; server/src/pskr.rs";
     }
     dependency CL_039_23_to_FR_007 from 'CL-039-23' to 'FR-007';
@@ -4266,7 +4266,7 @@ package WstxRequirements {
              Steps: 4 repetitions with: no spot; a spot of my call to K1ABC 60 s old, 590 s old, 601 s old, on 40 m; the spot with Use PSK Reporter off; the spot with the feed off. The quietest slot moving 1400, 1300 between repetitions, and staying tied with the current one. The partner's report after the 2nd repetition, then silent periods. The engine alone: the run's own contact past the watchdog limit, then another contact; a run's CQ at the limit. Unattended (no client 60 s) and past the run limit with the spot: N 2 back at once, also without a publication. A refused move.
              Expected (hand-worked from WstxStrategy::FreeTxSlot): every repetition keyed while the run is attended, tx_expired false. WD (repetitions 4): WD:4, 3, 2, 1, then the leaving; with the spot WD:8 down to 1; in a contest stay (TC-039-044 (c)) WD:∞, and back to a number when the spot ages past 600 s. No spot, 601 s, 40 m, Use off, feed off: Tx and Rx 1400 after the 1st, 1300 after the 2nd, kept when tied, slot_check hears_us false. Heard (60 s, 590 s): Tx stays 1500, hears_us true. After the partner's report Tx never moves again in that exchange. Engine: the run's own contact sends past N; another contact and the run's CQ stop at N (cause tx_watchdog). Unattended: the stop at N back, no further key, stopped no_client or run_limit. A refused move: unchanged, checked again at the next repetition. Manual stop at N: TC-008-001; a pounce stops at N: TC-039-005.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF, no network. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-039-21';
         }
@@ -4342,7 +4342,7 @@ package WstxRequirements {
              Steps: choose on tables: one lowest slot; the current Tx tying the lowest; two lowest without the current Tx, at different distances from it and at equal distances; levels 40.4 and 40.0 (one whole dB, a tie) against 40.6 and 40.0 (no tie); the range edges for FT8 (300..2650) and FT4 (300..2610, width 90); the called station on the quietest slot; his decoded frequencies of my Tx parity and of the other parity near the quietest; his frequencies excluding every candidate; listening only, with one parity quiet and the other loud; no power yet, with the called station on and away from the current Tx. Router: periods of both parities with a quiet band at 1800 Hz only in my Rx parity; the 5th oldest period of the parity quiet at 600 Hz; a period I transmitted in; then a candidate CQ on 1500 Hz; a QSO to its end; a station band change within the job; Hold Tx off; a caller on my slot; a pounce; a plain MCP run.
              Expected (oracle: the operator's rule, hand-computed in the test): that slot; the current Tx kept; the nearer one, then the lower; 40.4 and 40.0 tie and keep the current Tx, 40.6 does not; never outside the range; never within 50 Hz of the called station; his frequency of my Tx parity excludes the slot within 50 Hz and the other parity does not; all excluded: his end ignored, his_end no; listening only: the slot quiet in both; no power: the current Tx kept, or the nearest away from the called station, power_db null. Router: Tx and Rx 1800 before the first call (the 5th period and the transmitted period ignored), tx_slot {hz 1800, power_db 20, his_end unknown}; Tx stays 1800 through the whole QSO; after the band change only the new band's periods count; with Hold Tx off Tx back on its slot; the caller answered from the quietest slot away from it; the pounce calls from the quietest slot; the plain run has tx_slot null and keeps its Tx.
              2 — Isolated automated tests; Windows PC, no radio (wstx-rust, ui-operating suites). */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-09';
         }
@@ -4474,11 +4474,12 @@ package WstxRequirements {
              Steps: (a) K1ABC silent (not decoded) for 5 partner periods. (b) K1ABC calling CQ again each period. (c) As (a) with a spot of my call at K1ABC 60 s old; the same with Use PSK Reporter off. (d) K1ABC answers with -05 after the 2nd repetition and repeats -05 for 6 periods (the #63 fix). (e) A caller W1AW selected, repeating its first call 5 times. (f) A stronger new CQ DL1XYZ from the 2nd repetition on. (g) A caller JA1XYZ at the 2nd repetition; the same with callers_first off; with JA1XYZ in its quiet time; after K1ABC has answered. (h) After (a): K1ABC's CQ alone at 9 min 59 s and at 10 min, and its call to my call at 5 min. (i) repetitions 1. (j) The band changed to 40 m in a stay; a new live identity (FT4); Auto off; HALT.
              Expected (hand-worked from the operator's rule): (a) and (b) armed after 3, disarmed and cancelled at the 4th, left {K1ABC, repetitions}, quiet K1ABC 600 s, waiting; (c) armed after 7, left at the 8th; with Use off left at the 4th; (d) never left during the 6 repeats, unanswered back to 0 at each (red on the parent, which leaves at the calls); (e) left at the 4th; (f) K1ABC kept, DL1XYZ never selected before the 4th, selected at the next step after it; (g) left {K1ABC, caller} at once and JA1XYZ selected from the same publication; callers_first off, in quiet time or after an answer: K1ABC kept; (h) not selected at 9 min 59 s nor answered at 5 min, selected at 10 min; (i) left at the 1st; (j) disarmed and cancelled at the next step, no quiet entry, left null, the run waiting (band, mode) and selecting from the next publication, stopped (Auto off, HALT).
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-23';
             verify 'CL-039-05';
         }
+        attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_039_23_verified_by_TC_039_043 from 'CL-039-23' to 'TC-039-043';
     dependency CL_039_05_verified_by_TC_039_043 from 'CL-039-05' to 'TC-039-043';
@@ -4489,11 +4490,12 @@ package WstxRequirements {
              Steps: (a) K1ABC silent, no spot. (b) K1ABC silent with a spot of my call at K1ABC. (c) K1ABC calling CQ again for 10 periods with the spot; then CQ JA1XYZ PM95 (new multiplier, more points) from the 6th; again with JA1XYZ from the 1st repetition. (d) W1DUP (dupe) calling my call for 8 periods during (c) (the #63 fix). (e) A non-dupe caller K2NEW FN31 at the 1st repetition. (f) Run: CQ, caller K2NEW answered, then silent; K2NEW calling again during its quiet time. (g) Repetitions 3 and quiet_minutes 1 in the selection. (h) The station clock past the period end in a contact; the contest deselected (None) in a contact.
              Expected (hand-worked): (a) left at the 2nd; (b) left at the 4th; (c) stays all 10 with the spot and nothing more valuable; JA1XYZ at the 6th leaves at once and JA1XYZ is selected; JA1XYZ from the 1st: K1ABC kept until the 2nd, then left and JA1XYZ selected; (d) the stay holds, W1DUP never selected or answered (red on the parent, where the dupe ends the stay); (e) left {K1ABC, caller} at once, K2NEW selected; (f) left at the 2nd, calling_cq again, K2NEW not answered while quiet; (g) left at the 3rd, called again after 1 minute; (h) disarmed and cancelled at once, waiting outside_period; stopped, Auto off.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-23';
             verify 'CL-063-05';
         }
+        attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_039_23_verified_by_TC_039_044 from 'CL-039-23' to 'TC-039-044';
     dependency CL_063_05_verified_by_TC_039_044 from 'CL-063-05' to 'TC-039-044';
@@ -4504,10 +4506,11 @@ package WstxRequirements {
              Steps: two publications with nothing callable; a third; W1AW (worked today) calls my call; its QSO to the end; two empty publications; CQ DL1XYZ JO62 while calling CQ; the same strategy with cq_when_no_target false for 6 empty publications; Tx watchdog 2 with an unanswered CQ; no client for 60 s while calling CQ; the slot of the CQ with one parity loud.
              Expected: waiting after the first, calling_cq after the second, armed, Tx6 "CQ HB9BLA JN47"; W1AW answered (a caller, whatever the filter) with select_row {replace false} and Enable Tx kept; completed, then calling_cq again after two empty publications; DL1XYZ selected and called, the CQ ended; off: never a CQ, nothing armed; watchdog 2: stopped tx_watchdog, Auto off, not keyed again; unattended: the CQ disarmed and cancelled at once, stopped no_client; the CQ's slot quiet in both parities.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-22';
         }
+        attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_039_22_verified_by_TC_039_045 from 'CL-039-22' to 'TC-039-045';
     verification 'TC-039-046' {
@@ -4561,12 +4564,13 @@ package WstxRequirements {
              Steps: parse spots with rp -5, -99, 99, absent, 100, "x" and 2.5; spots to K1ABC from other senders at 14075200 Hz with t_tx in an even and in an odd period, twice the same offset in both parities; pskr.json of schema 1, schema 2 with use false, broken; POST /pskr/use {use false} and true, with an extra key, another profile, a stale boot, from the MCP principal; GET /pskr; a pskr.state subscriber; Use off and on during the run, and the subscription of a contest run's target; hearing with the feed connected and no spot, a spot 60 s old with rp -12, 601 s old, the feed not connected, a target call with a slash; the slot with his decoded offset of my Tx parity at the quietest slot, of the other parity there, and none.
              Expected: rp -5, -99 and 99 kept; absent, 100, "x" and 2.5 read as unknown and the spot still counts; offsets [1200] with their parities, the same offset kept once per parity; schema 1 reads use true and is written as schema 2 at the next change, use false read, the broken file reads enabled true and use true with invalid_pskr; use saved and returned by GET /pskr and pskr.state, the refusals 400 invalid_request, 403 wrong_profile, 409 state_conflict boot_id, 401 for MCP; with Use off no target subscription (UNSUBSCRIBE seen) and the run's hearing state unknown, with Use on SUBSCRIBE pskr/filter/v2/+/+/+/K1ABC/# again, also for the contest target; hearing {no, null, null}, {heard, t, -12}, {no}, {unknown}, {unknown}; his_end no when the slot within 50 Hz of his offset of my Tx parity was the only choice and else the next quietest slot with his_end yes, the other parity's offset not excluding, his_end unknown without spots. Red on the parent: rp, use and the parity do not exist.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF, no network. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-20';
             verify 'CL-039-23';
             verify 'CL-039-09';
         }
+        attribute executable : String = "server/src/pskr_tests.rs; server/src/strategy_tests.rs";
     }
     dependency CL_039_20_verified_by_TC_039_048 from 'CL-039-20' to 'TC-039-048';
     dependency CL_039_23_verified_by_TC_039_048 from 'CL-039-23' to 'TC-039-048';
