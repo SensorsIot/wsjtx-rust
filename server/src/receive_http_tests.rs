@@ -277,6 +277,8 @@ struct BusyPeriodInput {
     clock: Option<(Instant, audio::ClockCorrelation, i128)>,
     pushed: u64,
     running: bool,
+    /// The recording repeats this many seconds apart, for 90 s.
+    repeat_seconds: i128,
 }
 #[cfg(all(windows, not(debug_assertions)))]
 impl BusyPeriodInput {
@@ -328,6 +330,7 @@ impl BusyPeriodInput {
             clock: None,
             pushed: 0,
             running: false,
+            repeat_seconds: 30,
         }
     }
 }
@@ -367,9 +370,9 @@ impl SampleSource for BusyPeriodInput {
         let mut bytes = Vec::with_capacity(count * 8);
         for n in self.pushed..self.pushed + count as u64 {
             let at = i128::from(n) - offset;
-            // Three busy periods, 30 s apart.
+            // Busy periods for 90 s: by default three, 30 s apart.
             let at = if (0..90 * 48000).contains(&at) {
-                at % (30 * 48000)
+                at % (self.repeat_seconds * 48000)
             } else {
                 at
             };
@@ -408,6 +411,165 @@ impl recording::LiveInput for BusyPeriodInput {
             retry_after_ms: None,
         }
     }
+}
+
+/// One boot of the page test's station: its own runtime, so that a restart ends every
+/// connection, on the port and profile directory the next boot takes over.
+#[cfg(all(windows, not(debug_assertions)))]
+struct KeptPageBoot {
+    runtime: tokio::runtime::Runtime,
+    recording: Arc<recording::Recording>,
+}
+#[cfg(all(windows, not(debug_assertions)))]
+impl KeptPageBoot {
+    fn start(
+        listener: std::net::TcpListener,
+        dir: &std::path::Path,
+        origin: &str,
+        profile_id: &str,
+    ) -> Self {
+        let boot = profile::new_uuid().unwrap();
+        let (store, _) = profile::Store::open(dir).unwrap();
+        let recording = recording::Recording::open(dir, profile_id.to_owned(), boot.clone());
+        // The busy recording in every FT8 period: each period's rows move to the kept period.
+        // Two, because the page starts receive twice: the second start raises the generation
+        // above the new boot's 0, as any band change on the running station does.
+        let inputs = (0..2)
+            .map(|_| {
+                let mut input =
+                    BusyPeriodInput::load(Arc::new(std::sync::atomic::AtomicU64::new(0)));
+                input.repeat_seconds = 15;
+                Box::new(input) as Box<dyn recording::LiveInput>
+            })
+            .collect();
+        recording.fixture_inputs(inputs);
+        let app = App {
+            origin: origin.to_owned(),
+            profile: Some(Arc::new(ProfileState {
+                store: Mutex::new(store),
+                authorization: Mutex::new(None),
+                boot,
+                recording: recording.clone(),
+                logbook: Arc::new(crate::logbook::Logbook::open(dir)),
+            })),
+            profile_id: Some(profile_id.to_owned()),
+            token: None,
+            connections: Arc::new(Semaphore::new(16)),
+            login_attempts: Arc::new(Mutex::new((Instant::now(), 0))),
+        };
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.spawn(async move {
+            listener.set_nonblocking(true).unwrap();
+            let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+            axum::serve(listener, router(app)).await.unwrap();
+        });
+        Self { runtime, recording }
+    }
+    fn stop(self) {
+        let snapshot = self.recording.receive_snapshot();
+        if let Some(id) = snapshot["job"]["id"].as_str() {
+            let _ = self.recording.receive_stop(
+                &self.recording.profile,
+                &self.recording.boot,
+                snapshot["generation"].as_u64().unwrap(),
+                id,
+            );
+        }
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while self.recording.receive_snapshot()["audio"]["state"] != "closed"
+            && Instant::now() < deadline
+        {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        self.runtime.shutdown_background();
+    }
+}
+
+// Proves: CL-057-03; TC-007-002 (#22). Proves: CL-050-08; TC-050-008 (#50). One page across a
+// restart and busy periods through the actual live source, modem, HTTP and browser; the driver
+// tests/receive-page.test.cjs holds the oracle. The process stays, because native capture can
+// only be injected in-process; the listener, all connections, the receive owner and the boot go.
+#[cfg(all(windows, not(debug_assertions)))]
+#[test]
+fn live_native_page_kept_across_restart() {
+    let dir = std::env::temp_dir().join(format!("wstx-page-{}", profile::new_uuid().unwrap()));
+    std::fs::create_dir(&dir).unwrap();
+    let listener = crate::test_ports::first_allowed(
+        || std::net::TcpListener::bind("127.0.0.1:0").unwrap(),
+        |l| l.local_addr().unwrap().port(),
+    );
+    let address = listener.local_addr().unwrap();
+    let origin = format!("http://{address}");
+    let profile_id = profile::new_uuid().unwrap();
+    let doc = json!({"schema_version":1,"profile_id":profile_id,"revision":0,"display_name":"Kept page fixture",
+        "callsign":"HB9BLA","locator":"JN37VL","endpoint":{"bind":address.to_string(),"origin":null},"connection_type":"standard",
+        "audio":{"input_device":"explicit-test-native-input","output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
+    std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
+    // Senders of websdr_test7.wav (fixtures/decoder/jt9-deep-reference.json), worked on another
+    // band: their rows carry "New on 20m (worked on another band or mode)".
+    let adi: String = ["F5RRS", "OM7AZA", "SP9DLY", "S56ECR", "DJ0AH"]
+        .iter()
+        .map(|call| {
+            format!(
+                "<call:{}>{call} <band:3>40m <mode:3>FT8 <qso_date:8>20261031 <time_on:6>123000 <app_wstxrust_contact_id:36>{} <eor>\n",
+                call.len(),
+                profile::new_uuid().unwrap()
+            )
+        })
+        .collect();
+    std::fs::write(dir.join(crate::logbook::FILE_NAME), adi).unwrap();
+    let mut boot = KeptPageBoot::start(listener, &dir, &origin, &profile_id);
+    let control = dir.join("page-control");
+    std::fs::create_dir(&control).unwrap();
+    let output = std::fs::File::create(control.join("node.log")).unwrap();
+    let mut node = std::process::Command::new("node")
+        .args(["--test", "tests/receive-page.test.cjs"])
+        .current_dir(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap(),
+        )
+        .env("WSTX_PAGE_ORIGIN", &origin)
+        .env("WSTX_PAGE_CONTROL", &control)
+        .stdout(output.try_clone().unwrap())
+        .stderr(output)
+        .spawn()
+        .unwrap();
+    let mut restarted = false;
+    let status = loop {
+        if let Some(status) = node.try_wait().unwrap() {
+            break status;
+        }
+        if !restarted && control.join("restart").exists() {
+            restarted = true;
+            boot.stop();
+            // Down long enough for the page to see it, as a station restart is.
+            std::thread::sleep(Duration::from_secs(4));
+            let deadline = Instant::now() + Duration::from_secs(20);
+            let listener = loop {
+                match std::net::TcpListener::bind(address) {
+                    Ok(listener) => break listener,
+                    Err(e) => {
+                        assert!(Instant::now() < deadline, "rebinding {address}: {e}");
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                }
+            };
+            std::fs::write(control.join("restarted"), "").unwrap();
+            boot = KeptPageBoot::start(listener, &dir, &origin, &profile_id);
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let log = std::fs::read_to_string(control.join("node.log")).unwrap();
+    boot.stop();
+    std::fs::remove_dir_all(dir).unwrap();
+    assert!(status.success(), "{log}");
+    assert!(restarted, "the driver never asked for the restart\n{log}");
+    println!("{log}");
 }
 
 // Proves: CL-057-01, CL-057-02; TC-057-001, TC-057-002 (#57). Busy FT8 periods through the

@@ -132,6 +132,12 @@ runs in `radio-selection-thin`, the other selection tests in `radio-selection`. 
 complement includes future names instead of silently omitting them. No test assertion,
 budget or test case is removed by selection.
 
+The **live page check** (`.harness/deploy/live-page-check.ps1`, harness#38 item 3) is in no
+suite: it needs the installed station and one real restart. It runs on HB9BLA at live
+acceptance (CR step 6) of a change to `client/`, the receive, recording or logbook owners or
+`tests/page-watch.cjs`, receive only, and restarts the station only while nothing is armed,
+keyed, in a contact or an automation run. `live-station-browser` gates the same oracle in-process.
+
 Measurements run only when the change touches time-critical code (harness#28). Every
 timing, latency, cadence or throughput promise lives in a **timing suite** (`timing: true`:
 `protocol-thin`, `recording-thin`, `radio-selection-thin`, `contact-thin`, `live-station-latency`,
