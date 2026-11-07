@@ -425,6 +425,28 @@ test('TC-007-005 contact state is pushed: only what changed, no GET /contact',{t
   assert.deepEqual(page.errors,[]);
 });
 
+// Proves: CL-010-15; TC-007-005 (#10 PushedStationState). An own contact command reads no GET /contact:
+// the reply shows accepted or the refusal, contact.state carries the result, and two commands in a row
+// both pass (the second waits for the first one's revision). Expected values: the command semantics.
+test('TC-007-005 an own contact command reads no GET /contact; a refusal still shows its code',{timeout:60000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
+  const from=performance.now(),gets=()=>requests.filter(r=>r.method==='GET'&&r.path==='/contact'&&r.at>=from).length;
+  const hold=await page.evaluate(()=>window.wstxContact.snapshot().settings.hold_tx);
+  // Two changes back to back: the second goes with the first one's revision, from contact.state.
+  await page.locator('#contact-hold').click();await page.locator('#contact-hold').click();
+  await waitFor(async()=>commands().filter(c=>c.action==='set_hold_tx').length>=2&&/Hold Tx: accepted|^$/.test(await page.locator('#contact-result').textContent())&&await page.evaluate(()=>!document.querySelector('#contact-result').textContent.includes('pending')),'both Hold Tx commands answered',10000);
+  const sent=commands().filter(c=>c.action==='set_hold_tx').slice(-2);
+  assert.ok(sent[1].contact_revision>sent[0].contact_revision,`the second command has the first one's revision (${sent.map(c=>c.contact_revision)})`);
+  assert.equal((await snapshot()).settings.hold_tx,hold,'both applied: back where it was');
+  await waitFor(async()=>await page.evaluate(h=>window.wstxContact.snapshot().settings.hold_tx===h,hold),'the page holds the result',5000);
+  // A refusal: Tx at 2951 Hz is out of range; its code is shown and nothing is read.
+  await page.locator('#contact-tx').fill('2951');await page.locator('#contact-tx').press('Enter');await page.locator('#contact-tx').blur();
+  await waitFor(async()=>/refused · out_of_range/.test(await page.locator('#contact-result').textContent()),async()=>`result: ${await page.locator('#contact-result').textContent()}`,8000);
+  await new Promise(r=>setTimeout(r,2000));
+  assert.equal(gets(),0,'no GET /contact after an own command');
+  assert.deepEqual(page.errors,[]);
+});
+
 // Proves: CL-010-15; TC-007-005. A read older than a pushed change does not replace it.
 test('TC-007-005 an older GET /contact does not replace pushed state',{timeout:60000},async()=>{
   const live=await snapshot();const watchdogs=async tx_calls=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};

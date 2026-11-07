@@ -63,9 +63,9 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
     page.on('response',x=>{const e=x.request().__e;if(e)e.status=x.status();});
     page.on('requestfinished',r=>{if(r.__e){r.__e.end=performance.now();r.sizes().then(z=>{r.__e.bytes=z.responseBodySize+z.responseHeadersSize;}).catch(()=>{});}});
     page.on('requestfailed',r=>{if(r.__e){r.__e.end=performance.now();r.__e.failed=r.failure()?.errorText??'failed';}});
-    page.on('websocket',ws=>{
+    page.on('websocket',ws=>{let receiveEvents=0;
       ws.on('framesent',f=>{try{const m=JSON.parse(f.payload);s.sent.push({at:performance.now(),type:m.type});}catch{s.sent.push({at:performance.now(),type:'binary'});}});
-      ws.on('framereceived',f=>{let m;try{m=JSON.parse(f.payload);}catch{return;}const at=performance.now(),bytes=Buffer.byteLength(f.payload);s.frames.push({at,type:m.type,bytes});
+      ws.on('framereceived',f=>{let m;try{m=JSON.parse(f.payload);}catch{return;}const at=performance.now(),bytes=Buffer.byteLength(f.payload);s.frames.push({at,type:m.type,bytes,...(m.type==='receive.state'?{nth:++receiveEvents,keys:Object.keys(m.data??{})}:{})});
         if(['transmit.state','receive.state','contact.state'].includes(m.type))s.events.push({at,type:m.type});
         if(m.type==='station.tick')s.ticks.push({at,bytes,utc:m.data.utc_ms,transmitting:m.data.transmitting});
         else if(m.type==='contact.state')s.states.push({at,bytes,revision:m.data.contact_revision});});
@@ -237,6 +237,13 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
   assert.equal(latencies.length,28);
   for(const [i,c]of thin.entries()){
     bound(c.worked.length===0,`client ${i}: ${c.worked.length} worked-before queries`);
+    // Only what changed: after a socket's first receive.state the station's audio and clock (unchanged here) stay out.
+    const later=between(seen[i].frames,start,end).filter(f=>f.type==='receive.state'&&f.nth>1);
+    bound(later.length>0&&later.every(f=>!f.keys.includes('audio')&&!f.keys.includes('clock')),`client ${i}: later receive.state keys ${JSON.stringify([...new Set(later.map(f=>f.keys.join()))])}`);
+    // An own contact command reads no GET /contact: its reply and contact.state carry the result.
+    const inWindow=between(seen[i].requests,start,end),own=inWindow.filter(r=>r.method==='POST'&&r.path==='/contact/command'),after=inWindow.filter(r=>r.method==='GET'&&r.path==='/contact'&&own.some(o=>r.at>=o.at&&r.at-o.at<=6000));
+    bound(i!==0||own.length>=2,`client 0: ${own.length} contact commands in the Thin window`);
+    bound(after.length===0,`client ${i}: ${after.length} GET /contact after its own command`);
     bound((c.routes['GET /receive']??0)===0,`client ${i}: ${c.routes['GET /receive']} GET /receive: receive.state carries it`);
     bound(c.maxPendingContactGets<=1,`client ${i}: ${c.maxPendingContactGets} GET /contact pending`);
     // Thin: one tick per 5 s plus at most one per transmit start/stop (three transmissions).

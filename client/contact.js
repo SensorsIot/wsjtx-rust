@@ -99,7 +99,7 @@ async function fetchSnapshot(){
     const response=await stationFetch('/contact',{cache:'no-store',signal:AbortSignal.timeout(10000)});
     contactMissing=response.status===404;
     // #51: a contact snapshot this page cannot validate shows the reload chip.
-    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence)){snap=value;render();}}
+    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence)){snap=value;render();}heldWake();}
   }catch{}
 }
 // WstxContact::ContactStateEvent (#10): show what recording.js holds from the station's events,
@@ -108,7 +108,13 @@ function stateShow(){
   const view=contactHeld;if(!view)return;
   window.wstxStationData?.('contact',valid(view));
   if(valid(view)){stationSample(view.utc_ms);if(!snap||snap.boot_id!==view.boot_id||view.snapshot_sequence>=snap.snapshot_sequence){snap=view;render();}}
+  heldWake();
 }
+// #10 PushedStationState: an accepted command's result comes in contact.state; the next command
+// waits for the revision of its receipt there. Only a receipt that does not come in time reads GET /contact.
+let heldWaiters=[];
+function heldWake(){heldWaiters=heldWaiters.filter(w=>{if(snap&&snap.boot_id===w.boot&&snap.contact_revision>=w.revision){w.resolve(true);return false;}return true;});}
+function held(boot,revision,ms=5000){return new Promise(resolve=>{const w={boot,revision,resolve};heldWaiters.push(w);heldWake();setTimeout(()=>{if(heldWaiters.includes(w)){heldWaiters=heldWaiters.filter(x=>x!==w);resolve(false);}},ms);});}
 const ids=()=>snap&&{v:1,profile_id:snap.profile_id,boot_id:snap.boot_id};
 // Commands are sent one at a time, each with the revision of the latest snapshot.
 let sendChain=Promise.resolve();
@@ -116,17 +122,18 @@ function send(...args){const run=sendChain.then(()=>sendNow(...args));sendChain=
 async function sendNow(action,params={},label=action){
   if(!snap){resultText.textContent='Contact state unavailable';return null;}
   const body={...ids(),command_id:crypto.randomUUID(),contact_revision:snap.contact_revision,action,...params},before=running(snap.contact);
-  resultText.textContent=`${label}: pending · waiting for the station`;sending=true;
+  resultText.textContent=`${label}: pending · waiting for the station`;sending=true;let receipt=null,refused=false;
   try{
     const response=await stationFetch('/contact/command',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
     const data=await response.json().catch(()=>null);
-    if(response.status===202||response.status===200){resultText.textContent=`${label}: accepted`;return data;}
-    const code=data?.error?.code??`http_${response.status}`;
+    if((response.status===202||response.status===200)&&Number.isSafeInteger(data?.contact_revision)){resultText.textContent=`${label}: accepted`;receipt=data;return data;}
+    const code=data?.error?.code??`http_${response.status}`;refused=!!data?.error?.code;
     resultText.textContent=`${label}: refused · ${code}${code==='stale_revision'?' · station state changed, review and retry':''}`;
     return {refused:code,reason:data?.error?.reason};
   }catch(error){resultText.textContent=`${label}: outcome unknown · ${error.message}`;return null;}
+  // The receipt's revision comes in contact.state; a refusal changed nothing; an unknown outcome is read.
   // A command that ended the QSO (Log QSO) leaves no accepted result in the idle pane.
-  finally{sending=false;await load();if(before&&!running(snap?.contact)&&/: accepted$/.test(resultText.textContent))resultText.textContent='';}
+  finally{sending=false;if(receipt?(!await held(body.boot_id,receipt.contact_revision)):!refused)await load();if(before&&!running(snap?.contact)&&/: accepted$/.test(resultText.textContent))resultText.textContent='';}
 }
 // The keyboard halt itself (Alt+H) is sent by recording.js, which is loaded at once;
 // this client only shows its outcome.

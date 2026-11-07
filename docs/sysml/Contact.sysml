@@ -1413,9 +1413,11 @@ package WstxContact {
              lacks: all rows when an earlier row changed; rows over the frame budget follow
              on the next tick. The always-loaded browser client holds the snapshot from these
              events from the socket's first on, so a contact client loading later misses
-             none, and shows a snapshot_sequence not older than its own; it reads GET /contact once per socket and after
-             its own command, whose next command needs the revision at once, with one
-             pending GET per browser. It is not a StatusReply:
+             none, and shows a snapshot_sequence not older than its own; it reads GET /contact once per socket, with one
+             pending GET per browser. After its own command it shows the command's reply
+             (accepted, or the refusal with its code) and reads nothing: the next command
+             waits until a contact.state holds the receipt's contact_revision, and only when
+             none does within 5 s, or the outcome is unknown, it reads GET /contact (#10). It is not a StatusReply:
              station.status stays exactly {v,type,id,data{version,radio}}. Control and
              status keep priority over it as over optional visualization. */
     }

@@ -825,9 +825,10 @@ addEventListener('station-ready',event=>receiveReady(event.detail));
 addEventListener('station-stale',()=>{lastReceiveReady=null;receiveShow();receiveStatus.textContent='Disconnected · live receive data stale';});
 addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;resultsAnnounced=performance.now();
   // WstxRecordingReceive: the event carries the job's progress and the audio; GET /receive only for a new identity or state.
-  const e=message.data,carried=live?.job&&e?.job&&e.audio&&e.boot_id===live.boot_id&&e.generation===live.generation&&e.job_id===live.job.id&&e.state===live.job.state&&e.source_id===(live.source?.id??null);
-  const held=carried&&{...live,audio:e.audio,clock:{...live.clock,...e.clock},job:{...live.job,...e.job}};
-  let shown=false;if(carried&&!mutationPending&&!uncertainMutation&&validLiveSnapshot(held)){try{live=held;liveEventAt=performance.now();liveOperatingRevision=operatingState?.operating_revision??null;applyLatestDecode(e.job.latest_decode,e.job.first_sequence);receiveFailure='';stationData('receive',true);liveFailed=false;receiveShow();show();shown=true;}catch{}}
+  // After a socket's first event it holds the identity and only the audio, clock and job fields that changed.
+  const e=message.data,carried=live?.job&&e&&e.boot_id===live.boot_id&&e.generation===live.generation&&e.job_id===live.job.id&&e.state===live.job.state&&e.source_id===(live.source?.id??null)&&Object.keys(e).every(k=>['profile_id','boot_id','generation','source_id','job_id','state','audio','clock','job'].includes(k));
+  const held=carried&&{...live,audio:e.audio??live.audio,clock:{...live.clock,...e.clock},job:{...live.job,...e.job}};
+  let shown=false;if(carried&&!mutationPending&&!uncertainMutation&&validLiveSnapshot(held)){try{live=held;liveEventAt=performance.now();liveOperatingRevision=operatingState?.operating_revision??null;if(e.job&&('latest_decode' in e.job||'first_sequence' in e.job))applyLatestDecode(held.job.latest_decode,held.job.first_sequence);receiveFailure='';stationData('receive',true);liveFailed=false;receiveShow();show();shown=true;}catch{}}
   if(!shown)receiveSync(current);else if(resultsDue())receiveResults();
   const d=message.data;if(snapshot&&d&&(d.generation!==snapshot.generation||d.job_id!==(snapshot.job?.id??null)||d.state!==(snapshot.job?.state??null)))sync(current);});
 setInterval(receiveResults,250);

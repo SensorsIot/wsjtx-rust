@@ -1146,6 +1146,7 @@ async fn connection(
     let mut receive_tick = interval(Duration::from_secs(2));
     receive_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut receive_seen = Value::Null;
+    let mut receive_sent = Value::Null;
     // #57 CL-057-01: a Detailed peer is told of each new or grown decode view at once; Thin
     // and Off keep the 2 s receive tick that their link budget is measured with.
     let mut publication = recording.as_ref().map(|r| r.publication.subscribe());
@@ -1223,8 +1224,9 @@ async fn connection(
                 // The countdown of an audio retry alone is no change to announce.
                 let mut key=data.clone();key["audio"]["retry_after_ms"]=Value::Null;
                 if notify && key!=receive_seen {
-                    if !send_control(&mut socket,Message::Text(json!({"v":1,"type":"receive.state","data":data}).to_string().into()),optional_since).await {break "receive.state write";}
-                    optional_since=None;receive_seen=key;
+                    let event=receive_http::receive_state_delta(&receive_sent,&data);
+                    if !send_control(&mut socket,Message::Text(json!({"v":1,"type":"receive.state","data":event}).to_string().into()),optional_since).await {break "receive.state write";}
+                    optional_since=None;receive_seen=key;receive_sent=data;
                 }
             }
             _ = contact_tick.tick(), if subscribed && recording.as_ref().is_some_and(|r| r.contact.get().is_some()) => {

@@ -632,7 +632,9 @@ when idle, audio as in GET /receive, clock exactly
 `{correlated,utc_anchor,canonical_anchor_frame,uncertainty_ns}` and job exactly
 `{error,first_sequence,next_sequence,available_count,last_overrun,latest_decode}`, at most
 2020 bytes, which fits the 4096-byte write buffer beside a pending 2048-byte optional write. It
-is sent when any of these changes, not for the countdown of retry_after_ms alone. The browser accepts it like a read for
+is sent when any of these changes, not for the countdown of retry_after_ms alone. A socket's
+first event and one of a new identity hold every field; a later one the identity and only
+the audio, clock and job fields that changed (job by its keys). The browser accepts it like a read for
 the identity and job state it holds; only a new identity or job state or a refused event
 causes a GET /receive read. Otherwise it reads GET /receive once per socket, on a saved
 profile revision or boot change, after its own mutation and, on a later status of the socket,

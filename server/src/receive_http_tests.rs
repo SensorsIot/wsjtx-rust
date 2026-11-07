@@ -916,3 +916,43 @@ fn receive_state_of_the_largest_snapshot_fits_the_event_bound() {
     );
     assert!(data.get("source").is_none(), "a frame carries next_frame");
 }
+
+// Proves: CL-010-15; TC-007-005 (#10): after a socket's first receive.state only what changed goes,
+// beside the identity; a new receive identity goes whole. Hand-written before and after values.
+#[test]
+fn receive_state_after_the_first_holds_only_what_changed() {
+    let a = json!({"profile_id":"p","boot_id":"b","generation":3,"source_id":"s","job_id":"j","state":"running",
+        "audio":{"state":"running","retry_after_ms":null},"clock":{"correlated":true},
+        "job":{"error":null,"first_sequence":0,"next_sequence":5,"available_count":5,"last_overrun":null,"latest_decode":{"id":1}}});
+    assert_eq!(
+        receive_http::receive_state_delta(&Value::Null, &a),
+        a,
+        "the first event holds every field"
+    );
+    let mut b = a.clone();
+    b["job"]["next_sequence"] = json!(9);
+    b["job"]["available_count"] = json!(9);
+    b["job"]["latest_decode"] = json!({"id":2});
+    assert_eq!(
+        receive_http::receive_state_delta(&a, &b),
+        json!({"profile_id":"p","boot_id":"b","generation":3,"source_id":"s","job_id":"j","state":"running",
+            "job":{"next_sequence":9,"available_count":9,"latest_decode":{"id":2}}}),
+        "a new period: the identity and the job counters only"
+    );
+    let mut c = b.clone();
+    c["audio"]["state"] = json!("closing");
+    c["state"] = json!("cancelling");
+    assert_eq!(
+        receive_http::receive_state_delta(&b, &c),
+        json!({"profile_id":"p","boot_id":"b","generation":3,"source_id":"s","job_id":"j","state":"cancelling",
+            "audio":{"state":"closing","retry_after_ms":null}}),
+        "a job state and the audio"
+    );
+    let mut d = c.clone();
+    d["job_id"] = json!("k");
+    assert_eq!(
+        receive_http::receive_state_delta(&c, &d),
+        d,
+        "a new identity goes whole"
+    );
+}
