@@ -12,5 +12,5 @@ Filesystem path relative to this entrypoint: `../../../harness/core/skills/confo
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=8186e56f9ead75b780e2eefabd6d16f3c143b95586007e5b7c6c015d76dbee4b -->
-<!-- harness-forwarder-v1 sha256=1d6c02b9d8d83967e24ad1b4ec835b588367262d44be826f44bce97efda90396 -->
+<!-- canonical-source-sha256=a3fee996afc17f17a42bb471ab3f5924ab4dae2097d28c5e0fd7fb150f225c8f -->
+<!-- harness-forwarder-v1 sha256=bc27f52083b168232bfae55c7f85d7a04484ca618f016b2126b1c652305f11d5 -->
