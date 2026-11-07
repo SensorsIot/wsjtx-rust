@@ -17,7 +17,7 @@ TOOL = os.path.join(HERE, "radio-preflight.ps1")
 
 
 def prelude(log, raw="00 26", running=True, ptt="released", contact="idle", open_fails=False, comes_back=True,
-            stops_after=0, write="takes", reads_answered=99):
+            stops_after=0, write="takes", reads_answered=99, ctrl_c_exit=0):
     """The fake radio holds `raw` in 14 0A (None: it never answers) and acknowledges a write:
     `takes` FB and stored, `ignored` FB and not stored, `refused` FA, `silent` no reply and not
     stored. It answers the first `reads_answered` reads. `log` receives what reached the system."""
@@ -36,7 +36,7 @@ function Get-CimInstance {{ param($ClassName,$Filter)
 function Start-Process {{ param($FilePath,$ArgumentList,$WindowStyle,[switch]$PassThru,[switch]$Wait)
   Note 'ctrl-c'
   if ({stops_after} -gt 0) {{ $global:DownAt = [DateTime]::UtcNow.AddSeconds({stops_after}) }} else {{ $global:Up = $false }}
-  [pscustomobject]@{{ExitCode=0}} }}
+  [pscustomobject]@{{ExitCode={ctrl_c_exit}}} }}
 function Stop-ScheduledTask {{ param($TaskName,$ErrorAction) Note 'task-stop' }}
 function Get-ScheduledTask {{ param($TaskName) [pscustomobject]@{{State='Ready'}} }}
 function Start-ScheduledTask {{ param($TaskName)
@@ -255,10 +255,12 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         self.assertNotIn("task-start ignored: still running", self.system(), out)
         self.assertNotIn("THE STATION IS DOWN", out)
 
-    def test_a_station_that_never_stops_is_said_loudly(self):
-        rc, out = self.preflight(raw="00 03", stops_after=600)
+    def test_a_station_that_never_stops_is_said_to_run_with_the_helpers_exit_code(self):
+        rc, out = self.preflight(raw="00 03", stops_after=600, ctrl_c_exit=3)
         self.assertEqual(rc, 2, out)
-        self.assertIn("THE STATION IS DOWN", out)
+        self.assertIn("it still runs, state unknown, check it", out)
+        self.assertIn("helper exit 3", out)
+        self.assertNotIn("THE STATION IS DOWN", out, "it is up: the statement would be false")
         self.assertNotIn("task-start", self.system())
 
     def test_a_contact_or_ptt_leaves_the_station_alone(self):

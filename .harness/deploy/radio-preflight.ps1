@@ -81,6 +81,7 @@ function Station-InUse {
 }
 function Stop-Station($process) {
   $rc = Send-CtrlC ([int]$process.ProcessId)
+  $script:CtrlCExit = $rc
   $deadline = (Now).AddSeconds(12)
   while (@(Station-Procs).Count -gt 0 -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 200 }
   if (@(Station-Procs).Count -gt 0) { throw "the station did not stop on Ctrl+C (helper exit $rc)" }
@@ -94,12 +95,13 @@ function Settle-Task {
   Start-Sleep -Milliseconds 800
 }
 function Start-Station {
-  # A stop that outlasted Stop-Station's deadline is still under way: Ctrl+C has gone out, and a
-  # start now would be ignored by the running task and leave the station down when it exits.
+  # A stop that outlasted Stop-Station's deadline may still be under way, and a start now would be
+  # ignored by the running task and leave the station down when it exits. Ctrl+C may also never
+  # have reached it (the helper's exit code says), so a station that stays up is not called down.
   if (@(Station-Procs).Count -gt 0) {
     $deadline = (Now).AddSeconds(20)
     while (@(Station-Procs).Count -gt 0 -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 200 }
-    if (@(Station-Procs).Count -gt 0) { throw 'it still runs 32 s after Ctrl+C and was not restarted: treat it as down' }
+    if (@(Station-Procs).Count -gt 0) { $script:StillRuns = $true; throw "it still runs, state unknown, check it: 32 s after Ctrl+C (helper exit $script:CtrlCExit), not restarted" }
     Settle-Task
   }
   Start-ScheduledTask -TaskName $TaskName
@@ -189,7 +191,7 @@ try {
   }
   if ($taken) { Finish 3 'BUSY' "another live writer holds the lease: $($taken.holder) until $($taken.expires); a contact on the station may be theirs" }
 
-  $code = 2; $word = 'ERROR'; $why = ''; $raw = $null; $stopped = $false; $script:OldRaw = $null; $script:Written = $false
+  $code = 2; $word = 'ERROR'; $why = ''; $raw = $null; $stopped = $false; $script:OldRaw = $null; $script:Written = $false; $script:CtrlCExit = 'not run'; $script:StillRuns = $false
   try {
     $updating = $false
     try { ([IO.File]::Open((Join-Path $Station 'logs\update.lock'), 'OpenOrCreate', 'ReadWrite', 'None')).Dispose() }
@@ -206,7 +208,7 @@ try {
     }
   } catch { $why = "cannot set RF power: $($_.Exception.Message)" }
   try { if ($stopped) { Start-Station } }
-  catch { $code = 2; $word = 'ERROR'; $raw = $null; $why = "$why; THE STATION IS DOWN: $($_.Exception.Message)" }
+  catch { $code = 2; $word = 'ERROR'; $raw = $null; $why = if ($script:StillRuns) { "$why; THE STATION: $($_.Exception.Message)" } else { "$why; THE STATION IS DOWN: $($_.Exception.Message)" } }
 
   if ($null -ne $raw) {
     $shown = '{0:D4} ({1:F1} %)' -f $raw, ($raw * 100.0 / 255)
