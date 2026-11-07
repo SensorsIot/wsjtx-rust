@@ -1,14 +1,12 @@
 # Radio preflight before any agent Tx (harness retrospective 2026-11-06; wsjtx-rust#44 comment
 # 6683921947: 8 Tx periods and 2 Set level runs went out at about 10 W under a 1 W authorization).
 #   radio-preflight.ps1 -Holder <run name> [-Minutes 30]    take the lease, read RF power, judge it
-#   radio-preflight.ps1 -Holder <run name> -Attended        the same for a short attended test
 #   radio-preflight.ps1 -Status                             who holds the lease
 #   radio-preflight.ps1 -Release -Holder <run name>         give the lease back
 # An agent runs it before it keys and keys only on exit 0, while its lease is live. It writes
-# nothing to the radio. Exit 0: PREFLIGHT PASS, or PREFLIGHT WARN for a short attended test above
-# the authorization (operator 2026-11-06: "If they are short, nobody will complain"). Exit 1:
-# PREFLIGHT REFUSED, an unattended run with RF power above the authorization
-# (.harness/deploy/radio-authorization.json). Exit 2: PREFLIGHT ERROR, it could
+# nothing to the radio. Exit 0: PREFLIGHT PASS. Exit 1: PREFLIGHT REFUSED, RF power above the
+# authorization (.harness/deploy/radio-authorization.json), with no override: only the operator
+# changes that file. Exit 2: PREFLIGHT ERROR, it could
 # not read, so nothing is shown safe. Exit 3: PREFLIGHT BUSY, another live writer holds the
 # lease, or the station is in use: the station was not stopped.
 #
@@ -17,10 +15,9 @@
 # alone while PTT is keyed or a contact runs: such a contact may be the operator's. The old value
 # is printed and recorded in <git common dir>/harness-parallel/radio/preflight.jsonl beside the
 # lease (lease.json), so every worktree of the repository sees them.
-param([string]$Holder, [int]$Minutes = 30, [switch]$Attended, [switch]$Status, [switch]$Release,
+param([string]$Holder, [int]$Minutes = 30, [switch]$Status, [switch]$Release,
       [string]$StateDir, [string]$Station, [string]$AgentClient,
-      [string]$TaskName = 'WSTX Rust Station HB9BLA',
-      [string]$Authorization = (Join-Path $PSScriptRoot 'radio-authorization.json'))
+      [string]$TaskName = 'WSTX Rust Station HB9BLA')
 $ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest
 
 function Now { [DateTime]::UtcNow }
@@ -84,13 +81,24 @@ function Stop-Station($process) {
   $deadline = (Now).AddSeconds(12)
   while (@(Station-Procs).Count -gt 0 -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 200 }
   if (@(Station-Procs).Count -gt 0) { throw "the station did not stop on Ctrl+C (helper exit $rc)" }
-  # The task's launcher outlives the process for a moment; the next start must not race it.
+  Settle-Task
+}
+# The task's launcher outlives the process for a moment; the next start must not race it.
+function Settle-Task {
   try { Stop-ScheduledTask -TaskName $TaskName -ErrorAction Stop } catch { Write-Output "note: Stop-ScheduledTask: $($_.Exception.Message)" }
   $deadline = (Now).AddSeconds(10)
   while ((Get-ScheduledTask -TaskName $TaskName).State -eq 'Running' -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 200 }
   Start-Sleep -Milliseconds 800
 }
 function Start-Station {
+  # A stop that outlasted Stop-Station's deadline is still under way: Ctrl+C has gone out, and a
+  # start now would be ignored by the running task and leave the station down when it exits.
+  if (@(Station-Procs).Count -gt 0) {
+    $deadline = (Now).AddSeconds(20)
+    while (@(Station-Procs).Count -gt 0 -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+    if (@(Station-Procs).Count -gt 0) { throw 'it still runs 32 s after Ctrl+C and was not restarted: treat it as down' }
+    Settle-Task
+  }
   Start-ScheduledTask -TaskName $TaskName
   $deadline = (Now).AddSeconds(40)
   while (@(Station-Procs).Count -eq 0 -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 200 }
@@ -131,13 +139,15 @@ try {
     if ($released) { Write-Output "lease: released by $Holder"; exit 0 }
     Finish 3 'BUSY' "the lease is not $Holder's"
   }
-  $config = [IO.File]::ReadAllText($Authorization) | ConvertFrom-Json
+  $config = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'radio-authorization.json')) | ConvertFrom-Json
   $limit = [int]$config.rf_power_max_bcd
 
   # Before the station is touched: a second live writer stops here, and learns whose run it is.
+  $held = $null
   $taken = With-LeaseLock {
     $l = Read-Lease
     if ($l -and $l.holder -ne $Holder) { return $l }
+    $script:held = $l
     Write-Lease ([pscustomobject]@{ holder = $Holder; acquired = (Iso (Now)); expires = (Iso (Now).AddMinutes($Minutes)) })
     $null
   }
@@ -155,7 +165,7 @@ try {
     if ($busy) {
       $code = 3; $word = 'BUSY'; $why = "the station is in use and was not stopped: $busy"
     } else {
-      if ($procs.Count -eq 1) { Stop-Station $procs[0]; $stopped = $true }
+      if ($procs.Count -eq 1) { $stopped = $true; Stop-Station $procs[0] }
       $raw = Read-RfPower $config
     }
   } catch { $why = "cannot read RF power: $($_.Exception.Message)" }
@@ -164,17 +174,23 @@ try {
 
   if ($null -ne $raw) {
     $shown = '{0:D4} ({1:F1} %)' -f $raw, ($raw * 100.0 / 255)
-    if ($raw -gt $limit -and $Attended) {
-      $code = 0; $word = 'WARN'; $why = "RF power reads $shown, above the authorized $('{0:D4}' -f $limit) ($($config.authorized_watts) W). Short attended test only. Lease: $Holder for $Minutes min."
-    } elseif ($raw -gt $limit) {
+    if ($raw -gt $limit) {
       $code = 1; $word = 'REFUSED'; $why = "RF power reads $shown, above the authorized $('{0:D4}' -f $limit) ($($config.authorized_watts) W). Do not key. Raise it with the operator; this tool writes nothing."
     } else {
       $code = 0; $word = 'PASS'; $why = "RF power reads $shown, authorized up to $('{0:D4}' -f $limit) ($($config.authorized_watts) W). Lease: $Holder for $Minutes min."
     }
   }
   Record ([ordered]@{ time = (Iso (Now)); holder = $Holder; rf_power_bcd = $raw; limit_bcd = $limit; verdict = $word; station_stopped = $stopped; why = $why })
-  # Only exit 0 keeps the lease: nobody keys on any other result.
-  if ($code -ne 0) { With-LeaseLock { $l = Read-Lease; if ($l -and $l.holder -eq $Holder) { Remove-Item -LiteralPath (Join-Path $StateDir 'lease.json') } } }
+  # Nobody keys on a result but exit 0, so only that takes or renews the lease. BUSY says nothing
+  # about the power: a lease this holder already had, for its own contact, stays as it was.
+  if ($code -ne 0) {
+    With-LeaseLock {
+      $l = Read-Lease
+      if ($l -and $l.holder -eq $Holder) {
+        if ($code -eq 3 -and $script:held) { Write-Lease $script:held } else { Remove-Item -LiteralPath (Join-Path $StateDir 'lease.json') }
+      }
+    }
+  }
   Finish $code $word $why
 } catch {
   Finish 2 'ERROR' "$($_.Exception.GetType().Name): $($_.Exception.Message)"

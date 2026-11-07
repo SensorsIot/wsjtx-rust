@@ -16,7 +16,7 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOL = os.path.join(HERE, "radio-preflight.ps1")
 
 
-def prelude(log, raw="00 26", running=True, ptt="released", contact="idle", open_fails=False, comes_back=True):
+def prelude(log, raw="00 26", running=True, ptt="released", contact="idle", open_fails=False, comes_back=True, stops_after=0):
     """The fake radio answers 14 0A with `raw`; `log` receives what reached the system."""
     reply = "" if raw is None else f"0xFE,0xFE,0xE0,0x94,0x14,0x0A,0x{raw[:2]},0x{raw[3:]},0xFD"
     return f"""
@@ -24,13 +24,18 @@ $global:Log = {pwsh.ps_quote(log)}
 function Note($t) {{ Add-Content -LiteralPath $global:Log -Value $t }}
 $global:Up = ${running}
 $global:Started = $false
+$global:DownAt = $null
 function Get-CimInstance {{ param($ClassName,$Filter)
+  if ($global:DownAt -and [DateTime]::UtcNow -ge $global:DownAt) {{ $global:Up = $false; $global:DownAt = $null }}
   if ($global:Up) {{ [pscustomobject]@{{ProcessId=4242; ExecutablePath=(Join-Path $env:FAKE_STATION 'abc\\wstx-rust.exe')}} }} }}
 function Start-Process {{ param($FilePath,$ArgumentList,$WindowStyle,[switch]$PassThru,[switch]$Wait)
-  Note 'ctrl-c'; $global:Up = $false; [pscustomobject]@{{ExitCode=0}} }}
+  Note 'ctrl-c'
+  if ({stops_after} -gt 0) {{ $global:DownAt = [DateTime]::UtcNow.AddSeconds({stops_after}) }} else {{ $global:Up = $false }}
+  [pscustomobject]@{{ExitCode=0}} }}
 function Stop-ScheduledTask {{ param($TaskName,$ErrorAction) Note 'task-stop' }}
 function Get-ScheduledTask {{ param($TaskName) [pscustomobject]@{{State='Ready'}} }}
-function Start-ScheduledTask {{ param($TaskName) Note 'task-start'; $global:Up = ${comes_back} }}
+function Start-ScheduledTask {{ param($TaskName)
+  if (@(Get-CimInstance).Count -gt 0) {{ Note 'task-start ignored: still running' }} else {{ Note 'task-start'; $global:Up = ${comes_back} }} }}
 function New-Object {{ param($TypeName, [Parameter(ValueFromRemainingArguments=$true)]$Rest)
   if ($TypeName -ne 'System.IO.Ports.SerialPort') {{ return Microsoft.PowerShell.Utility\\New-Object $TypeName @Rest }}
   $p = [pscustomobject]@{{DtrEnable=$true; RtsEnable=$true; ReadTimeout=0; WriteTimeout=0; IsOpen=$false; Queue=$null}}
@@ -99,19 +104,20 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         self.assertEqual((record["rf_power_bcd"], record["verdict"], record["holder"]), (26, "REFUSED", "cr44-a"))
         self.assertEqual(self.lease(), "lease: free", "a refusal keeps no lease")
 
-    def test_a_short_attended_test_at_0026_warns_records_and_keeps_the_lease(self):
-        rc, out = self.run_tool("-Holder", "cr44-a", "-Attended", raw="00 26")
-        self.assertEqual(rc, 0, out)
-        self.assertIn("PREFLIGHT WARN", out)
-        self.assertIn("0026 (10.2 %)", out)
-        self.assertEqual(self.records()[-1]["verdict"], "WARN")
-        self.assertIn("held by cr44-a", self.lease())
-
-    def test_attended_changes_nothing_at_or_below_the_authorization_or_without_a_read(self):
-        rc, out = self.run_tool("-Holder", "cr44-a", "-Attended", raw="00 03")
-        self.assertEqual(rc, 0, out)
-        self.assertIn("PREFLIGHT PASS", out)
-        self.assertEqual(self.run_tool("-Holder", "cr44-a", "-Attended", raw=None)[0], 2)
+    def test_full_power_is_refused_and_no_flag_gets_past_the_limit(self):
+        rc, out = self.preflight(raw="02 55")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("PREFLIGHT REFUSED", out)
+        self.assertEqual(self.lease(), "lease: free")
+        other = os.path.join(self.tmp.name, "wide-open.json")
+        with open(other, "w", encoding="utf-8") as f:
+            json.dump({"port": "COM3", "baud": 9600, "rf_power_max_bcd": 255, "authorized_watts": 100}, f)
+        # The script has no CmdletBinding, so PowerShell ignores a flag it does not declare.
+        for flag in (["-Attended"], ["-Authorization", other]):
+            rc, out = self.run_tool("-Holder", "cr44-a", *flag, raw="02 55")
+            self.assertEqual(rc, 1, f"{flag}: {out}")
+            self.assertIn("PREFLIGHT REFUSED", out, flag)
+            self.assertEqual(self.lease(), "lease: free", flag)
 
     def test_refuses_just_above_and_passes_at_the_authorized_value(self):
         self.assertEqual(self.preflight(raw="00 04")[0], 1)
@@ -160,6 +166,21 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         self.assertEqual(rc, 2, out)
         self.assertIn("THE STATION IS DOWN", out)
 
+    def test_a_stop_slower_than_its_deadline_still_brings_the_station_back(self):
+        # Ctrl+C has gone out: the station exits 13 s later, after the 12 s deadline.
+        rc, out = self.preflight(raw="00 03", stops_after=13)
+        self.assertEqual(rc, 2, out)
+        self.assertIn("did not stop on Ctrl+C", out)
+        self.assertIn("task-start", self.system(), out)
+        self.assertNotIn("task-start ignored: still running", self.system(), out)
+        self.assertNotIn("THE STATION IS DOWN", out)
+
+    def test_a_station_that_never_stops_is_said_loudly(self):
+        rc, out = self.preflight(raw="00 03", stops_after=600)
+        self.assertEqual(rc, 2, out)
+        self.assertIn("THE STATION IS DOWN", out)
+        self.assertNotIn("task-start", self.system())
+
     def test_a_contact_or_ptt_leaves_the_station_alone(self):
         for client in ({"contact": "report"}, {"ptt": "asserted"}, {"broken": True}):
             self.set_client(**client)
@@ -189,6 +210,26 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         self.assertEqual(self.run_tool("-Release", "-Holder", "cr44-a")[0], 0)
         self.assertEqual(self.lease(), "lease: free")
         self.assertEqual(self.preflight("cr55-b", raw="00 03")[0], 0)
+
+    def test_a_holder_refused_as_busy_keeps_its_lease_as_it_was(self):
+        self.assertEqual(self.preflight("cr44-a", raw="00 03")[0], 0)
+        before = self.lease()
+        self.set_client(contact="report")
+        rc, out = self.run_tool("-Holder", "cr44-a", "-Minutes", "240", raw="00 03")
+        self.assertEqual(rc, 3, out)
+        self.assertEqual(self.lease(), before, "its own contact runs: neither dropped nor extended")
+        self.assertEqual(self.preflight("cr55-b", raw="00 03")[0], 3, "a second writer stays out")
+
+    def test_a_new_writer_refused_as_busy_holds_no_lease(self):
+        self.set_client(contact="report")
+        self.assertEqual(self.preflight("cr44-a", raw="00 03")[0], 3)
+        self.assertEqual(self.lease(), "lease: free")
+
+    def test_a_holder_whose_renewal_is_refused_or_unread_loses_its_lease(self):
+        for raw, code in (("00 26", 1), (None, 2)):
+            self.assertEqual(self.preflight("cr44-a", raw="00 03")[0], 0)
+            self.assertEqual(self.preflight("cr44-a", raw=raw)[0], code)
+            self.assertEqual(self.lease(), "lease: free", raw)
 
     def test_an_expired_lease_is_free(self):
         os.makedirs(self.state)

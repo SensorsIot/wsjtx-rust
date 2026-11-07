@@ -28,8 +28,12 @@ verify their availability in the actual agent environment before starting work.
   `.harness/deploy/radio-preflight.ps1 -Holder <run>` and keys only on exit 0, under its lease**
   (`-Status`, `-Release`). It stops an idle station gracefully for the CI-V read, because the
   station holds COM3, starts it again, and records the value; it writes nothing to the radio.
-  Above the authorization it refuses an unattended run; a short attended test adds `-Attended`
-  and is warned instead. A contact you did not start, seen while another run's lease is live,
+  Above the authorization it refuses, with no override: do not key, and report it to the
+  supervisor. The power is lowered only on the supervisor's go-ahead under the #44 write consent
+  (read, write, read back, record the old value, restore it afterwards); otherwise the test
+  waits. Because it restarts the station, do not run it while the operator is operating, unless
+  agreed: it sees only PTT and a contact, not someone watching Band Activity.
+  A contact you did not start, seen while another run's lease is live,
   is that run's. The station itself does not check this.
 - Function test before review ([CR process](../../harness/core/docs/CR-Process.md), step 2): a
   few short transmissions on a development build need no prior review (operator 2026-11-06: "If
