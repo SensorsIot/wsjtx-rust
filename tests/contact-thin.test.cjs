@@ -101,8 +101,13 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
   // ---- Detailed: station.tick once per second per client, and the worked-before status of a
   // period of 71 distinct CQ callers with no query (Detailed fetches a published view at once;
   // Thin and Off read at most one record per 4 s, CL-057-01).
+  // The window starts on two connected Detailed peers: the reload's contact.js (43 kB, 11-15 s of the shared
+  // link) can hold the other client's Ping past the station's 15 s, and that socket then comes back first.
+  // Such a close stays recorded in serverSocketCloses; the Thin window below runs with no asset on the link.
   for(const p of pages)await display(p,'detail');
   await sleep(3000);
+  await Promise.all(pages.map(p=>p.locator('#connection[data-state=connected]').waitFor({timeout:60000})));
+  await sleep(2000);
   {const start=performance.now(),wall0=Date.now();
     await publish(Math.floor(Date.now()/15000)*15000-15000,cqs(0,71));
     await waitUntil(start+15000);const wall1=Date.now();
