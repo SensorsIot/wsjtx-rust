@@ -6232,9 +6232,18 @@ async fn tc_039_043_band_mode_auto_off_and_halt_end_the_contact_at_once() {
 /// A contest run with Auto on (WW Digi, 20 m, the period in force, W1DUP a dupe in the log,
 /// repetitions 2, quiet_minutes 10 unless `edit` changes them), the feed attached.
 async fn contest_leaving(operation: &str, edit: impl FnOnce(&mut Value)) -> Leaving {
+    contest_leaving_with(operation, edit, |_, _| {}).await
+}
+/// `contest_leaving` with `before` run before the selection (waterfall rows for the CQ's slot).
+async fn contest_leaving_with(
+    operation: &str,
+    edit: impl FnOnce(&mut Value),
+    before: impl FnOnce(&Mcp, i64),
+) -> Leaving {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
+    before(&f, e);
     let client = f.state.recording.clients.session();
     f.state.recording.fixture_band("20m");
     import_adi(&f, &logged_before("W1DUP", "EM12", e));
@@ -6359,18 +6368,47 @@ async fn tc_039_044_a_contest_caller_is_answered_at_once() {
     );
 }
 
-// Proves: TC-039-044 (f), (g). Run: the caller K2NEW answered from the CQ and then silent is left at
-// the 2nd, the run calls CQ again and does not answer K2NEW in its quiet time. Repetitions 3 and
-// quiet_minutes 1 from the selection: left at the 3rd, answered again after 1 minute.
+/// Even periods quiet at 1800 Hz (10 dB), both parities 25 dB at 900 Hz, odd loud at 1800: a CQ,
+/// quiet in both, takes 900; a call by my Rx parity alone would take 1800.
+fn cq_rows(f: &Mcp, e: i64) {
+    for k in 0..4 {
+        wf_row(
+            f,
+            rep(e, k) - 120_000,
+            40,
+            &[(1800, 1850, 10), (900, 950, 25)],
+            false,
+        );
+        wf_row(
+            f,
+            rep(e, k) - 105_000,
+            40,
+            &[(1800, 1850, 60), (900, 950, 25)],
+            false,
+        );
+    }
+}
+
+// Proves: TC-039-044 (f), (g). Run: the caller K2NEW is answered from the CQ's slot (900 stays, not
+// the quietest of my Rx parity), then silent it is left at the 2nd, the run calls CQ again and does
+// not answer K2NEW in its quiet time. Repetitions 3 and quiet_minutes 1 from the selection: left at
+// the 3rd, answered again after 1 minute.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_044_run_leaves_a_silent_caller_and_keeps_it_quiet() {
     let k2 = ("HB9BLA K2NEW FN31", 1200.0, Some(-8.0));
-    let t = contest_leaving("run", |_| {}).await;
+    let t = contest_leaving_with("run", |_| {}, cq_rows).await;
     let (f, e) = (&t.f, t.e);
     assert_eq!(run_of(f).await["state"], "calling_cq");
+    assert_eq!(frequencies(f).await.1, json!(900), "the CQ's slot");
     publish(f, e, &[k2]);
     assert_eq!(contact(f).await.0, json!("K2NEW"));
     assert_eq!(contact(f).await.2, json!("armed"));
+    let s = frequencies(f).await;
+    assert_eq!(
+        (s.0, s.1),
+        (json!(900), json!(900)),
+        "answered from the CQ's slot"
+    );
     publish(f, rep(e, 1), &[]);
     assert_eq!(contact(f).await.2, json!("armed"));
     publish(f, rep(e, 2), &[]);
@@ -7004,4 +7042,67 @@ async fn tc_039_022_wd_is_infinite_in_a_contest_stay_and_a_number_after_the_spot
     assert_eq!(run_of(f).await["hearing"]["state"], "unknown");
     publish(f, rep(e, 3), &[K1ABC_WW]);
     assert_eq!(contact(f).await.2, json!("disarmed"));
+}
+
+// Proves: TC-039-045. A caller is answered from the CQ's slot: the CQ on 900 (quiet in both
+// parities), a caller at 1200 Hz keeps Tx and Rx on 900 (not the quietest of my Rx parity, 1800);
+// a caller at 920 Hz, within 50 Hz of the slot, moves Tx and Rx to the nearest candidate away
+// from it: 820 (my 50 Hz signal 50 Hz below its 920..970).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_045_a_caller_is_answered_from_the_cqs_slot() {
+    for (hz, expected) in [(1200.0, 900), (920.0, 820)] {
+        let t = casual(true).await;
+        let (f, e) = (&t.f, t.e);
+        cq_rows(f, e);
+        publish(f, e, &[]);
+        publish(f, rep(e, 1), &[]);
+        assert_eq!(run_of(f).await["state"], "calling_cq");
+        assert_eq!(frequencies(f).await.1, json!(900), "the CQ's slot");
+        publish(f, rep(e, 2), &[("HB9BLA DL1XYZ JO62", hz, Some(-10.0))]);
+        assert_eq!(contact(f).await.0, json!("DL1XYZ"));
+        let s = frequencies(f).await;
+        assert_eq!(
+            (s.0, s.1),
+            (json!(expected), json!(expected)),
+            "caller at {hz}"
+        );
+        assert_eq!(s.2["hz"], json!(expected));
+    }
+}
+
+// Proves: TC-039-042. With Auto off a selection only marks: a pounce armed on K1ABC keeps running
+// and armed when the browser selects "Test calls"; Auto on then ends it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_042_a_selection_with_auto_off_leaves_a_pounce_running() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    assert_eq!(pounce(&f, "K1ABC", 5).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-5.0))]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    save(&f, config(Some("Test calls"))).await;
+    f.tick();
+    assert_eq!(
+        f.browser("GET", "/strategy", None).await.json["auto"],
+        false
+    );
+    assert_eq!(run_state(&f).await, ("contact_active".into(), Value::Null));
+    assert_eq!(f.read("automation").await["run"]["pounce"]["call"], "K1ABC");
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    // Auto on: the operator wins over the pounce.
+    assert_eq!(auto(&f, true, None).await.status, StatusCode::OK);
+    f.tick();
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(
+        (run["state"].clone(), run["pounce"].clone()),
+        (json!("waiting"), Value::Null)
+    );
 }
