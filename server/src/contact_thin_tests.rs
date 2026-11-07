@@ -200,6 +200,16 @@ async fn contact_thin_link_two_clients() {
             }
         })
     };
+    // The running waterfall of the live job: one Thin row per second; a Thin peer gets one per 2 s.
+    let waterfall = {
+        let state = state.clone();
+        tokio::spawn(async move {
+            for sequence in 0.. {
+                state.recording.fixture_thin_row(sequence);
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        })
+    };
     child.stdin.as_mut().unwrap().write_all(b"READY\n").unwrap();
     drop(child.stdin.take());
     let outcome = tokio::task::spawn_blocking(move || {
@@ -221,6 +231,7 @@ async fn contact_thin_link_two_clients() {
     .await
     .unwrap();
     ticker.abort();
+    waterfall.abort();
     service.abort();
     control_service.abort();
     let keys = bench.keys.lock().unwrap().len();

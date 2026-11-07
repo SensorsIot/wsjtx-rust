@@ -2220,11 +2220,11 @@ test('TC-007-005 receive.state carries the job and the audio; only a new state, 
   }});
   await page.waitForFunction(id=>live?.job?.id===id,state.job.id,{timeout:25000});await page.waitForFunction(()=>!livePending);
   const event=async(job,change={},wait=true)=>{const data={profile_id:state.profile_id,boot_id:state.boot_id,generation:state.generation,source_id:state.source.id,job_id:state.job.id,state:state.job.state,audio:state.audio,clock:{correlated:state.clock.correlated,utc_anchor:state.clock.utc_anchor,canonical_anchor_frame:state.clock.canonical_anchor_frame,uncertainty_ns:state.clock.uncertainty_ns},job:{error:null,first_sequence:0,next_sequence:0,available_count:0,last_overrun:null,latest_decode:null,...job},...change};
-    await page.evaluate(data=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',fixture:true,data}}})),data);await page.waitForTimeout(100);if(wait)await page.waitForFunction(()=>!livePending);};
+    const fetching=await page.evaluate(data=>{dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',fixture:true,data}}}));return resultPending;},data);await page.waitForTimeout(100);if(wait)await page.waitForFunction(()=>!livePending);return fetching;};
   const settled=reads.length;
   // Progress and audio are carried: the rows follow from the result reads, with no GET /receive.
   state.job={...state.job,next_sequence:1,available_count:1,latest_decode:decode(1)};
-  await event({next_sequence:1,available_count:1,latest_decode:decode(1)},{audio:{...state.audio,loss_epochs:1,last_loss:'stalled'}});
+  assert.equal(await event({next_sequence:1,available_count:1,latest_decode:decode(1)},{audio:{...state.audio,loss_epochs:1,last_loss:'stalled'}}),true,'Detailed fetches the announced view at once, not at the next 250 ms check (CL-057-01)');
   await page.locator('tr[data-sequence="0"]').waitFor({timeout:10000});
   assert.deepEqual(await page.evaluate(()=>[live.job.next_sequence,live.audio.loss_epochs]),[1,1]);
   assert.match(await page.locator('#receive-status').textContent(),/1 audio loss restart \(last stalled\)/,'the carried audio is shown');
@@ -2253,8 +2253,14 @@ test('TC-007-005 receive.state carries the job and the audio; only a new state, 
   await event({next_sequence:2,available_count:2,latest_decode:decode(2)});
   assert.equal(reads.length,before+1,'an event during an unknown outcome reads GET /receive once');
   assert.equal(await page.evaluate(()=>uncertainMutation),false);
-  // A failed read: the next status reads again, the one after it no more.
+  // A failed read followed by an event: the event holds the state, nothing says otherwise.
   await page.unroute('**/receive');await page.route('**/receive',route=>route.abort(),{times:1});
+  await page.evaluate(()=>receiveSync());await page.waitForFunction(()=>liveFailed);
+  assert.match(await page.locator('#receive-status').textContent(),/Live receive unavailable/);
+  await event({next_sequence:2,available_count:2,latest_decode:decode(2)});
+  assert.doesNotMatch(await page.locator('#receive-status').textContent(),/Live receive unavailable/,'a carried event ends the failed read');
+  // A failed read: the next status reads again, the one after it no more.
+  await page.route('**/receive',route=>route.abort(),{times:1});
   await page.evaluate(()=>receiveSync());await page.waitForFunction(()=>liveFailed);
   await page.route('**/receive',route=>route.fulfill({json:state}));
   before=reads.length;await refreshStatus(page);await page.waitForFunction(()=>!liveFailed);
@@ -3478,6 +3484,9 @@ test('TC-061-001 an audio loss epoch keeps the waterfall and Band Activity; a St
     state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
     state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
     publish(1,periods[0],2);
+    // The load's two reads with /receive answering first; only the fixture's receive.state, a running page reads no GET /receive.
+    await page.addInitScript(()=>addEventListener('station-message',e=>{const m=e.detail.message;if((m.type==='receive.state'&&m.fixture!==true)||(m.type==='selection.state'&&!window.__liveHeld))e.stopImmediatePropagation();}));
+    await page.route('**/receive/selection',async route=>{await page.waitForFunction(()=>!!live);await page.evaluate(()=>{window.__liveHeld=true;});await route.continue();});
     await page.route('**/recording',async route=>{const json=await(await route.fetch()).json();await route.fulfill({json:{...json,generation:state.generation,job:{id:state.job.id,source_id:state.source.id,generation:state.generation,kind:'live',state:'running',processed_frames:0,error:null}}});});
     await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
     await page.route('**/receive/results?*',async route=>{
@@ -3490,7 +3499,9 @@ test('TC-061-001 an audio loss epoch keeps the waterfall and Band Activity; a St
   const waterfall=()=>page.evaluate(()=>rows.map(r=>[r.sequence,r.levels?r.levels[0]:null]));
   const level=q=>Array.from({length:1024},()=>q);
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2&&window.wstxRenderHistory);
-  publish(2,periods[1],1);await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>operatingState!==null);
+  const {first_sequence,next_sequence,available_count,latest_decode}=(publish(2,periods[1],1),state.job);
+  await page.evaluate(data=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',fixture:true,data}}})),{profile_id:state.profile_id,boot_id:state.boot_id,generation:state.generation,source_id:state.source.id,job_id:state.job.id,state:state.job.state,audio:state.audio,clock:{correlated:true,utc_anchor:state.clock.utc_anchor,canonical_anchor_frame:0,uncertainty_ns:500},job:{error:null,first_sequence,next_sequence,available_count,last_overrun:null,latest_decode}});
   await page.waitForFunction(()=>resultView?.id===2&&document.querySelectorAll('tr[data-period=latest]').length===1);
   await liveFrames(page,[0,1,2,3].map(sequence=>({sequence,levels:level(10*(sequence+1))})));
   assert.deepEqual(await waterfall(),[[0,10],[1,20],[2,30],[3,40]]);

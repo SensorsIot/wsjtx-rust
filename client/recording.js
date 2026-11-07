@@ -508,7 +508,7 @@ let operatingHeld=null,operatingHeldSocket=null;
 let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 
 // Mutations supersede earlier reads; accepted snapshots supersede pending pages.
-let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null;
+let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null,liveEventAt=-Infinity;
 let lastReceiveReady=null;
 let activitySortProfile=null,activitySortField='value',activitySortDirection='desc';
 const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsUnread=()=>resultFailed||liveFailed||resultsAnnounced!==null||(!!resultView&&resultCursor<resultView.next_sequence)||(Number.isSafeInteger(live?.job?.next_sequence)&&live.job.next_sequence>resultCursor)||(!!live?.job?.latest_decode&&live.job.latest_decode.id!==resultView?.id);const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
@@ -586,13 +586,13 @@ function receiveShow(){
 async function receiveSync(current=socket){
   if(current!==socket||connection.dataset.state!=='connected')return;
   if(livePending){liveAgain=receiveMutationEpoch;return;}livePending=true;
-  const epoch=receiveMutationEpoch,authEpoch=authorization?.snapshot().epoch;
+  const epoch=receiveMutationEpoch,authEpoch=authorization?.snapshot().epoch,started=performance.now();
   try{
     const data=await request('/receive');
     if(!stationContext(current,authEpoch)||epoch!==receiveMutationEpoch)return;
     if(!validLiveSnapshot(data)){stationData('receive',false);throw new Error('Invalid receive snapshot');}stationData('receive',true);
     if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||(data.boot_id===live?.boot_id&&data.generation<live.generation))return;// a new boot counts its generations from 0
-    if(liveIdentity(data)===liveIdentity(live)&&data.job&&live.job.next_sequence>data.job.next_sequence)return;// older than a receive.state already taken
+    if(liveIdentity(data)===liveIdentity(live)&&started<liveEventAt)return;// may be older than a receive.state already taken
     if(liveIdentity(data)!==liveIdentity(live)){
       const carry=lossEpoch(data);activityHistory=carry?[...(resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[]),...activityHistory].slice(0,2):[];
       resultRows=[];resultView=null;resultCursor=data.job?.first_sequence??0;historyIncomplete=false;if(carry)keepWaterfall();else if(data.job||live?.job){rows=[];resetLevels();paint();}
@@ -827,8 +827,8 @@ addEventListener('station-message',event=>{const {current,message}=event.detail;
   // WstxRecordingReceive: the event carries the job's progress and the audio; GET /receive only for a new identity or state.
   const e=message.data,carried=live?.job&&e?.job&&e.audio&&e.boot_id===live.boot_id&&e.generation===live.generation&&e.job_id===live.job.id&&e.state===live.job.state&&e.source_id===(live.source?.id??null);
   const held=carried&&{...live,audio:e.audio,clock:{...live.clock,...e.clock},job:{...live.job,...e.job}};
-  let shown=false;if(carried&&!mutationPending&&!uncertainMutation&&validLiveSnapshot(held)){try{live=held;applyLatestDecode(e.job.latest_decode,e.job.first_sequence);liveFailed=false;receiveShow();show();shown=true;}catch{}}
-  if(!shown)receiveSync(current);
+  let shown=false;if(carried&&!mutationPending&&!uncertainMutation&&validLiveSnapshot(held)){try{live=held;liveEventAt=performance.now();liveOperatingRevision=operatingState?.operating_revision??null;applyLatestDecode(e.job.latest_decode,e.job.first_sequence);receiveFailure='';stationData('receive',true);liveFailed=false;receiveShow();show();shown=true;}catch{}}
+  if(!shown)receiveSync(current);else if(resultsDue())receiveResults();
   const d=message.data;if(snapshot&&d&&(d.generation!==snapshot.generation||d.job_id!==(snapshot.job?.id??null)||d.state!==(snapshot.job?.state??null)))sync(current);});
 setInterval(receiveResults,250);
 if(socket?.readyState===WebSocket.OPEN&&profileData)receiveReady(socket);// this script came after the socket's first status

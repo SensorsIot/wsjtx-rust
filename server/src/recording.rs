@@ -825,6 +825,23 @@ impl Recording {
         self.sync_transmit_mode();
         (source_id, id, generation)
     }
+    /// Test seam: one Thin spectrum row of the live job, shaped as the receive worker's:
+    /// 128 levels of two digits, a frame of about 620 bytes.
+    #[cfg(test)]
+    pub(crate) fn fixture_thin_row(&self, sequence: u64) {
+        let mut s = self.state.lock().unwrap();
+        let Some(job) = s.job.as_ref() else { return };
+        let (first, end) = (sequence * 12000, (sequence + 1) * 12000);
+        let levels: Vec<u64> = (0..128)
+            .map(|bin| 40 + (sequence * 7 + bin * 13) % 50)
+            .collect();
+        let frame = json!({"v":1,"type":"spectrum.frame","data":{"boot_id":self.boot,"source_id":job.source_id,"job_id":job.id,
+            "generation":job.generation,"sequence":sequence,"first_frame":first,"end_frame":end,"levels":levels}});
+        s.frame = Some(frame);
+        if let Some(l) = s.live.as_mut() {
+            l.next_frame = end;
+        }
+    }
     /// Test seam: publishes one period of fixture records (sequence assigned here) and
     /// its latest-decode descriptor. Returns the assigned sequences.
     #[cfg(test)]

@@ -109,7 +109,7 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `contact-browser` | Contact engine, QSO sequencing, logging and halt through the browser | Router, contact/logbook/transmit owners, contact/logbook/recording clients, contact test |
 | `radio-selection` | H1 compression negotiation, commissioning, browser selection cases | Router, compression, selection/radio/CAT/receive/source owners, status and recording clients, selection test |
 | `radio-selection-thin` | Timing: the 75 s native/CAT/TLS two-browser Thin and Off workload | Timing inputs: router, compression, selection/CAT/receive/source/audio/spectrum owners, status and recording clients, its Rust and browser test files and link helpers |
-| `contact-thin` | Timing: TC-007-005 two browsers on the 32 kbit/s link with contact, log, status and presentation traffic | Timing inputs: router, compression, contact/log/transmit/receive/selection HTTP owners, status, recording, contact and logbook clients, the test and the link simulator |
+| `contact-thin` | Timing: TC-007-005 two browsers on the 32 kbit/s link with contact, log, status and presentation traffic | Timing inputs: router, compression, recording, selection and log owners, contact/log/transmit/receive/selection HTTP owners, every client asset, the test and the link simulator |
 | `native-flex` | FR-023 native FlexRadio against the loopback emulator: route isolation, reconciliation, capacity, mixed profiles, push-only status | Native session and status (`flex/`, `flex_http.rs`), router, authorization, profile, radio setup, recording, receive, selection and startup owners, page, recording and contact clients, its test and emulator |
 | `mcp` | MCP client grant and refusals | Router, MCP/automation/authorization owners, authorization client, MCP test and credential helper |
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, plus Node package metadata |
@@ -147,8 +147,8 @@ clients (`app.js`, `index.html`, `recording.js`, `recording.css`) for the two ot
 because those assets cross the 32 kbit/s link cold (the #55 cold-load red came from a
 client-only change); the recording/spectrum producers for `recording-thin`; the
 selection, CAT, receive, source, audio and spectrum owners for `radio-selection-thin`;
-the HTTP owners of the contact, log, transmit, receive and selection traffic and the contact and
-logbook clients for `contact-thin`;
+the recording, selection and log owners, the HTTP owners of the contact, log, transmit, receive and
+selection traffic and every client asset of the 10 s first status for `contact-thin`;
 the receive/source/audio/decoder pipeline and the recording client that polls and paints
 the rows for `live-station-latency`; the production decoder sources (every one sets the
 checkpoint spacing, per-item work or budgets the quantum, latency and matrix measure),

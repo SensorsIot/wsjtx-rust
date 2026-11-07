@@ -631,12 +631,14 @@ progress and the audio (#10 WstxStationProtocol::PushedStationState); its exact 
 when idle, audio as in GET /receive, clock exactly
 `{correlated,utc_anchor,canonical_anchor_frame,uncertainty_ns}` and job exactly
 `{error,first_sequence,next_sequence,available_count,last_overrun,latest_decode}`, at most
-2048 bytes. It is sent when any of these changes. The browser accepts it like a read for
+2020 bytes, which fits the 4096-byte write buffer beside a pending 2048-byte optional write. It
+is sent when any of these changes, not for the countdown of retry_after_ms alone. The browser accepts it like a read for
 the identity and job state it holds; only a new identity or job state or a refused event
 causes a GET /receive read. Otherwise it reads GET /receive once per socket, on a saved
 profile revision or boot change, after its own mutation and, on a later status of the socket,
-only after a failed read or an unknown outcome; a read older than an accepted event
-changes nothing. A frame keeps the source's next_frame and the job's processed_frames.
+only after a failed read or an unknown outcome; a read started before an accepted event
+changes nothing, and an accepted event ends a failed read's status. On Detailed it fetches the
+announced view at once. A frame keeps the source's next_frame and the job's processed_frames.
 They carry no samples or result records. Changing between live/file sources resets
 browser history/readouts without changing the fixed0..3000 Hz axis or local sliders.
 

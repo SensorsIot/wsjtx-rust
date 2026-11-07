@@ -865,8 +865,9 @@ fn resource_station_process_delta_and_owner_release() {
 }
 
 // Proves: CL-010-15; TC-007-005 (#10 PushedStationState): receive.state holds exactly what the browser
-// would otherwise read for its identity, not what frames carry, and the largest one stays in the
-// 2048-byte event bound. Every browser-accepted text at its 256-byte maximum, counters at 2^53-1.
+// would otherwise read for its identity, not what frames carry, and the largest one fits the
+// 4096-byte write buffer beside a pending 2048-byte optional write (two 14-byte headers).
+// Every browser-accepted text at its 256-byte maximum, counters at 2^53-1.
 #[test]
 fn receive_state_of_the_largest_snapshot_fits_the_event_bound() {
     let text = "x".repeat(256);
@@ -881,7 +882,7 @@ fn receive_state_of_the_largest_snapshot_fits_the_event_bound() {
         "clock":{"basis":"system_utc","correlated":true,"utc_anchor":"2026-11-06T10:55:30.0000000Z","canonical_anchor_frame":most,"uncertainty_ns":2000000,"external_accuracy":"unknown"}});
     let data = receive_http::receive_state_data(&snapshot);
     let event = json!({"v":1,"type":"receive.state","data":data}).to_string();
-    assert!(event.len() <= 2048, "{} bytes", event.len());
+    assert!(event.len() <= 4096 - 2048 - 2 * 14, "{} bytes", event.len());
     let mut keys: Vec<_> = data.as_object().unwrap().keys().cloned().collect();
     keys.sort();
     assert_eq!(

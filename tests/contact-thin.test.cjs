@@ -111,7 +111,7 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
   {const start=performance.now(),wall0=Date.now();
     await publish(Math.floor(Date.now()/15000)*15000-15000,cqs(0,71));
     await waitUntil(start+15000);const wall1=Date.now();
-    for(const [i,p]of pages.entries())await p.waitForFunction(()=>document.querySelectorAll('#band-activity tbody tr[data-sequence]').length>=71&&document.querySelector('#band-activity tbody tr[data-worked]'),null,{timeout:60000}).catch(async e=>{throw new Error(`client ${i}: ${await p.locator('#band-activity tbody tr[data-sequence]').count()} rows; ${JSON.stringify(await p.evaluate(async()=>({state:typeof operatingState==='undefined'?'undef':operatingState&&{selection:operatingState.selection,control:operatingState.control},fetched:await (await stationFetch('/receive/selection')).text(),mode:live?.job?.mode,cursor:resultCursor,status:document.querySelector('#operating-status')?.textContent})))}; worked ${JSON.stringify(seen[i].requests.filter(r=>r.path==='/contact/worked').map(r=>[r.body,r.end,r.failed]))}; ${e.message}`);});
+    for(const [i,p]of pages.entries())await p.waitForFunction(()=>document.querySelectorAll('#band-activity tbody tr[data-sequence]').length>=71&&document.querySelectorAll('#band-activity tbody tr[data-sequence][data-worked]').length>=71,null,{timeout:60000}).catch(async e=>{throw new Error(`client ${i}: ${await p.locator('#band-activity tbody tr[data-sequence]').count()} rows; ${JSON.stringify(await p.evaluate(async()=>({state:typeof operatingState==='undefined'?'undef':operatingState&&{selection:operatingState.selection,control:operatingState.control},fetched:await (await stationFetch('/receive/selection')).text(),mode:live?.job?.mode,cursor:resultCursor,status:document.querySelector('#operating-status')?.textContent})))}; worked ${JSON.stringify(seen[i].requests.filter(r=>r.path==='/contact/worked').map(r=>[r.body,r.end,r.failed]))}; ${e.message}`);});
     await sleep(3000);const end=performance.now();
     // Counted by the station time each tick carries: link queueing shifts arrival, not cadence.
     const d=seen.map(s=>s.ticks.filter(k=>k.utc>=wall0&&k.utc<wall1)),worked=seen.map(s=>between(s.requests,start,end).filter(r=>r.path==='/contact/worked').map(r=>JSON.parse(r.body).calls.length));
@@ -231,6 +231,8 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
   });
   report.phases.thin={state:'checking',seconds:span,frames:seen.map(s=>frameBytes(between(s.frames,start,end))),sharedBytesPerSecond:traffic,statusMs:latencies.slice(),publishes,churn:report.churn,clients:thin};await save();
   console.log(`Thin ${span.toFixed(1)} s ${JSON.stringify(traffic)}`);
+  // The window has its display workload: a Thin peer gets one spectrum row per 2 s.
+  for(const [i,f]of report.phases.thin.frames.entries())bound(between(seen[i].frames,start,end).filter(x=>x.type==='spectrum.frame').length>=Math.floor(span/2)-2&&f.byType['spectrum.frame']>0,`client ${i}: spectrum.frame ${f.byType['spectrum.frame']} B in the Thin window`);
   bound(traffic.up<=3000,`Thin counted uplink ${traffic.up} B/s`);bound(traffic.down<=3000,`Thin counted downlink ${traffic.down} B/s`);
   assert.equal(latencies.length,28);
   for(const [i,c]of thin.entries()){
@@ -267,6 +269,7 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
     const ticks=seen.map(s=>s.ticks.filter(k=>k.utc>=wallOff&&k.utc<wallOff+60000));
     report.phases.off={seconds:span,frames:seen.map(s=>frameBytes(between(s.frames,start,end))),sharedBytesPerSecond:off,ticks:ticks.map(x=>x.length),utcSpacingMs:ticks.map(x=>x.slice(1).map((k,n)=>k.utc-x[n].utc)),routes:seen.map(s=>between(s.requests,start,end).map(r=>`${r.method} ${r.path}`))};await save();
     console.log(`Off ${span.toFixed(1)} s ${JSON.stringify(off)}`);
+    for(const [i,f]of report.phases.off.frames.entries())bound(f.byType['spectrum.frame']===undefined,`client ${i}: spectrum.frame on Off`);
     bound(off.up<=1000,`Off idle counted uplink ${off.up} B/s`);bound(off.down<=1000,`Off idle counted downlink ${off.down} B/s`);
     for(const x of ticks){bound(x.length>=11&&x.length<=13,`Off ticks in 60 s: ${x.length}`);for(let n=1;n<x.length;n++)bound(x[n].utc-x[n-1].utc>=4900,`Off tick spacing ${x[n].utc-x[n-1].utc}`);}
   }

@@ -1220,9 +1220,11 @@ async fn connection(
                 let s=r.receive_snapshot();
                 let data=receive_http::receive_state_data(&s);
                 let notify=!s["job"].is_null() || !receive_seen["job_id"].is_null();
-                if notify && data!=receive_seen {
+                // The countdown of an audio retry alone is no change to announce.
+                let mut key=data.clone();key["audio"]["retry_after_ms"]=Value::Null;
+                if notify && key!=receive_seen {
                     if !send_control(&mut socket,Message::Text(json!({"v":1,"type":"receive.state","data":data}).to_string().into()),optional_since).await {break "receive.state write";}
-                    optional_since=None;receive_seen=data;
+                    optional_since=None;receive_seen=key;
                 }
             }
             _ = contact_tick.tick(), if subscribed && recording.as_ref().is_some_and(|r| r.contact.get().is_some()) => {
