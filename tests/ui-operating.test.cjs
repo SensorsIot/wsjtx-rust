@@ -898,6 +898,7 @@ test('TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fi
 
 // Proves: CL-044-13; TC-044-015. The Tx level in the Audio section follows the server's radio.tx_level
 // push; Set level and the slider are commands, the slider appears only without ALC over CI-V.
+// Proves: CL-044-14, CL-044-15; TC-044-018, TC-044-022 (steps inside this test).
 test('TC-044-015 Tx level in Settings > Radio > Audio',{timeout:60000},async t=>{
   const endpoint='icom7300://COM250?baud=19200&radio=94&controller=e0',posts=[];
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{control:{mode:'cat',endpoint,ptt:'disabled'},beforeNavigate:async p=>{

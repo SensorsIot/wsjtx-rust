@@ -101,9 +101,28 @@ def source_binding(identifier: str, binding: str, root: Path, manual: bool = Fal
             raise ValueError(f"Missing executable test symbol: {identifier}: {binding}")
         return True
     else:
-        proves = " ".join(re.findall(r"(?m)^\s*(?://|#)\s*Proves:([^\r\n]+)", source))
         named = re.search(r"\btest\s*\(\s*['\"][^'\"\r\n]*\b" + re.escape(identifier) + r"\b", source)
-        return identifier in source_proves(proves) or bool(named)
+        return identifier in source_proves(" ".join(attached_proves(source))) or bool(named)
+
+
+PROVES_TAG = re.compile(r"^\s*(?://|#)\s*Proves:([^\r\n]+)")
+# A Proves comment binds only when the next non-comment line is a test: Rust
+# #[test]/#[tokio::test] or fn, JS test(, Python def test_ or class. Other Rust
+# attributes and Python decorators belong to the test they precede.
+ATTACHED_TEST = re.compile(r"\s*(?:#\[(?:tokio::)?test\b|(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s|test\s*\(|(?:async\s+)?def\s+test_|class\s)")
+SKIPPED_LINE = re.compile(r"\s*(?://|#(?!\[)|#\[(?!(?:tokio::)?test\b)|@)")
+
+
+def attached_proves(source: str) -> list[str]:
+    lines = source.splitlines()
+    tags = []
+    for index, line in enumerate(lines):
+        if not (tag := PROVES_TAG.match(line)):
+            continue
+        following = (code for code in lines[index + 1:] if not SKIPPED_LINE.match(code))
+        if ATTACHED_TEST.match(next(following, "")):
+            tags.append(tag[1])
+    return tags
 
 
 def source_proves(text: str) -> set[str]:
