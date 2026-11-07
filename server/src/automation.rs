@@ -810,6 +810,11 @@ impl Owner {
         start: bool,
     ) -> bool {
         let r = &state.recording;
+        // WstxStrategy::WatchdogFromOperator: a browser's selection or Auto on is the operator's
+        // decision that ends a Tx watchdog stop (only the browser routes call this).
+        if let Some(t) = r.transmit.get() {
+            t.service.with(|c| c.operator_restart());
+        }
         // WstxStrategy::AutoToggle: with Auto off a selection only marks.
         let active = start
             && contact
@@ -845,8 +850,6 @@ impl Owner {
                 .with(|c| c.hardware().context().safety_revision)
                 .ok_or("transmit_unavailable")?;
             let id = profile::new_uuid().map_err(|_| "storage_unavailable")?;
-            // The selection is the operator's decision to transmit again after a Tx watchdog stop.
-            transmit.service.with(|c| c.operator_restart());
             let mode = if r.operating_mode() == "ft4" {
                 "ft4"
             } else {
