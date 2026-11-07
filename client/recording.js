@@ -502,11 +502,13 @@ profileSelect.addEventListener('change',()=>{const id=displayPreferenceId();if(i
 if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.state==='connected')sync(socket);
 
 let live,liveFailed=false,resultsAnnounced=null,livePending=false,liveAgain=null,resultPending=false,resultFailed=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
-let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingIntent=null,lastOperatingRead=-Infinity,operatingSocket=null;
+let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingIntent=null,operatingSocket=null;
+// What this socket's selection.state events hold (WstxOperatingReceive::SelectionStateEvent).
+let operatingHeld=null,operatingHeldSocket=null;
 let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 
 // Mutations supersede earlier reads; accepted snapshots supersede pending pages.
-let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null;
+let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null,liveEventAt=-Infinity;
 let lastReceiveReady=null;
 let activitySortProfile=null,activitySortField='value',activitySortDirection='desc';
 const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsUnread=()=>resultFailed||liveFailed||resultsAnnounced!==null||(!!resultView&&resultCursor<resultView.next_sequence)||(Number.isSafeInteger(live?.job?.next_sequence)&&live.job.next_sequence>resultCursor)||(!!live?.job?.latest_decode&&live.job.latest_decode.id!==resultView?.id);const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
@@ -584,12 +586,13 @@ function receiveShow(){
 async function receiveSync(current=socket){
   if(current!==socket||connection.dataset.state!=='connected')return;
   if(livePending){liveAgain=receiveMutationEpoch;return;}livePending=true;
-  const epoch=receiveMutationEpoch,authEpoch=authorization?.snapshot().epoch;
+  const epoch=receiveMutationEpoch,authEpoch=authorization?.snapshot().epoch,started=performance.now();
   try{
     const data=await request('/receive');
     if(!stationContext(current,authEpoch)||epoch!==receiveMutationEpoch)return;
     if(!validLiveSnapshot(data)){stationData('receive',false);throw new Error('Invalid receive snapshot');}stationData('receive',true);
     if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||(data.boot_id===live?.boot_id&&data.generation<live.generation))return;// a new boot counts its generations from 0
+    if(liveIdentity(data)===liveIdentity(live)&&started<liveEventAt)return;// may be older than a receive.state already taken
     if(liveIdentity(data)!==liveIdentity(live)){
       const carry=lossEpoch(data);activityHistory=carry?[...(resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[]),...activityHistory].slice(0,2):[];
       resultRows=[];resultView=null;resultCursor=data.job?.first_sequence??0;historyIncomplete=false;if(carry)keepWaterfall();else if(data.job||live?.job){rows=[];resetLevels();paint();}
@@ -700,7 +703,7 @@ function activityRow(record,period,context,mode){
   activityWhy(row);return row;
 }
 function validRecord(r){
-  return r&&Object.keys(r).filter(k=>!(k==='dxcc'&&validDxcc(r.dxcc))&&!(k==='flags'&&validFlags(r.flags))&&!(k==='a_priori'&&Number.isInteger(r.a_priori)&&r.a_priori>=1&&r.a_priori<=6&&r.status==='decoded')).sort().join(',')==='dt_seconds,fields,frequency_hz,i3,n3,payload77,period_start_utc,sequence,snr_db,start_frame,status,text'&&
+  return r&&Object.keys(r).filter(k=>!(k==='dxcc'&&validDxcc(r.dxcc))&&!(k==='flags'&&validFlags(r.flags))&&!(k==='worked_status'&&['not_worked','worked_other_band_or_mode','worked_this_band_and_mode'].includes(r.worked_status))&&!(k==='a_priori'&&Number.isInteger(r.a_priori)&&r.a_priori>=1&&r.a_priori<=6&&r.status==='decoded')).sort().join(',')==='dt_seconds,fields,frequency_hz,i3,n3,payload77,period_start_utc,sequence,snr_db,start_frame,status,text'&&
     Number.isSafeInteger(r.sequence)&&r.sequence>=0&&Number.isSafeInteger(r.start_frame)&&r.start_frame>=0&&
     ((r.period_start_utc===null&&r.dt_seconds===null)||(validPeriodTime(r.period_start_utc,live.job.mode)&&Number.isFinite(r.dt_seconds)&&r.dt_seconds>=-(live.job.mode==='ft8'?7.5:3.75)&&r.dt_seconds<(live.job.mode==='ft8'?7.5:3.75)))&&
     Number.isFinite(r.frequency_hz)&&r.frequency_hz>=200&&r.frequency_hz<=3500&&
@@ -800,16 +803,18 @@ document.getElementById('audio-use-radio').addEventListener('click',()=>{
   for(const [id,e] of [['audio-input',input],['audio-output',output]])if(e){const select=document.getElementById(id);select.value=e.id;select.dispatchEvent(new Event('change',{bubbles:true}));}
   serverForm.requestSubmit();
 });
-function receiveReadyKey(profile,statusId){
+function receiveReadyKey(profile){
   const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
-  if(!profile||!uuid(profile.profile_id)||!uuid(profile.boot_id)||!Number.isSafeInteger(profile.revision)||profile.revision<0||!Number.isSafeInteger(statusId)||statusId<=0)return null;
-  return JSON.stringify([profile.profile_id,profile.boot_id,profile.revision,statusId]);
+  if(!profile||!uuid(profile.profile_id)||!uuid(profile.boot_id)||!Number.isSafeInteger(profile.revision)||profile.revision<0)return null;
+  return JSON.stringify([profile.profile_id,profile.boot_id,profile.revision]);
 }
 function receiveReady(current){
   if(current!==socket||connection.dataset.state!=='connected')return false;
-  const key=receiveReadyKey(profileData,pendingId);
+  const key=receiveReadyKey(profileData);
   if(key!==null){
-    if(lastReceiveReady?.socket===current&&lastReceiveReady.key===key)return false;
+    // WstxRecordingReceive: one read per socket and saved profile; a later status of the socket reads
+    // nothing while receive.state holds the state, only after a failed read or an unknown outcome.
+    if(lastReceiveReady?.socket===current&&lastReceiveReady.key===key&&!liveFailed&&!uncertainMutation)return false;
     // The synchronous receiveSync entry below necessarily starts or queues this
     // read under the same socket/connection checks; failed HTTP is not replayed.
     lastReceiveReady={socket:current,key};
@@ -818,10 +823,16 @@ function receiveReady(current){
 }
 addEventListener('station-ready',event=>receiveReady(event.detail));
 addEventListener('station-stale',()=>{lastReceiveReady=null;receiveShow();receiveStatus.textContent='Disconnected · live receive data stale';});
-addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;resultsAnnounced=performance.now();receiveSync(current);
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;resultsAnnounced=performance.now();
+  // WstxRecordingReceive: the event carries the job's progress and the audio; GET /receive only for a new identity or state.
+  // After a socket's first event it holds the identity and only the audio, clock and job fields that changed.
+  const e=message.data,carried=live?.job&&e&&e.boot_id===live.boot_id&&e.generation===live.generation&&e.job_id===live.job.id&&e.state===live.job.state&&e.source_id===(live.source?.id??null)&&Object.keys(e).every(k=>['profile_id','boot_id','generation','source_id','job_id','state','audio','clock','job'].includes(k));
+  const held=carried&&{...live,audio:e.audio??live.audio,clock:{...live.clock,...e.clock},job:{...live.job,...e.job}};
+  let shown=false;if(carried&&!mutationPending&&!uncertainMutation&&validLiveSnapshot(held)){try{live=held;liveEventAt=performance.now();liveOperatingRevision=operatingState?.operating_revision??null;if(e.job&&('latest_decode' in e.job||'first_sequence' in e.job))applyLatestDecode(held.job.latest_decode,held.job.first_sequence);receiveFailure='';stationData('receive',true);liveFailed=false;receiveShow();show();shown=true;}catch{}}
+  if(!shown)receiveSync(current);else if(resultsDue())receiveResults();
   const d=message.data;if(snapshot&&d&&(d.generation!==snapshot.generation||d.job_id!==(snapshot.job?.id??null)||d.state!==(snapshot.job?.state??null)))sync(current);});
 setInterval(receiveResults,250);
-if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state==='connected')receiveSync(socket);
+if(socket?.readyState===WebSocket.OPEN&&profileData)receiveReady(socket);// this script came after the socket's first status
 
 // These controls share the existing station/receive authority. Nominal selection
 // and dated CAT observations remain different values throughout a transition.
@@ -894,40 +905,49 @@ function operatingShow(){
   const o=s.operation;
   operatingStatus.textContent=operatingFailure||(operatingUnknown?'Selection outcome unknown · refresh or press Monitor to cancel/fence before another action':mutationPending&&operatingIntent?'Selection request pending · waiting for server admission':o?`${o.result==='pending'?'Switching':o.phase} · ${o.requested.mode.toUpperCase()} ${o.requested.band}${o.error?' · '+o.error:''}`:`${s.selection.mode.toUpperCase()} · choose a band to establish nominal frequency`);
 }
+// A read or an event is accepted when it is not older than the state shown. Only an explicit
+// read or the read after an unknown outcome (reconcile) can clear that outcome's barrier.
+function operatingAccept(s,reconcile){
+  if(operatingState?.boot_id===s.boot_id&&s.snapshot_sequence<operatingState.snapshot_sequence)return;
+  const resolved=operatingUnknown&&reconcile&&(s.boot_id!==operatingUnknown.boot_id||s.operation?.command_id===operatingUnknown.command_id||s.operating_revision>operatingUnknown.base_revision);
+  if(resolved)operatingUnknown=null;
+  if(operatingIntent&&(s.operation?.command_id===operatingIntent.command_id||s.operating_revision>operatingIntent.base_revision))operatingIntent=null;
+  const catKey=o=>o&&JSON.stringify([o.boot_id,o.profile_revision,o.radio.connection_generation,o.radio.state,o.radio.error]),changed=catKey(operatingState)!==catKey(s);
+  operatingState=s;operatingSupported=true;if(changed||(!catStatus&&!catPending))catSync();if(resolved||operatingFailure.startsWith('Operating state stale')||operatingFailure==='Disconnected · operating data stale')operatingFailure='';
+}
 async function operatingSync(reconcile=false){
   if(connection.dataset.state!=='connected'||!profileData)return;
   if(operatingReadPending){if(reconcile)operatingReadAgain=true;return;}
-  operatingReadPending=true;lastOperatingRead=performance.now();const epoch=operatingEpoch,current=socket,authEpoch=authorization?.snapshot().epoch;
+  operatingReadPending=true;const epoch=operatingEpoch,current=socket,authEpoch=authorization?.snapshot().epoch;
+  let answered=false;
   try{
-    const response=await stationFetch('/receive/selection',{signal:AbortSignal.timeout(10000)}),text=await response.text();
+    const response=await stationFetch('/receive/selection',{signal:AbortSignal.timeout(10000)}),text=await response.text();answered=true;
     if(epoch!==operatingEpoch||!stationContext(current,authEpoch)||connection.dataset.state!=='connected')return;
     let s;try{s=JSON.parse(text);}catch{throw new Error('Invalid operating snapshot');}
     if(response.status===404||response.status===400&&s.error?.code==='unsupported_version'||s&&typeof s.v==='number'&&s.v!==1){operatingSupported=false;operatingFailure='Operating controls unsupported by this server';return;}
     if(!response.ok)throw new Error(s.error?.code||'Operating state unavailable');
     if(new TextEncoder().encode(text).length>3072||!validOperatingState(s)){stationData('selection',false);throw new Error('Invalid operating snapshot');}stationData('selection',true);
     if(s.profile_id!==profileData.profile_id||s.boot_id!==profileData.boot_id||s.profile_revision!==profileData.revision)throw new Error('Operating identity is stale');
-    if(operatingState?.boot_id===s.boot_id&&s.snapshot_sequence<operatingState.snapshot_sequence)return;
-    const resolved=operatingUnknown&&reconcile&&(s.boot_id!==operatingUnknown.boot_id||s.operation?.command_id===operatingUnknown.command_id||s.operating_revision>operatingUnknown.base_revision);
-    if(resolved)operatingUnknown=null;
-    if(operatingIntent&&(s.operation?.command_id===operatingIntent.command_id||s.operating_revision>operatingIntent.base_revision))operatingIntent=null;
-    const catKey=o=>o&&JSON.stringify([o.boot_id,o.profile_revision,o.radio.connection_generation,o.radio.state,o.radio.error]),changed=catKey(operatingState)!==catKey(s);
-    operatingState=s;operatingSupported=true;if(changed||!catStatus)catSync();if(resolved||operatingFailure.startsWith('Operating state stale')||operatingFailure==='Disconnected · operating data stale')operatingFailure='';
-  }catch(error){if(epoch===operatingEpoch&&current===socket){operatingFailure=`Operating state stale · ${error.message}`;operatingSupported=null;}}
+    operatingAccept(s,reconcile);
+  }catch(error){
+    // A read lost on the link, while this socket's own events hold the state, changes nothing.
+    if(!answered&&operatingState===operatingHeld&&operatingHeldSocket===current&&!operatingUnknown)return;
+    if(epoch===operatingEpoch&&current===socket){operatingFailure=`Operating state stale · ${error.message}`;operatingSupported=null;}}
   finally{operatingReadPending=false;operatingShow();receiveShow();if(operatingReadAgain){operatingReadAgain=false;operatingSync(true);}}
 }
 async function operatingSelect(action,value){
   if(!operatingState||mutationPending||uncertainMutation||operatingBlocked())return;
   const s=operatingState,command_id=crypto.randomUUID(),epoch=++operatingEpoch,current=socket,authEpoch=authorization?.snapshot().epoch;
   const body={v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id,action,profile_revision:s.profile_revision,generation:s.generation,operating_revision:s.operating_revision,[action]:value};
-  operatingIntent={command_id,base_revision:s.operating_revision,boot_id:s.boot_id};receiveMutationEpoch++;ownReceiveMutationAt=performance.now();mutationPending=true;operatingFailure='';receiveShow();
+  const intent={command_id,base_revision:s.operating_revision,boot_id:s.boot_id};operatingIntent=intent;receiveMutationEpoch++;ownReceiveMutationAt=performance.now();mutationPending=true;operatingFailure='';receiveShow();
   try{
     const response=await stationFetch('/receive/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),text=await response.text(),ack=JSON.parse(text);
     if(epoch!==operatingEpoch)return;
     if(!stationContext(current,authEpoch))throw new Error('Stale selection completion');
     if(!response.ok){operatingFailure=`Selection refused · ${ack.error?.code??'request_failed'}`;operatingIntent=null;return;}
     if(new TextEncoder().encode(text).length>384||!operatingShape(ack,'v,profile_id,boot_id,command_id,operating_revision,accepted,phase')||ack.v!==1||ack.profile_id!==s.profile_id||ack.boot_id!==s.boot_id||ack.command_id!==command_id||ack.accepted!==true||!operatingCounter(ack.operating_revision)||ack.operating_revision<=s.operating_revision||!['releasing','applying','restarting','applied','failed','release_blocked'].includes(ack.phase))throw new Error('Invalid admission receipt');
-  }catch(error){if(epoch===operatingEpoch){operatingUnknown=operatingIntent;operatingFailure=`Selection outcome unknown · ${error.message} · refresh or press Monitor to cancel/fence`;}}
-  finally{if(epoch===operatingEpoch){mutationPending=false;receiveShow();await operatingSync(true);await receiveSync();}}
+  }catch(error){if(epoch===operatingEpoch){operatingUnknown=intent;operatingIntent=null;operatingFailure=`Selection outcome unknown · ${error.message} · refresh or press Monitor to cancel/fence`;}}
+  finally{if(epoch===operatingEpoch){mutationPending=false;receiveShow();if(operatingUnknown)await operatingSync(true);await receiveSync();}}
 }
 async function operatingStop(){
   const s=operatingState,target=operatingUnknown??operatingIntent??(s?.operation?{command_id:s.operation.command_id,base_revision:s.operation.base_revision,boot_id:s.boot_id}:null);
@@ -941,7 +961,7 @@ async function operatingStop(){
     if(new TextEncoder().encode(text).length>384||!operatingShape(ack,'v,profile_id,boot_id,command_id,operating_revision,accepted,phase')||ack.v!==1||ack.profile_id!==profileData.profile_id||ack.boot_id!==target.boot_id||ack.command_id!==command_id||ack.accepted!==true||ack.phase!=='cancelled'||!operatingCounter(ack.operating_revision))throw new Error('Invalid cancellation receipt');
     if(epoch===operatingEpoch){operatingUnknown=null;operatingIntent=null;}
   }catch(error){if(epoch===operatingEpoch){operatingUnknown=target;operatingFailure=`Stop outcome unknown · ${error.message} · refresh before another action`;}}
-  finally{if(epoch===operatingEpoch){mutationPending=false;await operatingSync(true);await receiveSync();receiveShow();}}
+  finally{if(epoch===operatingEpoch){mutationPending=false;if(operatingUnknown)await operatingSync(true);await receiveSync();receiveShow();}}
 }
 // Selects synchronously when nothing is in progress so the epoch moves within the change event.
 function restartBusy(){const s=window.wstxContact?.snapshot?.(),c=s?.contact;return (c&&!['idle','completed','cancelled'].includes(c.state))||s?.transmit?.arm_state==='armed'||s?.transmit?.tune;}
@@ -966,16 +986,24 @@ addEventListener('station-ready',event=>{
   if(replaced||edited){if(operatingIntent)mutationPending=false;operatingState=null;operatingUnknown=null;operatingIntent=null;operatingEpoch++;catStatus=null;}
   const reconnected=operatingSocket!==event.detail;operatingSocket=event.detail;
   // station-ready also follows routine status/profile refreshes. Those must not
-  // bypass the selection cadence or create a second optional HTTP workload.
+  // create a second optional HTTP workload: one read per socket.
   if(operatingSupported!==false&&(reconnected||replaced||edited||(!operatingState&&!operatingReadPending)))operatingSync(reconnected||!!replaced||!!edited);
   operatingShow();
 });
 addEventListener('station-stale',()=>{operatingFailure='Disconnected · operating data stale';operatingShow();});
-setInterval(()=>{
-  if(operatingSupported===false||operatingReadPending||livePending||resultPending||syncPending||mutationPending||uncertainMutation||refresh.disabled||connection.dataset.state!=='connected')return;
-  const pending=operatingState?.operation?.result==='pending',slow=profileSelect.value!=='detail',interval=slow?(pending?4000:8000):(pending?500:2000);
-  if(performance.now()-lastOperatingRead>=interval)operatingSync(false);
-},250);
+// WstxOperatingReceive::SelectionStateEvent (#10): the socket's first event holds every field,
+// each later one what changed. Only events build this view, so a read never mixes into it.
+addEventListener('station-message',event=>{
+  const {current,message}=event.detail;if(current!==socket||message.type!=='selection.state'||!message.data?.changed)return;
+  const d=message.data;if(operatingHeldSocket!==current){operatingHeldSocket=current;operatingHeld=null;}
+  operatingHeld={...operatingHeld,...d.changed,v:1,profile_id:d.profile_id,boot_id:d.boot_id,snapshot_sequence:d.snapshot_sequence,monotonic_ms:d.monotonic_ms};
+  // A snapshot near its cap comes whole in two events.
+  if(Object.keys(operatingHeld).length<15)return;
+  const valid=validOperatingState(operatingHeld);stationData('selection',valid);
+  // Another identity than the status shown waits for the read station-ready makes for it.
+  if(!valid||operatingHeld.profile_id!==profileData?.profile_id||operatingHeld.boot_id!==profileData?.boot_id||operatingHeld.profile_revision!==profileData?.revision)return;
+  operatingAccept(operatingHeld,false);operatingShow();receiveShow();
+});
 if(socket?.readyState===WebSocket.OPEN&&profileData&&connection.dataset.state==='connected'){operatingSocket=socket;operatingSync(false);}
 
 // CL-022-03/05: automatic CAT health is read from the additive authorization status

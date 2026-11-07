@@ -354,11 +354,32 @@ package WstxOperatingReceive {
              Thin/Off proof specifically uses real browsers negotiatinggzip. Do not
              claim identity meets the same budgets without measurement. Preserve
              <=3000B/s/direction, <=2sstatus, existingWS payload/cadence/queue limits,
-             8s/4spolling, actual worker transitions and<=10s legacy status-after-load.
+             actual worker transitions and<=10s legacy status-after-load.
              Separate Cold metrics; do not stretch observation windows or reduce work
              or records. All original14suite assertions plus actual15th selection workload
              remain required. WstxRequirements::TC-009-005 cases7/8 own per-browser75s
-             pending/terminal windows,3950/7950msspacing and independent accounted traffic. */
+             pending/terminal windows and independent accounted traffic. */
+    }
+    attribute def SelectionStateEvent {
+        attribute maximumBytes : Integer = 2048;
+        attribute radioDatesDetailedMs : Integer = 2000;
+        attribute radioDatesBelowDetailedMs : Integer = 30000;
+        doc /* selection.state (WstxStationProtocol::PushedStationState, #10): exactly
+             {v:1,type:"selection.state",data:{profile_id,boot_id,snapshot_sequence,monotonic_ms,changed}}
+             to a display-subscribed peer, checked once per second. changed holds the top-level
+             fields of the GET /receive/selection snapshot this peer does not hold (a socket's
+             first event: all of them), at most maximumBytes per event; what does not fit goes at the next
+             check, so a snapshot near its 3072 B cap comes in two events and the browser waits for all fields. Each CAT poll dates the
+             radio facts anew: a change of the radio field in query_sequence or observed_at_ms alone
+             goes at most every radioDatesDetailedMs on Detailed and every
+             radioDatesBelowDetailedMs below it; any other change goes at the next check. The
+             browser builds its view of a socket from that socket's events alone and accepts it
+             like a read: not with a snapshot_sequence older than the state shown, and only for the
+             identity of its current status. It has no timer read. It reads GET /receive/selection
+             once per socket, on a saved profile revision or boot change, on the operator's Refresh
+             and after a command whose outcome is unknown; a pushed state never clears the barrier
+             of an unknown outcome, also not while the command's POST is pending. A read lost on
+             the link before its answer changes nothing while this socket's events hold the state. */
     }
     part def HttpContentCodingBoundary {
         doc /* Six current GET routes have fixed serialized JSON. Each own logical cap
@@ -870,65 +891,16 @@ package WstxOperatingReceive {
              cancelrecordseparate. Profilechangeinvalidateswithoutundopersistedconfig.
              Appliednominal+audiofailurestayscommittedandfailed,notfabricatedrollback. */
     }
-    enum def PollDispatch { automaticInterval; explicitReconciliation; other; }
-    enum def PollSuccessor { pending; terminal; }
-    part def PollCadenceEvidence {
-        attribute dispatch : PollDispatch;
-        attribute successor : PollSuccessor;
-        attribute previousAcceptedPending : Boolean;
-        attribute sameCommandContext : Boolean;
-        attribute sequentialTransport : Boolean;
-        attribute noInterveningSnapshotOrUnrelatedMutation : Boolean;
-        attribute startGapMs : Real;
-        attribute pendingRegimeEvidence : Boolean;
-        attribute passiveRegimeEvidence : Boolean;
-        constraint automaticSpacing { dispatch == PollDispatch::automaticInterval implies
-            ((previousAcceptedPending and startGapMs >= 3950) or
-             (not previousAcceptedPending and startGapMs >= 7950)) }
-        constraint pendingProof { pendingRegimeEvidence ==
-            (dispatch == PollDispatch::automaticInterval and previousAcceptedPending and
-             sameCommandContext and sequentialTransport and
-             noInterveningSnapshotOrUnrelatedMutation and startGapMs >= 3950 and startGapMs < 7950) }
-        constraint passiveProof { passiveRegimeEvidence ==
-            (dispatch == PollDispatch::automaticInterval and not previousAcceptedPending and
-             sameCommandContext and sequentialTransport and
-             noInterveningSnapshotOrUnrelatedMutation and startGapMs >= 7950) }
-        doc /* TC0090057/8D: successor pending OR terminal does not select the cadence;
-             last accepted state at dispatch does. Match station/profile/boot, saved
-             profile/operating revision and command. The same command may create its
-             expected fresh receive job/generation; unrelated context changes refuse.
-             CDP initiator + caller mapping derived from the served source, not gesture-time erasure.
-             50ms observation tolerance; <7950 is coverage, not product max latency. */
-    }
-    part def BrowserWindowCadenceCoverage {
-        attribute measuredCommands : Integer = 2;
-        attribute commandsWithActualPending : Integer;
-        attribute qualifyingPendingPairs : Integer;
-        attribute qualifyingPassivePairs : Integer;
-        constraint allCommands { commandsWithActualPending == measuredCommands }
-        constraint actualRegimes { qualifyingPendingPairs >= 1 and qualifyingPassivePairs >= 1 }
-        doc /* EACH browser/EACH75s Thin/Off window; all5CQ/26status/bytes/ACK/frame
-             bounds unchanged. A legal short operation need not survive two replies.
-             No forced delay/padding/omitted work or retroactive execution PASS. */
-    }
-    verification def PollCadenceFaultControls { doc /* Pending->pending/terminal accepted
-         only with real timer/context/sequential transport. Reject pending<3950,
-         passive-at4s, wrong command/identity, explicit-only, overlap and missing
-         positive pending/passive evidence in either browser/profile. */ }
     attribute def WireLimits {
         attribute requestBytes : Integer = 1024;
         attribute receiptBytes : Integer = 384;
         attribute snapshotBytes : Integer = 3072;
         attribute metadataBytes : Integer = 4096;
-        attribute thinOffPassiveMs : Integer = 8000;
-        attribute thinOffPendingMs : Integer = 4000;
-        attribute detailedPassiveMs : Integer = 2000;
-        attribute detailedPendingMs : Integer = 500;
         attribute pendingReads : Integer = 1;
         attribute pendingOrdinaryMutations : Integer = 1;
         doc /* S7: Targetengineeringbounds;existing32kbitTLS/status<=2s tests
-             mustincludeactualallowedpolls+mode/bandtraffic,notbodyestimatesonly.
-             NoWS/statusschemaextension,oldstrictv1routesunchanged. */
+             mustincludeactualselection.state+mode/bandtraffic,notbodyestimatesonly.
+             Oldstrictv1routesunchanged. */
     }
     action def RadioFactPublication {
         doc /* S6 existingactor/executorreportsquerycompletionkind/value/provenance
@@ -996,11 +968,10 @@ package WstxOperatingReceive {
              profile edits, Stop/late callback/CAS/fencing and exact strict barriers.
              Old/new client compatibility,384/3072/4096/1024 byte maxima+one-over,
              all safe counters and zero-effect refusals; no candidate-generated oracle.
-             Actual8s/4s Thin/Off traffic uses PollCadenceEvidence/BrowserWindowCadenceCoverage;
-             terminal successor allowed, explicit reconciliation cannot prove timer cadence.
+             Thin/Off traffic has no timer read (SelectionStateEvent); an unknown stack refuses.
              Actual mode/band controls preserve existing
              two-browser32kbit mean<=3000B/s eachway and visible status<=2s.
-             Detailed2s/500ms fast-link is separate. Keyboard360px/200percent.
+             Keyboard360px/200percent.
              TC009002 separate authorizedcost4 physical IC7300/USB/CAT/browser;
              actual frequency/USB/DATA/FIL, width/notch/PBT and restore independently
              observed, no TX or quiet-band fabricated decoding. Verification not run. */
@@ -1228,25 +1199,21 @@ changes or unsolicited stream. Polling never opens devices or asks for permissio
 
 At most one selection read and one ordinary mutation are pending in the browser,
 sharing existing HTTP priority. Status/control precede optional visualization/results;
-no added result parallelism. Thin/Off passive selection polling is no faster than8s,
-pending-operation polling4s; Detailed fast-link passive2s/pending500ms. One explicit
-reconciliation read is allowed when needed, not a retry loop. A stalled read prevents
-further optional polling; Stop is not held behind a result read. No audio/fixture data
+no added result parallelism. One explicit
+reconciliation read is allowed when needed, not a retry loop.
+Stop is not held behind a result read. No audio/fixture data
 is transported. Existing32kbit/s Thin/Off <=3000B/s mean each direction and <=2s visible
-status acceptance must include actual allowed selection polls and mode/band traffic,
+status acceptance must include the actual selection.state events and mode/band traffic,
 all TLS/headers/transport, on the exact candidate. Body arithmetic is not bandwidth
 proof. Fast-link cadence is not a32kbit/s promise.
-Pending versus passive cadence is selected from the last accepted browser operation
-state at interval dispatch. A pending-context automatic poll may discover terminal
-completion of the same command; status/control priority may defer it. This permits
-neither a faster4s automatic gate nor classification of an explicit reconciliation
-as an automatic cadence sample. TC-009-0057 defines the actual coverage evidence.
+The browser does not poll the selection: SelectionStateEvent carries it, and an explicit
+read is never counted as a pushed one. TC-009-005 case7 defines the coverage evidence.
 Negotiated HTTP snapshot content coding is limited to12.1.1. The combined32kbit/s
 proof uses real browsers negotiating supported gzip and records actual response
 Content-Encoding; identity remains correct but has no identical-workload bandwidth
 PASS without separate measurement. Existing caps refer to logical uncompressed JSON.
 All previous14 suite registrations/assertions and the additive selection suite remain
-required; no Cold/status10s,75s Thin/Off,4s/8s polling or other oracle is relaxed.
+required; no Cold/status10s,75s Thin/Off or other oracle is relaxed.
 
 
     */

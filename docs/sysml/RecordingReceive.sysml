@@ -729,7 +729,7 @@ package WstxRecordingReceive {
         in detailedFrame : DetailedSpectrumFrame[0..1];
         in requestedProfile : DisplayProfile;
         doc /* **Opt-in WebSocket extension.** Keep `wstx.v1`, 1024-byte incoming request/frame/message
-             limits; outbound Thin/control payloads remain <=1024 bytes. Set the outbound write
+             limits; outbound Thin/control payloads remain <=1024 bytes, except receive.state (RadioIO). Set the outbound write
              buffer cap to4096 bytes to admit a <=2048-byte Detailed event while reserving a full
              1024-byte control payload and two conservative14-byte framing allowances. Preserve existing station.get/status/error envelopes, validation order,
              binary1003, heartbeats and liveness unchanged. Add exact three-field requests

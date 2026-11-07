@@ -940,23 +940,24 @@ package WstxContact {
     // ---------------------------------------------------------------- worked before
     enum def WorkedStatus { enum notWorked; enum workedOtherBandOrMode; enum workedThisBandAndMode; enum unknown; }
     action def WorkedBeforeQuery {
-        in calls : String[0..64];
+        in call : String;
         in band : String;
         in mode : String;
-        out statuses : WorkedStatus[0..64];
+        out status : WorkedStatus;
         doc /* D9 adopted (WB indexes calls keyed by band+mode and band; LogBook::match).
              Determined by the server from the profile's contacts.adi including contacts
              saved this session and records added by UpdateLogbook (#10, 2026-11-03),
              through an index of the log by call and by grid square that is rebuilt only
-             when the log changes, so a query costs a lookup per asked call, not a scan
+             when the log changes, so a record costs a lookup of its call, not a scan
              of the log: workedThisBandAndMode when a record has the same CALL,
              BAND and MODE/SUBMODE; workedOtherBandOrMode when only CALL matches; else
              notWorked. Calls compare case-insensitively on the full call. DXCC entity,
              continent and zone status come with each decoded record instead
              (DecodedEntity, #55); LoTW highlighting is not adopted (B-list of #25). The
-             browser sends at most one query per published period with at most
-             64 distinct concrete calls of that period's rows; rows show unknown (no
-             indicator) until answered and for hashed/absent calls. Indication uses a
+             station determines it on each decoded record it serves (worked_status,
+             DecodedEntity) and the browser sends no query (#10
+             WstxStationProtocol::PushedStationState); a row without the key shows unknown
+             (no indicator): a hashed or absent call, or no band known. Indication uses a
              text/icon label plus colour; it changes no decoding, sequence or log.
              Award standing (#10, operator 2026-11-04, consumed by the #39 award
              strategies): the worked set of DecodedEntity holds, for each DXCC entity
@@ -1009,7 +1010,7 @@ package WstxContact {
     }
     attribute def DecodedEntity {
         doc /* #55 (CL-055-02). GET /receive/results adds to each decoded record whose
-             sender call resolves two optional keys; other records are unchanged. The
+             sender call resolves the optional keys below; other records are unchanged. The
              sender call is the 'from' call, also a filled-in hash; of a nonstandard (i3=4)
              message its full call, or its filled-in hash when that comes second; of a
              DXpedition message its hashed call, for dxcc only because Band Activity names
@@ -1029,7 +1030,10 @@ package WstxContact {
              is rebuilt only when the log or the country table changes; the annotation
              runs off the async runtime. Band: the CAT dial
              band, else the operating selection band; without a band no _band flag is
-             set. The browser accepts exactly these optional keys and values; any other
+             set. worked_status (notWorked as not_worked, workedOtherBandOrMode as
+             worked_other_band_or_mode, workedThisBandAndMode as worked_this_band_and_mode,
+             WorkedBeforeQuery of that band and the job's mode) on a standard message whose
+             'from' is a concrete call, not a hash, when a band is known. The browser accepts exactly these optional keys and values; any other
              key or value refuses the page like any invalid record. */
     }
     attribute def CountryFileHttp {
@@ -1409,9 +1413,18 @@ package WstxContact {
              lacks: all rows when an earlier row changed; rows over the frame budget follow
              on the next tick. The always-loaded browser client holds the snapshot from these
              events from the socket's first on, so a contact client loading later misses
-             none, and shows a snapshot_sequence not older than its own; it reads GET /contact once per socket and after
-             its own command, whose next command needs the revision at once, with one
-             pending GET per browser. It is not a StatusReply:
+             none, and shows a snapshot_sequence not older than its own; it reads GET /contact once per socket, with one
+             pending GET per browser. After its own command it shows the command's reply
+             (accepted, or the refusal with its code) and reads nothing: the next command goes
+             at once with the newer of the held and the last receipt's contact_revision, and
+             GET /contact is read only when no contact.state holds the receipt's revision
+             within 5 s; after a stale_revision refusal of contact_revision the explicit
+             gesture (double-click, Reply, CQ) waits up to 2.5 s for a newer revision before
+             its retry, outside the command order, after one of another field
+             (safety_revision) or an unknown outcome it reads at once. A choice made from the
+             held state (Log QSO, a row's selection, CQ) waits for a command and result still
+             on their way; Esc and Abort QSO never wait, and after them nothing an earlier
+             gesture queued (its retry, its Enable Tx) is sent (#10). It is not a StatusReply:
              station.status stays exactly {v,type,id,data{version,radio}}. Control and
              status keep priority over it as over optional visualization. */
     }
@@ -1435,11 +1448,7 @@ package WstxContact {
     }
     attribute def ContactWire {
         doc /* Routes of WstxContact (selected-profile mode only; environment-only mode
-             404 not_found): GET /contact; POST /contact/command; POST /contact/worked
-             (WorkedBeforeQuery: exactly {v,profile_id,boot_id,band,mode,calls}, calls 0..64
-             strings of at most 13 characters, body at most 2048 bytes; 200 exactly
-             {v:1,band,mode,statuses:[{call,status}]}, at most 4096 bytes; read-only, at
-             most one per published period per browser); POST /contacts (SaveContact:
+             404 not_found): GET /contact; POST /contact/command; POST /contacts (SaveContact:
              exactly {v,profile_id,boot_id,command_id,record}, body at most 8192 bytes so
              that a 1024-character comment fits with worst-case JSON escaping;
              201 {v:1,contact_id,outcome:"saved"}, 200 alreadySaved, 409 log_conflict,
@@ -1454,7 +1463,7 @@ package WstxContact {
              import_failed (UpdateLogbook); POST /transmit/halt (WstxTransmit::HaltTransmit).
              All use the existing HTTP/TLS authentication, exact Origin on mutations,
              JSON media rules and error envelope; the 1024-byte body cap applies except
-             the stated 2048-byte worked-before body, 8192-byte save body and 16384-byte
+             the stated 8192-byte save body and 16384-byte
              update chunks. Mutations are never
              replayed automatically; reconnect reads GET /contact first. MCP uses the
              same station operations. */

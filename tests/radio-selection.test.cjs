@@ -45,72 +45,32 @@ test('TC-009-005 network lifetime and correlated Off oracle reject true violatio
   const frames=[{socket:2,type:'spectrum.frame',at:13},{socket:2,type:'heartbeat',at:15}];assert.deepEqual(optionalAfterOff(frames,ack),[]);frames.push({socket:2,type:'spectrum.detail.frame',at:15});assert.equal(optionalAfterOff(frames,ack).length,1);
 });
 
-test('TC-009-005 frozen automatic cadence fault controls',async t=>{
-  const body=(result='pending')=>({profile_id:'profile-A',boot_id:'boot-A',profile_revision:3,operating_revision:7,generation:11,snapshot_sequence:21,receive:{job_id:'old-job'},operation:{command_id:'command-A',result,new_job_id:null}});
-  const previous=()=>({station:'https://station-A',started:1000,ended:1800,kind:'explicit/reconciliation',body:body()});
-  const successor=()=>({station:'https://station-A',started:5000,ended:5800,kind:'automatic',body:{...body('success'),snapshot_sequence:22}});
-  const pair=(p=previous(),c=successor(),mutations=[])=>cadencePair(p,c,mutations);
-  const refused=(p,c,mutations=[])=>{try{assert.equal(pair(p,c,mutations).eligible,false);}catch(error){if(error.code!=='ERR_ASSERTION')throw error;if(!/spacing|transport/.test(error.message))throw error;}};
-  await t.test('pending to terminal uses prior state',()=>assert.equal(pair().pendingCoverage,true));
-  await t.test('pending to pending remains coverage',()=>{const c=successor();c.body.operation.result='pending';assert.equal(pair(previous(),c).pendingCoverage,true);});
-  await t.test('pending below3950 refused',()=>{const c=successor();c.started=4949;assert.throws(()=>pair(previous(),c),/spacing/);});
-  await t.test('applied prior state at4s refused',()=>{const p=previous();p.body.operation.result='success';assert.throws(()=>pair(p),/spacing/);});
-  await t.test('wrong command refused',()=>{const c=successor();c.body.operation.command_id='command-B';refused(previous(),c);});
-  await t.test('each fixed identity refused',()=>{for(const key of ['profile_id','boot_id','profile_revision','operating_revision']){const c=successor();c.body[key]='changed';refused(previous(),c);}const c=successor();c.station='https://station-B';refused(previous(),c);});
-  await t.test('explicit and reconcile cannot prove timer coverage',()=>{const c=successor();c.kind='explicit/reconciliation';assert.equal(pair(previous(),c).eligible,false);assert.throws(()=>assertCadenceCoverage([pair(previous(),c)],'explicit'),/missing/);});
-  await t.test('overlap refused using network lifetime',()=>{const p=previous();p.ended=5001;assert.throws(()=>pair(p),/transport/);});
-  await t.test('same command owns new receive generation',()=>{const c=successor();c.body.generation=12;c.body.receive.job_id='new-job';c.body.operation.new_job_id='new-job';assert.equal(pair(previous(),c).pendingCoverage,true);});
-  await t.test('unowned new generation refused',()=>{const c=successor();c.body.generation=12;c.body.receive.job_id='unrelated';refused(previous(),c);c.body.operation.new_job_id='unrelated';c.body.operation.command_id='command-B';refused(previous(),c);});
-  await t.test('intervening mutation refused',()=>refused(previous(),successor(),[{started:2000}]));
-  await t.test('delayed pending is lawful but cannot prove4s regime',()=>{const c=successor();c.started=9000;assert.equal(pair(previous(),c).eligible,true);assert.equal(pair(previous(),c).pendingCoverage,false);});
-  await t.test('every browser and profile needs both regimes',()=>{
-    const p=previous();p.body.operation.result='success';const c=successor();c.started=9000;const passive=pair(p,c),pending=pair();
-    for(const profile of ['thin','off'])for(const browser of [0,1]){assertCadenceCoverage([pending,passive],`${profile}${browser}`);assert.throws(()=>assertCadenceCoverage([passive],`${profile}${browser}`),/pending-context/);assert.throws(()=>assertCadenceCoverage([pending],`${profile}${browser}`),/passive-context/);}
-  });
-  await t.test('actual frozen source and exact caller stack',async()=>{
+test('TC-009-005 no timer reads the selection: source and caller fault controls',async t=>{
+  await t.test('actual source: every selection read has an explicit caller, an unknown stack is refused',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
     const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:mapping.fetchLine},{url:origin+'/recording.js',lineNumber:line}]}});
-    assert.ok(mapping.explicitLines.length>0&&!mapping.explicitLines.includes(mapping.timerLine),'timer and explicit callers are distinct');
-    assert.equal(cadenceCaller(initiator(mapping.timerLine),origin,mapping),'automatic');for(const line of mapping.explicitLines)assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');
-    assert.ok(!mapping.explicitLines.includes(mapping.timerLine-1));assert.throws(()=>cadenceCaller(initiator(mapping.timerLine-1),origin,mapping),/unknown selection caller.*review the cadence caller mapping/);
-    const wrongFetch=initiator(mapping.timerLine);wrongFetch.stack.callFrames[0].lineNumber=mapping.fetchLine+1;assert.throws(()=>cadenceCaller(wrongFetch,origin,mapping),/review the cadence caller mapping/);
-    const wrapped={type:'script',stack:{callFrames:[{url:origin+'/authorization.js',functionName:'protectedFetch',lineNumber:1},{url:origin+'/app.js',functionName:'stationFetch',lineNumber:1},...initiator(mapping.timerLine).stack.callFrames]}};
-    assert.equal(cadenceCaller(wrapped,origin,mapping),'automatic');
+    assert.ok(mapping.explicitLines.length>0,'the reconnect and explicit reads stay');
+    for(const line of mapping.explicitLines)assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');
+    const unknown=mapping.explicitLines[0]-1;assert.ok(!mapping.explicitLines.includes(unknown));assert.throws(()=>cadenceCaller(initiator(unknown),origin,mapping),/unknown selection caller.*review the cadence/);
+    const wrongFetch=initiator(mapping.explicitLines[0]);wrongFetch.stack.callFrames[0].lineNumber=mapping.fetchLine+1;assert.throws(()=>cadenceCaller(wrongFetch,origin,mapping),/review the cadence/);
+    const wrapped={type:'script',stack:{callFrames:[{url:origin+'/authorization.js',functionName:'protectedFetch',lineNumber:1},{url:origin+'/app.js',functionName:'stationFetch',lineNumber:1},...initiator(mapping.explicitLines[0]).stack.callFrames]}};
+    assert.equal(cadenceCaller(wrapped,origin,mapping),'explicit/reconciliation');
     wrapped.stack.callFrames[1].functionName='other';assert.throws(()=>cadenceCaller(wrapped,origin,mapping));
-    assert.throws(()=>cadenceJoin({transfers:[],reads:[{}]},origin,mapping),/complete ordered/);
   });
   await t.test('caller mapping is derived from the source and line-ending neutral',async()=>{
     const lf=(await fs.readFile(path.join(__dirname,'../client/recording.js'),'utf8')).replace(/\r\n/g,'\n'),crlf=lf.replace(/\n/g,'\r\n');
-    const lines=({fetchLine,timerLine,explicitLines})=>({fetchLine,timerLine,explicitLines}),base=lines(cadenceSource(Buffer.from(lf)));
+    const lines=({fetchLine,explicitLines})=>({fetchLine,explicitLines}),base=lines(cadenceSource(Buffer.from(lf)));
     assert.notEqual(lf,crlf);assert.deepEqual(lines(cadenceSource(Buffer.from(crlf))),base);
     // A change that only moves lines (a comment above the fetch) moves the mapping with it (#8).
     const at=lf.indexOf("    const response=await stationFetch('/receive/selection'"),shifted=lines(cadenceSource(Buffer.from(lf.slice(0,at)+'    // shifted\n'+lf.slice(at))));
-    assert.deepEqual(shifted,{fetchLine:base.fetchLine+1,timerLine:base.timerLine+1,explicitLines:base.explicitLines.map(n=>n+1)});
-    // A change that makes the mapping ambiguous or loses a site needs review, not a renewal.
-    const src=lf.split('\n'),timer=src[base.timerLine],fetch=src[base.fetchLine];
+    assert.deepEqual(shifted,{fetchLine:base.fetchLine+1,explicitLines:base.explicitLines.map(n=>n+1)});
+    // A timer read coming back, or an ambiguous or lost fetch, needs review, not a renewal.
+    const src=lf.split('\n'),fetch=src[base.fetchLine];
     const variant=(index,replacement)=>Buffer.from([...src.slice(0,index),...replacement,...src.slice(index+1)].join('\n'));
-    assert.throws(()=>cadenceSource(variant(base.timerLine,[timer,timer])),/review the cadence caller mapping: the automatic timer caller matched 2 lines/);
-    assert.throws(()=>cadenceSource(variant(base.timerLine,['  lastOperatingRead=0;'])),/review the cadence caller mapping: the automatic timer caller matched 0 lines/);
+    assert.throws(()=>cadenceSource(Buffer.from(lf+'\nsetInterval(()=>operatingSync(false),2000);\n')),/a timer reads the selection/);
+    assert.throws(()=>cadenceSource(Buffer.from(lf+'\nsetInterval(()=>{\n  if(ok)operatingSync(false);\n},250);\n')),/a timer reads the selection/);
     assert.throws(()=>cadenceSource(variant(base.fetchLine,['    const response=await fetch(\'/x\'),text=await response.text();'])),/review the cadence caller mapping: the selection fetch matched 0 lines/);
     assert.throws(()=>cadenceSource(variant(base.fetchLine,[fetch,fetch])),/review the cadence caller mapping: the selection fetch matched 2 lines/);
-  });
-  await t.test('source acceptance guards refuse discarded valid-shaped snapshots',async()=>{
-    const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js')));
-    const uuid='00000000-0000-4000-8000-000000000001',unknown={value:null,query_sequence:null,observed_at_ms:null,confirmed:false};
-    const snapshot={v:1,profile_id:uuid,boot_id:uuid,profile_revision:3,generation:11,operating_revision:7,snapshot_sequence:21,monotonic_ms:100,control:'manual',selection:{mode:'ft8',band:null,nominal_hz:null,origin:'unknown',confirmed_command_id:null},available_bands:[],operation:null,cancellation:null,receive:{job_id:null,mode:null,state:null,audio_state:'closed',owner_released:true},radio:{connection_generation:0,state:'closed',error:null,observations:{frequency:unknown,mode:unknown,data:unknown,rx_tx:unknown,split:unknown}}};
-    assert.equal(mapping.valid(snapshot),true,'negative controls begin with a fully valid browser schema');
-    const expected={profile_id:uuid,boot_id:uuid,profile_revision:3};
-    const event={at:900,epoch:0,connected:true,sameSocket:true,acceptedSequence:20,...expected};
-    const q=()=>({expected,events:[event,{...event,at:6000,acceptedSequence:21}]});
-    const request={wallStarted:1000,wallEnded:1800},next={wallStarted:5000};
-    assert.equal(cadenceAccepted(snapshot,request,next,q()).acceptedSequence,21);
-    for(const key of ['profile_id','boot_id','profile_revision']){const wrong=structuredClone(snapshot);wrong[key]=key==='profile_revision'?4:'00000000-0000-4000-8000-000000000002';assert.equal(mapping.valid(wrong),true);assert.throws(()=>cadenceAccepted(wrong,request,next,q()),/expected/);}
-    const invalid=q();invalid.events.splice(1,0,{...event,at:1500,epoch:1,acceptedSequence:20});assert.throws(()=>cadenceAccepted(snapshot,request,next,invalid),/discarded|unproven/);
-    const socket=q();socket.events.splice(1,0,{...event,at:1500,sameSocket:false});assert.throws(()=>cadenceAccepted(snapshot,request,next,socket),/socket/);
-    const unproven=q();unproven.events[1].acceptedSequence=20;assert.throws(()=>cadenceAccepted(snapshot,request,null,unproven),/unproven/);
-    const after=q();after.events.splice(1,0,{...event,at:2000,epoch:1,acceptedSequence:21});assert.equal(cadenceAccepted(snapshot,request,next,after).proof,'accepted state at invalidating action');
-    const stale=structuredClone(snapshot);stale.snapshot_sequence=19;assert.equal(mapping.valid(stale),true);
-    assert.throws(()=>cadenceAccepted(stale,request,next,q()),/stale sequence/);
   });
   const coldSockets=()=>[{index:0,opened:10,closed:12},{index:1,opened:20,closed:22},{index:2,opened:30,closed:null}];
   const socketBaseline=()=>({index:2,count:3,at:40,end:120});
@@ -143,7 +103,7 @@ test('TC-009-005 frozen automatic cadence fault controls',async t=>{
   // (net::ERR_ABORTED) before the baseline and failed the join, though the page superseded it.
   await t.test('Cold selection read the page timed out before baseline is superseded, not a failure',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
-    const initiator={type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:mapping.fetchLine},{url:origin+'/recording.js',lineNumber:mapping.timerLine}]}};
+    const initiator={type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:mapping.fetchLine},{url:origin+'/recording.js',lineNumber:mapping.explicitLines[0]}]}};
     const uuid='00000000-0000-4000-8000-000000000001',unknown={value:null,query_sequence:null,observed_at_ms:null,confirmed:false};
     const snapshot={v:1,profile_id:uuid,boot_id:uuid,profile_revision:3,generation:11,operating_revision:7,snapshot_sequence:21,monotonic_ms:100,control:'manual',selection:{mode:'ft8',band:null,nominal_hz:null,origin:'unknown',confirmed_command_id:null},available_bands:[],operation:null,cancellation:null,receive:{job_id:null,mode:null,state:null,audio_state:'closed',owner_released:true},radio:{connection_generation:0,state:'closed',error:null,observations:{frequency:unknown,mode:unknown,data:unknown,rx_tx:unknown,split:unknown}}};
     const seen=(abort={})=>{
@@ -319,6 +279,38 @@ test('TC-009-005 strict TLS unions, early identity barriers and manual preferred
   const manualClose=await request('/radio/disconnect','POST',{v:1,profile_id:id,boot_id:s.boot_id,connection_generation:0});assert.equal(manualClose.status,409);assert.equal(manualClose.body.error.code,'automatic_lifecycle');
 });
 
+// Proves: CL-008-07; TC-009-005 case6 (#10). selection.state during a held POST (another client's
+// revision, then the command's own) does not take away the barrier of its unknown outcome.
+test('TC-009-005 an event during a pending command keeps the unknown outcome barrier',{timeout:60000},async t=>{
+  const {origin,request,token}=await station(t);const {chromium}=require('playwright');
+  const browser=await chromium.launch();t.after(()=>browser.close());
+  const page=await (await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}})).newPage();
+  await loginPage(page,origin,token);await page.locator('#operating-band:enabled').waitFor();
+  await page.selectOption('#operating-band','40m');await page.waitForFunction(()=>operatingState.operation?.error==='audio_unconfigured');
+  await page.locator('#operating-mode:enabled').waitFor();
+  const settled=()=>page.waitForFunction(()=>!mutationPending&&!operatingReadPending&&!operatingReadAgain);
+  const reads=[];page.on('request',r=>{if(new URL(r.url()).pathname==='/receive/selection')reads.push(performance.now());});
+  const held=async mode=>{let release,entered;const gate=new Promise(r=>release=r),reached=new Promise(r=>entered=r);t.after(()=>release());return {gate,release,entered,reached,mode};};
+  // Another client's revision while the POST is held; the POST never reaches the station.
+  const first=await held('ft4');
+  await page.route('**/receive/select',async route=>{await first.entered();await first.gate;await route.abort('failed');},{times:1});
+  await page.selectOption('#operating-mode','ft4');await first.reached;
+  const s=(await request('/receive/selection')).body;
+  const other=await request('/receive/select','POST',{v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:require('node:crypto').randomUUID(),action:'band',profile_revision:s.profile_revision,generation:s.generation,operating_revision:s.operating_revision,band:'20m'});
+  assert.equal(other.status,202,JSON.stringify(other.body));
+  await page.waitForFunction(revision=>operatingState.operating_revision>revision,s.operating_revision,{timeout:5000});
+  let before=reads.length;first.release();await page.waitForFunction(n=>operatingFailure===''&&!operatingUnknown&&!mutationPending,before,{timeout:15000}).catch(async e=>{throw new Error(`stuck: ${await page.evaluate(()=>JSON.stringify({operatingFailure,operatingUnknown,operatingIntent}))}; ${e.message}`);});await settled();
+  assert.ok(reads.length>before,'a reconciling read resolved the unknown outcome');
+  // The command's own event arrives while its reply is held, and the reply is lost.
+  await page.locator('#operating-band:enabled').waitFor();
+  const second=await held('ft8');
+  await page.route('**/receive/select',async route=>{await route.fetch();await second.entered();await second.gate;await route.abort('failed');},{times:1});
+  await page.selectOption('#operating-mode','ft8');await second.reached;
+  await page.waitForFunction(()=>operatingState.selection.mode==='ft8'||operatingState.operation?.requested?.mode==='ft8',null,{timeout:5000});
+  before=reads.length;second.release();await page.waitForFunction(()=>operatingFailure===''&&!operatingUnknown&&!mutationPending,null,{timeout:15000}).catch(async e=>{throw new Error(`stuck: ${await page.evaluate(()=>JSON.stringify({operatingFailure,operatingUnknown,operatingIntent}))}; ${e.message}`);});await settled();
+  assert.ok(reads.length>before,'a reconciling read resolved the unknown outcome');
+});
+
 // Proves: CL-008-07; CL-010-05/07/08; TC-009-005 cases1/2/6. Interception only
 // delays a mutation body; all successful replies/state originate in the real server.
 // Proves: CL-044-16; TC-044-023 (d), the step inside this test.
@@ -358,34 +350,42 @@ test('TC-009-005 browser preferred selection and Stop fence a genuinely delayed 
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-008-03/07; TC-009-005 case7. One actual status response can publish
-// the same readiness twice; unchanged context must not duplicate receive reads.
-test('TC-009-005 one status refresh coalesces unchanged receive readiness',{timeout:30000},async t=>{
+// Proves: CL-008-03/07; TC-009-005 case7. A status of the socket reads no receive snapshot while receive.state
+// holds it; the socket's first status, a changed saved profile and a failed read do, one each.
+test('TC-009-005 a status on the same socket reads no receive snapshot unless the state is in doubt',{timeout:30000},async t=>{
   const {origin,token}=await station(t),{chromium}=require('playwright');const browser=await chromium.launch();t.after(()=>browser.close());
   const context=await browser.newContext({ignoreHTTPSErrors:true}),page=await context.newPage();
-  await loginPage(page,origin,token);await page.locator('#operating-band:enabled').waitFor();await page.waitForTimeout(200);
+  await loginPage(page,origin,token);await page.locator('#operating-band:enabled').waitFor();await page.waitForFunction(()=>!livePending&&!!live);await page.waitForTimeout(200);
   await page.evaluate(()=>{window.__readyReads=[];addEventListener('station-ready',event=>window.__readyReads.push({sameSocket:event.detail===socket,pendingId,profile:profileData.profile_id,boot:profileData.boot_id,revision:profileData.revision}));});
   const reads=[];page.on('request',request=>{if(new URL(request.url()).pathname==='/receive')reads.push({method:request.method(),at:Date.now()});});
   const prior=await page.locator('#updated').textContent();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,prior);await page.waitForFunction(()=>window.__readyReads.length>=1);await page.waitForTimeout(250);
   const ready=await page.evaluate(()=>window.__readyReads);const evidence={reads,ready};await fs.mkdir('test-results/radio-selection',{recursive:true});await fs.writeFile('test-results/radio-selection/receive-ready.json',JSON.stringify(evidence,null,2));
   assert.equal(ready.length,1,'a status refresh on the socket reads no profile: one readiness notification');
-  assert.equal(reads.length,1,'one status refresh needs one receive snapshot');
-  await page.evaluate(()=>{dispatchEvent(new CustomEvent('station-ready',{detail:socket}));dispatchEvent(new CustomEvent('station-ready',{detail:socket}));});await page.waitForTimeout(100);assert.equal(reads.length,1,'the same completed readiness does not refetch');
+  assert.equal(reads.length,0,'a status of the socket needs no receive snapshot');
+  await page.evaluate(()=>{dispatchEvent(new CustomEvent('station-ready',{detail:socket}));dispatchEvent(new CustomEvent('station-ready',{detail:socket}));});await page.waitForTimeout(100);assert.equal(reads.length,0,'the same readiness does not read');
   const keys=await page.evaluate(()=>{
     const p={profile_id:'00000000-0000-4000-8000-000000000001',boot_id:'00000000-0000-4000-8000-000000000002',revision:0};
-    return {base:receiveReadyKey(p,1),profile:receiveReadyKey({...p,profile_id:'00000000-0000-4000-8000-000000000003'},1),boot:receiveReadyKey({...p,boot_id:'00000000-0000-4000-8000-000000000003'},1),revision:receiveReadyKey({...p,revision:1},1),status:receiveReadyKey(p,2),invalid:[receiveReadyKey(null,1),receiveReadyKey(p,null),receiveReadyKey({...p,boot_id:null},1),receiveReadyKey(p,0)],staleAdmitted:receiveReady({})};
+    return {base:receiveReadyKey(p),profile:receiveReadyKey({...p,profile_id:'00000000-0000-4000-8000-000000000003'}),boot:receiveReadyKey({...p,boot_id:'00000000-0000-4000-8000-000000000003'}),revision:receiveReadyKey({...p,revision:1}),invalid:[receiveReadyKey(null),receiveReadyKey({...p,boot_id:null}),receiveReadyKey({...p,revision:-1})],staleAdmitted:receiveReady({})};
   });
-  assert.equal(new Set([keys.base,keys.profile,keys.boot,keys.revision,keys.status]).size,5,'every independently validated context field changes admission identity');assert.deepEqual(keys.invalid,[null,null,null,null]);assert.equal(keys.staleAdmitted,false);
+  assert.equal(new Set([keys.base,keys.profile,keys.boot,keys.revision]).size,4,'every independently validated context field changes admission identity');assert.deepEqual(keys.invalid,[null,null,null]);assert.equal(keys.staleAdmitted,false);
+  // A changed saved profile reads once, also while a read is pending: one follow-up, never a parallel request.
   let release,entered;const gate=new Promise(resolve=>release=resolve),captured=new Promise(resolve=>entered=resolve);t.after(()=>release());
   let held=false;await page.route('**/receive',async route=>{if(!held){held=true;entered();await gate;}await route.continue();});
-  await refreshStatus(page);await captured;await page.waitForFunction(()=>window.__readyReads.length>=2);
-  const secondUpdate=await page.locator('#updated').textContent();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,secondUpdate);await page.waitForFunction(()=>window.__readyReads.length>=3);await page.waitForTimeout(100);
-  assert.equal(reads.length,2,'a changed status while pending queues one follow-up, not another parallel request');release();
-  await page.waitForFunction(()=>!livePending);await page.waitForTimeout(100);assert.equal(reads.length,3,'the single legitimate changed-status follow-up executes');
+  const changed=()=>page.evaluate(()=>{profileData={...profileData,revision:profileData.revision+1};dispatchEvent(new CustomEvent('station-ready',{detail:socket}));});
+  await changed();await captured;
+  await changed();await page.waitForTimeout(100);
+  assert.equal(reads.length,1,'a changed revision while pending queues one follow-up, not another parallel request');release();
+  await page.waitForFunction(()=>!livePending);await page.waitForTimeout(100);assert.equal(reads.length,2,'the single legitimate follow-up executes');
   await page.unroute('**/receive');
-  await page.evaluate(()=>{const id=pendingId;pendingId=null;dispatchEvent(new CustomEvent('station-ready',{detail:socket}));dispatchEvent(new CustomEvent('station-ready',{detail:socket}));pendingId=id;});
-  await page.waitForFunction(()=>!livePending);await page.waitForTimeout(100);assert.equal(reads.length,5,'missing status identity bypasses dedup instead of becoming a global shared key');
-  await page.evaluate(()=>dispatchEvent(new CustomEvent('station-ready',{detail:socket})));await page.waitForTimeout(100);assert.equal(reads.length,5,'invalid context did not poison the prior admitted valid context');
+  // No valid context bypasses the check instead of becoming a shared key.
+  await page.evaluate(()=>{const held=profileData;profileData=null;receiveReady(socket);profileData=held;});
+  await page.waitForFunction(()=>!livePending);await page.waitForTimeout(100);assert.equal(reads.length,3,'no valid context reads rather than sharing a key');
+  await page.evaluate(()=>dispatchEvent(new CustomEvent('station-ready',{detail:socket})));await page.waitForTimeout(100);assert.equal(reads.length,3,'invalid context did not poison the prior admitted valid context');
+  // A failed read: the next status reads again, the one after it no more.
+  await page.route('**/receive',route=>route.abort(),{times:1});
+  await page.evaluate(()=>receiveSync());await page.waitForFunction(()=>liveFailed);
+  const failed=reads.length;await refreshStatus(page);await page.waitForFunction(()=>!liveFailed&&!livePending);assert.equal(reads.length,failed+1,'the next status after a failed read reads once');
+  await refreshStatus(page);await page.waitForTimeout(250);assert.equal(reads.length,failed+1,'then none again');
 });
 
 // Proves: CL-022-03, CL-022-05; TC-022-009. Actual TLS server/browser. COM250 is an
@@ -473,15 +473,12 @@ function selectionNetworkSummary(transfers,start,end){
   let active=0,maxActive=0;for(const event of events){active+=event.delta;assert.ok(active>=0);maxActive=Math.max(maxActive,active);}
   return {maxActive,requests,pendingAtEnd:requests.filter(r=>r.ended===null||r.ended>end).length};
 }
-// WstxContact::ContactWire: POST /contact/worked is a read-only worked-before query, not a
-// station mutation; every other non-GET request still counts.
 // #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
 async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
-// Reads the client sends as POST are not station mutations: /contact/worked looks up worked
-// status, and /authorization/v1/status (catSync, sent on a CAT identity/state change, never by an
+// A read the client sends as POST is not a station mutation: /authorization/v1/status (catSync, sent on a CAT identity/state change, never by an
 // operator action) only reads the CAT condition and receive state (authorization_http.rs
 // Operation::Status). Every other non-GET request, including /receive/select, still counts (#8).
-const readOnlyPosts=['/contact/worked','/authorization/v1/status'];
+const readOnlyPosts=['/authorization/v1/status'];
 function stationMutation(r){return !['GET','HEAD'].includes(r.method)&&!(r.method==='POST'&&readOnlyPosts.includes(r.route));}
 // A Cold-load selection read the page itself abandoned: its frozen AbortSignal.timeout(10000)
 // fired (CDP lifetime >= 9500 ms, net::ERR_ABORTED) and the read ended before the accepted
@@ -501,17 +498,16 @@ function cadenceSource(bytes){
   // CDP line numbers are 0-based, the same as these indices.
   const single=(what,hits)=>{assert.equal(hits.length,1,`review the cadence caller mapping: ${what} matched ${hits.length} lines of recording.js (${hits.map(n=>n+1).join(',')||'none'})`);return hits[0];};
   const fetchLine=single('the selection fetch',lines.flatMap((line,n)=>line.includes("stationFetch('/receive/selection'")?[n]:[]));
-  // Every call of operatingSync (not its definition). The automatic one is the operatingSync(false)
-  // inside a top-level setInterval( timer: its statement starts at the nearest unindented line.
+  // Every call of operatingSync (not its definition); selection.state carries the state, so none
+  // may sit inside a top-level setInterval( timer (its statement starts at the nearest unindented line).
   const callers=lines.flatMap((line,n)=>/(?<!function )\boperatingSync\(/.test(line)?[n]:[]);
   const inTimer=n=>{while(n>0&&/^\s/.test(lines[n]))n--;return lines[n].startsWith('setInterval(');};
-  const timerLine=single('the automatic timer caller',callers.filter(n=>lines[n].includes('operatingSync(false)')&&inTimer(n)));
-  const explicitLines=callers.filter(n=>n!==timerLine);
+  const timers=callers.filter(inTimer);assert.equal(timers.length,0,`review the cadence caller mapping: a timer reads the selection (${timers.map(n=>n+1)})`);
   assert.ok(source.includes("stationFetch('/receive/selection',{signal:AbortSignal.timeout(10000)})"),'frozen 10 s selection read timeout');
   const valid=require('node:vm').runInNewContext(source.slice(source.indexOf('const operatingBands='),source.indexOf('function operatingShow()'))+';validOperatingState');
   // The digest is report evidence of which source was served, not a gate.
   const sha256=require('node:crypto').createHash('sha256').update(source,'utf8').digest('hex');
-  return {sha256,valid,fetchLine,timerLine,explicitLines};
+  return {sha256,valid,fetchLine,explicitLines:callers};
 }
 function cadenceCaller(initiator,origin,mapping){
   let frames=initiator?.stack?.callFrames;
@@ -524,54 +520,10 @@ function cadenceCaller(initiator,origin,mapping){
   assert.ok(frames?.length>=2,'complete selection caller stack');
   assert.equal(frames[0].url,origin+'/recording.js');assert.equal(frames[0].functionName,'operatingSync');assert.equal(frames[0].lineNumber,mapping.fetchLine,`selection read from line ${frames[0].lineNumber}, not the selection fetch ${mapping.fetchLine}: review the cadence caller mapping`);
   const caller=frames[1];assert.equal(caller.url,origin+'/recording.js');
-  // Every other operatingSync call of the served source is explicit or reconciliation.
+  // Every operatingSync call of the served source is explicit or reconciliation.
   // Unknown stacks fail closed. catSync never reads selection (CL-022-03).
-  if(caller.lineNumber===mapping.timerLine)return 'automatic';
   assert.ok(mapping.explicitLines.includes(caller.lineNumber),`unknown selection caller line ${caller.lineNumber}: review the cadence caller mapping`);
   return 'explicit/reconciliation';
-}
-function cadencePair(previous,current,mutations){
-  const gap=current.started-previous.started,p=previous.body,c=current.body;
-  const pending=p.operation?.result==='pending';
-  const pair={previous,current,gap,priorResult:p.operation?.result??null,minimum:pending?3950:7950,eligible:false,reason:null};
-  if(current.kind!=='automatic'){pair.reason='explicit/reconciliation';return pair;}
-  assert.ok(previous.ended<=current.started,'sequential actual selection transport');
-  // These lower bounds apply to EVERY automatic dispatch, even across an identity change.
-  assert.ok(gap>=pair.minimum,`automatic ${pair.priorResult} start spacing ${gap}`);
-  if(!c){pair.reason='incomplete trailing response';return pair;}
-  const fixed=['station','profile_id','boot_id','profile_revision','operating_revision'];
-  if(fixed.some(key=>(key==='station'?previous.station:p[key])!==(key==='station'?current.station:c[key]))||p.operation?.command_id!==c.operation?.command_id){pair.reason='identity/command changed';return pair;}
-  if(p.operation&&['base_revision','revision','action','requested','old_job_id'].some(key=>JSON.stringify(p.operation[key])!==JSON.stringify(c.operation[key]))){pair.reason='command context changed';return pair;}
-  if(p.radio?.connection_generation!==c.radio?.connection_generation){pair.reason='radio connection changed';return pair;}
-  if(mutations.some(m=>m.started>previous.started&&m.started<=current.started)){pair.reason='intervening mutation';return pair;}
-  if(c.snapshot_sequence<p.snapshot_sequence){pair.reason='stale successor';return pair;}
-  const changed=p.generation!==c.generation||p.receive.job_id!==c.receive.job_id;
-  // Only the same owning operation may introduce its newly created receive context.
-  if(changed&&!(pending&&c.operation?.command_id===p.operation.command_id&&c.operation.new_job_id&&c.receive.job_id===c.operation.new_job_id&&c.generation>=p.generation)){
-    pair.reason='unrelated receive context';return pair;
-  }
-  pair.eligible=true;pair.pendingCoverage=pending&&gap<7950;pair.passiveCoverage=!pending;return pair;
-}
-function cadenceAccepted(body,request,next,qualification){
-  const {expected,events}=qualification;
-  for(const key of ['profile_id','boot_id','profile_revision'])assert.equal(body[key],expected[key],`source acceptance expected ${key}`);
-  const before=events.filter(e=>e.at<=request.wallStarted).at(-1);
-  assert.ok(before&&before.connected&&before.sameSocket,'proven connected socket at dispatch');
-  assert.ok(before.acceptedSequence===null||body.snapshot_sequence>=before.acceptedSequence,'source stale sequence guard');
-  const boundary=next?.wallStarted??events.at(-1).at;
-  const during=events.filter(e=>e.at>request.wallStarted&&e.at<=boundary);
-  for(const event of during){
-    assert.ok(event.connected&&event.sameSocket,'source socket context invalidated');
-    if(event.epoch!==before.epoch){
-      // A synchronous action checkpoint can prove acceptance BEFORE that action
-      // increments the epoch. Otherwise network completion alone is insufficient.
-      assert.equal(event.acceptedSequence,body.snapshot_sequence,'source epoch discarded or acceptance unproven');
-      assert.ok(request.wallEnded!==null&&request.wallEnded<=event.at,'mutation before response completion');
-      return {epoch:before.epoch,proof:'accepted state at invalidating action',acceptedSequence:event.acceptedSequence};
-    }
-  }
-  assert.ok(next||events.at(-1).acceptedSequence===body.snapshot_sequence,'final response acceptance unproven');
-  return {epoch:before.epoch,proof:next?'frozen guards and next sequential dispatch':'accepted final checkpoint',acceptedSequence:body.snapshot_sequence};
 }
 function cadenceQualification(seen){
   const q=seen.acceptance,events=q.events;
@@ -614,15 +566,8 @@ function cadenceJoin(seen,origin,mapping){
     const previous=network[index-1];if(previous)assert.ok(previous.ended!==null&&previous.ended<=transfer.started,'no transport overlap');
     const priorBody=seen.reads[index-1]?.body;
     if(priorBody&&read.body&&priorBody.boot_id===read.body.boot_id)assert.ok(read.body.snapshot_sequence>=priorBody.snapshot_sequence,'fail closed on a snapshot the browser would reject as old');
-    // The source cannot dispatch the next read until response.text, validation and
-    // operatingState assignment finish. Observer JSON callbacks may finish later.
-    const acceptance=read.body&&transfer.wallStarted>=seen.acceptance.events[0].at?cadenceAccepted(read.body,transfer,network[index+1],seen.acceptance):null;
-    return {...transfer,station:origin,kind:cadenceCaller(transfer.initiator,origin,mapping),body:read.body,acceptance,observerParsedAt:read.ended};
+    return {...transfer,station:origin,kind:cadenceCaller(transfer.initiator,origin,mapping),body:read.body,observerParsedAt:read.ended};
   });
-}
-function assertCadenceCoverage(pairs,label){
-  assert.ok(pairs.some(p=>p.eligible&&p.pendingCoverage),`${label}: missing automatic4s pending-context pair`);
-  assert.ok(pairs.some(p=>p.eligible&&p.passiveCoverage),`${label}: missing automatic8s passive-context pair`);
 }
 function correlatedOffAck(requests,acks,after){
   for(const request of requests.filter(r=>r.profile==='off'&&r.at>=after)){
@@ -673,7 +618,7 @@ function liveSelectionFixture(){
     for(let i=0;i<2;i++){
       const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}});contexts.push(context);
       const page=await context.newPage();pages.push(page);
-      const seen={reads:[],profileBodies:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[],subscriptionRequests:[],subscriptionAcks:[],navigations:[],abandonedBodies:[]};observations.push(seen);
+      const seen={selectionEvents:[],reads:[],profileBodies:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[],subscriptionRequests:[],subscriptionAcks:[],navigations:[],abandonedBodies:[]};observations.push(seen);
       page.on('framenavigated',frame=>{if(frame===page.mainFrame())seen.navigations.push({url:frame.url(),at:performance.now()});});
       const cdp=await context.newCDPSession(page),transfers=new Map();await cdp.send('Network.enable');
       cdp.on('Network.requestWillBeSent',event=>{const transfer={id:event.requestId,route:new URL(event.request.url).pathname,method:event.request.method,started:performance.now(),browserStarted:event.timestamp,wallStarted:event.wallTime*1000,wallEnded:null,ended:null,encodedBytes:null,initiator:event.initiator};transfers.set(event.requestId,transfer);seen.transfers.push(transfer);});
@@ -698,7 +643,7 @@ function liveSelectionFixture(){
         if(!['/receive/selection','/receive','/receive/results'].includes(route)){if((response.headers()['content-type']||'').includes('application/json')){try{entry.bodyBytes=(await response.body()).length;}catch(error){entry.bodyError=error.message;}}return;}
         await observeReceiveResponse(response,entry,seen,reads,errors);
       });
-      page.on('websocket',socket=>{const session={index:seen.sockets.length,opened:performance.now(),closed:null,messages:[],receivedBytes:0};seen.sockets.push(session);socket.on('close',()=>session.closed=performance.now());socket.on('socketerror',error=>session.error=String(error));socket.on('framesent',event=>{try{const m=JSON.parse(event.payload);if(['spectrum.off','spectrum.thin','spectrum.detail'].includes(m.type)&&Number.isSafeInteger(m.id))seen.subscriptionRequests.push({socket:session.index,at:performance.now(),id:m.id,profile:m.type.slice(9)});}catch{}});socket.on('framereceived',event=>{session.receivedBytes+=Buffer.byteLength(event.payload);try{const m=JSON.parse(event.payload),at=performance.now();seen.wireFrames.push({socket:session.index,at,type:m.type,bytes:Buffer.byteLength(event.payload)});if(m.type==='spectrum.subscription')seen.subscriptionAcks.push({socket:session.index,at,id:m.id,profile:m.data?.profile});if(m.type==='spectrum.frame')seen.frames.push({socket:session.index,at,data:m.data});else session.messages.push({at,type:m.type,id:m.id,radio:m.data?.radio});}catch{}});});
+      page.on('websocket',socket=>{const session={index:seen.sockets.length,opened:performance.now(),closed:null,messages:[],receivedBytes:0};seen.sockets.push(session);socket.on('close',()=>session.closed=performance.now());socket.on('socketerror',error=>session.error=String(error));socket.on('framesent',event=>{try{const m=JSON.parse(event.payload);if(['spectrum.off','spectrum.thin','spectrum.detail'].includes(m.type)&&Number.isSafeInteger(m.id))seen.subscriptionRequests.push({socket:session.index,at:performance.now(),id:m.id,profile:m.type.slice(9)});}catch{}});socket.on('framereceived',event=>{session.receivedBytes+=Buffer.byteLength(event.payload);try{const m=JSON.parse(event.payload),at=performance.now();seen.wireFrames.push({socket:session.index,at,type:m.type,bytes:Buffer.byteLength(event.payload)});if(m.type==='selection.state')seen.selectionEvents.push({at,socket:session.index,bytes:Buffer.byteLength(event.payload),data:m.data});if(m.type==='spectrum.subscription')seen.subscriptionAcks.push({socket:session.index,at,id:m.id,profile:m.data?.profile});if(m.type==='spectrum.frame')seen.frames.push({socket:session.index,at,data:m.data});else session.messages.push({at,type:m.type,id:m.id,radio:m.data?.radio});}catch{}});});
     }
     const coldStarted=performance.now(),coldDeadline=coldStarted+230000;
     const coldRemaining=()=>{const remaining=Math.floor(coldDeadline-performance.now());assert.ok(remaining>0,'shared 230s Cold phase deadline');return remaining;};
@@ -762,8 +707,8 @@ function liveSelectionFixture(){
     const freshRead=async index=>{
       const seen=observations[index],before=seen.reads.length;seen.gestures.push(performance.now());await pages[index].locator('#operating-refresh:enabled').click();
       const deadline=performance.now()+12000;while(!seen.reads.slice(before).some(r=>r.ended!==null&&r.body?.v===1)){assert.ok(performance.now()<deadline,'actual explicit operating read completed');await sleep(20);}
-      // A click during an in-flight timer read is coalesced into a follow-up read (operatingReadAgain),
-      // and Node may see the timer read only after `before`. The operator acts once the page has no
+      // A click during a read in flight is coalesced into a follow-up read (operatingReadAgain),
+      // and Node may see that read only after `before`. The operator acts once the page has no
       // selection read pending, so the next action cannot make the page discard its own read (#8).
       await pages[index].waitForFunction(()=>!operatingReadPending&&!operatingReadAgain,null,{timeout:Math.max(1,Math.ceil(deadline-performance.now()))});
     };
@@ -799,8 +744,9 @@ function liveSelectionFixture(){
         const records=seen.results.filter(p=>p.job_id===identity.job&&p.source_id===identity.source).flatMap(p=>p.records??[]);
         assert.ok(records.length>0,'actual manager result page supplied the displayed row');
         for(const record of records){assert.equal(record.payload77,oracle[mode].payload77);assert.equal(record.text,'CQ K1ABC FN42');assert.deepEqual(record.fields,oracle[mode].fields);assert.ok(Math.abs(record.frequency_hz-oracle[mode].expected_receive.frequency_hz)<=oracle[mode].expected_receive.frequency_tolerance_hz);}
-        const snapshots=seen.reads.filter(r=>r.body?.operation?.command_id===ack.command_id);const last=snapshots.at(-1)?.body;
-        assert.ok(last,'actual operating snapshot retained this command');assert.equal(last.selection.nominal_hz,hz);assert.equal(last.radio.observations.frequency.value,hz);assert.equal(last.radio.observations.mode.value.mode,'USB');assert.equal(last.radio.observations.data.value.enabled,true);
+        // The state this browser holds (selection.state or its own read) retained the command.
+        await pages[i].waitForFunction(({command,hz})=>operatingState?.operation?.command_id===command&&operatingState.selection.nominal_hz===hz&&operatingState.radio.observations.frequency.value===hz,{command:ack.command_id,hz},{timeout:15000});
+        const last=await pages[i].evaluate(()=>operatingState);assert.equal(last.radio.observations.mode.value.mode,'USB');assert.equal(last.radio.observations.data.value.enabled,true);
       }
       report.contexts=identities;await save();console.log(`Actual ${mode} CQ context ${identities.length}/5 at ${hz}Hz`);
       return ack.command_id;
@@ -813,7 +759,17 @@ function liveSelectionFixture(){
       activePhase=profile;report.phases[profile]={state:'running',startedUtc:new Date().toISOString(),representativeSeconds:75};await save();console.log(`Actual ${profile}75s workload started`);
       const status=async()=>{for(let n=1;n<=13;n++){await waitUntil(start+n*5500);await Promise.all(pages.map(async page=>{const previous=await page.locator('#updated').textContent(),began=performance.now();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,previous,{timeout:2000});const ms=performance.now()-began;assert.ok(ms<=2000,`actual ${profile} visible status ${ms}ms`);latencies.push(ms);}));}};
       const controls=async()=>{const commands=[];for(let n=0;n<steps.length;n++){await waitUntil(start+(n?40000:5000));commands.push(await command(...steps[n]));}return commands;};
-      const [,commands]=await Promise.all([status(),controls()]);await waitUntil(start+75000);const seconds=(performance.now()-start)/1000;
+      // Each CAT poll dates the radio facts anew: that alone goes at most every 30 s below Detailed, on the
+      // station's clock. Checked during the window: the extra traffic of a broken pacing would otherwise show
+      // first as a missed status wait, not as what it is.
+      const undated=radio=>JSON.stringify(radio,(key,value)=>key==='query_sequence'||key==='observed_at_ms'?undefined:value);
+      const datesOnly=(seen,index)=>{const lastEvent=new Map(),heldRadio=new Map();let count=0;
+        for(const e of seen.selectionEvents){const c=e.data.changed,previous=lastEvent.get(e.socket);
+          if(Object.keys(c).join()==='radio'&&undated(c.radio)===undated(heldRadio.get(e.socket))&&e.at>=start){count++;assert.ok(e.data.monotonic_ms-previous>=29900,`${profile} browser${index}: new radio dates alone ${e.data.monotonic_ms-previous} ms after the last event`);}
+          if(c.radio)heldRadio.set(e.socket,c.radio);lastEvent.set(e.socket,e.data.monotonic_ms);}
+        return count;};
+      const pacing=async()=>{while(performance.now()<start+75000){observations.forEach(datesOnly);await sleep(250);}};
+      const [,commands]=await Promise.all([status(),controls(),pacing()]);await waitUntil(start+75000);const seconds=(performance.now()-start)/1000;
       assert.ok(seconds>=75,'full predeclared representative window');const traffic={up:(proxy.counters.up-baseline.up)/seconds,down:(proxy.counters.down-baseline.down)/seconds};
       const pathCounts=observations.map(seen=>Object.fromEntries([...new Set(seen.http.filter(r=>r.at>=start).map(r=>r.route))].map(route=>[route,seen.http.filter(r=>r.at>=start&&r.route===route).length])));
       report.phases[profile]={state:'checking',seconds,sharedBytesPerSecond:traffic,statusMs:latencies,pathCounts,offProofs,networkSelection:observations.map(seen=>selectionNetworkSummary(seen.transfers,start,start+seconds*1000)),httpResponses:observations.map(seen=>seen.http.filter(r=>r.at>=start)),browserTransfers:observations.map(seen=>seen.transfers.filter(r=>r.started>=start||r.ended>=start)),websocketFrames:observations.map(seen=>seen.wireFrames.filter(frame=>frame.at>=start)),selectionReads:observations.map((seen,index)=>seen.reads.slice(readStarts[index]).map(r=>({startedMs:r.started-start,completedMs:r.ended===null?null:r.ended-start,phase:r.body?.operation?.phase??null,command:r.body?.operation?.command_id??null}))),frames:observations.map((seen,index)=>seen.frames.length-frameStarts[index])};await save();
@@ -822,20 +778,11 @@ function liveSelectionFixture(){
       for(const [index,page]of pages.entries()){observations[index].acceptance.events=await page.evaluate(()=>window.__cadenceAcceptanceCheckpoint());observations[index].acceptance.socketBaseline.end=performance.now();}
       report.phases[profile].cadenceRaw=observations.map(seen=>({sourceBase64:seen.cadenceSource?.toString('base64'),acceptance:seen.acceptance,profileBodies:seen.profileBodies,reads:seen.reads,transfers:seen.transfers,sockets:seen.sockets.map(({messages,...s})=>({...s,messages:messages.length,lastMessageAt:messages.at(-1)?.at??null}))}));await save();
       const evidence=observations.map(seen=>{
-        const evidence={joined:[],pairs:[],errors:[]};
+        const evidence={joined:[],errors:[]};
         try{
           const mapping=cadenceSource(seen.cadenceSource);evidence.sourceSha256=mapping.sha256;
           cadenceQualification(seen);
           evidence.joined=cadenceJoin(seen,origin,mapping);
-          const mutations=observations.flatMap(o=>o.transfers).filter(stationMutation);
-          for(let n=1;n<evidence.joined.length;n++){
-            const previous=evidence.joined[n-1],current=evidence.joined[n];
-            if(previous.started<start||current.started>=start+seconds*1000)continue;
-            assert.ok(previous.acceptance,'prior selection acceptance proven');
-            if(current.body)assert.ok(current.acceptance,'successor selection acceptance proven');
-            try{evidence.pairs.push(cadencePair(previous,current,mutations));}
-            catch(error){evidence.errors.push({message:error.message,previous,current});}
-          }
         }catch(error){evidence.errors.push({message:error.message});}
         return evidence;
       });
@@ -844,11 +791,19 @@ function liveSelectionFixture(){
         const network=selectionNetworkSummary(seen.transfers,start,start+seconds*1000);assert.equal(network.maxActive,1,'one actual CDP network selection read pending per browser');
         const proof=evidence[index];assert.deepEqual(proof.errors,[],'complete validated cadence evidence');
         const reads=proof.joined.filter(r=>r.started>=start&&r.started<start+seconds*1000&&r.body);
-        const pending=commands.map(id=>reads.filter(r=>r.body.operation?.command_id===id&&r.body.operation.result==='pending'));
-        for(const [n,polls]of pending.entries())assert.ok(polls.length>=1,`${profile} browser${index} command${n}: actual pending reads ${polls.length}`);
-        assertCadenceCoverage(proof.pairs,`${profile} browser${index}`);
-        return {reads,pending:pending.map(p=>p.length),passivePairs:proof.pairs.filter(p=>p.eligible&&p.passiveCoverage).length,pendingPairs:proof.pairs.filter(p=>p.eligible&&p.pendingCoverage).length,frames:seen.frames.length-frameStarts[index]};
+        // What this browser saw of each command while pending, from a read or an event (a whole view per socket).
+        const held=new Map(),views=seen.selectionEvents.filter(e=>e.at>=start).map(e=>{const view={...held.get(e.socket),...e.data.changed};held.set(e.socket,view);return view;});
+        const pending=commands.map(id=>reads.filter(r=>r.body.operation?.command_id===id&&r.body.operation.result==='pending').length+views.filter(v=>v.operation?.command_id===id&&v.operation.result==='pending').length);
+        // No timer: reads only come from an operator's gesture, one each (a click during a read follows it).
+        const gestures=seen.gestures.filter(at=>at>=start&&at<start+seconds*1000).length;
+        assert.ok(reads.length<=gestures,`${profile} browser${index}: ${reads.length} selection reads for ${gestures} gestures`);
+        const events=seen.selectionEvents.filter(e=>e.at>=start&&e.at<start+seconds*1000);
+        assert.ok(events.every(e=>e.bytes<=2048),`${profile} browser${index}: selection.state over 2048 B`);
+        assert.ok(events.length<=Math.ceil(seconds)+1,`${profile} browser${index}: ${events.length} selection.state in ${seconds} s`);
+        return {reads,pending,gestures,events:events.length,datesOnly:datesOnly(seen,index),eventBytes:events.reduce((sum,e)=>sum+e.bytes,0),frames:seen.frames.length-frameStarts[index]};
       });
+      // A short command may end between two 1 s checks of one browser, not unseen by both.
+      for(const n of commands.keys())assert.ok(polling.some(p=>p.pending[n]>=1),`${profile} command${n}: pending seen by neither browser`);
       if(profile==='thin')assert.ok(polling.every(p=>p.frames>0),'real optional live spectrum was present, not an idle body-size exercise');
       if(profile==='off'){assert.equal(offProofs.length,2);for(const [index,ack]of offProofs.entries()){assert.ok(ack.ackAt<=start);assert.deepEqual(optionalAfterOff(observations[index].wireFrames,ack),[],'no optional frame after its correlated Off ACK');assert.equal(polling[index].frames,0,'no optional spectrum during actual Off window');}}
       report.phases[profile]={...report.phases[profile],state:'passed',seconds,sharedBytesPerSecond:traffic,statusMs:latencies,polling,commands,endedUtc:new Date().toISOString()};activePhase=null;await save();console.log(`Actual ${profile} workload completed ${seconds.toFixed(3)}s ${JSON.stringify(traffic)}`);

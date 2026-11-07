@@ -46,6 +46,56 @@ fn empty(body: Result<Bytes, BytesRejection>) -> Result<(), &'static str> {
         Err(_) => Err("request_too_large"),
     }
 }
+
+/// The data of receive.state (WstxStationProtocol::PushedStationState): the identity and what a
+/// browser holding it would otherwise read GET /receive for. It leaves out what frames carry.
+pub(crate) fn receive_state_data(s: &Value) -> Value {
+    let (j, c) = (&s["job"], &s["clock"]);
+    json!({"profile_id":s["profile_id"],"boot_id":s["boot_id"],"generation":s["generation"],
+        "source_id":s["source"]["id"],"job_id":j["id"],"state":j["state"],
+        "audio":s["audio"],
+        "clock":{"correlated":c["correlated"],"utc_anchor":c["utc_anchor"],"canonical_anchor_frame":c["canonical_anchor_frame"],"uncertainty_ns":c["uncertainty_ns"]},
+        "job":{"error":j["error"],"first_sequence":j["first_sequence"],"next_sequence":j["next_sequence"],
+            "available_count":j["available_count"],"last_overrun":j["last_overrun"],"latest_decode":j["latest_decode"]}})
+}
+
+/// The receive.state this peer gets after `sent` (#10): the first one of a socket and one of a new
+/// receive identity hold every field; a later one the identity and only the audio, clock and job
+/// fields that changed (job by its keys).
+pub(crate) fn receive_state_delta(sent: &Value, now: &Value) -> Value {
+    const IDENTITY: [&str; 6] = [
+        "profile_id",
+        "boot_id",
+        "generation",
+        "source_id",
+        "job_id",
+        "state",
+    ];
+    if sent.is_null() || IDENTITY[..5].iter().any(|k| sent[*k] != now[*k]) {
+        return now.clone();
+    }
+    let mut delta = serde_json::Map::new();
+    for key in IDENTITY {
+        delta.insert(key.into(), now[key].clone());
+    }
+    for key in ["audio", "clock"] {
+        if sent[key] != now[key] {
+            delta.insert(key.into(), now[key].clone());
+        }
+    }
+    let job: serde_json::Map<String, Value> = now["job"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(k, v)| sent["job"][k.as_str()] != **v)
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    if !job.is_empty() {
+        delta.insert("job".into(), Value::Object(job));
+    }
+    Value::Object(delta)
+}
+
 pub async fn snapshot(
     State(app): State<App>,
     headers: HeaderMap,

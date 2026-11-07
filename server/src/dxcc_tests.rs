@@ -395,6 +395,82 @@ async fn tc_055_002_receive_results_carry_entity_and_new_flags() {
     );
 }
 
+// Proves: CL-010-13; TC-011-003 the actual /receive/results route marks each decoded record
+// with the worked-before status of its concrete 'from' call on this band and mode, and the
+// browser needs no query. Hand-written log and expected statuses.
+#[tokio::test]
+async fn tc_011_003_receive_results_carry_the_worked_status() {
+    use crate::automation_tests::{at_even, publish};
+    let f = crate::mcp_tests::station(false).await;
+    let import = |adi: &str| {
+        let id = crate::profile::new_uuid().unwrap();
+        let open = |publish: &mut dyn FnMut() -> std::io::Result<()>| -> Result<std::io::Result<()>, crate::authorization::Error> { Ok(publish()) };
+        let sha: String = ring::digest::digest(&ring::digest::SHA256, adi.as_bytes())
+            .as_ref()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let now = std::time::Instant::now();
+        let log = &f.state.logbook;
+        log.reserve(&id, adi.len() as u64, &sha, now).unwrap();
+        log.chunk(&id, 0, adi.len() as u64, adi.as_bytes(), now, &open)
+            .unwrap();
+    };
+    import(
+        "<call:5>K1ABC <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <eor>\n\
+         <call:5>W1XYZ <qso_date:8>20261031 <time_on:4>1231 <band:3>40m <mode:3>FT8 <eor>\n\
+         <call:6>DL1ABC <qso_date:8>20261031 <time_on:4>1232 <band:3>20m <mode:3>FT4 <eor>\n",
+    );
+    let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
+    publish(
+        &f,
+        at_even(&f),
+        &[
+            ("CQ K1ABC FN42", 1000.0, Some(-5.0)),
+            ("K9XX W1XYZ -05", 1100.0, Some(-5.0)),
+            ("HB9BLA DL1ABC JO62", 1200.0, Some(-5.0)),
+            ("CQ N0NEW FN42", 1300.0, Some(-5.0)),
+            ("TNX BOB 73 GL", 1400.0, Some(-5.0)),
+            ("K9XX <PJ4/K1ABC> 73", 1500.0, Some(-5.0)),
+        ],
+    );
+    let uri = format!(
+        "/receive/results?source_id={source}&job_id={job}&generation={generation}&cursor=0&limit=16"
+    );
+    let statuses = |records: Value| -> Vec<Value> {
+        records
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["worked_status"].clone())
+            .collect()
+    };
+    let read = || async {
+        let records = f.browser("GET", &uri, None).await.json["records"].clone();
+        assert_eq!(records[5]["fields"]["from"]["kind"], "hash");
+        statuses(records)
+    };
+    // No band known: no status, the row stays unknown.
+    assert_eq!(read().await, vec![Value::Null; 6]);
+    f.state.recording.fixture_band("20m");
+    let null = Value::Null;
+    assert_eq!(
+        read().await,
+        [
+            json!("worked_this_band_and_mode"),
+            json!("worked_other_band_or_mode"),
+            json!("worked_other_band_or_mode"),
+            json!("not_worked"),
+            null.clone(),
+            null.clone(),
+        ],
+        "this band and mode; another band; another mode; not in the log; free text; a hash"
+    );
+    // A contact logged later counts at once.
+    import("<call:5>N0NEW <qso_date:8>20261101 <time_on:4>0800 <band:3>20m <mode:3>FT8 <eor>\n");
+    assert_eq!(read().await[3], "worked_this_band_and_mode");
+}
+
 // Proves: TC-055-006 (CL-055-04) every decoded sender, not only a CQ caller, carries its
 // entity and flags: a report and an R-report to other stations from new senders, and an
 // RR73 from a sender worked on this band and mode (entity, no flag).
