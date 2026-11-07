@@ -634,8 +634,10 @@ belong to test output and the implementing CR. Code/model correspondence and con
    artifact. For SysML authority, update the model directly; do not edit archived Markdown.
 3. Settle open decisions on behaviour, data, ownership, states, timing, errors and test
    oracles with the operator; unresolved ones block the slice. A device or protocol whose
-   behaviour is unknown gets a throwaway experiment against the real thing first, findings on
-   the issue. A model-readiness review is held only on request.
+   behaviour is unknown gets an experiment (`cr:experimenting`) within the
+   [limits below](#limits-for-experiments), findings on the issue. The issue then passes the
+   ready check of the [CR process](../../harness/core/docs/CR-Process.md): an agent that did not
+   write it posts `Ready: PASS`. A model-readiness review is held only on request.
 4. Implement against the model and declared normative references. Verification keeps
    independent expected values and does not generate its sole oracle from that code.
 5. Test the function, for real where it matters (a few short transmissions need no prior
@@ -644,6 +646,17 @@ belong to test output and the implementing CR. Code/model correspondence and con
    Keep test existence, actual execution, model readiness and live acceptance separate.
 6. Before issue closure reconcile delivered functionality, durable cases and model/source
    bindings. Current issues retain approval, review, deployment and dated execution evidence.
+
+### Limits for experiments
+
+The limits the [CR process](../../harness/core/docs/CR-Process.md) leaves to the project:
+
+- Throwaway scripts live in `D:/wstx-tmp/experiments/<issue>/`, are never committed and may
+  hold radio addresses.
+- The radio is keyed as in any agent test: the radio preflight and its lease first
+  ([handoff](HB9BLA-HANDOFF.md)), and short test transmissions only.
+- Anything that needs the operator (the Flex switched on) is prepared and dry-run first.
+- Three real runs without an answer mean stop and report to the operator.
 
 ### Method clauses (Markdown only)
 
@@ -657,8 +670,8 @@ These are HOW bindings, not product requirements and not SysML model elements.
 | CL-014-04 | Real validation | Required checks use the pinned full validator/library. Missing tools/files, syntax/name/semantic errors or missing completion evidence fail with no lint fallback. | TC-DOC-003; TC-DOC-004 |
 | CL-014-05 | Stable identities and traces | Preserve stable FR/CL/TC identities and declared states. Clause ownership and verification links are reciprocal. Delivered declarations name existing implementation/executable or explicit manual bindings; no declared status means a test passed. | TC-DOC-001; TC-DOC-002; TC-DOC-007 |
 | CL-014-06 | Structural integrity | Validate the resolved architecture against the independent physical/end-to-end oracle, including identity bindings, exclusive backend and shared authority. A legal but miswired model fails the oracle. | TC-DOC-005 |
-| CL-014-07 | Implementation readiness | Before code, the selected model slice settles observable behaviour, interfaces/data, ownership, state/timing/error choices and independent oracles. Explicit implementation freedoms do not authorize unresolved functional decisions. | TC-DOC-006 |
-| CL-014-08 | Functional sequence and closure | Use the declared canonical artifact first, independently review it, implement against it and verify with independent expected results. Reconcile delivered behaviour and durable cases before closing the issue. SysML-only authority requires no maintained/generated Markdown specification. | TC-DOC-006; TC-DOC-007; independent closure review |
+| CL-014-07 | Implementation readiness | Before code, the issue's ready check passes: the selected model slice settles observable behaviour, interfaces/data, ownership, state/timing/error choices and independent oracles. Explicit implementation freedoms do not authorize unresolved functional decisions. | TC-DOC-006 |
+| CL-014-08 | Functional sequence and closure | Use the declared canonical artifact first, pass the ready check, implement against it and verify with independent expected results. Reconcile delivered behaviour and durable cases before closing the issue. SysML-only authority requires no maintained/generated Markdown specification. | TC-DOC-006; TC-DOC-007; independent closure review |
 | CL-014-09 | Modeling feedback | Correct differences against the declared authority; do not bless code defects by rewriting requirements. Record causes/review on the issue and improve demonstrated reusable/project-specific gaps, with a focused regression where useful. | TC-DOC-006; independent review |
 
 ## Documentation-tool test definitions
@@ -674,7 +687,7 @@ portable Pilot. No radio, live service, Jupyter server or global Java is needed.
 | TC-DOC-003 | CL-014-04 | Feed the actual Pilot a valid model, malformed syntax and unresolved names/types. Accept only the valid model; other cases return diagnostics and nonzero. | Automated pinned Pilot, local fixtures. |
 | TC-DOC-004 | CL-014-04 | Remove/corrupt Java, validator/library or model paths. Required validation fails nonzero and never reports semantic PASS. | Automated tool/prerequisite fixtures on this PC. |
 | TC-DOC-005 | CL-014-03, CL-014-06 | Load the complete architecture with the actual Pilot, inspect resolved port/item/association/binding inventory and compare with independent endpoint expectations. Remove/delegate/bypass/split/duplicate/redirect a required path or authority, change item type/direction, weaken identity binding or add view-only runtime parts. Each negative fails semantics or integrity; a rendered view cannot repair it. | Automated full-validator mutation fixtures and independent architecture review on this PC. |
-| TC-DOC-006 | CL-014-07, CL-014-08, CL-014-09 | Independent reviewer traces the affected canonical contract to code boundaries and independent expected observations; missing required decisions, model/contract disagreement or a shared-only generated oracle refuse readiness. Recheck exact changes and closure reconciliation. No syntax/fingerprint result establishes implementation sufficiency. | Manual source/model/meaning review on this PC; automation cannot establish complete intended meaning. |
+| TC-DOC-006 | CL-014-07, CL-014-08, CL-014-09 | An agent that did not write the issue reads it and the canonical contract it names; missing required decisions, missing test cases or a shared-only generated oracle give `Ready: not yet`, and `cr_state.py` refuses `implementing` without a `Ready: PASS`. The independent review of the candidate rechecks exact changes and closure reconciliation. On request, a model-readiness review traces the contract to code boundaries. No syntax/fingerprint result establishes implementation sufficiency. | Manual source/model/meaning reading on this PC; automation cannot establish complete intended meaning. |
 | TC-DOC-007 | CL-014-01, CL-014-05, CL-014-08 | Refuse dual/missing authority and an active FSD without the marker, missing/duplicate stable IDs, missing required packages, invalid state, nonreciprocal verification links, missing/escaping source paths and unsupported executable claims. Refuse dangling active references to retired FSD content. Edited/missing archived Markdown does not change canonical checks; no command rewrites the model. New packages must be referenced by ProductScope and validated in full. Source edits/deletions invalidate both model suites' evidence; source-only changes select fast traces without the full model suite. Fast traces refuses a deleted binding and never invokes Java. | Automated isolated Python fixtures on this PC; full integrated Pilot validation remains separate. |
 
 Executable companions are `tools/sysml.py`, `tools/sysml/tests/` and the pinned

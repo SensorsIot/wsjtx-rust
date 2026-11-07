@@ -110,8 +110,8 @@ harness rollout process.
 CL-014 and TC-DOC are HOW bindings in
 [Project specifics](Project-Specifics.md#project-model-documentation-contract), not product
 SysML. Full parsing/name checking, architecture integrity and trace checks do not prove
-behavioural equivalence or implementation readiness; independent review and relevant
-application tests supply that evidence.
+behavioural equivalence or implementation readiness; the ready check, independent review
+and relevant application tests supply that evidence.
 
 The active canonical contract and these bindings state the rule that holds now, never
 its history ([documentation](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/documentation.md)).

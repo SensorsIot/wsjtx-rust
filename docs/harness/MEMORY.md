@@ -22,7 +22,8 @@ source; do not replace it with a user-level skill or update its pin without its 
 
 ## Working state and rules (2026-11-06)
 
-- **Lifecycle:** every open issue carries one `cr:*` label (preparing … accepted); read
+- **Lifecycle:** every open issue carries one `cr:*` label (recorded … accepted; none counts as
+  recorded), and no product code comes before the issue's `Ready: PASS`; read
   `python harness/core/tools/cr_state.py status` (with `HARNESS_REPO` set inline) before
   anything else. Slices of one issue (e.g. #24, #39, #44) are tracked per slice.
 - **Merge queue:** CRs land only through `harness/core/tools/merge_queue.py` (submit /
