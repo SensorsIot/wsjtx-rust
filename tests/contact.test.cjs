@@ -565,6 +565,30 @@ test('TC-007-005 a row selection after an unanswered Clear DX decides on the cle
   assert.deepEqual(page.errors,[]);
 });
 
+// Proves: CL-010-03, CL-010-15; TC-007-005 (#10). Esc during the Change contact of a Calling me line that the
+// station refused as contact_active (its selection went before the page showed the new contact): no Enable Tx follows.
+test('TC-007-005 Esc during a Calling me Change contact sends no Enable Tx after the abort',{timeout:60000},async()=>{
+  await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
+  const {sequences}=await publish(evenNow(),[{text:'CQ W1ABC FN42',hz:1350,snr:-5},{text:'HB9BLA W2XYZ FN31',hz:1750,snr:-6}]);
+  const cq=page.locator(`#band-activity tbody tr[data-sequence="${sequences[0]}"]`),li=page.locator('#qso-others tr[data-row]').filter({hasText:'W2XYZ'});
+  await cq.waitFor({timeout:30000});await li.first().waitFor({timeout:30000});
+  let held=0;
+  await page.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());if(b.action==='select_row'){held++;await new Promise(r=>setTimeout(r,800));}await route.continue();});
+  const from=requests.length;await cq.click();
+  await waitFor(()=>held>=1,'the W1ABC selection on its way',5000);
+  await li.first().dblclick();
+  const offered=await page.locator('#contact-change').waitFor({timeout:8000}).then(()=>true,()=>false);
+  let after=[];
+  if(offered){const mark=requests.length;await page.locator('#contact-change').click();await new Promise(r=>setTimeout(r,200));await page.keyboard.press('Escape');
+    await new Promise(r=>setTimeout(r,4000));after=requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/contact/command').map(r=>JSON.parse(r.body).action);}
+  await page.unroute('**/contact/command');const s=await snapshot();await idleAgain();
+  assert.ok(offered,`the Change contact button: ${requests.slice(from).filter(r=>r.method==='POST').map(r=>r.body)}`);
+  assert.ok(after.includes('abort'),`the change and the abort: ${after}`);
+  assert.deepEqual(after.slice(after.indexOf('abort')+1),[],`nothing after the abort: ${after}`);
+  assert.notEqual(s.transmit.arm_state,'armed','not armed after Esc');
+  assert.deepEqual(page.errors,[]);
+});
+
 // Proves: CL-010-15; TC-007-005. A read older than a pushed change does not replace it.
 test('TC-007-005 an older GET /contact does not replace pushed state',{timeout:60000},async()=>{
   const live=await snapshot();const watchdogs=async tx_calls=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};
