@@ -67,7 +67,10 @@ class FlexEmulator {
     this.periodWav = options.periodWav ? fs.readFileSync(options.periodWav) : null; // stream audio
     this.needRegister = options.needRegister ?? false; // sends a stream only to a registered source, as a NAT would
     this.registered = []; // {text, port, at}
-    this.ignoreTune = options.ignoreTune ?? false; // accepts slice tune, never reports it
+    this.ignoreTune = options.ignoreTune ?? false; // accepts slice tune, never changes frequency
+    this.reorderEvery = options.reorderEvery ?? 0; // delays every Nth stream packet behind later ones
+    this.reorderBy = options.reorderBy ?? 1; // by this many packets
+    this.latency = options.latency ?? 0; // ms on the way back of the control connection, as on a routed path
     this.replyFirst = options.replyFirst ?? false; // answers sub client before its statuses
     this.dropEvery = options.dropEvery ?? 0; // loses every Nth stream packet on the way
     this.keepOnDisconnect = options.keepOnDisconnect ?? false; // does not release a lost client's slice
@@ -139,7 +142,11 @@ class FlexEmulator {
         const dropped = this.dropEvery && s.sent % this.dropEvery === 0;
         const payload = this.periodWav ? periodPayload(128, this.periodWav, wall) : daxPayload(128, slice.amplitude, s.phase);
         const packet = vita({type: 3, stream: id, packetClass: DAX24, count: s.count++, time: FROZEN, payload});
-        if (!dropped) sender.send(packet, client.udpPort, '127.0.0.1');
+        if (this.reorderEvery && s.sent % this.reorderEvery === 0) (s.delayed ??= []).push({packet, left: this.reorderBy});
+        else {
+          if (!dropped) sender.send(packet, client.udpPort, '127.0.0.1');
+          s.delayed = (s.delayed ?? []).filter(d => { if (--d.left) return true; sender.send(d.packet, client.udpPort, '127.0.0.1'); return false; });
+        }
         s.phase += 128;
         // Interference every 8th packet: another client's stream ID and any stale old-session
         // ID, at a loud amplitude a correctly routed station must never accept.
@@ -169,6 +176,11 @@ class FlexEmulator {
     const client = {socket, clientId: null, gui: false, udpPort: null, subs: new Set(), connection};
     this.clients.set(handle, client);
     socket.setNoDelay(true);
+    if (this.latency) {
+      // In order, with jitter up to twice the base, like the path a real run went over.
+      const send = socket.write.bind(socket); let last = 0;
+      socket.write = text => { last = Math.max(last, performance.now() + this.latency * (1 + Math.random())); setTimeout(() => { if (!socket.destroyed) send(text); }, last - performance.now()); return true; };
+    }
     socket.on('error', () => {});
     socket.write(`V${this.protocol}\nH${hex(handle)}\n`);
     let pending = '';
@@ -238,7 +250,7 @@ class FlexEmulator {
       const index = Number(target[1]), s = this.slices.get(index);
       if (!s) return reply('5000000D');
       if (words[1] === 'remove' || words[1] === 'r') { this.slices.delete(index); this.publish('slice', `S${hex(handle)}|slice ${index} in_use=0`); return reply(0); }
-      if (words[1] === 'tune' || words[1] === 't') { const hz = hertz(words[3] ?? ''); if (hz === null) return reply('50000016'); if (this.ignoreTune) return reply(0); s.hz = hz; }
+      if (words[1] === 'tune' || words[1] === 't') { const hz = hertz(words[3] ?? ''); if (hz === null) return reply('50000016'); if (!this.ignoreTune) s.hz = hz; return reply(0); } // a real radio reports no status for a tune
       else if (kv.dax !== undefined && this.daxStatusDelay) {
         setTimeout(() => { s.dax = Number(kv.dax); this.publish('slice', `S${hex(handle)}|slice ${index} dax=${s.dax} dax_clients=0`); }, this.daxStatusDelay);
         return reply(0);

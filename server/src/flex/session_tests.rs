@@ -12,6 +12,88 @@ fn megahertz_text_round_trips_exact_hertz() {
     }
 }
 
+// Runs counts through a reorder buffer: what was handed on as (packet, turns given up), and
+// which packets were dropped.
+fn reordered(counts: &[u8]) -> (Vec<(u8, u64)>, Vec<u8>) {
+    let (mut order, mut out, mut dropped) = (Reorder::new(), Vec::new(), Vec::new());
+    for &count in counts {
+        if !order.accept(count, count, false, |p, missed| out.push((p, missed))) {
+            dropped.push(count);
+        }
+    }
+    (out, dropped)
+}
+
+// Proves: TC-023-001. Swapped packets go on in their count's order and lose nothing, also across
+// the wrap of the 4-bit count.
+#[test]
+fn reorder_restores_the_order_and_counts_nothing_lost() {
+    let (out, dropped) = reordered(&[14, 15, 1, 0, 2, 4, 5, 3, 6]);
+    let expected: Vec<_> = [14, 15, 0, 1, 2, 3, 4, 5, 6].map(|c| (c, 0)).into();
+    assert_eq!(out, expected);
+    assert!(dropped.is_empty());
+}
+
+// Proves: TC-023-001. A packet waits until 5 packets wait behind it, not longer: 4 places is still
+// put back, while at 5 its turn is given up, it counts lost once, and its late arrival is dropped.
+#[test]
+fn reorder_gives_up_a_turn_at_its_depth() {
+    let (out, dropped) = reordered(&[0, 2, 3, 4, 5, 1, 6]);
+    let expected: Vec<_> = [0, 1, 2, 3, 4, 5, 6].map(|c| (c, 0)).into();
+    assert_eq!(out, expected);
+    assert!(dropped.is_empty());
+
+    let (out, dropped) = reordered(&[0, 2, 3, 4, 5, 6, 1, 7]);
+    assert_eq!(
+        out,
+        vec![(0, 0), (2, 1), (3, 0), (4, 0), (5, 0), (6, 0), (7, 0)]
+    );
+    assert_eq!(dropped, vec![1]);
+}
+
+// Proves: TC-023-001. A burst of 7 lost packets counts in full, once the wait is over, and no
+// packet after it is mistaken for a late one. At 8 the count cannot tell: those packets read as
+// late, and the stream carries on at the wrap.
+#[test]
+fn reorder_counts_a_burst_of_lost_packets_up_to_half_the_count() {
+    let (out, dropped) = reordered(&[0, 8, 9, 10, 11, 12, 13]);
+    assert_eq!(
+        out,
+        vec![(0, 0), (8, 7), (9, 0), (10, 0), (11, 0), (12, 0), (13, 0)]
+    );
+    assert!(dropped.is_empty());
+
+    let (out, dropped) = reordered(&[0, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2]);
+    assert_eq!(out, vec![(0, 0), (1, 0), (2, 0)]);
+    assert_eq!(dropped, vec![9, 10, 11, 12, 13, 14, 15, 0]);
+}
+
+// Proves: TC-023-001. A duplicate never reaches the timeline, whether its turn has passed or its
+// first copy still waits.
+#[test]
+fn reorder_drops_duplicates() {
+    assert_eq!(reordered(&[0, 1, 1, 2]).1, vec![1]);
+    let (out, dropped) = reordered(&[0, 2, 2, 1, 3]);
+    let expected: Vec<_> = [0, 1, 2, 3].map(|c| (c, 0)).into();
+    assert_eq!(out, expected);
+    assert_eq!(dropped, vec![2]);
+}
+
+// Proves: TC-023-001. After a stall the count may have wrapped: what waits goes on first and the
+// next packet starts the count over, whatever its value, with no loss derived from it.
+#[test]
+fn reorder_starts_over_after_a_stall() {
+    let (mut order, mut out) = (Reorder::new(), Vec::new());
+    for count in [0, 1, 3] {
+        assert!(order.accept(count, count, false, |p, m| out.push((p, m))));
+    }
+    assert_eq!(out, vec![(0, 0), (1, 0)]);
+    assert!(order.accept(14, 14, true, |p, m| out.push((p, m))));
+    assert_eq!(out, vec![(0, 0), (1, 0), (3, 1), (14, 0)]);
+    assert!(order.accept(15, 15, false, |p, m| out.push((p, m))));
+    assert_eq!(out.last(), Some(&(15, 0)));
+}
+
 // Proves: TC-023-002. A slice's ownership and liveness follow the latest status;
 // removal and another client's handle are visible to the reconciler.
 #[test]
