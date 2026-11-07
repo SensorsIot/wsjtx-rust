@@ -19,8 +19,8 @@ verify their availability in the actual agent environment before starting work.
 
 - Station: **https://192.168.0.37:18081**, task `WSTX Rust Station HB9BLA`;
   receipt `%LOCALAPPDATA%\WstxRust\station\station-running.json`.
-- IC-7300: **COM3**, USB Audio CODEC; in use on **20 m FT8 (14.074 MHz USB-D)**, 1 W for
-  agent tests; **AGC SLOW** for FT8/FT4 (operator finding: it removes the AGC line between
+- IC-7300: **COM3**, USB Audio CODEC; in use on **20 m FT8 (14.074 MHz USB-D)**; agent tests that
+  make QSOs use 30 W, short non-QSO keying 1 W; **AGC SLOW** for FT8/FT4 (operator finding: it removes the AGC line between
   periods). Read back before changes — CI-V reads first and writes only on a difference.
   The camera microphone belongs to Dictate, not the radio.
 - Station log: `%LOCALAPPDATA%\WstxRust\station\profiles\ic7300\contacts.adi`, updated on
