@@ -109,6 +109,7 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `contact-browser` | Contact engine, QSO sequencing, logging and halt through the browser | Router, contact/logbook/transmit owners, contact/logbook/recording clients, contact test |
 | `radio-selection` | H1 compression negotiation, commissioning, browser selection cases | Router, compression, selection/radio/CAT/receive/source owners, status and recording clients, selection test |
 | `radio-selection-thin` | Timing: the 75 s native/CAT/TLS two-browser Thin and Off workload | Timing inputs: router, compression, selection/CAT/receive/source/audio/spectrum owners, status and recording clients, its Rust and browser test files and link helpers |
+| `contact-thin` | Timing: TC-007-005 two browsers on the 32 kbit/s link with contact, log, status and presentation traffic | Timing inputs: router, compression, contact/log/transmit/receive/selection HTTP owners, status, recording, contact and logbook clients, the test and the link simulator |
 | `native-flex` | FR-023 native FlexRadio against the loopback emulator: route isolation, reconciliation, capacity, mixed profiles, push-only status | Native session and status (`flex/`, `flex_http.rs`), router, authorization, profile, radio setup, recording, receive, selection and startup owners, page, recording and contact clients, its test and emulator |
 | `mcp` | MCP client grant and refusals | Router, MCP/automation/authorization owners, authorization client, MCP test and credential helper |
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, plus Node package metadata |
@@ -132,7 +133,7 @@ budget or test case is removed by selection.
 
 Measurements run only when the change touches time-critical code (harness#28). Every
 timing, latency, cadence or throughput promise lives in a **timing suite** (`timing: true`:
-`protocol-thin`, `recording-thin`, `radio-selection-thin`, `live-station-latency`,
+`protocol-thin`, `recording-thin`, `radio-selection-thin`, `contact-thin`, `live-station-latency`,
 `decoder-quality`). A timing suite has no `select`; its `timing_inputs` name the code that
 sets the measured time, and nothing else selects it: no functional owner, unmapped-input
 or unowned-path fallback, `.harness/` edit or dependency
@@ -146,6 +147,8 @@ clients (`app.js`, `index.html`, `recording.js`, `recording.css`) for the two ot
 because those assets cross the 32 kbit/s link cold (the #55 cold-load red came from a
 client-only change); the recording/spectrum producers for `recording-thin`; the
 selection, CAT, receive, source, audio and spectrum owners for `radio-selection-thin`;
+the HTTP owners of the contact, log, transmit, receive and selection traffic and the contact and
+logbook clients for `contact-thin`;
 the receive/source/audio/decoder pipeline and the recording client that polls and paints
 the rows for `live-station-latency`; the production decoder sources (every one sets the
 checkpoint spacing, per-item work or budgets the quantum, latency and matrix measure),
@@ -173,7 +176,7 @@ promise: a mixed group would declare `timing_inputs` and guard those assertions 
 
 The gate runs up to three groups at a time (`gate.parallel: 3` in
 `.harness/config.yaml`), longest first, and prints each group's output whole in name
-order. `protocol-thin`, `recording-thin` and `radio-selection-thin` run beside other groups
+order. `protocol-thin`, `recording-thin`, `radio-selection-thin` and `contact-thin` run beside other groups
 (`gate.timing_alone: false`). Most of their bounds are wall-clock and byte bounds on the
 simulated 32 kbit/s link; besides those, `recording-thin` holds two local 250 ms TC-018
 cancellation bounds (one while four stations replay a recording) and
