@@ -25,6 +25,23 @@ const AUTHORIZATION=`window.stationAuthorization=(()=>{const s=Object.freeze({ep
   return Object.freeze({snapshot:()=>s,ensureReady:()=>Promise.resolve(s),fetch:(p,o)=>fetch(p,o),bootstrap:no,logout:no,forget:no});})();`;
 const PERIODS=3,MINUTES=60000,WAIT=1000*(Number(process.env.WSTX_LIVE_PAGE_WAIT_SECONDS)||300);
 
+// What a request of the page may do: go to the station (anything else is aborted), get the
+// stand-in authorization component, or pass as a GET or a read; any other command is refused.
+function allowed(method,at,origin){
+  if(at.origin!==origin)return 'abort';
+  if(at.pathname==='/authorization.js')return 'stub';
+  return method==='GET'||READS.includes(at.pathname)?'pass':'refuse';
+}
+// Which live trigger was not on screen. #22 needs the new boot without a receive job yet
+// (generation null: recording.js sync cleared live) or below the old boot's generation; #50 a
+// worked-before tip on a kept row. Without them nothing was shown wrong, but nothing was proven.
+function missingTriggers(oldGeneration,newGeneration,workedKept){
+  const missing=[];
+  if(!(Number.isInteger(oldGeneration)&&(newGeneration===null||newGeneration<oldGeneration)))missing.push('#22: the new boot had a job at a generation not below the old one');
+  if(!workedKept)missing.push('#50: no worked-before tip on a kept row');
+  return missing;
+}
+
 async function run({origin,control,lines}){
   const browser=await chromium.launch();
   try{
@@ -32,11 +49,11 @@ async function run({origin,control,lines}){
     const url=new URL(origin),refused=[];
     const setCookies=cookies=>context.addCookies(cookies.map(({name,value})=>({name,value,domain:url.hostname,path:'/',secure:true,httpOnly:true,sameSite:'Strict'})));
     await context.route('**/*',route=>{
-      const r=route.request(),at=new URL(r.url());
-      if(at.origin!==url.origin)return route.abort();
-      if(at.pathname==='/authorization.js')return route.fulfill({contentType:'text/javascript',body:AUTHORIZATION});
-      if(r.method()!=='GET'&&!READS.includes(at.pathname)){refused.push(`${r.method()} ${at.pathname}`);return route.abort();}
-      return route.continue();
+      const r=route.request(),at=new URL(r.url()),how=allowed(r.method(),at,url.origin);
+      if(how==='stub')return route.fulfill({contentType:'text/javascript',body:AUTHORIZATION});
+      if(how==='pass')return route.continue();
+      if(how==='refuse')refused.push(`${r.method()} ${at.pathname}`);
+      return route.abort();
     });
     const watch=watchPage(page);
     const clean=what=>{const why=watch.verdict();if(why||refused.length)throw new Error(`${what}: ${why??''} commands refused: ${JSON.stringify(refused)}`);};
@@ -71,12 +88,8 @@ async function run({origin,control,lines}){
     // Several periods of the new boot, again with a row that moved.
     await watch.until('several periods after the restart',()=>{clean('after the restart');return watch.periods.size>=before.periods+PERIODS&&watch.moved()>before.moved;},4*MINUTES);
     clean('at the end');
-    // Green only with both live triggers on screen: #22 needs the new boot without a receive job
-    // yet (generation null: recording.js sync cleared live) or below the old boot's generation; #50
-    // a worked-before tip on a kept row. Without them nothing was shown wrong, but nothing was proven.
-    const generations={old:oldGeneration,new:back.generation},missing=[];
-    if(!(Number.isInteger(oldGeneration)&&(back.generation===null||back.generation<oldGeneration)))missing.push('#22: the new boot had a job at a generation not below the old one');
-    if(!watch.worked.kept)missing.push('#50: no worked-before tip on a kept row');
+    // Green only with both live triggers on screen.
+    const generations={old:oldGeneration,new:back.generation},missing=missingTriggers(oldGeneration,back.generation,watch.worked.kept>0);
     return {status:missing.length?'not-exercised':'green',missing,generations,gone:gone.state,before,after:{periods:watch.periods.size,moved:watch.moved()},rowsWatched:watch.tips.size,tipsWatched:[...watch.tips.values()].filter(Boolean).length,worked:watch.worked,commands:[...new Set(watch.commands)]};
   }finally{await browser.close();}
 }
@@ -95,7 +108,7 @@ function stdinLines(){
     next:(what,timeout)=>queue.length?Promise.resolve(queue.shift()):new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(new Error(`no ${what}`)),timeout);waiting.push(m=>{clearTimeout(t);resolve(m);});}),
   };
 }
-module.exports={run};
+module.exports={run,allowed,missingTriggers,READS};
 if(require.main===module){
   const origin=process.env.WSTX_LIVE_PAGE_ORIGIN,control=process.env.WSTX_LIVE_PAGE_CONTROL;
   if(!origin?.startsWith('https://')||!control){console.error('run through .harness/deploy/live-page-check.ps1');process.exit(2);}

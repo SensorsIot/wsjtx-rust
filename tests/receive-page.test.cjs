@@ -85,3 +85,21 @@ test('the page watch fails on undefined and on a changing tip, and passes what m
     assert.equal(watch.changes.length,1);
   }finally{await browser.close();}
 });
+
+// The live check's two decisions, without a station: what the page may send, and when it is green.
+test('the live page check lets the page send only reads and is green only with both triggers',()=>{
+  const {allowed,missingTriggers}=require('./live-page-check.cjs');
+  const origin='https://192.168.0.37:18081',at=p=>new URL(origin+p);
+  assert.equal(allowed('GET',at('/receive'),origin),'pass');
+  for(const p of ['/contact/worked','/strategy/evaluate','/authorization/v1/status'])assert.equal(allowed('POST',at(p),origin),'pass',p);
+  for(const p of ['/transmit/command','/transmit/halt','/contact/command','/automation/command','/receive/select','/receive/start','/radio/operation','/radio/settings/apply','/radio/tx-level','/profile','/session'])
+    assert.equal(allowed(p==='/profile'?'PUT':'POST',at(p),origin),'refuse',p);
+  assert.equal(allowed('GET',new URL('https://example.org/x'),origin),'abort');
+  assert.equal(allowed('GET',new URL('https://192.168.0.37:18082/receive'),origin),'abort');
+  assert.equal(allowed('GET',at('/authorization.js'),origin),'stub');
+  assert.deepEqual(missingTriggers(2,null,true),[],'no job yet on the new boot');
+  assert.deepEqual(missingTriggers(2,1,true),[],'below the old generation');
+  assert.equal(missingTriggers(1,1,true).length,1,'an equal generation is not the #22 window');
+  assert.equal(missingTriggers(null,null,true).length,1,'no old generation seen');
+  assert.equal(missingTriggers(2,null,false).length,1,'#50 needs a worked-before kept row');
+});
