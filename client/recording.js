@@ -591,6 +591,7 @@ async function receiveSync(current=socket){
     if(!stationContext(current,authEpoch)||epoch!==receiveMutationEpoch)return;
     if(!validLiveSnapshot(data)){stationData('receive',false);throw new Error('Invalid receive snapshot');}stationData('receive',true);
     if(data.profile_id!==profileData.profile_id||data.boot_id!==profileData.boot_id||(data.boot_id===live?.boot_id&&data.generation<live.generation))return;// a new boot counts its generations from 0
+    if(liveIdentity(data)===liveIdentity(live)&&data.job&&live.job.next_sequence>data.job.next_sequence)return;// older than a receive.state already taken
     if(liveIdentity(data)!==liveIdentity(live)){
       const carry=lossEpoch(data);activityHistory=carry?[...(resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[]),...activityHistory].slice(0,2):[];
       resultRows=[];resultView=null;resultCursor=data.job?.first_sequence??0;historyIncomplete=false;if(carry)keepWaterfall();else if(data.job||live?.job){rows=[];resetLevels();paint();}
@@ -822,7 +823,8 @@ addEventListener('station-stale',()=>{lastReceiveReady=null;receiveShow();receiv
 addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;resultsAnnounced=performance.now();
   // WstxRecordingReceive: the event carries the job's progress and the audio; GET /receive only for a new identity or state.
   const e=message.data,carried=live?.job&&e?.job&&e.audio&&e.boot_id===live.boot_id&&e.generation===live.generation&&e.job_id===live.job.id&&e.state===live.job.state&&e.source_id===(live.source?.id??null);
-  let shown=false;if(carried&&validLatestDecode(e.job.latest_decode,live.job.mode,e.job.next_sequence)){try{Object.assign(live.job,e.job);live.audio=e.audio;applyLatestDecode(e.job.latest_decode,e.job.first_sequence);receiveShow();shown=true;}catch{}}
+  const held=carried&&{...live,audio:e.audio,job:{...live.job,...e.job}};
+  let shown=false;if(carried&&!mutationPending&&validLiveSnapshot(held)){try{live=held;applyLatestDecode(e.job.latest_decode,e.job.first_sequence);liveFailed=false;receiveShow();shown=true;}catch{}}
   if(!shown)receiveSync(current);
   const d=message.data;if(snapshot&&d&&(d.generation!==snapshot.generation||d.job_id!==(snapshot.job?.id??null)||d.state!==(snapshot.job?.state??null)))sync(current);});
 setInterval(receiveResults,250);

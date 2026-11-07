@@ -25,7 +25,6 @@ pub const FIELD_NAME_CHARACTERS_MAX: usize = 64;
 pub const IMPORT_CHUNK_BYTES_MAX: usize = 16_384;
 pub const HISTORY_PAGE_RECORDS_MAX: usize = 10;
 pub const HISTORY_PAGE_BYTES_MAX: usize = 16_384;
-pub const WORKED_CALLS_MAX: usize = 64;
 pub const FILE_NAME: &str = "contacts.adi";
 const ID_FIELD: &str = "app_wstxrust_contact_id";
 /// #10 UpdateLogbook source marker of a record added from another logger's export.

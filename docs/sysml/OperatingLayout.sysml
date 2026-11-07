@@ -400,7 +400,7 @@ attribute def ActivityOrdering {
              actions per WstxContact::PointerEffect; the context menu is suppressed only
              over the canvas.
              Band Activity card: existing latest-period table plus a worked-before
-             label/icon column (WstxContact::WorkedBeforeQuery); row selection by click,
+             label/icon column (the record's worked_status, WstxContact::WorkedBeforeQuery); row selection by click,
              Enter or double-click is SelectDecodedRow.
              Current QSO card: DX Call and DX Grid inputs with Generate (Enter); contact
              state text and partner; six message rows Tx1..Tx6, each with a Next radio and
@@ -573,8 +573,8 @@ attribute def ActivityOrdering {
              only CQ/QRZ and calling-me lines: the new_* slots apply to the sender of every decoded
              message (CQ, replies to others, reports, R-reports, RR73, 73; the sender call of
              WstxContact::DecodedEntity), and they match
-             only the record's flags (WstxContact::DecodedEntity; the worked-before query no longer
-             adds slots). A row without a flag has no colour: there is no cq slot (#50). A row
+             only the record's flags (WstxContact::DecodedEntity; the worked-before status adds no
+             slots). A row without a flag has no colour: there is no cq slot (#50). A row
              to my call keeps mycall on top. A row with a reason of its colour carries the reason
              tip of BandActivityHover (#50 CL-050-08). Settings > General > Display lists the slots with their
              colours; the choice is per browser (browser storage). The #39 strategy mark is an
@@ -648,7 +648,7 @@ attribute def ActivityOrdering {
              zone on <band>", else "New ITU zone on <band>"; grid "New grid <square>", else "New
              grid on <band>"; call "New call", else "New on <band>" followed by the sender's
              worked-before status in parentheses ("(worked on another band or mode)" or "(worked
-             on <band> <MODE>)", WstxContact::WorkedBeforeQuery answers, no further query; the
+             on <band> <MODE>)", the record's worked_status, WstxContact::WorkedBeforeQuery; the
              status stays on the row while it is shown, also as a kept period, #50). An
              overall flag implies its on-band flag, so the on-band text appears only without
              it. Then the #39
@@ -860,8 +860,8 @@ attribute def ActivityOrdering {
              (continent, DXCC, zone, grid, call) only the strongest reason whose slot is
              enabled, no country, continent or distance text, "New on <band>" followed by the
              worked-before status in parentheses ("(worked on <band> <MODE>)" or "(worked on
-             another band or mode)") from the answers of the Band Activity
-             WorkedBeforeQuery of the latest and the previous period (no further query),
+             another band or mode)") from the worked_status of the sender's records of the
+             latest and the previous period (WstxContact::WorkedBeforeQuery),
              e.g. "New DXCC · New call"; a line without such a reason has no hover text. The
              double-click hint is the title of the section's "Calling me" header. When no row qualifies, the section shows the muted placeholder
              "Nobody is calling" instead of an empty list, in the same height.

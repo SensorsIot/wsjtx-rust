@@ -499,7 +499,6 @@ fn router(state: App) -> Router {
         .route("/contacts/imports/{id}", get(logbook_http::import).put(logbook_http::import).layer(axum::extract::DefaultBodyLimit::max(logbook::IMPORT_CHUNK_BYTES_MAX)))
         .route("/contact", get(contact_http::snapshot))
         .route("/contact/command", post(contact_http::command).layer(axum::extract::DefaultBodyLimit::max(1024)))
-        .route("/contact/worked", post(logbook_http::worked).layer(axum::extract::DefaultBodyLimit::max(2048)))
         .route("/dxcc", get(logbook_http::dxcc).put(logbook_http::dxcc_put).layer(axum::extract::DefaultBodyLimit::max(logbook_http::DXCC_BODY_MAX)))
         .route("/automation", get(automation::snapshot))
         .route("/automation/command", post(automation::command).layer(axum::extract::DefaultBodyLimit::max(1024)))

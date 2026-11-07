@@ -464,15 +464,12 @@ function selectionNetworkSummary(transfers,start,end){
   let active=0,maxActive=0;for(const event of events){active+=event.delta;assert.ok(active>=0);maxActive=Math.max(maxActive,active);}
   return {maxActive,requests,pendingAtEnd:requests.filter(r=>r.ended===null||r.ended>end).length};
 }
-// WstxContact::ContactWire: POST /contact/worked is a read-only worked-before query, not a
-// station mutation; every other non-GET request still counts.
 // #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
 async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
-// Reads the client sends as POST are not station mutations: /contact/worked looks up worked
-// status, and /authorization/v1/status (catSync, sent on a CAT identity/state change, never by an
+// A read the client sends as POST is not a station mutation: /authorization/v1/status (catSync, sent on a CAT identity/state change, never by an
 // operator action) only reads the CAT condition and receive state (authorization_http.rs
 // Operation::Status). Every other non-GET request, including /receive/select, still counts (#8).
-const readOnlyPosts=['/contact/worked','/authorization/v1/status'];
+const readOnlyPosts=['/authorization/v1/status'];
 function stationMutation(r){return !['GET','HEAD'].includes(r.method)&&!(r.method==='POST'&&readOnlyPosts.includes(r.route));}
 // A Cold-load selection read the page itself abandoned: its frozen AbortSignal.timeout(10000)
 // fired (CDP lifetime >= 9500 ms, net::ERR_ABORTED) and the read ended before the accepted
@@ -753,7 +750,17 @@ function liveSelectionFixture(){
       activePhase=profile;report.phases[profile]={state:'running',startedUtc:new Date().toISOString(),representativeSeconds:75};await save();console.log(`Actual ${profile}75s workload started`);
       const status=async()=>{for(let n=1;n<=13;n++){await waitUntil(start+n*5500);await Promise.all(pages.map(async page=>{const previous=await page.locator('#updated').textContent(),began=performance.now();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,previous,{timeout:2000});const ms=performance.now()-began;assert.ok(ms<=2000,`actual ${profile} visible status ${ms}ms`);latencies.push(ms);}));}};
       const controls=async()=>{const commands=[];for(let n=0;n<steps.length;n++){await waitUntil(start+(n?40000:5000));commands.push(await command(...steps[n]));}return commands;};
-      const [,commands]=await Promise.all([status(),controls()]);await waitUntil(start+75000);const seconds=(performance.now()-start)/1000;
+      // Each CAT poll dates the radio facts anew: that alone goes at most every 30 s below Detailed, on the
+      // station's clock. Checked during the window: the extra traffic of a broken pacing would otherwise show
+      // first as a missed status wait, not as what it is.
+      const undated=radio=>JSON.stringify(radio,(key,value)=>key==='query_sequence'||key==='observed_at_ms'?undefined:value);
+      const datesOnly=(seen,index)=>{const lastEvent=new Map(),heldRadio=new Map();let count=0;
+        for(const e of seen.selectionEvents){const c=e.data.changed,previous=lastEvent.get(e.socket);
+          if(Object.keys(c).join()==='radio'&&undated(c.radio)===undated(heldRadio.get(e.socket))&&e.at>=start){count++;assert.ok(e.data.monotonic_ms-previous>=29900,`${profile} browser${index}: new radio dates alone ${e.data.monotonic_ms-previous} ms after the last event`);}
+          if(c.radio)heldRadio.set(e.socket,c.radio);lastEvent.set(e.socket,e.data.monotonic_ms);}
+        return count;};
+      const pacing=async()=>{while(performance.now()<start+75000){observations.forEach(datesOnly);await sleep(250);}};
+      const [,commands]=await Promise.all([status(),controls(),pacing()]);await waitUntil(start+75000);const seconds=(performance.now()-start)/1000;
       assert.ok(seconds>=75,'full predeclared representative window');const traffic={up:(proxy.counters.up-baseline.up)/seconds,down:(proxy.counters.down-baseline.down)/seconds};
       const pathCounts=observations.map(seen=>Object.fromEntries([...new Set(seen.http.filter(r=>r.at>=start).map(r=>r.route))].map(route=>[route,seen.http.filter(r=>r.at>=start&&r.route===route).length])));
       report.phases[profile]={state:'checking',seconds,sharedBytesPerSecond:traffic,statusMs:latencies,pathCounts,offProofs,networkSelection:observations.map(seen=>selectionNetworkSummary(seen.transfers,start,start+seconds*1000)),httpResponses:observations.map(seen=>seen.http.filter(r=>r.at>=start)),browserTransfers:observations.map(seen=>seen.transfers.filter(r=>r.started>=start||r.ended>=start)),websocketFrames:observations.map(seen=>seen.wireFrames.filter(frame=>frame.at>=start)),selectionReads:observations.map((seen,index)=>seen.reads.slice(readStarts[index]).map(r=>({startedMs:r.started-start,completedMs:r.ended===null?null:r.ended-start,phase:r.body?.operation?.phase??null,command:r.body?.operation?.command_id??null}))),frames:observations.map((seen,index)=>seen.frames.length-frameStarts[index])};await save();
@@ -782,16 +789,9 @@ function liveSelectionFixture(){
         const gestures=seen.gestures.filter(at=>at>=start&&at<start+seconds*1000).length;
         assert.ok(reads.length<=gestures,`${profile} browser${index}: ${reads.length} selection reads for ${gestures} gestures`);
         const events=seen.selectionEvents.filter(e=>e.at>=start&&e.at<start+seconds*1000);
-        // Each CAT poll dates the radio facts anew: that alone goes at most every 30 s below Detailed, on the station's clock.
-        const undated=radio=>JSON.stringify(radio,(key,value)=>key==='query_sequence'||key==='observed_at_ms'?undefined:value);
-        const lastEvent=new Map(),heldRadio=new Map();let datesOnly=0;
-        for(const e of seen.selectionEvents){const c=e.data.changed,previous=lastEvent.get(e.socket);
-          if(Object.keys(c).join()==='radio'&&undated(c.radio)===undated(heldRadio.get(e.socket))){
-            if(e.at>=start){datesOnly++;assert.ok(e.data.monotonic_ms-previous>=29900,`${profile} browser${index}: new radio dates alone ${e.data.monotonic_ms-previous} ms after the last event`);}}
-          if(c.radio)heldRadio.set(e.socket,c.radio);lastEvent.set(e.socket,e.data.monotonic_ms);}
         assert.ok(events.every(e=>e.bytes<=2048),`${profile} browser${index}: selection.state over 2048 B`);
         assert.ok(events.length<=Math.ceil(seconds)+1,`${profile} browser${index}: ${events.length} selection.state in ${seconds} s`);
-        return {reads,pending,gestures,events:events.length,datesOnly,eventBytes:events.reduce((sum,e)=>sum+e.bytes,0),frames:seen.frames.length-frameStarts[index]};
+        return {reads,pending,gestures,events:events.length,datesOnly:datesOnly(seen,index),eventBytes:events.reduce((sum,e)=>sum+e.bytes,0),frames:seen.frames.length-frameStarts[index]};
       });
       // A short command may end between two 1 s checks of one browser, not unseen by both.
       for(const n of commands.keys())assert.ok(polling.some(p=>p.pending[n]>=1),`${profile} command${n}: pending seen by neither browser`);

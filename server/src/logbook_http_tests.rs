@@ -120,14 +120,7 @@ async fn https_log_routes_require_current_grant_and_revocation_refuses_without_e
     let file = std::fs::read(f.directory.join("contacts.adi")).unwrap();
     assert!(String::from_utf8_lossy(&file).contains("<call:5>K1ABC "));
     let (profile, boot) = ids(&f);
-    let worked = json!({"v":1,"profile_id":profile,"boot_id":boot,"band":"20m","mode":"FT8","calls":["K1ABC"]});
     let reserve = |id: &str| json!({"v":1,"profile_id":profile,"boot_id":boot,"import_id":id,"total_bytes":4,"sha256":"0".repeat(64)});
-    assert_eq!(
-        f.post("/contact/worked", worked.clone(), Some(&g.cookie))
-            .await
-            .json()["statuses"][0]["status"],
-        "worked_this_band_and_mode"
-    );
     assert_eq!(
         get(&f, "/contacts", Some(&g.cookie)).await.status,
         StatusCode::OK
@@ -140,12 +133,6 @@ async fn https_log_routes_require_current_grant_and_revocation_refuses_without_e
         let second = save_body(&f, record("88888888-8888-4888-8888-888888888888"));
         assert_eq!(
             code(&f.post("/contacts", second, cookie).await).0,
-            StatusCode::UNAUTHORIZED
-        );
-        assert_eq!(
-            f.post("/contact/worked", worked.clone(), cookie)
-                .await
-                .status,
             StatusCode::UNAUTHORIZED
         );
         assert_eq!(
@@ -312,7 +299,6 @@ async fn environment_only_mode_answers_not_found() {
         (Method::GET, "/contacts"),
         (Method::POST, "/contacts"),
         (Method::GET, "/contacts/export.adi"),
-        (Method::POST, "/contact/worked"),
         (Method::POST, "/contacts/imports"),
         (Method::GET, "/dxcc"),
         (Method::PUT, "/dxcc"),
@@ -755,77 +741,6 @@ async fn adi_import_over_http_reserves_chunks_retries_and_fails_atomically() {
     assert_eq!(
         std::fs::read(f.directory.join("contacts.adi")).unwrap(),
         file
-    );
-}
-
-// Proves: CL-010-13, CL-010-15; TC-011-003/TC-007-005 worked-before query bounds.
-#[tokio::test]
-async fn worked_before_query_is_bounded_to_sixty_four_calls_and_four_kibibytes() {
-    let f = HttpFixture::new("http://localhost:8097");
-    ready(&f);
-    let (profile, boot) = ids(&f);
-    let calls: Vec<String> = (0..64).map(|i| format!("AB{i:02}CDEFGHIJK")).collect();
-    let state = f.app().profile.as_ref().unwrap();
-    let mut adi = String::new();
-    for call in &calls {
-        adi.push_str(&format!(
-            "<call:13>{call} <qso_date:8>20261031 <time_on:4>1230 <band:5>2190m <mode:3>FT8 <eor>\n"
-        ));
-    }
-    let id = profile::new_uuid().unwrap();
-    let open = |publish: &mut dyn FnMut() -> std::io::Result<()>| -> Result<std::io::Result<()>, authorization::Error> { Ok(publish()) };
-    state
-        .logbook
-        .reserve(&id, adi.len() as u64, &sha(adi.as_bytes()), Instant::now())
-        .unwrap();
-    state
-        .logbook
-        .chunk(
-            &id,
-            0,
-            adi.len() as u64,
-            adi.as_bytes(),
-            Instant::now(),
-            &open,
-        )
-        .unwrap();
-    let query = |calls: &[String]| json!({"v":1,"profile_id":profile,"boot_id":boot,"band":"2190m","mode":"FT8","calls":calls});
-    let reply = f.post("/contact/worked", query(&calls), None).await;
-    assert_eq!(reply.status, StatusCode::OK);
-    assert!(reply.body.len() <= 4096, "{}", reply.body.len());
-    let v = reply.json();
-    assert_eq!(v["statuses"].as_array().unwrap().len(), 64);
-    assert!(
-        v["statuses"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|s| s["status"] == "worked_this_band_and_mode")
-    );
-    let mut more = calls.clone();
-    more.push("N0NEW".into());
-    assert_eq!(
-        code(&f.post("/contact/worked", query(&more), None).await),
-        (
-            StatusCode::BAD_REQUEST,
-            json!("invalid_request"),
-            json!("calls")
-        )
-    );
-    let mut hashed = calls[..1].to_vec();
-    hashed.push("<...>".into());
-    assert_eq!(
-        code(&f.post("/contact/worked", query(&hashed), None).await).2,
-        "calls"
-    );
-    let mut bad = query(&calls[..1]);
-    bad["band"] = json!("21m");
-    assert_eq!(code(&f.post("/contact/worked", bad, None).await).2, "band");
-    let mut big = query(&calls[..1]);
-    big["pad"] = json!("x".repeat(2100));
-    assert_eq!(
-        code(&f.post("/contact/worked", big, None).await).1,
-        "request_too_large"
     );
 }
 

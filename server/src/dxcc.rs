@@ -644,9 +644,9 @@ fn sender(record: &Value) -> Option<String> {
         .flatten()
 }
 /// #55 DecodedEntity: adds to each decoded record with a resolved sender call its
-/// `dxcc` (compact, when the call has an entity) and `flags` (only the FLAGS that hold,
+/// `dxcc` (compact, when the call has an entity), `flags` (only the FLAGS that hold,
 /// against the cached worked set of the log; omitted when none holds or the log is
-/// unreadable). Band: the CAT dial band, else the operating selection band; without a
+/// unreadable) and `worked_status` (WorkedBeforeQuery, with a known band). Band: the CAT dial band, else the operating selection band; without a
 /// band no `_band` flag is set. Blocking (log lock): call it off the async runtime.
 pub(crate) fn annotate(state: &crate::ProfileState, records: &mut [Value]) {
     if !records.iter().any(|r| sender(r).is_some()) {
@@ -666,9 +666,11 @@ pub(crate) fn annotate(state: &crate::ProfileState, records: &mut [Value]) {
         let Some(from) = sender(record) else {
             continue;
         };
-        // WstxOperatingLayout::BandActivityHover: this record's worked-before status, so the
-        // browser needs no query (#10).
+        // WstxContact::WorkedBeforeQuery: this record's worked-before status, so the browser
+        // needs no query (#10); a hash is no concrete call.
         if let (Some(band), Some(mode)) = (band, mode.as_deref())
+            && record["fields"]["type"] == "standard"
+            && record["fields"]["from"]["kind"] == "call"
             && let Ok(status) = state.logbook.worked(std::slice::from_ref(&from), band, mode)
             && let Some(status) = status.first()
         {

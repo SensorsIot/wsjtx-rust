@@ -1948,18 +1948,16 @@ test('TC-011-002 Update logbook from ADIF in Settings consolidates a logger expo
  assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-13; TC-011-003, TC-050-002 browser subset. Actual server log and worked-before query;
-// receive pages and the manual band selection are presentation fixtures, not RF truth.
-test('TC-011-003 Band Activity shows server worked-before status with one bounded query per period',{timeout:30000},async t=>{
+// Proves: CL-010-13; TC-011-003, TC-050-002 browser subset. The receive pages with the station's worked_status
+// (the station side: tc_011_003_receive_results_carry_the_worked_status) and the manual band selection are
+// presentation fixtures, not RF truth.
+test('TC-011-003 Band Activity shows the worked_status of each record with no query',{timeout:30000},async t=>{
  let state;const queries=[];
  const period='2026-10-27T12:00:15.0000000Z';
  const standard=(from)=>({type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
  const reply={type:'standard',to:{kind:'call',text:'K9XX',hash_bits:null,hash_value:null},from:{kind:'call',text:'W2AB',hash_bits:null,hash_value:null},ack:false,exchange:{kind:'report',value:-5}};
- const records=[['K1ABC',standard('K1ABC')],['W1XYZ',standard('W1XYZ')],['FREE',{}],['W2AB',reply]].map(([call,fields],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:call==='FREE'?'FREE TEXT':call==='W2AB'?'K9XX W2AB R-05':`CQ ${call} FN42`,fields,period_start_utc:period,dt_seconds:0.1,...(['W1XYZ','W2AB'].includes(call)?{flags:{new_call:true,new_call_band:true}}:{})}));
+ const records=[['K1ABC',standard('K1ABC')],['W1XYZ',standard('W1XYZ')],['FREE',{}],['W2AB',reply]].map(([call,fields],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:call==='FREE'?'FREE TEXT':call==='W2AB'?'K9XX W2AB R-05':`CQ ${call} FN42`,fields,period_start_utc:period,dt_seconds:0.1,...(['W1XYZ','W2AB'].includes(call)?{flags:{new_call:true,new_call_band:true}}:{}),...(call==='FREE'?{}:{worked_status:call==='K1ABC'?'worked_this_band_and_mode':'not_worked'})}));
  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
-  const profile=await(await fetch(app.origin+'/profile')).json();
-  const saved=await fetch(app.origin+'/contacts',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.origin},body:JSON.stringify({v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,command_id:crypto.randomUUID(),record:{contact_id:crypto.randomUUID(),call:'K1ABC',gridsquare:null,mode:'FT8',submode:null,rst_sent:null,rst_rcvd:null,qso_date:'20261027',time_on:'115900',qso_date_off:'20261027',time_off:'120000',band:'20m',freq:null,station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null}})});
-  assert.equal(saved.status,201);
   state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
   Object.assign(state.job,{first_sequence:0,next_sequence:4,available_count:4,latest_decode:{id:1,first_sequence:0,next_sequence:4,period_start_utc:period,complete:true}});
@@ -1986,27 +1984,22 @@ test('TC-011-003 Band Activity shows server worked-before status with one bounde
  assert.deepEqual(priority,['rgba(255, 0, 255, 0.26)','rgba(255, 0, 99, 0.28)','rgba(255, 102, 102, 0.32)',none,none,none],'WSJT-X priority; New grid and ITU zone are off by default; no CQ colour');
  await clickSort(page,'frequency');await page.waitForTimeout(300);
  await refreshStatus(page);await page.waitForTimeout(500);
- assert.equal(queries.length,1,'one query per published period');
- assert.deepEqual(queries[0].calls,['K1ABC','W1XYZ','W2AB']);assert.equal(queries[0].band,'20m');assert.equal(queries[0].mode,'FT8');
+ assert.deepEqual(queries,[],'the status comes with the record');
  assert.deepEqual(await page.locator('tr[data-worked=worked_this_band_and_mode]').evaluate(r=>[r.dataset.tip??null,r.title]),[null,''],'an uncoloured row has no reason tip (#50 CL-050-08 BandActivityHover)');
  assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-13; TC-011-003 QSO pane subset (#10 2026-11-04). Actual server log and worked-before
+// Proves: CL-010-13; TC-011-003 QSO pane subset (#10 2026-11-04). The station's worked_status on routed records and
 // query; receive pages, flags and the manual band selection are presentation fixtures, not RF truth.
 // The stations calling me carry the Band Activity marks: only interesting senders coloured, worked
 // before on this band and mode no colour, the status as text, and no extra query.
 test('TC-011-003 QSO pane callers show worked-before status and only interesting stations are coloured',{timeout:40000},async t=>{
  let state;const queries=[],period='2026-10-27T12:00:15.0000000Z';
  const standard=(from,exchange)=>({type:'standard',to:{kind:'call',text:'HB9BLA',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange});
- const rows=[['HB9BLA K1ABC FN42','K1ABC',{kind:'grid',value:'FN42'},null],['HB9BLA W1XYZ FN31','W1XYZ',{kind:'grid',value:'FN31'},{new_call:true,new_call_band:true}],['HB9BLA DL1ABC -10','DL1ABC',{kind:'report',value:-10},{new_call_band:true}]];
- const records=rows.map(([text,from,exchange,flags],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*300,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,exchange),period_start_utc:period,dt_seconds:0.1,...(flags?{flags}:{})}));
+ const rows=[['HB9BLA K1ABC FN42','K1ABC',{kind:'grid',value:'FN42'},null,'worked_this_band_and_mode'],['HB9BLA W1XYZ FN31','W1XYZ',{kind:'grid',value:'FN31'},{new_call:true,new_call_band:true},'not_worked'],['HB9BLA DL1ABC -10','DL1ABC',{kind:'report',value:-10},{new_call_band:true},'worked_other_band_or_mode']];
+ const records=rows.map(([text,from,exchange,flags,worked_status],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*300,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,exchange),period_start_utc:period,dt_seconds:0.1,worked_status,...(flags?{flags}:{})}));
  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
   const profile=await(await fetch(app.origin+'/profile')).json();
-  for(const [call,band] of [['K1ABC','20m'],['DL1ABC','40m']]){
-   const saved=await fetch(app.origin+'/contacts',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.origin},body:JSON.stringify({v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,command_id:crypto.randomUUID(),record:{contact_id:crypto.randomUUID(),call,gridsquare:null,mode:'FT8',submode:null,rst_sent:null,rst_rcvd:null,qso_date:'20261027',time_on:'115900',qso_date_off:'20261027',time_off:'120000',band,freq:null,station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null}})});
-   assert.equal(saved.status,201);
-  }
   state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
   Object.assign(state.job,{first_sequence:0,next_sequence:3,available_count:3,latest_decode:{id:1,first_sequence:0,next_sequence:3,period_start_utc:period,complete:true}});
@@ -2032,12 +2025,12 @@ test('TC-011-003 QSO pane callers show worked-before status and only interesting
  assert.deepEqual((await others()).map(r=>r[3]),[none,newCallBand,newCallBand],'with New call off, New call on band remains');
  assert.deepEqual((await others()).map(r=>r[4]),['','New on 20m','New on 20m (worked on another band or mode)'],'the tip follows the Settings slots');
  await refreshStatus(page);await page.waitForTimeout(500);
- assert.equal(queries.length,1,'the callers add no worked-before query');
+ assert.deepEqual(queries,[],'the callers add no worked-before query');
  assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-055-04; TC-055-006 browser subset. Actual server log and worked-before query;
-// the result records (with #55 dxcc and flags), the strategy verdict and the selection band
+// Proves: CL-055-04; TC-055-006 browser subset.
+// The result records (with #55 dxcc and flags and the station's worked_status), the strategy verdict and the selection band
 // are presentation fixtures.
 test('TC-055-006 Band Activity colours every sender, names each reason on hover and sorts by value',{timeout:40000},async t=>{
  const period='2026-10-27T12:00:15.0000000Z';
@@ -2056,13 +2049,11 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
   ['FREE TEXT',null,null,null,0,null,null],
   ['W9AA W2CD 73','W2CD','W9AA',{kind:'roger',value:'73'},-12,null,us],
  ];
- const records=rows.map(([text,from,to,exchange,snr,flags,dxcc],i)=>({sequence:i,start_frame:186000+i,frequency_hz:2400-i*150,snr_db:snr,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:from?fields(from,to,exchange):{},period_start_utc:period,dt_seconds:0.1,...(flags?{flags}:{}),...(dxcc?{dxcc}:{})}));
+ const records=rows.map(([text,from,to,exchange,snr,flags,dxcc],i)=>({sequence:i,start_frame:186000+i,frequency_hz:2400-i*150,snr_db:snr,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:from?fields(from,to,exchange):{},period_start_utc:period,dt_seconds:0.1,...(from?{worked_status:from==='K1ABC'?'worked_this_band_and_mode':'not_worked'}:{}),...(flags?{flags}:{}),...(dxcc?{dxcc}:{})}));
  const n=records.length;let state,view;
  const strategy={name:'Hover test',class:'award',goals:['new_call'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,calls_per_station:3,treat_73_as_cq:false,window:{kind:'all'}};
  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
   const profile=await(await fetch(app.origin+'/profile')).json();
-  const saved=await fetch(app.origin+'/contacts',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.origin},body:JSON.stringify({v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,command_id:crypto.randomUUID(),record:{contact_id:crypto.randomUUID(),call:'K1ABC',gridsquare:null,mode:'FT8',submode:null,rst_sent:null,rst_rcvd:null,qso_date:'20261027',time_on:'115900',qso_date_off:'20261027',time_off:'120000',band:'20m',freq:null,station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null}})});
-  assert.equal(saved.status,201);
   view={v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,revision:1,configuration:{continent:null,active:'Hover test',strategies:[strategy]},configuration_error:null,my_continent:'EU',derived_continent:'EU'};
   state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
@@ -2135,16 +2126,16 @@ test('TC-055-007 Band Activity rows are dense and keep the font size',{timeout:3
 });
 
 // Proves: CL-050-02; TC-050-002 (b). Operator 2026-11-03: only interesting stations are coloured. The
-// /contact/worked statuses and receive pages (with the #55 flags a station derives from its log,
+// receive pages (with the #55 flags and the worked_status a station derives from its log,
 // CL-055-04) are routed fixtures; the colours are the served client's CSS.
 test('TC-050-002 a CQ from a station worked on this band and mode has no colour; My call still applies',{timeout:30000},async t=>{
  let state;const queries=[];
  const period='2026-10-27T12:00:15.0000000Z';
+ const statuses={K1AA:'worked_this_band_and_mode',K2BB:'worked_other_band_or_mode',K3CC:'not_worked'};
  const call=text=>({kind:'call',text,hash_bits:null,hash_value:null});
  const cq=from=>({type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:call(from),ack:false,exchange:{kind:'grid',value:'FN42'}});
  const rows=[['CQ K1AA FN42',cq('K1AA'),null],['CQ K2BB FN42',cq('K2BB'),{new_call_band:true}],['CQ K3CC FN42',cq('K3CC'),{new_call:true,new_call_band:true}],['HB9BLA K1AA R-05',{type:'standard',to:call('HB9BLA'),from:call('K1AA'),ack:false,exchange:{kind:'report',value:-5}},null]];
- const records=rows.map(([text,fields,flags],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields,period_start_utc:period,dt_seconds:0.1,...(flags?{flags}:{})}));
- const statuses={K1AA:'worked_this_band_and_mode',K2BB:'worked_other_band_or_mode',K3CC:'not_worked'};
+ const records=rows.map(([text,fields,flags],i)=>({sequence:i,start_frame:186000+i,frequency_hz:1000+i*100,snr_db:-10,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields,period_start_utc:period,dt_seconds:0.1,worked_status:statuses[fields.from.text],...(flags?{flags}:{})}));
  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
   state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
@@ -2152,7 +2143,7 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
   await page.route('**/receive',async route=>{await page.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
   await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.snapshot_sequence=KEEP_SELECTION;s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
   await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:4,available_count:4,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
-  await page.route('**/contact/worked',async route=>{const q=JSON.parse(route.request().postData());queries.push(q);await route.fulfill({json:{v:1,statuses:q.calls.map(c=>({call:c,status:statuses[c]}))}});});
+  page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(r.postData());});
  }});
  await page.locator('tr[data-result-id][data-worked]').first().waitFor();
  const seen=await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.children[4]).backgroundColor]));
@@ -2161,16 +2152,16 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
   ['CQ K2BB FN42','worked_other_band_or_mode','new_call_band','rgba(153, 255, 255, 0.2)'],
   ['CQ K3CC FN42','not_worked','new_call new_call_band','rgba(0, 255, 255, 0.24)'],
   ['CQ K1AA FN42','worked_this_band_and_mode',null,'rgba(0, 0, 0, 0)']],'only interesting stations are coloured; My call still applies; rows in value order (#55)');
- assert.deepEqual(queries.map(q=>q.calls),[['K1AA','K2BB','K3CC']]);
+ assert.deepEqual(queries,[]);
  assert.deepEqual(errors,[]);
 });
 
 // Proves: CL-050-08; TC-050-008 (#50, live 2026-11-06, M7OZL UT4PA KO20): the worked-before status of a row
-// stays while it is on screen, also when the next period moves it to the kept period. The receive pages and
-// the /contact/worked statuses are routed fixtures.
+// stays while it is on screen, also when the next period moves it to the kept period. The receive pages with their
+// worked_status are routed fixtures.
 test('TC-050-008 a kept row keeps its worked-before status in the tip',{timeout:40000},async t=>{
   const a='2026-11-06T10:55:30.0000000Z',b='2026-11-06T10:55:45.0000000Z';
-  const record=(sequence,text,from,period)=>({sequence,start_frame:1000+sequence,frequency_hz:1000+sequence*100,snr_db:-5,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:{type:'standard',to:{kind:'call',text:'M7OZL',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'KO20'}},period_start_utc:period,dt_seconds:0.1,flags:{new_call_band:true}});
+  const record=(sequence,text,from,period)=>({sequence,start_frame:1000+sequence,frequency_hz:1000+sequence*100,snr_db:-5,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:{type:'standard',to:{kind:'call',text:'M7OZL',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'KO20'}},period_start_utc:period,dt_seconds:0.1,flags:{new_call_band:true},worked_status:'worked_other_band_or_mode'});
   const records=[record(0,'M7OZL UT4PA KO20','UT4PA',a),record(1,'M7OZL DL1ABC JO62','DL1ABC',b)];
   let state;const asked=[];
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -2180,7 +2171,7 @@ test('TC-050-008 a kept row keeps its worked-before status in the tip',{timeout:
     await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
     await p.route('**/receive/selection',async route=>{const s=await (await route.fetch()).json();s.snapshot_sequence=KEEP_SELECTION;s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),next=state.job.next_sequence;await route.fulfill({json:{...emptyResults(state),next_sequence:next,available_count:next,next,records:records.slice(cursor,next)}});});
-    await p.route('**/contact/worked',async route=>{const body=JSON.parse(route.request().postData());asked.push(body.calls);await route.fulfill({json:{v:1,statuses:body.calls.map(call=>({call,status:'worked_other_band_or_mode'}))}});});
+    p.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')asked.push(r.postData());});
   }});
   const tip='New on 20m (worked on another band or mode)';
   const tipOf=sequence=>page.locator(`tr[data-sequence="${sequence}"]`).evaluate(r=>[r.dataset.period,r.dataset.tip??null]);
@@ -2191,18 +2182,18 @@ test('TC-050-008 a kept row keeps its worked-before status in the tip',{timeout:
   await page.evaluate(()=>receiveSync());
   await page.locator('tr[data-period=history][data-sequence="0"]').waitFor();
   assert.deepEqual(await tipOf(0),['history',tip],'kept while the next period is partial');
-  // Complete: its own answer arrives, and the kept row keeps its status through this redraw too.
+  // Complete: its own status is shown, and the kept row keeps its status through this redraw too.
   Object.assign(state.job,{latest_decode:{...state.job.latest_decode,complete:true}});
   await page.evaluate(()=>receiveSync());
   await page.waitForFunction(()=>document.querySelector('tr[data-sequence="1"][data-worked]'),null,{timeout:10000});
   assert.deepEqual(await tipOf(1),['latest',tip]);
-  assert.deepEqual(await tipOf(0),['history',tip],'kept after the next answer');
-  assert.deepEqual(asked,[['UT4PA'],['DL1ABC']],'no extra query: one per published period');
+  assert.deepEqual(await tipOf(0),['history',tip],'kept after the next period is complete');
+  assert.deepEqual(asked,[],'the status comes with the record');
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-050-08; TC-050-008 (#50, operator 2026-11-04). The receive pages (with the #55 flags and
-// dxcc), the /contact/worked statuses, the contact snapshots are routed
+// Proves: CL-050-08; TC-050-008 (#50, operator 2026-11-04). The receive pages (with the #55 flags,
+// dxcc and the station's worked_status), the contact snapshots are routed
 // fixtures; marks, colours, order and the reason tip are the served client's. Expected values come
 // from the operator's scheme, not from the candidate.
 test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, CQ of interest, sender-only colour, one-line reason tip',{timeout:60000},async t=>{
@@ -2215,7 +2206,7 @@ test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, C
  const rec=(sequence,period,[text,snr,flags,dxcc])=>{const w=text.split(' '),cq=w[0]==='CQ';
   return {sequence,start_frame:186000+sequence,frequency_hz:500+sequence*100,snr_db:snr,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,
    fields:{type:'standard',to:cq?{kind:'token',text:'CQ',hash_bits:null,hash_value:null}:call(w[0]),from:call(w[1]),ack:false,exchange:/^[A-R]{2}\d\d$/.test(w[2])?{kind:'grid',value:w[2]}:{kind:'report',value:-5}},
-   period_start_utc:period,dt_seconds:0.1,...(flags?{flags}:{}),...(dxcc?{dxcc}:{})};};
+   period_start_utc:period,dt_seconds:0.1,...(statuses[w[1]]?{worked_status:statuses[w[1]]}:{}),...(flags?{flags}:{}),...(dxcc?{dxcc}:{})};};
  const kept=[['CQ K1PT FN42',-10,F('new_call_band'),null],['CQ K7OLD FN42',-11,null,null],['K9XX W1AA R-03',-12,null,null]];
  const latest=[['HB9BLA K1PT FN42',-10,F('new_call_band'),null],['HB9BLA K2CM -05',-12,null,null],['HB9BLA K3NB R-07',-14,F('new_call_band'),null],
   ['CQ OA4DX FH17',-5,F('new_dxcc','new_dxcc_band','new_call','new_call_band'),pe],['K9XX YO3ABC -07',-15,F('new_dxcc','new_dxcc_band','new_call','new_call_band'),ro],
@@ -2231,7 +2222,7 @@ test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, C
   await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.snapshot_sequence=KEEP_SELECTION;s.selection={...s.selection,band:'40m',nominal_hz:7074000,origin:'manual'};await route.fulfill({json:s});});
   await page.route('**/receive/results?*',async route=>{const q=new URL(route.request().url()).searchParams,cursor=Number(q.get('cursor')),limit=Number(q.get('limit'))||64,batch=records.slice(cursor,cursor+limit),next=cursor+batch.length;
    await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:next<records.length,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
-  await page.route('**/contact/worked',async route=>{const q=JSON.parse(route.request().postData());queries.push(q);await route.fulfill({json:{v:1,statuses:q.calls.map(c=>({call:c,status:statuses[c]}))}});});
+  page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(r.postData());});
   await page.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact})}));
  }});
  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3&&window.wstxRenderHistory);
@@ -2301,7 +2292,7 @@ test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, C
  await page.waitForFunction(()=>!document.querySelector('#band-activity tr.ba-partner-stripe'));
  assert.equal(await page.locator('#band-activity tr.ba-partner').count(),0);
  assert.equal((await byText('HB9BLA K1PT FN42'))[1],'ba-tome','the former partner calling me is a calls-me row again');
- assert.deepEqual(queries.map(q=>q.calls.length),[3,8],'one query per published period; the marks, the partner and the tip add none');
+ assert.deepEqual(queries,[],'the marks, the partner and the tip add no query');
  assert.deepEqual(errors,[]);
 });
 
