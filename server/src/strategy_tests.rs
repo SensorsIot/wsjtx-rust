@@ -1380,12 +1380,6 @@ async fn select(f: &Mcp, configuration: Value) {
         assert_eq!(r.status, StatusCode::OK, "{}", r.json);
     }
 }
-/// The browser's selection with Auto off: it only marks.
-async fn mark(f: &Mcp, configuration: Value) {
-    save(f, configuration).await;
-    let r = auto(f, false, None).await;
-    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
-}
 async fn save(f: &Mcp, configuration: Value) {
     let revision = f.browser("GET", "/strategy", None).await.json["revision"].clone();
     let r = put(f, revision, configuration).await;
@@ -5520,4 +5514,744 @@ async fn tc_063_011_the_safety_of_a_contest_run_stays_on_the_server() {
     assert_eq!(quiet_contact(&f).await.2, json!("disarmed"));
     // Its CQ is not left behind: the next Auto on calls again.
     start(&f).await;
+}
+
+// ------------------------------------------------------------------ strategydef
+/// TC-039-040 rows (HB9BLA JN47AA, EU, on 20 m FT8): (text, audio Hz, SNR), sequence in order.
+const VALUE_ROWS: [(&str, f64, f64); 7] = [
+    ("CQ K1ABC FN42", 1200.0, -12.0),
+    ("CQ JA1XYZ PM95", 900.0, -15.0),
+    ("CQ DL1XYZ JO62", 1500.0, -3.0),
+    ("CQ VK2ABC QF56", 600.0, -20.0),
+    ("CQ ZS6AA", 2000.0, -8.0),
+    ("CQ OH1AA KP20", 1400.0, -3.0),
+    ("HB9BLA W1AW FN31", 1000.0, -25.0),
+];
+fn value_rows(list: &[(&str, f64, f64)]) -> Vec<Value> {
+    list.iter()
+        .enumerate()
+        .map(|(i, (text, hz, snr))| {
+            let mut r = record(text, *hz, Some(*snr));
+            r["sequence"] = json!(i);
+            r
+        })
+        .collect()
+}
+/// (call, band, mode, grid, QSO_DATE).
+type DatedRow<'a> = (&'a str, &'a str, &'a str, Option<&'a str>, u32);
+fn dated(log: &[DatedRow], window: Option<(u32, u32)>) -> Arc<Worked> {
+    let logged: Vec<Logged> = log
+        .iter()
+        .map(|(call, band, mode, grid, date)| Logged {
+            call: (*call).into(),
+            grid: grid.map(Into::into),
+            band: Some((*band).into()),
+            mode: Some((*mode).into()),
+            confirmed: false,
+            date: Some(*date),
+        })
+        .collect();
+    Arc::new(Worked::from_log_window(
+        &crate::dxcc::Table::default(),
+        &logged,
+        window,
+    ))
+}
+/// HB9BLA JN47AA (EU) on 20 m FT8 with the log of TC-039-040: K1ABC and W1AW on 20 m, DL1XYZ
+/// on 40 m only; Most Wanted JA (Japan, ADIF 339) rank 40 and VK (Australia, ADIF 150) rank 90.
+fn value_station(log: &[DatedRow]) -> Station {
+    Station {
+        my_call: "HB9BLA".into(),
+        my_continent: Some("EU".into()),
+        band: Some("20m".into()),
+        mode: "FT8".into(),
+        my_locator: Some("JN47AA".into()),
+        worked: Some(dated(log, None)),
+        most_wanted: crate::most_wanted::List::parse(r#"{"40":"339","90":"150"}"#, "d")
+            .map(Arc::new),
+        ..Station::default()
+    }
+}
+const VALUE_LOG: [DatedRow; 3] = [
+    ("K1ABC", "20m", "FT8", Some("FN42"), 20_260_101),
+    ("W1AW", "20m", "FT8", Some("FN31"), 20_260_101),
+    ("DL1XYZ", "40m", "FT8", Some("JO62"), 20_260_101),
+];
+fn valued(goals: &[Goal], value: &[Criterion], callers_first: bool) -> Strategy {
+    Strategy {
+        value: value.to_vec(),
+        callers_first,
+        ..award(goals)
+    }
+}
+/// The great-circle distance written here: haversine on a sphere of 6371 km between two
+/// (lat, lon east) points, truncated to whole km.
+fn test_km(a: (f64, f64), b: (f64, f64)) -> u64 {
+    let r = std::f64::consts::PI / 180.0;
+    let (p1, p2) = (a.0 * r, b.0 * r);
+    let (dp, dl) = ((b.0 - a.0) * r, (b.1 - a.1) * r);
+    let h = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
+    (2.0 * 6371.0 * h.sqrt().asin()).floor() as u64
+}
+
+// Proves: TC-039-040. new_call_band and the value list ranked by hand: [snr], [distance] (the
+// haversine written here; the cty.dat entity centre without a grid), [most_wanted], two
+// criteria, [new_dxcc, snr]; the exact tie; callers first on and off; the empty list; a caller
+// failing every filter line; the band unknown; the window today; decode order is no ranking.
+#[test]
+fn tc_039_040_the_filter_and_the_value_order() {
+    use Criterion::*;
+    let rows = value_rows(&VALUE_ROWS);
+    let st = value_station(&VALUE_LOG);
+    let band = |value: &[Criterion], callers_first: bool| {
+        called(
+            &valued(&[Goal::NewCallBand], value, callers_first),
+            &rows,
+            &st,
+        )
+    };
+    // new_call_band: K1ABC (on 20 m) is no candidate, DL1XYZ (40 m only) is; W1AW calls me.
+    // [snr]: DL1XYZ and OH1AA tie at -3 dB, the lower audio frequency first (1400 < 1500).
+    assert_eq!(
+        band(&[Snr], true),
+        ["W1AW", "OH1AA", "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC"]
+    );
+    // [distance], farther first, from the centre of JN47AA (47.0208 N, 8.0417 E): QF56
+    // (-33.5, 151), PM95 (35.5, 139), ZS6AA without grid at the South Africa centre of cty.dat
+    // (-29.07, 22.63), KP20 (60.5, 25), JO62 (52.5, 13).
+    let me = (47.0 + 1.0 / 48.0, 8.0 + 1.0 / 24.0);
+    let km = |call: &str| {
+        let r = rows
+            .iter()
+            .filter_map(facts)
+            .find(|f| f.from == call)
+            .unwrap();
+        station_distance(&st, &r)
+    };
+    for (call, centre) in [
+        ("VK2ABC", (-33.5, 151.0)),
+        ("JA1XYZ", (35.5, 139.0)),
+        ("ZS6AA", (-29.07, 22.63)),
+        ("OH1AA", (60.5, 25.0)),
+        ("DL1XYZ", (52.5, 13.0)),
+    ] {
+        assert_eq!(km(call), Some(test_km(me, centre)), "{call}");
+    }
+    assert_eq!(
+        band(&[Distance], true),
+        ["W1AW", "VK2ABC", "JA1XYZ", "ZS6AA", "OH1AA", "DL1XYZ"]
+    );
+    // [most_wanted]: JA #40, VK #90, then the rest by the hidden SNR.
+    assert_eq!(
+        band(&[MostWanted], true),
+        ["W1AW", "JA1XYZ", "VK2ABC", "OH1AA", "DL1XYZ", "ZS6AA"]
+    );
+    // [most_wanted, distance]: the listed by rank, the rest by distance.
+    assert_eq!(
+        band(&[MostWanted, Distance], true),
+        ["W1AW", "JA1XYZ", "VK2ABC", "ZS6AA", "OH1AA", "DL1XYZ"]
+    );
+    // [new_dxcc, snr]: Germany is worked (on 40 m): DL1XYZ after the needed ones.
+    assert_eq!(
+        band(&[NewDxcc, Snr], true),
+        ["W1AW", "OH1AA", "ZS6AA", "JA1XYZ", "VK2ABC", "DL1XYZ"]
+    );
+    // Callers first off with [snr]: W1AW ranked by its SNR, the weakest, last.
+    assert_eq!(
+        band(&[Snr], false),
+        ["OH1AA", "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "W1AW"]
+    );
+    // The empty list: the hidden SNR alone.
+    assert_eq!(band(&[], true), band(&[Snr], true));
+    // The reasons name the needed goals; no Most Wanted suffix without that criterion.
+    let why = |s: &Strategy, call: &str| {
+        evaluate(s, &rows, &st)
+            .into_iter()
+            .find(|v| v.facts.from == call)
+            .unwrap()
+            .why
+    };
+    let snr = valued(&[Goal::NewCallBand], &[Snr], true);
+    assert_eq!(why(&snr, "OH1AA"), "needed: new_call_band");
+    assert_eq!(why(&snr, "W1AW"), "calls my call");
+    assert_eq!(why(&snr, "K1ABC"), "not needed");
+    assert_eq!(
+        why(&valued(&[Goal::NewCallBand], &[MostWanted], true), "JA1XYZ"),
+        "needed: new_call_band · Most Wanted #40"
+    );
+    // The caller fails every filter line (worked on 20 m, region AS only, min SNR -10): ranked.
+    let strict = Strategy {
+        region: Region::Selected(vec!["AS".into()]),
+        min_snr_db: Some(-10),
+        ..valued(&[Goal::NewCallBand], &[Snr], true)
+    };
+    assert_eq!(called(&strict, &rows, &st), ["W1AW"]);
+    // The band unknown: new_call_band needs none; the caller is still answered.
+    let unknown = Station {
+        band: None,
+        ..value_station(&VALUE_LOG)
+    };
+    assert_eq!(
+        called(&valued(&[Goal::NewCallBand], &[Snr], true), &rows, &unknown),
+        ["W1AW"]
+    );
+    // Decode order is no ranking: the same rows in the reverse sequence rank the same.
+    let mut reversed = rows.clone();
+    for (i, r) in reversed.iter_mut().enumerate() {
+        r["sequence"] = json!(VALUE_ROWS.len() - i);
+    }
+    reversed.reverse();
+    assert_eq!(
+        called(&valued(&[Goal::NewCallBand], &[Snr], true), &reversed, &st),
+        band(&[Snr], true)
+    );
+    // An exact tie of SNR and frequency: by the call, whatever the sequence.
+    let tied = value_rows(&[
+        ("CQ AB1AA FN42", 700.0, -10.0),
+        ("CQ AA1AA FN42", 700.0, -10.0),
+    ]);
+    assert_eq!(
+        called(&valued(&[Goal::NewCall], &[Snr], true), &tied, &st),
+        ["AA1AA", "AB1AA"]
+    );
+    // The window today: OH1AA worked on 20 m today is not needed, DL1XYZ worked on 20 m in 2025
+    // is; with the window all neither is.
+    let today = utc_date();
+    let log: [DatedRow; 2] = [
+        ("OH1AA", "20m", "FT8", Some("KP20"), today),
+        ("DL1XYZ", "20m", "FT8", Some("JO62"), 20_250_101),
+    ];
+    let in_window = |window: Option<(u32, u32)>| Station {
+        worked: Some(dated(&log, window)),
+        ..value_station(&[])
+    };
+    let s = valued(&[Goal::NewCallBand], &[Snr], false);
+    assert_eq!(
+        called(&s, &rows, &in_window(Some((today, today)))),
+        ["DL1XYZ", "ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC", "W1AW"]
+    );
+    assert_eq!(
+        called(&s, &rows, &in_window(None)),
+        ["ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC", "W1AW"]
+    );
+}
+
+// Proves: TC-039-040. Each needed-first criterion alone, each with its own log, before the hidden
+// SNR (goal new_call, grid or dxcc_slot so that every row stays a candidate; callers first off,
+// so the caller W1AW is ranked by the criterion too).
+#[test]
+fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
+    use Criterion::*;
+    let rows = value_rows(&VALUE_ROWS);
+    let goals = [Goal::NewCall, Goal::Grid, Goal::DxccSlot];
+    let order = |c: Criterion, log: &[DatedRow], band: Option<&str>| {
+        let st = Station {
+            band: band.map(Into::into),
+            most_wanted: None,
+            ..value_station(log)
+        };
+        called(&valued(&goals, &[c], false), &rows, &st)
+    };
+    let d = 20_260_101;
+    let twenty = Some("20m");
+    for (c, log, band, expected) in [
+        // Germany worked on 40 m: DL1XYZ after the rest.
+        (
+            NewDxcc,
+            vec![("DL9ZZZ", "40m", "FT8", Some("JO50"), d)],
+            twenty,
+            vec![
+                "OH1AA", "ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC", "W1AW", "DL1XYZ",
+            ],
+        ),
+        // On 20 m Germany (40 m only) is needed; the USA (K9ZZZ on 20 m) is not.
+        (
+            NewDxccBand,
+            vec![
+                ("DL9ZZZ", "40m", "FT8", Some("JO50"), d),
+                ("K9ZZZ", "20m", "FT8", Some("EM10"), d),
+            ],
+            twenty,
+            vec![
+                "OH1AA", "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "K1ABC", "W1AW",
+            ],
+        ),
+        // Japan only in FT4 on 20 m: needed in FT8 (another mode); Australia in FT8: not.
+        (
+            NewDxccSlot,
+            vec![
+                ("JA9ZZZ", "20m", "FT4", Some("PM85"), d),
+                ("VK3ZZZ", "20m", "FT8", Some("QF22"), d),
+            ],
+            twenty,
+            vec![
+                "OH1AA", "DL1XYZ", "ZS6AA", "K1ABC", "JA1XYZ", "W1AW", "VK2ABC",
+            ],
+        ),
+        // K1ABC and W1AW logged (from EM00, so K1ABC stays a candidate by its grid).
+        (
+            NewCall,
+            vec![
+                ("K1ABC", "20m", "FT8", Some("EM00"), d),
+                ("W1AW", "20m", "FT8", Some("EM00"), d),
+            ],
+            twenty,
+            vec![
+                "OH1AA", "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "K1ABC", "W1AW",
+            ],
+        ),
+        // K1ABC, W1AW and OH1AA on 20 m: after the rest.
+        (
+            NewCallBand,
+            vec![
+                ("K1ABC", "20m", "FT8", Some("EM00"), d),
+                ("W1AW", "20m", "FT8", Some("EM00"), d),
+                ("OH1AA", "20m", "FT8", Some("KP00"), d),
+            ],
+            twenty,
+            vec![
+                "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "OH1AA", "K1ABC", "W1AW",
+            ],
+        ),
+        // FN42 logged on 40 m: K1ABC's grid is worked; ZS6AA sends no grid (D13): both after.
+        (
+            NewGrid,
+            vec![("K9ZZZ", "40m", "FT8", Some("FN42"), d)],
+            twenty,
+            vec![
+                "OH1AA", "DL1XYZ", "JA1XYZ", "VK2ABC", "W1AW", "ZS6AA", "K1ABC",
+            ],
+        ),
+        // FN42 only on 40 m: K1ABC needed on 20 m; no grid (ZS6AA) and an unknown grid status
+        // (JA1XYZ, a 20 m QSO without grid, a candidate by dxcc_slot) are not.
+        (
+            NewGridBand,
+            vec![
+                ("K9ZZZ", "40m", "FT8", Some("FN42"), d),
+                ("JA1XYZ", "20m", "FT4", None, d),
+            ],
+            twenty,
+            vec![
+                "OH1AA", "DL1XYZ", "K1ABC", "VK2ABC", "W1AW", "ZS6AA", "JA1XYZ",
+            ],
+        ),
+        // The band unknown: new_grid_band needs nothing, the hidden SNR alone; JA1XYZ (logged,
+        // gridless, dxcc_slot needs a band) is no candidate.
+        (
+            NewGridBand,
+            vec![
+                ("K9ZZZ", "40m", "FT8", Some("FN42"), d),
+                ("JA1XYZ", "20m", "FT4", None, d),
+            ],
+            None,
+            vec!["OH1AA", "DL1XYZ", "ZS6AA", "K1ABC", "VK2ABC", "W1AW"],
+        ),
+    ] {
+        assert_eq!(order(c, &log, band), expected, "{c:?} {band:?}");
+    }
+}
+
+// Proves: TC-039-041. A schema 2 file reads at its revision with calls_per_station dropped and
+// the defaults added, and the next PUT writes schema 3; a malformed schema 2 strategy makes the
+// file malformed; the eight built-ins are listed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_041_a_schema_2_file_upgrades_and_is_written_as_schema_3() {
+    let f = station(true).await;
+    let write = |schema: u64, strategies: Value| {
+        std::fs::write(
+            f.dir.join(FILE_NAME),
+            serde_json::to_vec(
+                &json!({"schema_version":schema,"profile_id":f.id,"revision":7,
+                "configuration":{"continent":null,"active":null,"strategies":strategies,
+                "ignore_calls":[],"session_ignore_minutes":30}}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    };
+    let old = json!({"name":"Mine","class":"award","goals":["new_call"],"needed":"not_worked",
+        "region":{"kind":"all"},"min_snr_db":null,"calls_per_station":5,"treat_73_as_cq":true,
+        "window":{"kind":"all"}});
+    write(2, json!([old]));
+    let owner = Owner::default();
+    let s = owner.snapshot(&f.state);
+    assert_eq!(
+        (s["revision"].clone(), s["configuration_error"].clone()),
+        (json!(7), Value::Null)
+    );
+    let mine = json!({"name":"Mine","class":"award","goals":["new_call"],"needed":"not_worked",
+        "region":{"kind":"all"},"min_snr_db":null,"value":["most_wanted"],"callers_first":true,
+        "cq_when_no_target":false,"repetitions":4,"quiet_minutes":10,"treat_73_as_cq":true,
+        "window":{"kind":"all"}});
+    assert_eq!(s["configuration"]["strategies"], json!([mine]));
+    // The next PUT writes schema 3 at revision 8 with those keys.
+    let mut changed = s["configuration"].clone();
+    changed["continent"] = json!("AS");
+    owner
+        .put(
+            &f.state,
+            json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"expected_revision":7,
+                "configuration":changed}),
+        )
+        .unwrap();
+    let saved: Value =
+        serde_json::from_slice(&std::fs::read(f.dir.join(FILE_NAME)).unwrap()).unwrap();
+    assert_eq!(
+        saved,
+        json!({"schema_version":3,"profile_id":f.id,"revision":8,"configuration":changed})
+    );
+    assert_eq!(saved["configuration"]["strategies"][0], mine);
+    // A schema 2 strategy that is otherwise malformed: the file reads configuration null.
+    let with = |k: &str, v: Value| {
+        let mut s = old.clone();
+        s[k] = v;
+        s
+    };
+    let mut missing = old.clone();
+    missing.as_object_mut().unwrap().remove("calls_per_station");
+    for bad in [
+        with("calls_per_station", json!(0)),
+        with("calls_per_station", json!(21)),
+        with("region", json!({"kind":"east"})),
+        with("value", json!(["snr"])),
+        missing,
+    ] {
+        write(2, json!([bad.clone()]));
+        let s = Owner::default().snapshot(&f.state);
+        assert_eq!(
+            (s["configuration"].clone(), s["configuration_error"].clone()),
+            (Value::Null, json!("invalid_configuration")),
+            "{bad}"
+        );
+    }
+    // A schema 3 file is read as it is; schema 3 keys in it are required.
+    write(3, json!([mine]));
+    assert_eq!(
+        Owner::default().snapshot(&f.state)["configuration"]["strategies"],
+        json!([mine])
+    );
+    write(3, json!([old]));
+    assert_eq!(
+        Owner::default().snapshot(&f.state)["configuration_error"],
+        "invalid_configuration"
+    );
+    // The eight built-ins (their fields: TC-039-032).
+    assert_eq!(
+        owner.snapshot(&f.state)["builtin_strategies"]
+            .as_array()
+            .unwrap()
+            .len(),
+        8
+    );
+    std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
+}
+
+/// The armed state of the transmit owner.
+fn armed(f: &Mcp) -> bool {
+    f.state
+        .recording
+        .transmit
+        .get()
+        .unwrap()
+        .service
+        .view()
+        .arm_state
+        == wstx_rust::transmit::service::ArmState::Armed
+}
+async fn strategy_view(f: &Mcp) -> (Value, Value, u64) {
+    let s = f.browser("GET", "/strategy", None).await.json;
+    (
+        s["configuration"]["active"].clone(),
+        s["auto"].clone(),
+        s["revision"].as_u64().unwrap(),
+    )
+}
+
+// Proves: TC-039-042. Auto is station memory, off at start: a selection alone only marks; Auto on
+// starts the run, another selection while on restarts it, Auto off ends it at once; Auto on
+// without a selection is refused; None and HALT (route and MCP) turn it off and HALT keeps the
+// selection; one strategy.state per change; the refusals; a restart reads it off.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_042_auto_starts_and_ends_the_run_and_a_selection_only_marks() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let owner = f.state.recording.contact.get().unwrap();
+    let g = f.browser("GET", "/strategy", None).await.json;
+    assert_eq!(
+        (g["auto"].clone(), g["strategy_refusal"].clone()),
+        (json!(false), Value::Null),
+        "off by default"
+    );
+    // Auto on without a selection: 409 not_configured strategy, Auto stays off.
+    let r = auto(&f, true, None).await;
+    assert_eq!(
+        (
+            r.status,
+            r.json["error"]["code"].clone(),
+            r.json["error"]["field"].clone()
+        ),
+        (
+            StatusCode::CONFLICT,
+            json!("not_configured"),
+            json!("strategy")
+        )
+    );
+    assert_eq!(strategy_view(&f).await.1, json!(false));
+    // A selection with Auto off only marks: K1ABC has a rank, nothing is armed or keyed.
+    let (source, job, generation) = f
+        .state
+        .recording
+        .live_identity()
+        .map(|(s, j, g, _)| (s, j, g))
+        .unwrap();
+    save(&f, config(Some("New calls"))).await;
+    publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-10.0))]);
+    publish(&f, e + 30_000, &[("CQ K1ABC FN42", 1500.0, Some(-10.0))]);
+    let v = f
+        .browser(
+            "POST",
+            "/strategy/evaluate",
+            Some(
+                json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"source_id":source,
+                "job_id":job,"generation":generation,"first_sequence":0,"next_sequence":2,
+                "strategy":null,"explain":false}),
+            ),
+        )
+        .await;
+    assert_eq!(v.json["verdicts"][0]["rank"], 0, "{}", v.json);
+    assert_eq!(f.read("automation").await["run"], Value::Null);
+    assert_eq!(contact(&f).await.0, Value::Null);
+    assert!(!armed(&f));
+    assert_eq!(f.keys(), 0);
+    // Auto on: one revision, the run starts and calls K1ABC at the next publication.
+    let before = owner.strategy.revision();
+    let r = auto(&f, true, None).await;
+    assert_eq!(
+        (r.status, r.json["auto"].clone()),
+        (StatusCode::OK, json!(true)),
+        "{}",
+        r.json
+    );
+    assert_eq!(owner.strategy.revision(), before + 1, "one strategy.state");
+    assert_eq!(run_state(&f).await, ("waiting".into(), Value::Null));
+    publish(&f, e + 60_000, &[("CQ K1ABC FN42", 1500.0, Some(-10.0))]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    // Auto on again while it runs changes nothing.
+    let id = f.read("automation").await["run"]["id"].clone();
+    let r = auto(&f, true, None).await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(f.read("automation").await["run"]["id"], id);
+    assert_eq!(owner.strategy.revision(), before + 1);
+    // Another selection with Auto on: the old run ends (its contact disarmed and cancelled),
+    // the new one starts, Auto stays on.
+    save(&f, config(Some("DX hunting"))).await;
+    let a = f.read("automation").await;
+    assert_ne!(a["run"]["id"], id);
+    assert_eq!(a["run"]["state"], "waiting");
+    assert_eq!(strategy_view(&f).await.0, json!("DX hunting"));
+    assert_eq!(strategy_view(&f).await.1, json!(true));
+    let c = contact(&f).await;
+    assert_eq!((c.1, c.2), (json!("cancelled"), json!("disarmed")));
+    // Auto off ends the run at once: disarmed and cancelled, the selection kept.
+    publish(&f, e + 90_000, &[("CQ K1ABC FN42", 1500.0, Some(-10.0))]);
+    assert_eq!(contact(&f).await.2, json!("armed"));
+    let before = owner.strategy.revision();
+    let r = auto(&f, false, None).await;
+    assert_eq!(
+        (r.status, r.json["auto"].clone()),
+        (StatusCode::OK, json!(false))
+    );
+    assert_eq!(owner.strategy.revision(), before + 1, "one strategy.state");
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("stopped")));
+    let c = contact(&f).await;
+    assert_eq!((c.1, c.2), (json!("cancelled"), json!("disarmed")));
+    assert_eq!(strategy_view(&f).await.0, json!("DX hunting"));
+    // A repeated Auto off is no change: no revision.
+    assert_eq!(auto(&f, false, None).await.status, StatusCode::OK);
+    assert_eq!(owner.strategy.revision(), before + 1);
+    // None turns Auto off and stops the run.
+    assert_eq!(auto(&f, true, None).await.status, StatusCode::OK);
+    save(&f, config(None)).await;
+    assert_eq!(strategy_view(&f).await.1, json!(false));
+    assert_eq!(run_state(&f).await.0, "stopped");
+    // The MCP principal is refused 401 and changes nothing.
+    save(&f, config(Some("New calls"))).await;
+    let internal = crate::mcp_tests::internal_transport(&f, &f.mcp);
+    let m = crate::mcp_tests::with_cookie(
+        &f,
+        "POST",
+        "/strategy/auto",
+        &internal,
+        Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"auto":true})),
+    )
+    .await;
+    assert_eq!(m.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(strategy_view(&f).await.1, json!(false));
+    assert_eq!(run_state(&f).await.0, "stopped");
+    // The refusals of POST /strategy/ignore.
+    let body = |k: &str, v: Value| {
+        let mut b = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"auto":true});
+        b[k] = v;
+        b
+    };
+    for (b, status, code, field) in [
+        (body("extra", json!(1)), 400, "invalid_request", Value::Null),
+        (
+            body("auto", json!("on")),
+            400,
+            "invalid_request",
+            json!("auto"),
+        ),
+        (
+            body("automation_confirmed", json!(1)),
+            400,
+            "invalid_request",
+            json!("automation_confirmed"),
+        ),
+        (body("v", json!(2)), 400, "unsupported_version", json!("v")),
+        (
+            body("profile_id", json!(profile::new_uuid().unwrap())),
+            403,
+            "wrong_profile",
+            json!("profile_id"),
+        ),
+        (
+            body("boot_id", json!(profile::new_uuid().unwrap())),
+            409,
+            "state_conflict",
+            json!("boot_id"),
+        ),
+    ] {
+        let r = f.browser("POST", "/strategy/auto", Some(b.clone())).await;
+        assert_eq!(
+            (
+                r.status.as_u16(),
+                r.json["error"]["code"].clone(),
+                r.json["error"]["field"].clone()
+            ),
+            (status, json!(code), field),
+            "{b}"
+        );
+    }
+    assert_eq!(strategy_view(&f).await.1, json!(false));
+    // HALT by the route: Auto off, the run stopped halted, the selection kept; one revision.
+    assert_eq!(auto(&f, true, None).await.status, StatusCode::OK);
+    let before = owner.strategy.revision();
+    halt(&f).await;
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("halted")));
+    let (active, on, revision) = strategy_view(&f).await;
+    assert_eq!(
+        (active, on, revision),
+        (json!("New calls"), json!(false), before + 1)
+    );
+    // HALT by MCP likewise.
+    assert_eq!(auto(&f, true, None).await.status, StatusCode::OK);
+    let halt_body =
+        json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap()});
+    assert_eq!(
+        f.tool("wstx_transmit_halt", json!({"halt":halt_body}))
+            .await["status"],
+        202
+    );
+    f.tick();
+    assert_eq!(run_state(&f).await, ("stopped".into(), json!("halted")));
+    assert_eq!(strategy_view(&f).await.0, json!("New calls"));
+    assert_eq!(strategy_view(&f).await.1, json!(false));
+    // Every run end turns Auto off: a stop by the run itself (Enable Tx off by the operator;
+    // tx_watchdog, run_limit and no_client: tc_063_011).
+    assert_eq!(auto(&f, true, None).await.status, StatusCode::OK);
+    publish(&f, e + 120_000, &[("CQ K1ABC FN42", 1500.0, Some(-10.0))]);
+    assert_eq!(contact(&f).await.2, json!("armed"));
+    browser_ok(
+        &f,
+        "enable_tx",
+        json!({"enabled":false,"safety_revision":null}),
+    )
+    .await;
+    f.tick();
+    assert_eq!(
+        run_state(&f).await,
+        ("stopped".into(), json!("transmit_stopped"))
+    );
+    assert_eq!(strategy_view(&f).await.1, json!(false));
+    // A station restart: a new owner reads Auto off and no selection.
+    let reopened = Owner::default().snapshot(&f.state);
+    assert_eq!(
+        (
+            reopened["auto"].clone(),
+            reopened["configuration"]["active"].clone()
+        ),
+        (json!(false), Value::Null)
+    );
+    assert_eq!(f.keys(), 0, "no PTT exchange");
+}
+
+// Proves: TC-039-042, TC-063-009. A contest whose rules forbid automatic operation needs
+// automation_confirmed on Auto on (strategy_tests::tc_063_009_search_and_pounce...); a silent one
+// (FT8 Activity) needs none.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_042_a_silent_contest_switches_auto_on_without_a_confirmation() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let mut c = contest_config(e, "sp", -1);
+    c["contest"]["profile"] = json!("ft8_activity");
+    save(&f, c).await;
+    let r = auto(&f, true, None).await;
+    assert_eq!(
+        (r.status, r.json["auto"].clone()),
+        (StatusCode::OK, json!(true)),
+        "{}",
+        r.json
+    );
+    assert_eq!(
+        f.read("automation").await["configuration"]["strategy"],
+        true
+    );
+    // WW Digi forbids it: refused without the confirmation, Auto off and its run ended.
+    assert_eq!(auto(&f, false, None).await.status, StatusCode::OK);
+    save(&f, contest_config(e, "run", -1)).await;
+    let r = auto(&f, true, Some(false)).await;
+    assert_eq!(
+        (r.status, r.json["error"]["field"].clone()),
+        (StatusCode::BAD_REQUEST, json!("automation_confirmed"))
+    );
+    assert_eq!(strategy_view(&f).await.1, json!(false));
+    let r = auto(&f, true, Some(true)).await;
+    assert_eq!(r.json["auto"], true, "{}", r.json);
+}
+
+// Proves: TC-039-042. An Auto on from the browser is the operator's action that ends a Tx watchdog
+// stop (WatchdogFromOperator): the run arms afterwards.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_042_a_browser_auto_on_ends_a_watchdog_stop_and_arms() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let service = &f.state.recording.transmit.get().unwrap().service;
+    let spent = || service.with(|c| c.watchdog_spent());
+    // The strategy selected with Auto off; then an MCP CQ spends the watchdog at its limit 1.
+    browser_watchdog(&f, 1).await;
+    save(&f, config(Some("New calls"))).await;
+    let v = mcp_contact(&f, "enable_tx", json!({"enabled":true,"safety_revision":3})).await;
+    assert_eq!(v["status"], 202, "{v}");
+    transmit_own_period(&f, e + 15_000).await;
+    not_keyed_in(&f, e + 45_000).await;
+    assert!(spent());
+    let _ = mcp_contact(&f, "cancel", json!({})).await;
+    let v = mcp_contact(&f, "enable_tx", json!({"enabled":true,"safety_revision":3})).await;
+    assert_eq!(v["result"]["error"]["code"], "tx_watchdog", "{v}");
+    // The browser's Auto on ends the stop: the run calls K1ABC and arms.
+    let r = auto(&f, true, None).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
+    assert!(!spent());
+    publish(&f, e + 60_000, &[("CQ K1ABC FN42", 1500.0, Some(-10.0))]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
 }

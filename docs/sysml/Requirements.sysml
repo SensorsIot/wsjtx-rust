@@ -4425,10 +4425,11 @@ package WstxRequirements {
              Steps: goal new_call_band with value [snr], [distance], [most_wanted], [most_wanted, distance], [new_dxcc, snr]; goal new_call (every station of the rows a candidate) with each needed-first criterion alone before [snr]: [new_dxcc] (log: a DL QSO on 40 m), [new_dxcc_band] (on 20 m: DL worked on 40 m only), [new_dxcc_slot] (an FT4 QSO with JA on 20 m), [new_call] (K1ABC logged), [new_call_band], [new_grid] (FN42 logged on 40 m), [new_grid_band] (FN42 logged on 40 m; a row without grid; a call with a logged 20 m QSO without grid); the same with the station band unknown; goal new_call; window today; DL1XYZ and OH1AA at the same SNR (an exact tie except frequency); two verdicts at the same SNR and frequency; callers_first on and off with value [snr]; an empty value list; the caller W1AW failing every filter line (worked, region, minimum SNR -10).
              Expected (hand-worked): each needed-first criterion puts the needed stations before the others and leaves SNR order inside each group: [new_dxcc] DL1XYZ after the rest; [new_dxcc_band] DL1XYZ needed on 20 m; [new_dxcc_slot] JA1XYZ needed (FT4 is another mode); [new_call] K1ABC and W1AW after; [new_call_band] K1ABC, W1AW and OH1AA after; [new_grid] K1ABC (FN42) after; [new_grid_band] K1ABC (FN42 not on 20 m) needed, the row without grid and the call with an unknown grid status not needed, a band unknown nothing needed; new_call_band excludes K1ABC and W1AW as candidates (worked on 20 m) and keeps DL1XYZ; [snr]: DL1XYZ, OH1AA (frequency 1400 before 1500 when tied: OH1AA first), ZS6AA, JA1XYZ, VK2ABC; [distance]: VK2ABC, JA1XYZ, ZS6AA (entity centre), OH1AA, DL1XYZ; [most_wanted]: JA1XYZ, VK2ABC, then the rest by SNR; [most_wanted, distance] the same for the listed, then by distance; band unknown: no candidate for new_call_band; window today: OH1AA not needed by new_call_band; the exact tie of SNR and frequency ordered by call; callers_first on: W1AW first; off with [snr]: W1AW last (weakest); the empty list: SNR order; W1AW always has a rank, whatever the filter; the reasons name the needed goals; sequence (decode order) never changes an order. Red on the parent: the criteria do not exist.
              2 — Isolated automated tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-02';
         }
+        attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_039_02_verified_by_TC_039_040 from 'CL-039-02' to 'TC-039-040';
     verification 'TC-039-041' {
@@ -4438,11 +4439,12 @@ package WstxRequirements {
              Steps: a schema 2 file with a strategy "Mine" (calls_per_station 5) at revision 7; GET /strategy; PUT a change; read the file; a schema 2 strategy that is otherwise malformed; GET /strategy builtin_strategies.
              Expected: revision 7 with "Mine" holding value [most_wanted], callers_first true, cq_when_no_target false, repetitions 4, quiet_minutes 10 and no calls_per_station; the file after the PUT is schema 3 at revision 8 with those keys; the malformed one reads configuration null, invalid_configuration; the eight built-ins as in TC-039-032.
              2 — Isolated automated tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-01';
             verify 'CL-039-11';
         }
+        attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_039_01_verified_by_TC_039_041 from 'CL-039-01' to 'TC-039-041';
     dependency CL_039_11_verified_by_TC_039_041 from 'CL-039-11' to 'TC-039-041';
@@ -4453,11 +4455,12 @@ package WstxRequirements {
              Steps: GET /strategy; select "New calls" and publish CQ K1ABC FN42 for two periods; POST /strategy/auto true; another selection with Auto on; Auto false; Auto true without a selection (None); select None with Auto on; HALT by route and by MCP; a station restart; Auto true from the MCP principal; extra key, wrong profile, stale boot; a contest WW Digi (forbidden) with Auto true without and with automation_confirmed; FT8 Activity (silent) without it; a run stopped tx_watchdog by a manual contact, then a browser Auto on; a strategy.state subscriber across each change.
              Expected: auto false by default; with Auto off the verdicts mark K1ABC and nothing is armed or keyed; Auto true starts the run, K1ABC selected and armed; another selection ends the run and starts the new one, Auto still on; Auto false disarms and cancels at once, the run stopped, the strategy selected; 409 not_configured strategy and Auto off; None turns Auto off; HALT turns Auto off, the run stopped halted, active kept; after the restart auto false and active None; the MCP principal refused 401, nothing changed; 400 invalid_request, 403 wrong_profile, 409 state_conflict boot_id; WW Digi refused field automation_confirmed and accepted with it, FT8 Activity accepted; the Auto on ends the watchdog stop and arms; one strategy.state per change, none on subscription. No PTT exchange.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-22';
             verify 'CL-039-05';
         }
+        attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_039_22_verified_by_TC_039_042 from 'CL-039-22' to 'TC-039-042';
     dependency CL_039_05_verified_by_TC_039_042 from 'CL-039-05' to 'TC-039-042';
@@ -5962,7 +5965,7 @@ package WstxRequirements {
         objective {
             verify 'CL-063-05';
         }
-        attribute executable : String = "server/src/contest_tests.rs::tc_063_009_automatic_needs_the_confirmation_only_where_the_rules_forbid_it; server/src/strategy_tests.rs::tc_063_009_search_and_pounce_calls_the_most_valuable_and_waits_for_what_it_needs; server/src/strategy_tests.rs::tc_063_009_a_manual_qso_of_the_period_is_a_dupe_for_the_next_evaluation";
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_009_a_selection_asks_nothing_and_refuses_colouring_and_the_confirmation; server/src/strategy_tests.rs::tc_063_009_search_and_pounce_calls_the_most_valuable_and_waits_for_what_it_needs; server/src/strategy_tests.rs::tc_063_009_a_manual_qso_of_the_period_is_a_dupe_for_the_next_evaluation";
     }
     dependency CL_063_05_verified_by_TC_063_009 from 'CL-063-05' to 'TC-063-009';
     verification 'TC-063-010' {

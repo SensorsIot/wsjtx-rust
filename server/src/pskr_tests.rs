@@ -762,3 +762,388 @@ async fn http_routes_read_and_switch_the_feed() {
     let (status, _, _, _) = f.call("GET", "/pskr?x=1", None).await;
     assert_ne!(status, StatusCode::OK);
 }
+
+// ------------------------------------------------------------------ strategydef (TC-039-048)
+fn payload(sender: &str, receiver: &str, hz: u64, t_tx: i64, rp: Option<&str>) -> String {
+    let rp = rp.map_or(String::new(), |v| format!(r#","rp":{v}"#));
+    format!(
+        r#"{{"f":{hz},"md":"FT8","t":{},"t_tx":{t_tx},"sc":"{sender}","rc":"{receiver}","b":"20m"{rp}}}"#,
+        t_tx + 13
+    )
+}
+
+// Proves: TC-039-048. rp is the receiver's reported SNR: an integer -99..99; absent or anything
+// else is unknown and the spot still counts.
+#[test]
+fn tc_039_048_rp_is_read_as_the_reported_snr() {
+    for (rp, expected) in [
+        (Some("-5"), Some(-5)),
+        (Some("-99"), Some(-99)),
+        (Some("99"), Some(99)),
+        (None, None),
+        (Some("100"), None),
+        (Some("-100"), None),
+        (Some("\"x\""), None),
+        (Some("2.5"), None),
+        (Some("null"), None),
+    ] {
+        let s = parse_spot(payload("HB9BLA", "K1ABC", 14_075_200, 1_000_005, rp).as_bytes());
+        let s = s.unwrap_or_else(|| panic!("{rp:?}: the spot still counts"));
+        assert_eq!(s.snr_db, expected, "{rp:?}");
+    }
+    // The newest spot of a receiver keeps its rp, an older one never replaces it.
+    let mut h = Hearing::default();
+    let mut newer = spot("HB9BLA", "K1ABC", 14_075_200, 1000);
+    newer.band = "20m".into();
+    newer.snr_db = Some(-12);
+    let mut older = newer.clone();
+    older.utc_s = 990;
+    older.snr_db = Some(3);
+    h.record("HB9BLA", None, newer, 1000);
+    h.record("HB9BLA", None, older, 1000);
+    assert_eq!(
+        h.heard_by("K1ABC", "FT8", "20m", 1060),
+        Some((1000, Some(-12)))
+    );
+}
+
+// Proves: TC-039-048. His decoded offsets are kept once for each parity of the sender's t_tx; an
+// offset of the other parity excludes nothing of mine.
+#[test]
+fn tc_039_048_decoded_offsets_are_kept_per_parity() {
+    // 1_000_005 s lies in FT8 period 66_667 (odd), 1_000_020 s in 66_668 (even), hand-divided by
+    // 15 s.
+    let (odd_t, even_t) = (1_000_005, 1_000_020);
+    let mut h = Hearing::default();
+    for (sender, t) in [
+        ("DL1XYZ", odd_t),
+        ("G4ABC", even_t),
+        ("F5AAA", odd_t),
+        ("OH1AA", even_t),
+    ] {
+        let s = parse_spot(payload(sender, "K1ABC", 14_075_200, t, None).as_bytes()).unwrap();
+        h.record("HB9BLA", Some("K1ABC"), s, even_t + 30);
+    }
+    assert_eq!(
+        h.decoded("FT8", "20m", 14_074_000, (300, 2650), even_t + 30),
+        vec![(1200, Some(Parity::Even)), (1200, Some(Parity::Odd))],
+        "newest first, the same offset once per parity"
+    );
+    let dir = Dir::new();
+    let feed = Feed::start(&dir.0, "p", "b", None, FAST);
+    feed.observe(Some("HB9BLA"), Some("K1ABC"));
+    let now = utc_s();
+    let odd_now = if now.div_euclid(15) % 2 == 1 {
+        now
+    } else {
+        now - 15
+    };
+    feed.inject(&payload("DL1XYZ", "K1ABC", 14_075_200, odd_now, None));
+    let of = |p: Parity| feed.decoded_of_parity("FT8", "20m", 14_074_000, (300, 2650), p);
+    assert_eq!((of(Parity::Odd), of(Parity::Even)), (vec![1200], vec![]));
+    // Use off: no offsets at all.
+    feed.switch_use(false);
+    assert_eq!(of(Parity::Odd), Vec::<u32>::new());
+}
+
+// Proves: TC-039-048. pskr.json schema 2 with use: schema 1 reads use true and is written as 2 by
+// the next change; use false is kept; a broken file reads enabled and use true, invalid_pskr.
+#[test]
+fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
+    let dir = Dir::new();
+    let file = dir.0.join(FILE);
+    std::fs::write(
+        &file,
+        br#"{"schema_version":1,"profile_id":"p","enabled":false}"#,
+    )
+    .unwrap();
+    let feed = Feed::start(&dir.0, "p", "b", None, FAST);
+    let v = feed.view();
+    assert_eq!(
+        (
+            v["enabled"].clone(),
+            v["use"].clone(),
+            v["storage_error"].clone()
+        ),
+        (json!(false), json!(true), Value::Null)
+    );
+    feed.switch_use(false);
+    let saved: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(
+        saved,
+        json!({"schema_version":2,"profile_id":"p","enabled":false,"use":false})
+    );
+    drop(feed);
+    let v = Feed::start(&dir.0, "p", "b", None, FAST).view();
+    assert_eq!(
+        (v["enabled"].clone(), v["use"].clone()),
+        (json!(false), json!(false))
+    );
+    // The Settings switch writes schema 2 too and keeps use.
+    let feed = Feed::start(&dir.0, "p", "b", None, FAST);
+    feed.switch(true);
+    let saved: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(
+        saved,
+        json!({"schema_version":2,"profile_id":"p","enabled":true,"use":false})
+    );
+    drop(feed);
+    for broken in [
+        &b"{"[..],
+        br#"{"schema_version":2,"profile_id":"p","enabled":true}"#,
+        br#"{"schema_version":2,"profile_id":"p","enabled":true,"use":"no"}"#,
+        br#"{"schema_version":1,"profile_id":"p","enabled":true,"use":false}"#,
+        br#"{"schema_version":3,"profile_id":"p","enabled":true,"use":false}"#,
+    ] {
+        std::fs::write(&file, broken).unwrap();
+        let v = Feed::start(&dir.0, "p", "b", None, FAST).view();
+        assert_eq!(
+            (
+                v["enabled"].clone(),
+                v["use"].clone(),
+                v["storage_error"].clone()
+            ),
+            (json!(true), json!(true), json!("invalid_pskr")),
+            "{}",
+            String::from_utf8_lossy(broken)
+        );
+    }
+}
+
+// Proves: TC-039-048. POST /pskr/use saves the setting with the refusals of POST /pskr; GET /pskr
+// and pskr.state carry use; an MCP principal is refused 401.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_048_post_pskr_use_saves_and_refuses() {
+    let f = crate::mcp_tests::station(false).await;
+    let feed = Feed::start(&f.dir, &f.id, &f.boot, None, FAST);
+    f.state.recording.pskr.set(feed.clone()).ok().unwrap();
+    let g = f.browser("GET", "/pskr", None).await;
+    assert_eq!(
+        (g.status, g.json["use"].clone()),
+        (StatusCode::OK, json!(true))
+    );
+    let body = |use_: Value| json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"use":use_});
+    let before = feed.revision();
+    let r = f
+        .browser("POST", "/pskr/use", Some(body(json!(false))))
+        .await;
+    assert_eq!(
+        (r.status, r.json["use"].clone()),
+        (StatusCode::OK, json!(false)),
+        "{}",
+        r.json
+    );
+    assert_eq!(f.browser("GET", "/pskr", None).await.json["use"], false);
+    assert!(feed.revision() > before, "pushed by pskr.state");
+    let event: Value = serde_json::from_str(&feed.event().1).unwrap();
+    assert_eq!(
+        (event["type"].clone(), event["data"]["use"].clone()),
+        (json!("pskr.state"), json!(false))
+    );
+    let saved: Value = serde_json::from_slice(&std::fs::read(f.dir.join(FILE)).unwrap()).unwrap();
+    assert_eq!(saved["use"], false);
+    let r = f
+        .browser("POST", "/pskr/use", Some(body(json!(true))))
+        .await;
+    assert_eq!(r.json["use"], true);
+    // The refusals of POST /pskr.
+    let mut extra = body(json!(false));
+    extra["enabled"] = json!(true);
+    let mut other = body(json!(false));
+    other["profile_id"] = json!(profile::new_uuid().unwrap());
+    let mut stale = body(json!(false));
+    stale["boot_id"] = json!(profile::new_uuid().unwrap());
+    for (b, status, code) in [
+        (extra, 400, "invalid_request"),
+        (body(json!("no")), 400, "invalid_request"),
+        (other, 403, "wrong_profile"),
+        (stale, 409, "state_conflict"),
+    ] {
+        let r = f.browser("POST", "/pskr/use", Some(b.clone())).await;
+        assert_eq!(
+            (r.status.as_u16(), r.json["error"]["code"].clone()),
+            (status, json!(code)),
+            "{b}"
+        );
+    }
+    let internal = crate::mcp_tests::internal_transport(&f, &f.mcp);
+    let m =
+        crate::mcp_tests::with_cookie(&f, "POST", "/pskr/use", &internal, Some(body(json!(false))))
+            .await;
+    assert_eq!(m.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(feed.view()["use"], true, "nothing changed");
+}
+
+// Proves: TC-039-048. Use off unsubscribes the target and Use on subscribes it again; the hearing
+// state is heard (time and rp), no (connected and subscribed, no spot) or unknown.
+#[test]
+fn tc_039_048_use_drives_the_target_subscription_and_the_hearing_state() {
+    let dir = Dir::new();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (log_tx, log) = mpsc::channel::<(u8, Vec<u8>)>();
+    let (say_tx, say) = mpsc::channel::<(String, String)>();
+    let peer = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_millis(5)))
+            .unwrap();
+        let mut buffer: Vec<u8> = Vec::new();
+        loop {
+            let mut chunk = [0u8; 256];
+            match stream.read(&mut chunk) {
+                Ok(0) => return,
+                Ok(n) => buffer.extend_from_slice(&chunk[..n]),
+                Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
+                Err(_) => return,
+            }
+            while buffer.len() >= 2 && buffer.len() >= 2 + usize::from(buffer[1]) {
+                let body: Vec<u8> = buffer.drain(..2 + usize::from(buffer[1])).collect();
+                let (first, body) = (body[0], body[2..].to_vec());
+                match first {
+                    0x10 => stream.write_all(&[0x20, 2, 0, 0]).unwrap(),
+                    0x82 => stream.write_all(&[0x90, 3, body[0], body[1], 0]).unwrap(),
+                    0xa2 => stream.write_all(&[0xb0, 2, body[0], body[1]]).unwrap(),
+                    0xc0 => stream.write_all(&[0xd0, 0]).unwrap(),
+                    _ => {}
+                }
+                if log_tx.send((first, body)).is_err() {
+                    return;
+                }
+            }
+            while let Ok((topic, payload)) = say.try_recv() {
+                publish(&mut stream, &topic, &payload);
+            }
+        }
+    });
+    let feed = Feed::start(&dir.0, "p", "b00t", Some(local_connector(port)), FAST);
+    // Not connected yet: unknown.
+    feed.observe(Some("HB9BLA"), Some("K1ABC"));
+    assert_eq!(feed.hearing("K1ABC", "FT8", "20m"), HearingState::Unknown);
+    until("connected", || feed.view()["state"] == "connected");
+    let filter_of = |p: &(u8, Vec<u8>), tail: usize| {
+        String::from_utf8(p.1[4..p.1.len() - tail].to_vec()).unwrap()
+    };
+    let next = |wanted: u8| loop {
+        let p = log.recv_timeout(Duration::from_secs(5)).unwrap();
+        if p.0 == wanted {
+            return p;
+        }
+        assert!(matches!(p.0, 0xc0 | 0x10 | 0x82), "unexpected {:#x}", p.0);
+    };
+    let target = "pskr/filter/v2/+/+/+/K1ABC/#";
+    while filter_of(&next(0x82), 1) != target {}
+    // Connected, subscribed, no spot: no.
+    until("no", || {
+        feed.hearing("K1ABC", "FT8", "20m") == HearingState::No
+    });
+    assert_eq!(
+        HearingState::No.json(),
+        json!({"state":"no","spot_utc_s":null,"snr_db":null})
+    );
+    // A spot of my call at K1ABC 60 s old with rp -12: heard, with its time and rp.
+    let t = utc_s() - 60;
+    say_tx
+        .send((
+            "pskr/filter/v2/20m/FT8/HB9BLA/K1ABC".into(),
+            payload("HB9BLA", "K1ABC", 14_075_500, t, Some("-12")),
+        ))
+        .unwrap();
+    until("heard", || {
+        feed.hearing("K1ABC", "FT8", "20m")
+            == HearingState::Heard {
+                utc_s: t,
+                snr_db: Some(-12),
+            }
+    });
+    assert_eq!(
+        feed.hearing("K1ABC", "FT8", "20m").json(),
+        json!({"state":"heard","spot_utc_s":t,"snr_db":-12})
+    );
+    // Another band: no spot there; a call that is not the subscribed target: unknown.
+    assert_eq!(feed.hearing("K1ABC", "FT8", "40m"), HearingState::No);
+    assert_eq!(feed.hearing("W1AW", "FT8", "20m"), HearingState::Unknown);
+    // A call with a slash has no subscription: unknown.
+    feed.observe(Some("HB9BLA"), Some("K1ABC/P"));
+    assert_eq!(filter_of(&next(0xa2), 0), target);
+    assert_eq!(feed.hearing("K1ABC/P", "FT8", "20m"), HearingState::Unknown);
+    feed.observe(Some("HB9BLA"), Some("K1ABC"));
+    assert_eq!(filter_of(&next(0x82), 1), target);
+    // Use off: UNSUBSCRIBE, and the hearing is unknown; Use on: SUBSCRIBE again.
+    feed.switch_use(false);
+    assert_eq!(filter_of(&next(0xa2), 0), target);
+    assert_eq!(feed.hearing("K1ABC", "FT8", "20m"), HearingState::Unknown);
+    assert!(!feed.hears_us("K1ABC", "FT8", "20m"));
+    feed.switch_use(true);
+    assert_eq!(filter_of(&next(0x82), 1), target);
+    assert!(feed.hears_us("K1ABC", "FT8", "20m"));
+    drop(feed);
+    drop(say_tx);
+    drop(log);
+    peer.join().unwrap();
+}
+
+// Proves: TC-039-048. What a run reads of the feed on the station band: the hearing of its target
+// and his decoded offsets of my Tx parity, both unknown with Use off or without a band or dial.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_048_the_run_reads_the_target_on_the_station_band_honouring_use() {
+    let f = crate::mcp_tests::station(false).await;
+    let r = &f.state.recording;
+    let mode = decoder::Mode::Ft8;
+    assert_eq!(
+        target_hearing(r, Some("K1ABC"), mode),
+        HearingState::Unknown
+    );
+    assert_eq!(target_offsets(r, mode, Parity::Odd), None, "no feed");
+    assert!(!use_on(r));
+    let feed = Feed::start(&f.dir, &f.id, &f.boot, None, FAST);
+    r.pskr.set(feed.clone()).ok().unwrap();
+    feed.observe(Some("HB9BLA"), Some("K1ABC"));
+    let now = utc_s();
+    let odd = if now.div_euclid(15) % 2 == 1 {
+        now
+    } else {
+        now - 15
+    };
+    feed.inject(&payload(
+        "HB9BLA",
+        "K1ABC",
+        14_075_500,
+        now - 60,
+        Some("-12"),
+    ));
+    feed.inject(&payload("DL1XYZ", "K1ABC", 14_075_200, odd, None));
+    // Without a station band nothing is known.
+    assert_eq!(
+        target_hearing(r, Some("K1ABC"), mode),
+        HearingState::Unknown
+    );
+    assert_eq!(target_offsets(r, mode, Parity::Odd), None);
+    r.fixture_band("20m");
+    assert_eq!(
+        target_hearing(r, Some("K1ABC"), mode),
+        HearingState::Heard {
+            utc_s: now - 60,
+            snr_db: Some(-12)
+        }
+    );
+    assert_eq!(target_hearing(r, None, mode), HearingState::Unknown);
+    // Without a confirmed dial no offset is known; with it, those of the asked parity.
+    assert_eq!(target_offsets(r, mode, Parity::Odd), None);
+    *feed.dial.lock().unwrap() = Some(14_074_000);
+    assert_eq!(target_offsets(r, mode, Parity::Odd), Some(vec![1200]));
+    assert_eq!(target_offsets(r, mode, Parity::Even), Some(vec![]));
+    assert!(use_on(r));
+    // Use off: no spot is used.
+    feed.switch_use(false);
+    assert!(!use_on(r));
+    assert_eq!(
+        target_hearing(r, Some("K1ABC"), mode),
+        HearingState::Unknown
+    );
+    assert_eq!(target_offsets(r, mode, Parity::Odd), None);
+    // The Settings switch off counts as Use off.
+    feed.switch_use(true);
+    feed.switch(false);
+    assert!(!use_on(r));
+}
