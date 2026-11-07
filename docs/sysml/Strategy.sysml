@@ -275,7 +275,7 @@ package WstxStrategy {
              new_dxcc, new_dxcc_band, new_dxcc_slot, new_call, new_call_band: GoalNeeded of
              dxcc, dxcc_band, dxcc_slot, new_call, new_call_band with the strategy's needed and
              window; needed before not needed. new_grid: GoalNeeded grid. new_grid_band: the
-             message grid not worked on the station band in the window, with the rule of D13
+             message grid needed (the strategy's needed) on the station band in the window, with the rule of D13
              (no grid, an unknown grid status or an unknown band is not needed); needed
              first. most_wanted: on the Most Wanted list by its rank ascending, then the
              stations without a rank (MostWantedList). distance: StationDistance, farther
@@ -790,7 +790,9 @@ package WstxStrategy {
              (else 409 not_configured strategy, Auto stays off); a contest whose
              AutomationClause is forbidden needs automation_confirmed true (else 400
              invalid_request field automation_confirmed, Auto stays off), the browser asking the
-             WstxContest::ContestPrompt warning first. auto false ends the run. Selecting None
+             WstxContest::ContestPrompt warning first. A selection change while Auto is on to a
+             contest whose clause is forbidden turns Auto off instead of starting it: the
+             confirmation goes only with Auto on. auto false ends the run. Selecting None
              turns Auto off. The GET /strategy snapshot carries auto (boolean) and
              strategy_refusal; a change increments the strategy revision and is pushed by
              strategy.state. The reply is the GET /strategy snapshot.

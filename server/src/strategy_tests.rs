@@ -5150,6 +5150,11 @@ async fn tc_063_009_search_and_pounce_calls_the_most_valuable_and_waits_for_what
     let revision = f.browser("GET", "/strategy", None).await.json["revision"].clone();
     let p = put(&f, revision, contest_config(e, "sp", 1)).await;
     assert_eq!(p.status, StatusCode::OK, "{}", p.json);
+    // WW Digi forbids automatic operation: the change turns Auto off, the run stops; only an
+    // Auto on with the confirmation starts the new one.
+    assert_eq!(p.json["auto"], false);
+    assert_eq!(run_state(&f).await.0, "stopped");
+    assert_eq!(auto(&f, true, Some(true)).await.status, StatusCode::OK);
     f.tick();
     assert_eq!(
         run_state(&f).await,
@@ -6192,7 +6197,8 @@ async fn tc_039_042_auto_starts_and_ends_the_run_and_a_selection_only_marks() {
 
 // Proves: TC-039-042, TC-063-009. A contest whose rules forbid automatic operation needs
 // automation_confirmed on Auto on (strategy_tests::tc_063_009_search_and_pounce...); a silent one
-// (FT8 Activity) needs none.
+// (FT8 Activity) needs none; a selection change to a forbidding contest while Auto is on turns
+// Auto off instead of starting it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_042_a_silent_contest_switches_auto_on_without_a_confirmation() {
     let f = station(true).await;
@@ -6212,9 +6218,17 @@ async fn tc_039_042_a_silent_contest_switches_auto_on_without_a_confirmation() {
         f.read("automation").await["configuration"]["strategy"],
         true
     );
-    // WW Digi forbids it: refused without the confirmation, Auto off and its run ended.
-    assert_eq!(auto(&f, false, None).await.status, StatusCode::OK);
+    // A selection change while Auto is on to WW Digi, whose rules forbid automatic operation:
+    // the run ends, no run starts and Auto goes off (the confirmation goes only with Auto on).
+    let run_id = f.read("automation").await["run"]["id"].clone();
     save(&f, contest_config(e, "run", -1)).await;
+    let a = f.read("automation").await;
+    assert_eq!(
+        (a["run"]["id"].clone(), a["run"]["state"].clone()),
+        (run_id, json!("stopped"))
+    );
+    assert_eq!(strategy_view(&f).await.1, json!(false));
+    // Auto on: refused without the confirmation, accepted with it.
     let r = auto(&f, true, Some(false)).await;
     assert_eq!(
         (r.status, r.json["error"]["field"].clone()),

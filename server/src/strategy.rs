@@ -645,6 +645,11 @@ impl Config {
     pub(crate) fn automatic_contest(&self) -> Option<crate::contest::Selection> {
         self.contest
     }
+    /// A contest whose WstxContest::AutomationClause is forbidden: Auto on needs the confirmation.
+    pub(crate) fn forbidden_contest(&self) -> bool {
+        self.contest
+            .is_some_and(|c| c.profile.automation == crate::contest::AutomationClause::Forbidden)
+    }
     /// A selection: an active strategy or a contest (WstxStrategy::AutoToggle).
     pub(crate) fn selected(&self) -> bool {
         self.active.is_some() || self.contest.is_some()
@@ -1906,11 +1911,7 @@ impl Owner {
             .filter(Config::selected)
             .ok_or(("not_configured", Some("strategy".into())))?;
         // WstxContest::AutomationClause: a warning the operator must confirm, never a block.
-        if config
-            .contest
-            .is_some_and(|c| c.profile.automation == crate::contest::AutomationClause::Forbidden)
-            && !confirmation
-        {
+        if config.forbidden_contest() && !confirmation {
             return Err(("invalid_request", Some("automation_confirmed".into())));
         }
         Ok(true)
@@ -2258,8 +2259,14 @@ pub async fn put(
         if !changed {
             return Ok::<Value, Refusal>(snapshot);
         }
-        // A changed selection ends any run; while Auto is on the new one starts.
-        let auto = station.strategy.auto(&state);
+        // A changed selection ends any run; while Auto is on the new one starts, except a
+        // contest whose clause is forbidden: Auto goes off, the confirmation goes only with
+        // Auto on (WstxStrategy::AutoToggle).
+        let forbidden = station
+            .strategy
+            .config(&state)
+            .is_some_and(|c| c.forbidden_contest());
+        let auto = station.strategy.auto(&state) && !forbidden;
         start_selection(&station, &state, access, auto);
         Ok::<Value, Refusal>(station.strategy.snapshot(&state))
     })
