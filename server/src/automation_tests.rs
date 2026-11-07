@@ -107,7 +107,7 @@ fn tc_020_003_candidate_selection_table() {
     );
 }
 
-// Proves: TC-020-003.
+// Proves: TC-020-002, TC-020-003.
 #[test]
 fn tc_020_003_configuration_is_exact_and_has_no_default_policy() {
     assert_eq!(parse_config(&Value::Null), Ok(None), "null: unconfigured");

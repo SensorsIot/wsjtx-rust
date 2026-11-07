@@ -321,6 +321,7 @@ test('TC-009-005 strict TLS unions, early identity barriers and manual preferred
 
 // Proves: CL-008-07; CL-010-05/07/08; TC-009-005 cases1/2/6. Interception only
 // delays a mutation body; all successful replies/state originate in the real server.
+// Proves: CL-044-16; TC-044-023 (d), the step inside this test.
 test('TC-009-005 browser preferred selection and Stop fence a genuinely delayed POST',{timeout:45000},async t=>{
   const {origin,request,token}=await station(t);const {chromium}=require('playwright');
   const browser=await chromium.launch();t.after(()=>browser.close());

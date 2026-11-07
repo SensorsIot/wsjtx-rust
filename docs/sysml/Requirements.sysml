@@ -862,7 +862,7 @@ package WstxRequirements {
             verify 'CL-008-02';
             verify 'CL-008-03';
         }
-        attribute executable : String = "server/tests/audio_contract.rs; server/tests/audio_hardware.rs; server/tests/audio_listen.rs; server/tests/audio_receive.rs; server/tests/receive_integration.rs; server/tests/source_contract.rs";
+        attribute executable : String = "server/tests/audio_contract.rs; server/tests/audio_receive.rs; server/tests/receive_integration.rs; server/tests/source_contract.rs";
     }
     verification 'TC-009-001' {
         doc /* TC-009-001 — Typed radio control
@@ -1794,7 +1794,7 @@ package WstxRequirements {
              command names a local address. A full radio on a saved address reports
              radio_refused. */
         attribute automation : AutomationState = AutomationState::implemented;
-        attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
+        attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs";
         objective {
             verify 'CL-013-01';
             verify 'CL-013-04';
@@ -2389,7 +2389,7 @@ package WstxRequirements {
             verify 'CL-010-07';
             verify 'CL-010-08';
         }
-        attribute executable : String = "tests/radio-selection.test.cjs; server/src/selection_http_tests.rs; server/src/radio_http_tests.rs; server/src/http_compression_tests.rs";
+        attribute executable : String = "tests/radio-selection.test.cjs; server/src/selection_http_tests.rs; server/src/http_compression_tests.rs";
     }
     verification 'TC-007-006' {
         doc /* #### TC-007-006 — Latest decode and signed relative timing
@@ -3724,7 +3724,8 @@ package WstxRequirements {
              Steps: (a) IC-7300 at 94h answering the broadcast only at 19200, with echo of every frame; (b) IC-705 answering only the addressed read at A4h at 115200; (c) collision frames FE FE FC FC FC FD and garbage bytes before the reply; (d) a silent port; (e) a port whose reads time out; (f) an unknown ID 99h; (g) the IC-7300 menu read with values 0078=01, 0079=00, 0080=02, 0066=00, 0067=03, 0065 0128, 0071=01, and a FA refusal of 0065; (h) a station whose CAT owner holds COM3, other CP210x ports and an FTDI port.
              Expected (hand table): (a) IC-7300, 94h, 19200; (b) IC-705, A4h, 115200, manual; (c) identified as (a); (d) and (e) no_reply after all four rates; (f) unknown_model with ID 99h; every written frame is FE FE 00 E0 19 00 FD, FE FE <table address> E0 19 00 FD or FE FE 94 E0 1A 05 00 <item> FD, the lines are disabled before the first write and never raised; (g) values and guidance: usb_send DTR blocking, rtty RTS blocking, data_mod USB ok, level 128 ok, transceive advice, FA unreadable; (h) COM3 is never opened, reported station_cat from the owner, the CP210x ports probed, the FTDI port not_radio_bridge and never opened.
              2 — Isolated automated tests; Windows development PC, no serial port, radio or RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
+        // Partial: the line state (lines disabled before the first write, never raised) is not asserted: the fake records configure and write only.
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-044-01';
             verify 'CL-044-03';
@@ -3740,7 +3741,8 @@ package WstxRequirements {
              Steps: (a) one IC-7300 port and its CODEC capture and render under the same hub, a webcam microphone elsewhere; (b) two capture endpoints under the hub; (c) same container ID, different parents; (d) only a root-hub parent shared; (e) POST /radio/detect valid, other profile, other boot, extra key, v 2, without keying_inhibit_confirmed, with it false, foreign Origin, a query, a concurrent second detect; (f) PUT /profile with "Speakers (USB Audio CODEC )", a capture ID as output, a render ID as input, valid IDs, null; (g) startup migration with a unique name, a duplicated name, an unknown name and an ID.
              Expected: (a) proposal COM3 IC-7300 94h 19200, endpoint icom7300://COM3?baud=19200&radio=94&controller=e0, ptt cat, both CODEC endpoint IDs; (b) input ambiguous, output proposed; (c) matched; (d) none; (e) 200 report, 403 wrong_profile, 409 state_conflict, 400 invalid_request, 400 unsupported_version, 400 invalid_request, 409 confirmation_required, 403 forbidden_origin, 400, 409 busy; (f) 400 audio_device_not_endpoint with the field for the first three, 200 for the rest; (g) ID saved with revision + 1, the others unchanged with reasons ambiguous, not_found, unchanged.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
+        // Partial: (e) the concurrent second detect is not run (the test sets busy itself); (a) no test proposes COM3 at 19200 (the tests show COM3 at 9600 from the station CAT and an unconfigured COM4 at 19200).
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-044-01';
             verify 'CL-044-02';
@@ -3758,7 +3760,8 @@ package WstxRequirements {
              Steps: apply; read the undo record; apply again; undo; undo again; apply with the radio reporting TX; apply with the transmitter armed; apply with a radio that answers FA to 0080; apply with a radio whose readback of 0067 stays 00; apply against an IC-705 ID; HTTP refusals as TC-044-002 (e).
              Expected: writes FE FE 94 E0 1A 05 00 78 00 FD, 00 80 00, 00 67 03, 00 71 00 each acknowledged and read back, never 0079; the record holds {0078 1→0, 0080 2→0, 0067 0→3, 0071 1→0} before the first write; the second apply writes nothing and keeps the record; undo writes 0071=01, 0067=00, 0080=02, 0078=01 in that order and removes the record; the second undo nothing_to_undo; TX and armed refused with no write; FA stops after 0078 with the failed item named and the record reduced to 0078 1→0, a following undo writes 0078=01 and removes the record; TX leaves no record; mismatch reported readback_mismatch; IC-705 refused unsupported_radio; no 1C 00 01, frequency or mode frame in any case.
              2 — Isolated automated tests; Windows development PC, no radio or RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
+        // Partial: the undo record is read only after apply returns, not before the first write; no test checks for 1C 00 01, frequency or mode frames in the TX, FA and readback-mismatch cases.
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-044-04';
         }
@@ -3854,7 +3857,7 @@ package WstxRequirements {
             verify 'CL-044-10';
             verify 'CL-044-11';
         }
-        attribute executable : String = "server/src/radio_agc_tests.rs";
+        attribute executable : String = "server/src/radio_agc_tests.rs; server/src/radio_setup_tests.rs";
     }
     dependency CL_044_10_verified_by_TC_044_009 from 'CL-044-10' to 'TC-044-009';
     dependency CL_044_11_verified_by_TC_044_009 from 'CL-044-11' to 'TC-044-009';

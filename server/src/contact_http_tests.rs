@@ -289,6 +289,7 @@ fn code(v: &Value) -> (&str, Option<&str>) {
     )
 }
 
+// Proves: TC-007-004, TC-010-010, TC-050-006.
 #[tokio::test]
 async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -414,6 +415,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
 }
 const MAX_SAFE_TEST: u64 = 9_007_199_254_740_991;
 
+// Proves: TC-007-004.
 #[tokio::test]
 async fn contact_command_wire_is_strict_replays_receipts_and_checks_revisions() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -604,6 +606,7 @@ async fn contact_command_wire_is_strict_replays_receipts_and_checks_revisions() 
     );
 }
 
+// Proves: TC-007-001, TC-007-003, TC-050-006.
 #[tokio::test]
 async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -835,6 +838,7 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
     );
 }
 
+// Proves: TC-007-004.
 #[tokio::test]
 async fn receive_only_station_selects_and_logs_and_refuses_every_transmit_action() {
     let f = fixture("http://127.0.0.1:18001", false);
@@ -962,6 +966,7 @@ fn direct_log_record_fields_from_the_confirmed_dial() {
     );
 }
 
+// Proves: TC-010-009.
 #[test]
 fn rx_level_is_round_10_log10_mean_square_in_16_bit_units() {
     let sine = |amplitude: f64| -> (f64, u64) {
@@ -1691,6 +1696,7 @@ async fn published_ft4_partner_records_advance_the_contact_to_signoff_after_rr73
 // record is published 7.0 s after its period start (live +6.7..7.3 s), just before my
 // odd period; Hold Tx keeps my Tx at 2439 Hz. Expected: Tx1, R+10, R+10, 73, completed,
 // logged once (contacts.adi) with Enable Tx off.
+// Proves: TC-050-006.
 #[tokio::test]
 async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
     let f = fixture("http://127.0.0.1:18017", true);

@@ -70,7 +70,7 @@ pub(super) async fn map<T: Sync, S, R: Send>(
 mod tests {
     use super::*;
     use crate::decoder::search::complete;
-    // Proves: CL-057-02. Every item once, in input order, for 1..8 threads and a slow item.
+    // Proves: CL-057-02; TC-057-002. Every item once, in input order, for 1..8 threads and a slow item.
     #[test]
     fn map_keeps_input_order_on_any_thread_count() {
         let items: Vec<u64> = (0..200).collect();
@@ -94,7 +94,7 @@ mod tests {
             assert_eq!(out, items.iter().map(|x| x * x).collect::<Vec<_>>());
         }
     }
-    // Proves: CL-057-02. A cancelled caller stops between rounds with Cancelled.
+    // Proves: CL-057-02; TC-057-002. A cancelled caller stops between rounds with Cancelled.
     #[test]
     fn map_stops_when_cancelled() {
         let cancelled = std::sync::atomic::AtomicBool::new(false);

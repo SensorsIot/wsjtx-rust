@@ -98,6 +98,7 @@ fn keys(v: &Value) -> Vec<&str> {
     k
 }
 
+// Proves: TC-043-003.
 #[test]
 fn saved_source_reads_as_ntp_unless_valid() {
     let id = "00000000-0000-4000-8000-0000000000c1";
@@ -128,6 +129,7 @@ fn saved_source_reads_as_ntp_unless_valid() {
     }
 }
 
+// Proves: TC-043-003.
 #[tokio::test]
 async fn clock_wire_saves_the_source_and_reports_both_measurements() {
     let s = station(directory());
@@ -306,6 +308,7 @@ async fn clock_wire_saves_the_source_and_reports_both_measurements() {
 
 // The actual transmit owner plans with the station clock: refused while too few stations
 // are heard, admitted once the air estimate is confident, and its UTC carries the correction.
+// Proves: TC-043-003.
 #[test]
 fn transmit_owner_admits_and_times_by_the_air_clock() {
     let s = station(directory());

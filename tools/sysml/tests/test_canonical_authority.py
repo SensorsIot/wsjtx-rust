@@ -143,13 +143,15 @@ class CanonicalAuthorityTests(unittest.TestCase):
         attached = {
             "server/probe.rs": ("// Proves: TC-001-001\n// continues\n#[test]\nfn observed() {}",
                                 "// Proves: TC-001-001\n#[tokio::test(flavor = \"current_thread\")]\nasync fn observed() {}",
-                                "    // Proves: TC-001-001\n    fn observed() {}"),
-            "tests/probe_test.py": ("    # Proves: TC-001-001\n    def test_observed(self):\n        pass",
-                                    "# Proves: TC-001-001\nclass ObservedTests:\n    pass"),
+                                "    // Proves: TC-001-001\n    #[cfg(windows)]\n    #[test]\n    fn observed() {}"),
+            "tests/probe_test.py": ("    # Proves: TC-001-001\n    @unittest.skipIf(False, 'kept')\n    def test_observed(self):\n        pass",),
         }
+        # A helper function or a class is not a test, even when it sits where a test was.
         stale = {
-            "server/probe.rs": ("// Proves: TC-001-001\n", "// Proves: TC-001-001\nconst LIMIT: u32 = 1;\n#[test]\nfn observed() {}"),
-            "tests/probe_test.py": ("# Proves: TC-001-001\nLIMIT = 1\ndef test_observed():\n    pass", "# Proves: TC-001-001\ndef helper():\n    pass"),
+            "server/probe.rs": ("// Proves: TC-001-001\n", "// Proves: TC-001-001\nconst LIMIT: u32 = 1;\n#[test]\nfn observed() {}",
+                                "// Proves: TC-001-001\nfn helper() {}", "    // Proves: TC-001-001\n    pub async fn helper() {}"),
+            "tests/probe_test.py": ("# Proves: TC-001-001\nLIMIT = 1\ndef test_observed():\n    pass", "# Proves: TC-001-001\ndef helper():\n    pass",
+                                    "# Proves: TC-001-001\nclass ObservedTests:\n    pass"),
         }
         for path, contents in attached.items():
             source = self.root / path
@@ -165,6 +167,15 @@ class CanonicalAuthorityTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "No Proves tag or named-test"):
                         self.check()
             source.unlink()
+
+    def test_every_listed_file_of_a_case_must_bind_it(self):
+        (self.root / "tests/a.cjs").write_text("// Proves: TC-001-001\ntest('x',()=>{});", encoding="utf-8")
+        (self.root / "tests/b.cjs").write_text("// Proves: TC-001-001\nconst helper = 1;", encoding="utf-8")
+        self.requirements.write_text(MODEL.replace("AutomationState::planned;", 'AutomationState::partial;\nattribute executable : String = "tests/a.cjs; tests/b.cjs";'), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, r"TC-001-001: tests/b\.cjs$"):
+            self.check()
+        (self.root / "tests/b.cjs").write_text("// Proves: TC-001-001\ntest('y',()=>{});", encoding="utf-8")
+        self.check()
 
     def test_retired_dependency_and_bad_relative_links_refused(self):
         for extra, message in (("// Canonical FSD slices SHA256: stale", "retired FSD"), ("doc /* FSD12.6 remains authoritative */", "retired FSD"), ("doc /* [tests](../tests/missing.cjs) */", "Dangling model")):

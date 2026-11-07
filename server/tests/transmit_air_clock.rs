@@ -355,6 +355,7 @@ fn closed_loop(offset: i64, periods: i64) -> Vec<i64> {
     }
     applied
 }
+// Proves: TC-043-002.
 #[test]
 fn applied_correction_converges_without_oscillation() {
     // -2 s: everything is decodable at once; 2 x 1000 ms then the 25 ms hysteresis.

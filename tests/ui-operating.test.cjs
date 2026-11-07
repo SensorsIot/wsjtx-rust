@@ -807,6 +807,7 @@ test('TC-007-009 exception chips appear only for an exception and start, stop an
 });
 
 // Proves: CL-010-16; TC-007-009 Settings drawer sections and reachability.
+// Proves: TC-007-004 (Esc closes no panel).
 test('TC-007-009 the Settings drawer has four sections holding every control moved off the screen',{timeout:60000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   const requests=[];page.on('request',r=>requests.push(`${r.method()} ${new URL(r.url()).pathname}`));
@@ -2445,6 +2446,7 @@ test('TC-043-003 the clock source and the clock from the air are shown in Settin
 // station's verdicts (it never evaluates), sends only the selection and the editor's save, and
 // keeps HALT reachable in the popup. Station replies are hand-written fixtures; the expected
 // requests and row order are written here.
+// Proves: CL-039-09; TC-039-010 (steps inside this test).
 test('TC-039-006 Selecting starts it, marks and value order from the verdicts, a column click overrides, the editor holds the settings',{timeout:60000},async t=>{
   let state,view,automation={run:null,refusal:null,policy:0,runRevision:0};const puts=[],evaluations=[],autos=[],commands=[];let automationReads=0;
   const period='2026-10-27T12:00:00.0000000Z';

@@ -465,7 +465,7 @@ pub(crate) fn double(
     })
 }
 
-// Proves: TC-044-001, TC-044-002.
+// Proves: TC-044-001, TC-044-002, TC-044-009.
 #[test]
 fn detection_never_opens_station_port_and_proposes_the_station_radio() {
     let (f, radio) = station(Ic7300 {
@@ -580,6 +580,7 @@ fn detection_never_opens_station_port_and_proposes_the_station_radio() {
     assert!(f.bench.keys.lock().unwrap().is_empty());
 }
 
+// Proves: TC-044-002.
 #[test]
 fn detection_of_an_unconfigured_ic7300_probes_it_and_proposes_it() {
     let f = fixture("http://127.0.0.1:18045", false);
@@ -612,7 +613,7 @@ fn detection_of_an_unconfigured_ic7300_probes_it_and_proposes_it() {
     );
 }
 
-// Proves: TC-044-002.
+// Proves: TC-044-002, TC-044-003.
 #[tokio::test]
 async fn http_detect_and_settings_routes_refuse_like_operating_mutations() {
     let f = fixture("http://127.0.0.1:18046", false);

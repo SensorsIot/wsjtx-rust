@@ -161,7 +161,7 @@ fn stored(f: &Fixture) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
-// TC-044-013 (a, b)
+// Proves: TC-044-013 (a, b)
 #[test]
 fn meters_are_read_only_under_the_transmit_hold_in_the_manual_frames() {
     let (f, r) = station(radio(fixed([0x01, 0x20])));
@@ -197,7 +197,7 @@ fn meters_are_read_only_under_the_transmit_hold_in_the_manual_frames() {
     assert_eq!((meters.alc, meters.po), (None, Some(143)));
 }
 
-// TC-044-013 (c)
+// Proves: TC-044-013 (c)
 #[test]
 fn a_stalled_meter_read_gives_way_to_the_release_and_keeps_the_connection() {
     let (f, r) = station(radio(fixed([0, 0])));
@@ -228,7 +228,7 @@ fn a_stalled_meter_read_gives_way_to_the_release_and_keeps_the_connection() {
     assert_eq!(actor(&f).snapshot().unwrap().state, cat::State::Ready);
 }
 
-// TC-044-013 (d)
+// Proves: TC-044-013 (d)
 #[test]
 fn meter_scales_follow_the_manual_table() {
     assert_eq!(
@@ -247,7 +247,7 @@ fn meter_scales_follow_the_manual_table() {
     }
 }
 
-// TC-044-014 (a)
+// Proves: TC-044-014 (a)
 #[test]
 fn assistant_decides_from_alc_power_limit_and_swr() {
     let m = |alc, po, swr| Meters {
@@ -296,7 +296,7 @@ fn rising(f: &Fixture, r: &Arc<Mutex<Ic7300>>, rise_db: i32) {
     }));
 }
 
-// TC-044-014 (b)
+// Proves: TC-044-014 (b)
 #[test]
 fn set_level_steps_up_backs_off_one_step_stores_and_stops_tune() {
     let (f, r) = station(radio(fixed([0, 0])));
@@ -339,7 +339,7 @@ fn set_level_steps_up_backs_off_one_step_stores_and_stops_tune() {
     );
 }
 
-// TC-044-014 (c)
+// Proves: TC-044-014 (c)
 #[test]
 fn halt_aborts_set_level_without_storing() {
     let (f, r) = station(radio(fixed([0, 0])));
@@ -364,7 +364,7 @@ fn halt_aborts_set_level_without_storing() {
     assert_eq!(view.arm_state, ArmState::Disarmed);
 }
 
-// TC-044-014 (d)
+// Proves: TC-044-014 (d)
 #[test]
 fn a_radio_without_alc_stops_the_assistant_and_opens_the_manual_level() {
     let (f, _) = station(radio(fixed([0, 0])));
@@ -391,7 +391,7 @@ fn a_radio_without_alc_stops_the_assistant_and_opens_the_manual_level() {
     service.with(|c| c.set_tune(false, 0).unwrap());
 }
 
-// TC-044-014 (e)
+// Proves: TC-044-014 (e)
 #[test]
 fn stored_level_is_loaded_at_startup_and_bad_files_are_ignored() {
     let (f, _) = station(radio(fixed([0, 0])));
@@ -424,7 +424,7 @@ fn stored_level_is_loaded_at_startup_and_bad_files_are_ignored() {
     assert_eq!(level_after_tune(&f), -17);
 }
 
-// TC-044-014 (f)
+// Proves: TC-044-014 (f)
 #[test]
 fn tune_meters_are_read_once_a_second_and_pushed_as_one_event() {
     let (f, r) = station(radio(fixed([0, 7])));
@@ -497,7 +497,7 @@ fn tune_meters_are_read_once_a_second_and_pushed_as_one_event() {
     service.with(|c| c.set_tune(false, 0).unwrap());
 }
 
-// TC-044-014 (g)
+// Proves: TC-044-014 (g)
 #[tokio::test]
 async fn the_route_refuses_bad_requests_and_a_station_without_a_grant() {
     let (f, _) = station(radio(fixed([0, 0])));
@@ -624,7 +624,7 @@ fn set_level_that_cannot_be_stored_leaves_the_prior_level() {
     service.with(|c| c.set_tune(false, 0).unwrap());
 }
 
-// TC-044-017 (a)
+// Proves: TC-044-017 (a)
 #[test]
 fn monitor_decides_one_bounded_step_and_warns_only_when_persistent() {
     let m = |alc: Option<u16>, po: u16, swr: u16| Meters {
@@ -706,7 +706,7 @@ fn settled_level(mut level: i32, transmissions: u8, alc: impl Fn(i32) -> u16) ->
     level
 }
 
-// TC-044-017 (i): the level that reads 0 and the one above it that reads 11 do not alternate.
+// Proves: TC-044-017 (i): the level that reads 0 and the one above it that reads 11 do not alternate.
 #[test]
 fn alc_zero_and_above_the_limit_on_neighbouring_levels_settle_on_the_lower() {
     let alc = |level| if level >= -9 { 11 } else { 0 };
@@ -721,7 +721,7 @@ fn alc_zero_and_above_the_limit_on_neighbouring_levels_settle_on_the_lower() {
     assert_eq!(settled_level(-9, 40, alc), -10);
 }
 
-// TC-044-017 (m): a lowering alone leaves the level free to follow the drive back up.
+// Proves: TC-044-017 (m): a lowering alone leaves the level free to follow the drive back up.
 #[test]
 fn a_lowering_without_a_step_up_before_it_keeps_the_step_up() {
     let m = |alc| Meters {
@@ -741,7 +741,7 @@ fn a_lowering_without_a_step_up_before_it_keeps_the_step_up() {
     assert_eq!(step(-12, 0), -11);
 }
 
-// TC-044-017 (j): the live reading of 2026-11-06, ALC 31 at -9 dB and about 6 per dB: routine.
+// Proves: TC-044-017 (j): the live reading of 2026-11-06, ALC 31 at -9 dB and about 6 per dB: routine.
 #[test]
 fn the_live_alc_comes_down_to_the_limit_without_a_warning_and_stays() {
     let alc = |level: i32| (31 + 6 * (level + 9)).max(0) as u16;
@@ -750,7 +750,7 @@ fn the_live_alc_comes_down_to_the_limit_without_a_warning_and_stays() {
     }
 }
 
-// TC-044-017 (k): Set level's stop and the correction agree on one radio (onset reads 7 at
+// Proves: TC-044-017 (k): Set level's stop and the correction agree on one radio (onset reads 7 at
 // -8 dB). Set level stores -9; low power takes it to the onset, a higher level comes back.
 #[test]
 fn set_levels_stop_and_the_correction_agree() {
@@ -775,7 +775,7 @@ fn set_levels_stop_and_the_correction_agree() {
     assert_eq!(settled_level(-7, 40, alc), -8);
 }
 
-// TC-044-017 (l): the ceiling holds until a changed profile power or a stored Set level.
+// Proves: TC-044-017 (l): the ceiling holds until a changed profile power or a stored Set level.
 #[test]
 fn the_ceiling_ends_with_a_changed_profile_power_and_a_stored_set_level() {
     let (f, r) = station(radio(fixed([0, 0x11])));
@@ -826,7 +826,7 @@ fn one_transmission(f: &Fixture, r: &Arc<Mutex<Ic7300>>) {
     assert_eq!(meter_frames(r).len(), before + 3, "one burst");
 }
 
-// TC-044-017 (c, d)
+// Proves: TC-044-017 (c, d)
 #[test]
 fn one_burst_corrects_for_the_next_transmission_only_and_warns_when_persistent() {
     let (f, r) = station(radio(fixed([0, 0x60])));
@@ -867,7 +867,7 @@ fn one_burst_corrects_for_the_next_transmission_only_and_warns_when_persistent()
     assert!(r.lock().unwrap().writes.iter().all(|w| w[4] == 0x15));
 }
 
-// TC-044-017 (e)
+// Proves: TC-044-017 (e)
 #[test]
 fn a_clear_swr_fault_stops_transmitting_and_keeps_automation_off() {
     let (f, r) = station(radio(fixed([0, 0])));
@@ -902,7 +902,7 @@ fn a_clear_swr_fault_stops_transmitting_and_keeps_automation_off() {
     service.with(|c| c.disarm(DisarmCause::Operator));
 }
 
-// TC-044-017 (f)
+// Proves: TC-044-017 (f)
 #[test]
 fn nothing_is_read_for_a_transmission_while_set_level_runs() {
     let (f, r) = station(radio(fixed([0, 0])));
@@ -913,7 +913,7 @@ fn nothing_is_read_for_a_transmission_while_set_level_runs() {
     assert!(r.lock().unwrap().writes.is_empty());
 }
 
-// TC-044-017 (g): startup connects the transmit step's call to the burst.
+// Proves: TC-044-017 (g): startup connects the transmit step's call to the burst.
 #[test]
 fn startup_connects_the_meter_call_to_one_burst() {
     let (f, r) = station(radio(fixed([0, 0x10])));
@@ -929,7 +929,7 @@ fn startup_connects_the_meter_call_to_one_burst() {
     }
 }
 
-// TC-044-017 (h): a level that cannot be stored is not applied.
+// Proves: TC-044-017 (h): a level that cannot be stored is not applied.
 #[test]
 fn a_correction_that_cannot_be_stored_leaves_the_level() {
     let (f, r) = station(radio(fixed([0, 0x60])));
@@ -951,7 +951,7 @@ fn a_correction_that_cannot_be_stored_leaves_the_level() {
     service.with(|c| c.set_tune(false, 0).unwrap());
 }
 
-// TC-044-017 (e): a reading without SWR does not clear the fault.
+// Proves: TC-044-017 (e): a reading without SWR does not clear the fault.
 #[test]
 fn a_reading_without_swr_keeps_the_fault_entry() {
     let (f, r) = station(radio(fixed([0, 0])));

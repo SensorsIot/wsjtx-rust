@@ -38,7 +38,7 @@ async fn standard_layer_supports_one_existing_axum_response() {
     assert_eq!(&bytes[..3], &[0x1f, 0x8b, 8]);
 }
 
-// Proves: CL-003-08, CL-008-07; TC-009-005 case8. Read only the reviewed,
+// The oracle reads only the reviewed,
 // fixed-shape SysML oracle declarations, never the implementation negotiator.
 fn canonical_negotiations(source: &str) -> Result<Vec<(Vec<String>, &'static str)>, &'static str> {
     fn value<'a>(line: Option<&'a str>, prefix: &str) -> Result<&'a str, &'static str> {
@@ -115,6 +115,7 @@ fn canonical_negotiations(source: &str) -> Result<Vec<(Vec<String>, &'static str
     Ok(vectors)
 }
 
+// Proves: CL-003-08, CL-008-07; TC-009-005 case8.
 #[test]
 fn canonical_negotiation_oracle_rejects_missing_malformed_and_duplicate_data() {
     let source = include_str!("../../docs/sysml/OperatingReceive.sysml");
@@ -135,6 +136,7 @@ fn canonical_negotiation_oracle_rejects_missing_malformed_and_duplicate_data() {
     }
 }
 
+// Proves: CL-003-08, CL-008-07; TC-009-005 case8.
 #[tokio::test]
 async fn pinned_library_matches_all_49_independent_negotiations() {
     let source = include_str!("../../docs/sysml/OperatingReceive.sysml");
