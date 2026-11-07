@@ -1457,6 +1457,34 @@ impl Logbook {
         }
         last.map(|(_, _, w)| w)
     }
+    /// The log revision now; None while the log is busy (the station step never waits).
+    pub fn revision_now(&self) -> Option<u64> {
+        self.inner.try_lock().ok().map(|inner| inner.revision)
+    }
+    /// #63 WstxContest::ContestLog: the log revision and the contacts that started in [start,
+    /// end) (Unix ms).
+    pub fn contest_qsos(
+        &self,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> Result<(u64, Vec<crate::contest::Qso>), StoreError> {
+        let inner = self.lock()?;
+        let list = inner
+            .records
+            .iter()
+            .filter_map(|r| {
+                let ms = r.start_seconds()? * 1000;
+                (ms >= start_ms && ms < end_ms).then(|| crate::contest::Qso {
+                    call: r.values[CALL].as_deref().unwrap_or("").to_ascii_uppercase(),
+                    grid: r.values[GRID].clone(),
+                    band: r.effective_band(),
+                    mode: r.effective_mode(),
+                    ms,
+                })
+            })
+            .collect();
+        Ok((inner.revision, list))
+    }
     /// #55 the country table in use and whether an uploaded file was unreadable.
     pub fn dxcc(&self) -> (crate::dxcc::Table, bool) {
         let d = self.dxcc.lock().unwrap_or_else(|p| p.into_inner());

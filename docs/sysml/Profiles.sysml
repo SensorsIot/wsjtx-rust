@@ -1081,11 +1081,13 @@ package WstxProfiles {
              same keys plus connection_type native_flex and required native object
              {client_id: lowercase v4 UUID generated at creation (this station's GUI-client
              identity, not a radio identity), rx_antenna: 1..16 uppercase
-             letters/digits/underscore}; an explicit null or unknown key is invalid_profile, a
+             letters/digits/underscore, optional radio_address: IPv4 address:port, a locator for a
+             radio discovery cannot reach (operator decision on #13, 2026-11-06), never an identity
+             and never compared}; an explicit null or unknown key is invalid_profile, a
              schema-2 document without the native object stays unsupported_schema, and older
              binaries refuse it as unsupported_schema. Its audio selections stay null, control
              and PTT disabled and it has no managed radio settings; a PUT naming them is
-             invalid_settings with that field. Radio serial or address, slice index/letter, DAX
+             invalid_settings with that field. Radio serial, slice index/letter, DAX
              channel, stream ID, client handle and tuning are never persisted. GET/PUT /profile
              shapes are unchanged; connection type is not editable. */
     }

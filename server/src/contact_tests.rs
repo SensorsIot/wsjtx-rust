@@ -929,6 +929,42 @@ fn tc_008_001_the_watchdog_stops_at_n_repetitions_whatever_the_partner_or_browse
     assert_eq!(reps(&s), vec![(true, 1), (false, 4), (true, 3), (true, 1)]);
 }
 
+// Proves: CL-039-21; TC-039-022. The strategy run's own contact sends past the limit and counts
+// down to the next check; the same contact without the exemption stops at N, and another
+// contact's exemption does not help it.
+#[test]
+fn tc_039_022_only_the_runs_own_contact_sends_past_the_limit() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, None);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::SetWatchdogs {
+        tx_calls: 2,
+        tune_seconds: 90,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    let id = s.engine.contact.as_ref().unwrap().id.clone();
+    s.engine.repeat_exempt = Some((id, u32::MAX));
+    for (own, left) in [(1, 1), (3, 2), (5, 1), (7, 2)] {
+        s.run(period(own) + 2 * SECOND);
+        assert!(s.sent_in(period(own)).is_some(), "period {own}");
+        assert_eq!(s.core.view().tx_remaining_calls, left, "period {own}");
+    }
+    assert_eq!(s.engine.repetitions_due(), 4);
+    assert_eq!(s.core.view().arm_state, ArmState::Armed);
+    assert!(!s.core.view().tx_expired);
+    // Another contact's exemption, then none: the stop at N is back at once.
+    s.engine.repeat_exempt = Some(("another".into(), u32::MAX));
+    s.run(period(9) + 2 * SECOND);
+    assert!(s.sent_in(period(9)).is_none(), "beyond the limit");
+    assert_eq!(s.core.view().arm_state, ArmState::Disarmed);
+    assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
+}
+
 // Proves: CL-010-10; TC-008-001: a different message starts at 1 again, also when the
 // partner advances just before the send beyond the limit is due.
 #[test]

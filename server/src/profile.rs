@@ -123,17 +123,34 @@ pub struct Endpoint {
 pub struct Native {
     pub client_id: String,
     pub rx_antenna: String,
+    /// Where to connect when discovery cannot cross to the radio: a locator, no identity.
+    /// Absent means discovery; an explicit null is refused like the native object's.
+    #[serde(
+        default,
+        deserialize_with = "present_address",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub radio_address: Option<String>,
 }
 impl Native {
     pub fn intent(&self) -> wstx_rust::flex::Intent {
         wstx_rust::flex::Intent {
             client_id: self.client_id.clone(),
             rx_antenna: self.rx_antenna.clone(),
+            radio_address: self.radio_address.as_deref().and_then(|a| a.parse().ok()),
         }
     }
     fn valid(&self) -> bool {
-        self.intent().valid() && valid_uuid(&self.client_id)
+        self.intent().valid()
+            && valid_uuid(&self.client_id)
+            && self.radio_address.as_deref().is_none_or(|a| {
+                a.parse::<std::net::SocketAddrV4>()
+                    .is_ok_and(|a| a.port() != 0)
+            })
     }
+}
+fn present_address<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    String::deserialize(d).map(Some)
 }
 // Present means an object: an explicit null is refused, absence is the standard path.
 fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Native>, D::Error> {
@@ -507,13 +524,18 @@ impl Store {
         atomic_write(directory, &document).map_err(|_| "resource_unavailable")
     }
     /// FR-023: the connection type is chosen once, when the profile is created.
-    pub fn create_native(directory: &Path, rx_antenna: &str) -> Result<(), &'static str> {
+    pub fn create_native(
+        directory: &Path,
+        rx_antenna: &str,
+        radio_address: Option<&str>,
+    ) -> Result<(), &'static str> {
         let mut document = Document::defaults().map_err(|_| "resource_unavailable")?;
         document.schema_version = 2;
         document.connection_type = "native_flex".into();
         document.native = Some(Native {
             client_id: new_uuid().map_err(|_| "resource_unavailable")?,
             rx_antenna: rx_antenna.into(),
+            radio_address: radio_address.map(Into::into),
         });
         document
             .validate()

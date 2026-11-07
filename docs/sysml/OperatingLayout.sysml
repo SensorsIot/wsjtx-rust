@@ -501,7 +501,8 @@ attribute def ActivityOrdering {
              three the same width; at most 75em wide that column goes below Band Activity,
              still the same vertical stack, at most 48em everything stacks (a phone
              scrolls the workspace, never horizontally).
-             Strategy element: `Strategy [name] [edit] [Value]` (#39, WstxStrategy): the name
+             Strategy element: `Strategy [name] [edit] [Value] [Contest] [Show all]` (#39, WstxStrategy;
+             Contest opens WstxContest::ContestPrompt, Show all only with a contest, ContestView): the name
              selects the active strategy, which starts it, None stops it
              (StrategySelector, StrategyRun); edit opens the StrategyEditor popup; Value returns
              Band Activity to the value order (ValueView); beside them the run state. HALT
@@ -1080,8 +1081,11 @@ attribute def ActivityOrdering {
              command over UDP (operator 2026-11-06). GET /udp is read when the drawer opens (at
              most every 30 s, so routine drawer use stays inside the Thin budget), on the
              Logging tab and on Reload; Save sends one PUT /udp with expected_revision; it
-             is a setting that restarts nothing (no restart mark). PSK Reporter remains a
-             placeholder (later CR).
+             is a setting that restarts nothing (no restart mark). PSK Reporter: the read-only
+             feed's switch and status (off; connecting; connected with the age of the last
+             spot, or no spot yet; not connected with the error and retrying) from
+             WstxStrategy::HearingFeed; plain setting, saved at once, never an error
+             elsewhere on the screen.
              Expert: raw CAT readback, receive job/generation, timing, the explicit receive
              start/stop, the startup resume state of #45 (resume state and last receive
              choice from GET /receive/startup), the decode window diagnostics of #52 (Save

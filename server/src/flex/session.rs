@@ -29,6 +29,9 @@ use std::{
 pub struct Intent {
     pub client_id: String,
     pub rx_antenna: String,
+    /// Where to connect when discovery cannot reach the radio (a routed path): a locator,
+    /// not an identity. Without it, discovery finds the next available radio.
+    pub radio_address: Option<SocketAddr>,
 }
 impl Intent {
     pub fn valid(&self) -> bool {
@@ -49,11 +52,14 @@ impl Intent {
 pub struct Config {
     /// Where discovery announcements are received (default 0.0.0.0:4992).
     pub discovery: SocketAddr,
+    /// The radio's UDP ports the keep-alive of a routed path goes to.
+    pub register_ports: [u16; 2],
 }
 impl Default for Config {
     fn default() -> Self {
         Self {
             discovery: SocketAddr::from(([0, 0, 0, 0], wire::DISCOVERY_PORT)),
+            register_ports: wire::REGISTER_PORTS,
         }
     }
 }
@@ -62,7 +68,12 @@ const STEP: Duration = Duration::from_secs(5);
 const DISCOVERY_WAIT: Duration = Duration::from_secs(3);
 const BACKOFF_MAX_MS: u64 = 4000;
 const MAX_TRACKED: usize = 64;
+/// A real path reorders about one packet in 300 by one or two places and truly loses far fewer
+/// (2026-11-06); 5 packets (27 ms) of waiting tells the two apart.
+const REORDER_DEPTH: u8 = 5;
+const REGISTER_EVERY: Duration = Duration::from_secs(5);
 const UNKNOWN_GAP_100NS: u64 = 2_000_000;
+const DAX_RATE: u32 = 24_000;
 /// 10 ms at 48 kHz.
 const GROUP_FRAMES: usize = 480;
 /// Reply codes the pinned API documents for missing receiver/license/resources.
@@ -191,6 +202,8 @@ pub struct Counters {
     pub foreign: u64,
     pub invalid: u64,
     pub lost: u64,
+    /// Arrived after its turn was given up (and counted lost), or twice; dropped.
+    pub late: u64,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Snapshot {
@@ -209,6 +222,10 @@ pub struct Snapshot {
     /// a measurement of whether the radio's time could serve, not used for timing.
     pub vita_tsi: Option<u8>,
     pub vita_offset_ms: Option<i64>,
+    /// Spacing of own packets against their duration, as read by this session (its read
+    /// loop waits up to 10 ms, which sets the floor): smoothed and largest.
+    pub jitter_mean_ms: Option<f64>,
+    pub jitter_max_ms: Option<f64>,
     pub retry_after_ms: Option<u64>,
 }
 
@@ -263,10 +280,15 @@ impl Shared {
             }
         }
     }
-    fn update_vita(&self, tsi: u8, offset: Option<i64>) {
+    fn update_vita(&self, tsi: u8, offset: Option<i64>, spacing_error_ms: Option<f64>) {
         if let Ok(mut s) = self.snapshot.lock() {
             s.vita_tsi = Some(tsi);
             s.vita_offset_ms = offset;
+            if let Some(error) = spacing_error_ms.map(f64::abs) {
+                let mean = s.jitter_mean_ms.unwrap_or(error);
+                s.jitter_mean_ms = Some(mean + (error - mean) / 16.0);
+                s.jitter_max_ms = Some(s.jitter_max_ms.unwrap_or(0.0).max(error));
+            }
         }
     }
     /// Packet rate: the counters and the peak only, never a pushed change.
@@ -355,6 +377,8 @@ impl Session {
                 last_peak: None,
                 vita_tsi: None,
                 vita_offset_ms: None,
+                jitter_mean_ms: None,
+                jitter_max_ms: None,
                 retry_after_ms: None,
             }),
             sink: Mutex::new(None),
@@ -589,8 +613,16 @@ fn attempt(
         s.radio_code = None;
         s.retry_after_ms = None;
     });
-    let (found, address) = discover(shared, config)?;
-    let target = SocketAddr::new(address, found.port.unwrap_or(wire::CONTROL_PORT));
+    // A configured address skips discovery: nothing listens on the LAN then.
+    let (found, target) = match intent.radio_address {
+        Some(target) => (wire::Discovery::default(), target),
+        None => {
+            let (found, address) = discover(shared, config)?;
+            let port = found.port.unwrap_or(wire::CONTROL_PORT);
+            (found, SocketAddr::new(address, port))
+        }
+    };
+    let address = target.ip();
     if !shared.allowed() {
         return Err(Error::Unauthorized);
     }
@@ -624,6 +656,15 @@ fn attempt(
         }
     }
     radio.protocol = conn.version.map(|v| v.to_string());
+    // No announcement was heard on a routed path: the radio states its own facts.
+    if intent.radio_address.is_some()
+        && let Ok((0, reply)) = conn.request("info")
+    {
+        let info = wire::parse_info(&reply);
+        radio.serial = info.serial;
+        radio.model = info.model;
+        radio.firmware = info.firmware;
+    }
     shared.update(|s| s.radio = Some(radio.clone()));
     conn.expect_ok("sub client all")?;
     // Replies come in order, so the next reply also proves the client list has arrived,
@@ -656,7 +697,16 @@ fn attempt(
     let udp = bind_audio().map_err(|_| Error::TransportLost)?;
     let port = udp.local_addr().map_err(|_| Error::TransportLost)?.port();
     conn.udp = Some(udp);
+    // The radio takes the address from this connection, so a NAT rewriting it stays right;
+    // only the port is ever told.
     conn.expect_ok(&format!("client udpport {port}"))?;
+    if intent.radio_address.is_some() {
+        conn.register = Some((
+            config.register_ports.map(|p| SocketAddr::new(address, p)),
+            format!("client udp_register handle=0x{own:08X}"),
+        ));
+        conn.register_keepalive();
+    }
 
     let (code, message) = conn.request(&format!(
         "slice create rxant={} mode=DIGU",
@@ -739,6 +789,8 @@ fn attempt(
         s.last_peak = None;
         s.vita_tsi = None;
         s.vita_offset_ms = None;
+        s.jitter_mean_ms = None;
+        s.jitter_max_ms = None;
     });
     loop {
         if shared.stopping() {
@@ -748,6 +800,7 @@ fn attempt(
             return Err(Error::Unauthorized);
         }
         conn.pump()?;
+        conn.register_keepalive();
         conn.check_own()?;
         let facts = conn.slice_facts();
         shared.update(|s| {
@@ -768,6 +821,71 @@ fn attempt(
             }
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => return Ok(()),
+        }
+    }
+}
+
+/// Puts packets back in the order of their 4-bit count. One ahead of its turn waits; a turn is
+/// given up only when `REORDER_DEPTH` packets wait behind it. The count tells a jump forward from
+/// a late packet only by which half it falls in: 8 or more lost in a row read as late, and the
+/// timeline then falls short by up to 16 packets (85 ms) with no epoch.
+struct Reorder<T> {
+    /// The turn due now.
+    next: Option<u8>,
+    /// One past the newest count seen; turns from `next` up to here are waited for.
+    end: u8,
+    held: Vec<(u8, T)>,
+}
+impl<T> Reorder<T> {
+    fn new() -> Self {
+        Self {
+            next: None,
+            end: 0,
+            held: Vec::new(),
+        }
+    }
+    /// Hands on what is due, each packet with the number of turns given up before it. False: the
+    /// packet came after its turn or twice, and is dropped. After a stall the count may have
+    /// wrapped, so what waits goes on first and the count starts over.
+    fn accept(
+        &mut self,
+        count: u8,
+        packet: T,
+        stalled: bool,
+        mut hand_on: impl FnMut(T, u64),
+    ) -> bool {
+        if stalled {
+            self.release(1, &mut hand_on);
+            self.next = None;
+        }
+        let due = *self.next.get_or_insert_with(|| {
+            self.end = count;
+            count
+        });
+        let awaited = (count.wrapping_sub(due) & 15) < (self.end.wrapping_sub(due) & 15);
+        let passed = !awaited && (count.wrapping_sub(self.end) & 15) >= 8;
+        if passed || self.held.iter().any(|(c, _)| *c == count) {
+            return false;
+        }
+        if !awaited {
+            self.end = count.wrapping_add(1) & 15;
+        }
+        self.held.push((count, packet));
+        self.release(usize::from(REORDER_DEPTH), &mut hand_on);
+        true
+    }
+    fn release(&mut self, depth: usize, hand_on: &mut impl FnMut(T, u64)) {
+        let mut missed = 0;
+        while let Some(due) = self.next {
+            if let Some(at) = self.held.iter().position(|(c, _)| *c == due) {
+                hand_on(self.held.swap_remove(at).1, missed);
+                missed = 0;
+            } else if self.held.len() >= depth {
+                missed += 1;
+            } else {
+                return;
+            }
+            self.next = Some(due.wrapping_add(1) & 15);
         }
     }
 }
@@ -908,9 +1026,13 @@ struct Conn<'a> {
     own: Option<u32>,
     view: View,
     udp: Option<UdpSocket>,
+    /// A routed path: the datagram that opens and keeps open the way back for the stream.
+    register: Option<([SocketAddr; 2], String)>,
+    last_register: Option<Instant>,
     slice: Option<u32>,
     stream: Option<u32>,
-    last_count: Option<u8>,
+    order: Reorder<(Vec<f32>, Option<u64>)>,
+    last_seen: Option<u64>,
     buffer: Vec<u8>,
 }
 impl<'a> Conn<'a> {
@@ -927,10 +1049,29 @@ impl<'a> Conn<'a> {
             own: None,
             view: View::default(),
             udp: None,
+            register: None,
+            last_register: None,
             slice: None,
             stream: None,
-            last_count: None,
+            order: Reorder::new(),
+            last_seen: None,
             buffer: vec![0; wire::MAX_DATAGRAM + 1],
+        }
+    }
+    /// From the stream's own port, well inside a router's UDP tracking timeout.
+    fn register_keepalive(&mut self) {
+        let (Some(udp), Some((targets, text))) = (self.udp.as_ref(), self.register.as_ref()) else {
+            return;
+        };
+        if self
+            .last_register
+            .is_some_and(|at| at.elapsed() < REGISTER_EVERY)
+        {
+            return;
+        }
+        self.last_register = Some(Instant::now());
+        for target in targets {
+            let _ = udp.send_to(text.as_bytes(), target);
         }
     }
     fn pump(&mut self) -> Result<(), Error> {
@@ -1005,16 +1146,33 @@ impl<'a> Conn<'a> {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_millis() as i128);
             let (tsi, offset) = (vita.tsi, vita_offset_ms(&vita, now_ms));
-            self.shared.update_vita(tsi, offset);
-            let missed = self
-                .last_count
-                .map_or(0, |c| u64::from(count.wrapping_sub(c).wrapping_sub(1) & 15));
-            self.last_count = Some(count);
-            Self::deliver(self.shared, &samples, missed, arrival_100ns());
+            let arrival = arrival_100ns();
+            let frames = samples.len() as u64 / 2;
+            let spacing = self.last_seen.zip(arrival).map(|(last, now)| {
+                (now as f64 - last as f64) / 10_000.0 - frames as f64 * 1000.0 / DAX_RATE as f64
+            });
+            let stalled = self
+                .last_seen
+                .zip(arrival)
+                .is_some_and(|(last, now)| now.saturating_sub(last) > UNKNOWN_GAP_100NS);
+            self.last_seen = arrival.or(self.last_seen);
+            self.shared.update_vita(tsi, offset, spacing);
+            let shared = self.shared;
+            let taken = self.order.accept(
+                count,
+                (samples, arrival),
+                stalled,
+                |(samples, arrival), missed| Self::deliver(shared, &samples, missed, arrival),
+            );
+            if !taken {
+                shared.count(|counters, _| counters.late += 1);
+            }
         }
     }
     fn deliver(shared: &Shared, samples: &[f32], missed: u64, arrival: Option<u64>) {
-        let frames = samples.len() / 2;
+        // The radio's 24 kHz reach the shared 48 kHz converter with each frame held twice;
+        // its 6 kHz low-pass removes the images.
+        let frames = samples.len();
         let peak = samples
             .iter()
             .step_by(2)
@@ -1040,11 +1198,30 @@ impl<'a> Conn<'a> {
                 } else {
                     0
                 };
-            if missed > 0 || flags != 0 {
+            if flags != 0 {
                 sink.flush();
             }
-            // Known missing packets keep the timeline: the position jumps over them.
-            sink.next_frame = sink.next_frame.saturating_add(missed * frames as u64);
+            // Known missing packets keep the timeline and the analysis window: they become
+            // silence, since a jump of the position would discard the window being collected.
+            // An unknown gap (flags) opens a new epoch instead, and its count may have wrapped.
+            let silence = if flags == 0 {
+                missed as usize * frames
+            } else {
+                0
+            };
+            if silence > 0 {
+                if sink.pending_frames == 0 {
+                    sink.pending_first = (
+                        sink.next_frame,
+                        arrival.map_or(0, |a| a.saturating_sub(duration * (missed + 1))),
+                        0,
+                    );
+                }
+                let bytes = silence * 2 * 4;
+                sink.pending.resize(sink.pending.len() + bytes, 0);
+                sink.pending_frames += silence;
+                sink.next_frame = sink.next_frame.saturating_add(silence as u64);
+            }
             if sink.pending_frames == 0 {
                 sink.pending_first = (
                     sink.next_frame,
@@ -1052,8 +1229,12 @@ impl<'a> Conn<'a> {
                     flags,
                 );
             }
-            sink.pending
-                .extend(samples.iter().flat_map(|v| v.to_le_bytes()));
+            for frame in samples.as_chunks::<2>().0 {
+                for _ in 0..2 {
+                    sink.pending
+                        .extend(frame.iter().flat_map(|v| v.to_le_bytes()));
+                }
+            }
             sink.pending_frames += frames;
             sink.next_frame = sink.next_frame.saturating_add(frames as u64);
             if sink.pending_frames >= GROUP_FRAMES {
@@ -1187,7 +1368,9 @@ impl<'a> Conn<'a> {
         observed
     }
     /// Read first: each setting is written only when the slice's status differs, and
-    /// success needs the radio's own status for this slice, not only the reply.
+    /// success needs the radio's own status for this slice, not only the reply. A FLEX-6600
+    /// replies to a tune and reports nothing (2026-11-06, firmware 4.3.16), so after a write the
+    /// read-back is asked for: subscribing again returns the slice's full status.
     fn apply_frequency(
         &mut self,
         index: u32,
@@ -1200,6 +1383,9 @@ impl<'a> Conn<'a> {
         }
         if current.frequency_hz != Some(wanted) {
             self.expect_ok(&format!("slice tune {index} {}", megahertz_text(wanted)))?;
+        }
+        if current.frequency_hz != Some(wanted) || current.mode.as_deref() != Some("DIGU") {
+            self.expect_ok("sub slice all")?;
         }
         self.wait(deadline, |v| {
             v.slices
