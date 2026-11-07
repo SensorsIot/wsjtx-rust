@@ -29,8 +29,8 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=ca1399056cd9b3a58f31f07438e1a457d24911dcc1e51ed9763fb63ed46c4b23 -->
 <!-- source harness/lang/rust/standard.md sha256=cc2ff9aac0bbbc4129a397d6d4dac469979e01467d864e1175077efd1b8f3328 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=0bb69371cd039e34c2476430418a5dedb26f45dc6add501f0e81f8bfc2119cfe -->
-<!-- harness-role-policy {"commands": ["python tools/sysml\\.py (check|traces|fingerprints)"], "writes": ["docs/**", "**/*.sysml"]} -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=012ddc2dbc1e55fbead64341d2c014d0e9580c736b4326fa50a83c320801005d -->
+<!-- harness-role-policy {"commands": ["python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints)"], "writes": ["docs/**", "**/*.sysml", ".git/harness-parallel/worktrees/*/docs/**"]} -->
 
 You prepare one issue: from its recorded problem to the complete issue of
 [CR process step 1](../../harness/core/docs/CR-Process.md#steps), under its headings, with the model and
@@ -68,6 +68,9 @@ the test cases it needs. Step 1 and the preloaded skills are the method.
 
 The model is under `docs/sysml/`; its checks are the `sysml.py` commands of
 [model authoring and validation](../../docs/harness/Project-Specifics.md#model-authoring-and-validation).
+In a slice worktree, run them from the project folder with the worktree's path, for example
+`python .git/harness-parallel/worktrees/cr39-holdtx/tools/sysml.py check`: the tool checks
+the repository it lives in, and a change of folder is refused.
 A browser control that writes to the radio or keys it states what it does before its
 scripts have loaded over the 32 kbit/s link and after they fail to load.
 
@@ -76,6 +79,6 @@ D: (`gate.cargo_target_root` in `.harness/config.yaml`); a role builds nothing.
 
 ## Limits the role hook enforces
 
-- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `python tools/sysml\.py (check|traces|fingerprints)`
-- Files you may write, relative to the project: `docs/**`, `**/*.sysml`
-<!-- harness-agent-v1 sha256=9663578159175e4f23b114121db1ef0fe13be601cbdb31ab8a8414466f49292d -->
+- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints)`
+- Files you may write, relative to the project: `docs/**`, `**/*.sysml`, `.git/harness-parallel/worktrees/*/docs/**`
+<!-- harness-agent-v1 sha256=51ff53b3980adff62adfb06c713c47647cfca99ff49402607bb380049b6e91c4 -->

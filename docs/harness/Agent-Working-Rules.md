@@ -94,11 +94,15 @@ installed with `python harness/core/tools/install_skills.py --project . --host c
 ```yaml
 guard:
   commands:
-    - 'python tools/sysml\.py (check|traces|fingerprints)'
+    - 'python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints)'
+  writes: [".git/harness-parallel/worktrees/*/docs/**"]
 ```
 
 The model is under `docs/sysml/`; its checks are the `sysml.py` commands of
 [model authoring and validation](Project-Specifics.md#model-authoring-and-validation).
+In a slice worktree, run them from the project folder with the worktree's path, for example
+`python .git/harness-parallel/worktrees/cr39-holdtx/tools/sysml.py check`: the tool checks
+the repository it lives in, and a change of folder is refused.
 A browser control that writes to the radio or keys it states what it does before its
 scripts have loaded over the 32 kbit/s link and after they fail to load.
 
@@ -110,7 +114,8 @@ guard:
     - 'gh issue comment [0-9]+ --body .*'
 ```
 
-The checker posts its verdict as its own issue comment.
+The checker posts its verdict as its own issue comment, with exactly
+`gh issue comment <number> --body '<text>'`: single quotes, no `$` or backticks, no `--repo`.
 
 ### Role: every
 

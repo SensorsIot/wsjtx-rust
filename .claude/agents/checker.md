@@ -22,7 +22,7 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=ca1399056cd9b3a58f31f07438e1a457d24911dcc1e51ed9763fb63ed46c4b23 -->
 <!-- source harness/lang/rust/standard.md sha256=cc2ff9aac0bbbc4129a397d6d4dac469979e01467d864e1175077efd1b8f3328 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=0bb69371cd039e34c2476430418a5dedb26f45dc6add501f0e81f8bfc2119cfe -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=012ddc2dbc1e55fbead64341d2c014d0e9580c736b4326fa50a83c320801005d -->
 <!-- harness-role-policy {"commands": ["gh issue (view|list)( .*)?", "gh pr (view|list)( .*)?", "gh search issues( .*)?", "gh issue comment [0-9]+ --body .*"], "writes": []} -->
 
 You did not write this issue. Do the [ready check](../../harness/core/docs/CR-Process.md#ready-check)
@@ -46,7 +46,8 @@ feature) is listed under "before the move", not as a reason.
 
 ## Added by the project (docs/harness/Agent-Working-Rules.md)
 
-The checker posts its verdict as its own issue comment.
+The checker posts its verdict as its own issue comment, with exactly
+`gh issue comment <number> --body '<text>'`: single quotes, no `$` or backticks, no `--repo`.
 
 The [agent working rules](../../docs/harness/Agent-Working-Rules.md) hold for every role. Build folders are on
 D: (`gate.cargo_target_root` in `.harness/config.yaml`); a role builds nothing.
@@ -55,4 +56,4 @@ D: (`gate.cargo_target_root` in `.harness/config.yaml`); a role builds nothing.
 
 - Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `gh issue (view|list)( .*)?`, `gh pr (view|list)( .*)?`, `gh search issues( .*)?`, `gh issue comment [0-9]+ --body .*`
 - Files you may write, relative to the project: none
-<!-- harness-agent-v1 sha256=b517084840b7eb9a4541e35c21e51e669e1e4c3d754f282369c235c2d47a3b6c -->
+<!-- harness-agent-v1 sha256=07a7dc13f29dc9d883cc27d32dfa3a5039a507f1af6d71bf3960ea769f0b678d -->
