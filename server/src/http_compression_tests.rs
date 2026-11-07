@@ -115,7 +115,7 @@ fn canonical_negotiations(source: &str) -> Result<Vec<(Vec<String>, &'static str
     Ok(vectors)
 }
 
-// Proves: CL-003-08, CL-008-07; TC-009-005 case8.
+// Proves: TC-009-005 case8 (the test-side oracle only, not the product negotiator).
 #[test]
 fn canonical_negotiation_oracle_rejects_missing_malformed_and_duplicate_data() {
     let source = include_str!("../../docs/sysml/OperatingReceive.sysml");
