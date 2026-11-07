@@ -7180,6 +7180,15 @@ async fn held_run(
     tx: Option<u32>,
     first: &[(&str, f64, Option<f64>)],
 ) -> Leaving {
+    held_run_with(mode, tx, |_, _| {}, first).await
+}
+/// `held_run` with `rows` written to the waterfall before the selection in e.
+async fn held_run_with(
+    mode: &'static str,
+    tx: Option<u32>,
+    rows: impl FnOnce(&Mcp, i64),
+    first: &[(&str, f64, Option<f64>)],
+) -> Leaving {
     let f = station(true).await;
     f.state.recording.fixture_band("20m");
     f.state.recording.fixture_live_job(mode);
@@ -7193,6 +7202,7 @@ async fn held_run(
     if let Some(hz) = tx {
         set_tx(&f, hz).await;
     }
+    rows(&f, e);
     let feed = attach_feed(&f);
     let mut c = config(Some("Test calls"));
     c["strategies"][0]["repetitions"] = json!(4);
@@ -7323,14 +7333,21 @@ async fn tc_039_049_a_target_that_hears_us_or_has_answered_keeps_tx() {
 // Proves: TC-039-049 (f). A station within 50 Hz of the held Tx 1500: Tx goes to the nearest slot
 // 50 Hz clear of its signal, the lower on a tie, no power used; Rx on the station. At 1520
 // (1520..1570): below needs f + 50 + 50 <= 1520, so 1420 (80 Hz away); above f >= 1620 (120 Hz):
-// 1420. A caller at 1530: 1430 (70 Hz) against 1630 (130 Hz): 1430.
+// 1420. A caller at 1530: 1430 (70 Hz) against 1630 (130 Hz): 1430. No power is used (D4): a far
+// quiet slot is in the waterfall (my odd period 0 everywhere; the even one a floor of 40 with
+// 1000..1050 at 0, so 1000 has a rise of 0 and every floor slot 40), and Tx still takes the nearest
+// clear slot, power_db 40.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_049_a_station_within_50_hz_moves_tx_50_hz_clear() {
+    let rows = |f: &Mcp, e: i64| {
+        wf_row(f, e - 30_000, 40, &[(1000, 1050, 0)], false);
+        wf_row(f, e - 15_000, 0, &[], false);
+    };
     for (first, rx, tx) in [
         (("CQ K1ABC FN42", 1520.0, Some(-10.0)), 1520, 1420),
         (("HB9BLA DL1XYZ JO62", 1530.0, Some(-10.0)), 1530, 1430),
     ] {
-        let t = held_run("ft8", None, &[first]).await;
+        let t = held_run_with("ft8", None, rows, &[first]).await;
         let f = &t.f;
         assert_eq!(contact(f).await.2, json!("armed"), "{rx}");
         assert_eq!(
@@ -7338,7 +7355,7 @@ async fn tc_039_049_a_station_within_50_hz_moves_tx_50_hz_clear() {
             (
                 json!(rx),
                 json!(tx),
-                json!({"hz":tx,"power_db":null,"his_end":"unknown"})
+                json!({"hz":tx,"power_db":40,"his_end":"unknown"})
             ),
             "station at {rx}"
         );
@@ -7347,9 +7364,9 @@ async fn tc_039_049_a_station_within_50_hz_moves_tx_50_hz_clear() {
 
 // Proves: TC-039-049 (g). FT4, the held Tx 2700 outside the Tx range (300..2610), a station at
 // 1000: the selection keeps Tx 2700 (D7), Rx 1000. At the unanswered repetition with no spot 2700
-// is no candidate (round 3 Q6): my odd period reads 0, the even one has a floor of 40 with
-// 2000..2090 at 20, so Tx alone goes to 2000 (rise 20, the bins of 2000..2090 all in the band) and
-// Rx stays 1000.
+// is no candidate (round 3 Q6): my odd period reads 0, the even one a flat floor of 40, so every
+// candidate ties at a rise of 40; were 2700 a candidate the tie would keep it, but it is not, so Tx
+// alone goes to the tied candidate nearest 2700, the top of the range, 2610, and Rx stays 1000.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_049_a_held_tx_outside_the_range_is_kept_and_moves_in_at_the_slot_check() {
     let t = held_run("ft4", Some(2700), &[("CQ K1ABC FN42", 1000.0, Some(-10.0))]).await;
@@ -7365,13 +7382,13 @@ async fn tc_039_049_a_held_tx_outside_the_range_is_kept_and_moves_in_at_the_slot
         "kept at the selection"
     );
     wf_row(f, e - 7_500, 0, &[], false);
-    wf_row(f, e, 40, &[(2000, 2090, 20)], false);
+    wf_row(f, e, 40, &[], false);
     ended(f, e + 7_500);
     publish(f, e + 15_000, &[]);
-    assert_eq!(rx_tx(f).await, (json!(1000), json!(2000)));
+    assert_eq!(rx_tx(f).await, (json!(1000), json!(2610)));
     assert_eq!(
         run_of(f).await["slot_check"],
-        json!({"repetitions":1,"hears_us":false,"hz":2000})
+        json!({"repetitions":1,"hears_us":false,"hz":2610})
     );
 }
 
