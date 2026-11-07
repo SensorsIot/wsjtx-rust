@@ -53,14 +53,14 @@ package WstxMcp {
             longer than max_run_minutes (default 120, 1..480; stop time_limit); a strategy run
             follows its grant instead, D8 and WstxStrategy::StrategyRun. A running
             automation is shown read-only in the browser station bar (AutomationIndicator).
-         D8 Strategy runs (#39, WstxStrategy::StrategyRun): selecting a strategy in the
-            browser starts a run of this owner in which the active strategy chooses and
+         D8 Strategy runs (#39, WstxStrategy::StrategyRun): a selected strategy with Auto on
+            (WstxStrategy::AutoToggle, the browser only) is a run of this owner in which the active strategy chooses and
             orders stations; it has no contact limit, its own limit of 8 hours (run_limit) and never stops no_answer. An
             MCP client cannot select one: the configuration key strategy true is refused
             operator_required, PUT /strategy has no MCP tool. For every run
             (D6 included; a strategy run's own contact only when unattended, otherwise it has
             no stop: WstxStrategy::StrategyWatchdog) the Tx watchdog limits the repetitions of one message; only an
-            Enable Tx or a strategy selection from the browser ends its stop, never the run's commands
+            Enable Tx, a strategy selection or an Auto on from the browser ends its stop, never the run's commands
             or an MCP request (including starting or restarting a run)
             (WstxStrategy::WatchdogFromOperator, coordinator default for the operator's
             rule, recorded on #39/#12, 2026-11-02, amending D5/D7; repetition form 2026-11-06);
@@ -287,9 +287,13 @@ package WstxMcp {
              policy_revision, run_revision, configuration (null or the configuration),
              run (null or {id, state, reason, mode, completed_contacts, unanswered_periods,
              contact_id, selected (null or {source_id, job_id, generation, sequence, call}),
-             last_decision, given_up (calls the operator gave up in a strategy run), rested (the call a
-             strategy run left after calls_per_station, or null), tx_slot (null or {hz, free}, WstxStrategy::FreeTxSlot), slot_check (null or {repetitions, hears_us, hz, free},
-             WstxStrategy::StrategyWatchdog), pounce (null or
+             last_decision, given_up (calls the operator gave up in a strategy run), left (null
+             or {call, reason repetitions|caller}, the last station a strategy or contest run
+             left, WstxStrategy::LeaveRule), quiet ([{call, band, mode, remaining_s}],
+             WstxStrategy::QuietTime), hearing (null or {state heard|no|unknown, spot_utc_s,
+             snr_db}, WstxStrategy::PskrUse), tx_slot (null or {hz, power_db, his_end
+             yes|no|unknown}, WstxStrategy::FreeTxSlot), slot_check (null or {repetitions,
+             hears_us, hz}, WstxStrategy::StrategyWatchdog), pounce (null or
              {call, band}, #42)), strategy_refusal (null or why the last selection started no run,
              WstxStrategy::StrategyRun)}; existing auth and Origin rules of GET routes.
              POST /automation/command (AutomationCommand): exactly {v, profile_id, boot_id,
