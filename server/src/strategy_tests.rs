@@ -4871,85 +4871,27 @@ fn logged_before(call: &str, grid: &str, e: i64) -> String {
     )
 }
 
-/// A scripted IC-7300 on COM3 whose dial reads `dial` Hz: the confirmed dial from which the
-/// record of a completed QSO takes its BAND (WstxContact::DirectLog) and the station its band.
-/// With it the contest tests let the product log the QSO itself instead of importing the entry.
-struct Dial {
-    dial: Arc<std::sync::atomic::AtomicU64>,
-    pending: std::collections::VecDeque<u8>,
-}
-impl wstx_rust::radio_control::executor::Transport for Dial {
-    fn configure(&mut self, _: u32) -> wstx_rust::radio_control::Result<()> {
-        Ok(())
-    }
-    fn write(
-        &mut self,
-        bytes: &[u8],
-        _: std::time::Instant,
-        _: &std::sync::atomic::AtomicBool,
-    ) -> wstx_rust::radio_control::Result<usize> {
-        let hz = self.dial.load(Ordering::SeqCst);
-        let dial = wstx_rust::radio_control::codec::encode_frequency(hz).unwrap();
-        let reply: Vec<u8> = match &bytes[4..bytes.len() - 1] {
-            [3] => [&[3][..], &dial].concat(),
-            [4] => vec![4, 1, 1],
-            [0x1a, 6] => vec![0x1a, 6, 1, 1],
-            [0x1c, 0] => vec![0x1c, 0, 0],
-            [0x1c, 0, _] => vec![0xfb],
-            [0x0f] => vec![0x0f, 0],
-            _ => vec![0xfa],
-        };
-        self.pending.extend(bytes);
-        self.pending.extend([0xfe, 0xfe, 0xe0, 0x94]);
-        self.pending.extend(reply);
-        self.pending.push_back(0xfd);
-        Ok(bytes.len())
-    }
-    fn read(
-        &mut self,
-        bytes: &mut [u8],
-        _: std::time::Instant,
-        _: &std::sync::atomic::AtomicBool,
-    ) -> wstx_rust::radio_control::Result<usize> {
-        let n = bytes.len().min(self.pending.len());
-        for b in bytes.iter_mut().take(n) {
-            *b = self.pending.pop_front().unwrap();
-        }
-        Ok(n)
-    }
-    fn quiet(
-        &mut self,
-        _: std::time::Instant,
-        _: &std::sync::atomic::AtomicBool,
-    ) -> wstx_rust::radio_control::Result<()> {
-        self.pending.clear();
-        Ok(())
-    }
-    fn close(&mut self) -> wstx_rust::radio_control::Result<()> {
-        Ok(())
-    }
-}
-/// Connects the CAT owner to a `Dial` on 14.074 MHz (20 m) and waits until it is confirmed.
-fn dial_20m(f: &Mcp) -> Arc<std::sync::atomic::AtomicU64> {
-    use wstx_rust::radio_control as cat;
-    let dial = Arc::new(std::sync::atomic::AtomicU64::new(14_074_000));
-    let shared = dial.clone();
+/// The shared scripted IC-7300 (cat_lifecycle_tests) on COM3, its dial on 14.074 MHz (20 m):
+/// the confirmed dial from which the record of a completed QSO takes its BAND
+/// (WstxContact::DirectLog) and the station its band. With it the contest tests let the
+/// product log the QSO itself instead of importing the entry.
+fn dial_20m(f: &Mcp) -> Arc<Mutex<crate::cat_lifecycle_tests::Peer>> {
+    use crate::cat_lifecycle_tests::{Device, attach_peer};
     let r = &f.state.recording;
-    r.fixture_cat_transport(Arc::new(move |_, _, _| {
-        Ok(Box::new(Dial {
-            dial: shared.clone(),
-            pending: Default::default(),
-        }) as Box<dyn cat::executor::Transport>)
-    }));
+    let peer = attach_peer(r, Device::Present);
+    peer.lock().unwrap().dial = 14_074_000;
     let revision = f.state.store.lock().unwrap().document.revision;
-    r.radio_connect(cat::Configuration::parse("COM3").unwrap(), revision)
-        .unwrap();
-    retune(f, &dial, 14_074_000);
-    dial
+    r.radio_connect(
+        wstx_rust::radio_control::Configuration::parse("COM3").unwrap(),
+        revision,
+    )
+    .unwrap();
+    retune(f, &peer, 14_074_000);
+    peer
 }
 /// Turns the scripted dial to `hz` and waits until the CAT owner's poll has confirmed it.
-fn retune(f: &Mcp, dial: &std::sync::atomic::AtomicU64, hz: u64) {
-    dial.store(hz, Ordering::SeqCst);
+fn retune(f: &Mcp, peer: &Mutex<crate::cat_lifecycle_tests::Peer>, hz: u64) {
+    peer.lock().unwrap().dial = hz;
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while crate::contact_http::confirmed_dial(&f.state.recording) != Some(hz) {
         assert!(
