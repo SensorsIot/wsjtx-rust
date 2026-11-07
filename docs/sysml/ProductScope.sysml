@@ -289,8 +289,10 @@ package WstxProductScope {
              chooses again.
              Read first (CL-044 rule): a slice setting (mode, frequency, DAX channel) is compared
              with the slice's current status and written only on a difference, then read back
-             from the radio's status for that slice; a read-back that does not arrive by the step
-             deadline fails the operation. A band selection then fails with radio_timeout (a
+             from the radio's status for that slice. A FLEX-6600 on firmware 4.3.16 replies to slice
+             tune and volunteers no status (measured 2026-11-06), so after a write the session asks
+             with sub slice all, whose full status is the read-back; a read-back that does not arrive
+             by the step deadline fails the operation. A band selection then fails with radio_timeout (a
              radio refusal with radio_rejected, a lost session with radio_unavailable) and keeps
              no native_readback origin. Equal status sends no command. All BANDS stay admitted:
              the radio's refusal decides. The radio object of /receive/selection keeps its shape:
@@ -303,14 +305,18 @@ package WstxProductScope {
              the station's FLEX-6600 sent on 2026-11-06) enter the existing native
              queue/converter/epoch path, channel 0 only, each frame held twice for the 48 kHz
              converter, whose 6 kHz low-pass removes the images; other IDs are counted foreign,
-             48/96 kHz and reduced-bandwidth classes are refused as invalid. A gap in the 4-bit packet count
-             becomes silence of the missing packets' length, keeping the timeline and the analysis
-             window; an arrival
-             gap above 200 ms is unknown loss (native_discontinuity) because the count may have
-             wrapped. The receive socket asks for a 1 MiB buffer, and packets enter the queue in
+             48/96 kHz and reduced-bandwidth classes are refused as invalid. A real routed path reorders
+             about one packet in 300 and truly loses about 0.04% (measured 2026-11-06), so packets go
+             on in the order of their 4-bit count, waiting until at most 5 packets wait behind a
+             missing one (8 or more lost in a row cannot be told from late by the count, and read as late). A turn given up becomes silence of the packet's length, keeping the timeline
+             and the analysis window, and counts lost; that packet arriving later, or any packet
+             arriving twice, is dropped and counted late. An arrival gap above 200 ms is unknown loss
+             (native_discontinuity) because the count may have wrapped: what waits goes on first and
+             the count starts over. The receive socket asks for a 1 MiB buffer, and packets enter the queue in
              groups of at least 10 ms, as an audio device delivers them. Timing: each packet carries its host arrival
              time less its own duration, so the epoch is correlated to the system clock; network
-             and radio latency are not measured. VITA timestamps are not used: that radio, with no
+             and radio latency stay in it: the same anchor gave 453 decodes in 11 of 11 periods with
+             a median DT of -0.1 s against jt9 over a routed path (2026-11-06). VITA timestamps are not used: that radio, with no
              GPS, sent a frozen filler value on every packet (GET /native-flex reports the radio's timestamp kind and this host's
              clock minus it, for that measurement), and drift follows the same filtered clock tracking as an audio device.
              Tuning: the station operation's band selection on the own slice (origin
@@ -331,7 +337,7 @@ package WstxProductScope {
              protocol,address}, slice null or {index,letter,frequency_hz,mode,rx_antenna,
              dax_channel,stream_id}, transmit always unsupported, at most 4096
              encoded bytes. GET /native-flex is the read-only snapshot, the same keys plus v, packets
-             {accepted,foreign,invalid,lost}, last_peak and vita {tsi,host_minus_radio_ms} and arrival
+             {accepted,foreign,invalid,lost,late}, last_peak and vita {tsi,host_minus_radio_ms} and arrival
              {jitter_mean_ms,jitter_max_ms}, reset per session, for diagnosis and tests, 404 for standard
              profiles; no request accepts a slice, stream or handle as authority. A session that is
              not ready shows the ErrorFieldEntry nativeRadio with its state and error; the

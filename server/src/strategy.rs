@@ -136,6 +136,8 @@ pub(crate) struct Config {
     /// #42 the permanent ignore list (exact calls) and the session list expiry.
     pub ignore_calls: Vec<String>,
     pub session_ignore_minutes: u64,
+    /// #63 the contest in force (memory only, never with an active award strategy).
+    pub contest: Option<crate::contest::Selection>,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -145,6 +147,7 @@ impl Default for Config {
             strategies: Vec::new(),
             ignore_calls: Vec::new(),
             session_ignore_minutes: SESSION_IGNORE_MINUTES,
+            contest: None,
         }
     }
 }
@@ -319,17 +322,26 @@ fn strategy(v: &Value, field: &str) -> Result<Strategy, Field> {
 }
 /// Exact StrategyConfiguration parsing (field names a refused value).
 pub(crate) fn parse_config(v: &Value) -> Result<Config, Field> {
-    exact(
-        v,
+    // #63 contest is optional: a browser or a file without it selects no contest.
+    let keys: &[&str] = if v.get("contest").is_some() {
         &[
             "continent",
             "active",
             "strategies",
             "ignore_calls",
             "session_ignore_minutes",
-        ],
-        "configuration",
-    )?;
+            "contest",
+        ]
+    } else {
+        &[
+            "continent",
+            "active",
+            "strategies",
+            "ignore_calls",
+            "session_ignore_minutes",
+        ]
+    };
+    exact(v, keys, "configuration")?;
     let continent = match &v["continent"] {
         Value::Null => None,
         c => Some(
@@ -380,7 +392,16 @@ pub(crate) fn parse_config(v: &Value) -> Result<Config, Field> {
         }
         ignore_calls.push(c);
     }
+    // WstxContest::ContestSelection: exactly one strategy is active, or none.
+    let contest = match v.get("contest") {
+        None | Some(Value::Null) => None,
+        Some(c) => Some(crate::contest::parse_selection(c, "contest")?),
+    };
+    if contest.is_some() && active.is_some() {
+        return Err(bad("contest"));
+    }
     Ok(Config {
+        contest,
         continent,
         active,
         strategies,
@@ -444,9 +465,34 @@ impl Strategy {
 }
 impl Config {
     pub(crate) fn json(&self) -> Value {
-        json!({"continent":self.continent,"active":self.active,
+        let mut v = json!({"continent":self.continent,"active":self.active,
             "strategies":self.strategies.iter().map(Strategy::json).collect::<Vec<_>>(),
-            "ignore_calls":self.ignore_calls,"session_ignore_minutes":self.session_ignore_minutes})
+            "ignore_calls":self.ignore_calls,"session_ignore_minutes":self.session_ignore_minutes});
+        if let Some(c) = &self.contest {
+            v["contest"] = c.json();
+        }
+        v
+    }
+    /// A contest strategy that transmits (WstxContest::ContestRun).
+    pub(crate) fn automatic_contest(&self) -> Option<crate::contest::Selection> {
+        self.contest.filter(crate::contest::Selection::automatic)
+    }
+    /// What a run follows: the active award strategy, or the automatic contest as the bounds of
+    /// a strategy run (its calls per station; the contest evaluates, not the goals).
+    pub(crate) fn run_strategy(&self) -> Option<Strategy> {
+        match self.automatic_contest() {
+            Some(c) => Some(Strategy {
+                name: c.profile.name.to_owned(),
+                goals: Vec::new(),
+                needed: Needed::NotWorked,
+                region: Region::All,
+                min_snr_db: None,
+                calls_per_station: crate::contest::RUN_CALLS_PER_STATION,
+                treat_73_as_cq: true,
+                window: Window::All,
+            }),
+            None => self.active_strategy().cloned(),
+        }
     }
     pub(crate) fn active_strategy(&self) -> Option<&Strategy> {
         let name = self.active.as_deref()?;
@@ -556,6 +602,8 @@ pub(crate) struct Station {
     pub most_wanted: Option<std::sync::Arc<crate::most_wanted::List>>,
     /// #63 the station's activity, for the DirectedCqRule.
     pub activity: Activity,
+    /// #63 the profile locator, for a contest's distance points.
+    pub my_locator: Option<String>,
 }
 /// The list an ignored call is on (the session list wins when on both).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -564,7 +612,7 @@ pub(crate) enum Tier {
     Permanent,
 }
 impl Tier {
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Tier::Session => "session",
             Tier::Permanent => "permanent",
@@ -689,8 +737,15 @@ impl Station {
             self.dxcc.continent(&f.from),
         )
     }
+    /// The DirectedCqRule text of a greyed record.
+    pub(crate) fn directive_text(&self, f: &Facts) -> String {
+        not_for_me(
+            f.target.as_deref().unwrap_or(""),
+            self.my_continent.as_deref(),
+        )
+    }
     /// WstxStrategy::CallerOfMyCall, before the ignore check.
-    fn calls_me(&self, f: &Facts) -> bool {
+    pub(crate) fn calls_me(&self, f: &Facts) -> bool {
         f.to_call.as_deref() == Some(self.my_call.as_str()) && !f.signoff
     }
     fn region_holds(&self, s: &Strategy, f: &Facts) -> bool {
@@ -746,12 +801,19 @@ pub(crate) struct Verdict {
     pub grey: bool,
     pub why: String,
     pub kind: Option<Kind>,
+    /// #63 what a contest adds (WstxContest::ContestVerdict).
+    pub contest: Option<crate::contest::ContestValue>,
 }
 impl Verdict {
     pub(crate) fn json(&self, explain: bool) -> Value {
         let mut v = json!({"sequence":self.facts.sequence,"rank":self.rank,"grey":self.grey});
         if explain {
             v["why"] = json!(self.why);
+        }
+        if let Some(c) = self.contest {
+            v["dupe"] = json!(c.dupe);
+            v["new_multiplier"] = json!(c.new_multiplier);
+            v["points"] = json!(c.points);
         }
         v
     }
@@ -838,6 +900,7 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
                 grey,
                 why,
                 kind,
+                contest: None,
             }
         })
         .collect();
@@ -958,7 +1021,37 @@ pub(crate) fn station(state: &ProfileState, config: &Config, window: Window) -> 
         mode,
         most_wanted,
         activity,
+        my_locator: locator,
     }
+}
+/// (log revision, profile, start, end, my locator) of a built ContestLog.
+type ContestKey = (u64, &'static str, i64, i64, Option<String>);
+type ContestCache = Mutex<Option<(ContestKey, Arc<crate::contest::Log>)>>;
+/// #63 WstxContest::ContestLog of a selection from the stored log, kept for the station step;
+/// None when it is unreadable. On a blocking thread (routes, the build of a later step).
+fn contest_log(
+    log: &logbook::Logbook,
+    cache: &ContestCache,
+    s: &crate::contest::Selection,
+    my_locator: Option<&str>,
+) -> Option<Arc<crate::contest::Log>> {
+    let (revision, list) = log.contest_qsos(s.start_ms, s.end_ms).ok()?;
+    let key = (
+        revision,
+        s.profile.id,
+        s.start_ms,
+        s.end_ms,
+        my_locator.map(str::to_owned),
+    );
+    let mut held = cache.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some((k, built)) = held.as_ref()
+        && *k == key
+    {
+        return Some(built.clone());
+    }
+    let built = Arc::new(crate::contest::Log::of(s, my_locator, &list));
+    *held = Some((key, built.clone()));
+    Some(built)
 }
 
 // ------------------------------------------------------------------ alerts
@@ -1020,6 +1113,9 @@ pub(crate) struct Owner {
     alert_revision: std::sync::atomic::AtomicU64,
     /// The store revision, read without the lock by the strategy.state event.
     revision_seen: std::sync::atomic::AtomicU64,
+    /// #63 the ContestLog last built, for the station step, which never builds it.
+    contest_log: Arc<ContestCache>,
+    contest_building: Arc<std::sync::atomic::AtomicBool>,
     /// The HaltTransmit count the selection has seen (a change sets active to None).
     halts_seen: std::sync::atomic::AtomicU64,
     /// WstxStrategy::MostWantedList: a leaf lock over the parsed list; the file is read
@@ -1059,8 +1155,10 @@ impl Owner {
                         ok.then(|| parse_config(&configuration).ok())
                             .flatten()
                             .map(|mut c| {
-                                // active never survives a restart (WstxStrategy D2).
+                                // active never survives a restart (WstxStrategy D2), nor
+                                // does a contest (WstxContest::ContestSelection).
                                 c.active = None;
+                                c.contest = None;
                                 (v["revision"].as_u64().unwrap_or(0), c)
                             })
                     });
@@ -1078,6 +1176,61 @@ impl Owner {
             }
         }
         inner
+    }
+    /// #63 WstxContest::ContestLog on a blocking thread: waits until it is current.
+    pub(crate) fn contest_log_now(
+        &self,
+        state: &ProfileState,
+        s: &crate::contest::Selection,
+        my_locator: Option<&str>,
+    ) -> Option<Arc<crate::contest::Log>> {
+        contest_log(&state.logbook, &self.contest_log, s, my_locator)
+    }
+    /// #63 WstxContest::ContestLog for the station step: the last built one of this contest at
+    /// once; one behind the log is built on its own thread for a later step.
+    pub(crate) fn contest_log_latest(
+        &self,
+        state: &ProfileState,
+        s: &crate::contest::Selection,
+        my_locator: Option<&str>,
+    ) -> Option<Arc<crate::contest::Log>> {
+        use std::sync::atomic::Ordering;
+        let same = |k: &ContestKey| {
+            (k.1, k.2, k.3, k.4.as_deref()) == (s.profile.id, s.start_ms, s.end_ms, my_locator)
+        };
+        let (behind, last) = {
+            let held = self.contest_log.lock().unwrap_or_else(|p| p.into_inner());
+            match held.as_ref().filter(|(k, _)| same(k)) {
+                // A busy log keeps the last one: the step never waits for it.
+                Some((k, built)) => (
+                    state.logbook.revision_now().is_some_and(|r| r != k.0),
+                    Some(built.clone()),
+                ),
+                None => (true, None),
+            }
+        };
+        if behind && !self.contest_building.swap(true, Ordering::AcqRel) {
+            let (log, cache, building) = (
+                state.logbook.clone(),
+                self.contest_log.clone(),
+                self.contest_building.clone(),
+            );
+            let (selection, locator) = (*s, my_locator.map(str::to_owned));
+            std::thread::spawn(move || {
+                contest_log(&log, &cache, &selection, locator.as_deref());
+                building.store(false, Ordering::Release);
+            });
+        }
+        last
+    }
+    /// Test seam: how many QSOs the ContestLog last built holds, starting no build.
+    #[cfg(test)]
+    pub(crate) fn contest_log_built_qsos(&self) -> Option<u64> {
+        self.contest_log
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            .map(|(_, l)| l.qsos)
     }
     /// The saved configuration (None while the file is unreadable).
     pub(crate) fn config(&self, state: &ProfileState) -> Option<Config> {
@@ -1251,10 +1404,19 @@ impl Owner {
         }
         let mut inner = self.lock(state);
         let revision = inner.revision + 1;
-        let Some(config) = inner.config.as_mut().filter(|c| c.active.is_some()) else {
+        let Some(config) = inner
+            .config
+            .as_mut()
+            .filter(|c| c.active.is_some() || c.automatic_contest().is_some())
+        else {
             return;
         };
         config.active = None;
+        // #63 WstxContest::ContestRun: the contest stays, colouring only: it transmits nothing.
+        if let Some(c) = config.contest.as_mut() {
+            c.operation = crate::contest::Operation::Colouring;
+            c.automation_confirmed = false;
+        }
         inner.revision = revision;
         self.revision_seen.store(revision, Ordering::Release);
     }
@@ -1469,7 +1631,8 @@ impl Owner {
             return Err(("stale_revision", Some("expected_revision".into())));
         }
         let before = inner.config.as_ref().and_then(|c| c.active.clone());
-        let changed = config.active != before;
+        let contest_before = inner.config.as_ref().and_then(|c| c.contest);
+        let changed = config.active != before || config.contest != contest_before;
         if inner.revision >= MAX_SAFE {
             return Err(("counter_exhausted", None));
         }
@@ -1477,6 +1640,9 @@ impl Owner {
         // active is never read back: the file holds none (WstxStrategy D2).
         let mut stored = config.json();
         stored["active"] = Value::Null;
+        if let Some(o) = stored.as_object_mut() {
+            o.remove("contest");
+        }
         let document = json!({"schema_version":2,"profile_id":r.profile,"revision":revision,
             "configuration":stored});
         {
@@ -1568,12 +1734,17 @@ impl Owner {
             .config(state)
             .ok_or(("not_configured", Some("configuration".into())))?;
         self.most_wanted_load(state);
+        // WstxContest::ContestVerdict: a draft is a preview; else the contest in force.
+        let contest = config.contest.filter(|_| draft.is_none());
         let chosen = match draft {
-            Some(s) => s,
-            None => config
-                .active_strategy()
-                .cloned()
-                .ok_or(("not_configured", Some("strategy".into())))?,
+            Some(s) => Some(s),
+            None if contest.is_some() => None,
+            None => Some(
+                config
+                    .active_strategy()
+                    .cloned()
+                    .ok_or(("not_configured", Some("strategy".into())))?,
+            ),
         };
         let identity = (
             body["source_id"].as_str().unwrap_or("").to_owned(),
@@ -1590,6 +1761,26 @@ impl Owner {
                 })
                 .collect(),
             _ => return Err(("stale_request", Some("job_id".into()))),
+        };
+        let Some(chosen) = chosen else {
+            let Some(selection) = contest else {
+                return Err(("not_configured", Some("strategy".into())));
+            };
+            let st = station(state, &config, Window::All);
+            let log = self.contest_log_now(state, &selection, st.my_locator.as_deref());
+            let verdicts: Vec<Value> =
+                crate::contest::evaluate(&selection, &records, &st, log.as_deref())
+                    .iter()
+                    .filter(|v| {
+                        explain || v.rank.is_some() || v.grey || v.contest.is_some_and(|c| c.dupe)
+                    })
+                    .map(|v| v.json(explain))
+                    .collect();
+            return Ok(
+                json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"strategy":selection.profile.name,
+                "my_continent":st.my_continent,"verdicts":verdicts,
+                "contest":log.as_ref().map(|l| l.summary(&selection))}),
+            );
         };
         worked_build(state, chosen.window);
         let st = station(state, &config, chosen.window);
@@ -1695,13 +1886,16 @@ pub async fn put(
         let (snapshot, changed) = station.strategy.put(&state, body)?;
         if changed {
             station.strategy.most_wanted_load(&state);
-            if let Some(s) = station
-                .strategy
-                .config(&state)
-                .as_ref()
-                .and_then(Config::active_strategy)
-            {
+            let config = station.strategy.config(&state);
+            if let Some(s) = config.as_ref().and_then(Config::active_strategy) {
                 worked_build(&state, s.window);
+            }
+            // #63 the run's first step finds the contest's log.
+            if let Some(c) = config.as_ref().and_then(Config::automatic_contest) {
+                let (_, locator) = contact_http::profile_facts(&state);
+                station
+                    .strategy
+                    .contest_log_now(&state, &c, locator.as_deref());
             }
             // Taken after the strategy lock is free: the automation lock comes first.
             station.automation.selected(&station, &state, access);

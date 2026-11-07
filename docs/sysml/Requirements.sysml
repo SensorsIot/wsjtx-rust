@@ -1763,7 +1763,14 @@ package WstxRequirements {
              test's own clock. Read first: repeating a selection whose slice already reports the
              frequency sends no slice tune and no mode write (command log count unchanged); an
              emulator that does not report the new frequency makes the selection fail visibly with
-             error radio_timeout and leaves no native_readback origin. Two stations whose DAX
+             error radio_timeout and leaves no native_readback origin. The emulator reports a tune
+             only when asked, as the real radio does; a selection is confirmed also with its replies
+             and statuses 130 to 260 ms late, and a repeated selection also sends no sub slice all. One packet in 60 delayed by 4 places counts neither lost nor late; delayed by 6
+             places it counts lost once and late once. Neither opens an epoch or changes the rate. A 400 ms
+             outage after which the count comes back shifted by 9 opens an epoch (native_discontinuity)
+             and changes neither lost nor late: the count starts over, and what waited goes on first.
+             Rust unit tests also check that a duplicate is dropped, whether its first copy still waits or
+             its turn has passed, and the burst limit: 7 lost in a row count lost, 8 read as late. Two stations whose DAX
              status arrives 300 ms late end on different channels, the emulator's audio following
              the channel, not the owner. Datagrams with the own stream ID from another address
              (127.0.0.2, amplitude 0.95) are never accepted. No slice command targets another
@@ -4198,7 +4205,7 @@ package WstxRequirements {
     dependency CL_039_04_to_FR_010 from 'CL-039-04' to 'FR-010';
     dependency CL_039_04_to_FR_019 from 'CL-039-04' to 'FR-019';
     requirement 'CL-039-05' {
-        doc /* Selecting a strategy starts it and None stops it, through the existing station automation and contact engine (no second engine), with no confirmation, no Start and no client decision: the browser sends only the selection and HALT is always on screen. A strategy never calls CQ and goes on after each QSO without a contact limit, waiting for the next opportunity, for at most 8 hours from its selection, also with a browser open (operator decision 2026-11-06, replacing "no time limit": a new selection starts a new 8 hours; at the limit it selects no new station, the contact in progress ends its normal way, and it stops with the reason run_limit until a new selection); it answers callers of my call first, then the best candidate; after calls per station consecutive calls without progress it goes to the best other candidate of the next publication and may come back; it never selects a station the operator cancelled or aborted again in that run, nor one completed in that run on this band and mode; a station that calls me is answered also when it was just left. It follows its grant, not the transport of the selecting request: a page reload or a second tab does not stop it, a revoked grant does. Unattended (operator decision, #39 comment 6685226511): with no authenticated client (a status WebSocket session, or an authenticated MCP request) for 60 s it selects no new station, the contact in progress ends its normal way, and it stops with the reason no_client until a new selection; only a selection restarts it, never an AutomationCommand start. It waits instead of stopping across a receive restart; a refused start or a stop leaves the strategy selected with the reason shown. HALT from any source stops the run and sets active to None, pushed to the browser; Esc does not. A double-click is always possible and is a manual intervention: the strategy stays selected, waits for that QSO to end and resumes. An MCP principal cannot select a strategy. Details: WstxStrategy::StrategyRun, StrategySelector, ManualIntervention, SaneCall; WstxMcp::OperatingAutomation. */
+        doc /* Selecting a strategy starts it and None stops it, through the existing station automation and contact engine (no second engine), with no confirmation, no Start and no client decision: the browser sends only the selection and HALT is always on screen. An award strategy never calls CQ (a contest Run does, CL-063-05) and goes on after each QSO without a contact limit, waiting for the next opportunity, for at most 8 hours from its selection, also with a browser open (operator decision 2026-11-06, replacing "no time limit": a new selection starts a new 8 hours; at the limit it selects no new station, the contact in progress ends its normal way, and it stops with the reason run_limit until a new selection); it answers callers of my call first, then the best candidate; after calls per station consecutive calls without progress it goes to the best other candidate of the next publication and may come back; it never selects a station the operator cancelled or aborted again in that run, nor one completed in that run on this band and mode; a station that calls me is answered also when it was just left. It follows its grant, not the transport of the selecting request: a page reload or a second tab does not stop it, a revoked grant does. Unattended (operator decision, #39 comment 6685226511): with no authenticated client (a status WebSocket session, or an authenticated MCP request) for 60 s it selects no new station, the contact in progress ends its normal way, and it stops with the reason no_client until a new selection; only a selection restarts it, never an AutomationCommand start. It waits instead of stopping across a receive restart; a refused start or a stop leaves the strategy selected with the reason shown. HALT from any source stops the run and sets active to None, pushed to the browser; Esc does not. A double-click is always possible and is a manual intervention: the strategy stays selected, waits for that QSO to end and resumes. An MCP principal cannot select a strategy. Details: WstxStrategy::StrategyRun, StrategySelector, ManualIntervention, SaneCall; WstxMcp::OperatingAutomation. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/automation.rs; server/src/strategy.rs; client/contact.js";
     }
@@ -5693,5 +5700,152 @@ package WstxRequirements {
         attribute executable : String = "server/src/strategy_tests.rs::tc_063_004_the_directive_table_in_a_contest_activity; server/src/strategy_tests.rs::tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation";
     }
     dependency CL_063_02_verified_by_TC_063_004 from 'CL-063-02' to 'TC-063-004';
+
+    requirement 'CL-063-03' {
+        doc /* The operator selects a contest with its period through a prompt pre-filled from the schedule rule (empty for ARRL January VHF, which the prompt asks), shown with the strategy and editable; colouring only is the default and starts no run. It is exclusive with an award strategy, is held in station memory only, and None ends it. The log is evaluated only inside that period: dupes by the profile's rule, multipliers, points and the score. Choosing an activity sets no strategy and selecting a contest sets no activity. Details: WstxContest::ContestSelection, ContestLog, ContestPrompt. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contest.rs; server/src/strategy.rs; server/src/logbook.rs; client/contact.js";
+    }
+    dependency CL_063_03_to_FR_024 from 'CL-063-03' to 'FR-024';
+    dependency CL_063_03_to_FR_019 from 'CL-063-03' to 'FR-019';
+    requirement 'CL-063-04' {
+        doc /* With a contest in force Band Activity lists only the stations that can be called (non-dupe in the period, directive allows it, a CQ or an RR73/73, on a band of the contest), ordered by callers of my call, new multiplier, QSO points, SNR, with the partner on top; a Show all toggle (off) shows the rest. Colour only for the callable, a new multiplier apart; a dupe and a directed CQ dimmed. The station evaluates, the browser renders after a publication, never on a timer. A contest also works by hand: every row stays selectable with Show all. Details: WstxContest::ContestVerdict, ContestValueOrder, ContestView. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contest.rs; server/src/strategy.rs; client/contact.js; client/recording.css";
+    }
+    dependency CL_063_04_to_FR_024 from 'CL-063-04' to 'FR-024';
+    dependency CL_063_04_to_FR_010 from 'CL-063-04' to 'FR-010';
+    verification 'TC-063-005' {
+        doc /* TC-063-005 \— The points and multiplier rules
+             CL-063-03
+             Setup: distances computed apart from this code (haversine, R 6371 km; IARU 111.2 km per degree): JN37-FN42 5894.6 km, JN37-JO62 701.6, JN37-JN38 111.2, JN37-PM95 9624.3.
+             Steps: each points rule for those pairs, a six-character locator, the same square, no grid; the VHF band tables; Field Day per mode; the multiplier keys.
+             Expected: WW 2, 1, 1, 4; ARRL 13, 3, 2, 21; IARU 5895, 702, 112, 9625; the same large square 50; ARRL same square 2 (the minimum distance value); no grid none; 1 per call; January 1,1,2,2,4,4,8,8 and June/September 1,1,2,2,3,3,4,4 for 6 m, 2 m, 1.25 m, 70 cm, 33 cm, 23 cm, 13 cm, 3 cm; Field Day digital 2, CW 2, phone 1; keys FN|20m and FN42|6m, none without a rule or a grid.
+             2 \— Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-03';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_005_the_points_rules_by_hand";
+    }
+    dependency CL_063_03_verified_by_TC_063_005 from 'CL-063-03' to 'TC-063-005';
+    verification 'TC-063-006' {
+        doc /* TC-063-006 \— The log inside the period, the dupe rules and the verdicts
+             CL-063-03, CL-063-04
+             Setup: hand-written QSO lists and decoded records for HB9BLA JN37 in EU on 20 m with activity ww_digi.
+             Steps: a WW Digi log with a QSO before the period, one at its exclusive end, a repeat in FT4, another band, SSB and 30 m; ARRL VHF with a rover and without a grid; Field Day SSB; FT8 Activity on another band; ARRL Digi with RTTY. Verdicts for a known field, a new far field, a new near field, a dupe, CQ NA, no CQ, another station's RR73, a weak caller, a dupe caller; on 30 m; without a log; a /R CQ in ARRL VHF and IARU.
+             Expected: 2 QSOs, 2 multipliers, 4 points, score 8, nothing outside the period counted; VHF dupe on the same grid only, every grid without a logged grid; Field Day digital no dupe of SSB; a Field Day exchange to my call a caller with 2 points or a dupe, to another call not a CQ; FT8 Activity a dupe on another band; ARRL Digi 1 QSO, 13 points, score 13. Rank order caller, far new multiplier, near new multiplier, the known field, the RR73; the dupes rank null with dupe true, also the caller; greyed CQ NA; nothing ranked on 30 m or without a log; the wire form of a verdict; the rover ranked in ARRL VHF, refused callsign guard in IARU.
+             2 \— Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-03';
+            verify 'CL-063-04';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_006_only_the_period_counts_and_each_dupe_rule; server/src/contest_tests.rs::tc_063_006_verdicts_callable_by_value; server/src/contest_tests.rs::tc_063_006_a_field_day_exchange_to_my_call_is_a_caller";
+    }
+    dependency CL_063_03_verified_by_TC_063_006 from 'CL-063-03' to 'TC-063-006';
+    dependency CL_063_04_verified_by_TC_063_006 from 'CL-063-04' to 'TC-063-006';
+    verification 'TC-063-007' {
+        doc /* TC-063-007 \— The contest selection on the store and the evaluate route
+             CL-063-03, CL-063-04
+             Setup: exact-parse table; the actual station router on a disposable selected HTTPS profile (HB9BLA, JN47AA) on 40 m with an imported log (one QSO inside the period, one before), an injected FT8 live job with CQ WW W1DUP, K1OLD and JA1XYZ, activity ww_digi.
+             Steps: each refused selection form; PUT with a contest; read strategy.json; a new owner; the automation snapshot; PUT with a strategy and a contest; a period with end not after start; evaluate; PUT without contest; evaluate.
+             Expected: each field named; the configuration echoes the contest, the file holds none, a new owner has none, no run; 400 field contest and contest.end; verdicts JA1XYZ rank 0 new multiplier 4 points, K1OLD rank 1, W1DUP dupe with rank null; tally 1 QSO, 1 multiplier, 3 points, score 3 (JN47-EM12 8469.4 km); strategy WW Digi; after None the key is gone and evaluate says not_configured.
+             2 \— Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-03';
+            verify 'CL-063-04';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_007_a_selection_is_parsed_exactly; server/src/strategy_tests.rs::tc_063_007_a_contest_selection_store_and_evaluation";
+    }
+    dependency CL_063_03_verified_by_TC_063_007 from 'CL-063-03' to 'TC-063-007';
+    dependency CL_063_04_verified_by_TC_063_007 from 'CL-063-04' to 'TC-063-007';
+    verification 'TC-063-008' {
+        doc /* TC-063-008 \— The contest prompt, the callable list and Show all in the browser
+             CL-063-03, CL-063-04
+             Setup: actual browser with hand-written station replies for the receive results, GET and PUT /strategy, GET /strategy/contests and POST /strategy/evaluate.
+             Steps: no contest; the prompt on WW Digi; a page reload with the contest in force; ARRL January VHF without a date; Start, with a row to my call that is a dupe, rows carrying all-time flags (new call, new DXCC) and a row of the partner; the partner's contact prepared and ended; Show all on and off; 1.5 s of silence; reopen; None; the prompt at 360 px.
+             Expected: the toggle hidden, the selector unchanged, nothing evaluated and no read of /strategy/contests without a contest; one read at the prompt, and one after the reload, which names the contest in the selector; the rule's period pre-filled, the clause, the activity line, colouring only checked; January empty and refused with no request; one PUT with active null and the contest; one evaluation; the row to my call stays beside JA1XYZ with the multiplier colour and K1ABC, the status with period and tally; no all-time slot colour and no new-call or new-DXCC reason on any row; a partner row is listed first while its contact stands, and hidden after; Show all adds the dupe and the directed CQ dimmed, without a slot colour, with no new request; no request during the silence; the period in force on reopening; None sends no contest, shows every row and brings the slot colour back; no sideways overflow on the phone.
+             2 \— Isolated automated browser test; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-03';
+            verify 'CL-063-04';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_063_03_verified_by_TC_063_008 from 'CL-063-03' to 'TC-063-008';
+    dependency CL_063_04_verified_by_TC_063_008 from 'CL-063-04' to 'TC-063-008';
+    requirement 'CL-063-05' {
+        doc /* Fully automatic is offered beside colouring only as S&P or Run. S&P calls the most valuable callable station, Run calls CQ with the contest's message and answers the most valuable non-dupe caller (new multiplier, QSO points, SNR), not the first decoded. Where the rules forbid automatic operation the browser shows the clause as a warning and transmits only after the operator's confirmation, and the station refuses without it; where they are silent a short note. It waits while the activity, the band or the period do not fit the contest; a contest can still be operated by hand. Details: WstxContest::ContestRun, AutomationClause, ContestSelection. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/automation.rs; server/src/contest.rs; server/src/strategy.rs; server/src/logbook.rs; client/contact.js";
+    }
+    dependency CL_063_05_to_FR_024 from 'CL-063-05' to 'FR-024';
+    dependency CL_063_05_to_FR_020 from 'CL-063-05' to 'FR-020';
+    requirement 'CL-063-06' {
+        doc /* The safety of a contest run stays on the server and is that of an award strategy run: HALT from any source ends it (the contest stays, colouring only), Abort QSO (Esc) ends the QSO only, the Tx watchdog stops it, with no client for 60 s or after 8 hours it starts nothing new and its own CQ ends at once, only a browser's selection starts it, and a double-click is a manual intervention it resumes after. Details: WstxContest::ContestRun, WstxStrategy::StrategyRun, ManualIntervention, WatchdogFromOperator. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/automation.rs; server/src/strategy.rs";
+    }
+    dependency CL_063_06_to_FR_024 from 'CL-063-06' to 'FR-024';
+    dependency CL_063_06_to_FR_020 from 'CL-063-06' to 'FR-020';
+    verification 'TC-063-009' {
+        doc /* TC-063-009 — Search and pounce, and the automation clause
+             CL-063-05
+             Setup: the selection form table; the actual station router (HB9BLA JN47AA) with the contact engine and #9 transmit owner on the recording hardware double, virtual UTC, on 20 m, an imported QSO with W1DUP inside the period; a status session held open.
+             Steps: each forbidding and silent profile with sp and run with and without the confirmation; PUT sp without it; set_activity alone; sp with activity none, on 30 m, then fitting; CQ WW W1DUP (strongest), K1ABC and JA1XYZ (weakest); empty partner periods; W1DUP alone; a selection whose period starts in an hour; a run with a manual replacing QSO with W9XYZ to its end, the log rebuilt, then W9XYZ's CQ alone.
+             Expected: refused contest.automation_confirmed where forbidden, accepted where silent; no run after the refused PUT and after set_activity; reasons activity, band, none; never a CQ; JA1XYZ selected and armed, Tx2 with the grid; after 2 partner periods without progress waiting, disarmed; nothing armed for the dupe alone; outside_period and nothing armed; the manual QSO's station a dupe, nothing armed.
+             2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-05';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_009_automatic_needs_the_confirmation_only_where_the_rules_forbid_it; server/src/strategy_tests.rs::tc_063_009_search_and_pounce_calls_the_most_valuable_and_waits_for_what_it_needs; server/src/strategy_tests.rs::tc_063_009_a_manual_qso_of_the_period_is_a_dupe_for_the_next_evaluation";
+    }
+    dependency CL_063_05_verified_by_TC_063_009 from 'CL-063-05' to 'TC-063-009';
+    verification 'TC-063-010' {
+        doc /* TC-063-010 — Run: CQ and the most valuable caller
+             CL-063-05
+             Setup: as TC-063-009, activity ww_digi, run selected.
+             Steps: a step; callers W1DUP (dupe, strongest), K1ABC (first non-dupe decoded), JA1XYZ (weakest, new multiplier, most points); its R and 73; steps; JA1XYZ again; once the log is rebuilt, callers JA2ABC PM85 (more points) and K1NEW FN42; Abort of that QSO; an empty period; Abort of the run's own CQ; the band leaves the contest and returns; the station clock past the period's end.
+             Expected: calling_cq, armed, Tx6 "CQ WW HB9BLA JN47"; JA1XYZ answered with 2 candidates, not the first, not the strongest, not the dupe; completed, then calling_cq again with 1 completed; not answered again; K1NEW selected, PM being no new multiplier any more; after that Abort calling_cq; the CQ goes on; after Abort of the CQ calling_cq, armed, with a new contact id and operation run; waiting band and disarmed, then calling_cq and armed again; waiting outside_period and disarmed.
+             2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-05';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs::tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller";
+    }
+    dependency CL_063_05_verified_by_TC_063_010 from 'CL-063-05' to 'TC-063-010';
+    verification 'TC-063-011' {
+        doc /* TC-063-011 — The safety of a contest run
+             CL-063-06
+             Setup: as TC-063-010, the run calling CQ.
+             Steps: an MCP configure with strategy true; a browser's replace selection of a CQ; Abort; HALT by route; a new selection, the clock past 8 hours; a new selection, every session gone and the clock past 60 s; a new selection, then colouring, then a new selection; a watchdog limit of 2 with two CQs sent, the third period and a caller; a new selection, Enable Tx off, colouring, a new selection.
+             Expected: operator_required; manual with the operator's contact; after Abort calling_cq with operation run; halted, operation colouring, disarmed; run_limit and no_client, disarmed, the contest selected with its operation; stopped and disarmed for colouring, calling_cq again with no CQ left behind; tx_watchdog, not keyed again, still disarmed with the caller, the contest selected with operation run; transmit_stopped, then calling_cq again.
+             2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-06';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs::tc_063_011_the_safety_of_a_contest_run_stays_on_the_server; server/src/strategy_tests.rs::tc_063_011_the_tx_watchdog_stops_a_run_on_a_silent_band";
+    }
+    dependency CL_063_06_verified_by_TC_063_011 from 'CL-063-06' to 'TC-063-011';
+    verification 'TC-063-012' {
+        doc /* TC-063-012 — Fully automatic in the browser
+             CL-063-05
+             Setup: actual browser with hand-written replies for GET and PUT /strategy, GET /strategy/contests and GET /automation.
+             Steps: Run on WW Digi, Start, decline; Start, confirm; 1.5 s of silence; automation.state pushes for calling_cq, waiting outside_period and stopped run_limit; reopen and Start the same selection; reopen; FT8 Activity with S&P.
+             Expected: the warning with the clause, nothing sent when declined and the prompt still open; one PUT with operation run and automation_confirmed true; no read of /automation during the silence; the status names each; two PUTs, without a contest and then with it; the operation in force on reopening, colouring as the default of another contest, the note; no warning and no automation_confirmed for FT8 Activity.
+             2 — Isolated automated browser test; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-05';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_063_05_verified_by_TC_063_012 from 'CL-063-05' to 'TC-063-012';
 
 }

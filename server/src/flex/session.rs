@@ -68,6 +68,9 @@ const STEP: Duration = Duration::from_secs(5);
 const DISCOVERY_WAIT: Duration = Duration::from_secs(3);
 const BACKOFF_MAX_MS: u64 = 4000;
 const MAX_TRACKED: usize = 64;
+/// A real path reorders about one packet in 300 by one or two places and truly loses far fewer
+/// (2026-11-06); 5 packets (27 ms) of waiting tells the two apart.
+const REORDER_DEPTH: u8 = 5;
 const REGISTER_EVERY: Duration = Duration::from_secs(5);
 const UNKNOWN_GAP_100NS: u64 = 2_000_000;
 const DAX_RATE: u32 = 24_000;
@@ -199,6 +202,8 @@ pub struct Counters {
     pub foreign: u64,
     pub invalid: u64,
     pub lost: u64,
+    /// Arrived after its turn was given up (and counted lost), or twice; dropped.
+    pub late: u64,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Snapshot {
@@ -820,6 +825,71 @@ fn attempt(
     }
 }
 
+/// Puts packets back in the order of their 4-bit count. One ahead of its turn waits; a turn is
+/// given up only when `REORDER_DEPTH` packets wait behind it. The count tells a jump forward from
+/// a late packet only by which half it falls in: 8 or more lost in a row read as late, and the
+/// timeline then falls short by up to 16 packets (85 ms) with no epoch.
+struct Reorder<T> {
+    /// The turn due now.
+    next: Option<u8>,
+    /// One past the newest count seen; turns from `next` up to here are waited for.
+    end: u8,
+    held: Vec<(u8, T)>,
+}
+impl<T> Reorder<T> {
+    fn new() -> Self {
+        Self {
+            next: None,
+            end: 0,
+            held: Vec::new(),
+        }
+    }
+    /// Hands on what is due, each packet with the number of turns given up before it. False: the
+    /// packet came after its turn or twice, and is dropped. After a stall the count may have
+    /// wrapped, so what waits goes on first and the count starts over.
+    fn accept(
+        &mut self,
+        count: u8,
+        packet: T,
+        stalled: bool,
+        mut hand_on: impl FnMut(T, u64),
+    ) -> bool {
+        if stalled {
+            self.release(1, &mut hand_on);
+            self.next = None;
+        }
+        let due = *self.next.get_or_insert_with(|| {
+            self.end = count;
+            count
+        });
+        let awaited = (count.wrapping_sub(due) & 15) < (self.end.wrapping_sub(due) & 15);
+        let passed = !awaited && (count.wrapping_sub(self.end) & 15) >= 8;
+        if passed || self.held.iter().any(|(c, _)| *c == count) {
+            return false;
+        }
+        if !awaited {
+            self.end = count.wrapping_add(1) & 15;
+        }
+        self.held.push((count, packet));
+        self.release(usize::from(REORDER_DEPTH), &mut hand_on);
+        true
+    }
+    fn release(&mut self, depth: usize, hand_on: &mut impl FnMut(T, u64)) {
+        let mut missed = 0;
+        while let Some(due) = self.next {
+            if let Some(at) = self.held.iter().position(|(c, _)| *c == due) {
+                hand_on(self.held.swap_remove(at).1, missed);
+                missed = 0;
+            } else if self.held.len() >= depth {
+                missed += 1;
+            } else {
+                return;
+            }
+            self.next = Some(due.wrapping_add(1) & 15);
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 struct ClientView {
     client_id: Option<String>,
@@ -961,7 +1031,7 @@ struct Conn<'a> {
     last_register: Option<Instant>,
     slice: Option<u32>,
     stream: Option<u32>,
-    last_count: Option<u8>,
+    order: Reorder<(Vec<f32>, Option<u64>)>,
     last_seen: Option<u64>,
     buffer: Vec<u8>,
 }
@@ -983,7 +1053,7 @@ impl<'a> Conn<'a> {
             last_register: None,
             slice: None,
             stream: None,
-            last_count: None,
+            order: Reorder::new(),
             last_seen: None,
             buffer: vec![0; wire::MAX_DATAGRAM + 1],
         }
@@ -1081,13 +1151,22 @@ impl<'a> Conn<'a> {
             let spacing = self.last_seen.zip(arrival).map(|(last, now)| {
                 (now as f64 - last as f64) / 10_000.0 - frames as f64 * 1000.0 / DAX_RATE as f64
             });
+            let stalled = self
+                .last_seen
+                .zip(arrival)
+                .is_some_and(|(last, now)| now.saturating_sub(last) > UNKNOWN_GAP_100NS);
             self.last_seen = arrival.or(self.last_seen);
             self.shared.update_vita(tsi, offset, spacing);
-            let missed = self
-                .last_count
-                .map_or(0, |c| u64::from(count.wrapping_sub(c).wrapping_sub(1) & 15));
-            self.last_count = Some(count);
-            Self::deliver(self.shared, &samples, missed, arrival);
+            let shared = self.shared;
+            let taken = self.order.accept(
+                count,
+                (samples, arrival),
+                stalled,
+                |(samples, arrival), missed| Self::deliver(shared, &samples, missed, arrival),
+            );
+            if !taken {
+                shared.count(|counters, _| counters.late += 1);
+            }
         }
     }
     fn deliver(shared: &Shared, samples: &[f32], missed: u64, arrival: Option<u64>) {
@@ -1289,7 +1368,9 @@ impl<'a> Conn<'a> {
         observed
     }
     /// Read first: each setting is written only when the slice's status differs, and
-    /// success needs the radio's own status for this slice, not only the reply.
+    /// success needs the radio's own status for this slice, not only the reply. A FLEX-6600
+    /// replies to a tune and reports nothing (2026-11-06, firmware 4.3.16), so after a write the
+    /// read-back is asked for: subscribing again returns the slice's full status.
     fn apply_frequency(
         &mut self,
         index: u32,
@@ -1302,6 +1383,9 @@ impl<'a> Conn<'a> {
         }
         if current.frequency_hz != Some(wanted) {
             self.expect_ok(&format!("slice tune {index} {}", megahertz_text(wanted)))?;
+        }
+        if current.frequency_hz != Some(wanted) || current.mode.as_deref() != Some("DIGU") {
+            self.expect_ok("sub slice all")?;
         }
         self.wait(deadline, |v| {
             v.slices

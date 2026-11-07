@@ -494,7 +494,7 @@ package WstxContact {
              auto_tx_mode(true); AutoRespondPeriod.cpp ~11-32
              isDirectAutoRespondCandidate: addressed to my call, a callsign sender other
              than me, an exchange that is not R+report, RRR, RR73 or 73): while the
-             contact is calling (an own CQ started by the operator; an MCP run keeps its own rules, WstxMcp; a strategy never calls CQ) with Enable Tx,
+             contact is calling (an own CQ started by the operator; an MCP run keeps its own rules, WstxMcp; an award strategy never calls CQ, and a contest Run answers its callers itself, WstxContest::ContestRun) with Enable Tx,
              Auto Seq and Call 1st on (WSJT-X AutoRespondPeriod.cpp observePeriod opens
              the respond period only while Enable Tx is on), the first decoded row of the step, in decode order (row
              sequence), that is a standard message to my call from a concrete call in the
