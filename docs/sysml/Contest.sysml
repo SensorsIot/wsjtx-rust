@@ -1,7 +1,7 @@
 package WstxContest {
     private import ScalarValues::*;
-    doc /* Canonical contract of the contest strategies (issue #63, CL-063-01 and CL-063-02 in
-         WstxRequirements; verification TC-063-001..004): the second strategy class beside
+    doc /* Canonical contract of the contest strategies (issue #63, CL-063-01..06 in
+         WstxRequirements; verification TC-063-001..012): the second strategy class beside
          WstxStrategy's award strategies. Nothing here is an execution result.
 
          Decisions (operator on #63 and #39, 2026-11-04 and 2026-11-06, newest wins):
@@ -17,7 +17,21 @@ package WstxContest {
          D5 January VHF is not computed, the period prompt asks; IARU MGM uses standard FT8
             messages with report and 4-character locator; operating-time limits are notes, not
             tracked; a full weekend has Saturday and Sunday both in the month; an unconfirmed
-            Cabrillo name stays marked. */
+            Cabrillo name stays marked.
+         D6 Contest strategies are not saved strategies: the profiles are data, and the choice with
+            its period is the selection (ContestSelection), never written to the file. The award
+            strategy class on the wire stays award (WstxStrategy::StrategyClass): a saved strategy
+            of class contest stays refused.
+         D7 The activity stays the operator's (D2 both ways): selecting a contest does not set
+            it; the prompt says when it differs. Implementer's default on #63.
+         D8 Band Activity lists only what can be called, by value, with a Show all toggle (off),
+            and colours only what is interesting: the callable stations and most the new
+            multipliers; a dupe or a directed CQ shown by Show all is dimmed, uncoloured.
+         D9 Fully automatic stays with the station: the safety of WstxStrategy::StrategyRun
+            applies unchanged (HALT, Esc, Tx watchdog, 60 s without a client, 8 hours). Implementer's
+            defaults on #63: HALT leaves the contest in force as colouring only; S&P and Run are
+            the two automatic operations, chosen at the prompt, not both at once (no band or
+            frequency hopping); the Tx watchdog stops a Run on an unanswered CQ like any message. */
 
     enum def DupeRule {
         doc /* band: once per band. band_mode_class: once per band and per Phone, CW or Digital.
@@ -102,8 +116,148 @@ package WstxContest {
     attribute def ContestHttp {
         doc /* GET /strategy/contests (operating access, no query, empty body; the refusals of GET
              /strategy): {v 1, profile_id, boot_id, profiles: [ContestProfile]}. It changes nothing;
-             the browser reads it at (re)connect and when the period prompt opens, never on a
-             timer. */
+             the browser reads it when the period prompt opens, and once per connection while a
+             contest is in force (for its name), never at a plain page load or reconnect (it is several
+             kB on the 32 kbit/s link, TC-010-002) and never on a timer. */
+    }
+    attribute def ContestSelection {
+        attribute periodDaysMax : Integer = 31;
+        doc /* The optional key contest of WstxStrategy::StrategyConfiguration on PUT /strategy and in
+             the GET /strategy snapshot, present only while one is selected: {profile (a profile
+             id), start, end (real instants "YYYY-MM-DDTHH:MMZ", end exclusive, start < end, at most
+             31 days apart), operation "colouring", "sp" or "run", and the optional boolean
+             automation_confirmed}. Exact keys; each refusal names its field
+             (contest, contest.profile, contest.start, contest.end, contest.operation,
+             contest.automation_confirmed: sp or run of a forbidden clause without true), 400
+             invalid_request like any other field. null or absent: no contest. Exactly one strategy
+             is active or none: active and contest together are refused with field contest. It
+             lives in station memory only: the file never holds it and a station restart starts
+             without one (as active, WstxStrategy D2). A changed contest is a changed selection
+             (WstxStrategy::StrategyRun: any run ends; colouring starts none, sp and run start
+             one, ContestRun). HALT leaves colouring in force: it transmits nothing. An MCP principal cannot select one (the PUT
+             /strategy principal guard). No alert is recorded for a contest
+             (WstxStrategy::Alert follows the active award strategy). */
+    }
+    attribute def ContestLog {
+        doc /* The log read for a contest: the contacts whose QSO_DATE and TIME_ON start lies in [start,
+             end) only, with a band of the profile and a mode the contest counts: WW Digi FT8 and FT4;
+             ARRL Digi digital except RTTY; Field Day and ARRL VHF any mode; IARU MGM and FT8 Activity
+             digital. Phone is SSB, USB, LSB, AM, FM, DIGITALVOICE; CW is CW; every other mode is
+             digital. In time order; a QSO that is a dupe by the DupeRule counts nothing. Band and
+             mode are the record's effective values, the grid its first four characters; a record without
+             a band (logged without a confirmed CAT dial, WstxContact::DirectLog) counts for nothing. band_grid
+             with no grid: a logged QSO without a grid dupes every grid of that call on the band, a
+             decoded message without a grid is a dupe when the call is logged on that band. The
+             tally: qsos, multipliers (distinct keys of the MultiplierRule), points (the PointsRule;
+             no points where the rule needs a grid that is not known) and score: points x
+             multipliers, or the points for a profile without a multiplier rule (Field Day's power
+             multiplier and bonus points are not computed). Unreadable: no claim, nothing callable.
+             A contest evaluation reads it on a blocking thread, about one read per publication;
+             it scans the records without copying those outside the period. */
+    }
+    attribute def ContestVerdict {
+        doc /* WstxStrategy::Verdict with a contest in force, one per decoded record with a resolved
+             sender that is standard, or a Field Day exchange (type field_day) to a call, in this
+             order of tests: ignored (IgnoreLists, as a strategy); greyed
+             (DirectedCqRule); "my own message"; "band unknown"; "band not in the contest"; "log
+             unreadable"; "dupe" (DupeRule for the station band, mode class Digital; rank null,
+             dupe true, also when it calls my call: operator #63 "non-dupe", the one difference from
+             WstxStrategy D5); a caller of my call (CallerOfMyCall, also a grid or Field Day
+             exchange to it); else the callsign guard (SaneCall; a /R rover passes where a new grid counts,
+             band_grid); else "not a CQ": a CQ or an RR73/73 to someone else counts as calling, in
+             every contest. So the callable records have a rank by ContestValueOrder; every other has
+             rank null. The reply's verdicts carry dupe, new_multiplier (the record's key is not
+             yet in the period, false without a grid) and points (PointsRule; null when not known).
+             POST /strategy/evaluate with strategy null and a contest in force returns these, with
+             strategy the profile's name and contest the tally {qsos, multipliers, points, score}
+             (null when the log is unreadable); explain false lists the ranked, the greyed and the
+             dupes. A draft strategy still previews the draft. why: "calls my call", "new
+             multiplier", "<n> points" joined by " \· ", or the reason above. */
+    }
+    attribute def ContestValueOrder {
+        doc /* Smaller first: callers of my call before the others (WstxStrategy D5); then a new
+             multiplier; then more QSO points (unknown 0); then the strongest SNR (unknown last); then
+             sequence. Replaces WSJT-X's first decoded (operator #63). */
+    }
+    attribute def ContestPrompt {
+        doc /* The Contest button of the strategy element opens a modal dialog with its own HALT (the
+             top-bar HALT's action, as WstxStrategy::StrategyEditor); receive keeps running. It reads
+             GET /strategy/contests once at opening, so the pre-fill is current. It offers the
+             profiles; Start and End (UTC, to the minute): the selection in force when it matches, else
+             the profile's period, empty when asked; the schedule in words; the operation with
+             colouring only as the default; the automation text and the notes. When the profile's
+             activity differs from the station's, one line says so. Start with an empty period
+             asks for it and sends nothing; else one PUT /strategy with active null and contest. Cancel
+             changes nothing. In the selector the contest in force is one more option "<name>
+             (contest)"; None or an award strategy sends a PUT without contest (the selector's other
+             rule, WstxStrategy::StrategySelector, is unchanged). */
+    }
+    attribute def ContestView {
+        doc /* With a contest in force the browser renders the verdicts as WstxStrategy::ValueView
+             does, on the same events (a new publication, a save; never a timer). Band Activity lists
+             only the rows with a rank, in rank order under the value sort; rows to my call and the
+             partner rows stay (#50); every other row is hidden. Show all (a toggle in the strategy
+             element, visible only with a contest, off at each page load, kept in the page only)
+             shows them all again without a new request: a dupe and a greyed row dimmed, no colour; a
+             row with a new multiplier has its own colour beside the strategy mark
+             (WstxOperatingLayout::BandActivityColours: only interesting stations). The colour slots of the
+             all-time log (new call, DXCC, zone, grid and LotW) are off while a contest is in force,
+             their reasons leave the hover too, and they come back with its end: QSOs outside the
+             period do not count (the My call slot stays; the Settings choice is unchanged). The hover names "#n",
+             new multiplier and points, or the dupe. The status beside it: "Contest <name> \· <MM-DD
+             HH:MM> to <MM-DD HH:MM> UTC \· colouring only" and, once evaluated, " \· <n> QSOs \· <m>
+             mult \· score <s>". Manual operation stays as it is: every row selects as ever, the
+             double-click and the directive warning unchanged. */
+    }
+    attribute def ContestRun {
+        attribute callsPerStation : Integer = 2;
+        doc /* A contest with operation sp or run is a WstxStrategy::StrategyRun: one run at a time, through
+             the same internal path and the same contact engine, selected only by a browser's PUT
+             /strategy. Unchanged: HALT stops every run from any source and sets the operation to
+             colouring (revision + 1, pushed by strategy.state; the contest and period stay); Esc
+             changes neither; ManualIntervention (a double-click always, the run resumes after the
+             QSO); WatchdogFromOperator; the 8 hour run limit (run_limit) and 60 s without a client
+             (no_client), with the contest staying selected and the reason shown until a new
+             selection; the grant (authority_lost); FreeTxSlot; an AutomationCommand start of what
+             it left is refused operator_required.
+             Waiting reasons in a contest (run.reason while state waiting), besides no_receive,
+             auto_seq and call: activity (the station's activity is not the profile's), band (the
+             station band is not in the profile), outside_period (the station clock is outside
+             [start, end)). It selects nothing and calls nothing until the reason is gone.
+             sp: on each fresh complete publication the list is ContestVerdict with a rank, one per
+             call, not completed in this run on this band and mode nor given up; the first is selected
+             as a strategy run selects. Calls per station 2 (the operator's Contest preset, #39
+             comment 6626497059); no skip (D6): it may come back when alone.
+             run: while waiting and no reason it decides the slot (FreeTxSlot, no called station) and
+             sends enable_tx with no partner, which calls CQ with the activity's Tx6; state
+             calling_cq. WstxContact::CallFirst does not answer a CQ started by automation. On each
+             fresh complete publication of the partner's parity the callers of my call
+             (ContestVerdict kind caller: a dupe has no rank; in ContestValueOrder; not worked in this
+             run on this band and mode, not given up) are read; the first is selected with
+             select_row {replace false}, which keeps Enable Tx, and Tx stays on its slot
+             (FreeTxSlot with that station). No caller: the CQ goes on. In the contact as sp; after
+             completion or 2 calls without progress it waits, so the next step calls CQ again.
+             In calling_cq: a reason appearing disarms and cancels the CQ and it waits; run_limit
+             or no_client disarm and cancel the CQ at once and stop (there is no exchange to
+             end); an operator's selection or cancel makes it manual; a disarm stops it with
+             the cause (tx_watchdog, transmit_stopped): the Tx watchdog counts a repeated CQ like
+             any message, so a Run on a silent band stops at its limit until a new selection (the
+             step that sees the disarm stops it tx_watchdog, and an automatic enable_tx after a
+             watchdog stop is refused besides, WatchdogFromOperator). Every stop
+             and a selection cancel a CQ of the run: none is left to read as the operator's contact.
+             Esc on the run's own CQ ends that CQ; the run calls again.
+             The log: ContestLog of the last build on the station step, built at the selection
+             first; each step of the run asks for it, so a build behind the log runs on its own
+             thread as soon as a QSO is logged, also a manual one, well before the next
+             publication; until it is done a QSO is held off by this run's own completed list. Band Activity follows ContestView; the status
+             names "calling CQ", "<call>", "your QSO", "waiting · <reason>", "stopped · <reason>"
+             or "not started · <reason>" from GET /automation on automation.state only, never a
+             timer. The prompt offers both beside colouring only; AutomationClause forbidden asks
+             WstxOperatingLayout's confirmation with the clause's text and sends
+             automation_confirmed true on Transmit automatically, sends nothing when declined;
+             silent asks nothing, the clause is on the prompt. Start of the selection in force after
+             its run stopped sends None and then the selection, a new selection by the contract
+             (a save of the same contest starts nothing). No band hopping. */
     }
     attribute def ContestDirective {
         doc /* WstxStrategy::DirectedCqRule in a contest activity: the word of the station's
@@ -119,4 +273,13 @@ package WstxContest {
     dependency httpClause from ContestHttp to WstxRequirements::'CL-063-01';
     dependency directiveClause from ContestDirective to WstxRequirements::'CL-063-02';
     dependency directiveOwner from ContestDirective to WstxStrategy::DirectedCqRule;
+    dependency selectionClause from ContestSelection to WstxRequirements::'CL-063-03';
+    dependency promptClause from ContestPrompt to WstxRequirements::'CL-063-03';
+    dependency logClause from ContestLog to WstxRequirements::'CL-063-03';
+    dependency verdictClause from ContestVerdict to WstxRequirements::'CL-063-04';
+    dependency orderClause from ContestValueOrder to WstxRequirements::'CL-063-04';
+    dependency viewClause from ContestView to WstxRequirements::'CL-063-04';
+    dependency runClause from ContestRun to WstxRequirements::'CL-063-05';
+    dependency runSafety from ContestRun to WstxRequirements::'CL-063-06';
+    dependency runPath from ContestRun to WstxStrategy::StrategyRun;
 }

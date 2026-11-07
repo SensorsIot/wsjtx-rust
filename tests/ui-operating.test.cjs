@@ -13,12 +13,12 @@ const {server,browserPort}=require('./support.cjs');
 let browser,root;
 before(async()=>{root=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-operating-'));await fs.mkdir('test-results/ui-operating',{recursive:true});browser=await chromium.launch();});
 after(async()=>{await browser?.close();await fs.rm(root,{recursive:true,force:true});});
-async function fixture(t,viewport,{inputDevice=null,beforeNavigate,deviceScaleFactor=1,control=null}={}){
+async function fixture(t,viewport,{inputDevice=null,beforeNavigate,deviceScaleFactor=1,control=null,env={}}={}){
   const port=await browserPort();
   const dir=await fs.mkdtemp(path.join(root,'station-'));
   const doc={schema_version:1,profile_id:crypto.randomUUID(),revision:0,display_name:'HB9BLA <station>',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin:null},connection_type:'standard',audio:{input_device:inputDevice,output_device:null},control:control??{mode:'disabled',endpoint:null,ptt:'disabled'}};
   await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify(doc));
-  const app=await server({},['--profile',dir]),context=await browser.newContext({viewport,deviceScaleFactor}),page=await context.newPage();
+  const app=await server(env,['--profile',dir]),context=await browser.newContext({viewport,deviceScaleFactor}),page=await context.newPage();
   t.after(async()=>{await context.close();await app.close();});
   const errors=[],sent=[];page.on('pageerror',e=>errors.push(e.message));
   page.on('websocket',ws=>ws.on('framesent',frame=>sent.push(JSON.parse(frame.payload))));
@@ -1014,6 +1014,51 @@ test('TC-044-005 radio settings writes wait for the confirmation dialog and a kn
   for(const id of ['#radio-settings-apply','#radio-settings-undo'])assert.equal(await page.locator(id).isDisabled(),true,id);
   await page.evaluate(()=>radioSettings('apply'));await page.waitForTimeout(500);
   assert.deepEqual(radio,[],'no unconfirmed settings write');assert.equal(await page.locator('#op-confirm[open]').count(),0);
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-039-20; TC-039-021 Settings shows the PSK Reporter feed from one snapshot and pushed
+// events, against a local MQTT peer written from the 3.1.1 packet tables; nothing reaches the broker.
+test('TC-039-021 Settings shows the PSK Reporter status, pushed, and saves the switch',{timeout:60000},async t=>{
+  const sockets=new Set(),received=[];let drop=false;
+  const broker=net.createServer(socket=>{sockets.add(socket);socket.on('error',()=>{});socket.on('close',()=>sockets.delete(socket));
+    if(drop){socket.destroy();return;}
+    let held=Buffer.alloc(0);
+    socket.on('data',data=>{held=Buffer.concat([held,data]);
+      while(held.length>=2&&held.length>=2+held[1]){const type=held[0],id=held.subarray(2,4);received.push(type);held=held.subarray(2+held[1]);
+        if(type===0x10)socket.write(Buffer.from([0x20,2,0,0]));
+        else if(type===0x82)socket.write(Buffer.from([0x90,3,id[0],id[1],0]));
+        else if(type===0xc0)socket.write(Buffer.from([0xd0,0]));}});});
+  await new Promise(resolve=>broker.listen(0,'127.0.0.1',resolve));
+  t.after(()=>{for(const s of sockets)s.destroy();broker.close();});
+  const publish=payload=>{const topic=Buffer.from('pskr/filter/v2/40m/FT8/HB9BLA/K1ABC/JN37/FN42/287/291'),body=Buffer.from(JSON.stringify(payload)),length=2+topic.length+body.length;
+    const header=length>127?[0x30,(length%128)|0x80,length>>7]:[0x30,length];for(const s of sockets)s.write(Buffer.concat([Buffer.from(header),Buffer.from([0,topic.length]),topic,body]));};
+  const requests=[];
+  const {page,app,errors}=await fixture(t,{width:1366,height:768},{env:{WSTX_PSKR:`tcp:127.0.0.1:${broker.address().port}`},beforeNavigate:page=>{page.on('request',r=>{const p=new URL(r.url()).pathname;if(p==='/pskr')requests.push(r.method());});}});
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
+  await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();
+  const status=page.locator('#pskr-status'),box=page.locator('#pskr-enabled');
+  await page.locator('#pskr-enabled:enabled').waitFor();await box.scrollIntoViewIfNeeded();
+  assert.equal(await inViewport(page,'#pskr-enabled'),true,'the switch is in Settings > Logging');
+  assert.equal(await box.isChecked(),true,'on by default');
+  await status.filter({hasText:'Connected'}).waitFor({timeout:20000});
+  assert.equal(await status.textContent(),'Connected \u00b7 no spot yet');
+  publish({f:7075512,md:'FT8',rp:-5,t:Math.floor(Date.now()/1000)-180,sc:'HB9BLA',rc:'K1ABC',b:'40m'});
+  await status.filter({hasText:'last spot'}).waitFor({timeout:10000});
+  await page.locator('#pskr-status',{hasText:'last spot 3 min ago'}).waitFor({timeout:10000});
+  assert.deepEqual(requests,['GET'],'one snapshot; the rest is pushed');
+  // Off: saved, shown, and the peer sees the clean end.
+  await box.uncheck();await page.locator('#pskr-result',{hasText:'Saved'}).waitFor();
+  await status.filter({hasText:'Off'}).waitFor();
+  assert.equal((await (await fetch(app.origin+'/pskr')).json()).enabled,false,'the station stored it');
+  for(let i=0;i<100&&!received.includes(0xe0);i++)await page.waitForTimeout(50);
+  assert.equal(received.includes(0xe0),true,'a clean DISCONNECT');
+  assert.deepEqual([...new Set(received)].filter(type=>![0x10,0x82,0xc0,0xe0].includes(type)),[],'only the handshake, subscribe, ping and disconnect on the wire');
+  // On again, with the broker gone: a named status in Settings, no error anywhere else.
+  drop=true;for(const s of sockets)s.destroy();
+  await box.check();await status.filter({hasText:'Not connected'}).waitFor({timeout:30000});
+  assert.match(await status.textContent(),/^Not connected \u00b7 connection_(closed|lost) \u00b7 retrying$/);
+  assert.doesNotMatch(await page.locator('#operating-workspace').textContent(),/connection_(closed|lost)|PSK/,'never an error on the operating screen');
   assert.deepEqual(errors,[]);
 });
 
@@ -2521,6 +2566,182 @@ test('TC-039-006 Selecting starts it, marks and value order from the verdicts, a
   assert.equal(commands.some(c=>c.action==='enable_tx'),false,'the browser never arms for a strategy; the station run does');
   assert.deepEqual(errors,[]);
 });
+// Proves: CL-063-03, CL-063-04; TC-063-008. The browser sends only the selection with the period,
+// lists what the station's verdicts call callable, and never evaluates. Station replies are
+// hand-written fixtures; the expected requests and rows are written here.
+test('TC-063-008 The contest prompt, colouring only, the callable list and Show all',{timeout:60000},async t=>{
+  let state,view,contact=null;const puts=[],evaluations=[],contestReads=[];
+  const period='2026-10-27T12:00:00.0000000Z';
+  const standard=(from,to='CQ',grid='FN42')=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}});
+  const record=(sequence,text,from,hz,to,grid)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to,grid),period_start_utc:period});
+  const records=[{...record(0,'CQ WW K1ABC FN42','K1ABC',1000,'CQ WW','FN42'),flags:{new_call:true,new_call_band:true}},record(1,'CQ WW W1DUP EM12','W1DUP',1200,'CQ WW','EM12'),record(2,'CQ WW JA1XYZ PM95','JA1XYZ',1400,'CQ WW','PM95'),{...record(3,'CQ POTA W1AW FN31','W1AW',1600,'CQ POTA','FN31'),flags:{new_dxcc:true,new_dxcc_band:true}},record(4,'HB9BLA W1OLD EM12','W1OLD',1800,'HB9BLA','EM12'),record(5,'CQ WW K1PT FN42','K1PT',2000,'CQ WW','FN42')];
+  const profile=(id,name,extra)=>({id,name,cabrillo:null,cabrillo_confirmed:false,activity:'none',bands:['20m'],modes:'',exchange:'',dupes:'band',points:'one_per_call',multipliers:'none',score:'',automation:'silent',automation_text:'The rules do not address automatic operation.',schedule:`${name} schedule`,notes:[`${name} note`],source:'',period:null,...extra});
+  const profiles=[profile('ww_digi','WW Digi',{activity:'ww_digi',automation:'forbidden',automation_text:'A human operator must initiate calling each QSO partner.',period:{start:'2026-08-29T12:00Z',end:'2026-08-30T12:00Z',band:null}}),profile('arrl_vhf_jan','ARRL January VHF',{activity:'na_vhf'})];
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:4,configuration:{continent:null,active:null,strategies:[],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[],most_wanted:null,most_wanted_unreadable:false,most_wanted_attribution:''};
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:period,canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    Object.assign(state.job,{first_sequence:0,next_sequence:6,available_count:6,latest_decode:{id:1,first_sequence:0,next_sequence:6,period_start_utc:period,complete:true}});
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact})}));
+    await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());puts.push(b);view={...view,revision:view.revision+1,configuration:b.configuration};}await route.fulfill({json:view});});
+    await p.route('**/strategy/contests',route=>{contestReads.push(1);return route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,profiles}});});
+    await p.route('**/strategy/evaluate',async route=>{const b=JSON.parse(route.request().postData());evaluations.push(b);
+      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'WW Digi',my_continent:'EU',contest:{qsos:12,multipliers:7,points:30,score:210},verdicts:[{sequence:2,rank:0,grey:false,dupe:false,new_multiplier:true,points:4},{sequence:0,rank:1,grey:false,dupe:false,new_multiplier:false,points:2},{sequence:1,rank:null,grey:false,dupe:true,new_multiplier:false,points:null},{sequence:4,rank:null,grey:false,dupe:true,new_multiplier:false,points:null},{sequence:3,rank:null,grey:true}]}});});
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===6&&document.querySelector('#strategy-contest')?.disabled===false,null,{timeout:25000});
+  const shown=()=>page.locator('#band-activity tr[data-sequence]').evaluateAll(rows=>rows.filter(r=>getComputedStyle(r).display!=='none').map(r=>[r.children[4].textContent,r.className.split(' ').filter(c=>c.startsWith('ba-')&&c!=='ba-cq').join(' ')]));
+  // Without a contest the toggle is hidden, the selector unchanged, nothing evaluated.
+  assert.equal(await page.locator('#activity-show-all').isVisible(),false);
+  assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None']);
+  assert.equal((await shown()).length,6);
+  assert.deepEqual(evaluations,[]);
+  assert.deepEqual(contestReads,[],'no read of the profiles without a contest: a thin link pays for each');
+  const message=text=>page.locator('#band-activity tr[data-sequence]',{hasText:text}).locator('td[data-col=message]');
+  const none='rgba(0, 0, 0, 0)',background=text=>message(text).evaluate(e=>getComputedStyle(e).backgroundColor);
+  assert.notEqual(await background('CQ WW K1ABC'),none,'the all-time colour without a contest');
+  // The prompt: pre-filled from the rule; a contest without a computed period asks and refuses empty.
+  await page.locator('#strategy-contest').click();
+  await page.locator('#contest-prompt[open]').waitFor();
+  assert.equal(await page.inputValue('#cp-start'),'2026-08-29T12:00');
+  assert.equal(await page.inputValue('#cp-end'),'2026-08-30T12:00');
+  assert.match(await page.locator('#cp-notes').textContent(),/A human operator must initiate/);
+  assert.match(await page.locator('#cp-activity').textContent(),/ww digi/);
+  assert.equal(await page.locator('input[name=cp-operation]:checked').inputValue(),'colouring','colouring only is the default');
+  await page.selectOption('#cp-profile','arrl_vhf_jan');
+  assert.equal(await page.inputValue('#cp-start'),'');
+  assert.match(await page.locator('#cp-schedule').textContent(),/enter the date/);
+  await page.locator('#cp-go').click();
+  await page.locator('#cp-result').filter({hasText:'Enter the start'}).waitFor();
+  assert.deepEqual(puts,[],'nothing sent without a period');
+  await page.selectOption('#cp-profile','ww_digi');
+  await page.screenshot({path:'test-results/ui-operating/contest-prompt-1366.png'});
+  await page.locator('#cp-go').click();
+  await page.waitForFunction(()=>!document.querySelector('#contest-prompt').open);
+  assert.deepEqual(puts.map(b=>[b.expected_revision,b.configuration.active,b.configuration.contest]),[[4,null,{profile:'ww_digi',start:'2026-08-29T12:00Z',end:'2026-08-30T12:00Z',operation:'colouring'}]]);
+  // Only what can be called, by value; the new multiplier stands out, the dupe and the directed CQ are gone.
+  for(let i=0;i<60&&!evaluations.length;i++)await page.waitForTimeout(50);
+  assert.deepEqual(evaluations.map(b=>[b.first_sequence,b.next_sequence,b.strategy,b.explain]),[[0,6,null,false]]);
+  await page.waitForFunction(()=>[...document.querySelectorAll('#band-activity tr[data-sequence]')].filter(r=>getComputedStyle(r).display!=='none').length===3);
+  // The row to my call stays although it is a dupe; the all-time colours and reasons are off.
+  assert.deepEqual(await shown(),[['HB9BLA W1OLD EM12','ba-tome ba-dupe'],['CQ WW JA1XYZ PM95','ba-strategy ba-contest-mult'],['CQ WW K1ABC FN42','ba-strategy']]);
+  assert.equal(await background('CQ WW K1ABC'),none,'QSOs outside the period colour nothing');
+  assert.doesNotMatch(await page.locator('#band-activity tr[data-sequence]',{hasText:'CQ WW K1ABC'}).getAttribute('aria-description')??'',/New call/);
+  // The partner of a manual QSO is listed first while its contact stands.
+  contact=partner('replying',{dx_call:'K1PT'});await page.evaluate(()=>window.wstxContact.load());
+  await page.locator('#band-activity tr.ba-partner-stripe').waitFor();
+  assert.equal((await shown())[0][0],'CQ WW K1PT FN42');
+  contact=null;await page.evaluate(()=>window.wstxContact.load());
+  await page.waitForFunction(()=>!document.querySelector('#band-activity tr.ba-partner-stripe'));
+  assert.equal((await shown()).length,3,'the rest stays hidden');
+  assert.equal(await page.inputValue('#strategy-name'),'contest:ww_digi');
+  await page.locator('#station-automation').filter({hasText:'Contest WW Digi · 08-29 12:00 to 08-30 12:00 UTC · colouring only · 12 QSOs · 7 mult · score 210'}).waitFor();
+  await page.screenshot({path:'test-results/ui-operating/contest-list-1366.png'});
+  // Show all brings the rest back, the dupe and the directed CQ dimmed, without a new evaluation.
+  const asked=evaluations.length;
+  await page.locator('#activity-show-all').click();
+  assert.equal(await page.locator('#activity-show-all').getAttribute('aria-pressed'),'true');
+  assert.deepEqual((await shown()).map(r=>r[1]).filter(c=>c.includes('ba-dupe')||c.includes('ba-grey')).sort(),['ba-dupe','ba-grey','ba-tome ba-dupe']);
+  assert.equal((await shown()).length,6);
+  assert.equal(await background('CQ POTA W1AW'),none,'a directed CQ of a new DXCC: no slot colour');
+  await page.locator('#activity-show-all').click();
+  assert.equal((await shown()).length,3);
+  // No client polling: nothing is asked while nothing is published.
+  const reads=contestReads.length;await page.waitForTimeout(1500);assert.equal(contestReads.length,reads);assert.equal(evaluations.length,asked);
+  // Reopening edits the period in force; None ends the contest and shows every row again.
+  await page.locator('#strategy-contest').click();await page.locator('#contest-prompt[open]').waitFor();
+  assert.equal(await page.inputValue('#cp-start'),'2026-08-29T12:00');
+  await page.locator('#contest-prompt button[value=cancel]').click();
+  // A page load with a contest in force reads them once, for its name.
+  const beforeReload=contestReads.length;await page.reload();
+  await page.waitForFunction(()=>document.querySelector('#strategy-name option[value="contest:ww_digi"]')?.textContent==='WW Digi (contest)',null,{timeout:25000});
+  assert.equal(contestReads.length,beforeReload+1);
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===6,null,{timeout:25000});
+  await page.selectOption('#strategy-name','');
+  await page.waitForFunction(()=>document.querySelectorAll('#band-activity tr[data-sequence].ba-hidden').length===0);
+  const last=puts.at(-1).configuration;assert.equal(last.active,null);assert.equal('contest' in last,false,'None drops the contest');
+  assert.equal(await page.locator('#activity-show-all').isVisible(),false);
+  assert.notEqual(await background('CQ WW K1ABC'),none,'the colours are back');
+  // A phone: the prompt fits without a sideways page.
+  await page.setViewportSize({width:360,height:740});
+  await page.locator('#strategy-contest').scrollIntoViewIfNeeded();await page.locator('#strategy-contest').click();await page.locator('#contest-prompt[open]').waitFor();
+  assert.ok(await page.locator('#contest-prompt').evaluate(d=>d.scrollWidth<=d.clientWidth+1&&d.getBoundingClientRect().width<=360));
+  await page.screenshot({path:'test-results/ui-operating/contest-prompt-360.png'});
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-063-05; TC-063-012. Automatic operation: the warning to confirm where the rules forbid
+// it, a note where they are silent; the run state comes with the automation.state push. Station
+// replies are hand-written fixtures; the expected requests are written here.
+test('TC-063-012 Fully automatic: the warning, the confirmation and the run state',{timeout:60000},async t=>{
+  let view,automation={policy:0,runRevision:0,run:null,refusal:null},automationReads=0;const puts=[];
+  const profile=(id,name,extra)=>({id,name,cabrillo:null,cabrillo_confirmed:false,activity:'none',bands:['20m'],modes:'',exchange:'',dupes:'band',points:'one_per_call',multipliers:'none',score:'',automation:'silent',automation_text:'The rules do not address automatic operation.',schedule:`${name} schedule`,notes:[],source:'',period:{start:'2026-08-29T12:00Z',end:'2026-08-30T12:00Z',band:null},...extra});
+  const profiles=[profile('ww_digi','WW Digi',{activity:'ww_digi',automation:'forbidden',automation_text:'A human operator must initiate calling each QSO partner.'}),profile('ft8_activity','FT8 Activity')];
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:1,configuration:{continent:null,active:null,strategies:[],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[],most_wanted:null,most_wanted_unreadable:false,most_wanted_attribution:''};
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base)}));
+    await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());puts.push(b);view={...view,revision:view.revision+1,configuration:b.configuration};}await route.fulfill({json:view});});
+    await p.route('**/strategy/contests',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,profiles}}));
+    await p.route('**/automation',route=>{automationReads++;return route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,policy_revision:automation.policy,run_revision:automation.runRevision,configuration:automation.policy?{strategy:true}:null,run:automation.run,strategy_refusal:automation.refusal}});});
+  }});
+  await page.waitForFunction(()=>document.querySelector('#strategy-contest')?.disabled===false,null,{timeout:25000});
+  const announce=(type,data)=>page.evaluate(([type,data])=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type,data}}})),[type,data]);
+  const open=async op=>{await page.locator('#strategy-contest').click();await page.locator('#contest-prompt[open]').waitFor();if(op)await page.check(`input[name=cp-operation][value=${op}]`);};
+  // Where the rules forbid it: a warning; declined sends nothing, the prompt stays.
+  await open('run');
+  assert.equal(await page.locator('input[name=cp-operation]:checked').inputValue(),'run');
+  await page.locator('#cp-go').click();
+  await page.locator('#op-confirm[open]').waitFor();
+  assert.match(await page.locator('#op-confirm-text').textContent(),/forbid automatic operation.*A human operator must initiate/);
+  await page.screenshot({path:'test-results/ui-operating/contest-warning-1366.png'});
+  await page.locator('#op-confirm button[value=cancel]').click();
+  await page.waitForFunction(()=>!document.querySelector('#op-confirm').open);
+  assert.deepEqual(puts,[],'declined: nothing sent');
+  assert.equal(await page.locator('#contest-prompt[open]').count(),1);
+  // Confirmed: one PUT that says so.
+  await page.locator('#cp-go').click();
+  await page.locator('#op-confirm[open]').waitFor();
+  await page.locator('#op-confirm-ok').click();
+  await page.waitForFunction(()=>!document.querySelector('#contest-prompt').open);
+  assert.deepEqual(puts.at(-1).configuration.contest,{profile:'ww_digi',start:'2026-08-29T12:00Z',end:'2026-08-30T12:00Z',operation:'run',automation_confirmed:true});
+  // The run state: only on the push, no polling.
+  await page.waitForTimeout(200);const reads=automationReads;await page.waitForTimeout(1500);assert.equal(automationReads,reads,'no client polling');
+  automation={policy:1,runRevision:1,refusal:null,run:{id:crypto.randomUUID(),state:'calling_cq',reason:null,mode:'ft8',given_up:[],rested:null}};
+  await announce('automation.state',{policy_revision:1,run_revision:1});
+  await page.locator('#station-automation').filter({hasText:'Contest WW Digi · 08-29 12:00 to 08-30 12:00 UTC · calling CQ'}).waitFor();
+  assert.equal(await page.locator('#station-automation').getAttribute('data-active'),'true');
+  automation={...automation,runRevision:2,run:{...automation.run,state:'waiting',reason:'outside_period'}};
+  await announce('automation.state',{policy_revision:1,run_revision:2});
+  await page.locator('#station-automation').filter({hasText:'waiting · outside period'}).waitFor();
+  automation={...automation,runRevision:3,run:{...automation.run,state:'stopped',reason:'run_limit'}};
+  await announce('automation.state',{policy_revision:1,run_revision:3});
+  await page.locator('#station-automation').filter({hasText:'stopped · run limit'}).waitFor();
+  // Start after a stop: None, then the same selection, so that the station starts a new run.
+  await open();
+  const before=puts.length;
+  await page.locator('#cp-go').click();
+  await page.locator('#op-confirm[open]').waitFor();
+  await page.locator('#op-confirm-ok').click();
+  await page.waitForFunction(()=>!document.querySelector('#contest-prompt').open);
+  assert.deepEqual(puts.slice(before).map(b=>[b.expected_revision,b.configuration.contest?.operation??null]),[[puts[before].expected_revision,null],[puts[before].expected_revision+1,'run']]);
+  // Where the rules are silent: no warning, the clause is on the prompt; no confirmation sent.
+  await open();
+  assert.equal(await page.locator('input[name=cp-operation]:checked').inputValue(),'run','the operation in force');
+  await page.selectOption('#cp-profile','ft8_activity');
+  assert.equal(await page.locator('input[name=cp-operation]:checked').inputValue(),'colouring','colouring only is the default for every contest');
+  assert.match(await page.locator('#cp-notes').textContent(),/do not address automatic operation/);
+  await page.check('input[name=cp-operation][value=sp]');
+  await page.locator('#cp-go').click();
+  await page.waitForFunction(()=>!document.querySelector('#contest-prompt').open);
+  assert.equal(await page.locator('#op-confirm[open]').count(),0);
+  assert.equal('automation_confirmed' in puts.at(-1).configuration.contest,false);
+  assert.equal(puts.at(-1).configuration.contest.operation,'sp');
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-039-01; TC-039-006 the continent is a station setting now.
 test('TC-039-006 Settings > General continent saves to the station strategy store',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});

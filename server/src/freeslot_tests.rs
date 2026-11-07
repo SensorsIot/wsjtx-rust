@@ -1,5 +1,38 @@
 #![forbid(unsafe_code)]
 use super::*;
+
+// Proves: CL-039-21; TC-039-022. A new slot leaves the current one, stays clear of the signals
+// and the called station, and lands nearest what the target decodes; none free keeps it.
+#[test]
+fn decide_away_prefers_what_the_target_decodes() {
+    let row =
+        |hz: f64| json!({"period_start_utc":"2026-11-06T12:00:00.0000000Z","frequency_hz":hz});
+    let parity = parity(
+        Mode::Ft8,
+        parse_utc("2026-11-06T12:00:00.0000000Z").unwrap(),
+    );
+    let records = [row(1000.0)];
+    assert_eq!(
+        decide_away(&records, Mode::Ft8, parity, 1500, Some(2000), &[1020]),
+        (1100, true),
+        "1020 is on the signal at 1000; the edge of its gap is nearest"
+    );
+    assert_eq!(
+        decide_away(&records, Mode::Ft8, parity, 1500, None, &[1500]),
+        (1400, true),
+        "never the slot it leaves, even when the target decodes there"
+    );
+    assert_eq!(
+        decide_away(&records, Mode::Ft8, parity, 1500, None, &[]),
+        (1400, true),
+        "nothing known: the next free slot"
+    );
+    let full: Vec<Value> = (0..30).map(|n| row(f64::from(300 + n * 100))).collect();
+    assert_eq!(
+        decide_away(&full, Mode::Ft8, parity, 1500, None, &[1000]),
+        (1500, false)
+    );
+}
 use serde_json::json;
 
 const FT8: (u32, u32) = (300, 2650);

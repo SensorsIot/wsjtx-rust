@@ -74,7 +74,7 @@ package WstxRequirements {
         doc /* Integrations
              Preserve required external protocols and message formats, including baseline UDP integrations and reception-reporting workflows. The WSJT-X UDP interface is specified by issue #40, CL-040-01..04 (send-only, operator 2026-11-06), contract WstxUdp; reception reporting remains target. */
         attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/network_message.rs; server/src/udp.rs";
+        attribute implementation : String = "server/src/network_message.rs; server/src/udp.rs; server/src/pskr.rs";
     }
     requirement 'FR-013' {
         doc /* EME
@@ -617,7 +617,7 @@ package WstxRequirements {
         doc /* TC-008-002 — Physical controlled FT8 transmit
              CL-009-03, CL-009-04
              Setup: separately approved operation on the HB9BLA IC-7300 (COM3, USB Audio
-             CODEC) into a dummy load or the station antenna at reduced power, profile
+             CODEC) into a dummy load or the station antenna, RF power set low by the test before the first Tx (CI-V 14 0A, value 0003, with the station stopped and idle, because it holds COM3; read back; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported), profile
              with control.ptt cat and the IC-7300 USB output, system clock
              synchronized by the station's SNTP measurement (CL-009-05), the radio's own transmit time-out timer set
              (mandatory, e.g. 3 min) and read back before any keying.
@@ -1126,7 +1126,7 @@ package WstxRequirements {
     verification 'TC-007-007' {
         doc /* TC-007-007 — Live FT8 contact on the IC-7300
              CL-010-01, CL-010-02, CL-010-03, CL-010-04, CL-010-10
-             Setup: deployed candidate on HB9BLA with the IC-7300 (USB audio and CAT, USB-D, 20 m 14.074 MHz or another FT8 dial frequency), operator present at the radio, low power chosen by the operator, Halt Tx and the radio's own power control within reach; transmit authorized by the operator on 2026-10-31 for this test only. An independent receiver (separate WSJT-X station or PSK Reporter reception reports) observes our transmissions.
+             Setup: deployed candidate on HB9BLA with the IC-7300 (USB audio and CAT, USB-D, 20 m 14.074 MHz or another FT8 dial frequency), operator present at the radio, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported), Halt Tx and the radio's own power control within reach; transmit authorized by the operator on 2026-10-31 for this test only; the 30 W instructed by the operator on 2026-11-07. An independent receiver (separate WSJT-X station or PSK Reporter reception reports) observes our transmissions.
              Steps: run a UDP listener on 127.0.0.1:2237 enabled as a WSJT-X UDP target with QSO Logged and Logged ADIF; complete at least one contact answering a real CQ and, if band conditions allow, one by calling CQ, with Auto Seq, without pressing Log QSO; then Enable Tx without operator activity until the Tx watchdog (set to 2 repetitions for the test) stops it; Halt once during a transmission; restart the server.
              Expected: the partner's messages addressed to HB9BLA appear in the Rx Frequency pane with the report we sent echoed back; the independent receiver decodes exactly the transmitted texts in the expected periods and audio offset within 10 Hz; the contact completes per the AutoSequence table with Enable Tx off and logs itself (no review form; the Logbook page lists it); the listener receives one QSO Logged and one Logged ADIF with the same call, reports, times and frequency; contacts.adi contains exactly one record with the independent observations (call, grid, reports, date/time, band, FREQ = dial + Tx offset) after restart; Halt stops RF promptly as observed on the radio; watchdog expiry stops transmission and disarms. Failures are recorded, not reworded as passes.
              5 — Live RF transmission with operator authorization; HB9BLA station PC with the actual IC-7300 and antenna. */
@@ -1762,7 +1762,14 @@ package WstxRequirements {
              test's own clock. Read first: repeating a selection whose slice already reports the
              frequency sends no slice tune and no mode write (command log count unchanged); an
              emulator that does not report the new frequency makes the selection fail visibly with
-             error radio_timeout and leaves no native_readback origin. Two stations whose DAX
+             error radio_timeout and leaves no native_readback origin. The emulator reports a tune
+             only when asked, as the real radio does; a selection is confirmed also with its replies
+             and statuses 130 to 260 ms late, and a repeated selection also sends no sub slice all. One packet in 60 delayed by 4 places counts neither lost nor late; delayed by 6
+             places it counts lost once and late once. Neither opens an epoch or changes the rate. A 400 ms
+             outage after which the count comes back shifted by 9 opens an epoch (native_discontinuity)
+             and changes neither lost nor late: the count starts over, and what waited goes on first.
+             Rust unit tests also check that a duplicate is dropped, whether its first copy still waits or
+             its turn has passed, and the burst limit: 7 lost in a row count lost, 8 read as late. Two stations whose DAX
              status arrives 300 ms late end on different channels, the emulator's audio following
              the channel, not the owner. Datagrams with the own stream ID from another address
              (127.0.0.2, amplitude 0.95) are never accepted. No slice command targets another
@@ -3562,7 +3569,7 @@ package WstxRequirements {
         doc /* TC-043-004 — Live clock from the air on HB9BLA
              CL-043-01, CL-043-02, CL-043-03, CL-009-05
              Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3, USB Audio
-             CODEC, FT8 receive on a band with at least ten stations heard. Steps (1)-(4)
+             CODEC, FT8 receive on a band with at least ten stations heard; for the transmit steps, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported). Steps (1)-(4)
              keep the PC clock disciplined by NTP and need no administrator rights (agents
              have none); step (5), the issue's offset-clock check, is performed by the
              operator with administrator rights.
@@ -3922,10 +3929,10 @@ package WstxRequirements {
     verification 'TC-044-019' {
         doc /* TC-044-019 — Monitoring on HB9BLA
              CL-044-14
-             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, 1 W on 40 m.
-             Steps: transmit during normal operation, compare the frame count in the CI-V log and the transmit timing; check the thresholds against the radio's own meters; transmit with ALC above 0010.
+             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, 40 m, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported); every transmission into a mismatched antenna instead goes at low power, Po at most 5 %, 14 0A set the same way (coordinator decision 2026-11-07, not the operator's).
+             Steps: transmit during normal operation, compare the frame count in the CI-V log and the transmit timing; check the ALC threshold against the radio's own meter; transmit with ALC above 0010; connect a mismatched antenna at low power, check the SWR thresholds against the radio's display at that power first, then transmit until the SWR 3.0 stop.
              Expected: three meter frames per transmission, in the middle; decode by another station unaffected; ALC above 0010 goes down one step at the next transmission until it reads 0010 or less, with no entry below 0060; the ALC and SWR thresholds match the radio's display; a mismatched antenna stops at SWR 3.0.
-             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
+             5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
         objective {
@@ -4050,10 +4057,10 @@ package WstxRequirements {
     verification 'TC-044-016' {
         doc /* TC-044-016 — Set level on HB9BLA
              CL-044-12, CL-044-13
-             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, a dummy load or the 1 W authorization.
+             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, a dummy load or the station antenna, RF power set low by the test before the first Tx (CI-V 14 0A, value 0003, with the station stopped and idle, because it holds COM3; read back; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported).
              Steps: read 15 13, 15 11, 15 12 during Tune and compare with the radio's own meter; press Set level; press HALT during a second run.
              Expected: the meter values agree with the radio's display and the manual's scales; the run ends with the ALC just below rising, the level stored and Tune off; HALT stops it at once and keeps the stored level.
-             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
+             5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
         objective {
@@ -4216,14 +4223,14 @@ package WstxRequirements {
     dependency CL_039_04_to_FR_010 from 'CL-039-04' to 'FR-010';
     dependency CL_039_04_to_FR_019 from 'CL-039-04' to 'FR-019';
     requirement 'CL-039-05' {
-        doc /* Selecting a strategy starts it and None stops it, through the existing station automation and contact engine (no second engine), with no confirmation, no Start and no client decision: the browser sends only the selection and HALT is always on screen. A strategy never calls CQ and goes on after each QSO without a contact limit, waiting for the next opportunity, for at most 8 hours from its selection, also with a browser open (operator decision 2026-11-06, replacing "no time limit": a new selection starts a new 8 hours; at the limit it selects no new station, the contact in progress ends its normal way, and it stops with the reason run_limit until a new selection); it answers callers of my call first, then the best candidate; after calls per station consecutive calls without progress it goes to the best other candidate of the next publication and may come back; it never selects a station the operator cancelled or aborted again in that run, nor one completed in that run on this band and mode; a station that calls me is answered also when it was just left. It follows its grant, not the transport of the selecting request: a page reload or a second tab does not stop it, a revoked grant does. Unattended (operator decision, #39 comment 6685226511): with no authenticated client (a status WebSocket session, or an authenticated MCP request) for 60 s it selects no new station, the contact in progress ends its normal way, and it stops with the reason no_client until a new selection; only a selection restarts it, never an AutomationCommand start. It waits instead of stopping across a receive restart; a refused start or a stop leaves the strategy selected with the reason shown. HALT from any source stops the run and sets active to None, pushed to the browser; Esc does not. A double-click is always possible and is a manual intervention: the strategy stays selected, waits for that QSO to end and resumes. An MCP principal cannot select a strategy. Details: WstxStrategy::StrategyRun, StrategySelector, ManualIntervention, SaneCall; WstxMcp::OperatingAutomation. */
+        doc /* Selecting a strategy starts it and None stops it, through the existing station automation and contact engine (no second engine), with no confirmation, no Start and no client decision: the browser sends only the selection and HALT is always on screen. An award strategy never calls CQ (a contest Run does, CL-063-05) and goes on after each QSO without a contact limit, waiting for the next opportunity, for at most 8 hours from its selection, also with a browser open (operator decision 2026-11-06, replacing "no time limit": a new selection starts a new 8 hours; at the limit it selects no new station, the contact in progress ends its normal way, and it stops with the reason run_limit until a new selection); it answers callers of my call first, then the best candidate; after calls per station consecutive calls without progress it goes to the best other candidate of the next publication and may come back; it never selects a station the operator cancelled or aborted again in that run, nor one completed in that run on this band and mode; a station that calls me is answered also when it was just left. It follows its grant, not the transport of the selecting request: a page reload or a second tab does not stop it, a revoked grant does. Unattended (operator decision, #39 comment 6685226511): with no authenticated client (a status WebSocket session, or an authenticated MCP request) for 60 s it selects no new station, the contact in progress ends its normal way, and it stops with the reason no_client until a new selection; only a selection restarts it, never an AutomationCommand start. It waits instead of stopping across a receive restart; a refused start or a stop leaves the strategy selected with the reason shown. HALT from any source stops the run and sets active to None, pushed to the browser; Esc does not. A double-click is always possible and is a manual intervention: the strategy stays selected, waits for that QSO to end and resumes. An MCP principal cannot select a strategy. Details: WstxStrategy::StrategyRun, StrategySelector, ManualIntervention, SaneCall; WstxMcp::OperatingAutomation. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/automation.rs; server/src/strategy.rs; client/contact.js";
     }
     dependency CL_039_05_to_FR_020 from 'CL-039-05' to 'FR-020';
     dependency CL_039_05_to_FR_007 from 'CL-039-05' to 'FR-007';
     requirement 'CL-039-06' {
-        doc /* The Tx watchdog limits the repetitions of one message (WstxContact::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or a strategy selection from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or strategy selection from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run and MCP requests (including starting or restarting a run) never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a run stops tx_watchdog; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxContact::TxWatchdog. */
+        doc /* The Tx watchdog limits the repetitions of one message (WstxContact::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or a strategy selection from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or strategy selection from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run and MCP requests (including starting or restarting a run) never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a pounce or MCP policy run stops tx_watchdog, while a strategy run's own contact has no stop and is bounded by CL-039-21 instead; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxContact::TxWatchdog. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs; server/src/mcp.rs; server/src/authorization.rs";
     }
@@ -4246,6 +4253,62 @@ package WstxRequirements {
         }
     }
     dependency CL_039_07_verified_by_TC_039_008 from 'CL-039-07' to 'TC-039-008';
+    requirement 'CL-039-21' {
+        doc /* A strategy run never stops transmitting for the Tx watchdog. When the Rep of the message due next has grown by N, or by calls_per_station when that is less: a target known to hear us (a PSK Reporter spot at most 600 s old on this band and mode) keeps the same slot with no limit; a target not known to hear us (no spot, the feed off or unreachable) takes a new free slot near the frequencies the target decodes, and the run goes on. Manual operation, a pounce and an MCP policy run keep the stop at N. A target that hears us is called without a limit only while the run may go on: the no-client rule and the run limit still end it, a station calling my call still comes first, and a partner that has answered keeps the slot without a spot, though only a spot keeps it from being left after its calls. Details: WstxStrategy::StrategyWatchdog, HearingFeed, FreeTxSlot; WstxContact::TxWatchdog. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/automation.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/freeslot.rs; server/src/pskr.rs";
+    }
+    dependency CL_039_21_to_FR_007 from 'CL-039-21' to 'FR-007';
+    dependency CL_039_21_to_FR_008 from 'CL-039-21' to 'FR-008';
+    verification 'TC-039-022' {
+        doc /* TC-039-022 — The repetitions reaching N in a strategy run
+             CL-039-21
+             Setup: the actual station router, contact engine, automation and #9 transmit owner on the recording hardware double, virtual UTC, a feed without a connection fed hand-authored spots, a dial of 7074000 Hz; Tx watchdog 2; a strategy run on 40 m calling K1ABC (CQ at 1800 Hz) from Tx 1500.
+             Steps: send 4 repetitions with: no spot; a spot of my call to K1ABC 60 s old, 590 s old, 601 s old, on 20 m; a spot of my call, the feed off and another spot; a spot to K1ABC from DL1XYZ at 7075000 Hz. Then calls_per_station 1 with the spot of my call and without. Then N 6 and calls_per_station 3 with partner periods between the calls, without a spot until the run left and came back, and with the spot of my call. Heard with no client for CLIENT_GONE, and past the run limit. A pounce and a halted run: the target subscription. N 6, 3 calls, the spot of my call, and a station calling my call in four partner periods. N 2, no spot, the partner's report answered with two repetitions; N 6, 3 calls, no spot, the partner's report and then silent partner periods. N 2, heard, 3 sent, then no client or past the run limit with no publication. N 6, 3 calls: WD:n across the check, with the own period's band full. The engine alone: the run's own contact past the limit, then another contact's exemption. A slot choice leaving a slot the target decodes, and with none free.
+             Expected (hand-worked from WstxStrategy::FreeTxSlot): every repetition keyed, armed, tx_expired false and the run in contact_active in every row. Heard (60 s, 590 s): Tx stays 1500, slot_check hears_us true. No spot, 601 s, 20 m, feed off: 1400 at the 2nd, 1300 at the 4th, hears_us false. DL1XYZ's frequency: 1000 at the 2nd, 900 at the 4th. Calls per station 1: heard, rested null and K1ABC still armed; not heard, rested K1ABC. N 6 with 3 calls: Tx 1500 for 2 calls, 1400 at the 3rd, rested K1ABC after the partner period following the 3rd call, then K1ABC armed again from 1400; heard: Tx 1500, rested null and armed after 5 calls. Heard with no client or past the run limit: disarmed, stopped no_client or run_limit. The caller: the contact on DL1XYZ, armed. The answer: Tx 1500, armed, slot_check hears_us true; then rested K1ABC after its calls. Times of i64 MIN and MAX: no overflow, too old or counted as now. Unattended: never keyed again, stopped no_client or run_limit. Subscription: K1ABC in the run, none after HALT, none for a pounce. WD: 3, 2, 1, then 3 after the check; no free slot keeps Tx 1500 with tx_slot free false. Engine: remaining calls count down to the next check, repetitions 4 sent; another contact's exemption stops at N without a send (cause tx_watchdog). The slot choice: never the slot it leaves; none free keeps it, free false. Manual stop at N: TC-008-001; a pounce stops at N: TC-039-005.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF, no network. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-21';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs; server/src/contact_tests.rs; server/src/freeslot_tests.rs";
+    }
+    dependency CL_039_21_verified_by_TC_039_022 from 'CL-039-21' to 'TC-039-022';
+    requirement 'CL-039-20' {
+        doc /* A read-only PSK Reporter MQTT feed tells the station whether the current target hears my call and which frequencies it decodes: two exact subscriptions (my call as sender; the strategy target as receiver, replaced when the target changes), never a wildcard from a decoded call, TLS against compiled-in roots, an identifiable client id, bounded reconnect backoff, bounded memory, spots expiring after 600 s, a spot of another band or mode ignored. Settings shows the switch (on by default) and the status, pushed. It sends nothing but the handshake, keep-alive and subscriptions; everything works without it: no connection is unknown, never an operator error, and receive and the 50 ms station step never wait on it. Details: WstxStrategy::HearingFeed. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/pskr.rs; server/src/main.rs; server/src/contact_http.rs; server/src/recording.rs; client/contact.js";
+    }
+    dependency CL_039_20_to_FR_007 from 'CL-039-20' to 'FR-007';
+    dependency CL_039_20_to_FR_012 from 'CL-039-20' to 'FR-012';
+    verification 'TC-039-020' {
+        doc /* TC-039-020 — The PSK Reporter feed against a local peer
+             CL-039-20
+             Setup: no network. A local TCP peer whose packets are written from the OASIS MQTT 3.1.1 tables; hand-authored payloads in the form of the broker's published schema; the certificate chain the broker presented on 2026-11-06, captured once as a fixture; shortened session timings; the actual station router for the routes.
+             Steps: parse a full spot, one without t_tx, and malformed ones; build filters from my call, a target and hostile calls (wildcards, slash, space, lower case, control and non-ASCII characters, overlong); record spots past the window, on another band or mode, past each bound, repeated and ahead of the clock; read the decoded offsets of a 7074000 Hz dial; encode each packet and parse whole, split and hostile input; step the backoff; run a session and change the target, send a non-spot and spots with another sender and receiver than the topic says, wait for a ping, switch off; a peer that drops five connections and then accepts; peers that refuse CONNECT, refuse SUBSCRIBE, send a reserved packet; the setting by default, after a save, from another profile and broken; WSTX_PSKR values; verify the captured chain against the compiled-in roots, with another name and after it expired; a peer without TLS; GET and POST /pskr with and without a feed, an extra key, a query.
+             Expected: exactly pskr/filter/v2/+/+/HB9BLA/+/# and pskr/filter/v2/+/+/+/K1ABC/#, no filter for any hostile call; hears us exactly up to 600 s, on that band and mode; offsets [1200, 800] for 7075200 and 7074800 Hz, none from another band, mode, receiver or from my own spot, none outside the range; at most 256 and 128 entries, 32 offsets, newest kept; packets equal the hand table; hostile input is protocol_error; delays 5, 10, 20, 40, 80, 160, 300, 300 s, 5 s after a reset; on the wire only CONNECT, SUBSCRIBE, UNSUBSCRIBE, PINGREQ, DISCONNECT; the old target unsubscribed, the hostile one not subscribed; the spot counts by its payload; off forgets everything; attempts at least 40, 80, 160, 160, 160 ms apart with the shortened timing, the status naming the error, recovery without any action; connection_refused, subscribe_refused, protocol_error; on by default, the save kept, invalid_pskr for the other two; only a loopback tcp: value replaces the broker; the chain valid on capture, refused otherwise; tls_failed with TLS spoken first; 404 without a feed, the exact view with one, other requests refused.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF, no network. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-20';
+        }
+        attribute executable : String = "server/src/pskr_tests.rs";
+    }
+    dependency CL_039_20_verified_by_TC_039_020 from 'CL-039-20' to 'TC-039-020';
+    verification 'TC-039-021' {
+        doc /* TC-039-021 — Settings shows the PSK Reporter status, pushed
+             CL-039-20
+             Setup: the actual isolated station with WSTX_PSKR pointing at a local MQTT peer in the test, Chromium at 1366 x 768.
+             Steps: open Settings > Logging; wait for the connection; publish a spot of my call 180 s old; uncheck the switch; drop the peer and check the switch again.
+             Expected: the switch is in view and on by default; "Connected · no spot yet", then "Connected · last spot 3 min ago", with exactly one GET /pskr; "Off" and Saved after the switch, the station stores it and the peer sees DISCONNECT and no packet other than CONNECT, SUBSCRIBE, PINGREQ, DISCONNECT; "Not connected · <code> · retrying" with the broker gone; no page error.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF, no network. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-20';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_039_20_verified_by_TC_039_021 from 'CL-039-20' to 'TC-039-021';
     requirement 'CL-039-08' {
         doc /* Hold Tx is on by default (operator decision 2026-11-04, #39; consistent with the split-frequency rule): a station starts with settings.hold_tx true, in manual operation and for a strategy alike, so selecting or answering a station moves Rx and never Tx; Tx stays on the operator's chosen slot until an explicit Tx action (the Tx input, a waterfall Tx pointer action, the Hound's own rule, a run's free slot: WstxStrategy::FreeTxSlot). The operator may switch it off with set_hold_tx; the choice lasts for the station's running session, since contact settings are not persisted, so no stored value can override the default. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -4267,7 +4330,7 @@ package WstxRequirements {
     }
     dependency CL_039_08_verified_by_TC_039_009 from 'CL-039-08' to 'TC-039-009';
     requirement 'CL-039-09' {
-        doc /* A strategy run or a pounce calls from a free audio slot chosen between QSOs from the last 4 decoding periods of my Tx parity on the current band (when these fill the band, the 3, 2 or 1 most recent), with 50 Hz clear of every occupied signal, inside 300..2700 Hz; the slot nearest the current Tx, then the lowest, so it changes only when the current one has become busy; Tx stays there for the whole QSO. No free slot keeps the current Tx, still calls and says so in the status. In every case Tx is never within 50 Hz of the called station's signal when calling it, also with no free slot. Details: WstxStrategy::FreeTxSlot. */
+        doc /* A strategy run or a pounce calls from a free audio slot chosen between QSOs from the last 4 decoding periods of my Tx parity on the current band (when these fill the band, the 3, 2 or 1 most recent), with 50 Hz clear of every occupied signal, inside 300..2700 Hz; the slot nearest the current Tx, then the lowest, so it changes only when the current one has become busy; Tx stays there for the whole QSO, except that CL-039-21 moves it while the partner has not answered. No free slot keeps the current Tx, still calls and says so in the status. In every case Tx is never within 50 Hz of the called station's signal when calling it, also with no free slot. Details: WstxStrategy::FreeTxSlot. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/freeslot.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js";
     }
@@ -4554,8 +4617,8 @@ package WstxRequirements {
         doc /* TC-039-005 — The Tx watchdog stop is never ended by automation
              CL-039-06
              Setup: as TC-039-004; for the unit cases the #9 Core on the hardware double; counts per WstxContact::TxWatchdog (#39, 2026-11-06).
-             Steps: (1) browser limit 2; a strategy selected from the browser with calls per station 20; publish CQ K1ABC at E; transmit the call at E+15 s and its repeat at E+45 s; reach E+75 s; cancel, select None and the strategy again from the browser and publish another CQ. (2) MCP and browser: an MCP Enable Tx before any browser action; browser limit 1; an MCP Enable Tx (CQ) transmitted at E+15 s; MCP set_frequency; MCP set_watchdogs 99; reach E+45 s; a station calls HB9BLA in period E+30 s; an MCP Enable Tx; an MCP run start and a matching CQ; a browser action and an MCP Enable Tx. (3) MCP route: browser limit 1, an MCP Enable Tx and its CQ, MCP-principal commands through the tool and straight to /contact/command, then MCP Enable Tx on both. Unit: automatic arm before any operator action; activity, limit 2, automatic arm; operator arm.
-             Expected: (1) remaining calls 1 after the first call (the run's selection does not extend it), the request at E+75 s is never keyed, the run stops tx_watchdog with the strategy still selected, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the new selection arms again. (2) refused tx_watchdog; not spent after the one CQ and the MCP command, set_watchdogs refused operator_required, the next CQ never keyed and spent, still spent after the caller (an answer after a stop ends nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; still spent after an unrelated browser action; after a browser Enable Tx not spent and the MCP Enable Tx arms. (3) after the stop spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
+             Steps: (1) browser limit 2; a pounce on K1ABC started from the browser (a strategy run has no stop: TC-039-022); publish CQ K1ABC at E; transmit the call at E+15 s and its repeat at E+45 s; reach E+75 s; cancel, select a strategy from the browser and publish another CQ. (2) MCP and browser: an MCP Enable Tx before any browser action; browser limit 1; an MCP Enable Tx (CQ) transmitted at E+15 s; MCP set_frequency; MCP set_watchdogs 99; reach E+45 s; a station calls HB9BLA in period E+30 s; an MCP Enable Tx; an MCP run start and a matching CQ; a browser action and an MCP Enable Tx. (3) MCP route: browser limit 1, an MCP Enable Tx and its CQ, MCP-principal commands through the tool and straight to /contact/command, then MCP Enable Tx on both. Unit: automatic arm before any operator action; activity, limit 2, automatic arm; operator arm.
+             Expected: (1) remaining calls 1 after the first call (the run's selection does not extend it), the request at E+75 s is never keyed, the run stops tx_watchdog, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the selection arms again. (2) refused tx_watchdog; not spent after the one CQ and the MCP command, set_watchdogs refused operator_required, the next CQ never keyed and spent, still spent after the caller (an answer after a stop ends nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; still spent after an unrelated browser action; after a browser Enable Tx not spent and the MCP Enable Tx arms. (3) after the stop spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
              2 — Isolated automated functional tests; Windows development PC, transmit double; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -4587,7 +4650,7 @@ package WstxRequirements {
     verification 'TC-039-007' {
         doc /* TC-039-007 — Live strategy on HB9BLA
              CL-039-03, CL-039-04, CL-039-05, CL-039-06
-             Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 at 1 W on 40 m FT8, operator consent; Tx watchdog 6 repetitions (the profile default).
+             Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 on 40 m FT8, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported), operator consent; Tx watchdog 6 repetitions (the profile default).
              Steps: create an award strategy (goal new_call, region dx, Treat 73 as CQ); select it; let it work two stations; HALT; select it again; Esc during a QSO; select None; in Settings > General click Update Most Wanted once.
              Expected: the stations it would call are marked and on top by value, CQ NA/AS and same-continent CQ DX greyed; no CQ is transmitted; it answers callers first, then the best candidate, to a logged QSO, and goes on; HALT stops at once and the selector shows None; Esc aborts the QSO, gives the station up and the strategy goes on; None stops it; a station restart leaves None; Update Most Wanted fetches the list once and the status shows its date, its entries and how many are not mapped.
              5 — Live with RF on the station, operator consent; not run by the automated gate. */
@@ -5541,10 +5604,10 @@ package WstxRequirements {
     verification 'TC-061-007' {
         doc /* TC-061-007 — Tx periods on HB9BLA
              CL-061-04
-             Setup: the gated candidate installed on HB9BLA, 40 m FT8 and FT4, CQ at 1 W, one browser on the LAN.
+             Setup: the gated candidate installed on HB9BLA, 40 m FT8 and FT4, CQ, RF power set low by the test before the first Tx (CI-V 14 0A, value 0003, with the station stopped and idle, because it holds COM3; read back; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported), the operator's consent, one browser on the LAN.
              Steps: call CQ for at least three own periods; watch Band Activity, the waterfall, the meter and the error field; read GET /receive during a Tx period.
              Expected: each Tx period shows the Tx marker and no empty block, its waterfall rows are Tx rows, no "Audio level low" entry appears in or right after a Tx period, the receive periods decode and show their level; audio.loss_epochs does not grow from the transmissions; HALT stops the transmission as before.
-             3 — Live on the station with transmission; with the operator at acceptance. */
+             5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
         objective {
@@ -5575,10 +5638,10 @@ package WstxRequirements {
     verification 'TC-061-009' {
         doc /* TC-061-009 — The Tx band on HB9BLA
              CL-061-05
-             Setup: the installed station on HB9BLA, IC-7300, the operator's browser in its usual theme.
+             Setup: the installed station on HB9BLA, IC-7300, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported), the operator's consent, the operator's browser in its usual theme.
              Steps: run a QSO with several Tx periods and look at the waterfall during and after them.
              Expected: each Tx period shows only a thin dark red band; no white or grey band appears while transmitting; the time labels below a band are the source times of those rows.
-             3 — Live on the station with transmission; with the operator at acceptance. */
+             5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
         objective {
@@ -5655,5 +5718,152 @@ package WstxRequirements {
         attribute executable : String = "server/src/strategy_tests.rs::tc_063_004_the_directive_table_in_a_contest_activity; server/src/strategy_tests.rs::tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation";
     }
     dependency CL_063_02_verified_by_TC_063_004 from 'CL-063-02' to 'TC-063-004';
+
+    requirement 'CL-063-03' {
+        doc /* The operator selects a contest with its period through a prompt pre-filled from the schedule rule (empty for ARRL January VHF, which the prompt asks), shown with the strategy and editable; colouring only is the default and starts no run. It is exclusive with an award strategy, is held in station memory only, and None ends it. The log is evaluated only inside that period: dupes by the profile's rule, multipliers, points and the score. Choosing an activity sets no strategy and selecting a contest sets no activity. Details: WstxContest::ContestSelection, ContestLog, ContestPrompt. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contest.rs; server/src/strategy.rs; server/src/logbook.rs; client/contact.js";
+    }
+    dependency CL_063_03_to_FR_024 from 'CL-063-03' to 'FR-024';
+    dependency CL_063_03_to_FR_019 from 'CL-063-03' to 'FR-019';
+    requirement 'CL-063-04' {
+        doc /* With a contest in force Band Activity lists only the stations that can be called (non-dupe in the period, directive allows it, a CQ or an RR73/73, on a band of the contest), ordered by callers of my call, new multiplier, QSO points, SNR, with the partner on top; a Show all toggle (off) shows the rest. Colour only for the callable, a new multiplier apart; a dupe and a directed CQ dimmed. The station evaluates, the browser renders after a publication, never on a timer. A contest also works by hand: every row stays selectable with Show all. Details: WstxContest::ContestVerdict, ContestValueOrder, ContestView. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contest.rs; server/src/strategy.rs; client/contact.js; client/recording.css";
+    }
+    dependency CL_063_04_to_FR_024 from 'CL-063-04' to 'FR-024';
+    dependency CL_063_04_to_FR_010 from 'CL-063-04' to 'FR-010';
+    verification 'TC-063-005' {
+        doc /* TC-063-005 \— The points and multiplier rules
+             CL-063-03
+             Setup: distances computed apart from this code (haversine, R 6371 km; IARU 111.2 km per degree): JN37-FN42 5894.6 km, JN37-JO62 701.6, JN37-JN38 111.2, JN37-PM95 9624.3.
+             Steps: each points rule for those pairs, a six-character locator, the same square, no grid; the VHF band tables; Field Day per mode; the multiplier keys.
+             Expected: WW 2, 1, 1, 4; ARRL 13, 3, 2, 21; IARU 5895, 702, 112, 9625; the same large square 50; ARRL same square 2 (the minimum distance value); no grid none; 1 per call; January 1,1,2,2,4,4,8,8 and June/September 1,1,2,2,3,3,4,4 for 6 m, 2 m, 1.25 m, 70 cm, 33 cm, 23 cm, 13 cm, 3 cm; Field Day digital 2, CW 2, phone 1; keys FN|20m and FN42|6m, none without a rule or a grid.
+             2 \— Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-03';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_005_the_points_rules_by_hand";
+    }
+    dependency CL_063_03_verified_by_TC_063_005 from 'CL-063-03' to 'TC-063-005';
+    verification 'TC-063-006' {
+        doc /* TC-063-006 \— The log inside the period, the dupe rules and the verdicts
+             CL-063-03, CL-063-04
+             Setup: hand-written QSO lists and decoded records for HB9BLA JN37 in EU on 20 m with activity ww_digi.
+             Steps: a WW Digi log with a QSO before the period, one at its exclusive end, a repeat in FT4, another band, SSB and 30 m; ARRL VHF with a rover and without a grid; Field Day SSB; FT8 Activity on another band; ARRL Digi with RTTY. Verdicts for a known field, a new far field, a new near field, a dupe, CQ NA, no CQ, another station's RR73, a weak caller, a dupe caller; on 30 m; without a log; a /R CQ in ARRL VHF and IARU.
+             Expected: 2 QSOs, 2 multipliers, 4 points, score 8, nothing outside the period counted; VHF dupe on the same grid only, every grid without a logged grid; Field Day digital no dupe of SSB; a Field Day exchange to my call a caller with 2 points or a dupe, to another call not a CQ; FT8 Activity a dupe on another band; ARRL Digi 1 QSO, 13 points, score 13. Rank order caller, far new multiplier, near new multiplier, the known field, the RR73; the dupes rank null with dupe true, also the caller; greyed CQ NA; nothing ranked on 30 m or without a log; the wire form of a verdict; the rover ranked in ARRL VHF, refused callsign guard in IARU.
+             2 \— Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-03';
+            verify 'CL-063-04';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_006_only_the_period_counts_and_each_dupe_rule; server/src/contest_tests.rs::tc_063_006_verdicts_callable_by_value; server/src/contest_tests.rs::tc_063_006_a_field_day_exchange_to_my_call_is_a_caller";
+    }
+    dependency CL_063_03_verified_by_TC_063_006 from 'CL-063-03' to 'TC-063-006';
+    dependency CL_063_04_verified_by_TC_063_006 from 'CL-063-04' to 'TC-063-006';
+    verification 'TC-063-007' {
+        doc /* TC-063-007 \— The contest selection on the store and the evaluate route
+             CL-063-03, CL-063-04
+             Setup: exact-parse table; the actual station router on a disposable selected HTTPS profile (HB9BLA, JN47AA) on 40 m with an imported log (one QSO inside the period, one before), an injected FT8 live job with CQ WW W1DUP, K1OLD and JA1XYZ, activity ww_digi.
+             Steps: each refused selection form; PUT with a contest; read strategy.json; a new owner; the automation snapshot; PUT with a strategy and a contest; a period with end not after start; evaluate; PUT without contest; evaluate.
+             Expected: each field named; the configuration echoes the contest, the file holds none, a new owner has none, no run; 400 field contest and contest.end; verdicts JA1XYZ rank 0 new multiplier 4 points, K1OLD rank 1, W1DUP dupe with rank null; tally 1 QSO, 1 multiplier, 3 points, score 3 (JN47-EM12 8469.4 km); strategy WW Digi; after None the key is gone and evaluate says not_configured.
+             2 \— Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-03';
+            verify 'CL-063-04';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_007_a_selection_is_parsed_exactly; server/src/strategy_tests.rs::tc_063_007_a_contest_selection_store_and_evaluation";
+    }
+    dependency CL_063_03_verified_by_TC_063_007 from 'CL-063-03' to 'TC-063-007';
+    dependency CL_063_04_verified_by_TC_063_007 from 'CL-063-04' to 'TC-063-007';
+    verification 'TC-063-008' {
+        doc /* TC-063-008 \— The contest prompt, the callable list and Show all in the browser
+             CL-063-03, CL-063-04
+             Setup: actual browser with hand-written station replies for the receive results, GET and PUT /strategy, GET /strategy/contests and POST /strategy/evaluate.
+             Steps: no contest; the prompt on WW Digi; a page reload with the contest in force; ARRL January VHF without a date; Start, with a row to my call that is a dupe, rows carrying all-time flags (new call, new DXCC) and a row of the partner; the partner's contact prepared and ended; Show all on and off; 1.5 s of silence; reopen; None; the prompt at 360 px.
+             Expected: the toggle hidden, the selector unchanged, nothing evaluated and no read of /strategy/contests without a contest; one read at the prompt, and one after the reload, which names the contest in the selector; the rule's period pre-filled, the clause, the activity line, colouring only checked; January empty and refused with no request; one PUT with active null and the contest; one evaluation; the row to my call stays beside JA1XYZ with the multiplier colour and K1ABC, the status with period and tally; no all-time slot colour and no new-call or new-DXCC reason on any row; a partner row is listed first while its contact stands, and hidden after; Show all adds the dupe and the directed CQ dimmed, without a slot colour, with no new request; no request during the silence; the period in force on reopening; None sends no contest, shows every row and brings the slot colour back; no sideways overflow on the phone.
+             2 \— Isolated automated browser test; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-03';
+            verify 'CL-063-04';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_063_03_verified_by_TC_063_008 from 'CL-063-03' to 'TC-063-008';
+    dependency CL_063_04_verified_by_TC_063_008 from 'CL-063-04' to 'TC-063-008';
+    requirement 'CL-063-05' {
+        doc /* Fully automatic is offered beside colouring only as S&P or Run. S&P calls the most valuable callable station, Run calls CQ with the contest's message and answers the most valuable non-dupe caller (new multiplier, QSO points, SNR), not the first decoded. Where the rules forbid automatic operation the browser shows the clause as a warning and transmits only after the operator's confirmation, and the station refuses without it; where they are silent a short note. It waits while the activity, the band or the period do not fit the contest; a contest can still be operated by hand. Details: WstxContest::ContestRun, AutomationClause, ContestSelection. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/automation.rs; server/src/contest.rs; server/src/strategy.rs; server/src/logbook.rs; client/contact.js";
+    }
+    dependency CL_063_05_to_FR_024 from 'CL-063-05' to 'FR-024';
+    dependency CL_063_05_to_FR_020 from 'CL-063-05' to 'FR-020';
+    requirement 'CL-063-06' {
+        doc /* The safety of a contest run stays on the server and is that of an award strategy run: HALT from any source ends it (the contest stays, colouring only), Abort QSO (Esc) ends the QSO only, the Tx watchdog stops it, with no client for 60 s or after 8 hours it starts nothing new and its own CQ ends at once, only a browser's selection starts it, and a double-click is a manual intervention it resumes after. Details: WstxContest::ContestRun, WstxStrategy::StrategyRun, ManualIntervention, WatchdogFromOperator. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/automation.rs; server/src/strategy.rs";
+    }
+    dependency CL_063_06_to_FR_024 from 'CL-063-06' to 'FR-024';
+    dependency CL_063_06_to_FR_020 from 'CL-063-06' to 'FR-020';
+    verification 'TC-063-009' {
+        doc /* TC-063-009 — Search and pounce, and the automation clause
+             CL-063-05
+             Setup: the selection form table; the actual station router (HB9BLA JN47AA) with the contact engine and #9 transmit owner on the recording hardware double, virtual UTC, on 20 m, an imported QSO with W1DUP inside the period; a status session held open.
+             Steps: each forbidding and silent profile with sp and run with and without the confirmation; PUT sp without it; set_activity alone; sp with activity none, on 30 m, then fitting; CQ WW W1DUP (strongest), K1ABC and JA1XYZ (weakest); empty partner periods; W1DUP alone; a selection whose period starts in an hour; a run with a manual replacing QSO with W9XYZ to its end, the log rebuilt, then W9XYZ's CQ alone.
+             Expected: refused contest.automation_confirmed where forbidden, accepted where silent; no run after the refused PUT and after set_activity; reasons activity, band, none; never a CQ; JA1XYZ selected and armed, Tx2 with the grid; after 2 partner periods without progress waiting, disarmed; nothing armed for the dupe alone; outside_period and nothing armed; the manual QSO's station a dupe, nothing armed.
+             2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-05';
+        }
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_009_automatic_needs_the_confirmation_only_where_the_rules_forbid_it; server/src/strategy_tests.rs::tc_063_009_search_and_pounce_calls_the_most_valuable_and_waits_for_what_it_needs; server/src/strategy_tests.rs::tc_063_009_a_manual_qso_of_the_period_is_a_dupe_for_the_next_evaluation";
+    }
+    dependency CL_063_05_verified_by_TC_063_009 from 'CL-063-05' to 'TC-063-009';
+    verification 'TC-063-010' {
+        doc /* TC-063-010 — Run: CQ and the most valuable caller
+             CL-063-05
+             Setup: as TC-063-009, activity ww_digi, run selected.
+             Steps: a step; callers W1DUP (dupe, strongest), K1ABC (first non-dupe decoded), JA1XYZ (weakest, new multiplier, most points); its R and 73; steps; JA1XYZ again; once the log is rebuilt, callers JA2ABC PM85 (more points) and K1NEW FN42; Abort of that QSO; an empty period; Abort of the run's own CQ; the band leaves the contest and returns; the station clock past the period's end.
+             Expected: calling_cq, armed, Tx6 "CQ WW HB9BLA JN47"; JA1XYZ answered with 2 candidates, not the first, not the strongest, not the dupe; completed, then calling_cq again with 1 completed; not answered again; K1NEW selected, PM being no new multiplier any more; after that Abort calling_cq; the CQ goes on; after Abort of the CQ calling_cq, armed, with a new contact id and operation run; waiting band and disarmed, then calling_cq and armed again; waiting outside_period and disarmed.
+             2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-05';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs::tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller";
+    }
+    dependency CL_063_05_verified_by_TC_063_010 from 'CL-063-05' to 'TC-063-010';
+    verification 'TC-063-011' {
+        doc /* TC-063-011 — The safety of a contest run
+             CL-063-06
+             Setup: as TC-063-010, the run calling CQ.
+             Steps: an MCP configure with strategy true; a browser's replace selection of a CQ; Abort; HALT by route; a new selection, the clock past 8 hours; a new selection, every session gone and the clock past 60 s; a new selection, then colouring, then a new selection; a watchdog limit of 2 with two CQs sent, the third period and a caller; a new selection, Enable Tx off, colouring, a new selection.
+             Expected: operator_required; manual with the operator's contact; after Abort calling_cq with operation run; halted, operation colouring, disarmed; run_limit and no_client, disarmed, the contest selected with its operation; stopped and disarmed for colouring, calling_cq again with no CQ left behind; tx_watchdog, not keyed again, still disarmed with the caller, the contest selected with operation run; transmit_stopped, then calling_cq again.
+             2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-06';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs::tc_063_011_the_safety_of_a_contest_run_stays_on_the_server; server/src/strategy_tests.rs::tc_063_011_the_tx_watchdog_stops_a_run_on_a_silent_band";
+    }
+    dependency CL_063_06_verified_by_TC_063_011 from 'CL-063-06' to 'TC-063-011';
+    verification 'TC-063-012' {
+        doc /* TC-063-012 — Fully automatic in the browser
+             CL-063-05
+             Setup: actual browser with hand-written replies for GET and PUT /strategy, GET /strategy/contests and GET /automation.
+             Steps: Run on WW Digi, Start, decline; Start, confirm; 1.5 s of silence; automation.state pushes for calling_cq, waiting outside_period and stopped run_limit; reopen and Start the same selection; reopen; FT8 Activity with S&P.
+             Expected: the warning with the clause, nothing sent when declined and the prompt still open; one PUT with operation run and automation_confirmed true; no read of /automation during the silence; the status names each; two PUTs, without a contest and then with it; the operation in force on reopening, colouring as the default of another contest, the note; no warning and no automation_confirmed for FT8 Activity.
+             2 — Isolated automated browser test; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-063-05';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_063_05_verified_by_TC_063_012 from 'CL-063-05' to 'TC-063-012';
 
 }

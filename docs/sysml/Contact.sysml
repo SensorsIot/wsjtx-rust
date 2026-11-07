@@ -494,7 +494,7 @@ package WstxContact {
              auto_tx_mode(true); AutoRespondPeriod.cpp ~11-32
              isDirectAutoRespondCandidate: addressed to my call, a callsign sender other
              than me, an exchange that is not R+report, RRR, RR73 or 73): while the
-             contact is calling (an own CQ started by the operator; an MCP run keeps its own rules, WstxMcp; a strategy never calls CQ) with Enable Tx,
+             contact is calling (an own CQ started by the operator; an MCP run keeps its own rules, WstxMcp; an award strategy never calls CQ, and a contest Run answers its callers itself, WstxContest::ContestRun) with Enable Tx,
              Auto Seq and Call 1st on (WSJT-X AutoRespondPeriod.cpp observePeriod opens
              the respond period only while Enable Tx is on), the first decoded row of the step, in decode order (row
              sequence), that is a standard message to my call from a concrete call in the
@@ -709,7 +709,8 @@ package WstxContact {
              TxWatchdog ~3749, MW tx_watchdog ~14646, and the unanswered count of
              2026-11-04): the Tx watchdog limits how often one message is repeated, in
              manual operation and under automation alike, whatever the message (CQ,
-             Tx1..Tx5, free text). Server-owned station-session setting: limit 1..99
+             Tx1..Tx5, free text), except a strategy run's own contact, which has no stop and
+             counts WD:n down to its next check (WstxStrategy::StrategyWatchdog). Server-owned station-session setting: limit 1..99
              repetitions, default 6 at each station start. DIFFERENT: WSJT-X 0 = disabled
              is not offered; a safety bound always applies.
              It keeps no count of its own: the repetition count is the Rep of the

@@ -60,6 +60,25 @@ pub(crate) fn decide(
         (None, None) => (current, false),
     }
 }
+/// WstxStrategy::StrategyWatchdog: a new slot away from `current`, nearest what the target
+/// decodes. No free slot: `current`, not free.
+pub(crate) fn decide_away(
+    records: &[Value],
+    mode: Mode,
+    tx_parity: Parity,
+    current: u32,
+    called: Option<u32>,
+    preferred: &[u32],
+) -> (u32, bool) {
+    let (bounds, width) = (band(mode), width_hz(mode));
+    let found = (1..=RECENT_PERIODS).rev().find_map(|periods| {
+        let mut occupied = recent_signals(records, mode, tx_parity, periods);
+        occupied.push((current, width));
+        occupied.extend(called.map(|hz| (hz, width)));
+        choose(&occupied, bounds, width, current, preferred)
+    });
+    (found.unwrap_or(current), found.is_some())
+}
 /// The signals of the last `periods` periods of `tx_parity` that decoded anything.
 fn recent_signals(records: &[Value], mode: Mode, tx_parity: Parity, periods: usize) -> Vec<Signal> {
     let period = |v: &Value| {
@@ -79,9 +98,7 @@ fn recent_signals(records: &[Value], mode: Mode, tx_parity: Parity, periods: usi
 }
 /// The free slot nearest `preferred` (when given), then nearest `current`, then the lowest;
 /// None when `bounds` hold no free slot. A signal of `width` at a slot must keep MARGIN_HZ
-/// from each occupied signal. The later #39 slice that retries "on a different slot near
-/// what the target decodes" passes those frequencies as `preferred` and the slot it leaves
-/// as occupied.
+/// from each occupied signal.
 pub(crate) fn choose(
     occupied: &[Signal],
     bounds: (u32, u32),
