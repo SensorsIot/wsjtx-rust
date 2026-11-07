@@ -58,14 +58,16 @@ package WstxMcp {
             orders stations; it has no contact limit, its own limit of 8 hours (run_limit) and never stops no_answer. An
             MCP client cannot select one: the configuration key strategy true is refused
             operator_required, PUT /strategy has no MCP tool. For every run
-            (D6 included) the Tx watchdog limits the repetitions of one message; only an
+            (D6 included; a strategy run's own contact only when unattended, otherwise it has
+            no stop: WstxStrategy::StrategyWatchdog) the Tx watchdog limits the repetitions of one message; only an
             Enable Tx or a strategy selection from the browser ends its stop, never the run's commands
             or an MCP request (including starting or restarting a run)
             (WstxStrategy::WatchdogFromOperator, coordinator default for the operator's
             rule, recorded on #39/#12, 2026-11-02, amending D5/D7; repetition form 2026-11-06);
             an MCP Enable Tx or run arm is refused tx_watchdog after a stop
             or when no browser action was seen this boot; set_watchdogs through MCP is refused operator_required (only the
-            browser sets the watchdog); a watchdog disarm stops tx_watchdog. */
+            browser sets the watchdog); a watchdog disarm stops tx_watchdog, for an unattended strategy
+            run no_client or run_limit (WstxStrategy::StrategyWatchdog). */
 
     attribute def McpEndpoint {
         attribute route : String = "POST /mcp";
@@ -262,7 +264,8 @@ package WstxMcp {
              its context_changed stop and the no_answer stop; a run with pounce follows
              WstxStrategy::Pounce instead of CandidateSelection, its completion and no_answer
              rules, and stops band_changed on a station band change; a disarm by the Tx watchdog stops
-             tx_watchdog for every run; a refused enable_tx with code tx_watchdog stops
+             tx_watchdog for every run, an unattended strategy run naming no_client or run_limit
+             instead (WstxStrategy::StrategyWatchdog); a refused enable_tx with code tx_watchdog stops
              tx_watchdog. Run commands are automatic: they never end a Tx watchdog stop. */
     }
     attribute def AutomationIndicator {
@@ -285,7 +288,8 @@ package WstxMcp {
              run (null or {id, state, reason, mode, completed_contacts, unanswered_periods,
              contact_id, selected (null or {source_id, job_id, generation, sequence, call}),
              last_decision, given_up (calls the operator gave up in a strategy run), rested (the call a
-             strategy run left after calls_per_station, or null), tx_slot (null or {hz, free}, WstxStrategy::FreeTxSlot), pounce (null or
+             strategy run left after calls_per_station, or null), tx_slot (null or {hz, free}, WstxStrategy::FreeTxSlot), slot_check (null or {repetitions, hears_us, hz, free},
+             WstxStrategy::StrategyWatchdog), pounce (null or
              {call, band}, #42)), strategy_refusal (null or why the last selection started no run,
              WstxStrategy::StrategyRun)}; existing auth and Origin rules of GET routes.
              POST /automation/command (AutomationCommand): exactly {v, profile_id, boot_id,

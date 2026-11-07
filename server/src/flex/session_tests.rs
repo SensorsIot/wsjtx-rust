@@ -73,6 +73,7 @@ fn intent_domains() {
     let valid = Intent {
         client_id: "72e8c7f3-5766-4ade-9286-ebf2f525c77a".into(),
         rx_antenna: "ANT1".into(),
+        radio_address: None,
     };
     assert!(valid.valid());
     for bad in [

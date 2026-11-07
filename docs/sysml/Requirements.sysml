@@ -74,7 +74,7 @@ package WstxRequirements {
         doc /* Integrations
              Preserve required external protocols and message formats, including baseline UDP integrations and reception-reporting workflows. The WSJT-X UDP interface is specified by issue #40, CL-040-01..04 (send-only, operator 2026-11-06), contract WstxUdp; reception reporting remains target. */
         attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/network_message.rs; server/src/udp.rs";
+        attribute implementation : String = "server/src/network_message.rs; server/src/udp.rs; server/src/pskr.rs";
     }
     requirement 'FR-013' {
         doc /* EME
@@ -247,7 +247,7 @@ package WstxRequirements {
     }
     dependency CL_013_02_to_FR_023 from 'CL-013-02' to 'FR-023';
     requirement 'CL-013-03' {
-        doc /* Each native FlexRadio profile MUST persist its receive intent: its own client identity and receive antenna, and no radio identity (operator decision 2026-11-06 on #22: the station uses whichever radio discovery finds available). On every connection/reconnection the system MUST reconcile that intent with authoritative discovery/status and current runtime handles. A changed/transient slice index MUST NOT redirect a station to another station's slice. Unresolvable associations MUST produce a visible unavailable/conflict state rather than guessing a replacement. */
+        doc /* Each native FlexRadio profile MUST persist its receive intent: its own client identity and receive antenna, and no radio identity (operator decision 2026-11-06 on #22: the station uses whichever radio discovery finds available). Where discovery cannot reach the radio, the profile may also save the radio's address (operator decision 2026-11-06 on #13): a locator for that one radio, not compared with anything. On every connection/reconnection the system MUST reconcile that intent with authoritative discovery/status and current runtime handles. A changed/transient slice index MUST NOT redirect a station to another station's slice. Unresolvable associations MUST produce a visible unavailable/conflict state rather than guessing a replacement. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/flex/session.rs; server/src/profile.rs";
     }
@@ -1747,7 +1747,9 @@ package WstxRequirements {
 
              **Level-2 realization:** tests/native-flex.test.cjs starts the independent loopback
              emulator tests/flex-emulator.cjs (TCP command/status, unicast loopback discovery and
-             VITA-49 DAX float 48 kHz streams; no code shared with the candidate) and four real
+             VITA-49 DAX float 24 kHz streams at the radio's 187.5 packets/s in the form a real
+             FLEX-6600 sent, its encoder checked byte for byte against that captured packet; no code
+             shared with the candidate) and four real
              station servers with disposable schema-2 HTTPS profiles. Each emulated slice carries
              a 1 kHz tone of a slice-specific amplitude, and every eighth packet another client's
              stream ID is sent at amplitude 0.95. Oracle: the emulator's own slice/stream/owner
@@ -1765,12 +1767,25 @@ package WstxRequirements {
              the channel, not the owner. Datagrams with the own stream ID from another address
              (127.0.0.2, amplitude 0.95) are never accepted. No slice command targets another
              client's slice and no transmit, disconnect or persistence command is sent. Rust unit
-             tests check the pinned independent narrow48 vector field by field, its negative cases,
-             documented control lines and the 4096-byte line bound; the emulator encoder reproduces
-             the same vector bytes. Another model on the admitted API connects and its announced
+             tests check the captured packet and the pinned independent vector field by field, their
+             negative cases, documented control lines and the 4096-byte line bound. The live check
+             script tests/flex-live-check.cjs, run against the emulator streaming the verified FT8
+             vector on the UTC period at 24 kHz with one packet in 64 lost, measures that loss, reports jitter, shows the
+             vector's expected text from the station's decoder with DT within 0.3 s from arrival
+             anchoring, saves the windows and leaves no slice or client. It stops as occupied with a
+             client or slice present, whichever way round the replies come, as unverified when a
+             reply is refused, reports not_released for a slice left behind or a closing look it cannot
+             verify, and reports the loss it saw. One packet in four
+             lost is counted at 25% and filled with silence, with the canonical frame rate kept and no new epoch, and a
+             120 ms stall reads as at least 90 ms of jitter; a 400 ms stall with packets missing opens a
+             new epoch (native_discontinuity). Another model on the admitted API connects and its announced
              model, serial and firmware are shown. GET /native-flex reports the packet's timestamp
              kind and this host's clock minus its time, which a new session without own packets
-             shows as null. */
+             shows as null. A saved address connects with nothing announced and no discovery
+             listener; model, serial and firmware then come from the radio's info reply; the stream
+             arrives only after client udp_register from the stream's port, which repeats, and no
+             command names a local address. A full radio on a saved address reports
+             radio_refused. */
         attribute automation : AutomationState = AutomationState::implemented;
         attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
         objective {
@@ -4208,7 +4223,7 @@ package WstxRequirements {
     dependency CL_039_05_to_FR_020 from 'CL-039-05' to 'FR-020';
     dependency CL_039_05_to_FR_007 from 'CL-039-05' to 'FR-007';
     requirement 'CL-039-06' {
-        doc /* The Tx watchdog limits the repetitions of one message (WstxContact::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or a strategy selection from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or strategy selection from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run and MCP requests (including starting or restarting a run) never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a run stops tx_watchdog; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxContact::TxWatchdog. */
+        doc /* The Tx watchdog limits the repetitions of one message (WstxContact::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or a strategy selection from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or strategy selection from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run and MCP requests (including starting or restarting a run) never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a pounce or MCP policy run stops tx_watchdog, while a strategy run's own contact has no stop and is bounded by CL-039-21 instead; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxContact::TxWatchdog. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs; server/src/mcp.rs; server/src/authorization.rs";
     }
@@ -4231,6 +4246,62 @@ package WstxRequirements {
         }
     }
     dependency CL_039_07_verified_by_TC_039_008 from 'CL-039-07' to 'TC-039-008';
+    requirement 'CL-039-21' {
+        doc /* A strategy run never stops transmitting for the Tx watchdog. When the Rep of the message due next has grown by N, or by calls_per_station when that is less: a target known to hear us (a PSK Reporter spot at most 600 s old on this band and mode) keeps the same slot with no limit; a target not known to hear us (no spot, the feed off or unreachable) takes a new free slot near the frequencies the target decodes, and the run goes on. Manual operation, a pounce and an MCP policy run keep the stop at N. A target that hears us is called without a limit only while the run may go on: the no-client rule and the run limit still end it, a station calling my call still comes first, and a partner that has answered keeps the slot without a spot, though only a spot keeps it from being left after its calls. Details: WstxStrategy::StrategyWatchdog, HearingFeed, FreeTxSlot; WstxContact::TxWatchdog. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/automation.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/freeslot.rs; server/src/pskr.rs";
+    }
+    dependency CL_039_21_to_FR_007 from 'CL-039-21' to 'FR-007';
+    dependency CL_039_21_to_FR_008 from 'CL-039-21' to 'FR-008';
+    verification 'TC-039-022' {
+        doc /* TC-039-022 — The repetitions reaching N in a strategy run
+             CL-039-21
+             Setup: the actual station router, contact engine, automation and #9 transmit owner on the recording hardware double, virtual UTC, a feed without a connection fed hand-authored spots, a dial of 7074000 Hz; Tx watchdog 2; a strategy run on 40 m calling K1ABC (CQ at 1800 Hz) from Tx 1500.
+             Steps: send 4 repetitions with: no spot; a spot of my call to K1ABC 60 s old, 590 s old, 601 s old, on 20 m; a spot of my call, the feed off and another spot; a spot to K1ABC from DL1XYZ at 7075000 Hz. Then calls_per_station 1 with the spot of my call and without. Then N 6 and calls_per_station 3 with partner periods between the calls, without a spot until the run left and came back, and with the spot of my call. Heard with no client for CLIENT_GONE, and past the run limit. A pounce and a halted run: the target subscription. N 6, 3 calls, the spot of my call, and a station calling my call in four partner periods. N 2, no spot, the partner's report answered with two repetitions; N 6, 3 calls, no spot, the partner's report and then silent partner periods. N 2, heard, 3 sent, then no client or past the run limit with no publication. N 6, 3 calls: WD:n across the check, with the own period's band full. The engine alone: the run's own contact past the limit, then another contact's exemption. A slot choice leaving a slot the target decodes, and with none free.
+             Expected (hand-worked from WstxStrategy::FreeTxSlot): every repetition keyed, armed, tx_expired false and the run in contact_active in every row. Heard (60 s, 590 s): Tx stays 1500, slot_check hears_us true. No spot, 601 s, 20 m, feed off: 1400 at the 2nd, 1300 at the 4th, hears_us false. DL1XYZ's frequency: 1000 at the 2nd, 900 at the 4th. Calls per station 1: heard, rested null and K1ABC still armed; not heard, rested K1ABC. N 6 with 3 calls: Tx 1500 for 2 calls, 1400 at the 3rd, rested K1ABC after the partner period following the 3rd call, then K1ABC armed again from 1400; heard: Tx 1500, rested null and armed after 5 calls. Heard with no client or past the run limit: disarmed, stopped no_client or run_limit. The caller: the contact on DL1XYZ, armed. The answer: Tx 1500, armed, slot_check hears_us true; then rested K1ABC after its calls. Times of i64 MIN and MAX: no overflow, too old or counted as now. Unattended: never keyed again, stopped no_client or run_limit. Subscription: K1ABC in the run, none after HALT, none for a pounce. WD: 3, 2, 1, then 3 after the check; no free slot keeps Tx 1500 with tx_slot free false. Engine: remaining calls count down to the next check, repetitions 4 sent; another contact's exemption stops at N without a send (cause tx_watchdog). The slot choice: never the slot it leaves; none free keeps it, free false. Manual stop at N: TC-008-001; a pounce stops at N: TC-039-005.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF, no network. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-21';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs; server/src/contact_tests.rs; server/src/freeslot_tests.rs";
+    }
+    dependency CL_039_21_verified_by_TC_039_022 from 'CL-039-21' to 'TC-039-022';
+    requirement 'CL-039-20' {
+        doc /* A read-only PSK Reporter MQTT feed tells the station whether the current target hears my call and which frequencies it decodes: two exact subscriptions (my call as sender; the strategy target as receiver, replaced when the target changes), never a wildcard from a decoded call, TLS against compiled-in roots, an identifiable client id, bounded reconnect backoff, bounded memory, spots expiring after 600 s, a spot of another band or mode ignored. Settings shows the switch (on by default) and the status, pushed. It sends nothing but the handshake, keep-alive and subscriptions; everything works without it: no connection is unknown, never an operator error, and receive and the 50 ms station step never wait on it. Details: WstxStrategy::HearingFeed. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/pskr.rs; server/src/main.rs; server/src/contact_http.rs; server/src/recording.rs; client/contact.js";
+    }
+    dependency CL_039_20_to_FR_007 from 'CL-039-20' to 'FR-007';
+    dependency CL_039_20_to_FR_012 from 'CL-039-20' to 'FR-012';
+    verification 'TC-039-020' {
+        doc /* TC-039-020 — The PSK Reporter feed against a local peer
+             CL-039-20
+             Setup: no network. A local TCP peer whose packets are written from the OASIS MQTT 3.1.1 tables; hand-authored payloads in the form of the broker's published schema; the certificate chain the broker presented on 2026-11-06, captured once as a fixture; shortened session timings; the actual station router for the routes.
+             Steps: parse a full spot, one without t_tx, and malformed ones; build filters from my call, a target and hostile calls (wildcards, slash, space, lower case, control and non-ASCII characters, overlong); record spots past the window, on another band or mode, past each bound, repeated and ahead of the clock; read the decoded offsets of a 7074000 Hz dial; encode each packet and parse whole, split and hostile input; step the backoff; run a session and change the target, send a non-spot and spots with another sender and receiver than the topic says, wait for a ping, switch off; a peer that drops five connections and then accepts; peers that refuse CONNECT, refuse SUBSCRIBE, send a reserved packet; the setting by default, after a save, from another profile and broken; WSTX_PSKR values; verify the captured chain against the compiled-in roots, with another name and after it expired; a peer without TLS; GET and POST /pskr with and without a feed, an extra key, a query.
+             Expected: exactly pskr/filter/v2/+/+/HB9BLA/+/# and pskr/filter/v2/+/+/+/K1ABC/#, no filter for any hostile call; hears us exactly up to 600 s, on that band and mode; offsets [1200, 800] for 7075200 and 7074800 Hz, none from another band, mode, receiver or from my own spot, none outside the range; at most 256 and 128 entries, 32 offsets, newest kept; packets equal the hand table; hostile input is protocol_error; delays 5, 10, 20, 40, 80, 160, 300, 300 s, 5 s after a reset; on the wire only CONNECT, SUBSCRIBE, UNSUBSCRIBE, PINGREQ, DISCONNECT; the old target unsubscribed, the hostile one not subscribed; the spot counts by its payload; off forgets everything; attempts at least 40, 80, 160, 160, 160 ms apart with the shortened timing, the status naming the error, recovery without any action; connection_refused, subscribe_refused, protocol_error; on by default, the save kept, invalid_pskr for the other two; only a loopback tcp: value replaces the broker; the chain valid on capture, refused otherwise; tls_failed with TLS spoken first; 404 without a feed, the exact view with one, other requests refused.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF, no network. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-20';
+        }
+        attribute executable : String = "server/src/pskr_tests.rs";
+    }
+    dependency CL_039_20_verified_by_TC_039_020 from 'CL-039-20' to 'TC-039-020';
+    verification 'TC-039-021' {
+        doc /* TC-039-021 — Settings shows the PSK Reporter status, pushed
+             CL-039-20
+             Setup: the actual isolated station with WSTX_PSKR pointing at a local MQTT peer in the test, Chromium at 1366 x 768.
+             Steps: open Settings > Logging; wait for the connection; publish a spot of my call 180 s old; uncheck the switch; drop the peer and check the switch again.
+             Expected: the switch is in view and on by default; "Connected · no spot yet", then "Connected · last spot 3 min ago", with exactly one GET /pskr; "Off" and Saved after the switch, the station stores it and the peer sees DISCONNECT and no packet other than CONNECT, SUBSCRIBE, PINGREQ, DISCONNECT; "Not connected · <code> · retrying" with the broker gone; no page error.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF, no network. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-20';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_039_20_verified_by_TC_039_021 from 'CL-039-20' to 'TC-039-021';
     requirement 'CL-039-08' {
         doc /* Hold Tx is on by default (operator decision 2026-11-04, #39; consistent with the split-frequency rule): a station starts with settings.hold_tx true, in manual operation and for a strategy alike, so selecting or answering a station moves Rx and never Tx; Tx stays on the operator's chosen slot until an explicit Tx action (the Tx input, a waterfall Tx pointer action, the Hound's own rule, a run's free slot: WstxStrategy::FreeTxSlot). The operator may switch it off with set_hold_tx; the choice lasts for the station's running session, since contact settings are not persisted, so no stored value can override the default. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -4252,7 +4323,7 @@ package WstxRequirements {
     }
     dependency CL_039_08_verified_by_TC_039_009 from 'CL-039-08' to 'TC-039-009';
     requirement 'CL-039-09' {
-        doc /* A strategy run or a pounce calls from a free audio slot chosen between QSOs from the last 4 decoding periods of my Tx parity on the current band (when these fill the band, the 3, 2 or 1 most recent), with 50 Hz clear of every occupied signal, inside 300..2700 Hz; the slot nearest the current Tx, then the lowest, so it changes only when the current one has become busy; Tx stays there for the whole QSO. No free slot keeps the current Tx, still calls and says so in the status. In every case Tx is never within 50 Hz of the called station's signal when calling it, also with no free slot. Details: WstxStrategy::FreeTxSlot. */
+        doc /* A strategy run or a pounce calls from a free audio slot chosen between QSOs from the last 4 decoding periods of my Tx parity on the current band (when these fill the band, the 3, 2 or 1 most recent), with 50 Hz clear of every occupied signal, inside 300..2700 Hz; the slot nearest the current Tx, then the lowest, so it changes only when the current one has become busy; Tx stays there for the whole QSO, except that CL-039-21 moves it while the partner has not answered. No free slot keeps the current Tx, still calls and says so in the status. In every case Tx is never within 50 Hz of the called station's signal when calling it, also with no free slot. Details: WstxStrategy::FreeTxSlot. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/freeslot.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js";
     }
@@ -4539,8 +4610,8 @@ package WstxRequirements {
         doc /* TC-039-005 — The Tx watchdog stop is never ended by automation
              CL-039-06
              Setup: as TC-039-004; for the unit cases the #9 Core on the hardware double; counts per WstxContact::TxWatchdog (#39, 2026-11-06).
-             Steps: (1) browser limit 2; a strategy selected from the browser with calls per station 20; publish CQ K1ABC at E; transmit the call at E+15 s and its repeat at E+45 s; reach E+75 s; cancel, select None and the strategy again from the browser and publish another CQ. (2) MCP and browser: an MCP Enable Tx before any browser action; browser limit 1; an MCP Enable Tx (CQ) transmitted at E+15 s; MCP set_frequency; MCP set_watchdogs 99; reach E+45 s; a station calls HB9BLA in period E+30 s; an MCP Enable Tx; an MCP run start and a matching CQ; a browser action and an MCP Enable Tx. (3) MCP route: browser limit 1, an MCP Enable Tx and its CQ, MCP-principal commands through the tool and straight to /contact/command, then MCP Enable Tx on both. Unit: automatic arm before any operator action; activity, limit 2, automatic arm; operator arm.
-             Expected: (1) remaining calls 1 after the first call (the run's selection does not extend it), the request at E+75 s is never keyed, the run stops tx_watchdog with the strategy still selected, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the new selection arms again. (2) refused tx_watchdog; not spent after the one CQ and the MCP command, set_watchdogs refused operator_required, the next CQ never keyed and spent, still spent after the caller (an answer after a stop ends nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; still spent after an unrelated browser action; after a browser Enable Tx not spent and the MCP Enable Tx arms. (3) after the stop spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
+             Steps: (1) browser limit 2; a pounce on K1ABC started from the browser (a strategy run has no stop: TC-039-022); publish CQ K1ABC at E; transmit the call at E+15 s and its repeat at E+45 s; reach E+75 s; cancel, select a strategy from the browser and publish another CQ. (2) MCP and browser: an MCP Enable Tx before any browser action; browser limit 1; an MCP Enable Tx (CQ) transmitted at E+15 s; MCP set_frequency; MCP set_watchdogs 99; reach E+45 s; a station calls HB9BLA in period E+30 s; an MCP Enable Tx; an MCP run start and a matching CQ; a browser action and an MCP Enable Tx. (3) MCP route: browser limit 1, an MCP Enable Tx and its CQ, MCP-principal commands through the tool and straight to /contact/command, then MCP Enable Tx on both. Unit: automatic arm before any operator action; activity, limit 2, automatic arm; operator arm.
+             Expected: (1) remaining calls 1 after the first call (the run's selection does not extend it), the request at E+75 s is never keyed, the run stops tx_watchdog, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the selection arms again. (2) refused tx_watchdog; not spent after the one CQ and the MCP command, set_watchdogs refused operator_required, the next CQ never keyed and spent, still spent after the caller (an answer after a stop ends nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; still spent after an unrelated browser action; after a browser Enable Tx not spent and the MCP Enable Tx arms. (3) after the stop spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
              2 — Isolated automated functional tests; Windows development PC, transmit double; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {

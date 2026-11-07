@@ -13,12 +13,12 @@ const {server,browserPort}=require('./support.cjs');
 let browser,root;
 before(async()=>{root=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-operating-'));await fs.mkdir('test-results/ui-operating',{recursive:true});browser=await chromium.launch();});
 after(async()=>{await browser?.close();await fs.rm(root,{recursive:true,force:true});});
-async function fixture(t,viewport,{inputDevice=null,beforeNavigate,deviceScaleFactor=1,control=null}={}){
+async function fixture(t,viewport,{inputDevice=null,beforeNavigate,deviceScaleFactor=1,control=null,env={}}={}){
   const port=await browserPort();
   const dir=await fs.mkdtemp(path.join(root,'station-'));
   const doc={schema_version:1,profile_id:crypto.randomUUID(),revision:0,display_name:'HB9BLA <station>',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin:null},connection_type:'standard',audio:{input_device:inputDevice,output_device:null},control:control??{mode:'disabled',endpoint:null,ptt:'disabled'}};
   await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify(doc));
-  const app=await server({},['--profile',dir]),context=await browser.newContext({viewport,deviceScaleFactor}),page=await context.newPage();
+  const app=await server(env,['--profile',dir]),context=await browser.newContext({viewport,deviceScaleFactor}),page=await context.newPage();
   t.after(async()=>{await context.close();await app.close();});
   const errors=[],sent=[];page.on('pageerror',e=>errors.push(e.message));
   page.on('websocket',ws=>ws.on('framesent',frame=>sent.push(JSON.parse(frame.payload))));
@@ -1014,6 +1014,51 @@ test('TC-044-005 radio settings writes wait for the confirmation dialog and a kn
   for(const id of ['#radio-settings-apply','#radio-settings-undo'])assert.equal(await page.locator(id).isDisabled(),true,id);
   await page.evaluate(()=>radioSettings('apply'));await page.waitForTimeout(500);
   assert.deepEqual(radio,[],'no unconfirmed settings write');assert.equal(await page.locator('#op-confirm[open]').count(),0);
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-039-20; TC-039-021 Settings shows the PSK Reporter feed from one snapshot and pushed
+// events, against a local MQTT peer written from the 3.1.1 packet tables; nothing reaches the broker.
+test('TC-039-021 Settings shows the PSK Reporter status, pushed, and saves the switch',{timeout:60000},async t=>{
+  const sockets=new Set(),received=[];let drop=false;
+  const broker=net.createServer(socket=>{sockets.add(socket);socket.on('error',()=>{});socket.on('close',()=>sockets.delete(socket));
+    if(drop){socket.destroy();return;}
+    let held=Buffer.alloc(0);
+    socket.on('data',data=>{held=Buffer.concat([held,data]);
+      while(held.length>=2&&held.length>=2+held[1]){const type=held[0],id=held.subarray(2,4);received.push(type);held=held.subarray(2+held[1]);
+        if(type===0x10)socket.write(Buffer.from([0x20,2,0,0]));
+        else if(type===0x82)socket.write(Buffer.from([0x90,3,id[0],id[1],0]));
+        else if(type===0xc0)socket.write(Buffer.from([0xd0,0]));}});});
+  await new Promise(resolve=>broker.listen(0,'127.0.0.1',resolve));
+  t.after(()=>{for(const s of sockets)s.destroy();broker.close();});
+  const publish=payload=>{const topic=Buffer.from('pskr/filter/v2/40m/FT8/HB9BLA/K1ABC/JN37/FN42/287/291'),body=Buffer.from(JSON.stringify(payload)),length=2+topic.length+body.length;
+    const header=length>127?[0x30,(length%128)|0x80,length>>7]:[0x30,length];for(const s of sockets)s.write(Buffer.concat([Buffer.from(header),Buffer.from([0,topic.length]),topic,body]));};
+  const requests=[];
+  const {page,app,errors}=await fixture(t,{width:1366,height:768},{env:{WSTX_PSKR:`tcp:127.0.0.1:${broker.address().port}`},beforeNavigate:page=>{page.on('request',r=>{const p=new URL(r.url()).pathname;if(p==='/pskr')requests.push(r.method());});}});
+  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
+  await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();
+  const status=page.locator('#pskr-status'),box=page.locator('#pskr-enabled');
+  await page.locator('#pskr-enabled:enabled').waitFor();await box.scrollIntoViewIfNeeded();
+  assert.equal(await inViewport(page,'#pskr-enabled'),true,'the switch is in Settings > Logging');
+  assert.equal(await box.isChecked(),true,'on by default');
+  await status.filter({hasText:'Connected'}).waitFor({timeout:20000});
+  assert.equal(await status.textContent(),'Connected \u00b7 no spot yet');
+  publish({f:7075512,md:'FT8',rp:-5,t:Math.floor(Date.now()/1000)-180,sc:'HB9BLA',rc:'K1ABC',b:'40m'});
+  await status.filter({hasText:'last spot'}).waitFor({timeout:10000});
+  await page.locator('#pskr-status',{hasText:'last spot 3 min ago'}).waitFor({timeout:10000});
+  assert.deepEqual(requests,['GET'],'one snapshot; the rest is pushed');
+  // Off: saved, shown, and the peer sees the clean end.
+  await box.uncheck();await page.locator('#pskr-result',{hasText:'Saved'}).waitFor();
+  await status.filter({hasText:'Off'}).waitFor();
+  assert.equal((await (await fetch(app.origin+'/pskr')).json()).enabled,false,'the station stored it');
+  for(let i=0;i<100&&!received.includes(0xe0);i++)await page.waitForTimeout(50);
+  assert.equal(received.includes(0xe0),true,'a clean DISCONNECT');
+  assert.deepEqual([...new Set(received)].filter(type=>![0x10,0x82,0xc0,0xe0].includes(type)),[],'only the handshake, subscribe, ping and disconnect on the wire');
+  // On again, with the broker gone: a named status in Settings, no error anywhere else.
+  drop=true;for(const s of sockets)s.destroy();
+  await box.check();await status.filter({hasText:'Not connected'}).waitFor({timeout:30000});
+  assert.match(await status.textContent(),/^Not connected \u00b7 connection_(closed|lost) \u00b7 retrying$/);
+  assert.doesNotMatch(await page.locator('#operating-workspace').textContent(),/connection_(closed|lost)|PSK/,'never an error on the operating screen');
   assert.deepEqual(errors,[]);
 });
 

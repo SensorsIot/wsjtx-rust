@@ -3110,12 +3110,15 @@ async fn browser_command(f: &Mcp, action: &str, extra: Value) -> Value {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_005_automation_never_resets_the_tx_watchdog() {
     let f = station(true).await;
+    f.state.recording.fixture_band("40m");
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
     browser_watchdog(&f, 2).await;
     let mut c = config(Some("Test calls"));
     c["strategies"][0]["calls_per_station"] = json!(20);
-    select(&f, c.clone()).await;
+    // A pounce keeps the stop at N; a strategy run has none (TC-039-022).
+    let started = pounce(&f, "K1ABC", 20).await;
+    assert_eq!(started.status, StatusCode::ACCEPTED, "{}", started.json);
     let halt_state = f.read("contact").await["transmit"]["halt_state"].clone();
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-10.0))]);
     assert_eq!(
@@ -3144,17 +3147,347 @@ async fn tc_039_005_automation_never_resets_the_tx_watchdog() {
         (json!(true), json!("tx_watchdog"), halt_state),
         "stopped without a halt"
     );
-    assert_eq!(
-        active_of(&f).await,
-        json!("Test calls"),
-        "it stays selected"
-    );
-    // A new selection from the browser is an operator action: it arms again.
+    // A selection from the browser is an operator action: it arms again.
     browser_ok(&f, "cancel", json!({})).await;
-    save(&f, config(None)).await;
     select(&f, c).await;
     publish(&f, e + 90_000, &[("CQ DL1XYZ JO62", 1200.0, Some(-1.0))]);
     assert_eq!(contact(&f).await.2, json!("armed"));
+}
+
+/// A strategy run calling K1ABC at 1800 Hz on 40 m from Tx 1500 with the Tx watchdog at `limit`,
+/// with the feed `set` prepares once the run has its target. e is the even period of the CQ.
+async fn run_at_limit(limit: u64, calls: u64, set: impl FnOnce(&crate::pskr::Feed)) -> (Mcp, i64) {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    browser_watchdog(&f, limit).await;
+    let dir = std::env::temp_dir().join(format!("wstx-pskr-{}", profile::new_uuid().unwrap()));
+    std::fs::create_dir(&dir).unwrap();
+    let feed = crate::pskr::Feed::start(&dir, &f.id, &f.boot, None, crate::pskr::Timing::BROKER);
+    f.state.recording.pskr.set(feed.clone()).ok().unwrap();
+    let mut c = config(Some("Test calls"));
+    c["strategies"][0]["calls_per_station"] = json!(calls);
+    select(&f, c).await;
+    publish(&f, e, &[("CQ K1ABC FN42", 1800.0, Some(-10.0))]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    assert_eq!(f.read("contact").await["settings"]["tx_hz"], 1500);
+    f.tick();
+    set(&feed);
+    (f, e)
+}
+fn spot(sender: &str, hz: u64, band: &str, age_s: i64) -> String {
+    let t = crate::contact_http_tests::now_ms() / 1000 - age_s;
+    json!({"f":hz,"md":"FT8","t":t,"sc":sender,"rc":"K1ABC","b":band}).to_string()
+}
+// Proves: CL-039-21; TC-039-022. The decision table of the Rep count reaching N in a strategy run;
+// the slots are worked by hand from WstxStrategy::FreeTxSlot: with nothing decoded but the called
+// station at 1800, leaving 1500 gives 1400 (1400 and 1600 equally near, the lower), and then
+// leaving 1400 gives 1300. A spot at 7075000 Hz on the 7074000 Hz dial is 1000 Hz; leaving that
+// gives 900 (900 and 1100 equally near it, the lower).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_the_repetitions_reaching_n_in_a_strategy_run() {
+    type Set = fn(&crate::pskr::Feed);
+    let heard: Set = |feed| feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+    let table: [(&str, Set, bool, u64, u64); 7] = [
+        ("no spot", |_| {}, false, 1400, 1300),
+        ("heard", heard, true, 1500, 1500),
+        (
+            "heard at the end of the window",
+            |feed| feed.inject(&spot("HB9BLA", 7_075_500, "40m", 590)),
+            true,
+            1500,
+            1500,
+        ),
+        (
+            "heard too long ago",
+            |feed| feed.inject(&spot("HB9BLA", 7_075_500, "40m", 601)),
+            false,
+            1400,
+            1300,
+        ),
+        (
+            "heard on another band",
+            |feed| feed.inject(&spot("HB9BLA", 14_075_500, "20m", 60)),
+            false,
+            1400,
+            1300,
+        ),
+        (
+            "the feed off",
+            |feed| {
+                feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+                feed.switch(false);
+                // A spot already read when the switch went off says nothing either.
+                feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+            },
+            false,
+            1400,
+            1300,
+        ),
+        (
+            "not heard, the target decodes 1000 Hz",
+            |feed| {
+                *feed.dial.lock().unwrap() = Some(7_074_000);
+                feed.inject(&spot("DL1XYZ", 7_075_000, "40m", 60));
+            },
+            false,
+            1000,
+            900,
+        ),
+    ];
+    for (name, set, hears, first, second) in table {
+        let (f, e) = run_at_limit(2, 20, set).await;
+        for (own, hz, repetitions) in [(15_000, 1500, 1), (45_000, first, 2), (75_000, first, 3)] {
+            transmit_own_period(&f, e + own).await;
+            f.tick();
+            let c = f.read("contact").await;
+            assert_eq!(c["settings"]["tx_hz"], hz, "{name}, {repetitions} sent");
+            assert_eq!(c["transmit"]["arm_state"], "armed", "{name}");
+            assert_eq!(c["watchdog"]["tx_expired"], false, "{name}");
+        }
+        let check = f.read("automation").await["run"]["slot_check"].clone();
+        assert_eq!(
+            check,
+            json!({"repetitions":2,"hears_us":hears,"hz":first,"free":true}),
+            "{name}"
+        );
+        assert_eq!(
+            f.read("automation").await["run"]["tx_slot"],
+            json!({"hz":first,"free":true}),
+            "{name}: the status follows the move"
+        );
+        // N more on the slot: checked again, and Tx still never stops.
+        transmit_own_period(&f, e + 105_000).await;
+        f.tick();
+        let c = f.read("contact").await;
+        assert_eq!(c["settings"]["tx_hz"], second, "{name}, 4 sent");
+        assert_eq!(c["transmit"]["arm_state"], "armed", "{name}");
+        assert_eq!(
+            f.keys(),
+            8,
+            "{name}: every repetition is keyed and released"
+        );
+        assert_eq!(run_state(&f).await, ("contact_active".into(), Value::Null));
+    }
+}
+// Proves: CL-039-21; TC-039-022. At the defaults (N 6, 3 calls per station) the check comes at the
+// 3rd call, before the run leaves the station; alone, it comes back and calls from the new slot.
+// A target known to hear us keeps its slot through the same calls.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_the_check_comes_before_the_run_leaves_the_station() {
+    let tx = |c: &Value| c["settings"]["tx_hz"].clone();
+    let (f, e) = run_at_limit(6, 3, |_| {}).await;
+    for (own, hz) in [(15_000, 1500), (45_000, 1500), (75_000, 1400)] {
+        transmit_own_period(&f, e + own).await;
+        f.tick();
+        assert_eq!(tx(&f.read("contact").await), hz, "after the call at {own}");
+        assert_eq!(f.read("automation").await["run"]["rested"], Value::Null);
+        publish(&f, e + own + 15_000, &[]);
+    }
+    assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
+    publish(&f, e + 120_000, &[("CQ K1ABC FN42", 1800.0, Some(-10.0))]);
+    let c = f.read("contact").await;
+    assert_eq!(c["contact"]["dx_call"], "K1ABC", "alone, it comes back");
+    assert_eq!(tx(&c), 1400, "from the new slot");
+    assert_eq!(c["transmit"]["arm_state"], "armed");
+
+    let (f, e) = run_at_limit(6, 3, |feed| {
+        feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+    })
+    .await;
+    for own in [15_000, 45_000, 75_000, 105_000, 135_000] {
+        transmit_own_period(&f, e + own).await;
+        f.tick();
+        publish(&f, e + own + 15_000, &[]);
+    }
+    let c = f.read("contact").await;
+    assert_eq!(tx(&c), 1500);
+    assert_eq!(c["transmit"]["arm_state"], "armed");
+    assert_eq!(f.read("automation").await["run"]["rested"], Value::Null);
+    assert_eq!(f.keys(), 10, "every call is keyed and released");
+}
+
+// Proves: CL-039-21; TC-039-022. The unattended bounds hold for a target that hears us: with no
+// client it is left after its calls and the run stops no_client, and likewise at the run limit.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_a_target_that_hears_us_does_not_outlive_the_run_bounds() {
+    for (skew, reason) in [
+        (crate::automation::CLIENT_GONE.as_secs(), "no_client"),
+        (9 * 3600, "run_limit"),
+    ] {
+        let (f, e) = run_at_limit(2, 2, |feed| {
+            feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+        })
+        .await;
+        // Heard and attended: it stays.
+        publish(&f, e + 30_000, &[]);
+        publish(&f, e + 60_000, &[]);
+        publish(&f, e + 90_000, &[]);
+        assert_eq!(contact(&f).await.2, json!("armed"), "{reason}");
+        // That read counted as a client: this step takes it, and none comes after it.
+        f.tick();
+        at_skew(&f, skew);
+        publish(&f, e + 120_000, &[]);
+        publish(&f, e + 150_000, &[]);
+        publish(&f, e + 180_000, &[]);
+        f.tick();
+        assert_eq!(quiet_run(&f), ("stopped".into(), json!(reason)));
+        assert_eq!(quiet_contact(&f).await.2, json!("disarmed"), "{reason}");
+    }
+}
+// Proves: CL-039-21; TC-039-022. A station calling my call outranks the queue (D5): the run leaves
+// the target that hears us after its calls, and answers the caller.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_a_caller_of_my_call_outranks_a_target_that_hears_us() {
+    let (f, e) = run_at_limit(6, 3, |feed| {
+        feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+    })
+    .await;
+    let caller = [("HB9BLA DL1XYZ JO62", 1200.0, Some(-5.0))];
+    for period in [30_000, 60_000, 90_000, 120_000] {
+        publish(&f, e + period, &caller);
+    }
+    assert_eq!(contact(&f).await.0, json!("DL1XYZ"));
+    assert_eq!(contact(&f).await.2, json!("armed"));
+}
+// Proves: CL-039-21; TC-039-022. A partner that answered has proved the slot, spot or no spot: Tx
+// stays through its repetitions (CL-039-09), and the message goes on without a stop.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_an_answer_keeps_the_slot_without_a_spot() {
+    let (f, e) = run_at_limit(2, 20, |_| {}).await;
+    transmit_own_period(&f, e + 15_000).await;
+    publish(&f, e + 30_000, &[("HB9BLA K1ABC -09", 1800.0, Some(-9.0))]);
+    transmit_own_period(&f, e + 45_000).await;
+    f.tick();
+    transmit_own_period(&f, e + 75_000).await;
+    f.tick();
+    let c = f.read("contact").await;
+    assert_eq!(c["settings"]["tx_hz"], 1500);
+    assert_eq!(c["transmit"]["arm_state"], "armed");
+    let check = f.read("automation").await["run"]["slot_check"].clone();
+    assert_eq!(
+        check,
+        json!({"repetitions":2,"hears_us":true,"hz":1500,"free":true})
+    );
+}
+// Proves: CL-039-21; TC-039-022. An answer keeps the slot only: without a spot the partner is still
+// left after its calls, since an answer does not expire and a partner gone QRT would hold the run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_an_answer_without_a_spot_is_still_left_after_its_calls() {
+    let (f, e) = run_at_limit(6, 3, |_| {}).await;
+    publish(&f, e + 30_000, &[("HB9BLA K1ABC -09", 1800.0, Some(-9.0))]);
+    assert_eq!(f.read("automation").await["run"]["rested"], Value::Null);
+    for period in [60_000, 90_000, 120_000, 150_000] {
+        publish(&f, e + period, &[]);
+    }
+    assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
+}
+// Proves: CL-039-21; TC-039-022. With no client, or past the run limit, the stop at N is back at once,
+// so the run cannot go on transmitting even when no publication ever arrives to end its contact.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_unattended_the_stop_at_n_is_back_without_a_publication() {
+    for (skew, reason) in [
+        (crate::automation::CLIENT_GONE.as_secs(), "no_client"),
+        (9 * 3600, "run_limit"),
+    ] {
+        let (f, e) = run_at_limit(2, 20, |feed| {
+            feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+        })
+        .await;
+        for own in [15_000, 45_000, 75_000] {
+            transmit_own_period(&f, e + own).await;
+            f.tick();
+        }
+        assert_eq!(
+            quiet_contact(&f).await.2,
+            json!("armed"),
+            "past N, attended"
+        );
+        at_skew(&f, skew);
+        let keys = f.keys();
+        not_keyed_in(&f, e + 105_000).await;
+        assert_eq!(f.keys(), keys, "never keyed again");
+        assert_eq!(quiet_run(&f), ("stopped".into(), json!(reason)));
+    }
+}
+// Proves: CL-039-20; CL-039-21; TC-039-022. Only a strategy run's own contact subscribes to its
+// target: not a pounce, nor the same contact after the run ended.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_only_a_strategy_run_subscribes_to_its_target() {
+    let (f, _) = run_at_limit(2, 20, |feed| {
+        assert_eq!(feed.target().as_deref(), Some("K1ABC"), "the run's contact");
+    })
+    .await;
+    let feed = f.state.recording.pskr.get().unwrap().clone();
+    halt(&f).await;
+    f.tick();
+    assert_eq!(feed.target(), None, "the run ended, the contact stays");
+
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let dir = std::env::temp_dir().join(format!("wstx-pskr-{}", profile::new_uuid().unwrap()));
+    std::fs::create_dir(&dir).unwrap();
+    let feed = crate::pskr::Feed::start(&dir, &f.id, &f.boot, None, crate::pskr::Timing::BROKER);
+    f.state.recording.pskr.set(feed.clone()).ok().unwrap();
+    assert_eq!(pounce(&f, "K1ABC", 20).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ K1ABC FN42", 1800.0, Some(-10.0))]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    f.tick();
+    assert_eq!(feed.target(), None, "a pounce reads no spots");
+}
+// Proves: CL-039-21; TC-039-022. WD:n counts down to the next check, at min(N, calls per station),
+// and a check without a free slot keeps the slot and tells the status the browser reads.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_the_status_shows_the_next_check_and_no_free_slot() {
+    let (f, e) = run_at_limit(6, 3, |_| {}).await;
+    f.tick();
+    let left = |c: &Value| c["watchdog"]["tx_remaining_calls"].clone();
+    assert_eq!(
+        left(&f.read("contact").await),
+        3,
+        "3 calls to the first check"
+    );
+    transmit_own_period(&f, e + 15_000).await;
+    f.tick();
+    assert_eq!(left(&f.read("contact").await), 2);
+    // The own period's band is full: every slot of 300..2650 is within a signal's gap.
+    let full: Vec<(&str, f64, Option<f64>)> = (0..24)
+        .map(|n| ("CQ DL1XYZ JO62", f64::from(300 + n * 100), Some(0.0)))
+        .collect();
+    publish(&f, e + 15_000, &full);
+    transmit_own_period(&f, e + 45_000).await;
+    f.tick();
+    assert_eq!(left(&f.read("contact").await), 1);
+    transmit_own_period(&f, e + 75_000).await;
+    f.tick();
+    let c = f.read("contact").await;
+    assert_eq!(left(&c), 3, "the check came: the next one is 3 away");
+    assert_eq!(c["settings"]["tx_hz"], 1500, "no free slot keeps the slot");
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(run["tx_slot"], json!({"hz":1500,"free":false}));
+    assert_eq!(run["slot_check"]["free"], false);
+}
+// Proves: CL-039-21; TC-039-022. A target known to hear us is not left after its calls ("we are in
+// the queue"); without that spot the run goes on to the next candidate as before.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_039_022_a_target_that_hears_us_is_not_left_after_its_calls() {
+    let (f, e) = run_at_limit(2, 1, |feed| {
+        feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+    })
+    .await;
+    publish(&f, e + 30_000, &[]);
+    publish(&f, e + 60_000, &[]);
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(run["rested"], Value::Null);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    assert_eq!(contact(&f).await.2, json!("armed"));
+    let (f, e) = run_at_limit(2, 1, |_| {}).await;
+    publish(&f, e + 30_000, &[]);
+    publish(&f, e + 60_000, &[]);
+    assert_eq!(f.read("automation").await["run"]["rested"], json!("K1ABC"));
 }
 
 // Proves: TC-039-005
