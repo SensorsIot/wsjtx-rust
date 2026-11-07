@@ -2212,6 +2212,7 @@ test('TC-007-005 receive.state carries the job and the audio; only a new state, 
     state=liveFixture(await (await fetch(app.origin+'/receive')).json());
     state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-11-06T10:50:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
     p.on('request',r=>{if(new URL(r.url()).pathname==='/receive')reads.push(r.method());});
+    await p.route('**/recording',async route=>{const real=await (await route.fetch()).json();await route.fulfill({json:{...real,generation:state.generation,job:{id:state.job.id,source_id:state.source.id,generation:state.generation,kind:'live',state:state.job.state,processed_frames:0,error:null}}});});
     await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);const json=structuredClone(state);if(hold)await hold;await route.fulfill({json});});
     await p.route('**/receive/results?*',async route=>{const q=new URL(route.request().url()).searchParams,cursor=Number(q.get('cursor')),next=state.job.next_sequence;await route.fulfill({json:{...emptyResults(state),next_sequence:next,available_count:next,next,records:records.slice(cursor,next)}});});
   }});
