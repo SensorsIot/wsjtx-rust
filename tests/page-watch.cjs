@@ -35,6 +35,7 @@ function watchPage(page){
     boot:typeof profileData==='undefined'?null:profileData?.boot_id,
     state:document.querySelector('#connection')?.dataset.state,
     job:typeof live==='undefined'?null:live?.job?.id??null,
+    generation:typeof live==='undefined'?null:live?.generation??null,
   }));
   const sample=async()=>{
     const seen=await read();

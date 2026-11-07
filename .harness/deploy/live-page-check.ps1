@@ -6,9 +6,12 @@
 # has no running contact, /automation has no active run, no update runs and nobody holds the radio
 # lease; otherwise it waits up to -WaitSeconds and gives up with the station untouched.
 # Stop and start as in radio-preflight.ps1: Ctrl+C, then the scheduled task.
-# Exit 0: PAGE CHECK green. 1: PAGE CHECK RED. 2: ERROR, it could not run or the station did not
-# come back (it says which). 3: BUSY, the station was in use and was not restarted.
-param([int]$WaitSeconds = 300, [string]$Station, [string]$AgentClient, [string]$RadioDir,
+# While it restarts it holds the station's update.lock, so station-update.ps1 and radio-preflight.ps1
+# refuse to start in that window.
+# Exit 0: PASS. 1: RED. 2: ERROR, it could not run or the station did not come back (it says which).
+# 3: BUSY, the station was in use and was not restarted. 4: NOT-EXERCISED, nothing was shown wrong
+# but a live trigger of #22 or #50 was not on screen (the PAGE CHECK line says which).
+param([int]$WaitSeconds = 300, [string]$Station, [string]$AgentClient, [string]$RadioDir, [string]$Check = 'tests/live-page-check.cjs',
       [string]$TaskName = 'WSTX Rust Station HB9BLA')
 $ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest
 
@@ -38,9 +41,16 @@ function Settle-Task {
   Start-Sleep -Milliseconds 800
 }
 # Why the station cannot be restarted now, or $null. An unreadable state counts as in use.
+# It takes the update lock and keeps it while the station is free ($script:Lock), so that no
+# update or preflight starts between this check and the new boot.
 function Station-InUse {
-  try { ([IO.File]::Open((Join-Path $Station 'logs\update.lock'), 'OpenOrCreate', 'ReadWrite', 'None')).Dispose() }
+  try { $script:Lock = [IO.File]::Open((Join-Path $Station 'logs\update.lock'), 'OpenOrCreate', 'ReadWrite', 'None') }
   catch [IO.IOException] { return 'an update is running' }
+  $why = Station-Busy
+  if ($why) { $script:Lock.Dispose(); $script:Lock = $null }
+  $why
+}
+function Station-Busy {
   $leaseFile = Join-Path $RadioDir 'lease.json'
   if (Test-Path -LiteralPath $leaseFile) {
     $lease = [IO.File]::ReadAllText($leaseFile) | ConvertFrom-Json
@@ -59,7 +69,7 @@ function Station-InUse {
     try { $transmit, $contact, $run = & $read } catch { return "its state cannot be read ($($_.Exception.GetType().Name))" }
   }
   if ([string]$transmit.transmit.arm_state -ne 'disarmed') { return "transmit is $($transmit.transmit.arm_state)" }
-  if ([string]$transmit.ptt -ne 'released' -or $transmit.transmitting) { return "PTT is $($transmit.ptt)" }
+  if ([string]$transmit.ptt -ne 'released' -or $transmit.transmitting) { return "PTT is $($transmit.ptt), transmitting: $($transmit.transmitting)" }
   if ($contact -and [string]$contact.state -notin @('idle', 'completed', 'cancelled')) { return "a contact is $($contact.state)" }
   if ($run -and [string]$run.state -ne 'stopped') { return "an automation run is $($run.state)" }
   $null
@@ -81,7 +91,7 @@ function Session-Line($session) {
   @{ cookies = $cookies } | ConvertTo-Json -Compress -Depth 3
 }
 
-$node = $null; $control = $null; $script:Session = $null; $code = 2; $word = 'ERROR'; $why = 'the check did not finish'
+$node = $null; $control = $null; $script:Session = $null; $script:Lock = $null; $code = 2; $word = 'ERROR'; $why = 'the check did not finish'
 try {
   # Only this script and the check: the station starts from its task, outside this priority.
   [Diagnostics.Process]::GetCurrentProcess().PriorityClass = 'BelowNormal'
@@ -95,12 +105,13 @@ try {
 
   $start = New-Object Diagnostics.ProcessStartInfo
   $start.FileName = (Get-Command node).Source
-  $start.Arguments = 'tests/live-page-check.cjs'
+  $start.Arguments = $Check
   $start.WorkingDirectory = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
   $start.UseShellExecute = $false
   $start.RedirectStandardInput = $true
   $start.EnvironmentVariables['WSTX_LIVE_PAGE_ORIGIN'] = $AgentUrl
   $start.EnvironmentVariables['WSTX_LIVE_PAGE_CONTROL'] = $control
+  $start.EnvironmentVariables['WSTX_LIVE_PAGE_WAIT_SECONDS'] = [string]$WaitSeconds
   $node = [Diagnostics.Process]::Start($start)
   $node.StandardInput.WriteLine((Session-Line (Open-AgentSession))); $node.StandardInput.Flush()
 
@@ -120,18 +131,20 @@ try {
         try { $session = Open-AgentSession } catch { if ((Now) -ge $deadline) { throw "THE STATION does not answer 90 s after its start: $($_.Exception.Message)" }; Start-Sleep -Seconds 1 }
       }
       Write-Output "station back, $((Now).ToString('HH:mm:ss')) UTC"
+      $script:Lock.Dispose(); $script:Lock = $null
       $node.StandardInput.WriteLine((Session-Line $session)); $node.StandardInput.Flush()
     }
     Start-Sleep -Milliseconds 200
   }
   $node.WaitForExit()
   $code = $node.ExitCode
-  $word = @{ 0 = 'PASS'; 1 = 'RED'; 3 = 'BUSY' }[$code]; $why = 'see the PAGE CHECK line'
+  $word = @{ 0 = 'PASS'; 1 = 'RED'; 3 = 'BUSY'; 4 = 'NOT-EXERCISED' }[$code]; $why = 'see the PAGE CHECK line'
   if (-not $word) { $word = 'ERROR'; $code = 2; $why = "the check exited with $($node.ExitCode)" }
 } catch {
   $why = "$($_.Exception.GetType().Name): $($_.Exception.Message)"
 } finally {
   if ($node -and -not $node.HasExited) { $node.Kill() }
+  if ($script:Lock) { $script:Lock.Dispose() }
   if ($control -and (Test-Path -LiteralPath $control)) { Remove-Item -LiteralPath $control -Recurse -Force -ErrorAction SilentlyContinue }
 }
 Write-Output "LIVE PAGE CHECK $word $why"

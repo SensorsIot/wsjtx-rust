@@ -8,6 +8,8 @@
 //   {"cookies":[{"name","value"}]}  at the start, and again once the new boot answers
 //   {"stopping":true}               the station is being stopped now
 //   {"abort":"why"}                 the station is in use: no restart, exit 3
+// Exit 0 green; 1 red; 3 busy; 4 not exercised: nothing went wrong, but the old boot's generation
+// was not above the new one's (#22) or no kept row had a worked-before tip (#50).
 // Receive only: it starts nothing and selects nothing. The station resumes receive by itself;
 // a station that does not, or a dead band, ends in a timeout, red.
 // The page is the station's actual client. Only its authorization component is replaced: a browser
@@ -21,7 +23,7 @@ const READS=['/contact/worked','/strategy/evaluate','/authorization/v1/status'];
 const AUTHORIZATION=`window.stationAuthorization=(()=>{const s=Object.freeze({epoch:1,state:'ready',ready:true,scope:null});
   const no=()=>Promise.reject(new Error('live page check: no authorization action'));
   return Object.freeze({snapshot:()=>s,ensureReady:()=>Promise.resolve(s),fetch:(p,o)=>fetch(p,o),bootstrap:no,logout:no,forget:no});})();`;
-const PERIODS=3,MINUTES=60000;
+const PERIODS=3,MINUTES=60000,WAIT=1000*(Number(process.env.WSTX_LIVE_PAGE_WAIT_SECONDS)||300);
 
 async function run({origin,control,lines}){
   const browser=await chromium.launch();
@@ -36,7 +38,6 @@ async function run({origin,control,lines}){
       if(r.method()!=='GET'&&!READS.includes(at.pathname)){refused.push(`${r.method()} ${at.pathname}`);return route.abort();}
       return route.continue();
     });
-    if(process.env.WSTX_LIVE_PAGE_INJECT)await require(path.resolve(process.env.WSTX_LIVE_PAGE_INJECT))(context);
     const watch=watchPage(page);
     const clean=what=>{const why=watch.verdict();if(why||refused.length)throw new Error(`${what}: ${why??''} commands refused: ${JSON.stringify(refused)}`);};
     await setCookies((await lines.next('first session',10000)).cookies);
@@ -45,18 +46,21 @@ async function run({origin,control,lines}){
     const firstBoot=first.boot;
     // Several periods, and a row seen moving from the latest period to the kept ones.
     await watch.until('several periods before the restart',()=>{clean('before the restart');return watch.periods.size>=PERIODS&&watch.moved()>0;},4*MINUTES);
-    const before={periods:watch.periods.size,moved:watch.moved()},old=new Set(watch.tips.keys());
+    const before={periods:watch.periods.size,moved:watch.moved()};
 
     fs.writeFileSync(path.join(control,'restart'),'');
     let message;
-    await watch.until('the restart is not answered',()=>{clean('waiting for the restart');return (message=lines.poll());},7*MINUTES);
+    let last;
+    await watch.until('the restart is not answered',seen=>{clean('waiting for the restart');last=seen;return (message=lines.poll());},WAIT+3*MINUTES);
     if(message.abort)return {status:'busy',why:message.abort};
-    const gone=await watch.until('the page sees the station gone',seen=>seen.state!=='connected'||seen.boot!==firstBoot,60000);
-    await watch.until('the new session',()=>{const m=lines.poll();if(m)message=m;return message.cookies;},2*MINUTES);
+    const gone=await watch.until('the page sees the station gone',seen=>{if(seen.state==='connected'&&seen.boot===firstBoot)last=seen;return seen.state!=='connected'||seen.boot!==firstBoot;},60000);
+    // Every row the old boot showed, up to its last period: a #22 defect keeps those.
+    const old=new Set(watch.tips.keys()),oldGeneration=last.generation;
+    await watch.until('the new session',()=>{const m=lines.poll();if(m)message=m;return message.cookies;},4*MINUTES);
     await setCookies(message.cookies);
     const oldRows=seen=>seen.rows.filter(r=>old.has(rowKey(r)));
     // Rows of the old boot may stay until the first reads of the new boot answer.
-    await watch.until('the page is back on the new boot',seen=>seen.state==='connected'&&seen.boot&&seen.boot!==firstBoot&&!oldRows(seen).length,2*MINUTES);
+    const back=await watch.until('the page is back on the new boot',seen=>seen.state==='connected'&&seen.boot&&seen.boot!==firstBoot&&!oldRows(seen).length,2*MINUTES);
     // The window that showed "Latest undefined period" with the old boot's rows.
     const quiet=Date.now()+8000;
     while(Date.now()<quiet){
@@ -67,7 +71,13 @@ async function run({origin,control,lines}){
     // Several periods of the new boot, again with a row that moved.
     await watch.until('several periods after the restart',()=>{clean('after the restart');return watch.periods.size>=before.periods+PERIODS&&watch.moved()>before.moved;},4*MINUTES);
     clean('at the end');
-    return {status:'green',gone:gone.state,before,after:{periods:watch.periods.size,moved:watch.moved()},rowsWatched:watch.tips.size,tipsWatched:[...watch.tips.values()].filter(Boolean).length,worked:watch.worked,commands:[...new Set(watch.commands)]};
+    // Green only with both live triggers on screen: #22 needs the old boot's generation above the
+    // new one's, #50 a worked-before tip on a kept row. Without them nothing was shown wrong, but
+    // nothing was proven either.
+    const generations={old:oldGeneration,new:back.generation},missing=[];
+    if(!(Number.isInteger(oldGeneration)&&Number.isInteger(back.generation)&&oldGeneration>back.generation))missing.push('#22: the old generation was not above the new one');
+    if(!watch.worked.kept)missing.push('#50: no worked-before tip on a kept row');
+    return {status:missing.length?'not-exercised':'green',missing,generations,gone:gone.state,before,after:{periods:watch.periods.size,moved:watch.moved()},rowsWatched:watch.tips.size,tipsWatched:[...watch.tips.values()].filter(Boolean).length,worked:watch.worked,commands:[...new Set(watch.commands)]};
   }finally{await browser.close();}
 }
 
@@ -77,7 +87,7 @@ function stdinLines(){
   readline.createInterface({input:process.stdin}).on('line',line=>{
     // Windows PowerShell's stdin starts with a byte order mark. The line holds the session, so a
     // bad one is never printed, and neither is the error that would quote it.
-    let m;try{m=JSON.parse(line.replace(/^﻿/,''));}catch{console.error('a stdin line is not JSON');process.exit(2);}
+    let m;try{m=JSON.parse(line.replace(/^\uFEFF/,''));}catch{console.error('a stdin line is not JSON');process.exit(2);}
     const w=waiting.shift();if(w)w(m);else queue.push(m);
   });
   return {
@@ -89,5 +99,5 @@ module.exports={run};
 if(require.main===module){
   const origin=process.env.WSTX_LIVE_PAGE_ORIGIN,control=process.env.WSTX_LIVE_PAGE_CONTROL;
   if(!origin?.startsWith('https://')||!control){console.error('run through .harness/deploy/live-page-check.ps1');process.exit(2);}
-  run({origin,control,lines:stdinLines()}).then(report=>{console.log(`PAGE CHECK ${JSON.stringify(report)}`);process.exit(report.status==='green'?0:3);},e=>{console.log(`PAGE CHECK RED ${e.message}`);process.exit(1);});
+  run({origin,control,lines:stdinLines()}).then(report=>{console.log(`PAGE CHECK ${JSON.stringify(report)}`);process.exit({green:0,busy:3,'not-exercised':4}[report.status]);},e=>{console.log(`PAGE CHECK RED ${e.message}`);process.exit(1);});
 }
