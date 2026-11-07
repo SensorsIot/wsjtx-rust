@@ -998,7 +998,9 @@ async fn a_band_change_waits_for_the_lease_of_a_poll_and_is_accepted() {
     holder.join().unwrap();
 }
 
-// Proves: CL-044-16; TC-044-023 (b). The wait is bounded; a refusal changes nothing.
+// Proves: CL-044-16; TC-044-023 (b). The wait is bounded; a refusal changes nothing. The refusal
+// comes at 3 s, never before, and at most 250 ms after (the margin of CL-044-16: 35 runs on
+// HB9BLA, 2026-11-07, waited 3001.9 to 3081.6 ms, the most beside a 2-job cargo build).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing() {
     let (f, _) = station(radio(fixed([0, 0])));
@@ -1013,7 +1015,7 @@ async fn a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing()
         (StatusCode::CONFLICT, Some("busy"))
     );
     assert!(
-        waited >= Duration::from_millis(2900) && waited < Duration::from_millis(4500),
+        waited >= Duration::from_millis(3000) && waited < Duration::from_millis(3250),
         "{waited:?}"
     );
     let (_, after, _, _) = f.call("GET", "/receive/selection", None).await;

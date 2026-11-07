@@ -4871,6 +4871,57 @@ fn logged_before(call: &str, grid: &str, e: i64) -> String {
     )
 }
 
+/// The shared scripted IC-7300 (cat_lifecycle_tests) on COM3, its dial on 14.074 MHz (20 m):
+/// the confirmed dial from which the record of a completed QSO takes its BAND
+/// (WstxContact::DirectLog) and the station its band. With it the contest tests let the
+/// product log the QSO itself instead of importing the entry.
+fn dial_20m(f: &Mcp) -> Arc<Mutex<crate::cat_lifecycle_tests::Peer>> {
+    use crate::cat_lifecycle_tests::{Device, attach_peer};
+    let r = &f.state.recording;
+    let peer = attach_peer(r, Device::Present);
+    peer.lock().unwrap().dial = 14_074_000;
+    let revision = f.state.store.lock().unwrap().document.revision;
+    r.radio_connect(
+        wstx_rust::radio_control::Configuration::parse("COM3").unwrap(),
+        revision,
+    )
+    .unwrap();
+    retune(f, &peer, 14_074_000);
+    peer
+}
+/// Turns the scripted dial to `hz` and waits until the CAT owner's poll has confirmed it.
+fn retune(f: &Mcp, peer: &Mutex<crate::cat_lifecycle_tests::Peer>, hz: u64) {
+    peer.lock().unwrap().dial = hz;
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while crate::contact_http::confirmed_dial(&f.state.recording) != Some(hz) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "dial {hz} not confirmed"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+/// The contest QSOs the log holds now, as (call, grid, band, mode), oldest first.
+fn logged(f: &Mcp, e: i64) -> Vec<(String, Option<String>, Option<String>, String)> {
+    let (_, mut list) = f
+        .state
+        .logbook
+        .contest_qsos(e - 3_600_000, e + 3_600_000)
+        .unwrap();
+    list.sort_by_key(|q| q.ms);
+    list.into_iter()
+        .map(|q| (q.call, q.grid, q.band, q.mode))
+        .collect()
+}
+fn qso(call: &str, grid: &str) -> (String, Option<String>, Option<String>, String) {
+    (
+        call.into(),
+        Some(grid.into()),
+        Some("20m".into()),
+        "FT8".into(),
+    )
+}
+
 // Proves: TC-063-009
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_063_009_search_and_pounce_calls_the_most_valuable_and_waits_for_what_it_needs() {
@@ -4971,9 +5022,11 @@ async fn tc_063_009_a_manual_qso_of_the_period_is_a_dupe_for_the_next_evaluation
     let e = at_even(&f);
     let _client = f.state.recording.clients.session();
     f.state.recording.fixture_band("20m");
+    dial_20m(&f);
     browser_ok(&f, "set_activity", json!({"activity":"ww_digi"})).await;
     select(&f, contest_config(e, "sp", -1)).await;
     f.tick();
+    assert_eq!(logged(&f, e), vec![], "the log starts empty");
     // A row the run skips, so that it keeps waiting; the operator confirms and arms it.
     publish(&f, e, &[("CQ NA W9XYZ EN52", 900.0, Some(-3.0))]);
     assert_eq!(run_state(&f).await.0, "waiting");
@@ -5001,8 +5054,8 @@ async fn tc_063_009_a_manual_qso_of_the_period_is_a_dupe_for_the_next_evaluation
     assert_eq!(contact(&f).await.1, json!("completed"));
     f.tick();
     assert_eq!(run_state(&f).await.0, "waiting");
-    // No CAT dial on this bench, so the record has no band: the log the radio would have written.
-    import_adi(&f, &logged_before("W9XYZ", "EN52", e));
+    // The completed QSO wrote its own log entry, on the confirmed dial's band; nothing imported.
+    assert_eq!(logged(&f, e), vec![qso("W9XYZ", "EN52")]);
     built_qsos(&f, 1).await;
     // Its CQ in the next period: a dupe alone, nothing armed.
     publish(&f, e + 120_000, &[("CQ WW W9XYZ EN52", 900.0, Some(9.0))]);
@@ -5075,6 +5128,7 @@ async fn tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller() {
     let e = at_even(&f);
     let _client = f.state.recording.clients.session();
     f.state.recording.fixture_band("20m");
+    let dial = dial_20m(&f);
     import_adi(&f, &logged_before("W1DUP", "EM12", e));
     browser_ok(&f, "set_activity", json!({"activity":"ww_digi"})).await;
     select(&f, contest_config(e, "run", -1)).await;
@@ -5123,8 +5177,11 @@ async fn tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller() {
         (run["state"].clone(), run["completed_contacts"].clone()),
         (json!("calling_cq"), json!(1))
     );
-    // No CAT dial on this bench, so the record has no band: the log the radio would have written.
-    import_adi(&f, &logged_before("JA1XYZ", "PM95", e));
+    // The completed QSO wrote its own log entry beside the earlier W1DUP; nothing imported.
+    assert_eq!(
+        logged(&f, e),
+        vec![qso("W1DUP", "EM12"), qso("JA1XYZ", "PM95")]
+    );
     built_qsos(&f, 2).await;
     publish(
         &f,
@@ -5168,11 +5225,14 @@ async fn tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller() {
         "run"
     );
     // A reason appearing ends the CQ: a band outside the contest, disarmed; back, it calls again.
+    // The station band is the radio's: the dial moves to 30 m and back.
     f.state.recording.fixture_band("30m");
+    retune(&f, &dial, 10_136_000);
     f.tick();
     assert_eq!(run_state(&f).await, ("waiting".into(), json!("band")));
     assert_eq!(contact(&f).await.2, json!("disarmed"));
     f.state.recording.fixture_band("20m");
+    retune(&f, &dial, 14_074_000);
     f.tick();
     f.tick();
     assert_eq!(run_state(&f).await.0, "calling_cq");

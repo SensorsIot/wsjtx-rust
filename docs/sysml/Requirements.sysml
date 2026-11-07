@@ -3994,7 +3994,7 @@ package WstxRequirements {
     dependency CL_044_15_verified_by_TC_044_021 from 'CL-044-15' to 'TC-044-021';
     // Live finding 2026-11-06 (#44 comment 6683284855): a band change from the operator must simply work.
     requirement 'CL-044-16' {
-        doc /* A selection of POST /receive/select that finds the CAT lease held by the 1 s poll, a menu or AGC exchange or another transition waits for it up to 3 s, without a queue, off the async runtime, and then proceeds: a poll no longer refuses a band change. After the wait the preflight runs again as before. A lease still held at 3 s refuses busy, as does a transmit hold, at once, since a transmission lasts far longer than the wait. A refusal changes nothing: the operating revision and the selection stay as they were, and the Band control shows the band the station is on, with "Selection refused · busy". */
+        doc /* A selection of POST /receive/select that finds the CAT lease held by the 1 s poll, a menu or AGC exchange or another transition waits for it up to 3 s, without a queue, off the async runtime, and then proceeds: a poll no longer refuses a band change. After the wait the preflight runs again as before. A lease still held at 3 s refuses busy, as does a transmit hold, at once, since a transmission lasts far longer than the wait. The busy refusal of a held lease comes at 3 s from the request, never before, with a margin of at most 250 ms for scheduling and request handling: on the development PC (HB9BLA, 2026-11-07, 35 runs) it came 2 to 82 ms after 3 s, the most beside a build, so 250 ms is about three times the worst seen and well below a 3.5 s wait. A refusal changes nothing: the operating revision and the selection stay as they were, and the Band control shows the band the station is on, with "Selection refused · busy". */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/radio_control/actor.rs; server/src/recording.rs; server/src/selection.rs; server/src/selection_http.rs";
     }
@@ -4004,7 +4004,7 @@ package WstxRequirements {
              CL-044-16
              Setup: the actual router, Recording and CAT actor on a scripted IC-7300; Chromium with one refusal injected.
              Steps: (a) POST /receive/select while the lease is held for 300 ms; (b) while it stays held; (c) reserve the lease under a transmit hold; (d) in the browser, select a band and answer 409 busy.
-             Expected: (a) 202 after the wait; (b) 409 busy after 3 s, with the operating revision and selection unchanged; (c) Busy at once; (d) "Selection refused · busy" and the Band control back on the current band.
+             Expected: (a) 202 after the wait; (b) 409 busy at least 3000 ms and under 3250 ms after the request (3 s plus the 250 ms margin of CL-044-16; a red under load is rerun once), with the operating revision and selection unchanged; (c) Busy at once; (d) "Selection refused · busy" and the Band control back on the current band.
              2 — Isolated automated tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -5815,9 +5815,9 @@ package WstxRequirements {
     verification 'TC-063-009' {
         doc /* TC-063-009 — Search and pounce, and the automation clause
              CL-063-05
-             Setup: the selection form table; the actual station router (HB9BLA JN47AA) with the contact engine and #9 transmit owner on the recording hardware double, virtual UTC, on 20 m, an imported QSO with W1DUP inside the period; a status session held open.
-             Steps: each forbidding and silent profile with sp and run with and without the confirmation; PUT sp without it; set_activity alone; sp with activity none, on 30 m, then fitting; CQ WW W1DUP (strongest), K1ABC and JA1XYZ (weakest); empty partner periods; W1DUP alone; a selection whose period starts in an hour; a run with a manual replacing QSO with W9XYZ to its end, the log rebuilt, then W9XYZ's CQ alone.
-             Expected: refused contest.automation_confirmed where forbidden, accepted where silent; no run after the refused PUT and after set_activity; reasons activity, band, none; never a CQ; JA1XYZ selected and armed, Tx2 with the grid; after 2 partner periods without progress waiting, disarmed; nothing armed for the dupe alone; outside_period and nothing armed; the manual QSO's station a dupe, nothing armed.
+             Setup: the selection form table; the actual station router (HB9BLA JN47AA) with the contact engine and #9 transmit owner on the recording hardware double, virtual UTC, on 20 m, an imported QSO with W1DUP inside the period; a status session held open; for the manual QSO, the CAT owner on a scripted IC-7300 whose dial reads 14.074 MHz, confirmed, and an empty log.
+             Steps: each forbidding and silent profile with sp and run with and without the confirmation; PUT sp without it; set_activity alone; sp with activity none, on 30 m, then fitting; CQ WW W1DUP (strongest), K1ABC and JA1XYZ (weakest); empty partner periods; W1DUP alone; a selection whose period starts in an hour; a run with a manual replacing QSO with W9XYZ to its end, nothing imported, the log rebuilt, then W9XYZ's CQ alone.
+             Expected: refused contest.automation_confirmed where forbidden, accepted where silent; no run after the refused PUT and after set_activity; reasons activity, band, none; never a CQ; JA1XYZ selected and armed, Tx2 with the grid; after 2 partner periods without progress waiting, disarmed; nothing armed for the dupe alone; outside_period and nothing armed; the log holds exactly W9XYZ EN52 20m FT8, written by the completed QSO itself; the manual QSO's station a dupe, nothing armed.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -5829,9 +5829,9 @@ package WstxRequirements {
     verification 'TC-063-010' {
         doc /* TC-063-010 — Run: CQ and the most valuable caller
              CL-063-05
-             Setup: as TC-063-009, activity ww_digi, run selected.
-             Steps: a step; callers W1DUP (dupe, strongest), K1ABC (first non-dupe decoded), JA1XYZ (weakest, new multiplier, most points); its R and 73; steps; JA1XYZ again; once the log is rebuilt, callers JA2ABC PM85 (more points) and K1NEW FN42; Abort of that QSO; an empty period; Abort of the run's own CQ; the band leaves the contest and returns; the station clock past the period's end.
-             Expected: calling_cq, armed, Tx6 "CQ WW HB9BLA JN47"; JA1XYZ answered with 2 candidates, not the first, not the strongest, not the dupe; completed, then calling_cq again with 1 completed; not answered again; K1NEW selected, PM being no new multiplier any more; after that Abort calling_cq; the CQ goes on; after Abort of the CQ calling_cq, armed, with a new contact id and operation run; waiting band and disarmed, then calling_cq and armed again; waiting outside_period and disarmed.
+             Setup: as TC-063-009 with the scripted IC-7300 on 14.074 MHz, activity ww_digi, run selected.
+             Steps: a step; callers W1DUP (dupe, strongest), K1ABC (first non-dupe decoded), JA1XYZ (weakest, new multiplier, most points); its R and 73; steps; nothing imported; JA1XYZ again; once the log is rebuilt, callers JA2ABC PM85 (more points) and K1NEW FN42; Abort of that QSO; an empty period; Abort of the run's own CQ; the band leaves the contest and returns (the dial to 10.136 MHz and back); the station clock past the period's end.
+             Expected: calling_cq, armed, Tx6 "CQ WW HB9BLA JN47"; JA1XYZ answered with 2 candidates, not the first, not the strongest, not the dupe; completed, then calling_cq again with 1 completed; the log holds W1DUP EM12 and JA1XYZ PM95 20m FT8, the latter written by the completed QSO itself; not answered again; K1NEW selected, PM being no new multiplier any more; after that Abort calling_cq; the CQ goes on; after Abort of the CQ calling_cq, armed, with a new contact id and operation run; waiting band and disarmed, then calling_cq and armed again; waiting outside_period and disarmed.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
