@@ -160,12 +160,12 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 .ct-marker{position:absolute;top:0;bottom:0;width:0;margin-left:-1.5px;border-left:3px solid;pointer-events:none;z-index:1;box-shadow:0 0 0 1px rgba(0,0,0,.55)}
 .ct-rx{border-color:#30d050;color:#30d050}
 .ct-txm{border-color:#ff4040;color:#ff6060}
-/* #65 FreeTxSlotMarks: the run's Free Tx slots in the frequency ruler (contact.js), neither the Rx
-   green nor the Tx red, no pointer input; they fit inside the ruler and never move the waterfall. */
+/* #65/#76 FreeTxSlotMarks: the run's Free Tx slots in the frequency ruler (contact.js), 8 px pale
+   green bars without text, set apart from the Rx green, the Tx red and the ruler in every theme
+   (Day and Night remap them with the page); no pointer input; inside the ruler, the waterfall stays. */
 #free-tx-slots{position:absolute;inset:0;overflow:hidden;pointer-events:none}
-#free-tx-slots[hidden],#free-tx-slots .fts-label[hidden]{display:none}
-#free-tx-slots .fts-bar{position:absolute;bottom:0;height:4px;background:#4aa8ff;pointer-events:none}
-#free-tx-slots .fts-label{position:absolute;bottom:4px;padding:0 2px;line-height:1.1;white-space:nowrap;color:#cfe6ff;background:#0d2238;border-radius:2px;pointer-events:none}
+#free-tx-slots[hidden]{display:none}
+#free-tx-slots .fts-bar{position:absolute;bottom:0;height:8px;background:#ccffd4;pointer-events:none}
 .op-input-meter[data-level=high] strong,.op-input-meter[data-level=low] strong{color:#ffb040}
 #band-activity tr[data-sequence]{cursor:pointer}
 #band-activity tr[data-sequence]:focus{outline:2px solid #e0a030;outline-offset:-2px}

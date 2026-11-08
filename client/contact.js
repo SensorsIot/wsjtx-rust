@@ -867,7 +867,7 @@ waterfall?.addEventListener('click',event=>{
 waterfall?.addEventListener('dblclick',event=>{clearTimeout(pointerTimer);const hz=pointerHz(event);pointer(hz,hz,'Rx and Tx frequency');});
 // #65 WstxOperatingLayout::FreeTxSlotMarks: the latest free_tx_slots (GET /automation, read on
 // automation.state and once per socket, and each free_tx_slots.state event; no other request) as
-// bars from hz to hz + width in the frequency ruler, on the waterfall's one mapping (CL-050-07),
+// bars over hz to hz + width in the frequency ruler, on the waterfall's one mapping (CL-050-07),
 // while "Show free Tx slots" is on and the value belongs to the snapshot's run.
 let freeTxSlots=null;
 const freeTxLayer=document.createElement('div');freeTxLayer.id='free-tx-slots';freeTxLayer.setAttribute('aria-hidden','true');freeTxLayer.hidden=true;
@@ -878,28 +878,22 @@ function freeTxSlotsRead(a){
   if(!(running&&freeTxSlots?.run_id===a.run.id&&(!v||v.run_id===freeTxSlots.run_id&&v.at_utc_ms<freeTxSlots.at_utc_ms)))freeTxSlots=v;
   freeTxSlotMarks();
 }
-const signedRise=n=>n<0?`−${-n}`:`+${n}`;
+// #76 look: no text on the marks; each bar is shortened by 2 px at each end, so slots one width
+// apart show a 4 px gap. A slot narrower than both insets (a phone) draws no bar.
+const freeTxInsetPx=2;
 function freeTxSlotMarks(){
   const ruler=document.querySelector('#frequency-ruler'),axis=window.wstxWaterfallAxis;if(!ruler||!axis)return;
   if(freeTxLayer.parentNode!==ruler)ruler.append(freeTxLayer);
   const v=freeTxSlots,run=automationView?.run;
   const show=window.wstxFreeTxSlotsShown?.()===true&&!!run&&!!v&&v.run_id===run.id&&v.slots.length>0;
   freeTxLayer.replaceChildren();freeTxLayer.hidden=!show;if(!show)return;
-  const width=v.mode==='ft4'?90:50,labels=[];
+  const width=v.mode==='ft4'?90:50;
   v.slots.forEach((s,i)=>{
     if(!Number.isInteger(s?.hz)||!Number.isInteger(s.rise_db))return;
-    const left=axis.x(s.hz,ruler),right=axis.x(s.hz+width,ruler),rank=String(i+1);
-    const bar=document.createElement('div');bar.className='fts-bar';bar.dataset.rank=rank;bar.dataset.hz=String(s.hz);bar.style.left=`${left}px`;bar.style.width=`${right-left}px`;
-    const label=document.createElement('div');label.className='fts-label';label.dataset.rank=rank;label.textContent=`${rank} ${signedRise(s.rise_db)}`;label.style.left=`${left}px`;
-    freeTxLayer.append(bar,label);labels.push(label);
+    const left=axis.x(s.hz,ruler)+freeTxInsetPx,right=axis.x(s.hz+width,ruler)-freeTxInsetPx;
+    const bar=document.createElement('div');bar.className='fts-bar';bar.dataset.rank=String(i+1);bar.dataset.hz=String(s.hz);bar.style.left=`${left}px`;bar.style.width=`${Math.max(0,right-left)}px`;
+    freeTxLayer.append(bar);
   });
-  // A label stays inside the ruler; of overlapping labels the higher rank's stays, the bars all do.
-  const box=freeTxLayer.getBoundingClientRect(),kept=[];
-  for(const label of labels){
-    let r=label.getBoundingClientRect();
-    if(r.right>box.right){label.style.left=`${Math.max(0,box.width-r.width)}px`;r=label.getBoundingClientRect();}
-    if(kept.some(k=>r.left<k.right&&k.left<r.right))label.hidden=true;else kept.push(r);
-  }
 }
 window.wstxFreeTxSlotMarks=freeTxSlotMarks;
 addEventListener('wstx-free-tx-slots',freeTxSlotMarks);
