@@ -719,7 +719,18 @@ package WstxStrategy {
              element shows the run state from GET /automation, read only on an automation.state
              event: "Strategy <name> waiting", "· <call>", "· calling CQ", "· your QSO", a
              waiting reason, the stop reason, or "Strategy <name> · Auto off" while Auto is off.
-             No client polling. */
+             No client polling. The line is drawn from the current strategy snapshot and the
+             current automation snapshot together at each change of either, so that it never
+             keeps the text of an earlier state (#74, CL-074-01): with None, or no strategy
+             snapshot yet, and no strategy run it shows the WstxMcp::AutomationIndicator text
+             of the automation snapshot ("Automation idle" without a run). A new boot
+             (WstxStationProtocol::PushedStationState): when the browser learns a boot_id other
+             than that of its held strategy snapshot, the element drops that snapshot and its
+             verdicts at once and shows what a freshly loaded page shows before its GET
+             /strategy answers (the selector with None only and disabled, Auto disabled with
+             "Strategies are loading", "Automation idle", no marks), then the new boot's
+             snapshot; nothing of the previous boot is drawn, also not with the new boot's
+             automation snapshot. */
     }
     attribute def StrategyRun {
         doc /* A WstxMcp::OperatingAutomation run with strategy true; one run at a time.
@@ -1031,6 +1042,7 @@ package WstxStrategy {
     dependency valueViewClause from ValueView to WstxRequirements::'CL-039-04';
     dependency editorClause from StrategyEditor to WstxRequirements::'CL-039-04';
     dependency selectorClause from StrategySelector to WstxRequirements::'CL-039-04';
+    dependency selectorBootClause from StrategySelector to WstxRequirements::'CL-074-01';
     dependency runClause from StrategyRun to WstxRequirements::'CL-039-05';
     dependency freeSlotClause from FreeTxSlot to WstxRequirements::'CL-039-09';
     dependency freeSlotRun from StrategyRun to FreeTxSlot;
