@@ -1162,7 +1162,7 @@ package WstxRequirements {
     verification 'TC-010-008' {
         doc /* TC-010-008 — Waterfall pointer actions and frequency inputs
              CL-010-11
-             Setup: actual Chromium/server with injected spectrum rows, 1100x850 and 360x640, DPR 1/2; request recorder. The bound test runs at 1440x1000; the narrow and DPR 2 checks are in TC-050-007.
+             Setup: actual Chromium/server with injected spectrum rows at 1440x1000, DPR 1; request recorder. The pointer mapping at 1366x768 (DPR 1 and 2), 900x700 and 360x800 is checked by TC-050-007.
              Steps: at independently computed pixel positions for 700, 1000, 1500 and 2950 Hz perform click, double-click, shift-click with Hold Tx on and right-click; numeric Rx/Tx inputs with 199/200/2950/2951 Tx.
              Expected (#50): requested offsets equal the independently computed axis frequency rounded to integer Hz; click Tx only; a double-click exactly one request for Rx and Tx and no re-decode request; shift-click as click and with Hold Tx on; right-click nothing; the markers are 3 px lines (Rx rgb(48,208,80), Tx rgb(255,64,64)) without text at the confirmed values; out-of-domain refused; no Enable Tx request; the browser context menu does not open on the waterfall.
              2 — Isolated automated functional tests; Windows development PC. */
@@ -2815,8 +2815,9 @@ package WstxRequirements {
              '<port> in use by another program' (for example 'COM3 in use by another
              program'); other unavailable causes keep radio_unavailable. Still missing:
              only the Thin/Off accounted-traffic companion
-             including these status reads (TC-022-008). */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
+             including these status reads (TC-022-008), moved to the combined front-end/server
+             traffic-test issue #80 (operator 2026-11-08). */
+        attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/authorization_http.rs; client/recording.js; client/authorization.js; client/app.js";
     }
     dependency CL_022_05_to_FR_003 from 'CL-022-05' to 'FR-003';
@@ -3920,8 +3921,8 @@ package WstxRequirements {
         doc /* TC-044-019 — Monitoring on HB9BLA
              CL-044-14
              Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, 40 m, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported). The mismatched-antenna / SWR 3.0 stop step is dropped by operator decision of 2026-11-08 ("bad SWR is handled by the transceiver"); the station's own stop at and above SWR 3.0 stays (CL-044-14), covered offline; the SWR display is #68.
-             Steps: transmit during normal operation, compare the frame count in the CI-V log and the transmit timing; check the ALC threshold against the radio's own meter; transmit with ALC above 0010.
-             Expected: three meter frames per transmission, in the middle; decode by another station unaffected; ALC above 0010 goes down one step at the next transmission until it reads 0010 or less, with no entry below 0060; the ALC threshold matches the radio's display.
+             Steps: transmit during normal operation and record the radio.tx_level frames and the transmit timing; transmit with ALC above 0010. The evidence is the CI-V readback and the radio.tx_level frames, not the radio's display or a CI-V log (operator decision of 2026-11-08; the station keeps no CI-V log).
+             Expected: at most one radio.tx_level meter frame per transmission (sent only when the values change); decode by another station unaffected; ALC above 0010 goes down one step at the next transmission until it reads 0010 or less, with no entry below 0060.
              5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
@@ -4048,8 +4049,8 @@ package WstxRequirements {
         doc /* TC-044-016 — Set level on HB9BLA
              CL-044-12, CL-044-13
              Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, a dummy load or the station antenna, RF power set low by the test before the first Tx (CI-V 14 0A, value 0003, with the station stopped and idle, because it holds COM3; read back; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported).
-             Steps: read 15 13, 15 11, 15 12 during Tune and compare with the radio's own meter; press Set level; press HALT during a second run.
-             Expected: the meter values agree with the radio's display and the manual's scales; the run ends with the ALC just below rising, the level stored and Tune off; HALT stops it at once and keeps the stored level.
+             Steps: read 15 13, 15 11, 15 12 during Tune over CI-V; press Set level; press HALT during a second run. The evidence is the CI-V readback and the radio.tx_level frames, not the radio's display (operator decision of 2026-11-08).
+             Expected: the meter values read back agree with the radio.tx_level frames and the manual's scales; the run ends with the ALC just below rising, the level stored and Tune off; HALT stops it at once and keeps the stored level.
              5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
