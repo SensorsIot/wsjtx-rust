@@ -16,6 +16,9 @@ const settingsForm = document.querySelector('#settings');
 const settingsResult = document.querySelector('#settings-result');
 let profileData, editingRevision, dirty = false, conflict = false, saving = false;
 let socket, timer, pendingId, handshakeProbe;
+// WstxMcp::AutomationIndicator (#74): the socket that has carried an automation.state, so that
+// the operating client, loaded after the first snapshots, reads GET /automation only after one.
+let automationAnnounced = null;
 let retry = 1000, lastMessage = 0, nextId = 1;
 function stale() { connection.textContent = 'Disconnected · stale'; connection.dataset.state = 'stale'; refresh.disabled = true; window.dispatchEvent(new Event('station-stale')); }
 function requestStatus() {
@@ -94,6 +97,7 @@ async function connect() {
       const message = JSON.parse(event.data);
       if (message.v !== 1) throw new Error('Unsupported version');
       lastMessage = Date.now();
+      if (message.type === 'automation.state') automationAnnounced = current;
       window.dispatchEvent(new CustomEvent('station-message', {detail: {message, current}}));
       // WstxStationProtocol::PushedStationState: the first status of a socket reads the profile, then only a newer announced revision does.
       if (message.type === 'profile.state' && profileRefresh.initialized && (message.data?.boot_id !== profileData?.boot_id || message.data?.revision > profileData?.revision)) refreshProfile(current, profileRefresh).catch(() => disconnect(current));
@@ -243,7 +247,11 @@ async function loadProfile(reload, current = socket) {
 function applyProfile(data, reload) {
   if (typeof data?.profile_id !== 'string' || typeof data.boot_id !== 'string' || !Number.isSafeInteger(data.revision) || !data.settings) throw new Error('Invalid profile');
   if (profileData && data.boot_id === profileData.boot_id && data.revision < profileData.revision) return false;
+  const newBoot = !!profileData && data.boot_id !== profileData.boot_id;
   profileData = data; document.querySelector('#profile-panel').hidden = false;
+  // WstxStationProtocol::PushedStationState (#74): a new boot is learned here; each view of
+  // station state drops what it holds at once and shows its freshly loaded form.
+  if (newBoot) window.dispatchEvent(new CustomEvent('station-boot', {detail: data.boot_id}));
   // FR-023: the connection type is read-only and shown as saved.
   document.querySelector('#settings select:not([id])').value = data.connection_type === 'native_flex' ? 'native_flex' : 'standard';
   for (const [id, text] of [['#profile-id', data.profile_id], ['#profile-name', data.settings.display_name], ['#profile-endpoint', data.endpoint], ['#profile-boot', data.boot_id], ['#profile-revision', String(data.revision)]]) document.querySelector(id).textContent = text;

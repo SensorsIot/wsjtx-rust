@@ -70,6 +70,9 @@ test('TC-010-005 display preference is isolated by origin and validated profile 
   await chooseDisplay(page,'off');let current=base;
   // Profile identity wire fixtures test browser preference identity only; no decoded traffic is injected.
   await page.route('**/profile',route=>route.fulfill({json:current}));
+  // #74 (CL-074-01): a recording reply naming another boot than the profile's is discarded, so the
+  // fixture's station names the same boot in GET /recording as in GET /profile.
+  await page.route('**/recording',async route=>{const real=await (await route.fetch()).json();await route.fulfill({json:{...real,boot_id:current.boot_id}});});
   current={...base,boot_id:crypto.randomUUID(),revision:base.revision+1};await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);
   assert.equal(await page.inputValue('#display-profile'),'off','boot/revision changes preserve explicit choice');
   current={...base,profile_id:crypto.randomUUID()};await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);
@@ -77,7 +80,10 @@ test('TC-010-005 display preference is isolated by origin and validated profile 
   current={...base,profile_id:'invalid-profile-id'};await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);await chooseDisplay(page,'thin');assert.equal(await page.evaluate(()=>localStorage.getItem('wstx.display-profile.v1:invalid-profile-id')),null,'invalid UUID is never persisted');
   current=base;await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);assert.equal(await page.inputValue('#display-profile'),'off');
   const other=await fixture(t,{width:1440,height:900}),otherPage=await page.context().newPage();t.after(()=>otherPage.close());
-  await otherPage.route('**/profile',route=>route.fulfill({json:base}));await otherPage.goto(other.app.origin);await otherPage.waitForFunction(()=>profileData&&snapshot&&!syncPending);
+  await otherPage.route('**/profile',route=>route.fulfill({json:base}));
+  // The other station's GET /recording names the boot of the profile it is shown with (#74).
+  await otherPage.route('**/recording',async route=>{const real=await (await route.fetch()).json();await route.fulfill({json:{...real,boot_id:base.boot_id}});});
+  await otherPage.goto(other.app.origin);await otherPage.waitForFunction(()=>profileData&&snapshot&&!syncPending);
   assert.equal(await otherPage.inputValue('#display-profile'),'detail','same profile UUID on another origin cannot inherit Off');await chooseDisplay(otherPage,'thin');
   assert.equal(await page.inputValue('#display-profile'),'off');assert.deepEqual(errors,[]);
 });
@@ -1401,6 +1407,10 @@ test('TC-065-003 Free Tx slots marks above the waterfall',{timeout:180000},async
       await contactCommands(p,commands);
       await p.route('**/automation',route=>route.fulfill({json:{v:1,profile_id:base.profile_id,boot_id:base.boot_id,policy_revision:1,run_revision:automation.runRevision,configuration:{strategy:false,pounce:'K1ABC'},run:automation.run,strategy_refusal:null,free_tx_slots:automation.value}}));
     }});
+    // #74: the run is announced by automation.state (the station sends one to a new subscriber
+    // while a revision is nonzero); GET /automation is read only after it.
+    await page.waitForFunction(()=>!!window.wstxContact?.snapshot(),null,{timeout:20000});
+    await page.evaluate(r=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:1,run_revision:r}}}})),automation.runRevision);
     // The run is read (the station element marks an active run).
     await page.waitForFunction(()=>window.wstxContact?.snapshot()&&!document.querySelector('#contact-rx').disabled&&document.querySelector('#station-automation')?.dataset.active==='true',null,{timeout:20000}).catch(async e=>{throw new Error(`${e.message} ${JSON.stringify(await page.evaluate(()=>[!!window.wstxContact?.snapshot(),document.querySelector('#contact-rx')?.disabled,document.querySelector('#station-automation')?.dataset.active,document.querySelector('#station-automation')?.textContent]))} ${JSON.stringify(requests)} ${errors}`);});
     const push=v=>page.evaluate(v=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'free_tx_slots.state',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,free_tx_slots:v}}}})),v);
@@ -3235,6 +3245,233 @@ test('TC-063-012 Fully automatic: the warning on Auto on, the confirmation and t
   assert.equal(await page.locator('#op-confirm[open]').count(),0);
   assert.deepEqual(s.autos[1],{v:1,profile_id:s.base.profile_id,boot_id:s.base.boot_id,auto:true});
   assert.deepEqual(errors,[]);
+});
+
+// ---------------------------------------------------------------- #74 an open page after a station restart
+// The station requests of a page (its HTTP requests to the station except static files), and the
+// count of those not yet finished.
+function stationRequests(page,origin){
+  const list=[],open=new Set(),station=r=>{const u=new URL(r.url());return u.origin===origin&&u.pathname!=='/'&&!/\.(js|css|svg|png|ico|woff2?)$/.test(u.pathname);};
+  page.on('request',r=>{if(station(r)){list.push(`${r.method()} ${new URL(r.url()).pathname}`);open.add(r);}});
+  for(const e of ['requestfinished','requestfailed'])page.on(e,r=>open.delete(r));
+  return {list,pending:()=>open.size};
+}
+// Two frames drawn.
+const drawn=page=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+// Waits until every station request of the page has finished and two frames are drawn.
+async function settled(page,requests){
+  for(let i=0;i<400&&requests.pending();i++)await new Promise(r=>setTimeout(r,25));
+  assert.equal(requests.pending(),0,'station requests still open');
+  await drawn(page);
+}
+// Waits (hang guard 10 s) until a condition of the test's own fixture holds.
+async function until(condition){for(let i=0;i<400&&!condition();i++)await new Promise(r=>setTimeout(r,25));}
+// The strategy line, the selector and the Auto button as the page shows them.
+const strategyElement=page=>page.evaluate(()=>{const a=document.querySelector('#qso-auto'),s=document.querySelector('#strategy-name');
+  return {line:document.querySelector('#station-automation').textContent,value:s.value,options:[...s.options].map(o=>o.textContent),selectorDisabled:s.disabled,pressed:a.getAttribute('aria-pressed'),disabled:a.disabled,title:a.title};});
+// Proves: CL-074-01; TC-074-001 (#74 reproduction, live 2026-11-08): a page kept open across a real
+// restart of the isolated station, with the new socket's GET /strategy held back, never shows the
+// previous boot's "Strategy Farthest new on band" and ends as a freshly opened page shows the new
+// boot, without a GET /automation. Oracles: the station's state after a restart (active None, Auto
+// off: WstxStrategy D2) and a second page opened on the restarted station.
+test('TC-074-001 a page kept open across a station restart shows the new boot strategy line without a reload',{timeout:120000},async t=>{
+  let requests,holdStrategy=false;const held=deferred(),release=deferred();
+  const {page,app,errors,dir}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    requests=stationRequests(p,app.origin);
+    // The order a thin link gives: the new socket's GET /strategy answers last.
+    await p.route('**/strategy',async route=>{if(route.request().method()==='GET'&&holdStrategy){holdStrategy=false;held.resolve();await release.promise;}await route.continue();});
+  }});
+  await page.waitForFunction(()=>document.querySelector('#strategy-name')?.disabled===false&&!!window.wstxContact?.snapshot(),null,{timeout:30000});
+  await page.selectOption('#strategy-name','Farthest new on band');
+  await page.waitForFunction(()=>document.querySelector('#station-automation').textContent==='Strategy Farthest new on band · Auto off',null,{timeout:10000});
+  // Every change of the line, the selector and Auto, with the boot the page knows at that moment.
+  await page.evaluate(()=>{window.__changes=[];const record=()=>{const a=document.querySelector('#qso-auto'),s=document.querySelector('#strategy-name');
+    window.__changes.push({boot:profileData?.boot_id,line:document.querySelector('#station-automation').textContent,value:s.value,pressed:a.getAttribute('aria-pressed')});};
+    const o=new MutationObserver(record);for(const id of ['#station-automation','#strategy-name','#qso-auto'])o.observe(document.querySelector(id),{subtree:true,childList:true,characterData:true,attributes:true});
+    for(const e of ['station-boot','station-ready'])addEventListener(e,record);});
+  const before=await page.evaluate(()=>profileData.boot_id),mark=requests.list.length;
+  // The real restart on the same profile and port: every connection and the boot go.
+  holdStrategy=true;await app.close();
+  const next=await server({},['--profile',dir]);t.after(()=>next.close());
+  await held.promise;
+  await page.waitForFunction(b=>profileData.boot_id!==b&&connection.dataset.state==='connected'&&window.wstxContact?.snapshot()?.boot_id===profileData.boot_id,before,{timeout:30000});
+  const after=await page.evaluate(()=>profileData.boot_id);
+  release.resolve();
+  await page.waitForFunction(()=>document.querySelector('#strategy-name').disabled===false,null,{timeout:10000});
+  await settled(page,requests);
+  const changes=await page.evaluate(()=>window.__changes);
+  assert.ok(changes.some(c=>c.boot===after),'changes recorded after the new boot was learned');
+  assert.deepEqual(changes.filter(c=>c.boot===after&&c.line.startsWith('Strategy Farthest new on band')),[],'the previous boot\'s strategy line never shows after the new boot is learned');
+  const first=await strategyElement(page);
+  assert.equal(first.line,'Automation idle');assert.equal(first.value,'','the selector on None');
+  // A freshly opened page on the restarted station.
+  const other=await browser.newContext({viewport:{width:1366,height:768}});t.after(()=>other.close());
+  const second=await other.newPage(),secondRequests=stationRequests(second,app.origin);
+  await second.goto(app.origin);await second.locator('#connection[data-state=connected]').waitFor();
+  await second.waitForFunction(()=>document.querySelector('#strategy-name')?.disabled===false&&!!window.wstxContact?.snapshot(),null,{timeout:30000});
+  await settled(second,secondRequests);
+  assert.deepEqual(first,await strategyElement(second),'the kept page equals a freshly opened one');
+  assert.deepEqual(requests.list.slice(mark).filter(r=>r==='GET /automation'),[],'no GET /automation: automation is unused after the restart');
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-074-01; TC-074-002 the strategy line with None and no strategy run: drawn from the
+// strategy and automation snapshots together at each change of either; with None and no strategy
+// run it is the automation snapshot's text, "Automation idle" without a run; GET /automation only
+// after automation.state. Expected texts: WstxMcp::AutomationIndicator, WstxStrategy::StrategySelector.
+test('TC-074-002 the strategy line with None and no strategy run shows the automation text',{timeout:60000},async t=>{
+  const {page,errors,s,announce,settle,status}=await strategydefStation(t,{width:1366,height:768});
+  const reads=()=>s.requests.filter(r=>r==='GET /automation').length;
+  assert.equal(await page.locator('#station-automation').textContent(),'Automation idle');
+  assert.equal(reads(),0,'no GET /automation before the first automation.state');
+  await page.selectOption('#strategy-name','New calls');await settle(s.puts,1);
+  await status('Strategy New calls · Auto off');
+  await page.selectOption('#strategy-name','');await settle(s.puts,2);
+  assert.equal(s.puts[1].configuration.active,null);
+  await status('Automation idle');
+  assert.equal(reads(),0,'still no GET /automation');
+  // A pounce run (configuration strategy false), its stop, then no run: one read after each event.
+  const run=r=>{s.automation={policy:1,runRevision:s.automation.runRevision+1,configuration:{strategy:false,pounce:'K1ABC'},run:r,refusal:null};
+    return announce('automation.state',{profile_id:s.base.profile_id,boot_id:s.base.boot_id,policy_revision:1,run_revision:s.automation.runRevision});};
+  const pounce=strategyRunOf('waiting',{id:crypto.randomUUID(),pounce:{call:'K1ABC',band:'40m'}});
+  await run(pounce);await status('Pounce K1ABC waiting · HALT ends it');assert.equal(reads(),1);
+  await run({...pounce,state:'stopped',reason:'no_answer'});await status('Automation stopped · no answer');assert.equal(reads(),2);
+  await run(null);await status('Automation idle');assert.equal(reads(),3);
+  assert.deepEqual(errors,[]);
+});
+// The views of station state a page shows (WstxStationProtocol::PushedStationState), read in the page.
+function stationViews(){
+  const q=s=>document.querySelector(s),a=q('#qso-auto'),sel=q('#strategy-name'),use=q('#qso-pskr'),layer=q('#free-tx-slots');
+  return {line:q('#station-automation').textContent,active:q('#station-automation').dataset.active??null,
+    slots:layer&&!layer.hidden?layer.querySelectorAll('.fts-bar').length:0,hearing:!q('#qso-pskr-lines').hidden,pounce:!!q('#qso-pounce')&&!q('#qso-pounce').hidden,
+    auto:{pressed:a.getAttribute('aria-pressed'),disabled:a.disabled,title:a.title},
+    selector:{value:sel.value,options:[...sel.options].map(o=>o.textContent),disabled:sel.disabled},
+    pskr:{status:q('#pskr-status').textContent,enabled:q('#pskr-enabled').checked,disabled:q('#pskr-enabled').disabled,use:use.getAttribute('aria-pressed'),title:use.title},
+    startup:{checked:q('#monitor-off-startup').checked,disabled:q('#monitor-off-startup').disabled,resume:q('#startup-resume').textContent},
+    alerts:[...document.querySelectorAll('#alert-history li')].map(l=>l.textContent),transmit:q('#transmit-status').textContent};
+}
+// The boot of the state the already conforming views hold (null: none held).
+const heldBoots=page=>page.evaluate(()=>({contact:window.wstxContact?.snapshot()?.boot_id??null,recording:snapshot?.boot_id??null,live:typeof live==='undefined'?null:live?.boot_id??null,
+  operating:operatingState?.boot_id??null,agc:agcState?.boot_id??null,txLevel:txLevelState?.boot_id??null,native:nativeState?.boot_id??null}));
+// Proves: CL-074-01; TC-074-003 every view on a new boot: boot A (the isolated station's real boot)
+// with a strategy run, Free Tx slots, PSK Reporter connected, Monitor off at startup on, Auto on and an
+// alert; then a new socket whose GET /profile names boot B, with boot B's replies held until the page
+// has been read, and boot A's late replies to GET /strategy and GET /pskr. From then on every station
+// reply and socket message of the page names boot B (the test rewrites the boot id). Oracles: the boot
+// B replies written here, the freshly loaded form (WstxStrategy::StrategySelector and the page's own
+// initial texts) and a second page on boot B.
+test('TC-074-003 on a new boot every view drops the previous boot at once, discards its late replies and ends as a fresh page',{timeout:240000},async t=>{
+  for(const failing of [false,true]){
+    const label=failing?'boot B strategy and PSK Reporter 503':'boot B answers';
+    const B=crypto.randomUUID(),T=Math.floor(Date.now()/1000),runId=crypto.randomUUID();
+    const st={phase:'A',lateA:false,holdB:false,late:[],lateDone:0,heldB:[],doneB:0,releaseLate:deferred(),releaseB:deferred()};
+    let A,base,origin;
+    const boot=()=>st.phase==='A'?A:B;
+    const strategyOf=phase=>({v:1,profile_id:base.profile_id,boot_id:phase==='A'?A:B,revision:4,configuration:{continent:null,active:phase==='A'?'Farthest new on band':null,strategies:[],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:phase==='A'?[{call:'DL1XYZ',remaining_s:600}]:[],most_wanted:null,most_wanted_unreadable:false,most_wanted_attribution:'',builtin_strategies:BUILTIN_STRATEGIES,auto:phase==='A',strategy_refusal:null});
+    // The isolated station's own reply, naming the boot of the phase.
+    const realOf=async(phase,route)=>JSON.parse((await (await route.fetch()).text()).split(A).join(phase==='A'?A:B));
+    const pskrOf=phase=>phase==='A'?{v:1,profile_id:base.profile_id,boot_id:A,enabled:true,use:true,state:'connected',error:null,last_spot_utc_s:T-30,storage_error:null}:{v:1,profile_id:base.profile_id,boot_id:B,enabled:false,use:false,state:'off',error:null,last_spot_utc_s:null,storage_error:null};
+    const alertsOf=phase=>({v:1,profile_id:base.profile_id,boot_id:phase==='A'?A:B,revision:1,alerts:phase==='A'?[{id:1,utc:'2026-10-27T12:00:00.0000000Z',call:'K1ABC',message:'CQ K1ABC FN42',rule:'CQ',band:'40m',mode:'ft8',snr_db:-12,dxcc:'United States'}]:[]});
+    const automationOf=phase=>phase==='A'?{v:1,profile_id:base.profile_id,boot_id:A,policy_revision:1,run_revision:1,configuration:{strategy:true},
+      run:strategyRunOf('contact_active',{id:runId,selected:{source_id:'s',job_id:'j',generation:1,sequence:3,call:'K1ABC'},hearing:{state:'heard',spot_utc_s:T-75,snr_db:-12},tx_slot:{hz:1420,power_db:20,his_end:'yes'}}),strategy_refusal:null,free_tx_slots:freeTxValue(runId,[[1000,0],[1300,1]])}:
+      {v:1,profile_id:base.profile_id,boot_id:B,policy_revision:0,run_revision:0,configuration:null,run:null,strategy_refusal:null,free_tx_slots:null};
+    // The station of both boots for a page: replies and socket messages name the boot of the phase.
+    const routes=async p=>{
+      await p.routeWebSocket(/\/ws$/,ws=>{const named=boot(),station=ws.connectToServer();station.onMessage(m=>ws.send(typeof m==='string'&&named!==A?m.split(A).join(B):m));});
+      await p.route(u=>u.origin===origin&&u.pathname!=='/'&&!/\.(js|css|svg|png|ico|woff2?)$/.test(u.pathname),async route=>{
+        const r=await route.fetch(),json=(r.headers()['content-type']??'').includes('json');
+        await route.fulfill(st.phase==='A'||!json?{response:r}:{response:r,body:(await r.text()).split(A).join(B)});});
+      // A POST /strategy/ignore of boot A answered only after boot B is learned.
+      await p.route('**/strategy/ignore',async route=>{if(!st.holdIgnore)return route.fallback();st.holdIgnore=false;st.late.push('POST /strategy/ignore');await st.releaseLate.promise;await route.fulfill({json:strategyOf('A')});st.lateDone++;});
+      // GET /strategy, /pskr, /receive/startup, /strategy/alerts, /contact and /recording: boot A's late replies and boot B's held ones.
+      const held=(path,reply)=>p.route(`**${path}`,async route=>{
+        if(route.request().method()!=='GET')return route.fallback();
+        const phase=st.phase;
+        if(phase==='A'&&st.lateA&&['/strategy','/pskr'].includes(path)){st.late.push(path);await st.releaseLate.promise;await route.fulfill({json:await reply('A',route)});st.lateDone++;return;}
+        const hold=phase==='B'&&st.holdB;if(hold){st.heldB.push(path);await st.releaseB.promise;}
+        if(phase==='B'&&failing&&['/strategy','/pskr'].includes(path))await route.fulfill({status:503,json:{error:{code:'unavailable'}}});
+        else await route.fulfill({json:await reply(phase,route)});
+        if(hold)st.doneB++;});
+      await held('/strategy',phase=>strategyOf(phase));
+      await held('/pskr',phase=>pskrOf(phase));
+      await held('/strategy/alerts',phase=>alertsOf(phase));
+      await held('/receive/startup',async(phase,route)=>({...await realOf(phase,route),monitor_off_at_startup:phase==='A'}));
+      await held('/contact',realOf);
+      await held('/recording',realOf);
+      await p.route('**/automation',route=>route.request().method()==='GET'?route.fulfill({json:automationOf(st.phase)}):route.fallback());
+    };
+    let requests;
+    const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+      origin=app.origin;base=await (await fetch(app.origin+'/profile')).json();A=base.boot_id;
+      await p.clock.install();requests=stationRequests(p,origin);await routes(p);
+    }});
+    const announce=(type,data)=>page.evaluate(([type,data])=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type,data}}})),[type,data]);
+    await page.waitForFunction(()=>document.querySelector('#strategy-name')?.disabled===false&&!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-pskr').disabled&&!document.querySelector('#monitor-off-startup').disabled,null,{timeout:30000});
+    await page.locator('#open-server-settings').click();await page.locator('#free-tx-slots-show').check();await page.locator('.op-secondary:not([hidden]) .return-operate').click();
+    // Boot A: the run announced; AGC, Tx level and transmit pushed.
+    await announce('automation.state',{profile_id:base.profile_id,boot_id:A,policy_revision:1,run_revision:1});
+    await announce('radio.agc',{profile_id:base.profile_id,boot_id:A,target:'SLOW',connection_generation:1,value:'SLOW',result:'unchanged',trigger:'connect'});
+    await announce('radio.tx_level',{profile_id:base.profile_id,boot_id:A,managed:true,level_db:-10,stored:true,alc:'available',assistant:false,result:null,meters:null,power_limit_pct:null,warnings:[],keying_confirmed:false});
+    await announce('transmit.state',{profile_id:base.profile_id,boot_id:A,changed:{transmitting:false}});
+    await page.waitForFunction(()=>document.querySelector('#station-automation').textContent==='Strategy Farthest new on band · K1ABC'&&document.querySelectorAll('#free-tx-slots .fts-bar').length===2&&!document.querySelector('#qso-pskr-lines').hidden&&document.querySelectorAll('#alert-history li').length===1,null,{timeout:10000});
+    const a=await page.evaluate(stationViews);
+    assert.deepEqual([a.active,a.auto.pressed,a.selector.value,a.pskr.use,a.startup.checked],['true','true','Farthest new on band','true',true],`${label}: boot A shown`);
+    assert.match(a.pskr.status,/^Connected/);
+    const heldA=await heldBoots(page);
+    assert.deepEqual([heldA.contact,heldA.recording,heldA.agc,heldA.txLevel],[A,A,A,A],`${label}: boot A contact, recording, AGC and Tx level held`);
+    // The operator's "Stop ignoring" of boot A, whose reply comes only after boot B is learned.
+    st.holdIgnore=true;await page.evaluate(()=>document.querySelector('#ignore-session button').click());await until(()=>st.late.length===1);
+    // A second socket of boot A whose GET /strategy and GET /pskr are still unanswered when boot B is learned.
+    st.lateA=true;await page.evaluate(()=>socket.close());await until(()=>st.late.length===3);
+    assert.deepEqual(st.late.slice().sort(),['/pskr','/strategy','POST /strategy/ignore'],`${label}: boot A requests in flight`);st.lateA=false;
+    // Every change of the views from the moment boot B is learned.
+    await page.evaluate(([src,B])=>{const views=new Function(`return (${src})`)();window.__changes=[];const record=()=>{if(profileData?.boot_id===B)window.__changes.push(views());};
+      const o=new MutationObserver(record);for(const id of ['#station-automation','#strategy-name','#qso-auto','#qso-pskr','#qso-pskr-lines','#pskr-status','#pskr-enabled','#monitor-off-startup','#startup-resume','#alert-history','#frequency-ruler'])o.observe(document.querySelector(id),{subtree:true,childList:true,characterData:true,attributes:true});
+      for(const e of ['station-boot','station-ready'])addEventListener(e,record);},[stationViews.toString(),B]);
+    const mark=requests.list.length;st.phase='B';st.holdB=true;
+    await page.evaluate(()=>socket.close());
+    await page.waitForFunction(B=>profileData?.boot_id===B&&connection.dataset.state==='connected',B,{timeout:30000});
+    await until(()=>st.heldB.length===6);
+    assert.deepEqual(st.heldB.slice().sort(),['/contact','/pskr','/receive/startup','/recording','/strategy','/strategy/alerts'],`${label}: each view reads boot B`);
+    // While the contact and recording reads are held, the already conforming views hold no boot A
+    // state (asserted below together with the late replies, so that each shows its own failure).
+    const nameBoot=b=>b===A?'A':b===B?'B':b,heldWhileB=Object.fromEntries(Object.entries(await heldBoots(page)).map(([view,b])=>[view,nameBoot(b)]));
+    // While boot B's replies are held: the freshly loaded form, nothing of boot A.
+    const fresh={line:'Automation idle',active:'false',slots:0,hearing:false,pounce:false,auto:{pressed:'false',disabled:true,title:'Strategies are loading'},selector:{value:'',options:['None'],disabled:true},
+      pskr:{status:'PSK Reporter status unknown',enabled:false,disabled:true,use:'false',title:'Use PSK Reporter · status unknown'},startup:{checked:false,disabled:true,resume:'Startup resume unknown'},alerts:[]};
+    const withoutTransmit=({transmit:_,...v})=>v;
+    assert.deepEqual(withoutTransmit(await page.evaluate(stationViews)),fresh,`${label}: the freshly loaded form while boot B's replies are held`);
+    // Boot A's late replies change nothing (the ignore reply names Farthest new on band with Auto on).
+    st.releaseLate.resolve();await until(()=>st.lateDone===3);await drawn(page);
+    assert.equal(st.lateDone,3);
+    const noA=Object.fromEntries(Object.entries(heldWhileB).map(([view,b])=>[view,b==='A'?'A':'null or B']));
+    assert.deepEqual({held:noA,afterLateReplies:withoutTransmit(await page.evaluate(stationViews))},{held:Object.fromEntries(Object.keys(heldWhileB).map(v=>[v,'null or B'])),afterLateReplies:fresh},
+      `${label}: no boot A state held while boot B's reads are held (${JSON.stringify(heldWhileB)}), and boot A's late replies are discarded`);
+    st.releaseB.resolve();await until(()=>st.doneB===6);
+    assert.equal(st.doneB,6);st.holdB=false;
+    await settled(page,requests);
+    // No timer request: the page's clock runs past every timer pending within 5 s.
+    const quiet=requests.list.length;await page.clock.runFor(5000);await settled(page,requests);
+    assert.deepEqual(requests.list.slice(quiet),[],`${label}: no timer request in 5 s`);
+    const end=await page.evaluate(stationViews),changes=await page.evaluate(()=>window.__changes);
+    assert.ok(changes.length>0,`${label}: changes recorded after boot B was learned`);
+    for(const c of [...changes,end])
+      assert.ok(!/Farthest|Pounce|K1ABC/.test(c.line)&&c.active!=='true'&&c.slots===0&&!c.hearing&&!c.pounce&&c.auto.pressed!=='true'&&c.selector.value!=='Farthest new on band'&&!/^Connected/.test(c.pskr.status)&&!c.pskr.enabled&&c.pskr.use!=='true'&&!c.startup.checked&&c.alerts.length===0,
+        `${label}: a boot A value after boot B was learned: ${JSON.stringify(c)}`);
+    for(const [view,b] of Object.entries(await heldBoots(page)))assert.ok(b===null||b===B,`${label}: ${view} holds boot ${b}`);
+    // With 503 the strategy and PSK Reporter views stay in their empty form.
+    if(failing)assert.deepEqual([end.line,end.auto,end.selector,end.pskr],[fresh.line,fresh.auto,fresh.selector,fresh.pskr],`${label}: the empty form`);
+    else assert.deepEqual([end.selector.value,end.selector.disabled,end.auto.pressed,end.pskr.status,end.pskr.disabled,end.startup.checked,end.startup.disabled],['',false,'false','Off',false,false,false],`${label}: boot B's replies shown`);
+    // One read per state on boot B's socket, no GET /automation.
+    const reads=path=>requests.list.slice(mark).filter(r=>r===`GET ${path}`).length;
+    assert.deepEqual(['/strategy','/pskr','/receive/startup','/strategy/alerts','/automation'].map(reads),[1,1,1,1,0],`${label}: ${JSON.stringify(requests.list.slice(mark))}`);
+    // A second page on boot B shows the same.
+    const second=await page.context().newPage(),secondRequests=stationRequests(second,origin);await routes(second);
+    await second.goto(origin);await second.locator('#connection[data-state=connected]').waitFor();
+    await second.waitForFunction(()=>!!window.wstxContact?.snapshot(),null,{timeout:30000});await settled(second,secondRequests);
+    assert.deepEqual(end,await second.evaluate(stationViews),`${label}: the kept page equals a second page on boot B`);
+    await second.close();
+    assert.deepEqual(errors,[]);
+  }
 });
 
 // Proves: CL-039-01; TC-039-006 the continent is a station setting now.

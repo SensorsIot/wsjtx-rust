@@ -272,7 +272,25 @@ package WstxStationProtocol {
              bytes), sent at each slot decision of a run to each Detailed or Thin peer and
              once to a peer that subscribes Detailed or Thin while a run's value exists, never
              to an Off peer and never without a run; until a read
-             is migrated its existing cadence rules apply. */
+             is migrated its existing cadence rules apply.
+             A new boot (#74, operator 2026-11-08, CL-074-01): the browser learns the station's
+             boot_id from GET /profile of a socket and from profile.state. When it learns a
+             boot_id other than the one a view's held station state belongs to, that view drops
+             the state at once and shows the form a freshly loaded page shows before its reads
+             (no value of the previous boot, alone or together with values of the new boot),
+             then reads its snapshot under its own rule (one read per socket, or only after its
+             announcement event where its rule says so, as WstxMcp::AutomationIndicator) or
+             waits for its first event; a snapshot reply that names another boot_id than the
+             browser's current one is discarded (events of a closed socket are already
+             ignored). This holds for every view of station state:
+             contact, recording, receive, operating selection, AGC, Tx level, native radio,
+             transmit, strategy (WstxStrategy::StrategySelector), automation, PSK Reporter,
+             Monitor off at startup and alerts. Once the reads and first events of the new boot
+             have arrived, each view shows what a page loaded fresh at that moment shows. A
+             failed read leaves the empty form until that view's next read under its rule; no
+             retry timer. While the socket is down, views keep their values under the existing
+             stale marks until the new boot is learned. The logbook is stored history, not
+             state of one boot, and keeps its own rules. */
     }
     attribute def IndependentLinkAccounting {
         attribute payloadBytesPerSecond : Integer = 4000;
@@ -301,6 +319,7 @@ package WstxStationProtocol {
     dependency reconnectPromise from BrowserLinkLifecycle to WstxRequirements::'CL-003-04';
     dependency budgetPromise from ThinLinkBudget to WstxRequirements::'CL-003-05';
     dependency pushedStatePromise from PushedStationState to WstxRequirements::'CL-003-05';
+    dependency pushedStateBootPromise from PushedStationState to WstxRequirements::'CL-074-01';
     dependency pushedStateOwner from PushedStationState to WstxArchitecture::physicalStation::backend::stations::web;
     dependency bufferPromise from Limits to WstxRequirements::'CL-003-06';
     dependency exchangeVerification from ExchangeStatus to WstxRequirements::'TC-021-005';

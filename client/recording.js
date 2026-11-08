@@ -409,6 +409,8 @@ async function sync(current=socket) {
   const authEpoch=authorization?.snapshot().epoch;
   try {
     const data=await request('/recording');if(!stationContext(current,authEpoch)) return;
+    // #74 PushedStationState: a reply of another boot than the browser's is discarded.
+    if(profileData&&data.boot_id!==profileData.boot_id)return;
     const previousImport=snapshot?.import?.id,previousGeneration=snapshot?.generation;
     if(identity(data)!==identity(snapshot)&&!(data.job?.kind==='live'&&snapshot?.job?.kind==='live'&&data.boot_id===snapshot.boot_id)){rows=[];resetLevels();paint();}snapshot=data; // #61: receiveSync decides a live identity change
     if(data.job?.kind!=='live'&&live?.job){live=undefined;resultRows=[];resultView=null;activityHistory=[];renderResults();receiveShow();}
@@ -420,6 +422,12 @@ async function sync(current=socket) {
   } catch(error){if(current===socket){statusText.textContent=`Recording state unavailable · ${error.message}`;if(subscribedSocket===current)disconnect(current);}} finally{syncPending=false;if(syncAgain){syncAgain=false;sync(socket);}}
 }
 addEventListener('station-ready',event => {if(subscribedSocket!==event.detail || snapshot?.boot_id!==profileData.boot_id)sync(event.detail);});
+// WstxStationProtocol::PushedStationState (#74): a new boot drops the recording and live receive
+// state of the previous boot at once; both show their freshly loaded form until the new boot's reads.
+addEventListener('station-boot',()=>{
+  snapshot=undefined;importOutcome=undefined;rows=[];resetLevels();paint();
+  live=undefined;resultRows=[];resultView=null;activityHistory=[];renderResults();receiveShow();show();
+});
 addEventListener('station-stale',()=>{statusText.textContent='Disconnected · recording data stale';subscribedSocket=undefined;});
 addEventListener('station-message',event => {
   const {message,current}=event.detail;
