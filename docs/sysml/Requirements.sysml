@@ -1009,7 +1009,8 @@ package WstxRequirements {
     // double-click Rx and Tx, dragging the lines and strip fields) are installed but not yet
     // accepted live, and TC-010-008 is partial; since #37 the browser sends no re-decode, the wire
     // redecode stays refused redecode_unavailable.
-    // CL-010-15 partial: the Thin/Off budget with MCP traffic is not measured; TC-007-005 measures the browsers.
+    // CL-010-15 implemented (operator 2026-11-08): the Thin/Off byte budget is the browsers'
+    // (StationTickEvent), measured by TC-007-005; MCP traffic is outside that budget.
     requirement 'CL-010-04' {
         doc /* Log every completed contact directly, without a review step (#41, as WSJT-X): at completion and on a manual Log QSO the server stores the contact's record in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity and sends it to the WSJT-X UDP targets as QSO Logged and Logged ADIF; exactly one record per contact identity (an identical re-log adds nothing, completion after an early Log QSO replaces it; each contact is sent to the UDP targets once), a later contact with the same station a new record, Saved only after durable acknowledgement, a failed write visibly unsaved and retried; ADI export and history with the stated limits; and (#10, operator 2026-11-03) Update logbook from ADIF, the one ADI import: an export of another logger (for example Log4OM) is consolidated into the contact log, repeatable and incremental, a record already present (same contact identity, or same call, band and mode/submode with a start within 2 minutes) adding nothing and the stored record winning, only the log's own fields kept, added records marked with their source, QSO confirmation status (LoTW, QSL and eQSL received with their dates and via) kept and, on a rerun, upgraded on records already present (a confirmation is only added, never removed; #10, operator 2026-11-04), so worked-before and award queries tell worked from confirmed per entity, band and mode, invalid records skipped and invalid optional fields dropped with their reasons in the summary, nothing sent to the UDP targets or elsewhere, and the added records feeding worked-before, DXCC and grid status. The former log review queue (OfferLogReview, discard_review, the review form) is retired. Details: WstxContact::LogRecord, DirectLog, SaveContact, UpdateLogbook, ExportAdi, ContactHistory, AdiLimits, WorkedBeforeQuery; WstxUdp::OutboundRules. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -1018,7 +1019,7 @@ package WstxRequirements {
     dependency CL_010_04_to_FR_011 from 'CL-010-04' to 'FR-011';
     requirement 'CL-010-15' {
         doc /* Expose the contact operations only through the versioned WstxContact wire contract: exact routes, keys and byte caps, command_id idempotency, contact_revision, the ContactRefusal codes, the contact.state and station.tick events, and the stated Thin/Off byte budget, leaving StatusReply and the compressed-route allowlist unchanged. Details: WstxContact::ContactWire, ContactCommand, CommandReceipt, ContactSnapshot, ContactStateEvent, StationTickEvent. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/contact_http.rs; server/src/logbook_http.rs; server/src/main.rs";
     }
     dependency CL_010_15_to_FR_019 from 'CL-010-15' to 'FR-019';
