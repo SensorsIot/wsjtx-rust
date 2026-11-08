@@ -7730,11 +7730,13 @@ async fn slots_of(f: &Mcp) -> Value {
 }
 const K1ABC_2400: (&str, f64, Option<f64>) = ("CQ K1ABC FN42", 2400.0, Some(-5.0));
 
-/// `with_aa3b` with an undecoded FT4 station 12 dB above it at 1500..1590 Hz, on the current Tx.
+/// `with_aa3b` with an undecoded FT4 station 18 dB above it at 1500.5..1590.5 Hz (bins 513..542),
+/// on the current Tx (level and position as roll_off_ft4.py's: every deciding candidate 0.1 dB from
+/// a half dB, and the same choice under the parent's rule).
 fn with_station(hz: f64) -> f64 {
     with_aa3b(hz)
-        + if (1500.0..1590.0).contains(&hz) {
-            12.0
+        + if (1500.5..1590.5).contains(&hz) {
+            18.0
         } else {
             0.0
         }
@@ -7748,11 +7750,10 @@ fn with_station(hz: f64) -> f64 {
 // choice it implies (roll_off_ft4.py), whose tables are the test's; and the rule by hand: at or
 // under the floor a slot is free, 0 (#66 "At or under floor = free"), so the roll-off slots are no
 // quieter than the free mid-band. Tx 1500 on the flat floor: kept, power_db 0. Tx 1500 on a station
-// 12 dB above the floor at 1500..1590: to the free slot nearest it, the vector's (a slot holding
-// only a few of the station's 31 bins may still read under 0.5, free), power_db 0. Never a slot in
-// 2400..2610 (raw level
-// alone would choose 2530 at 21 dB, the floor rule without the clamp 2530 at -2). A regression
-// guard: green on the parent, red without the clamp.
+// 18 dB above the floor at 1500.5..1590.5: to the free slot nearest it, the vector's (a slot holding
+// only a few of the station's bins may still read under 0.5, free), power_db 0. Never a slot in
+// 2400..2610 (raw level alone would choose 2530 at 21 dB, the floor rule without the clamp 2530
+// at -2). A regression guard: green on the parent, red without the clamp.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_the_roll_off_is_compared_above_the_passband_floor() {
     type Table = fn(f64) -> f64;

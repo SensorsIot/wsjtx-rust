@@ -446,10 +446,11 @@ fn floor_vectors() -> Vec<Value> {
 
 // Proves: CL-039-09; TC-039-050 (a). The sloped floor of the 2026-11-07 FT4 roll-off table (30 dB
 // flat to 2400 Hz, falling to 15 dB at 2700 Hz, AA3B 12 dB above it at 2621..2711 Hz; once
-// without and once with a station 12 dB above the floor at 1500..1590 Hz) against the independent
+// without and once with a station 18 dB above the floor at 1500.5..1590.5 Hz) against the independent
 // numpy fourth-order fit of each run of each reference vector: every floor bin lies within the
-// vector's tolerance, and every candidate's compared value lies at least 0.1 dB from a half dB, so
-// that the whole-dB rounding is unambiguous.
+// vector's tolerance, and the compared value of every candidate deciding the choice (no farther
+// from the current Tx than the chosen slot) lies at least 0.1 dB from a half dB (margin_db), so
+// that the whole-dB rounding of the choice is unambiguous.
 #[test]
 fn tc_039_050_the_roll_off_floor_matches_the_numpy_reference() {
     for v in floor_vectors() {

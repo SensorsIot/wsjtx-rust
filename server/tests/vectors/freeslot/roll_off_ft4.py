@@ -4,8 +4,10 @@ roll-off table and the Tx slot it implies, computed here independently of the Ru
 The table (as the test writes it): per native bin k (k x 12000/4096 Hz) 30 dB flat to 2400 Hz,
 falling linearly to 15 dB at 2700 Hz (5 dB per 100 Hz, a sharp knee; 15 dB above), AA3B 12 dB
 above it at 2621..2711 Hz, each bin rounded to whole dB (half away from zero) as the detailed rows
-are. Two runs: "flat" as is, and "station" with an undecoded station 12 dB above the table at
-1500..1590 Hz (an FT4 signal on the current Tx).
+are. Two runs: "flat" as is, and "station" with an undecoded station 18 dB above the table at
+1500.5..1590.5 Hz (an FT4 signal on the current Tx, bins 513..542; its level and position chosen
+so that every candidate deciding the choice lies at least 0.1 dB from a half dB, margin_db, and
+so that the parent's rule, the rise over each slot's usual level, makes the same choice).
 
 The floor (#66 Functionality 3, the WSJT-X FT8/FT4 decoder baseline): the bins 103..921
 (300..2700 Hz), ten segments of 81 bins from bin 103, in each the bins at or below its 8th lowest
@@ -52,7 +54,7 @@ def with_aa3b(hz):
 
 
 def with_station(hz):
-    return with_aa3b(hz) + (12.0 if 1500.0 <= hz < 1590.0 else 0.0)
+    return with_aa3b(hz) + (18.0 if 1500.5 <= hz < 1590.5 else 0.0)
 
 
 FIRST, LAST = math.ceil(300 / BIN), math.ceil(2700 / BIN) - 1
