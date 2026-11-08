@@ -557,6 +557,9 @@ package WstxContact {
         transition rogersToSignoff first rogerReport if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::rogers then signoff;
         transition seventyThreeInRogerReport first rogerReport if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::seventyThree then signoff;
         transition rogersRepeat first signoff if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::rogers then signoff;
+        transition rogersInRogers first rogers if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::rogers then signoff;
+        transition rogersFromReplying first replying if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::rogers then signoff;
+        transition rogersFromReport first report if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::rogers then signoff;
         transition reportBackFromRogers first rogers if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::signalReport then rogerReport;
         transition seventyThreeInRogers first rogers if acceptedEvent == SequenceEvent::receivedFromPartner and autoSequenceOn and addressedToMe and fromPartner and received == ReceivedKind::seventyThree then completed;
         transition sentRr73 first rogers if acceptedEvent == SequenceEvent::transmittedSignoff and sentTx4 and tx4IsRr73 then completed;
@@ -595,9 +598,18 @@ package WstxContact {
              to rogerReport (resend Tx3); R+report in rogerReport/rogers keeps rogers
              (resend Tx4); rogers in signoff resends Tx5. A 73 in rogerReport (the
              partner skipped RR73 after my R+report) moves to signoff: my 73 is sent once
-             and the contact completes on it (#11 supervisor default). A rogers or 73
-             counted while my Tx3 is already pending for the next period replaces that
-             request with Tx5 until its audio starts; after the audio start the Tx3 of
+             and the contact completes on it (#11 supervisor default). A rogers (RRR or
+             RR73) moves to signoff in every active state before signoff, as WSJT-X
+             (DMR ~585-600: rogerAck selects Tx5; MW ~8237-8249 logs on the first 73
+             sent): in rogerReport after my R+report; in rogers after my Tx4 RRR, or after
+             a Tx4 RR73 whose transmission did not complete (#69, live stall 2026-11-08:
+             the partner's RR73 after my RRR was answered with RRR until a halt); and in
+             replying or report, when the partner signs off before I received his report
+             or R+report (#69, operator 2026-11-08). In each case my 73 is sent once and
+             the contact completes on it and is logged once (sent73, DirectLog); no
+             report received leaves RST_RCVD absent. A rogers or 73
+             counted while my Tx1-Tx4 is already pending for the next period replaces that
+             request with Tx5 until its audio starts; after the audio start the message of
              that period is sent and Tx5 follows in my next period (TransmitSubmission).
              With Auto Seq off a counted partner message changes no state (it still
              updates the received report and TIME_OFF); the step Auto Seq would take is
@@ -605,14 +617,15 @@ package WstxContact {
              Seq state and that offer, so a signed-off partner is never silently
              answered with a repeat (#11 live stall 2026-11-02).
              Messages not in the table
-             (grid in report.., 73 in signoff, anything after completed/cancelled)
-             change nothing.
+             (grid in report.., 73 in replying, report or signoff, anything after
+             completed/cancelled) change nothing.
              Completion: transmittedSignoff is TransmitService's confirmed completed
              transmission of a Tx4 RR73 or Tx5 73 of this contact (MW message_is_73
              ~492, m_sentFirst73). On completion Enable Tx turns off (CFG
              disable_TX_on_73 default true ~3746) and the contact is logged once
              (DirectLog, #41). Receiving 73 while in rogers (after Tx4 RRR) completes without
-             sending more (DMR ~601-616). DIFFERENT: WSJT-X then leaves Enable Tx on
+             sending more (DMR ~601-616); receiving RRR or RR73 there sends my 73 first
+             (signoff, #69). DIFFERENT: WSJT-X then leaves Enable Tx on
              with Tx6 selected; here Enable Tx turns off because Auto Seq never
              starts another contact (#10).
              partnerWorksOther (DMR planAutoSequence ~775-791, MW ~7427
@@ -883,9 +896,11 @@ package WstxContact {
              to the external programs). Retires the #10 OfferLogReview queue, its
              discard_review action and the browser review form.
              Automatic: once per contactId when it completes (AutoSequence completed:
-             after a confirmed transmitted Tx4 RR73 or Tx5 73 with the partner's report
-             received, or a received 73 in rogers), which is when WSJT-X prompts to log
-             (MW guiUpdate ~8056). The server builds the LogRecord at completion: CALL,
+             after a confirmed transmitted Tx4 RR73 or Tx5 73, or a received 73 in
+             rogers), which is when WSJT-X prompts to log (MW guiUpdate ~8056). A
+             contact completed without a received report (a selected RR73/73 row, or the
+             partner's RRR/RR73 answered in replying or report, #69) is logged the same
+             way with RST_RCVD absent. The server builds the LogRecord at completion: CALL,
              GRIDSQUARE when known, MODE/SUBMODE by ContactMode, RST_SENT/RST_RCVD,
              QSO_DATE/TIME_ON and QSO_DATE_OFF/TIME_OFF by the LogRecord time rules, BAND
              and FREQ from the dial confirmed at completion plus the Tx offset (absent when

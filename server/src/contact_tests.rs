@@ -4179,3 +4179,495 @@ fn a_hound_works_a_scripted_fox_over_an_audio_loopback() {
         "the Hound never transmitted in the Fox's period"
     );
 }
+
+// ---------------------------------------------------------------- #69 rogers before my 73
+// TC-007-010. A partner's RRR or RR73 counted before my 73 (in replying, report or rogers)
+// is answered with my 73 once; the contact then completes and is logged once. Expected
+// states, texts and log fields are hand-written from WSJT-X 3.3.0-beta5
+// DecodedMessageReaction.cpp ~585-616 (rogerAck: Tx5, SIGNOFF) and mainwindow.cpp
+// ~8237-8255 (log on the first 73 sent), and the live SV2CLJ trace of 2026-11-08.
+
+/// The start of period `n` of the station's mode.
+fn p(s: &Station, n: i64) -> i64 {
+    P0 + n * period_ms(s.mode)
+}
+/// One second before the end of period `n`: when the partner's row of that period lands.
+fn landed(s: &Station, n: i64) -> i64 {
+    p(s, n + 1) - SECOND
+}
+/// The texts that started after period `n`, with their period number.
+fn sent_after(s: &Station, n: i64) -> Vec<(i64, String)> {
+    let len = period_ms(s.mode);
+    s.sent
+        .iter()
+        .filter(|(at, _)| *at > p(s, n))
+        .map(|(at, t)| ((at - P0) / len, t.clone()))
+        .collect()
+}
+fn texts(expected: &[(i64, &str)]) -> Vec<(i64, String)> {
+    expected.iter().map(|(n, t)| (*n, t.to_string())).collect()
+}
+/// The SV2CLJ contact of 2026-11-08 up to rogers: my CQ (even periods), his
+/// "HB9BLA SV2CLJ KN10" in period 1 selected, my Tx2 "-04" in period 2, his R+02 in
+/// period 3. Returns in rogers with Tx4 next, at the end of period 3.
+fn sv2clj_to_rogers(mode: Mode, tx4: Tx4) -> Station {
+    let mut s = station();
+    s.mode = mode;
+    s.command(Command::SetCallFirst(false)).unwrap();
+    s.command(Command::SetParity(Parity::Even)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    let t = landed(&s, 1);
+    s.run(t);
+    let answer = s.row(p(&s, 1), "HB9BLA SV2CLJ KN10", 900.0, Some(-4.0));
+    s.command(Command::SelectRow {
+        row: answer,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(s.state(), (State::Report, Slot::Tx2));
+    if mode == Mode::Ft8 {
+        s.command(Command::SetTx4(tx4)).unwrap();
+    }
+    let t = landed(&s, 3);
+    s.run(t);
+    assert_eq!(
+        s.sent_in(p(&s, 2)).as_deref(),
+        Some("SV2CLJ HB9BLA -04"),
+        "{:?}",
+        s.sent
+    );
+    let roger = s.row(p(&s, 3), "HB9BLA SV2CLJ R+02", 900.0, Some(-4.0));
+    s.deliver(&[roger]);
+    let tx4 = match (mode, tx4) {
+        (Mode::Ft8, Tx4::Rrr) => "SV2CLJ HB9BLA RRR",
+        _ => "SV2CLJ HB9BLA RR73",
+    };
+    assert_eq!(s.state(), (State::Rogers, Slot::Tx4));
+    assert_eq!(s.next_text(), tx4);
+    s
+}
+/// Completed by my sent 73: Enable Tx off with contactCompleted and exactly one log entry
+/// of kind completion with the hand-written call and reports.
+fn assert_completed_once(s: &mut Station, call: &str, rst: (Option<&str>, Option<&str>)) {
+    assert_eq!(s.state(), (State::Completed, Slot::Tx6));
+    assert!(!s.armed(), "Enable Tx off");
+    assert_eq!(
+        s.core.view().last_disarm_cause,
+        DisarmCause::ContactCompleted
+    );
+    let (kind, logged) = one_entry(s);
+    assert_eq!(kind, LogKind::Completion);
+    let f = logged.log_fields(s.now()).unwrap();
+    assert_eq!(
+        (
+            f.call.as_str(),
+            f.rst_sent.as_deref(),
+            f.rst_rcvd.as_deref()
+        ),
+        (call, rst.0, rst.1)
+    );
+}
+/// The partner answers my Tx4 RRR (period 4) with `last` in period 5.
+fn sv2clj_ends_with(last: &str) {
+    let mut s = sv2clj_to_rogers(Mode::Ft8, Tx4::Rrr);
+    s.run(period(5) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(4)).as_deref(), Some("SV2CLJ HB9BLA RRR"));
+    let row = s.row(
+        period(5),
+        &format!("HB9BLA SV2CLJ {last}"),
+        900.0,
+        Some(-4.0),
+    );
+    s.deliver(&[row]);
+    assert_eq!(s.state(), (State::Signoff, Slot::Tx5), "after his {last}");
+    assert_eq!(s.next_text(), "SV2CLJ HB9BLA 73");
+    // He moved on: four more own periods (6, 8, 10, 12) pass without his rows.
+    s.run(period(13) + 14 * SECOND);
+    assert_eq!(
+        sent_after(&s, 5),
+        texts(&[(6, "SV2CLJ HB9BLA 73")]),
+        "exactly one 73 in the next own period, no RRR after his {last}"
+    );
+    assert_completed_once(&mut s, "SV2CLJ", (Some("-04"), Some("+02")));
+    // His late 73 changes nothing and logs nothing.
+    let late = s.row(period(13), "HB9BLA SV2CLJ 73", 900.0, Some(-4.0));
+    s.deliver(&[late]);
+    assert_eq!(s.state(), (State::Completed, Slot::Tx6));
+    assert!(s.engine.take_logs().is_empty(), "logged once");
+    s.run(period(17));
+    assert_eq!(sent_after(&s, 5), texts(&[(6, "SV2CLJ HB9BLA 73")]));
+}
+
+// Proves: CL-010-02; TC-007-010 (a). Reproduction of the live SV2CLJ contact: his RR73 after
+// my RRR leads to one 73, completion and one log (master 7914875d0 repeated the RRR).
+#[test]
+fn tc_007_010_a_the_partners_rr73_after_my_rrr_sends_73_once_and_logs_once() {
+    sv2clj_ends_with("RR73");
+}
+
+// Proves: CL-010-02; TC-007-010 (b). The partner answers my RRR with RRR.
+#[test]
+fn tc_007_010_b_the_partners_rrr_after_my_rrr_sends_73_once_and_logs_once() {
+    sv2clj_ends_with("RRR");
+}
+
+// Proves: CL-010-02. AutoSequence after the change: every (state, received) cell of the
+// hand-written table of #69 Functionality 3 (WSJT-X DMR ~526-655 plus the #11 decision).
+#[test]
+fn the_whole_auto_sequence_table_of_a_partner_message() {
+    use Received as R;
+    use State as S;
+    let kinds = [
+        R::Grid,
+        R::SignalReport,
+        R::RogerReport,
+        R::Rogers,
+        R::SeventyThree,
+        R::Other,
+    ];
+    let x = None;
+    let table = [
+        // grid, report, R+report, RRR/RR73, 73, other
+        (
+            S::Replying,
+            [
+                Some(S::Report),
+                Some(S::RogerReport),
+                Some(S::Rogers),
+                Some(S::Signoff),
+                x,
+                x,
+            ],
+        ),
+        (
+            S::Report,
+            [
+                x,
+                Some(S::RogerReport),
+                Some(S::Rogers),
+                Some(S::Signoff),
+                x,
+                x,
+            ],
+        ),
+        (
+            S::RogerReport,
+            [x, x, Some(S::Rogers), Some(S::Signoff), Some(S::Signoff), x],
+        ),
+        (
+            S::Rogers,
+            [
+                x,
+                Some(S::RogerReport),
+                x,
+                Some(S::Signoff),
+                Some(S::Completed),
+                x,
+            ],
+        ),
+        (S::Signoff, [x, x, x, Some(S::Signoff), x, x]),
+        // Calling, completed and cancelled (and idle) take no partner rows.
+        (S::Idle, [x; 6]),
+        (S::Calling, [x; 6]),
+        (S::Completed, [x; 6]),
+        (S::Cancelled, [x; 6]),
+    ];
+    for (state, row) in table {
+        for (kind, expected) in kinds.into_iter().zip(row) {
+            assert_eq!(transition(state, kind), expected, "{state:?} x {kind:?}");
+        }
+    }
+    // RRR and RR73 are one kind; a blank or another family's exchange is "other".
+    let msg = |exchange| Standard {
+        to: Call::Sign("HB9BLA".into()),
+        from: Call::Sign("K1ABC".into()),
+        ack: false,
+        exchange,
+    };
+    assert_eq!(classify(&msg(Exchange::Rrr)), R::Rogers);
+    assert_eq!(classify(&msg(Exchange::Rr73)), R::Rogers);
+    assert_eq!(classify(&msg(Exchange::Blank)), R::Other);
+    assert_eq!(
+        classify_in(
+            &msg(Exchange::Contest(ContestKind::FieldDay, "1A EPA".into())),
+            Activity::Rtty
+        ),
+        R::Other
+    );
+}
+
+// Proves: CL-010-02; TC-007-010 (c). My Tx4 RR73 is halted (rogers kept); the partner's RR73
+// arrives; Enable Tx again sends one 73, then completes and logs once. FT4 and FT8.
+#[test]
+fn tc_007_010_c_a_halted_tx4_rr73_then_the_partners_rr73_sends_73_once() {
+    for mode in [Mode::Ft4, Mode::Ft8] {
+        let mut s = sv2clj_to_rogers(mode, Tx4::Rr73);
+        let t = p(&s, 4) + 2 * SECOND;
+        s.run(t);
+        assert!(s.core.view().transmitting, "{mode:?}");
+        s.core.halt();
+        s.step(&[]);
+        assert!(!s.armed());
+        assert_eq!(s.state(), (State::Rogers, Slot::Tx4), "halt keeps rogers");
+        assert!(
+            s.engine.take_logs().is_empty(),
+            "a halted RR73 is no completion"
+        );
+        let t = landed(&s, 5);
+        s.run(t);
+        let rr73 = s.row(p(&s, 5), "HB9BLA SV2CLJ RR73", 900.0, Some(-4.0));
+        s.deliver(&[rr73]);
+        assert_eq!(s.state(), (State::Signoff, Slot::Tx5), "{mode:?}");
+        s.command(Command::EnableTx(true, Some(7))).unwrap();
+        let t = p(&s, 11);
+        s.run(t);
+        assert_eq!(
+            sent_after(&s, 4),
+            texts(&[(6, "SV2CLJ HB9BLA 73")]),
+            "{mode:?}"
+        );
+        assert_completed_once(&mut s, "SV2CLJ", (Some("-04"), Some("+02")));
+    }
+}
+
+// Proves: CL-010-02; TC-007-010 (d). A partner who signs off before any report reached me:
+// RR73 in replying (after my Tx1), RRR in report (after my Tx2 to a CQ caller).
+#[test]
+fn tc_007_010_d_rogers_in_replying_and_report_send_73_once_and_log_without_rst_rcvd() {
+    // replying: I answer K1ABC's CQ (he is even, I am odd).
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, Some(-12.0));
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("K1ABC HB9BLA JN47"));
+    let rr73 = s.row(period(2), "HB9BLA K1ABC RR73", 1500.0, Some(-12.0));
+    s.deliver(&[rr73]);
+    assert_eq!(s.state(), (State::Signoff, Slot::Tx5));
+    assert_eq!(s.next_text(), "K1ABC HB9BLA 73");
+    s.run(period(8));
+    assert_eq!(
+        sent_after(&s, 0),
+        texts(&[(1, "K1ABC HB9BLA JN47"), (3, "K1ABC HB9BLA 73")])
+    );
+    assert_completed_once(&mut s, "K1ABC", (None, None));
+
+    // report: K1ABC answers my CQ (I am even), my Tx2 +03 goes out, he sends RRR.
+    let mut s = station();
+    s.command(Command::SetCallFirst(false)).unwrap();
+    s.command(Command::SetParity(Parity::Even)).unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(1) + 14 * SECOND);
+    let answer = s.row(period(1), "HB9BLA K1ABC FN42", 900.0, Some(3.0));
+    s.command(Command::SelectRow {
+        row: answer,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(s.state(), (State::Report, Slot::Tx2));
+    s.run(period(3) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(2)).as_deref(), Some("K1ABC HB9BLA +03"));
+    let rrr = s.row(period(3), "HB9BLA K1ABC RRR", 900.0, Some(3.0));
+    s.deliver(&[rrr]);
+    assert_eq!(s.state(), (State::Signoff, Slot::Tx5));
+    s.run(period(9));
+    assert_eq!(sent_after(&s, 2), texts(&[(4, "K1ABC HB9BLA 73")]));
+    assert_completed_once(&mut s, "K1ABC", (Some("+03"), None));
+}
+
+// Proves: CL-010-02; TC-007-010 (e). The partner's RR73 counted while my next Tx4 is pending:
+// before its audio starts that period carries Tx5; after the start the Tx4 of that period
+// is sent and Tx5 follows in my next own period. One 73 and one log either way.
+#[test]
+fn tc_007_010_e_rr73_while_my_next_tx4_is_pending_before_and_after_its_audio_start() {
+    let before: &[(i64, &str)] = &[(6, "SV2CLJ HB9BLA 73")];
+    let after: &[(i64, &str)] = &[(6, "SV2CLJ HB9BLA RRR"), (8, "SV2CLJ HB9BLA 73")];
+    for (counted, expected) in [
+        (period(5) + 14 * SECOND, before),
+        (period(5) + 14_900, before),
+        (period(6) + 2 * SECOND, after),
+    ] {
+        let mut s = sv2clj_to_rogers(Mode::Ft8, Tx4::Rrr);
+        s.run(counted);
+        if counted > period(6) {
+            assert!(s.core.view().transmitting, "the Tx4 audio has started");
+        }
+        let rr73 = s.row(period(5), "HB9BLA SV2CLJ RR73", 900.0, Some(-4.0));
+        s.deliver(&[rr73]);
+        assert_eq!(s.state(), (State::Signoff, Slot::Tx5));
+        s.run(period(12));
+        assert_eq!(
+            sent_after(&s, 5),
+            texts(expected),
+            "counted at {}",
+            counted - P0
+        );
+        assert_completed_once(&mut s, "SV2CLJ", (Some("-04"), Some("+02")));
+    }
+}
+
+// Proves: CL-010-02; TC-007-010 (f). Auto Seq off: the partner's RR73 in rogers, replying and
+// report changes neither state nor next slot, offers suggested_slot tx5 and logs nothing.
+#[test]
+fn tc_007_010_f_auto_seq_off_offers_tx5_after_rogers_in_rogers_replying_and_report() {
+    let assert_offered = |s: &mut Station, state: (State, Slot)| {
+        assert_eq!(s.state(), state);
+        let c = s.engine.contact.as_ref().unwrap();
+        assert_eq!(c.suggested, Some(Slot::Tx5), "{state:?}: Tx5 offered");
+        assert!(s.engine.take_logs().is_empty(), "{state:?}: nothing logged");
+    };
+    // rogers
+    let mut s = sv2clj_to_rogers(Mode::Ft8, Tx4::Rrr);
+    s.command(Command::SetAutoSeq(false)).unwrap();
+    s.run(period(5) + 14 * SECOND);
+    let rr73 = s.row(period(5), "HB9BLA SV2CLJ RR73", 900.0, Some(-4.0));
+    s.deliver(&[rr73]);
+    assert_offered(&mut s, (State::Rogers, Slot::Tx4));
+    // replying and report: K1ABC's CQ, or his call to me, selected in an even period.
+    for (selected, state) in [
+        ("CQ K1ABC FN42", (State::Replying, Slot::Tx1)),
+        ("HB9BLA K1ABC FN42", (State::Report, Slot::Tx2)),
+    ] {
+        let mut s = station();
+        s.command(Command::SetAutoSeq(false)).unwrap();
+        let row = s.row(P0, selected, 1500.0, Some(-12.0));
+        s.command(Command::SelectRow {
+            row,
+            replace: false,
+        })
+        .unwrap();
+        assert_eq!(s.state(), state);
+        let rr73 = s.row(period(2), "HB9BLA K1ABC RR73", 1500.0, Some(-12.0));
+        s.deliver(&[rr73]);
+        assert_offered(&mut s, state);
+    }
+}
+
+// Proves: CL-010-02; TC-007-010 (g). Negatives: rows that are not the partner's RR73 to me in
+// his parity change nothing; a twice-delivered RR73 counts once; a partner 73 in replying or
+// report changes nothing; a partner 73 in rogers completes at once without my 73.
+#[test]
+fn tc_007_010_g_only_the_partners_counted_rogers_lead_to_one_73() {
+    let mut s = sv2clj_to_rogers(Mode::Ft8, Tx4::Rrr);
+    s.run(period(5) + 14 * SECOND);
+    let others = [
+        s.row(period(5), "HB9BLA W1XYZ RR73", 900.0, Some(-4.0)),
+        s.row(period(5), "W1XYZ SV2CLJ RR73", 900.0, Some(-4.0)),
+        // My own (even) parity: not the partner's period.
+        s.row(period(4), "HB9BLA SV2CLJ RR73", 900.0, Some(-4.0)),
+    ];
+    s.deliver(&others);
+    assert_eq!(s.state(), (State::Rogers, Slot::Tx4), "nothing changes");
+    let rr73 = s.row(period(5), "HB9BLA SV2CLJ RR73", 900.0, Some(-4.0));
+    s.deliver(&[rr73.clone(), rr73.clone()]);
+    s.deliver(&[rr73]);
+    assert_eq!(s.state(), (State::Signoff, Slot::Tx5));
+    s.run(period(11));
+    assert_eq!(sent_after(&s, 5), texts(&[(6, "SV2CLJ HB9BLA 73")]));
+    assert_completed_once(&mut s, "SV2CLJ", (Some("-04"), Some("+02")));
+
+    // A partner 73 in replying or report changes nothing.
+    for (selected, state) in [
+        ("CQ K1ABC FN42", (State::Replying, Slot::Tx1)),
+        ("HB9BLA K1ABC FN42", (State::Report, Slot::Tx2)),
+    ] {
+        let mut s = station();
+        let row = s.row(P0, selected, 1500.0, Some(-12.0));
+        s.command(Command::SelectRow {
+            row,
+            replace: false,
+        })
+        .unwrap();
+        let bye = s.row(period(2), "HB9BLA K1ABC 73", 1500.0, Some(-12.0));
+        s.deliver(&[bye]);
+        assert_eq!(s.state(), state, "73 in {state:?}");
+        assert!(s.engine.take_logs().is_empty());
+    }
+
+    // A partner 73 in rogers completes at once: no 73 of mine, one log.
+    let mut s = sv2clj_to_rogers(Mode::Ft8, Tx4::Rrr);
+    s.run(period(5) + 14 * SECOND);
+    let bye = s.row(period(5), "HB9BLA SV2CLJ 73", 900.0, Some(-4.0));
+    s.deliver(&[bye]);
+    s.run(period(9));
+    assert_eq!(sent_after(&s, 4), Vec::<(i64, String)>::new(), "no 73 sent");
+    assert_completed_once(&mut s, "SV2CLJ", (Some("-04"), Some("+02")));
+}
+
+// Proves: CL-010-02; TC-007-010 (h). WW Digi: my Tx4 RRR after the partner's R grid, then his
+// RR73: one 73, completed, one log.
+#[test]
+fn tc_007_010_h_ww_digi_rr73_after_my_rrr_sends_73_once_and_logs_once() {
+    let mut s = station();
+    let mut table = wstx_rust::decoder::HashTable::new();
+    s.command(Command::SetContest {
+        activity: Activity::WwDigi,
+        exchange: None,
+    })
+    .unwrap();
+    let cq = decoded(&mut s, &mut table, P0, "CQ WW S52XYZ JN76", 1200.0, -10.0);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(2) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("S52XYZ HB9BLA JN47"));
+    let r = decoded(
+        &mut s,
+        &mut table,
+        period(2),
+        "HB9BLA S52XYZ R JN76",
+        1200.0,
+        -10.0,
+    );
+    s.deliver(&[r]);
+    assert_eq!(s.state(), (State::Rogers, Slot::Tx4));
+    s.run(period(4) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(3)).as_deref(), Some("S52XYZ HB9BLA RRR"));
+    let rr73 = decoded(
+        &mut s,
+        &mut table,
+        period(4),
+        "HB9BLA S52XYZ RR73",
+        1200.0,
+        -10.0,
+    );
+    s.deliver(&[rr73]);
+    assert_eq!(s.state(), (State::Signoff, Slot::Tx5));
+    s.run(period(10));
+    assert_eq!(sent_after(&s, 3), texts(&[(5, "S52XYZ HB9BLA 73")]));
+    assert_completed_once(&mut s, "S52XYZ", (None, None));
+}
+
+// Proves: CL-010-02; TC-007-010 (i). My 73 after the partner's RR73 is halted: signoff kept and
+// nothing logged; Enable Tx again sends the 73 once, then completes and logs once.
+#[test]
+fn tc_007_010_i_a_halted_73_keeps_signoff_and_enable_tx_sends_it_once() {
+    let mut s = sv2clj_to_rogers(Mode::Ft8, Tx4::Rrr);
+    s.run(period(5) + 14 * SECOND);
+    let rr73 = s.row(period(5), "HB9BLA SV2CLJ RR73", 900.0, Some(-4.0));
+    s.deliver(&[rr73]);
+    assert_eq!(s.state(), (State::Signoff, Slot::Tx5));
+    s.run(period(6) + 2 * SECOND);
+    assert!(s.core.view().transmitting);
+    s.core.halt();
+    s.step(&[]);
+    assert!(!s.armed());
+    assert_eq!(s.state(), (State::Signoff, Slot::Tx5), "halt keeps signoff");
+    assert!(s.engine.take_logs().is_empty(), "a halted 73 logs nothing");
+    s.run(period(7) + 14 * SECOND);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(13));
+    assert_eq!(
+        sent_after(&s, 5),
+        texts(&[(6, "SV2CLJ HB9BLA 73"), (8, "SV2CLJ HB9BLA 73")]),
+        "the halted 73, then the one sent in full"
+    );
+    assert_completed_once(&mut s, "SV2CLJ", (Some("-04"), Some("+02")));
+}
