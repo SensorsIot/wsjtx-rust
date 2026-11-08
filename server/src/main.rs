@@ -33,7 +33,7 @@ mod protocol_tests;
 mod pskr;
 mod radio_agc;
 mod radio_http;
-#[cfg(all(test, not(debug_assertions)))]
+#[cfg(test)]
 mod radio_http_tests;
 mod radio_level;
 mod radio_setup;

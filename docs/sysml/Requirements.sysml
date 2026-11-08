@@ -1358,10 +1358,12 @@ package WstxRequirements {
              4. Drop bytes without closing the established test connection. Expect stale detection
                 within the contract's silent-loss bound and scheduler tolerance. Restore byte delivery;
                 expect bounded recovery and another snapshot without waiting for the old close handshake.
-             5. Hold (delay, not drop) every station-to-browser byte for 16s while the page's
-                deferred client download is pending, then deliver it. Expect the same socket, no
-                stale state and no new connection (#8). Hold beyond 31s with the download pending:
-                expect stale detection within the 31s bound plus 1-second scheduler tolerance.
+             5. Hold (delay, not drop) every station-to-browser byte while the page's deferred
+                client download is pending; with the page's clock installed before load, drive it
+                16s (past the 12s bound and its 1-second tick), then deliver. Expect only the
+                connected state, the same socket and no new connection (#8, issue70: driven, no
+                real wait). Hold beyond 31s in real time with the download pending: expect stale
+                detection within the 31s bound plus 1-second scheduler tolerance (a measurement).
 
              **Oracle:** contract state transitions/time limits and observed request exchange.
              The automation cuts/restores the proxy to the actual server and checks a new snapshot
@@ -2024,6 +2026,7 @@ package WstxRequirements {
              Exercise unsupported/truncated audio, silence/noise, an explicit mode mismatch and a second offline run.
              Invalid input is reported without corrupting station state; false decodes meet the agreed rejection criteria; replay produces equivalent results within defined tolerances. Use hand-specified errors and independent reference fixtures.
              Runtime matrix qualification (#36 decision): a poll whose wall time exceeds 50 ms leaves that configuration's 50 ms CPU quantum unmeasured, which is neither a pass nor a violation. The configuration is re-measured, at most three attempts; the runtime (including the four-worker 2x bound), cold-start and 64 MiB budgets bind every attempt, and any exceedance is a failure. A configuration still unmeasured after the third attempt makes the matrix inconclusive. The ordinary push gate keeps the matrix as a regression detector: an inconclusive matrix exits with the harness NOT RUN code 77, so the gate lists the suite as not run, records it as not-run, never memoises it as passed and does not block the push; such a run is never a pass and never CL-007-04 evidence. CL-007-04 runtime evidence comes only from the strict exclusive-window run on the reference PC, which refuses an inconclusive matrix.
+             Station process case (#71): receive_http_tests::resource_station_process_delta_and_owner_release (private-commit delta at most 96 MiB over idle, receive-owner release at most 250 ms after Stop, FT8 and FT4, after a decode and during a busy window) runs in the release timing suite live-station-latency, alone, as a regression detector. A gate run of it is never CL-007-04 evidence; that evidence comes only from the strict exclusive-window run on the reference PC.
              2 — Isolated automated tests; Windows PC with disposable recordings, no radio or live service. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -2056,6 +2059,7 @@ package WstxRequirements {
         doc /* TC-018-001
              CL-006-01, CL-006-02
              Construct byte-level PCM WAVs with 1, 2048, 4096, 4097 and 1,440,000 frames, endpoint samples -32768,-1,0,1,32767 and legal ancillary/padding chunks. Import, inspect blocks/metadata, replay twice and restart. Use the pinned actual recordings from chapter13 after retaining their license/provenance manifest; the verified22 inputs all fit the selected PCM capability.
+             Provenance sweep (issue70, tests/recording-fixtures.test.cjs, no server): every one of the 22 FT8 and 3 FT4 original recordings in WSTX_SAMPLE_DIR has the sha256 of its manifest entry, and its hand-parsed RIFF/fmt header is PCM, 1 channel, 16 bit, 12000 Hz with a data size within the import cap; the enumeration equals the two manifests (25 files). Import (tests/recording.test.cjs): the first .wav entry of each manifest, one FT8 and one FT4 original, imports with rate_hz 12000, file_bytes equal to its length and stored bytes unchanged, and its replay paints waterfall rows.
              Hand-authored RIFF byte offsets/counts and exact signed-value/32768 mapping match; concatenated blocks equal input samples, <=4096 per block, contiguous offsets and one EOS; original bytes unchanged. Source UUID survives restart and repeats; job IDs differ, generations advance within a boot and reset to0 on restart, recording UTC remains null and no device opens. Analytical spectra repeat within 0.5 dB quantization plus 0.05 dB numerical tolerance. The actual recording proves non-synthetic input; it is not the calibration oracle. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -2354,7 +2358,7 @@ package WstxRequirements {
 
              8. Bounded HTTP content coding12.1.1 (same cost2 boundary):
                 A. Real application/router + normal TLS/session: authenticate once through existing /session; for each allowlisted successful GET gzip decode must equal identity logical JSON exactly on immutable state, exact shape/caps preserved. Use independent standard decoder (Node zlib) and assert actual raw gzip magic/header/trailer + body rather than fetch auto-decoded size. Check Content-Type/Vary/Content-Length correctness; existing Vary/cache/security headers retained. Mutable facts compare frozen fixture context, never pretend two temporally distinct snapshots must match timestamps.
-                B. Table: absent/empty, identity, gzip, GZip case-insensitivity, gzip;q=0, gzip;q=0.5 vs identity;q=1, identity;q=0 with gzip acceptable, br-only, wildcard and explicit exclusions, invalid q/token/multiple header instances. Expected outcomes are frozen in the ordered12.1.1 negotiation table from the pinned source; malformed headers must follow the frozen ordered12.1.1 negotiation table without panic/leak; duplicate/wildcard selection follows the exact table, not a blanket last-q or any-q0 rule. Both gzip+identity explicitly forbidden=>406 only eligible successful GET. Preserve original401/403/404/400/409/500 on excluded error paths even with forbidden encodings.
+                B. Table: absent/empty, identity, gzip, GZip case-insensitivity, gzip;q=0, gzip;q=0.5 vs identity;q=1, identity;q=0 with gzip acceptable, br-only, wildcard and explicit exclusions, invalid q/token/multiple header instances. Expected outcomes are frozen in the ordered12.1.1 negotiation table from the pinned source; malformed headers must follow the frozen ordered12.1.1 negotiation table without panic/leak; duplicate/wildcard selection follows the exact table, not a blanket last-q or any-q0 rule. Both gzip+identity explicitly forbidden=>406 only eligible successful GET. Preserve original401/403/404/400/409/500 on excluded error paths even with forbidden encodings. Every row of the frozen ordered table runs through the product's own response encoder (http_compression::encode_response) on an eligible successful JSON GET, never through a bare library layer (#71).
                 C. Every excluded method/path including POST/session, PUT/profile, POST/receive/select and /radio operations remains unencoded and byte/schema compatible; no duplicate mutation effects. Authenticate cookies/tokens never appear in body/debug logs. Authenticated eligible snapshots contain no credential fields; malicious literal decoded text is unchanged. Oversized logical result rejected/capped BEFORE gzip, encoded size cannot admit extra rows; valid max logical result still decodes within original cap. Request Content-Encoding:gzip must not add support or bypass request body limit. HEAD/no-body/range/already-encoded cases must not be double-compressed or misframed.
                 D. Actual two Chromium browsers on unchanged shared4000B/s/direction+150ms TLS model, actual native FT4/FT8 + CAT transitions and mode-appropriate fixtures, actual status, pushed selection state and reads, records and source/operation identities. Preserve all Thin75s/Off75s windows and >=60 checks, five CQ records, status/pending/original WS oracles. Record Content-Encoding from real response headers, raw encoded sizes via CDP as attribution, and unchanged actual proxy TLS/model counters as sole bandwidth oracle; BOTH directions <=3000B/s and existing Off requirement, all status<=2s. No arithmetic compression estimate counts as PASS. Run original14+new15 suite through ordinary integration/prepush as selected; separate old10s Connected-after-load remains required. Identity path correctness is mandatory; identity workload bandwidth remains unproven unless separately measured.
                 The read and event proof in7 applies unchanged to8D: preserve per-command pending
@@ -2390,7 +2394,7 @@ package WstxRequirements {
             verify 'CL-010-07';
             verify 'CL-010-08';
         }
-        attribute executable : String = "tests/radio-selection.test.cjs; server/src/selection_http_tests.rs; server/src/http_compression_tests.rs";
+        attribute executable : String = "tests/radio-selection.test.cjs; server/src/selection_http_tests.rs; server/src/http_compression_tests.rs; server/src/recording_tests.rs";
     }
     verification 'TC-007-006' {
         doc /* #### TC-007-006 — Latest decode and signed relative timing
@@ -2903,14 +2907,21 @@ package WstxRequirements {
              grant after restart and no successful receipt/proof. No assumption that
              server can observe browser receipt of a success response is allowed.
              Slow-link setup retry oracle (independent request counters on the actual
-             browser): hold the first bootstrap-scope response past its 10 s bound;
-             the status shows 'Retrying authorization' and becomes connected after one
-             token press with one session, two bootstrap-scope and one enrollment.
+             browser; the page's clock is installed before load and driven, issue70,
+             no real wait): hold the first bootstrap-scope response; at 9999 ms no
+             retry is shown and one bootstrap-scope was sent, at 10000 ms the status
+             shows 'Retrying authorization (attempt 2 of 3)'; the late response is
+             then delivered and the page becomes connected after one token press with
+             one session, two bootstrap-scope and one enrollment.
              A network-failed enrollment is repeated once with the identical operation
              ID and verifier and connects. Network failure of every /session
-             attempt stops after exactly 3 attempts with 'Could not authenticate'.
-             A 401 bootstrap-scope is never retried. Navigating away during a held
-             attempt sends no further setup request.
+             attempt: 1 attempt at +999 ms and 2 at +1000 ms after the first failure,
+             2 at +1999 ms and 3 at +2000 ms after the second, then 'Could not
+             authenticate', and still exactly 3 after the clock runs past the 45 s
+             login bound. A 401 bootstrap-scope is never retried (counts 1/1/0 after
+             the clock runs past 45 s). A pagehide event on the live page during a
+             held attempt cancels it: no further setup request after the clock runs
+             past 45 s (counts 1/1/0).
              Grant revocation and configuration edits (operator 2026-11-06: moved here from
              the retired TC-022-007). Disable/re-enable and endpoint edit preserve UUID;
              endpoint change advances safety revision/invalidates commissioning only.
@@ -2933,9 +2944,9 @@ package WstxRequirements {
              transport usable at 28799 s and refused at exactly 28800 s, a challenge 400 days
              on, a reopen keeping grants and receipts with no transport), and
              tests/profiles.test.cjs "actual browser and server process restart" removes the
-             cookie and restarts both processes. No run advances a browser's clock; that
-             combination stays unautomated, and TC-022-010 observes controlled cookie expiry
-             live. */
+             cookie and restarts both processes. Only the slow-link setup retry case
+             drives a browser's clock; the cookie-retention and 28800 s combination stays
+             unautomated, and TC-022-010 observes controlled cookie expiry live. */
         attribute automation : AutomationState = AutomationState::partial;
         attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs; server/src/authorization_tests.rs";
         objective {
@@ -4245,15 +4256,15 @@ package WstxRequirements {
     }
     dependency CL_039_06_to_FR_008 from 'CL-039-06' to 'FR-008';
     requirement 'CL-039-07' {
-        doc /* Outstanding, issue #39/#42 later slices: auto-QRM stop; free Tx slot finder; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies; the contest class (#63). Until delivered these are not offered. */
+        doc /* Outstanding, issue #39/#42 later slices: auto-QRM stop; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Delivered meanwhile: the free Tx slot finder (CL-039-09) and contests (#63). Until delivered these are not offered. */
         attribute coverage : ImplementationState = ImplementationState::target;
     }
     dependency CL_039_07_to_FR_007 from 'CL-039-07' to 'FR-007';
     verification 'TC-039-008' {
-        doc /* TC-039-008 — Later strategy slices (outstanding)
+        doc /* TC-039-008 — Later strategy slices (outstanding: auto-QRM stop and the other CL-039-07 slices)
              CL-039-07
              Setup: actual candidate router with a pinned cty.dat fixture and hand-authored rows.
-             Steps: auto-QRM stop scenarios; contest class.
+             Steps: auto-QRM stop scenarios.
              Expected: defined when the slice is prepared; until then contest is refused at PUT /strategy.
              2 — Isolated automated functional tests; Windows development PC; not implemented. */
         attribute automation : AutomationState = AutomationState::planned;
@@ -4567,7 +4578,7 @@ package WstxRequirements {
              CL-039-02, CL-039-09, CL-039-20, CL-039-21, CL-039-22, CL-039-23
              Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 on 20 m FT8 (14.074 MHz), RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported), operator consent; Tx watchdog 6; PSK Reporter on in Settings and Use PSK Reporter on.
              Steps: select "Strongest new on band" with Auto off for two periods; switch Auto on and let it work stations to two logged QSOs; watch a station that does not answer; watch the PSK Reporter lines and the Tx slot at each repetition; HALT; Auto on again; select "Farthest new on band" and let it work one QSO; select "Casual 20 m" and let it call CQ and answer a caller; Auto off during a CQ; select None.
-             Expected: with Auto off the candidates are marked by SNR and nothing is transmitted; with Auto on the strongest new call on band is called first, to a logged QSO, and it goes on; a station that does not answer is left after 4 repetitions (8 while the QSO pane shows "Hears us" with a spot) and not called again for 10 minutes; while there is no spot Tx and Rx move to the quietest slot at a repetition or stay on a tie, and with a spot Tx stays; the QSO pane shows "Hears us" and "open at his end" with the slot; HALT stops at once, Auto grey, the selection kept; Farthest calls the farthest new call on band first; Casual calls CQ after 2 periods without a candidate and answers a caller to a logged QSO; Auto off ends the CQ at once; None leaves Auto off. Not live: the contest rules (no contest in progress; TC-039-044 at cost 2), the 8 h limit and the 60 s without a client (TC-039-033 at cost 2): named on #39 for the operator.
+             Expected: with Auto off the candidates are marked by SNR and nothing is transmitted; with Auto on the strongest new call on band is called first, to a logged QSO, and it goes on; a station that does not answer is left after 4 repetitions (8 while the QSO pane shows "Hears us" with a spot) and not called again for 10 minutes; while there is no spot Tx (with Hold Tx on; Tx and Rx together with Hold Tx off) moves to the quietest slot at a repetition or stays on a tie, and with a spot Tx stays; the QSO pane shows "Hears us" and "open at his end" with the slot; HALT stops at once, Auto grey, the selection kept; Farthest calls the farthest new call on band first; Casual calls CQ after 2 periods without a candidate and answers a caller to a logged QSO; Auto off ends the CQ at once; None leaves Auto off. Not live: the contest rules (no contest in progress; TC-039-044 at cost 2), the 8 h limit and the 60 s without a client (TC-039-033 at cost 2): named on #39 for the operator.
              5 — Live with RF on the station, operator consent; not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {

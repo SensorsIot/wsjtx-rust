@@ -2185,7 +2185,7 @@ fn latest_decode_cancel_and_failure_preserve_published_period_without_new_identi
     }
 }
 
-#[cfg(not(debug_assertions))]
+// Proves: CL-008-07; TC-009-005
 #[test]
 fn selection_radio_cache_old_ready_cannot_overwrite_closed() {
     use wstx_rust::radio_control::State;
@@ -2217,7 +2217,7 @@ fn selection_radio_cache_old_ready_cannot_overwrite_closed() {
         "a delayed Ready capture must not resurrect a closed actor"
     );
 }
-#[cfg(not(debug_assertions))]
+// Proves: CL-008-07; TC-009-005
 #[test]
 fn selection_radio_cache_reordered_capture_cannot_erase_mode_query() {
     use wstx_rust::radio_control::{Operation, Request};
@@ -2267,7 +2267,7 @@ fn selection_radio_cache_reordered_capture_cannot_erase_mode_query() {
     );
     actor.request_close();
 }
-#[cfg(not(debug_assertions))]
+// Proves: CL-008-07; TC-009-005
 #[test]
 fn selection_radio_cache_unversioned_failure_cannot_clear_current_facts() {
     let fixture = Fixture::new();
@@ -2282,7 +2282,7 @@ fn selection_radio_cache_unversioned_failure_cannot_clear_current_facts() {
     actor.request_close();
 }
 
-#[cfg(not(debug_assertions))]
+// Proves: CL-008-07; TC-009-005
 #[test]
 fn review_connect_profile_edit_before_install_releases_own_reservation() {
     let fixture = Fixture::new();
@@ -2315,7 +2315,7 @@ fn review_connect_profile_edit_before_install_releases_own_reservation() {
     assert_eq!(next, generation + 1);
     r.radio_disconnect(next).unwrap();
 }
-#[cfg(not(debug_assertions))]
+// Proves: CL-008-07; TC-009-005
 #[test]
 fn review_stale_profile_frequency_cannot_infer_unknown_manual_band() {
     let fixture = Fixture::new();
@@ -2361,7 +2361,7 @@ fn review_stale_profile_frequency_cannot_infer_unknown_manual_band() {
     actor.request_close();
 }
 
-#[cfg(not(debug_assertions))]
+// Proves: CL-008-07; TC-009-005
 #[test]
 fn review_obsolete_connect_cannot_clear_newer_or_disconnected_reservation() {
     for newer in [false, true] {
@@ -2401,7 +2401,7 @@ fn review_obsolete_connect_cannot_clear_newer_or_disconnected_reservation() {
         }
     }
 }
-#[cfg(not(debug_assertions))]
+// Proves: CL-008-07; TC-009-005
 #[test]
 fn review_frequency_inference_requires_profile_boot_and_connection_authority() {
     let fixture = Fixture::new();
