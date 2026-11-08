@@ -70,6 +70,9 @@ test('TC-010-005 display preference is isolated by origin and validated profile 
   await chooseDisplay(page,'off');let current=base;
   // Profile identity wire fixtures test browser preference identity only; no decoded traffic is injected.
   await page.route('**/profile',route=>route.fulfill({json:current}));
+  // #74 (CL-074-01): a recording reply naming another boot than the profile's is discarded, so the
+  // fixture's station names the same boot in GET /recording as in GET /profile.
+  await page.route('**/recording',async route=>{const real=await (await route.fetch()).json();await route.fulfill({json:{...real,boot_id:current.boot_id}});});
   current={...base,boot_id:crypto.randomUUID(),revision:base.revision+1};await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);
   assert.equal(await page.inputValue('#display-profile'),'off','boot/revision changes preserve explicit choice');
   current={...base,profile_id:crypto.randomUUID()};await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);
