@@ -100,7 +100,8 @@ async function fetchSnapshot(){
     const response=await stationFetch('/contact',{cache:'no-store',signal:AbortSignal.timeout(10000)});
     contactMissing=response.status===404;
     // #51: a contact snapshot this page cannot validate shows the reload chip.
-    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence)){snap=value;render();}heldWake();}
+    // #74 PushedStationState: a reply of another boot than the browser's is discarded.
+    if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&value.boot_id===profileData?.boot_id&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence)){snap=value;render();}heldWake();}
   }catch{}
 }
 // WstxContact::ContactStateEvent (#10): show what recording.js holds from the station's events,
@@ -108,9 +109,12 @@ async function fetchSnapshot(){
 function stateShow(){
   const view=contactHeld;if(!view)return;
   window.wstxStationData?.('contact',valid(view));
-  if(valid(view)){stationSample(view.utc_ms);if(!snap||snap.boot_id!==view.boot_id||view.snapshot_sequence>=snap.snapshot_sequence){snap=view;render();}}
+  if(valid(view)&&view.boot_id===profileData?.boot_id){stationSample(view.utc_ms);if(!snap||snap.boot_id!==view.boot_id||view.snapshot_sequence>=snap.snapshot_sequence){snap=view;render();}}
   heldWake();
 }
+// WstxStationProtocol::PushedStationState (#74): a new boot drops the contact state at once;
+// the QSO pane shows its freshly loaded form until the new boot's read or first event.
+addEventListener('station-boot',()=>{snap=null;render();});
 // #10 PushedStationState: an accepted command's result comes in contact.state; the next command
 // waits for the revision of its receipt there. Only a receipt that does not come in time reads GET /contact.
 let heldWaiters=[];
@@ -1352,7 +1356,8 @@ async function ignore(call,on){
     const response=await stationFetch('/strategy/ignore',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,call,ignore:on}),signal:AbortSignal.timeout(10000)});
     const data=await response.json().catch(()=>null);
     if(!response.ok||data?.v!==1){const e=data?.error;statusNode.textContent=`Ignore not saved · ${e?.code??response.status}${e?.field?` (${e.field})`:''}`;return;}
-    // The shown rows are evaluated again with the station's new list.
+    // The shown rows are evaluated again with the station's new list (#74: of this boot only).
+    if(data.boot_id!==profileData?.boot_id)return;
     view=data;verdicts=new Map();evaluatedKey='';show();evaluateShown();
   }catch(error){statusNode.textContent=`Ignore not saved · ${error.message}`;}
 }
@@ -1434,6 +1439,7 @@ alertClear?.addEventListener('click',async()=>{
     const response=await stationFetch('/strategy/alerts/clear',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:alertView.profile_id,boot_id:alertView.boot_id}),signal:AbortSignal.timeout(10000)});
     const data=await response.json().catch(()=>null);
     if(!response.ok||data?.v!==1){alertNote.textContent=`Not cleared \u00b7 ${data?.error?.code??response.status}`;return;}
+    if(data.boot_id!==profileData?.boot_id)return;
     alertSeq++;alertView=data;showAlerts();
   }catch(error){alertNote.textContent=`Not cleared \u00b7 ${error.message}`;}
 });
@@ -1502,6 +1508,7 @@ $('mw-update')?.addEventListener('click',async()=>{
     const data=await response.json().catch(()=>null);
     // A failure keeps the list and says why, in one line.
     if(!response.ok||data?.v!==1){result.textContent=`Update failed · ${data?.error?.reason??data?.error?.code??response.status}; the list stays as it was`;return;}
+    if(data.boot_id!==profileData?.boot_id)return;
     view=data;verdicts=new Map();evaluatedKey='';show();evaluateShown();result.textContent='Updated';
   }catch(error){result.textContent=`Update failed · ${error.message}; the list stays as it was`;}
   finally{button.disabled=false;}
