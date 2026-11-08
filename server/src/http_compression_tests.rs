@@ -1,42 +1,10 @@
 //! H1 compatibility prerequisites; transport behavior tests are added before integration.
 use axum::{
     body::{Body, to_bytes},
-    http::{Extensions, HeaderMap, Request, StatusCode, Version},
+    http::{HeaderMap, Request, StatusCode},
     response::Response,
 };
-use std::{convert::Infallible, future::ready};
-use tower::{Layer, ServiceExt, service_fn};
-use tower_http::compression::CompressionLayer;
-
-#[tokio::test]
-async fn standard_layer_supports_one_existing_axum_response() {
-    let mut response = Some(Response::new(Body::from("{}")));
-    let one_response = service_fn(move |_: Request<Body>| {
-        ready(Ok::<_, Infallible>(
-            response
-                .take()
-                .expect("one response service is called once"),
-        ))
-    });
-    let layer = CompressionLayer::new()
-        .gzip(true)
-        .compress_when(|_: StatusCode, _: Version, _: &HeaderMap, _: &Extensions| true);
-    let response = layer
-        .layer(one_response)
-        .oneshot(
-            Request::builder()
-                .header("accept-encoding", "identity;q=0,gzip")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.headers()["content-encoding"], "gzip");
-    let bytes = to_bytes(Body::new(response.into_body()), 1024)
-        .await
-        .unwrap();
-    assert_eq!(&bytes[..3], &[0x1f, 0x8b, 8]);
-}
+use tower::ServiceExt;
 
 // The oracle reads only the reviewed,
 // fixed-shape SysML oracle declarations, never the implementation negotiator.
@@ -138,27 +106,22 @@ fn canonical_negotiation_oracle_rejects_missing_malformed_and_duplicate_data() {
 
 // Proves: CL-003-08, CL-008-07; TC-009-005 case8.
 #[tokio::test]
-async fn pinned_library_matches_all_49_independent_negotiations() {
+async fn product_encoder_matches_all_49_independent_negotiations() {
     let source = include_str!("../../docs/sysml/OperatingReceive.sysml");
     let mut count = 0;
     for (fields, expected) in canonical_negotiations(source).unwrap() {
-        let mut request = Request::new(Body::empty());
+        let mut negotiation = HeaderMap::new();
         for field in fields {
-            request
-                .headers_mut()
-                .append("accept-encoding", field.parse().unwrap());
+            negotiation.append("accept-encoding", field.parse().unwrap());
         }
-        let mut existing = Some(Response::new(Body::from("{}")));
-        let service = service_fn(move |_: Request<Body>| {
-            ready(Ok::<_, Infallible>(existing.take().unwrap()))
-        });
-        let response = CompressionLayer::new()
-            .gzip(true)
-            .compress_when(|_: StatusCode, _: Version, _: &HeaderMap, _: &Extensions| true)
-            .layer(service)
-            .oneshot(request)
-            .await
-            .unwrap();
+        // An eligible successful JSON GET: every row reaches our own negotiation path.
+        let response = crate::http_compression::encode_response(
+            &axum::http::Method::GET,
+            "/profile",
+            negotiation,
+            json_body(b"{}".to_vec()),
+        )
+        .await;
         let status = response.status();
         let encoding = response
             .headers()
@@ -179,9 +142,7 @@ async fn pinned_library_matches_all_49_independent_negotiations() {
             }
             _ => panic!("unknown independently specified outcome"),
         }
-        let bytes = to_bytes(Body::new(response.into_body()), 1024)
-            .await
-            .unwrap();
+        let bytes = to_bytes(response.into_body(), 1024).await.unwrap();
         if expected == "gzip" {
             assert_eq!(&bytes[..3], &[0x1f, 0x8b, 8]);
         } else {

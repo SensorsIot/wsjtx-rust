@@ -1007,7 +1007,7 @@ impl Recording {
     pub(crate) fn fixture_inputs(&self, inputs: Vec<Box<dyn LiveInput>>) {
         self.resources.lock().unwrap().live_inputs = inputs.into();
     }
-    #[cfg(all(test, not(debug_assertions)))]
+    #[cfg(test)]
     pub(crate) fn fixture_radio(&self, actor: Arc<wstx_rust::radio_control::actor::Actor>) {
         let snapshot = actor.snapshot().unwrap();
         let mut s = self.state.lock().unwrap();
