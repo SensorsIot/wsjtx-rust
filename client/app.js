@@ -242,7 +242,7 @@ async function loadProfile(reload, current = socket) {
 // the ProfileRepresentation checks, then SnapshotApplicable, then the form and shown profile.
 function applyProfile(data, reload) {
   if (typeof data?.profile_id !== 'string' || typeof data.boot_id !== 'string' || !Number.isSafeInteger(data.revision) || !data.settings) throw new Error('Invalid profile');
-  if (profileData && data.boot_id === profileData.boot_id && data.revision < profileData.revision) return;
+  if (profileData && data.boot_id === profileData.boot_id && data.revision < profileData.revision) return false;
   profileData = data; document.querySelector('#profile-panel').hidden = false;
   // FR-023: the connection type is read-only and shown as saved.
   document.querySelector('#settings select:not([id])').value = data.connection_type === 'native_flex' ? 'native_flex' : 'standard';
@@ -262,6 +262,7 @@ function applyProfile(data, reload) {
     editingRevision = data.revision; dirty = false; conflict = false;
   }
   document.querySelector('#settings-save').disabled = saving || conflict;
+  return true;
 }
 settingsForm.addEventListener('input', () => {dirty = true;});
 settingsForm.addEventListener('change', () => {dirty = true;});
@@ -288,8 +289,9 @@ settingsForm.addEventListener('submit', async event => {
       return;
     }
     // The 200 body is the authoritative snapshot, applied as a GET's (no follow-up GET);
-    // an invalid body leaves the outcome unknown. A newer shown snapshot is kept.
-    applyProfile(result, true);
+    // an invalid body leaves the outcome unknown. A newer shown same-boot snapshot is kept
+    // and the form takes it (CL-073-01), so the next Apply edits the newer revision.
+    if (!applyProfile(result, true)) applyProfile(profileData, true);
     settingsResult.textContent = `Saved revision ${result.revision}`;
   } catch {settingsResult.textContent = 'Save outcome unknown. Reload saved settings before retrying.'; conflict = true;}
   finally {saving = false; for (const [element, disabled] of controls) element.disabled = disabled; button.disabled = saving || conflict;}

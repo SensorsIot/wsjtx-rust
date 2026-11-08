@@ -1338,11 +1338,17 @@ const saveReplyCases = {
     assert.equal(await saveOutcome(page), 'Saved revision 1');
     assert.equal(await page.locator('#profile-revision').textContent(), '2', 'the newer shown snapshot is kept');
     assert.equal(await page.locator('#profile-name').textContent(), 'Window B save');
-    assert.equal(await page.locator('#display-name').inputValue(), 'Window A save', 'the reply does not overwrite the form');
+    assert.equal(await page.locator('#display-name').inputValue(), 'Window B save', 'the form keeps the newer shown snapshot');
     assert.equal(await page.locator('#settings-save').isEnabled(), true);
     assert.equal(await page.evaluate(() => window.resultTexts.some(text => text.includes('Save outcome unknown'))), false);
     assert.equal(await page.evaluate(() => window.profileCalls.put), 1); assert.equal(await page.evaluate(() => window.profileCalls.outcomeGets), 0);
     assert.equal((await savedFile(p)).revision, 2);
+    // The form edits revision 2, so the next Apply is no conflict.
+    await page.unroute('**/profile');
+    await page.locator('#display-name').fill('Window A again'); await page.locator('#settings-save').click();
+    await page.waitForFunction(() => document.querySelector('#settings-result').textContent !== 'Saved revision 1');
+    assert.equal(await saveOutcome(page), 'Saved revision 3');
+    assert.equal((await savedFile(p)).revision, 3);
   },
   '(e) committed PUT whose delivery is aborted': async ({p, page}) => {
     await page.locator('#display-name').fill('Aborted delivery');
