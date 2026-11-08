@@ -4271,7 +4271,7 @@ package WstxRequirements {
     dependency CL_039_21_to_FR_008 from 'CL-039-21' to 'FR-008';
     requirement 'CL-039-22' {
         doc /* Mode (operator grill 2026-11-07, Q5, Q11, Q12, Q17, Q29, Q35, Q40). Auto is a toggle above the QSO pane next to CQ, green on and grey off, not part of a strategy, one toggle for strategies and contests; the station owns it in memory: off after a station restart, after HALT from any source and after every run end, and only the browser switches it (POST /strategy/auto; an MCP principal is refused). With Auto off a selected strategy or contest only marks its candidates; switching it on needs a selection and starts the run, and a contest whose rules forbid automatic operation asks the existing warning and needs its confirmation; switching it off ends the run at once; selecting None turns it off, another selection with Auto on starts that one. CQ when no target is a strategy option, off by default: with it on the run calls CQ after 2 publications with no candidate, answers callers (always, D5) and calls a candidate that appears; the Tx watchdog stops its CQ. With Hold Tx on (#39 holdtx round 1 Q3) the CQ goes out on the held Tx without a slot decision; with Hold Tx off it takes the slot quiet in my Rx parity (CL-039-09, #66). Details: WstxStrategy::AutoToggle, CqWhenNoTarget, StrategyRun, PskrUse; WstxOperatingLayout::QsoPane. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js";
     }
     dependency CL_039_22_to_FR_007 from 'CL-039-22' to 'FR-007';
@@ -4355,7 +4355,7 @@ package WstxRequirements {
     dependency CL_039_08_verified_by_TC_039_009 from 'CL-039-08' to 'TC-039-009';
     requirement 'CL-039-09' {
         doc /* A strategy or contest run or a pounce calls from the quietest Tx slot: the slot where the target can answer us, a free slot on my side, judged in every decision (a selection, a slot check, a CQ) in my Rx periods only (his Tx parity; #66 operator 2026-11-08 "judge the parity I will receive in"), and only in recent ones: the counted periods among the last 4 periods of my Rx parity on the clock (#66 "Only if recent"), periods I transmitted in never counted. Slots are compared with each other across the whole passband (#66, operator 2026-11-08 "We want to have the quiet slots overall. Across the entire bandwidth of FT8."), not by their own usual level: in each counted period a slot's rise is its level minus the WSJT-X passband floor fitted to that period (so the receive filter's roll-off does not favour the edges), and its value is its largest rise over the counted periods; compared in whole dB, the lowest value winning; a tie keeps the current Tx when it is among the quietest, else goes nearer the current Tx, then lower; there is no threshold. A slot whose signal overlaps a station decoded in a counted period (less than one signal width from his decoded frequency) is left out while any other is free. Where known it is free at his end: at least 50 Hz from every frequency his PSK Reporter spots show him decoding, counting only spots from my Tx parity (ignored when that leaves no slot). Hold Tx off: Rx = Tx, the slot sets both, decided at each selection, before a CQ and at each slot check (CL-039-21). Hold Tx on (CL-039-08): Rx stays on the station and the slot sets Tx alone, only at the slot check of a target that does not hear us, or as the nearest slot 50 Hz away when the station is within 50 Hz of Tx; a CQ goes out on the held Tx. Every slot the run chooses lies inside the Tx range (FT8 300..2650, FT4 300..2610) and at least 50 Hz from the called station's signal and from Rx; without power data the current Tx is kept. Details: WstxStrategy::FreeTxSlot. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/freeslot.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js";
     }
     dependency CL_039_09_to_FR_007 from 'CL-039-09' to 'FR-007';
@@ -4368,7 +4368,7 @@ package WstxRequirements {
              Expected (oracle: the operator's rule, hand-computed in the test): that slot; the current Tx kept; the nearer one, then the lower; 40.4 and 40.0 tie and keep the current Tx, 40.6 does not; never outside the range; never within 50 Hz of the called station; his frequency of my Tx parity excludes the slot within 50 Hz and the other parity does not; all excluded: his end ignored, his_end no; listening only (#66): judged on my Rx parity alone, the parity loud only in my Tx periods not avoided; no power: the current Tx kept, or the nearest away from the called station, power_db null. Router: Tx and Rx 1800 before the first call (the 5th period and the transmitted period ignored), tx_slot {hz 1800, power_db 20, his_end unknown}; Tx stays 1800 through the whole QSO; after the band change only the new band's periods count; with Hold Tx off Tx back on its slot; the caller answered from the quietest slot away from it; the pounce calls from the quietest slot; the plain run has tx_slot null and keeps its Tx.
              #39 holdtx: the Router steps run with Hold Tx explicitly off (the Rx = Tx rule); with Hold Tx on they are TC-039-049. The tables give the compared value instead of the absolute power, and power_db is that value. #66: the compared value is the largest rise above the passband floor (TC-039-050), so the Router's tx_slot reads power_db -1 on the flat floor of 20 (floor 20.65, rise -0.65); the decoded-station rule is TC-066-002.
              2 — Isolated automated tests; Windows PC, no radio (wstx-rust, ui-operating suites). */
-        attribute automation : AutomationState = AutomationState::partial;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-09';
         }
@@ -4535,7 +4535,7 @@ package WstxRequirements {
              #39 holdtx: these steps run with Hold Tx explicitly off; with Hold Tx on the CQ goes out on the held Tx and the callers are TC-039-049 (h).
              #66: the step "the slot of the CQ with one parity loud" is run twice, the loud parity my Tx parity (ignored) and my Rx parity (avoided); a caller's nearest candidate 50 Hz away also skips a station decoded in my Rx periods (TC-066-002 (h)).
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::partial;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-22';
         }
@@ -4635,7 +4635,7 @@ package WstxRequirements {
         objective {
             verify 'CL-039-09';
         }
-        attribute executable : String = "server/src/strategy_tests.rs";
+        attribute executable : String = "server/src/freeslot_tests.rs; server/src/strategy_tests.rs";
     }
     dependency CL_039_09_verified_by_TC_039_050 from 'CL-039-09' to 'TC-039-050';
     verification 'TC-039-051' {
@@ -5717,7 +5717,7 @@ package WstxRequirements {
     // #65 Free Tx slots (operator 2026-11-08, three grill-me rounds).
     requirement 'CL-065-01' {
         doc /* (#65) Free Tx slots: at every slot decision of an automation run (strategy, contest, pounce; WstxStrategy::FreeTxSlot, every rule, also with Hold Tx on) the station lists the 5 best candidates of that decision: its own candidates (Tx range, clear of the called station and with Hold Tx on of my Rx, free at his end where known, and from #66 clear of stations decoded in the counted periods while one is free), ranked by its own compared value (#66: the whole-dB largest rise above the passband floor over the recent counted periods of my Rx parity, in every decision), then nearer the current Tx, then lower, skipping a candidate closer than the slot width (FT8 50 Hz, FT4 90 Hz) to one already listed; none without power. The value {run_id, at_utc_ms, mode, rx_parity, listening, periods {even, odd: {now}} (null for my Tx parity), slots [{hz, rise_db, level_db, floor_db}]} is the top-level free_tx_slots of GET /automation (null without a run and before its first decision) and is pushed at each decision only as free_tx_slots.state to Detailed and Thin peers (at most 1024 bytes). No list and no event without a run. The choice and tx_slot are unchanged. Details: WstxStrategy::FreeTxSlots, WstxMcp::AutomationWire, WstxStationProtocol::PushedStationState. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/freeslot.rs; server/src/automation.rs; server/src/main.rs";
     }
     dependency CL_065_01_to_FR_020 from 'CL-065-01' to 'FR-020';
@@ -5736,7 +5736,7 @@ package WstxRequirements {
              Expected (hand computation recorded in the test): 5 of seven in rank order; 3; empty; 0.4 ties and the current Tx is first, 0.6 does not; the nearer first, at equal distance the lower; 40 Hz skipped and 50 Hz listed, 80 Hz skipped and 90 Hz listed; the called station's neighbour never listed; my Rx's neighbour not listed with Hold Tx on, listed with it off; candidates near his frequencies excluded, his frequencies everywhere leave all; -1.4 listed as -1; level_db the larger parity's; the first listed equals quietest_clear's chosen hz for every table. Red on the parent: no list.
              #66: the tables give the compared value (the largest rise above the passband floor); "listening with one parity higher" becomes my Tx parity higher, which changes nothing (only my Rx parity is judged), and level_db and floor_db are those of the busiest Rx period; a candidate overlapping a decoded station is not listed while a free one exists (TC-066-002).
              2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
-        attribute automation : AutomationState = AutomationState::partial;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-01';
         }
@@ -5751,7 +5751,7 @@ package WstxRequirements {
              Expected: null before any run; the value with exactly {run_id, at_utc_ms, mode, rx_parity, listening, periods, slots}, the run's id, at_utc_ms the station clock of the decision, the hand-computed slots and period counts; one free_tx_slots.state each to the Detailed and Thin peer, data.free_tx_slots equal to the GET value, none to Off, at most 1024 bytes also with 5 slots at their longest numbers; tx_slot exactly as on the parent; the MCP view carries the same value; with only Rx-parity periods the Tx-parity usual count is 0; the CQ listening true with both now counts; Hold Tx on the list filled and Tx unchanged; a new event with a later at_utc_ms; after the end null and no free_tx_slots.state; the fourth peer gets the value once; without a run zero free_tx_slots.state and zero automation.state. Red on the parent: no key, no event.
              #66: periods carries {now} only, the count for my Rx parity and null for my Tx parity, in every decision (also the CQ, listening true); slots carry {hz, rise_db, level_db, floor_db} with no usual_db; "with only Rx-parity periods the Tx-parity usual count is 0" becomes "the Tx parity null"; at most 1024 bytes with 5 slots at their longest numbers (floor_db -999 and the like).
              2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
-        attribute automation : AutomationState = AutomationState::partial;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-01';
         }
@@ -5794,11 +5794,12 @@ package WstxRequirements {
              Steps: the decision with Hold Tx on (no choice, the list only); the same with Hold Tx off (the choice).
              Expected (hand computation recorded in the test): the even decodes leave the candidates 300..400, 720..800, 1010..1050, 1250..1310, 1450..1680, 1890..1960, 2120..2130 and 2240..2650 (810..1000 within 50 Hz of Rx 906 with Hold Tx on); each reads -1 (floor 30.65 or 32.65, rise -0.65); the list is 1930, 2120, 1680, 1630, 2240, each {rise_db -1, level_db 32, floor_db 33}; no listed slot overlaps a station decoded in my even periods and none lies in 800-1330 Hz; the odd stations (DL5XU at 1976, A61DD at 765) do not count; periods {even {now 3}, odd {now null}}; Hold Tx off: the CQ's slot is 1930, tx_slot power_db -1, the first listed. Red on the parent: its list holds slots on RK3AW (rise 0 there against 1 on the free slots, the live failure's ranks 2 and 3).
              2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-09';
             verify 'CL-065-01';
         }
+        attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_039_09_verified_by_TC_066_001 from 'CL-039-09' to 'TC-066-001';
     dependency CL_065_01_verified_by_TC_066_001 from 'CL-065-01' to 'TC-066-001';
@@ -5809,12 +5810,13 @@ package WstxRequirements {
              Steps: (a) the 07:29 reproduction (HB9BLA 2026-11-08, 20 m): Tx 1550, my Rx parity even, a flat floor 30 in the two older and 32 in the two later of 4 counted periods of each parity; a station decoded at 659.5 Hz at 38 dB in all 4 even periods, stations at 659.7 and 691.8 Hz at 38 dB in all 4 odd periods. (b) A decode at 1000.0 Hz: FT8 candidates 950, 960, 1040, 1050; FT4 910, 920, 1080, 1090; a decode at 1000.4 Hz and the candidate 1050. (c) A decode overlapping every candidate. (d) A station decoded only in my Tx parity, 20 dB above the floor, on the otherwise quietest slot. (e) A CQ decision: a slot loud only in the CQ's Tx parity, quietest in my Rx parity; and the reverse. (f) Decodes from a period that does not count: the 5th older Rx period, one before a band change, one older than the last 4 Rx periods on the clock. (g) Hold Tx on, a selection of a station within 50 Hz of Tx whose nearest candidate 50 Hz clear overlaps a decoded station; the same with every candidate overlapped. (h) Hold Tx off, the CQ on 900 answered for a caller at 920, with a station decoded at 800 Hz. (i) His frequencies of my Tx parity together with decodes. (j) The list at each step.
              Expected (hand computation recorded in the test): (a) Tx stays 1550 (value -1, every free slot -1, the current Tx kept); 610..700 never chosen or listed; (b) FT8 960 and 1040 left out, 950 and 1050 kept; FT4 920 and 1080 left out, 910 and 1090 kept; 1050 left out at 1000.4; (c) all candidates back, ranked by value; (d) that slot chosen, neither left out nor raised; (e) the slot quietest in my Rx parity chosen in both; (f) those decodes leave nothing out; (g) Tx to the next nearest candidate clear of the station and of the decoded station; with all overlapped the nearest 50 Hz clear; (h) Tx and Rx to the nearest candidate 50 Hz clear of 920 that does not overlap 800 (not 820); (i) his end applies among the candidates left by the decoded stations, his_end no when it leaves none; (j) the first listed equals the choice, no listed slot overlaps a counted decode while a free one exists. Red on the parent: (a) moves Tx to 680 (rise 0 on the station, 1 on the free slots), as live; (b), (g) and (h) choose the overlapped candidates.
              2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-09';
             verify 'CL-065-01';
             verify 'CL-039-22';
         }
+        attribute executable : String = "server/src/freeslot_tests.rs; server/src/strategy_tests.rs";
     }
     dependency CL_039_09_verified_by_TC_066_002 from 'CL-039-09' to 'TC-066-002';
     dependency CL_065_01_verified_by_TC_066_002 from 'CL-065-01' to 'TC-066-002';

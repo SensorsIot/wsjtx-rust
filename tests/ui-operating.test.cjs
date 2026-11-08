@@ -1346,7 +1346,7 @@ test('TC-050-007 the waterfall pointer, Rx/Tx lines and axis share one frequency
 // and #76 numbers (bars 8 px high, 2 px inset at each end, a drawn colour difference of at least 40);
 // the automation snapshot and the free_tx_slots values are hand-written fixtures.
 const freeTxValue=(run_id,slots,{mode='ft8',at=1}={})=>({run_id,at_utc_ms:at,mode,rx_parity:'even',listening:false,
-  periods:{even:{now:1,usual:1},odd:{now:null,usual:1}},slots:slots.map(([hz,rise])=>({hz,rise_db:rise,level_db:20+rise,usual_db:20}))});
+  periods:{even:{now:1},odd:{now:null}},slots:slots.map(([hz,rise])=>({hz,rise_db:rise,level_db:21+rise,floor_db:21}))});
 // The ruler's marks, the waterfall box and the Rx/Tx lines as the page shows them.
 const freeTxMarks=page=>page.evaluate(()=>{
   const box=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};

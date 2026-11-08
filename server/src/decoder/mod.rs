@@ -33,6 +33,13 @@ pub use search::{Decode, DecodeError, Decoder};
 use serde::{Deserialize, Serialize};
 pub(crate) use waveform::gaussian_pulse;
 pub use waveform::quadratures;
+/// The WSJT-X FT8/FT4 decoder baseline of a linear power spectrum over bins `ia..=ib`: ten equal
+/// segments of (ib - ia + 1) / 10 bins from `ia`, in each its points at or below its lowest tenth,
+/// a fourth-order least-squares fit through them in dB plus 0.65 dB, as linear power (bins outside
+/// `ia..=ib` stay 1). The passband floor of the Tx slot choice (#66 WstxStrategy::FreeTxSlot).
+pub fn passband_baseline(power: &[f64], ia: usize, ib: usize) -> Option<Vec<f64>> {
+    coarse_ft4::fitted_baseline(power, ia, ib)
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {

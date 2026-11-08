@@ -1533,7 +1533,8 @@ impl Owner {
                 if waiting_reason.is_some() {
                     return;
                 }
-                // #63 WstxContest::ContestRun: Run calls CQ, from a slot quiet in both parities.
+                // #63 WstxContest::ContestRun: Run calls CQ, from a slot quiet in my Rx parity
+                // (#66).
                 let run_cq = contest.is_some_and(|s| s.operation == crate::contest::Operation::Run);
                 let Some((_, first, next, _)) = fresh else {
                     if run_cq {
@@ -1640,7 +1641,7 @@ impl Owner {
         inner.run_revision += 1;
     }
     /// The run's own CQ (WstxContest::ContestRun, WstxStrategy::CqWhenNoTarget): from a slot quiet
-    /// in both parities (FreeTxSlot, no called station), then enable_tx with no partner.
+    /// in my Rx parity (FreeTxSlot, #66; no called station), then enable_tx with no partner.
     fn calling(&self, inner: &mut Inner, contact: &contact_http::Station, state: &ProfileState) {
         let run = inner.run.as_mut().expect("checked");
         let (revision, _, _) = contact.facts();
@@ -2018,6 +2019,22 @@ fn utc_now(r: &recording::Recording) -> i64 {
         t.service.with(|h| h.hardware().now_utc_ms())
     })
 }
+/// The decodes of the run's live job as (period start, audio frequency): WstxStrategy::FreeTxSlot
+/// "decoded stations" (#66), of which the counted periods' count.
+fn decodes_of(r: &recording::Recording, identity: &(String, String, u64)) -> Vec<(i64, f64)> {
+    r.live_records_after(Some(identity), 0)
+        .filter(|(current, _, _)| current == identity)
+        .map(|(_, _, records)| {
+            records
+                .iter()
+                .filter_map(|v| {
+                    let start = crate::contact::parse_utc(v["period_start_utc"].as_str()?)?;
+                    Some((start, v["frequency_hz"].as_f64()?))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
 /// How a run takes its Tx slot (WstxStrategy::FreeTxSlot).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SlotRule {
@@ -2027,7 +2044,8 @@ enum SlotRule {
     /// The slot check at a repetition (StrategyWatchdog): the quietest slot of my Rx parity; with
     /// Hold Tx on Tx alone moves, clear of my Rx as well.
     Check,
-    /// Its own CQ: the quietest slot in both parities, no his end; with Hold Tx on the held Tx.
+    /// Its own CQ: the quietest slot of my Rx parity, the other of the CQ's (#66), no his end;
+    /// with Hold Tx on the held Tx.
     Listen,
     /// Answering from its own CQ (CqWhenNoTarget, WstxContest::ContestRun): the CQ's slot stays
     /// unless it is within 50 Hz of the called station, then the nearest candidate away.
@@ -2055,15 +2073,19 @@ fn take_slot(
         wstx_rust::transmit::Parity::Even => wstx_rust::transmit::Parity::Odd,
         wstx_rust::transmit::Parity::Odd => wstx_rust::transmit::Parity::Even,
     };
+    let now = utc_now(r);
     let periods = r
         .waterfall
         .lock()
         .unwrap_or_else(|p| p.into_inner())
-        .periods((&run.identity.1, run.identity.2), utc_now(r));
-    let since = run.slot_since_ms;
-    // The rise of a slot over its usual level (#39 holdtx); while only listening the larger rise
-    // of the two parities counts.
-    let numbers = |f: u32| freeslot::numbers(&periods, mode, rx_parity, since, f, listening);
+        .periods((&run.identity.1, run.identity.2), now);
+    // #66: every decision judges my Rx periods only (a CQ's the other of its Tx parity), the
+    // recent ones, by each slot's largest rise above the passband floor, clear of the stations
+    // decoded in them.
+    let decodes = decodes_of(r, &run.identity);
+    let judged = freeslot::Judged::new(&periods, mode, rx_parity, run.slot_since_ms, now, &decodes);
+    let decoded = judged.decoded();
+    let numbers = |f: u32| judged.numbers(f);
     let power = |f: u32| numbers(f).map(|n| n.rise);
     let hold = facts.hold_tx;
     // His end: the frequencies the target decodes from my Tx parity, only while the feed
@@ -2092,28 +2114,29 @@ fn take_slot(
         },
         // Hold Tx on, a selection: Tx stays unless within 50 Hz of the station (Q1, Q2, D7).
         (SlotRule::Call | SlotRule::KeepCq, true) => {
-            freeslot::held(mode, current, &avoid, his.as_deref(), &power)
+            freeslot::held(mode, current, &avoid, decoded, his.as_deref(), &power)
         }
         (SlotRule::KeepCq, false) => {
-            // The rule without power keeps the current slot or moves it nearest away from him;
-            // its power is still shown.
-            let mut slot = freeslot::quietest(mode, current, called, his.as_deref(), &|_| None);
+            // The rule without power keeps the current slot or moves it nearest away from him
+            // (clear of the decoded stations while one is free, #66 D4); its value is still shown.
+            let mut slot =
+                freeslot::quietest(mode, current, called, decoded, his.as_deref(), &|_| None);
             slot.power_db = power(slot.hz).map(|p| p.round() as i64);
             slot
         }
-        _ => freeslot::quietest_clear(mode, current, &avoid, his.as_deref(), &power),
+        _ => freeslot::quietest_clear(mode, current, &avoid, decoded, his.as_deref(), &power),
     };
     run.tx_slot = Some(slot.json());
     // #65 WstxStrategy::FreeTxSlots: the decision's own candidates and compared value, set
     // together with tx_slot (every rule, also where the choice uses no power).
-    let slots = freeslot::free_slots(mode, current, &avoid, his.as_deref(), &numbers);
+    let slots = freeslot::free_slots(mode, current, &avoid, decoded, his.as_deref(), &numbers);
     let value = freeslot::value(
         &run.id,
-        utc_now(r),
+        now,
         mode,
         rx_parity,
         listening,
-        freeslot::period_counts(&periods, mode, rx_parity, since, listening),
+        freeslot::period_counts(rx_parity, judged.count()),
         &slots,
     );
     let cursor = contact
