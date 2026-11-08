@@ -6174,7 +6174,8 @@ package WstxRequirements {
     // #74 An open page after a station restart (operator 2026-11-08, one grill-me round).
     requirement 'CL-074-01' {
         doc /* (#74, live acceptance 2026-11-08, #39 comment 6719540492: after a station restart an open page kept "Strategy Farthest new on band · Auto off" until reloaded, while the station had None and Auto off) After a station restart an open page shows the new boot's state without a reload, within the push rule. When the browser learns a boot_id other than the one a view's held station state belongs to, that view drops the state at once and shows the form of a freshly loaded page before its reads; it never shows a value of the previous boot, alone or with values of the new boot; a snapshot reply naming another boot is discarded; once the new boot's reads and first events have arrived the page equals a freshly loaded one. The automation view reads GET /automation only after an automation.state event, never once per socket, and on a new boot holds the never-used state without a request. The strategy element's line is drawn from the current strategy and automation snapshots together at each change of either; with None and no strategy run it shows the automation text, "Automation idle" without a run. No new request kind, no retry timer, no server change. Details: WstxStationProtocol::PushedStationState, WstxMcp::AutomationIndicator, WstxStrategy::StrategySelector. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/app.js; client/contact.js";
     }
     dependency CL_074_01_to_FR_019 from 'CL-074-01' to 'FR-019';
     verification 'TC-074-001' {
