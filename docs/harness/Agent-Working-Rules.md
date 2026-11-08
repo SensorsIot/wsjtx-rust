@@ -89,7 +89,7 @@ rules around it. Agent memory only points here.
 ## Agent role additions
 
 This project's layer of the [agent roles](../../harness/core/docs/Parallel-Work.md#agent-roles),
-installed with `python harness/core/tools/install_skills.py --project . --host claude --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --agent definer --agent checker --agent coder --agent reviewer`.
+installed with `python harness/core/tools/install_skills.py --project . --host claude --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --agent definer --agent checker --agent coder --agent reviewer --agent harness-improver`.
 
 ### Role: definer
 
@@ -109,11 +109,13 @@ scripts have loaded over the 32 kbit/s link and after they fail to load.
 ```yaml
 guard:
   commands:
-    - 'gh issue comment [0-9]+ --body .*'
+    - 'gh issue comment [0-9]+ --body ''Ready: (PASS|not yet)( [A-Za-z0-9_.-]+(, [A-Za-z0-9_.-]+)*)?(\n[^'']*)?'''
 ```
 
 The checker posts its verdict as its own issue comment, in the posting form under
-"Role: every" below.
+"Role: every" below. Its first line is exactly `Ready: PASS` or `Ready: not yet`, followed
+only by slice names as the [ready check](../../harness/core/docs/CR-Process.md#ready-check)
+says; the hook refuses any other first line.
 
 ### Role: coder
 
@@ -122,7 +124,7 @@ guard:
   commands:
     - 'node --test( --test-concurrency=1| --test-name-pattern=[A-Za-z0-9_.,:^+=/-]+){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
   deny:
-    - '^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?node ).*\bnode\s+--test'
+    - '^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test'
   model:
     facts:
       - '\s*attribute (coverage|automation|executable) : .*;\s*'
@@ -135,9 +137,13 @@ guard:
   TEMP=D:/wstx-build/<worktree> TMP=D:/wstx-build/<worktree> CARGO_BUILD_JOBS=2 nice -n 10
   cargo test --manifest-path .git/harness-parallel/worktrees/<worktree>/Cargo.toml …`;
   under Git Bash `nice -n 10` is BelowNormal. Node tests run as
-  `NODE_PATH=D:/Github/wsjtx-rust/node_modules node --test --test-concurrency=1
-  --test-name-pattern=<pattern> .git/harness-parallel/worktrees/<worktree>/<test file> …`,
-  the prefix and both options optional, the pattern without spaces or shell characters.
+  `NODE_PATH=D:/Github/wsjtx-rust/node_modules
+  WSTX_TEST_EXE=D:/wstx-build/<worktree>/debug/wstx-rust.exe node --test
+  --test-concurrency=1 --test-name-pattern=<pattern>
+  .git/harness-parallel/worktrees/<worktree>/<test file> …`: each prefix and both options
+  optional, the two prefixes in that order and no other, the pattern without spaces or
+  shell characters. `WSTX_TEST_EXE` (read by `tests/support.cjs`) runs the tests on the
+  role's own build; its `<worktree>` is the one every test file of the command lies in.
 - **Delivery facts** in the model are a requirement's `coverage`, a case's `automation`
   and its `executable` binding
   ([source bindings](Project-Specifics.md#canonical-model-catalog-and-source-bindings));
@@ -153,12 +159,24 @@ guard:
   commands:
     - 'node --test( --test-concurrency=1| --test-name-pattern=[A-Za-z0-9_.,:^+=/-]+){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
   deny:
-    - '^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?node ).*\bnode\s+--test'
+    - '^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test'
 ```
 
 The reviewer reads the candidate as [Reviews](Agent-Working-Rules.md#reviews) says, runs Node tests in the
 coder's form above, and posts its verdict in the
 posting form under "Role: every" below.
+
+### Role: harness-improver
+
+```yaml
+guard:
+  deny:
+    - '\s(--repo(?=[\s=]|$)|-R)(?!\sSensorsIot/harness(\s|$))'
+```
+
+The harness-improver posts on a harness issue in the posting form under "Role: every"
+below, with `--repo SensorsIot/harness` between the number and `--body`; the hook refuses
+any other repository, for reading too.
 
 ### Role: every
 
@@ -180,4 +198,5 @@ are the coder's above.
   write its files by that path.
 - **Posting form.** A role that posts on an issue uses exactly
   `gh issue comment <number> --body '<text>'`: single quotes, no `'`, `$` or backticks in the
-  text, no `--repo`, no `--body-file`.
+  text, no `--body-file`, and no `--repo` on this project's issues (the harness-improver's
+  harness issues above are the one exception).
