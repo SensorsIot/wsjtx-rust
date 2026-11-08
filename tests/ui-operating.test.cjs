@@ -80,7 +80,10 @@ test('TC-010-005 display preference is isolated by origin and validated profile 
   current={...base,profile_id:'invalid-profile-id'};await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);await chooseDisplay(page,'thin');assert.equal(await page.evaluate(()=>localStorage.getItem('wstx.display-profile.v1:invalid-profile-id')),null,'invalid UUID is never persisted');
   current=base;await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);assert.equal(await page.inputValue('#display-profile'),'off');
   const other=await fixture(t,{width:1440,height:900}),otherPage=await page.context().newPage();t.after(()=>otherPage.close());
-  await otherPage.route('**/profile',route=>route.fulfill({json:base}));await otherPage.goto(other.app.origin);await otherPage.waitForFunction(()=>profileData&&snapshot&&!syncPending);
+  await otherPage.route('**/profile',route=>route.fulfill({json:base}));
+  // The other station's GET /recording names the boot of the profile it is shown with (#74).
+  await otherPage.route('**/recording',async route=>{const real=await (await route.fetch()).json();await route.fulfill({json:{...real,boot_id:base.boot_id}});});
+  await otherPage.goto(other.app.origin);await otherPage.waitForFunction(()=>profileData&&snapshot&&!syncPending);
   assert.equal(await otherPage.inputValue('#display-profile'),'detail','same profile UUID on another origin cannot inherit Off');await chooseDisplay(otherPage,'thin');
   assert.equal(await page.inputValue('#display-profile'),'off');assert.deepEqual(errors,[]);
 });
