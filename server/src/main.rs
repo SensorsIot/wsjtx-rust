@@ -1166,6 +1166,9 @@ async fn connection(
     let mut transmit_sent_at = Instant::now();
     // WstxMcp::AutomationStateEvent: only after a change since boot (no event while unused).
     let mut automation_seen: Option<(u64, u64)> = Some((0, 0));
+    // #65 free_tx_slots.state: the decision this Detailed or Thin peer holds (None: none, also
+    // while Off, so that a peer coming from Off gets the current value once).
+    let mut free_tx_slots_seen: Option<u64> = None;
     // #39 WstxStrategy::StrategyHttp strategy.state: only after a change since this peer subscribed.
     let mut strategy_seen: Option<u64> = None;
     // #42 WstxStrategy::Alert alert.state: only after a change since this peer subscribed.
@@ -1273,6 +1276,13 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(automation::state_event(r,automation.unwrap_or_default()).into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{automation_seen=automation;if !flushed {optional_since=Some(Instant::now());continue;}},
+                        Err(_)=>break "optional write error",
+                    }
+                }
+                if display_profile!="off" && let Some((decision,text))=r.contact.get().and_then(|c|c.automation.free_tx_slots_event(r)) && free_tx_slots_seen!=Some(decision) {
+                    match optional_write(&mut socket,Message::Text(text.into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{free_tx_slots_seen=Some(decision);if !flushed {optional_since=Some(Instant::now());continue;}},
                         Err(_)=>break "optional write error",
                     }
                 }
@@ -1391,6 +1401,7 @@ async fn connection(
                                 } else {
                                     display_profile = if command=="spectrum.detail" {"detail"} else if command=="spectrum.thin" {"thin"} else {"off"};
                                     subscribed = true;
+                                    if display_profile=="off" { free_tx_slots_seen=None; }
                                     if display_profile=="detail" { next_detail=arm_detail(&mut detail_tick,tokio::time::Instant::now(),false); }
                                     let state=r.state.lock().unwrap();
                                     let frame=if display_profile=="detail" {&state.detail_frame} else {&state.frame};

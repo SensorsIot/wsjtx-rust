@@ -116,24 +116,17 @@ fn at_his_end(f: u32, his: &[u32]) -> bool {
     his.iter()
         .all(|o| (i64::from(f) - i64::from(*o)).abs() >= CLEARANCE_HZ)
 }
-/// `quietest` keeping clear of every signal in `avoid`: the called station and, with Hold Tx on,
-/// my Rx (#39 holdtx, "never to the Rx frequency"). A current Tx outside the Tx range is no
-/// candidate (round 3 Q6).
-pub(crate) fn quietest_clear(
-    mode: Mode,
-    current: u32,
-    avoid: &[u32],
-    his: Option<&[u32]>,
-    power: &dyn Fn(u32) -> Option<f64>,
-) -> Slot {
+/// The candidates of one FreeTxSlot decision: every STEP_HZ and the current Tx inside the Tx
+/// range, clear of every signal in `avoid`; where his decoded frequencies are known (`his`), only
+/// those free at his end, all of them when that leaves none (his_end no).
+fn candidates(mode: Mode, current: u32, avoid: &[u32], his: Option<&[u32]>) -> (Vec<u32>, HisEnd) {
     let ((low, high), width) = (band(mode), width_hz(mode));
     let mut candidates: Vec<u32> = (low..=high).step_by(STEP_HZ as usize).collect();
     if (low..=high).contains(&current) && !candidates.contains(&current) {
         candidates.push(current);
     }
     candidates.retain(|f| clear_of_all(*f, avoid, width));
-    let his = his.filter(|h| !h.is_empty());
-    let (candidates, his_end) = match his {
+    match his.filter(|h| !h.is_empty()) {
         Some(his) => {
             let free: Vec<u32> = candidates
                 .iter()
@@ -147,7 +140,21 @@ pub(crate) fn quietest_clear(
             }
         }
         None => (candidates, HisEnd::Unknown),
-    };
+    }
+}
+/// `quietest` keeping clear of every signal in `avoid`: the called station and, with Hold Tx on,
+/// my Rx (#39 holdtx, "never to the Rx frequency"). A current Tx outside the Tx range is no
+/// candidate (round 3 Q6).
+pub(crate) fn quietest_clear(
+    mode: Mode,
+    current: u32,
+    avoid: &[u32],
+    his: Option<&[u32]>,
+    power: &dyn Fn(u32) -> Option<f64>,
+) -> Slot {
+    let ((low, high), width) = (band(mode), width_hz(mode));
+    let his = his.filter(|h| !h.is_empty());
+    let (candidates, his_end) = candidates(mode, current, avoid, his);
     let powers: Option<Vec<(u32, i64)>> = candidates
         .iter()
         .map(|f| power(*f).map(|p| (*f, p.round() as i64)))
@@ -217,6 +224,79 @@ pub(crate) fn held(
         power_db: power(slot.hz).map(|p| p.round() as i64),
         ..slot
     }
+}
+
+/// WstxStrategy::FreeTxSlots slotsListed.
+pub(crate) const SLOTS_LISTED: usize = 5;
+/// The numbers of one slot of a decision (#65): its compared value (the rise), its power now
+/// (while listening that of the parity whose rise counts) and its usual level, in dB.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Numbers {
+    pub rise: f64,
+    pub level: f64,
+    pub usual: f64,
+}
+/// One listed Free Tx slot, each number rounded to whole dB on its own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Listed {
+    pub hz: u32,
+    pub rise_db: i64,
+    pub level_db: i64,
+    pub usual_db: i64,
+}
+impl Listed {
+    pub(crate) fn json(&self) -> Value {
+        json!({"hz":self.hz,"rise_db":self.rise_db,"level_db":self.level_db,"usual_db":self.usual_db})
+    }
+}
+/// WstxStrategy::FreeTxSlots (#65): the best candidates of one decision, exactly its candidates
+/// (`candidates`, as `quietest_clear`) and its compared value (`numbers`' rise in whole dB), the
+/// lower first, then nearer `current` (the current Tx itself first), then the lower frequency;
+/// walking that ranking a candidate closer than the slot width to one already listed is skipped;
+/// at most SLOTS_LISTED. No power (a candidate without numbers, as the choice's "No power yet"):
+/// empty.
+pub(crate) fn free_slots(
+    mode: Mode,
+    current: u32,
+    avoid: &[u32],
+    his: Option<&[u32]>,
+    numbers: &dyn Fn(u32) -> Option<Numbers>,
+) -> Vec<Listed> {
+    let (candidates, _) = candidates(mode, current, avoid, his);
+    let Some(mut ranked) = candidates
+        .iter()
+        .map(|f| numbers(*f).map(|n| (*f, n)))
+        .collect::<Option<Vec<(u32, Numbers)>>>()
+    else {
+        return Vec::new();
+    };
+    ranked.sort_by_key(|(f, n)| {
+        (
+            n.rise.round() as i64,
+            (i64::from(*f) - i64::from(current)).abs(),
+            *f,
+        )
+    });
+    let width = i64::from(width_hz(mode));
+    let mut listed: Vec<Listed> = Vec::new();
+    for (f, n) in ranked {
+        if listed.len() == SLOTS_LISTED {
+            break;
+        }
+        if listed
+            .iter()
+            .any(|l| (i64::from(l.hz) - i64::from(f)).abs() < width)
+        {
+            continue;
+        }
+        listed.push(Listed {
+            hz: f,
+            rise_db: n.rise.round() as i64,
+            level_db: n.level.round() as i64,
+            usual_db: n.usual.round() as i64,
+        });
+    }
+    listed
 }
 
 /// One counted received period: its start and the mean level of each detailed bin over its rows.
@@ -355,33 +435,81 @@ pub(crate) fn usual_level(periods: &[Period], mode: Mode, since_ms: i64, f: u32)
         .filter_map(|p| slot_power(&[p], f, width))
         .min_by(f64::total_cmp)
 }
-/// The compared value of a slot at `f` (#39 holdtx, FreeTxSlot): its power now, the mean over the
-/// last PERIODS_PER_PARITY counted periods of my Rx parity `rx`, minus its usual level. While only
-/// `listening` the larger rise of the two parities counts (one parity alone where the other has no
-/// period). None without a counted period of the parity (of either parity while listening).
-pub(crate) fn rise(
+/// The other parity.
+fn other(of: Parity) -> Parity {
+    match of {
+        Parity::Even => Parity::Odd,
+        Parity::Odd => Parity::Even,
+    }
+}
+fn parity_name(of: Parity) -> &'static str {
+    match of {
+        Parity::Even => "even",
+        Parity::Odd => "odd",
+    }
+}
+/// The period counts of a decision (#65 FreeTxSlots `periods`): per parity the counted periods in
+/// the power now (at most PERIODS_PER_PARITY; null for a parity the decision does not compare: my
+/// Tx parity unless `listening`) and in the usual level (at most USUAL_PERIODS), since `since_ms`.
+pub(crate) fn period_counts(
+    periods: &[Period],
+    mode: Mode,
+    rx: Parity,
+    since_ms: i64,
+    listening: bool,
+) -> Value {
+    let count = |of: Parity| {
+        let now = (listening || of == rx).then(|| recent(periods, mode, of, since_ms).len());
+        json!({"now":now,"usual":last(periods, mode, of, since_ms, USUAL_PERIODS).len()})
+    };
+    json!({"even":count(Parity::Even),"odd":count(Parity::Odd)})
+}
+/// The value of one decision (#65 FreeTxSlots, WstxMcp::AutomationWire free_tx_slots).
+pub(crate) fn value(
+    run_id: &str,
+    at_utc_ms: i64,
+    mode: Mode,
+    rx: Parity,
+    listening: bool,
+    periods: Value,
+    slots: &[Listed],
+) -> Value {
+    let mode = match mode {
+        Mode::Ft8 => "ft8",
+        Mode::Ft4 => "ft4",
+    };
+    json!({"run_id":run_id,"at_utc_ms":at_utc_ms,"mode":mode,"rx_parity":parity_name(rx),
+        "listening":listening,"periods":periods,"slots":slots.iter().map(Listed::json).collect::<Vec<_>>()})
+}
+/// The compared value of a slot at `f` (#39 holdtx, FreeTxSlot), its rise: its power now, the mean
+/// over the last PERIODS_PER_PARITY counted periods of my Rx parity `rx`, minus its usual level.
+/// While only `listening` the larger rise of the two parities counts (one parity alone where the
+/// other has no period), and its level is that parity's. None without a counted period of the
+/// parity (of either parity while listening). With its power now and its usual level (#65).
+pub(crate) fn numbers(
     periods: &[Period],
     mode: Mode,
     rx: Parity,
     since_ms: i64,
     f: u32,
     listening: bool,
-) -> Option<f64> {
+) -> Option<Numbers> {
     let width = width_hz(mode);
     let now = |of: Parity| slot_power(&recent(periods, mode, of, since_ms), f, width);
-    let power = if listening {
-        let tx = match rx {
-            Parity::Even => Parity::Odd,
-            Parity::Odd => Parity::Even,
-        };
-        match (now(rx), now(tx)) {
+    let level = if listening {
+        match (now(rx), now(other(rx))) {
             (Some(a), Some(b)) => Some(a.max(b)),
             (a, b) => a.or(b),
         }
     } else {
         now(rx)
     }?;
-    Some(power - usual_level(periods, mode, since_ms, f)?)
+    let usual = usual_level(periods, mode, since_ms, f)?;
+    Some(Numbers {
+        rise: level - usual,
+        level,
+        usual,
+    })
 }
 /// The power of a slot at `f`: the mean over `periods` of the mean level of the bins in
 /// [f, f + width). None without a period or a bin.

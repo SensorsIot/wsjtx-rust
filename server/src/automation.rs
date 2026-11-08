@@ -440,6 +440,10 @@ struct Run {
     /// time from which periods count (Inner's).
     tx_slot: Option<Value>,
     slot_since_ms: i64,
+    /// #65 WstxStrategy::FreeTxSlots: the last slot decision's value, set with tx_slot, and its
+    /// free_tx_slots.state event cursor (Owner's, never reused across runs); None before the
+    /// first decision and after the run's end.
+    free_tx_slots: Option<(u64, Value)>,
     /// WstxStrategy::PskrUse: the run's own contact's target hearing us.
     hearing: Option<Value>,
     /// WstxStrategy::CqWhenNoTarget: consecutive fresh publications with nothing listed.
@@ -493,6 +497,7 @@ impl Run {
             remaining: None,
             tx_slot: None,
             slot_since_ms: i64::MIN,
+            free_tx_slots: None,
             hearing: None,
             empty_publications: 0,
         }
@@ -551,6 +556,8 @@ struct Inner {
 #[derive(Default)]
 pub(crate) struct Owner {
     inner: Mutex<Inner>,
+    /// #65 the free_tx_slots.state cursor: one more at each slot decision of any run.
+    free_tx_slots_decisions: std::sync::atomic::AtomicU64,
     /// Test seam: added to the monotonic clock of every automation step.
     #[cfg(test)]
     pub(crate) skew: Mutex<Duration>,
@@ -668,9 +675,21 @@ impl Owner {
                 "tx_slot":run.tx_slot,"slot_check":run.slot_check,
                 "pounce":run.pounce.as_ref().map(|(call, band)| json!({"call":call,"band":band}))})
         });
+        let free_tx_slots = inner
+            .run
+            .as_ref()
+            .and_then(|run| run.free_tx_slots.as_ref())
+            .map(|(_, value)| value);
         json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"policy_revision":inner.policy_revision,
             "run_revision":inner.run_revision,"configuration":inner.configuration.as_ref().map(Config::json),"run":run,
-            "strategy_refusal":inner.strategy_refusal})
+            "strategy_refusal":inner.strategy_refusal,"free_tx_slots":free_tx_slots})
+    }
+    /// #65 free_tx_slots.state: the current run's last decision value with its cursor, None
+    /// without a run's value (never an event without a run).
+    pub(crate) fn free_tx_slots_event(&self, r: &recording::Recording) -> Option<(u64, String)> {
+        let inner = self.lock();
+        let (cursor, value) = inner.run.as_ref()?.free_tx_slots.as_ref()?;
+        Some((*cursor, free_tx_slots_event(r, value)))
     }
     fn receipt(r: &recording::Recording, inner: &Inner, command_id: &str) -> Value {
         let (run_id, state) = inner.run.as_ref().map_or((Value::Null, "off"), |run| {
@@ -919,6 +938,8 @@ impl Owner {
         if let Some(run) = inner.run.as_mut() {
             run.state = RunState::Stopped;
             run.reason = Some(reason);
+            // #65 FreeTxSlots: no value after the run's end (and no event for it).
+            run.free_tx_slots = None;
             inner.run_revision = inner.run_revision.saturating_add(1).min(MAX_SAFE);
         }
     }
@@ -2042,7 +2063,8 @@ fn take_slot(
     let since = run.slot_since_ms;
     // The rise of a slot over its usual level (#39 holdtx); while only listening the larger rise
     // of the two parities counts.
-    let power = |f: u32| freeslot::rise(&periods, mode, rx_parity, since, f, listening);
+    let numbers = |f: u32| freeslot::numbers(&periods, mode, rx_parity, since, f, listening);
+    let power = |f: u32| numbers(f).map(|n| n.rise);
     let hold = facts.hold_tx;
     // His end: the frequencies the target decodes from my Tx parity, only while the feed
     // follows this very target (a pounce, a plain run and a CQ have none).
@@ -2082,6 +2104,24 @@ fn take_slot(
         _ => freeslot::quietest_clear(mode, current, &avoid, his.as_deref(), &power),
     };
     run.tx_slot = Some(slot.json());
+    // #65 WstxStrategy::FreeTxSlots: the decision's own candidates and compared value, set
+    // together with tx_slot (every rule, also where the choice uses no power).
+    let slots = freeslot::free_slots(mode, current, &avoid, his.as_deref(), &numbers);
+    let value = freeslot::value(
+        &run.id,
+        utc_now(r),
+        mode,
+        rx_parity,
+        listening,
+        freeslot::period_counts(&periods, mode, rx_parity, since, listening),
+        &slots,
+    );
+    let cursor = contact
+        .automation
+        .free_tx_slots_decisions
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        + 1;
+    run.free_tx_slots = Some((cursor, value));
     let unchanged = if hold {
         facts.tx_hz == slot.hz
     } else {
@@ -2129,6 +2169,12 @@ fn fresh_records(
                 .is_some_and(|s| s >= first && s < next)
         })
         .collect()
+}
+/// #65 free_tx_slots.state: carries its state, the run's last decision value (at most 1024 bytes).
+pub(crate) fn free_tx_slots_event(r: &recording::Recording, value: &Value) -> String {
+    json!({"v":1,"type":"free_tx_slots.state","data":{"profile_id":r.profile,"boot_id":r.boot,
+        "free_tx_slots":value}})
+    .to_string()
 }
 /// automation.state: announces a policy or run change; the browser then reads GET
 /// /automation for its station-bar indicator.

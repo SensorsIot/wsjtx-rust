@@ -5708,10 +5708,11 @@ package WstxRequirements {
              Steps: seven separate quiet places; three candidates only; no power; rises 0.4 against 0.0 and 0.6 against 0.0; equal rises either side of the current Tx; FT8 a candidate 40 Hz and one 50 Hz from a listed one, FT4 80 Hz and 90 Hz; a candidate within 50 Hz of the called station; one within 50 Hz of my Rx with Hold Tx on and off; his frequencies of my Tx parity near some candidates, and everywhere; a rise of -1.4; listening with one parity higher.
              Expected (hand computation recorded in the test): 5 of seven in rank order; 3; empty; 0.4 ties and the current Tx is first, 0.6 does not; the nearer first, at equal distance the lower; 40 Hz skipped and 50 Hz listed, 80 Hz skipped and 90 Hz listed; the called station's neighbour never listed; my Rx's neighbour not listed with Hold Tx on, listed with it off; candidates near his frequencies excluded, his frequencies everywhere leave all; -1.4 listed as -1; level_db the larger parity's; the first listed equals quietest_clear's chosen hz for every table. Red on the parent: no list.
              2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-01';
         }
+        attribute executable : String = "server/src/freeslot_tests.rs";
     }
     dependency CL_065_01_verified_by_TC_065_001 from 'CL-065-01' to 'TC-065-001';
     verification 'TC-065-002' {
@@ -5721,10 +5722,11 @@ package WstxRequirements {
              Steps: read before any run; a selection with Hold Tx off; the same with only my Rx-parity periods counted since the band change; a CQ decision; a selection with Hold Tx on; a second decision with the same list; the run ends; a fourth peer subscribes Thin while a value exists; a separate session with no run at all.
              Expected: null before any run; the value with exactly {run_id, at_utc_ms, mode, rx_parity, listening, periods, slots}, the run's id, at_utc_ms the station clock of the decision, the hand-computed slots and period counts; one free_tx_slots.state each to the Detailed and Thin peer, data.free_tx_slots equal to the GET value, none to Off, at most 1024 bytes also with 5 slots at their longest numbers; tx_slot exactly as on the parent; the MCP view carries the same value; with only Rx-parity periods the Tx-parity usual count is 0; the CQ listening true with both now counts; Hold Tx on the list filled and Tx unchanged; a new event with a later at_utc_ms; after the end null and no free_tx_slots.state; the fourth peer gets the value once; without a run zero free_tx_slots.state and zero automation.state. Red on the parent: no key, no event.
              2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-01';
         }
+        attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_065_01_verified_by_TC_065_002 from 'CL-065-01' to 'TC-065-002';
     verification 'TC-065-003' {
@@ -5734,10 +5736,11 @@ package WstxRequirements {
              Steps: open Settings > Expert; with a value pushed and the checkbox off read #frequency-ruler; turn it on; push a newer value; one of another run_id; one with empty slots; route run null; reload and open a second browser context; click and double-click the waterfall at a mark's frequency and drag the Tx marker across a mark.
              Expected (oracle: CL-050-07 mapping, the operator's #65 answers): the checkbox "Show free Tx slots" off by default; no mark while off; on: 5 bars with left and right edges within 1 px of the waterfall x of hz and hz + 50 (FT8) or hz + 90 (FT4) at every size and ratio, labels "1 +0", "2 +1", "3 −1" (U+2212), of two overlapping labels only the higher rank's shown and both bars, colour not the Rx or Tx colour in each theme, the waterfall top and height unchanged; redrawn on the newer value; none for another run_id, for empty slots and with run null; on after reload, off in the other context; the same set_frequency requests as without marks, Rx and Tx lines unchanged; no request after an event and no timer request; no horizontal overflow at 360 px; no page error. Red on the parent: no checkbox, no marks.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-02';
         }
+        attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_065_02_verified_by_TC_065_003 from 'CL-065-02' to 'TC-065-003';
     verification 'TC-065-004' {

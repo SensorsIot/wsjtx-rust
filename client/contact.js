@@ -336,7 +336,7 @@ function loadAutomation(){
     // #42 a pounce run names its call (WstxStrategy::Pounce).
     // A strategy run's state is the strategy client's (WstxStrategy::StrategySelector).
     if(!a?.configuration?.strategy&&!a?.strategy_refusal)automationNode.textContent=active&&run.pounce?`Pounce ${run.pounce.call} ${run.state==='waiting'?'waiting':'in QSO'} · HALT ends it`:active?`Automation ${{waiting:'waiting',manual:'paused for your QSO'}[run.state]??'in contact'} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
-    if(a?.v===1){automationView=a;pskrLinesShow();dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));}
+    if(a?.v===1){automationView=a;freeTxSlotsRead(a);pskrLinesShow();dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));}
   }).catch(()=>{}).finally(()=>{automationLoading=null;});
   return automationLoading;
 }
@@ -865,6 +865,45 @@ waterfall?.addEventListener('click',event=>{
   pointerTimer=setTimeout(()=>pointer(null,hz,'Tx frequency'),250);
 });
 waterfall?.addEventListener('dblclick',event=>{clearTimeout(pointerTimer);const hz=pointerHz(event);pointer(hz,hz,'Rx and Tx frequency');});
+// #65 WstxOperatingLayout::FreeTxSlotMarks: the latest free_tx_slots (GET /automation, read on
+// automation.state and once per socket, and each free_tx_slots.state event; no other request) as
+// bars from hz to hz + width in the frequency ruler, on the waterfall's one mapping (CL-050-07),
+// while "Show free Tx slots" is on and the value belongs to the snapshot's run.
+let freeTxSlots=null;
+const freeTxLayer=document.createElement('div');freeTxLayer.id='free-tx-slots';freeTxLayer.setAttribute('aria-hidden','true');freeTxLayer.hidden=true;
+const freeTxValue=v=>v&&typeof v==='object'&&typeof v.run_id==='string'&&Array.isArray(v.slots)&&['ft8','ft4'].includes(v.mode);
+// A read that left before a newer event of the same running run does not take it back.
+function freeTxSlotsRead(a){
+  const v=freeTxValue(a.free_tx_slots)?a.free_tx_slots:null,running=a.run&&a.run.state!=='stopped';
+  if(!(running&&freeTxSlots?.run_id===a.run.id&&(!v||v.run_id===freeTxSlots.run_id&&v.at_utc_ms<freeTxSlots.at_utc_ms)))freeTxSlots=v;
+  freeTxSlotMarks();
+}
+const signedRise=n=>n<0?`−${-n}`:`+${n}`;
+function freeTxSlotMarks(){
+  const ruler=document.querySelector('#frequency-ruler'),axis=window.wstxWaterfallAxis;if(!ruler||!axis)return;
+  if(freeTxLayer.parentNode!==ruler)ruler.append(freeTxLayer);
+  const v=freeTxSlots,run=automationView?.run;
+  const show=window.wstxFreeTxSlotsShown?.()===true&&!!run&&!!v&&v.run_id===run.id&&v.slots.length>0;
+  freeTxLayer.replaceChildren();freeTxLayer.hidden=!show;if(!show)return;
+  const width=v.mode==='ft4'?90:50,labels=[];
+  v.slots.forEach((s,i)=>{
+    if(!Number.isInteger(s?.hz)||!Number.isInteger(s.rise_db))return;
+    const left=axis.x(s.hz,ruler),right=axis.x(s.hz+width,ruler),rank=String(i+1);
+    const bar=document.createElement('div');bar.className='fts-bar';bar.dataset.rank=rank;bar.dataset.hz=String(s.hz);bar.style.left=`${left}px`;bar.style.width=`${right-left}px`;
+    const label=document.createElement('div');label.className='fts-label';label.dataset.rank=rank;label.textContent=`${rank} ${signedRise(s.rise_db)}`;label.style.left=`${left}px`;
+    freeTxLayer.append(bar,label);labels.push(label);
+  });
+  // A label stays inside the ruler; of overlapping labels the higher rank's stays, the bars all do.
+  const box=freeTxLayer.getBoundingClientRect(),kept=[];
+  for(const label of labels){
+    let r=label.getBoundingClientRect();
+    if(r.right>box.right){label.style.left=`${Math.max(0,box.width-r.width)}px`;r=label.getBoundingClientRect();}
+    if(kept.some(k=>r.left<k.right&&k.left<r.right))label.hidden=true;else kept.push(r);
+  }
+}
+window.wstxFreeTxSlotMarks=freeTxSlotMarks;
+addEventListener('wstx-free-tx-slots',freeTxSlotMarks);
+{const ruler=document.querySelector('#frequency-ruler');if(ruler)new ResizeObserver(()=>freeTxSlotMarks()).observe(ruler);}
 const period=document.querySelector('#radio-toolbar .op-period'),meter=document.querySelector('#settings-audio .op-input-meter');
 function displays(){
   if(!period||!meter)return;
@@ -921,6 +960,8 @@ addEventListener('station-message',event=>{
   const d=message.data;
   if(message.type==='contact.state'&&d?.changed)stateShow();
   else if(message.type==='automation.state'&&d)loadAutomation();
+  // #65 free_tx_slots.state carries its state: no read after it.
+  else if(message.type==='free_tx_slots.state'&&freeTxValue(d?.free_tx_slots)){freeTxSlots=d.free_tx_slots;freeTxSlotMarks();}
   else if(message.type==='station.tick'&&d&&Number.isSafeInteger(d.utc_ms)&&[15000,7500].includes(d.period_ms)){
     const changed=tick?.transmitting!==d.transmitting;stationSample(d.utc_ms);
     tick={utc:d.utc_ms,at:performance.now(),period:d.period_ms,transmitting:d.transmitting===true,level:Number.isInteger(d.rx_level_db)?d.rx_level_db:null};$('contact-tx').max=d.period_ms===7500?'2916':'2950';
