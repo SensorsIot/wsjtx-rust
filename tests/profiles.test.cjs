@@ -266,6 +266,9 @@ test('TC-022-006: token login retries a slow or failed setup step without anothe
     await page.clock.runFor(1999); assert.equal(await fetched(page, '/session'), 2, 'no third attempt before the 2 s pause');
     await page.clock.runFor(1); assert.equal(await fetched(page, '/session'), 3, 'third attempt after the 2 s pause');
     // Once the third attempt has failed, no timer may start another one, up to the 45 s login bound.
+    // The retry text is also in #login-error (client/app.js:175); it changes when the third attempt
+    // ends, to the refusal or to a further retry. Waiting for the refusal first would turn a fourth
+    // attempt into a hang (its pause never runs on the stopped clock) instead of a count failure.
     await page.waitForFunction(() => !document.querySelector('#login-error').textContent.includes('(attempt 3 of'), null, {timeout: 10000});
     await page.clock.runFor(45000);
     assert.equal(await fetched(page, '/session'), 3, 'bounded attempts');
