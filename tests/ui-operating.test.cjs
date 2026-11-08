@@ -1342,7 +1342,8 @@ test('TC-050-007 the waterfall pointer, Rx/Tx lines and axis share one frequency
 });
 
 // #65 WstxOperatingLayout::FreeTxSlotMarks (TC-065-003). Oracle: the CL-050-07 mapping (the waterfall
-// canvas's own box carries 0..3000 Hz) and the operator's #65 answers R1-R3 (issue #65 Functionality 3);
+// canvas's own box carries 0..3000 Hz), the operator's #65 answers R1-R3 (issue #65 Functionality 3)
+// and #76 numbers (bars 8 px high, 2 px inset at each end, a drawn colour difference of at least 40);
 // the automation snapshot and the free_tx_slots values are hand-written fixtures.
 const freeTxValue=(run_id,slots,{mode='ft8',at=1}={})=>({run_id,at_utc_ms:at,mode,rx_parity:'even',listening:false,
   periods:{even:{now:1,usual:1},odd:{now:null,usual:1}},slots:slots.map(([hz,rise])=>({hz,rise_db:rise,level_db:20+rise,usual_db:20}))});
@@ -1350,37 +1351,45 @@ const freeTxValue=(run_id,slots,{mode='ft8',at=1}={})=>({run_id,at_utc_ms:at,mod
 const freeTxMarks=page=>page.evaluate(()=>{
   const box=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
   const layer=document.querySelector('#frequency-ruler > #free-tx-slots'),shown=e=>e.checkVisibility()&&e.getBoundingClientRect().width>0;
-  const bars=layer?[...layer.querySelectorAll('.fts-bar')].filter(shown).map(b=>({...box(b),hz:Number(b.dataset.hz),rank:Number(b.dataset.rank),colour:getComputedStyle(b).backgroundColor,pointer:getComputedStyle(b).pointerEvents})):[];
-  // A hidden label is measured where it would stand.
-  const labels=layer?[...layer.querySelectorAll('.fts-label')].map(l=>{const hidden=l.hidden,visible=shown(l);l.hidden=false;const b=box(l);l.hidden=hidden;
-    return {...b,rank:Number(l.dataset.rank),text:l.textContent,shown:visible,pointer:getComputedStyle(l).pointerEvents};}):[];
+  const bars=layer?[...layer.querySelectorAll('.fts-bar')].filter(shown).map(b=>({...box(b),hz:Number(b.dataset.hz),rank:Number(b.dataset.rank),pointer:getComputedStyle(b).pointerEvents})):[];
   const wf=document.querySelector('#waterfall').getBoundingClientRect(),line=key=>box(document.querySelector(`#waterfall-wrap .ct-${key}`));
-  return {bars,labels,ruler:box(document.querySelector('#frequency-ruler')),wf:{x:wf.left,w:wf.width,top:wf.top,height:wf.height},rx:line('rx'),tx:line('txm'),
+  return {bars,text:layer?.textContent??'',ruler:box(document.querySelector('#frequency-ruler')),wf:{x:wf.left,w:wf.width,top:wf.top,height:wf.height},rx:line('rx'),tx:line('txm'),
     overflow:document.documentElement.scrollWidth>innerWidth};
 });
-// Every listed slot a bar from hz to hz + width within 1 px of the mapping, inside the ruler; of
-// overlapping labels the higher rank's shown; none outside the ruler; no horizontal overflow.
+// Layout settled: the waterfall, the ruler and the bars unchanged over two frames.
+const freeTxSettled=page=>page.evaluate(()=>new Promise(done=>{let last=null;const step=()=>{
+  const now=JSON.stringify([innerWidth,document.documentElement.dataset.theme,...[...document.querySelectorAll('#waterfall,#frequency-ruler,#free-tx-slots .fts-bar')].map(e=>{const r=e.getBoundingClientRect();return [r.left,r.top,r.width,r.height];})]);
+  if(now===last)done();else{last=now;requestAnimationFrame(()=>requestAnimationFrame(step));}};step();}));
+// The drawn RGB at CSS-pixel points of the page, read from a screenshot.
+const freeTxPixels=async(page,points)=>{const png=(await page.screenshot({scale:'css',animations:'disabled'})).toString('base64');
+  return page.evaluate(async([png,points])=>{const img=await createImageBitmap(new Blob([Uint8Array.from(atob(png),c=>c.charCodeAt(0))],{type:'image/png'}));
+    const g=new OffscreenCanvas(img.width,img.height).getContext('2d');g.drawImage(img,0,0);
+    return points.map(([x,y])=>[...g.getImageData(Math.floor(x),Math.floor(y),1,1).data.slice(0,3)]);},[png,points]);};
+const rgbDifference=(a,b)=>a.reduce((s,v,i)=>s+Math.abs(v-b[i]),0);
+// Every listed slot a bar 8 px high at the bottom of the ruler from x(hz) + 2 to x(hz + width) - 2
+// within 1 px of the mapping; no text in the marks layer; no horizontal overflow.
 function freeTxGeometry(m,slots,width,label){
   const x=hz=>m.wf.x+hz*m.wf.w/3000;
   assert.deepEqual(m.bars.map(b=>[b.rank,b.hz]),slots.map(([hz],i)=>[i+1,hz]),`${label}: one bar per listed slot`);
   for(const b of m.bars){
-    assert.ok(Math.abs(b.left-x(b.hz))<=1&&Math.abs(b.right-x(b.hz+width))<=1,`${label}: bar ${b.hz} at ${b.left}-${b.right}, mapping ${x(b.hz)}-${x(b.hz+width)}`);
-    assert.ok(b.top>=m.ruler.top-.5&&b.bottom<=m.ruler.bottom+.5,`${label}: bar ${b.hz} inside the ruler`);
-    assert.ok(!['rgb(48, 208, 80)','rgb(255, 64, 64)','rgba(0, 0, 0, 0)'].includes(b.colour),`${label}: bar colour ${b.colour}`);
+    assert.ok(Math.abs(b.left-(x(b.hz)+2))<=1&&Math.abs(b.right-(x(b.hz+width)-2))<=1,`${label}: bar ${b.hz} at ${b.left}-${b.right}, mapping ${x(b.hz)}-${x(b.hz+width)} less 2 px each end`);
+    assert.ok(Math.abs(b.height-8)<=.5,`${label}: bar ${b.hz} ${b.height} px high`);
+    assert.ok(Math.abs(b.bottom-m.ruler.bottom)<=.5&&b.top>=m.ruler.top-.5,`${label}: bar ${b.hz} at the bottom of the ruler`);
     assert.equal(b.pointer,'none');
   }
-  const shown=m.labels.filter(l=>l.shown),over=(a,b)=>a.left<b.right&&b.left<a.right;
-  for(const l of m.labels){
-    assert.equal(l.pointer,'none');
-    if(l.shown){assert.ok(l.left>=m.ruler.left-.5&&l.right<=m.ruler.right+.5&&l.top>=m.ruler.top-.5&&l.bottom<=m.ruler.bottom+.5,`${label}: label ${l.text} inside the ruler ${JSON.stringify([l,m.ruler])}`);
-      assert.ok(!shown.some(o=>o!==l&&over(o,l)),`${label}: shown label ${l.text} overlaps another`);}
-    else assert.ok(shown.some(o=>o.rank<l.rank&&over(o,l)),`${label}: label ${l.text} hidden only under a higher rank's`);
-  }
+  assert.equal(m.text.trim(),'',`${label}: no text on the marks`);
   assert.equal(m.overflow,false,`${label}: horizontal overflow`);
 }
+// Two slots exactly one width apart: two bars with a 4 px gap between them (within 1 px).
+function freeTxGap(m,low,high,label){
+  const a=m.bars.find(b=>b.hz===low),b=m.bars.find(b=>b.hz===high);
+  assert.ok(a&&b,`${label}: bars ${low} and ${high}`);
+  assert.ok(Math.abs(b.left-a.right-4)<=1,`${label}: gap ${b.left-a.right} px between ${low} and ${high}`);
+}
 // Proves: CL-065-02; TC-065-003 the Free Tx slots marks above the waterfall: the Expert checkbox (off
-// by default, per browser), bars on the waterfall's mapping at every size and ratio, labels and their
-// overlap rule, the marks only for the snapshot's run, no pointer input and no request of their own.
+// by default, per browser), 8 px bars inset 2 px at each end on the waterfall's mapping with a 4 px gap
+// between adjacent slots, no text, a drawn colour apart from the Rx line, Tx line and ruler in each
+// theme, the marks only for the snapshot's run, no pointer input and no request of their own.
 test('TC-065-003 Free Tx slots marks above the waterfall',{timeout:180000},async t=>{
   for(const scale of [1,2]){
     const commands=[],settings={rx_hz:1500,tx_hz:1200,hold_tx:false},runId=crypto.randomUUID(),requests=[];
@@ -1396,7 +1405,8 @@ test('TC-065-003 Free Tx slots marks above the waterfall',{timeout:180000},async
     await page.waitForFunction(()=>window.wstxContact?.snapshot()&&!document.querySelector('#contact-rx').disabled&&document.querySelector('#station-automation')?.dataset.active==='true',null,{timeout:20000}).catch(async e=>{throw new Error(`${e.message} ${JSON.stringify(await page.evaluate(()=>[!!window.wstxContact?.snapshot(),document.querySelector('#contact-rx')?.disabled,document.querySelector('#station-automation')?.dataset.active,document.querySelector('#station-automation')?.textContent]))} ${JSON.stringify(requests)} ${errors}`);});
     const push=v=>page.evaluate(v=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'free_tx_slots.state',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,free_tx_slots:v}}}})),v);
     const reads=()=>requests.filter(r=>r==='GET /automation').length;
-    const first=[[1000,0],[1300,1],[2000,-1],[700,3],[1350,4]];
+    // FT8 2110 and 2160 Hz are exactly one width apart; FT4 2110 and 2200 Hz likewise.
+    const first=[[1000,0],[1300,1],[2110,-1],[700,3],[2160,4]],ft4=[[1000,0],[1300,1],[2110,-1],[700,3],[2200,4]];
     const option=page.locator('#settings-expert label:has(#free-tx-slots-show)');
     const setOption=async on=>{await page.locator('#open-server-settings').click();const box=page.locator('#free-tx-slots-show');if(await box.isChecked()!==on)await box.click();await page.locator('.op-secondary:not([hidden]) .return-operate').click();};
     if(scale===1){
@@ -1404,33 +1414,41 @@ test('TC-065-003 Free Tx slots marks above the waterfall',{timeout:180000},async
       assert.equal(await page.locator('#free-tx-slots-show').isChecked(),false,'off by default');
     }
     const before=await freeTxMarks(page),readsBefore=reads();
+    // The event is handled within the dispatch: the read after it sees its effect.
     await push(freeTxValue(runId,first));
-    await page.waitForTimeout(100);
     assert.deepEqual((await freeTxMarks(page)).bars,[],'no marks while the option is off');
     if(scale===1)assert.equal(await page.evaluate(()=>localStorage.getItem('wstx.free-tx-slots.v1')),null);
     await setOption(true);
     for(const [width,height] of scale===1?[[1366,768],[1920,1080],[360,800]]:[[1366,768],[360,800]]){
-      await page.setViewportSize({width,height});await page.waitForTimeout(150);
+      await page.setViewportSize({width,height});await freeTxSettled(page);
       const label=`${width}x${height} dpr ${scale}`,m=await freeTxMarks(page);
+      // A phone: a bar may vanish; only no overflow and no page error.
+      if(width===360){assert.equal(m.overflow,false,`${label}: horizontal overflow`);assert.equal(m.text.trim(),'',`${label}: no text on the marks`);continue;}
       freeTxGeometry(m,first,50,label);
-      assert.deepEqual(m.labels.map(l=>l.text),['1 +0','2 +1','3 −1','4 +3','5 +4'],label);
-      if(width===360)assert.ok(m.labels.some(l=>!l.shown),`${label}: 50 Hz apart the labels overlap`);
+      freeTxGap(m,2110,2160,label);
       if(width===1366){assert.deepEqual(m.wf,before.wf,`${label}: the waterfall does not move`);assert.deepEqual([m.rx,m.tx],[before.rx,before.tx],`${label}: the Rx and Tx lines unchanged`);}
       // Nothing of the marks under the pointer.
       for(const b of m.bars)assert.equal(await page.evaluate(([x,y])=>!!document.elementFromPoint(x,y)?.closest('#free-tx-slots'),[(b.left+b.right)/2,(b.top+b.bottom)/2]),false,`${label}: bar ${b.hz} takes no pointer input`);
     }
-    await page.setViewportSize({width:1366,height:768});
+    await page.setViewportSize({width:1366,height:768});await freeTxSettled(page);
     if(scale===2){assert.equal(reads(),readsBefore,'no request after an event');assert.deepEqual(errors,[]);continue;}
-    // The colour in each theme.
-    for(const theme of ['day','dark','night']){await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;},theme);
-      for(const b of (await freeTxMarks(page)).bars)assert.ok(!['rgb(48, 208, 80)','rgb(255, 64, 64)'].includes(b.colour),`${theme}: ${b.colour}`);}
+    // The drawn colour in each theme: each bar's centre pixel against the Rx line's and the Tx
+    // line's centre pixel and the ruler background in the 2110/2160 Hz gap, at the bars' height.
+    for(const theme of ['dark','day','night']){
+      await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;},theme);await freeTxSettled(page);
+      const m=await freeTxMarks(page),y=(m.bars[0].top+m.bars[0].bottom)/2,a=m.bars.find(b=>b.hz===2110),b=m.bars.find(b=>b.hz===2160);
+      const centre=r=>[(r.left+r.right)/2,(r.top+r.bottom)/2];
+      const [rx,tx,ruler,...bars]=await freeTxPixels(page,[centre(m.rx),centre(m.tx),[(a.right+b.left)/2,y],...m.bars.map(centre)]);
+      for(const [i,bar] of bars.entries())for(const [name,other] of [['Rx line',rx],['Tx line',tx],['ruler background',ruler]])
+        assert.ok(rgbDifference(bar,other)>=40,`${theme}: bar ${m.bars[i].hz} ${bar} against the ${name} ${other}: ${rgbDifference(bar,other)}`);
+    }
     await page.evaluate(()=>{document.documentElement.dataset.theme='dark';});
     // A newer value redraws; FT4 bars are 90 Hz wide.
     const newer=[[1100,0],[2200,2],[600,5]];
     await push(freeTxValue(runId,newer,{at:2}));
     freeTxGeometry(await freeTxMarks(page),newer,50,'newer value');
-    await push(freeTxValue(runId,first,{mode:'ft4',at:3}));
-    freeTxGeometry(await freeTxMarks(page),first,90,'FT4');
+    await push(freeTxValue(runId,ft4,{mode:'ft4',at:3}));
+    const four=await freeTxMarks(page);freeTxGeometry(four,ft4,90,'FT4');freeTxGap(four,2110,2200,'FT4');
     // No marks for another run, for an empty list, and with no run.
     await push(freeTxValue(crypto.randomUUID(),first,{at:4}));
     assert.deepEqual((await freeTxMarks(page)).bars,[],'another run_id');
@@ -1447,7 +1465,7 @@ test('TC-065-003 Free Tx slots marks above the waterfall',{timeout:180000},async
       const wf=await page.locator('#waterfall').boundingBox(),y=wf.y+wf.height*.6,x=hz=>wf.x+hz*wf.width/3000,n=commands.length;
       const wait=async k=>{for(let i=0;i<60&&commands.length<n+k;i++)await page.waitForTimeout(50);assert.equal(commands.length,n+k);};
       await page.mouse.dblclick(x(1025),y);await wait(1);
-      await page.mouse.click(x(2025),y);await wait(2);
+      await page.mouse.click(x(2125),y);await wait(2);
       const tx=await page.locator('#waterfall-wrap .ct-txm').boundingBox();
       await page.mouse.move(tx.x+tx.width/2,y);await page.mouse.down();await page.mouse.move(x(1325),y,{steps:6});await page.mouse.up();await wait(3);
       return commands.slice(n).map(c=>[c.action,c.rx_hz,c.tx_hz]);
