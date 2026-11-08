@@ -1002,9 +1002,13 @@ package WstxRequirements {
     // CL-010-04: ExportAdi is streamed (#10, 2026-11-04). #41 retired the #10 log review queue: completion and
     // Log QSO log directly (WstxContact::DirectLog); TIME_ON/TIME_OFF come from the
     // contact engine (server/src/contact.rs).
-    // CL-010-03 partial: physical RF acceptance (TC-007-007) is unexecuted; MCP exposes
-    // the same contact operations through WstxMcp (#12). CL-010-11 partial: since #37 the
-    // browser sends no re-decode; the wire redecode stays refused redecode_unavailable.
+    // #10 closing reconcile (2026-11-08): CL-010-03 implemented; TC-007-007 was accepted by the
+    // operator through the live QSOs (#10 comment 6718939269) and stays automation planned, as a
+    // manual live case has no executable binding. MCP exposes the same contact operations
+    // through WstxMcp (#12). CL-010-11 partial: the #50 pointer actions it states (click Tx,
+    // double-click Rx and Tx, dragging the lines and strip fields) are installed but not yet
+    // accepted live, and TC-010-008 is partial; since #37 the browser sends no re-decode, the wire
+    // redecode stays refused redecode_unavailable.
     // CL-010-15 partial: the Thin/Off budget with MCP traffic is not measured; TC-007-005 measures the browsers.
     requirement 'CL-010-04' {
         doc /* Log every completed contact directly, without a review step (#41, as WSJT-X): at completion and on a manual Log QSO the server stores the contact's record in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity and sends it to the WSJT-X UDP targets as QSO Logged and Logged ADIF; exactly one record per contact identity (an identical re-log adds nothing, completion after an early Log QSO replaces it; each contact is sent to the UDP targets once), a later contact with the same station a new record, Saved only after durable acknowledgement, a failed write visibly unsaved and retried; ADI export and history with the stated limits; and (#10, operator 2026-11-03) Update logbook from ADIF, the one ADI import: an export of another logger (for example Log4OM) is consolidated into the contact log, repeatable and incremental, a record already present (same contact identity, or same call, band and mode/submode with a start within 2 minutes) adding nothing and the stored record winning, only the log's own fields kept, added records marked with their source, QSO confirmation status (LoTW, QSL and eQSL received with their dates and via) kept and, on a rerun, upgraded on records already present (a confirmation is only added, never removed; #10, operator 2026-11-04), so worked-before and award queries tell worked from confirmed per entity, band and mode, invalid records skipped and invalid optional fields dropped with their reasons in the summary, nothing sent to the UDP targets or elsewhere, and the added records feeding worked-before, DXCC and grid status. The former log review queue (OfferLogReview, discard_review, the review form) is retired. Details: WstxContact::LogRecord, DirectLog, SaveContact, UpdateLogbook, ExportAdi, ContactHistory, AdiLimits, WorkedBeforeQuery; WstxUdp::OutboundRules. */
