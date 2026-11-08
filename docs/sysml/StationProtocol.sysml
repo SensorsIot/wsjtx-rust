@@ -266,7 +266,12 @@ package WstxStationProtocol {
              after its first subscription and then when the saved revision changes, checked
              once per second; the browser reads GET /profile once per socket for its first
              status and on a newer announced revision, not on a later status of the socket),
-             operating selection (WstxOperatingReceive::SelectionStateEvent) and radio; until a read
+             operating selection (WstxOperatingReceive::SelectionStateEvent) and radio;
+             free_tx_slots.state (#65) carries its state: exactly {v:1,type:"free_tx_slots.state",
+             data:{profile_id,boot_id,free_tx_slots}} (WstxStrategy::FreeTxSlots, at most 1024
+             bytes), sent at each slot decision of a run to each Detailed or Thin peer and
+             once to a peer that subscribes Detailed or Thin while a run's value exists, never
+             to an Off peer and never without a run; until a read
              is migrated its existing cadence rules apply. */
     }
     attribute def IndependentLinkAccounting {

@@ -543,6 +543,30 @@ attribute def ActivityOrdering {
              4 x 20.833 = 83.3 Hz, following the station's operating mode (station.tick period,
              15 s FT8, 7.5 s FT4). The bracket takes no pointer input. */
     }
+    attribute def FreeTxSlotMarks {
+        attribute marksTakePointer : Boolean = false;
+        attribute offByDefault : Boolean = true;
+        assert constraint marksRules { not marksTakePointer and offByDefault }
+        doc /* CL-065-02 (#65, operator 2026-11-08: "show it above the waterfall as
+             visually that I can place the TX frequency according to that"). With the
+             Settings > Expert checkbox "Show free Tx slots" on (per browser, browser
+             storage, off by default, operative), while the automation snapshot has a run,
+             the latest free_tx_slots (from GET /automation and free_tx_slots.state, no
+             other request or poll) belongs to that run (run_id) and lists slots, each slot
+             is a bar in the frequency ruler directly above the waterfall from hz to hz +
+             width (FT8 50 Hz, FT4 90 Hz, from its mode), on the waterfall's one frequency
+             mapping (RxTxStrip, CL-050-07: edges within 1 px), in a colour that is neither
+             the Rx green nor the Tx red in each theme, labelled "<rank> <rise>" (rank 1-5,
+             the rise signed whole dB, "+" from 0, U+2212 below); of overlapping labels the
+             higher rank's is shown, the bars stay. Bars and labels take no pointer input
+             (click, double-click and marker drag act as without them); the Rx and Tx lines
+             are unchanged; the marks fit inside the ruler and never move the waterfall.
+             They stay until the next decision and go when the run ends, when another run's
+             value arrives and when the checkbox is off. No horizontal overflow at 360 px.
+             The full numbers are in GET /automation only (WstxStrategy::FreeTxSlots). */
+    }
+    dependency freeTxSlotMarksClause from FreeTxSlotMarks to WstxRequirements::'CL-065-02';
+    dependency freeTxSlotMarksMapping from FreeTxSlotMarks to RxTxStrip;
     enum def BandActivitySlot {
         enum mycall; enum new_continent; enum new_continent_band; enum new_cq_zone; enum new_cq_zone_band;
         enum new_itu_zone; enum new_itu_zone_band; enum new_dxcc; enum new_dxcc_band; enum new_grid;
@@ -1102,7 +1126,8 @@ attribute def ActivityOrdering {
              FT8 decode windows and the latest window's counters, CL-052-01), selection
              refresh, connection details, the saved audio endpoint IDs (CL-044-08),
              recordings/replay and the
-             raw transmit test panel (WstxTransmit, #9).
+             raw transmit test panel (WstxTransmit, #9), and "Show free Tx slots" (#65,
+             FreeTxSlotMarks; per browser, off by default).
              Operative changes (display, theme, watchdogs) apply immediately and never
              interrupt decoding. Restart changes (the saved profile: station, CAT, audio,
              PTT) take effect only on Apply (the existing revision-aware profile save) and,

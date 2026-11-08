@@ -278,7 +278,9 @@ package WstxMcp {
              policy_revision, run_revision} (an optional write paced with contact.state)
              after each change since boot, also once to a peer that subscribes while
              either revision is nonzero; the browser then reads GET /automation. No event
-             or request while automation is never used. */
+             or request while automation is never used. The run's Free Tx slots are pushed
+             by free_tx_slots.state at each run decision only (WstxStrategy::FreeTxSlots),
+             so they keep this rule. */
     }
     attribute def AutomationWire {
         attribute receiptsRetained : Integer = 16;
@@ -296,7 +298,9 @@ package WstxMcp {
              WstxStrategy::FreeTxSlot), slot_check (null or {repetitions,
              hears_us, hz}, WstxStrategy::StrategyWatchdog), pounce (null or
              {call, band}, #42)), strategy_refusal (null or why the last selection started no run,
-             WstxStrategy::StrategyRun)}; existing auth and Origin rules of GET routes.
+             WstxStrategy::StrategyRun), free_tx_slots (null without a run and before its
+             first slot decision, else the last decision's value, WstxStrategy::FreeTxSlots)};
+             existing auth and Origin rules of GET routes.
              POST /automation/command (AutomationCommand): exactly {v, profile_id, boot_id,
              command_id, action} plus configure {expected_policy_revision, configuration};
              start {expected_policy_revision, expected_run_revision, mode ft8|ft4,

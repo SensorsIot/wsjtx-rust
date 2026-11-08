@@ -965,6 +965,29 @@ package WstxStrategy {
              Status: the run's tx_slot {hz, power_db, his_end yes|no|unknown} (WstxMcp), power_db
              the whole-dB rise of that slot over its usual level (null without power). */
     }
+    attribute def FreeTxSlots {
+        attribute slotsListed : Integer = 5;
+        doc /* Free Tx slots (#65, operator 2026-11-08): the best candidates of each slot
+             decision of a run, for the operator to compare with the waterfall and to place
+             Tx by hand (WstxOperatingLayout::FreeTxSlotMarks). At every decision of
+             FreeTxSlot (every rule, also with Hold Tx on where the choice uses no power;
+             strategy and contest runs and pounces) and at no other time: no list without a
+             run, none between decisions. Candidates and compared value are exactly the
+             decision's (FreeTxSlot Candidates, his end, Relative; while listening the
+             larger rise of the two parities). Ranked by the whole-dB rise, then nearer the
+             current Tx, then lower; walking the ranking a candidate closer than the slot
+             width (FT8 50 Hz, FT4 90 Hz) to one already listed is skipped; at most
+             slotsListed (5); none without power. Where the decision's rule uses power the
+             first listed is the chosen slot. The choice and tx_slot are unchanged.
+             Value: {run_id, at_utc_ms (station time of the decision), mode ft8|ft4,
+             rx_parity even|odd, listening, periods {even, odd: {now (counted periods in the
+             power now, at most periodsPerParity, null for a parity not compared), usual (in
+             the usual level, at most usualPeriods)}}, slots [{hz, rise_db, level_db,
+             usual_db}] in rank order}, each dB rounded on its own (level_db while listening
+             that of the parity whose rise counts). It is GET /automation free_tx_slots
+             (WstxMcp::AutomationWire) and the free_tx_slots.state event
+             (WstxStationProtocol::PushedStationState). */
+    }
     calc def SaneCall {
         in call : String;
         return sane : Boolean;
@@ -1012,6 +1035,8 @@ package WstxStrategy {
     dependency freeSlotClause from FreeTxSlot to WstxRequirements::'CL-039-09';
     dependency freeSlotRun from StrategyRun to FreeTxSlot;
     dependency freeSlotPounce from Pounce to FreeTxSlot;
+    dependency freeTxSlotsClause from FreeTxSlots to WstxRequirements::'CL-065-01';
+    dependency freeTxSlotsChoice from FreeTxSlots to FreeTxSlot;
     dependency watchdogClause from WatchdogFromOperator to WstxRequirements::'CL-039-06';
     dependency hearingClause from HearingFeed to WstxRequirements::'CL-039-20';
     dependency strategyWatchdogClause from StrategyWatchdog to WstxRequirements::'CL-039-21';
