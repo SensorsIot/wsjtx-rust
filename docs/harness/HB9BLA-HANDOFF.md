@@ -43,6 +43,9 @@ verify their availability in the actual agent environment before starting work.
   agreed: it sees only PTT and a contact, not someone watching Band Activity.
   A contact you did not start, seen while another run's lease is live,
   is that run's. The station itself does not check this.
+- A cost-4/5 live test sets back what it changed ([testing](../../harness/core/docs/standards/testing.md#cost-levels)):
+  band, frequency, mode, strategy, Auto, Hold Tx, Tx/Rx, theme and power. A CAT setting change
+  resets the receive-only setup confirmation, which must then be given again.
 - Function test before review ([CR process](../../harness/core/docs/CR-Process.md), step 2): a
   few short transmissions on a development build need no prior review (operator 2026-11-06: "If
   they are short, nobody will complain"). Long or unattended automatic running on the air

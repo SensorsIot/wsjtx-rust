@@ -68,6 +68,9 @@ rules around it. Agent memory only points here.
   Continuation state uses the bounded [checkpoint](../../harness/core/docs/CR-Reporting.md#restart-and-handoff-checkpoint).
   Required evidence lives in these records, rather than only in a session or chat;
   the issue is not a running diary.
+- **Records are cited as read.** A comment or other GitHub record is cited by the id or
+  url read from `gh` (`gh api repos/<owner>/<repo>/issues/<n>/comments --jq '.[] | .html_url'`),
+  never from memory.
 - **Written for a person.** The title states the problem in plain words; the body opens
   with the problem, the decision or task and a status checklist, readable on a phone.
   Commits, test IDs and paths go below, in a collapsed

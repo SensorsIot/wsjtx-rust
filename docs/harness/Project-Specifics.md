@@ -662,6 +662,7 @@ The limits the [CR process](../../harness/core/docs/CR-Process.md) leaves to the
 
 - Throwaway scripts live in `D:/wstx-tmp/experiments/<issue>/`, are never committed and may
   hold radio addresses.
+- Live runs log under `D:/wstx-tmp/live/<issue>/`, removed when the issue closes.
 - The radio is keyed as in any agent test: the radio preflight and its lease first
   ([handoff](HB9BLA-HANDOFF.md)), and short test transmissions only.
 - Anything that needs the operator (the Flex switched on) is prepared and dry-run first.
