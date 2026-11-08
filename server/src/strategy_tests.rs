@@ -6622,8 +6622,8 @@ fn comb_row(
 }
 /// The CQ's table (#66: judged in my Rx parity only): my 4 even (Rx) periods before e busy
 /// (comb_row, floor 20, busy 40) except 900..950 at the floor, my odd periods flat 20. 900 reads
-/// -0.65, -1 in whole dB; 890 (bins 304..320) holds one busy bin, 1 dB; 910 (311..327) three,
-/// 3 dB; every other slot more. So a CQ from Tx 1500 takes 900, value -1.
+/// rise -0.65, free: value 0; 890 (bins 304..320) holds one busy bin, 1 dB; 910 (311..327) three,
+/// 3 dB; every other slot more. So a CQ from Tx 1500 takes 900, value 0.
 fn cq_quiet_rows(f: &Mcp, e: i64) {
     for k in 0..4 {
         comb_row(
@@ -6669,7 +6669,7 @@ fn wf_row(f: &Mcp, start: i64, floor: u8, bands: &[(u32, u32, u8)], tx: bool) {
 }
 
 // Proves: TC-039-045. The Tx watchdog stops the run's CQ at its limit (stopped tx_watchdog, Auto off,
-// not keyed again); the CQ's slot is the quiet one of my Rx parity (cq_quiet_rows: 900, value -1);
+// not keyed again); the CQ's slot is the quiet one of my Rx parity (cq_quiet_rows: 900, value 0);
 // unattended the CQ is disarmed and cancelled at once (stopped no_client).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_045_the_watchdog_and_no_client_end_the_cq_and_its_slot_is_quiet() {
@@ -6687,7 +6687,7 @@ async fn tc_039_045_the_watchdog_and_no_client_end_the_cq_and_its_slot_is_quiet(
         (
             json!(900),
             json!(900),
-            json!({"hz":900,"power_db":-1,"his_end":"unknown"})
+            json!({"hz":900,"power_db":0,"his_end":"unknown"})
         )
     );
     transmit_own_period(f, rep(e, 1) + 15_000).await;
@@ -6723,7 +6723,7 @@ async fn tc_039_045_the_watchdog_and_no_client_end_the_cq_and_its_slot_is_quiet(
 // Proves: CL-039-22; TC-039-045 (the slot of the CQ with one parity loud, #66). The CQ judges my
 // Rx parity only (even, the other of its odd Tx parity): 4 periods of each parity flat 20, one
 // parity 60 at 1500..1550 (the current Tx). Loud in my Tx parity: ignored, the CQ stays on 1500,
-// value -1 (floor 20.65); loud in my Rx parity: avoided, the CQ goes to the nearest floor slot, 1450
+// value 0 (rise -0.65 under the floor 20.65, free); loud in my Rx parity: avoided, the CQ goes to the nearest floor slot, 1450
 // and 1550 both 50 Hz away, the lower. Red on the parent: it takes the larger rise of both parities
 // while listening and leaves 1500 in both.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -6742,7 +6742,7 @@ async fn tc_039_045_the_cqs_slot_is_judged_in_my_rx_parity() {
             (
                 json!(expected),
                 json!(expected),
-                json!({"hz":expected,"power_db":-1,"his_end":"unknown"})
+                json!({"hz":expected,"power_db":0,"his_end":"unknown"})
             ),
             "loud in {loud:?}"
         );
@@ -6752,7 +6752,7 @@ async fn tc_039_045_the_cqs_slot_is_judged_in_my_rx_parity() {
 // Proves: TC-039-010. The router: my Rx parity (even, K1ABC's) is busy (comb_row, floor 20, busy
 // 40) except a quiet band at 1800..1850 Hz in its last 3 received periods; the 5th older (quiet at
 // 600, 90 at 1800) and a transmitted period (90, quiet at 600) do not count, nor my odd periods
-// (flat 20, #66). Tx and Rx 1800 before the first call, tx_slot {1800, -1, unknown}: 1800 reads its
+// (flat 20, #66). Tx and Rx 1800 before the first call, tx_slot {1800, 0, unknown}: 1800 reads its
 // floor 20 against the floor 20.65 (1810 also holds only floor bins, the band and the segment's
 // floor bins 629..636, but is farther from 1500; every other slot holds busy bins); the whole QSO
 // stays there; with Hold Tx off the selection's Tx goes back to the slot. Hold Tx explicitly off
@@ -6792,7 +6792,7 @@ async fn tc_039_010_the_run_calls_from_the_quietest_slot_of_its_rx_parity() {
         (
             json!(1800),
             json!(1800),
-            json!({"hz":1800,"power_db":-1,"his_end":"unknown"})
+            json!({"hz":1800,"power_db":0,"his_end":"unknown"})
         )
     );
     publish(&f, rep(e, 1), &[("HB9BLA K1ABC -10", 1500.0, Some(-10.0))]);
@@ -6814,7 +6814,7 @@ async fn tc_039_010_the_run_calls_from_the_quietest_slot_of_its_rx_parity() {
 // Proves: TC-039-010. After a station band change within the job only the new band's periods count:
 // no power yet keeps Tx (power_db null); a caller on my slot is answered from the quietest slot away
 // from it; a pounce calls from the quietest slot. Hold Tx explicitly off (#39 holdtx). The new
-// band's even period: a flat floor of 20 (floor 20.65, a free slot -1) with 1350..1450 at 40; its
+// band's even period: a flat floor of 20 (floor 20.65, a free slot 0) with 1350..1450 at 40; its
 // odd period 0 (my Tx parity, not judged, #66). The caller at 1500 on my Tx forbids 1410..1590: the
 // free slots nearest to 1500 are 1600 (100 Hz) and 1300 (200 Hz; 1310..1400 hold busy bins), so
 // 1600. The pounce on G4ABC at 1650 forbids 1560..1740 for my Tx 1600: 1550 (50 Hz, its bins
@@ -6864,7 +6864,7 @@ async fn tc_039_010_a_band_change_a_caller_on_my_slot_and_a_pounce() {
         (s.1, s.2),
         (
             json!(1600),
-            json!({"hz":1600,"power_db":-1,"his_end":"unknown"})
+            json!({"hz":1600,"power_db":0,"his_end":"unknown"})
         )
     );
     // A pounce calls from the quietest slot.
@@ -6879,7 +6879,7 @@ async fn tc_039_010_a_band_change_a_caller_on_my_slot_and_a_pounce() {
         (
             json!(1550),
             json!(1550),
-            json!({"hz":1550,"power_db":-1,"his_end":"unknown"})
+            json!({"hz":1550,"power_db":0,"his_end":"unknown"})
         )
     );
 }
@@ -6898,7 +6898,7 @@ async fn slot_check(set: impl FnOnce(&crate::pskr::Feed)) -> Leaving {
     t
 }
 /// The even row of repetition `k`, in the period before its publication: a flat floor of 20
-/// (floor 20.65, a free slot -1), at the 1st 1450..1650 at 40, so that from Tx 1500 (K1ABC's 1800
+/// (floor 20.65, a free slot 0), at the 1st 1450..1650 at 40, so that from Tx 1500 (K1ABC's 1800
 /// forbids 1710..1890) the nearest free slot is 1400 (100 Hz; 1650 is 150 Hz away); at the 2nd
 /// 1350..1650 at 40, so that 1400 is busy in its busiest period and from 1400 the nearest slot free
 /// in both is 1300 (100 Hz; 1650 is 250 Hz away); from the 3rd flat, so 1300 stays tied.
@@ -6920,8 +6920,8 @@ fn slot_rows(f: &Mcp, e: i64, k: i64) {
 }
 
 // Proves: TC-039-022. Without a known hearing (no spot, 601 s, 40 m, Use off, feed off) Tx and Rx
-// move to the quietest slot at each repetition (1400, 1300) and stay on a tie (1300: -1 against
-// the nearest other free slots' -1); every repetition is keyed past the watchdog limit 2 and WD counts 4, 3, 2, 1; a spot 60 s
+// move to the quietest slot at each repetition (1400, 1300) and stay on a tie (1300 free, 0, the
+// current Tx among the free slots); every repetition is keyed past the watchdog limit 2 and WD counts 4, 3, 2, 1; a spot 60 s
 // or 590 s old keeps Tx at 1500 and WD counts from 8; slot_check names the repetition and hearing.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_022_the_slot_check_at_every_repetition() {
@@ -7093,9 +7093,9 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     f.tick();
     assert_eq!(run_of(f).await["hearing"]["state"], "unknown");
     // Use off is also no his end: the slot check (not heard) has the power alone. My even period
-    // busy (comb_row, floor 20, busy 40) except 1300..1350 at 20 (value -1) and 1650..1700 at 21
-    // (21 - 20.65 = 0.35, value 0); every other slot holds busy bins (1290 three of 17, 3 dB). My
-    // odd period reads 0 (my Tx parity, not judged, #66).
+    // busy (comb_row, floor 20, busy 40) except 1300..1350 at 20 (rise -0.65, free: value 0) and
+    // 1650..1700 at 22 (22 - 20.65 = 1.35, value 1); every other slot holds busy bins (1290 three
+    // of 17, 3 dB; 1660 three, 5 dB). My odd period reads 0 (my Tx parity, not judged, #66).
     let rows = |f: &Mcp, e: i64| {
         wf_row(f, e - 45_000, 0, &[], false);
         comb_row(
@@ -7103,7 +7103,7 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
             e - 30_000,
             20,
             40,
-            &[(bins(1300, 1350), 20), (bins(1650, 1700), 21)],
+            &[(bins(1300, 1350), 20), (bins(1650, 1700), 22)],
             false,
         );
     };
@@ -7111,7 +7111,7 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     publish(f, rep(e, 1), &[]);
     assert_eq!(
         run_of(f).await["tx_slot"],
-        json!({"hz":1300,"power_db":-1,"his_end":"unknown"})
+        json!({"hz":1300,"power_db":0,"his_end":"unknown"})
     );
     // A run not heard: his decoded frequencies of my Tx parity decide.
     let t = leaving(|_| {}, &[K1ABC_CQ]).await;
@@ -7131,7 +7131,7 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     publish(f, rep(e, 1), &[]);
     assert_eq!(
         run_of(f).await["tx_slot"],
-        json!({"hz":1650,"power_db":0,"his_end":"yes"})
+        json!({"hz":1650,"power_db":1,"his_end":"yes"})
     );
     // His frequencies of my Tx parity everywhere: his end ignored.
     // 27 offsets 90 Hz apart (the feed keeps at most 32): every candidate within 45 Hz of one.
@@ -7147,7 +7147,7 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     publish(f, rep(e, 2), &[]);
     assert_eq!(
         run_of(f).await["tx_slot"],
-        json!({"hz":1300,"power_db":-1,"his_end":"no"})
+        json!({"hz":1300,"power_db":0,"his_end":"no"})
     );
 }
 
@@ -7302,7 +7302,7 @@ async fn rx_tx(f: &Mcp) -> (Value, Value) {
 
 // Proves: TC-039-049 (a), (b). Hold Tx on: selecting K1ABC (CQ at 1800) leaves Tx on 1500 and puts
 // Rx on 1800, tx_slot names the held 1500 (no power yet); at the unanswered repetitions with no
-// spot Tx alone takes the quietest slot, 1400 then 1300 (slot_rows, each a free slot of value -1),
+// spot Tx alone takes the quietest slot, 1400 then 1300 (slot_rows, each a free slot of value 0),
 // and Rx stays 1800.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_049_hold_tx_on_keeps_tx_and_moves_it_alone_when_he_does_not_hear_us() {
@@ -7328,7 +7328,7 @@ async fn tc_039_049_hold_tx_on_keeps_tx_and_moves_it_alone_when_he_does_not_hear
             (
                 json!(1800),
                 json!(hz),
-                json!({"hz":hz,"power_db":-1,"his_end":"unknown"})
+                json!({"hz":hz,"power_db":0,"his_end":"unknown"})
             ),
             "(b) repetition {k}: Tx alone"
         );
@@ -7342,7 +7342,7 @@ async fn tc_039_049_hold_tx_on_keeps_tx_and_moves_it_alone_when_he_does_not_hear
 
 // Proves: TC-039-049 (c). The slot check keeps 50 Hz from my Rx as well: K1ABC calls CQ again at
 // 1600 (his signal moved, Rx stays 1800). The even period busy (comb_row, floor 20, busy 40)
-// except 1760..1810 at 20 (value -1) and 1300..1350 at 21 (value 0). 1760 is 50 Hz clear of
+// except 1760..1810 at 20 and 1300..1350 at 21 (both value 0, free). 1760 is 50 Hz clear of
 // K1ABC's 1600..1650 but not of my Rx signal 1800..1850 (1760 + 50 + 50 > 1800), so it is
 // excluded; candidates clear of both lie at or below 1500, at 1700 and from 1900: the quietest of
 // them is 1300 (every other slot holds busy bins).
@@ -7418,7 +7418,7 @@ async fn tc_039_049_a_target_that_hears_us_or_has_answered_keeps_tx() {
 // (1520..1570): below needs f + 50 + 50 <= 1520, so 1420 (80 Hz away); above f >= 1620 (120 Hz):
 // 1420. A caller at 1530: 1430 (70 Hz) against 1630 (130 Hz): 1430. No power is used (D4): a far
 // quiet slot is in the waterfall (my even period busy, comb_row floor 20 busy 40, except 1000..1050
-// at the floor, value -1), and Tx still takes the nearest clear slot, power_db 19 (1420, bins
+// at the floor, value 0), and Tx still takes the nearest clear slot, power_db 19 (1420, bins
 // 485..501, and 1430, bins 489..505, are all busy: 40 - 20.65).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_049_a_station_within_50_hz_moves_tx_50_hz_clear() {
@@ -7476,7 +7476,7 @@ async fn tc_039_049_a_held_tx_outside_the_range_is_kept_and_moves_in_at_the_slot
 }
 
 /// The held CQ's table: both parities a floor of 20, my odd periods 60 at 900..950. Held, the CQ
-/// stays on 900 and names its value in my Rx parity (even), 20 - 20.65, -1 (#66).
+/// stays on 900 and names its value in my Rx parity (even), 20 - 20.65 clamped, 0 (#66).
 fn held_cq_rows(f: &Mcp, e: i64) {
     for k in 0..4 {
         wf_row(f, rep(e, k) - 120_000, 20, &[], false);
@@ -7486,9 +7486,9 @@ fn held_cq_rows(f: &Mcp, e: i64) {
 
 // Proves: TC-039-049 (h). "Casual 20 m" with Hold Tx on and Tx 900: after two empty publications
 // the CQ is keyed on 900 with no slot decision (tx_slot names 900 with its value in my Rx parity,
-// -1), Rx unchanged. A caller at 1200 is answered from 900, Rx 1200 (tx_slot 900, -1); a caller at
+// 0), Rx unchanged. A caller at 1200 is answered from 900, Rx 1200 (tx_slot 900, 0); a caller at
 // 920 (920..970) moves Tx to 820, the nearest slot 50 Hz clear of it (820 + 50 + 50 = 920; above,
-// 1020 is 120 Hz away), Rx 920, -1.
+// 1020 is 120 Hz away), Rx 920, 0.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_049_the_cq_goes_out_on_the_held_tx_and_its_callers_keep_it() {
     for (hz, expected) in [(1200.0, 900), (920.0, 820)] {
@@ -7506,7 +7506,7 @@ async fn tc_039_049_the_cq_goes_out_on_the_held_tx_and_its_callers_keep_it() {
             (
                 rx,
                 json!(900),
-                json!({"hz":900,"power_db":-1,"his_end":"unknown"})
+                json!({"hz":900,"power_db":0,"his_end":"unknown"})
             ),
             "the CQ on the held Tx"
         );
@@ -7517,7 +7517,7 @@ async fn tc_039_049_the_cq_goes_out_on_the_held_tx_and_its_callers_keep_it() {
             (
                 json!(hz as u32),
                 json!(expected),
-                json!({"hz":expected,"power_db":-1,"his_end":"unknown"})
+                json!({"hz":expected,"power_db":0,"his_end":"unknown"})
             ),
             "caller at {hz}"
         );
@@ -7584,7 +7584,7 @@ async fn contest_run_held() -> Leaving {
 }
 
 // Proves: TC-039-049 (j). Contest Run as (h): its CQ on the held 900 with no slot decision
-// (tx_slot 900, value -1 in my Rx parity); K2NEW calling at 1200 is answered from 900, Rx 1200; at
+// (tx_slot 900, value 0 in my Rx parity); K2NEW calling at 1200 is answered from 900, Rx 1200; at
 // 920 Tx moves to 820, Rx 920.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_049_contest_run_calls_cq_on_the_held_tx() {
@@ -7599,7 +7599,7 @@ async fn tc_039_049_contest_run_calls_cq_on_the_held_tx() {
         );
         assert_eq!(
             run_of(f).await["tx_slot"],
-            json!({"hz":900,"power_db":-1,"his_end":"unknown"})
+            json!({"hz":900,"power_db":0,"his_end":"unknown"})
         );
         publish(f, e, &[("HB9BLA K2NEW FN31", hz, Some(-8.0))]);
         assert_eq!(contact(f).await.0, json!("K2NEW"));
@@ -7730,54 +7730,91 @@ async fn slots_of(f: &Mcp) -> Value {
 }
 const K1ABC_2400: (&str, f64, Option<f64>) = ("CQ K1ABC FN42", 2400.0, Some(-5.0));
 
-// Proves: CL-039-09; TC-039-050 (a), (k). The 2026-11-07 reproduction, FT4: the floor falls from
-// 30 dB at 2400 Hz to 15 dB at 2700 Hz, AA3B 12 dB above it at 2621..2711 Hz, not decoded, in my 4
-// counted Rx periods (my Tx-parity periods without him). Oracle: the reference vector, an
-// independent numpy fourth-order fit of the floor and the choice it implies (roll_off_ft4.py); the
-// table the test writes is the vector's. The selection of KC8ZPI (513 Hz) from Tx 1500 takes the
-// vector's slot with its whole-dB value, a slot not overlapping AA3B (raw level alone would choose
-// 2530 at 21 dB on the roll-off).
+/// `with_aa3b` with an undecoded FT4 station 12 dB above it at 1500..1590 Hz, on the current Tx.
+fn with_station(hz: f64) -> f64 {
+    with_aa3b(hz)
+        + if (1500.0..1590.0).contains(&hz) {
+            12.0
+        } else {
+            0.0
+        }
+}
+
+// Proves: CL-039-09; TC-039-050 (a), (k). The 2026-11-07 reproduction, FT4: 30 dB flat to 2400 Hz,
+// falling to 15 dB at 2700 Hz (a sharp knee the fourth-order floor cannot follow: the roll-off
+// slots read about 2 dB below it), AA3B 12 dB above it at 2621..2711 Hz, not decoded, in my 4
+// counted Rx periods (my Tx-parity periods without him); the selection of KC8ZPI (513 Hz) from Tx
+// 1500, twice. Oracle: the reference vector, an independent numpy fit of each run's floor and the
+// choice it implies (roll_off_ft4.py), whose tables are the test's; and the rule by hand: at or
+// under the floor a slot is free, 0 (#66 "At or under floor = free"), so the roll-off slots are no
+// quieter than the free mid-band. Tx 1500 on the flat floor: kept, power_db 0. Tx 1500 on a station
+// 12 dB above the floor at 1500..1590: to the free slot nearest it, the vector's (a slot holding
+// only a few of the station's 31 bins may still read under 0.5, free), power_db 0. Never a slot in
+// 2400..2610 (raw level
+// alone would choose 2530 at 21 dB, the floor rule without the clamp 2530 at -2). A regression
+// guard: green on the parent, red without the clamp.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_the_roll_off_is_compared_above_the_passband_floor() {
+    type Table = fn(f64) -> f64;
     let v = roll_off_vector();
-    let levels: Vec<Value> = (0..1024)
-        .map(|bin| json!(with_aa3b(f64::from(bin) * crate::freeslot::BIN_HZ).round() as u8))
-        .collect();
-    assert_eq!(v["levels_db"], json!(levels), "the vector's table");
-    let choice = &v["choice"];
-    assert_eq!(
-        (&choice["mode"], &choice["current_hz"], &choice["called_hz"]),
-        (&json!("ft4"), &json!(1500), &json!(513))
-    );
-    let rows = |f: &Mcp, e: i64| {
-        for j in (1..=4).rev() {
-            wf_levels(f, ft4(e, -2 * j), with_aa3b, false);
-            wf_levels(f, ft4(e, -2 * j + 1), roll_off, false);
+    let runs: [(&str, Table, Option<u64>); 2] = [
+        ("flat", with_aa3b, Some(1500)),
+        ("station", with_station, None),
+    ];
+    for (i, (name, level, kept)) in runs.into_iter().enumerate() {
+        let run = &v["runs"][i];
+        assert_eq!(run["name"], json!(name));
+        let levels: Vec<Value> = (0..1024)
+            .map(|bin| json!(level(f64::from(bin) * crate::freeslot::BIN_HZ).round() as u8))
+            .collect();
+        assert_eq!(
+            run["levels_db"],
+            json!(levels),
+            "{name}: the vector's table"
+        );
+        let choice = &run["choice"];
+        assert_eq!(
+            (&choice["mode"], &choice["current_hz"], &choice["called_hz"]),
+            (&json!("ft4"), &json!(1500), &json!(513)),
+            "{name}"
+        );
+        let expected = choice["hz"].as_u64().unwrap();
+        assert_eq!(choice["power_db"], json!(0), "{name}: a free slot");
+        match kept {
+            Some(hz) => assert_eq!(expected, hz, "{name}: the current Tx kept"),
+            None => assert_ne!(expected, 1500, "{name}: off the station"),
         }
-    };
-    let t = rise_run("ft4", 1500, rows, &[KC8ZPI_CQ]).await;
-    let f = &t.f;
-    assert_eq!(contact(f).await.0, json!("KC8ZPI"));
-    let hz = choice["hz"].clone();
-    assert_eq!(
-        frequencies(f).await,
-        (
-            hz.clone(),
-            hz.clone(),
-            json!({"hz":hz,"power_db":choice["power_db"],"his_end":"unknown"})
-        )
-    );
-    let hz = hz.as_u64().unwrap();
-    assert!(hz + 90 <= 2621, "no slot overlapping AA3B: {hz}");
+        let rows = move |f: &Mcp, e: i64| {
+            for j in (1..=4).rev() {
+                wf_levels(f, ft4(e, -2 * j), level, false);
+                wf_levels(f, ft4(e, -2 * j + 1), roll_off, false);
+            }
+        };
+        let t = rise_run("ft4", 1500, rows, &[KC8ZPI_CQ]).await;
+        let f = &t.f;
+        assert_eq!(contact(f).await.0, json!("KC8ZPI"), "{name}");
+        let s = frequencies(f).await;
+        assert_eq!(
+            s,
+            (
+                json!(expected),
+                json!(expected),
+                json!({"hz":expected,"power_db":0,"his_end":"unknown"})
+            ),
+            "{name}"
+        );
+        let hz = s.1.as_u64().unwrap();
+        assert!(!(2400..=2610).contains(&hz), "{name}: never the roll-off");
+    }
 }
 
 // Proves: CL-039-09; TC-039-050 (b), (k). FT8, a flat floor of 30 (floor 30.65) in my 4 counted Rx
 // periods, the current Tx 1500 on a slot 5 dB above it (1500..1550, bins 512..529, at 35), every
-// other slot on the floor. Its value is 35 - 30.65 = 4.35, 4; a floor slot's -0.65, -1. The
-// selection of K1ABC (2400) with Hold Tx off leaves 1500 for the nearest floor slot: 1450 (bins
-// 495..511) and 1550 (bins 530..546), both 50 Hz away, the lower; tx_slot {1450, -1}. With Hold Tx
-// on Tx stays on 1500 and tx_slot names its value 4. Red on the parent: every rise 0 over its own
-// usual level, Tx kept with power_db 0.
+// other slot on the floor. Its value is 35 - 30.65 = 4.35, 4; a floor slot's rise -0.65, free: 0.
+// The selection of K1ABC (2400) with Hold Tx off leaves 1500 for the nearest floor slot: 1450
+// (bins 495..511) and 1550 (bins 530..546), both 50 Hz away, the lower; tx_slot {1450, 0}, listed
+// first {1450, 0, 30, 31} (level and floor as measured). With Hold Tx on Tx stays on 1500 and
+// tx_slot names its value 4. Red on the parent: every rise 0 over its own usual level, Tx kept.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_a_steady_station_on_the_current_tx_is_a_rise_above_the_floor() {
     let rows = |f: &Mcp, e: i64| {
@@ -7791,8 +7828,12 @@ async fn tc_039_050_a_steady_station_on_the_current_tx_is_a_rise_above_the_floor
         (
             json!(1450),
             json!(1450),
-            json!({"hz":1450,"power_db":-1,"his_end":"unknown"})
+            json!({"hz":1450,"power_db":0,"his_end":"unknown"})
         )
+    );
+    assert_eq!(
+        slots_of(&t.f).await[0],
+        json!({"hz":1450,"rise_db":0,"level_db":30,"floor_db":31})
     );
     let t = held_run_with("ft8", None, rows, &[K1ABC_2400]).await;
     assert_eq!(
@@ -7846,8 +7887,8 @@ async fn tc_039_050_the_busiest_counted_period_counts() {
 
 // Proves: CL-039-09, CL-065-01; TC-039-050 (d), (k). The floor follows each period: my counted Rx
 // periods flat 30 in the two older and 32 in the two later. A floor slot reads -0.65 in each (30
-// against 30.65, 32 against 32.65), so its value is -1, not raised by the floor change; Tx 1500
-// kept, tx_slot {1500, -1}; of the equal rises the latest counts: listed {1500, -1, 32, 33}. Red on
+// against 30.65, 32 against 32.65), so its value is 0, not raised by the floor change; Tx 1500
+// kept, tx_slot {1500, 0}; of the equal rises the latest counts: listed {1500, 0, 32, 33}. Red on
 // the parent: its rise over the usual level is 31 - 30, 1.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_a_floor_change_does_not_raise_a_free_slot() {
@@ -7863,29 +7904,30 @@ async fn tc_039_050_a_floor_change_does_not_raise_a_free_slot() {
         (
             json!(1500),
             json!(1500),
-            json!({"hz":1500,"power_db":-1,"his_end":"unknown"})
+            json!({"hz":1500,"power_db":0,"his_end":"unknown"})
         )
     );
     assert_eq!(
         slots_of(f).await[0],
-        json!({"hz":1500,"rise_db":-1,"level_db":32,"floor_db":33})
+        json!({"hz":1500,"rise_db":0,"level_db":32,"floor_db":33})
     );
 }
 
 // Proves: CL-039-09; TC-039-050 (e), (k). One counted period is enough to compare: one Rx period, a
-// flat 30 with the current Tx's slot 1500..1550 at 34 (value 3): Tx leaves for the nearest floor
-// slot, 1450 (the lower of 1450 and 1550), value -1. Red on the parent: with one period every rise
-// over its own usual level is 0 and Tx stays.
+// flat 30 with the current Tx's slot 1500..1550 (bins 512..529) at 35 (value 4.35, 4): Tx leaves
+// for the nearest free slot. 1460 and 1540 hold 4 of the band's bins, (4 x 35 + 13 x 30) / 17 -
+// 30.65 = 0.53, 1 (not free); so 1450 (the lower of 1450 and 1550), value 0. Red on the parent:
+// with one period every rise over its own usual level is 0 and Tx stays.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_one_counted_period_compares() {
-    let rows = |f: &Mcp, e: i64| wf_row(f, e - 30_000, 30, &[(1500, 1550, 34)], false);
+    let rows = |f: &Mcp, e: i64| wf_row(f, e - 30_000, 30, &[(1500, 1550, 35)], false);
     let t = rise_run("ft8", 1500, rows, &[K1ABC_2400]).await;
     assert_eq!(
         frequencies(&t.f).await,
         (
             json!(1450),
             json!(1450),
-            json!({"hz":1450,"power_db":-1,"his_end":"unknown"})
+            json!({"hz":1450,"power_db":0,"his_end":"unknown"})
         )
     );
 }
@@ -7929,7 +7971,7 @@ async fn tc_039_050_transmitted_old_and_absent_periods_never_count() {
 
 // Proves: CL-039-09; TC-039-050 (g), (k). After a station band change only later periods count: on
 // 20 m my Rx period 30 s before e has the current Tx's slot 1500..1550 at 40 on a flat 30; after
-// the change to 40 m one Rx period flat 30. The selection two periods later keeps Tx 1500 at -1
+// the change to 40 m one Rx period flat 30. The selection two periods later keeps Tx 1500 at 0
 // (the 20 m period counted would move it). Red on the parent: its rise over the usual level is 0.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_after_a_band_change_only_later_periods_count() {
@@ -7955,7 +7997,7 @@ async fn tc_039_050_after_a_band_change_only_later_periods_count() {
         (
             json!(1500),
             json!(1500),
-            json!({"hz":1500,"power_db":-1,"his_end":"unknown"})
+            json!({"hz":1500,"power_db":0,"his_end":"unknown"})
         )
     );
     assert_eq!(
@@ -8007,7 +8049,7 @@ async fn tc_039_050_values_compare_in_whole_db() {
 // with the current Tx's slot 1500..1550 at 40 and a station decoded at 1500 in it. Its rows of 922
 // bins (to bin 921): it counts, 1500 is busy and on the decoded station, Tx to 1450 (|1450 - 1500|
 // is not below 50), periods now 3. Its rows of 921 bins (to bin 920): neither its levels nor its
-// decode count, Tx stays 1500 at -1, periods now 2. Red on the parent: it counts the short period.
+// decode count, Tx stays 1500 at 0, periods now 2. Red on the parent: it counts the short period.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_a_period_counts_only_when_its_levels_reach_bin_921() {
     for (bins_len, expected, now) in [(922, 1450, 3), (921, 1500, 2)] {
@@ -8037,7 +8079,7 @@ async fn tc_039_050_a_period_counts_only_when_its_levels_reach_bin_921() {
             (
                 json!(expected),
                 json!(expected),
-                json!({"hz":expected,"power_db":-1,"his_end":"unknown"})
+                json!({"hz":expected,"power_db":0,"his_end":"unknown"})
             ),
             "{bins_len} bins"
         );
@@ -8177,30 +8219,30 @@ fn frame(b: &[u8]) -> Option<(u8, Vec<u8>, usize)> {
 }
 /// The waterfall before the selection in e: my Rx parity (even, e - 30 s) busy (comb_row, floor 20,
 /// busy 40: floor 20.65, a slot off the bands at least 10) with quiet bands at their slots, my Tx
-/// parity (odd, e - 15 s) a flat 20 (not judged, #66). A band slot's value is its level - 20.65:
-/// 1000 at -1, 1300 at 0, 2000 at 1, 700 at 2, 2400 at 3, 1700 at 4. A slot shifted from a band by
-/// less than 50 Hz overlaps that band's listed slot and is skipped, one shifted by 50 Hz or more
-/// holds busy bins; so the five listed are 1000, 1300, 2000, 700, 2400 (1700 is the sixth), each
-/// level its band's and floor 21.
+/// parity (odd, e - 15 s) a flat 20 (not judged, #66). A band slot's value is its level - 20.65
+/// clamped at 0: 1000 at 0 (on the floor, free), 1300 at 1, 2000 at 2, 700 at 3, 2400 at 4, 1700
+/// at 5. A slot shifted from a band by less than 50 Hz overlaps that band's listed slot and is
+/// skipped, one shifted by 50 Hz or more holds busy bins; so the five listed are 1000, 1300, 2000,
+/// 700, 2400 (1700 is the sixth), each level its band's and floor 21.
 fn free_rows(f: &Mcp, e: i64) {
     let bands = [
         (bins(1000, 1050), 20),
-        (bins(1300, 1350), 21),
-        (bins(2000, 2050), 22),
-        (bins(700, 750), 23),
-        (bins(2400, 2450), 24),
-        (bins(1700, 1750), 25),
+        (bins(1300, 1350), 22),
+        (bins(2000, 2050), 23),
+        (bins(700, 750), 24),
+        (bins(2400, 2450), 25),
+        (bins(1700, 1750), 26),
     ];
     comb_row(f, e - 30_000, 20, 40, &bands, false);
     wf_row(f, e - 15_000, 20, &[], false);
 }
 /// The five of `free_rows`: {hz, rise_db, level_db, floor_db}.
 fn free_rows_slots() -> Value {
-    json!([{"hz":1000,"rise_db":-1,"level_db":20,"floor_db":21},
-        {"hz":1300,"rise_db":0,"level_db":21,"floor_db":21},
-        {"hz":2000,"rise_db":1,"level_db":22,"floor_db":21},
-        {"hz":700,"rise_db":2,"level_db":23,"floor_db":21},
-        {"hz":2400,"rise_db":3,"level_db":24,"floor_db":21}])
+    json!([{"hz":1000,"rise_db":0,"level_db":20,"floor_db":21},
+        {"hz":1300,"rise_db":1,"level_db":22,"floor_db":21},
+        {"hz":2000,"rise_db":2,"level_db":23,"floor_db":21},
+        {"hz":700,"rise_db":3,"level_db":24,"floor_db":21},
+        {"hz":2400,"rise_db":4,"level_db":25,"floor_db":21}])
 }
 const K1ABC_2600: (&str, f64, Option<f64>) = ("CQ K1ABC FN42", 2600.0, Some(-10.0));
 /// GET /automation free_tx_slots, checked to be the MCP automation view's.
@@ -8269,7 +8311,7 @@ async fn tc_065_002_free_tx_slots_in_the_snapshot_and_on_the_socket() {
         (
             json!(1000),
             json!(1000),
-            json!({"hz":1000,"power_db":-1,"his_end":"unknown"})
+            json!({"hz":1000,"power_db":0,"his_end":"unknown"})
         ),
         "the choice as without the list"
     );
@@ -8346,12 +8388,12 @@ async fn tc_065_002_free_tx_slots_in_the_snapshot_and_on_the_socket() {
 }
 
 // Proves: CL-065-01; TC-065-002 (the period counts, the CQ, Hold Tx on). Only my Rx parity counted
-// since the band change (20 m to 40 m, then one even period flat 40, floor 40.65): every slot -1,
-// so from Tx 1500 the list is the tie rule's 1500, 1450, 1550, 1400, 1600 (each 50 Hz from the
+// since the band change (20 m to 40 m, then one even period flat 40, floor 40.65): every slot free,
+// 0 (rise -0.65), so from Tx 1500 the list is the tie rule's 1500, 1450, 1550, 1400, 1600 (each 50 Hz from the
 // nearer listed one), level 40, floor 41; periods {even {now 1}, odd {now null}} (#66: my Tx
 // parity is not judged). A CQ ("Casual 20 m", Hold Tx off, cq_rows with my odd Tx parity loud at
 // 1500): listening, my Rx parity even, periods {even {now 4}, odd {now null}}; the loud Tx parity
-// changes nothing: the CQ stays on 1500 at -1 and the list is again 1500, 1450, 1550, 1400, 1600,
+// changes nothing: the CQ stays on 1500 at 0 and the list is again 1500, 1450, 1550, 1400, 1600,
 // level 20, floor 21. Hold Tx on: the selection of K1ABC at 2600 on `free_rows` keeps Tx 1500
 // (tx_slot 1500 with its value: all 18 bins busy, 40 - 20.65, 19) and the list is filled as with
 // it off.
@@ -8374,7 +8416,7 @@ async fn tc_065_002_period_counts_a_cq_and_hold_tx_on() {
     assert_eq!(contact(&f).await.0, json!("K1ABC"));
     let v = free_tx_slots(&f).await;
     assert_eq!(v["periods"], json!({"even":{"now":1},"odd":{"now":null}}));
-    let slot = |hz: u32| json!({"hz":hz,"rise_db":-1,"level_db":40,"floor_db":41});
+    let slot = |hz: u32| json!({"hz":hz,"rise_db":0,"level_db":40,"floor_db":41});
     assert_eq!(
         v["slots"],
         json!([slot(1500), slot(1450), slot(1550), slot(1400), slot(1600)])
@@ -8390,7 +8432,7 @@ async fn tc_065_002_period_counts_a_cq_and_hold_tx_on() {
     assert_eq!(run_of(f).await["state"], "calling_cq");
     assert_eq!(
         run_of(f).await["tx_slot"],
-        json!({"hz":1500,"power_db":-1,"his_end":"unknown"})
+        json!({"hz":1500,"power_db":0,"his_end":"unknown"})
     );
     let v = free_tx_slots(f).await;
     assert_eq!(
@@ -8405,7 +8447,7 @@ async fn tc_065_002_period_counts_a_cq_and_hold_tx_on() {
             json!({"even":{"now":4},"odd":{"now":null}})
         )
     );
-    let slot = |hz: u32| json!({"hz":hz,"rise_db":-1,"level_db":20,"floor_db":21});
+    let slot = |hz: u32| json!({"hz":hz,"rise_db":0,"level_db":20,"floor_db":21});
     assert_eq!(
         v["slots"],
         json!([slot(1500), slot(1450), slot(1550), slot(1400), slot(1600)])
@@ -8519,12 +8561,13 @@ fn reports(hz: &[f64]) -> Vec<(&'static str, f64, Option<f64>)> {
 // [hz, hz + 50) 12 dB above the floor; my odd periods alike, RK3AW's band in both. Hand computation:
 // the even decodes leave the candidates 300..400, 720..800, 1010..1050, 1250..1310, 1450..1680,
 // 1890..1960, 2120..2130 and 2240..2650 (with Hold Tx on 810..1000 is also within 50 Hz of Rx
-// 906); each lies on the floor in every even period, -0.65, so -1, and the latest period counts
-// (level 32, floor 32.65). Ranked from Tx 1930 by distance, skipping a slot within 50 Hz of a
-// listed one: 1930, 2120 (190 Hz), 1680 (250 Hz), 1630 (300 Hz), 2240 (310 Hz, after 1620, which is
-// skipped), each {-1, 32, 33}: none in 800..1330, none on an even decode; DL5XU (1976) and A61DD
-// (765), decoded only in my odd periods, do not count; periods {even {now 3}, odd {now null}}.
-// Hold Tx on: the CQ on the held 1930, Rx 906, tx_slot {1930, -1}. Hold Tx off: the CQ's slot 1930
+// 906); each lies on the floor in every even period, rise -0.65, so free: 0 (#66 "At or under
+// floor = free"), and the latest period counts (level 32, floor 32.65). Ranked from Tx 1930 by
+// distance, skipping a slot within 50 Hz of a listed one: 1930, 2120 (190 Hz), 1680 (250 Hz),
+// 1630 (300 Hz), 2240 (310 Hz, after 1620, which is skipped), each {0, 32, 33}: none in 800..1330,
+// none on an even decode; DL5XU (1976) and A61DD (765), decoded only in my odd periods, do not
+// count; periods {even {now 3}, odd {now null}}.
+// Hold Tx on: the CQ on the held 1930, Rx 906, tx_slot {1930, 0}. Hold Tx off: the CQ's slot 1930
 // (the current Tx among the quietest), Rx = Tx, the first listed. Red on the parent: its list
 // ranks by the rise over each slot's own usual level and holds slots on RK3AW.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -8567,7 +8610,7 @@ async fn tc_066_001_the_capture_lists_free_slots_off_the_busy_region() {
             (
                 json!(rx),
                 json!(1930),
-                json!({"hz":1930,"power_db":-1,"his_end":"unknown"})
+                json!({"hz":1930,"power_db":0,"his_end":"unknown"})
             ),
             "Hold Tx {hold}"
         );
@@ -8581,7 +8624,7 @@ async fn tc_066_001_the_capture_lists_free_slots_off_the_busy_region() {
             ),
             "Hold Tx {hold}"
         );
-        let slot = |hz: u32| json!({"hz":hz,"rise_db":-1,"level_db":32,"floor_db":33});
+        let slot = |hz: u32| json!({"hz":hz,"rise_db":0,"level_db":32,"floor_db":33});
         assert_eq!(
             v["slots"],
             json!([slot(1930), slot(2120), slot(1680), slot(1630), slot(2240)]),
@@ -8594,9 +8637,9 @@ async fn tc_066_001_the_capture_lists_free_slots_off_the_busy_region() {
 // 20 m): Tx 1550, my Rx parity even; 4 counted periods of each parity, a flat floor of 30 in the
 // two older and 32 in the two later; a station decoded at 659.5 Hz at 38 dB in all 4 even periods,
 // stations decoded at 659.7 and 691.8 Hz at 38 dB in all 4 odd periods. The selection of K1ABC
-// (2400, Hold Tx off): 1550 reads -1 like every free slot (610..700 is on the decoded station), so
-// Tx stays on 1550, tx_slot {1550, -1}; the list by distance 1550, 1500, 1600 (both 50 Hz, the
-// lower first), 1450, 1650, each {-1, 32, 33}. Red on the parent: it moves Tx to 680 (rise 0 on
+// (2400, Hold Tx off): 1550 is free, 0 (rise -0.65), like every free slot (610..700 is on the
+// decoded station), so Tx stays on 1550, tx_slot {1550, 0}; the list by distance 1550, 1500, 1600
+// (both 50 Hz, the lower first), 1450, 1650, each {0, 32, 33}. Red on the parent: it moves Tx to 680 (rise 0 on
 // the station against 1 on the free slots), as live.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_066_002_the_0729_case_keeps_tx_off_the_station() {
@@ -8627,10 +8670,10 @@ async fn tc_066_002_the_0729_case_keeps_tx_off_the_station() {
         (
             json!(1550),
             json!(1550),
-            json!({"hz":1550,"power_db":-1,"his_end":"unknown"})
+            json!({"hz":1550,"power_db":0,"his_end":"unknown"})
         )
     );
-    let slot = |hz: u32| json!({"hz":hz,"rise_db":-1,"level_db":32,"floor_db":33});
+    let slot = |hz: u32| json!({"hz":hz,"rise_db":0,"level_db":32,"floor_db":33});
     assert_eq!(
         slots_of(f).await,
         json!([slot(1550), slot(1500), slot(1600), slot(1450), slot(1650)])
@@ -8641,7 +8684,7 @@ async fn tc_066_002_the_0729_case_keeps_tx_off_the_station() {
 // within 50 Hz of the held Tx 1500 (D4): the nearest candidates 50 Hz clear of his signal (and of
 // Rx on him) are 1420 (80 Hz) below and 1620 (120 Hz) above. A station decoded at 1400 in my last
 // Rx period (flat 20) overlaps 1360..1440, so below only 1350 and lower are left (150 Hz) and Tx
-// goes to 1620, Rx on 1520, tx_slot {1620, -1}. With stations decoded every 40 Hz every candidate is
+// goes to 1620, Rx on 1520, tx_slot {1620, 0}. With stations decoded every 40 Hz every candidate is
 // overlapped, all come back and Tx goes to 1420. Red on the parent: decodes leave nothing out, Tx
 // to 1420.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -8658,7 +8701,7 @@ async fn tc_066_002_the_hold_tx_50_hz_move_skips_a_decoded_station() {
             (
                 json!(1520),
                 json!(tx),
-                json!({"hz":tx,"power_db":-1,"his_end":"unknown"})
+                json!({"hz":tx,"power_db":0,"his_end":"unknown"})
             ),
             "Tx to {tx}"
         );
@@ -8667,7 +8710,7 @@ async fn tc_066_002_the_hold_tx_50_hz_move_skips_a_decoded_station() {
 
 // Proves: CL-039-22; TC-039-045; TC-066-002 (h). Hold Tx off, "Casual 20 m", Tx 900, my 4 Rx periods
 // flat 20 and a station decoded at 800 Hz in the last of them: the CQ stays on 900 (|900 - 800| is
-// 100 Hz; every free slot -1), tx_slot {900, -1}. A caller at 920 is within 50 Hz of the CQ's slot:
+// 100 Hz; every free slot 0), tx_slot {900, 0}. A caller at 920 is within 50 Hz of the CQ's slot:
 // the nearest candidate 50 Hz clear of his 920..970 below is 820, on the decoded station (20 Hz),
 // and below it the first free one is 750 (150 Hz); above, 1020 (120 Hz): Tx and Rx to 1020, not
 // 820. Red on the parent: decodes leave nothing out, Tx to 820.
@@ -8689,7 +8732,7 @@ async fn tc_066_002_the_cqs_caller_move_skips_a_decoded_station() {
         (
             json!(900),
             json!(900),
-            json!({"hz":900,"power_db":-1,"his_end":"unknown"})
+            json!({"hz":900,"power_db":0,"his_end":"unknown"})
         )
     );
     publish(f, rep(e, 2), &[("HB9BLA DL1XYZ JO62", 920.0, Some(-10.0))]);
@@ -8699,7 +8742,7 @@ async fn tc_066_002_the_cqs_caller_move_skips_a_decoded_station() {
         (
             json!(1020),
             json!(1020),
-            json!({"hz":1020,"power_db":-1,"his_end":"unknown"})
+            json!({"hz":1020,"power_db":0,"his_end":"unknown"})
         )
     );
 }

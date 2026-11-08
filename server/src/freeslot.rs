@@ -78,8 +78,8 @@ impl HisEnd {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Slot {
     pub hz: u32,
-    /// The whole-dB compared value of the chosen slot (its largest rise above the passband floor,
-    /// #66); None before any counted period.
+    /// The whole-dB compared value of the chosen slot (its largest rise above the passband floor
+    /// clamped at 0, #66, `compared`); None before any counted period.
     pub power_db: Option<i64>,
     pub his_end: HisEnd,
 }
@@ -87,6 +87,13 @@ impl Slot {
     pub(crate) fn json(&self) -> Value {
         json!({"hz":self.hz,"power_db":self.power_db,"his_end":self.his_end.name()})
     }
+}
+/// The compared value of a slot in whole dB: its largest rise above the passband floor clamped
+/// at 0 (#66, operator 2026-11-08 "At or under floor = free": a single fourth-order floor cannot
+/// follow a sharp receive-filter knee, where slots read below it; at or under the floor a slot is
+/// free, never quieter than another free one).
+pub(crate) fn compared(rise: f64) -> i64 {
+    rise.max(0.0).round() as i64
 }
 /// My signal of `width` at `f` keeps CLEARANCE_HZ from the called station's signal at `called`.
 fn clear_of(f: u32, called: Option<u32>, width: u32) -> bool {
@@ -117,8 +124,8 @@ fn nearest(slots: &[u32], current: u32) -> Option<u32> {
 /// range, never within CLEARANCE_HZ of the called station; while one is free, none overlapping a
 /// station `decoded` in the counted periods; where his decoded frequencies of my Tx parity are
 /// known (`his`), only those at least CLEARANCE_HZ from each (when that leaves none, his end is
-/// not used: his_end no). `power` is the compared value of a slot in dB (None: no counted
-/// period); compared in whole dB, the lowest wins, a tie keeps the current Tx when it is among the
+/// not used: his_end no). `power` is the largest rise of a slot in dB (None: no counted
+/// period); compared clamped at 0 in whole dB (`compared`), the lowest wins, a tie keeps the current Tx when it is among the
 /// quietest, else the nearer to it, then the lower. No power: the current Tx, or the nearest
 /// candidate when it is too near the called station.
 pub(crate) fn quietest(
@@ -194,7 +201,7 @@ pub(crate) fn quietest_clear(
     let (candidates, his_end) = candidates(mode, current, avoid, decoded, his);
     let powers: Option<Vec<(u32, i64)>> = candidates
         .iter()
-        .map(|f| power(*f).map(|p| (*f, p.round() as i64)))
+        .map(|f| power(*f).map(|p| (*f, compared(p))))
         .collect();
     match powers.filter(|p| !p.is_empty()) {
         Some(powers) => {
@@ -259,23 +266,24 @@ pub(crate) fn held(
         quietest_clear(mode, current, avoid, decoded, his, &|_| None)
     };
     Slot {
-        power_db: power(slot.hz).map(|p| p.round() as i64),
+        power_db: power(slot.hz).map(compared),
         ..slot
     }
 }
 
 /// WstxStrategy::FreeTxSlots slotsListed.
 pub(crate) const SLOTS_LISTED: usize = 5;
-/// The numbers of one slot of a decision: its compared value (its largest rise above the
-/// passband floor over the counted periods, #66), and the level and the floor of the period whose
-/// rise counts, in dB.
+/// The numbers of one slot of a decision: its largest rise above the passband floor over the
+/// counted periods (#66; the compared value is that rise clamped at 0, `compared`), and the level
+/// and the floor of that busiest period as measured, in dB.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Numbers {
     pub rise: f64,
     pub level: f64,
     pub floor: f64,
 }
-/// One listed Free Tx slot, each number rounded to whole dB on its own.
+/// One listed Free Tx slot, each number rounded to whole dB on its own: rise_db the compared value
+/// (never negative), level_db and floor_db as measured.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Listed {
     pub hz: u32,
@@ -289,7 +297,7 @@ impl Listed {
     }
 }
 /// WstxStrategy::FreeTxSlots (#65): the best candidates of one decision, exactly its candidates
-/// (`candidates`, as `quietest_clear`) and its compared value (`numbers`' rise in whole dB), the
+/// (`candidates`, as `quietest_clear`) and its compared value (`compared` of `numbers`' rise), the
 /// lower first, then nearer `current` (the current Tx itself first), then the lower frequency;
 /// walking that ranking a candidate closer than the slot width to one already listed is skipped;
 /// at most SLOTS_LISTED. No power (a candidate without numbers, as the choice's "No power yet"):
@@ -312,7 +320,7 @@ pub(crate) fn free_slots(
     };
     ranked.sort_by_key(|(f, n)| {
         (
-            n.rise.round() as i64,
+            compared(n.rise),
             (i64::from(*f) - i64::from(current)).abs(),
             *f,
         )
@@ -331,7 +339,7 @@ pub(crate) fn free_slots(
         }
         listed.push(Listed {
             hz: f,
-            rise_db: n.rise.round() as i64,
+            rise_db: compared(n.rise),
             level_db: n.level.round() as i64,
             floor_db: n.floor.round() as i64,
         });

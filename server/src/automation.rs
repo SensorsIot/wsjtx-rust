@@ -2080,7 +2080,8 @@ fn take_slot(
         .unwrap_or_else(|p| p.into_inner())
         .periods((&run.identity.1, run.identity.2), now);
     // #66: every decision judges my Rx periods only (a CQ's the other of its Tx parity), the
-    // recent ones, by each slot's largest rise above the passband floor, clear of the stations
+    // recent ones, by each slot's largest rise above the passband floor clamped at 0 (at or under
+    // the floor a slot is free), clear of the stations
     // decoded in them.
     let decodes = decodes_of(r, &run.identity);
     let judged = freeslot::Judged::new(&periods, mode, rx_parity, run.slot_since_ms, now, &decodes);
@@ -2106,10 +2107,10 @@ fn take_slot(
         .chain(hold.then_some(facts.rx_hz))
         .collect();
     let slot = match (rule, hold) {
-        // Hold Tx on, a CQ: on the held Tx, no decision (round 1 Q3); its rise is shown.
+        // Hold Tx on, a CQ: on the held Tx, no decision (round 1 Q3); its value is shown.
         (SlotRule::Listen, true) => freeslot::Slot {
             hz: current,
-            power_db: power(current).map(|p| p.round() as i64),
+            power_db: power(current).map(freeslot::compared),
             his_end: freeslot::HisEnd::Unknown,
         },
         // Hold Tx on, a selection: Tx stays unless within 50 Hz of the station (Q1, Q2, D7).
@@ -2121,7 +2122,7 @@ fn take_slot(
             // (clear of the decoded stations while one is free, #66 D4); its value is still shown.
             let mut slot =
                 freeslot::quietest(mode, current, called, decoded, his.as_deref(), &|_| None);
-            slot.power_db = power(slot.hz).map(|p| p.round() as i64);
+            slot.power_db = power(slot.hz).map(freeslot::compared);
             slot
         }
         _ => freeslot::quietest_clear(mode, current, &avoid, decoded, his.as_deref(), &power),

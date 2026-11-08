@@ -104,6 +104,18 @@ fn tc_039_010_whole_db_decides_the_tie() {
     // 41 dB against 40 dB moves, however close.
     let one = table(50.0, &[(1500, 41.0), (1510, 40.0)]);
     assert_eq!(ft8(1500, None, None, &one).hz, 1510);
+    // #66: a rise at or under the floor is free, 0: -2 at 1500 and -5 at 1800 tie, the current Tx
+    // stays with power_db 0; free (-0.6) beats 0.6 (1 dB).
+    let under = table(50.0, &[(1500, -2.0), (1800, -5.0)]);
+    assert_eq!(
+        ft8(1500, None, None, &under),
+        slot(1500, Some(0), HisEnd::Unknown)
+    );
+    let free = table(50.0, &[(1500, 0.6), (1800, -0.6)]);
+    assert_eq!(
+        ft8(1500, None, None, &free),
+        slot(1800, Some(0), HisEnd::Unknown)
+    );
 }
 
 // Proves: TC-039-010. The range edges: FT8 300..2650 and FT4 300..2610 (90 Hz wide), my whole
@@ -433,33 +445,42 @@ fn floor_vectors() -> Vec<Value> {
 }
 
 // Proves: CL-039-09; TC-039-050 (a). The sloped floor of the 2026-11-07 FT4 roll-off table (30 dB
-// falling to 15 dB from 2400 to 2700 Hz, AA3B 12 dB above it at 2621..2711 Hz) against the
-// independent numpy fourth-order fit of each reference vector: the levels are the vector's, and
-// every floor bin lies within its tolerance.
+// flat to 2400 Hz, falling to 15 dB at 2700 Hz, AA3B 12 dB above it at 2621..2711 Hz; once
+// without and once with a station 12 dB above the floor at 1500..1590 Hz) against the independent
+// numpy fourth-order fit of each run of each reference vector: every floor bin lies within the
+// vector's tolerance, and every candidate's compared value lies at least 0.1 dB from a half dB, so
+// that the whole-dB rounding is unambiguous.
 #[test]
 fn tc_039_050_the_roll_off_floor_matches_the_numpy_reference() {
     for v in floor_vectors() {
         let case = v["case"].as_str().unwrap();
-        let levels: Vec<f32> = v["levels_db"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|l| l.as_f64().unwrap() as f32)
-            .collect();
-        let expected = v["floor_db"].as_array().unwrap();
         let first = v["first_bin"].as_u64().unwrap() as usize;
         let tolerance = v["tolerance_db"].as_f64().unwrap();
-        let floor = passband_floor(&levels).unwrap();
         assert_eq!(first, floor_bins().0, "{case}");
-        assert_eq!(expected.len(), floor_bins().1 - first + 1, "{case}");
-        for (i, e) in expected.iter().enumerate() {
-            let e = e.as_f64().unwrap();
-            assert!(
-                (floor[first + i] - e).abs() <= tolerance,
-                "{case}: bin {}: {} against numpy {e}",
-                first + i,
-                floor[first + i]
-            );
+        let runs = v["runs"].as_array().unwrap();
+        assert!(!runs.is_empty(), "{case}: no run");
+        for run in runs {
+            let name = format!("{case} {}", run["name"]);
+            let levels: Vec<f32> = run["levels_db"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|l| l.as_f64().unwrap() as f32)
+                .collect();
+            let expected = run["floor_db"].as_array().unwrap();
+            let floor = passband_floor(&levels).unwrap();
+            assert_eq!(expected.len(), floor_bins().1 - first + 1, "{name}");
+            for (i, e) in expected.iter().enumerate() {
+                let e = e.as_f64().unwrap();
+                assert!(
+                    (floor[first + i] - e).abs() <= tolerance,
+                    "{name}: bin {}: {} against numpy {e}",
+                    first + i,
+                    floor[first + i]
+                );
+            }
+            let margin = run["choice"]["margin_db"].as_f64().unwrap();
+            assert!(margin >= 0.1, "{name}: margin {margin} dB");
         }
     }
 }
@@ -579,7 +600,7 @@ fn tc_066_002_a_candidate_on_a_decoded_station_is_left_out_while_one_is_free() {
 // Proves: CL-039-09, CL-039-22; TC-066-002 (d), (e), (j). Only my Rx parity is judged. My even
 // periods: a flat floor of 30 with 1460..1560 at 40 (on the current Tx 1500), so the nearest floor
 // slot is 1560 (60 Hz; 1410 is 90 Hz away). A station 20 dB up at 1560 decoded only in my odd (Tx)
-// period is neither left out nor raised: 1560 is chosen at -0.65 (-1). A CQ: with its Tx parity
+// period is neither left out nor raised: 1560 is chosen at -0.65, free (0). A CQ: with its Tx parity
 // odd my Rx parity is even, so a slot loud only in the odd period (1500) is kept; with its Tx
 // parity even my Rx parity is odd and the same slot is avoided, the nearest floor slot 1450 (50 Hz,
 // the lower of 1450 and 1550).
@@ -602,7 +623,7 @@ fn tc_066_002_only_my_rx_parity_is_judged() {
     assert!(close(j.numbers(1560).unwrap().rise, -0.65));
     assert_eq!(
         quietest_clear(Mode::Ft8, 1500, &[], j.decoded(), None, &rises(&j)),
-        slot(1560, Some(-1), HisEnd::Unknown)
+        slot(1560, Some(0), HisEnd::Unknown)
     );
     assert_eq!(
         list(Mode::Ft8, 1500, &[], j.decoded(), None, &|f| j.numbers(f))[0],
@@ -617,7 +638,7 @@ fn tc_066_002_only_my_rx_parity_is_judged() {
         assert_eq!(j.count(), 1);
         assert_eq!(
             quietest_clear(Mode::Ft8, 1500, &[], j.decoded(), None, &rises(&j)),
-            slot(expected, Some(-1), HisEnd::Unknown),
+            slot(expected, Some(0), HisEnd::Unknown),
             "my Rx parity {rx:?}"
         );
     }
@@ -711,8 +732,8 @@ fn listed(
 }
 
 // Proves: CL-065-01; TC-065-001 (count, rank order, no power). Seven separate quiet places from Tx
-// 1500 on a floor of value 10: 400 at -2, 700 at -1, 1000, 1300 and 1800 at 0, 2100 at 1, 2400 at 2.
-// Rank: -2, -1, then the three at 0 by distance to 1500 (1300 200 Hz, 1800 300 Hz, 1000 500 Hz):
+// 1500 on a floor of value 10: 400 at 0, 700 at 1, 1000, 1300 and 1800 at 2, 2100 at 3, 2400 at 4.
+// Rank: 0, 1, then the three at 2 by distance to 1500 (1300 200 Hz, 1800 300 Hz, 1000 500 Hz):
 // exactly 5, 2100 and 2400 are not listed. Three candidates only: called stations every 150 to 200
 // Hz leave exactly 1000, 1500 and 2000 (each excludes the 19 grid slots within 90 Hz), all at value
 // 0: 1500 (the current Tx), then 1000 and 2000 at 500 Hz, the lower first; 3 listed. No power: an
@@ -722,13 +743,13 @@ fn tc_065_001_five_listed_in_rank_order_fewer_when_fewer_none_without_power() {
     let seven = values(
         10.0,
         &[
-            (400, -2.0),
-            (700, -1.0),
-            (1000, 0.0),
-            (1300, 0.0),
-            (1800, 0.0),
-            (2100, 1.0),
-            (2400, 2.0),
+            (400, 0.0),
+            (700, 1.0),
+            (1000, 2.0),
+            (1300, 2.0),
+            (1800, 2.0),
+            (2100, 3.0),
+            (2400, 4.0),
         ],
     );
     assert_eq!(
@@ -818,21 +839,21 @@ fn tc_065_001_a_candidate_closer_than_the_slot_width_is_skipped() {
 }
 
 // Proves: CL-065-01; TC-065-001 (the decision's candidates). The called station at 1000 forbids
-// 910..1090 (FT8: 50 Hz signal, 50 Hz clearance): 950 at -5 and 1090 at -6 are never listed, 1100 at
-// -5 (100 Hz above him) is first. My Rx at 1000 with Hold Tx on is in `avoid` as well (the station
-// at 2000): 1050 at -5 is not listed; with Hold Tx off only the station is: 1050 is first. His
-// decoded frequency 1200 of my Tx parity excludes 1160..1240: 1200 at -5 is not listed, 1250 at -4
+// 910..1090 (FT8: 50 Hz signal, 50 Hz clearance): 950 at 1 and 1090 at 0 are never listed, 1100 at
+// 1 (100 Hz above him) is first. My Rx at 1000 with Hold Tx on is in `avoid` as well (the station
+// at 2000): 1050 at 0 is not listed; with Hold Tx off only the station is: 1050 is first. His
+// decoded frequency 1200 of my Tx parity excludes 1160..1240: 1200 at 0 is not listed, 1250 at 1
 // (50 Hz away) is first; his frequencies everywhere leave every candidate, 1200 first.
 #[test]
 fn tc_065_001_only_the_decisions_candidates_are_listed() {
-    let near_him = values(10.0, &[(950, -5.0), (1090, -6.0), (1100, -5.0)]);
+    let near_him = values(10.0, &[(950, 1.0), (1090, 0.0), (1100, 1.0)]);
     let l = listed(Mode::Ft8, 1500, &[1000], None, &near_him);
     assert_eq!(l[0], 1100);
     assert!(l.iter().all(|f| !(910..=1090).contains(f)), "{l:?}");
-    let near_rx = values(10.0, &[(1050, -5.0)]);
+    let near_rx = values(10.0, &[(1050, 0.0)]);
     assert!(!listed(Mode::Ft8, 1500, &[2000, 1000], None, &near_rx).contains(&1050));
     assert_eq!(listed(Mode::Ft8, 1500, &[2000], None, &near_rx)[0], 1050);
-    let at_his = values(10.0, &[(1200, -5.0), (1250, -4.0)]);
+    let at_his = values(10.0, &[(1200, 0.0), (1250, 1.0)]);
     let l = listed(Mode::Ft8, 1500, &[], Some(&[1200]), &at_his);
     assert_eq!(l[0], 1250);
     assert!(l.iter().all(|f| !(1160..=1240).contains(f)), "{l:?}");
@@ -843,12 +864,13 @@ fn tc_065_001_only_the_decisions_candidates_are_listed() {
     );
 }
 
-// Proves: CL-065-01; TC-065-001 (the numbers). A value of -1.4 (level 18.4, floor 19.8) is listed as
-// rise_db -1, level_db 18, floor_db 20: each rounded on its own. My Tx parity higher changes
-// nothing (#66): my Rx parity even flat 20 (floor 20.65), my odd period flat 30: 1500 reads rise
-// -0.65, level 20, floor 20.65 and is listed {1500, -1, 20, 21}, for a selection and for a CQ alike;
-// the period counts are {even {now 1}, odd {now null}}, and the other way round for my Rx parity
-// odd.
+// Proves: CL-065-01; TC-065-001 (the numbers). A rise of -1.4 (level 18.4, floor 19.8) is listed as
+// rise_db 0 (clamped, #66 "At or under floor = free"), level_db 18, floor_db 20 as measured: each
+// rounded on its own. Clamped, it ties with a rise of 0.0 at 1300: the nearer to Tx 1500 first, so
+// 1300 before 1000. My Tx parity higher changes nothing (#66): my Rx parity even flat 20 (floor
+// 20.65), my odd period flat 30: 1500 reads rise -0.65, level 20, floor 20.65 and is listed
+// {1500, 0, 20, 21}, for a selection and for a CQ alike; the period counts are {even {now 1}, odd
+// {now null}}, and the other way round for my Rx parity odd.
 #[test]
 fn tc_065_001_rise_level_and_floor_round_alone_and_my_tx_parity_changes_nothing() {
     let numbers = |f: u32| {
@@ -870,12 +892,23 @@ fn tc_065_001_rise_level_and_floor_round_alone_and_my_tx_parity_changes_nothing(
         free_slots(Mode::Ft8, 1500, &[], &[], None, &numbers)[0],
         Listed {
             hz: 1000,
-            rise_db: -1,
+            rise_db: 0,
             level_db: 18,
             floor_db: 20
         }
     );
     assert_eq!(listed(Mode::Ft8, 1500, &[], None, &numbers)[0], 1000);
+    let tied = |f: u32| {
+        numbers(f).map(|n| match f {
+            1300 => Numbers {
+                rise: 0.0,
+                level: 20.0,
+                floor: 20.0,
+            },
+            _ => n,
+        })
+    };
+    assert_eq!(listed(Mode::Ft8, 1500, &[], None, &tied)[..2], [1300, 1000]);
     let periods = [period(1, false, 20, &[]), period(1, true, 30, &[])];
     let j = Judged::new(&periods, Mode::Ft8, Parity::Even, i64::MIN, NOW, &[]);
     let n = j.numbers(1500).unwrap();
@@ -884,7 +917,7 @@ fn tc_065_001_rise_level_and_floor_round_alone_and_my_tx_parity_changes_nothing(
         free_slots(Mode::Ft8, 1500, &[], &[], None, &|f| j.numbers(f))[0],
         Listed {
             hz: 1500,
-            rise_db: -1,
+            rise_db: 0,
             level_db: 20,
             floor_db: 21
         }
