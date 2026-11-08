@@ -2624,7 +2624,7 @@ package WstxRequirements {
              the transport cookie. A confirmed rejected/invalid retained credential
              offers 'Forget this browser credential and authorize again', which
              deletes only the local key and shows the bootstrap token form. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/authorization.js; client/app.js; server/src/authorization.rs; server/src/authorization_http.rs";
     }
     dependency CL_022_01_to_FR_019 from 'CL-022-01' to 'FR-019';
@@ -2706,7 +2706,7 @@ package WstxRequirements {
              one in-flight effect per admitted request follows, under the existing
              cancellation/release rules. Every request admitted after the commit is
              refused, and the affected WS closes before its next message. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/authorization.rs; server/src/authorization_http.rs; server/src/recording_http.rs; server/src/main.rs";
     }
     dependency CL_022_02_to_FR_019 from 'CL-022-02' to 'FR-019';
@@ -2755,7 +2755,7 @@ package WstxRequirements {
              read-only, no receive restart, no revision advance, never replacing a known
              selection), so no band choice by hand is needed after startup or a
              reconnect. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization.rs; server/src/authorization_http.rs; server/src/radio_http.rs; server/src/main.rs; client/recording.js";
     }
     dependency CL_022_03_to_FR_008 from 'CL-022-03' to 'FR-008';
@@ -2784,7 +2784,7 @@ package WstxRequirements {
              the first tick observing the confirmed released failure (<=one tick
              after release). Explicit recovery from a failed-close quarantine is a
              station restart; no in-process action clears it. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization_http.rs; server/src/main.rs";
     }
     dependency CL_022_04_to_FR_008 from 'CL-022-04' to 'FR-008';
@@ -2816,7 +2816,7 @@ package WstxRequirements {
              program'); other unavailable causes keep radio_unavailable. Still target:
              Thin/Off accounted-traffic companion
              including these status reads (TC-022-008) and the freeze trace. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/authorization_http.rs; client/recording.js; client/authorization.js; client/app.js";
     }
     dependency CL_022_05_to_FR_003 from 'CL-022-05' to 'FR-003';
