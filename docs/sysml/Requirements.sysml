@@ -141,7 +141,7 @@ package WstxRequirements {
     }
     requirement 'FR-024' {
         doc /* Contest, special-activity and DXpedition operation — phase three
-             Offer WSJT-X's special operating activities chosen by the operator, the contest exchanges, the Hound role and the nonstandard message types, each with its decode, encode, sequencing and logging, on the shared browser/modem/QSO/log/MCP services. Approved slices (issue #24, operator 2026-11-03, WSJT-X 3.3.0-beta5 reference): S1 nonstandard/compound calls, filled-in hashed calls and free text; S2a grid-exchange contests; S2b Field Day and RTTY Roundup (ADIF contest fields, no Cabrillo); S4 classic Hound; S5 SuperFox Hound. Fox (S6) is out of scope; EU VHF (S3) is backlog. */
+             Offer WSJT-X's special operating activities chosen by the operator, the contest exchanges, the Hound role and the nonstandard message types, each with its decode, encode, sequencing and logging, on the shared browser/modem/QSO/log/MCP services. Approved slices (issue #24, operator 2026-11-03, WSJT-X 3.3.0-beta5 reference): S1 nonstandard/compound calls, filled-in hashed calls and free text; S2a grid-exchange contests; S2b Field Day and RTTY Roundup (ADIF contest fields, no Cabrillo); S4 classic Hound. S5 SuperFox Hound moved to its own phase-two issue #77 (operator 2026-11-08); Fox (S6) was dropped; EU VHF (S3) is backlog. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/decoder/hashes.rs; server/src/recording.rs; server/src/contact.rs; server/src/transmit/pack.rs";
     }
@@ -1005,9 +1005,9 @@ package WstxRequirements {
     // #10 closing reconcile (2026-11-08): CL-010-03 implemented; TC-007-007 was accepted by the
     // operator through the live QSOs (#10 comment 6718939269) and stays automation planned, as a
     // manual live case has no executable binding. MCP exposes the same contact operations
-    // through WstxMcp (#12). CL-010-11 partial: the #50 pointer actions it states (click Tx,
-    // double-click Rx and Tx, dragging the lines and strip fields) are installed but not yet
-    // accepted live, and TC-010-008 is partial; since #37 the browser sends no re-decode, the wire
+    // through WstxMcp (#12). CL-010-11 and TC-010-008 implemented: the #50 pointer actions (click Tx,
+    // double-click Rx and Tx, dragging the lines and strip fields) were accepted live
+    // (#50 comment 6719539569); since #37 the browser sends no re-decode, the wire
     // redecode stays refused redecode_unavailable.
     // CL-010-15 implemented (operator 2026-11-08): the Thin/Off byte budget is the browsers'
     // (StationTickEvent), measured by TC-007-005; MCP traffic is outside that budget.
@@ -1162,7 +1162,7 @@ package WstxRequirements {
     verification 'TC-010-008' {
         doc /* TC-010-008 — Waterfall pointer actions and frequency inputs
              CL-010-11
-             Setup: actual Chromium/server with injected spectrum rows, 1100x850 and 360x640, DPR 1/2; request recorder.
+             Setup: actual Chromium/server with injected spectrum rows, 1100x850 and 360x640, DPR 1/2; request recorder. The bound test runs at 1440x1000; the narrow and DPR 2 checks are in TC-050-007.
              Steps: at independently computed pixel positions for 700, 1000, 1500 and 2950 Hz perform click, double-click, shift-click with Hold Tx on and right-click; numeric Rx/Tx inputs with 199/200/2950/2951 Tx.
              Expected (#50): requested offsets equal the independently computed axis frequency rounded to integer Hz; click Tx only; a double-click exactly one request for Rx and Tx and no re-decode request; shift-click as click and with Hold Tx on; right-click nothing; the markers are 3 px lines (Rx rgb(48,208,80), Tx rgb(255,64,64)) without text at the confirmed values; out-of-domain refused; no Enable Tx request; the browser context menu does not open on the waterfall.
              2 — Isolated automated functional tests; Windows development PC. */
@@ -2527,19 +2527,19 @@ package WstxRequirements {
     dependency CL_013_05_verified_by_TC_023_006 from 'CL-013-05' to 'TC-023-006';
     dependency CL_013_06_verified_by_TC_023_003 from 'CL-013-06' to 'TC-023-003';
 
-    doc /* Issue22 contract. Delivered (partial): CL-022-01 persistent browser key,
+    doc /* Issue22 contract. Delivered: CL-022-01 persistent browser key,
          enrollment, challenge/proof transport, retained-key recovery and the
          browser Log out / forget-rejected-credential actions; CL-022-02 durable
          private record, revocation (logout, revoke-all), dispatch fencing of every
          operating HTTP/WS effect under the authority lock, safety-revision
          advance and the commissioning server API (POST /authorization/v1/commission
-         and the status condition). Delivered (partial, before live acceptance):
+         and the status condition). Delivered:
          CL-022-03 'Confirm receive-only setup' UI and the automatic read-only CAT
          lifecycle, CL-022-04 cadence, CL-022-05 CAT status/freshness presentation;
          TC-022-009 automated companions. Radio identity Add/Replace/Remove is dropped
-         from the contract (operator 2026-11-06, CL-022-02). Still target: the
-         CL-022-05 dated freeze reproduction and Thin/Off accounted-traffic companion;
-         TC-022-008 and TC-022-010 stay planned.
+         from the contract (operator 2026-11-06, CL-022-02). The CL-022-05 freeze was accepted on
+         the recorded trace (comment 6622256637); TC-022-008 is partial (the Thin/Off
+         accounted-traffic tests are not written); TC-022-010 was accepted live (6719540079).
          Existing99 identities retain meaning and numbering. No parser, model
          declaration or issue checkpoint proves execution/acceptance. */
     requirement 'CL-022-01' {
@@ -2745,7 +2745,7 @@ package WstxRequirements {
              setup' when the safety revision is above1. A selected plaintext profile
              has no grant authority and therefore never runs the lifecycle (zero CAT
              I/O); its automatic CAT is unavailable by design. Live IC-7300
-             acceptance (TC-022-010) remains outstanding.
+             acceptance (TC-022-010) passed on 2026-11-08 (6719540079).
              Reconnect restores the selection (operator finding 2026-11-02, another
              program held the port and released it): when the lifecycle's eligible
              connection becomes Ready with a confirmed fresh dial while the selection
@@ -2801,7 +2801,7 @@ package WstxRequirements {
              32kbit/s accounted-traffic regressions include new auth/recovery/status
              messages, explicit errors and multi-peer recovery. Issue10 existing
              continuity/stale fixes are reused; this proposal adds no duplicate helper.
-             Actual dated freeze reproduction/root-cause trace remains outstanding.
+             The freeze is accepted on the recorded trace (6622256637).
              Delivered: POST /authorization/v1/status reports the actual lifecycle
              condition, mapped error and retry delay, with receive_state separate; the
              browser reads it only when the versioned /receive/selection
@@ -2813,9 +2813,9 @@ package WstxRequirements {
              station's ownership lock; also the rare ambiguous case of two serial
              interfaces with the same port name) as error port_in_use, and the browser names it
              '<port> in use by another program' (for example 'COM3 in use by another
-             program'); other unavailable causes keep radio_unavailable. Still target:
-             Thin/Off accounted-traffic companion
-             including these status reads (TC-022-008) and the freeze trace. */
+             program'); other unavailable causes keep radio_unavailable. Still missing:
+             only the Thin/Off accounted-traffic companion
+             including these status reads (TC-022-008). */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/authorization_http.rs; client/recording.js; client/authorization.js; client/app.js";
     }
@@ -2942,9 +2942,9 @@ package WstxRequirements {
              Origin403 before auth, invalid grant401, extra/duplicate/missing fields400,
              wrong media415,1025bytes413; GETnewstatus405/no effects/no fallback. Existing
              GET/profile permits absent Origin as before, not a relaxed POST policy.
-             Dated real freeze
-             reproduction and cause tracing remain separate required evidence, not
-             replaced by this constructed case. Existing issue10 barriers/unknown state
+             The real freeze
+             is accepted on the recorded trace (6622256637); the Thin/Off
+             traffic tests below are what is missing. Existing issue10 barriers/unknown state
              assertions remain. Add auth recovery to existing Thin/Off accounted-traffic
              companion tests/recording.test.cjs TC-010-002 and communication tests;
              same ceilings/windows/controls, no assertion or source-pin weakening.
@@ -3019,8 +3019,8 @@ package WstxRequirements {
              cable/server/browser restart, truthful independent health/freshness and
              latest real decode rows. Retained-browser proof after controlled cookie
              expiry is observed; simulated clock boundary labelled simulated. PTT
-             remains released; zero transmit acceptance is added. Missing physical
-             cases/freeze evidence remain missing. Independent source/model review,
+             remains released; zero transmit acceptance is added. Accepted live
+             on 2026-11-08 (6719540079); the freeze is accepted on the trace. Independent source/model review,
              red-on-parent, exact ordinary gates and actual acceptance all required.
              Where: HB9BLA installed exact gated candidate, actual IC-7300 COM3/USB Audio CODEC and authenticated browser. Physical acceptance is planned and consent-bound, not an automated simulator verdict. */
         attribute automation : AutomationState = AutomationState::planned;
@@ -3919,9 +3919,9 @@ package WstxRequirements {
     verification 'TC-044-019' {
         doc /* TC-044-019 — Monitoring on HB9BLA
              CL-044-14
-             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, 40 m, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported); every transmission into a mismatched antenna instead goes at low power, Po at most 5 %, 14 0A set the same way (coordinator decision 2026-11-07, not the operator's).
-             Steps: transmit during normal operation, compare the frame count in the CI-V log and the transmit timing; check the ALC threshold against the radio's own meter; transmit with ALC above 0010; connect a mismatched antenna at low power, check the SWR thresholds against the radio's display at that power first, then transmit until the SWR 3.0 stop.
-             Expected: three meter frames per transmission, in the middle; decode by another station unaffected; ALC above 0010 goes down one step at the next transmission until it reads 0010 or less, with no entry below 0060; the ALC and SWR thresholds match the radio's display; a mismatched antenna stops at SWR 3.0.
+             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, 40 m, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported). The mismatched-antenna / SWR 3.0 stop step is dropped by operator decision of 2026-11-08 ("bad SWR is handled by the transceiver"); the station's own stop at and above SWR 3.0 stays (CL-044-14), covered offline; the SWR display is #68.
+             Steps: transmit during normal operation, compare the frame count in the CI-V log and the transmit timing; check the ALC threshold against the radio's own meter; transmit with ALC above 0010.
+             Expected: three meter frames per transmission, in the middle; decode by another station unaffected; ALC above 0010 goes down one step at the next transmission until it reads 0010 or less, with no entry below 0060; the ALC threshold matches the radio's display.
              5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
@@ -3969,7 +3969,7 @@ package WstxRequirements {
         doc /* TC-044-021 — Discovery on HB9BLA
              CL-044-15
              Setup: the gated candidate on HB9BLA, the IC-7300 on COM3, keying inhibit confirmed through Detect radio on both profiles; a second station process on its own profile; the operator's consent.
-             Steps: start the station with COM3 saved; start a second process with COM3 saved while the first holds it; start it with a second transceiver connected, if one is available; with two transceivers, start two processes on unconfirmed CAT, so one holds its radio only by reservation.
+             Steps: start the station with COM3 saved; start a second process with COM3 saved while the first holds it; start it with a second transceiver connected, if one is available; with two transceivers, start two processes on unconfirmed CAT, so one holds its radio only by reservation. The second-transceiver steps can't run on this station, which has only one radio.
              Expected: the first keeps COM3; the second reports port_in_use with nothing changed when no other radio is free, and takes the second transceiver when one is; a radio reserved but not yet held is passed over.
              4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
