@@ -1358,10 +1358,12 @@ package WstxRequirements {
              4. Drop bytes without closing the established test connection. Expect stale detection
                 within the contract's silent-loss bound and scheduler tolerance. Restore byte delivery;
                 expect bounded recovery and another snapshot without waiting for the old close handshake.
-             5. Hold (delay, not drop) every station-to-browser byte for 16s while the page's
-                deferred client download is pending, then deliver it. Expect the same socket, no
-                stale state and no new connection (#8). Hold beyond 31s with the download pending:
-                expect stale detection within the 31s bound plus 1-second scheduler tolerance.
+             5. Hold (delay, not drop) every station-to-browser byte while the page's deferred
+                client download is pending; with the page's clock installed before load, drive it
+                16s (past the 12s bound and its 1-second tick), then deliver. Expect only the
+                connected state, the same socket and no new connection (#8, issue70: driven, no
+                real wait). Hold beyond 31s in real time with the download pending: expect stale
+                detection within the 31s bound plus 1-second scheduler tolerance (a measurement).
 
              **Oracle:** contract state transitions/time limits and observed request exchange.
              The automation cuts/restores the proxy to the actual server and checks a new snapshot
@@ -2057,6 +2059,7 @@ package WstxRequirements {
         doc /* TC-018-001
              CL-006-01, CL-006-02
              Construct byte-level PCM WAVs with 1, 2048, 4096, 4097 and 1,440,000 frames, endpoint samples -32768,-1,0,1,32767 and legal ancillary/padding chunks. Import, inspect blocks/metadata, replay twice and restart. Use the pinned actual recordings from chapter13 after retaining their license/provenance manifest; the verified22 inputs all fit the selected PCM capability.
+             Provenance sweep (issue70, tests/recording-fixtures.test.cjs, no server): every one of the 22 FT8 and 3 FT4 original recordings in WSTX_SAMPLE_DIR has the sha256 of its manifest entry, and its hand-parsed RIFF/fmt header is PCM, 1 channel, 16 bit, 12000 Hz with a data size within the import cap; the enumeration equals the two manifests (25 files). Import (tests/recording.test.cjs): the first .wav entry of each manifest, one FT8 and one FT4 original, imports with rate_hz 12000, file_bytes equal to its length and stored bytes unchanged, and its replay paints waterfall rows.
              Hand-authored RIFF byte offsets/counts and exact signed-value/32768 mapping match; concatenated blocks equal input samples, <=4096 per block, contiguous offsets and one EOS; original bytes unchanged. Source UUID survives restart and repeats; job IDs differ, generations advance within a boot and reset to0 on restart, recording UTC remains null and no device opens. Analytical spectra repeat within 0.5 dB quantization plus 0.05 dB numerical tolerance. The actual recording proves non-synthetic input; it is not the calibration oracle. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -2904,14 +2907,21 @@ package WstxRequirements {
              grant after restart and no successful receipt/proof. No assumption that
              server can observe browser receipt of a success response is allowed.
              Slow-link setup retry oracle (independent request counters on the actual
-             browser): hold the first bootstrap-scope response past its 10 s bound;
-             the status shows 'Retrying authorization' and becomes connected after one
-             token press with one session, two bootstrap-scope and one enrollment.
+             browser; the page's clock is installed before load and driven, issue70,
+             no real wait): hold the first bootstrap-scope response; at 9999 ms no
+             retry is shown and one bootstrap-scope was sent, at 10000 ms the status
+             shows 'Retrying authorization (attempt 2 of 3)'; the late response is
+             then delivered and the page becomes connected after one token press with
+             one session, two bootstrap-scope and one enrollment.
              A network-failed enrollment is repeated once with the identical operation
              ID and verifier and connects. Network failure of every /session
-             attempt stops after exactly 3 attempts with 'Could not authenticate'.
-             A 401 bootstrap-scope is never retried. Navigating away during a held
-             attempt sends no further setup request.
+             attempt: 1 attempt at +999 ms and 2 at +1000 ms after the first failure,
+             2 at +1999 ms and 3 at +2000 ms after the second, then 'Could not
+             authenticate', and still exactly 3 after the clock runs past the 45 s
+             login bound. A 401 bootstrap-scope is never retried (counts 1/1/0 after
+             the clock runs past 45 s). A pagehide event on the live page during a
+             held attempt cancels it: no further setup request after the clock runs
+             past 45 s (counts 1/1/0).
              Grant revocation and configuration edits (operator 2026-11-06: moved here from
              the retired TC-022-007). Disable/re-enable and endpoint edit preserve UUID;
              endpoint change advances safety revision/invalidates commissioning only.
@@ -2934,9 +2944,9 @@ package WstxRequirements {
              transport usable at 28799 s and refused at exactly 28800 s, a challenge 400 days
              on, a reopen keeping grants and receipts with no transport), and
              tests/profiles.test.cjs "actual browser and server process restart" removes the
-             cookie and restarts both processes. No run advances a browser's clock; that
-             combination stays unautomated, and TC-022-010 observes controlled cookie expiry
-             live. */
+             cookie and restarts both processes. Only the slow-link setup retry case
+             drives a browser's clock; the cookie-retention and 28800 s combination stays
+             unautomated, and TC-022-010 observes controlled cookie expiry live. */
         attribute automation : AutomationState = AutomationState::partial;
         attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs; server/src/authorization_tests.rs";
         objective {
