@@ -325,20 +325,18 @@ function logShow(){
 }
 const stationTxNode=document.createElement('span');stationTxNode.id='station-tx';stationTxNode.className='ct-station-tx';stationTxNode.setAttribute('role','status');stationTxNode.hidden=true;
 document.querySelector('#halt-tx')?.before(stationTxNode);
-// WstxMcp::AutomationIndicator: the run state sits in the strategy element; HALT ends it.
-const automationNode=$('station-automation');
+// WstxMcp::AutomationIndicator: the run state sits in the strategy element (its line is drawn by
+// the strategy client from both snapshots, #74 D1); HALT ends it. GET /automation is read only
+// after an automation.state event (#74): null is the never-used state, held without a request.
 let automationLoading=null,automationView=null;
 function loadAutomation(){
   if(automationLoading)return automationLoading;
-  automationLoading=stationFetch('/automation',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(a=>{
-    const run=a?.v===1?a.run:null,active=run&&run.state!=='stopped';
-    automationNode.dataset.active=String(!!active);
-    // #42 a pounce run names its call (WstxStrategy::Pounce).
-    // A strategy run's state is the strategy client's (WstxStrategy::StrategySelector).
-    if(!a?.configuration?.strategy&&!a?.strategy_refusal)automationNode.textContent=active&&run.pounce?`Pounce ${run.pounce.call} ${run.state==='waiting'?'waiting':'in QSO'} · HALT ends it`:active?`Automation ${{waiting:'waiting',manual:'paused for your QSO'}[run.state]??'in contact'} · run ${String(run.id).slice(0,8)} · HALT ends it`:run?.reason&&run.reason!=='stopped'?`Automation stopped · ${run.reason.replace(/_/g,' ')}`:'Automation idle';
-    if(a?.v===1){automationView=a;freeTxSlotsRead(a);pskrLinesShow();dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));}
-  }).catch(()=>{}).finally(()=>{automationLoading=null;});
-  return automationLoading;
+  const loading=automationLoading=stationFetch('/automation',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(a=>{
+    // WstxStationProtocol::PushedStationState: a reply of another boot is discarded.
+    if(loading!==automationLoading||a?.v!==1||a.boot_id!==profileData?.boot_id)return;
+    automationView=a;freeTxSlotsRead(a);pskrLinesShow();dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));
+  }).catch(()=>{}).finally(()=>{if(loading===automationLoading)automationLoading=null;});
+  return loading;
 }
 function stationTx(){
   const t=snap?.transmit,capable=transmitCapable(),wd=snap?.watchdog,armed=t?.arm_state==='armed';
@@ -569,6 +567,8 @@ function pskrToggleShow(){
   button.disabled=!pskrView||!pskrView.enabled||pskrPosting;
   button.title=!pskrView?'Use PSK Reporter · status unknown':!pskrView.enabled?'PSK Reporter is off in Settings':'Use PSK Reporter';
 }
+// The freshly loaded form is the same as after a new boot (#74): drawn by the one rule above.
+pskrToggleShow();
 $('qso-pskr').addEventListener('click',async()=>{
   const v=pskrView;if(!v?.enabled||pskrPosting)return;pskrPosting=true;pskrToggleShow();
   try{
@@ -592,13 +592,14 @@ function pskrLinesShow(){
   const slot=run.tx_slot,tx=$('qso-txslot');tx.hidden=!Number.isInteger(slot?.hz);
   tx.textContent=tx.hidden?'':`Tx ${slot.hz} Hz · open at his end: ${['yes','no'].includes(slot.his_end)?slot.his_end:'unknown'}`;
 }
-function loadPskr(){stationFetch('/pskr',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(v?.v===1){pskrView=v;pskrShow();}}).catch(()=>{});}
+const currentBoot=v=>v?.boot_id===profileData?.boot_id;
+function loadPskr(){stationFetch('/pskr',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(v?.v===1&&currentBoot(v)){pskrView=v;pskrShow();}}).catch(()=>{});}
 $('pskr-enabled').addEventListener('change',async event=>{
   const box=event.target,v=pskrView;if(!v)return;box.disabled=true;$('pskr-result').textContent='Saving';
   try{
     const response=await stationFetch('/pskr',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:v.profile_id,boot_id:v.boot_id,enabled:box.checked}),signal:AbortSignal.timeout(10000)});
     const data=await response.json();if(!response.ok)throw new Error(data?.error?.code||'connection error');
-    pskrView=data;$('pskr-result').textContent='Saved';
+    if(currentBoot(data)){pskrView=data;$('pskr-result').textContent='Saved';}
   }catch(error){$('pskr-result').textContent=`Not saved · ${error.message}`;}
   pskrShow();
 });
@@ -607,16 +608,27 @@ addEventListener('station-message',event=>{const m=event.detail?.message;
   else if(m?.type==='pskr.state'&&m.data?.v===1&&m.data.boot_id===profileData?.boot_id){pskrView=m.data;pskrShow();}});
 function loadStartup(){
   if(startupLoading)return startupLoading;
-  startupLoading=stationFetch('/receive/startup',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(v?.v===1){startupView=v;startupShow();}}).catch(()=>{}).finally(()=>{startupLoading=null;});
-  return startupLoading;
+  const loading=startupLoading=stationFetch('/receive/startup',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(loading===startupLoading&&v?.v===1&&currentBoot(v)){startupView=v;startupShow();}}).catch(()=>{}).finally(()=>{if(loading===startupLoading)startupLoading=null;});
+  return loading;
 }
+// WstxStationProtocol::PushedStationState (#74): a new boot drops the automation, Free Tx slots,
+// PSK Reporter and Monitor off at startup state of the previous boot at once; each view shows
+// the form of a freshly loaded page until its own read or event of the new boot.
+let bootReads=false;
+addEventListener('station-boot',()=>{
+  automationLoading=null;automationView=null;freeTxSlots=null;freeTxSlotMarks();
+  pskrView=null;startupView=null;startupLoading=null;bootReads=true;
+  const status=$('pskr-status');status.textContent='PSK Reporter status unknown';delete status.dataset.state;
+  $('pskr-enabled').checked=false;$('pskr-result').textContent='';pskrShow();
+  $('monitor-off-startup').checked=false;$('startup-result').textContent='';$('startup-resume').textContent='Startup resume unknown';startupShow();
+});
 $('monitor-off-startup').addEventListener('change',async event=>{
   const box=event.target,v=startupView;if(!v)return;box.disabled=true;$('startup-result').textContent='Saving';
   try{
     const response=await stationFetch('/receive/startup',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:v.profile_id,boot_id:v.boot_id,monitor_off_at_startup:box.checked}),signal:AbortSignal.timeout(10000)});
     const data=await response.json().catch(()=>null);
     if(!response.ok||data?.v!==1)throw new Error(data?.error?.code||'request_failed');
-    startupView=data;$('startup-result').textContent='Saved';
+    if(currentBoot(data)){startupView=data;$('startup-result').textContent='Saved';}
   }catch(error){$('startup-result').textContent=`Not saved · ${error.message}`;}
   startupShow();
 });
@@ -866,7 +878,7 @@ waterfall?.addEventListener('click',event=>{
 });
 waterfall?.addEventListener('dblclick',event=>{clearTimeout(pointerTimer);const hz=pointerHz(event);pointer(hz,hz,'Rx and Tx frequency');});
 // #65 WstxOperatingLayout::FreeTxSlotMarks: the latest free_tx_slots (GET /automation, read on
-// automation.state and once per socket, and each free_tx_slots.state event; no other request) as
+// automation.state only, and each free_tx_slots.state event; no other request) as
 // bars over hz to hz + width in the frequency ruler, on the waterfall's one mapping (CL-050-07),
 // while "Show free Tx slots" is on and the value belongs to the snapshot's run.
 let freeTxSlots=null;
@@ -946,8 +958,9 @@ setInterval(displays,250);setInterval(countdown,100);
 // Reconnect (a new socket) reloads the authoritative snapshot; a status refresh on the
 // same socket does not (contact.state announces every change).
 let readySocket=null;
-// The automation state is read once per socket (then announced by automation.state).
-addEventListener('station-ready',event=>{const fresh=event.detail!==readySocket;if(!fresh&&(contactMissing||snap&&snap.boot_id===profileData?.boot_id))return;readySocket=event.detail;load();if(fresh){loadAutomation();loadStartup();loadPskr();}});
+// The PSK Reporter and startup states are read once per socket and after a new boot; the
+// automation state only after automation.state (#74: never on connect).
+addEventListener('station-ready',event=>{const fresh=event.detail!==readySocket;if(!fresh&&!bootReads&&(contactMissing||snap&&snap.boot_id===profileData?.boot_id))return;readySocket=event.detail;load();if(fresh||bootReads){bootReads=false;loadStartup();loadPskr();}});
 addEventListener('station-stale',()=>{displays();});
 addEventListener('station-message',event=>{
   const {message,current}=event.detail;if(current!==socket)return;
@@ -963,7 +976,8 @@ addEventListener('station-message',event=>{
   }
 });
 render();
-if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){readySocket=socket;load();loadAutomation();loadStartup();loadPskr();}
+// This client loads after the first snapshots: an automation.state the socket already carried is read now.
+if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){readySocket=socket;load();loadStartup();loadPskr();if(automationAnnounced===socket)loadAutomation();}
 // WstxTransmit::TransmitWire: explicit requests only; the server plans, keys and halts.
 document.querySelector('#transmit-status').insertAdjacentHTML('afterend','<label>Message<input id="tx-message" maxlength="37" value="CQ"></label><label>Mode<select id="tx-mode" disabled title="Follows the station operating mode"><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label><label>Tx offset Hz<input id="tx-offset" type="number" min="200" max="2950" value="1500"></label><label>Period<select id="tx-parity"><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><p><button type="button" id="tx-arm">Arm (Enable Tx)</button> <button type="button" id="tx-disarm">Disarm</button> <button type="button" id="tx-send">Send next period</button> <button type="button" id="tx-tune">Tune</button></p>');
 let transmitSequence=0;
@@ -1101,7 +1115,7 @@ const $=id=>document.getElementById(id);
 const nameSelect=$('strategy-name'),editButton=$('strategy-edit'),valueButton=$('activity-value'),statusNode=$('station-automation'),contestButton=$('strategy-contest'),showAllButton=$('activity-show-all');
 if(!nameSelect)return;
 const autoButton=$('qso-auto');let autoPosting=false;
-let view=null,viewLoading=null,viewAgain=false,strategyMissing=false,run=null,refusal=null,pounceConfirmed=false,verdicts=new Map(),evaluatedKey='',evaluating=false,evaluateAgain=false;
+let view=null,viewLoading=null,viewAgain=false,strategyMissing=false,automation=null,run=null,refusal=null,pounceConfirmed=false,verdicts=new Map(),evaluatedKey='',evaluating=false,evaluateAgain=false;
 const config=()=>view?.configuration??null;
 const builtins=()=>view?.builtin_strategies??[];
 // WstxStrategy::AutoToggle: station state, read from the snapshot only (never a local guess).
@@ -1122,9 +1136,17 @@ const strategyRun=()=>runActive()&&run.strategy;
 function loadStrategy(){
   // A change announced during a read reads again: it must not leave an older view.
   if(viewLoading){viewAgain=true;return viewLoading;}
-  viewLoading=stationFetch('/strategy',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>{strategyMissing=r.status===404;return r.ok?r.json():null;}).then(v=>{if(v?.v===1){if(view?.revision!==v.revision){verdicts=new Map();evaluatedKey='';}view=v;show();evaluateShown();}}).catch(()=>{}).finally(()=>{viewLoading=null;if(viewAgain){viewAgain=false;loadStrategy();}});
-  return viewLoading;
+  // WstxStationProtocol::PushedStationState: a reply of another boot (or of a read a new boot
+  // dropped) is discarded.
+  const loading=viewLoading=stationFetch('/strategy',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>{if(loading===viewLoading)strategyMissing=r.status===404;return r.ok?r.json():null;}).then(v=>{if(loading!==viewLoading||v?.v!==1||v.boot_id!==profileData?.boot_id)return;if(view?.revision!==v.revision){verdicts=new Map();evaluatedKey='';}view=v;show();evaluateShown();}).catch(()=>{}).finally(()=>{if(loading!==viewLoading)return;viewLoading=null;if(viewAgain){viewAgain=false;loadStrategy();}});
+  return loading;
 }
+// WstxStrategy::StrategySelector (#74): a new boot drops the strategy snapshot, its verdicts and
+// the automation snapshot at once; the element shows the freshly loaded form until GET /strategy.
+addEventListener('station-boot',()=>{
+  view=null;viewLoading=null;viewAgain=false;strategyMissing=false;automation=null;run=null;refusal=null;
+  verdicts=new Map();evaluatedKey='';contests=[];contestsAsked=false;contestSummary=null;show();
+});
 async function saveConfiguration(configuration,label){
   if(!view)return false;
   try{
@@ -1132,11 +1154,21 @@ async function saveConfiguration(configuration,label){
     const data=await response.json().catch(()=>null);
     if(!response.ok||data?.v!==1){const e=data?.error;statusNode.textContent=`${label} not saved · ${e?.code??response.status}${e?.field?` (${e.field})`:''}${e?.code==='stale_revision'?' · changed elsewhere, reloaded':''}`;if(e?.code==='stale_revision')await loadStrategy();return false;}
     // A saved configuration is evaluated at once, not at the next publication.
+    if(data.boot_id!==profileData?.boot_id)return false;
     view=data;verdicts=new Map();evaluatedKey='';show();evaluateShown();return true;
   }catch(error){statusNode.textContent=`${label} not saved · ${error.message}`;return false;}
 }
 const words_=t=>String(t).replace(/_/g,' ');
-// WstxStrategy::StrategySelector: the run state, from GET /automation on automation.state only.
+// WstxMcp::AutomationIndicator: the automation snapshot's own text (null: never used, idle).
+function automationLine(){
+  const r=automation?.run,active=!!r&&r.state!=='stopped';
+  statusNode.dataset.active=String(active);
+  // #42 a pounce run names its call (WstxStrategy::Pounce).
+  statusNode.textContent=active&&r.pounce?`Pounce ${r.pounce.call} ${r.state==='waiting'?'waiting':'in QSO'} · HALT ends it`:active?`Automation ${{waiting:'waiting',manual:'paused for your QSO'}[r.state]??'in contact'} · run ${String(r.id).slice(0,8)} · HALT ends it`:r?.reason&&r.reason!=='stopped'?`Automation stopped · ${words_(r.reason)}`:'Automation idle';
+}
+// WstxStrategy::StrategySelector (#74 D1): the one writer of the #station-automation line, drawn
+// from the current strategy snapshot and the current automation snapshot (GET /automation,
+// read on automation.state only) together at each change of either.
 function showRun(){
   const name=config()?.active;
   // WstxContest::ContestView: the contest, its period and the log inside it.
@@ -1152,10 +1184,11 @@ function showRun(){
     statusNode.dataset.active=String(!!on);statusNode.textContent=`Contest ${selectedProfile()?.name??contest.profile} · ${when(contest.start)} to ${when(contest.end)} UTC · ${{sp:'S&P',run:'Run'}[contest.operation]??contest.operation} · Auto ${auto()?'on':'off'}${state}${tally}`;
     return;
   }
-  // None: a run the HALT or a selection ended (the generic text is for other runs).
-  if(!name){if(run?.strategy){statusNode.dataset.active='false';statusNode.textContent=run.reason&&run.reason!=='stopped'?`Strategy stopped · ${words_(run.reason)}`:'Strategy None';}return;}
+  // None (or no strategy snapshot yet): a strategy run the HALT or a selection ended; without a
+  // strategy run the automation snapshot's text, "Automation idle" without a run.
+  if(!name){if(run?.strategy){statusNode.dataset.active='false';statusNode.textContent=run.reason&&run.reason!=='stopped'?`Strategy stopped · ${words_(run.reason)}`:'Strategy None';}else automationLine();return;}
   if(refusal){statusNode.textContent=`Strategy ${name} not started · ${words_(refusal)}`;statusNode.dataset.active='false';return;}
-  if(runActive()&&run.pounce)return;
+  if(runActive()&&run.pounce){automationLine();return;}
   statusNode.dataset.active=String(!!on);
   // WstxStrategy::StrategySelector: with Auto off a selection only marks.
   statusNode.textContent=!auto()?`Strategy ${name} · Auto off${stopped}`:!on?`Strategy ${name} · Auto on`:doing()?`Strategy ${name} · ${doing()}`:`Strategy ${name} waiting${run.reason?` · ${words_(run.reason)}`:''}`;
@@ -1277,7 +1310,7 @@ showAllButton.addEventListener('click',()=>{showAll=!showAll;show();});
 valueButton.addEventListener('click',()=>{if(typeof sortBy==='function')sortBy({dataset:{sort:'value'}});show();});
 document.querySelector('#band-activity thead')?.addEventListener('click',()=>valueButton.setAttribute('aria-pressed',String(valueSort())));
 // ---------------------------------------------------------------- run state
-addEventListener('wstx-automation',event=>{run=event.detail?.run??null;refusal=event.detail?.strategy_refusal??null;if(run)run.strategy=!!event.detail?.configuration?.strategy;show();});
+addEventListener('wstx-automation',event=>{automation=event.detail??null;const r=automation?.run??null;run=r&&{...r,strategy:!!automation.configuration?.strategy};refusal=automation?.strategy_refusal??null;show();});
 async function automationCommand(action,extra){
   const s=window.wstxContact?.snapshot();if(!s)throw new Error('contact state unavailable');
   const response=await stationFetch('/automation/command',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),action,...extra}),signal:AbortSignal.timeout(10000)});
@@ -1387,7 +1420,7 @@ async function loadAlerts(quiet){
   try{
     const response=await stationFetch('/strategy/alerts',{cache:'no-store',signal:AbortSignal.timeout(10000)});
     const data=await response.json().catch(()=>null);
-    if(seq!==alertSeq||!response.ok||data?.v!==1||!Array.isArray(data.alerts))return;
+    if(seq!==alertSeq||!response.ok||data?.v!==1||!Array.isArray(data.alerts)||data.boot_id!==profileData?.boot_id)return;
     const known=alertSeen!==null&&alertView?.boot_id===data.boot_id&&!quiet;
     const fresh=known?data.alerts.filter(a=>a.id>alertSeen):[];
     alertView=data;alertSeen=Math.max(known?alertSeen:0,...data.alerts.map(a=>a.id));
@@ -1420,6 +1453,8 @@ for(const el of [alertSound,alertNotify])for(const type of ['input','change'])el
 addEventListener('pointerdown',()=>{if(audio?.state==='suspended')audio.resume?.();},true);
 addEventListener('station-message',event=>{const {message,current}=event.detail;if(current===socket&&message?.type==='alert.state')loadAlerts(false);});
 addEventListener('station-ready',event=>{if(event.detail===alertSocket)return;alertSocket=event.detail;loadAlerts(true);});
+// WstxStationProtocol::PushedStationState (#74): a new boot drops the previous boot's history at once.
+addEventListener('station-boot',()=>{alertSeq++;alertView=null;alertSeen=null;showAlerts();});
 if(settingsDrawer)new MutationObserver(()=>{if(!settingsDrawer.hidden)loadAlerts(false);}).observe(settingsDrawer,{attributes:true,attributeFilter:['hidden']});
 if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){alertSocket=socket;loadAlerts(true);}
 // ---------------------------------------------------------------- #42 Pounce
