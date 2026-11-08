@@ -51,7 +51,7 @@ verify their availability in the actual agent environment before starting work.
 - Station log: `%LOCALAPPDATA%\WstxRust\station\profiles\ic7300\contacts.adi`, updated on
   2026-11-04 from the operator's Log4OM export (26,886 QSOs). A rerun of Update logbook
   with the same export adds nothing.
-- Install: build `resources\station-update\make_package.py <commit> <green gate log>` (a
+- Install: build `.git\harness-parallel\resources\station-update\make_package.py <commit> <green gate log>` (a
   merge-queue log under `.git\harness-parallel\queue\logs\` that shows the push), then
   `station-update.ps1 -Manifest …`, then `.harness\deploy\station-probe.ps1 -Manifest …`;
   afterwards `cr_state.py installed <commit> --since <previous>`. Check `/transmit` is
