@@ -264,7 +264,7 @@
   - fixtures/decoder/
   - package.json
   - package-lock.json
-  needs: Node 24. Windows PC; offline pinned fixture setup/refusal tests. No download in the gate.
+  needs: Node 24 and WSTX_SAMPLE_DIR with verified original recordings (TC-018-001 provenance sweep). Windows PC; offline pinned fixture setup/refusal tests. No download in the gate.
 
 - suite: sysml-documentation
   cost: 2
