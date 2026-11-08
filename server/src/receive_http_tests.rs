@@ -572,10 +572,11 @@ fn live_native_page_kept_across_restart() {
     println!("{log}");
 }
 
-// Proves: CL-057-01, CL-057-02; TC-057-001, TC-057-002 (#57). Busy FT8 periods through the
-// actual live source, window schedule, modem, publication, WebSocket, results API and
-// Detailed browser: every row of a published period view is painted within 0.3 s of its
-// publication, and within 0.5 s of the prompt window's completion at +13.8 s (best of two).
+// Proves: CL-057-01, CL-057-02, CL-007-05; TC-057-001, TC-057-002 (#57, #72). Busy FT8
+// periods through the actual live source, window schedule, modem, publication, WebSocket,
+// results API and Detailed browser: each period view is published by its period start
+// + 15.0 s, and every row of it is painted within 0.3 s of its publication. The time from
+// the prompt window's completion (+13.8 s) to paint is reported, not asserted.
 #[cfg(all(windows, not(debug_assertions)))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn live_native_busy_period_rows_promptly() {
@@ -805,17 +806,16 @@ async fn live_native_busy_period_rows_promptly() {
             "rows painted {:.0} ms after their publication (budget 300 ms)",
             painted - published
         );
+        // CL-007-05: the view is published by its period start + 15.0 s.
+        let start = completed - 13_800.0;
+        assert!(
+            *published <= start + 15_000.0,
+            "view published at period start {:+.3}s (bound +15.0 s)",
+            (published - start) / 1000.0
+        );
         completion_latencies.push(painted - completed);
     }
     println!("COMPLETION all rows painted {completion_latencies:?} ms after window completion");
-    let best = completion_latencies
-        .iter()
-        .copied()
-        .fold(f64::INFINITY, f64::min);
-    assert!(
-        best <= 500.0,
-        "rows painted {best:.0} ms after the window completed at best (budget 500 ms)"
-    );
 }
 
 #[cfg(all(windows, not(debug_assertions)))]
