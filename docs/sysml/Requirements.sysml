@@ -5692,13 +5692,15 @@ package WstxRequirements {
     // #65 Free Tx slots (operator 2026-11-08, three grill-me rounds).
     requirement 'CL-065-01' {
         doc /* (#65) Free Tx slots: at every slot decision of an automation run (strategy, contest, pounce; WstxStrategy::FreeTxSlot, every rule, also with Hold Tx on) the station lists the 5 best candidates of that decision: its own candidates (Tx range, clear of the called station and with Hold Tx on of my Rx, free at his end where known), ranked by its own compared value (the whole-dB rise in my Rx parity, while listening the larger of both parities), then nearer the current Tx, then lower, skipping a candidate closer than the slot width (FT8 50 Hz, FT4 90 Hz) to one already listed; none without power. The value {run_id, at_utc_ms, mode, rx_parity, listening, periods {even, odd: {now, usual}}, slots [{hz, rise_db, level_db, usual_db}]} is the top-level free_tx_slots of GET /automation (null without a run and before its first decision) and is pushed at each decision only as free_tx_slots.state to Detailed and Thin peers (at most 1024 bytes). No list and no event without a run. The choice and tx_slot are unchanged. Details: WstxStrategy::FreeTxSlots, WstxMcp::AutomationWire, WstxStationProtocol::PushedStationState. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/freeslot.rs; server/src/automation.rs; server/src/main.rs";
     }
     dependency CL_065_01_to_FR_020 from 'CL-065-01' to 'FR-020';
     dependency CL_065_01_to_FR_007 from 'CL-065-01' to 'FR-007';
     requirement 'CL-065-02' {
         doc /* (#65) Free Tx slots marks: with the per-browser Settings > Expert checkbox "Show free Tx slots" on (off by default), while the automation snapshot has a run and free_tx_slots belongs to it, each listed slot is a bar in the frequency ruler directly above the waterfall from hz to hz + width (FT8 50 Hz, FT4 90 Hz) on the waterfall's one frequency mapping (CL-050-07), labelled "<rank> <signed rise>", in a colour other than Rx and Tx, taking no pointer input; the marks stay until the next decision and go when the run ends or the checkbox is off. No request or poll beyond the snapshot and the event. Details: WstxOperatingLayout::FreeTxSlotMarks. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.js; client/recording.css";
     }
     dependency CL_065_02_to_FR_019 from 'CL-065-02' to 'FR-019';
     verification 'TC-065-001' {
