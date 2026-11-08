@@ -579,9 +579,10 @@
   - server/Cargo.toml
   - package.json
   - package-lock.json
+  - tools/windows_process_metrics.py
   exclusive: ["*"]
   build: cargo test --release --locked --bin wstx-rust --no-run
-  run: "cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_busy_period_rows_promptly -- --exact --nocapture"
+  run: "cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_busy_period_rows_promptly -- --exact --nocapture && cargo test --release --locked --bin wstx-rust receive_http_tests::resource_station_process_delta_and_owner_release -- --exact --ignored --nocapture"
   paths:
   - server/src/main.rs
   - server/src/profile.rs
@@ -606,7 +607,8 @@
   - rust-toolchain.toml
   - package.json
   - package-lock.json
-  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; timing suite (#28, #57): the busy-period browser latency case through the actual isolated Router, receive owner and browser. WSTX_DECODER_VECTORS and WSTX_SAMPLE_DIR must name the verified fixtures; missing inputs fail closed. Runs only when the router, the receive/source/audio/decoder pipeline, the recording client that polls and paints the rows, its test files or the toolchain change, or on request (Harness-Timing: yes)."
+  - tools/windows_process_metrics.py
+  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; timing suite (#28, #57): the busy-period browser latency case through the actual isolated Router, receive owner and browser, and the station process case (#71, CL-007-04 regression detector only, never its evidence: at most 96 MiB private-commit delta, at most 250 ms owner release) through tools/windows_process_metrics.py. WSTX_DECODER_VECTORS and WSTX_SAMPLE_DIR must name the verified fixtures; missing inputs fail closed. Runs only when the router, the receive/source/audio/decoder pipeline, the recording client that polls and paints the rows, its test files or the toolchain change, or on request (Harness-Timing: yes)."
 
 - suite: native-flex
   cost: 2
@@ -741,12 +743,11 @@
 
 - suite: radio-selection
   cost: 2
-  run: "cargo test --release --locked --bin wstx-rust http_compression_tests:: -- --nocapture && cargo test --release --locked --bin wstx-rust selection_http_tests::live_native_selection_commission_ -- --nocapture && cargo test --release --locked --bin wstx-rust selection_http_tests::selection_state_ -- --nocapture && cargo build --workspace --locked && node --test --test-concurrency=1 tests/radio-selection.test.cjs"
+  run: "cargo test --release --locked --bin wstx-rust selection_http_tests::live_native_selection_commission_ -- --nocapture && cargo test --release --locked --bin wstx-rust selection_http_tests::selection_state_ -- --nocapture && cargo build --workspace --locked && node --test --test-concurrency=1 tests/radio-selection.test.cjs"
   paths: *browser-inputs
   select:
   - server/src/main.rs
   - server/src/http_compression.rs
-  - server/src/http_compression_tests.rs
   - server/src/selection.rs
   - server/src/selection_http.rs
   - server/src/selection_http_tests.rs
@@ -776,7 +777,7 @@
   - cargo build --workspace --locked
   - cargo test --release --locked --bin wstx-rust --no-run
   exclusive: [radio-selection-evidence]
-  needs: "Windows PC, pinned Rust/Python/Node/Chromium. Functional: H1 compression negotiation, commissioning with zero native effects and the browser selection cases of tests/radio-selection.test.cjs. The 75 s Thin/Off workload runs in radio-selection-thin."
+  needs: "Windows PC, pinned Rust/Python/Node/Chromium. Functional: commissioning with zero native effects and the browser selection cases of tests/radio-selection.test.cjs. The 75 s Thin/Off workload runs in radio-selection-thin."
 
 - suite: radio-selection-thin
   cost: 2

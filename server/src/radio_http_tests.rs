@@ -16,7 +16,10 @@ use wstx_rust::radio_control::{
 const SETUP_FRAMES: usize = 12;
 pub(crate) struct Rig {
     pub writes: Vec<Vec<u8>>,
+    // Read only by the release-only timing tests (selection_http_tests, auth_tests).
+    #[cfg_attr(debug_assertions, allow(dead_code))]
     pub exchanges: Vec<(Instant, Option<Instant>, u64)>,
+    #[cfg_attr(debug_assertions, allow(dead_code))]
     pub setups: Vec<(Instant, Option<Instant>)>,
     pub closed: bool,
     frequency: [u8; 5],
