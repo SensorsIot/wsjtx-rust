@@ -1120,6 +1120,7 @@ test('TC-022-006: missing selected authorization asset fails closed', {timeout: 
   assert.equal(await page.locator('#login').isHidden(), true, 'a missing component cannot fall back to transient login');
 });
 
+// Proves: CL-022-01, CL-073-01; TC-022-006 held profile bodies across a renewal: a GET body is never applied, a save's 200 reply is its outcome.
 for (const action of ['reload', 'save']) test(`TC-022-006: held ${action} body cannot cross authorization renewal`, {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true), p = profiles[0];
   const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
@@ -1169,14 +1170,213 @@ for (const action of ['reload', 'save']) test(`TC-022-006: held ${action} body c
   assert.equal(await page.evaluate(() => socket !== window.profileBodyCompletion.oldSocket && socket.readyState === WebSocket.OPEN && window.profileBodyCompletion.oldSocket.readyState === WebSocket.CLOSED), true);
   assert.equal(await page.locator('#display-name').inputValue(), intendedName, 'new socket preserves the in-progress form');
   await page.evaluate(() => window.profileBodyCompletion.release());
-  await page.locator('#settings-result').filter({hasText: action === 'save' ? 'Save outcome unknown' : 'Could not load saved settings'}).waitFor();
-  assert.equal(await page.locator('#display-name').inputValue(), intendedName, 'old completion must not overwrite the form');
+  // CL-073-01: a held GET body is never applied; the save's received 200 reply is its outcome.
+  if (action === 'save') assert.equal(await saveOutcome(page), 'Saved revision 1');
+  else await page.locator('#settings-result').filter({hasText: 'Could not load saved settings'}).waitFor();
+  assert.equal(await page.locator('#display-name').inputValue(), intendedName, action === 'save' ? 'the form holds the saved name' : 'old completion must not overwrite the form');
   assert.equal(await page.evaluate(() => window.profileBodyCompletion.timedOut), false, 'the controlled completion was released explicitly');
   assert.equal(putCount, action === 'save' ? 1 : 0, 'no automatic mutation replay');
   const committed = JSON.parse(await fs.readFile(path.join(p.dir, 'profile.json'), 'utf8'));
   assert.equal(committed.revision, action === 'save' ? 1 : 0);
   assert.equal(committed.display_name, action === 'save' ? intendedName : 'Station 1');
-  if (action === 'save') assert.equal(await page.locator('#settings-save').isDisabled(), true, 'unknown save needs explicit reload');
+  if (action === 'save') assert.equal(await page.locator('#settings-save').isEnabled(), true, 'a received save reply needs no reload');
+});
+
+// #73 CL-073-01: a selected HTTPS profile with an enrolled grant (the TC-022-006 fixture), connected.
+// Every #settings-result text is recorded from page load; in-page counters see each real
+// PUT /profile and each GET /profile started after the test marks a reply's release while saving.
+async function selectedPage(t, {clock = false} = {}) {
+  const {profiles} = await fixture(t, true), p = profiles[0];
+  const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
+  await context.addInitScript(() => {
+    window.resultTexts = [];
+    document.addEventListener('DOMContentLoaded', () => {
+      const result = document.querySelector('#settings-result');
+      new MutationObserver(() => window.resultTexts.push(result.textContent)).observe(result, {childList: true, characterData: true, subtree: true});
+    });
+  });
+  const page = await context.newPage(); if (clock) await page.clock.install();
+  const sessions = [], scopes = [];
+  page.on('request', request => {if (request.url().endsWith('/session') && request.method() === 'POST') sessions.push(request.url());});
+  page.on('response', response => {if (response.url().endsWith('/authorization/v1/status') && response.status() === 200) scopes.push(response.json().then(body => body.scope.safety_revision));});
+  await page.goto(p.origin); await page.locator('#login').waitFor({state: 'visible'});
+  await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click(); await connected(page);
+  await countProfileCalls(page);
+  return {p, context, page, sessions, scopes};
+}
+// Installs the counting fetch wrapper once per page; a later call only resets the counters.
+async function countProfileCalls(page) {
+  await page.evaluate(() => {
+    window.profileCalls = {put: 0, outcomeGets: 0, released: false};
+    if (window.profileCallsCounting) return;
+    window.profileCallsCounting = true; const original = window.fetch;
+    window.fetch = (...args) => {
+      if (args[0] === '/profile') {
+        if (args[1]?.method === 'PUT') window.profileCalls.put++;
+        else if (window.profileCalls.released && saving) window.profileCalls.outcomeGets++;
+      }
+      return original(...args);
+    };
+  });
+}
+// Route fixture: the real server commits or refuses the page's next PUT /profile (route.fetch);
+// its reply is then held until the test fulfils, replaces, cuts or aborts it.
+async function holdPut(page) {
+  let held; const reply = new Promise(resolve => {held = resolve;});
+  await page.route('**/profile', async route => {
+    if (route.request().method() !== 'PUT') {await route.continue(); return;}
+    held({route, response: await route.fetch()});
+  });
+  return {reply};
+}
+async function shownRevision(page, revision) {await page.waitForFunction(text => document.querySelector('#profile-revision').textContent === text, String(revision));}
+async function release(page, deliver) {await page.evaluate(() => {window.profileCalls.released = true;}); await deliver();}
+// The page's socket closes and a new one connects (CL-022 reconnect rules, no token).
+async function reconnect(page) {
+  await page.evaluate(() => {window.closedSocket = socket; socket.close();});
+  await page.waitForFunction(() => socket !== window.closedSocket && connection.dataset.state === 'connected');
+}
+// The save's outcome line, once the page has shown one (saved, unknown or a refusal).
+async function saveOutcome(page) {
+  await page.waitForFunction(() => /^(Saved revision|Save outcome unknown|Settings changed|Could not save|Invalid )/.test(document.querySelector('#settings-result').textContent));
+  return page.locator('#settings-result').textContent();
+}
+async function savedFile(p) {return JSON.parse(await fs.readFile(path.join(p.dir, 'profile.json'), 'utf8'));}
+async function knownSave(page, p, name) {
+  assert.equal(await saveOutcome(page), 'Saved revision 1');
+  assert.equal(await page.locator('#settings-save').isEnabled(), true, 'a received save reply needs no reload');
+  assert.equal(await page.evaluate(() => window.profileCalls.outcomeGets), 0, 'no follow-up GET /profile for the outcome');
+  assert.equal(await page.evaluate(() => window.resultTexts.some(text => text.includes('Save outcome unknown'))), false);
+  assert.equal(await page.evaluate(() => window.profileCalls.put), 1, 'exactly one PUT');
+  assert.equal((await savedFile(p)).revision, 1);
+  if (name) {
+    assert.equal(await page.locator('#display-name').inputValue(), name);
+    assert.equal(await page.locator('#profile-revision').textContent(), '1');
+  }
+}
+const unknownText = 'Save outcome unknown. Reload saved settings before retrying.';
+async function unknownSave(page, p) {
+  assert.equal(await saveOutcome(page), unknownText);
+  assert.equal(await page.locator('#settings-save').isDisabled(), true, 'an unknown outcome disables Save');
+  const before = await page.locator('#updated').textContent(); await refreshStatus(page);
+  await page.waitForFunction(old => document.querySelector('#updated').textContent !== old, before);
+  assert.equal(await page.locator('#settings-save').isDisabled(), true, 'Refresh cannot clear the unknown outcome');
+  await reconnect(page);
+  assert.equal(await page.locator('#settings-save').isDisabled(), true, 'a reconnect cannot clear the unknown outcome');
+  await page.locator('#settings-reload').click(); await page.locator('#settings-result').filter({hasText: 'Loaded saved settings.'}).waitFor();
+  assert.equal(await page.locator('#settings-save').isEnabled(), true, 'an explicit reload enables Save');
+  assert.equal(await page.evaluate(() => window.profileCalls.put), 1, 'exactly one PUT, no replay');
+  assert.equal((await savedFile(p)).revision, 1, 'the save had committed');
+}
+
+// Proves: CL-073-01; TC-073-001 reproduction: a control save drops the session while its 200 reply is on the way.
+test('TC-073-001: Apply of a CAT change on a selected HTTPS profile reports the committed save', {timeout: 60000}, async t => {
+  const {p, page, sessions, scopes} = await selectedPage(t);
+  const before = (await Promise.all(scopes)).at(-1);
+  await page.locator('#control-mode').selectOption('cat'); await page.locator('#control-endpoint').fill('fixture-cat-1'); await page.locator('#ptt-mode').selectOption('disabled');
+  await page.evaluate(() => {window.closedSocket = socket;});
+  const clicked = Date.now(); await page.locator('#settings-save').click();
+  assert.equal(await saveOutcome(page), 'Saved revision 1');
+  await page.waitForFunction(() => socket !== window.closedSocket && connection.dataset.state === 'connected');
+  assert.ok(Date.now() - clicked <= 10000, 'Connected again within 10 s');
+  assert.equal(await page.evaluate(() => window.profileCalls.put), 1, 'exactly one PUT');
+  assert.equal(await page.evaluate(() => window.resultTexts.some(text => text.includes('Save outcome unknown'))), false, 'never unknown');
+  assert.equal(await page.locator('#settings-result').textContent(), 'Saved revision 1');
+  const committed = await savedFile(p);
+  assert.equal(committed.revision, 1); assert.deepEqual(committed.control, {mode: 'cat', endpoint: 'fixture-cat-1', ptt: 'disabled'});
+  const renewed = await Promise.all(scopes);
+  assert.equal(renewed.at(-1), before + 1, 'the control save advanced the safety revision (session-dropping path)');
+  assert.equal(sessions.length, 1, 'no token entry after the login'); assert.equal(await page.locator('#login').isHidden(), true);
+  assert.equal(await page.locator('#settings-save').isEnabled(), true, 'Save enabled without Reload saved settings');
+  assert.equal(await page.locator('#control-endpoint').inputValue(), 'fixture-cat-1');
+  assert.equal(await page.locator('#profile-revision').textContent(), '1');
+});
+
+// TC-073-002 (a)-(h), each from a fresh revision: a received reply is the outcome, a missing reply stays unknown.
+const saveReplyCases = {
+  '(a) committed 200 held across a socket reconnect': async ({p, page}) => {
+    await page.locator('#display-name').fill('Saved across a reconnect');
+    const held = await holdPut(page); await page.locator('#settings-save').click(); const {route, response} = await held.reply;
+    await reconnect(page);
+    await release(page, () => route.fulfill({response}));
+    await knownSave(page, p, 'Saved across a reconnect');
+  },
+  '(b) committed 200 held while an announced read loads revision 1': async ({p, page}) => {
+    await page.locator('#display-name').fill('Saved after an announced read');
+    const held = await holdPut(page); await page.locator('#settings-save').click(); const {route, response} = await held.reply;
+    await announceProfile(page); await shownRevision(page, 1);
+    await release(page, () => route.fulfill({response}));
+    await knownSave(page, p, 'Saved after an announced read');
+  },
+  '(c) received 409 held across a socket reconnect': async ({p, page}) => {
+    await page.locator('#display-name').fill('Stale form');
+    const other = {profile_id: p.document.profile_id, revision: 0, settings: {...settings(1), display_name: 'Other writer'}};
+    assert.equal(await page.evaluate(async body => (await window.stationAuthorization.fetch('/profile', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body})).status, JSON.stringify(other)), 200);
+    await announceProfile(page); await shownRevision(page, 1);
+    await countProfileCalls(page);
+    const held = await holdPut(page); await page.locator('#settings-save').click(); const {route, response} = await held.reply;
+    assert.equal(response.status(), 409);
+    await reconnect(page);
+    await release(page, () => route.fulfill({response}));
+    assert.equal(await saveOutcome(page), 'Settings changed or revision limit reached. Reload saved settings before saving.');
+    assert.equal(await page.locator('#settings-save').isDisabled(), true, 'a conflict disables Save until reload');
+    assert.equal(await page.evaluate(() => window.resultTexts.some(text => text.includes('Save outcome unknown'))), false);
+    assert.equal(await page.evaluate(() => window.profileCalls.put), 1); assert.equal(await page.evaluate(() => window.profileCalls.outcomeGets), 0);
+    const committed = await savedFile(p); assert.equal(committed.revision, 1); assert.equal(committed.display_name, 'Other writer');
+    await page.locator('#settings-reload').click(); await page.locator('#settings-result').filter({hasText: 'Loaded saved settings.'}).waitFor();
+    assert.equal(await page.locator('#settings-save').isEnabled(), true);
+  },
+  '(d) committed revision-1 reply after another window saved revision 2': async ({p, context, page}) => {
+    const other = await context.newPage(); await other.goto(p.origin); await connected(other);
+    await page.locator('#display-name').fill('Window A save');
+    const held = await holdPut(page); await page.locator('#settings-save').click(); const {route, response} = await held.reply;
+    await announceProfile(other); await shownRevision(other, 1);
+    await other.locator('#display-name').fill('Window B save'); await other.locator('#settings-save').click();
+    await other.locator('#settings-result').filter({hasText: 'Saved revision 2'}).waitFor();
+    await announceProfile(page); await shownRevision(page, 2);
+    await release(page, () => route.fulfill({response}));
+    assert.equal(await saveOutcome(page), 'Saved revision 1');
+    assert.equal(await page.locator('#profile-revision').textContent(), '2', 'the newer shown snapshot is kept');
+    assert.equal(await page.locator('#profile-name').textContent(), 'Window B save');
+    assert.equal(await page.locator('#display-name').inputValue(), 'Window A save', 'the reply does not overwrite the form');
+    assert.equal(await page.locator('#settings-save').isEnabled(), true);
+    assert.equal(await page.evaluate(() => window.resultTexts.some(text => text.includes('Save outcome unknown'))), false);
+    assert.equal(await page.evaluate(() => window.profileCalls.put), 1); assert.equal(await page.evaluate(() => window.profileCalls.outcomeGets), 0);
+    assert.equal((await savedFile(p)).revision, 2);
+  },
+  '(e) committed PUT whose delivery is aborted': async ({p, page}) => {
+    await page.locator('#display-name').fill('Aborted delivery');
+    const held = await holdPut(page); await page.locator('#settings-save').click(); const {route} = await held.reply;
+    await release(page, () => route.abort('failed'));
+    await unknownSave(page, p);
+  },
+  '(f) committed PUT whose 200 body is cut after 20 bytes': async ({p, page}) => {
+    await page.locator('#display-name').fill('Cut body');
+    const held = await holdPut(page); await page.locator('#settings-save').click(); const {route, response} = await held.reply;
+    const text = await response.text(); assert.equal(response.status(), 200);
+    await release(page, () => route.fulfill({status: 200, headers: {'Content-Type': 'application/json'}, body: text.slice(0, 20)}));
+    await unknownSave(page, p);
+  },
+  '(g) committed PUT whose 200 body has no revision': async ({p, page}) => {
+    await page.locator('#display-name').fill('Body without revision');
+    const held = await holdPut(page); await page.locator('#settings-save').click(); const {route, response} = await held.reply;
+    const body = await response.json(); assert.equal(body.revision, 1); delete body.revision;
+    await release(page, () => route.fulfill({status: 200, json: body}));
+    await unknownSave(page, p);
+  },
+  '(h) committed PUT whose reply is held past the 10 s timeout': async ({p, page}) => {
+    await page.locator('#display-name').fill('Timed out reply');
+    const held = await holdPut(page); await page.locator('#settings-save').click(); const {route, response} = await held.reply;
+    await page.clock.fastForward(10000);
+    await unknownSave(page, p);
+    await route.fulfill({response}).catch(() => {});
+  },
+};
+// Proves: CL-073-01; TC-073-002.
+test('TC-073-002: received save replies are known, missing replies stay unknown', {timeout: 480000}, async t => {
+  for (const [name, run] of Object.entries(saveReplyCases)) await t.test(`TC-073-002 ${name}`, {timeout: 60000}, async c => {
+    await run(await selectedPage(c, {clock: name.startsWith('(h)')}));
+  });
 });
 
 // Client continuation only: the reservation success is simulated; backend mutation guards remain intact.
@@ -1937,7 +2137,7 @@ test('TC-022-001 review regression: Refresh cannot reopen a pending save', {time
   } finally {releaseGet(); releasePut();}
 
   // Inverse completion order: a real revision-0 Refresh response arrives only after
-  // the save and its own revision-1 GET have already been acknowledged/rendered.
+  // the save's revision-1 reply (its snapshot, CL-073-01) has been acknowledged and rendered.
   const inverse = pages[1]; let releaseOld, observedOld, oldDone, oldHeld = false;
   const oldFinished = new Promise(r => {oldDone = r;});
   const oldResponse = new Promise(r => {releaseOld = r;}), oldStarted = new Promise(r => {observedOld = r;});

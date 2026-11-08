@@ -235,8 +235,14 @@ async function loadProfile(reload, current = socket) {
   if (!response.ok) {settingsResult.textContent = 'Could not load saved settings.'; throw new Error('Profile unavailable');}
   const data = await response.json();
   if (!stationContext(current, authEpoch)) return false;
-  if (typeof data.profile_id !== 'string' || typeof data.boot_id !== 'string' || !Number.isSafeInteger(data.revision) || !data.settings) throw new Error('Invalid profile');
-  if (profileData && data.boot_id === profileData.boot_id && data.revision < profileData.revision) return true;
+  applyProfile(data, reload);
+  return true;
+}
+// One authoritative snapshot, from a GET or from the save's own 200 reply (CL-073-01):
+// the ProfileRepresentation checks, then SnapshotApplicable, then the form and shown profile.
+function applyProfile(data, reload) {
+  if (typeof data?.profile_id !== 'string' || typeof data.boot_id !== 'string' || !Number.isSafeInteger(data.revision) || !data.settings) throw new Error('Invalid profile');
+  if (profileData && data.boot_id === profileData.boot_id && data.revision < profileData.revision) return;
   profileData = data; document.querySelector('#profile-panel').hidden = false;
   // FR-023: the connection type is read-only and shown as saved.
   document.querySelector('#settings select:not([id])').value = data.connection_type === 'native_flex' ? 'native_flex' : 'standard';
@@ -256,7 +262,6 @@ async function loadProfile(reload, current = socket) {
     editingRevision = data.revision; dirty = false; conflict = false;
   }
   document.querySelector('#settings-save').disabled = saving || conflict;
-  return true;
 }
 settingsForm.addEventListener('input', () => {dirty = true;});
 settingsForm.addEventListener('change', () => {dirty = true;});
@@ -265,23 +270,26 @@ document.querySelector('#settings-reload').addEventListener('click', async () =>
 });
 settingsForm.addEventListener('submit', async event => {
   event.preventDefault(); if (!profileMode || !profileData || saving || conflict || !authorized()) return;
-  const current=socket,authEpoch=authorization?.snapshot().epoch,context=JSON.stringify([profileData.profile_id,profileData.boot_id,profileData.revision]);
-  if(!stationContext(current,authEpoch))return;
+  if (!stationContext(socket, authorization?.snapshot().epoch)) return;
   saving = true;
   const button = document.querySelector('#settings-save');
   const controls = [...settingsForm.elements].map(element => [element, element.disabled]);
   for (const [element] of controls) element.disabled = true;
   try {
     const response = await stationFetch('/profile', {method: 'PUT', signal: AbortSignal.timeout(10000), headers: {'Content-Type': 'application/json'}, body: JSON.stringify({profile_id: profileData.profile_id, revision: editingRevision, settings: {...formSettings(), ...(agcManaged() ? {radio: {agc: document.querySelector('#control-agc').value, ...(document.querySelector('#control-power-limit').value ? {power_limit_pct: Number(document.querySelector('#control-power-limit').value)} : {})}} : {})}})});
+    // CL-073-01: the reply is the outcome. A control save advances the safety revision and
+    // so drops this page's socket and transport while the reply is on its way; no check of
+    // the socket, the authorization epoch or the shown snapshot after the reply decides it.
     const result = await response.json();
-    if(!stationContext(current,authEpoch)||context!==JSON.stringify([profileData.profile_id,profileData.boot_id,profileData.revision]))throw new Error('Stale save completion');
     if (!response.ok) {
       if (response.status === 409) {conflict = true; settingsResult.textContent = 'Settings changed or revision limit reached. Reload saved settings before saving.';}
       else if (result.error?.code === 'audio_device_not_endpoint') settingsResult.textContent = `${result.error.field} must be a Windows audio endpoint ID ({0.0.x.00000000}.{GUID}), not a device name.`;
       else settingsResult.textContent = result.error?.field ? `Invalid ${result.error.field}. Check this field.` : `Could not save settings (${result.error?.code || 'connection error'}).`;
       return;
     }
-    if(!await loadProfile(true,current)||!stationContext(current,authEpoch))throw new Error('Stale save completion');
+    // The 200 body is the authoritative snapshot, applied as a GET's (no follow-up GET);
+    // an invalid body leaves the outcome unknown. A newer shown snapshot is kept.
+    applyProfile(result, true);
     settingsResult.textContent = `Saved revision ${result.revision}`;
   } catch {settingsResult.textContent = 'Save outcome unknown. Reload saved settings before retrying.'; conflict = true;}
   finally {saving = false; for (const [element, disabled] of controls) element.disabled = disabled; button.disabled = saving || conflict;}
