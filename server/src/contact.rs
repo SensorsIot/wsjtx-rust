@@ -435,7 +435,9 @@ pub fn transition(state: State, received: Received) -> Option<State> {
         // A partner who skips RR73 and signs off with 73 after my R+report is
         // answered with my 73 once, like an RR73 (#11).
         (S::RogerReport, R::Rogers | R::SeventyThree) => S::Signoff,
-        (S::Signoff, R::Rogers) => S::Signoff,
+        // rogerAck (DMR ~585-600): a partner's RRR or RR73 before my 73 is answered with
+        // my 73 once, also after my RRR and before any report reached me (#69).
+        (S::Replying | S::Report | S::Rogers | S::Signoff, R::Rogers) => S::Signoff,
         (S::Rogers, R::SignalReport) => S::RogerReport,
         (S::Rogers, R::SeventyThree) => S::Completed,
         _ => return None,
