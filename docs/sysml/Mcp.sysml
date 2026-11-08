@@ -294,7 +294,7 @@ package WstxMcp {
              left, WstxStrategy::LeaveRule), quiet ([{call, band, mode, remaining_s}],
              WstxStrategy::QuietTime), hearing (null or {state heard|no|unknown, spot_utc_s,
              snr_db}, WstxStrategy::PskrUse), tx_slot (null or {hz, power_db, his_end
-             yes|no|unknown}, power_db the slot's whole-dB rise over its usual level,
+             yes|no|unknown}, power_db the slot's whole-dB rise above the passband floor clamped at 0 (#66),
              WstxStrategy::FreeTxSlot), slot_check (null or {repetitions,
              hears_us, hz}, WstxStrategy::StrategyWatchdog), pounce (null or
              {call, band}, #42)), strategy_refusal (null or why the last selection started no run,
