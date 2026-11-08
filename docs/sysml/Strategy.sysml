@@ -2,7 +2,8 @@ package WstxStrategy {
     private import ScalarValues::*;
     doc /* Canonical contract of the strategy engine (issue #39, CL-039-01..11 and CL-039-20..23 in
          WstxRequirements; verification TC-039-001..010, TC-039-020..022, TC-039-030..033 and
-         the strategydef cases TC-039-040..048, the holdtx cases TC-039-049..051; the ignore
+         the strategydef cases TC-039-040..048, the holdtx cases TC-039-049..051, the quiet
+         slots of issue #66 TC-066-001..003; the ignore
          lists of issue #42, CL-042-02 and TC-042-002..003; Pounce, CL-042-03 and
          TC-042-004..005; Alert, CL-042-04 and TC-042-006..007): the award strategies, the
          directed-CQ rule, the value order in Band Activity, the strategy editor popup and
@@ -60,9 +61,19 @@ package WstxStrategy {
             listed defaults D1-D15 of the slice confirmed by the operator). With Hold Tx on a run keeps Tx and
             puts Rx on the station; Tx alone moves at the slot check of a target that does not
             hear us, or 50 Hz clear when the station is within 50 Hz of it; a CQ goes out on the
-            held Tx. With Hold Tx off Rx = Tx on the slot as before. Quietness is a slot's rise
-            over its own usual level (FreeTxSlot). It replaces CL-039-08's "a run's free slot"
+            held Tx. With Hold Tx off Rx = Tx on the slot as before. Quietness was a slot's rise
+            over its own usual level; D17 replaces that. It replaces CL-039-08's "a run's free slot"
             as an explicit Tx action and CL-039-09's "Rx = Tx" for Hold Tx on.
+         D17 Quiet slots across the passband (#66, operator 2026-11-08: "We want to have the
+            quiet slots overall. Across the entire bandwidth of FT8."; round 1: Q1 the level
+            above the WSJT-X passband floor, Q2 leave out slots on a decoded station, Q4 the
+            busiest of the last 4 periods; round 2: "judge the parity I will receive in. I
+            want to signal the other station a free slot on my side", in every decision,
+            "Only if recent"). Slots are compared with each other across the whole passband
+            by their level above the passband floor, never by their own usual level, which
+            goes; only my Rx periods count, in every decision (FreeTxSlot). It replaces D16's
+            "Relative to its own usual level" and CL-039-09's "while only listening the slot
+            must be quiet in both parities".
          D7 Manual intervention (#39, 2026-11-04): a double-click is always possible, also
             during a strategy; the strategy stays selected and resumes after the manual
             QSO (ManualIntervention).
@@ -889,7 +900,7 @@ package WstxStrategy {
              20 m). It is not a special class. With it on, a waiting run with no waiting reason
              that has seen two consecutive fresh complete publications with nothing listed
              (StrategyRun Waiting) calls CQ as a contest Run does (WstxContest::ContestRun):
-             it decides the slot (FreeTxSlot, quiet in both parities; with Hold Tx on the held Tx,
+             it decides the slot (FreeTxSlot, quiet in my Rx parity; with Hold Tx on the held Tx,
              no decision, D16) and sends enable_tx with
              no partner, which calls the activity's Tx6 (a plain CQ outside a contest
              activity); state calling_cq. On each fresh complete publication the list of
@@ -903,44 +914,58 @@ package WstxStrategy {
     }
     attribute def FreeTxSlot {
         attribute periodsPerParity : Integer = 4;
-        attribute usualPeriods : Integer = 3;
+        attribute floorLowHz : Integer = 300;
+        attribute floorHighHz : Integer = 2700;
         attribute clearanceHz : Integer = 50;
         attribute stepHz : Integer = 10;
         doc /* The Tx slot of a strategy or contest run or a pounce (not a plain MCP policy run,
              not manual operation), operator grill 2026-11-07 Q18, Q30-Q32, Q36, Q39, replacing
-             the free slot by decodes. The slot is where he can answer us.
-             Power: from the detailed waterfall rows of the live receive (0.2 s rows, the native
-             bins of about 2.93 Hz, levels in whole dB), per received period the mean level of
-             each bin over the rows of that period; a period I transmitted in is not counted.
-             The power of a slot at f is the mean, over the last periodsPerParity (4) counted
-             periods of a parity (fewer: those there are), of the mean level of the bins in
-             [f, f + width): FT8 50 Hz, FT4 90 Hz. The parity is my Rx periods (his Tx parity).
-             Relative (D16, operator 2026-11-07 "Relative to its own usual level", so that the
-             receive filter's roll-off cancels out): the usual level of a slot is its lowest
-             period level (the mean level of its bins in one counted period) over the last
-             usualPeriods (3) counted periods of each parity, up to 6 periods (operator: "lowest
-             over the last 3 periods", round 2 Q5 "3 of each parity": so a station sitting on a
-             slot through my last Rx periods shows as a rise, since it is silent in my Tx
-             parity; during a call those Tx-parity periods are the ones from before the run
-             transmitted on this band; fewer: those there are); the compared value, its
-             rise, is its power minus its usual level. While only listening (a CQ, no target)
-             the slot must be quiet in both parities: its rise is the larger of the two. The rise
-             is compared rounded to whole dB.
+             the free slot by decodes; quiet across the passband (#66, D17). The slot is where
+             he can answer us: a free slot on my side.
+             Parity: every decision (a selection, a slot check, a CQ) judges my Rx periods (his
+             Tx parity, the periods I will receive his answer in), never my Tx periods (#66
+             round 2: "judge the parity I will receive in"). A CQ's Rx parity is the other of
+             the parity it transmits in.
+             Counted periods: from the detailed waterfall rows of the live receive (0.2 s rows,
+             the native bins of about 2.93 Hz, levels in whole dB), per received period the
+             mean level of each bin over the rows of that period; a period I transmitted in is
+             not counted. Only recent periods count (#66 "Only if recent"): the counted periods
+             among the last periodsPerParity (4) periods of my Rx parity on the clock before the
+             period in progress at the decision (FT8 the last 2 minutes, FT4 the last minute);
+             a period of them that I transmitted in or did not receive leaves a gap that no
+             older period fills; fewer: those there are.
+             Floor: per counted period, the WSJT-X passband floor (the baseline of the WSJT-X
+             FT8 and FT4 decoders) over the bins from floorLowHz (300) to floorHighHz (2700):
+             those bins in ten equal segments, in each the lowest tenth of the bin levels, a
+             fourth-order polynomial fitted through those points by least squares, plus 0.65 dB.
+             It follows the receive filter's roll-off, so slots at the passband edges are
+             compared fairly. A period whose fit has fewer than 5 points is not counted.
+             Value: a slot at f covers the bins in [f, f + width): FT8 50 Hz, FT4 90 Hz. In one
+             counted period its level is the mean level of those bins, its floor the mean of
+             the floor over the same bins, its rise level minus floor. The compared value is
+             its largest rise over the counted periods (the busiest period, #66 round 1 Q4;
+             of equal rises the latest period); its level and floor are that period's. Slots
+             are compared with each other across the passband by this value, rounded to whole
+             dB; there is no usual level.
              Candidates: f in stepHz (10 Hz) steps and the current Tx, my whole signal inside
              the Tx range (FrequencyControls): FT8 300..2650, FT4 300..2610; never within
              clearanceHz (50 Hz) of the called station's signal nor of my Rx signal (Tx is never
-             on the called station, "never to the Rx frequency"). Where known it is free at his
+             on the called station, "never to the Rx frequency"). Free of decoded stations
+             (#66 round 1 Q2): a candidate whose signal overlaps a station decoded in a counted
+             period, its decoded audio frequency d (the lower edge of its signal) with
+             |f - d| below the width (FT8 50 Hz, FT4 90 Hz), is left out; when that leaves no
+             candidate, all of them are used. Among those left, where known it is free at his
              end: at least 50 Hz from every frequency
              HearingFeed shows him decoding, counting only spots of my Tx parity (PskrUse on);
              when that leaves no candidate, his end is not used and the status says "· no".
-             Choice: the lowest rise wins; a tie keeps the current Tx when it is among the
+             Choice: the lowest value wins; a tie keeps the current Tx when it is among the
              quietest, else goes nearer the current Tx, then lower. There is no threshold.
-             No power yet (no counted period of the parity): Tx keeps the current frequency
-             unless it is too near the called station (then the nearest candidate away from
-             it), power_db null.
+             No power yet (no counted period): Tx keeps the current frequency
+             unless it is too near the called station or my Rx (then the nearest candidate away
+             from it), power_db null. One counted period is enough to compare.
              Band: a retune keeps the live job, so from a station band change on only periods
-             after it count, for the power and the usual level; a new live identity counts from
-             its first period.
+             after it count, for the value and the decoded stations; a new live identity counts
+             from its first period.
              Hold Tx (WstxContact::FrequencyControls holdTx, read at each decision; D16):
              Hold Tx off: decided once per call, between QSOs, when the run or a pounce has
              selected its station (a caller of my call as well), before a CQ, and at each slot
@@ -950,8 +975,8 @@ package WstxStrategy {
              Hold Tx on: a selection (a caller of my call as well, also from the run's CQ) keeps
              Tx and leaves Rx on the station where select_row put it; only when the station's
              signal is within 50 Hz of Tx does Tx go to the nearest candidate clear of it (the
-             candidates above with power not used, the lower on a tie; round 1 Q2 "Move 50 Hz
-             away"). A CQ goes out on the held Tx with no decision (Q3). At each slot check of a
+             candidates above with power not used, so also clear of decoded stations while one
+             is free, the lower on a tie; round 1 Q2 "Move 50 Hz away"). A CQ goes out on the held Tx with no decision (Q3). At each slot check of a
              target that does not hear us (StrategyWatchdog) Tx alone takes the choice above and
              Rx stays (set_frequency with tx_hz only). A pounce has no slot check, so with
              Hold Tx on it moves Tx only by the 50 Hz rule. A held Tx outside the Tx range above is kept at a
@@ -963,7 +988,8 @@ package WstxStrategy {
              established) is not taken. A caller of my call is a called station like any
              other. The next decision starts from the Tx the operator may have set meanwhile.
              Status: the run's tx_slot {hz, power_db, his_end yes|no|unknown} (WstxMcp), power_db
-             the whole-dB rise of that slot over its usual level (null without power). */
+             the whole-dB compared value of that slot, its largest rise above the passband floor
+             (null without power). */
     }
     attribute def FreeTxSlots {
         attribute slotsListed : Integer = 5;
@@ -973,18 +999,23 @@ package WstxStrategy {
              FreeTxSlot (every rule, also with Hold Tx on where the choice uses no power;
              strategy and contest runs and pounces) and at no other time: no list without a
              run, none between decisions. Candidates and compared value are exactly the
-             decision's (FreeTxSlot Candidates, his end, Relative; while listening the
-             larger rise of the two parities). Ranked by the whole-dB rise, then nearer the
+             decision's (FreeTxSlot Candidates with the decoded stations, his end, Value: the
+             largest rise above the passband floor in my Rx parity, #66). Ranked by the
+             whole-dB value, then nearer the
              current Tx, then lower; walking the ranking a candidate closer than the slot
              width (FT8 50 Hz, FT4 90 Hz) to one already listed is skipped; at most
              slotsListed (5); none without power. Where the decision's rule uses power the
-             first listed is the chosen slot. The choice and tx_slot are unchanged.
+             first listed is the chosen slot. The choice and tx_slot are unchanged. A
+             decision is one that sets tx_slot: a repetition whose target has answered or is
+             known to hear us is no slot check decision (StrategyWatchdog: it keeps its slot),
+             so it lists nothing and the last list stays (#66).
              Value: {run_id, at_utc_ms (station time of the decision), mode ft8|ft4,
-             rx_parity even|odd, listening, periods {even, odd: {now (counted periods in the
-             power now, at most periodsPerParity, null for a parity not compared), usual (in
-             the usual level, at most usualPeriods)}}, slots [{hz, rise_db, level_db,
-             usual_db}] in rank order}, each dB rounded on its own (level_db while listening
-             that of the parity whose rise counts). It is GET /automation free_tx_slots
+             rx_parity even|odd (the judged parity), listening (true at a CQ decision),
+             periods {even, odd: {now (the counted periods of the value, at most
+             periodsPerParity; null for my Tx parity, which is not judged)}}, slots [{hz,
+             rise_db (the compared value), level_db, floor_db (the level and the floor of the
+             period whose rise counts)}] in rank order}, each dB rounded on its own (#66
+             replaces usual_db and periods usual). It is GET /automation free_tx_slots
              (WstxMcp::AutomationWire) and the free_tx_slots.state event
              (WstxStationProtocol::PushedStationState). */
     }
