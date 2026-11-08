@@ -69,8 +69,9 @@ package WstxStrategy {
             above the WSJT-X passband floor, Q2 leave out slots on a decoded station, Q4 the
             busiest of the last 4 periods; round 2: "judge the parity I will receive in. I
             want to signal the other station a free slot on my side", in every decision,
-            "Only if recent"). Slots are compared with each other across the whole passband
-            by their level above the passband floor, never by their own usual level, which
+            "Only if recent"; after implementation, "At or under floor = free"). Slots are
+            compared with each other across the whole passband by their level above the
+            passband floor, clamped at 0, never by their own usual level, which
             goes; only my Rx periods count, in every decision (FreeTxSlot). It replaces D16's
             "Relative to its own usual level" and CL-039-09's "while only listening the slot
             must be quiet in both parities".
@@ -946,15 +947,20 @@ package WstxStrategy {
              5 points and maximum of 1000 are never reached). Coverage: a period counts only
              when its levels reach bin 921 (2698.2 Hz); one whose rows end below it has no
              floor and is not counted (the live detailed rows have 1024 bins, up to 2997 Hz).
-             The floor follows the receive filter's roll-off, so slots at the passband edges
-             are compared fairly.
+             The floor follows a gentle receive-filter roll-off; where a sharp knee leaves
+             slots below it, the clamp of the Value makes them free like any slot at the floor,
+             never quieter, so the passband edges do not win.
              Value: a slot at f covers the bins in [f, f + width): FT8 50 Hz, FT4 90 Hz. In one
              counted period its level is the mean level of those bins, its floor the mean of
-             the floor over the same bins, its rise level minus floor. The compared value is
-             its largest rise over the counted periods (the busiest period, #66 round 1 Q4;
-             of equal rises the latest period); its level and floor are that period's. Slots
-             are compared with each other across the passband by this value, rounded to whole
-             dB; there is no usual level.
+             the floor over the same bins, its rise level minus floor. Its busiest period is
+             the one with its largest rise (#66 round 1 Q4; of equal rises the latest period);
+             its level and floor are that period's, as measured. The compared value is that
+             largest rise clamped at 0 and rounded to whole dB: max(0, rise) (#66, operator
+             2026-11-08 "At or under floor = free"; a single fourth-order floor cannot follow a
+             sharp receive-filter knee, where slots read below the floor). A slot at or below
+             the floor is free (0); stations and the filter knee stay above it. Slots are
+             compared with each other across the passband by this value; there is no usual
+             level.
              Candidates: f in stepHz (10 Hz) steps and the current Tx, my whole signal inside
              the Tx range (FrequencyControls): FT8 300..2650, FT4 300..2610; never within
              clearanceHz (50 Hz) of the called station's signal nor of my Rx signal (Tx is never
@@ -967,7 +973,9 @@ package WstxStrategy {
              HearingFeed shows him decoding, counting only spots of my Tx parity (PskrUse on);
              when that leaves no candidate, his end is not used and the status says "· no".
              Choice: the lowest value wins; a tie keeps the current Tx when it is among the
-             quietest, else goes nearer the current Tx, then lower. There is no threshold.
+             quietest, else goes nearer the current Tx, then lower. There is no threshold. So
+             among the free slots (0) the current Tx is kept when it is free, else the free slot
+             nearest it, then the lower.
              No power yet (no counted period): Tx keeps the current frequency
              unless it is too near the called station or my Rx (then the nearest candidate away
              from it), power_db null. One counted period is enough to compare.
@@ -997,7 +1005,7 @@ package WstxStrategy {
              other. The next decision starts from the Tx the operator may have set meanwhile.
              Status: the run's tx_slot {hz, power_db, his_end yes|no|unknown} (WstxMcp), power_db
              the whole-dB compared value of that slot, its largest rise above the passband floor
-             (null without power). */
+             clamped at 0 (null without power). */
     }
     attribute def FreeTxSlots {
         attribute slotsListed : Integer = 5;
@@ -1008,7 +1016,7 @@ package WstxStrategy {
              strategy and contest runs and pounces) and at no other time: no list without a
              run, none between decisions. Candidates and compared value are exactly the
              decision's (FreeTxSlot Candidates with the decoded stations, his end, Value: the
-             largest rise above the passband floor in my Rx parity, #66). Ranked by the
+             largest rise above the passband floor in my Rx parity clamped at 0, #66). Ranked by the
              whole-dB value, then nearer the
              current Tx, then lower; walking the ranking a candidate closer than the slot
              width (FT8 50 Hz, FT4 90 Hz) to one already listed is skipped; at most
@@ -1021,9 +1029,10 @@ package WstxStrategy {
              rx_parity even|odd (the judged parity), listening (true at a CQ decision),
              periods {even, odd: {now (the counted periods of the value, at most
              periodsPerParity; null for my Tx parity, which is not judged)}}, slots [{hz,
-             rise_db (the compared value), level_db, floor_db (the level and the floor of the
-             period whose rise counts)}] in rank order}, each dB rounded on its own (#66
-             replaces usual_db and periods usual). It is GET /automation free_tx_slots
+             rise_db (the compared value, clamped at 0, never negative), level_db, floor_db
+             (the level and the floor of the busiest period as measured, not clamped, so
+             level_db may lie below floor_db when rise_db is 0)}] in rank order}, each dB
+             rounded on its own (#66 replaces usual_db and periods usual). It is GET /automation free_tx_slots
              (WstxMcp::AutomationWire) and the free_tx_slots.state event
              (WstxStationProtocol::PushedStationState). */
     }
