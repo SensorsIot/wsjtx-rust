@@ -1522,8 +1522,8 @@ package WstxRequirements {
              no second PUT. Release the PUT: exactly one revision advances, editable controls and
              Save recover their usable state, and permanently read-only controls remain disabled.
              Repeat with the opposite response order on an unchanged revision-0 station: hold the
-             announced revision's GET response, complete the PUT and its follow-up revision-1 GET, then release the
-             old response. Visible revision, saved fields and acknowledged-save feedback remain at
+             announced revision's GET response, complete the PUT, whose 200 reply is the revision-1
+             snapshot (CL-073-01, no follow-up GET), then release the old response. Visible revision, saved fields and acknowledged-save feedback remain at
              revision 1. A changed boot identity still permits restart/recovery resynchronization.
 
              **Automation coverage:** Existing companions retain the delivered profile,
@@ -2910,6 +2910,12 @@ package WstxRequirements {
              attempt stops after exactly 3 attempts with 'Could not authenticate'.
              A 401 bootstrap-scope is never retried. Navigating away during a held
              attempt sends no further setup request.
+             Held profile bodies across a renewal (#73): a GET /profile 200 whose body is held
+             while the transport cookie is cleared, the authorization renews and a new
+             socket connects is never applied ('Could not load saved settings', form
+             kept). A PUT /profile 200 held the same way is the save's outcome
+             (CL-073-01): on release 'Saved revision 1', Save enabled, the form holds
+             the saved value, exactly one PUT and revision 1 on disk.
              Grant revocation and configuration edits (operator 2026-11-06: moved here from
              the retired TC-022-007). Disable/re-enable and endpoint edit preserve UUID;
              endpoint change advances safety revision/invalidates commissioning only.
@@ -2940,10 +2946,59 @@ package WstxRequirements {
         objective {
             verify 'CL-022-01';
             verify 'CL-022-02';
+            verify 'CL-073-01';
         }
     }
+    dependency CL_073_01_verified_by_TC_022_006 from 'CL-073-01' to 'TC-022-006';
     dependency CL_022_01_verified_by_TC_022_006 from 'CL-022-01' to 'TC-022-006';
     dependency CL_022_02_verified_by_TC_022_006 from 'CL-022-02' to 'TC-022-006';
+    // #73 the save reply is the save's outcome (operator 2026-11-08, candidate A).
+    requirement 'CL-073-01' {
+        doc /* (#73) Save outcome: the reply to the page's PUT /profile is the save's outcome. A 200 whose body is a valid ProfileRepresentation (the same checks as a GET /profile body) shows "Saved revision N" (N its revision) and is applied as the authoritative snapshot exactly like a GET: SnapshotApplicable, then a reload of the form, the edited revision and the shown profile (no newer same-boot snapshot is overwritten). A received 400, 409 or 503 shows its existing refusal text and state. No follow-up GET /profile is sent for the outcome, and no check of the socket, the authorization epoch or the displayed snapshot after the reply decides it: a control save (mode, endpoint, PTT) advances the CL-022 safety revision, so the server drops this page's transport and socket while the reply is on its way, and the page re-authorizes and reconnects by the existing rules without a token. "Save outcome unknown. Reload saved settings before retrying." with Save disabled until an explicit reload stays only for a save without a readable reply: network failure, the 10 s timeout, abort, an unreadable or invalid body, or a reply the authorization component discards because its headers arrived after a renewal began (accepted rare case). The server, the safety revision rule and every other caller of the authorization component are unchanged. Details: WstxProfiles::PresentAndEditProfile, WstxProfiles::BrowserSaveLifecycle. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute implementation : String = "client/app.js";
+    }
+    dependency CL_073_01_to_FR_019 from 'CL-073-01' to 'FR-019';
+    dependency CL_073_01_to_FR_022 from 'CL-073-01' to 'FR-022';
+    verification 'TC-073-001' {
+        doc /* TC-073-001 — Reproduction: Apply ⟳ of a CAT change reports the committed save
+             CL-073-01
+             Setup: actual candidate server on a disposable selected HTTPS profile (the TC-022-006 fixture: TLS localhost, token login, enrolled grant) and Chromium; control disabled at revision 0; request recorder for PUT /profile.
+             Steps: connect; set CAT mode cat, endpoint fixture-cat-1, PTT disabled; press Apply ⟳; wait until the page is Connected again; read the result line, Save, the form, the shown revision, profile.json and the grant status scope.
+             Expected (oracle: the contract above and the fixture's edit, not candidate output): exactly one PUT; the result line "Saved revision 1" and never "Save outcome unknown" at any time; profile.json revision 1 with control cat/fixture-cat-1/disabled; the scope's safety_revision advanced by 1 (the session-dropping path was taken); Connected again within 10 s with no token entry; Save enabled without Reload saved settings; the form shows fixture-cat-1 and the shown revision is 1. Red on the parent: "Save outcome unknown" and Save disabled.
+             2 — Isolated automated browser test; Windows development PC, no radio, serial port or RF. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-073-01';
+        }
+    }
+    dependency CL_073_01_verified_by_TC_073_001 from 'CL-073-01' to 'TC-073-001';
+    verification 'TC-073-002' {
+        doc /* TC-073-002 — Received replies are known, missing replies stay unknown
+             CL-073-01
+             Setup: as TC-073-001; PUT /profile replies held, replaced or cut by a route fixture after the real server committed or refused them; a second window on the same profile.
+             Steps (each from a fresh revision): (a) hold a committed display-name save's 200 reply, close the page's socket and let it reconnect, then release; (b) hold a committed 200 reply, announce the new revision so the page's background GET loads revision 1 first, then release; (c) hold a 409 reply (stale revision) across a socket reconnect, then release; (d) hold window A's committed revision-1 reply while window B saves revision 2 and A loads it, then release; (e) fetch a committed PUT and abort its delivery; (f) fulfil a committed PUT with status 200 and the body cut after 20 bytes; (g) with a body that is JSON but without revision; (h) hold the reply past 10 s.
+             Expected (hand-written table): (a) and (b) "Saved revision 1", Save enabled, the form and shown revision 1; (c) the existing 409 text, Save disabled until reload, no "unknown"; (d) "Saved revision 1" while the shown revision stays 2 and the form is not overwritten; (e) to (h) "Save outcome unknown. Reload saved settings before retrying.", Save disabled, Refresh or a reconnect leave it disabled and an explicit reload enables it; exactly one PUT in every case (no replay); no GET /profile is sent for a save outcome in (a) to (d) beyond the socket's own initial read and the announced read. Red on the parent: (a), (b) and (d) unknown.
+             2 — Isolated automated browser tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-073-01';
+        }
+    }
+    dependency CL_073_01_verified_by_TC_073_002 from 'CL-073-01' to 'TC-073-002';
+    verification 'TC-073-003' {
+        doc /* TC-073-003 — Live Apply ⟳ of a CAT change on HB9BLA
+             CL-073-01
+             Setup: the gated candidate installed on HB9BLA, the operator's browser over HTTPS with its grant, IC-7300 on COM3; no transmission.
+             Steps: note the shown revision R; in Settings > Radio change the CAT endpoint from COM3 to icom7300://COM3?baud=9600&radio=94&controller=e0 and press Apply ⟳; after the page is Connected again change it back to COM3 and press Apply ⟳; give the receive-only confirmation; change the display name and back with Apply ⟳.
+             Expected (oracle: the shown revision before each save, the operator's look): each Apply ⟳ shows "Saved revision R+1", R+2, ... and never "Save outcome unknown"; after each CAT save the page is Connected again within 10 s with no token entry and Apply ⟳ is enabled without Reload saved settings; CAT shows waiting for the receive-only confirmation, then ready after it; the endpoint ends at the operator's COM3.
+             4 — Live on the station, configuration change and back, no RF; not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-073-01';
+        }
+    }
+    dependency CL_073_01_verified_by_TC_073_003 from 'CL-073-01' to 'TC-073-003';
     // TC-022-007 retired (operator 2026-11-06, radio identity Add/Replace/Remove dropped, #22);
     // its revocation and configuration-edit cases moved to TC-022-006. The identity is not reused.
     verification 'TC-022-008' {

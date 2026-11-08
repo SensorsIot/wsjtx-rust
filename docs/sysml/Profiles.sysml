@@ -425,7 +425,8 @@ package WstxProfiles {
              require correlated status snapshot AND successful validated authenticated GET
              /profile on EACH new socket, before station-ready or optional display.
              After every await captured socket must remain current and OPEN before
-             applying HTTP results. Established same-socket correlated status updates
+             applying HTTP results; the one exception is the save reply below (CL-073-01).
+             Established same-socket correlated status updates
              version/radio/Connected/updated and enables Refresh immediately, independent
              of settings HTTP. A status on an established socket reads no settings; a newer
              announced revision (WstxStationProtocol profile.state) reads them asynchronously:
@@ -450,7 +451,15 @@ package WstxProfiles {
              permits authoritative restart/recovery resynchronization, including an
              independently restored lower revision.
              Invalid field preserves typed input with error, never Saved. Successful save
-             updates revision only on durable 200. On 409 prompt reload before another
+             updates revision only on durable 200. The PUT reply is the save's outcome
+             (CL-073-01): a 200 whose body is a valid ProfileRepresentation shows Saved
+             revision N and is applied as the authoritative snapshot exactly as a GET
+             (SnapshotApplicable; a reload of the form and edited revision), with no
+             follow-up GET and no socket, authorization or form-context check after
+             the reply; a received 400/409/503 shows its refusal. The outcome is unknown
+             only when no readable reply arrives (network failure, timeout, abort,
+             unreadable or invalid body, or a reply the authorization component discards).
+             On 409 prompt reload before another
              save. An unknown outcome also requires explicit reload before another save,
              without automatic PUT replay or an assumed rollback. A newer announced revision or a reconnect reloads authoritative settings; preserve in-progress
              edits until explicit reload or successful save. No settings polling/replay.
@@ -518,7 +527,12 @@ package WstxProfiles {
              Conflict and unknownOutcome keep Save disabled until explicit reload returns
              a validated authoritative profile on the current OPEN socket. Background GET,
              Refresh or reconnect alone cannot clear the reload requirement; failed reload
-             leaves it set. No mutation replay. Known rejection shows error, not Saved. */
+             leaves it set. No mutation replay. Known rejection shows error, not Saved.
+             CL-073-01: success is a received 200 with a valid ProfileRepresentation body,
+             also when the socket, the authorization or the displayed snapshot changed
+             while it was in flight (a control save renews the authorization itself);
+             a received 400 is rejected and a received 409 is conflict likewise.
+             outcome_unknown is only a save without a readable reply. */
     }
     action createProfile : CreateProfile;
     action launchProfile : LaunchSelectedProfile;
@@ -544,6 +558,7 @@ package WstxProfiles {
     satisfy WstxRequirements::'CL-005-03' by authenticate;
     satisfy WstxRequirements::'CL-005-04' by launchProfile;
     satisfy WstxRequirements::'CL-005-05' by presentAndEdit;
+    satisfy WstxRequirements::'CL-073-01' by presentAndEdit;
 
     package IndependentVerification {
         doc /* Case identities remain WstxRequirements::TC-022-001..005, projected
@@ -605,8 +620,8 @@ package WstxProfiles {
                  Hold an announced revision's GET, start/hold PUT, then release GET: Save stays disabled,
                  repeated submit sends no second PUT. Release PUT, require one revision
                  increment and usable editable controls/Save, preserving read-only controls.
-                 Inverse order on revision0 station: hold an old announced GET, complete PUT and
-                 its revision1 GET, then release old GET. Visible revision/form/name and
+                 Inverse order on revision0 station: hold an old announced GET, complete PUT,
+                 whose 200 reply is the revision1 snapshot (CL-073-01), then release old GET. Visible revision/form/name and
                  Saved1 feedback remain1; same-boot ordering does not reject changed boots.
                  Render <img src=x onerror=alert(1)> display name and
                  <script>alert(1)</script> audio ID literally, no element/dialog/script.
