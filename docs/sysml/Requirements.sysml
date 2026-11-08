@@ -940,14 +940,14 @@ package WstxRequirements {
     }
     requirement 'CL-010-05' {
         doc /* Present one operating-first profile page with the fixed-band signal display above the message/contact workspace, an accessible adjustable split and secondary in-page settings. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/index.html; client/recording.js; client/recording.css; server/src/recording.rs";
     }
     dependency CL_010_05_to_FR_010 from 'CL-010-05' to 'FR-010';
     dependency CL_010_05_to_FR_019 from 'CL-010-05' to 'FR-019';
     requirement 'CL-010-07' {
         doc /* Show audio, CAT, decoder and transmit availability independently. Label unavailable values and visibly disable unsupported actions with adjacent reasons; status-link connection alone does not establish a radio capability. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/index.html; client/recording.js; client/recording.css; server/src/recording.rs";
     }
     dependency CL_010_07_to_FR_001 from 'CL-010-07' to 'FR-001';
@@ -956,14 +956,14 @@ package WstxRequirements {
     dependency CL_010_07_to_FR_019 from 'CL-010-07' to 'FR-019';
     requirement 'CL-010-09' {
         doc /* Band Activity shows only the latest published decode period and signed station timing relative to our clock, selectable presentation sorting and explicit partial/unavailable states. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/index.html; client/recording.js; client/recording.css; server/src/recording.rs";
     }
     dependency CL_010_09_to_FR_010 from 'CL-010-09' to 'FR-010';
     dependency CL_010_09_to_FR_019 from 'CL-010-09' to 'FR-019';
     requirement 'CL-010-16' {
         doc /* Present the laptop operating screen of WstxOperatingLayout::OperatingScreen: a top bar with only band, mode, dial, UTC/period, Logbook, Settings, HALT and Abort QSO (Esc); the full-width waterfall with the Rx/Tx strip; Band Activity with the strategy element and the QSO pane with direct buttons and no Enable Tx control; setup and diagnostics in the four-section Settings drawer; themes; WSJT-X keyboard shortcuts; and only the token form for an unauthorized browser. Details: OperatingScreen, RxTxStrip, BandActivityView, QsoPane, SettingsDrawer, ThemeChoice, UnauthorizedView, KeyboardShortcuts, WstxContact::SetEnableTx. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/recording.js; client/recording.css; client/contact.js; client/logbook.js";
     }
     dependency CL_010_16_to_FR_010 from 'CL-010-16' to 'FR-010';
@@ -971,7 +971,7 @@ package WstxRequirements {
     dependency CL_010_16_to_FR_021 from 'CL-010-16' to 'FR-021';
     requirement 'CL-010-08' {
         doc /* Preserve keyboard and narrow-screen operation, literal field rendering and existing signal/status transport contracts. Secondary in-page regions keep the persistent station bar and disabled Halt Tx accessible. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/index.html; client/recording.js; client/recording.css; server/src/recording.rs";
     }
     dependency CL_010_08_to_FR_019 from 'CL-010-08' to 'FR-019';
@@ -994,7 +994,7 @@ package WstxRequirements {
     dependency CL_010_02_to_FR_019 from 'CL-010-02' to 'FR-019';
     requirement 'CL-010-03' {
         doc /* Offer explicit Enable Tx, disarm, contact cancellation, Abort QSO (Esc and a button beside HALT: the transmission stops now and the contact is cancelled without a halt, closing no panel; #39 2026-11-04) and the immediate Halt Tx emergency stop (buttons and Alt+H; the station and its automation never halt in normal flow); every transmission is a TransmitRequest through the #9 transmit service and its transmit authority, never direct PTT; loss, reconnect, retry or duplicates replay no transmit request and create no second contact. The live transmit path consumes the delivered #9 slice B owner (WstxTransmit::TransmitArming, TransmitRequest, TransmitOutcome, HaltTransmit) in-process. Details: WstxContact::SetEnableTx, HaltTx, AbortQso, CancelContact, TransmitSubmission, ContactCommand; WstxTransmit::AbortTransmission, TransmitHaltUse. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; server/src/main.rs; server/src/transmit/service.rs; client/contact.js";
     }
     dependency CL_010_03_to_FR_007 from 'CL-010-03' to 'FR-007';
@@ -1002,10 +1002,15 @@ package WstxRequirements {
     // CL-010-04: ExportAdi is streamed (#10, 2026-11-04). #41 retired the #10 log review queue: completion and
     // Log QSO log directly (WstxContact::DirectLog); TIME_ON/TIME_OFF come from the
     // contact engine (server/src/contact.rs).
-    // CL-010-03 partial: physical RF acceptance (TC-007-007) is unexecuted; MCP exposes
-    // the same contact operations through WstxMcp (#12). CL-010-11 partial: since #37 the
-    // browser sends no re-decode; the wire redecode stays refused redecode_unavailable.
-    // CL-010-15 partial: the Thin/Off budget with MCP traffic is not measured; TC-007-005 measures the browsers.
+    // #10 closing reconcile (2026-11-08): CL-010-03 implemented; TC-007-007 was accepted by the
+    // operator through the live QSOs (#10 comment 6718939269) and stays automation planned, as a
+    // manual live case has no executable binding. MCP exposes the same contact operations
+    // through WstxMcp (#12). CL-010-11 partial: the #50 pointer actions it states (click Tx,
+    // double-click Rx and Tx, dragging the lines and strip fields) are installed but not yet
+    // accepted live, and TC-010-008 is partial; since #37 the browser sends no re-decode, the wire
+    // redecode stays refused redecode_unavailable.
+    // CL-010-15 implemented (operator 2026-11-08): the Thin/Off byte budget is the browsers'
+    // (StationTickEvent), measured by TC-007-005; MCP traffic is outside that budget.
     requirement 'CL-010-04' {
         doc /* Log every completed contact directly, without a review step (#41, as WSJT-X): at completion and on a manual Log QSO the server stores the contact's record in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity and sends it to the WSJT-X UDP targets as QSO Logged and Logged ADIF; exactly one record per contact identity (an identical re-log adds nothing, completion after an early Log QSO replaces it; each contact is sent to the UDP targets once), a later contact with the same station a new record, Saved only after durable acknowledgement, a failed write visibly unsaved and retried; ADI export and history with the stated limits; and (#10, operator 2026-11-03) Update logbook from ADIF, the one ADI import: an export of another logger (for example Log4OM) is consolidated into the contact log, repeatable and incremental, a record already present (same contact identity, or same call, band and mode/submode with a start within 2 minutes) adding nothing and the stored record winning, only the log's own fields kept, added records marked with their source, QSO confirmation status (LoTW, QSL and eQSL received with their dates and via) kept and, on a rerun, upgraded on records already present (a confirmation is only added, never removed; #10, operator 2026-11-04), so worked-before and award queries tell worked from confirmed per entity, band and mode, invalid records skipped and invalid optional fields dropped with their reasons in the summary, nothing sent to the UDP targets or elsewhere, and the added records feeding worked-before, DXCC and grid status. The former log review queue (OfferLogReview, discard_review, the review form) is retired. Details: WstxContact::LogRecord, DirectLog, SaveContact, UpdateLogbook, ExportAdi, ContactHistory, AdiLimits, WorkedBeforeQuery; WstxUdp::OutboundRules. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -1014,7 +1019,7 @@ package WstxRequirements {
     dependency CL_010_04_to_FR_011 from 'CL-010-04' to 'FR-011';
     requirement 'CL-010-15' {
         doc /* Expose the contact operations only through the versioned WstxContact wire contract: exact routes, keys and byte caps, command_id idempotency, contact_revision, the ContactRefusal codes, the contact.state and station.tick events, and the stated Thin/Off byte budget, leaving StatusReply and the compressed-route allowlist unchanged. Details: WstxContact::ContactWire, ContactCommand, CommandReceipt, ContactSnapshot, ContactStateEvent, StationTickEvent. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/contact_http.rs; server/src/logbook_http.rs; server/src/main.rs";
     }
     dependency CL_010_15_to_FR_019 from 'CL-010-15' to 'FR-019';
@@ -1069,7 +1074,7 @@ package WstxRequirements {
              Steps: (a) responder: select a hand-authored "CQ K1ABC FN42" row (SNR -12.4, 1234.6 Hz, even period); Enable Tx; feed "HB9BLA K1ABC -05", then "HB9BLA K1ABC RR73"; (b) responder with RRR: feed "HB9BLA K1ABC RRR", then nothing; (c) caller: Enable Tx with no partner (Tx6, state calling), feed "HB9BLA K1ABC FN42" and select that row (prepareReply with firstSlot tx2), feed "HB9BLA K1ABC R-07", once with Tx4 RRR then "HB9BLA K1ABC 73", once toggled to RR73; (d) repeats: partner repeats each message one to three times; partner misses my Tx3 and resends its report from rogers; (e) other stations and late rows: "HB9BLA W1XYZ -10" during the contact, a row of the previous partner after ChangeContact, a reply after completion; (f) Tx1 skip, report override -50/+49/-51/+50, manual entry "DL1ABC" grid JO62 and invalid "AB1", "<...>" and grid "SS00"; (g) partner answers another call at 50 Hz and at 51 Hz from my Tx offset, in replying and again in report after a Tx1-skipped start; the watchdog expires while calling CQ; (h) Auto Seq off; Esc, Halt, disarm and cancel in every state.
              Expected (independent hand-written table, not candidate output): selection gives dxCall K1ABC, grid FN42, report -12 rendered "-12", Rx and Tx 1235 Hz, odd parity, next Tx1 "K1ABC HB9BLA JN47", Tx2 "K1ABC HB9BLA -12", Tx3 "K1ABC HB9BLA R-12", Tx4 "K1ABC HB9BLA RRR", Tx5 "K1ABC HB9BLA 73", Tx6 "CQ HB9BLA JN47" and no TransmitRequest before Enable Tx. States/next slots follow WstxContact::AutoSequence exactly: (a) replying/Tx1 -> rogerReport/Tx3 -> signoff/Tx5 -> completed after the completed Tx5 outcome, Enable Tx off, one log offer; (b) RRR from the partner gives signoff/Tx5; the contact completes after the first completed Tx5 transmission (AutoSequence sent73), Enable Tx off, one log offer; (c) calling/Tx6 -> report/Tx2 only after selection -> rogers/Tx4 -> completed on 73 (RRR) or on the completed RR73 transmission, Enable Tx off and no further CQ; (d) repeats resend the same text, report-from-rogers returns to Tx3, no second completion or log offer; (e) other/late rows change nothing; (f) with Tx1 skip, selecting the CQ row enters report directly with next Tx2, overrides -50/+49 accepted and rendered "-50"/"+49", -51/+50 and invalid entries refused with no contact; (g) 50 Hz disarms in replying and in the Tx1-skipped report, 51 Hz does not; watchdog expiry while calling returns to idle; (h) Auto Seq off never changes the next slot; Halt and Alt+H send the halt request first; Esc sends one abort and no halt; last transmitted text changes only on started outcomes and differs visibly from the next message. Each request carries a fresh requestSequence; a duplicated browser action (same command_id) yields one request; one decoded row delivered twice counts once.
              2 — Isolated automated functional tests; Windows development PC, actual candidate server and browser, independent decoded-row and transmit-outcome fixtures; no RF. */
-        attribute automation : AutomationState = AutomationState::partial;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-010-01';
             verify 'CL-010-02';
@@ -1085,7 +1090,7 @@ package WstxRequirements {
              Steps: filter/sort Band Activity; with no contact, read the QSO pane Calling me lines for one period with rows at 1449.9, 1450.0, 1489.9, 1510.1, 1550.0 Hz, "HB9BLA W1XYZ -10" at 400 Hz and "HB9BL K1ABC -01" at 2600 Hz (#37); select rows by click/Enter and by manual DX entry; switch profile.
              Expected (fixed input catalogue): the Calling me lines are exactly the HB9BLA row, plain (no warning sign), with call W1XYZ, SNR −10, no grid and country U.S.A. (#37 2026-11-04), and not the CQs near Rx or HB9BL; sorting Band Activity sends no request and changes no contact/log; selection sends the exact identity and changes the partner only after acceptance; unresolved/old/wrong-profile rows cannot prepare a contact; no invented UTC/callsign, executable markup or cross-profile state.
              2 — Isolated automated functional tests; Windows development PC, real browser/server and independent result source. */
-        attribute automation : AutomationState = AutomationState::partial;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-010-01';
             verify 'CL-010-06';
@@ -1099,7 +1104,7 @@ package WstxRequirements {
              Steps: Enable Tx, Tune, Halt (button and Alt+H, also before the contact client loads and without a contact snapshot), Esc (focus in a text field, in the DX Call input and in an open panel; Abort QSO), Cancel while transmitting, the partner working another call within 50 Hz while transmitting, save and contact change while the link drops; reconnect; replay old requests; unauthenticated, wrong-Origin and wrong-profile requests; Tx offset 199/200/2950/2951 Hz; every ContactCommand action with missing/extra keys, 1024/1025-byte bodies, stale contact_revision (also for cancel and enable_tx false), a retained command_id with identical and different bodies; GET /contact at its 4096-byte maximum shape; Esc on a receive-only station.
              Expected (independent operation/state catalogue): Alt+H and Halt reach the #9 halt operation first even with panels open (exactly one halt per Alt+H); Esc sends exactly one ContactCommand abort and no halt, stops the transmission now (PTT released, outcome aborted, halt_state unchanged), cancels the contact with nothing logged and leaves the station ready for the next QSO; Cancel lets a transmission on the air finish; the partner-works-other stop releases PTT without a halt; Esc closes no panel; state shows pending/unknown until #9 confirms; reconnect loads the snapshot and replays no arm, tune, next-message or transmit request; no request reaches PTT except through the transmit-service double; unsupported transmit leaves Enable Tx/Tune disabled with a reason; 200 and 2950 accepted, 199/2951 refused; barrier refusals unchanged; no cross-profile contact. Each malformed command returns the independently expected ContactRefusal code and field with no state change; stale revisions refused except cancel/abort/disarm; an identical retained command_id returns the same receipt with no second effect, a different body state_conflict; the maximum snapshot is exactly admitted and GET /contact is never gzip-coded; StatusReply keeps exactly {version,radio}; on the receive-only station Alt+H sends no halt, while row selection and Log QSO still work.
              2 — Isolated automated functional tests; Windows development PC, actual candidate server/browser and independent control, audio and transmit emulators. */
-        attribute automation : AutomationState = AutomationState::partial;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-010-02';
             verify 'CL-010-03';
@@ -1187,7 +1192,7 @@ package WstxRequirements {
              Steps: complete a contact (transmitted Tx5 73 after the partner's report; received 73 in rogers); repeat the completion events; manual Log QSO before completion, then the partner's later messages; Log QSO again unchanged; storage failure at completion, then recovery; restart; the same call again as a new contact; SaveContact with power 10 and comment, invalid power -1, comment with CR/LF or 1025 characters, repeat save; second profile; the browser Log QSO button.
              Expected (independent record catalogue and direct file reading): each completion stores exactly one record with the hand-computed CALL, GRIDSQUARE, MODE/SUBMODE, RST_SENT/RST_RCVD, QSO_DATE/TIME_ON (first transmitted Tx2/Tx3 rule), TIME_OFF, BAND, FREQ = dial + Tx offset, STATION_CALLSIGN and MY_GRIDSQUARE, and the UDP target receives one QSO Logged and one Logged ADIF for it; repeated completion and an unchanged Log QSO add no record and no datagram; an early Log QSO closes the contact (completed, Enable Tx off, nothing queued), so the partner's later messages neither replace its record nor send a second datagram pair (#37); Log QSO of a completed contact keeps its completion record even after a location change; a due retry stores the record in the contact step and the datagrams follow; a failed write leaves the record unsaved with storage_unavailable shown and is stored by the retry; nothing is logged again after restart; the second contact with the same call is a separate record; SaveContact identical resave alreadySaved, changed resave conflict, invalid fields refused; the browser shows no review form and sends no POST /contacts; no cross-profile record or browser-clock time.
              2 — Isolated automated functional tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::partial;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-010-04';
         }
@@ -1200,7 +1205,7 @@ package WstxRequirements {
              Steps: update the logbook, update again with the same file and with a grown file, retry the same import_id with identical and different total/sha256, export, reopen, page history at cursor 0, total-1 and total with limit 1/10/11; in the browser pick the file in Settings > Logging & Reporting and press Update logbook.
              Expected (independent ADI parser and hand-counted catalogue): the independently counted added/already present/skipped numbers with the skip reasons {code,field} and dropped fields; the stored station records unchanged byte for byte (existing wins) except an upgraded confirmation: a rerun sets Y/V with its date and via on present records (also records added earlier from the same file), never downgrades or removes one, changes no other stored field, and a repeat writes nothing; DirectLog replacing a record keeps its confirmation and SaveContact of it stays already saved; invalid confirmation values are dropped with their reason and QSL_SENT is not stored; the worked set answers worked vs confirmed per DXCC entity, entity x band and entity x band x mode (needed = not worked or not confirmed) and is rebuilt after an upgrade; a rerun of 27,000 QSOs all confirmed upgrades all of them within seconds; a stored log with repeated or invalid verbatim QSL fields stays readable; a record within 120 s of a stored one with the same call, band and effective mode present, one beyond or on another band or mode added; MFSK/FT4 and FT4 consolidated as one mode; added records carry APP_WSTXRUST_SOURCE LOG4OM2 and a new contact id and only the kept fields (no NAME, ADDRESS, EMAIL or other field stored); a second update adds nothing, a grown file only its new records; a structural fault or over-limit input publishes zero records with record/field context; same import_id retry has no second effect, different values state_conflict; no datagram reaches the UDP target; the added calls and grids answer worked-before; history pages hold stable indexes, limit 11 refused, at most 16384 bytes; export then update adds nothing; the browser shows "Logbook updated: N added, M already present (C confirmations updated), K skipped" with the reasons, and "Logbook not updated" for a refused file.
              2 — Isolated automated functional tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::partial;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-010-04';
         }
@@ -2184,7 +2189,7 @@ package WstxRequirements {
              at200% text enlargement, and8CSSpx vertical padding.
              All widths retain these minima; long text wraps without page overflow. Existing splitter, keyboard, capability and transport assertions remain.
              These style oracles come from the stated presentation values, not candidate CSS. Verify the dominant/full-width Band Activity proportions and labelled responsive rows at360/720/1200/1440/1600CSSpx and1x/2x text. Use captured physical FT4 message text strictly as a labelled presentation fixture, plus independent edge strings:3499.9Hz, signed SNR/DT, long callsigns/full messages, large source seconds, UTC-formatted text and every result status. All six values remain literal and inside their own cells; numbers never split, message tokens wrap only when needed, and table labels remain accessible. This fixture is not decoder/RF truth. Capture desktop/narrow/2x screenshots; retain the separate actual nativeFT4/FT8 decoder/browser proofs. */
-        attribute automation : AutomationState = AutomationState::partial;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-010-05';
             verify 'CL-010-07';
@@ -2251,7 +2256,7 @@ package WstxRequirements {
              contact is gone at once. At 360x800 nothing overflows horizontally.
              Independent oracles: the design-interview decisions in the
              model, not the candidate markup. Screenshots at 1366x768 and 360x800. */
-        attribute automation : AutomationState = AutomationState::partial;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-010-16';
             verify 'CL-045-01';
