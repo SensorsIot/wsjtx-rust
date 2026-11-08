@@ -24,8 +24,8 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=6889086b09921b42cc7359f6be3b23bdfbbd768f8694b42a28d8ca94ae31b612 -->
 <!-- source harness/lang/rust/standard.md sha256=40eaf145803873bcdc41d946527cb59c22ee1c598cef3e3d1ebb05c7a01ccc76 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=35b7e4bc094d3f0e80a799712311396c59b577ae8f65a41abe5d2e31e9a6f444 -->
-<!-- harness-role-policy {"commands": ["git( -C \\S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?", "gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*resolution_diff\\.py [0-9a-f]{7,40}", "gh issue comment [0-9]+ --body 'Review: (PASS|[0-9]+ findings?) \u2014 [0-9a-f]{7,12}(\\n[^']*)?'", "cargo test(?=.* --manifest-path \\S+).*", "node --test( \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/\\S+)+", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints)"], "writes": [], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=14cf3934cbc3676c49a4e21e8970c6616099e6b226f1a489fff83501338a5ecc -->
+<!-- harness-role-policy {"commands": ["git( -C \\S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?", "gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*resolution_diff\\.py [0-9a-f]{7,40}", "gh issue comment [0-9]+ --body 'Review: (PASS|[0-9]+ findings?) \u2014 [0-9a-f]{7,12}(\\n[^']*)?'", "cargo test(?=.* --manifest-path \\S+).*", "node --test( --test-concurrency=1| --test-name-pattern=[A-Za-z0-9_.,:^+=/-]+){0,2}( \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\\.\\.?(?=[/\\s]|$))[A-Za-z0-9_.@+-]+)+)+", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints)"], "writes": [], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py", "^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?node ).*\\bnode\\s+--test"], "model": {"files": [], "facts": []}} -->
 
 You review product CR candidates only, never a harness change ([Harness
 changes](../../harness/core/docs/Harness-Changes.md#steps)). You did not write this change. You are the fresh-context reviewer of
@@ -56,7 +56,8 @@ This standard is the Rust part of your review's inputs.
 
 ## Added by the project (docs/harness/Agent-Working-Rules.md)
 
-The reviewer reads the candidate as [Reviews](../../docs/harness/Agent-Working-Rules.md#reviews) says, and posts its verdict in the
+The reviewer reads the candidate as [Reviews](../../docs/harness/Agent-Working-Rules.md#reviews) says, runs Node tests in the
+coder's form above, and posts its verdict in the
 posting form under "Role: every" below.
 
 The [agent working rules](../../docs/harness/Agent-Working-Rules.md) hold for every role. Gate build folders
@@ -75,8 +76,8 @@ are the coder's above.
 
 ## Limits the role hook enforces
 
-- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `git( -C \S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?`, `gh issue view [0-9]+( .*)?`, `(python3?|py)(\.exe)? \S*resolution_diff\.py [0-9a-f]{7,40}`, `gh issue comment [0-9]+ --body 'Review: (PASS|[0-9]+ findings?) — [0-9a-f]{7,12}(\n[^']*)?'`, `cargo test(?=.* --manifest-path \S+).*`, `node --test( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/\S+)+`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints)`
-- Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
+- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `git( -C \S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?`, `gh issue view [0-9]+( .*)?`, `(python3?|py)(\.exe)? \S*resolution_diff\.py [0-9a-f]{7,40}`, `gh issue comment [0-9]+ --body 'Review: (PASS|[0-9]+ findings?) — [0-9a-f]{7,12}(\n[^']*)?'`, `cargo test(?=.* --manifest-path \S+).*`, `node --test( --test-concurrency=1| --test-name-pattern=[A-Za-z0-9_.,:^+=/-]+){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints)`
+- Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`, `^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?node ).*\bnode\s+--test`
 - Files you may write, relative to the project: none
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=6e2fecf93254f8d5028115502d18ebcf9c7ce079b09fa5517072599cca2733a9 -->
+<!-- harness-agent-v1 sha256=ebf4cd03f92d55808f3af9aeb435e5cdd1e9657469f52deab46cc97ceb118b1e -->

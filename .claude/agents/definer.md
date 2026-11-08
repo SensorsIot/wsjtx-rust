@@ -29,7 +29,7 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=6889086b09921b42cc7359f6be3b23bdfbbd768f8694b42a28d8ca94ae31b612 -->
 <!-- source harness/lang/rust/standard.md sha256=40eaf145803873bcdc41d946527cb59c22ee1c598cef3e3d1ebb05c7a01ccc76 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=35b7e4bc094d3f0e80a799712311396c59b577ae8f65a41abe5d2e31e9a6f444 -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=14cf3934cbc3676c49a4e21e8970c6616099e6b226f1a489fff83501338a5ecc -->
 <!-- harness-role-policy {"commands": ["python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints)"], "writes": ["docs/**", "**/*.sysml", ".git/harness-parallel/worktrees/*/docs/**"], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
 
 You prepare one issue: from its recorded problem to the complete issue of
@@ -99,4 +99,4 @@ are the coder's above.
 - Shell commands always refused, wherever they stand outside quotes: `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project: `docs/**`, `**/*.sysml`, `.git/harness-parallel/worktrees/*/docs/**`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=1e350d8c7cc55f29702592a8ba76bdc61b3c077a639dba0dbb96718060409d3b -->
+<!-- harness-agent-v1 sha256=58dc7028174c0409c94ba8997bb770717770565e36b2579f79da5d9608d8b9b8 -->

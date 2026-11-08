@@ -161,14 +161,17 @@ test('TC-021-007: dropped connection, bounded retries, fresh snapshot', async t 
 // #8: on the shared 32 kbit/s bottleneck the page's own deferred contact client download holds
 // the station's WebSocket messages behind it for more than 12 s. Deterministic model: hold
 // (delay, never drop) every station-to-page message while /contact.js is pending, then deliver.
-async function deferredDownloadHold(t, holdMs) {
+// holdMs null: the hold ends only by state.release(); clock true: the page clock is installed
+// before the page loads, so the test can drive it (#70).
+async function deferredDownloadHold(t, holdMs, {clock = false} = {}) {
   const dir = await fs.mkdtemp(path.join(temporary, 'deferred-')), port = await browserPort();
   const document = {schema_version: 1, profile_id: require('node:crypto').randomUUID(), revision: 0, display_name: 'Deferred', callsign: 'HB9BLA', locator: 'JN37VL',
     endpoint: {bind: `127.0.0.1:${port}`, origin: null}, connection_type: 'standard', audio: {input_device: null, output_device: null}, control: {mode: 'disabled', endpoint: null, ptt: 'disabled'}};
   await fs.writeFile(path.join(dir, 'profile.json'), JSON.stringify(document));
   const app = await server({}, ['--profile', dir]); t.after(() => app.close());
   const context = await contextFor(app.origin); t.after(() => context.close());
-  const page = await context.newPage(), state = {held: false, queue: [], lastDelivered: 0, logbookEnded: null, sockets: 0, release: null, heldAt: null};
+  const page = await context.newPage(), state = {held: false, queue: [], lastDelivered: 0, logbookEnded: null, sockets: 0, release: null, heldAt: null, holding: null, queued: null};
+  state.whenHeld = new Promise(resolve => {state.holding = resolve;});
   await page.addInitScript(() => {
     window.__states = [];
     addEventListener('DOMContentLoaded', () => {const c = document.querySelector('#connection'); new MutationObserver(() => window.__states.push({at: Date.now(), state: c.dataset.state})).observe(c, {attributes: true, attributeFilter: ['data-state']});});
@@ -178,24 +181,34 @@ async function deferredDownloadHold(t, holdMs) {
   page.on('requestfinished', request => {if (new URL(request.url()).pathname === '/logbook.js') state.logbookEnded = Date.now();});
   await page.routeWebSocket(/\/ws$/, ws => {
     const station = ws.connectToServer();
-    station.onMessage(message => {const deliver = () => {state.lastDelivered = Date.now(); try {ws.send(message);} catch {}}; if (state.held) state.queue.push(deliver); else deliver();});
+    station.onMessage(message => {const deliver = () => {state.lastDelivered = Date.now(); try {ws.send(message);} catch {}}; if (state.held) {state.queue.push(deliver); state.queued?.();} else deliver();});
   });
   await page.route('**/contact.js', async route => {
     state.held = true; state.heldAt = Date.now();
-    await new Promise(resolve => {state.release = resolve; setTimeout(resolve, holdMs);});
+    await new Promise(resolve => {state.release = resolve; if (holdMs !== null) setTimeout(resolve, holdMs); state.holding();});
     await route.continue(); state.held = false; for (const deliver of state.queue.splice(0)) deliver();
   });
+  if (clock) await page.clock.install();
   await page.goto(app.origin);
   await page.locator('#connection[data-state=connected]').waitFor({timeout: 10000});
   return {page, state};
 }
 
+// #70: the 16 s hold runs on the page's driven clock (the watchdog is a page setInterval on Date.now()).
 // Proves: FR-021; CL-003-04; TC-021-007 case 5 (#8); level 2, profile station, real Chromium.
-test('TC-021-007: a deferred client download that holds station messages 16 s is not a lost link', {timeout: 60000}, async t => {
-  const {page, state} = await deferredDownloadHold(t, 16000);
-  await page.waitForFunction(() => !!window.wstxContact, null, {timeout: 45000});
-  assert.ok(state.heldAt !== null && state.lastDelivered - state.heldAt >= 15000, 'the station messages were held behind the download');
-  await sleep(2000);
+test('TC-021-007: a deferred client download that holds station messages 16 s is not a lost link', {timeout: 30000}, async t => {
+  const {page, state} = await deferredDownloadHold(t, null, {clock: true});
+  await state.whenHeld;
+  // A station message while the download is pending: it queues behind the download.
+  const queued = new Promise(resolve => {state.queued = resolve;});
+  await page.evaluate(() => socket.send(JSON.stringify({v: 1, type: 'station.get', id: 7016})));
+  await queued;
+  // 16 watchdog ticks: past the 12 s bound without a download, inside the 30 s bound with one.
+  await page.clock.runFor(16000);
+  assert.ok(state.held && state.queue.length > 0, 'the station messages were held behind the download');
+  assert.deepEqual((await page.evaluate(() => window.__states)).filter(s => s.state !== 'connected'), [], 'not stale after 16 s held');
+  state.release();
+  await page.waitForFunction(() => !!window.wstxContact, null, {timeout: 10000});
   assert.deepEqual((await page.evaluate(() => window.__states)).filter(s => s.state !== 'connected'), [], 'never stale or reconnecting');
   assert.equal(state.sockets, 1, 'the same socket throughout');
 });

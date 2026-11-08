@@ -186,9 +186,24 @@ test('TC-022-006: retained HTTPS browser authorization', {timeout: 45000}, async
 
 // Proves the CL-022-01 slow-link setup retry (operator decision 2026-11-03, #22): one token
 // press survives a late or network-failed setup step; refusals are never retried.
-test('TC-022-006: token login retries a slow or failed setup step without another press', {timeout: 120000}, async t => {
+// #70: the page's clock is driven (Playwright page.clock fakes setTimeout and AbortSignal.timeout),
+// so each bound of CL-022-01 (10 s attempt, 1 s/2 s pauses, 3 attempts, 45 s login) is watched
+// crossing in one run without real waiting.
+// Proves: CL-022-01; TC-022-006
+test('TC-022-006: token login retries a slow or failed setup step without another press', {timeout: 60000}, async t => {
   const {profiles} = await fixture(t, true);
-  const fresh = async () => {const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close()); return context.newPage();};
+  // Each case has its own context, so its own page clock; installed before the page loads.
+  const fresh = async () => {
+    const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
+    const page = await context.newPage(); await page.clock.install();
+    // In-page count of setup fetches as the page issues them: read after a driven step it is
+    // exact, where the network events below reach the test asynchronously.
+    await page.addInitScript(() => {
+      const original = window.fetch; window.__fetched = [];
+      window.fetch = function (input, init) {window.__fetched.push(new URL(input instanceof Request ? input.url : String(input), location.href).pathname); return original.call(this, input, init);};
+    });
+    return page;
+  };
   // Independent request counters per actual browser page; enroll bodies kept for identity.
   const counted = page => {
     const seen = {'/session': 0, '/authorization/v1/bootstrap-scope': 0, '/authorization/v1/enroll': 0, enrollBodies: []};
@@ -199,20 +214,31 @@ test('TC-022-006: token login retries a slow or failed setup step without anothe
     await page.goto(p.origin); await page.locator('#login').waitFor({state: 'visible'});
     await page.evaluate(() => {const node = document.querySelector('#login-error'); window.__loginTexts = []; new MutationObserver(() => window.__loginTexts.push(node.textContent)).observe(node, {childList: true, characterData: true, subtree: true});});
   };
+  // Stop the page clock: from here on page time moves only by runFor, so a crossing is exact.
+  const hold = async page => page.clock.pauseAt(await page.evaluate(() => Date.now()) + 1000);
+  const fetched = (page, route) => page.evaluate(route => window.__fetched.filter(path => path === route).length, route);
   const press = async (page, p) => {await page.locator('#token').fill(p.env.WSTX_TOKEN); await page.locator('#login button').click();};
-  const refused = page => page.locator('#login-error').filter({hasText: 'Could not authenticate'}).waitFor({timeout: 20000});
+  const refused = page => page.locator('#login-error').filter({hasText: 'Could not authenticate'}).waitFor({timeout: 10000});
+  const retrying = (page, attempt) => page.locator('#connection').filter({hasText: `Retrying authorization (attempt ${attempt} of 3)`}).waitFor({timeout: 10000});
+  const shown = async page => (await page.locator('#connection').textContent()).includes('Retrying authorization');
   const texts = page => page.evaluate(() => window.__loginTexts);
 
   // The first bootstrap-scope is answered by the server but delivered after its 10 s bound.
   {
-    const p = profiles[0], page = await fresh(), seen = counted(page); let held = 0;
+    const p = profiles[0], page = await fresh(), seen = counted(page); let held = 0, arrived, deliver;
+    const first = new Promise(resolve => {arrived = resolve;}), late = new Promise(resolve => {deliver = resolve;}); t.after(() => deliver());
     await page.route(p.origin + '/authorization/v1/bootstrap-scope', async route => {
       if (held++) {await route.continue(); return;}
-      const response = await route.fetch(); await sleep(11000);
+      const response = await route.fetch(); arrived(); await late;
       await route.fulfill({response}).catch(() => {});
     });
-    await open(page, p); await press(page, p);
-    await page.locator('#connection').filter({hasText: 'Retrying authorization (attempt 2 of 3)'}).waitFor({timeout: 15000});
+    await open(page, p); await hold(page); await press(page, p); await first;
+    await page.clock.runFor(9999);
+    assert.equal(await shown(page), false, 'no retry before the 10 s attempt bound');
+    assert.equal(await fetched(page, '/authorization/v1/bootstrap-scope'), 1);
+    await page.clock.runFor(1);
+    assert.match(await page.locator('#connection').textContent(), /Retrying authorization \(attempt 2 of 3\)/, 'retry at the 10 s attempt bound');
+    deliver(); await page.clock.runFor(1000); await page.clock.resume();
     await connected(page);
     assert.equal(await page.locator('#login-error').textContent(), '');
     assert.equal((await texts(page)).some(text => text.includes('Could not authenticate')), false, 'no refusal shown');
@@ -222,17 +248,31 @@ test('TC-022-006: token login retries a slow or failed setup step without anothe
   {
     const p = profiles[1], page = await fresh(), seen = counted(page); let failed = 0;
     await page.route(p.origin + '/authorization/v1/enroll', route => failed++ ? route.continue() : route.abort('failed'));
-    await open(page, p); await press(page, p); await connected(page);
+    await open(page, p); await press(page, p);
+    await retrying(page, 2); await page.clock.runFor(1000); await connected(page);
     assert.equal(seen['/session'], 1); assert.equal(seen['/authorization/v1/enroll'], 2);
     assert.equal(seen.enrollBodies[0], seen.enrollBodies[1], 'retried enrollment is the same operation');
     assert.equal((await texts(page)).some(text => text.includes('Retrying authorization')), true);
   }
-  // Every /session attempt fails on the network: exactly three attempts, then the refusal text.
+  // Every /session attempt fails on the network: three attempts 1 s and 2 s apart, then the refusal text.
   {
     const p = profiles[2], page = await fresh(), seen = counted(page);
     await page.route(p.origin + '/session', route => route.abort('failed'));
-    await open(page, p); await press(page, p); await refused(page);
-    assert.equal(seen['/session'], 3); await sleep(4000); assert.equal(seen['/session'], 3, 'bounded attempts');
+    await open(page, p); await hold(page); await press(page, p);
+    await retrying(page, 2); assert.equal(seen['/session'], 1);
+    await page.clock.runFor(999); assert.equal(await fetched(page, '/session'), 1, 'no second attempt before the 1 s pause');
+    await page.clock.runFor(1); assert.equal(await fetched(page, '/session'), 2, 'second attempt after the 1 s pause');
+    await retrying(page, 3);
+    await page.clock.runFor(1999); assert.equal(await fetched(page, '/session'), 2, 'no third attempt before the 2 s pause');
+    await page.clock.runFor(1); assert.equal(await fetched(page, '/session'), 3, 'third attempt after the 2 s pause');
+    // Once the third attempt has failed, no timer may start another one, up to the 45 s login bound.
+    // The retry text is also in #login-error (client/app.js:175); it changes when the third attempt
+    // ends, to the refusal or to a further retry. Waiting for the refusal first would turn a fourth
+    // attempt into a hang (its pause never runs on the stopped clock) instead of a count failure.
+    await page.waitForFunction(() => !document.querySelector('#login-error').textContent.includes('(attempt 3 of'), null, {timeout: 10000});
+    await page.clock.runFor(45000);
+    assert.equal(await fetched(page, '/session'), 3, 'bounded attempts');
+    await refused(page); assert.equal(seen['/session'], 3, 'bounded attempts');
     assert.equal(seen['/authorization/v1/bootstrap-scope'], 0);
     assert.equal((await texts(page)).filter(text => text.includes('Retrying authorization')).length >= 2, true);
     assert.equal(await page.locator('#token').inputValue(), '');
@@ -243,17 +283,21 @@ test('TC-022-006: token login retries a slow or failed setup step without anothe
     const p = profiles[2], page = await fresh(), seen = counted(page);
     await page.route(p.origin + '/authorization/v1/bootstrap-scope', route => route.fulfill({status: 401, contentType: 'application/json', body: '{}'}));
     await open(page, p); await press(page, p); await refused(page);
-    await sleep(4000);
+    await page.clock.runFor(45000);
+    assert.equal(await fetched(page, '/authorization/v1/bootstrap-scope'), 1);
     assert.deepEqual([seen['/session'], seen['/authorization/v1/bootstrap-scope'], seen['/authorization/v1/enroll']], [1, 1, 0]);
     assert.equal((await texts(page)).some(text => text.includes('Retrying authorization')), false);
   }
-  // Leaving the page during a held attempt sends no further setup request.
+  // Leaving the page (pagehide on the live page, CL-022-01) during a held attempt sends no further
+  // setup request. Navigating away is no proof: without a back-forward cache it destroys the page.
   {
     const p = profiles[3], page = await fresh(), seen = counted(page); let arrived;
     const first = new Promise(resolve => {arrived = resolve;});
     await page.route(p.origin + '/authorization/v1/bootstrap-scope', () => arrived());
     await open(page, p); await press(page, p); await first;
-    await page.goto('about:blank'); await sleep(13000);
+    await page.evaluate(() => dispatchEvent(new PageTransitionEvent('pagehide')));
+    await page.clock.runFor(45000);
+    assert.equal(await fetched(page, '/authorization/v1/bootstrap-scope'), 1, 'no setup attempt after pagehide');
     assert.deepEqual([seen['/session'], seen['/authorization/v1/bootstrap-scope'], seen['/authorization/v1/enroll']], [1, 1, 0]);
   }
 });

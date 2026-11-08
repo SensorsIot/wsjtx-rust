@@ -120,7 +120,9 @@ The checker posts its verdict as its own issue comment, in the posting form unde
 ```yaml
 guard:
   commands:
-    - 'node --test( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/\S+)+'
+    - 'node --test( --test-concurrency=1| --test-name-pattern=[A-Za-z0-9_.,:^+=/-]+){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
+  deny:
+    - '^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?node ).*\bnode\s+--test'
   model:
     facts:
       - '\s*attribute (coverage|automation|executable) : .*;\s*'
@@ -130,9 +132,12 @@ guard:
   [HB9BLA handover](HB9BLA-HANDOFF.md#inputs-and-unfinished-work) and run beside the gate
   as [heavy runs yield to the gate](Agent-Working-Rules.md#who-changes-what) says, a timing failure rerun once.
   In the hook's one-command form: `CARGO_TARGET_DIR=D:/wstx-build/<worktree>
-  TEMP=D:/wstx-tmp/<worktree> TMP=D:/wstx-tmp/<worktree> CARGO_BUILD_JOBS=2 nice -n 10
+  TEMP=D:/wstx-build/<worktree> TMP=D:/wstx-build/<worktree> CARGO_BUILD_JOBS=2 nice -n 10
   cargo test --manifest-path .git/harness-parallel/worktrees/<worktree>/Cargo.toml …`;
-  under Git Bash `nice -n 10` is BelowNormal.
+  under Git Bash `nice -n 10` is BelowNormal. Node tests run as
+  `NODE_PATH=D:/Github/wsjtx-rust/node_modules node --test --test-concurrency=1
+  --test-name-pattern=<pattern> .git/harness-parallel/worktrees/<worktree>/<test file> …`,
+  the prefix and both options optional, the pattern without spaces or shell characters.
 - **Delivery facts** in the model are a requirement's `coverage`, a case's `automation`
   and its `executable` binding
   ([source bindings](Project-Specifics.md#canonical-model-catalog-and-source-bindings));
@@ -146,10 +151,13 @@ guard:
 ```yaml
 guard:
   commands:
-    - 'node --test( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/\S+)+'
+    - 'node --test( --test-concurrency=1| --test-name-pattern=[A-Za-z0-9_.,:^+=/-]+){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
+  deny:
+    - '^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?node ).*\bnode\s+--test'
 ```
 
-The reviewer reads the candidate as [Reviews](Agent-Working-Rules.md#reviews) says, and posts its verdict in the
+The reviewer reads the candidate as [Reviews](Agent-Working-Rules.md#reviews) says, runs Node tests in the
+coder's form above, and posts its verdict in the
 posting form under "Role: every" below.
 
 ### Role: every

@@ -106,8 +106,9 @@ HARNESS_REPO=D:/Github/wsjtx-rust python D:/Github/harness-mq/core/tools/merge_q
 
 `D:\Github\harness-mq` is a harness clone at the pinned (or newer reviewed) commit; keep it
 and the main checkout's `harness` submodule on the same commit. Agent builds use their own
-`CARGO_TARGET_DIR=D:/wstx-build/<worktree>` and `TEMP`/`TMP=D:/wstx-tmp/<worktree>` (never
-inside a worktree, never shared). Agents do not wait for `busy` (it starves them when the
+`CARGO_TARGET_DIR=D:/wstx-build/<worktree>` and `TEMP`/`TMP` set to that same folder (never
+inside a worktree, never shared): Cargo creates it before the linker needs it, so no
+one has to make a temp folder first (link.exe fails with LNK1104 on a missing one). Agents do not wait for `busy` (it starves them when the
 queue gates back to back): they run beside the gate at BelowNormal with 2 build jobs and
 rerun a timing-sensitive failure once. Gate builds go to
 `D:/harness-cargo-target/wsjtx-rust/<checkout>` and are pruned by the gate itself; agent

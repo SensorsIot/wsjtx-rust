@@ -27,8 +27,8 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=6889086b09921b42cc7359f6be3b23bdfbbd768f8694b42a28d8ca94ae31b612 -->
 <!-- source harness/lang/rust/standard.md sha256=40eaf145803873bcdc41d946527cb59c22ee1c598cef3e3d1ebb05c7a01ccc76 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=35b7e4bc094d3f0e80a799712311396c59b577ae8f65a41abe5d2e31e9a6f444 -->
-<!-- harness-role-policy {"commands": ["git -C (\\S*[/\\\\]|'[^']*[/\\\\]|\"[^\"]*[/\\\\])?\\.git[/\\\\]harness-parallel[/\\\\]worktrees[/\\\\](cr|issue-)[^\\s/\\\\'\"]+[/\\\\]?['\"]? \\S.*", "gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*red_on_parent\\.py .+", "(python3?|py)(\\.exe)? \\S*merge_queue\\.py (submit [0-9]+ [0-9a-f]{7,40}( --slice \\S+)?|status( --json)?)", "cargo (build|check|test|clippy|fmt)(?=.* --manifest-path \\S+).*", "node --test( \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/\\S+)+", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints)"], "writes": [".git/harness-parallel/worktrees/cr*/**", ".git/harness-parallel/worktrees/issue-*/**"], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": ["**/*.sysml"], "facts": ["\\s*attribute (coverage|automation|executable) : .*;\\s*"]}} -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=14cf3934cbc3676c49a4e21e8970c6616099e6b226f1a489fff83501338a5ecc -->
+<!-- harness-role-policy {"commands": ["git -C (\\S*[/\\\\]|'[^']*[/\\\\]|\"[^\"]*[/\\\\])?\\.git[/\\\\]harness-parallel[/\\\\]worktrees[/\\\\](cr|issue-)[^\\s/\\\\'\"]+[/\\\\]?['\"]? \\S.*", "gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*red_on_parent\\.py .+", "(python3?|py)(\\.exe)? \\S*merge_queue\\.py (submit [0-9]+ [0-9a-f]{7,40}( --slice \\S+)?|status( --json)?)", "cargo (build|check|test|clippy|fmt)(?=.* --manifest-path \\S+).*", "node --test( --test-concurrency=1| --test-name-pattern=[A-Za-z0-9_.,:^+=/-]+){0,2}( \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\\.\\.?(?=[/\\s]|$))[A-Za-z0-9_.@+-]+)+)+", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints)"], "writes": [".git/harness-parallel/worktrees/cr*/**", ".git/harness-parallel/worktrees/issue-*/**"], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py", "^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?node ).*\\bnode\\s+--test"], "model": {"files": ["**/*.sysml"], "facts": ["\\s*attribute (coverage|automation|executable) : .*;\\s*"]}} -->
 
 You implement one issue (or one slice of an issue that already has slices) that carries
 `Ready: PASS`. The method is
@@ -68,9 +68,12 @@ checks. Cargo runs on your worktree by its path (`--manifest-path <worktree>/Car
   [HB9BLA handover](../../docs/harness/HB9BLA-HANDOFF.md#inputs-and-unfinished-work) and run beside the gate
   as [heavy runs yield to the gate](../../docs/harness/Agent-Working-Rules.md#who-changes-what) says, a timing failure rerun once.
   In the hook's one-command form: `CARGO_TARGET_DIR=D:/wstx-build/<worktree>
-  TEMP=D:/wstx-tmp/<worktree> TMP=D:/wstx-tmp/<worktree> CARGO_BUILD_JOBS=2 nice -n 10
+  TEMP=D:/wstx-build/<worktree> TMP=D:/wstx-build/<worktree> CARGO_BUILD_JOBS=2 nice -n 10
   cargo test --manifest-path .git/harness-parallel/worktrees/<worktree>/Cargo.toml …`;
-  under Git Bash `nice -n 10` is BelowNormal.
+  under Git Bash `nice -n 10` is BelowNormal. Node tests run as
+  `NODE_PATH=D:/Github/wsjtx-rust/node_modules node --test --test-concurrency=1
+  --test-name-pattern=<pattern> .git/harness-parallel/worktrees/<worktree>/<test file> …`,
+  the prefix and both options optional, the pattern without spaces or shell characters.
 - **Delivery facts** in the model are a requirement's `coverage`, a case's `automation`
   and its `executable` binding
   ([source bindings](../../docs/harness/Project-Specifics.md#canonical-model-catalog-and-source-bindings));
@@ -95,8 +98,8 @@ are the coder's above.
 
 ## Limits the role hook enforces
 
-- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `git -C (\S*[/\\]|'[^']*[/\\]|"[^"]*[/\\])?\.git[/\\]harness-parallel[/\\]worktrees[/\\](cr|issue-)[^\s/\\'"]+[/\\]?['"]? \S.*`, `gh issue view [0-9]+( .*)?`, `(python3?|py)(\.exe)? \S*red_on_parent\.py .+`, `(python3?|py)(\.exe)? \S*merge_queue\.py (submit [0-9]+ [0-9a-f]{7,40}( --slice \S+)?|status( --json)?)`, `cargo (build|check|test|clippy|fmt)(?=.* --manifest-path \S+).*`, `node --test( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/\S+)+`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints)`
-- Shell commands always refused, wherever they stand outside quotes: `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
+- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `git -C (\S*[/\\]|'[^']*[/\\]|"[^"]*[/\\])?\.git[/\\]harness-parallel[/\\]worktrees[/\\](cr|issue-)[^\s/\\'"]+[/\\]?['"]? \S.*`, `gh issue view [0-9]+( .*)?`, `(python3?|py)(\.exe)? \S*red_on_parent\.py .+`, `(python3?|py)(\.exe)? \S*merge_queue\.py (submit [0-9]+ [0-9a-f]{7,40}( --slice \S+)?|status( --json)?)`, `cargo (build|check|test|clippy|fmt)(?=.* --manifest-path \S+).*`, `node --test( --test-concurrency=1| --test-name-pattern=[A-Za-z0-9_.,:^+=/-]+){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints)`
+- Shell commands always refused, wherever they stand outside quotes: `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`, `^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?node ).*\bnode\s+--test`
 - Files you may write, relative to the project: `.git/harness-parallel/worktrees/cr*/**`, `.git/harness-parallel/worktrees/issue-*/**`
 - Model files among them, where each changed line must match a delivery fact (`\s*attribute (coverage|automation|executable) : .*;\s*`): `**/*.sysml`
-<!-- harness-agent-v1 sha256=bfd13699f981b373a2d7f69f972224b502b8766fc64d2cd216ebca3a71776c50 -->
+<!-- harness-agent-v1 sha256=7663e4b7674d465bae6fc92489e9507a68f11c2a36fd63fa0d2299b81fc22616 -->

@@ -260,15 +260,18 @@ test('TC-010-001/003 calibrated real spectrum, source rows and accessible splitt
   await p.evaluate(()=>document.documentElement.style.zoom='2');assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
 });
 
-// Proves: CL-006-01/03; TC-018-001, all pinned real recordings; level 2 read-only acquired inputs.
-test('TC-018-001 all 22 FT8 and 3 FT4 originals match provenance and import unchanged',{timeout:90000},async t=>{
+// The 25-file provenance sweep is in tests/recording-fixtures.test.cjs (#70); here one real
+// original of each mode goes through the server's import.
+// Proves: CL-006-01/03; TC-018-001, one pinned real FT8 and one FT4 recording; level 2 read-only acquired inputs.
+test('TC-018-001 one real FT8 and one real FT4 original import unchanged',{timeout:20000},async t=>{
   const {execFileSync}=require('node:child_process');
   const common=path.resolve(execFileSync('git',['rev-parse','--git-common-dir'],{encoding:'utf8',windowsHide:true}).trim());
   const samples=process.env.WSTX_SAMPLE_DIR || path.join(common,'harness-parallel','resources','issue-7','downloads');
-  const ft8=JSON.parse(await fs.readFile('fixtures/decoder/manifest.json','utf8'));
-  const ft4=JSON.parse(await fs.readFile('fixtures/decoder/ft4-manifest.json','utf8'));
-  const inputs=[...ft8.files.filter(f=>f.path.endsWith('.wav')).map(f=>({...f,file:path.join(samples,path.basename(f.path))})),...ft4.files.map(f=>({...f,file:path.join(samples,'ft4',f.relative_download_path)}))];
-  assert.equal(inputs.length,25);const f=await fixture(t);
+  const ft8=JSON.parse(await fs.readFile(path.join(__dirname,'..','fixtures/decoder/manifest.json'),'utf8'));
+  const ft4=JSON.parse(await fs.readFile(path.join(__dirname,'..','fixtures/decoder/ft4-manifest.json'),'utf8'));
+  const first8=ft8.files.find(f=>f.path.endsWith('.wav')),first4=ft4.files.find(f=>f.relative_download_path.endsWith('.wav'));
+  const inputs=[{...first8,file:path.join(samples,path.basename(first8.path))},{...first4,file:path.join(samples,'ft4',first4.relative_download_path)}];
+  const f=await fixture(t);
   for(const input of inputs){const bytes=await fs.readFile(input.file).catch(error=>{if(error.code==='ENOENT')throw Error('Missing recording fixtures. Run node tools/recording-fixtures.cjs --directory <absolute-cache-directory> and set WSTX_SAMPLE_DIR to that directory.');throw error;});assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),input.sha256);const s=await f.upload(bytes);assert.equal(s.recording.rate_hz,12000);assert.equal(s.recording.file_bytes,bytes.length);assert.deepEqual(await fs.readFile(path.join(f.dir,'recordings',s.recording.id+'.wav')),bytes);}
   const p=await page(f);await p.locator('#recording-replay').click();await p.waitForFunction(()=>Number(document.querySelector('#waterfall').dataset.rows)>0,{timeout:8000});
   await f.req('/recording/jobs/'+(await f.snapshot()).job.id,'DELETE');await terminal(f);

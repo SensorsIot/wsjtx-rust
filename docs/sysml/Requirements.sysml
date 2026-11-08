@@ -141,7 +141,7 @@ package WstxRequirements {
     }
     requirement 'FR-024' {
         doc /* Contest, special-activity and DXpedition operation — phase three
-             Offer WSJT-X's special operating activities chosen by the operator, the contest exchanges, the Hound role and the nonstandard message types, each with its decode, encode, sequencing and logging, on the shared browser/modem/QSO/log/MCP services. Approved slices (issue #24, operator 2026-11-03, WSJT-X 3.3.0-beta5 reference): S1 nonstandard/compound calls, filled-in hashed calls and free text; S2a grid-exchange contests; S2b Field Day and RTTY Roundup (ADIF contest fields, no Cabrillo); S4 classic Hound; S5 SuperFox Hound. Fox (S6) is out of scope; EU VHF (S3) is backlog. */
+             Offer WSJT-X's special operating activities chosen by the operator, the contest exchanges, the Hound role and the nonstandard message types, each with its decode, encode, sequencing and logging, on the shared browser/modem/QSO/log/MCP services. Approved slices (issue #24, operator 2026-11-03, WSJT-X 3.3.0-beta5 reference): S1 nonstandard/compound calls, filled-in hashed calls and free text; S2a grid-exchange contests; S2b Field Day and RTTY Roundup (ADIF contest fields, no Cabrillo); S4 classic Hound. S5 SuperFox Hound moved to its own phase-two issue #77 (operator 2026-11-08); Fox (S6) was dropped; EU VHF (S3) is backlog. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/decoder/hashes.rs; server/src/recording.rs; server/src/contact.rs; server/src/transmit/pack.rs";
     }
@@ -343,7 +343,7 @@ package WstxRequirements {
     dependency CL_007_05_to_FR_021 from 'CL-007-05' to 'FR-021';
     requirement 'CL-008-01' {
         doc /* Persist independently selected audio and typed IC-7300 control intent through the existing profile revision/atomic-store boundary; settings never assert device availability. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
     }
     dependency CL_008_01_to_FR_001 from 'CL-008-01' to 'FR-001';
@@ -352,7 +352,7 @@ package WstxRequirements {
     dependency CL_008_01_to_FR_022 from 'CL-008-01' to 'FR-022';
     requirement 'CL-008-02' {
         doc /* Deliver immutable canonical 12 kHz mono samples and explicit timing/gaps through one common converter to the existing spectrum/decoder worker, without fabricating samples or UTC accuracy. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
     }
     dependency CL_008_02_to_FR_002 from 'CL-008-02' to 'FR-002';
@@ -360,7 +360,7 @@ package WstxRequirements {
     dependency CL_008_02_to_FR_004 from 'CL-008-02' to 'FR-004';
     requirement 'CL-008-03' {
         doc /* Publish independently truthful audio/control states, bounded live results and explicit loss/recovery while preserving worker, cancellation and thin-link bounds. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
     }
     dependency CL_008_03_to_FR_002 from 'CL-008-03' to 'FR-002';
@@ -369,27 +369,27 @@ package WstxRequirements {
     dependency CL_008_03_to_FR_021 from 'CL-008-03' to 'FR-021';
     requirement 'CL-008-04' {
         doc /* Support the Windows shared-audio and IC-7300 receive-control matrix below, with independently verified receive-only physical acceptance. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
     }
     dependency CL_008_04_to_FR_002 from 'CL-008-04' to 'FR-002';
     dependency CL_008_04_to_FR_009 from 'CL-008-04' to 'FR-009';
     requirement 'CL-008-05' {
         doc /* Audio never requires CAT; CAT never opens audio. Unsupported operations fail before device bytes; independent failure never creates false readiness. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
     }
     dependency CL_008_05_to_FR_002 from 'CL-008-05' to 'FR-002';
     dependency CL_008_05_to_FR_009 from 'CL-008-05' to 'FR-009';
     requirement 'CL-008-06' {
         doc /* Separate a versioned factual radio catalogue, compiled typed operations and bounded protocol execution. Catalogue data cannot authorize raw or transmit commands. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
     }
     dependency CL_008_06_to_FR_009 from 'CL-008-06' to 'FR-009';
     requirement 'CL-008-07' {
         doc /* Coordinate receive-only operating mode and preferred band changes through the existing station/receive owner and typed CAT actor, with explicit nominal/observed truth, actual release barriers, per-query provenance and cancellation fencing. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/selection.rs; server/src/selection_http.rs; server/src/radio_http.rs; server/src/radio_control/actor.rs; client/recording.js";
     }
     dependency CL_008_07_to_FR_002 from 'CL-008-07' to 'FR-002';
@@ -1005,9 +1005,9 @@ package WstxRequirements {
     // #10 closing reconcile (2026-11-08): CL-010-03 implemented; TC-007-007 was accepted by the
     // operator through the live QSOs (#10 comment 6718939269) and stays automation planned, as a
     // manual live case has no executable binding. MCP exposes the same contact operations
-    // through WstxMcp (#12). CL-010-11 partial: the #50 pointer actions it states (click Tx,
-    // double-click Rx and Tx, dragging the lines and strip fields) are installed but not yet
-    // accepted live, and TC-010-008 is partial; since #37 the browser sends no re-decode, the wire
+    // through WstxMcp (#12). CL-010-11 and TC-010-008 implemented: the #50 pointer actions (click Tx,
+    // double-click Rx and Tx, dragging the lines and strip fields) were accepted live
+    // (#50 comment 6719539569); since #37 the browser sends no re-decode, the wire
     // redecode stays refused redecode_unavailable.
     // CL-010-15 implemented (operator 2026-11-08): the Thin/Off byte budget is the browsers'
     // (StationTickEvent), measured by TC-007-005; MCP traffic is outside that budget.
@@ -1040,7 +1040,7 @@ package WstxRequirements {
     dependency CL_010_10_to_FR_008 from 'CL-010-10' to 'FR-008';
     requirement 'CL-010-11' {
         doc /* Set Rx and Tx audio offsets through labelled numeric inputs and waterfall pointer actions (#50: click Tx; double-click Rx and Tx; dragging the 3 px Rx/Tx lines and the Rx/Tx strip fields with 1 Hz/10 Hz steps), Hold Tx protecting only against implicit moves, each confirmed by the server and none enabling transmission. Details: WstxContact::PointerEffect, FrequencyControls. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; client/contact.js";
     }
     dependency CL_010_11_to_FR_007 from 'CL-010-11' to 'FR-007';
@@ -1175,11 +1175,11 @@ package WstxRequirements {
     verification 'TC-010-008' {
         doc /* TC-010-008 — Waterfall pointer actions and frequency inputs
              CL-010-11
-             Setup: actual Chromium/server with injected spectrum rows, 1100x850 and 360x640, DPR 1/2; request recorder.
+             Setup: actual Chromium/server with injected spectrum rows at 1440x1000, DPR 1; request recorder. The pointer mapping at 1366x768 (DPR 1 and 2), 900x700 and 360x800 is checked by TC-050-007.
              Steps: at independently computed pixel positions for 700, 1000, 1500 and 2950 Hz perform click, double-click, shift-click with Hold Tx on and right-click; numeric Rx/Tx inputs with 199/200/2950/2951 Tx.
              Expected (#50): requested offsets equal the independently computed axis frequency rounded to integer Hz; click Tx only; a double-click exactly one request for Rx and Tx and no re-decode request; shift-click as click and with Hold Tx on; right-click nothing; the markers are 3 px lines (Rx rgb(48,208,80), Tx rgb(255,64,64)) without text at the confirmed values; out-of-domain refused; no Enable Tx request; the browser context menu does not open on the waterfall.
              2 — Isolated automated functional tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::partial;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-010-11';
         }
@@ -1358,10 +1358,12 @@ package WstxRequirements {
              4. Drop bytes without closing the established test connection. Expect stale detection
                 within the contract's silent-loss bound and scheduler tolerance. Restore byte delivery;
                 expect bounded recovery and another snapshot without waiting for the old close handshake.
-             5. Hold (delay, not drop) every station-to-browser byte for 16s while the page's
-                deferred client download is pending, then deliver it. Expect the same socket, no
-                stale state and no new connection (#8). Hold beyond 31s with the download pending:
-                expect stale detection within the 31s bound plus 1-second scheduler tolerance.
+             5. Hold (delay, not drop) every station-to-browser byte while the page's deferred
+                client download is pending; with the page's clock installed before load, drive it
+                16s (past the 12s bound and its 1-second tick), then deliver. Expect only the
+                connected state, the same socket and no new connection (#8, issue70: driven, no
+                real wait). Hold beyond 31s in real time with the download pending: expect stale
+                detection within the 31s bound plus 1-second scheduler tolerance (a measurement).
 
              **Oracle:** contract state transitions/time limits and observed request exchange.
              The automation cuts/restores the proxy to the actual server and checks a new snapshot
@@ -2024,6 +2026,7 @@ package WstxRequirements {
              Exercise unsupported/truncated audio, silence/noise, an explicit mode mismatch and a second offline run.
              Invalid input is reported without corrupting station state; false decodes meet the agreed rejection criteria; replay produces equivalent results within defined tolerances. Use hand-specified errors and independent reference fixtures.
              Runtime matrix qualification (#36 decision): a poll whose wall time exceeds 50 ms leaves that configuration's 50 ms CPU quantum unmeasured, which is neither a pass nor a violation. The configuration is re-measured, at most three attempts; the runtime (including the four-worker 2x bound), cold-start and 64 MiB budgets bind every attempt, and any exceedance is a failure. A configuration still unmeasured after the third attempt makes the matrix inconclusive. The ordinary push gate keeps the matrix as a regression detector: an inconclusive matrix exits with the harness NOT RUN code 77, so the gate lists the suite as not run, records it as not-run, never memoises it as passed and does not block the push; such a run is never a pass and never CL-007-04 evidence. CL-007-04 runtime evidence comes only from the strict exclusive-window run on the reference PC, which refuses an inconclusive matrix.
+             Station process case (#71): receive_http_tests::resource_station_process_delta_and_owner_release (private-commit delta at most 96 MiB over idle, receive-owner release at most 250 ms after Stop, FT8 and FT4, after a decode and during a busy window) runs in the release timing suite live-station-latency, alone, as a regression detector. A gate run of it is never CL-007-04 evidence; that evidence comes only from the strict exclusive-window run on the reference PC.
              2 — Isolated automated tests; Windows PC with disposable recordings, no radio or live service. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -2056,6 +2059,7 @@ package WstxRequirements {
         doc /* TC-018-001
              CL-006-01, CL-006-02
              Construct byte-level PCM WAVs with 1, 2048, 4096, 4097 and 1,440,000 frames, endpoint samples -32768,-1,0,1,32767 and legal ancillary/padding chunks. Import, inspect blocks/metadata, replay twice and restart. Use the pinned actual recordings from chapter13 after retaining their license/provenance manifest; the verified22 inputs all fit the selected PCM capability.
+             Provenance sweep (issue70, tests/recording-fixtures.test.cjs, no server): every one of the 22 FT8 and 3 FT4 original recordings in WSTX_SAMPLE_DIR has the sha256 of its manifest entry, and its hand-parsed RIFF/fmt header is PCM, 1 channel, 16 bit, 12000 Hz with a data size within the import cap; the enumeration equals the two manifests (25 files). Import (tests/recording.test.cjs): the first .wav entry of each manifest, one FT8 and one FT4 original, imports with rate_hz 12000, file_bytes equal to its length and stored bytes unchanged, and its replay paints waterfall rows.
              Hand-authored RIFF byte offsets/counts and exact signed-value/32768 mapping match; concatenated blocks equal input samples, <=4096 per block, contiguous offsets and one EOS; original bytes unchanged. Source UUID survives restart and repeats; job IDs differ, generations advance within a boot and reset to0 on restart, recording UTC remains null and no device opens. Analytical spectra repeat within 0.5 dB quantization plus 0.05 dB numerical tolerance. The actual recording proves non-synthetic input; it is not the calibration oracle. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -2354,7 +2358,7 @@ package WstxRequirements {
 
              8. Bounded HTTP content coding12.1.1 (same cost2 boundary):
                 A. Real application/router + normal TLS/session: authenticate once through existing /session; for each allowlisted successful GET gzip decode must equal identity logical JSON exactly on immutable state, exact shape/caps preserved. Use independent standard decoder (Node zlib) and assert actual raw gzip magic/header/trailer + body rather than fetch auto-decoded size. Check Content-Type/Vary/Content-Length correctness; existing Vary/cache/security headers retained. Mutable facts compare frozen fixture context, never pretend two temporally distinct snapshots must match timestamps.
-                B. Table: absent/empty, identity, gzip, GZip case-insensitivity, gzip;q=0, gzip;q=0.5 vs identity;q=1, identity;q=0 with gzip acceptable, br-only, wildcard and explicit exclusions, invalid q/token/multiple header instances. Expected outcomes are frozen in the ordered12.1.1 negotiation table from the pinned source; malformed headers must follow the frozen ordered12.1.1 negotiation table without panic/leak; duplicate/wildcard selection follows the exact table, not a blanket last-q or any-q0 rule. Both gzip+identity explicitly forbidden=>406 only eligible successful GET. Preserve original401/403/404/400/409/500 on excluded error paths even with forbidden encodings.
+                B. Table: absent/empty, identity, gzip, GZip case-insensitivity, gzip;q=0, gzip;q=0.5 vs identity;q=1, identity;q=0 with gzip acceptable, br-only, wildcard and explicit exclusions, invalid q/token/multiple header instances. Expected outcomes are frozen in the ordered12.1.1 negotiation table from the pinned source; malformed headers must follow the frozen ordered12.1.1 negotiation table without panic/leak; duplicate/wildcard selection follows the exact table, not a blanket last-q or any-q0 rule. Both gzip+identity explicitly forbidden=>406 only eligible successful GET. Preserve original401/403/404/400/409/500 on excluded error paths even with forbidden encodings. Every row of the frozen ordered table runs through the product's own response encoder (http_compression::encode_response) on an eligible successful JSON GET, never through a bare library layer (#71).
                 C. Every excluded method/path including POST/session, PUT/profile, POST/receive/select and /radio operations remains unencoded and byte/schema compatible; no duplicate mutation effects. Authenticate cookies/tokens never appear in body/debug logs. Authenticated eligible snapshots contain no credential fields; malicious literal decoded text is unchanged. Oversized logical result rejected/capped BEFORE gzip, encoded size cannot admit extra rows; valid max logical result still decodes within original cap. Request Content-Encoding:gzip must not add support or bypass request body limit. HEAD/no-body/range/already-encoded cases must not be double-compressed or misframed.
                 D. Actual two Chromium browsers on unchanged shared4000B/s/direction+150ms TLS model, actual native FT4/FT8 + CAT transitions and mode-appropriate fixtures, actual status, pushed selection state and reads, records and source/operation identities. Preserve all Thin75s/Off75s windows and >=60 checks, five CQ records, status/pending/original WS oracles. Record Content-Encoding from real response headers, raw encoded sizes via CDP as attribution, and unchanged actual proxy TLS/model counters as sole bandwidth oracle; BOTH directions <=3000B/s and existing Off requirement, all status<=2s. No arithmetic compression estimate counts as PASS. Run original14+new15 suite through ordinary integration/prepush as selected; separate old10s Connected-after-load remains required. Identity path correctness is mandatory; identity workload bandwidth remains unproven unless separately measured.
                 The read and event proof in7 applies unchanged to8D: preserve per-command pending
@@ -2390,7 +2394,7 @@ package WstxRequirements {
             verify 'CL-010-07';
             verify 'CL-010-08';
         }
-        attribute executable : String = "tests/radio-selection.test.cjs; server/src/selection_http_tests.rs; server/src/http_compression_tests.rs";
+        attribute executable : String = "tests/radio-selection.test.cjs; server/src/selection_http_tests.rs; server/src/http_compression_tests.rs; server/src/recording_tests.rs";
     }
     verification 'TC-007-006' {
         doc /* #### TC-007-006 — Latest decode and signed relative timing
@@ -2541,19 +2545,19 @@ package WstxRequirements {
     dependency CL_013_05_verified_by_TC_023_006 from 'CL-013-05' to 'TC-023-006';
     dependency CL_013_06_verified_by_TC_023_003 from 'CL-013-06' to 'TC-023-003';
 
-    doc /* Issue22 contract. Delivered (partial): CL-022-01 persistent browser key,
+    doc /* Issue22 contract. Delivered: CL-022-01 persistent browser key,
          enrollment, challenge/proof transport, retained-key recovery and the
          browser Log out / forget-rejected-credential actions; CL-022-02 durable
          private record, revocation (logout, revoke-all), dispatch fencing of every
          operating HTTP/WS effect under the authority lock, safety-revision
          advance and the commissioning server API (POST /authorization/v1/commission
-         and the status condition). Delivered (partial, before live acceptance):
+         and the status condition). Delivered:
          CL-022-03 'Confirm receive-only setup' UI and the automatic read-only CAT
          lifecycle, CL-022-04 cadence, CL-022-05 CAT status/freshness presentation;
          TC-022-009 automated companions. Radio identity Add/Replace/Remove is dropped
-         from the contract (operator 2026-11-06, CL-022-02). Still target: the
-         CL-022-05 dated freeze reproduction and Thin/Off accounted-traffic companion;
-         TC-022-008 and TC-022-010 stay planned.
+         from the contract (operator 2026-11-06, CL-022-02). The CL-022-05 freeze was accepted on
+         the recorded trace (comment 6622256637); TC-022-008 is partial (the Thin/Off
+         accounted-traffic tests are not written); TC-022-010 was accepted live (6719540079).
          Existing99 identities retain meaning and numbering. No parser, model
          declaration or issue checkpoint proves execution/acceptance. */
     requirement 'CL-022-01' {
@@ -2638,7 +2642,7 @@ package WstxRequirements {
              the transport cookie. A confirmed rejected/invalid retained credential
              offers 'Forget this browser credential and authorize again', which
              deletes only the local key and shows the bootstrap token form. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/authorization.js; client/app.js; server/src/authorization.rs; server/src/authorization_http.rs";
     }
     dependency CL_022_01_to_FR_019 from 'CL-022-01' to 'FR-019';
@@ -2720,7 +2724,7 @@ package WstxRequirements {
              one in-flight effect per admitted request follows, under the existing
              cancellation/release rules. Every request admitted after the commit is
              refused, and the affected WS closes before its next message. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/authorization.rs; server/src/authorization_http.rs; server/src/recording_http.rs; server/src/main.rs";
     }
     dependency CL_022_02_to_FR_019 from 'CL-022-02' to 'FR-019';
@@ -2759,7 +2763,7 @@ package WstxRequirements {
              setup' when the safety revision is above1. A selected plaintext profile
              has no grant authority and therefore never runs the lifecycle (zero CAT
              I/O); its automatic CAT is unavailable by design. Live IC-7300
-             acceptance (TC-022-010) remains outstanding.
+             acceptance (TC-022-010) passed on 2026-11-08 (6719540079).
              Reconnect restores the selection (operator finding 2026-11-02, another
              program held the port and released it): when the lifecycle's eligible
              connection becomes Ready with a confirmed fresh dial while the selection
@@ -2769,7 +2773,7 @@ package WstxRequirements {
              read-only, no receive restart, no revision advance, never replacing a known
              selection), so no band choice by hand is needed after startup or a
              reconnect. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization.rs; server/src/authorization_http.rs; server/src/radio_http.rs; server/src/main.rs; client/recording.js";
     }
     dependency CL_022_03_to_FR_008 from 'CL-022-03' to 'FR-008';
@@ -2798,7 +2802,7 @@ package WstxRequirements {
              the first tick observing the confirmed released failure (<=one tick
              after release). Explicit recovery from a failed-close quarantine is a
              station restart; no in-process action clears it. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization_http.rs; server/src/main.rs";
     }
     dependency CL_022_04_to_FR_008 from 'CL-022-04' to 'FR-008';
@@ -2815,7 +2819,7 @@ package WstxRequirements {
              32kbit/s accounted-traffic regressions include new auth/recovery/status
              messages, explicit errors and multi-peer recovery. Issue10 existing
              continuity/stale fixes are reused; this proposal adds no duplicate helper.
-             Actual dated freeze reproduction/root-cause trace remains outstanding.
+             The freeze is accepted on the recorded trace (6622256637).
              Delivered: POST /authorization/v1/status reports the actual lifecycle
              condition, mapped error and retry delay, with receive_state separate; the
              browser reads it only when the versioned /receive/selection
@@ -2827,9 +2831,10 @@ package WstxRequirements {
              station's ownership lock; also the rare ambiguous case of two serial
              interfaces with the same port name) as error port_in_use, and the browser names it
              '<port> in use by another program' (for example 'COM3 in use by another
-             program'); other unavailable causes keep radio_unavailable. Still target:
-             Thin/Off accounted-traffic companion
-             including these status reads (TC-022-008) and the freeze trace. */
+             program'); other unavailable causes keep radio_unavailable. Still missing:
+             only the Thin/Off accounted-traffic companion
+             including these status reads (TC-022-008), moved to the combined front-end/server
+             traffic-test issue #80 (operator 2026-11-08). */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/authorization_http.rs; client/recording.js; client/authorization.js; client/app.js";
     }
@@ -2902,14 +2907,21 @@ package WstxRequirements {
              grant after restart and no successful receipt/proof. No assumption that
              server can observe browser receipt of a success response is allowed.
              Slow-link setup retry oracle (independent request counters on the actual
-             browser): hold the first bootstrap-scope response past its 10 s bound;
-             the status shows 'Retrying authorization' and becomes connected after one
-             token press with one session, two bootstrap-scope and one enrollment.
+             browser; the page's clock is installed before load and driven, issue70,
+             no real wait): hold the first bootstrap-scope response; at 9999 ms no
+             retry is shown and one bootstrap-scope was sent, at 10000 ms the status
+             shows 'Retrying authorization (attempt 2 of 3)'; the late response is
+             then delivered and the page becomes connected after one token press with
+             one session, two bootstrap-scope and one enrollment.
              A network-failed enrollment is repeated once with the identical operation
              ID and verifier and connects. Network failure of every /session
-             attempt stops after exactly 3 attempts with 'Could not authenticate'.
-             A 401 bootstrap-scope is never retried. Navigating away during a held
-             attempt sends no further setup request.
+             attempt: 1 attempt at +999 ms and 2 at +1000 ms after the first failure,
+             2 at +1999 ms and 3 at +2000 ms after the second, then 'Could not
+             authenticate', and still exactly 3 after the clock runs past the 45 s
+             login bound. A 401 bootstrap-scope is never retried (counts 1/1/0 after
+             the clock runs past 45 s). A pagehide event on the live page during a
+             held attempt cancels it: no further setup request after the clock runs
+             past 45 s (counts 1/1/0).
              Held profile bodies across a renewal (#73): a GET /profile 200 whose body is held
              while the transport cookie is cleared, the authorization renews and a new
              socket connects is never applied ('Could not load saved settings', form
@@ -2938,9 +2950,9 @@ package WstxRequirements {
              transport usable at 28799 s and refused at exactly 28800 s, a challenge 400 days
              on, a reopen keeping grants and receipts with no transport), and
              tests/profiles.test.cjs "actual browser and server process restart" removes the
-             cookie and restarts both processes. No run advances a browser's clock; that
-             combination stays unautomated, and TC-022-010 observes controlled cookie expiry
-             live. */
+             cookie and restarts both processes. Only the slow-link setup retry case
+             drives a browser's clock; the cookie-retention and 28800 s combination stays
+             unautomated, and TC-022-010 observes controlled cookie expiry live. */
         attribute automation : AutomationState = AutomationState::partial;
         attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs; server/src/authorization_tests.rs";
         objective {
@@ -3013,9 +3025,9 @@ package WstxRequirements {
              Origin403 before auth, invalid grant401, extra/duplicate/missing fields400,
              wrong media415,1025bytes413; GETnewstatus405/no effects/no fallback. Existing
              GET/profile permits absent Origin as before, not a relaxed POST policy.
-             Dated real freeze
-             reproduction and cause tracing remain separate required evidence, not
-             replaced by this constructed case. Existing issue10 barriers/unknown state
+             The real freeze
+             is accepted on the recorded trace (6622256637); the Thin/Off
+             traffic tests below are what is missing. Existing issue10 barriers/unknown state
              assertions remain. Add auth recovery to existing Thin/Off accounted-traffic
              companion tests/recording.test.cjs TC-010-002 and communication tests;
              same ceilings/windows/controls, no assertion or source-pin weakening.
@@ -3090,8 +3102,8 @@ package WstxRequirements {
              cable/server/browser restart, truthful independent health/freshness and
              latest real decode rows. Retained-browser proof after controlled cookie
              expiry is observed; simulated clock boundary labelled simulated. PTT
-             remains released; zero transmit acceptance is added. Missing physical
-             cases/freeze evidence remain missing. Independent source/model review,
+             remains released; zero transmit acceptance is added. Accepted live
+             on 2026-11-08 (6719540079); the freeze is accepted on the trace. Independent source/model review,
              red-on-parent, exact ordinary gates and actual acceptance all required.
              Where: HB9BLA installed exact gated candidate, actual IC-7300 COM3/USB Audio CODEC and authenticated browser. Physical acceptance is planned and consent-bound, not an automated simulator verdict. */
         attribute automation : AutomationState = AutomationState::planned;
@@ -3990,9 +4002,9 @@ package WstxRequirements {
     verification 'TC-044-019' {
         doc /* TC-044-019 — Monitoring on HB9BLA
              CL-044-14
-             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, 40 m, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported); every transmission into a mismatched antenna instead goes at low power, Po at most 5 %, 14 0A set the same way (coordinator decision 2026-11-07, not the operator's).
-             Steps: transmit during normal operation, compare the frame count in the CI-V log and the transmit timing; check the ALC threshold against the radio's own meter; transmit with ALC above 0010; connect a mismatched antenna at low power, check the SWR thresholds against the radio's display at that power first, then transmit until the SWR 3.0 stop.
-             Expected: three meter frames per transmission, in the middle; decode by another station unaffected; ALC above 0010 goes down one step at the next transmission until it reads 0010 or less, with no entry below 0060; the ALC and SWR thresholds match the radio's display; a mismatched antenna stops at SWR 3.0.
+             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, 40 m, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported). The mismatched-antenna / SWR 3.0 stop step is dropped by operator decision of 2026-11-08 ("bad SWR is handled by the transceiver"); the station's own stop at and above SWR 3.0 stays (CL-044-14), covered offline; the SWR display is #68.
+             Steps: transmit during normal operation and record the radio.tx_level frames and the transmit timing; transmit with ALC above 0010. The evidence is the CI-V readback and the radio.tx_level frames, not the radio's display or a CI-V log (operator decision of 2026-11-08; the station keeps no CI-V log).
+             Expected: at most one radio.tx_level meter frame per transmission (sent only when the values change); decode by another station unaffected; ALC above 0010 goes down one step at the next transmission until it reads 0010 or less, with no entry below 0060.
              5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
@@ -4040,7 +4052,7 @@ package WstxRequirements {
         doc /* TC-044-021 — Discovery on HB9BLA
              CL-044-15
              Setup: the gated candidate on HB9BLA, the IC-7300 on COM3, keying inhibit confirmed through Detect radio on both profiles; a second station process on its own profile; the operator's consent.
-             Steps: start the station with COM3 saved; start a second process with COM3 saved while the first holds it; start it with a second transceiver connected, if one is available; with two transceivers, start two processes on unconfirmed CAT, so one holds its radio only by reservation.
+             Steps: start the station with COM3 saved; start a second process with COM3 saved while the first holds it; start it with a second transceiver connected, if one is available; with two transceivers, start two processes on unconfirmed CAT, so one holds its radio only by reservation. The second-transceiver steps can't run on this station, which has only one radio.
              Expected: the first keeps COM3; the second reports port_in_use with nothing changed when no other radio is free, and takes the second transceiver when one is; a radio reserved but not yet held is passed over.
              4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
@@ -4119,8 +4131,8 @@ package WstxRequirements {
         doc /* TC-044-016 — Set level on HB9BLA
              CL-044-12, CL-044-13
              Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, a dummy load or the station antenna, RF power set low by the test before the first Tx (CI-V 14 0A, value 0003, with the station stopped and idle, because it holds COM3; read back; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported).
-             Steps: read 15 13, 15 11, 15 12 during Tune and compare with the radio's own meter; press Set level; press HALT during a second run.
-             Expected: the meter values agree with the radio's display and the manual's scales; the run ends with the ALC just below rising, the level stored and Tune off; HALT stops it at once and keeps the stored level.
+             Steps: read 15 13, 15 11, 15 12 during Tune over CI-V; press Set level; press HALT during a second run. The evidence is the CI-V readback and the radio.tx_level frames, not the radio's display (operator decision of 2026-11-08).
+             Expected: the meter values read back agree with the radio.tx_level frames and the manual's scales; the run ends with the ALC just below rising, the level stored and Tune off; HALT stops it at once and keeps the stored level.
              5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
@@ -4173,7 +4185,7 @@ package WstxRequirements {
     }
     dependency CL_057_01_verified_by_TC_057_001 from 'CL-057-01' to 'TC-057-001';
     requirement 'CL-057-02' {
-        doc /* The modem decodes on all CPU cores with headroom: its parallel stages use up to the logical CPU count minus one threads (at least one; the calling thread included), scoped to each stage, so capture, display and transmit threads keep a core; the native audio capture and transmit render threads run at raised (highest) thread priority. Parallel stages are the rows of the FT8 detection spectrum, the FT8 sync-peak qualification, the verification of each pass's candidates (demodulation, channel decode, refinement, physical check and, for a supported complete FT8 frame, its SNR signal power; at most sixteen at once, each holding one 1.2 MB known-word waveform while it refines) and the synthesis of the waveforms to subtract; peak blocking, the duplicate checks, the SNR baseline (per period) and SNR value, publication and the residual subtraction stay in candidate order. The decode set and its order (payload, start frame, frequency and SNR) are identical for every thread count. At most four subtraction waveforms are built at a time: the next four are built on other threads while the previous four are subtracted, so at most eight are held, bounding their memory. The last pass's verified frames are not subtracted, because no later pass reads that residual (#57: these keep a busy FT8 prompt window at about 0.3 s of decode, below the 0.5 s row budget of TC-057-002). The CL-007-04 per-CPU-worker runtime, memory and four-profile budgets are measured with one decode thread per worker. Parallel work runs in rounds of about 10 ms, each started item finishing, and the decode future yields and checks cancellation between rounds, so the station worker keeps draining capture and a cancellation returns as before. */
+        doc /* The modem decodes on all CPU cores with headroom: its parallel stages use up to the logical CPU count minus one threads (at least one; the calling thread included), scoped to each stage, so capture, display and transmit threads keep a core; the native audio capture and transmit render threads run at raised (highest) thread priority. Parallel stages are the rows of the FT8 detection spectrum, the FT8 sync-peak qualification, the verification of each pass's candidates (demodulation, channel decode, refinement, physical check and, for a supported complete FT8 frame, its SNR signal power; at most sixteen at once, each holding one 1.2 MB known-word waveform while it refines) and the synthesis of the waveforms to subtract; peak blocking, the duplicate checks, the SNR baseline (per period) and SNR value, publication and the residual subtraction stay in candidate order. The decode set and its order (payload, start frame, frequency and SNR) are identical for every thread count. At most four subtraction waveforms are built at a time: the next four are built on other threads while the previous four are subtracted, so at most eight are held, bounding their memory. The last pass's verified frames are not subtracted, because no later pass reads that residual (#57: these keep a busy FT8 prompt window at about 0.3 s of decode, well inside the CL-007-05 publication bound of period start + 15.0 s; #72: no bound from window completion to painted row is promised beyond CL-007-05 and CL-057-01). The CL-007-04 per-CPU-worker runtime, memory and four-profile budgets are measured with one decode thread per worker. Parallel work runs in rounds of about 10 ms, each started item finishing, and the decode future yields and checks cancellation between rounds, so the station worker keeps draining capture and a cancellation returns as before. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/decoder/parallel.rs; server/src/decoder/search.rs; server/src/decoder/synchronization.rs; server/src/decoder/baseband.rs; server/src/audio/windows.rs; server/src/playback/windows.rs";
     }
@@ -4181,35 +4193,39 @@ package WstxRequirements {
     dependency CL_057_02_to_FR_004 from 'CL-057-02' to 'FR-004';
     verification 'TC-057-002' {
         doc /* TC-057-002 — Parallel decode: identical result, wall time by thread count
-             CL-057-02, CL-057-01
+             CL-057-02, CL-057-01, CL-007-05
              Setup: release build; the hash-pinned busy recording websdr_test7.wav as the UTC-aligned FT8 prompt window (as TC-004-004); for the end-to-end case the TC-057-001 live path and Detailed browser.
              Steps: decode the window three times each on 1, 4 and 12 threads; order-preserving map of 200 items on 1, 2, 4 and 8 threads with one slow item, and with cancellation from inside the work; the TC-057-001 run with the default thread count.
-             Expected (independent oracle: the single-threaded decode of the same window and the input order): the records on 4 and 12 threads equal those on 1 thread bit for bit and in order, at least 25 records; best wall times are reported per thread count (busy corpus period); the map returns every item once in input order and a cancelled caller ends with Cancelled; the cooperative-quanta and quality cases of TC-004-001 stay green; end to end (TC-057-001 setup, two busy periods), every row of the better period is painted at most 0.5 s after its prompt window completes at +13.8 s.
+             Expected (independent oracle: the single-threaded decode of the same window and the input order): the records on 4 and 12 threads equal those on 1 thread bit for bit and in order, at least 25 records; best wall times are reported per thread count (busy corpus period); the map returns every item once in input order and a cancelled caller ends with Cancelled; the cooperative-quanta and quality cases of TC-004-001 stay green; end to end (TC-057-001 setup, two busy periods), each period's view is published by its period start + 15.0 s on the server timeline (CL-007-05) and its rows are painted at most 300 ms after that publication (CL-057-01), so every row is painted by period start + 15.3 s; the time from window completion (+13.8 s) to the painted rows is reported, not asserted (#72: no contract states that bound).
              2 — Isolated automated functional tests; Windows PC, no radio (decoder-quality, wstx-rust and live-station-browser suites). */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-057-02';
             verify 'CL-057-01';
+            verify 'CL-007-05';
         }
         attribute executable : String = "server/tests/decoder_signal.rs; server/src/decoder/parallel.rs; server/src/receive_http_tests.rs";
     }
     dependency CL_057_02_verified_by_TC_057_002 from 'CL-057-02' to 'TC-057-002';
     dependency CL_057_01_verified_by_TC_057_002 from 'CL-057-01' to 'TC-057-002';
+    dependency CL_007_05_verified_by_TC_057_002 from 'CL-007-05' to 'TC-057-002';
     verification 'TC-057-003' {
         doc /* TC-057-003 — Live decode display on HB9BLA
-             CL-057-01, CL-057-02
+             CL-057-01, CL-057-02, CL-007-05
              Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 receiving a busy FT8 band, one browser on the LAN on the Detailed profile; no transmission.
              Steps: watch Band Activity over 10 consecutive FT8 periods; read GET /receive audio over the same periods.
-             Expected: no "Loading results" visible in normal operation; each period's rows appear at about +14.0 to +14.5 s of the period; under that decode load no audio_stalled loss (#49): loss_epochs unchanged.
+             Expected: no "Loading results" visible in normal operation; every row of each period is painted by period start + 15.3 s (CL-007-05 publication by +15.0 s plus CL-057-01's 0.3 s; #72), the observed times being reported; under that decode load no audio_stalled loss (#49): loss_epochs unchanged.
              4 — Live on the station, receive only; not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
             verify 'CL-057-01';
             verify 'CL-057-02';
+            verify 'CL-007-05';
         }
     }
     dependency CL_057_02_verified_by_TC_057_003 from 'CL-057-02' to 'TC-057-003';
     dependency CL_057_01_verified_by_TC_057_003 from 'CL-057-01' to 'TC-057-003';
+    dependency CL_007_05_verified_by_TC_057_003 from 'CL-007-05' to 'TC-057-003';
     requirement 'CL-057-03' {
         doc /* Band Activity shows only the latest even and the latest odd T/R period of the current receive identity (operator 2026-11-02, #37): the latest published period on top and, below a divider with its period UTC, the period it replaced when that one has the other parity; each period sorted by value or by the chosen column (ActivityOrdering, #55 CL-055-04); all decodes of a period; #39 highlight and #50 colours as before. When a new period arrives, the older period of the same parity disappears; a same-parity successor (a skipped period) or an uncorrelated period leaves only the latest. Older periods are neither kept, paged nor fetched: the browser reads only the latest view's records (the replaced period's rows are the ones it already has). The logbook and worked-before status are unaffected. After a page load or reload (for example the #51 reload after a station update) only the latest period is shown until the next period arrives, because the receive snapshot describes only the latest view; the previous period is not fetched back. A period in which this station transmitted is the exception of CL-061-03: it adds no block, and the period kept below it stays until a receive period replaces it. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -4297,15 +4313,15 @@ package WstxRequirements {
     }
     dependency CL_039_06_to_FR_008 from 'CL-039-06' to 'FR-008';
     requirement 'CL-039-07' {
-        doc /* Outstanding, issue #39/#42 later slices: auto-QRM stop; free Tx slot finder; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies; the contest class (#63). Until delivered these are not offered. */
+        doc /* Outstanding, issue #39/#42 later slices: auto-QRM stop; filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Delivered meanwhile: the free Tx slot finder (CL-039-09) and contests (#63). Until delivered these are not offered. */
         attribute coverage : ImplementationState = ImplementationState::target;
     }
     dependency CL_039_07_to_FR_007 from 'CL-039-07' to 'FR-007';
     verification 'TC-039-008' {
-        doc /* TC-039-008 — Later strategy slices (outstanding)
+        doc /* TC-039-008 — Later strategy slices (outstanding: auto-QRM stop and the other CL-039-07 slices)
              CL-039-07
              Setup: actual candidate router with a pinned cty.dat fixture and hand-authored rows.
-             Steps: auto-QRM stop scenarios; contest class.
+             Steps: auto-QRM stop scenarios.
              Expected: defined when the slice is prepared; until then contest is refused at PUT /strategy.
              2 — Isolated automated functional tests; Windows development PC; not implemented. */
         attribute automation : AutomationState = AutomationState::planned;
@@ -4619,7 +4635,7 @@ package WstxRequirements {
              CL-039-02, CL-039-09, CL-039-20, CL-039-21, CL-039-22, CL-039-23
              Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 on 20 m FT8 (14.074 MHz), RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported), operator consent; Tx watchdog 6; PSK Reporter on in Settings and Use PSK Reporter on.
              Steps: select "Strongest new on band" with Auto off for two periods; switch Auto on and let it work stations to two logged QSOs; watch a station that does not answer; watch the PSK Reporter lines and the Tx slot at each repetition; HALT; Auto on again; select "Farthest new on band" and let it work one QSO; select "Casual 20 m" and let it call CQ and answer a caller; Auto off during a CQ; select None.
-             Expected: with Auto off the candidates are marked by SNR and nothing is transmitted; with Auto on the strongest new call on band is called first, to a logged QSO, and it goes on; a station that does not answer is left after 4 repetitions (8 while the QSO pane shows "Hears us" with a spot) and not called again for 10 minutes; while there is no spot Tx and Rx move to the quietest slot at a repetition or stay on a tie, and with a spot Tx stays; the QSO pane shows "Hears us" and "open at his end" with the slot; HALT stops at once, Auto grey, the selection kept; Farthest calls the farthest new call on band first; Casual calls CQ after 2 periods without a candidate and answers a caller to a logged QSO; Auto off ends the CQ at once; None leaves Auto off. Not live: the contest rules (no contest in progress; TC-039-044 at cost 2), the 8 h limit and the 60 s without a client (TC-039-033 at cost 2): named on #39 for the operator.
+             Expected: with Auto off the candidates are marked by SNR and nothing is transmitted; with Auto on the strongest new call on band is called first, to a logged QSO, and it goes on; a station that does not answer is left after 4 repetitions (8 while the QSO pane shows "Hears us" with a spot) and not called again for 10 minutes; while there is no spot Tx (with Hold Tx on; Tx and Rx together with Hold Tx off) moves to the quietest slot at a repetition or stays on a tie, and with a spot Tx stays; the QSO pane shows "Hears us" and "open at his end" with the slot; HALT stops at once, Auto grey, the selection kept; Farthest calls the farthest new call on band first; Casual calls CQ after 2 periods without a candidate and answers a caller to a logged QSO; Auto off ends the CQ at once; None leaves Auto off. Not live: the contest rules (no contest in progress; TC-039-044 at cost 2), the 8 h limit and the 60 s without a client (TC-039-033 at cost 2): named on #39 for the operator.
              5 — Live with RF on the station, operator consent; not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
@@ -5774,7 +5790,7 @@ package WstxRequirements {
     dependency CL_065_01_to_FR_020 from 'CL-065-01' to 'FR-020';
     dependency CL_065_01_to_FR_007 from 'CL-065-01' to 'FR-007';
     requirement 'CL-065-02' {
-        doc /* (#65) Free Tx slots marks: with the per-browser Settings > Expert checkbox "Show free Tx slots" on (off by default), while the automation snapshot has a run and free_tx_slots belongs to it, each listed slot is a bar in the frequency ruler directly above the waterfall from hz to hz + width (FT8 50 Hz, FT4 90 Hz) on the waterfall's one frequency mapping (CL-050-07), labelled "<rank> <signed rise>", in a colour other than Rx and Tx, taking no pointer input; the marks stay until the next decision and go when the run ends or the checkbox is off. No request or poll beyond the snapshot and the event. Details: WstxOperatingLayout::FreeTxSlotMarks. */
+        doc /* (#65) Free Tx slots marks: with the per-browser Settings > Expert checkbox "Show free Tx slots" on (off by default), while the automation snapshot has a run and free_tx_slots belongs to it, each listed slot is a bar in the frequency ruler directly above the waterfall over hz to hz + width (FT8 50 Hz, FT4 90 Hz) on the waterfall's one frequency mapping (CL-050-07), taking no pointer input; the marks stay until the next decision and go when the run ends or the checkbox is off. No request or poll beyond the snapshot and the event. Look (#76, operator 2026-11-08): each bar 8 CSS px high, shortened by 2 CSS px at each end (from x(hz) + 2 to x(hz + width) - 2), so slots exactly one width apart show a 4 px gap (where a slot is narrower than both insets, on a phone, the bar may vanish); no text on the marks (no rank, no rise); one pale green in the base theme, remapped by Day and Night like the page, whose drawn pixel differs in each theme from the drawn Rx line, Tx line and ruler background by at least 40 in the sum of the R, G and B differences. Details: WstxOperatingLayout::FreeTxSlotMarks. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js; client/recording.js; client/recording.css";
     }
@@ -5811,8 +5827,8 @@ package WstxRequirements {
         doc /* TC-065-003 — Free Tx slots marks above the waterfall
              CL-065-02
              Setup: actual candidate server and Chromium at 1366x768, 1920x1080 and 360x800, also devicePixelRatio 2; routed automation snapshot with a run and pushed free_tx_slots.state events, FT8 and FT4.
-             Steps: open Settings > Expert; with a value pushed and the checkbox off read #frequency-ruler; turn it on; push a newer value; one of another run_id; one with empty slots; route run null; reload and open a second browser context; click and double-click the waterfall at a mark's frequency and drag the Tx marker across a mark.
-             Expected (oracle: CL-050-07 mapping, the operator's #65 answers): the checkbox "Show free Tx slots" off by default; no mark while off; on: 5 bars with left and right edges within 1 px of the waterfall x of hz and hz + 50 (FT8) or hz + 90 (FT4) at every size and ratio, labels "1 +0", "2 +1", "3 −1" (U+2212), of two overlapping labels only the higher rank's shown and both bars, colour not the Rx or Tx colour in each theme, the waterfall top and height unchanged; redrawn on the newer value; none for another run_id, for empty slots and with run null; on after reload, off in the other context; the same set_frequency requests as without marks, Rx and Tx lines unchanged; no request after an event and no timer request; no horizontal overflow at 360 px; no page error. Red on the parent: no checkbox, no marks.
+             Steps: open Settings > Expert; with a value pushed and the checkbox off read #frequency-ruler; turn it on; push a value whose slots include FT8 2110 and 2160 Hz (exactly one width apart); in the Dark, Day and Night themes take a screenshot and read the pixel at each bar's centre, at the Rx line's and the Tx line's centre and at the ruler background beside the bars; push a newer value; an FT4 value with slots 90 Hz apart; one of another run_id; one with empty slots; route run null; reload and open a second browser context; click and double-click the waterfall at a mark's frequency and drag the Tx marker across a mark.
+             Expected (oracle: CL-050-07 mapping, the operator's #65 and #76 answers): the checkbox "Show free Tx slots" off by default; no mark while off; on at 1366x768 and 1920x1080 (also devicePixelRatio 2): one bar per listed slot, each 8 CSS px high (within 0.5 px) at the bottom of the ruler, with left and right edges within 1 px of x(hz) + 2 and x(hz + width) - 2 (width 50 Hz FT8, 90 Hz FT4); the 2110 and 2160 Hz bars (and the FT4 pair) two bars with a gap of 4 px (within 1 px) between them; no text in the ruler's marks layer (no rank, no rise); in each theme the drawn bar pixel differs from the drawn Rx line, Tx line and ruler background pixel by at least 40 in the sum of the R, G and B differences; the waterfall top and height unchanged; redrawn on the newer value; none for another run_id, for empty slots and with run null; on after reload, off in the other context; the same set_frequency requests as without marks, Rx and Tx lines unchanged; no request after an event and no timer request; at 360x800 no bar is required, no horizontal overflow and no page error. Red on the parent: 4 px bars over the full slot (no gap between 2110 and 2160 Hz), labels in the ruler.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -5826,7 +5842,7 @@ package WstxRequirements {
              CL-065-01, CL-065-02
              Setup: the gated candidate installed on HB9BLA, IC-7300 on 40 m FT8 within the operator's standing transmit consent, PSK Reporter on, Hold Tx on, "Show free Tx slots" on in the operator's browser.
              Steps: Auto on with a strategy; let it select and call through at least one QSO and one slot check; at each decision look at the marks against the traces of my recent Rx periods; where a mark lies on a visible station read free_tx_slots from GET /automation and record it on the issue; place Tx by hand between marks with a click; HALT, Auto off.
-             Expected (oracle: the operator's look): 5 marks at each decision, staying until the next; their places comparable with the waterfall at a glance; the recorded numbers name why that slot ranked as it did; the click sets Tx as before; no marks after the run ends.
+             Expected (oracle: the operator's look): 5 marks at each decision, staying until the next; each mark a separate pale green bar visible at a glance, also two adjacent slots, with no text (#76); their places comparable with the waterfall at a glance; the recorded numbers name why that slot ranked as it did; the click sets Tx as before; no marks after the run ends.
              5 — Live with RF on the station, operator consent; not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
