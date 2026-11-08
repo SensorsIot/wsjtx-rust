@@ -23,6 +23,8 @@ parallel_workers: 3
 # The push gate runs up to three selected suites at a time; the suites' exclusive/shared
 # tags keep conflicting ones apart (docs/harness/Project-Specifics.md).
 gate:
+  # Shared compile cache for Rust builds (harness lang/rust "Shared compile cache"); sccache on HB9BLA.
+  compile_cache: D:/sccache
   parallel: 3
   # protocol-thin, recording-thin and radio-selection-thin run beside other groups: measured
   # stable there (harness#28; Project-Specifics.md, Parallel groups). The CPU measurements
