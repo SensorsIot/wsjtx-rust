@@ -935,11 +935,19 @@ package WstxStrategy {
              a period of them that I transmitted in or did not receive leaves a gap that no
              older period fills; fewer: those there are.
              Floor: per counted period, the WSJT-X passband floor (the baseline of the WSJT-X
-             FT8 and FT4 decoders) over the bins from floorLowHz (300) to floorHighHz (2700):
-             those bins in ten equal segments, in each the lowest tenth of the bin levels, a
-             fourth-order polynomial fitted through those points by least squares, plus 0.65 dB.
-             It follows the receive filter's roll-off, so slots at the passband edges are
-             compared fairly. A period whose fit has fewer than 5 points is not counted.
+             FT8 and FT4 decoders) over the floor bins, the native bins k whose frequency
+             k x 12000/4096 Hz lies in [floorLowHz, floorHighHz) = [300, 2700): k = 103..921,
+             819 bins. They form ten equal segments of 81 bins from k = 103 (the top 9 bins,
+             913..921, in none, as in WSJT-X); in each segment the cutoff is its 8th lowest
+             level (WSJT-X's tenth: rank 0.1 x 81 + 0.5 rounded down) and the points are its
+             bins at or below the cutoff; a fourth-order polynomial is fitted through all
+             points by least squares, plus 0.65 dB. Every segment gives at least 8 points and
+             all ten at most 810, so a covered period always has a floor (WSJT-X's minimum of
+             5 points and maximum of 1000 are never reached). Coverage: a period counts only
+             when its levels reach bin 921 (2698.2 Hz); one whose rows end below it has no
+             floor and is not counted (the live detailed rows have 1024 bins, up to 2997 Hz).
+             The floor follows the receive filter's roll-off, so slots at the passband edges
+             are compared fairly.
              Value: a slot at f covers the bins in [f, f + width): FT8 50 Hz, FT4 90 Hz. In one
              counted period its level is the mean level of those bins, its floor the mean of
              the floor over the same bins, its rise level minus floor. The compared value is
