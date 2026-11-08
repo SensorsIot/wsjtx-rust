@@ -5694,6 +5694,77 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_037_02_verified_by_TC_037_002 from 'CL-037-02' to 'TC-037-002';
+    // #65 Free Tx slots (operator 2026-11-08, three grill-me rounds).
+    requirement 'CL-065-01' {
+        doc /* (#65) Free Tx slots: at every slot decision of an automation run (strategy, contest, pounce; WstxStrategy::FreeTxSlot, every rule, also with Hold Tx on) the station lists the 5 best candidates of that decision: its own candidates (Tx range, clear of the called station and with Hold Tx on of my Rx, free at his end where known), ranked by its own compared value (the whole-dB rise in my Rx parity, while listening the larger of both parities), then nearer the current Tx, then lower, skipping a candidate closer than the slot width (FT8 50 Hz, FT4 90 Hz) to one already listed; none without power. The value {run_id, at_utc_ms, mode, rx_parity, listening, periods {even, odd: {now, usual}}, slots [{hz, rise_db, level_db, usual_db}]} is the top-level free_tx_slots of GET /automation (null without a run and before its first decision) and is pushed at each decision only as free_tx_slots.state to Detailed and Thin peers (at most 1024 bytes). No list and no event without a run. The choice and tx_slot are unchanged. Details: WstxStrategy::FreeTxSlots, WstxMcp::AutomationWire, WstxStationProtocol::PushedStationState. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/freeslot.rs; server/src/automation.rs; server/src/main.rs";
+    }
+    dependency CL_065_01_to_FR_020 from 'CL-065-01' to 'FR-020';
+    dependency CL_065_01_to_FR_007 from 'CL-065-01' to 'FR-007';
+    requirement 'CL-065-02' {
+        doc /* (#65) Free Tx slots marks: with the per-browser Settings > Expert checkbox "Show free Tx slots" on (off by default), while the automation snapshot has a run and free_tx_slots belongs to it, each listed slot is a bar in the frequency ruler directly above the waterfall from hz to hz + width (FT8 50 Hz, FT4 90 Hz) on the waterfall's one frequency mapping (CL-050-07), labelled "<rank> <signed rise>", in a colour other than Rx and Tx, taking no pointer input; the marks stay until the next decision and go when the run ends or the checkbox is off. No request or poll beyond the snapshot and the event. Details: WstxOperatingLayout::FreeTxSlotMarks. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js; client/recording.js; client/recording.css";
+    }
+    dependency CL_065_02_to_FR_019 from 'CL-065-02' to 'FR-019';
+    verification 'TC-065-001' {
+        doc /* TC-065-001 — The five best non-overlapping candidates
+             CL-065-01
+             Setup: the list function with hand-authored power tables (dB per candidate, written in the test), FT8 and FT4.
+             Steps: seven separate quiet places; three candidates only; no power; rises 0.4 against 0.0 and 0.6 against 0.0; equal rises either side of the current Tx; FT8 a candidate 40 Hz and one 50 Hz from a listed one, FT4 80 Hz and 90 Hz; a candidate within 50 Hz of the called station; one within 50 Hz of my Rx with Hold Tx on and off; his frequencies of my Tx parity near some candidates, and everywhere; a rise of -1.4; listening with one parity higher.
+             Expected (hand computation recorded in the test): 5 of seven in rank order; 3; empty; 0.4 ties and the current Tx is first, 0.6 does not; the nearer first, at equal distance the lower; 40 Hz skipped and 50 Hz listed, 80 Hz skipped and 90 Hz listed; the called station's neighbour never listed; my Rx's neighbour not listed with Hold Tx on, listed with it off; candidates near his frequencies excluded, his frequencies everywhere leave all; -1.4 listed as -1; level_db the larger parity's; the first listed equals quietest_clear's chosen hz for every table. Red on the parent: no list.
+             2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-065-01';
+        }
+        attribute executable : String = "server/src/freeslot_tests.rs";
+    }
+    dependency CL_065_01_verified_by_TC_065_001 from 'CL-065-01' to 'TC-065-001';
+    verification 'TC-065-002' {
+        doc /* TC-065-002 — free_tx_slots in the snapshot and on the socket
+             CL-065-01
+             Setup: the actual station router with hand-authored detailed waterfall rows (as TC-039-050); a strategy run and a CQ run, Hold Tx off and on; socket peers subscribed Detailed, Thin and Off; GET /automation and the MCP automation view.
+             Steps: read before any run; a selection with Hold Tx off; the same with only my Rx-parity periods counted since the band change; a CQ decision; a selection with Hold Tx on; a second decision with the same list; the run ends; a fourth peer subscribes Thin while a value exists; a separate session with no run at all.
+             Expected: null before any run; the value with exactly {run_id, at_utc_ms, mode, rx_parity, listening, periods, slots}, the run's id, at_utc_ms the station clock of the decision, the hand-computed slots and period counts; one free_tx_slots.state each to the Detailed and Thin peer, data.free_tx_slots equal to the GET value, none to Off, at most 1024 bytes also with 5 slots at their longest numbers; tx_slot exactly as on the parent; the MCP view carries the same value; with only Rx-parity periods the Tx-parity usual count is 0; the CQ listening true with both now counts; Hold Tx on the list filled and Tx unchanged; a new event with a later at_utc_ms; after the end null and no free_tx_slots.state; the fourth peer gets the value once; without a run zero free_tx_slots.state and zero automation.state. Red on the parent: no key, no event.
+             2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-065-01';
+        }
+        attribute executable : String = "server/src/strategy_tests.rs";
+    }
+    dependency CL_065_01_verified_by_TC_065_002 from 'CL-065-01' to 'TC-065-002';
+    verification 'TC-065-003' {
+        doc /* TC-065-003 — Free Tx slots marks above the waterfall
+             CL-065-02
+             Setup: actual candidate server and Chromium at 1366x768, 1920x1080 and 360x800, also devicePixelRatio 2; routed automation snapshot with a run and pushed free_tx_slots.state events, FT8 and FT4.
+             Steps: open Settings > Expert; with a value pushed and the checkbox off read #frequency-ruler; turn it on; push a newer value; one of another run_id; one with empty slots; route run null; reload and open a second browser context; click and double-click the waterfall at a mark's frequency and drag the Tx marker across a mark.
+             Expected (oracle: CL-050-07 mapping, the operator's #65 answers): the checkbox "Show free Tx slots" off by default; no mark while off; on: 5 bars with left and right edges within 1 px of the waterfall x of hz and hz + 50 (FT8) or hz + 90 (FT4) at every size and ratio, labels "1 +0", "2 +1", "3 −1" (U+2212), of two overlapping labels only the higher rank's shown and both bars, colour not the Rx or Tx colour in each theme, the waterfall top and height unchanged; redrawn on the newer value; none for another run_id, for empty slots and with run null; on after reload, off in the other context; the same set_frequency requests as without marks, Rx and Tx lines unchanged; no request after an event and no timer request; no horizontal overflow at 360 px; no page error. Red on the parent: no checkbox, no marks.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-065-02';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_065_02_verified_by_TC_065_003 from 'CL-065-02' to 'TC-065-003';
+    verification 'TC-065-004' {
+        doc /* TC-065-004 — Live Free Tx slots on HB9BLA
+             CL-065-01, CL-065-02
+             Setup: the gated candidate installed on HB9BLA, IC-7300 on 40 m FT8 within the operator's standing transmit consent, PSK Reporter on, Hold Tx on, "Show free Tx slots" on in the operator's browser.
+             Steps: Auto on with a strategy; let it select and call through at least one QSO and one slot check; at each decision look at the marks against the traces of my recent Rx periods; where a mark lies on a visible station read free_tx_slots from GET /automation and record it on the issue; place Tx by hand between marks with a click; HALT, Auto off.
+             Expected (oracle: the operator's look): 5 marks at each decision, staying until the next; their places comparable with the waterfall at a glance; the recorded numbers name why that slot ranked as it did; the click sets Tx as before; no marks after the run ends.
+             5 — Live with RF on the station, operator consent; not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-065-01';
+            verify 'CL-065-02';
+        }
+    }
+    dependency CL_065_01_verified_by_TC_065_004 from 'CL-065-01' to 'TC-065-004';
+    dependency CL_065_02_verified_by_TC_065_004 from 'CL-065-02' to 'TC-065-004';
     // #37 fixed-height QSO pane with a QSO and a Calling me section (operator 2026-11-04).
     requirement 'CL-037-04' {
         doc /* (#37, operator 2026-11-04: "The QSO panel should contain all needed information for the operator. And it should be fixed in size that the things below it do not move all the time up and down. We probably have a section for the QSO and a section for who is calling"; "you can make this section big enough to accommodate also longer QSOs. We have enough space") The QSO pane has a fixed height that depends on the screen only, never on its content, so the Control panel and the error field below it do not move when a QSO starts or ends, dialogue rows or callers are added or a message line appears. It has two sections of fixed height that scroll inside: QSO, below the header (partner call, grid, country, distance, reports) and the message lines (state, NEXT, last partner message), holds the #60 dialogue table with its header row and 12 rows without scrolling on a laptop screen (6 at most 48em wide), more rows scrolling inside with the newest row always visible, and the placeholder "No QSO" while no QSO runs; Calling me lists every station calling my call except the partner, one line per station with call, SNR, grid and country, at least 5 rows high, double-click (or Enter) to work it, with the #10 worked-before marks, and the placeholder "Nobody is calling". At 360 CSS px both sections stack with fixed heights, and Band Activity, with a fixed height, shows compact rows (numbers and distance, then message and country, wrapping only between whole fields, usually two lines) instead of labelled cards, at least six on screen at 360x800. The Calling me hover follows the compact #50 BandActivityHover rule (one line, only the enabled colour reasons, the strongest per kind). No new request or poll: the sections show the contact snapshot and the result rows the page already reads. Details: WstxOperatingLayout::QsoPane items 3, 7 and 8, BandActivityView. */

@@ -116,6 +116,14 @@ bandColours.addEventListener('change',()=>{const value=Object.fromEntries([...ba
 bandColoursApply();
 secondary('recorded-input','Recordings and replay',panel,expertSection).open=true;
 expertSection.insertAdjacentHTML('afterbegin','<p class="op-muted">Diagnostics that are not needed while operating.</p>');
+// #65 WstxOperatingLayout::FreeTxSlotMarks: "Show free Tx slots", this browser only, off by default,
+// applied at once (contact.js draws the marks in the frequency ruler).
+const freeTxSlotsKey='wstx.free-tx-slots.v1';
+block('settings-free-tx-slots','Free Tx slots',expertSection,'<label class="op-check"><input id="free-tx-slots-show" type="checkbox"> Show free Tx slots</label><p class="op-muted">Marks the five best Tx slots of the automation run\'s last slot decision above the waterfall. This browser only.</p>');
+const freeTxSlotsBox=document.querySelector('#free-tx-slots-show');
+try{freeTxSlotsBox.checked=localStorage.getItem(freeTxSlotsKey)==='on';}catch{}
+freeTxSlotsBox.addEventListener('change',()=>{try{localStorage.setItem(freeTxSlotsKey,freeTxSlotsBox.checked?'on':'off');}catch{}dispatchEvent(new Event('wstx-free-tx-slots'));});
+window.wstxFreeTxSlotsShown=()=>freeTxSlotsBox.checked;
 const sliders=document.createElement('div');sliders.id='presentation-sliders';sliders.className='op-display-controls';
 sliders.innerHTML='<label title="WSJT-X Zero: moves the whole colour scale; the noise floor sits lower or higher">Sensitivity <input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="0" aria-label="Waterfall sensitivity (zero)"><output id="sensitivity-value">+0 dB</output></label>'+'<label title="WSJT-X Gain: the dB span from dark blue to red">Range <input id="display-range" type="range" min="10" max="80" step="1" value="50" aria-label="Waterfall range (gain)"><output id="range-value">50 dB</output></label>'+'<label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Speed <input id="display-speed" type="range" min="0.5" max="8" step="0.5" value="1" aria-label="Waterfall speed, Slow to Fast"><output id="speed-value">10 px/s</output></label>';
 signal.querySelector('.op-signal-heading').append(sliders);
@@ -363,6 +371,7 @@ function paint() {
     const ruler=document.querySelector('#frequency-ruler');ruler.replaceChildren();
     const labelStep=500*Math.max(1,Math.ceil(parseFloat(getComputedStyle(ruler).fontSize)*4/Math.max(1,ruler.clientWidth/6)));
     for(let f=0;f<=3000;f+=100){const tick=document.createElement('span');tick.style.left=`${wstxWaterfallAxis.x(f,ruler)}px`;tick.className=f%500?'minor':'major';if(f===0||f===3000||f%labelStep===0)tick.append(Object.assign(document.createElement('b'),{textContent:String(f)}));ruler.append(tick);}
+    window.wstxFreeTxSlotMarks?.();
     const legend=document.querySelector('#level-legend'),E=effectiveBlack(),R=visibleCount(),low=R?rows.at(-R).first_frame/12000:0,high=R?rows.at(-1).end_frame/12000:0;
     legend.textContent=`0-3000 Hz | ${B===1024?'2.93 Hz/bin':'23.44 Hz/group'} | WF ${E} to ${E+displayRange} dBFS | Window ${timeProjection().capacity.toFixed(1)} s | Observed ${low.toFixed(1)}-${high.toFixed(1)} s`;
     legend.title=B===1024?'Detailed: 2.9296875 Hz native bins; 5 rows/s; 4096/12000 = 0.341333 s Hann window support':'Thin: 23.4375 Hz groups; 1 row/s; 2048/12000 s Hann window support';

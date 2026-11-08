@@ -7843,3 +7843,434 @@ async fn tc_039_050_after_a_band_change_only_later_periods_set_the_usual_level()
         )
     );
 }
+
+// #65 WstxStrategy::FreeTxSlots on the wire (TC-065-002). Oracle: the operator's rules of
+// 2026-11-08 (issue #65 Functionality 1-2) worked by hand from the hand-authored waterfall rows
+// below, and the model's exact keys (WstxMcp::AutomationWire, WstxStationProtocol).
+
+/// A status WebSocket peer over the served router with the browser's cookie and Origin and one
+/// display subscription (RFC 6455 frames written and read here; client frames masked).
+struct Peer {
+    stream: std::net::TcpStream,
+    pending: Vec<u8>,
+    inbox: Vec<Value>,
+}
+impl Peer {
+    fn open(address: std::net::SocketAddr, f: &Mcp, subscription: &str) -> Peer {
+        use std::io::{Read, Write};
+        let mut stream = std::net::TcpStream::connect(address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .unwrap();
+        let request = [
+            "GET /ws HTTP/1.1".to_owned(),
+            format!("Host: {address}"),
+            format!("Origin: {}", f.app.origin),
+            "Connection: Upgrade".to_owned(),
+            "Upgrade: websocket".to_owned(),
+            "Sec-WebSocket-Version: 13".to_owned(),
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==".to_owned(),
+            "Sec-WebSocket-Protocol: wstx.v1".to_owned(),
+            format!("Cookie: {}", f.cookie()),
+            String::new(),
+            String::new(),
+        ]
+        .join("\r\n");
+        stream.write_all(request.as_bytes()).unwrap();
+        let (mut head, deadline) = (Vec::new(), Instant::now() + Duration::from_secs(5));
+        while !head.ends_with(b"\r\n\r\n") {
+            assert!(Instant::now() < deadline, "no upgrade");
+            let mut byte = [0u8];
+            if let Ok(1) = stream.read(&mut byte) {
+                head.push(byte[0]);
+            }
+        }
+        assert!(head.starts_with(b"HTTP/1.1 101"), "{head:?}");
+        let mut peer = Peer {
+            stream,
+            pending: Vec::new(),
+            inbox: Vec::new(),
+        };
+        peer.write(
+            1,
+            json!({"v":1,"type":subscription,"id":1})
+                .to_string()
+                .as_bytes(),
+        );
+        // What follows the subscription's reply stays for the next read.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            assert!(Instant::now() < deadline, "no subscription reply");
+            let messages = peer.read(Duration::from_millis(100));
+            if let Some(i) = messages
+                .iter()
+                .position(|m| m["type"] == "spectrum.subscription")
+            {
+                peer.inbox = messages[i + 1..].to_vec();
+                break;
+            }
+        }
+        peer
+    }
+    fn write(&mut self, opcode: u8, payload: &[u8]) {
+        use std::io::Write;
+        let mask = [0x37, 0xfa, 0x21, 0x3d];
+        let mut frame = vec![0x80 | opcode];
+        match payload.len() {
+            n @ 0..=125 => frame.push(0x80 | n as u8),
+            n => {
+                frame.push(0x80 | 126);
+                frame.extend((n as u16).to_be_bytes());
+            }
+        }
+        frame.extend(mask);
+        frame.extend(payload.iter().enumerate().map(|(i, b)| b ^ mask[i % 4]));
+        self.stream.write_all(&frame).unwrap();
+    }
+    /// The text messages received within `wait` (a ping is answered).
+    fn read(&mut self, wait: Duration) -> Vec<Value> {
+        use std::io::Read;
+        let (deadline, mut out) = (Instant::now() + wait, std::mem::take(&mut self.inbox));
+        while Instant::now() < deadline {
+            let mut buf = [0u8; 16384];
+            if let Ok(n) = self.stream.read(&mut buf) {
+                assert!(n > 0, "the station closed the socket");
+                self.pending.extend(&buf[..n]);
+            }
+            while let Some((opcode, payload, used)) = frame(&self.pending) {
+                self.pending.drain(..used);
+                match opcode {
+                    1 => out.push(serde_json::from_slice(&payload).unwrap()),
+                    9 => self.write(10, &payload),
+                    _ => {}
+                }
+            }
+        }
+        out
+    }
+    /// The free_tx_slots.state messages received within 2.5 s (two contact ticks and more).
+    fn free_tx_slots(&mut self) -> Vec<Value> {
+        let messages = tokio::task::block_in_place(|| self.read(Duration::from_millis(2500)));
+        messages
+            .into_iter()
+            .filter(|m| m["type"] == "free_tx_slots.state")
+            .collect()
+    }
+}
+/// One complete server frame at the start of `b`: (opcode, payload, its length in `b`).
+fn frame(b: &[u8]) -> Option<(u8, Vec<u8>, usize)> {
+    let (len, at) = match *b.get(1)? & 0x7f {
+        126 => (usize::from(u16::from_be_bytes([*b.get(2)?, *b.get(3)?])), 4),
+        127 => (
+            usize::try_from(u64::from_be_bytes(b.get(2..10)?.try_into().ok()?)).ok()?,
+            10,
+        ),
+        n => (usize::from(n), 2),
+    };
+    let payload = b.get(at..at + len)?.to_vec();
+    Some((b[0] & 0x0f, payload, at + len))
+}
+/// The waterfall before the selection in e: my Rx parity (even, e - 30 s) a floor of 40 with quiet
+/// bands at their slots, my Tx parity (odd, e - 15 s) a flat 20. Each slot's usual level is 20
+/// (the lowest of its two periods), so a band slot's rise is its level - 20: 1000 at 0, 1300 at 1,
+/// 2000 at 2, 700 at 3, 2300 at 4, 1700 at 5, the floor at 20. A slot shifted from a band by less
+/// than 50 Hz overlaps that band's listed slot and is skipped, one shifted by 50 Hz or more reads
+/// the floor; so the five listed are 1000, 1300, 2000, 700, 2300 (1700 is the sixth).
+fn free_rows(f: &Mcp, e: i64) {
+    let bands = [
+        (1000, 1050, 20),
+        (1300, 1350, 21),
+        (2000, 2050, 22),
+        (700, 750, 23),
+        (2300, 2350, 24),
+        (1700, 1750, 25),
+    ];
+    wf_row(f, e - 30_000, 40, &bands, false);
+    wf_row(f, e - 15_000, 20, &[], false);
+}
+/// The five of `free_rows`: {hz, rise_db, level_db, usual_db}.
+fn free_rows_slots() -> Value {
+    json!([{"hz":1000,"rise_db":0,"level_db":20,"usual_db":20},
+        {"hz":1300,"rise_db":1,"level_db":21,"usual_db":20},
+        {"hz":2000,"rise_db":2,"level_db":22,"usual_db":20},
+        {"hz":700,"rise_db":3,"level_db":23,"usual_db":20},
+        {"hz":2300,"rise_db":4,"level_db":24,"usual_db":20}])
+}
+const K1ABC_2600: (&str, f64, Option<f64>) = ("CQ K1ABC FN42", 2600.0, Some(-10.0));
+/// GET /automation free_tx_slots, checked to be the MCP automation view's.
+async fn free_tx_slots(f: &Mcp) -> Value {
+    let get = f.browser("GET", "/automation", None).await.json;
+    assert!(
+        get.as_object().unwrap().contains_key("free_tx_slots"),
+        "{get}"
+    );
+    assert_eq!(
+        f.read("automation").await["free_tx_slots"],
+        get["free_tx_slots"],
+        "MCP view"
+    );
+    get["free_tx_slots"].clone()
+}
+
+// Proves: CL-065-01; TC-065-002 (the snapshot and the socket). A strategy run, Hold Tx off, Tx 1500,
+// Detailed, Thin and Off peers on the served router. Before any run: null. The selection of K1ABC
+// (CQ at 2600, even: my Rx parity even) on `free_rows`: exactly the keys of the value, the run's id,
+// at_utc_ms the station clock (held still over the decision), the five of `free_rows` and the
+// period counts (one even period now, the odd one not compared: null; one of each usual); tx_slot
+// and the move to 1000 exactly as the choice decides them. One free_tx_slots.state each to the
+// Detailed and Thin peers, data its value, none to Off; at most 1024 bytes, also with five slots at
+// their longest numbers. The slot check of the unanswered repetition (nothing new counted): the same
+// list in a new event with a later at_utc_ms. A Thin peer subscribing now gets it once. Auto off
+// ends the run: null and no event.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_065_002_free_tx_slots_in_the_snapshot_and_on_the_socket() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = f.app.clone();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, crate::router(app)).await.unwrap();
+    });
+    let mut peers: Vec<Peer> = tokio::task::block_in_place(|| {
+        ["spectrum.detail", "spectrum.thin", "spectrum.off"]
+            .iter()
+            .map(|s| Peer::open(address, &f, s))
+            .collect()
+    });
+    assert_eq!(free_tx_slots(&f).await, Value::Null, "before any run");
+    hold_off(&f).await;
+    free_rows(&f, e);
+    let _feed = attach_feed(&f);
+    let mut c = config(Some("Test calls"));
+    c["strategies"][0]["repetitions"] = json!(4);
+    select(&f, c).await;
+    assert_eq!(
+        free_tx_slots(&f).await,
+        Value::Null,
+        "before the run's first decision"
+    );
+    let at = f.bench.now_utc_ms();
+    f.bench.frozen.store(at, Ordering::SeqCst);
+    publish(&f, e, &[K1ABC_2600]);
+    f.bench.frozen.store(0, Ordering::SeqCst);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    assert_eq!(
+        frequencies(&f).await,
+        (
+            json!(1000),
+            json!(1000),
+            json!({"hz":1000,"power_db":0,"his_end":"unknown"})
+        ),
+        "the choice as without the list"
+    );
+    let run_id = run_of(&f).await["id"].clone();
+    let first = free_tx_slots(&f).await;
+    assert_eq!(
+        first,
+        json!({"run_id":run_id,"at_utc_ms":at,"mode":"ft8","rx_parity":"even","listening":false,
+            "periods":{"even":{"now":1,"usual":1},"odd":{"now":null,"usual":1}},
+            "slots":free_rows_slots()})
+    );
+    let event = json!({"v":1,"type":"free_tx_slots.state",
+        "data":{"profile_id":f.id,"boot_id":f.boot,"free_tx_slots":first}});
+    for (i, name) in [(0, "Detailed"), (1, "Thin")] {
+        assert_eq!(
+            peers[i].free_tx_slots(),
+            std::slice::from_ref(&event),
+            "{name}"
+        );
+    }
+    assert_eq!(peers[2].free_tx_slots(), Vec::<Value>::new(), "Off");
+    let r = &f.state.recording;
+    assert!(crate::automation::free_tx_slots_event(r, &first).len() <= 1024);
+    let longest = crate::freeslot::Listed {
+        hz: 2650,
+        rise_db: -255,
+        level_db: 255,
+        usual_db: 255,
+    };
+    let value = crate::freeslot::value(
+        &profile::new_uuid().unwrap(),
+        i64::from(i32::MAX) * 1000,
+        wstx_rust::decoder::Mode::Ft8,
+        wstx_rust::transmit::Parity::Even,
+        true,
+        json!({"even":{"now":4,"usual":3},"odd":{"now":4,"usual":3}}),
+        &[longest; 5],
+    );
+    let longest = crate::automation::free_tx_slots_event(r, &value);
+    assert!(longest.len() <= 1024, "{} bytes: {longest}", longest.len());
+
+    // The slot check of the unanswered repetition: the same list, a later decision.
+    transmit_own_period(&f, e + 15_000).await;
+    publish(&f, rep(e, 1), &[]);
+    assert_eq!(run_of(&f).await["slot_check"]["repetitions"], 1);
+    let second = free_tx_slots(&f).await;
+    assert!(
+        second["at_utc_ms"].as_i64() > first["at_utc_ms"].as_i64(),
+        "{second}"
+    );
+    let mut same = second.clone();
+    same["at_utc_ms"] = first["at_utc_ms"].clone();
+    assert_eq!(same, first, "the same list");
+    let event = json!({"v":1,"type":"free_tx_slots.state",
+        "data":{"profile_id":f.id,"boot_id":f.boot,"free_tx_slots":second}});
+    for (i, name) in [(0, "Detailed"), (1, "Thin")] {
+        assert_eq!(
+            peers[i].free_tx_slots(),
+            std::slice::from_ref(&event),
+            "{name}, second"
+        );
+    }
+    assert_eq!(peers[2].free_tx_slots(), Vec::<Value>::new(), "Off, second");
+    let mut late = tokio::task::block_in_place(|| Peer::open(address, &f, "spectrum.thin"));
+    assert_eq!(
+        late.free_tx_slots(),
+        [event],
+        "a peer subscribing Thin gets it once"
+    );
+    assert_eq!(late.free_tx_slots(), Vec::<Value>::new(), "once");
+    peers.push(late);
+
+    assert_eq!(auto(&f, false, None).await.status, StatusCode::OK);
+    f.tick();
+    assert_eq!(run_of(&f).await["state"], "stopped");
+    assert_eq!(free_tx_slots(&f).await, Value::Null, "after the run's end");
+    for (i, peer) in peers.iter_mut().enumerate() {
+        assert_eq!(
+            peer.free_tx_slots(),
+            Vec::<Value>::new(),
+            "peer {i} after the end"
+        );
+    }
+    server.abort();
+}
+
+// Proves: CL-065-01; TC-065-002 (the period counts, the CQ, Hold Tx on). Only my Rx parity counted
+// since the band change (20 m to 40 m, then one even period, floor 40 with 1200..1250 at 20): every
+// slot's usual level is its own Rx-parity level, every rise 0, so from Tx 1500 the list is the tie
+// rule's 1500, 1450, 1550, 1400, 1600 (each 50 Hz from the nearer listed one), level and usual 40;
+// the Tx-parity usual count is 0 (the #66 question). A CQ ("Casual 20 m", Hold Tx off, the
+// cq_rise_rows table): listening, both now counts 4 (usual 3 each), 900 first at rise 5 (level 25,
+// the even parity's, the larger; 890 and 910 at 8 are within 50 Hz of it). Then the two slots
+// reaching 3 of their 17 bins into 1800..1850 (even 10, odd 60 there): 1760 (bins 601..617, 615..617
+// in the band) and 1840 (bins 629..645, 629..631 in it): even (14 x 40 + 3 x 10) / 17 = 34.7, odd
+// (14 x 20 + 3 x 60) / 17 = 27.1, so level 35 (the larger), usual 27 (the lower), rise 7.6, 8 in
+// whole dB, nearer to Tx 1500 first; slots further into the band rise more (1770: 36.5 - 27.6 = 9).
+// Then the floor's rise 20 (level 40, usual 20) by distance to 1500: 1500, 1450. Hold Tx
+// on: the selection of K1ABC at 2600 on `free_rows` keeps Tx 1500 (tx_slot 1500 with its rise 20)
+// and the list is filled as with it off.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_065_002_period_counts_a_cq_and_hold_tx_on() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    hold_off(&f).await;
+    select(&f, config(Some("Test calls"))).await;
+    wf_row(&f, e - 15_000, 0, &[], false);
+    f.tick();
+    f.state.recording.fixture_band("40m");
+    f.tick();
+    wf_row(&f, rep(e, 1), 40, &[(1200, 1250, 20)], false);
+    ended(&f, rep(e, 2));
+    publish(&f, rep(e, 2), &[K1ABC_2600]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    let v = free_tx_slots(&f).await;
+    assert_eq!(
+        v["periods"],
+        json!({"even":{"now":1,"usual":1},"odd":{"now":null,"usual":0}})
+    );
+    let slot = |hz: u32| json!({"hz":hz,"rise_db":0,"level_db":40,"usual_db":40});
+    assert_eq!(
+        v["slots"],
+        json!([slot(1500), slot(1450), slot(1550), slot(1400), slot(1600)])
+    );
+    assert_eq!(run_of(&f).await["tx_slot"]["hz"], 1500);
+
+    let t = casual(true).await;
+    let (f, e) = (&t.f, t.e);
+    hold_off(f).await;
+    cq_rise_rows(f, e);
+    publish(f, e, &[]);
+    publish(f, rep(e, 1), &[]);
+    assert_eq!(run_of(f).await["state"], "calling_cq");
+    assert_eq!(
+        run_of(f).await["tx_slot"],
+        json!({"hz":900,"power_db":5,"his_end":"unknown"})
+    );
+    let v = free_tx_slots(f).await;
+    assert_eq!(
+        (
+            v["listening"].clone(),
+            v["rx_parity"].clone(),
+            v["periods"].clone()
+        ),
+        (
+            json!(true),
+            json!("even"),
+            json!({"even":{"now":4,"usual":3},"odd":{"now":4,"usual":3}})
+        )
+    );
+    let floor = |hz: u32| json!({"hz":hz,"rise_db":20,"level_db":40,"usual_db":20});
+    let edge = |hz: u32| json!({"hz":hz,"rise_db":8,"level_db":35,"usual_db":27});
+    assert_eq!(
+        v["slots"],
+        json!([{"hz":900,"rise_db":5,"level_db":25,"usual_db":20},
+            edge(1760), edge(1840), floor(1500), floor(1450)])
+    );
+
+    let t = held_run_with("ft8", None, free_rows, &[K1ABC_2600]).await;
+    let f = &t.f;
+    assert_eq!(
+        frequencies(f).await,
+        (
+            json!(2600),
+            json!(1500),
+            json!({"hz":1500,"power_db":20,"his_end":"unknown"})
+        ),
+        "Tx held"
+    );
+    let v = free_tx_slots(f).await;
+    assert_eq!(v["slots"], free_rows_slots());
+    assert_eq!(v["listening"], false);
+}
+
+// Proves: CL-065-01; TC-065-002 (no run, no event). A station whose automation is never used, with
+// Detailed and Thin peers for 6 s: zero free_tx_slots.state and zero automation.state messages, and
+// GET /automation free_tx_slots null (WstxMcp::AutomationIndicator).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_065_002_no_run_sends_no_free_tx_slots_and_no_automation_state() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let _client = f.state.recording.clients.session();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = f.app.clone();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, crate::router(app)).await.unwrap();
+    });
+    let mut peers: Vec<Peer> = tokio::task::block_in_place(|| {
+        ["spectrum.detail", "spectrum.thin"]
+            .iter()
+            .map(|s| Peer::open(address, &f, s))
+            .collect()
+    });
+    for peer in &mut peers {
+        let messages = tokio::task::block_in_place(|| peer.read(Duration::from_secs(3)));
+        let kinds: Vec<&Value> = messages
+            .iter()
+            .map(|m| &m["type"])
+            .filter(|t| *t == "free_tx_slots.state" || *t == "automation.state")
+            .collect();
+        assert_eq!(kinds, Vec::<&Value>::new());
+        assert!(!messages.is_empty(), "the peer receives its other events");
+    }
+    assert_eq!(free_tx_slots(&f).await, Value::Null);
+    server.abort();
+}

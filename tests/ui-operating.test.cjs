@@ -1341,6 +1341,142 @@ test('TC-050-007 the waterfall pointer, Rx/Tx lines and axis share one frequency
   }
 });
 
+// #65 WstxOperatingLayout::FreeTxSlotMarks (TC-065-003). Oracle: the CL-050-07 mapping (the waterfall
+// canvas's own box carries 0..3000 Hz) and the operator's #65 answers R1-R3 (issue #65 Functionality 3);
+// the automation snapshot and the free_tx_slots values are hand-written fixtures.
+const freeTxValue=(run_id,slots,{mode='ft8',at=1}={})=>({run_id,at_utc_ms:at,mode,rx_parity:'even',listening:false,
+  periods:{even:{now:1,usual:1},odd:{now:null,usual:1}},slots:slots.map(([hz,rise])=>({hz,rise_db:rise,level_db:20+rise,usual_db:20}))});
+// The ruler's marks, the waterfall box and the Rx/Tx lines as the page shows them.
+const freeTxMarks=page=>page.evaluate(()=>{
+  const box=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
+  const layer=document.querySelector('#frequency-ruler > #free-tx-slots'),shown=e=>e.checkVisibility()&&e.getBoundingClientRect().width>0;
+  const bars=layer?[...layer.querySelectorAll('.fts-bar')].filter(shown).map(b=>({...box(b),hz:Number(b.dataset.hz),rank:Number(b.dataset.rank),colour:getComputedStyle(b).backgroundColor,pointer:getComputedStyle(b).pointerEvents})):[];
+  // A hidden label is measured where it would stand.
+  const labels=layer?[...layer.querySelectorAll('.fts-label')].map(l=>{const hidden=l.hidden,visible=shown(l);l.hidden=false;const b=box(l);l.hidden=hidden;
+    return {...b,rank:Number(l.dataset.rank),text:l.textContent,shown:visible,pointer:getComputedStyle(l).pointerEvents};}):[];
+  const wf=document.querySelector('#waterfall').getBoundingClientRect(),line=key=>box(document.querySelector(`#waterfall-wrap .ct-${key}`));
+  return {bars,labels,ruler:box(document.querySelector('#frequency-ruler')),wf:{x:wf.left,w:wf.width,top:wf.top,height:wf.height},rx:line('rx'),tx:line('txm'),
+    overflow:document.documentElement.scrollWidth>innerWidth};
+});
+// Every listed slot a bar from hz to hz + width within 1 px of the mapping, inside the ruler; of
+// overlapping labels the higher rank's shown; none outside the ruler; no horizontal overflow.
+function freeTxGeometry(m,slots,width,label){
+  const x=hz=>m.wf.x+hz*m.wf.w/3000;
+  assert.deepEqual(m.bars.map(b=>[b.rank,b.hz]),slots.map(([hz],i)=>[i+1,hz]),`${label}: one bar per listed slot`);
+  for(const b of m.bars){
+    assert.ok(Math.abs(b.left-x(b.hz))<=1&&Math.abs(b.right-x(b.hz+width))<=1,`${label}: bar ${b.hz} at ${b.left}-${b.right}, mapping ${x(b.hz)}-${x(b.hz+width)}`);
+    assert.ok(b.top>=m.ruler.top-.5&&b.bottom<=m.ruler.bottom+.5,`${label}: bar ${b.hz} inside the ruler`);
+    assert.ok(!['rgb(48, 208, 80)','rgb(255, 64, 64)','rgba(0, 0, 0, 0)'].includes(b.colour),`${label}: bar colour ${b.colour}`);
+    assert.equal(b.pointer,'none');
+  }
+  const shown=m.labels.filter(l=>l.shown),over=(a,b)=>a.left<b.right&&b.left<a.right;
+  for(const l of m.labels){
+    assert.equal(l.pointer,'none');
+    if(l.shown){assert.ok(l.left>=m.ruler.left-.5&&l.right<=m.ruler.right+.5&&l.top>=m.ruler.top-.5&&l.bottom<=m.ruler.bottom+.5,`${label}: label ${l.text} inside the ruler ${JSON.stringify([l,m.ruler])}`);
+      assert.ok(!shown.some(o=>o!==l&&over(o,l)),`${label}: shown label ${l.text} overlaps another`);}
+    else assert.ok(shown.some(o=>o.rank<l.rank&&over(o,l)),`${label}: label ${l.text} hidden only under a higher rank's`);
+  }
+  assert.equal(m.overflow,false,`${label}: horizontal overflow`);
+}
+// Proves: CL-065-02; TC-065-003 the Free Tx slots marks above the waterfall: the Expert checkbox (off
+// by default, per browser), bars on the waterfall's mapping at every size and ratio, labels and their
+// overlap rule, the marks only for the snapshot's run, no pointer input and no request of their own.
+test('TC-065-003 Free Tx slots marks above the waterfall',{timeout:180000},async t=>{
+  for(const scale of [1,2]){
+    const commands=[],settings={rx_hz:1500,tx_hz:1200,hold_tx:false},runId=crypto.randomUUID(),requests=[];
+    const automation={runRevision:1,run:{id:runId,state:'waiting',reason:null,mode:'ft8',completed_contacts:0,unanswered_periods:0,contact_id:null,selected:null,last_decision:null,given_up:[],left:null,quiet:[],hearing:null,tx_slot:null,slot_check:null,pounce:{call:'K1ABC',band:'40m'}},value:null};
+    const {page,app,errors}=await fixture(t,{width:1366,height:768},{deviceScaleFactor:scale,beforeNavigate:async(p,app)=>{
+      const base=await (await fetch(app.origin+'/profile')).json();
+      p.on('request',r=>{const u=new URL(r.url());if(u.origin===app.origin&&u.pathname!=='/'&&!/\.(js|css|svg|png|ico|woff2?)$/.test(u.pathname))requests.push(`${r.method()} ${u.pathname}`);});
+      await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{settings})}));
+      await contactCommands(p,commands);
+      await p.route('**/automation',route=>route.fulfill({json:{v:1,profile_id:base.profile_id,boot_id:base.boot_id,policy_revision:1,run_revision:automation.runRevision,configuration:{strategy:false,pounce:'K1ABC'},run:automation.run,strategy_refusal:null,free_tx_slots:automation.value}}));
+    }});
+    // The run is read (the station element marks an active run).
+    await page.waitForFunction(()=>window.wstxContact?.snapshot()&&!document.querySelector('#contact-rx').disabled&&document.querySelector('#station-automation')?.dataset.active==='true',null,{timeout:20000}).catch(async e=>{throw new Error(`${e.message} ${JSON.stringify(await page.evaluate(()=>[!!window.wstxContact?.snapshot(),document.querySelector('#contact-rx')?.disabled,document.querySelector('#station-automation')?.dataset.active,document.querySelector('#station-automation')?.textContent]))} ${JSON.stringify(requests)} ${errors}`);});
+    const push=v=>page.evaluate(v=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'free_tx_slots.state',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,free_tx_slots:v}}}})),v);
+    const reads=()=>requests.filter(r=>r==='GET /automation').length;
+    const first=[[1000,0],[1300,1],[2000,-1],[700,3],[1350,4]];
+    const option=page.locator('#settings-expert label:has(#free-tx-slots-show)');
+    const setOption=async on=>{await page.locator('#open-server-settings').click();const box=page.locator('#free-tx-slots-show');if(await box.isChecked()!==on)await box.click();await page.locator('.op-secondary:not([hidden]) .return-operate').click();};
+    if(scale===1){
+      assert.equal((await option.textContent()).trim(),'Show free Tx slots');
+      assert.equal(await page.locator('#free-tx-slots-show').isChecked(),false,'off by default');
+    }
+    const before=await freeTxMarks(page),readsBefore=reads();
+    await push(freeTxValue(runId,first));
+    await page.waitForTimeout(100);
+    assert.deepEqual((await freeTxMarks(page)).bars,[],'no marks while the option is off');
+    if(scale===1)assert.equal(await page.evaluate(()=>localStorage.getItem('wstx.free-tx-slots.v1')),null);
+    await setOption(true);
+    for(const [width,height] of scale===1?[[1366,768],[1920,1080],[360,800]]:[[1366,768],[360,800]]){
+      await page.setViewportSize({width,height});await page.waitForTimeout(150);
+      const label=`${width}x${height} dpr ${scale}`,m=await freeTxMarks(page);
+      freeTxGeometry(m,first,50,label);
+      assert.deepEqual(m.labels.map(l=>l.text),['1 +0','2 +1','3 −1','4 +3','5 +4'],label);
+      if(width===360)assert.ok(m.labels.some(l=>!l.shown),`${label}: 50 Hz apart the labels overlap`);
+      if(width===1366){assert.deepEqual(m.wf,before.wf,`${label}: the waterfall does not move`);assert.deepEqual([m.rx,m.tx],[before.rx,before.tx],`${label}: the Rx and Tx lines unchanged`);}
+      // Nothing of the marks under the pointer.
+      for(const b of m.bars)assert.equal(await page.evaluate(([x,y])=>!!document.elementFromPoint(x,y)?.closest('#free-tx-slots'),[(b.left+b.right)/2,(b.top+b.bottom)/2]),false,`${label}: bar ${b.hz} takes no pointer input`);
+    }
+    await page.setViewportSize({width:1366,height:768});
+    if(scale===2){assert.equal(reads(),readsBefore,'no request after an event');assert.deepEqual(errors,[]);continue;}
+    // The colour in each theme.
+    for(const theme of ['day','dark','night']){await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;},theme);
+      for(const b of (await freeTxMarks(page)).bars)assert.ok(!['rgb(48, 208, 80)','rgb(255, 64, 64)'].includes(b.colour),`${theme}: ${b.colour}`);}
+    await page.evaluate(()=>{document.documentElement.dataset.theme='dark';});
+    // A newer value redraws; FT4 bars are 90 Hz wide.
+    const newer=[[1100,0],[2200,2],[600,5]];
+    await push(freeTxValue(runId,newer,{at:2}));
+    freeTxGeometry(await freeTxMarks(page),newer,50,'newer value');
+    await push(freeTxValue(runId,first,{mode:'ft4',at:3}));
+    freeTxGeometry(await freeTxMarks(page),first,90,'FT4');
+    // No marks for another run, for an empty list, and with no run.
+    await push(freeTxValue(crypto.randomUUID(),first,{at:4}));
+    assert.deepEqual((await freeTxMarks(page)).bars,[],'another run_id');
+    await push(freeTxValue(runId,[],{at:5}));
+    assert.deepEqual((await freeTxMarks(page)).bars,[],'empty slots');
+    await push(freeTxValue(runId,first,{at:6}));
+    assert.equal((await freeTxMarks(page)).bars.length,5);
+    // Timer: nothing is read while the marks stand.
+    await page.waitForTimeout(2500);
+    assert.equal(reads(),readsBefore,'no request after an event and no timer request');
+    // Pointer: the same set_frequency requests with marks as without them.
+    const actions=async()=>{
+      await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>document.querySelector('#waterfall-wrap .ct-txm').dataset.hz==='1200');
+      const wf=await page.locator('#waterfall').boundingBox(),y=wf.y+wf.height*.6,x=hz=>wf.x+hz*wf.width/3000,n=commands.length;
+      const wait=async k=>{for(let i=0;i<60&&commands.length<n+k;i++)await page.waitForTimeout(50);assert.equal(commands.length,n+k);};
+      await page.mouse.dblclick(x(1025),y);await wait(1);
+      await page.mouse.click(x(2025),y);await wait(2);
+      const tx=await page.locator('#waterfall-wrap .ct-txm').boundingBox();
+      await page.mouse.move(tx.x+tx.width/2,y);await page.mouse.down();await page.mouse.move(x(1325),y,{steps:6});await page.mouse.up();await wait(3);
+      return commands.slice(n).map(c=>[c.action,c.rx_hz,c.tx_hz]);
+    };
+    const withMarks=await actions();
+    await setOption(false);
+    assert.deepEqual((await freeTxMarks(page)).bars,[],'checkbox off: no marks');
+    const without=await actions();
+    assert.deepEqual(withMarks,without,'the same requests as without marks');
+    assert.equal(withMarks[0][0],'set_frequency');
+    await setOption(true);
+    assert.equal((await freeTxMarks(page)).bars.length,5,'on again');
+    // The run ends: the snapshot has run null.
+    const readsEnd=reads();automation.run=null;automation.value=null;automation.runRevision++;
+    await page.evaluate(r=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:1,run_revision:r}}}})),automation.runRevision);
+    await page.waitForFunction(()=>document.querySelector('#station-automation')?.dataset.active==='false');
+    assert.deepEqual((await freeTxMarks(page)).bars,[],'run null');
+    assert.equal(reads(),readsEnd+1,'one read on automation.state');
+    // Per browser: on after a reload, off in another browser context.
+    await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
+    assert.equal(await page.locator('#free-tx-slots-show').isChecked(),true,'on after a reload');
+    const other=await browser.newContext({viewport:{width:1366,height:768}});t.after(()=>other.close());
+    const second=await other.newPage();await second.goto(app.origin);await second.locator('#free-tx-slots-show').waitFor({state:'attached'});
+    assert.equal(await second.locator('#free-tx-slots-show').isChecked(),false,'off in another browser');
+    assert.equal(commands.some(c=>c.action==='enable_tx'),false);
+    assert.deepEqual(errors,[]);
+  }
+});
+
 // Proves: CL-010-16, CL-037-03, CL-010-01, CL-010-09, CL-050-01; TC-007-009, TC-050-001 QSO pane, double-click to call, Band Activity history and menu.
 test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Activity keeps period history',{timeout:45000},async t=>{
   let state,contact=null,records=[];const commands=[],period=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z'];
@@ -2538,7 +2674,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
     await p.route('**/strategy/evaluate',async route=>{const b=JSON.parse(route.request().postData());evaluations.push(b);
       const verdicts=b.explain?[{sequence:2,rank:0,grey:false,why:'needed: dxcc · Most Wanted #3'},{sequence:0,rank:1,grey:false,why:'needed: new_call'},{sequence:1,rank:null,grey:true,why:'CQ NA — not for EU'}]:[{sequence:2,rank:0,grey:false},{sequence:0,rank:1,grey:false},{sequence:1,rank:null,grey:true}];
       await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:b.strategy?.name??'DX first',my_continent:'EU',verdicts}});});
-    await p.route('**/automation',route=>{automationReads++;return route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,policy_revision:automation.policy,run_revision:automation.runRevision,configuration:automation.policy?{strategy:true}:null,run:automation.run,strategy_refusal:automation.refusal}});});
+    await p.route('**/automation',route=>{automationReads++;return route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,policy_revision:automation.policy,run_revision:automation.runRevision,configuration:automation.policy?{strategy:true}:null,run:automation.run,strategy_refusal:automation.refusal,free_tx_slots:null}});});
     await p.route('**/automation/command',async route=>{autos.push(JSON.parse(route.request().postData()));await route.fulfill({status:202,json:{v:1,accepted:true}});});
     await p.route('**/strategy/auto',async route=>{switches.push(JSON.parse(route.request().postData()));await route.fulfill({json:view});});
   }});
@@ -2786,7 +2922,7 @@ async function strategydefStation(t,viewport,{strategies=[userStrategy('Mine')]}
     await p.route('**/strategy/contests',route=>route.fulfill({json:{v:1,profile_id:base.profile_id,boot_id:base.boot_id,profiles:CONTEST_PROFILES}}));
     await p.route('**/pskr',route=>route.fulfill({json:s.pskr}));
     await p.route('**/pskr/use',async route=>{const b=JSON.parse(route.request().postData());s.uses.push(b);s.pskr={...s.pskr,use:b.use};await route.fulfill({json:s.pskr});});
-    await p.route('**/automation',route=>route.fulfill({json:{v:1,profile_id:base.profile_id,boot_id:base.boot_id,policy_revision:s.automation.policy,run_revision:s.automation.runRevision,configuration:s.automation.configuration,run:s.automation.run,strategy_refusal:s.automation.refusal}}));
+    await p.route('**/automation',route=>route.fulfill({json:{v:1,profile_id:base.profile_id,boot_id:base.boot_id,policy_revision:s.automation.policy,run_revision:s.automation.runRevision,configuration:s.automation.configuration,run:s.automation.run,strategy_refusal:s.automation.refusal,free_tx_slots:null}}));
   }});
   await page.waitForFunction(()=>document.querySelector('#strategy-name')?.disabled===false&&!!window.wstxContact?.snapshot()&&document.querySelector('#qso-pskr')?.disabled===false,null,{timeout:25000});
   const announce=(type,data)=>page.evaluate(([type,data])=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type,data}}})),[type,data]);
@@ -3295,7 +3431,7 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
     await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base)}));
     await contactCommands(p,commands);
     await p.route('**/strategy',route=>route.fulfill({json:view}));
-    await p.route('**/automation',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,policy_revision:automation.policy,run_revision:automation.runRevision,configuration:automation.configuration,run:automation.run}}));
+    await p.route('**/automation',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,policy_revision:automation.policy,run_revision:automation.runRevision,configuration:automation.configuration,run:automation.run,strategy_refusal:null,free_tx_slots:null}}));
     await p.route('**/automation/command',async route=>{const b=JSON.parse(route.request().postData());autos.push(b);
       if(b.action==='configure'){automation.policy++;automation.configuration={...b.configuration};}
       if(b.action==='start'){automation.runRevision++;automation.run={id:crypto.randomUUID(),state:'waiting',reason:null,mode:'ft8',completed_contacts:0,unanswered_periods:0,contact_id:null,selected:null,last_decision:null,given_up:[],rested:null,pounce:{call:automation.configuration.pounce,band:'40m'}};}
