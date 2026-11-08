@@ -343,7 +343,7 @@ package WstxRequirements {
     dependency CL_007_05_to_FR_021 from 'CL-007-05' to 'FR-021';
     requirement 'CL-008-01' {
         doc /* Persist independently selected audio and typed IC-7300 control intent through the existing profile revision/atomic-store boundary; settings never assert device availability. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
     }
     dependency CL_008_01_to_FR_001 from 'CL-008-01' to 'FR-001';
@@ -352,7 +352,7 @@ package WstxRequirements {
     dependency CL_008_01_to_FR_022 from 'CL-008-01' to 'FR-022';
     requirement 'CL-008-02' {
         doc /* Deliver immutable canonical 12 kHz mono samples and explicit timing/gaps through one common converter to the existing spectrum/decoder worker, without fabricating samples or UTC accuracy. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
     }
     dependency CL_008_02_to_FR_002 from 'CL-008-02' to 'FR-002';
@@ -360,7 +360,7 @@ package WstxRequirements {
     dependency CL_008_02_to_FR_004 from 'CL-008-02' to 'FR-004';
     requirement 'CL-008-03' {
         doc /* Publish independently truthful audio/control states, bounded live results and explicit loss/recovery while preserving worker, cancellation and thin-link bounds. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
     }
     dependency CL_008_03_to_FR_002 from 'CL-008-03' to 'FR-002';
@@ -369,27 +369,27 @@ package WstxRequirements {
     dependency CL_008_03_to_FR_021 from 'CL-008-03' to 'FR-021';
     requirement 'CL-008-04' {
         doc /* Support the Windows shared-audio and IC-7300 receive-control matrix below, with independently verified receive-only physical acceptance. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
     }
     dependency CL_008_04_to_FR_002 from 'CL-008-04' to 'FR-002';
     dependency CL_008_04_to_FR_009 from 'CL-008-04' to 'FR-009';
     requirement 'CL-008-05' {
         doc /* Audio never requires CAT; CAT never opens audio. Unsupported operations fail before device bytes; independent failure never creates false readiness. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
     }
     dependency CL_008_05_to_FR_002 from 'CL-008-05' to 'FR-002';
     dependency CL_008_05_to_FR_009 from 'CL-008-05' to 'FR-009';
     requirement 'CL-008-06' {
         doc /* Separate a versioned factual radio catalogue, compiled typed operations and bounded protocol execution. Catalogue data cannot authorize raw or transmit commands. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
     }
     dependency CL_008_06_to_FR_009 from 'CL-008-06' to 'FR-009';
     requirement 'CL-008-07' {
         doc /* Coordinate receive-only operating mode and preferred band changes through the existing station/receive owner and typed CAT actor, with explicit nominal/observed truth, actual release barriers, per-query provenance and cancellation fencing. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/selection.rs; server/src/selection_http.rs; server/src/radio_http.rs; server/src/radio_control/actor.rs; client/recording.js";
     }
     dependency CL_008_07_to_FR_002 from 'CL-008-07' to 'FR-002';
