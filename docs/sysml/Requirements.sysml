@@ -6596,5 +6596,39 @@ package WstxRequirements {
         }
     }
     dependency CL_081_01_verified_by_TC_081_007 from 'CL-081-01' to 'TC-081-007';
+    // #96 full-screen button in the top bar (operator 2026-11-09).
+    requirement 'CL-096-01' {
+        doc /* (#96, operator 2026-11-09: "a botton top right where we can enable and disable the entire browser headers and only show our app"; "switch between normal browser mode and app mode should be left of ?") The top bar has a full-screen button immediately left of "?" (Logbook, Settings, full screen, "?", HALT), icon only (four corners outwards, inwards while full screen), labelled "Full screen" or "Leave full screen" with aria-pressed. A press puts the whole page into the browser's full screen with the standard Fullscreen API (no tabs, address bar or toolbars; drawer, pages, popups and menus inside it), a further press leaves it; the button follows the browser's fullscreen state however it is left, and a refused request changes nothing and reports no error. Where the browser does not offer element full screen (Safari on iPhone) the button is not shown. While full screen Esc never aborts the QSO (operator: "lock esc. we do not need esc for abort, we have halt button or abort qso"): where the browser has Keyboard Lock (desktop Chrome and Edge) the Escape key is locked, so a short Esc only closes an open dialog or menu and otherwise does nothing, and holding Esc leaves full screen; elsewhere the browser's Esc leaves full screen; HALT, Abort QSO and Alt+H act as always, and outside full screen Esc stays Abort QSO. No shortcut key; the button is reachable with Tab, Enter and Space. Each page load starts in the normal window and the choice is not stored. No station request, setting or storage; not shown in the unauthorized view; no page scroll at 1366x768 and no horizontal overflow at 360 CSS px in either state. Details: WstxOperatingLayout::FullScreenToggle, KeyboardShortcuts. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_096_01_to_FR_010 from 'CL-096-01' to 'FR-010';
+    dependency CL_096_01_to_FR_019 from 'CL-096-01' to 'FR-019';
+    verification 'TC-096-001' {
+        doc /* TC-096-001 — Full-screen button in the browser
+             CL-096-01
+             Setup: actual candidate server and Chromium at 1366x768 and 360x800 with a retained authorization and a routed ContactSnapshot of a prepared contact (abortable); a request recorder on every station route; per variant an init script that, delegating to the real objects, records each call of navigator.keyboard.lock and unlock with its arguments, or deletes navigator.keyboard, or makes Document.fullscreenEnabled false, or makes Element.requestFullscreen reject.
+             Steps: (a) read the top-bar buttons in order and the full-screen button's aria-label, aria-pressed and title; click it; read document.fullscreenElement, the button and the lock calls; (b) press Escape (short keydown) while full screen with the prepared contact; read the requests, the contact and document.fullscreenElement; then open the Band Activity row menu and press Escape; read the menu; then leave full screen and press Escape; read the requests; (c) call document.exitFullscreen() from the test (as the browser does on Esc held or its own control); read the button and the unlock call; (d) Tab to the button, press Enter, then Space; (e) reload while full screen; (f) the variant without navigator.keyboard: click, read; (g) the variant with fullscreenEnabled false; (h) the variant whose request rejects: click, read the page errors; (i) the unauthorized view (no retained authorization); (j) at 360x800 and 1366x768 read the page and top-bar scroll widths and the page scroll height, before and after entering full screen.
+             Expected (oracle: the operator's request on #96 and the WHATWG Fullscreen Standard): (a) the order Logbook, Settings, full screen, "?", HALT; "Full screen", aria-pressed false; after the click document.fullscreenElement is document.documentElement, the label "Leave full screen", aria-pressed true, one lock call ["Escape"]; (b) in full screen no abort request, the contact still prepared and document.fullscreenElement still set; the menu closed by Escape; after leaving full screen Escape sends one abort request (unchanged Abort QSO); (c) the label "Full screen", aria-pressed false, one unlock call; (d) Enter enters and Space leaves full screen; (e) after the reload not full screen and the button off; (f) full screen entered, no lock call, no page error; (g) no full-screen button and Settings directly followed by "?"; (h) not full screen, the button off, no page error and no ErrorField entry; (i) no full-screen button; (j) no horizontal overflow at 360 px and no page scroll at 1366x768 in both states; in (a) to (h) no station request caused by the button. Red on the parent: there is no full-screen button, and an Escape always aborts.
+             2 — Isolated automated browser test; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-096-01';
+        }
+    }
+    dependency CL_096_01_verified_by_TC_096_001 from 'CL-096-01' to 'TC-096-001';
+    verification 'TC-096-002' {
+        doc /* TC-096-002 — Live: full screen on the operator's browsers
+             CL-096-01
+             Setup: the gated candidate installed on HB9BLA; the operator's laptop with Chrome or Edge over the station link; an Android phone with Chrome; an iPhone with Safari if at hand. Receive only, Enable Tx off: no transmission.
+             Steps: on the laptop press the full-screen button; open the Settings drawer, the Logbook and "?", and a Band Activity row menu; select a CQ row (a prepared contact, Enable Tx off) and press Esc briefly; hold Esc; enter again and leave with the button; press F5 while full screen. On the Android phone enter and leave with the button. On the iPhone look at the top bar.
+             Expected: on the laptop the button left of "?"; no browser tabs, address bar or toolbars while full screen and the drawer, Logbook, overview and menu inside it; the short Esc leaves the prepared contact as it is and the page stays full screen; holding Esc shows the browser's notice and leaves full screen, the button then off; the button leaves full screen; after F5 the normal window with the button off; the waterfall keeps running throughout. On Android the browser frame goes and returns with the button. On the iPhone no full-screen button and no gap in the top bar. Screenshots on the issue.
+             4 — Live on the station without RF; operator's browsers; not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-096-01';
+        }
+    }
+    dependency CL_096_01_verified_by_TC_096_002 from 'CL-096-01' to 'TC-096-002';
 
 }

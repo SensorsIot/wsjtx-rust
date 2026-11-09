@@ -430,6 +430,8 @@ attribute def ActivityOrdering {
     enum def TopBarItem {
         enum band; enum mode; enum dialFrequency; enum utcPeriod;
         enum logbook; enum settings; enum halt;
+        // #96 CL-096-01: the full-screen toggle (FullScreenToggle), immediately left of "?".
+        enum fullScreen;
     }
     // #37 (operator 2026-11-03): the entries of the ErrorField, which replaced the top-bar
     // exception chips; receiveRestarted (an informational notice) is no entry any more.
@@ -477,7 +479,8 @@ attribute def ActivityOrdering {
              restart (ChangeKind restart: a change restarts receive through the operating
              selection, contract 4.7.5, and asks first while a QSO or transmission is
              active); dial frequency (display, CAT readback or nominal); UTC (#50: the
-             period progress is only the QSO pane's NEXT bar); Logbook (full page); Settings (drawer); "?" (shortcut overview); HALT.
+             period progress is only the QSO pane's NEXT bar); Logbook (full page); Settings (drawer);
+             full screen (#96, FullScreenToggle, only where the browser offers it); "?" (shortcut overview); HALT.
              HALT stays reachable by pointer too: a confirmation popup (the only popup kind)
              carries its own HALT with the same action and enabled state as the top-bar one,
              because a modal popup makes the rest of the page inert. One HALT is visible at
@@ -1176,6 +1179,76 @@ attribute def ActivityOrdering {
              cannot halt (the station refuses it). A retained authorization that is
              reconnecting keeps the full screen. */
     }
+    attribute def FullScreenToggle {
+        attribute targetIsWholePage : Boolean = true;
+        attribute shownOnlyWhereSupported : Boolean = true;
+        attribute escapeLockedWherePossible : Boolean = true;
+        attribute escapeAbortsInFullScreen : Boolean = false;
+        attribute rememberedAcrossLoads : Boolean = false;
+        attribute sendsStationRequest : Boolean = false;
+        attribute hasShortcutKey : Boolean = false;
+        assert constraint fullScreenRules {
+            targetIsWholePage and shownOnlyWhereSupported and escapeLockedWherePossible and
+            not escapeAbortsInFullScreen and
+            not rememberedAcrossLoads and not sendsStationRequest and not hasShortcutKey
+        }
+        doc /* CL-096-01 (#96, operator 2026-11-09: "a botton top right where we can enable and
+             disable the entire browser headers and only show our app"; place: "halt is already
+             available in qso area. switch between normal browser mode and app mode should be
+             left of ?"). A top-bar button (TopBarItem fullScreen) immediately left of "?": the
+             order is Logbook, Settings, full screen, "?", HALT (OperatingScreen).
+             It switches the browser to full screen with the standard Fullscreen API
+             (WHATWG Fullscreen Standard: Element.requestFullscreen, Document.exitFullscreen,
+             Document.fullscreenElement, Document.fullscreenEnabled, the fullscreenchange
+             event) on the whole page (the document element), so the Settings drawer, Logbook,
+             "?" overview, popups, menus and tips stay inside it; browser tabs, address bar
+             and toolbars are gone. A press while the page is not full screen requests it, a
+             press while it is leaves it. No prefixed (webkit) API is used.
+             Look: icon only, the same size and style as "?": an inline SVG of four corners
+             pointing outwards while not full screen and inwards while full screen (no font
+             glyph); aria-label "Full screen" or "Leave full screen", aria-pressed false or
+             true, title "Full screen: hide the browser frame" or "Leave full screen". The
+             state shown follows Document.fullscreenElement at every fullscreenchange, so it
+             is right however full screen was left (the button, Esc held, the browser's own
+             control, a page reload). A refused request (the promise rejects: no user
+             activation, a permissions policy) leaves the page and the button as they were,
+             with no error entry (ErrorField lists station problems only) and no uncaught
+             error.
+             Where Document.fullscreenEnabled is not true (Safari on iPhone, which offers full
+             screen only for video; an embedding frame without allowfullscreen) the button is
+             not shown and the top bar has no gap for it (operator 2026-11-09: no button on
+             iPhone, nothing more). Android Chrome and desktop Chromium, Firefox and Safari
+             show it. Installing the page as a home-screen app (a web app manifest,
+             standalone display) is not part of this clause.
+             Esc (KeyboardShortcuts; operator 2026-11-09: "lock esc. we do not need esc for
+             abort, we have halt button or abort qso"): while the page is full screen Esc
+             never aborts the QSO. Where the Keyboard Lock API exists (navigator.keyboard.lock,
+             desktop Chromium: Chrome, Edge; a secure context, the station page is HTTPS),
+             entering full screen locks the Escape key (navigator.keyboard.lock(["Escape"])):
+             a short Esc closes an open dialog or menu as before and otherwise does nothing,
+             the page staying full screen, and the browser's "press and hold Esc" leaves full
+             screen; leaving releases the lock (navigator.keyboard.unlock). A browser without
+             Keyboard Lock leaves full screen on Esc, and that press does not abort either.
+             A lock that fails (its promise rejects) leaves full screen working with the
+             browser's Esc. HALT, Abort QSO (the QSO pane buttons) and Alt+H act as always.
+             Outside full screen Esc stays Abort QSO (KeyboardShortcuts unchanged).
+             Keyboard: an ordinary focusable button (Tab, Enter, Space); no shortcut key (F11 is
+             Rx -1 Hz, KeyboardShortcuts, so the browser's own F11 full screen does not reach
+             this page). The "?" overview lists the button and "Esc held: leave full screen", and
+             its Esc / Abort QSO entry adds "not in full screen".
+             Per page load only (operator 2026-11-09): the browser requires a user action for
+             each request, so a new or reloaded page (also the automatic reload of
+             WstxStationProtocol::PageUpdate) starts in the normal window, and the choice is
+             not stored.
+             View only: no station request, setting or browser storage; it works over every
+             region since it is in the top bar. The UnauthorizedView shows no button (only the
+             token form and link status); a full screen entered before stays until left.
+             Entering or leaving changes the viewport height; the existing resize rule keeps
+             the signal height (SplitGeometry) and the workspace takes the difference, and the
+             CL-010-16 rules (no page scroll at 1366x768 and larger, no horizontal overflow at
+             360 CSS px) hold in both states. */
+    }
+    dependency fullScreenToggleClause from FullScreenToggle to WstxRequirements::'CL-096-01';
     action def KeyboardShortcuts {
         doc /* WSJT-X keys 1:1 where the function exists: Alt+H halts (the emergency
              stop, WstxContact::HaltTx); Esc aborts the QSO (WstxContact::AbortQso, #39
@@ -1184,7 +1257,11 @@ attribute def ActivityOrdering {
              next message Tx1-Tx6 (Now is a fold-out button only); Alt+M receive start/stop; Alt+T Tune;
              Alt+Q Log QSO; F11/F12 Rx -/+1 Hz; Shift+F11/F12 Tx -/+60 Hz FT8 (90 Hz FT4);
              Ctrl+F11/F12 Rx and Tx -/+1 Hz. Letter and "?" keys are inactive while a text
-             field has focus; Esc and Alt+H always act (an open dialog or menu takes Esc first). Alt+N (Enable Tx) has no function. */
+             field has focus; Esc and Alt+H always act (an open dialog or menu takes Esc first). Alt+N (Enable Tx) has no function.
+             In full screen (#96, FullScreenToggle) Esc never aborts the QSO: where the
+             browser has Keyboard Lock a short Esc only closes an open dialog or menu and
+             holding Esc leaves full screen; without Keyboard Lock the browser takes Esc to
+             leave full screen. */
     }
     verification def operatingScreen009 {
         objective { verify WstxRequirements::'CL-010-16'; }
