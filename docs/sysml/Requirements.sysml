@@ -173,7 +173,7 @@ package WstxRequirements {
     dependency CL_003_04_to_FR_021 from 'CL-003-04' to 'FR-021';
     requirement 'CL-003-05' {
         doc /* The minimal profile MUST support two clients sharing the contract's 32 kbit/s link model (WstxStationProtocol::ThinLinkBudget). Its traffic budgets are targets of normal operation that the operator judges from the station's link byte log, and its visible-response target is watched in the live check after each deploy (operator 2026-11-09) (WstxStationProtocol::LinkTrafficLog); no test asserts them (operator 2026-11-09, #80). The station MUST record that log: per period and client (an enrolled browser, an MCP client or local), the bytes each way in total and by message type, and the display profile of each of the client's sockets. Page and asset loading, reconnection, authorization recovery, CAT, selection changes, recording replay or import and log maintenance carry no link budget. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/main.rs; client/app.js";
     }
     dependency CL_003_05_to_FR_021 from 'CL-003-05' to 'FR-021';
@@ -1400,12 +1400,13 @@ package WstxRequirements {
              ("on the next heartbeat tick, >15 s without Pong disconnects that peer") in the
              [liveness rules](StationProtocol.sysml). Removing the Pong check (#70 mutation M8)
              must turn case 1 red. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-003-02';
             verify 'CL-003-06';
             verify 'FR-021';
         }
+        attribute executable : String = "server/src/liveness_tests.rs";
     }
     verification 'TC-080-001' {
         doc /* TC-080-001 — Link byte log
@@ -1414,10 +1415,11 @@ package WstxRequirements {
              Steps: (a) FT8: in one period the browser's socket subscribes Thin and sends station.get three times; on the browser's credentialed connection GET /profile, POST /authorization/v1/status and POST /receive/select with a malformed body (refused 400); the MCP client makes one tools/call; the period ends. (b) A second socket of the same grant on Off in the next period. (c) FT4: two 7.5 s periods. (d) A mode change FT8 to FT4 at 5.2 s into a period. (e) No mode selected. (f) A TLS connection without credentials: GET / and a request refused 401. (g) The browser's GET /profile over HTTP/2. (h) Lines written past the rotation size. (i) A plaintext loopback profile.
              Expected (WstxStationProtocol::LinkTrafficLog): one JSON line per client with traffic at each period end, none for a client without traffic. bytes each way equals the TCP bytes the client's peers wrote and read in that period. Each type's count and bytes equal the peers' own counts by the log's rule: WebSocket frames header plus payload (mask included from the client); HTTP the request as written (request line, header fields, body) and the response as received minus the fields the HTTP server adds itself (date, and the content-length or transfer-encoding these routes leave unset) and minus chunk framing, re-serialized as HTTP/1.1 text; the same reconstruction for the HTTP/2 exchange. other = bytes - sum of types. estimate equals the hand calculation of the log's formula. The refused POST /receive/select is on the browser's line; the MCP client has its own line and the browser line holds no MCP bytes; (f) is on a local line on TLS. display lists each socket's profile (thin, then thin and off). FT4 lines are 7500 ms apart; the mode change gives (start, 5200, FT8), (change, until the next FT4 start, FT4), then 7500 ms FT4 lines; with no mode the lines say mode none and are 15000 ms apart. No line holds a cookie, token or proof. The file moves to link-traffic.1.log at its rotation size, replacing the older one. Nothing of the log reaches a socket or response. On the plaintext profile t is 0 and the client is local.
              2 — Isolated automated functional test; Windows development PC; no browser, link simulator or radio. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-003-05';
         }
+        attribute executable : String = "server/src/link_log_tests.rs";
     }
     verification 'TC-021-009' {
         doc /* #### TC-021-009 — Remote access boundary
