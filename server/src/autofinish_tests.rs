@@ -458,10 +458,7 @@ async fn tc_081_003_a_contest_deselected_or_its_period_end_finishes_the_qso() {
     let (f, e) = (&t.f, t.e);
     // An hour later (the same period phase): past the period's end.
     let later = e + 3_600_000;
-    f.bench
-        .offset
-        .fetch_add(later + 1_000 - f.bench.now_utc_ms(), Ordering::SeqCst);
-    f.tick();
+    crate::automation_tests::jump_and_tick(f, later + 1_000 - f.bench.now_utc_ms());
     assert_eq!(run_state(f).await, ("manual".into(), Value::Null));
     assert_eq!(contact(f).await.2, json!("armed"));
     contest_finished(f, later + 15_000, e).await;

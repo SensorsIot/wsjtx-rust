@@ -5010,8 +5010,7 @@ async fn tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller() {
     assert_eq!(run_state(&f).await.0, "calling_cq");
     assert_eq!(contact(&f).await.2, json!("armed"));
     // The end of the period, by the station clock: the same, and it stays.
-    f.bench.offset.fetch_add(3 * 3_600_000, Ordering::SeqCst);
-    f.tick();
+    crate::automation_tests::jump_and_tick(&f, 3 * 3_600_000);
     assert_eq!(
         run_state(&f).await,
         ("waiting".into(), json!("outside_period"))
@@ -6486,8 +6485,7 @@ async fn tc_039_044_run_leaves_a_silent_caller_and_keeps_it_quiet() {
 async fn tc_039_044_period_end_and_deselect_end_the_contact_at_once() {
     let t = contest_calling(|_| {}).await;
     let f = &t.f;
-    f.bench.offset.fetch_add(3 * 3_600_000, Ordering::SeqCst);
-    f.tick();
+    crate::automation_tests::jump_and_tick(f, 3 * 3_600_000);
     assert_eq!(
         contact(f).await,
         (Value::Null, json!("cancelled"), json!("disarmed"))

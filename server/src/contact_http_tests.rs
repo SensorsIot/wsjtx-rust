@@ -31,6 +31,9 @@ pub(crate) struct Bench {
     pub(crate) levels: Arc<Mutex<Vec<i32>>>,
     /// Safety edits since the start: the safety revision is 3 plus this (#81 TC-081-005 (g)).
     pub(crate) safety_edits: Arc<AtomicU64>,
+    /// When nonzero, the transmit owner's thread reads its UTC at most this value while the
+    /// test thread reads the moved clock: a jump the engine sees first (#87).
+    pub(crate) owner_hold: Arc<AtomicI64>,
 }
 impl Hardware for Bench {
     fn set_level_db(&mut self, level_db: i32) {
@@ -41,11 +44,16 @@ impl Hardware for Bench {
         if frozen != 0 {
             return frozen;
         }
-        std::time::SystemTime::now()
+        let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as i64
-            + self.offset.load(Ordering::SeqCst)
+            + self.offset.load(Ordering::SeqCst);
+        let hold = self.owner_hold.load(Ordering::SeqCst);
+        if hold != 0 && std::thread::current().name() == Some("transmit") {
+            return now.min(hold);
+        }
+        now
     }
     fn clock(&self) -> wstx_rust::transmit::ClockState {
         wstx_rust::transmit::ClockState::Synchronized

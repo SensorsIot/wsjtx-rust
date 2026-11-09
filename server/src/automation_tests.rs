@@ -311,6 +311,18 @@ pub(crate) fn assert_bound(f: &Mcp, own: i64) {
         );
     }
 }
+/// Moves the bench UTC by `by_ms` and ticks the station once, the transmit owner kept at the
+/// UTC before the jump until that tick has run: a jump past a pending request's period (a
+/// contest period's end an hour on) that the engine, not the transmit service, sees first
+/// (#87); in real time the engine ticks long before such a period is due.
+pub(crate) fn jump_and_tick(f: &Mcp, by_ms: i64) {
+    f.bench
+        .owner_hold
+        .store(f.bench.now_utc_ms(), Ordering::SeqCst);
+    f.bench.offset.fetch_add(by_ms, Ordering::SeqCst);
+    f.tick();
+    f.bench.owner_hold.store(0, Ordering::SeqCst);
+}
 /// Moves the bench UTC forward to `to` (never back: the clock may already be past it).
 fn advance_to(f: &Mcp, to: i64) {
     f.bench
