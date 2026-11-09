@@ -6994,10 +6994,11 @@ package WstxRequirements {
              Steps: open the editor; Duplicate "DXCC all"; set every control of the nine decisions; look for a class control; open the contest strategy; enter a country name that the station refuses; Save; close; open the selector; choose the saved contest strategy (contest ww_digi) with no contest in force, then with ww_digi in force, then with arrl_digi in force, and Cancel and Start in the prompt it opens.
              Expected (oracle: WstxStrategy::StrategyEditor and StrategySelector): the list grouped Strategy, Contest, no Add; "DXCC all copy" of class strategy with the nine decisions in order and their labels; Save sends exactly one PUT whose strategy is the schema 4 object written in the test, key for key; the class shown and never switchable; the contest strategy shows its contest read-only, only the three lists and "Ranked by the contest's rules"; the refusal shown at the country control; "Renamed Casual to Casual copy" shown once; the selector grouped with "DXCC all" first and no contest built-ins; one evaluate request 400 ms after an edit; no horizontal overflow at 360 px; choosing the contest strategy with no contest or with arrl_digi in force sends nothing and opens the prompt on WW Digi with that strategy chosen and the period pre-filled, Cancel sends nothing and the selector returns to the earlier selection, Start sends one PUT {active the strategy, contest {ww_digi, start, end}}; with ww_digi in force it sends one PUT with that active and the same contest key. Red on the parent: the editor has an Add and no nine decisions, and the PUT carries schema 3 keys.
              2 — Isolated automated browser test; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-097-01';
         }
+        attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_097_01_verified_by_TC_097_014 from 'CL-097-01' to 'TC-097-014';
     verification 'TC-097-015' {
