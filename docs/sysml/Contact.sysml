@@ -213,7 +213,9 @@ package WstxContact {
              other activities (not saved). It is refused profile_incomplete with field
              locator, the activity unchanged, while the selected profile's locator
              (WstxProfiles::Settings) has fewer than 6 characters (empty or 4: WSJT-X only
-             warns, "EU VHF Contest messages require a 6-character locator"). The serial is
+             warns, "EU VHF Contest messages require a 6-character locator"), and refused
+             invalid_call with field callsign while the profile callsign has more than 11
+             characters (a hashed slot holds no more; the profile admits 12). The serial is
              ContestExchange serial, the one station contest serial (1 at boot, +1 for each
              logged contact while a contest activity is set, never reset by set_activity);
              #98 replaces its source by the log (highest STX of the contest + 1) for rtty and
@@ -226,13 +228,28 @@ package WstxContact {
              (report+36)/6 truncated toward zero and clamped to 2..9 (the report of
              ReportRange, as ContestExchange's 5n9), SSSS the serial as four digits and GRID6
              the first six characters of the profile locator (an 8-character locator sends
-             its first six). Both calls are hashed whatever their form, so each must be 3-11
-             characters (a hashed slot holds no more); a longer DX call is refused
-             invalid_call. Tx2 and Tx3 are not generated, and a selection, entry or
-             regeneration that needs them is refused, out_of_range with field serial when the
-             serial is outside 1..2047 (WSJT-X's spin box maximum; a station that logged 2047
-             contacts) and profile_incomplete with field locator when the locator was changed
-             to fewer than 6 characters after the choice; the other slots stay. Every
+             its first six, JN37VL12 sends JN37VL). Both calls are hashed whatever their
+             form, so each is 3-11 characters, and the message limit of 37 characters
+             (PackMessage tooLong; WSJT-X has no longer message) bounds the pair: Tx3 is
+             len(DX) + len(MYCALL) + 21 characters, so the two calls together have at most 16
+             characters (e.g. HB9BLA with a DX call of at most 10, HB9BLA/P with at most 8).
+             The pair is checked before a contact starts, so no contact starts whose Tx3
+             cannot be packed: while eu_vhf is set, a selection (SelectDecodedRow, also from
+             Call 1st and automation) or entry (EnterDxStation) whose DX call has more than 11
+             characters or more than 16 together with my call is refused invalid_call (no
+             field, as the other DX-call refusals), nothing changes, and Call 1st goes on to
+             the next caller. set_activity eu_vhf with an active contact whose pair is too
+             long is refused invalid_call with field dx_call, the activity unchanged.
+             Every command that regenerates the active contact's messages (set_activity,
+             set_report, set_tx4, a selection or entry of the same partner) is refused, and
+             changes nothing, when its Tx2/Tx3 cannot be generated: out_of_range with field
+             serial when the serial is outside 1..2047 (WSJT-X's spin box maximum; a station
+             that logged 2047 contacts), profile_incomplete with field locator when the
+             profile locator was changed to fewer than 6 characters after the choice, and
+             invalid_call with field callsign when the profile callsign was changed so that it
+             has more than 11 characters or the pair more than 16. A profile change alone
+             regenerates nothing: the messages already generated stay until such a command,
+             and a new selection or entry is refused the same way. Every
              generated text packs unaltered (PackMessage, family euVhf for Tx2/Tx3). An
              operator-edited Tx2 or Tx3 is accepted when it packs unaltered in any family,
              including euVhf. The accepted request teaches the hash table both calls
@@ -254,7 +271,10 @@ package WstxContact {
              Selection. While eu_vhf is set an EU VHF row whose 'from' is a filled-in hash is
              selectable (SelectDecodedRow): dx call its 'from' text, dx grid its locator;
              addressed to me (its 'to' is my call) the first slot is tx3 without R and tx4
-             with R, otherwise tx1 (replying). An unresolved 'from' is refused
+             with R, and its last two words become exchange_rcvd, as a selected RTTY Roundup
+             or Field Day row addressed to me does and as WSJT-X stores the received exchange
+             of an EU VHF message to my call (DMR ~772-776); otherwise tx1 (replying) and
+             exchange_rcvd stays null. An unresolved 'from' is refused
              row_not_standard, as WSJT-X refuses a contest message with <...>. In another
              activity such a row is refused row_not_standard as before. Call 1st, the
              strategies and contest verdicts keep reading standard messages only: a caller's
