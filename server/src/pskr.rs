@@ -289,6 +289,27 @@ impl Hearing {
             .max_by_key(|h| h.utc_s)
             .map(|h| (h.utc_s, h.snr_db))
     }
+    /// #97 HearingFeed "He reports": a spot received by `target` from any sender (my call
+    /// included) on this mode and band within the window, whatever its offset.
+    pub(crate) fn reports(&self, target: &str, mode: &str, band: &str, now_s: i64) -> bool {
+        self.heard_by(target, mode, band, now_s).is_some()
+            || self.decoded.iter().any(|s| {
+                s.receiver == target
+                    && s.mode == mode
+                    && s.band == band
+                    && now_s.saturating_sub(s.utc_s) <= HEARD_WINDOW_S
+            })
+    }
+    /// #97 the receivers that heard my call on this mode and band within the window.
+    pub(crate) fn heard_calls(&self, mode: &str, band: &str, now_s: i64) -> Vec<String> {
+        self.heard
+            .iter()
+            .filter(|h| {
+                h.mode == mode && h.band == band && now_s.saturating_sub(h.utc_s) <= HEARD_WINDOW_S
+            })
+            .map(|h| h.receiver.clone())
+            .collect()
+    }
     /// Audio offsets (spot frequency minus my dial) of what the current target decoded on
     /// this mode and band with the parity of the sender's period, newest first and distinct
     /// per (offset, parity), inside `range`, at most PREFERRED_MAX. A spot for another band
@@ -746,6 +767,20 @@ impl Feed {
             HearingState::Unknown
         }
     }
+    /// #97 TxMoveRule: `target` reports (HearingFeed "He reports"); false with Use off.
+    pub(crate) fn reports(&self, target: &str, mode: &str, band: &str) -> bool {
+        let i = self.shared.lock();
+        i.enabled && i.use_ && i.hearing.reports(target, mode, band, utc_s())
+    }
+    /// #97 ValueOrder hears_us: the receivers with a spot of my call on this mode and band at
+    /// most 600 s old; None with Use off (the criterion ties).
+    pub(crate) fn heard_calls(&self, mode: &str, band: &str) -> Option<Vec<String>> {
+        let i = self.shared.lock();
+        if !(i.enabled && i.use_) {
+            return None;
+        }
+        Some(i.hearing.heard_calls(mode, band, utc_s()))
+    }
     /// The audio offsets the current target decodes (any parity); none with Use off.
     #[cfg(test)]
     pub(crate) fn decoded_offsets(
@@ -1078,6 +1113,28 @@ pub(crate) fn target_hearing(
         (Some(feed), Some(target), Some(band)) => feed.hearing(target, mode_name(mode), band),
         _ => HearingState::Unknown,
     }
+}
+/// #97 TxMoveRule: whether `target` reports on the station band and `mode` (false without the
+/// feed, a band or with Use off).
+pub(crate) fn target_reports(
+    r: &recording::Recording,
+    target: Option<&str>,
+    mode: decoder::Mode,
+) -> bool {
+    match (r.pskr.get(), target, strategy::station_band(r)) {
+        (Some(feed), Some(target), Some(band)) => feed.reports(target, mode_name(mode), band),
+        _ => false,
+    }
+}
+/// #97 ValueOrder hears_us on the station band and operating mode: None (ties) without the
+/// feed, a band, or with Use off.
+pub(crate) fn heard_calls(r: &recording::Recording) -> Option<Vec<String>> {
+    let mode = if r.operating_mode() == "ft4" {
+        "FT4"
+    } else {
+        "FT8"
+    };
+    r.pskr.get()?.heard_calls(mode, strategy::station_band(r)?)
 }
 /// WstxStrategy::FreeTxSlot his end: the audio offsets the current target decodes from
 /// senders of `parity` (my Tx parity), inside the free slot range of `mode`. None is unknown:

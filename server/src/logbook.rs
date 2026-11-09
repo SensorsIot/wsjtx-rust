@@ -83,6 +83,8 @@ const QSO_DATE_OFF: usize = 8;
 const TIME_OFF: usize = 9;
 const BAND: usize = 10;
 const FREQ: usize = 11;
+/// #97 the ADIF STATE (WstxStrategy::UsStateOf).
+const STATE: usize = 23;
 /// The contest fields are FIELDS[CONTEST..CONFIRMATION].
 const CONTEST: usize = 16;
 /// The confirmation fields are FIELDS[CONFIRMATION..]; the LogRecord fields before them.
@@ -93,6 +95,10 @@ const CHANNELS: [(usize, usize, Option<usize>); 3] =
     [(24, 25, None), (26, 27, Some(28)), (29, 30, None)];
 
 /// ADIF 3.1.8 band enumeration with inclusive limits in Hz.
+/// #97 a band name of the ADIF band enumeration, in lower case (WstxStrategy::StrategyBands).
+pub fn is_band(name: &str) -> bool {
+    BANDS.iter().any(|(b, _, _)| *b == name)
+}
 const BANDS: [(&str, u64, u64); 33] = [
     ("2190m", 135_700, 137_800),
     ("630m", 472_000, 479_000),
@@ -942,6 +948,7 @@ fn logged(records: &[Record]) -> Vec<crate::dxcc::Logged> {
             mode: Some(r.effective_mode()).filter(|m| !m.is_empty()),
             confirmed: r.confirmed(),
             date: r.values[QSO_DATE].as_deref().and_then(|d| d.parse().ok()),
+            state: r.values[STATE].clone(),
         })
         .collect()
 }

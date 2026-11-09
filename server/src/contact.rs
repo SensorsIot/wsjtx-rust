@@ -862,9 +862,8 @@ pub struct Engine {
     pub settings: Settings,
     pub contact: Option<Contact>,
     /// WstxStrategy::StrategyWatchdog: the strategy run's own contact, which sends past the
-    /// Tx watchdog limit, and the repetitions left before LeaveRule leaves it (WD:n; None while
-    /// no count applies). Set by the station before every step.
-    pub repeat_exempt: Option<(String, Option<u32>)>,
+    /// Tx watchdog limit (#97: no WD shown for it). Set by the station before every step.
+    pub repeat_exempt: Option<String>,
     /// Contacts due for the log (completed, or Log QSO), taken by the station.
     to_log: Vec<(LogKind, Contact)>,
     /// The last request target refused without a disarm, never resubmitted as is.
@@ -2067,9 +2066,7 @@ impl Engine {
         // WstxContact::TxWatchdog: nothing is planned for a send beyond the limit; a
         // partner message may still change the next message until 1.2 s into its period.
         // A request still pending would key, so it stops at once; after the Nth send none is.
-        if c.repetitions(&text) >= core.tx_limit()
-            && self.repeat_exempt.as_ref().map(|e| &e.0) != Some(&c.id)
-        {
+        if c.repetitions(&text) >= core.tx_limit() && self.repeat_exempt.as_ref() != Some(&c.id) {
             let due = self.last_started_period.map_or(now, |p| {
                 transmit::next_period(mode, p + period_ms(mode), self.settings.parity)
             });
@@ -2259,24 +2256,16 @@ impl Engine {
                 .map_or(0, |text| c.repetitions(text))
         })
     }
-    /// WstxStrategy::StrategyWatchdog: the run's own contact is in a contest stay (no count: the
-    /// snapshot's tx_remaining_calls is null, WD:∞).
-    pub fn staying(&self) -> bool {
-        self.repeat_exempt
-            .as_ref()
-            .is_some_and(|e| e.1.is_none() && self.contact.as_ref().is_some_and(|c| c.id == e.0))
-    }
     /// tx_remaining_calls (limit - reported) reads the Rep of the message due next; a strategy
-    /// run's own contact has no stop and counts down to the repetition at which LeaveRule
-    /// leaves it (WstxStrategy::StrategyWatchdog).
+    /// run's own contact (attended) has no stop and no count: null (#97 WstxStrategy::
+    /// StrategyWatchdog, LeaveCountLabel; the leave count is the run's own label).
     fn report_repetitions<H: Hardware>(&self, core: &mut Core<H>) {
         core.report_tx_repetitions(self.repetitions_due());
-        let remaining = self
+        let own = self
             .repeat_exempt
             .as_ref()
-            .filter(|e| self.contact.as_ref().is_some_and(|c| c.id == e.0))
-            .and_then(|e| e.1);
-        core.report_tx_remaining(remaining);
+            .is_some_and(|e| self.contact.as_ref().is_some_and(|c| c.id == *e));
+        core.report_tx_unbounded(own);
     }
     /// The reply timeout (MW stopWRTimeout) and the Hound watchdog (HWD) turn Enable Tx off.
     fn hound_timeouts<H: Hardware>(&mut self, core: Option<&mut Core<H>>, now: i64) {

@@ -35,70 +35,196 @@ use crate::contact::Activity;
 pub use crate::dxcc::CONTINENTS;
 use crate::dxcc::{Category, Standing, Worked};
 
-/// WstxStrategy::Goal, in wire order.
+/// WstxStrategy::StrategyClass (#97 D19), wire names "strategy" and "contest".
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Goal {
-    Dxcc,
-    DxccBand,
-    DxccSlot,
-    Waz,
-    Wpx,
-    Grid,
-    NewCall,
-    /// strategydef: the call on the station band in any mode.
-    NewCallBand,
+pub(crate) enum Class {
+    Strategy,
+    Contest,
 }
-const GOALS: [(&str, Goal); 8] = [
-    ("dxcc", Goal::Dxcc),
-    ("dxcc_band", Goal::DxccBand),
-    ("dxcc_slot", Goal::DxccSlot),
-    ("waz", Goal::Waz),
-    ("wpx", Goal::Wpx),
-    ("grid", Goal::Grid),
-    ("new_call", Goal::NewCall),
-    ("new_call_band", Goal::NewCallBand),
-];
-impl Goal {
+impl Class {
     fn name(self) -> &'static str {
-        GOALS.iter().find(|g| g.1 == self).map_or("", |g| g.0)
+        match self {
+            Class::Strategy => "strategy",
+            Class::Contest => "contest",
+        }
+    }
+}
+/// WstxStrategy::NewWhat, in wire order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NewWhat {
+    Dxcc,
+    Call,
+    Grid,
+    CqZone,
+    ItuZone,
+    Continent,
+    Prefix,
+}
+const WHATS: [(&str, NewWhat); 7] = [
+    ("dxcc", NewWhat::Dxcc),
+    ("call", NewWhat::Call),
+    ("grid", NewWhat::Grid),
+    ("cq_zone", NewWhat::CqZone),
+    ("itu_zone", NewWhat::ItuZone),
+    ("continent", NewWhat::Continent),
+    ("prefix", NewWhat::Prefix),
+];
+impl NewWhat {
+    fn name(self) -> &'static str {
+        WHATS.iter().find(|g| g.1 == self).map_or("", |g| g.0)
+    }
+}
+/// WstxStrategy::NewPer, least specific first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum NewPer {
+    Ever,
+    Band,
+    BandMode,
+}
+const PERS: [(&str, NewPer); 3] = [
+    ("ever", NewPer::Ever),
+    ("band", NewPer::Band),
+    ("band_mode", NewPer::BandMode),
+];
+impl NewPer {
+    fn name(self) -> &'static str {
+        PERS.iter().find(|g| g.1 == self).map_or("", |g| g.0)
     }
 }
 /// WstxStrategy::ValueCriterion, the criteria of ValueOrder, wire names exactly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Criterion {
+    MostWanted,
     NewDxcc,
     NewDxccBand,
-    NewDxccSlot,
-    NewGrid,
-    NewGridBand,
+    NewDxccBandMode,
     NewCall,
     NewCallBand,
-    MostWanted,
-    Distance,
+    NewGrid,
+    NewGridBand,
+    NewCqZone,
+    NewItuZone,
+    NewContinent,
+    NewPrefix,
+    SnrBucket,
     Snr,
+    Distance,
+    HearsUs,
 }
-const CRITERIA: [(&str, Criterion); 10] = [
+const CRITERIA: [(&str, Criterion); 16] = [
+    ("most_wanted", Criterion::MostWanted),
     ("new_dxcc", Criterion::NewDxcc),
     ("new_dxcc_band", Criterion::NewDxccBand),
-    ("new_dxcc_slot", Criterion::NewDxccSlot),
-    ("new_grid", Criterion::NewGrid),
-    ("new_grid_band", Criterion::NewGridBand),
+    ("new_dxcc_band_mode", Criterion::NewDxccBandMode),
     ("new_call", Criterion::NewCall),
     ("new_call_band", Criterion::NewCallBand),
-    ("most_wanted", Criterion::MostWanted),
-    ("distance", Criterion::Distance),
+    ("new_grid", Criterion::NewGrid),
+    ("new_grid_band", Criterion::NewGridBand),
+    ("new_cq_zone", Criterion::NewCqZone),
+    ("new_itu_zone", Criterion::NewItuZone),
+    ("new_continent", Criterion::NewContinent),
+    ("new_prefix", Criterion::NewPrefix),
+    ("snr_bucket", Criterion::SnrBucket),
     ("snr", Criterion::Snr),
+    ("distance", Criterion::Distance),
+    ("hears_us", Criterion::HearsUs),
 ];
-/// Strategy valueCriteriaMax.
-pub const VALUE_MAX: usize = 10;
+/// Strategy orderCriteriaMax.
+pub const ORDER_MAX: usize = 16;
 impl Criterion {
     fn name(self) -> &'static str {
         CRITERIA.iter().find(|c| c.1 == self).map_or("", |c| c.0)
     }
+    /// The NewNeeded of a "new" criterion (ValueOrder).
+    fn new_of(self) -> Option<(NewWhat, NewPer)> {
+        Some(match self {
+            Criterion::NewDxcc => (NewWhat::Dxcc, NewPer::Ever),
+            Criterion::NewDxccBand => (NewWhat::Dxcc, NewPer::Band),
+            Criterion::NewDxccBandMode => (NewWhat::Dxcc, NewPer::BandMode),
+            Criterion::NewCall => (NewWhat::Call, NewPer::Ever),
+            Criterion::NewCallBand => (NewWhat::Call, NewPer::Band),
+            Criterion::NewGrid => (NewWhat::Grid, NewPer::Ever),
+            Criterion::NewGridBand => (NewWhat::Grid, NewPer::Band),
+            Criterion::NewCqZone => (NewWhat::CqZone, NewPer::Ever),
+            Criterion::NewItuZone => (NewWhat::ItuZone, NewPer::Ever),
+            Criterion::NewContinent => (NewWhat::Continent, NewPer::Ever),
+            Criterion::NewPrefix => (NewWhat::Prefix, NewPer::Ever),
+            _ => return None,
+        })
+    }
 }
-/// The LeaveRule and QuietTime defaults of a strategy (WstxStrategy::Strategy).
-pub const REPETITIONS_DEFAULT: u64 = 4;
-pub const QUIET_MINUTES_DEFAULT: u64 = 10;
+/// WstxStrategy::LeaveRule, the strategy's leave (#97 decision 5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Leave {
+    /// After `calls` calls without an answer, `heard` while he hears us.
+    Calls { calls: u64, heard: u64 },
+    /// Until logged; gone after `gone_minutes` without his decode.
+    UntilLogged { gone_minutes: u64 },
+    /// Contest style: stay while heard and most valuable, else leave after `tx_changes`.
+    Contest { tx_changes: u64 },
+}
+impl Leave {
+    fn json(self) -> Value {
+        match self {
+            Leave::Calls { calls, heard } => {
+                json!({"mode":"calls","calls":calls,"calls_heard":heard})
+            }
+            Leave::UntilLogged { gone_minutes } => {
+                json!({"mode":"until_logged","gone_minutes":gone_minutes})
+            }
+            Leave::Contest { tx_changes } => json!({"mode":"contest","tx_changes":tx_changes}),
+        }
+    }
+    /// The LeaveMode's wire name.
+    pub(crate) fn mode(self) -> &'static str {
+        match self {
+            Leave::Calls { .. } => "calls",
+            Leave::UntilLogged { .. } => "until_logged",
+            Leave::Contest { .. } => "contest",
+        }
+    }
+}
+/// WstxStrategy::TxMoveRule: k per PskCase (0 stay, 1 every call, n every n-th call).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TxMoveEvery {
+    pub heard: u64,
+    pub not_heard: u64,
+    pub no_reports: u64,
+}
+/// One entry of WstxStrategy::CountryList.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CountryEntry {
+    /// kind "country" (an entity name) or "prefix".
+    pub country: bool,
+    pub value: String,
+    /// None: every band.
+    pub bands: Option<Vec<String>>,
+}
+/// An include and an exclude list (CountryList, UsStateFilter, CqTargetList).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Lists<T> {
+    pub include: Vec<T>,
+    pub exclude: Vec<T>,
+}
+impl<T> Default for Lists<T> {
+    fn default() -> Self {
+        Self {
+            include: Vec::new(),
+            exclude: Vec::new(),
+        }
+    }
+}
+/// WstxStrategy::Strategy bounds of the lists and bands.
+pub const COUNTRIES_MAX: usize = 64;
+pub const CQ_TARGETS_MAX: usize = 32;
+pub const BANDS_MAX: usize = 32;
+/// WstxStrategy::UsStateFilter: the 50 US states and DC.
+pub const US_STATES: [&str; 51] = [
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA", "HI", "ID", "IL", "IN", "IA",
+    "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM",
+    "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA",
+    "WV", "WI", "WY",
+];
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Needed {
     NotWorked,
@@ -125,120 +251,143 @@ pub(crate) enum Window {
     Today,
     FromTo(u32, u32),
 }
-/// WstxStrategy::Strategy.
+/// WstxStrategy::Strategy (#97 D19, schema 4): the nine decisions of one strategy. A contest
+/// strategy (class contest) uses only the three lists of its filters; the other filter fields
+/// keep their base values and are never read for it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Strategy {
     pub name: String,
-    pub goals: Vec<Goal>,
+    pub class: Class,
+    /// 1 Band (StrategyBands): None for every band.
+    pub bands: Option<Vec<String>>,
+    /// 2 Filters (Candidate).
+    pub new: Vec<NewWhat>,
+    pub new_per: NewPer,
     pub needed: Needed,
     pub region: Region,
     pub min_snr_db: Option<i64>,
-    /// ValueOrder: 0..10 unique criteria in the operator's order.
-    pub value: Vec<Criterion>,
-    /// Callers of my call first (Q4).
-    pub callers_first: bool,
-    /// WstxStrategy::CqWhenNoTarget.
-    pub cq_when_no_target: bool,
-    /// x of WstxStrategy::LeaveRule, "repetitions before leaving", 1..20.
-    pub repetitions: u64,
-    /// WstxStrategy::QuietTime in minutes, 1..120.
-    pub quiet_minutes: u64,
-    pub treat_73_as_cq: bool,
     pub window: Window,
+    pub treat_73_as_cq: bool,
+    pub countries: Lists<CountryEntry>,
+    pub states: Lists<String>,
+    pub cq_targets: Lists<String>,
+    /// 3 Order (ValueOrder): 0..16 unique criteria; [] for a contest.
+    pub order: Vec<Criterion>,
+    /// The contest id of a contest strategy (WstxContest::ProfileTable).
+    pub contest: Option<&'static str>,
+    /// 4 Callers first.
+    pub callers_first: bool,
+    /// 5 Leaving a station.
+    pub leave: Leave,
+    /// 6 Tx frequency.
+    pub tx_move_every: TxMoveEvery,
+    /// 7 Busy pause.
+    pub busy_pause: bool,
+    /// 8 CQ when idle (CqWhenNoTarget).
+    pub cq_when_idle: bool,
+    /// 9 Retry pause (QuietTime) in minutes, 1..120.
+    pub retry_minutes: u64,
 }
-/// One row of the built-in table: name, goal, DX only, window today, value, CQ when no target.
-type Builtin = (&'static str, Goal, bool, bool, Criterion, bool);
-/// WstxStrategy::BuiltinStrategies: the one table, in this order.
-const BUILTINS: [Builtin; 8] = [
-    (
-        "New DXCC",
-        Goal::Dxcc,
-        false,
-        false,
-        Criterion::MostWanted,
-        false,
-    ),
-    (
-        "New DXCC on band",
-        Goal::DxccBand,
-        false,
-        false,
-        Criterion::MostWanted,
-        false,
-    ),
-    (
-        "DXCC slots",
-        Goal::DxccSlot,
-        false,
-        false,
-        Criterion::MostWanted,
-        false,
-    ),
-    (
-        "New calls",
-        Goal::NewCall,
-        false,
-        false,
-        Criterion::MostWanted,
-        false,
-    ),
-    (
-        "DX hunting",
-        Goal::NewCall,
-        true,
-        false,
-        Criterion::MostWanted,
-        false,
-    ),
-    (
-        "Strongest new on band",
-        Goal::NewCallBand,
-        false,
-        false,
-        Criterion::Snr,
-        false,
-    ),
-    (
-        "Farthest new on band",
-        Goal::NewCallBand,
-        false,
-        false,
-        Criterion::Distance,
-        false,
-    ),
-    (
-        "Casual 20 m",
-        Goal::NewCallBand,
-        false,
-        true,
-        Criterion::Snr,
-        true,
-    ),
-];
+impl Strategy {
+    /// The values every built-in shares (BuiltinStrategies "All five"), with new [dxcc] per band
+    /// and mode, not confirmed, order [] and leave {calls 4, calls_heard 8}.
+    pub(crate) fn base(name: &str) -> Self {
+        Self {
+            name: name.to_owned(),
+            class: Class::Strategy,
+            bands: None,
+            new: vec![NewWhat::Dxcc],
+            new_per: NewPer::BandMode,
+            needed: Needed::NotConfirmed,
+            region: Region::All,
+            min_snr_db: None,
+            window: Window::All,
+            treat_73_as_cq: true,
+            countries: Lists::default(),
+            states: Lists::default(),
+            cq_targets: Lists::default(),
+            order: Vec::new(),
+            contest: None,
+            callers_first: true,
+            leave: Leave::Calls { calls: 4, heard: 8 },
+            tx_move_every: TxMoveEvery {
+                heard: 0,
+                not_heard: 1,
+                no_reports: 2,
+            },
+            busy_pause: true,
+            cq_when_idle: false,
+            retry_minutes: 10,
+        }
+    }
+    /// The contest profile of a contest strategy.
+    pub(crate) fn profile(&self) -> Option<&'static crate::contest::Profile> {
+        self.contest.and_then(crate::contest::profile)
+    }
+}
+/// WstxStrategy::BuiltinStrategies: the five built-ins of class strategy, in this order.
 pub(crate) fn builtins() -> &'static [Strategy] {
     static TABLE: std::sync::OnceLock<Vec<Strategy>> = std::sync::OnceLock::new();
     TABLE.get_or_init(|| {
-        BUILTINS
+        let dxcc = |name: &str, per: NewPer| Strategy {
+            new_per: per,
+            order: vec![Criterion::MostWanted, Criterion::Snr],
+            leave: Leave::UntilLogged { gone_minutes: 10 },
+            ..Strategy::base(name)
+        };
+        let casual = |name: &str| Strategy {
+            new: vec![NewWhat::Call],
+            new_per: NewPer::Band,
+            needed: Needed::NotWorked,
+            order: vec![Criterion::SnrBucket, Criterion::Distance],
+            cq_when_idle: true,
+            ..Strategy::base(name)
+        };
+        vec![
+            dxcc("DXCC all", NewPer::BandMode),
+            dxcc("New DXCC on band", NewPer::Band),
+            dxcc("New DXCC", NewPer::Ever),
+            casual("Casual"),
+            Strategy {
+                window: Window::Today,
+                cq_targets: Lists {
+                    include: vec!["POTA".into(), "SOTA".into()],
+                    exclude: Vec::new(),
+                },
+                cq_when_idle: false,
+                ..casual("POTA/SOTA")
+            },
+        ]
+    })
+}
+/// WstxStrategy::BuiltinStrategies: one read-only contest built-in per contest of the table,
+/// with the contest defaults.
+pub(crate) fn contest_builtins() -> &'static [Strategy] {
+    static TABLE: std::sync::OnceLock<Vec<Strategy>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        crate::contest::all_profiles()
             .iter()
-            .map(|(name, goal, dx, today, value, cq)| Strategy {
-                name: (*name).to_owned(),
-                goals: vec![*goal],
-                needed: Needed::NotWorked,
-                region: if *dx { Region::Dx } else { Region::All },
-                min_snr_db: None,
-                value: vec![*value],
-                callers_first: true,
-                cq_when_no_target: *cq,
-                repetitions: REPETITIONS_DEFAULT,
-                quiet_minutes: QUIET_MINUTES_DEFAULT,
-                treat_73_as_cq: true,
-                window: if *today { Window::Today } else { Window::All },
+            .map(|p| Strategy {
+                class: Class::Contest,
+                contest: Some(p.id),
+                leave: Leave::Contest { tx_changes: 2 },
+                tx_move_every: TxMoveEvery {
+                    heard: 0,
+                    not_heard: 2,
+                    no_reports: 2,
+                },
+                busy_pause: false,
+                cq_when_idle: true,
+                ..Strategy::base(p.name)
             })
             .collect()
     })
 }
 fn is_builtin(name: &str) -> bool {
-    builtins().iter().any(|b| b.name.eq_ignore_ascii_case(name))
+    builtins()
+        .iter()
+        .chain(contest_builtins())
+        .any(|b| b.name.eq_ignore_ascii_case(name))
 }
 /// WstxStrategy::StrategyConfiguration.
 #[derive(Clone, Debug, PartialEq)]
@@ -314,29 +463,123 @@ fn date(v: &Value, field: &str) -> Result<u32, Field> {
 fn date_text(d: u32) -> String {
     format!("{:04}-{:02}-{:02}", d / 10000, d / 100 % 100, d % 100)
 }
-/// The exact keys of WstxStrategy::Strategy.
-const STRATEGY_KEYS: [&str; 13] = [
+/// The exact keys of WstxStrategy::Strategy (schema 4), in the order of the decisions.
+const STRATEGY_KEYS: [&str; 12] = [
     "name",
     "class",
-    "goals",
-    "needed",
+    "bands",
+    "filters",
+    "order",
+    "contest",
+    "callers_first",
+    "leave",
+    "tx_move_every",
+    "busy_pause",
+    "cq_when_idle",
+    "retry_minutes",
+];
+/// The exact filter keys of class strategy; class contest has only the three lists.
+const FILTER_KEYS: [&str; 10] = [
+    "new",
+    "new_per",
+    "new_means",
     "region",
     "min_snr_db",
-    "value",
-    "callers_first",
-    "cq_when_no_target",
-    "repetitions",
-    "quiet_minutes",
+    "worked_since",
     "treat_73_as_cq",
-    "window",
+    "countries",
+    "states",
+    "cq_targets",
 ];
-fn strategy(v: &Value, field: &str) -> Result<Strategy, Field> {
-    let f = |k: &str| format!("{field}.{k}");
-    // calls_per_station is gone (strategydef): refused by its own path; any other extra key
-    // by the strategy's.
-    if v.get("calls_per_station").is_some() {
-        return Err(f("calls_per_station"));
+const LIST_KEYS: [&str; 3] = ["countries", "states", "cq_targets"];
+/// StrategyBands: null, or 1..32 unique ADIF band names in lower case.
+fn bands_of(v: &Value, field: &str) -> Result<Option<Vec<String>>, Field> {
+    if v.is_null() {
+        return Ok(None);
     }
+    let list = v
+        .as_array()
+        .filter(|a| (1..=BANDS_MAX).contains(&a.len()))
+        .ok_or(bad(field))?;
+    let mut out: Vec<String> = Vec::new();
+    for (i, b) in list.iter().enumerate() {
+        let b = b
+            .as_str()
+            .filter(|b| logbook::is_band(b) && !out.iter().any(|o| o == b))
+            .ok_or(bad(format!("{field}[{i}]")))?;
+        out.push(b.to_owned());
+    }
+    Ok(Some(out))
+}
+/// An include and an exclude list, each 0..max entries read by `item` (unique when asked).
+fn lists_of<T: PartialEq>(
+    v: &Value,
+    field: &str,
+    max: usize,
+    unique: bool,
+    item: impl Fn(&Value, &str) -> Result<T, Field>,
+) -> Result<Lists<T>, Field> {
+    exact(v, &["include", "exclude"], field)?;
+    let one = |k: &str| -> Result<Vec<T>, Field> {
+        let lf = format!("{field}.{k}");
+        let a = v[k].as_array().filter(|a| a.len() <= max).ok_or(bad(&lf))?;
+        let mut out: Vec<T> = Vec::new();
+        for (i, x) in a.iter().enumerate() {
+            let fi = format!("{lf}[{i}]");
+            let t = item(x, &fi)?;
+            if unique && out.contains(&t) {
+                return Err(fi);
+            }
+            out.push(t);
+        }
+        Ok(out)
+    };
+    Ok(Lists {
+        include: one("include")?,
+        exclude: one("exclude")?,
+    })
+}
+/// CountryList entries; a country name must be in `table` when one is given (a PUT), a file's
+/// entry is read as it is.
+fn countries_of(
+    v: &Value,
+    field: &str,
+    table: Option<&crate::dxcc::Table>,
+) -> Result<Lists<CountryEntry>, Field> {
+    lists_of(v, field, COUNTRIES_MAX, false, |e, f| {
+        exact(e, &["kind", "value", "bands"], f)?;
+        let country = match e["kind"].as_str() {
+            Some("prefix") => false,
+            Some("country") => true,
+            _ => return Err(format!("{f}.kind")),
+        };
+        let vf = format!("{f}.value");
+        let value = if country {
+            let name = e["value"]
+                .as_str()
+                .filter(|n| (1..=64).contains(&n.len()))
+                .ok_or(bad(&vf))?;
+            match table {
+                Some(t) => t
+                    .cty
+                    .entity_names()
+                    .find(|n| n.eq_ignore_ascii_case(name))
+                    .map(str::to_owned)
+                    .ok_or(bad(&vf))?,
+                None => name.to_owned(),
+            }
+        } else {
+            word(&e["value"], &vf, 13, b"/")?
+        };
+        Ok(CountryEntry {
+            country,
+            value,
+            bands: bands_of(&e["bands"], &format!("{f}.bands"))?,
+        })
+    })
+}
+fn strategy(v: &Value, field: &str, table: Option<&crate::dxcc::Table>) -> Result<Strategy, Field> {
+    let f = |k: &str| format!("{field}.{k}");
     exact(v, &STRATEGY_KEYS, field)?;
     let name = v["name"]
         .as_str()
@@ -347,29 +590,159 @@ fn strategy(v: &Value, field: &str) -> Result<Strategy, Field> {
         })
         .ok_or(bad(f("name")))?
         .to_owned();
-    // Only award has behaviour; contest is #63.
-    if v["class"] != "award" {
-        return Err(f("class"));
-    }
-    let list = v["goals"]
+    let class = match v["class"].as_str() {
+        Some("strategy") => Class::Strategy,
+        Some("contest") => Class::Contest,
+        _ => return Err(f("class")),
+    };
+    let bands = bands_of(&v["bands"], &f("bands"))?;
+    let ff = f("filters");
+    let fv = &v["filters"];
+    exact(
+        fv,
+        if class == Class::Strategy {
+            &FILTER_KEYS[..]
+        } else {
+            &LIST_KEYS[..]
+        },
+        &ff,
+    )?;
+    let countries = countries_of(&fv["countries"], &format!("{ff}.countries"), table)?;
+    let states = lists_of(
+        &fv["states"],
+        &format!("{ff}.states"),
+        US_STATES.len(),
+        true,
+        |s, f| {
+            s.as_str()
+                .filter(|s| US_STATES.contains(s))
+                .map(str::to_owned)
+                .ok_or(bad(f))
+        },
+    )?;
+    let cq_targets = lists_of(
+        &fv["cq_targets"],
+        &format!("{ff}.cq_targets"),
+        CQ_TARGETS_MAX,
+        true,
+        |s, f| word(s, f, 8, b""),
+    )?;
+    let order_field = f("order");
+    let list = v["order"]
         .as_array()
-        .filter(|g| (1..=GOALS.len()).contains(&g.len()))
-        .ok_or(bad(f("goals")))?;
-    let mut goals = Vec::new();
+        .filter(|c| c.len() <= ORDER_MAX && (class == Class::Strategy || c.is_empty()))
+        .ok_or(bad(&order_field))?;
+    let mut order = Vec::new();
+    for (i, c) in list.iter().enumerate() {
+        let criterion = CRITERIA
+            .iter()
+            .find(|k| c.as_str() == Some(k.0))
+            .map(|k| k.1)
+            .filter(|k| !order.contains(k))
+            .ok_or(bad(format!("{order_field}[{i}]")))?;
+        order.push(criterion);
+    }
+    let contest = match (class, &v["contest"]) {
+        (Class::Strategy, Value::Null) => None,
+        (Class::Contest, c) => Some(
+            c.as_str()
+                .and_then(crate::contest::profile)
+                .ok_or(bad(f("contest")))?
+                .id,
+        ),
+        _ => return Err(f("contest")),
+    };
+    let flag = |k: &str| v[k].as_bool().ok_or(bad(f(k)));
+    let lf = f("leave");
+    let lv = &v["leave"];
+    let leave = match lv["mode"].as_str() {
+        Some("calls") => {
+            exact(lv, &["mode", "calls", "calls_heard"], &lf)?;
+            let calls = bounded(&lv["calls"], &format!("{lf}.calls"), 1, 20)?;
+            Leave::Calls {
+                calls,
+                heard: bounded(&lv["calls_heard"], &format!("{lf}.calls_heard"), calls, 40)?,
+            }
+        }
+        Some("until_logged") => {
+            exact(lv, &["mode", "gone_minutes"], &lf)?;
+            Leave::UntilLogged {
+                gone_minutes: bounded(&lv["gone_minutes"], &format!("{lf}.gone_minutes"), 1, 60)?,
+            }
+        }
+        Some("contest") => {
+            exact(lv, &["mode", "tx_changes"], &lf)?;
+            Leave::Contest {
+                tx_changes: bounded(&lv["tx_changes"], &format!("{lf}.tx_changes"), 1, 20)?,
+            }
+        }
+        _ => return Err(format!("{lf}.mode")),
+    };
+    let tf = f("tx_move_every");
+    let tv = &v["tx_move_every"];
+    exact(tv, &["heard", "not_heard", "no_reports"], &tf)?;
+    let k = |key: &str| bounded(&tv[key], &format!("{tf}.{key}"), 0, 20);
+    let tx_move_every = TxMoveEvery {
+        heard: k("heard")?,
+        not_heard: k("not_heard")?,
+        no_reports: k("no_reports")?,
+    };
+    let mut s = Strategy {
+        name,
+        class,
+        bands,
+        countries,
+        states,
+        cq_targets,
+        order,
+        contest,
+        callers_first: flag("callers_first")?,
+        leave,
+        tx_move_every,
+        busy_pause: flag("busy_pause")?,
+        cq_when_idle: flag("cq_when_idle")?,
+        retry_minutes: bounded(&v["retry_minutes"], &f("retry_minutes"), 1, 120)?,
+        ..Strategy::base("")
+    };
+    if class == Class::Contest {
+        return Ok(s);
+    }
+    let list = fv["new"]
+        .as_array()
+        .filter(|g| (1..=WHATS.len()).contains(&g.len()))
+        .ok_or(bad(format!("{ff}.new")))?;
+    s.new.clear();
     for (i, g) in list.iter().enumerate() {
-        let goal = GOALS
+        let what = WHATS
             .iter()
             .find(|k| g.as_str() == Some(k.0))
             .map(|k| k.1)
-            .filter(|k| !goals.contains(k))
-            .ok_or(bad(format!("{field}.goals[{i}]")))?;
-        goals.push(goal);
+            .filter(|k| !s.new.contains(k))
+            .ok_or(bad(format!("{ff}.new[{i}]")))?;
+        s.new.push(what);
     }
-    let needed = match v["needed"].as_str() {
+    s.new_per = PERS
+        .iter()
+        .find(|k| fv["new_per"].as_str() == Some(k.0))
+        .map(|k| k.1)
+        .ok_or(bad(format!("{ff}.new_per")))?;
+    s.needed = match fv["new_means"].as_str() {
         Some("not_worked") => Needed::NotWorked,
         Some("not_confirmed") => Needed::NotConfirmed,
-        _ => return Err(f("needed")),
+        _ => return Err(format!("{ff}.new_means")),
     };
+    let (region, min_snr_db, window) = region_snr_window(fv, &ff)?;
+    s.region = region;
+    s.min_snr_db = min_snr_db;
+    s.window = window;
+    s.treat_73_as_cq = fv["treat_73_as_cq"]
+        .as_bool()
+        .ok_or(bad(format!("{ff}.treat_73_as_cq")))?;
+    Ok(s)
+}
+/// The region, min_snr_db and worked_since filter lines (field paths under `field`).
+fn region_snr_window(v: &Value, field: &str) -> Result<(Region, Option<i64>, Window), Field> {
+    let f = |k: &str| format!("{field}.{k}");
     let region_field = f("region");
     let region = match v["region"]["kind"].as_str() {
         Some("all") => {
@@ -406,35 +779,21 @@ fn strategy(v: &Value, field: &str) -> Result<Strategy, Field> {
                 .ok_or(bad(f("min_snr_db")))?,
         ),
     };
-    let list = v["value"]
-        .as_array()
-        .filter(|c| c.len() <= VALUE_MAX)
-        .ok_or(bad(f("value")))?;
-    let mut value = Vec::new();
-    for (i, c) in list.iter().enumerate() {
-        let criterion = CRITERIA
-            .iter()
-            .find(|k| c.as_str() == Some(k.0))
-            .map(|k| k.1)
-            .filter(|k| !value.contains(k))
-            .ok_or(bad(format!("{field}.value[{i}]")))?;
-        value.push(criterion);
-    }
-    let flag = |k: &str| v[k].as_bool().ok_or(bad(f(k)));
-    let window_field = f("window");
-    let window = match v["window"]["kind"].as_str() {
+    let window_field = f("worked_since");
+    let wv = &v["worked_since"];
+    let window = match wv["kind"].as_str() {
         Some("all") => {
-            exact(&v["window"], &["kind"], &window_field)?;
+            exact(wv, &["kind"], &window_field)?;
             Window::All
         }
         Some("today") => {
-            exact(&v["window"], &["kind"], &window_field)?;
+            exact(wv, &["kind"], &window_field)?;
             Window::Today
         }
         Some("from_to") => {
-            exact(&v["window"], &["kind", "from", "to"], &window_field)?;
-            let from = date(&v["window"]["from"], &format!("{window_field}.from"))?;
-            let to = date(&v["window"]["to"], &format!("{window_field}.to"))?;
+            exact(wv, &["kind", "from", "to"], &window_field)?;
+            let from = date(&wv["from"], &format!("{window_field}.from"))?;
+            let to = date(&wv["to"], &format!("{window_field}.to"))?;
             if from > to {
                 return Err(format!("{window_field}.to"));
             }
@@ -442,23 +801,11 @@ fn strategy(v: &Value, field: &str) -> Result<Strategy, Field> {
         }
         _ => return Err(format!("{window_field}.kind")),
     };
-    Ok(Strategy {
-        name,
-        goals,
-        needed,
-        region,
-        min_snr_db,
-        value,
-        callers_first: flag("callers_first")?,
-        cq_when_no_target: flag("cq_when_no_target")?,
-        repetitions: bounded(&v["repetitions"], &f("repetitions"), 1, 20)?,
-        quiet_minutes: bounded(&v["quiet_minutes"], &f("quiet_minutes"), 1, 120)?,
-        treat_73_as_cq: flag("treat_73_as_cq")?,
-        window,
-    })
+    Ok((region, min_snr_db, window))
 }
-/// Exact StrategyConfiguration parsing (field names a refused value).
-pub(crate) fn parse_config(v: &Value) -> Result<Config, Field> {
+/// Exact StrategyConfiguration parsing (field names a refused value). `table`: the country
+/// table a PUT checks country names against (None: a file, read as it is).
+pub(crate) fn parse_config(v: &Value, table: Option<&crate::dxcc::Table>) -> Result<Config, Field> {
     // #63 contest is optional: a browser or a file without it selects no contest.
     let keys: &[&str] = if v.get("contest").is_some() {
         &[
@@ -494,7 +841,7 @@ pub(crate) fn parse_config(v: &Value) -> Result<Config, Field> {
         .ok_or(bad("strategies"))?;
     let mut strategies: Vec<Strategy> = Vec::new();
     for (i, s) in list.iter().enumerate() {
-        let s = strategy(s, &format!("strategies[{i}]"))?;
+        let s = strategy(s, &format!("strategies[{i}]"), table)?;
         if is_builtin(&s.name)
             || strategies
                 .iter()
@@ -509,8 +856,11 @@ pub(crate) fn parse_config(v: &Value) -> Result<Config, Field> {
         a => Some(
             a.as_str()
                 .filter(|a| {
-                    strategies.iter().any(|s| s.name == *a)
-                        || builtins().iter().any(|b| b.name == *a)
+                    strategies
+                        .iter()
+                        .chain(builtins())
+                        .chain(contest_builtins())
+                        .any(|s| s.name == *a)
                 })
                 .ok_or(bad("active"))?
                 .to_owned(),
@@ -529,12 +879,21 @@ pub(crate) fn parse_config(v: &Value) -> Result<Config, Field> {
         }
         ignore_calls.push(c);
     }
-    // WstxContest::ContestSelection: exactly one strategy is active, or none.
+    // WstxContest::ContestSelection (#97): a contest goes with active naming a contest strategy
+    // of its profile, and a contest strategy only with its contest.
     let contest = match v.get("contest") {
         None | Some(Value::Null) => None,
         Some(c) => Some(crate::contest::parse_selection(c, "contest")?),
     };
-    if contest.is_some() && active.is_some() {
+    let active_contest = active.as_deref().and_then(|a| {
+        strategies
+            .iter()
+            .chain(builtins())
+            .chain(contest_builtins())
+            .find(|s| s.name == a)
+            .and_then(|s| s.contest)
+    });
+    if contest.map(|c| c.profile.id) != active_contest {
         return Err(bad("contest"));
     }
     Ok(Config {
@@ -589,8 +948,8 @@ fn upgrade_2(configuration: &Value) -> Option<Value> {
                 ("value", json!(["most_wanted"])),
                 ("callers_first", json!(true)),
                 ("cq_when_no_target", json!(false)),
-                ("repetitions", json!(REPETITIONS_DEFAULT)),
-                ("quiet_minutes", json!(QUIET_MINUTES_DEFAULT)),
+                ("repetitions", json!(4)),
+                ("quiet_minutes", json!(10)),
             ] {
                 if o.insert(k.to_owned(), default).is_some() {
                     return None;
@@ -600,34 +959,170 @@ fn upgrade_2(configuration: &Value) -> Option<Value> {
     }
     Some(v)
 }
-/// A saved file from before the presets: a strategy with a built-in's name is dropped.
-fn without_builtin_names(configuration: &Value) -> Value {
-    let mut v = configuration.clone();
-    if let Some(list) = v["strategies"].as_array_mut() {
-        list.retain(|s| !s["name"].as_str().is_some_and(is_builtin));
+/// The exact keys of a schema 3 strategy (read only by the upgrade).
+const SCHEMA_3_KEYS: [&str; 13] = [
+    "name",
+    "class",
+    "goals",
+    "needed",
+    "region",
+    "min_snr_db",
+    "value",
+    "callers_first",
+    "cq_when_no_target",
+    "repetitions",
+    "quiet_minutes",
+    "treat_73_as_cq",
+    "window",
+];
+/// The schema 3 goals as (what, per) (StrategyConfiguration upgrade table).
+fn goal_of(goal: &str) -> Option<(NewWhat, NewPer)> {
+    Some(match goal {
+        "dxcc" => (NewWhat::Dxcc, NewPer::Ever),
+        "dxcc_band" => (NewWhat::Dxcc, NewPer::Band),
+        "dxcc_slot" => (NewWhat::Dxcc, NewPer::BandMode),
+        "waz" => (NewWhat::CqZone, NewPer::Ever),
+        "wpx" => (NewWhat::Prefix, NewPer::Ever),
+        "grid" => (NewWhat::Grid, NewPer::Ever),
+        "new_call" => (NewWhat::Call, NewPer::Ever),
+        "new_call_band" => (NewWhat::Call, NewPer::Band),
+        _ => return None,
+    })
+}
+/// #97 one schema 3 strategy mapped key by key to schema 4 (StrategyConfiguration); None when it
+/// is not a schema 3 strategy (the file is then malformed). The values are checked by
+/// parse_config afterwards.
+pub(crate) fn upgrade_3_strategy(s: &Value) -> Option<Value> {
+    let o = s.as_object()?;
+    if o.len() != SCHEMA_3_KEYS.len() || !SCHEMA_3_KEYS.iter().all(|k| o.contains_key(*k)) {
+        return None;
     }
-    v
+    if s["class"] != "award" {
+        return None;
+    }
+    let goals = s["goals"].as_array().filter(|g| !g.is_empty())?;
+    let mut whats: Vec<NewWhat> = Vec::new();
+    let mut per = NewPer::Ever;
+    for g in goals {
+        let (what, p) = goal_of(g.as_str()?)?;
+        if !whats.contains(&what) {
+            whats.push(what);
+        }
+        per = per.max(p);
+    }
+    let order: Vec<Value> = s["value"]
+        .as_array()?
+        .iter()
+        .map(|c| {
+            if c == "new_dxcc_slot" {
+                json!("new_dxcc_band_mode")
+            } else {
+                c.clone()
+            }
+        })
+        .collect();
+    let repetitions = s["repetitions"].as_u64()?;
+    let empty = json!({"include":[],"exclude":[]});
+    Some(json!({"name":s["name"],"class":"strategy","bands":null,
+        "filters":{"new":whats.iter().map(|w| w.name()).collect::<Vec<_>>(),
+            "new_per":per.name(),"new_means":s["needed"],"region":s["region"],
+            "min_snr_db":s["min_snr_db"],"worked_since":s["window"],
+            "treat_73_as_cq":s["treat_73_as_cq"],"countries":empty,"states":empty,
+            "cq_targets":empty},
+        "order":order,"contest":null,"callers_first":s["callers_first"],
+        "leave":{"mode":"calls","calls":repetitions,"calls_heard":repetitions.saturating_mul(2)},
+        "tx_move_every":{"heard":0,"not_heard":1,"no_reports":2},"busy_pause":true,
+        "cq_when_idle":s["cq_when_no_target"],"retry_minutes":s["quiet_minutes"]}))
+}
+/// A schema 3 configuration with every strategy mapped to schema 4.
+fn upgrade_3(configuration: &Value) -> Option<Value> {
+    let mut v = configuration.clone();
+    if let Some(list) = v.get_mut("strategies").and_then(Value::as_array_mut) {
+        for s in list.iter_mut() {
+            *s = upgrade_3_strategy(s)?;
+        }
+    }
+    Some(v)
+}
+/// StrategyConfiguration names: a saved strategy whose name equals a built-in's ignoring case
+/// reads renamed "<name> copy", else "<name> copy 2", ..., the first free name of at most 32
+/// characters (the name cut so that the suffix fits). Returns the renames (from, to).
+fn rename_builtin_names(configuration: &mut Value) -> Vec<(String, String)> {
+    let mut renames = Vec::new();
+    let Some(list) = configuration["strategies"].as_array_mut() else {
+        return renames;
+    };
+    let mut taken: Vec<String> = list
+        .iter()
+        .filter_map(|s| s["name"].as_str().map(str::to_ascii_lowercase))
+        .collect();
+    for s in list.iter_mut() {
+        let Some(name) = s["name"].as_str().map(str::to_owned) else {
+            continue;
+        };
+        if !is_builtin(&name) {
+            continue;
+        }
+        let free = |n: &str| !is_builtin(n) && !taken.contains(&n.to_ascii_lowercase());
+        let renamed = (1..)
+            .map(|i| {
+                let suffix = if i == 1 {
+                    " copy".to_owned()
+                } else {
+                    format!(" copy {i}")
+                };
+                let keep = 32usize.saturating_sub(suffix.len()).min(name.len());
+                format!("{}{suffix}", name[..keep].trim_end())
+            })
+            .find(|n| free(n))
+            .unwrap_or_default();
+        taken.push(renamed.to_ascii_lowercase());
+        s["name"] = json!(renamed);
+        renames.push((name, renamed));
+    }
+    renames
+}
+fn lists_json<T>(l: &Lists<T>, item: impl Fn(&T) -> Value) -> Value {
+    json!({"include":l.include.iter().map(&item).collect::<Vec<_>>(),
+        "exclude":l.exclude.iter().map(&item).collect::<Vec<_>>()})
 }
 impl Strategy {
     pub(crate) fn json(&self) -> Value {
-        json!({"name":self.name,"class":"award",
-        "goals":self.goals.iter().map(|g| g.name()).collect::<Vec<_>>(),
-        "needed":match self.needed {Needed::NotWorked=>"not_worked",Needed::NotConfirmed=>"not_confirmed"},
-        "region":match &self.region {
-            Region::All=>json!({"kind":"all"}),
-            Region::Dx=>json!({"kind":"dx"}),
-            Region::Selected(c)=>json!({"kind":"selected","continents":c}),
-        },
-        "min_snr_db":self.min_snr_db,
-        "value":self.value.iter().map(|c| c.name()).collect::<Vec<_>>(),
-        "callers_first":self.callers_first,"cq_when_no_target":self.cq_when_no_target,
-        "repetitions":self.repetitions,"quiet_minutes":self.quiet_minutes,
-        "treat_73_as_cq":self.treat_73_as_cq,
-        "window":match self.window {
-            Window::All=>json!({"kind":"all"}),
-            Window::Today=>json!({"kind":"today"}),
-            Window::FromTo(a,b)=>json!({"kind":"from_to","from":date_text(a),"to":date_text(b)}),
-        }})
+        let countries = lists_json(
+            &self.countries,
+            |e| json!({"kind":if e.country {"country"} else {"prefix"},"value":e.value,"bands":e.bands}),
+        );
+        let states = lists_json(&self.states, |s| json!(s));
+        let cq_targets = lists_json(&self.cq_targets, |s| json!(s));
+        let filters = match self.class {
+            Class::Contest => {
+                json!({"countries":countries,"states":states,"cq_targets":cq_targets})
+            }
+            Class::Strategy => json!({
+                "new":self.new.iter().map(|g| g.name()).collect::<Vec<_>>(),
+                "new_per":self.new_per.name(),
+                "new_means":match self.needed {Needed::NotWorked=>"not_worked",Needed::NotConfirmed=>"not_confirmed"},
+                "region":match &self.region {
+                    Region::All=>json!({"kind":"all"}),
+                    Region::Dx=>json!({"kind":"dx"}),
+                    Region::Selected(c)=>json!({"kind":"selected","continents":c}),
+                },
+                "min_snr_db":self.min_snr_db,
+                "worked_since":match self.window {
+                    Window::All=>json!({"kind":"all"}),
+                    Window::Today=>json!({"kind":"today"}),
+                    Window::FromTo(a,b)=>json!({"kind":"from_to","from":date_text(a),"to":date_text(b)}),
+                },
+                "treat_73_as_cq":self.treat_73_as_cq,
+                "countries":countries,"states":states,"cq_targets":cq_targets}),
+        };
+        let t = self.tx_move_every;
+        json!({"name":self.name,"class":self.class.name(),"bands":self.bands,"filters":filters,
+            "order":self.order.iter().map(|c| c.name()).collect::<Vec<_>>(),
+            "contest":self.contest,"callers_first":self.callers_first,"leave":self.leave.json(),
+            "tx_move_every":{"heard":t.heard,"not_heard":t.not_heard,"no_reports":t.no_reports},
+            "busy_pause":self.busy_pause,"cq_when_idle":self.cq_when_idle,
+            "retry_minutes":self.retry_minutes})
     }
 }
 impl Config {
@@ -654,33 +1149,18 @@ impl Config {
     pub(crate) fn selected(&self) -> bool {
         self.active.is_some() || self.contest.is_some()
     }
-    /// What a run follows: the active award strategy, or the contest as the bounds of a
-    /// strategy run (its repetitions and quiet time, callers first; the contest evaluates,
-    /// not the goals or the value list).
+    /// What a run follows: the active strategy (#97: a contest strategy with its contest; the
+    /// contest evaluates, the strategy's decisions bound the run).
     pub(crate) fn run_strategy(&self) -> Option<Strategy> {
-        match self.contest {
-            Some(c) => Some(Strategy {
-                name: c.profile.name.to_owned(),
-                goals: Vec::new(),
-                needed: Needed::NotWorked,
-                region: Region::All,
-                min_snr_db: None,
-                value: Vec::new(),
-                callers_first: true,
-                cq_when_no_target: false,
-                repetitions: c.repetitions,
-                quiet_minutes: c.quiet_minutes,
-                treat_73_as_cq: true,
-                window: Window::All,
-            }),
-            None => self.active_strategy().cloned(),
-        }
+        self.active_strategy().cloned()
     }
+    /// The active strategy: a saved one, a built-in or a contest built-in.
     pub(crate) fn active_strategy(&self) -> Option<&Strategy> {
         let name = self.active.as_deref()?;
         self.strategies
             .iter()
             .chain(builtins())
+            .chain(contest_builtins())
             .find(|s| s.name == name)
     }
 }
@@ -811,6 +1291,9 @@ pub(crate) struct Station {
     pub activity: Activity,
     /// #63 the profile locator, for a contest's distance points.
     pub my_locator: Option<String>,
+    /// #97 ValueOrder hears_us: the stations with a spot of my call at most 600 s old on this
+    /// band and mode; None with PskrUse off or no feed (the criterion ties).
+    pub hears: Option<Vec<String>>,
 }
 /// The list an ignored call is on (the session list wins when on both).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -928,6 +1411,21 @@ pub(crate) fn selection_warning(
     ))
     .then(|| not_for_me(f.target.as_deref().unwrap_or(""), mine.as_deref()))
 }
+/// #97 CqTargetList: the strategy run's own select_row of this record passes the directed-CQ
+/// check when it is a CQ whose directive word is on the active strategy's include list (the
+/// caller holds the contact lock; the strategy lock is a leaf).
+pub(crate) fn run_admits(state: &ProfileState, record: &Value) -> bool {
+    let Some(f) = facts(record) else {
+        return false;
+    };
+    state
+        .recording
+        .contact
+        .get()
+        .and_then(|s| s.strategy.config(state))
+        .and_then(|c| c.active_strategy().cloned())
+        .is_some_and(|s| f.cq && included_target(&s, f.target.as_deref()))
+}
 impl Station {
     /// A CQ, or with treat_73_as_cq an RR73/73 that ends someone else's QSO.
     pub(crate) fn cq_like(&self, f: &Facts, treat_73_as_cq: bool) -> bool {
@@ -967,45 +1465,109 @@ impl Station {
             Region::Selected(list) => theirs.is_some_and(|t| list.iter().any(|c| c == t)),
         }
     }
-    /// WstxStrategy::GoalNeeded.
-    fn goal_needed(&self, s: &Strategy, goal: Goal, f: &Facts) -> bool {
+    /// WstxStrategy::NewNeeded: whether `what` is new for the sender per `per`, with the
+    /// strategy's new_means and the worked set of its window. False without the log, without
+    /// an entity (the entity whats) and without a known band (per band and band_mode).
+    pub(crate) fn new_needed(&self, s: &Strategy, what: NewWhat, per: NewPer, f: &Facts) -> bool {
         let Some(w) = &self.worked else { return false };
-        let entity = self.dxcc.lookup(&f.from);
-        let of = |c: Category, band: Option<&str>, mode: Option<&str>| {
-            entity
-                .as_ref()
-                .is_some_and(|r| s.needed.holds(w.entity_standing(c, r, band, mode)))
+        let (band, mode) = match per {
+            NewPer::Ever => (None, None),
+            NewPer::Band => (self.band.as_deref(), None),
+            NewPer::BandMode => (self.band.as_deref(), Some(self.mode.as_str())),
         };
-        let band = self.band.as_deref();
-        match goal {
-            Goal::Dxcc => of(Category::Dxcc, None, None),
-            Goal::DxccBand => band.is_some() && of(Category::Dxcc, band, None),
-            Goal::DxccSlot => band.is_some() && of(Category::Dxcc, band, Some(&self.mode)),
-            Goal::Waz => of(Category::CqZone, None, None),
-            Goal::Wpx => s.needed.holds(w.wpx_standing(&f.from)),
-            Goal::NewCall => s.needed.holds(w.call_standing(&f.from)),
-            Goal::NewCallBand => {
-                band.is_some_and(|b| s.needed.holds(w.call_band_standing(&f.from, b)))
-            }
+        if per != NewPer::Ever && band.is_none() {
+            return false;
+        }
+        let entity = |c: Category| {
+            self.dxcc
+                .lookup(&f.from)
+                .is_some_and(|r| s.needed.holds(w.entity_standing(c, &r, band, mode)))
+        };
+        match what {
+            NewWhat::Dxcc => entity(Category::Dxcc),
+            NewWhat::CqZone => entity(Category::CqZone),
+            NewWhat::ItuZone => entity(Category::ItuZone),
+            NewWhat::Continent => entity(Category::Continent),
+            NewWhat::Call => s.needed.holds(w.call_scoped(&f.from, band, mode)),
+            NewWhat::Prefix => s.needed.holds(w.wpx_scoped(&f.from, band, mode)),
             // D13: no grid in the message, or a logged QSO without one: unknown, never new.
-            Goal::Grid => {
+            NewWhat::Grid => {
                 !w.gridless(&f.from)
                     && f.grid
                         .as_deref()
-                        .is_some_and(|g| s.needed.holds(w.grid_standing(g)))
+                        .is_some_and(|g| s.needed.holds(w.grid_scoped(g, band, mode)))
             }
         }
     }
-    /// ValueOrder new_grid_band: the message grid not worked on the station band in the
-    /// window, with the rule of D13 (no grid, an unknown grid status or an unknown band is
-    /// not needed).
-    fn grid_band_needed(&self, s: &Strategy, f: &Facts) -> bool {
-        let (Some(w), Some(band), Some(grid)) =
-            (&self.worked, self.band.as_deref(), f.grid.as_deref())
-        else {
-            return false;
+    /// WstxStrategy::StrategyBands: why every verdict is unranked off the strategy's bands.
+    fn off_band(&self, s: &Strategy) -> Option<&'static str> {
+        let bands = s.bands.as_ref()?;
+        match self.band.as_deref() {
+            None => Some("band unknown"),
+            Some(b) if !bands.iter().any(|x| x == b) => Some("band not in the strategy"),
+            Some(_) => None,
+        }
+    }
+    /// WstxStrategy::UsStateOf: the message's exchange first, then the log.
+    fn us_state(&self, f: &Facts, from_messages: &HashMap<String, String>) -> Option<String> {
+        let entity = self.dxcc.lookup(&f.from)?;
+        if !crate::dxcc::US_ENTITIES.contains(&entity.name.as_str()) {
+            return None;
+        }
+        from_messages
+            .get(&f.from)
+            .cloned()
+            .or_else(|| self.worked.as_ref()?.state_of(&f.from).map(str::to_owned))
+            .filter(|s| US_STATES.contains(&s.as_str()))
+    }
+    /// The three lists of a strategy (CountryList, UsStateFilter and, for a CQ, CqTargetList):
+    /// the failing line's why, or None.
+    fn lists_fail(
+        &self,
+        s: &Strategy,
+        f: &Facts,
+        states: &HashMap<String, String>,
+        caller: bool,
+    ) -> Option<&'static str> {
+        let entity = self.dxcc.lookup(&f.from);
+        let band = self.band.as_deref();
+        let matches = |e: &CountryEntry| {
+            e.bands
+                .as_ref()
+                .is_none_or(|b| band.is_some_and(|band| b.iter().any(|x| x == band)))
+                && if e.country {
+                    entity
+                        .as_ref()
+                        .is_some_and(|r| r.name.eq_ignore_ascii_case(&e.value))
+                } else {
+                    f.from.starts_with(&e.value)
+                }
         };
-        !w.gridless(&f.from) && s.needed.holds(w.grid_band_standing(grid, band))
+        let c = &s.countries;
+        if c.exclude.iter().any(matches)
+            || (!c.include.is_empty() && !c.include.iter().any(matches))
+        {
+            return Some("country list");
+        }
+        if !s.states.include.is_empty() || !s.states.exclude.is_empty() {
+            let state = self.us_state(f, states);
+            let listed = |l: &[String]| state.as_ref().is_some_and(|st| l.contains(st));
+            if listed(&s.states.exclude)
+                || (!s.states.include.is_empty() && !listed(&s.states.include))
+            {
+                return Some("state list");
+            }
+        }
+        if !caller {
+            let word = f.target.as_ref().filter(|_| f.cq);
+            let listed = |l: &[String]| word.is_some_and(|w| l.contains(w));
+            if listed(&s.cq_targets.exclude)
+                || (!s.cq_targets.include.is_empty() && !listed(&s.cq_targets.include))
+            {
+                return Some("CQ target");
+            }
+        }
+        None
     }
     /// The Most Wanted rank of the sender's entity (None: not listed or no list).
     fn most_wanted_rank(&self, f: &Facts) -> Option<u32> {
@@ -1016,21 +1578,31 @@ impl Station {
     /// One criterion as a key, smaller first: (0 better group, 1 worse or unknown; the value
     /// inside the group).
     fn criterion_key(&self, s: &Strategy, c: Criterion, f: &Facts) -> (u8, f64) {
-        let needed = |yes: bool| (u8::from(!yes), 0.0);
         let known = |v: Option<f64>| v.map_or((1, 0.0), |v| (0, -v));
+        if let Some((what, per)) = c.new_of() {
+            return (u8::from(!self.new_needed(s, what, per, f)), 0.0);
+        }
         match c {
-            Criterion::NewDxcc => needed(self.goal_needed(s, Goal::Dxcc, f)),
-            Criterion::NewDxccBand => needed(self.goal_needed(s, Goal::DxccBand, f)),
-            Criterion::NewDxccSlot => needed(self.goal_needed(s, Goal::DxccSlot, f)),
-            Criterion::NewGrid => needed(self.goal_needed(s, Goal::Grid, f)),
-            Criterion::NewGridBand => needed(self.grid_band_needed(s, f)),
-            Criterion::NewCall => needed(self.goal_needed(s, Goal::NewCall, f)),
-            Criterion::NewCallBand => needed(self.goal_needed(s, Goal::NewCallBand, f)),
             Criterion::MostWanted => self
                 .most_wanted_rank(f)
                 .map_or((1, 0.0), |rank| (0, f64::from(rank))),
             Criterion::Distance => known(station_distance(self, f).map(|km| km as f64)),
             Criterion::Snr => known(f.snr),
+            // Above 0 dB, -10..0 dB, below -10 dB, unknown; equal inside a bucket.
+            Criterion::SnrBucket => (
+                match f.snr {
+                    Some(snr) if snr > 0.0 => 0,
+                    Some(snr) if snr >= -10.0 => 1,
+                    Some(_) => 2,
+                    None => 3,
+                },
+                0.0,
+            ),
+            Criterion::HearsUs => (
+                u8::from(self.hears.as_ref().is_some_and(|h| !h.contains(&f.from))),
+                0.0,
+            ),
+            _ => (0, 0.0),
         }
     }
 }
@@ -1071,8 +1643,33 @@ impl Verdict {
         v
     }
 }
+/// #97 CqTargetList: the directive word of this CQ is on the strategy's include list, so it is
+/// answerable for the strategy (not grey, and its run's own select_row passes).
+pub(crate) fn included_target(s: &Strategy, target: Option<&str>) -> bool {
+    target.is_some_and(|t| s.cq_targets.include.iter().any(|w| w == t))
+}
+/// #97 UsStateOf (1): the US states the RTTY Roundup exchanges of these records carry, per
+/// sender.
+fn message_states(records: &[Value]) -> HashMap<String, String> {
+    records
+        .iter()
+        .filter(|r| r["status"] == "decoded" && r["fields"]["type"] == "rtty")
+        .filter(|r| r["fields"]["exchange"]["kind"] == "state")
+        .filter_map(|r| {
+            Some((
+                r["fields"]["from"]["text"].as_str()?.to_owned(),
+                r["fields"]["exchange"]["value"].as_str()?.to_owned(),
+            ))
+        })
+        .collect()
+}
 /// One record's classification before the ranks: the kind or the reason there is none.
-fn classify(s: &Strategy, f: &Facts, st: &Station) -> (Option<Kind>, bool, String) {
+fn classify(
+    s: &Strategy,
+    f: &Facts,
+    st: &Station,
+    states: &HashMap<String, String>,
+) -> (Option<Kind>, bool, String) {
     if let Some(tier) = st.ignored.get(&f.from) {
         return (
             None,
@@ -1080,7 +1677,7 @@ fn classify(s: &Strategy, f: &Facts, st: &Station) -> (Option<Kind>, bool, Strin
             format!("{} is ignored ({} list)", f.from, tier.name()),
         );
     }
-    if st.greyed(f) {
+    if st.greyed(f) && !included_target(s, f.target.as_deref()) {
         let text = not_for_me(
             f.target.as_deref().unwrap_or(""),
             st.my_continent.as_deref(),
@@ -1090,36 +1687,60 @@ fn classify(s: &Strategy, f: &Facts, st: &Station) -> (Option<Kind>, bool, Strin
     if f.from == st.my_call {
         return (None, false, "my own message".to_owned());
     }
-    if st.calls_me(f) {
-        return (Some(Kind::Caller), false, "calls my call".to_owned());
+    if let Some(why) = st.off_band(s) {
+        return (None, false, why.to_owned());
     }
-    if !sane_call(&f.from) {
-        return (None, false, "callsign guard".to_owned());
-    }
-    if !st.cq_like(f, s.treat_73_as_cq) {
-        return (None, false, "not a CQ".to_owned());
+    // #97 CallerOfMyCall: a caller must pass the filters too (every line but "a CQ" and the CQ
+    // target line).
+    let caller = st.calls_me(f);
+    let fail = |why: &str| {
+        let why = if caller {
+            format!("calls my call · {why}")
+        } else {
+            why.to_owned()
+        };
+        (None, false, why)
+    };
+    if !caller {
+        if !sane_call(&f.from) {
+            return (None, false, "callsign guard".to_owned());
+        }
+        if !st.cq_like(f, s.treat_73_as_cq) {
+            return (None, false, "not a CQ".to_owned());
+        }
     }
     if !st.region_holds(s, f) {
-        return (None, false, "region".to_owned());
+        return fail("region");
     }
     if s.min_snr_db
         .is_some_and(|m| f.snr.is_none_or(|snr| snr < m as f64))
     {
-        return (None, false, "below min SNR".to_owned());
+        return fail("below min SNR");
     }
-    let needed: Vec<&str> = s
-        .goals
+    let new: Vec<&str> = s
+        .new
         .iter()
-        .filter(|g| st.goal_needed(s, **g, f))
-        .map(|g| g.name())
+        .filter(|w| st.new_needed(s, **w, s.new_per, f))
+        .map(|w| w.name())
         .collect();
-    if needed.is_empty() {
-        return (None, false, "not needed".to_owned());
+    if new.is_empty() {
+        return fail("not new");
     }
+    if let Some(why) = st.lists_fail(s, f, states, caller) {
+        return fail(why);
+    }
+    if caller {
+        return (Some(Kind::Caller), false, "calls my call".to_owned());
+    }
+    let on = match (s.new_per, st.band.as_deref()) {
+        (NewPer::Band, Some(b)) => format!(" on {b}"),
+        (NewPer::BandMode, Some(b)) => format!(" on {b} {}", st.mode),
+        _ => String::new(),
+    };
     (
         Some(Kind::Candidate),
         false,
-        format!("needed: {}", needed.join(", ")),
+        format!("new: {}{on}", new.join(", ")),
     )
 }
 /// WstxStrategy::ValueOrder of a ranked record, smaller first: with callers_first the callers
@@ -1128,7 +1749,7 @@ fn classify(s: &Strategy, f: &Facts, st: &Station) -> (Option<Kind>, bool, Strin
 fn value_key(s: &Strategy, v: &Verdict, st: &Station) -> Vec<(u8, f64)> {
     let group = u8::from(s.callers_first && v.kind != Some(Kind::Caller));
     let mut key = vec![(group, 0.0)];
-    key.extend(s.value.iter().map(|c| st.criterion_key(s, *c, &v.facts)));
+    key.extend(s.order.iter().map(|c| st.criterion_key(s, *c, &v.facts)));
     key.push(st.criterion_key(s, Criterion::Snr, &v.facts));
     key
 }
@@ -1143,11 +1764,12 @@ fn key_cmp(a: &[(u8, f64)], b: &[(u8, f64)]) -> std::cmp::Ordering {
 /// order: rank (the position in ValueOrder) ascending, then the records without a rank in
 /// their order.
 pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Verdict> {
+    let states = message_states(records);
     let mut list: Vec<Verdict> = records
         .iter()
         .filter_map(facts)
         .map(|f| {
-            let (kind, grey, why) = classify(s, &f, st);
+            let (kind, grey, why) = classify(s, &f, st, &states);
             Verdict {
                 facts: f,
                 rank: None,
@@ -1165,7 +1787,7 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
         .map(|v| (value_key(s, &v, st), v))
         .collect();
     keyed.sort_by(|(a, va), (b, vb)| key_cmp(a, b).then_with(|| exact_tie(&va.facts, &vb.facts)));
-    let ranked_by_list = s.value.contains(&Criterion::MostWanted);
+    let ranked_by_list = s.order.contains(&Criterion::MostWanted);
     let mut out = Vec::with_capacity(keyed.len() + rest.len());
     for (i, (_, mut v)) in keyed.into_iter().enumerate() {
         v.rank = Some(i);
@@ -1176,6 +1798,46 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
     }
     out.extend(rest);
     out
+}
+/// #97 a contest strategy's verdicts: the contest's (WstxContest::ContestVerdict, the contest's
+/// rules first), then the strategy's bands and its country, US state and CQ target lists on top,
+/// ranked by ContestValueOrder with the strategy's callers_first.
+pub(crate) fn evaluate_contest(
+    s: &Strategy,
+    selection: &crate::contest::Selection,
+    records: &[Value],
+    st: &Station,
+    log: Option<&crate::contest::Log>,
+) -> Vec<Verdict> {
+    let states = message_states(records);
+    let off_band = st.off_band(s);
+    let (mut ranked, mut rest): (Vec<Verdict>, Vec<Verdict>) =
+        crate::contest::evaluate(selection, records, st, log)
+            .into_iter()
+            .map(|mut v| {
+                if v.kind.is_some() {
+                    let caller = v.kind == Some(Kind::Caller);
+                    let fail = off_band.or_else(|| st.lists_fail(s, &v.facts, &states, caller));
+                    if let Some(why) = fail {
+                        v.kind = None;
+                        v.why = if caller && off_band.is_none() {
+                            format!("calls my call · {why}")
+                        } else {
+                            why.to_owned()
+                        };
+                    }
+                }
+                v.rank = None;
+                v
+            })
+            .partition(|v| v.kind.is_some());
+    ranked.sort_by(|a, b| crate::contest::order_by(a, b, s.callers_first));
+    for (i, v) in ranked.iter_mut().enumerate() {
+        v.rank = Some(i);
+    }
+    rest.sort_by_key(|v| v.facts.sequence);
+    ranked.extend(rest);
+    ranked
 }
 /// The callsign guard before a run answers a candidate (WSJT-Z): at least 3 characters with a digit
 /// and a letter, not a rover (/R).
@@ -1274,6 +1936,7 @@ pub(crate) fn station(state: &ProfileState, config: &Config, window: Window) -> 
         most_wanted,
         activity,
         my_locator: locator,
+        hears: pskr::heard_calls(r),
     }
 }
 /// (log revision, profile, start, end, my locator) of a built ContestLog.
@@ -1353,6 +2016,8 @@ struct Inner {
     error: Option<&'static str>,
     /// WstxStrategy::AutoToggle: station memory only, off at start.
     auto: bool,
+    /// #97 configuration_note: the renames of the upgrade (from, to) until the next PUT.
+    notes: Vec<(String, String)>,
 }
 /// The strategy store of one station (strategy.json beside profile.json), read on first
 /// use; one leaf lock.
@@ -1404,26 +2069,31 @@ impl Owner {
                         let ok = v.as_object().is_some_and(|o| o.len() == 4)
                             && v["profile_id"] == state.recording.profile.as_str()
                             && v["revision"].as_u64().is_some_and(|n| n <= MAX_SAFE);
-                        let configuration = match v["schema_version"].as_u64() {
-                            Some(1) => upgrade(&v["configuration"]),
-                            Some(2) => without_builtin_names(&upgrade_2(&v["configuration"])?),
-                            Some(3) => without_builtin_names(&v["configuration"]),
+                        let mut configuration = match v["schema_version"].as_u64() {
+                            Some(1) => upgrade_3(&upgrade(&v["configuration"]))?,
+                            Some(2) => upgrade_3(&upgrade_2(&v["configuration"])?)?,
+                            Some(3) => upgrade_3(&v["configuration"])?,
+                            Some(4) => v["configuration"].clone(),
                             _ => return None,
                         };
-                        ok.then(|| parse_config(&configuration).ok())
+                        // #97: a saved name colliding with a built-in reads renamed, never
+                        // dropped (every schema).
+                        let notes = rename_builtin_names(&mut configuration);
+                        ok.then(|| parse_config(&configuration, None).ok())
                             .flatten()
                             .map(|mut c| {
                                 // active never survives a restart (WstxStrategy D2), nor
                                 // does a contest (WstxContest::ContestSelection).
                                 c.active = None;
                                 c.contest = None;
-                                (v["revision"].as_u64().unwrap_or(0), c)
+                                (v["revision"].as_u64().unwrap_or(0), c, notes)
                             })
                     });
                     match loaded {
-                        Some((revision, config)) => {
+                        Some((revision, config, notes)) => {
                             inner.revision = revision;
                             inner.config = Some(config);
+                            inner.notes = notes;
                             self.revision_seen
                                 .store(revision, std::sync::atomic::Ordering::Release);
                         }
@@ -1846,11 +2516,13 @@ impl Owner {
             "auto":inner.auto,"strategy_refusal":refusal,
             "derived_continent":call.as_deref().and_then(|c| dxcc.continent(c)),
             "session_ignore":session,"most_wanted":status,
-            "builtin_strategies":builtins().iter().map(|b| {
+            "builtin_strategies":builtins().iter().chain(contest_builtins()).map(|b| {
                 let mut v = b.json();
                 v["builtin"] = json!(true);
                 v
             }).collect::<Vec<_>>(),
+            "configuration_note":inner.notes.iter()
+                .map(|(from, to)| json!({"from":from,"to":to})).collect::<Vec<_>>(),
             "most_wanted_unreadable":unreadable,
             "most_wanted_attribution":crate::most_wanted::ATTRIBUTION})
     }
@@ -1951,8 +2623,9 @@ impl Owner {
             .as_u64()
             .filter(|n| *n <= MAX_SAFE)
             .ok_or(("invalid_request", Some("expected_revision".into())))?;
-        let config =
-            parse_config(&body["configuration"]).map_err(|f| ("invalid_request", Some(f)))?;
+        let (table, _) = state.logbook.dxcc();
+        let config = parse_config(&body["configuration"], Some(&table))
+            .map_err(|f| ("invalid_request", Some(f)))?;
         if body["profile_id"] != r.profile.as_str() {
             return Err(("wrong_profile", Some("profile_id".into())));
         }
@@ -1976,7 +2649,7 @@ impl Owner {
         if let Some(o) = stored.as_object_mut() {
             o.remove("contest");
         }
-        let document = json!({"schema_version":3,"profile_id":r.profile,"revision":revision,
+        let document = json!({"schema_version":4,"profile_id":r.profile,"revision":revision,
             "configuration":stored});
         {
             let mut store = state
@@ -1989,6 +2662,7 @@ impl Owner {
         }
         inner.revision = revision;
         inner.error = None;
+        inner.notes.clear();
         // WstxStrategy::AutoToggle: selecting None turns Auto off (in this revision).
         if !config.selected() {
             inner.auto = false;
@@ -2059,7 +2733,13 @@ impl Owner {
             .ok_or(("invalid_request", Some("explain".into())))?;
         let draft = match &body["strategy"] {
             Value::Null => None,
-            s => Some(strategy(s, "strategy").map_err(|f| ("invalid_request", Some(f)))?),
+            s => {
+                let (table, _) = state.logbook.dxcc();
+                Some(
+                    strategy(s, "strategy", Some(&table))
+                        .map_err(|f| ("invalid_request", Some(f)))?,
+                )
+            }
         };
         if body["profile_id"] != r.profile.as_str() {
             return Err(("wrong_profile", Some("profile_id".into())));
@@ -2071,17 +2751,26 @@ impl Owner {
             .config(state)
             .ok_or(("not_configured", Some("configuration".into())))?;
         self.most_wanted_load(state);
-        // WstxContest::ContestVerdict: a draft is a preview; else the contest in force.
-        let contest = config.contest.filter(|_| draft.is_none());
+        // WstxContest::ContestVerdict: a draft is a preview (a contest draft over the contest in
+        // force, or its contest's period from now); else the active strategy.
         let chosen = match draft {
-            Some(s) => Some(s),
-            None if contest.is_some() => None,
-            None => Some(
-                config
-                    .active_strategy()
-                    .cloned()
-                    .ok_or(("not_configured", Some("strategy".into())))?,
-            ),
+            Some(s) => s,
+            None => config
+                .active_strategy()
+                .cloned()
+                .ok_or(("not_configured", Some("strategy".into())))?,
+        };
+        let contest = match (chosen.class, chosen.profile()) {
+            (Class::Contest, Some(p)) => {
+                Some(config.contest.filter(|c| c.profile.id == p.id).unwrap_or(
+                    crate::contest::Selection {
+                        profile: p,
+                        start_ms: 0,
+                        end_ms: i64::MAX,
+                    },
+                ))
+            }
+            _ => None,
         };
         let identity = (
             body["source_id"].as_str().unwrap_or("").to_owned(),
@@ -2099,14 +2788,11 @@ impl Owner {
                 .collect(),
             _ => return Err(("stale_request", Some("job_id".into()))),
         };
-        let Some(chosen) = chosen else {
-            let Some(selection) = contest else {
-                return Err(("not_configured", Some("strategy".into())));
-            };
+        if let Some(selection) = contest {
             let st = station(state, &config, Window::All);
             let log = self.contest_log_now(state, &selection, st.my_locator.as_deref());
             let verdicts: Vec<Value> =
-                crate::contest::evaluate(&selection, &records, &st, log.as_deref())
+                evaluate_contest(&chosen, &selection, &records, &st, log.as_deref())
                     .iter()
                     .filter(|v| {
                         explain || v.rank.is_some() || v.grey || v.contest.is_some_and(|c| c.dupe)

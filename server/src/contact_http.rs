@@ -62,6 +62,8 @@ pub(crate) struct Station {
     pub(crate) automation: crate::automation::Owner,
     /// WstxStrategy store of this station (#39), read on first use.
     pub(crate) strategy: crate::strategy::Owner,
+    /// #97 set by a strategy run around its own select_row (CqTargetList admission).
+    pub(crate) strategy_select: std::sync::atomic::AtomicBool,
     /// Test seam only: stands in for the CL-022 grant a plaintext test router lacks.
     #[cfg(test)]
     pub(crate) grant: std::sync::atomic::AtomicBool,
@@ -300,6 +302,7 @@ impl Station {
             started: Instant::now(),
             automation: crate::automation::Owner::default(),
             strategy: crate::strategy::Owner::default(),
+            strategy_select: std::sync::atomic::AtomicBool::new(false),
             #[cfg(test)]
             grant: std::sync::atomic::AtomicBool::new(false),
         })
@@ -405,8 +408,21 @@ impl Station {
         if body["boot_id"] != r.boot.as_str() {
             return Err(("state_conflict", Some("boot_id")));
         }
+        // #97 CqTargetList: the strategy run's own select_row of a CQ whose directive word is on
+        // its active strategy's include list passes the directed-CQ check (never MCP or UDP).
+        let run_select = principal == authorization::Principal::Automation
+            && self
+                .strategy_select
+                .load(std::sync::atomic::Ordering::Acquire);
         self.execute(
-            state, body, command_id, revision, &action, parsed, granted, automatic,
+            state,
+            body,
+            command_id,
+            revision,
+            &action,
+            parsed,
+            granted,
+            (automatic, run_select),
         )
     }
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
@@ -717,9 +733,10 @@ impl Station {
             "tx_calls":view.as_ref().map_or(6,|v|v.tx_calls),"tune_seconds":view.as_ref().map_or(90,|v|v.tune_seconds),
             "rx_hz":s.rx_hz,"tx_hz":s.tx_hz,"hold_tx":s.hold_tx,"parity":parity_name(s.parity),"report":s.report,
             "activity":s.activity.name(),"exchange":s.exchange,"serial":s.serial});
-        // WstxStrategy::StrategyWatchdog: null during a contest stay (WD:∞), else the count.
+        // #97 WstxStrategy::StrategyWatchdog: null while armed for a strategy run's own contact
+        // (attended), else the Tx watchdog's count.
         let remaining = view.as_ref().map_or(json!(0), |v| {
-            if v.arm_state == wstx_rust::transmit::service::ArmState::Armed && e.staying() {
+            if v.tx_remaining_null {
                 Value::Null
             } else {
                 json!(v.tx_remaining_calls)
@@ -1144,7 +1161,7 @@ impl Station {
         action: &str,
         parsed: Option<Command>,
         granted: bool,
-        automatic: bool,
+        (automatic, run_select): (bool, bool),
     ) -> Result<(StatusCode, Value), Refusal> {
         let r = &state.recording;
         let (call, locator) = profile_facts(state);
@@ -1198,6 +1215,7 @@ impl Station {
                 if let Some(reason) =
                     strategy::selection_warning(state, &record, inner.engine.settings.activity)
                     && (automatic || body["directive_confirmed"] != true)
+                    && !(run_select && strategy::run_admits(state, &record))
                 {
                     if automatic {
                         return Err(("directive_not_answerable", Some("row")));

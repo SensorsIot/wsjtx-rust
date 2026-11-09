@@ -348,7 +348,8 @@ pub(crate) fn view_json(r: &recording::Recording, v: &View) -> Value {
         "clock_measurement":v.clock_measurement.as_ref().map(measurement),
         "clock_source":r.clock.get().map_or("ntp",|c|c.station.source().name()),
         "clock_warning":r.clock.get().is_some_and(|c|c.station.view().warning).then_some("ntp_air_disagree"),
-        "watchdog":{"tx_calls":v.tx_calls,"tx_remaining_calls":v.tx_remaining_calls,"tx_expired":v.tx_expired,
+        "watchdog":{"tx_calls":v.tx_calls,
+            "tx_remaining_calls":(!v.tx_remaining_null).then_some(v.tx_remaining_calls),"tx_expired":v.tx_expired,
             "tune_seconds":v.tune_seconds,"tune_remaining_seconds":v.tune_remaining_seconds},
         "outcomes":recent,"startup_release":name(v.startup_release)})
 }

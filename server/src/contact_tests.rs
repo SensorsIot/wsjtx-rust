@@ -929,10 +929,10 @@ fn tc_008_001_the_watchdog_stops_at_n_repetitions_whatever_the_partner_or_browse
     assert_eq!(reps(&s), vec![(true, 1), (false, 4), (true, 3), (true, 1)]);
 }
 
-// Proves: CL-039-21; TC-039-022. The strategy run's own contact sends past the limit and shows
-// WD:n as the run counts it down to its leaving (4, 3, 2, 1 with the limit at 2); without a count
-// (a contest stay) the limit's; the same contact without the exemption stops at N, and another
-// contact's exemption does not help it.
+// Proves: CL-039-21; TC-039-022, TC-097-013. The strategy run's own contact sends past the limit
+// and (#97, #91) has no Tx watchdog count: tx_remaining_calls is null while armed for it (never the
+// leave count, never the limit minus the Rep); the same contact without the exemption stops at N,
+// and another contact's exemption does not help it.
 #[test]
 fn tc_039_022_only_the_runs_own_contact_sends_past_the_limit() {
     let mut s = station();
@@ -949,22 +949,17 @@ fn tc_039_022_only_the_runs_own_contact_sends_past_the_limit() {
     .unwrap();
     s.command(Command::EnableTx(true, Some(7))).unwrap();
     let id = s.engine.contact.as_ref().unwrap().id.clone();
-    for (own, left) in [(1, 4), (3, 3), (5, 2), (7, 1)] {
-        s.engine.repeat_exempt = Some((id.clone(), Some(left)));
+    for own in [1, 3, 5, 7, 9] {
+        s.engine.repeat_exempt = Some(id.clone());
         s.run(period(own) + 2 * SECOND);
         assert!(s.sent_in(period(own)).is_some(), "period {own}");
-        assert_eq!(s.core.view().tx_remaining_calls, left, "period {own}");
+        assert!(s.core.view().tx_remaining_null, "period {own}: null, no WD");
     }
-    assert_eq!(s.engine.repetitions_due(), 4);
+    assert_eq!(s.engine.repetitions_due(), 5);
     assert_eq!(s.core.view().arm_state, ArmState::Armed);
     assert!(!s.core.view().tx_expired);
-    // No count: still past the limit, the display falls back to the limit's.
-    s.engine.repeat_exempt = Some((id, None));
-    s.run(period(9) + 2 * SECOND);
-    assert!(s.sent_in(period(9)).is_some(), "period 9");
-    assert_eq!(s.core.view().tx_remaining_calls, 0);
     // Another contact's exemption, then none: the stop at N is back at once.
-    s.engine.repeat_exempt = Some(("another".into(), Some(4)));
+    s.engine.repeat_exempt = Some("another".into());
     s.run(period(11) + 2 * SECOND);
     assert!(s.sent_in(period(11)).is_none(), "beyond the limit");
     assert_eq!(s.core.view().arm_state, ArmState::Disarmed);
