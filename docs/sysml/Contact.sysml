@@ -879,7 +879,8 @@ package WstxContact {
              another call. Holds (operator #93: "we pause counting ... till the called station
              finishes its other qso"): from then on, however long he is not decoded and also when
              he goes on with a further station, until he ends it: his RR73, RRR or 73 to another
-             call, his CQ, his free text, or any message from him to my call (progress,
+             call, his CQ, his free text (a free text has no sender: it counts as his when decoded in
+             his period within 10 Hz of his last decode; #97 coordinator default), or any message from him to my call (progress,
              AutoSequence); a new contact or the end of the contact clears it. Nothing but his own
              messages ends it, and the bound of TxWatchdog (N paused calls per message, #97 Q5)
              keeps it from extending a call without limit.

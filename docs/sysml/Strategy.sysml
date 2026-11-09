@@ -878,8 +878,9 @@ package WstxStrategy {
              Band, Band and mode); "New means" (Not worked, Not confirmed (QSL/LoTW)); "Region"
              (All, Other continents than mine, Selected continents with checkboxes); "Minimum SNR"
              (empty: none); "Worked since" (Any time, Today UTC, From/to UTC dates); "Treat 73 as
-             CQ"; "Prefix/country" include and exclude lists (an entry: prefix or country with a
-             picker of the country table's names, optional bands); "US state" include and exclude
+             CQ"; "Prefix/country" include and exclude lists (an entry: a prefix or a country name
+             typed as free text, checked by the station on Save with a refusal shown at the entry;
+             no picker, optional bands); "US state" include and exclude
              (state codes); "CQ target" include and exclude (words); the line "Callers of my call
              must pass these filters too". A contest strategy shows its contest (read-only) and
              only the three lists, under "Contest rules first, then:".
