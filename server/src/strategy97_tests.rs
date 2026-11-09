@@ -1265,6 +1265,53 @@ async fn tc_097_011_h_a_grid_to_another_starts_busy_and_his_73_ends_it() {
     assert_eq!(contact(f).await.2, json!("armed"));
 }
 
+// Proves: TC-097-011 (g) (CL-097-06: "unattended there is no pause"; WstxContact::BusyPartner: the
+// split move applies to every contact that pauses, also while it is not pausing). No client for
+// 60 s, busy_pause on, Tx watchdog 3: KE1J's R-report to W9XYZ at 1510 Hz moves Tx to 1410 (Rx
+// stays 1800, Enable Tx on); the calls while he is busy count (WD 1, 0 after the 2nd and 3rd
+// keyed call, no busy_with shown) and the Tx watchdog stops the 4th at N; the run then stops
+// no_client. The calls are keyed (transmit_own_period): a run step alone keys nothing, so the stop
+// at N is only reached with real sends. No product change: the busy logic of ee0cb13ad already
+// holds this (the 50 Hz stop of partnerWorksOther would disarm at once).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_011_g_unattended_the_busy_calls_count_and_tx_still_moves() {
+    let mut t = calling_busy_ke1j(true).await;
+    let e = t.e;
+    drop(t.client.take());
+    let f = &t.f;
+    f.tick();
+    at_skew(f, 60);
+    assert_eq!(quiet_run(f).0, "contact_active");
+    let busy = ("W9XYZ KE1J R-09", 1510.0, Some(-7.0));
+    let watchdog = async || {
+        let c = f.browser("GET", "/contact", None).await.json;
+        (
+            c["watchdog"]["tx_remaining_calls"].clone(),
+            c["watchdog"]["busy_with"].clone(),
+        )
+    };
+    transmit_own_period(f, e + 15_000).await;
+    assert_eq!(watchdog().await, (json!(2), Value::Null), "the first call");
+    publish(f, rep(e, 1), &[busy]);
+    let c = f.browser("GET", "/contact", None).await.json;
+    assert_eq!(
+        (&c["settings"]["rx_hz"], &c["settings"]["tx_hz"]),
+        (&json!(1800), &json!(1410)),
+        "the split move"
+    );
+    assert_eq!(quiet_contact(f).await.2, json!("armed"));
+    transmit_own_period(f, rep(e, 1) + 15_000).await;
+    assert_eq!(watchdog().await, (json!(1), Value::Null), "counted, busy");
+    publish(f, rep(e, 2), &[busy]);
+    transmit_own_period(f, rep(e, 2) + 15_000).await;
+    assert_eq!(watchdog().await, (json!(0), Value::Null), "counted, busy");
+    publish(f, rep(e, 3), &[busy]);
+    not_keyed_in(f, rep(e, 3) + 15_000).await;
+    assert_eq!(quiet_contact(f).await.2, json!("disarmed"), "the stop at N");
+    f.tick();
+    assert_eq!(quiet_run(f), ("stopped".into(), json!("no_client")));
+}
+
 // Proves: TC-097-011 (i) (CL-097-06, hand-worked from WstxContact::BusyPartner and the #97
 // coordinator default for a free text). KE1J's report to W9XYZ starts busy (paused 1); his report
 // to K2ABC keeps it (busy_with K2ABC, paused 2, remaining stays 4) and Tx stays 1500 (no TxMoveRule
