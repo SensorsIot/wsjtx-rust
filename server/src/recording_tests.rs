@@ -2678,15 +2678,9 @@ fn drifting_capture_clock_keeps_prompt_windows_on_the_utc_period() {
 // system clock whatever correction is applied (no feedback loop).
 #[test]
 fn air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate() {
-    use wstx_rust::transmit::air::Source;
     let fixture = Fixture::new();
     let r = fixture.recording();
-    let clock = crate::clock_http::Clock::load(
-        &fixture.0,
-        &r.profile,
-        wstx_rust::transmit::clock::Monitor::new(),
-    );
-    clock.station.set_source(Source::Air);
+    let clock = crate::clock_http::Clock::new(wstx_rust::transmit::clock::Monitor::new());
     let _ = r.clock.set(clock.clone());
     let (job, mut decoded) = live_ring(&r);
     relative_clock(&r, "ft8", "2026-11-01T00:00:00.0000000Z", 0);
@@ -2724,14 +2718,15 @@ fn air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate()
     let mut first = 0;
     while first < total {
         if first == 150 * 12000 {
-            // Twelve stations heard 2 s late against the system clock: two windows apply
-            // the -2000 ms correction under the 1000 ms rate limit.
+            // Twelve stations heard 2 s late against the system clock: windows of two
+            // periods apply the -2000 ms correction, at most 1000 ms per period (#92).
             clock.station.with_air(|a| {
                 for k in 0..2 {
+                    let t = k * 15_000;
                     for i in 0..12 {
-                        a.observe(k, k, &format!("K{i}ABC"), "HB9BLA", 2000, Some(-6.0));
+                        a.observe(t, t, &format!("K{i}ABC"), "HB9BLA", 2000, Some(-6.0));
                     }
-                    a.period_done(k, k);
+                    a.period_done(t, t, 15_000);
                 }
             });
             assert_eq!(r.clock_correction(), -20_000_000);

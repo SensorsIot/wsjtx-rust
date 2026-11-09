@@ -307,7 +307,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // WstxTransmit slice B: one transmit owner per station, disarmed at startup.
             // WstxTransmit::TransmitClock: the station measures its UTC offset by SNTP
             // on its own thread, at start and every minute. WSTX_SNTP_SERVERS replaces
-            // the server order (comma-separated; empty: never measure, clock unknown).
+            // the server order (comma-separated; empty: never measure, no NTP warning).
             let mut sntp = wstx_rust::transmit::clock::Sntp::station();
             if let Ok(list) = env::var("WSTX_SNTP_SERVERS") {
                 sntp.servers = wstx_rust::transmit::clock::server_list(&list);
@@ -317,14 +317,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 wstx_rust::transmit::clock::INTERVAL,
             )
             .map_err(|_| error("resource_unavailable", ""))?;
-            // #43: the profile's clock source (clock.json) combines SNTP with the clock
-            // from the air into the station clock of receive and transmit.
-            let clock_base = selected.clone().ok_or("profile directory absent")?;
-            let clock_profile = recording.profile.clone();
-            let clock = tokio::task::spawn_blocking(move || {
-                clock_http::Clock::load(&clock_base, &clock_profile, clock)
-            })
-            .await?;
+            // #43/#92: the station clock of receive and transmit: the system clock plus
+            // the correction from the air; SNTP only measures for warnings (no source
+            // setting; a clock.json left by #43 is ignored and left in place).
+            let clock = clock_http::Clock::new(clock);
             let _ = recording.clock.set(clock.clone());
             let transmit = transmit_http::Station::start(clock.station.clone())
                 .map_err(|_| error("resource_unavailable", ""))?;
@@ -528,7 +524,8 @@ fn router(state: App) -> Router {
         .route("/receive/stop", post(receive_http::stop).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/results", get(receive_http::results))
         .route("/receive/clock", get(receive_http::clock))
-        .route("/clock", get(clock_http::snapshot).post(clock_http::update).layer(axum::extract::DefaultBodyLimit::max(1024)))
+        // #92: POST /clock no longer exists; any other method gets the unknown-route answer.
+        .route("/clock", get(clock_http::snapshot).fallback(|| async { StatusCode::NOT_FOUND }).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/startup", get(receive_http::startup).post(receive_http::startup_update).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/diagnostics", get(receive_http::diagnostics).post(receive_http::diagnostics_update).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/receive/selection", get(selection_http::snapshot))
@@ -1188,6 +1185,12 @@ async fn connection(
     recording_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut recording_seen: Option<(Value, Value, Instant)> = None;
     let mut profile_seen: Option<u64> = None;
+    // #92 CL-043-01 clock.state: every profile, once after subscribing, then at each change of
+    // clock_revision, at most one per second per peer and within 1 s (250 ms ticks).
+    let mut clock_tick = interval(Duration::from_millis(250));
+    clock_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut clock_seen: Option<u64> = None;
+    let mut clock_sent_at: Option<Instant> = None;
     // WstxOperatingReceive::SelectionStateEvent: what this peer holds, and when it was last sent.
     let mut selection_sent = Value::Null;
     let mut selection_sent_at = Instant::now();
@@ -1345,6 +1348,20 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{last_station_tick=Some(Instant::now());tick_transmitting=Some(transmitting);if !flushed {optional_since=Some(Instant::now());}},
+                        Err(_)=>break "optional write error",
+                    }
+                }
+            }
+            _ = clock_tick.tick(), if subscribed && recording.as_ref().is_some_and(|r| r.clock.get().is_some()) => {
+                if !auth_ready { continue; }
+                if optional_since.is_some() {
+                    match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break "optional write error" }
+                }
+                if clock_sent_at.is_some_and(|at| at.elapsed() < Duration::from_secs(1)) { continue; }
+                if let Some((revision,text))=clock_http::state_event(recording.as_ref().unwrap()) && clock_seen!=Some(revision) {
+                    match optional_write(&mut socket,Message::Text(text.into())) {
+                        Ok(None)=>{},
+                        Ok(Some(flushed))=>{clock_seen=Some(revision);clock_sent_at=Some(Instant::now());if !flushed {optional_since=Some(Instant::now());}},
                         Err(_)=>break "optional write error",
                     }
                 }

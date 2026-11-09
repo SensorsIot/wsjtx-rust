@@ -6,8 +6,42 @@
 use super::ClockState;
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+/// #92 situation 1: the Windows Time service state, read without administrator rights
+/// for the remedy of pc_clock_off; the station never starts or configures it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WindowsTime {
+    Running,
+    Stopped,
+    Disabled,
+    /// The query failed (or no Windows).
+    Unknown,
+}
+impl WindowsTime {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Stopped => "stopped",
+            Self::Disabled => "disabled",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+/// Reads the Windows Time (W32Time) service state now: running; else disabled when its
+/// start type is disabled; else stopped; unknown when a query fails.
+pub fn windows_time() -> WindowsTime {
+    #[cfg(windows)]
+    {
+        super::windows_time::query()
+    }
+    #[cfg(not(windows))]
+    {
+        WindowsTime::Unknown
+    }
+}
 
 /// Servers in the operator's order; the next is tried when one does not answer.
 pub const SERVERS: [&str; 3] = ["ch.pool.ntp.org", "time.windows.com", "pool.ntp.org"];
@@ -242,6 +276,11 @@ pub fn query(
 /// A source of clock measurements (SNTP on the station, fakes in tests).
 pub trait Source: Send {
     fn measure(&mut self) -> Option<Measurement>;
+    /// Whether a round asks any server (false for an empty server list), for the
+    /// warning ntp_unreachable (#92).
+    fn asks(&self) -> bool {
+        true
+    }
 }
 
 /// SNTP over `servers` in order: the first that answers validly is the measurement.
@@ -269,6 +308,9 @@ pub fn server_list(list: &str) -> Vec<String> {
         .collect()
 }
 impl Source for Sntp {
+    fn asks(&self) -> bool {
+        !self.servers.is_empty()
+    }
     fn measure(&mut self) -> Option<Measurement> {
         self.servers.iter().find_map(|server| {
             let e = query(server, self.timeout, &self.now).ok()?;
@@ -289,11 +331,27 @@ impl Source for Sntp {
 #[derive(Default)]
 pub struct Monitor {
     latest: Mutex<Option<Measurement>>,
+    /// Whether any completed round since start asked a server (#92 ntp_unreachable).
+    asked: AtomicBool,
 }
 impl Monitor {
     /// A monitor that never measures by itself (state unknown until `record`).
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
+    }
+    /// One completed round: `asked` whether it asked any server, `measurement` its valid
+    /// answer (none keeps the previous measurement, which then ages out).
+    pub fn round(&self, asked: bool, measurement: Option<Measurement>) {
+        if asked {
+            self.asked.store(true, Ordering::Release);
+        }
+        if let Some(m) = measurement {
+            *self.latest.lock().unwrap_or_else(|p| p.into_inner()) = Some(m);
+        }
+    }
+    /// Whether any round since start asked a server.
+    pub fn asked(&self) -> bool {
+        self.asked.load(Ordering::Acquire)
     }
     /// Measures with `source` now and then every `interval` on a dedicated thread,
     /// which ends after the monitor is dropped.
@@ -304,9 +362,10 @@ impl Monitor {
             .name("wstx-sntp".into())
             .spawn(move || {
                 loop {
+                    let asked = source.asks();
                     let measurement = source.measure();
                     match weak.upgrade() {
-                        Some(monitor) => monitor.record(measurement),
+                        Some(monitor) => monitor.round(asked, measurement),
                         None => return,
                     }
                     std::thread::sleep(interval);
@@ -314,11 +373,10 @@ impl Monitor {
             })?;
         Ok(monitor)
     }
-    /// Keeps the previous measurement (which then ages out) when none was taken.
+    /// Records a measurement without marking a round (test seam): keeps the previous
+    /// measurement (which then ages out) when none was taken.
     pub fn record(&self, measurement: Option<Measurement>) {
-        if let Some(m) = measurement {
-            *self.latest.lock().unwrap_or_else(|p| p.into_inner()) = Some(m);
-        }
+        self.round(false, measurement);
     }
     pub fn latest(&self) -> Option<Measurement> {
         self.latest

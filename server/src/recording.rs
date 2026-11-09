@@ -581,6 +581,26 @@ impl Recording {
             "capture_drift_ms":drift.map(|(d,_)|(d as f64/10_000.0).round() as i64),
             "capture_drift_ppm":drift.and_then(|(_,ppm)|ppm).map(|p|(p*10.0).round()/10.0)})
     }
+    /// #92 CL-043-03 (2) capture_warning, only while live receive runs: uncorrelated while a
+    /// capture epoch exists and its clock is not correlated to UTC (null before the first
+    /// epoch, so a receive start or restart is no entry), else drift_high while the known
+    /// |capture_drift_ppm| is above 1000, else null.
+    pub(crate) fn capture_warning(&self) -> Option<&'static str> {
+        let s = self.state.lock().unwrap();
+        let running = s
+            .job
+            .as_ref()
+            .is_some_and(|j| j.kind == "live" && !terminal(j.state));
+        let l = s.live.as_ref().filter(|_| running)?;
+        let timing = l.timing.as_ref()?;
+        if !timing.correlated {
+            return Some("uncorrelated");
+        }
+        l.capture_drift
+            .and_then(|(_, ppm)| ppm)
+            .filter(|ppm| ppm.abs() > CAPTURE_DRIFT_WARN_PPM)
+            .map(|_| "drift_high")
+    }
     /// The station clock correction (#43) in 100 ns: 0 without a station clock.
     pub(crate) fn clock_correction(&self) -> i128 {
         self.clock
@@ -766,6 +786,28 @@ impl Recording {
         s.operating.nominal.band = Some(band);
         s.operating.nominal.nominal_hz = Some(nominal_hz);
         s.operating.nominal.origin = "manual";
+    }
+    /// Test seam (#92): the live receive's capture epoch (None: none yet; Some(correlated))
+    /// and its measured drift (None: not measured; Some(None): rate not yet known).
+    #[cfg(test)]
+    pub(crate) fn fixture_capture_clock(&self, epoch: Option<bool>, drift: Option<Option<f64>>) {
+        let mut s = self.state.lock().unwrap();
+        if let Some(l) = s.live.as_mut() {
+            l.timing = epoch.map(|correlated| source::SourceTiming {
+                source_id: "fixture-capture".into(),
+                segment: 0,
+                native_rate: 48_000,
+                native_anchor_frame: 0.0,
+                canonical_anchor_frame: 0,
+                converter_delay_native_frames: 0.0,
+                qpc_anchor_100ns: None,
+                system_utc_anchor: correlated.then(|| "2026-11-09T12:00:00.0000000Z".into()),
+                uncertainty_ns: None,
+                correlated,
+                external_accuracy: source::ExternalAccuracy::Unknown,
+            });
+            l.capture_drift = drift.map(|ppm| (0, ppm));
+        }
     }
     /// Test seam: an injected running live job whose result records the test publishes
     /// itself (hand-authored rows; no decoder). Returns (source, job, generation).
@@ -2962,9 +3004,14 @@ impl LiveWorker {
             if !self.reset {
                 self.owner
                     .publish_latest_decode(&job, interval, first_sequence, complete, late)?;
-                // #43: one completed decode window re-estimates the clock from the air.
+                // #43/#92: one completed decode window re-estimates the clock from the
+                // air; the correction moves at most 1000 ms within one period of the mode.
                 if let Some(clock) = self.owner.clock.get() {
-                    clock.station.period_done();
+                    clock.station.period_done(if mode == decoder::Mode::Ft4 {
+                        7_500
+                    } else {
+                        15_000
+                    });
                 }
             }
             if self.reset {
@@ -3049,6 +3096,8 @@ struct ClockTracker {
 /// The schedule follows the measured offset once it moved by more than 50 ms.
 const RESCHEDULE_TICKS: f64 = 500_000.0;
 const STEP_TICKS: f64 = 2_000_000.0;
+/// #92 capture_warning drift_high above this |capture drift| (ppm, operator 2026-11-09).
+const CAPTURE_DRIFT_WARN_PPM: f64 = 1000.0;
 impl ClockTracker {
     /// Feeds one (canonical frame, observed UTC) sample. Returns (offset, ppm) whenever the
     /// applied offset changes, so the caller re-anchors exactly then.
