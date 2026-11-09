@@ -1,12 +1,12 @@
 #![forbid(unsafe_code)]
-// Proves: TC-005-002, TC-006-002, TC-024-007, CL-011-01, CL-024-03
+// Proves: TC-005-002, TC-006-002, TC-024-007, TC-099-001, CL-011-01, CL-024-03, CL-099-01
 use rustfft::{FftPlanner, num_complex::Complex};
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::sync::OnceLock;
 use wstx_rust::decoder::{Decoder, Mode};
 use wstx_rust::transmit::{
-    ClockState, PackError, Parity, SampleRate, ScheduleError, Start, WaveformError, encode_ft4,
-    next_period, parity, plan_start, waveform_ft4,
+    ClockState, Family, PackError, Parity, SampleRate, ScheduleError, Start, WaveformError,
+    encode_ft4, next_period, parity, plan_start, waveform_ft4,
 };
 
 /// Samples of one 12 kHz symbol, the 103-tone frame and the native (103 + 2)-symbol waveform.
@@ -49,7 +49,7 @@ fn tc_005_002_ft4sim_bits_codeword_and_tones_match_exactly() {
         let message = v["message"].as_str().unwrap();
         let expect_ok = v["encoded"] == true && v["altered"] == false && {
             let (i3, n3) = (v["i3"].as_u64().unwrap(), v["n3"].as_u64().unwrap());
-            matches!(i3, 1..=4) || (i3 == 0 && matches!(n3, 0 | 3 | 4 | 5))
+            matches!(i3, 1..=5) || (i3 == 0 && matches!(n3, 0 | 3 | 4 | 5))
         };
         match encode_ft4(message) {
             Ok(frame) if expect_ok => {
@@ -327,6 +327,47 @@ fn tc_006_002_ft4_start_plan_late_start_and_refusals() {
             Err(ScheduleError::ClockNotSynchronized)
         );
     }
+}
+
+/// FT4 carries the EU VHF type 5 payload (#99): every message of TC-099-001 that ft4sim
+/// encodes unaltered packs to its bits, codeword and tones.
+// Proves: TC-099-001, CL-099-01
+#[test]
+fn tc_099_001_ft4_eu_vhf_matches_ft4sim() {
+    for message in [
+        "<K1ABC> <HB9BLA> 550001 JN37VL",
+        "<HB9BLA> <K1ABC> R 590003 FN42AX",
+        "<G4ABC/P> <HB9BLA> 522047 IO91NP",
+        "<PJ4/K1ABC> <HB9BLA> 590123 FK52UD",
+        "<ABC> <ABCDEFGHIJK> 570010 AA00AA",
+        "<HB9BLA> <K1ABC> 590001 RR99XX",
+        "<k1abc> <hb9bla> 550001 jn37vl",
+        "<K1ABCDEFGH> <HB9BLA> R 550001 JN37VL",
+    ] {
+        let v = vectors()["vectors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["message"] == message)
+            .unwrap_or_else(|| {
+                panic!("{message}: no ft4sim vector; run fixtures/transmit/generate.py --ft4sim")
+            });
+        assert_eq!(
+            (&v["encoded"], &v["altered"], &v["i3"]),
+            (&json!(true), &json!(false), &json!(5)),
+            "{message}"
+        );
+        let frame = encode_ft4(message).unwrap_or_else(|e| panic!("{message}: {e:?}"));
+        assert_eq!((frame.packed.family, frame.packed.i3), (Family::EuVhf, 5));
+        let field = |k: &str| digits(v[k].as_str().unwrap());
+        assert_eq!(frame.packed.bits.to_vec(), field("bits77"), "{message}");
+        assert_eq!(frame.codeword.to_vec(), field("codeword174"), "{message}");
+        assert_eq!(frame.tones.to_vec(), field("tones103"), "{message}");
+    }
+    assert_eq!(
+        encode_ft4("<K1ABCDEFGHI> <HB9BLA> R 550001 JN37VL"),
+        Err(PackError::TooLong)
+    );
 }
 
 /// FT4 carries the same Field Day and RTTY Roundup payloads (#24 S2b), TU; included.

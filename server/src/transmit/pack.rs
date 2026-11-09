@@ -20,6 +20,8 @@ pub enum Family {
     FieldDay,
     /// i3=3 (ARRL RTTY / FT Roundup, #24 S2b)
     RttyRoundup,
+    /// i3=5 (EU VHF contest, #99)
+    EuVhf,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PackError {
@@ -90,6 +92,12 @@ pub fn pack(message: &str) -> Result<Packed, PackError> {
     }
     if let Some(bits) = nonstandard(&words)
         && let Ok(packed) = checked(text.clone(), Family::Nonstandard, bits)
+    {
+        return Ok(packed);
+    }
+    // Type 5 is tried after type 4, as WSJT-X does (#99).
+    if let Some(bits) = eu_vhf(&words)
+        && let Ok(packed) = checked(text.clone(), Family::EuVhf, bits)
     {
         return Ok(packed);
     }
@@ -537,6 +545,40 @@ fn rtty(w: &[&str]) -> Result<Option<[u8; 77]>, PackError> {
         (nexch, 13),
         (3, 3),
     ])))
+}
+
+/// Type 5 EU VHF contest (pack77_parse_type5_source, pack77_5_candidate,
+/// encode_pack77_type5; #99): "<CALL1> <CALL2> [R] 5nSSSS GRID6", both calls hashed
+/// (h12, h22), n 2-9, serial 1-2047, GRID6 AA00AA..RR99XX.
+fn eu_vhf(w: &[&str]) -> Option<[u8; 77]> {
+    let (first, second, r, exchange, grid) = match w {
+        [a, b, x, g] => (*a, *b, 0, *x, *g),
+        [a, b, "R", x, g] => (*a, *b, 1, *x, *g),
+        _ => return None,
+    };
+    let (first, second) = (hash_body(first)?, hash_body(second)?);
+    let e = exchange.as_bytes();
+    if e.len() != 6 || !digits(exchange) || e[0] != b'5' || !(b'2'..=b'9').contains(&e[1]) {
+        return None;
+    }
+    let serial = exchange[2..].parse::<u128>().ok()?;
+    if !(1..=2047).contains(&serial) {
+        return None;
+    }
+    let g = grid.as_bytes();
+    if g.len() != 6 || !g[4..].iter().all(|c| (b'A'..=b'X').contains(c)) {
+        return None;
+    }
+    let grid6 = (grid4(&grid[..4])? * 24 + u128::from(g[4] - b'A')) * 24 + u128::from(g[5] - b'A');
+    Some(fields(&[
+        (hash(first, 12)?, 12),
+        (hash(second, 22)?, 22),
+        (r, 1),
+        (u128::from(e[1] - b'2'), 3),
+        (serial, 11),
+        (grid6, 25),
+        (5, 3),
+    ]))
 }
 
 /// The WSPR shapes WSJT-X tries before type 1 (pack77_parse_wspr_source matched_shape).

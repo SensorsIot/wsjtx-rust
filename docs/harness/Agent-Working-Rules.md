@@ -68,9 +68,9 @@ rules around it. Agent memory only points here.
   Continuation state uses the bounded [checkpoint](../../harness/core/docs/CR-Reporting.md#restart-and-handoff-checkpoint).
   Required evidence lives in these records, rather than only in a session or chat;
   the issue is not a running diary.
-- **Records are cited as read.** A comment or other GitHub record is cited by the id or
-  url read from `gh` (`gh api repos/<owner>/<repo>/issues/<n>/comments --jq '.[] | .html_url'`),
-  never from memory.
+- **Records are cited as read.** A comment, commit, run or other record is cited by the
+  id, sha or url read from its source (`gh api repos/<owner>/<repo>/issues/<n>/comments --jq '.[] | .html_url'`,
+  `git log`, `gh run list`), never from memory.
 - **Written for a person.** The title states the problem in plain words; the body opens
   with the problem, the decision or task and a status checklist, readable on a phone.
   Commits, test IDs and paths go below, in a collapsed
@@ -92,7 +92,7 @@ rules around it. Agent memory only points here.
 ## Agent role additions
 
 This project's layer of the [agent roles](../../harness/core/docs/Parallel-Work.md#agent-roles),
-installed with `python harness/core/tools/install_skills.py --project . --host claude --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --agent definer --agent checker --agent coder --agent reviewer --agent harness-improver`.
+installed with `python harness/core/tools/install_skills.py --project . --host claude --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --skill improvement --agent definer --agent checker --agent coder --agent reviewer --agent harness-improver --agent tester --agent prober --agent explainer`.
 
 ### Role: definer
 
@@ -125,7 +125,7 @@ says; the hook refuses any other first line.
 ```yaml
 guard:
   commands:
-    - 'node --test( --test-concurrency=1| --test-name-pattern=[A-Za-z0-9_.,:^+=/-]+){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
+    - 'node --test( --test-concurrency=1| --test-name-pattern=([\[\]A-Za-z0-9_.,:^+=/-]+|''[^'']+'')){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
   deny:
     - '^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test'
   model:
@@ -144,9 +144,11 @@ guard:
   WSTX_TEST_EXE=D:/wstx-build/<worktree>/debug/wstx-rust.exe node --test
   --test-concurrency=1 --test-name-pattern=<pattern>
   .git/harness-parallel/worktrees/<worktree>/<test file> …`: each prefix and both options
-  optional, the two prefixes in that order and no other, the pattern without spaces or
-  shell characters. `WSTX_TEST_EXE` (read by `tests/support.cjs`) runs the tests on the
-  role's own build; its `<worktree>` is the one every test file of the command lies in.
+  optional, the two prefixes in that order and no other, the pattern bare (letters, digits,
+  brackets and `_.,:^+=/-`) or in single quotes without a `'`. A test file may also be named
+  from a session inside the worktree or by its absolute path. `WSTX_TEST_EXE` (read by
+  `tests/support.cjs`) runs the tests on the role's own build; its `<worktree>` is the one
+  every test file of the command lies in.
 - **Delivery facts** in the model are a requirement's `coverage`, a case's `automation`
   and its `executable` binding
   ([source bindings](Project-Specifics.md#canonical-model-catalog-and-source-bindings));
@@ -160,7 +162,7 @@ guard:
 ```yaml
 guard:
   commands:
-    - 'node --test( --test-concurrency=1| --test-name-pattern=[A-Za-z0-9_.,:^+=/-]+){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
+    - 'node --test( --test-concurrency=1| --test-name-pattern=([\[\]A-Za-z0-9_.,:^+=/-]+|''[^'']+'')){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
   deny:
     - '^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test'
 ```
@@ -180,6 +182,45 @@ guard:
 The harness-improver posts on a harness issue in the posting form under "Role: every"
 below, with `--repo SensorsIot/harness` between the number and `--body`; the hook refuses
 any other repository, for reading too.
+
+### Role: tester
+
+```yaml
+guard:
+  commands:
+    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|\.harness/deploy/(radio-preflight|live-page-check))\.ps1( .*)?'
+  writes: ["D:/wstx-tmp/live/**"]
+```
+
+The live-test binding is [Preserve the runtime](HB9BLA-HANDOFF.md#preserve-the-runtime):
+the radio preflight and its lease before keying, the power the test sets, the bands, no
+abort at or after RR73 or 73, a contact you did not start, and the settings a cost-4/5
+test sets back. A run writes under `D:/wstx-tmp/live/<issue>/`
+([limits for experiments](Project-Specifics.md#limits-for-experiments)): its log, and its
+scripts, which act on the station only through the station client
+`.git/harness-parallel/resources/station-update/agent-client.ps1` (dot-sourced:
+`Open-AgentSession`, `Agent-Get`, `Agent-Post`). It runs them, and the radio preflight or
+the live page check, as
+`powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/live/<issue>/<name>.ps1 …`
+or `… -File .harness/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <value>`. It
+installs nothing and restarts the station only through those deploy scripts.
+
+### Role: prober
+
+```yaml
+guard:
+  commands:
+    - '(python|py)(\.exe)? D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\.py( .*)?'
+    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\.ps1( .*)?'
+  writes: ["D:/wstx-tmp/experiments/**"]
+```
+
+The experiment folder is `D:/wstx-tmp/experiments/<issue>/`, within the
+[limits for experiments](Project-Specifics.md#limits-for-experiments); its scripts run as
+`python D:/wstx-tmp/experiments/<issue>/<name>.py …` or
+`powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/<issue>/<name>.ps1 …`.
+They read recordings, logs and the code; they do not use the station client, open COM3 or
+key the radio: that is a live test for the tester.
 
 ### Role: every
 

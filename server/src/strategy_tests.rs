@@ -19,6 +19,10 @@ use wstx_rust::transmit::service::Hardware;
 // #81 WstxStrategy::StartedQso (TC-081-001..005), on this file's station helpers.
 #[path = "autofinish_tests.rs"]
 mod autofinish;
+// #89 WstxStrategy::FreeTxSlot Due and Waiting for the newest period (TC-089-002..004), on this
+// file's station helpers.
+#[path = "newest_rx_tests.rs"]
+mod newest_rx;
 
 fn rows(list: &[(&str, Option<f64>)]) -> Vec<Value> {
     list.iter()
@@ -4211,6 +4215,27 @@ async fn tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation() {
     assert_eq!(contact(&f).await.0, "K1ABC");
 }
 
+// Proves: CL-099-02; TC-099-002 (g). In eu_vhf a CQ TEST is the activity's own word: the
+// operator's selection needs no directive_confirmed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_099_002_cq_test_needs_no_confirmation_in_eu_vhf() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    publish(&f, e, &[("CQ TEST K1ABC FN42", 1000.0, Some(-1.0))]);
+    let row = live_row(&f, "CQ TEST K1ABC FN42");
+    browser_ok(&f, "set_activity", json!({"activity":"eu_vhf"})).await;
+    let selected = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":row,"replace":false})).await),
+        )
+        .await;
+    assert_eq!(selected.status, StatusCode::ACCEPTED, "{}", selected.json);
+    assert_eq!(contact(&f).await.0, "K1ABC");
+}
+
 // Proves: TC-063-003
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_063_003_the_contests_route() {
@@ -6620,8 +6645,10 @@ async fn tc_039_045_the_watchdog_and_no_client_end_the_cq_and_its_slot_is_quiet(
 // Rx parity only (even, the other of its odd Tx parity): 4 periods of each parity flat 20, one
 // parity 60 at 1500..1550 (the current Tx). Loud in my Tx parity: ignored, the CQ stays on 1500,
 // value 0 (rise -0.65 under the floor 20.65, free); loud in my Rx parity: avoided, the CQ goes to the nearest floor slot, 1450
-// and 1550 both 50 Hz away, the lower. Red on the parent: it takes the larger rise of both parities
-// while listening and leaves 1500 in both.
+// and 1550 both 50 Hz away, the lower. The CQ is decided at e + 1 s on the publication of e + 30 s,
+// a period not yet begun and never due (#89); e (published, in progress) holds no row and no decode,
+// so the slot reads the same rows of the periods before e whether e counts or not. Red on the parent: it takes the larger rise of both
+// parities while listening and leaves 1500 in both.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_045_the_cqs_slot_is_judged_in_my_rx_parity() {
     use wstx_rust::transmit::Parity::{Even, Odd};
@@ -6646,9 +6673,12 @@ async fn tc_039_045_the_cqs_slot_is_judged_in_my_rx_parity() {
 }
 
 // Proves: TC-039-010. The router: my Rx parity (even, K1ABC's) is busy (comb_row, floor 20, busy
-// 40) except a quiet band at 1800..1850 Hz in its last 3 received periods; the 5th older (quiet at
-// 600, 90 at 1800) and a transmitted period (90, quiet at 600) do not count, nor my odd periods
-// (flat 20, #66). Tx and Rx 1800 before the first call, tx_slot {1800, 0, unknown}: 1800 reads its
+// 40) except a quiet band at 1800..1850 Hz in its 3 received periods e - 120, e - 90 and e - 60 s;
+// K1ABC's period e is due on its publication 1 s in (#89: no row yet, his decode at 1500 closes
+// 1460..1540), so the counted window is e, e - 30 (transmitted), e - 60 and e - 90, and e - 120
+// and the 6th older e - 150 (quiet at 600, 90 at 1800) do not count; neither does the transmitted
+// period (90, quiet at 600), nor my odd periods (flat 20, #66). Tx and Rx 1800 before the first
+// call, tx_slot {1800, 0, unknown}: 1800 reads its
 // floor 20 against the floor 20.65 (1810 also holds only floor bins, the band and the segment's
 // floor bins 629..636, but is farther from 1500; every other slot holds busy bins); the whole QSO
 // stays there; with Hold Tx off the selection's Tx goes back to the slot. Hold Tx explicitly off
@@ -7785,7 +7815,9 @@ async fn tc_039_050_a_steady_station_on_the_current_tx_is_a_rise_above_the_floor
 
 // Proves: CL-039-09, CL-065-01; TC-039-050 (c), (k). The busiest period counts. My 4 counted Rx
 // periods busy (comb_row, floor 30, busy 40: every slot off the bands holds at least 9 busy bins of
-// 17, so reads at least 35.3, a value of at least 5). Slot A, the current Tx 1500 (bins 512..529),
+// 17, so reads at least 35.3, a value of at least 5): e - 90 s to e, e counted on its complete
+// publication 1 s in by its row so far (#89 Due; e - 120 s is no longer among the last 4 due).
+// Slot A, the current Tx 1500 (bins 512..529),
 // on the floor in 3 periods and 6 dB above it in the oldest: its largest rise 36 - 30.65 = 5.35, 5.
 // Slot B 1950 (bins 666..682) 3 dB above the floor in all 4: 33 - 30.65 = 2.35, 2; the slots
 // overlapping it in part hold busy bins and read more (1940: 3 busy and 14 of B, 34.2). So B wins
@@ -7795,8 +7827,8 @@ async fn tc_039_050_a_steady_station_on_the_current_tx_is_a_rise_above_the_floor
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_the_busiest_counted_period_counts() {
     let rows = |f: &Mcp, e: i64| {
-        for j in (1..=4).rev() {
-            let a = if j == 4 { 36 } else { 30 };
+        for j in (0..=3).rev() {
+            let a = if j == 3 { 36 } else { 30 };
             comb_row(
                 f,
                 e - 30_000 * j,
@@ -8953,8 +8985,10 @@ async fn tc_066_002_the_cqs_caller_move_skips_a_decoded_station() {
 // rows of my Rx period before each Tx period (first frames 0.4 and 0.2 s before it) complete on
 // the air and carry the tx mark (#61), as the live Tx runs of 77 rows. Those periods are received
 // (I transmitted in the period after them), so they count (CL-039-09 "periods I transmitted in
-// never counted"): the station's build counts 1 period at the selection (e - 30 s, #82 periods),
-// 2 at the slot check of the 1st repetition (+ e), 3 at the 2nd (+ e + 30 s). My Tx periods are never kept
+// never counted"): the station's build counts 1 period at the selection (e - 30 s, #82 periods; e,
+// published 1 s in, is due but has no row yet), 3 at the slot check of the 1st repetition (+ e, and
+// + e + 30 s, in progress, due on its complete publication 13 s in with its rows so far, #89), 4 at
+// the 2nd (+ e + 60 s). My Tx periods are never kept
 // in the per-period power, the received ones are (e - 30, e - 15, e and e + 30 s). Red on the
 // parent: it drops each Rx period with a marked row, 1 at every slot check, as live.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -9017,7 +9051,7 @@ async fn tc_066_002_received_periods_count_after_my_transmissions() {
         );
         assert_eq!(
             free_tx_slots(&f).await["periods"],
-            periods(k + 1),
+            periods(k + 2),
             "repetition {k}"
         );
     }
@@ -9029,7 +9063,10 @@ async fn tc_066_002_received_periods_count_after_my_transmissions() {
         .waterfall
         .lock()
         .unwrap()
-        .periods((&job, generation), f.bench.now_utc_ms())
+        .periods(
+            (&job, generation),
+            crate::automation_tests::due_at(f.bench.now_utc_ms(), None),
+        )
         .iter()
         .map(|p| p.start_ms - e)
         .collect();

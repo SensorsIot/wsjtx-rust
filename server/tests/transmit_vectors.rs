@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
-// Proves: TC-005-001, TC-006-001, TC-024-007, CL-009-01, CL-009-02, CL-024-03
+// Proves: TC-005-001, TC-006-001, TC-024-007, TC-099-001, CL-009-01, CL-009-02, CL-024-03, CL-099-01
 use serde_json::Value;
 use std::sync::OnceLock;
-use wstx_rust::decoder::{Decoder, Mode};
+use wstx_rust::decoder::{Decoder, HashTable, Mode, unpack, unpack_with};
 use wstx_rust::transmit::{
     ClockState, Family, PackError, Parity, SampleRate, ScheduleError, Start, WaveformError, encode,
     next_period, plan_start, waveform,
@@ -42,7 +42,7 @@ fn wav(name: &str) -> Vec<f64> {
 // Proves: TC-005-001.
 #[test]
 fn tc_005_001_ft8code_bits_crc_parity_and_tones_match_exactly() {
-    let supported = ["1.", "2.", "3.", "4.", "0.0", "0.3", "0.4", "0.5"];
+    let supported = ["1.", "2.", "3.", "4.", "5.", "0.0", "0.3", "0.4", "0.5"];
     let (mut encoded, mut refused) = (0, 0);
     for v in vectors()["vectors"].as_array().unwrap() {
         let message = v["message"].as_str().unwrap();
@@ -219,6 +219,120 @@ fn tc_024_007_field_day_and_rtty_roundup_pack_exactly() {
         assert!(fixture(m)["altered"] == true, "{m}");
         assert!(encode(m).is_err(), "{m}");
     }
+}
+
+/// TC-099-001: the EU VHF messages WSJT-X 3.3.0-beta5 encodes unaltered as type 5
+/// (fixtures/transmit/generate.py MESSAGES), and the shapes it rejects or alters.
+const EU_VHF: [&str; 8] = [
+    "<K1ABC> <HB9BLA> 550001 JN37VL",
+    "<HB9BLA> <K1ABC> R 590003 FN42AX",
+    "<G4ABC/P> <HB9BLA> 522047 IO91NP",
+    "<PJ4/K1ABC> <HB9BLA> 590123 FK52UD",
+    "<ABC> <ABCDEFGHIJK> 570010 AA00AA",
+    "<HB9BLA> <K1ABC> 590001 RR99XX",
+    "<k1abc> <hb9bla> 550001 jn37vl",
+    "<K1ABCDEFGH> <HB9BLA> R 550001 JN37VL",
+];
+const EU_VHF_REJECTED: [&str; 13] = [
+    "<K1ABC> <HB9BLA> 550000 JN37VL",
+    "<K1ABC> <HB9BLA> 552048 JN37VL",
+    "<K1ABC> <HB9BLA> 510001 JN37VL",
+    "<K1ABC> <HB9BLA> 600001 JN37VL",
+    "<K1ABC> <HB9BLA> 55001 JN37VL",
+    "<K1ABC> <HB9BLA> 5500001 JN37VL",
+    "<K1ABC> <HB9BLA> 550001 JN37",
+    "<K1ABC> <HB9BLA> 550001 SS00AA",
+    "K1ABC <HB9BLA> 550001 JN37VL",
+    "<AB> <HB9BLA> 550001 JN37VL",
+    "<K1ABCDEFGHIJ> <HB9BLA> 550001 JN37VL",
+    "<K1ABC> <HB9BLA> X 550001 JN37VL",
+    "<K1ABC> <HB9BLA> R 550001 JN37VL 73",
+];
+fn oracle(message: &str) -> &'static Value {
+    vectors()["vectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["message"] == message)
+        .unwrap_or_else(|| {
+            panic!("{message}: no ft8code vector; run fixtures/transmit/generate.py --bin")
+        })
+}
+
+/// EU VHF (#99): every oracle vector packs bit for bit as ft8code, renders its own tokens
+/// with a hash table that knows both calls and <...> without one; every rejected shape is
+/// never packed as EU VHF; the 38-character message is refused tooLong.
+// Proves: TC-099-001, CL-099-01
+#[test]
+fn tc_099_001_eu_vhf_packs_exactly_as_ft8code() {
+    for message in EU_VHF {
+        let v = oracle(message);
+        assert_eq!(
+            (v["type"].as_str(), v["altered"].as_bool()),
+            (Some("5."), Some(false)),
+            "{message}"
+        );
+        let frame = encode(message).unwrap_or_else(|e| panic!("{message}: {e:?}"));
+        assert_eq!(
+            (frame.packed.family, frame.packed.i3),
+            (Family::EuVhf, 5),
+            "{message}"
+        );
+        for (got, key) in [
+            (frame.packed.bits.to_vec(), "bits77"),
+            (frame.codeword[77..91].to_vec(), "crc14"),
+            (frame.codeword[91..].to_vec(), "parity83"),
+            (frame.tones.to_vec(), "tones79"),
+        ] {
+            assert_eq!(got, bits(v[key].as_str().unwrap()), "{message} {key}");
+        }
+        let normalized = message.to_ascii_uppercase();
+        assert_eq!(frame.packed.text, normalized);
+        assert_eq!(frame.packed.text, v["decoded"].as_str().unwrap());
+        // With a table that knows both calls the tokens come back; with none, <...>.
+        let bare = unpack(&frame.packed.bits);
+        let mut table = HashTable::new();
+        table.learn_sent(&bare, &normalized);
+        let known = unpack_with(&frame.packed.bits, Some(&table));
+        assert_eq!(known.text.as_deref(), Some(normalized.as_str()));
+        let words = normalized.split(' ').collect::<Vec<_>>();
+        let hidden = ["<...>", "<...>"]
+            .into_iter()
+            .chain(words[2..].iter().copied())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(bare.text.as_deref(), Some(hidden.as_str()), "{message}");
+    }
+    assert_eq!(
+        unpack(
+            &encode("<HB9BLA> <K1ABC> R 590003 FN42AX")
+                .unwrap()
+                .packed
+                .bits
+        )
+        .text
+        .as_deref(),
+        Some("<...> <...> R 590003 FN42AX")
+    );
+    for message in EU_VHF_REJECTED {
+        let v = oracle(message);
+        match encode(message) {
+            Ok(frame) => {
+                assert_ne!(frame.packed.family, Family::EuVhf, "{message}");
+                assert_eq!(v["altered"], false, "{message}");
+                assert_eq!(
+                    frame.packed.bits.to_vec(),
+                    bits(v["bits77"].as_str().unwrap()),
+                    "{message}"
+                );
+            }
+            Err(_) => assert!(v["type"] != "5." || v["altered"] == true, "{message}"),
+        }
+    }
+    let long = "<K1ABCDEFGHI> <HB9BLA> R 550001 JN37VL";
+    assert_eq!(long.len(), 38);
+    assert_eq!(encode(long).unwrap_err(), PackError::TooLong);
+    assert_eq!(EU_VHF[7].len(), 37);
 }
 
 fn peak_normalized(x: &[f32]) -> Vec<f64> {

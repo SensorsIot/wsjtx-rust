@@ -20,12 +20,12 @@ package WstxTransmit {
          generator, Gray map and Costas arrays of WstxOfflineDecode; it adds no
          second codebook. */
 
-    enum def MessageFamily { enum standardCalls; enum portableCalls; enum nonstandard; enum freeText; enum telemetry; enum fieldDay; enum rttyRoundup; }
+    enum def MessageFamily { enum standardCalls; enum portableCalls; enum nonstandard; enum freeText; enum telemetry; enum fieldDay; enum rttyRoundup; enum euVhf; }
     enum def PackRefusal {
         enum empty;              // nothing to send after normalization
         enum tooLong;            // message over 37 characters, or free text over 13
         enum invalidText;        // a character no supported family can represent
-        enum unsupportedFamily;  // WSJT-X would choose DXpedition, WSPR or EU VHF type 5
+        enum unsupportedFamily;  // WSJT-X would choose DXpedition or WSPR (EU VHF type 5 is packed since #99)
         enum notExact;           // WSJT-X would transmit an altered rendering (zero-padded telemetry; a Field Day or RTTY Roundup call it would hash)
         enum roundTripMismatch;  // the packed bits do not unpack to the normalized message
     }
@@ -80,7 +80,18 @@ package WstxTransmit {
              than 11 characters is not this family, and an explicit <CALL> token is
              never a contest call slot. Nonstandard i3=4: CQ plus a 5-11 character
              base-38 nonstandard call, or one nonstandard call of at most 11 base-38 characters and one
-             <hashed call> (12-bit hash) with optional RRR/RR73/73. Free text i3=0
+             <hashed call> (12-bit hash) with optional RRR/RR73/73. EU VHF i3=5 (#99,
+             CL-099-01; pack77_parse_type5_source, pack77_5_candidate, encode_pack77_type5,
+             tried after i3=4 as WSJT-X does): exactly "<CALL1> <CALL2> [R] EXCH GRID6",
+             each call a <hashed call> token of 3-11 characters inside the brackets, R the
+             only allowed third word of five, EXCH exactly six digits 5nSSSS with n 2-9
+             and the serial SSSS 0001-2047 (520001..592047 and serial >= 1), GRID6 exactly six
+             characters AA00AA..RR99XX (bit fields: h12 of CALL1 12, h22 of CALL2 22, R 1,
+             n-2 3, serial 11, grid6 index 25, i3 3; the grid6 index as the decoder's
+             VhfFields grid). Serial 0000 and above 2047, a report digit 0, 1 or a
+             six-digit exchange outside 52..59, a 4-character grid, a missing bracket or a
+             word other than R are not this family (WSJT-X rejects them) and fall through.
+             The round trip renders <CALL1> and <CALL2> as the input tokens. Free text i3=0
              n3=0: at most 13 characters from " 0-9A-Z+-./?", right-justified base 42.
              Anything else is refused. The packed bits are unpacked again by the
              receive payload decoder and must render the same blank-separated

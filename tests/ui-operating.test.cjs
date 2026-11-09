@@ -784,8 +784,8 @@ test('TC-007-009 one fixed operating screen at 1366x768 holds only the operating
   for(const selector of operateItems)assert.equal(await inViewport(page,selector),true,`${selector} on the 1366x768 screen`);
   for(const selector of [...Object.values(drawerItems).flat(),...healthyTexts])assert.equal(await shown(page,selector),false,`${selector} is not on the operating screen`);
   // Top bar holds only band, mode, dial, UTC/period, chips, Logbook, Settings, HALT (plus the
-  // status refresh and "?" overview affordances).
-  const allowed=['operating-band','operating-mode','op-dial','open-logbook','open-server-settings','Help','halt-tx'];
+  // status refresh and "?" overview affordances; #96 TopBarItem fullScreen left of "?").
+  const allowed=['operating-band','operating-mode','op-dial','open-logbook','open-server-settings','full-screen','Help','halt-tx'];
   const extra=await page.locator('#station-bar').evaluate((bar,allowed)=>[...bar.querySelectorAll('button,select,input')].filter(n=>n.getClientRects().length&&!n.closest('#exception-chips')&&!allowed.includes(n.id)&&!allowed.includes(n.getAttribute('aria-label'))).map(n=>n.id||n.textContent),allowed);
   assert.deepEqual(extra,[],'the top bar holds only its decided items');
   assert.equal(await page.locator('#station-bar #refresh').count(),0,'no refresh in the top bar: the status refreshes itself');
@@ -1749,6 +1749,7 @@ test('TC-009-005 no receive start, stop or selection without an operator action 
 });
 
 // Proves: CL-010-16, CL-022-01; TC-007-009 unauthorized view.
+// Proves: CL-096-01; TC-096-001 (i) no full-screen button in the unauthorized view, shown once authorized.
 test('TC-007-009 an unauthorized browser sees only the token form until it is authorized',{timeout:60000},async t=>{
   const selfsigned=require('selfsigned'),dir=await fs.mkdtemp(path.join(root,'secure-')),port=await browserPort(),origin=`https://localhost:${port}`;
   const cert=await selfsigned.generate([{name:'commonName',value:'localhost'}],{days:1,keySize:2048,extensions:[{name:'subjectAltName',altNames:[{type:2,value:'localhost'},{type:7,ip:'127.0.0.1'}]}]});
@@ -1764,6 +1765,7 @@ test('TC-007-009 an unauthorized browser sees only the token form until it is au
     const visible=await page.evaluate(()=>[...document.querySelectorAll('main *')].filter(el=>el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden'&&(el.matches('button,input,select,textarea,a,canvas,table,[tabindex]')||[...el.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()))).map(el=>({id:el.id,inLogin:!!el.closest('#login-view'),connection:el.id==='connection'})).filter(e=>!e.inLogin&&!e.connection));
     assert.deepEqual(visible,[],`only the token form and its status line are shown at ${width}px`);
     assert.equal(await page.locator('#token').isVisible(),true);assert.equal(await page.locator('#login button').isVisible(),true);
+    assert.equal(await page.locator('#full-screen').isVisible(),false,'#96 TC-096-001 (i): no full-screen button in the unauthorized view');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     await page.screenshot({path:`test-results/ui-operating/unauthorized-${width}.png`});
   }
@@ -1771,7 +1773,7 @@ test('TC-007-009 an unauthorized browser sees only the token form until it is au
   await page.locator('#token').fill(token);await page.locator('#login button').click();await page.locator('#connection[data-state="connected"]').waitFor();
   assert.equal(await page.locator('#login-view').isVisible(),false);
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
-  for(const selector of ['#operating-workspace','#radio-toolbar','#qso-halt','#rxtx-strip','#qso-cq'])assert.equal(await page.locator(selector).isVisible(),true,`${selector} after authorization`);
+  for(const selector of ['#operating-workspace','#radio-toolbar','#qso-halt','#rxtx-strip','#qso-cq','#full-screen'])assert.equal(await page.locator(selector).isVisible(),true,`${selector} after authorization`);
   assert.deepEqual(errors,[]);
 });
 
@@ -4222,7 +4224,7 @@ test('TC-024-006 the Activity choice in the QSO fold-out',{timeout:40000},async 
   await page.locator('#qso-more summary').click();
   const choice=page.locator('#contact-activity');
   await page.waitForFunction(()=>document.querySelector('#contact-activity')?.value==='ww_digi');
-  assert.deepEqual(await choice.locator('option').evaluateAll(o=>o.map(x=>[x.value,x.textContent])),[['none','None'],['na_vhf','NA VHF'],['ww_digi','WW Digi'],['arrl_digi','ARRL Digi'],['field_day','Field Day'],['rtty','RTTY Roundup'],['hound','Hound']]);
+  assert.deepEqual(await choice.locator('option').evaluateAll(o=>o.map(x=>[x.value,x.textContent])),[['none','None'],['na_vhf','NA VHF'],['eu_vhf','EU VHF'],['ww_digi','WW Digi'],['arrl_digi','ARRL Digi'],['field_day','Field Day'],['rtty','RTTY Roundup'],['hound','Hound']]);
   await choice.selectOption('arrl_digi');
   for(let i=0;i<40&&!commands.some(c=>c.action==='set_activity');i++)await page.waitForTimeout(50);
   const sent=commands.find(c=>c.action==='set_activity');
@@ -4286,6 +4288,50 @@ test('TC-024-013 the Hound choice in the QSO fold-out',{timeout:40000},async t=>
   const sent=commands.find(c=>c.action==='set_activity');
   assert.equal(sent.activity,'hound');
   assert.equal('exchange' in sent,false,'Hound takes no exchange');
+  assert.equal(commands.some(c=>c.action==='enable_tx'),false,'choosing never transmits');
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-099-02; TC-099-003 (#99). The EU VHF choice: offered after NA VHF, shown with the
+// next serial, sent without an exchange; a refusal is shown and the choice returns to the
+// station's setting.
+test('TC-099-003 the EU VHF choice in the QSO fold-out',{timeout:40000},async t=>{
+  const commands=[];
+  const settings={activity:'eu_vhf',exchange:null,serial:12};
+  let refuse=false;
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:partner(),settings:{...settings}})}));
+    await p.route('**/contact/command',async route=>{
+      const body=JSON.parse(route.request().postData());commands.push(body);
+      if(refuse&&body.action==='set_activity')await route.fulfill({status:409,json:{error:{code:'profile_incomplete',field:'locator'}}});
+      else await route.fulfill({status:202,json:{v:1,accepted:true}});
+    });
+  }});
+  await page.waitForFunction(()=>window.wstxContact?.snapshot(),null,{timeout:25000});
+  await page.locator('#qso-more summary').click();
+  await page.waitForFunction(()=>document.querySelector('#contact-activity')?.value==='eu_vhf');
+  const choice=page.locator('#contact-activity');
+  const options=await choice.locator('option').evaluateAll(o=>o.map(x=>[x.value,x.textContent]));
+  assert.deepEqual(options.slice(1,3),[['na_vhf','NA VHF'],['eu_vhf','EU VHF']]);
+  assert.equal(await page.locator('#contact-serial').textContent(),'Serial 0012');
+  const toNone=async()=>{
+    Object.assign(settings,{activity:'none'});
+    await page.evaluate(()=>{document.activeElement?.blur();return window.wstxContact.load();});
+    await page.waitForFunction(()=>document.querySelector('#contact-activity')?.value==='none');
+  };
+  await toNone();
+  await choice.selectOption('eu_vhf');
+  for(let i=0;i<40&&!commands.some(c=>c.action==='set_activity');i++)await page.waitForTimeout(50);
+  const sent=commands.find(c=>c.action==='set_activity');
+  assert.equal(sent.activity,'eu_vhf');
+  assert.equal('exchange' in sent,false,'EU VHF sends no exchange');
+  await toNone();
+  refuse=true;
+  await choice.selectOption('eu_vhf');
+  for(let i=0;i<40&&commands.filter(c=>c.action==='set_activity').length<2;i++)await page.waitForTimeout(50);
+  await page.waitForFunction(()=>/profile_incomplete/.test(document.querySelector('#contact-result')?.textContent??''));
+  await page.waitForFunction(()=>document.querySelector('#contact-activity')?.value==='none');
   assert.equal(commands.some(c=>c.action==='enable_tx'),false,'choosing never transmits');
   assert.deepEqual(errors,[]);
 });
@@ -4845,4 +4891,154 @@ test('TC-044-007 the Audio section shows endpoint names, keeps IDs in hover and 
   await page.setViewportSize({width:360,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'the Audio section fits a phone');
   await page.locator('#settings-audio').screenshot({path:'test-results/ui-operating/audio-section-mobile.png'});
   assert.deepEqual(errors,[]);
+});
+
+// ---------------------------------------------------------------- #96 full screen
+// WstxOperatingLayout::FullScreenToggle (CL-096-01). The expected values are the operator's words on #96 and
+// the WHATWG Fullscreen Standard (requestFullscreen on the document element, fullscreenElement,
+// fullscreenEnabled, exitFullscreen), not the candidate markup.
+const fullScreenVariants={
+  // Records each Keyboard Lock call with its arguments and delegates to the real object.
+  lock:()=>{window.__keyboardLock=[];const k=navigator.keyboard;if(!k)return;const lock=k.lock.bind(k),unlock=k.unlock.bind(k);
+    k.lock=(...a)=>{window.__keyboardLock.push(['lock',...structuredClone(a)]);return lock(...a);};k.unlock=()=>{window.__keyboardLock.push(['unlock']);return unlock();};},
+  noKeyboard:()=>{window.__keyboardLock=[];delete Navigator.prototype.keyboard;},
+  disabled:()=>{Object.defineProperty(Document.prototype,'fullscreenEnabled',{configurable:true,get:()=>false});},
+  rejects:()=>{Element.prototype.requestFullscreen=function(){return Promise.reject(new TypeError('Permissions check failed'));};},
+};
+// A routed prepared contact (abortable), the contact commands recorded, every request's path recorded and,
+// with rows, one decoded CQ row in Band Activity (for its row menu).
+async function fullScreenFixture(t,viewport,variant,{rows=false}={}){
+  const commands=[],requests=[];
+  const f=await fixture(t,viewport,{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.addInitScript(fullScreenVariants[variant]);
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:partner('replying')})}));
+    await contactCommands(p,commands);
+    if(rows){
+      const period='2026-10-27T12:00:00.0000000Z',state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+      state.clock={basis:'system_utc',correlated:true,utc_anchor:period,canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+      Object.assign(state.job,{first_sequence:0,next_sequence:1,available_count:1,latest_decode:{id:1,first_sequence:0,next_sequence:1,period_start_utc:period,complete:true}});
+      const call=text=>({kind:'call',text,hash_bits:null,hash_value:null});
+      const records=[{sequence:0,start_frame:6000,frequency_hz:1000,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:'CQ W1AW FN31',
+        fields:{type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:call('W1AW'),ack:false,exchange:{kind:'grid',value:'FN31'}},period_start_utc:period}];
+      await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+      await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor);
+        await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:1,available_count:1,next:cursor+batch.length,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+    }
+    p.on('request',r=>requests.push(`${r.method()} ${new URL(r.url()).pathname}`));
+  }});
+  const {page}=f;
+  await page.waitForFunction(()=>window.wstxContact?.snapshot()?.contact?.state==='replying',null,{timeout:45000});
+  if(rows)await page.locator('#band-activity tr[data-sequence="0"]').waitFor({timeout:25000});
+  const button=page.locator('#full-screen');
+  return {...f,commands,requests,button,
+    aborts:()=>commands.filter(c=>c.action==='abort').length,
+    full:()=>page.evaluate(()=>document.fullscreenElement===document.documentElement),
+    // A change of state is complete once the browser's state has changed and the fullscreenchange event has
+    // reached the page (the button follows that event; Chromium may resolve the request's promise before it).
+    entered:()=>page.waitForFunction(()=>!!document.fullscreenElement&&document.querySelector('#full-screen')?.getAttribute('aria-pressed')==='true',null,{timeout:5000}),
+    left:()=>page.waitForFunction(()=>!document.fullscreenElement&&document.querySelector('#full-screen')?.getAttribute('aria-pressed')==='false',null,{timeout:5000}),
+    prepared:()=>page.evaluate(()=>window.wstxContact.snapshot()?.contact?.state==='replying'),
+    look:()=>button.evaluate(b=>({label:b.getAttribute('aria-label'),pressed:b.getAttribute('aria-pressed'),title:b.title,icon:b.dataset.icon,svg:b.querySelectorAll('svg').length,text:b.textContent.trim()})),
+    locks:()=>page.evaluate(()=>window.__keyboardLock),
+    // The button's press causes no station request and no WebSocket frame.
+    quiet:async(action,label)=>{const r=requests.length,s=f.sent.length;await action();await page.waitForTimeout(300);
+      assert.deepEqual(requests.slice(r),[],`${label}: no station request`);assert.deepEqual(f.sent.slice(s),[],`${label}: no WebSocket frame`);},
+    order:()=>page.locator('#station-bar .op-header-actions > button').evaluateAll(list=>list.map(b=>b.id||b.dataset.region)),
+    overflow:()=>page.evaluate(()=>{const bar=document.querySelector('#station-bar');return {page:document.documentElement.scrollWidth>innerWidth,bar:bar.scrollWidth>bar.clientWidth,scroll:document.documentElement.scrollHeight>innerHeight};}),
+  };
+}
+const fullScreenOff={label:'Full screen',pressed:'false',title:'Full screen: hide the browser frame',icon:'expand',svg:1,text:''};
+const fullScreenOn={label:'Leave full screen',pressed:'true',title:'Leave full screen',icon:'collapse',svg:1,text:''};
+const repeatedEscape=page=>page.evaluate(()=>{for(let i=0;i<3;i++)(document.activeElement??document.body).dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',repeat:true,bubbles:true,cancelable:true}));});
+
+// Proves: CL-096-01; TC-096-001 (a) place and look, (b) short Esc in full screen and after, (c) leaving from
+// outside and the held key's repeats, (d) keyboard, (e) reload, (j) layout in both states, (k) the overview.
+test('TC-096-001 the full-screen button left of ?, its states, Esc in and after full screen, keyboard, reload and the overview',{timeout:90000},async t=>{
+  const x=await fullScreenFixture(t,{width:1366,height:768},'lock',{rows:true}),{page,errors,button}=x;
+  // (a) Logbook, Settings, full screen, "?", HALT; off: outward corners.
+  assert.deepEqual((await x.order()).slice(0,5),['open-logbook','open-server-settings','full-screen','help','halt-tx']);
+  assert.deepEqual(await x.look(),fullScreenOff);
+  const corners=()=>button.locator('svg path').getAttribute('d'),outwards=await corners();
+  assert.deepEqual(await x.overflow(),{page:false,bar:false,scroll:false},'(j) 1366x768 normal window');
+  await x.quiet(async()=>{await button.click();await x.entered();},'enter');
+  assert.equal(await x.full(),true,'the whole page (the document element) is full screen');
+  assert.deepEqual(await x.look(),fullScreenOn);assert.notEqual(await corners(),outwards,'the corners turn inwards');
+  await page.waitForFunction(()=>window.__keyboardLock.length>0);
+  assert.deepEqual(await x.locks(),[['lock',['Escape']]],'entering locks Escape once');
+  assert.deepEqual(await x.overflow(),{page:false,bar:false,scroll:false},'(j) 1366x768 full screen');
+  // (b) A short Esc while full screen: no abort, the contact stays prepared, the page stays full screen.
+  await page.keyboard.press('Escape');await page.waitForTimeout(400);
+  assert.equal(x.aborts(),0,'a short Esc in full screen sends no abort');
+  assert.equal(await x.prepared(),true);assert.equal(await x.full(),true,'the page stays full screen');
+  // An open row menu still takes Esc.
+  await page.locator('#band-activity tr[data-sequence="0"]').click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
+  await page.keyboard.press('Escape');await page.locator('#ba-menu').waitFor({state:'hidden'});
+  assert.equal(x.aborts(),0);
+  // The button leaves; outside full screen a first Esc is Abort QSO, as before.
+  await x.quiet(async()=>{await button.click();await x.left();},'leave');
+  assert.deepEqual(await x.look(),fullScreenOff);
+  await page.keyboard.press('Escape');
+  for(let i=0;i<40&&!x.aborts();i++)await page.waitForTimeout(50);
+  await page.waitForTimeout(500);assert.equal(x.aborts(),1,'after leaving, Esc sends one abort');
+  // (c) Full screen left from outside (the browser on Esc held, its own control): the button follows and the lock
+  // is released; the held key's repeated keydowns that reach the page afterwards never abort.
+  await x.quiet(async()=>{await button.click();await x.entered();},'enter again');
+  await page.evaluate(()=>document.exitFullscreen());await x.left();
+  assert.deepEqual(await x.look(),fullScreenOff);assert.equal(await corners(),outwards);
+  await page.waitForFunction(()=>window.__keyboardLock.filter(c=>c[0]==='unlock').length===2);
+  assert.deepEqual(await x.locks(),[['lock',['Escape']],['unlock'],['lock',['Escape']],['unlock']],'one unlock per leave');
+  await repeatedEscape(page);await page.waitForTimeout(500);
+  assert.equal(x.aborts(),1,'repeated Escape keydowns never abort');assert.equal(await x.prepared(),true);
+  // (d) An ordinary focusable button: Tab reaches it, Enter enters, Space leaves.
+  await page.locator('#open-server-settings').focus();await page.keyboard.press('Tab');
+  assert.equal(await button.evaluate(b=>document.activeElement===b),true,'Tab after Settings reaches the button');
+  await x.quiet(async()=>{await page.keyboard.press('Enter');await x.entered();},'Enter');
+  await x.quiet(async()=>{await page.keyboard.press('Space');await x.left();},'Space');
+  // (j) 360x800 in both states.
+  await page.setViewportSize({width:360,height:800});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  assert.deepEqual({...await x.overflow(),scroll:false},{page:false,bar:false,scroll:false},'(j) 360x800 normal window');
+  await button.click();await x.entered();
+  assert.deepEqual({...await x.overflow(),scroll:false},{page:false,bar:false,scroll:false},'(j) 360x800 full screen');
+  await page.screenshot({path:'test-results/ui-operating/full-screen-360x800.png'});
+  // (e) A reload starts in the normal window with the button off; nothing is stored.
+  await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
+  await page.waitForFunction(()=>window.wstxContact?.snapshot()?.contact,null,{timeout:45000});
+  assert.equal(await page.evaluate(()=>document.fullscreenElement),null);assert.deepEqual(await x.look(),fullScreenOff);
+  assert.deepEqual(await page.evaluate(()=>[...Object.keys(localStorage),...Object.keys(sessionStorage)].filter(k=>/full/i.test(k))),[],'nothing stored');
+  // (k) The "?" overview.
+  await page.setViewportSize({width:1366,height:768});await page.locator('#station-bar [data-region=help]').click();await page.locator('#region-help').waitFor();
+  assert.equal(await page.locator('#region-help .op-secondary-body > p.op-muted').first().textContent(),'WSJT-X keys where the function exists. Letter keys and ? are inactive while a text field has focus; Alt+H always halts, Esc aborts the QSO (not in full screen).');
+  const keys=await page.locator('#help-keys > div').evaluateAll(list=>list.map(d=>[d.querySelector('dt').textContent,d.querySelector('dd').textContent]));
+  const esc=keys.findIndex(([dt])=>dt==='Esc / Abort QSO');
+  assert.deepEqual(keys.slice(esc,esc+2),[['Esc / Abort QSO','Abort the QSO: the transmission stops now and the contact is cancelled (nothing logged); the station stays ready. Not in full screen.'],
+    ['Full screen button','Hide the browser frame and show only the app; press again to leave. Esc held: leave full screen.']]);
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-096-01; TC-096-001 (f) a browser without Keyboard Lock.
+test('TC-096-001 without Keyboard Lock the button enters full screen and Esc in full screen never aborts',{timeout:60000},async t=>{
+  const x=await fullScreenFixture(t,{width:1366,height:768},'noKeyboard'),{page,errors,button}=x;
+  assert.equal(await page.evaluate(()=>navigator.keyboard),undefined);
+  await x.quiet(async()=>{await button.click();await x.entered();},'enter');
+  assert.equal(await x.full(),true);assert.deepEqual(await x.look(),fullScreenOn);assert.deepEqual(await x.locks(),[],'no lock call');
+  await page.keyboard.press('Escape');await page.waitForTimeout(500);
+  assert.equal(x.aborts(),0,'Esc in full screen sends no abort');assert.equal(await x.prepared(),true);
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-096-01; TC-096-001 (g) no button where the browser offers no element full screen.
+test('TC-096-001 where fullscreenEnabled is false there is no full-screen button and no gap',{timeout:60000},async t=>{
+  const x=await fullScreenFixture(t,{width:1366,height:768},'disabled'),{page,errors}=x;
+  assert.equal(await page.locator('#full-screen').count(),0);
+  assert.deepEqual((await x.order()).slice(0,4),['open-logbook','open-server-settings','help','halt-tx'],'Settings directly followed by ?');
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-096-01; TC-096-001 (h) a refused request changes nothing.
+test('TC-096-001 a refused full-screen request changes nothing and reports no error',{timeout:60000},async t=>{
+  const x=await fullScreenFixture(t,{width:1366,height:768},'rejects'),{page,errors,button}=x;
+  await page.evaluate(()=>window.wstxChipsShow?.());
+  const entries=()=>page.locator('#error-field [role=listitem]').allTextContents(),before=await entries();
+  await x.quiet(()=>button.click(),'refused');
+  assert.equal(await page.evaluate(()=>document.fullscreenElement),null);assert.deepEqual(await x.look(),fullScreenOff);
+  await page.evaluate(()=>window.wstxChipsShow?.());assert.deepEqual(await entries(),before,'no error-field entry');
+  assert.deepEqual(errors,[],'no page error');
 });

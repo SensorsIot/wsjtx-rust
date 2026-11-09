@@ -43,6 +43,8 @@ verify their availability in the actual agent environment before starting work.
   agreed: it sees only PTT and a contact, not someone watching Band Activity.
   A contact you did not start, seen while another run's lease is live,
   is that run's. The station itself does not check this.
+- Agent tests transmit only on 10, 15, 20 or 40 m (the IC-7300's antenna). A stop a test
+  triggers never aborts a contact at or after RR73 or 73: that contact ends on its own.
 - A cost-4/5 live test sets back what it changed ([testing](../../harness/core/docs/standards/testing.md#cost-levels)):
   band, frequency, mode, strategy, Auto, Hold Tx, Tx/Rx, theme and power. A CAT setting change
   resets the receive-only setup confirmation, which must then be given again.

@@ -739,7 +739,7 @@ package WstxStrategy {
              is answerable when its directive does not exclude me: a plain CQ (no target);
              "CQ x" with x my continent; "CQ DX" when both continents are known and differ.
              Contest activity (#63, WstxContest::ContestDirective): the word of the station's
-             special activity (WstxContact::SpecialActivity: na_vhf and arrl_digi TEST, ww_digi WW,
+             special activity (WstxContact::SpecialActivity: na_vhf, eu_vhf and arrl_digi TEST, ww_digi WW,
              field_day FD, rtty RU) is answerable too, whatever the continents.
              Every other directive is not answerable: another continent or region (NA, JA,
              SA, ...), any other word (TEST, POTA, a number; a contest word outside its activity),
@@ -1177,6 +1177,15 @@ package WstxStrategy {
              station, D16) and it is armed (enable_tx). Nothing listed: it
              keeps waiting, or calls CQ (CqWhenNoTarget). A contact the run did not select:
              ManualIntervention.
+             Decision timing (#89, operator 2026-11-09: "decision always fastest when needed
+             info is available. this is a general rule for the auto mode"): every decision of an
+             Auto run (a selection, a slot, a slot check, a CQ, a leaving) is taken at the
+             earliest moment the information it needs is available, never later: on the
+             publication that brings it at once, and, where that information can be missing,
+             at the latest at the moment its own rule names, then with what is there. A
+             decision whose information is all there is taken at once, without waiting. The
+             waiting cases are named where the decision is defined (FreeTxSlot "Waiting for
+             the newest period").
              In a contact: completion counts and returns to waiting; LeaveRule decides when the
              run leaves the target; no stop. The browser itself never sends enable_tx for a
              strategy. The run snapshot (WstxMcp) carries left (null or {call, reason
@@ -1390,10 +1399,36 @@ package WstxStrategy {
              the native bins of about 2.93 Hz, levels in whole dB), per received period the
              mean level of each bin over the rows of that period; a period I transmitted in is
              not counted. Only recent periods count (#66 "Only if recent"): the counted periods
-             among the last periodsPerParity (4) periods of my Rx parity on the clock before the
-             period in progress at the decision (FT8 the last 2 minutes, FT4 the last minute);
-             a period of them that I transmitted in or did not receive leaves a gap that no
-             older period fills; fewer: those there are.
+             among the last periodsPerParity (4) periods of my Rx parity that are due at the
+             decision (FT8 about the last 2 minutes, FT4 the last minute); a period of them that
+             I transmitted in or did not receive leaves a gap that no older period fills; fewer:
+             those there are.
+             Due (#89, operator 2026-11-09 "Count once decoded"): a period is due once it has
+             ended on the station clock, or earlier, while it is in progress, once the complete
+             publication of its decodes has been published (the decoder publishes a period before
+             it ends, about 0.9 s before the next period start in FT8). A period that has not
+             started on the station clock is never due, also when a publication names it. So a decision taken on the publication of my
+             newest Rx period, still in progress on the clock (a selection, a slot check, a
+             pounce, a CQ after CqWhenNoTarget's publications), counts that period, and the
+             oldest of the four drops out. Such a period counts with its decodes of that
+             publication and its levels over the detailed rows received up to the decision; once
+             it has ended, a later decision takes all its rows. A partial publication (not
+             complete) makes no period due; a period in progress without its complete
+             publication is not counted. A period that has ended without its decodes published
+             counts by its levels, and its decodes count from their publication on (unchanged).
+             No decision already taken is taken again because a period becomes due.
+             Waiting for the newest period (#89 round 1 Q1, StrategyRun Decision timing): every
+             CQ of a contest Run (WstxContest::ContestRun) decided in waiting without a fresh
+             publication (at Auto on, when a waiting reason ends, when a manual contact ends or
+             Esc gives a caller up, after a completion or a leaving) while the newest period of
+             its Rx parity (in progress or ended) has no complete publication waits for that
+             publication and is taken at once when it arrives, at the latest when the period in
+             progress ends (then with what is due then), never later; when that period's complete
+             publication is already there it is taken at once. The CQ (enable_tx) is sent only
+             after the decision. With
+             Hold Tx on the CQ takes no decision (D16) and does not wait. A run that stops, gets a
+             waiting reason or is made manual meanwhile takes no decision and sends nothing; a
+             repeated Auto on during the wait starts no second wait or decision.
              Floor: per counted period, the WSJT-X passband floor (the baseline of the WSJT-X
              FT8 and FT4 decoders) over the floor bins, the native bins k whose frequency
              k x 12000/4096 Hz lies in [floorLowHz, floorHighHz) = [300, 2700): k = 103..921,
@@ -1493,8 +1528,9 @@ package WstxStrategy {
              period I could transmit in is the one after the period P in progress, and its Rx
              parity is P's own (round 1 Q3): the parity alternates every period.
              Counted periods, floor and value: FreeTxSlot's, unchanged (the last
-             periodsPerParity periods of that parity on the clock before the period in
-             progress, a period I transmitted in or did not receive leaving a gap; the WSJT-X
+             periodsPerParity periods of that parity that are due, ended on the clock or in
+             progress with their complete publication published, #89; a period I transmitted in or did not
+             receive leaving a gap; the WSJT-X
              passband floor; a slot's largest rise above it in those periods, clamped at 0 in
              whole dB). They are taken from the station's live job in the station's operating
              mode (WstxContact::StationOperatingMode), from the last station band change on
@@ -1514,7 +1550,10 @@ package WstxStrategy {
              long, ascending and disjoint. So at most rangesMaxFt8 (48, 2400 / 50) in FT8 and
              rangesMaxFt4 (26, floor of 2400 / 90) in FT4.
              Built: at each period start on the station clock; when the decodes of a counted
-             period are published (operator 2026-11-09, Rebuild on decodes); at once when a QSO starts or ends (the judged parity may change); at once when the live job, its mode or the
+             period are published (operator 2026-11-09, Rebuild on decodes), also the complete
+             publication of the period in progress of the judged parity, which makes it due and
+             counted from that build on (#89; while only listening the judged parity is that
+             period's own, so the last build before the next period start counts it); at once when a QSO starts or ends (the judged parity may change); at once when the live job, its mode or the
              station band changes. Without a live receive (no live job) the value is null; with
              no counted period open is [].
              Value: null or {at_utc_ms (station time of the build), mode ft8|ft4, rx_parity

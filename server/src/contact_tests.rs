@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 // Proves: CL-010-01, CL-010-02, CL-010-03, CL-010-04, CL-010-10, CL-010-12; TC-007-001, TC-008-001, TC-011-001.
 // (#24 S4b: CL-024-04; TC-024-011, TC-024-014, the classic Hound.)
+// (#99: CL-099-02; TC-099-002, the EU VHF contest message.)
 // (#41 DirectLog: the contacts the engine hands to the log.)
 // The contact engine against the actual #9 transmit owner core (`Core`) on a virtual
 // UTC clock with a recording hardware double (no audio, PTT or radio). Decoded rows are
@@ -123,6 +124,8 @@ struct Station {
     sent_hz: Vec<(i64, u32)>,
     /// The profile callsign (Ctx.call).
     call: String,
+    /// The profile locator (Ctx.locator; empty is none).
+    locator: String,
 }
 /// The one contact handed to the log since the last check (WstxContact::DirectLog).
 fn one_entry(s: &mut Station) -> (LogKind, Contact) {
@@ -149,6 +152,7 @@ fn station() -> Station {
         sent: Vec::new(),
         sent_hz: Vec::new(),
         call: "HB9BLA".into(),
+        locator: "JN47AA".into(),
     }
 }
 /// Hand-authored standard row "TO FROM EXCHANGE" decoded at `hz` in `period`.
@@ -188,7 +192,7 @@ impl Station {
     fn ctx(&self) -> Ctx {
         Ctx {
             call: Some(self.call.clone()),
-            locator: Some("JN47AA".into()),
+            locator: Some(self.locator.clone()).filter(|l| !l.is_empty()),
             now_utc_ms: self.now(),
             granted: true,
             mode: Some(self.mode),
@@ -211,6 +215,7 @@ impl Station {
             text: text.into(),
             standard: Some(parse(text)),
             dxpedition: None,
+            vhf: None,
         }
     }
     fn command(&mut self, command: Command) -> Result<(), &'static str> {
@@ -3495,11 +3500,13 @@ fn arrl_digi_with_a_nonstandard_own_call_and_back_to_none() {
         (Activity::NaVhf, "na_vhf", 1),
         (Activity::WwDigi, "ww_digi", 5),
         (Activity::ArrlDigi, "arrl_digi", 8),
+        (Activity::EuVhf, "eu_vhf", 2),
     ] {
         assert_eq!((a.name(), a.special_operation()), (name, udp));
         assert_eq!(Activity::parse(name), Some(a));
     }
-    assert_eq!(Activity::parse("eu_vhf"), None);
+    // "eu_vhf" until #99 (TC-099-002).
+    assert_eq!(Activity::parse("q65_pileup"), None);
 }
 
 // Proves: CL-024-02; TC-024-005 (e). The activity regenerates a running CQ's Tx6 and an
@@ -3823,6 +3830,607 @@ fn contest_exchanges_are_validated_and_rows_of_another_family_are_other() {
         Activity::FieldDay
     );
     assert_eq!(set(&s)[1], "K1ABC HB9BLA 1A EMA");
+}
+
+// ---------------------------------------------------------------- #99 EU VHF
+/// A received message as the station builds its row: packed, unpacked, filled in from the
+/// station's hash table (my call and the calls it learned) and read by the row reader.
+fn heard_in(
+    s: &mut Station,
+    table: &mut wstx_rust::decoder::HashTable,
+    period: i64,
+    text: &str,
+    snr: f64,
+    mode: &str,
+) -> Row {
+    use wstx_rust::decoder::{Decode, unpack};
+    let payload = table.resolve(&unpack(&wstx_rust::transmit::pack(text).unwrap().bits));
+    table.learn(&payload);
+    s.sequence += 1;
+    let mut record = serde_json::to_value(Decode {
+        payload,
+        start_frame: 0,
+        frequency_hz: 1300.0,
+        snr_db: Some(snr),
+        a_priori: None,
+    })
+    .unwrap();
+    record["sequence"] = serde_json::json!(s.sequence);
+    record["period_start_utc"] = serde_json::json!(utc_text(period));
+    let identity = ("s".to_string(), "j".to_string(), 1);
+    crate::contact_http::row_of(&record, &identity, mode).unwrap()
+}
+/// eu_vhf chosen with the profile HB9BLA JN37VL; the station's table knows my call.
+fn eu_vhf(s: &mut Station) -> wstx_rust::decoder::HashTable {
+    s.locator = "JN37VL".into();
+    s.command(Command::SetContest {
+        activity: Activity::EuVhf,
+        exchange: None,
+    })
+    .unwrap();
+    let mut table = wstx_rust::decoder::HashTable::new();
+    table.set_my_call(Some("HB9BLA"));
+    table
+}
+fn adif_fields(c: &Contact) -> String {
+    let adif = adif_of(c);
+    assert!(
+        !adif.contains("stx_string") && !adif.contains("srx_string"),
+        "{adif}"
+    );
+    adif
+}
+fn exchanges(s: &Station) -> (Option<String>, Option<String>) {
+    let c = s.engine.contact.as_ref().unwrap();
+    (c.exchange_sent.clone(), c.exchange_rcvd.clone())
+}
+
+// Proves: CL-099-02; TC-099-002 (a), (b). EU VHF as the CQer with Call 1st (Tx1 kept, the
+// caller's grid answered with Tx2), the partner's R exchange moved to Tx4, logged with STX,
+// SRX, the exchanged RS and the 6-character grid; then as the replier to a CQ TEST from Tx1,
+// the exchange answered with Tx3 and the next serial.
+#[test]
+fn tc_099_002_eu_vhf_run_and_reply_through_the_log() {
+    let mut s = station();
+    let mut t = eu_vhf(&mut s);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(set(&s)[5], "CQ TEST HB9BLA JN37");
+    s.run(period(1) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(1)).as_deref(), Some("CQ TEST HB9BLA JN37"));
+    let caller = heard_in(&mut s, &mut t, period(2), "HB9BLA K1ABC FN42", -6.0, "ft8");
+    s.deliver(&[caller]);
+    // Report -06: n = (-6 + 36) / 6 = 5; serial 0001 on a fresh station.
+    assert_eq!(
+        set(&s),
+        [
+            "K1ABC HB9BLA JN37",
+            "<K1ABC> <HB9BLA> 550001 JN37VL",
+            "<K1ABC> <HB9BLA> R 550001 JN37VL",
+            "K1ABC HB9BLA RRR",
+            "K1ABC HB9BLA 73",
+            "CQ TEST HB9BLA JN37"
+        ]
+    );
+    assert_eq!(s.state(), (State::Report, Slot::Tx2));
+    s.run(period(3) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(3)).as_deref(),
+        Some("<K1ABC> <HB9BLA> 550001 JN37VL")
+    );
+    let r = heard_in(
+        &mut s,
+        &mut t,
+        period(4),
+        "<HB9BLA> <K1ABC> R 590007 FN42AX",
+        -6.0,
+        "ft8",
+    );
+    s.deliver(&[r]);
+    assert_eq!(s.state(), (State::Rogers, Slot::Tx4));
+    assert_eq!(s.next_text(), "K1ABC HB9BLA RRR");
+    assert_eq!(
+        exchanges(&s),
+        (Some("550001 JN37VL".into()), Some("590007 FN42AX".into()))
+    );
+    assert_eq!(
+        s.engine.contact.as_ref().unwrap().dx_grid.as_deref(),
+        Some("FN42AX")
+    );
+    s.run(period(5) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(5)).as_deref(), Some("K1ABC HB9BLA RRR"));
+    let bye = heard_in(&mut s, &mut t, period(6), "HB9BLA K1ABC 73", -6.0, "ft8");
+    s.deliver(&[bye]);
+    assert_eq!(s.state().0, State::Completed);
+    let c = one_log(&mut s);
+    assert_eq!((c.report_sent, c.report_rcvd), (None, None));
+    let adif = adif_fields(&c);
+    for field in [
+        "<gridsquare:6>FN42AX",
+        "<stx:4>0001",
+        "<srx:4>0007",
+        "<rst_sent:2>55",
+        "<rst_rcvd:2>59",
+    ] {
+        assert!(adif.contains(field), "{field} in {adif}");
+    }
+    assert_eq!(s.engine.settings.serial, 2);
+
+    // (b) Answering a CQ TEST starts with Tx1 (not disabled in eu_vhf).
+    let cq = heard_in(&mut s, &mut t, period(8), "CQ TEST W9XYZ EN37", 3.0, "ft8");
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(s.state(), (State::Replying, Slot::Tx1));
+    assert_eq!(set(&s)[0], "W9XYZ HB9BLA JN37");
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(period(9) + 14 * SECOND);
+    assert_eq!(s.sent_in(period(9)).as_deref(), Some("W9XYZ HB9BLA JN37"));
+    let x = heard_in(
+        &mut s,
+        &mut t,
+        period(10),
+        "<HB9BLA> <W9XYZ> 590003 EN37AB",
+        3.0,
+        "ft8",
+    );
+    s.deliver(&[x]);
+    // Report +03: n = 39 / 6 = 6; the serial counted on to 0002.
+    assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
+    assert_eq!(s.next_text(), "<W9XYZ> <HB9BLA> R 560002 JN37VL");
+    s.run(period(11) + 14 * SECOND);
+    assert_eq!(
+        s.sent_in(period(11)).as_deref(),
+        Some("<W9XYZ> <HB9BLA> R 560002 JN37VL")
+    );
+    let rr73 = heard_in(&mut s, &mut t, period(12), "HB9BLA W9XYZ RR73", 3.0, "ft8");
+    s.deliver(&[rr73]);
+    assert_eq!(s.state(), (State::Signoff, Slot::Tx5));
+    s.run(period(14));
+    assert_eq!(s.sent_in(period(13)).as_deref(), Some("W9XYZ HB9BLA 73"));
+    let c = one_log(&mut s);
+    assert_eq!(
+        (c.exchange_sent.as_deref(), c.exchange_rcvd.as_deref()),
+        (Some("560002 JN37VL"), Some("590003 EN37AB"))
+    );
+    let adif = adif_fields(&c);
+    for field in ["<stx:4>0002", "<srx:4>0003", "<gridsquare:6>EN37AB"] {
+        assert!(adif.contains(field), "{field} in {adif}");
+    }
+}
+
+// Proves: CL-099-02; TC-099-002 (c). The same run in FT4: Tx4 is RR73 and its transmission
+// completes the contact.
+#[test]
+fn tc_099_002_eu_vhf_in_ft4() {
+    let mut s = ft4_station();
+    let mut t = eu_vhf(&mut s);
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.run(ft4_period(1) + 6_000);
+    assert_eq!(
+        s.sent_in(ft4_period(1)).as_deref(),
+        Some("CQ TEST HB9BLA JN37")
+    );
+    let caller = heard_in(
+        &mut s,
+        &mut t,
+        ft4_period(2),
+        "HB9BLA K1ABC FN42",
+        -6.0,
+        "ft4",
+    );
+    s.deliver(&[caller]);
+    assert_eq!(s.next_text(), "<K1ABC> <HB9BLA> 550001 JN37VL");
+    s.run(ft4_period(3) + 6_000);
+    assert_eq!(
+        s.sent_in(ft4_period(3)).as_deref(),
+        Some("<K1ABC> <HB9BLA> 550001 JN37VL")
+    );
+    let r = heard_in(
+        &mut s,
+        &mut t,
+        ft4_period(4),
+        "<HB9BLA> <K1ABC> R 590007 FN42AX",
+        -6.0,
+        "ft4",
+    );
+    s.deliver(&[r]);
+    assert_eq!(s.state(), (State::Rogers, Slot::Tx4));
+    assert_eq!(s.next_text(), "K1ABC HB9BLA RR73");
+    s.run(ft4_period(6));
+    assert_eq!(
+        s.sent_in(ft4_period(5)).as_deref(),
+        Some("K1ABC HB9BLA RR73")
+    );
+    assert_eq!(s.state().0, State::Completed);
+    let c = one_log(&mut s);
+    assert_eq!(c.mode, Mode::Ft4);
+    let adif = adif_fields(&c);
+    for field in [
+        "<stx:4>0001",
+        "<srx:4>0007",
+        "<rst_sent:2>55",
+        "<rst_rcvd:2>59",
+    ] {
+        assert!(adif.contains(field), "{field} in {adif}");
+    }
+}
+
+// Proves: CL-099-02; TC-099-002 (d). An EU VHF message counts only from the DX call's hash to
+// my call's hash, and only in eu_vhf.
+#[test]
+fn tc_099_002_eu_vhf_messages_count_only_by_both_hashes_in_eu_vhf() {
+    let mut s = station();
+    let mut t = eu_vhf(&mut s);
+    t.save("K1ABC");
+    s.command(Command::EnterDx {
+        call: "K1ABC".into(),
+        grid: None,
+        replace: false,
+    })
+    .unwrap();
+    let before = s.engine.contact.clone();
+    for text in [
+        "<HB9BLA> <W9XYZ> 590003 EN37AB",
+        "<G4ABC> <K1ABC> 590003 FN42AX",
+        "<HB9BLA> <ZZ1ZZZ> 590003 FN42AX",
+    ] {
+        let row = heard_in(&mut s, &mut t, period(2), text, -3.0, "ft8");
+        s.deliver(&[row]);
+        assert_eq!(s.engine.contact, before, "{text}");
+    }
+    let mut table = wstx_rust::decoder::HashTable::new();
+    table.set_my_call(Some("HB9BLA"));
+    table.save("K1ABC");
+    let mut s = station();
+    s.command(Command::EnterDx {
+        call: "K1ABC".into(),
+        grid: None,
+        replace: false,
+    })
+    .unwrap();
+    let before = s.engine.contact.clone();
+    let row = heard_in(
+        &mut s,
+        &mut table,
+        period(2),
+        "<HB9BLA> <K1ABC> 590003 FN42AX",
+        -3.0,
+        "ft8",
+    );
+    assert!(row.vhf.is_some());
+    s.deliver(&[row]);
+    assert_eq!(s.engine.contact, before, "activity none");
+}
+
+// Proves: CL-099-02; TC-099-002 (e). The refusals: no 6-character locator, a callsign over 11,
+// an exchange, a DX call over 11, a serial past 2047, a locator cut after the choice, and EU
+// VHF rows that cannot be selected; each changes nothing.
+#[test]
+fn tc_099_002_eu_vhf_refusals_change_nothing() {
+    let choose = |s: &mut Station, exchange: Option<&str>| {
+        let r = s.command(Command::SetContest {
+            activity: Activity::EuVhf,
+            exchange: exchange.map(String::from),
+        });
+        (r, s.engine.refusal_field, s.engine.settings.activity)
+    };
+    let mut s = station();
+    for (locator, call, exchange, refused) in [
+        (
+            "JN37",
+            "HB9BLA",
+            None,
+            ("profile_incomplete", Some("locator")),
+        ),
+        ("", "HB9BLA", None, ("profile_incomplete", Some("locator"))),
+        (
+            "JN37VL",
+            "VP2E/HB9BLAX",
+            None,
+            ("invalid_call", Some("callsign")),
+        ),
+        ("JN37VL", "HB9BLA", Some("MA"), ("invalid_exchange", None)),
+    ] {
+        s.locator = locator.into();
+        s.call = call.into();
+        assert_eq!(
+            choose(&mut s, exchange),
+            (Err(refused.0), refused.1, Activity::None),
+            "{locator} {call} {exchange:?}"
+        );
+    }
+    s.call = "HB9BLA".into();
+    let mut t = eu_vhf(&mut s);
+    assert_eq!(
+        s.command(Command::EnterDx {
+            call: "K1ABCDEFGHIJ".into(),
+            grid: None,
+            replace: false,
+        }),
+        Err("invalid_call")
+    );
+    assert!(s.engine.contact.is_none());
+    s.command(Command::EnterDx {
+        call: "K1ABC".into(),
+        grid: None,
+        replace: false,
+    })
+    .unwrap();
+    let before = s.engine.contact.clone();
+    let report = s.engine.settings.report;
+    s.engine.settings.serial = 2048;
+    assert_eq!(s.command(Command::SetReport(-10)), Err("out_of_range"));
+    assert_eq!(s.engine.refusal_field, Some("serial"));
+    assert_eq!(
+        (&s.engine.contact, s.engine.settings.report),
+        (&before, report)
+    );
+    s.engine.settings.serial = 1;
+    // A profile change alone regenerates nothing; the next regeneration is refused.
+    s.locator = "JN37".into();
+    s.step(&[]);
+    assert_eq!(s.engine.contact, before);
+    assert_eq!(
+        s.command(Command::SetReport(-10)),
+        Err("profile_incomplete")
+    );
+    assert_eq!(s.engine.refusal_field, Some("locator"));
+    assert_eq!(
+        s.command(Command::SetTx4(Tx4::Rr73)),
+        Err("profile_incomplete")
+    );
+    assert_eq!(
+        (&s.engine.contact, s.engine.settings.report),
+        (&before, report)
+    );
+    s.locator = "JN37VL".into();
+    let unresolved = heard_in(
+        &mut s,
+        &mut t,
+        period(2),
+        "<HB9BLA> <ZZ1ZZZ> 590003 FN42AX",
+        -3.0,
+        "ft8",
+    );
+    assert_eq!(
+        s.command(Command::SelectRow {
+            row: unresolved,
+            replace: true,
+        }),
+        Err("row_not_standard")
+    );
+    t.save("DL1ABC");
+    let row = heard_in(
+        &mut s,
+        &mut t,
+        period(2),
+        "<HB9BLA> <DL1ABC> 590012 JO62QM",
+        -3.0,
+        "ft8",
+    );
+    s.command(Command::SetContest {
+        activity: Activity::WwDigi,
+        exchange: None,
+    })
+    .unwrap();
+    let before = s.engine.contact.clone();
+    assert_eq!(
+        s.command(Command::SelectRow { row, replace: true }),
+        Err("row_not_standard")
+    );
+    assert_eq!(s.engine.contact, before);
+}
+
+// Proves: CL-099-02; TC-099-002 (f). An EU VHF row to me starts with Tx3 and sets the received
+// exchange (D7), one to another station replies with Tx1; an edited Tx2 must pack unaltered.
+#[test]
+fn tc_099_002_eu_vhf_rows_are_selectable_and_edits_must_pack() {
+    let mut s = station();
+    let mut t = eu_vhf(&mut s);
+    t.save("DL1ABC");
+    let mine = heard_in(
+        &mut s,
+        &mut t,
+        period(2),
+        "<HB9BLA> <DL1ABC> 590012 JO62QM",
+        -3.0,
+        "ft8",
+    );
+    s.command(Command::SelectRow {
+        row: mine,
+        replace: false,
+    })
+    .unwrap();
+    let c = s.engine.contact.clone().unwrap();
+    assert_eq!(
+        (c.dx_call.as_deref(), c.dx_grid.as_deref()),
+        (Some("DL1ABC"), Some("JO62QM"))
+    );
+    assert_eq!(c.exchange_rcvd.as_deref(), Some("590012 JO62QM"));
+    assert_eq!((c.state, c.next), (State::RogerReport, Slot::Tx3));
+    // Report -03: n = 33 / 6 = 5.
+    assert_eq!(s.next_text(), "<DL1ABC> <HB9BLA> R 550001 JN37VL");
+    let other = heard_in(
+        &mut s,
+        &mut t,
+        period(4),
+        "<W9XYZ> <DL1ABC> R 570004 JO62QM",
+        -3.0,
+        "ft8",
+    );
+    s.command(Command::SelectRow {
+        row: other,
+        replace: false,
+    })
+    .unwrap();
+    let c = s.engine.contact.clone().unwrap();
+    assert_eq!(c.dx_call.as_deref(), Some("DL1ABC"));
+    assert_eq!((c.state, c.next), (State::Replying, Slot::Tx1));
+    assert_eq!(c.exchange_rcvd, None);
+    s.command(Command::EditMessage(
+        Slot::Tx2,
+        "<K1ABC> <HB9BLA> 590001 JN37VL".into(),
+    ))
+    .unwrap();
+    assert_eq!(set(&s)[1], "<K1ABC> <HB9BLA> 590001 JN37VL");
+    assert_eq!(
+        s.command(Command::EditMessage(
+            Slot::Tx2,
+            "<K1ABC> <HB9BLA> 590000 JN37VL".into()
+        )),
+        Err("invalid_message")
+    );
+}
+
+// Proves: CL-099-02; TC-099-002 (g). UDP value, directive word, and the RS the log admits.
+#[test]
+fn tc_099_002_eu_vhf_udp_directive_and_rs_bounds() {
+    assert_eq!(Activity::EuVhf.special_operation(), 2);
+    assert_eq!(Activity::EuVhf.cq(), Some("TEST"));
+    assert!(crate::strategy::answerable_in(
+        Activity::EuVhf,
+        Some("TEST"),
+        Some("EU"),
+        Some("NA")
+    ));
+    for (rs, valid) in [
+        ("51", false),
+        ("52", true),
+        ("55", true),
+        ("59", true),
+        ("60", false),
+    ] {
+        assert_eq!(crate::logbook::valid_report(rs), valid, "{rs}");
+    }
+    // A logged EU VHF record with an RS outside 52..59 is refused by the record validation.
+    let mut s = station();
+    let mut t = eu_vhf(&mut s);
+    t.save("K1ABC");
+    let row = heard_in(
+        &mut s,
+        &mut t,
+        period(2),
+        "<HB9BLA> <K1ABC> 590003 FN42AX",
+        -3.0,
+        "ft8",
+    );
+    s.command(Command::SelectRow {
+        row,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::OpenLog).unwrap();
+    let c = one_log(&mut s);
+    let record = crate::contact_http::Station::record_of(
+        &c,
+        P0 + 300 * SECOND,
+        Some(7_074_000),
+        1500,
+        "HB9BLA",
+        Some("JN37VL"),
+    )
+    .unwrap();
+    assert_eq!(
+        crate::logbook::validate_record(&record, "HB9BLA", "JN37VL"),
+        Ok(())
+    );
+    for (rs, index, key) in [("51", 4, "record.rst_sent"), ("60", 5, "record.rst_rcvd")] {
+        let mut bad = record.clone();
+        bad.values[index] = Some(rs.into());
+        assert_eq!(
+            crate::logbook::validate_record(&bad, "HB9BLA", "JN37VL"),
+            Err(key),
+            "{rs}"
+        );
+    }
+}
+
+// Proves: CL-099-02; TC-099-002 (h). The 37-character limit: with HB9BLA a DX call of 10
+// characters (16 together) is accepted and its Tx3 has 37 characters; one of 11 (17) is refused
+// by enter_dx, by a selection, and by set_activity while such a contact is active.
+#[test]
+fn tc_099_002_eu_vhf_refuses_a_pair_of_calls_over_16_characters() {
+    let mut s = station();
+    let mut t = eu_vhf(&mut s);
+    s.command(Command::EnterDx {
+        call: "3D2AG/K1AB".into(),
+        grid: None,
+        replace: false,
+    })
+    .unwrap();
+    let tx3 = set(&s)[2].clone();
+    assert_eq!(tx3, "<3D2AG/K1AB> <HB9BLA> R 530001 JN37VL");
+    assert_eq!(tx3.len(), 37);
+    assert_eq!(slot_text(&tx3).as_deref(), Some(tx3.as_str()));
+    let before = s.engine.contact.clone();
+    assert_eq!(
+        s.command(Command::EnterDx {
+            call: "3D2AG/K1ABC".into(),
+            grid: None,
+            replace: true,
+        }),
+        Err("invalid_call")
+    );
+    assert_eq!(s.engine.refusal_field, None);
+    let cq = heard_in(&mut s, &mut t, period(2), "CQ 3D2AG/K1ABC", -3.0, "ft8");
+    assert_eq!(
+        s.command(Command::SelectRow {
+            row: cq,
+            replace: true,
+        }),
+        Err("invalid_call")
+    );
+    assert_eq!(s.engine.contact, before);
+    let mut s = station();
+    s.locator = "JN37VL".into();
+    s.command(Command::EnterDx {
+        call: "3D2AG/K1ABC".into(),
+        grid: None,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(
+        s.command(Command::SetContest {
+            activity: Activity::EuVhf,
+            exchange: None,
+        }),
+        Err("invalid_call")
+    );
+    assert_eq!(
+        (s.engine.refusal_field, s.engine.settings.activity),
+        (Some("dx_call"), Activity::None)
+    );
+}
+
+// Proves: CL-099-02; TC-099-002 (i). An 8-character locator: Tx6 and Tx1 send its first four,
+// Tx2 its first six.
+#[test]
+fn tc_099_002_eu_vhf_sends_the_first_six_locator_characters() {
+    let mut s = station();
+    s.locator = "JN37VL12".into();
+    s.command(Command::SetContest {
+        activity: Activity::EuVhf,
+        exchange: None,
+    })
+    .unwrap();
+    let mut t = wstx_rust::decoder::HashTable::new();
+    let cq = heard_in(&mut s, &mut t, P0, "CQ TEST K1ABC FN42", -6.0, "ft8");
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    let set = set(&s);
+    assert_eq!(
+        [&set[5], &set[0], &set[1]],
+        [
+            "CQ TEST HB9BLA JN37",
+            "K1ABC HB9BLA JN37",
+            "<K1ABC> <HB9BLA> 550001 JN37VL"
+        ]
+    );
 }
 
 // ---------------------------------------------------------------- #24 S4b Hound

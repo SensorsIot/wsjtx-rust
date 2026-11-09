@@ -1916,7 +1916,10 @@ async fn the_contact_step_gives_the_hash_table_the_dx_call() {
 #[tokio::test]
 async fn set_activity_reads_back_and_reaches_udp_status() {
     let f = fixture("http://127.0.0.1:18001", true);
-    let (s, v) = f.send("set_activity", json!({"activity":"eu_vhf"})).await;
+    // "eu_vhf" until #99 (TC-099-002).
+    let (s, v) = f
+        .send("set_activity", json!({"activity":"q65_pileup"}))
+        .await;
     assert_eq!(
         (s, code(&v)),
         (
@@ -1939,6 +1942,72 @@ async fn set_activity_reads_back_and_reaches_udp_status() {
             "{name}"
         );
     }
+}
+
+// Proves: CL-099-02; TC-099-002 (e), (g). set_activity eu_vhf over POST /contact/command: no
+// exchange, the refusals with their fields from the profile, the settings read back with the
+// serial and UDP Status special operation 2.
+#[tokio::test]
+async fn eu_vhf_reads_back_refuses_with_its_fields_and_reaches_udp_status() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    let (s, v) = f
+        .send("set_activity", json!({"activity":"eu_vhf","exchange":"MA"}))
+        .await;
+    assert_eq!(
+        (s, code(&v)),
+        (
+            StatusCode::BAD_REQUEST,
+            ("invalid_request", Some("exchange"))
+        )
+    );
+    let profile = |callsign: &str, locator: &str| {
+        let mut store = f.state.store.lock().unwrap();
+        store.document.callsign = callsign.into();
+        store.document.locator = locator.into();
+    };
+    for (callsign, locator, refused) in [
+        ("HB9BLA", "JN47", ("profile_incomplete", Some("locator"))),
+        ("VP2E/HB9BLAX", "JN47AA", ("invalid_call", Some("callsign"))),
+    ] {
+        profile(callsign, locator);
+        let (_, v) = f.send("set_activity", json!({"activity":"eu_vhf"})).await;
+        assert_eq!(code(&v), refused, "{callsign} {locator}");
+        assert_eq!(f.snapshot().await["settings"]["activity"], "none");
+    }
+    profile("HB9BLA", "JN47AA");
+    let (s, v) = f.send("set_activity", json!({"activity":"eu_vhf"})).await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let settings = &f.snapshot().await["settings"];
+    assert_eq!(
+        (
+            &settings["activity"],
+            &settings["exchange"],
+            &settings["serial"]
+        ),
+        (&json!("eu_vhf"), &Value::Null, &json!(1))
+    );
+    assert_eq!(
+        crate::udp::status_of(&f.state, &f.state.recording).special_operation,
+        2
+    );
+    let (s, v) = f
+        .send(
+            "enter_dx",
+            json!({"dx_call":"K1ABC","dx_grid":null,"replace":false}),
+        )
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let contact = &f.snapshot().await["contact"];
+    // The default report -15: n = 21 / 6 = 3.
+    assert_eq!(contact["messages"][1], "<K1ABC> <HB9BLA> 530001 JN47AA");
+    assert_eq!(
+        (&contact["exchange_sent"], &contact["exchange_rcvd"]),
+        (&Value::Null, &Value::Null)
+    );
+    // The locator cut after the choice: the next regeneration names the field.
+    profile("HB9BLA", "JN47");
+    let (_, v) = f.send("set_report", json!({"report":-10})).await;
+    assert_eq!(code(&v), ("profile_incomplete", Some("locator")));
 }
 
 // Proves: CL-024-03; TC-024-008 (d), (e). set_activity field_day/rtty with the exchange

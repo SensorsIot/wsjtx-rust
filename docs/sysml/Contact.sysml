@@ -109,7 +109,7 @@ package WstxContact {
              always rr73 (MW send_rr73_for_tx4 ~9661 is true for FT4 whatever
              m_send_RR73; set_rr73_tx4 ~9676 forces it), see ToggleTx4Form. */
     }
-    enum def SpecialActivity { enum none; enum na_vhf; enum ww_digi; enum arrl_digi; enum field_day; enum rtty; enum hound; }
+    enum def SpecialActivity { enum none; enum na_vhf; enum eu_vhf; enum ww_digi; enum arrl_digi; enum field_day; enum rtty; enum hound; }
     attribute def GridExchangeContest {
         attribute activity : SpecialActivity;
         doc /* #24 S2a, CL-024-02 (WSJT-X 3.3.0-beta5 Settings > Advanced > Special operating
@@ -139,10 +139,12 @@ package WstxContact {
              DX grid. Contest dupes are the existing worked-before indication of the
              call on this band and mode (WorkedBeforeQuery). The UDP Status special
              operation carries the WSJT-X SpecialOperatingActivity value: none 0, na_vhf 1,
-             ww_digi 5, arrl_digi 8, field_day 3, rtty 4, hound 7 (HoundOperation). Field Day and FT Roundup:
-             ContestExchange (#24 S2b). In every contest activity (not none, not hound) Tx1 is disabled
+             ww_digi 5, arrl_digi 8, field_day 3, rtty 4, hound 7 (HoundOperation), eu_vhf 2. Field Day and FT Roundup:
+             ContestExchange (#24 S2b); EU VHF: EuVhfExchange (#99). In every contest activity
+             (not none, not hound) except eu_vhf Tx1 is disabled
              as in WSJT-X (MW ~8190: "start QSO with Tx2"): a selection or entry that would
-             start with Tx1 starts with Tx2, as with Skip Tx1. */
+             start with Tx1 starts with Tx2, as with Skip Tx1. In eu_vhf Tx1 stays enabled
+             (MW ~8203: "We're in EU_VHF mode: start QSO with Tx1"). */
     }
     attribute def ContestExchange {
         attribute exchange : String[0..1];
@@ -195,6 +197,100 @@ package WstxContact {
              value), CLASS (first word) and ARRL_SECT (second word); rtty gives STATE
              (second word); another activity SRX_STRING. Fields are written in the
              LogRecord order. */
+    }
+    attribute def EuVhfExchange {
+        attribute serialMinimum : Integer = 1;
+        attribute serialMaximum : Integer = 2047;
+        attribute gridLength : Integer = 6;
+        doc /* #99, CL-099-02 (WSJT-X 3.3.0-beta5 genCQMsg ~9619, genStdMsgs ~9774-9779,
+             guiUpdate ~8008-8011 and ~8203-8207, ~3431 and ~10280 (6-character locator),
+             ~10542 and ~10669 (serial, eu_vhf_type5_serial_max), DecodedMessageReaction.cpp
+             ~501-565 and ~772-776, AdifQso.cpp to_adif ~87-124; packjt77 type 5:
+             WstxTransmit::PackMessage). The EU VHF contest message: report, serial and
+             6-character locator, both calls hashed.
+             Choosing. set_activity {activity:"eu_vhf"} without an exchange (an exchange is
+             refused invalid_request field exchange), FT8 and FT4, a boot setting like the
+             other activities (not saved). It is refused profile_incomplete with field
+             locator, the activity unchanged, while the selected profile's locator
+             (WstxProfiles::Settings) has fewer than 6 characters (empty or 4: WSJT-X only
+             warns, "EU VHF Contest messages require a 6-character locator"), and refused
+             invalid_call with field callsign while the profile callsign has more than 11
+             characters (a hashed slot holds no more; the profile admits 12). The serial is
+             ContestExchange serial, the one station contest serial (1 at boot, +1 for each
+             logged contact while a contest activity is set, never reset by set_activity);
+             #98 replaces its source by the log (highest STX of the contest + 1) for rtty and
+             eu_vhf alike.
+             Messages. Tx6 "CQ TEST MYCALL GRID4" (a nonstandard MYCALL keeps "CQ MYCALL");
+             Tx1, Tx4 and Tx5 are StandardMessageSet's, including its nonstandard and
+             compound rules (#24 S1b), and Tx1 stays enabled (GridExchangeContest); Tx2
+             "<DX> <MYCALL> 5nSSSS GRID6" and Tx3 "<DX> <MYCALL> R 5nSSSS GRID6" (e.g.
+             "<K1ABC> <HB9BLA> 550001 JN37VL", "<K1ABC> <HB9BLA> R 550001 JN37VL"), with n =
+             (report+36)/6 truncated toward zero and clamped to 2..9 (the report of
+             ReportRange, as ContestExchange's 5n9), SSSS the serial as four digits and GRID6
+             the first six characters of the profile locator (an 8-character locator sends
+             its first six, JN37VL12 sends JN37VL). Both calls are hashed whatever their
+             form, so each is 3-11 characters, and the message limit of 37 characters
+             (PackMessage tooLong; WSJT-X has no longer message) bounds the pair: Tx3 is
+             len(DX) + len(MYCALL) + 21 characters, so the two calls together have at most 16
+             characters (e.g. HB9BLA with a DX call of at most 10, HB9BLA/P with at most 8).
+             The pair is checked before a contact starts, so no contact starts whose Tx3
+             cannot be packed: while eu_vhf is set, a selection (SelectDecodedRow, also from
+             Call 1st and automation) or entry (EnterDxStation) whose DX call has more than 11
+             characters or more than 16 together with my call is refused invalid_call (no
+             field, as the other DX-call refusals), nothing changes, and Call 1st goes on to
+             the next caller. set_activity eu_vhf with an active contact whose pair is too
+             long is refused invalid_call with field dx_call, the activity unchanged.
+             Every command that regenerates the active contact's messages (set_activity,
+             set_report, set_tx4, a selection or entry of the same partner) is refused, and
+             changes nothing, when its Tx2/Tx3 cannot be generated: out_of_range with field
+             serial when the serial is outside 1..2047 (WSJT-X's spin box maximum; a station
+             that logged 2047 contacts), profile_incomplete with field locator when the
+             profile locator was changed to fewer than 6 characters after the choice, and
+             invalid_call with field callsign when the profile callsign was changed so that it
+             has more than 11 characters or the pair more than 16. A profile change alone
+             regenerates nothing: the messages already generated stay until such a command,
+             and a new selection or entry is refused the same way. Every
+             generated text packs unaltered (PackMessage, family euVhf for Tx2/Tx3). An
+             operator-edited Tx2 or Tx3 is accepted when it packs unaltered in any family,
+             including euVhf. The accepted request teaches the hash table both calls
+             (WstxOfflineDecode::HashResolution). The partner can resolve my hashed call only
+             from a message that carries it in full (my CQ or Tx1): that is why Tx1 stays.
+             Received (ContestReceivedKind in eu_vhf). An EU VHF message (decoded fields type
+             vhf) counts as the partner's message to me when its 'to' h12 equals the 12-bit
+             hash of my profile callsign and its 'from' h22 equals the 22-bit hash of the
+             contact's DX call, decoded in the partner's period in the contact's mode (the
+             AutoSequence counting rules otherwise); without R it is signalReport (Tx3 next,
+             rogerReport), with R rogerReport (Tx4 next, rogers). A standard grid message to my
+             call stays grid (Tx2 next, report), as WSJT-X (DMR ~534 excludes EU VHF from the
+             grid-as-report rule); a standard report or R+report to my call is classified as
+             without an activity; RRR, RR73 and 73 end the contact as usual. In every other
+             activity an EU VHF message is other. A counted EU VHF message sets the contact's
+             exchange_rcvd to its last two words ("590003 IO91NP", WSJT-X right(13)) and its
+             dxGrid to the 6-character locator; exchange_sent is the last two words of Tx2 once
+             a Tx2 or Tx3 is transmitted. report_sent/report_rcvd stay null.
+             Selection. While eu_vhf is set an EU VHF row whose 'from' is a filled-in hash is
+             selectable (SelectDecodedRow): dx call its 'from' text, dx grid its locator;
+             addressed to me (its 'to' is my call) the first slot is tx3 without R and tx4
+             with R, and its last two words become exchange_rcvd, as a selected RTTY Roundup
+             or Field Day row addressed to me does and as WSJT-X stores the received exchange
+             of an EU VHF message to my call (DMR ~772-776); otherwise tx1 (replying) and
+             exchange_rcvd stays null. An unresolved 'from' is refused
+             row_not_standard, as WSJT-X refuses a contest message with <...>. In another
+             activity such a row is refused row_not_standard as before. Call 1st, the
+             strategies and contest verdicts keep reading standard messages only: a caller's
+             Tx1 grid is answered with Tx2.
+             Log (DirectLog, LogRecord). STX is the last four digits of the first word of
+             exchange_sent ("0001"), SRX those of exchange_rcvd (AdifQso mid(2)); RST_SENT and
+             RST_RCVD are the two-digit RS 52..59 of those words, the RS actually exchanged
+             ("55", "59"; operator 2026-11-09 on #99: "Log the exchanged 55/59"); GRIDSQUARE is the
+             partner's 6-character locator; no STX_STRING or SRX_STRING. UDP Status special
+             operation 2. DIFFERENT from WSJT-X: (1) set_activity is refused without a
+             6-character locator (WSJT-X warns and then sends a message type 5 cannot
+             carry); (2) a partner message counts by the two hashes against my call and the
+             DX call, never by whatever call the table fills in, as HoundOperation (2);
+             (3) RST_SENT/RST_RCVD log the RS that was exchanged, not the dB report WSJT-X
+             writes; (4) the contest hint WSJT-X shows for an EU VHF message in another
+             activity is not offered. */
     }
     attribute def HoundOperation {
         attribute foxHz : Integer;
@@ -425,7 +521,8 @@ package WstxContact {
              txParity = opposite of the row's period parity; message set generated, except the texts kept for the same active partner (ContactSnapshot dialogue);
              nextSlot and state per FirstSlotOnSelection. Unresolved hashes (<...>), rows
              without a concrete call, a DX call that would pair two nonstandard calls,
-             old/wrong-profile tuples and other families are refused with a reason.
+             old/wrong-profile tuples and other families are refused with a reason (an
+             EU VHF row is selectable while eu_vhf is set, EuVhfExchange, #99).
              Received partner messages count by the same row reading, so a compound QSO
              sequences as a standard one (AutoSequence). Never sets enableTx (DIFFERENT from
              CFG quick_call "double-click sets Tx enable": #10 safety rule; the browser's
@@ -943,8 +1040,8 @@ package WstxContact {
              UpdateLogbook sets them; DirectLog and SaveContact never write them, a DirectLog
              replacement keeps the stored ones, and the one-record-per-contactId
              comparison ignores them. In the stored log a confirmation field that is invalid
-             or repeated (a log kept verbatim before #10) stays an unknown field. RST_SENT/RST_RCVD are a ReportRange report or a
-             5n9 RST (n 2-9). APP_WSTXRUST_CONTACT_ID = contactId; APP_WSTXRUST_SOURCE (a
+             or repeated (a log kept verbatim before #10) stays an unknown field. RST_SENT/RST_RCVD are a ReportRange report, a
+             5n9 RST (n 2-9) or a 5n RS 52..59 (EuVhfExchange, #99, operator 2026-11-09). APP_WSTXRUST_CONTACT_ID = contactId; APP_WSTXRUST_SOURCE (a
              token of 1..32 letters, digits or '-') marks a record added by UpdateLogbook
              with the program it came from and is absent on the station's own records.
              Name, operator, propagation and satellite fields are not adopted (D10; WSJT-X
@@ -1386,8 +1483,8 @@ package WstxContact {
              this with the PointerEffect result); set_hold_tx {enabled};
              set_parity {parity:"even"|"odd"}; set_auto_seq {enabled};
              set_call_first {enabled} (CallFirst);
-             set_activity {activity:"none"|"na_vhf"|"ww_digi"|"arrl_digi"|"field_day"|"rtty"|"hound",
-             exchange?} (GridExchangeContest, ContestExchange, HoundOperation);
+             set_activity {activity:"none"|"na_vhf"|"eu_vhf"|"ww_digi"|"arrl_digi"|"field_day"|"rtty"|"hound",
+             exchange?} (GridExchangeContest, ContestExchange, EuVhfExchange, HoundOperation);
              set_watchdogs {tx_calls,tune_seconds}; enable_tx {enabled,
              safety_revision|null} (safety_revision: the CL-022 safety revision shown in
              the snapshot transmit view; for enabled true a value different from the

@@ -278,6 +278,11 @@ package WstxContest {
              as a strategy run selects, not in its QuietTime. Leaving: WstxStrategy::LeaveRule with
              the strategy's leave and retry_minutes (#97); no skip (WstxStrategy D6).
              run: while waiting and no reason it decides the slot (FreeTxSlot, no called station;
+             decided in waiting without a fresh publication, at Auto on, when a reason ends, when a
+             manual contact ends or Esc gives a caller up, after a completion or a leaving, it
+             waits for the newest Rx period's complete publication and decides at once when it
+             arrives, at the latest when the period in progress ends, WstxStrategy::FreeTxSlot
+             Waiting for the newest period, #89, StrategyRun Decision timing;
              with Hold Tx on the held Tx, no decision, WstxStrategy D16) and
              sends enable_tx with no partner, which calls CQ with the activity's Tx6; state
              calling_cq. WstxContact::CallFirst does not answer a CQ started by automation. On each
@@ -313,7 +318,7 @@ package WstxContest {
     }
     attribute def ContestDirective {
         doc /* WstxStrategy::DirectedCqRule in a contest activity: the word of the station's
-             current activity (na_vhf and arrl_digi TEST, ww_digi WW, field_day FD, rtty RU) is
+             current activity (na_vhf, eu_vhf and arrl_digi TEST, ww_digi WW, field_day FD, rtty RU) is
              answerable, also with my continent unknown. So it is not greyed, a selection needs no
              directive_confirmed, and a word outside its activity keeps the warning. It depends on
              the activity alone, not on a selected contest strategy (D2). */

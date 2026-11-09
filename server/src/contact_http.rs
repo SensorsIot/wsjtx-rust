@@ -236,6 +236,26 @@ pub(crate) fn row_of(record: &Value, identity: &(String, String, u64), mode: &st
             }))
         })
         .flatten();
+    // EuVhfExchange (#99): an i3=5 record keeps its fields with the received hashes.
+    let vhf = (record["status"] == "decoded" && f["type"] == "vhf")
+        .then(|| {
+            let hash = |c: &Value, bits: u64| {
+                (c["hash_bits"].as_u64() == Some(bits))
+                    .then(|| u32::try_from(c["hash_value"].as_u64()?).ok())
+                    .flatten()
+            };
+            Some(Box::new(contact::Vhf {
+                to: call_of(&f["to"])?,
+                from: call_of(&f["from"])?,
+                to_h12: hash(&f["to"], 12)?,
+                from_h22: hash(&f["from"], 22)?,
+                ack: f["ack"].as_bool()?,
+                report: u32::try_from(f["report"].as_u64()?).ok()?,
+                serial: u32::try_from(f["serial"].as_u64()?).ok()?,
+                grid: f["grid"].as_str()?.to_owned(),
+            }))
+        })
+        .flatten();
     let standard = (record["status"] == "decoded" && f["type"] == "standard")
         .then(|| {
             let exchange = match (f["exchange"]["kind"].as_str()?, &f["exchange"]["value"]) {
@@ -274,6 +294,7 @@ pub(crate) fn row_of(record: &Value, identity: &(String, String, u64), mode: &st
         text: record["text"].as_str().unwrap_or("").to_owned(),
         standard: standard.or(nonstandard).or(contest),
         dxpedition,
+        vhf,
     })
 }
 pub(crate) fn confirmed_dial(r: &recording::Recording) -> Option<u64> {
@@ -1280,17 +1301,15 @@ impl Station {
                 mode,
                 automatic,
             };
-            inner
-                .engine
-                .command(command, core.as_deref_mut(), &ctx)
-                .map_err(|code| {
-                    let field = match code {
-                        "stale_revision" => Some("safety_revision"),
-                        "out_of_range" if action == "set_tx4" => Some("form"),
-                        _ => None,
-                    };
-                    (code, field)
-                })?;
+            if let Err(code) = inner.engine.command(command, core.as_deref_mut(), &ctx) {
+                // A refusal that names its field (EuVhfExchange, #99) keeps it.
+                let field = inner.engine.refusal_field.or(match code {
+                    "stale_revision" => Some("safety_revision"),
+                    "out_of_range" if action == "set_tx4" => Some("form"),
+                    _ => None,
+                });
+                return Err((code, field));
+            }
             // An accepted command always advances the revision; the immediate step
             // folds its own consequences (a new pending request) into the receipt.
             inner.engine.revision += 1;

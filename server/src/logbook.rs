@@ -406,11 +406,14 @@ fn printable(value: &str) -> bool {
 fn confirmation(value: &str) -> bool {
     value.eq_ignore_ascii_case("Y") || value.eq_ignore_ascii_case("V")
 }
-/// Report rendering of WstxContact::ReportRange, "%+2.2d" in -50..+49, or an RTTY
-/// Roundup 5n9 RST (#24 S2b, LogRecord).
+/// Report rendering of WstxContact::ReportRange, "%+2.2d" in -50..+49, an RTTY
+/// Roundup 5n9 RST (#24 S2b, LogRecord) or an EU VHF RS 52..59 (#99, EuVhfExchange).
 pub fn valid_report(value: &str) -> bool {
     let b = value.as_bytes();
     if b.len() == 3 && b[0] == b'5' && (b'2'..=b'9').contains(&b[1]) && b[2] == b'9' {
+        return true;
+    }
+    if b.len() == 2 && b[0] == b'5' && (b'2'..=b'9').contains(&b[1]) {
         return true;
     }
     b.len() == 3

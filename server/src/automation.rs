@@ -805,8 +805,10 @@ impl Owner {
         let since = inner.slot_since_ms;
         // "Rebuild on decodes" (operator 2026-11-09): the build at a period start counts the
         // period just ended before its decodes exist; the publication of a counted period's
-        // decodes builds again.
-        let counted = freeslot::recent_starts(mode, rx, now);
+        // decodes builds again; #89 also the complete publication of the period in progress of
+        // the judged parity, which makes it due.
+        let published = published_start(r);
+        let counted = freeslot::recent_starts(mode, rx, (now, published));
         let decoded = r
             .latest_publication()
             .filter(|p| p.3)
@@ -828,9 +830,9 @@ impl Owner {
             .waterfall
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .periods((&key.0.1, key.0.2), now);
+            .periods((&key.0.1, key.0.2), (now, published));
         let decodes = decodes_of(r, &key.0);
-        let judged = freeslot::Judged::new(&periods, mode, rx, since, now, &decodes);
+        let judged = freeslot::Judged::new(&periods, mode, rx, since, (now, published), &decodes);
         let open = freeslot::open_slots(mode, judged.decoded(), &|f| {
             judged.numbers(f).map(|n| n.rise)
         });
@@ -2392,6 +2394,13 @@ fn utc_now(r: &recording::Recording) -> i64 {
         t.service.with(|h| h.hardware().now_utc_ms())
     })
 }
+/// The period start of the latest complete receive publication (WstxStrategy::FreeTxSlot Due,
+/// #89): a partial publication names none.
+fn published_start(r: &recording::Recording) -> Option<i64> {
+    r.latest_publication()
+        .filter(|p| p.3)
+        .and_then(|p| p.4.as_deref().and_then(crate::contact::parse_utc))
+}
 /// The decodes of the run's live job as (period start, audio frequency): WstxStrategy::FreeTxSlot
 /// "decoded stations" (#66), of which the counted periods' count.
 fn decodes_of(r: &recording::Recording, identity: &(String, String, u64)) -> Vec<(i64, f64)> {
@@ -2448,17 +2457,27 @@ fn take_slot(
         wstx_rust::transmit::Parity::Odd => wstx_rust::transmit::Parity::Even,
     };
     let now = utc_now(r);
+    // #89 Due: my newest Rx period counts once its complete publication is there, also while it
+    // is in progress (its rows so far).
+    let published = published_start(r);
     let periods = r
         .waterfall
         .lock()
         .unwrap_or_else(|p| p.into_inner())
-        .periods((&run.identity.1, run.identity.2), now);
+        .periods((&run.identity.1, run.identity.2), (now, published));
     // #66: every decision judges my Rx periods only (a CQ's the other of its Tx parity), the
     // recent ones, by each slot's largest rise above the passband floor clamped at 0 (at or under
     // the floor a slot is free), clear of the stations
     // decoded in them.
     let decodes = decodes_of(r, &run.identity);
-    let judged = freeslot::Judged::new(&periods, mode, rx_parity, run.slot_since_ms, now, &decodes);
+    let judged = freeslot::Judged::new(
+        &periods,
+        mode,
+        rx_parity,
+        run.slot_since_ms,
+        (now, published),
+        &decodes,
+    );
     let decoded = judged.decoded();
     let power = |f: u32| judged.numbers(f).map(|n| n.rise);
     let hold = facts.hold_tx;

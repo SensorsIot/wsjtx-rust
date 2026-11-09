@@ -6,6 +6,7 @@
 // floor, clear of the stations decoded in them). A flat floor F is its own lowest tenth in every
 // segment, so its fit is F exactly and the floor F + 0.65 dB.
 use super::*;
+use crate::automation_tests::due_at;
 
 /// A value table: `floor` everywhere, the listed candidates at their own value.
 fn table(floor: f64, levels: &[(u32, f64)]) -> impl Fn(u32) -> Option<f64> {
@@ -298,11 +299,12 @@ fn tc_039_010_the_counted_periods_are_my_recent_rx_periods() {
         w.row(job, start, 15_000, &row(30, None), false);
         w.row(job, start + 15_000, 15_000, &row(90, None), true);
     }
-    let all = w.periods(job, EVEN + 6 * 30_000);
+    let all = w.periods(job, due_at(EVEN + 6 * 30_000, None));
     assert_eq!(all.len(), 6, "the transmitted periods are not kept");
     assert_eq!(all[0].levels[0], 25.0, "the mean of the two rows");
+    // No complete publication of a period in progress (#89): only ended periods are due.
     let starts = |now: i64, since: i64| {
-        Judged::new(&all, Mode::Ft8, Parity::Even, since, now, &[])
+        Judged::new(&all, Mode::Ft8, Parity::Even, since, due_at(now, None), &[])
             .counted
             .iter()
             .map(|c| c.period.start_ms)
@@ -312,7 +314,7 @@ fn tc_039_010_the_counted_periods_are_my_recent_rx_periods() {
     // 1 s into the even period 6: the last 4 even periods before it. In the odd period after it,
     // the even period 6 (not received) is one of the 4 and 2 is no longer.
     assert_eq!(
-        recent_starts(Mode::Ft8, Parity::Even, at(6) + 1_000),
+        recent_starts(Mode::Ft8, Parity::Even, due_at(at(6) + 1_000, None)),
         [at(5), at(4), at(3), at(2)]
     );
     assert_eq!(
@@ -328,25 +330,34 @@ fn tc_039_010_the_counted_periods_are_my_recent_rx_periods() {
     );
     // My Rx parity odd: every odd period was transmitted in.
     assert_eq!(
-        Judged::new(&all, Mode::Ft8, Parity::Odd, i64::MIN, at(6) + 1_000, &[]).count(),
+        Judged::new(
+            &all,
+            Mode::Ft8,
+            Parity::Odd,
+            i64::MIN,
+            due_at(at(6) + 1_000, None),
+            &[]
+        )
+        .count(),
         0
     );
     // After a band change at 4 only later periods count.
     assert_eq!(starts(at(6) + 1_000, at(4) - 500), [at(4), at(5)]);
     // FT4: my last 4 even periods of 7.5 s, the last minute.
     assert_eq!(
-        recent_starts(Mode::Ft4, Parity::Even, EVEN + 1_000),
+        recent_starts(Mode::Ft4, Parity::Even, due_at(EVEN + 1_000, None)),
         [EVEN - 15_000, EVEN - 30_000, EVEN - 45_000, EVEN - 60_000]
     );
-    // The open period counts once it has ended, and not before.
+    // The open period counts once it has ended, and not before (without its publication).
     w.row(job, ODD + 6 * 30_000, 15_000, &row(40, None), false);
-    assert_eq!(w.periods(job, ODD + 6 * 30_000 + 14_999).len(), 6);
-    assert_eq!(w.periods(job, ODD + 6 * 30_000 + 15_000).len(), 7);
+    let at_ms = |now: i64| due_at(now, None);
+    assert_eq!(w.periods(job, at_ms(ODD + 6 * 30_000 + 14_999)).len(), 6);
+    assert_eq!(w.periods(job, at_ms(ODD + 6 * 30_000 + 15_000)).len(), 7);
     // Another live job reads nothing of this one and starts empty.
-    assert!(w.periods(("other", 1), EVEN + 9 * 30_000).is_empty());
+    assert!(w.periods(("other", 1), at_ms(EVEN + 9 * 30_000)).is_empty());
     w.row(("job", 2), EVEN + 9 * 30_000, 15_000, &row(20, None), false);
-    assert!(w.periods(job, EVEN + 10 * 30_000).is_empty());
-    assert_eq!(w.periods(("job", 2), EVEN + 10 * 30_000).len(), 1);
+    assert!(w.periods(job, at_ms(EVEN + 10 * 30_000)).is_empty());
+    assert_eq!(w.periods(("job", 2), at_ms(EVEN + 10 * 30_000)).len(), 1);
 }
 
 // Proves: TC-039-010; TC-039-050 (b). A slot covers the bins of [f, f + width) and reads their mean
@@ -358,7 +369,14 @@ fn tc_039_010_the_counted_periods_are_my_recent_rx_periods() {
 #[test]
 fn tc_039_010_a_slot_reads_its_bins_above_the_floor() {
     let periods = [period(1, false, 20, &[(1000, 1100, 60)])];
-    let j = Judged::new(&periods, Mode::Ft8, Parity::Even, i64::MIN, NOW, &[]);
+    let j = Judged::new(
+        &periods,
+        Mode::Ft8,
+        Parity::Even,
+        i64::MIN,
+        due_at(NOW, None),
+        &[],
+    );
     let n = |f: u32| j.numbers(f).unwrap();
     assert!(close(n(900).level, 20.0) && close(n(900).floor, 20.65));
     assert!(close(n(900).rise, -0.65), "{:?}", n(900));
@@ -369,7 +387,15 @@ fn tc_039_010_a_slot_reads_its_bins_above_the_floor() {
     assert!(close(n(1080).rise, level - 20.65));
     let none: [Period; 0] = [];
     assert_eq!(
-        Judged::new(&none, Mode::Ft8, Parity::Even, i64::MIN, NOW, &[]).numbers(1000),
+        Judged::new(
+            &none,
+            Mode::Ft8,
+            Parity::Even,
+            i64::MIN,
+            due_at(NOW, None),
+            &[]
+        )
+        .numbers(1000),
         None
     );
 }
@@ -388,7 +414,14 @@ fn tc_039_050_the_busiest_counted_period_counts() {
         period(2, false, 32, &[(1200, 1250, 35)]),
         period(1, false, 32, &[(1200, 1250, 35)]),
     ];
-    let j = Judged::new(&periods, Mode::Ft8, Parity::Even, i64::MIN, NOW, &[]);
+    let j = Judged::new(
+        &periods,
+        Mode::Ft8,
+        Parity::Even,
+        i64::MIN,
+        due_at(NOW, None),
+        &[],
+    );
     let a = j.numbers(1000).unwrap();
     let b = j.numbers(1200).unwrap();
     assert!(close(a.rise, 5.35) && close(a.level, 36.0), "{a:?}");
@@ -580,7 +613,7 @@ fn tc_066_002_only_my_rx_parity_is_judged() {
         Mode::Ft8,
         Parity::Even,
         i64::MIN,
-        NOW,
+        due_at(NOW, None),
         &[(odd_start, 1560.0)],
     );
     assert!(j.decoded().is_empty(), "a Tx-parity decode counts nowhere");
@@ -596,7 +629,7 @@ fn tc_066_002_only_my_rx_parity_is_judged() {
         period(1, true, 30, &[(1500, 1550, 50)]),
     ];
     for (rx, expected) in [(Parity::Even, 1500), (Parity::Odd, 1450)] {
-        let j = Judged::new(&cq, Mode::Ft8, rx, i64::MIN, NOW, &[]);
+        let j = Judged::new(&cq, Mode::Ft8, rx, i64::MIN, due_at(NOW, None), &[]);
         assert_eq!(j.count(), 1);
         assert_eq!(
             quietest_clear(Mode::Ft8, 1500, &[], j.decoded(), None, &rises(&j)),
@@ -621,7 +654,7 @@ fn tc_066_002_decodes_of_periods_that_do_not_count_leave_nothing_out() {
             Mode::Ft8,
             Parity::Even,
             since,
-            NOW,
+            due_at(NOW, None),
             &[(decode, 1500.0)],
         );
         let chosen = quietest_clear(Mode::Ft8, 1500, &[], j.decoded(), None, &rises(&j));
@@ -698,7 +731,14 @@ fn four(bands: &[(u32, u32, u8)]) -> Vec<Period> {
 #[test]
 fn tc_082_001_a_station_closes_its_slots_and_the_open_ones_join_into_ranges() {
     let periods = four(&[(1000, 1050, 42)]);
-    let j = Judged::new(&periods, Mode::Ft8, Parity::Even, i64::MIN, NOW, &[]);
+    let j = Judged::new(
+        &periods,
+        Mode::Ft8,
+        Parity::Even,
+        i64::MIN,
+        due_at(NOW, None),
+        &[],
+    );
     assert_eq!(j.count(), 4);
     let open = open_of(Mode::Ft8, j.decoded(), &rises(&j));
     assert!(open.contains(&950) && open.contains(&1050), "{open:?}");
@@ -764,7 +804,14 @@ fn tc_082_001_whole_db_no_fallback_and_no_counted_period() {
         "(g) all overlapped"
     );
     let none: [Period; 0] = [];
-    let j = Judged::new(&none, Mode::Ft8, Parity::Even, i64::MIN, NOW, &[]);
+    let j = Judged::new(
+        &none,
+        Mode::Ft8,
+        Parity::Even,
+        i64::MIN,
+        due_at(NOW, None),
+        &[],
+    );
     assert_eq!(j.count(), 0);
     assert_eq!(
         ranges_of(Mode::Ft8, j.decoded(), &rises(&j)),
@@ -793,7 +840,7 @@ fn tc_082_001_other_parity_and_uncounted_decodes_close_nothing_the_busiest_perio
         Mode::Ft8,
         Parity::Even,
         i64::MIN,
-        NOW,
+        due_at(NOW, None),
         &[(odd, 1560.0)],
     );
     let all = vec![(300, 2700)];
@@ -817,7 +864,7 @@ fn tc_082_001_other_parity_and_uncounted_decodes_close_nothing_the_busiest_perio
             Mode::Ft8,
             Parity::Even,
             since,
-            NOW,
+            due_at(NOW, None),
             &[(decode, 1500.0)],
         );
         assert_eq!(
@@ -828,7 +875,14 @@ fn tc_082_001_other_parity_and_uncounted_decodes_close_nothing_the_busiest_perio
     }
     let mut busiest = four(&[]);
     busiest[0] = period(4, false, 30, &[(1500, 1550, 33)]);
-    let j = Judged::new(&busiest, Mode::Ft8, Parity::Even, i64::MIN, NOW, &[]);
+    let j = Judged::new(
+        &busiest,
+        Mode::Ft8,
+        Parity::Even,
+        i64::MIN,
+        due_at(NOW, None),
+        &[],
+    );
     assert!(close(j.numbers(1500).unwrap().rise, 2.35));
     assert_eq!(
         ranges_of(Mode::Ft8, j.decoded(), &rises(&j)),
@@ -858,4 +912,181 @@ fn tc_082_001_the_value_of_a_build() {
         value(NOW, Mode::Ft8, Parity::Even, false, 0, &[]),
         json!({"at_utc_ms":NOW,"mode":"ft8","rx_parity":"even","qso":false,"periods":0,"open":[]})
     );
+}
+
+// #89 WstxStrategy::FreeTxSlot Due (TC-089-001). Oracle: the operator's rule of 2026-11-09 ("Count
+// once decoded"): a period is due once it has ended, or earlier, while in progress, once its
+// complete publication is published, never before it starts; the counted periods are the last 4
+// due ones of my Rx parity. Every number below is a hand computation written above its test.
+
+/// The odd FT8 period P of TC-089-001 (my Rx parity odd), P the newest odd period.
+const P: i64 = ODD + 4 * 30_000;
+const JOB: (&str, u64) = ("job", 1);
+/// The odd periods P - 120 s .. P - 30 s received, one flat row of 30 each (the even periods
+/// between them, the other parity, not received), then `p_rows` of P (P open).
+fn with_p(p_rows: &[Vec<u8>]) -> Waterfall {
+    let mut w = Waterfall::default();
+    for b in (1..=4).rev() {
+        w.row(JOB, P - 30_000 * b, 15_000, &row(30, None), false);
+    }
+    for r in p_rows {
+        w.row(JOB, P, 15_000, r, false);
+    }
+    w
+}
+/// One judgement of my odd Rx parity at `now` with `published` (the period start of the latest
+/// complete publication) and `decodes`: the counted starts, the decoded stations, the open slots.
+fn judge_p(
+    w: &Waterfall,
+    now: i64,
+    published: Option<i64>,
+    decodes: &[(i64, f64)],
+) -> (Vec<i64>, Vec<f64>, Vec<u32>) {
+    let periods = w.periods(JOB, due_at(now, published));
+    let j = Judged::new(
+        &periods,
+        Mode::Ft8,
+        Parity::Odd,
+        i64::MIN,
+        due_at(now, published),
+        decodes,
+    );
+    let starts = j.counted.iter().map(|c| c.period.start_ms).collect();
+    let open = open_of(Mode::Ft8, j.decoded(), &rises(&j));
+    (starts, j.decoded().to_vec(), open)
+}
+
+// Proves: CL-039-09, CL-065-01; TC-089-001 (a), (b), (c), (g). Every period flat 30 (floor 30.65,
+// every slot -0.65, free). (a) At P + 14.1 s (P in progress) with P's complete publication: P is
+// due, so the last 4 due odd periods are P, P - 30, P - 60 and P - 90 s; P - 120 s is the 5th and
+// does not count. A station decoded at 2340 Hz in P closes the candidates f with |f - 2340| below
+// 50: 2300..2380; 2290 and 2390 (50 Hz) stay open. (b) The same instant without it: P is not due,
+// the 4 before it count (P - 120 .. P - 30 s), 2340 closes nothing. (c) A partial publication is no
+// complete one: the station passes no publication (automation published_start; router: TC-089-003
+// (c)), so as (b). (g) A complete publication naming P + 30 s (the next odd period) while P + 15 s
+// is in progress, at P + 20 s: P + 30 s has not started, so it is not due and its decode at 1200
+// closes nothing; P has ended: P .. P - 90 s count. Red on the parent: (a) P not counted and 2340
+// open.
+#[test]
+fn tc_089_001_the_newest_rx_period_counts_once_its_complete_publication_is_there() {
+    let w = with_p(&[row(30, None)]);
+    let now = P + 14_100;
+    let (starts, decoded, open) = judge_p(&w, now, Some(P), &[(P, 2340.0)]);
+    assert_eq!(
+        recent_starts(Mode::Ft8, Parity::Odd, due_at(now, Some(P))),
+        [P, P - 30_000, P - 60_000, P - 90_000],
+        "(a)"
+    );
+    assert_eq!(starts, [P - 90_000, P - 60_000, P - 30_000, P], "(a)");
+    assert_eq!(decoded, [2340.0], "(a)");
+    assert!(
+        (2300..=2380).step_by(10).all(|f| !open.contains(&f)),
+        "(a) 2300..2380 closed: {open:?}"
+    );
+    assert!(open.contains(&2290) && open.contains(&2390), "(a) {open:?}");
+    let (starts, decoded, open) = judge_p(&w, now, None, &[(P, 2340.0)]);
+    assert_eq!(
+        starts,
+        [P - 120_000, P - 90_000, P - 60_000, P - 30_000],
+        "(b), (c)"
+    );
+    assert!(decoded.is_empty(), "(b), (c)");
+    assert!(open.contains(&2340), "(b), (c) {open:?}");
+    let later = P + 20_000;
+    let (starts, decoded, open) = judge_p(&w, later, Some(P + 30_000), &[(P + 30_000, 1200.0)]);
+    assert_eq!(
+        starts,
+        [P - 90_000, P - 60_000, P - 30_000, P],
+        "(g) P + 30 s not due"
+    );
+    assert!(decoded.is_empty(), "(g)");
+    assert!(open.contains(&1200), "(g) {open:?}");
+}
+
+// Proves: CL-039-09; TC-089-001 (d). Undecoded, every odd period flat 30 (floor 30.65), except in P
+// the 18 bins 512..529 of slot 1500 ([1500, 1550) Hz: ceil(1500 / 2.9297) = 512, ceil(1550 /
+// 2.9297) - 1 = 529) at 42 in P's rows 3..64 (62 rows) and 30 in its other rows; those 18 bins lie
+// above the 8th lowest level of their floor segment (bins 508..588), so the flat-floor fit stands.
+// At P + 14.1 s with P's complete publication and its rows 0..69: level (62 x 42 + 8 x 30) / 70 =
+// 40.629, rise 9.979, value 10. Then rows 70..74 and P + 15.2 s (P ended, all 75 rows): (62 x 42 +
+// 13 x 30) / 75 = 39.92, rise 9.27, value 9. A slot off the band (1000, 2000) is 0. Red on the
+// parent: value 0 at P + 14.1 s (P not counted).
+#[test]
+fn tc_089_001_the_newest_period_counts_by_its_rows_so_far() {
+    let p_row = |k: usize| {
+        let mut r = vec![30u8; 1024];
+        if (3..=64).contains(&k) {
+            r[512..=529].fill(42);
+        }
+        r
+    };
+    let rows: Vec<Vec<u8>> = (0..70).map(p_row).collect();
+    let mut w = with_p(&rows);
+    let numbers = |w: &Waterfall, now: i64| {
+        let periods = w.periods(JOB, due_at(now, Some(P)));
+        let j = Judged::new(
+            &periods,
+            Mode::Ft8,
+            Parity::Odd,
+            i64::MIN,
+            due_at(now, Some(P)),
+            &[],
+        );
+        let others = [1000, 2000].map(|f| compared(j.numbers(f).unwrap().rise));
+        (j.numbers(1500).unwrap(), others)
+    };
+    let (n, others) = numbers(&w, P + 14_100);
+    let level = (62.0 * 42.0 + 8.0 * 30.0) / 70.0;
+    assert!((n.level - level).abs() < 1e-4, "{n:?}");
+    assert!((n.floor - 30.65).abs() < 1e-6, "{n:?}");
+    assert!((n.rise - (level - 30.65)).abs() < 1e-4, "{n:?}");
+    assert_eq!(compared(n.rise), 10, "at P + 14.1 s");
+    assert_eq!(others, [0, 0]);
+    for k in 70..75 {
+        w.row(JOB, P, 15_000, &p_row(k), false);
+    }
+    let (n, others) = numbers(&w, P + 15_200);
+    let level = (62.0 * 42.0 + 13.0 * 30.0) / 75.0;
+    assert!((n.level - level).abs() < 1e-4, "{n:?}");
+    assert!((n.rise - 9.27).abs() < 1e-4, "{n:?}");
+    assert_eq!(compared(n.rise), 9, "at P + 15.2 s");
+    assert_eq!(others, [0, 0]);
+}
+
+// Proves: CL-039-09, CL-065-01; TC-089-001 (e), (f). (e) At P + 15.2 s P has ended without its
+// publication: it counts by its levels (P - 90 .. P), and with no decode of it 2340 is open; once
+// its complete publication brings the station at 2340, 2300..2380 close (unchanged, #82). (f) FT4
+// (7.5 s periods, my Rx parity Q's): at Q + 6.9 s with Q's complete publication Q is due, the last
+// 4 due periods of its parity are Q, Q - 15, Q - 30 and Q - 45 s, and Q counts by its row so far.
+#[test]
+fn tc_089_001_an_ended_period_and_ft4() {
+    let w = with_p(&[row(30, None)]);
+    let after = P + 15_200;
+    let (starts, decoded, open) = judge_p(&w, after, None, &[]);
+    assert_eq!(starts, [P - 90_000, P - 60_000, P - 30_000, P], "(e)");
+    assert!(decoded.is_empty() && open.contains(&2340), "(e) {open:?}");
+    let (starts, decoded, open) = judge_p(&w, after, Some(P), &[(P, 2340.0)]);
+    assert_eq!(starts, [P - 90_000, P - 60_000, P - 30_000, P], "(e)");
+    assert_eq!(decoded, [2340.0], "(e)");
+    assert!(
+        (2300..=2380).step_by(10).all(|f| !open.contains(&f)),
+        "(e) {open:?}"
+    );
+    let q = EVEN + 7_500 * 5;
+    let rx = parity(Mode::Ft4, q);
+    let mut w = Waterfall::default();
+    for b in (1..=4).rev() {
+        w.row(JOB, q - 15_000 * b, 7_500, &row(30, None), false);
+    }
+    w.row(JOB, q, 7_500, &row(30, None), false);
+    let at = due_at(q + 6_900, Some(q));
+    assert_eq!(
+        recent_starts(Mode::Ft4, rx, at),
+        [q, q - 15_000, q - 30_000, q - 45_000],
+        "(f)"
+    );
+    let periods = w.periods(JOB, at);
+    let j = Judged::new(&periods, Mode::Ft4, rx, i64::MIN, at, &[]);
+    let starts: Vec<i64> = j.counted.iter().map(|c| c.period.start_ms).collect();
+    assert_eq!(starts, [q - 45_000, q - 30_000, q - 15_000, q], "(f)");
 }

@@ -882,6 +882,24 @@ impl Recording {
         period_start_utc: &str,
         records: Vec<Value>,
     ) -> Vec<u64> {
+        self.fixture_publish_view(period_start_utc, records, true)
+    }
+    /// Test seam: `fixture_publish_period` as a partial publication (complete false, #89).
+    #[cfg(test)]
+    pub(crate) fn fixture_publish_partial(
+        &self,
+        period_start_utc: &str,
+        records: Vec<Value>,
+    ) -> Vec<u64> {
+        self.fixture_publish_view(period_start_utc, records, false)
+    }
+    #[cfg(test)]
+    fn fixture_publish_view(
+        &self,
+        period_start_utc: &str,
+        records: Vec<Value>,
+        complete: bool,
+    ) -> Vec<u64> {
         let mut s = self.state.lock().unwrap();
         let counter = s.decode_counter + 1;
         let l = s.live.as_mut().unwrap();
@@ -903,7 +921,7 @@ impl Recording {
             first_sequence: first,
             next_sequence: next,
             period_start_utc: Some(period_start_utc.into()),
-            complete: true,
+            complete,
             transmitted: false,
         });
         self.publication.send_modify(|n| *n = n.wrapping_add(1));
