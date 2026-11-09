@@ -267,11 +267,16 @@ package WstxStationProtocol {
              once per second; the browser reads GET /profile once per socket for its first
              status and on a newer announced revision, not on a later status of the socket),
              operating selection (WstxOperatingReceive::SelectionStateEvent) and radio;
-             free_tx_slots.state (#65) carries its state: exactly {v:1,type:"free_tx_slots.state",
+             free_tx_slots.state (#65, #82) carries its state: exactly {v:1,type:"free_tx_slots.state",
              data:{profile_id,boot_id,free_tx_slots}} (WstxStrategy::FreeTxSlots, at most 1024
-             bytes), sent at each slot decision of a run to each Detailed or Thin peer and
-             once to a peer that subscribes Detailed or Thin while a run's value exists, never
-             to an Off peer and never without a run; until a read
+             bytes), sent to each Detailed or Thin peer at each build of the value (every period
+             start, and at once when a QSO starts or ends or the live job, mode or band
+             changes), once with free_tx_slots null when the value becomes null, and once to
+             a peer that subscribes Detailed or Thin while a value exists; with or without a
+             run, also while automation is never used; never to an Off peer. Its cost on the
+             thin link stays within ThinLinkBudget's Thin envelope (TC-007-005): at most
+             2 x (1024 + 4 WS + 29 TLS + 3 x 160 accounted TCP/ACK) / 7.5 s, about 410 B/s
+             for two FT4 browsers, half that in FT8; until a read
              is migrated its existing cadence rules apply.
              A new boot (#74, operator 2026-11-08, CL-074-01): the browser learns the station's
              boot_id from GET /profile of a socket and from profile.state. When it learns a
