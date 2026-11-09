@@ -267,9 +267,10 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
     bound(seen[i].states.some(x=>x.revision>=report.churn.last&&x.at<=report.churn.end+3500),`client ${i}: the last churn revision ${report.churn.last} not announced in time`);
     bound(c.states>=2,`client ${i}: contact.state announced the contact (${c.states})`);
     // #82 (CL-065-01): a live receive and no automation run, so the station builds its open slots
-    // at each 15 s period start (5 or 6 in 80 s) and at the contact's QSO start and end (one more
-    // each), each at most 1024 B, with no read after it (the event carries the state).
-    bound(c.free.length>=5&&c.free.length<=6+2,`client ${i}: ${c.free.length} free_tx_slots.state in ${span} s`);
+    // at each 15 s period start (5 or 6 in 80 s), at the contact's QSO start and end (one more
+    // each) and again at most once per published period whose decodes count ("Rebuild on
+    // decodes"), each at most 1024 B, with no read after it (the event carries the state).
+    bound(c.free.length>=5&&c.free.length<=6+2+publishes.length,`client ${i}: ${c.free.length} free_tx_slots.state in ${span} s`);
     bound(c.free.every(b=>b<=1024),`client ${i}: free_tx_slots.state sizes ${c.free}`);
     bound((c.routes['GET /automation']??0)===0,`client ${i}: ${c.routes['GET /automation']} GET /automation after free_tx_slots.state`);
   }

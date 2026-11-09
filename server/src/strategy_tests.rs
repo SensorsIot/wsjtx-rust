@@ -8346,10 +8346,100 @@ async fn tc_082_002_listening_alternates_the_parity_every_period_with_or_without
     }
 }
 
-// Proves: CL-065-01; TC-082-002 (b), (c). (b) My own CQ, Tx even, Enable Tx on in the middle of
-// the odd period e + 15 s (not my Tx period, so nothing is keyed): a build at once (at_utc_ms the
-// click's e + 16 s) with qso true and rx_parity odd; Enable Tx off at e + 20 s: at once a build with
-// qso false. (c) A manual contact: K1ABC's CQ decoded at 900 Hz in the odd period e - 15 s; the
+/// The station clock runs again from where it stood still (the offset carries the frozen time).
+fn unfreeze(f: &Mcp) {
+    let at = f.bench.frozen.swap(0, Ordering::SeqCst);
+    if at != 0 {
+        f.bench
+            .offset
+            .fetch_add(at - f.bench.now_utc_ms(), Ordering::SeqCst);
+    }
+}
+
+// Proves: CL-065-01; TC-082-002 (b). My own CQ, Tx even, no contact: flat rows before e, the odd
+// period e + 15 s with a station 12 dB up over 2000..2050 Hz (closing 1960..2040, as
+// `listening_rows`' band) and the odd e + 45 s with one over 2400..2450 Hz (bins 820..836,
+// closing 2360..2440: 2360 holds 3 of its bins, 2440 4, 2350 and 2450 none). Enable Tx on at
+// e + 16 s (the odd period, not mine): at once a build with qso true and rx_parity odd (e - 15 and
+// e - 45 s count, 2: [[300, 2700]]). Then the period starts e + 30 s (my transmission), e + 45 s,
+// e + 60 s (my transmission) and e + 75 s: every build qso true and rx_parity odd; the open ranges
+// change only at the even starts, when an odd period has ended: at e + 30 s 3 periods,
+// [[300, 2000], [2050, 2700]], the same at e + 45 s; at e + 60 s 4 periods, [[300, 2000],
+// [2050, 2400], [2450, 2700]], the same at e + 75 s. Enable Tx off at e + 76 s: at once qso false
+// (rx_parity odd, the period in progress). Red on the parent: no value without a run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_082_002_my_own_cq_holds_its_rx_parity_over_its_transmissions() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    for back in [60_000, 45_000, 30_000, 15_000] {
+        wf_row(&f, e - back, 30, &[], false);
+    }
+    wf_row(&f, e + 15_000, 30, &[(2000, 2050, 42)], false);
+    wf_row(&f, e + 45_000, 30, &[(2400, 2450, 42)], false);
+    browser_ok(&f, "set_parity", json!({"parity":"even"})).await;
+    f.bench.frozen.store(e + 16_000, Ordering::SeqCst);
+    let safety = f.read("contact").await["transmit"]["safety_revision"].clone();
+    browser_ok(
+        &f,
+        "enable_tx",
+        json!({"enabled":true,"safety_revision":safety}),
+    )
+    .await;
+    step_at(&f, e + 16_000);
+    assert_eq!(contact(&f).await.2, json!("armed"));
+    assert_eq!(
+        build_of(&f).await,
+        json!({"at_utc_ms":e + 16_000,"mode":"ft8","rx_parity":"odd","qso":true,"periods":2,
+            "open":[[300, 2700]]}),
+        "Enable Tx on: at once"
+    );
+    let after_15 = json!([[300, 2000], [2050, 2700]]);
+    let after_45 = json!([[300, 2000], [2050, 2400], [2450, 2700]]);
+    for (start, own, periods, open) in [
+        (e + 30_000, true, 3, &after_15),
+        (e + 45_000, false, 3, &after_15),
+        (e + 60_000, true, 4, &after_45),
+        (e + 75_000, false, 4, &after_45),
+    ] {
+        if own {
+            unfreeze(&f);
+            transmit_own_period(&f, start).await;
+            assert_eq!(contact(&f).await.2, json!("armed"), "{start}");
+        } else {
+            step_at(&f, start);
+        }
+        let v = build_of(&f).await;
+        let at = v["at_utc_ms"].as_i64().unwrap();
+        assert!(
+            (start..start + 15_000).contains(&at),
+            "{start}: built at {at}"
+        );
+        assert_eq!(
+            (&v["qso"], &v["rx_parity"], &v["periods"], &v["open"]),
+            (&json!(true), &json!("odd"), &json!(periods), open),
+            "{start}"
+        );
+    }
+    f.bench.frozen.store(e + 76_000, Ordering::SeqCst);
+    browser_ok(
+        &f,
+        "enable_tx",
+        json!({"enabled":false,"safety_revision":null}),
+    )
+    .await;
+    step_at(&f, e + 76_000);
+    let v = build_of(&f).await;
+    assert_eq!(
+        (&v["at_utc_ms"], &v["qso"], &v["rx_parity"]),
+        (&json!(e + 76_000), &json!(false), &json!("odd")),
+        "Enable Tx off: at once"
+    );
+}
+
+// Proves: CL-065-01; TC-082-002 (c), (f). (c) A manual contact: K1ABC's CQ decoded at 900 Hz in the odd period e - 15 s; the
 // operator double-clicks it at e + 61 s, in the even period e + 60 s, my Tx parity even (replying,
 // Enable Tx off: nothing keyed). Listening just before, rx_parity even; at once qso true and
 // rx_parity odd (the contact's Rx parity: e + 45, e + 15, e - 15 and e - 45 s count, 4), and at
@@ -8357,9 +8447,15 @@ async fn tc_082_002_listening_alternates_the_parity_every_period_with_or_without
 // 50 closes 860..940. The open ranges change only at builds at even starts: a station over
 // 2400..2450 Hz (bins 820..836) in the odd period e + 75 s, closing 2360..2440 (2360 holds 3 of its
 // bins, 2440 4; 2350 and 2450 none), is not in the build at e + 75 s, nor at e + 89 s (no build
-// within a period), and is from e + 90 s on. Red on the parent: no value without a run.
+// within a period), and is from e + 90 s on. (f) A station decoded at 1200 Hz only in the odd
+// period e + 105 s, which is flat in the waterfall (no rise closes a slot): the build at the even
+// start e + 120 s (e + 105, 75, 45 and 15 s count, 4; K1ABC's e - 15 s no longer) has 1200 open,
+// [[300, 2400], [2450, 2700]]; the publication of e + 105 s's decodes builds at once (e + 120.5 s),
+// qso true and rx_parity odd as before, 1160..1240 closed: [[300, 1200], [1250, 2400],
+// [2450, 2700]]. Red on the parent: no value without a run; on the build without "Rebuild on
+// decodes" (f) keeps the period-start value.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_082_002_a_qso_holds_its_rx_parity_and_builds_at_once_at_its_start_and_end() {
+async fn tc_082_002_a_manual_qso_holds_its_rx_parity_and_its_decodes_build_at_once() {
     let f = station(true).await;
     f.state.recording.fixture_band("20m");
     f.state.recording.fixture_live_job("ft8");
@@ -8371,44 +8467,11 @@ async fn tc_082_002_a_qso_holds_its_rx_parity_and_builds_at_once_at_its_start_an
     }
     publish(&f, e - 15_000, &[("CQ K1ABC FN42", 900.0, Some(-5.0))]);
     let caller = json!([[300, 900], [950, 2700]]);
-
-    // (b) my own CQ, Tx even.
-    browser_ok(&f, "set_parity", json!({"parity":"even"})).await;
     step_at(&f, e + 15_000);
     assert_eq!(
         build_of(&f).await,
         listening(e + 15_000, "odd", 2, caller.clone())
     );
-    f.bench.frozen.store(e + 16_000, Ordering::SeqCst);
-    let safety = f.read("contact").await["transmit"]["safety_revision"].clone();
-    browser_ok(
-        &f,
-        "enable_tx",
-        json!({"enabled":true,"safety_revision":safety}),
-    )
-    .await;
-    step_at(&f, e + 16_000);
-    assert_eq!(contact(&f).await.2, json!("armed"));
-    let v = build_of(&f).await;
-    assert_eq!(
-        (&v["at_utc_ms"], &v["qso"], &v["rx_parity"]),
-        (&json!(e + 16_000), &json!(true), &json!("odd")),
-        "Enable Tx on: at once"
-    );
-    f.bench.frozen.store(e + 20_000, Ordering::SeqCst);
-    browser_ok(
-        &f,
-        "enable_tx",
-        json!({"enabled":false,"safety_revision":null}),
-    )
-    .await;
-    step_at(&f, e + 20_000);
-    assert_eq!(
-        build_of(&f).await,
-        listening(e + 20_000, "odd", 2, caller.clone()),
-        "Enable Tx off: at once"
-    );
-    browser_ok(&f, "cancel", json!({})).await;
 
     // (c) a manual contact with K1ABC (decoded in the odd e - 15 s).
     for back in [0, 30_000] {
@@ -8455,6 +8518,37 @@ async fn tc_082_002_a_qso_holds_its_rx_parity_and_builds_at_once_at_its_start_an
         (&json!(e + 90_000), &json!("odd"), &json!(true), &json!(4))
     );
     assert_eq!(v["open"], json!([[300, 900], [950, 2400], [2450, 2700]]));
+
+    // (f) Rebuild on decodes: the odd period e + 105 s flat (a station there below the level that
+    // closes a slot by its rise), its decodes not yet published at the even start e + 120 s.
+    wf_row(&f, e + 90_000, 30, &[], false);
+    wf_row(&f, e + 105_000, 30, &[], false);
+    step_at(&f, e + 120_000);
+    let start = build_of(&f).await;
+    assert_eq!(
+        (
+            &start["at_utc_ms"],
+            &start["rx_parity"],
+            &start["qso"],
+            &start["periods"]
+        ),
+        (&json!(e + 120_000), &json!("odd"), &json!(true), &json!(4))
+    );
+    assert_eq!(
+        start["open"],
+        json!([[300, 2400], [2450, 2700]]),
+        "e + 105, 75, 45 and 15 s count; K1ABC's e - 15 s no longer; 1200 open"
+    );
+    // Its decodes published: at once a build, the slots overlapping 1200 Hz (1160..1240) closed.
+    decoded_in(&f, e + 105_000, &[1200.0]);
+    step_at(&f, e + 120_500);
+    let v = build_of(&f).await;
+    assert_eq!(
+        (&v["at_utc_ms"], &v["rx_parity"], &v["qso"], &v["periods"]),
+        (&json!(e + 120_500), &json!("odd"), &json!(true), &json!(4)),
+        "the publication builds at once"
+    );
+    assert_eq!(v["open"], json!([[300, 1200], [1250, 2400], [2450, 2700]]));
 }
 
 // Proves: CL-065-01; TC-082-002 (e). Listening on flat rows (my even e - 60 and e - 30 s): at e + 1 s

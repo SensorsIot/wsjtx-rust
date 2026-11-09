@@ -564,6 +564,8 @@ struct Inner {
     /// builds again.
     free_tx_slots: Option<(u64, Value)>,
     free_tx_slots_key: Option<FreeKey>,
+    /// The latest complete publication of a counted period's decodes the value was built on.
+    free_tx_slots_decoded: Option<u64>,
 }
 /// What one open-slot build judges (#82 Built): the live job, its mode, a QSO, the judged parity,
 /// the period in progress and the band change the periods count from.
@@ -717,8 +719,9 @@ impl Owner {
     }
     /// #82 WstxStrategy::FreeTxSlots Built (main.rs station timer, after the automation step):
     /// the station's open slots of my Rx parity, with or without a run, a QSO or Auto, built
-    /// again at each period start and at once when a QSO starts or ends or the live job, its
-    /// mode or the station band changes; null without a live receive.
+    /// again at each period start, when the decodes of a counted period are published, and at
+    /// once when a QSO starts or ends or the live job, its mode or the station band changes;
+    /// null without a live receive.
     pub(crate) fn build_free_tx_slots(
         &self,
         contact: &contact_http::Station,
@@ -771,8 +774,25 @@ impl Owner {
             wstx_rust::transmit::parity(mode, start)
         };
         let since = inner.slot_since_ms;
+        // "Rebuild on decodes" (operator 2026-11-09): the build at a period start counts the
+        // period just ended before its decodes exist; the publication of a counted period's
+        // decodes builds again.
+        let counted = freeslot::recent_starts(mode, rx, now);
+        let decoded = r
+            .latest_publication()
+            .filter(|p| p.3)
+            .filter(|p| {
+                p.4.as_deref()
+                    .and_then(crate::contact::parse_utc)
+                    .is_some_and(|s| s >= since && counted.contains(&s))
+            })
+            .map(|p| p.0);
+        let fresh_decodes = decoded.is_some() && decoded != inner.free_tx_slots_decoded;
+        if fresh_decodes {
+            inner.free_tx_slots_decoded = decoded;
+        }
         let key: FreeKey = (identity, mode_name, qso, rx, start, since);
-        if inner.free_tx_slots_key.as_ref() == Some(&key) {
+        if !fresh_decodes && inner.free_tx_slots_key.as_ref() == Some(&key) {
             return;
         }
         let periods = r
