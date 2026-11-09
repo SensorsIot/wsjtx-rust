@@ -6862,10 +6862,11 @@ package WstxRequirements {
              Steps: evaluate with the station band 20m, 15m and unknown; the run on 15m with CQ K1ABC FN42 published; the dial to 20m; on 20m in a contact with K1ABC, the dial to 17m; the same strategy with bands null on 15m.
              Expected: on 20m the candidates ranked; on 15m every verdict rank null with why "band not in the strategy", unknown "band unknown"; the run waits with reason band and arms nothing; after the retune it selects K1ABC from the next publication; the retune to 17m disarms and cancels the contact at the next step (no retry entry) and the run waits band; bands null ranks on 15m. Red on the parent: bands is refused.
              2 — Isolated automated tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-097-02';
         }
+        attribute executable : String = "server/src/strategy97_tests.rs";
     }
     dependency CL_097_02_verified_by_TC_097_004 from 'CL-097-02' to 'TC-097-004';
     verification 'TC-097-005' {
@@ -6875,10 +6876,11 @@ package WstxRequirements {
              Steps: each NewWhat alone with each new_per and each new_means: dxcc; call; grid (no grid in the message, a logged QSO without grid); cq_zone; itu_zone (an entity whose cty.dat entry overrides the ITU zone); continent; prefix (the WpxPrefix table cases); two whats (either counts); worked_since today and from_to with an undated record; region dx and selected; min_snr_db; treat_73_as_cq on and off; the station band unknown with new_per band.
              Expected: the hand-worked tables: each what new exactly where the log lacks its key per the chosen per and means; D13 grid rules; the override zone used; an undated record counts only for any time; band unknown: nothing new per band or band_mode; RR73 to another counted as calling only with treat_73_as_cq. Red on the parent: the keys are refused.
              2 — Isolated automated tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-097-02';
         }
+        attribute executable : String = "server/src/strategy97_tests.rs";
     }
     dependency CL_097_02_verified_by_TC_097_005 from 'CL-097-02' to 'TC-097-005';
     verification 'TC-097-006' {
@@ -6888,10 +6890,11 @@ package WstxRequirements {
              Steps: countries include [prefix VK9]; include [country "Lord Howe Island"]; include [prefix DL, bands [40m]] on 20m and on 40m; exclude [country "United States"]; include [prefix W] with exclude [prefix W6]; a PUT with country "Atlantis"; states include [CA]; include [MA]; exclude [CA]; cq_targets include [POTA]; exclude [DX]; an operator double-click of CQ POTA K1ABC with the strategy active; the built-in POTA/SOTA on the same rows with K1ABC also logged on 20m yesterday and W7XYZ logged on 20m today. Run (the actual router with the contact engine and #9 owner on the recording hardware double, virtual UTC, 20m): POTA/SOTA selected and Auto on, CQ POTA K1ABC FN42 published; then a run of a strategy without POTA on its include list with CQ POTA K1ABC; an MCP select_row of the CQ POTA row; a run of POTA/SOTA with CQ JA JA1XYZ PM95; the Band Activity rows and the alert history (browser case with routed verdicts).
              Expected (hand-worked from WstxStrategy::CountryList, UsStateFilter, UsStateOf, CqTargetList): prefix by the start of the call, country by the entity; the DL entry only on 40m; exclude wins over include; "Atlantis" refused 400 at its field path; CA for W6ABC (confirmed before newer unconfirmed), MA for K1RU from the exchange; K9NOR (unknown) and VE3ABC fail include and pass exclude; with include [POTA] only CQ POTA is ranked (answerable for the strategy although DirectedCqRule greys it), the plain CQ and CQ DX fail with why "CQ target"; exclude [DX] fails CQ DX only; the operator's double-click still gets the directive warning; POTA/SOTA ranks K1ABC (worked yesterday, new today) and not W7XYZ (worked today, "not new"), and nothing else of the rows. Run: K1ABC selected (select_row accepted), armed and its Tx1 "K1ABC HB9BLA JN37" keyed in the next own period; the other strategy's run never selects it (grey, no rank); the MCP select_row refused directive_not_answerable; CQ JA never selected (refused, grey); in Band Activity the CQ POTA row marked and not struck through under POTA/SOTA, struck through under the other strategy; one alert for K1ABC under POTA/SOTA. Red on the parent: the run's select_row of CQ POTA is refused directive_not_answerable. Red on the parent: the lists are refused.
              2 — Isolated automated tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-097-02';
         }
+        attribute executable : String = "server/src/strategy97_tests.rs";
     }
     dependency CL_097_02_verified_by_TC_097_006 from 'CL-097-02' to 'TC-097-006';
     verification 'TC-097-007' {
@@ -6901,10 +6904,11 @@ package WstxRequirements {
              Steps: W1AW (worked on 20m) calls my call; N1NEW (new) calls my call; the same with callers_first off and order [snr]; a caller failing region dx, min SNR -10, a country exclude, a state include; a contest strategy with the dupe W1DUP calling; the run calls K1ABC, who answers with -05 and then has an SNR below the minimum; the operator double-clicks W1AW's call.
              Expected (oracle: the operator's decision 2 on #97): W1AW rank null, why "calls my call · not new", never answered by the run; N1NEW first with callers_first on, ranked by SNR among the candidates when off; each failing caller names its line; W1DUP never answered; K1ABC's answer is progress and the QSO completes and is logged; the double-click starts the QSO with W1AW (manual). Red on the parent: W1AW is answered (D5).
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-097-02';
         }
+        attribute executable : String = "server/src/strategy97_tests.rs";
     }
     dependency CL_097_02_verified_by_TC_097_007 from 'CL-097-02' to 'TC-097-007';
     verification 'TC-097-008' {
@@ -6914,10 +6918,11 @@ package WstxRequirements {
              Steps: order [snr_bucket]; [snr_bucket, distance]; [hears_us] with PskrUse on and off; [new_cq_zone], [new_itu_zone], [new_continent], [new_prefix], [new_dxcc_band_mode] each before [snr]; [most_wanted, snr]; a contest strategy evaluated; callers_first off with a caller among the candidates under [snr_bucket].
              Expected: +1 first; 0 and -10 in the middle bucket; -11 last; unknown after them; inside a bucket SNR, frequency, call (alone) or farthest first (with distance); JA1XYZ and VK2ABC first with PskrUse on, the plain SNR order with it off; each new criterion puts the new stations first with SNR order inside; the contest strategy ranks by ContestValueOrder; decode order never changes an order. Red on the parent: the new criteria are refused.
              2 — Isolated automated tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-097-03';
         }
+        attribute executable : String = "server/src/strategy97_tests.rs";
     }
     dependency CL_097_03_verified_by_TC_097_008 from 'CL-097-03' to 'TC-097-008';
     verification 'TC-097-009' {
@@ -6927,10 +6932,11 @@ package WstxRequirements {
              Steps: (a) leave {calls 4, calls_heard 8}: K1ABC silent; the same with a spot of my call 60 s old; the spot ageing past 600 s after the 5th call. (b) leave {until_logged, gone_minutes 10}: K1ABC calling CQ every period for 30 minutes; K1ABC last decoded at t0 then silent, publications at t0 + 9 min 45 s and t0 + 10 min; K1ABC answers -05, then silent. (c) leave {contest, tx_changes 2} with tx_move_every {0, 2, 2}: K1ABC silent with no spot; K1ABC calling CQ with a spot and nothing more valuable for 20 periods; the same with a more valuable callable station listed from the 3rd period, with tx_move_every heard 0 (the contest built-in's) and with heard 1; tx_move_every no_reports 0. (d) An answer after the 3rd call, then silence. (e) retry_minutes 10: K1ABC's CQ after the leaving at 9 min 59 s and 10 min, its call to my call at 5 min. (f) No client for 60 s in each mode. (g) A caller of my call that passes the filters at the 2nd call in each mode.
              Expected (hand-worked from WstxStrategy::LeaveRule): (a) left at the 4th call {K1ABC, repetitions}; with the spot at the 8th; back to 4 once the spot is older than 600 s (left at the 5th); (b) never left while decoded (30 minutes); left {K1ABC, gone} at t0 + 10 min, not at t0 + 9 min 45 s; after the answer left 10 minutes after his last decode; (c) Tx moved after the 2nd and the 4th call and left {K1ABC, tx_changes} at the 6th (three slots); staying all 20 periods; counting from the 3rd: with heard 0 Tx never moves and K1ABC is left {tx_changes} at the 5th call (change points at the 3rd and 4th, leaving at the 5th), with heard 1 Tx moves at the 3rd and 4th and he is left at the 5th; with no_reports 0 Tx never moves and he is left at the 3rd call; (d) the counts back to 0; (e) not selected at 9 min 59 s nor answered at 5 min, selected at 10 min; (f) calls: left at 4 also with the spot; until_logged and contest: no stay, ended by the Tx watchdog's stop at 6; (g) left {K1ABC, caller} and the caller selected from the same publication. Red on the parent: the modes are refused.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-097-04';
         }
+        attribute executable : String = "server/src/strategy97_tests.rs; server/src/strategy_tests.rs";
     }
     dependency CL_097_04_verified_by_TC_097_009 from 'CL-097-04' to 'TC-097-009';
     verification 'TC-097-010' {
@@ -6940,10 +6946,11 @@ package WstxRequirements {
              Steps: case heard (a spot of my call 60 s old); case not_heard (K1ABC reports another sender 120 s ago, and 600 s ago, no spot of my call); K1ABC's only report 601 s old (no_reports); case no_reports (no spot; PskrUse off; the feed off; a call with a slash); each with tx_move_every {0, 0, 0}, {1, 1, 1}, {2, 2, 2} and {0, 1, 2} over 6 calls; a move whose quietest slot is the current one; a move whose quiet candidates all lie within 50 Hz of his reported frequencies of my Tx parity; his reported frequency in the other parity; free slots at 400, 480 and 520 Hz only; free slots at 1700 and 2420 Hz of equal value; 2420 strictly quieter than 1700; FT8 free slots only at 2350 (signal to 2400 Hz) and 2360 (to 2410 Hz) of equal value, the current Tx 2400; a held Tx at 400 (Hold Tx on) at the selection and at a move; the case changing from no_reports to heard after the 1st call; K1ABC answering after the 2nd call; a busy-paused call between two calls.
              Expected (hand-worked from WstxStrategy::TxMoveRule and FreeTxSlot): slot_check.case not_heard for the reports 120 s and 600 s old, no_reports for the one 601 s old; k 0 never moves; k 1 moves at every call and k 2 at every second, each move to another slot than the current (never overlapping it), never within 50 Hz of his frequency of my Tx parity; all candidates near his frequencies: Tx stays, slot_check moved false, tried again at the next call; the other parity's frequency does not exclude; 520 chosen, never 400 or 480; 1700 over 2420 on the tie, 2420 when strictly quieter; 2350 (not the upper edge) over the nearer 2360 (upper edge); the held 400 kept at the selection and moved into 500..2650 at a move; after the case change to heard no move; no move after the answer; the paused call not counted toward k; Hold Tx on moves Tx alone with Rx on K1ABC, off both; slot_check carries case, hears_us, moved and hz; the open-slot marks (FreeTxSlots) still list an open range below 500 Hz. Red on the parent: moves at every call regardless of the case, 400 chosen, 2420 on the tie.
              2 — Isolated automated tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-097-05';
         }
+        attribute executable : String = "server/src/strategy97_tests.rs; server/src/freeslot_tests.rs";
     }
     dependency CL_097_05_verified_by_TC_097_010 from 'CL-097-05' to 'TC-097-010';
     verification 'TC-097-011' {
@@ -6953,7 +6960,7 @@ package WstxRequirements {
              Steps: (a) KE1J sends W9XYZ KE1J -07 at 1200 Hz for two of his periods, then W9XYZ KE1J RR73, then CQ; (b) KE1J sends W9XYZ KE1J R-09 at 1510 Hz; (c) after (a)'s report, three periods without a decode of KE1J, then W9XYZ KE1J RR73; (d) KE1J busy for 5 periods; (e) KE1J sends HB9BLA KE1J -10 after being busy; (f) (a) and (b) with busy_pause off; (g) KE1J busy at 1510 Hz while the run is unattended; (h) KE1J sends W9XYZ KE1J FN42 and later W9XYZ KE1J 73; (i) KE1J goes on from W9XYZ to K2ABC with a report, then sends free text.
              Expected (hand-worked from WstxContact::BusyPartner and WstxStrategy::BusyPause): (a) our call keyed in every period, leave.busy true, paused 1 and 2, remaining stays 4; the RR73 ends it and the next call counts (remaining 3); (b) Tx moves before our next period to 1410 (the nearest candidate at least 100 Hz from 1510, FT8), Rx stays 1800, Enable Tx stays on, the call goes on; (c) the three calls without his decode stay paused (busy holds), the call after the RR73 counts; (d) 3 paused calls, the 4th and 5th count (N = 3); (e) progress resets every count; (f) the calls count and KE1J is left at the 4th; (b) disarms as partnerWorksOther does; (g) the calls count (no pause unattended) and Tx still moves to 1410, Enable Tx on, until the stop at N; (h) the grid to another starts busy, the 73 ends it; (i) busy holds across K2ABC and ends with the free text; no TxMoveRule move while busy. Red on the parent: the busy calls count and (b) disarms.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::partial;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-097-06';
         }
@@ -6981,10 +6988,11 @@ package WstxRequirements {
              Steps: (a) the #91 run of 2026-11-09: a run calling M7HNI with M7HNI HB9BLA +15, M7HNI repeating his message so that the leave count resets; (b) a run's own contact with leave {calls 4, calls_heard 8}, attended, then unattended; (c) a contest stay; (d) until_logged; (e) a manual contact; (f) a busy partner in the run and in the manual contact; (g) GET /transmit and the receive page's transmit line during (b) attended, (b) unattended and (e).
              Expected (oracle: WstxStrategy::LeaveCountLabel and WstxContact::ContactSnapshot): (a) no WD text in the run's own contact, tx_remaining_calls null, the label "Leave in <n> calls" going back up on his message; (b) "Leave in 4 calls" .. "Leave in 1 calls"; unattended WD:n with the Tx watchdog's count; (c) "Stay · most valuable", never "WD:∞"; (d) "Until logged", then "Until logged · leave if gone <n> min"; (e) WD:6 down to WD:1; (f) the busy suffixes; (g) watchdog.tx_remaining_calls null while armed in (b) attended and the transmit line without a WD part, an integer (the Tx watchdog's) unattended and in (e) with "WD <n> calls". Red on the parent: WD:2 then WD:6 in (a); GET /transmit reports the leave countdown.
              2 — Isolated automated tests and browser test; Windows development PC; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-097-04';
         }
+        attribute executable : String = "server/src/strategy97_tests.rs; server/src/strategy_tests.rs; server/src/contact_tests.rs; tests/ui-operating.test.cjs";
     }
     dependency CL_097_04_verified_by_TC_097_013 from 'CL-097-04' to 'TC-097-013';
     verification 'TC-097-014' {
@@ -7008,10 +7016,11 @@ package WstxRequirements {
              Steps: open the prompt, choose WW Digi, Start with the built-in; two publications with nothing callable; CQ JA1XYZ PM95 (new multiplier) and CQ K1ABC FN42; a JA caller of my call; W1DUP calling; then "WW Digi fast" for six publications with nothing callable and the same stations; PUT a contest selection with operation "run"; active a strategy of class strategy with the contest.
              Expected (oracle: WstxContest D11 and WstxStrategy::BuiltinStrategies): the prompt offers "WW Digi" first and "WW Digi fast", no S&P/Run, no repetitions or quiet time; Start sends one PUT {active "WW Digi", contest {ww_digi, start, end}}; the built-in calls CQ after the two empty publications, selects JA1XYZ (first by ContestValueOrder) when it appears and ends the CQ, answers the JA caller, never W1DUP; under "WW Digi fast" JA1XYZ and the JA caller have no rank, K1ABC is selected, no CQ is called, and K1ABC, silent and without spots (no_reports, every 2nd call), is moved after the 2nd call and left {K1ABC, tx_changes} at the 4th; the PUTs refused 400 field contest.operation and contest. Status "Contest WW Digi · <period> UTC · WW Digi · Auto on". Red on the parent: the prompt's S&P/Run.
              2 — Isolated automated functional and browser tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-097-07';
         }
+        attribute executable : String = "server/src/strategy97_tests.rs; tests/ui-operating.test.cjs";
     }
     dependency CL_097_07_verified_by_TC_097_015 from 'CL-097-07' to 'TC-097-015';
     verification 'TC-097-016' {
