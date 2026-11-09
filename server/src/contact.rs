@@ -710,6 +710,13 @@ pub struct Heard {
     pub count: u32,
 }
 impl Contact {
+    /// #81 WstxStrategy::StartedQso: a partner in progress, and the dialogue holds a message of the
+    /// partner to my call and an own transmission that has started (keyed, also still on the air).
+    pub fn started(&self) -> bool {
+        self.state.active()
+            && self.dialogue.iter().any(|e| !e.tx)
+            && self.dialogue.iter().any(|e| e.tx)
+    }
     fn exchanged(&mut self, tx: bool, text: &str, snr: Option<i32>, period_ms: i64) {
         if let Some(last) = self.dialogue.iter_mut().rev().find(|e| e.tx == tx)
             && last.text == text

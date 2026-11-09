@@ -4301,7 +4301,7 @@ package WstxRequirements {
     dependency CL_039_04_to_FR_019 from 'CL-039-04' to 'FR-019';
     requirement 'CL-039-05' {
         doc /* Selecting a strategy marks its candidates; it transmits only while Auto is on (CL-039-22), through the existing station automation and contact engine (no second engine), with no confirmation and no client decision: the browser sends only the selection and the toggle, and HALT is always on screen. An award strategy calls CQ only with CQ when no target (CL-039-22) and goes on after each QSO without a contact limit, waiting for the next opportunity, for at most 8 hours from its start, also with a browser open (operator decision 2026-11-06: a new start gives a new 8 hours); it answers callers of my call (first with Callers of my call first), then the best candidate; it leaves a station by the leave rule (CL-039-23) and may call it again after its quiet time; it never selects a station the operator cancelled or aborted again in that run, nor one completed in that run on this band and mode. It follows its grant, not the transport of the starting request: a page reload or a second tab does not stop it, a revoked grant does. Unattended (operator decision, #39 comment 6685226511) and at the run limit ("Finish the QSO first", operator 2026-11-07): with no authenticated client (a status WebSocket session, or an authenticated MCP request) for 60 s, or past 8 hours, it selects no new station and answers no caller, its own CQ ends at once, a QSO the partner is answering is completed, otherwise the contact ends at x repetitions, and it stops with the reason no_client or run_limit; only an Auto on restarts it, never an AutomationCommand start. A band or mode change by the operator and HALT end the contact at once; Auto off, None, another selection, a contest deselected and the end of a contest period end at once a contact that is no started QSO and let a started QSO finish (#81, CL-081-01). It waits instead of stopping across a receive restart; a refused start or a stop turns Auto off with the reason shown and leaves the strategy selected. HALT from any source stops the run and turns Auto off, pushed to the browser; the selection stays. Esc does not. A double-click is always possible and is a manual intervention: the run waits for that QSO to end and resumes. An MCP principal cannot select a strategy nor switch Auto. Details: WstxStrategy::StrategyRun, AutoToggle, StrategySelector, ManualIntervention, SaneCall; WstxMcp::OperatingAutomation. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/automation.rs; server/src/strategy.rs; client/contact.js";
     }
     dependency CL_039_05_to_FR_020 from 'CL-039-05' to 'FR-020';
@@ -4339,7 +4339,7 @@ package WstxRequirements {
     dependency CL_039_21_to_FR_008 from 'CL-039-21' to 'FR-008';
     requirement 'CL-039-22' {
         doc /* Mode (operator grill 2026-11-07, Q5, Q11, Q12, Q17, Q29, Q35, Q40). Auto is a toggle above the QSO pane next to CQ, green on and grey off, not part of a strategy, one toggle for strategies and contests; the station owns it in memory: off after a station restart, after HALT from any source and after every run end, and only the browser switches it (POST /strategy/auto; an MCP principal is refused). With Auto off a selected strategy or contest only marks its candidates; switching it on needs a selection and starts the run, and a contest whose rules forbid automatic operation asks the existing warning and needs its confirmation; switching it off ends the run at once, and a QSO the run has started is finished as an ordinary contact (#81, CL-081-01: Auto only decides whether new QSOs start); selecting None turns it off, another selection with Auto on starts that one. CQ when no target is a strategy option, off by default: with it on the run calls CQ after 2 publications with no candidate, answers callers (always, D5) and calls a candidate that appears; the Tx watchdog stops its CQ. With Hold Tx on (#39 holdtx round 1 Q3) the CQ goes out on the held Tx without a slot decision; with Hold Tx off it takes the slot quiet in my Rx parity (CL-039-09, #66). Details: WstxStrategy::AutoToggle, CqWhenNoTarget, StrategyRun, PskrUse; WstxOperatingLayout::QsoPane. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js";
     }
     dependency CL_039_22_to_FR_007 from 'CL-039-22' to 'FR-007';
@@ -6368,10 +6368,11 @@ package WstxRequirements {
              Steps: publish CQ K1ABC FN42; let the run select and call K1ABC (Tx1 keyed); publish K1ABC's answer HB9BLA K1ABC -05 in his period; at the next station step POST /strategy/auto {auto false}; then publish HB9BLA K1ABC RR73 after our next transmission; afterwards publish CQ DL1XYZ JO62 and W1AW calling my call for three periods.
              Expected (oracle: the operator's rule of 2026-11-08 on #81 and the standard sequence of WstxContact::QsoAndLogging): Auto off at once (GET /strategy auto false, one strategy.state) and the run stopped with reason stopped; Enable Tx stays on: the R-report K1ABC HB9BLA R-.. is keyed in the next own period, then 73 after his RR73; the contact completed with Enable Tx off; exactly one log entry K1ABC FN42 20m FT8, written by the completed contact itself; after the completion nothing is armed, selected or keyed: DL1XYZ and W1AW never get a transmission. Red on the parent: Enable Tx off and the contact cancelled at the Auto off, no R-report keyed, nothing logged.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-081-01';
         }
+        attribute executable : String = "server/src/autofinish_tests.rs";
     }
     dependency CL_081_01_verified_by_TC_081_001 from 'CL-081-01' to 'TC-081-001';
     verification 'TC-081-002' {
@@ -6381,10 +6382,11 @@ package WstxRequirements {
              Steps: (a) W1AW FN31 calls my call during the CQ; the run answers; POST /strategy/auto {auto false} 2 s into the period in which our reply to W1AW is keyed; W1AW then sends R-.. and RR73 in turn. (b) The same, with Auto false after W1AW is selected and our reply armed, before its period starts; W1AW calls my call again for three periods. (c) "New calls" calling CQ K1ABC FN42, K1ABC silent; Auto false 2 s into the period of our second Tx1; then K1ABC answers HB9BLA K1ABC -05. (d) Auto false 2 s into a period in which the run's CQ is keyed, no caller.
              Expected (oracle: the definition of a started QSO in CL-081-01): (a) started: the reply's period ends normally (no abort, no halt), the exchange goes on to completed and one log entry of W1AW; (b) not started: Enable Tx off and the contact cancelled at once, no transmission to W1AW, his further calls not answered, nothing logged; (c) not started: the Tx1 on the air finishes its period (no abort, PTT released at its normal end), then nothing is keyed, the contact cancelled, K1ABC's answer not replied to, nothing logged; (d) the CQ on the air finishes its period, nothing keyed after it, no CQ contact left behind. Red on the parent: (a) Enable Tx off and cancelled at the Auto off; (b), (c) and (d) are regression guards, green on the parent.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-081-01';
         }
+        attribute executable : String = "server/src/autofinish_tests.rs";
     }
     dependency CL_081_01_verified_by_TC_081_002 from 'CL-081-01' to 'TC-081-002';
     verification 'TC-081-003' {
@@ -6394,10 +6396,11 @@ package WstxRequirements {
              Steps: (a) PUT /strategy with active None; (b) PUT /strategy with "Farthest new on band" while Auto is on, and CQ JA1XYZ PM95 published during the QSO and after its completion; (c) PUT /strategy without the contest; (d) the station clock past the contest period's end; (e) POST /strategy/auto {auto true} with "New calls" selected; (f) AutomationCommand stop of the run; (g) the run deadline passed; (h) POST /strategy/auto {auto false} sent twice, 1 s apart.
              Expected (oracle: the list of run ends in CL-081-01): every case completes K1ABC with exactly one log entry and keys nothing for another station until it has completed; the run's state and reason at the end: (a) stopped, Auto off; (b) the old run stopped, Auto on, the new run manual until the completion, then waiting, and JA1XYZ selected only from a publication after the completion; (c) stopped, Auto off; (d) waiting outside_period after manual, disarmed after the completion; (e) the pounce stopped, the strategy run manual until the completion; (f) stopped; (g) time_limit; (h) stopped once, the second request changes no revision and no contact. Red on the parent: each case disarms and cancels K1ABC at the end, nothing logged.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-081-01';
         }
+        attribute executable : String = "server/src/autofinish_tests.rs";
     }
     dependency CL_081_01_verified_by_TC_081_003 from 'CL-081-01' to 'TC-081-003';
     verification 'TC-081-004' {
@@ -6407,10 +6410,11 @@ package WstxRequirements {
              Steps: (a) Auto false after our 1st R-report; K1ABC sends RR73 after our 2nd R-report. (b) Auto false after our 1st R-report; K1ABC repeats HB9BLA K1ABC -05 every period. (c) Auto stays on while K1ABC repeats -05 until our R-report has been keyed 3 times (past the limit under the run's exemption, StrategyWatchdog); then Auto false.
              Expected (oracle: WstxContact::TxWatchdog, limit 2, and CL-081-01): (a) the 2nd R-report keyed, then 73, completed, one log entry (the limit not passed); (b) the R-report keyed a 2nd time, never a 3rd: 1.2 s into that period Enable Tx goes off with cause txWatchdog, no halt, nothing logged; (c) the R-report not keyed again after the Auto off, Enable Tx off with cause txWatchdog at 1.2 s into the next due period; in every case after the Auto off no leaving (left null, no quiet entry), no slot check (tx_hz stays 1500, slot_check unchanged), the hearing subscription of K1ABC dropped, and the contact snapshot's tx_remaining_calls that of the Tx watchdog. Red on the parent: (a) disarmed at the Auto off, never completed.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-081-01';
         }
+        attribute executable : String = "server/src/autofinish_tests.rs";
     }
     dependency CL_081_01_verified_by_TC_081_004 from 'CL-081-01' to 'TC-081-004';
     verification 'TC-081-005' {
@@ -6420,10 +6424,11 @@ package WstxRequirements {
              Steps: (a) HALT by route; (b) Abort QSO (ContactCommand abort); (c) a double-click of W1AW's call to my call (select_row replace true, then enable_tx); (d) the radio's dial to 7.074 MHz (band change); (e) the operating mode to FT4; (f) the browser grant revoked; (g) a safety edit; (h) with Auto on and the run still on, K1ABC silent after his report for 4 repetitions (no spot).
              Expected (oracle: the immediate stops of CL-081-01): (a) halted, the transmission stopped, nothing keyed after, nothing logged; (b) the transmission stopped now, the contact cancelled, nothing logged, no halt; (c) W1AW's contact replaces K1ABC's and is called, K1ABC never logged; (d), (e), (f) Enable Tx off and the contact cancelled at the next station step, nothing keyed after and nothing logged; (g) Enable Tx off with cause authorityChanged, nothing logged; (h) left {K1ABC, repetitions} at the 4th, disarmed and cancelled, waiting. Red on the parent: the precondition fails, the QSO is already ended at the Auto off ((h) is a regression guard, green on the parent).
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-081-01';
         }
+        attribute executable : String = "server/src/autofinish_tests.rs";
     }
     dependency CL_081_01_verified_by_TC_081_005 from 'CL-081-01' to 'TC-081-005';
     verification 'TC-081-006' {
@@ -6433,10 +6438,11 @@ package WstxRequirements {
              Steps: read the Auto button's title with Auto on; push Auto off with the run stopped and the contact still in progress; read the button, the strategy line and the QSO pane.
              Expected (oracle: the texts of WstxStrategy::AutoToggle and StrategySelector): with Auto on the title "Auto on: the selection transmits. Click to switch Auto off; a QSO already started is finished"; after the push the button grey with the title "Auto off: the selection only marks. Click to let it transmit", the line "Strategy New calls · Auto off" and the QSO pane still showing the contact with K1ABC. Red on the parent: the on title lacks the sentence on the started QSO.
              2 — Isolated automated browser test; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-081-01';
         }
+        attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_081_01_verified_by_TC_081_006 from 'CL-081-01' to 'TC-081-006';
     verification 'TC-081-007' {

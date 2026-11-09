@@ -1224,7 +1224,8 @@ function showAuto(){
   autoButton.setAttribute('aria-pressed',String(on));autoButton.dataset.on=String(on);
   const reason=!view?'Strategies are loading':on?'':!ready?'Receive only':!selected()?'Select a strategy or a contest first':'';
   autoButton.disabled=autoPosting||!!reason;
-  autoButton.title=reason||(on?'Auto on: the selection transmits. Click to switch Auto off':'Auto off: the selection only marks. Click to let it transmit');
+  // #81 WstxStrategy::StartedQso: Auto off ends the run, a QSO already started is finished.
+  autoButton.title=reason||(on?'Auto on: the selection transmits. Click to switch Auto off; a QSO already started is finished':'Auto off: the selection only marks. Click to let it transmit');
 }
 addEventListener('wstx-contact-render',showAuto);
 autoButton?.addEventListener('click',async()=>{

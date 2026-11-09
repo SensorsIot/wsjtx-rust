@@ -217,7 +217,7 @@ pub(crate) fn publish(f: &Mcp, period: i64, list: &[(&str, f64, Option<f64>)]) {
         .fixture_publish_period(&period_text(period), records);
     f.tick();
 }
-async fn automation(f: &Mcp, action: &str, extra: Value) -> Value {
+pub(crate) async fn automation(f: &Mcp, action: &str, extra: Value) -> Value {
     // #39: an MCP run arms only within the Tx watchdog time of the operator's last
     // browser action; these MCP cases start with the operator present.
     if action == "start" {
@@ -231,7 +231,7 @@ async fn automation(f: &Mcp, action: &str, extra: Value) -> Value {
         .await
 }
 /// Configure, then start with the revisions and safety revision read through MCP.
-async fn run(f: &Mcp, config: Value, mode: &str) -> (Value, Value) {
+pub(crate) async fn run(f: &Mcp, config: Value, mode: &str) -> (Value, Value) {
     let a = f.read("automation").await;
     let c = automation(
         f,
