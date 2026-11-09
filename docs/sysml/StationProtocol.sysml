@@ -289,13 +289,13 @@ package WstxStationProtocol {
              spectrum.subscription and error replies included), "ws ping", "ws pong", "ws close",
              each the frame's header and payload as written or read (a client frame's mask
              included); "<METHOD> <route>" for an HTTP exchange with the route's template (an
-             identifier segment as {id}; the WebSocket upgrade is "GET /ws"), so the set of types
+             identifier segment as {id}; the WebSocket upgrade is "GET /ws"; the method is named only when it is GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH, CONNECT or TRACE, any other is "OTHER", and a request matching no route has the route "unrouted", so no client text becomes a type), so the set of types
              is bounded. An HTTP request counts "<METHOD> <path and query> HTTP/1.1" CRLF, each header
              field the router received as "name: value" CRLF, CRLF, and its body bytes as read; a
              response counts "HTTP/1.1 <code> <reason>" CRLF, each header field it carries when it
              leaves the outermost router layer (after content coding) as "name: value" CRLF, CRLF,
              and its body bytes as sent after content coding (no chunk framing). What the HTTP
-             server adds itself (date, a content-length or transfer-encoding it sets, chunk framing,
+             server adds itself (date, a content-length or transfer-encoding it sets, the Allow field of a 405, chunk framing,
              HTTP/2 frames and header compression) is not in types.
              other = bytes - sum of the types' bytes: TLS, handshakes and what the HTTP server adds;
              signed, since HTTP/2 header compression can make it negative.
