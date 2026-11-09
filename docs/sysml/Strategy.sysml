@@ -1122,8 +1122,8 @@ package WstxStrategy {
              [lo_hz, hi_hz) with lo an open f and hi an open f + width, at least one width
              long, ascending and disjoint. So at most rangesMaxFt8 (48, 2400 / 50) in FT8 and
              rangesMaxFt4 (26, floor of 2400 / 90) in FT4.
-             Built: at each period start on the station clock; at once when a QSO starts or
-             ends (the judged parity may change); at once when the live job, its mode or the
+             Built: at each period start on the station clock; when the decodes of a counted
+             period are published (operator 2026-11-09, Rebuild on decodes); at once when a QSO starts or ends (the judged parity may change); at once when the live job, its mode or the
              station band changes. Without a live receive (no live job) the value is null; with
              no counted period open is [].
              Value: null or {at_utc_ms (station time of the build), mode ft8|ft4, rx_parity
