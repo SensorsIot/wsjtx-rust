@@ -325,6 +325,16 @@ impl Station {
         });
         (e.revision, facts, e.settings.auto_seq)
     }
+    /// #97 WstxContact::BusyPartner for the run: (the partner is busy, the paused calls of the
+    /// message due next).
+    pub(crate) fn busy_facts(&self) -> (bool, u32) {
+        let inner = self.lock();
+        let e = &inner.engine;
+        (
+            e.contact.as_ref().is_some_and(|c| c.busy_with.is_some()),
+            e.paused_due(),
+        )
+    }
     /// WstxStationDecode::APrioriContext for the next live decode window (#56 slice 5).
     pub(crate) fn a_priori(&self) -> decoder::APriori {
         self.lock().a_priori.clone()
@@ -443,9 +453,33 @@ impl Station {
         let (call, locator) = profile_facts(state);
         // Automation's lock first, as its own step takes them.
         let repeat_exempt = self.automation.repeat_exempt();
+        let automated = self.automation.busy_policy();
         let mut guard = self.lock();
         let inner = &mut *guard;
         inner.engine.repeat_exempt = repeat_exempt;
+        inner.engine.automated = automated;
+        // #97 BusyPartner split move: his PSK Reporter frequencies of my Tx parity, while the feed
+        // follows this very partner.
+        let dx = inner
+            .engine
+            .contact
+            .as_ref()
+            .and_then(|c| c.dx_call.clone());
+        inner.engine.his_psk = dx
+            .filter(|d| {
+                r.pskr
+                    .get()
+                    .and_then(|f| f.target())
+                    .is_some_and(|t| t == *d)
+            })
+            .and_then(|_| {
+                crate::pskr::target_offsets(
+                    r,
+                    mode_of(r.operating_mode()),
+                    inner.engine.settings.parity,
+                )
+            })
+            .unwrap_or_default();
         let cursor = inner.rows.clone();
         let mut rows = Vec::new();
         let mode = Some(mode_of(r.operating_mode()));
@@ -742,9 +776,11 @@ impl Station {
                 json!(v.tx_remaining_calls)
             }
         });
+        // #97 WstxContact::BusyPartner: busy_with and the paused calls of the message due next.
         let watchdog = json!({"tx_remaining_calls":remaining,
             "tx_expired":view.as_ref().is_some_and(|v|v.tx_expired),
-            "tune_remaining_seconds":view.as_ref().map_or(0,|v|v.tune_remaining_seconds)});
+            "tune_remaining_seconds":view.as_ref().map_or(0,|v|v.tune_remaining_seconds),
+            "busy_with":e.busy_with(),"paused_calls":e.paused_due()});
         let material = json!([transmit, settings, contact, log, watchdog]);
         if inner.snapshot.1 != material {
             inner.snapshot = (inner.snapshot.0 + 1, material);

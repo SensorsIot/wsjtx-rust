@@ -350,9 +350,17 @@ function leaveLabel(){
   const n=l.remaining;
   return l.mode==='calls'?`Leave in ${n} calls`:l.mode==='until_logged'?(n==null?'Until logged':`Until logged · leave if gone ${n} min`):l.staying?'Stay · most valuable':`Leave in ${n} Tx changes`;
 }
+// #97 WstxContact::BusyPartner: while the partner is busy " · <call> busy with <other>, not
+// counted (<k>/<N>)" follows WD:n (k the paused calls of the message due) or, in a run's own
+// contact, the leave label (k the run's paused calls).
+function busySuffix(wd,k){
+  const other=wd?.busy_with,call=snap?.contact?.dx_call;
+  return other&&call?` · ${call} busy with ${other}, not counted (${k}/${snap.settings.tx_calls})`:'';
+}
 function watchdogText(wd){
-  if(typeof wd.tx_remaining_calls==='number')return `WD:${wd.tx_remaining_calls}`;
-  return leaveLabel();
+  if(typeof wd.tx_remaining_calls==='number')return `WD:${wd.tx_remaining_calls}${busySuffix(wd,wd.paused_calls??0)}`;
+  const label=leaveLabel(),l=automationView?.run?.leave;
+  return label&&l?.busy?label+busySuffix(wd,l.paused):label;
 }
 /// A new run snapshot redraws the leave label (the QSO pane's watchdog line and the station bar).
 function leaveShow(){

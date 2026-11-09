@@ -404,6 +404,8 @@ struct Target {
     /// whether he is decoded in the latest publication of his parity (LeaveCountLabel).
     last_heard_ms: Option<i64>,
     decoded_last: bool,
+    /// #97 BusyPause: the paused calls of the message due (at most N, the Tx watchdog limit).
+    paused: u64,
 }
 struct Run {
     id: String,
@@ -454,6 +456,8 @@ struct Run {
     hearing: Option<Value>,
     /// WstxStrategy::CqWhenNoTarget: consecutive fresh publications with nothing listed.
     empty_publications: u32,
+    /// #97 WstxStrategy::BusyPause: the active strategy's busy_pause (a strategy run).
+    busy_pause: bool,
 }
 impl Run {
     #[allow(
@@ -505,6 +509,7 @@ impl Run {
             slot_since_ms: i64::MIN,
             hearing: None,
             empty_publications: 0,
+            busy_pause: false,
         }
     }
     /// WstxStrategy::LeaveRule leaving: run.left, the left station's QuietTime on this band and
@@ -679,6 +684,20 @@ impl Owner {
                 run.config.strategy && run.state == RunState::ContactActive && !run.unattended
             })
             .and_then(|run| run.contact_id.clone())
+    }
+    /// #97 WstxContact::BusyPartner: the contact a run owns and how it treats a busy partner. A
+    /// strategy or contest run whose strategy has busy_pause on takes the split move, and its sends
+    /// pause while it is attended; a pounce, an MCP policy run and busy_pause off neither.
+    pub(crate) fn busy_policy(&self) -> Option<crate::contact::Automated> {
+        let inner = self.lock();
+        let run = inner.run.as_ref()?;
+        let contact_id = run.contact_id.clone()?;
+        let split = run.config.strategy && run.pounce.is_none() && run.busy_pause;
+        Some(crate::contact::Automated {
+            contact_id,
+            split,
+            pause: split && !run.unattended,
+        })
     }
     /// The strategy or contest run's own contact (attended or not): its target is the one
     /// the PSK Reporter feed subscribes to (WstxStrategy::HearingFeed).
@@ -1489,6 +1508,7 @@ impl Owner {
         if let Some((id, _, _, _)) = &fresh {
             run.last_decode = *id;
         }
+        run.busy_pause = chosen.as_ref().is_some_and(|(_, s)| s.busy_pause);
         run.quiet.retain(|q| q.until > now);
         if r.clients.present() {
             run.client_seen = now;
@@ -1654,6 +1674,10 @@ impl Owner {
                 }
                 let run = inner.run.as_mut().expect("checked");
                 let leave = chosen.1.leave;
+                // #97 BusyPause: paused calls in an attended run whose strategy has it on.
+                let busy_pause = chosen.1.busy_pause && !run.unattended;
+                let busy_now = contact.busy_facts().0;
+                let tx_limit = u64::from(view.as_ref().map_or(6, |v| v.tx_calls));
                 if let Some((_, first, next, _)) = fresh.filter(|_| partner_period) {
                     let records = fresh_records(r, &run.identity, first, next);
                     let seen = assess(
@@ -1702,6 +1726,7 @@ impl Owner {
                         run.target.staying = false;
                         run.target.move_count = 0;
                         run.target.changes = 0;
+                        run.target.paused = 0;
                         run.unanswered = 0;
                     } else if seen.caller
                         && !run.target.answered
@@ -1717,6 +1742,11 @@ impl Owner {
                         cancel(contact, state);
                         disarm(contact, state);
                         return self.tick(contact, state, publication);
+                    } else if busy_pause && busy_now && run.target.paused < tx_limit {
+                        // #97 BusyPause: this repetition is a paused call (his publication comes
+                        // before the stop point of the send it counts); it counts for nothing of
+                        // the run: no leave count, no TxMoveRule count, no move.
+                        run.target.paused += 1;
                     } else {
                         // #97 TxMoveRule: the PSK case and its k.
                         let (case, k) = if heard {
@@ -1777,8 +1807,9 @@ impl Owner {
                             return;
                         }
                         let before = contact.status_facts().tx_hz;
-                        // A target that has answered has proved the slot: no move.
-                        if try_move && !run.target.answered {
+                        // A target that has answered has proved the slot: no move. #97 BusyPause:
+                        // no move while he is busy (the split move keeps Tx clear of him).
+                        if try_move && !run.target.answered && !(chosen.1.busy_pause && busy_now) {
                             let (revision, _, _) = contact.facts();
                             let called = run.target.hz;
                             // A refused move or no candidate changes nothing: tried again at
@@ -1828,8 +1859,10 @@ impl Owner {
                         (!run.target.staying).then(|| tx_changes.saturating_sub(run.target.changes))
                     }
                 };
-                let view = json!({"mode":leave.mode(),"remaining":remaining,"busy":false,
-                    "paused":0,"staying":run.target.staying});
+                // #97 BusyPause: busy while the target is busy and the calls pause.
+                let busy = busy_pause && busy_now;
+                let view = json!({"mode":leave.mode(),"remaining":remaining,"busy":busy,
+                    "paused":run.target.paused,"staying":run.target.staying});
                 if run.leave_view.as_ref() != Some(&view) {
                     run.leave_view = Some(view);
                     inner.run_revision += 1;
@@ -2096,6 +2129,7 @@ impl Owner {
             changes: 0,
             last_heard_ms: pick.period_ms,
             decoded_last: true,
+            paused: 0,
         };
         inner.run_revision += 1;
     }

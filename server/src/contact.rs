@@ -682,6 +682,10 @@ pub struct Contact {
     /// The QSO dialogue (#37, ContactSnapshot dialogue): counted partner messages and
     /// this contact's started transmissions, oldest first, at most DIALOGUE_MAX.
     pub dialogue: VecDeque<Exchanged>,
+    /// #97 WstxContact::BusyPartner: the other call the partner is working (as decoded,
+    /// "<...>" for an unresolved hash), from his message to it with a grid, report or R-report
+    /// until he ends that QSO.
+    pub busy_with: Option<String>,
 }
 /// At most this many dialogue entries are kept (the oldest is dropped).
 pub const DIALOGUE_MAX: usize = 16;
@@ -699,6 +703,9 @@ pub struct Exchanged {
     /// An operator Enable Tx closed this entry: the next equal transmission opens a new
     /// one, so a station stopped by the Tx watchdog may send the same message again.
     pub closed: bool,
+    /// #97 WstxContact::TxWatchdog busy pause: the sends of this entry that were paused (the
+    /// partner busy at their stop point), at most the Tx watchdog limit.
+    pub paused: u32,
 }
 /// A partner message to my call as the QSO pane shows it (#37).
 #[derive(Clone, Debug, PartialEq)]
@@ -739,17 +746,30 @@ impl Contact {
             period_ms,
             count: 1,
             closed: false,
+            paused: 0,
         });
     }
-    /// WstxContact::TxWatchdog: the Rep of the transmitted `text`, 0 when the next
-    /// transmission of it opens a new entry.
-    fn repetitions(&self, text: &str) -> u32 {
+    /// The newest tx entry when it holds `text` and is not closed (the entry the next send of
+    /// `text` joins).
+    fn tx_entry(&self, text: &str) -> Option<&Exchanged> {
         self.dialogue
             .iter()
             .rev()
             .find(|e| e.tx)
             .filter(|e| e.text == text && !e.closed)
-            .map_or(0, |e| e.count)
+    }
+    /// WstxContact::TxWatchdog: the Rep of the transmitted `text`, 0 when the next
+    /// transmission of it opens a new entry.
+    fn repetitions(&self, text: &str) -> u32 {
+        self.tx_entry(text).map_or(0, |e| e.count)
+    }
+    /// #97 the paused sends of `text` (BusyPartner), 0 when the next send opens a new entry.
+    fn paused(&self, text: &str) -> u32 {
+        self.tx_entry(text).map_or(0, |e| e.paused)
+    }
+    /// #97 the counted repetitions of `text`: its Rep less its paused sends.
+    fn counted(&self, text: &str) -> u32 {
+        self.repetitions(text).saturating_sub(self.paused(text))
     }
     fn heard(&mut self, row: &Row, period_ms: i64) {
         let snr = row.snr_db.map(|s| s.round() as i32);
@@ -846,6 +866,16 @@ pub enum Command {
     Redecode,
     OpenLog,
 }
+/// #97 WstxContact::BusyPartner for the contact the station's automation owns: `split` the split
+/// move instead of partnerWorksOther's stop (a run whose strategy has busy_pause on), `pause` its
+/// sends to a busy partner are paused calls (that run, attended). A pounce and an MCP policy run
+/// have neither.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Automated {
+    pub contact_id: String,
+    pub split: bool,
+    pub pause: bool,
+}
 #[derive(Clone, Debug)]
 struct Submitted {
     slot: Slot,
@@ -864,6 +894,27 @@ pub struct Engine {
     /// WstxStrategy::StrategyWatchdog: the strategy run's own contact, which sends past the
     /// Tx watchdog limit (#97: no WD shown for it). Set by the station before every step.
     pub repeat_exempt: Option<String>,
+    /// #97 WstxContact::BusyPartner: the contact the station's automation owns, with whether it
+    /// takes the split move and whether its sends pause now. Every other contact is manual and
+    /// does both. Set by the station before every step.
+    pub automated: Option<Automated>,
+    /// #97 BusyPartner split move: the audio offsets his PSK Reporter spots show him decoding
+    /// in my Tx parity (empty: none known). Set by the station before every step.
+    pub his_psk: Vec<u32>,
+    /// The stations decoded in the latest period of my Rx parity: (its start, their offsets).
+    rx_decodes: Option<(i64, Vec<f64>)>,
+    /// #97 BusyPartner: the latest own send whose stop point has passed, and whether it was a
+    /// paused call.
+    decided: Option<(i64, bool)>,
+    /// The period and contact of the latest started transmission (the send the busy pause
+    /// judges at its stop point).
+    last_started: Option<(i64, String)>,
+    /// Test seam: the split move is refused (WstxContact::BusyPartner "a refused move").
+    #[cfg(test)]
+    pub refuse_split: bool,
+    /// Test record: (period, Tx offset) of every started request, as submitted.
+    #[cfg(test)]
+    pub started_hz: Vec<(i64, u32)>,
     /// Contacts due for the log (completed, or Log QSO), taken by the station.
     to_log: Vec<(LogKind, Contact)>,
     /// The last request target refused without a disarm, never resubmitted as is.
@@ -966,6 +1017,15 @@ impl Engine {
             new_id,
             automatic_cq: None,
             repeat_exempt: None,
+            automated: None,
+            his_psk: Vec::new(),
+            rx_decodes: None,
+            decided: None,
+            last_started: None,
+            #[cfg(test)]
+            refuse_split: false,
+            #[cfg(test)]
+            started_hz: Vec::new(),
             last_tx_start_ms: None,
             last_rr73_ms: None,
             hound: Hound::default(),
@@ -1019,6 +1079,7 @@ impl Engine {
         c.dx_call = None;
         c.dx_grid = None;
         c.dialogue.clear();
+        c.busy_with = None;
         for message in &mut c.messages[..5] {
             *message = None;
         }
@@ -1172,6 +1233,12 @@ impl Engine {
             suggested: None,
             last_rcvd: None,
             dialogue,
+            // The same active partner keeps his busy state; a new contact clears it.
+            busy_with: self
+                .contact
+                .as_ref()
+                .filter(|_| active && same)
+                .and_then(|c| c.busy_with.clone()),
         });
         self.settings.report = report;
         Ok(())
@@ -1392,6 +1459,7 @@ impl Engine {
                     c.dx_call = None;
                     c.dx_grid = None;
                     c.dialogue.clear();
+                    c.busy_with = None;
                     for i in 0..5 {
                         c.messages[i] = None;
                     }
@@ -1624,6 +1692,7 @@ impl Engine {
                         suggested: None,
                         last_rcvd: None,
                         dialogue: VecDeque::new(),
+                        busy_with: None,
                     });
                 }
                 if !ctx.automatic
@@ -1683,6 +1752,7 @@ impl Engine {
         if let Some(c) = self.contact.as_mut() {
             c.state = State::Completed;
             c.next = Slot::Tx6;
+            c.busy_with = None;
             if c.last_counted_end.is_none() {
                 c.last_counted_end = Some(now);
             }
@@ -1726,6 +1796,9 @@ impl Engine {
                     OutcomeKind::Started => {
                         self.last_started_period = Some(submitted.period);
                         self.last_tx_start_ms = Some(submitted.period);
+                        self.last_started = Some((submitted.period, submitted.contact_id.clone()));
+                        #[cfg(test)]
+                        self.started_hz.push((submitted.period, submitted.tx_hz));
                         // planClassicTxStart: a pending first reply is sent once it starts.
                         if mine
                             && self.settings.activity == Activity::Hound
@@ -1821,10 +1894,16 @@ impl Engine {
                 }
             }
         }
+        // #97 BusyPartner: the send whose stop point has passed is judged before this step's
+        // rows, so a publication after the stop point counts for the next send.
+        if let Some(core) = core.as_deref() {
+            self.judge_stop_point(core, now);
+        }
         let hound = self.is_hound();
         if hound {
             self.hound_rows(core.as_deref_mut(), ctx, rows);
         }
+        self.note_rx_decodes(rows);
         // Received messages (DMR planProcessMessage, planAutoSequence); a Hound has its
         // own reactions instead (MW calls auto_sequence only outside FT8 Hound).
         for row in rows.iter().filter(|_| !hound) {
@@ -1841,8 +1920,25 @@ impl Engine {
             let Some(my) = ctx.call.as_deref() else {
                 continue;
             };
-            match std.to.call() {
-                Some(to) if to == my => {
+            let other = match &std.to {
+                Call::Sign(to) | Call::Hashed(to) if to == my => None,
+                Call::Sign(to) | Call::Hashed(to) => Some(to.clone()),
+                // A hash not filled with my call is another call (BusyPartner).
+                Call::Hash => Some("<...>".to_owned()),
+                // His CQ (or QRZ, DE) ends his other QSO.
+                Call::Token(_) => {
+                    if let Some(c) = self.contact.as_mut() {
+                        c.busy_with = None;
+                    }
+                    continue;
+                }
+            };
+            match other {
+                None => {
+                    // Any message from him to my call ends his other QSO (BusyPartner).
+                    if let Some(c) = self.contact.as_mut() {
+                        c.busy_with = None;
+                    }
                     let Some(period) = row.period_start_ms else {
                         continue;
                     };
@@ -1893,16 +1989,52 @@ impl Engine {
                         }
                     }
                 }
-                Some(_) => {
-                    // partnerWorksOther: the 50 Hz rule (MW auto_sequence 25/50).
-                    let applies = c.state == State::Replying
-                        || (c.state == State::Report && c.started_tx1_skipped);
-                    if self.settings.auto_seq
-                        && applies
-                        && (row.frequency_hz - f64::from(self.settings.tx_hz)).abs()
-                            <= STOP_TOLERANCE_HZ
-                        && let Some(core) = core.as_deref_mut()
-                    {
+                Some(to) => {
+                    let (split, _) = self.busy_kind();
+                    let c = self.contact.as_mut().expect("checked");
+                    // BusyPartner: a grid, a report or an R-report to another call starts (or
+                    // keeps) his other QSO; his RR73, RRR or 73 to another call ends it.
+                    if split {
+                        match std.exchange {
+                            Exchange::Grid(_) | Exchange::Report(_) | Exchange::Contest(..) => {
+                                c.busy_with = Some(to)
+                            }
+                            Exchange::Rrr | Exchange::Rr73 | Exchange::SeventyThree => {
+                                c.busy_with = None
+                            }
+                            Exchange::Blank => {}
+                        }
+                    }
+                    // partnerWorksOther (MW auto_sequence 25/50): in replying, or in a
+                    // Tx1-skipped report, with Auto Seq on.
+                    let applies = self.settings.auto_seq
+                        && (c.state == State::Replying
+                            || (c.state == State::Report && c.started_tx1_skipped));
+                    let mode = c.mode;
+                    if !applies {
+                        continue;
+                    }
+                    let tx = self.settings.tx_hz;
+                    let stop = if split {
+                        // BusyPartner split frequency: Tx moves clear of his signal before my
+                        // next own period; Rx stays on him. Only a refused move stops.
+                        let his = row.frequency_hz.round().max(0.0) as u32;
+                        if crate::freeslot::split_clear(mode, tx, his) {
+                            false
+                        } else {
+                            match self.split_move(mode, tx, his) {
+                                Some(hz) => {
+                                    self.settings.tx_hz = hz;
+                                    false
+                                }
+                                None => true,
+                            }
+                        }
+                    } else {
+                        // The 50 Hz rule.
+                        (row.frequency_hz - f64::from(tx)).abs() <= STOP_TOLERANCE_HZ
+                    };
+                    if stop && let Some(core) = core.as_deref_mut() {
                         let view = core.view();
                         // Normal flow never halts (WstxTransmit::TransmitHaltUse): the
                         // transmission on top of the partner's QSO stops by an abort.
@@ -1914,7 +2046,6 @@ impl Engine {
                         self.pending = None;
                     }
                 }
-                None => {}
             }
         }
         self.call_first(core.as_deref_mut(), ctx, rows);
@@ -2066,7 +2197,13 @@ impl Engine {
         // WstxContact::TxWatchdog: nothing is planned for a send beyond the limit; a
         // partner message may still change the next message until 1.2 s into its period.
         // A request still pending would key, so it stops at once; after the Nth send none is.
-        if c.repetitions(&text) >= core.tx_limit() && self.repeat_exempt.as_ref() != Some(&c.id) {
+        // #97 BusyPartner: the counted repetitions (Rep less the paused calls); a send while
+        // the partner is busy is a paused call (at most N per message) and is planned.
+        let limit = core.tx_limit();
+        let pause = self.busy_kind().1;
+        let c = self.contact.as_ref().expect("checked");
+        let pausable = pause && c.busy_with.is_some() && c.paused(&text) < limit;
+        if c.counted(&text) >= limit && !pausable && self.repeat_exempt.as_ref() != Some(&c.id) {
             let due = self.last_started_period.map_or(now, |p| {
                 transmit::next_period(mode, p + period_ms(mode), self.settings.parity)
             });
@@ -2248,13 +2385,111 @@ impl Engine {
         self.hound.reply = HoundReply::Pending;
         self.hound.reply_deadline = Some(ctx.now_utc_ms + 11 * period_ms(mode));
     }
-    /// The Rep of the message due next (WstxContact::TxWatchdog).
+    /// The counted repetitions of the message due next (WstxContact::TxWatchdog): its Rep less
+    /// its paused calls (#97).
     pub fn repetitions_due(&self) -> u32 {
         self.contact.as_ref().map_or(0, |c| {
             c.messages[c.next.index()]
                 .as_deref()
-                .map_or(0, |text| c.repetitions(text))
+                .map_or(0, |text| c.counted(text))
         })
+    }
+    /// #97 the paused calls of the message due next (ContactSnapshot watchdog.paused_calls).
+    pub fn paused_due(&self) -> u32 {
+        self.contact.as_ref().map_or(0, |c| {
+            c.messages[c.next.index()]
+                .as_deref()
+                .map_or(0, |text| c.paused(text))
+        })
+    }
+    /// #97 WstxContact::BusyPartner for the current contact: (split move, paused calls now). A
+    /// contact the station's automation does not name is manual: both.
+    pub fn busy_kind(&self) -> (bool, bool) {
+        let Some(c) = self.contact.as_ref() else {
+            return (false, false);
+        };
+        if self.is_hound() {
+            return (false, false);
+        }
+        match self.automated.as_ref().filter(|a| a.contact_id == c.id) {
+            Some(a) => (a.split, a.pause),
+            None => (true, true),
+        }
+    }
+    /// #97 ContactSnapshot watchdog.busy_with: the other call while the partner is busy and the
+    /// contact's sends pause.
+    pub fn busy_with(&self) -> Option<&str> {
+        let c = self.contact.as_ref()?;
+        let (_, pause) = self.busy_kind();
+        c.busy_with.as_deref().filter(|_| pause && c.state.active())
+    }
+    /// #97 the latest own send whose stop point has passed: (its period, a paused call).
+    #[cfg(test)]
+    pub fn decided(&self) -> Option<(i64, bool)> {
+        self.decided
+    }
+    /// The stations decoded in the latest period of my Rx parity, except the partner.
+    fn note_rx_decodes(&mut self, rows: &[Row]) {
+        let dx = self.contact.as_ref().and_then(|c| c.dx_call.clone());
+        for row in rows {
+            let Some(period) = row.period_start_ms else {
+                continue;
+            };
+            if transmit::parity(row.mode, period) == self.settings.parity
+                || row
+                    .standard
+                    .as_ref()
+                    .is_some_and(|s| s.from.call().is_some() && s.from.call() == dx.as_deref())
+            {
+                continue;
+            }
+            match self.rx_decodes.as_mut() {
+                Some((p, list)) if *p == period => list.push(row.frequency_hz),
+                Some((p, _)) if *p > period => {}
+                _ => self.rx_decodes = Some((period, vec![row.frequency_hz])),
+            }
+        }
+    }
+    /// #97 BusyPartner split move: the nearest candidate clear of his signal (None: the move is
+    /// refused, the stop follows).
+    fn split_move(&self, mode: Mode, tx: u32, his: u32) -> Option<u32> {
+        #[cfg(test)]
+        if self.refuse_split {
+            return None;
+        }
+        let decoded = self
+            .rx_decodes
+            .as_ref()
+            .map_or(&[][..], |(_, list)| list.as_slice());
+        crate::freeslot::split_target(mode, tx, his, decoded, &self.his_psk)
+            .filter(|hz| (TX_MIN_HZ..=tx_max_hz(mode)).contains(hz))
+    }
+    /// #97 WstxContact::TxWatchdog busy pause: once the stop point (1.2 s into its period) of the
+    /// latest started send of this contact has passed, the send is a paused call when the
+    /// partner is busy then, the contact pauses and its message has fewer than N paused calls.
+    fn judge_stop_point<H: Hardware>(&mut self, core: &Core<H>, now: i64) {
+        let Some((period, id)) = self.last_started.clone() else {
+            return;
+        };
+        if self.decided.is_some_and(|(p, _)| p == period)
+            || now < period + WATCHDOG_STOP_AFTER_DUE_MS
+        {
+            return;
+        }
+        let (_, pause) = self.busy_kind();
+        let limit = core.tx_limit();
+        let mut paused = false;
+        if let Some(c) = self.contact.as_mut().filter(|c| c.id == id)
+            && pause
+            && c.busy_with.is_some()
+            && let Some(entry) = c.dialogue.iter_mut().rev().find(|e| e.tx)
+            && entry.paused < limit
+            && entry.paused < entry.count
+        {
+            entry.paused += 1;
+            paused = true;
+        }
+        self.decided = Some((period, paused));
     }
     /// tx_remaining_calls (limit - reported) reads the Rep of the message due next; a strategy
     /// run's own contact (attended) has no stop and no count: null (#97 WstxStrategy::

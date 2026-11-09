@@ -69,10 +69,44 @@ fn on_upper_edge(f: u32, width: u32) -> bool {
     f + width > UPPER_EDGE_HZ
 }
 /// #97 BusyPartner split clearance: my signal at `f` is clear of his at `d` (FT8 100 Hz, FT4
-/// 140 Hz between the lower edges: width + 50). Read by the busy pause (not delivered yet).
-#[cfg(test)]
+/// 140 Hz between the lower edges: width + 50).
 pub(crate) fn split_clear(mode: Mode, f: u32, d: u32) -> bool {
     (i64::from(f) - i64::from(d)).abs() >= i64::from(width_hz(mode)) + CLEARANCE_HZ
+}
+/// #97 WstxContact::BusyPartner split frequency: FreeTxSlot's grid from 500 Hz inside the Tx range,
+/// clear of his signal at `his_signal` (`split_clear`); of them those overlapping no station
+/// `decoded` while one is free, and those at least 50 Hz from a frequency his PSK Reporter spots
+/// show him decoding in my Tx parity (`his`) while one is free; the nearest to `current`, the lower
+/// on a tie. No power is used. None only when no candidate is clear of him.
+pub(crate) fn split_target(
+    mode: Mode,
+    current: u32,
+    his_signal: u32,
+    decoded: &[f64],
+    his: &[u32],
+) -> Option<u32> {
+    let ((low, high), width) = (auto_band(mode), width_hz(mode));
+    let mut list: Vec<u32> = (low..=high)
+        .step_by(STEP_HZ as usize)
+        .filter(|f| split_clear(mode, *f, his_signal))
+        .collect();
+    let free: Vec<u32> = list
+        .iter()
+        .copied()
+        .filter(|f| !occupied(*f, decoded, width))
+        .collect();
+    if !free.is_empty() {
+        list = free;
+    }
+    let at_end: Vec<u32> = list
+        .iter()
+        .copied()
+        .filter(|f| at_his_end(*f, his))
+        .collect();
+    if !at_end.is_empty() {
+        list = at_end;
+    }
+    nearest(&list, current)
 }
 /// #97 WstxStrategy::TxMoveRule: another quiet slot. FreeTxSlot's choice (from 500 Hz, clear of
 /// every signal in `avoid`, of the decoded stations while one is free) with two exclusions of its

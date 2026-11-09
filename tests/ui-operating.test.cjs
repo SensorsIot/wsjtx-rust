@@ -349,7 +349,7 @@ function contactSnapshot(base,{contact=null,transmit={},settings={},log=null}={}
   return {v:1,profile_id:base.profile_id,boot_id:base.boot_id,contact_revision:base.revision??3,snapshot_sequence:base.sequence??3,monotonic_ms:1000,utc_ms:Date.now(),log,
     transmit:{capability:'available',arm_state:'disarmed',last_disarm_cause:'startup',tune:false,pending_sequence:null,last_text:null,last_period_utc:null,halt_state:'idle',safety_revision:7,refusal:null,...transmit},
     settings:{auto_seq:true,tx1_skip:false,tx_calls:6,tune_seconds:90,rx_hz:1500,tx_hz:1500,hold_tx:false,parity:'even',report:-10,...settings},
-    contact,watchdog:{tx_remaining_calls:6,tx_expired:false,tune_remaining_seconds:0}};
+    contact,watchdog:{tx_remaining_calls:6,tx_expired:false,tune_remaining_seconds:0,busy_with:null,paused_calls:0}};
 }
 const partner=(state='replying',extra={})=>({id:crypto.randomUUID(),origin:'selected_row',dx_call:'K1ABC',dx_grid:'FN42',report_sent:'-12',report_rcvd:null,state,next_slot:'tx1',tx4:'rrr',messages:['K1ABC HB9BLA JN47','K1ABC HB9BLA -12','K1ABC HB9BLA R-12','K1ABC HB9BLA RRR','K1ABC HB9BLA 73','CQ HB9BLA JN47'],start_utc:null,end_utc:null,saved:false,...extra});
 // Records a page's contact commands and answers them like the station (202) without effects.
@@ -683,6 +683,36 @@ test('TC-050-003 the period bar follows the station clock and is red in my Tx pe
   assert.deepEqual(errors,[]);
 });
 
+// Proves: TC-097-017 (d), TC-097-013 (f) (CL-097-06, WstxContact::BusyPartner "Shown"). While
+// busy_with is set " · K1ABC busy with W9XYZ, not counted (2/6)" follows WD:n in the QSO pane and
+// the station bar (k the paused_calls, N the Tx watchdog's tx_calls), gone with busy_with null; in a
+// run's own contact (tx_remaining_calls null) it follows the leave label with the run's paused.
+// Red on the parent: no suffix.
+test('TC-097-017 the busy marker follows WD:n and the leave label',{timeout:40000},async t=>{
+  let watchdog={tx_remaining_calls:6,tx_expired:false,tune_remaining_seconds:0,busy_with:'W9XYZ',paused_calls:2},run=null;
+  const contact=partner('replying');
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:{...contactSnapshot(base,{contact,transmit:{arm_state:'armed'}}),watchdog}}));
+    await p.route('**/automation',async route=>{const a=await (await route.fetch()).json();if(run)a.run=run;return route.fulfill({json:a});});
+  }});
+  await page.waitForFunction(()=>!!window.wstxContact?.snapshot(),null,{timeout:25000});
+  const busy='WD:6 · K1ABC busy with W9XYZ, not counted (2/6)';
+  await page.waitForFunction(text=>document.querySelector('#contact-watchdog').textContent===text,busy,{timeout:10000});
+  assert.match(await page.locator('#station-tx').textContent(),/ · WD:6 · K1ABC busy with W9XYZ, not counted \(2\/6\)/);
+  watchdog={...watchdog,busy_with:null,paused_calls:0};
+  await page.evaluate(()=>window.wstxContact.load());
+  assert.equal(await page.locator('#contact-watchdog').textContent(),'WD:6');
+  // A run's own contact: the leave label carries it.
+  watchdog={...watchdog,tx_remaining_calls:null,busy_with:'W9XYZ',paused_calls:1};
+  run={id:crypto.randomUUID(),state:'contact_active',contact_id:contact.id,leave:{mode:'calls',remaining:4,busy:true,paused:1,staying:false}};
+  await page.evaluate(()=>window.wstxContact.load());
+  await page.evaluate(()=>new Promise(done=>{addEventListener('wstx-automation',()=>done(),{once:true});dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:0,run_revision:99}}}}));}));
+  await page.waitForFunction(()=>document.querySelector('#contact-watchdog').textContent.startsWith('Leave in'),null,{timeout:10000});
+  assert.equal(await page.locator('#contact-watchdog').textContent(),'Leave in 4 calls · K1ABC busy with W9XYZ, not counted (1/6)');
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-050-05, CL-039-21; TC-050-005, TC-039-022 (WD:∞ for a null count). #37 (operator 2026-11-02, a CQ run on 40 m): while my CQ
 // runs the header says "Calling CQ" with the Tx period, also after a receive refresh; the
 // message line is "▶ TX now" while the station transmits and "▸ next" otherwise; an empty
@@ -721,10 +751,11 @@ test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherw
   transmit={arm_state:'disarmed'};watchdog={tx_remaining_calls:0,tx_expired:true,tune_remaining_seconds:0};
   await page.evaluate(()=>window.wstxContact.load());
   assert.match(await page.locator('#contact-watchdog').textContent(),/^Tx watchdog: same message sent \d+ times$/);
-  // TC-039-022: a contest stay has no count: null is WD:∞; a number is WD:n again.
+  // TC-039-022 as #97 changes it (CL-097-04, "WD:∞ goes"): null is no WD (a run's own contact
+  // shows its leave label instead; without a run nothing); a number is WD:n again.
   transmit={arm_state:'armed'};watchdog={tx_remaining_calls:null,tx_expired:false,tune_remaining_seconds:0};
   await page.evaluate(()=>window.wstxContact.load());
-  assert.equal(await page.locator('#contact-watchdog').textContent(),'WD:∞');
+  assert.equal(await page.locator('#contact-watchdog').textContent(),'');
   watchdog={tx_remaining_calls:3,tx_expired:false,tune_remaining_seconds:0};
   await page.evaluate(()=>window.wstxContact.load());
   assert.equal(await page.locator('#contact-watchdog').textContent(),'WD:3');

@@ -1143,3 +1143,109 @@ fn tc_097_017_the_split_clearance_table() {
         assert_eq!(split_clear(Mode::Ft4, 1500 + d, 1500), clear, "FT4 {d}");
     }
 }
+
+const KE1J_CQ: (&str, f64, Option<f64>) = ("CQ KE1J FN42", 1800.0, Some(-10.0));
+const KE1J_BUSY: (&str, f64, Option<f64>) = ("W9XYZ KE1J -07", 1200.0, Some(-7.0));
+/// TC-097-011 setup: an attended run of "Test calls" with leave {calls 4, calls_heard 8},
+/// busy_pause `on`, Hold Tx on, Tx watchdog 3 set by the browser, calling KE1J (CQ at 1800 Hz)
+/// from Tx 1500.
+async fn calling_busy_ke1j(on: bool) -> Leaving {
+    let t = leaving(|c| c["strategies"][0]["busy_pause"] = json!(on), &[KE1J_CQ]).await;
+    browser_watchdog(&t.f, 3).await;
+    assert_eq!(
+        contact(&t.f).await,
+        (json!("KE1J"), json!("replying"), json!("armed"))
+    );
+    assert_eq!(frequencies(&t.f).await.1, json!(1500));
+    t
+}
+fn leave_of(remaining: u64, busy: bool, paused: u64) -> Value {
+    json!({"mode":"calls","remaining":remaining,"busy":busy,"paused":paused,"staying":false})
+}
+
+// Proves: TC-097-011 (a), (c), (e) (CL-097-06, hand-worked from WstxStrategy::BusyPause). KE1J's
+// report to W9XYZ for two of his periods: leave.busy true, paused 1 and 2, remaining stays 4; his
+// RR73 ends it and the next call counts (remaining 3), his CQ the next (2). (c) three publications
+// without his decode after the report stay paused (busy holds). (e) his report to my call resets
+// every count. Red on the parent: the busy calls count (remaining 3, 2).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_011_a_busy_target_pauses_the_runs_count() {
+    let t = calling_busy_ke1j(true).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, rep(e, 1), &[KE1J_BUSY]);
+    assert_eq!(run_of(f).await["leave"], leave_of(4, true, 1));
+    publish(f, rep(e, 2), &[KE1J_BUSY]);
+    assert_eq!(run_of(f).await["leave"], leave_of(4, true, 2));
+    publish(f, rep(e, 3), &[("W9XYZ KE1J RR73", 1200.0, Some(-7.0))]);
+    assert_eq!(run_of(f).await["leave"], leave_of(3, false, 2));
+    publish(f, rep(e, 4), &[KE1J_CQ]);
+    assert_eq!(run_of(f).await["leave"], leave_of(2, false, 2));
+    assert_eq!(contact(f).await.2, json!("armed"));
+    // (c) busy holds without his decode; (e) progress resets every count.
+    let t = calling_busy_ke1j(true).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, rep(e, 1), &[KE1J_BUSY]);
+    publish(f, rep(e, 2), &[]);
+    publish(f, rep(e, 3), &[]);
+    assert_eq!(run_of(f).await["leave"], leave_of(4, true, 3), "(c)");
+    publish(f, rep(e, 4), &[("HB9BLA KE1J -10", 1800.0, Some(-10.0))]);
+    let leave = run_of(f).await["leave"].clone();
+    assert_eq!(
+        (&leave["busy"], &leave["paused"], &leave["remaining"]),
+        (&json!(false), &json!(0), &json!(4)),
+        "(e) {leave}"
+    );
+}
+
+// Proves: TC-097-011 (d), (b) (CL-097-06). (d) Tx watchdog 3: KE1J busy for 5 publications, 3
+// paused calls, the 4th and 5th count (remaining 3, 2). (b) his R-report to W9XYZ at 1510 Hz moves
+// Tx to 1410 (the nearest candidate 100 Hz from 1510, FT8), Rx stays 1800, Enable Tx stays on.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_011_d_at_most_n_paused_calls_and_the_split_move() {
+    let t = calling_busy_ke1j(true).await;
+    let (f, e) = (&t.f, t.e);
+    let mut seen = Vec::new();
+    for k in 1..=5 {
+        publish(f, rep(e, k), &[KE1J_BUSY]);
+        let leave = run_of(f).await["leave"].clone();
+        seen.push((leave["paused"].clone(), leave["remaining"].clone()));
+    }
+    assert_eq!(
+        seen,
+        [
+            (json!(1), json!(4)),
+            (json!(2), json!(4)),
+            (json!(3), json!(4)),
+            (json!(3), json!(3)),
+            (json!(3), json!(2))
+        ]
+    );
+    let t = calling_busy_ke1j(true).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, rep(e, 1), &[("W9XYZ KE1J R-09", 1510.0, Some(-7.0))]);
+    let (rx, tx, _) = frequencies(f).await;
+    assert_eq!((rx, tx), (json!(1800), json!(1410)), "(b)");
+    assert_eq!(contact(f).await.2, json!("armed"));
+}
+
+// Proves: TC-097-011 (f) (CL-097-06, busy_pause off). The busy calls count and KE1J is left at the
+// 4th; his R-report to W9XYZ at 1510 Hz disarms as partnerWorksOther does (within 50 Hz of Tx).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_011_f_busy_pause_off_counts_and_keeps_the_wsjtx_stop() {
+    let t = calling_busy_ke1j(false).await;
+    let (f, e) = (&t.f, t.e);
+    for k in 1..=3 {
+        publish(f, rep(e, k), &[KE1J_BUSY]);
+        assert_eq!(run_of(f).await["leave"], leave_of(4 - k as u64, false, 0));
+    }
+    publish(f, rep(e, 4), &[KE1J_BUSY]);
+    assert_eq!(
+        run_of(f).await["left"],
+        json!({"call":"KE1J","reason":"repetitions"})
+    );
+    let t = calling_busy_ke1j(false).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, rep(e, 1), &[("W9XYZ KE1J R-09", 1510.0, Some(-7.0))]);
+    assert_eq!(contact(f).await.2, json!("disarmed"));
+    assert_eq!(frequencies(f).await.1, json!(1500), "no split move");
+}

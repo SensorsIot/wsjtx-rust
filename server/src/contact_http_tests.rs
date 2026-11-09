@@ -304,7 +304,7 @@ fn code(v: &Value) -> (&str, Option<&str>) {
     )
 }
 
-// Proves: TC-007-004, TC-010-010, TC-050-006.
+// Proves: TC-007-004, TC-010-010, TC-050-006, TC-097-017 (d).
 #[tokio::test]
 async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -375,7 +375,17 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     );
     assert_eq!(
         keys(&v["watchdog"]),
-        sorted(&["tx_remaining_calls", "tx_expired", "tune_remaining_seconds"])
+        sorted(&[
+            "tx_remaining_calls",
+            "tx_expired",
+            "tune_remaining_seconds",
+            "busy_with",
+            "paused_calls"
+        ])
+    );
+    assert_eq!(
+        (&v["watchdog"]["busy_with"], &v["watchdog"]["paused_calls"]),
+        (&Value::Null, &json!(0))
     );
     assert_eq!(v["contact"], Value::Null);
     assert_eq!(v["log"], Value::Null, "#41: no review; nothing logged yet");
@@ -395,8 +405,8 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         (StatusCode::FORBIDDEN, "forbidden_origin")
     );
     // The maximum shape (six 37-character messages, 13-character calls, a log outcome,
-    // 16 maximal dialogue entries, #37) fits; one byte over the cap is refused, never
-    // truncated.
+    // 16 maximal dialogue entries, #37; #97 a 13-character busy_with and paused_calls 99) fits;
+    // one byte over the cap is refused, never truncated.
     let long = "A".repeat(37);
     let entry =
         json!({"dir":"tx","text":long,"snr":-50,"period_utc_ms":MAX_SAFE_TEST,"count":u32::MAX});
@@ -412,7 +422,8 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
             "last_rcvd":{"text":long,"snr":-50,"period_utc_ms":MAX_SAFE_TEST,"count":u32::MAX},
             "dialogue":dialogue},
         "log":{"contact_id":f.id,"call":"PJ4/PA3XYZABC","outcome":"unsaved","error":"storage_unavailable"},
-        "watchdog":{"tx_remaining_calls":99,"tx_expired":true,"tune_remaining_seconds":300}});
+        "watchdog":{"tx_remaining_calls":99,"tx_expired":true,"tune_remaining_seconds":300,
+            "busy_with":"PJ4/PA3XYZABC","paused_calls":99}});
     let size = contact_http::admit(&max).unwrap().len();
     assert!(size <= contact_http::SNAPSHOT_BYTES_MAX, "{size}");
     let mut over = max.clone();
@@ -429,6 +440,49 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     assert!(worst.len() <= 224, "{worst}");
 }
 const MAX_SAFE_TEST: u64 = 9_007_199_254_740_991;
+
+// Proves: TC-097-017 (d) (CL-097-06, WstxContact::BusyPartner "Shown"). The operator selects CQ
+// KE1J; KE1J's report to W9XYZ (packed with the real codec) is published: GET /contact's watchdog
+// carries busy_with "W9XYZ" and paused_calls 0 (no paused send yet); his RR73 to W9XYZ clears it.
+// Red on the parent: no busy_with key.
+#[tokio::test]
+async fn tc_097_017_d_get_contact_carries_the_busy_partner() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    let r = &f.state.recording;
+    let (source, job, generation) = r.fixture_live_job("ft8");
+    let even = now_ms().div_euclid(30_000) * 30_000;
+    let seq = r.fixture_publish_period(
+        &period_text(even),
+        vec![record("CQ KE1J FN42", 1800.0, Some(-7.0))],
+    );
+    f.tick();
+    let row = json!({"source_id":source,"job_id":job,"generation":generation,"sequence":seq[0]});
+    let (s, v) = f
+        .send("select_row", json!({"row":row,"replace":false}))
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    r.fixture_publish_period(
+        &period_text(even),
+        vec![record("W9XYZ KE1J -07", 1200.0, Some(-7.0))],
+    );
+    f.tick();
+    let snap = f.snapshot().await;
+    assert_eq!(
+        (
+            &snap["watchdog"]["busy_with"],
+            &snap["watchdog"]["paused_calls"]
+        ),
+        (&json!("W9XYZ"), &json!(0)),
+        "{}",
+        snap["watchdog"]
+    );
+    r.fixture_publish_period(
+        &period_text(even),
+        vec![record("W9XYZ KE1J RR73", 1200.0, Some(-7.0))],
+    );
+    f.tick();
+    assert_eq!(f.snapshot().await["watchdog"]["busy_with"], Value::Null);
+}
 
 // Proves: TC-007-004.
 #[tokio::test]
@@ -957,6 +1011,7 @@ fn direct_log_record_fields_from_the_confirmed_dial() {
         suggested: None,
         last_rcvd: None,
         dialogue: Default::default(),
+        busy_with: None,
     };
     let record = contact_http::Station::record_of(
         &c,
