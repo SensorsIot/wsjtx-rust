@@ -211,10 +211,10 @@ async fn live_native_selection_tls_thin_and_off() {
             let mut line = String::new();
             assert!(
                 reader.read_line(&mut line).unwrap() > 0,
-                "child did not announce proxy"
+                "child did not announce its port"
             );
             prefix.push_str(&line);
-            if let Some((_, tail)) = line.split_once("WSTX_SELECTION_PROXY ") {
+            if let Some((_, tail)) = line.split_once("WSTX_SELECTION_PORT ") {
                 let port = tail.trim().parse::<u16>().unwrap();
                 return (reader, prefix, port);
             }
@@ -222,10 +222,10 @@ async fn live_native_selection_tls_thin_and_off() {
     });
     let (mut reader, mut output, port) = tokio::time::timeout(Duration::from_secs(15), announced)
         .await
-        .expect("proxy announcement deadline")
+        .expect("port announcement deadline")
         .unwrap();
     let origin = format!("https://localhost:{port}");
-    let document = json!({"schema_version":1,"profile_id":id,"revision":0,"display_name":"Actual native selection fixture","callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":format!("127.0.0.2:{port}"),"origin":origin},"connection_type":"standard","audio":{"input_device":"independently-verified-native-input","output_device":null},"control":{"mode":"cat","endpoint":"COM3","ptt":"disabled"}});
+    let document = json!({"schema_version":1,"profile_id":id,"revision":0,"display_name":"Actual native selection fixture","callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":format!("127.0.0.1:{port}"),"origin":origin},"connection_type":"standard","audio":{"input_device":"independently-verified-native-input","output_device":null},"control":{"mode":"cat","endpoint":"COM3","ptt":"disabled"}});
     std::fs::write(
         dir.join("profile.json"),
         serde_json::to_vec(&document).unwrap(),
@@ -260,8 +260,8 @@ async fn live_native_selection_tls_thin_and_off() {
     )
     .await
     .unwrap();
-    let listener =
-        std::net::TcpListener::bind((std::net::Ipv4Addr::new(127, 0, 0, 2), port)).unwrap();
+    // #80: the browsers reach the station directly on an unshaped TLS connection.
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let server = axum_server::from_tcp_rustls(listener, config).unwrap();
     let service = tokio::spawn(async move {

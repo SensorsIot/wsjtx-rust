@@ -1104,7 +1104,7 @@ package WstxOfflineDecode {
             doc /* 1000noise/modefourRMSplusinvalid/wrongmode/silence/goodFECbadCRC require
                  zeropublishedframes. Unsupported/invalidonlyinjectedvalidCRCframes, nopanic.
                  Repeatpayloadmultiset,time<=1frame,freq<=.2HzFT8/.5HzFT4. Cancelallphases,
-                 stale/restart/busy/limits/strictHTTP/realbrowser/twopeer32kbitlink<=2sstatus.
+                 stale/restart/busy/limits/strictHTTP/realbrowser/twopeer<=2sstatus (no 32 kbit/s link, #80).
                  OneCPUworker(onedecodethread;defaultthreadcount:CL-057-02):15sFT8<=5s,7.5sFT4<=3s,120s<=40s,cold+<=2s; tenruns+warmup,
                  actualreferencePC HB9BLA(AMDRyzen9 3900X,32GB,Windows11)
                  OS/build/power/hash/workload/min/median/p95/max/memory;

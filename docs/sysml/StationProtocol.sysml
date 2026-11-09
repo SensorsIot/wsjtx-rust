@@ -232,13 +232,94 @@ package WstxStationProtocol {
         attribute clients : Integer = 2;
         attribute measurementSeconds : Integer = 60;
         attribute idleBytesPerSecondEachDirectionMax : Integer = 1000;
+        attribute thinBytesPerSecondEachDirectionMax : Integer = 3000;
         attribute connectedStatusDisplayMs : Integer = 2000;
-        attribute initialStatusAfterPageLoadMs : Integer = 10000;
-        doc /* Shared bottleneck, not one32kbit link per browser. Idle includes
-             heartbeat and accounted protocol overhead. Cold page/assets bytes/time
-             are reported separately. This original status-only workload has no raw
-             audio or spectrum stream; explicit Thin/live/display extensions retain
-             their own measured limits and do not inherit an unproved N-station claim. */
+        doc /* Shared bottleneck, not one32kbit link per browser. Targets of normal operation
+             (#80, operator 2026-11-09): two browsers loaded and connected, live receive on a
+             busy band (FT8, about 40 decodes per period), the waterfall on Thin, one complete
+             QSO answering a CQ, the operator sorting and scrolling Band Activity and refreshing
+             status; then Off with the same receive and the operator idle. Thin at most
+             thinBytesPerSecondEachDirectionMax and Off at most idleBytesPerSecondEachDirectionMax
+             per direction, heartbeat and accounted protocol overhead included, over
+             measurementSeconds; connected status within connectedStatusDisplayMs. No test asserts
+             these numbers: the operator judges the bytes from LinkTrafficLog, and the live check
+             after a deploy watches that Refresh status shows within connectedStatusDisplayMs on
+             the thin link (operator 2026-11-09, "Watch it in the live check"). Page and asset loading,
+             reconnection, authorization recovery, CAT, selection or mode/band changes, recording
+             replay or import and log maintenance carry no link budget. Detailed carries no
+             32 kbit/s promise. */
+    }
+    attribute def LinkTrafficLog {
+        attribute fileName : String = "link-traffic.log";
+        attribute rotateBytes : Integer = 4194304;
+        attribute tlsRecordOverheadBytes : Integer = 29;
+        attribute tlsRecordPayloadMax : Integer = 16384;
+        doc /* (#80, operator 2026-11-09) The station counts the bytes between each client and
+             itself and writes them, per period, to fileName in the profile directory: one JSON
+             line per client that had traffic in the period, written at the period's end; at
+             rotateBytes the file first moves to link-traffic.1.log, replacing the older one (as the
+             MCP audit, WstxMcp::McpCredential). A station without a profile directory writes no
+             log. The log is local: nothing of it is sent on a socket or in a response, and no
+             client reads it; the operator reads the file. Counting never waits, and the line is
+             written by its own task, never on a socket's or a request's path (the profile store's
+             lock is not taken there).
+             Period: the selected operating mode's (FT8 15000 ms, FT4 7500 ms), aligned to UTC
+             period starts; mode "none" with 15000 ms periods when no mode is selected. A mode
+             change at time c ends the open period there (its line: utc_ms its start, period_ms
+             c - start, the old mode); the next period runs from c to the next UTC period start of
+             the new mode (utc_ms c, period_ms up to that start, the new mode), then full periods.
+             Example: FT8 period 12:00:00, change to FT4 at 12:00:05.200: lines (12:00:00, 5200,
+             FT8), (12:00:05.200, 2300, FT4), (12:00:07.500, 7500, FT4).
+             Client: "browser:<grant_id>" for an enrolled browser, "mcp:<client_id>" for an MCP
+             client, "local" otherwise. Each TCP connection belongs, at each period end, to the
+             client of its most recent request the station accepted with credentials (a browser
+             grant, also by the WebSocket upgrade, or an MCP bearer); a connection without one is
+             local (plaintext loopback, a page before enrollment, requests refused before
+             authentication, also on TLS). Everything counted on a connection, its refused requests
+             included, goes to that client. No cookie, token, proof or body content is logged.
+             Line: {utc_ms, period_ms, mode, client, display (the display profile of each of the
+             client's sockets at the period's end: "detail", "thin", "off" or "none"), to_client and
+             from_client, each {bytes, other, estimate, types}}.
+             bytes (exact): the TCP payload bytes the station wrote (to_client) or read (from_client)
+             on the client's connections in the period, counted below TLS, so TLS records and
+             handshakes are included; the same on HTTP/1.1, HTTP/2 and WebSocket connections.
+             types maps a message type to [count, bytes], each message counted in the period in
+             which the station finished writing or reading it, by one rule for every HTTP version:
+             "ws <type>" for a WebSocket text message by its JSON type (station.status,
+             spectrum.subscription and error replies included), "ws ping", "ws pong", "ws close",
+             each the frame's header and payload as written or read (a client frame's mask
+             included); "<METHOD> <route>" for an HTTP exchange with the route's template (an
+             identifier segment as {id}; the WebSocket upgrade is "GET /ws"; the method is named only when it is GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH, CONNECT or TRACE, any other is "OTHER", and a request matching no route has the route "unrouted", so no client text becomes a type), so the set of types
+             is bounded. An HTTP request counts "<METHOD> <path and query> HTTP/1.1" CRLF, each header
+             field the router received as "name: value" CRLF, CRLF, and its body bytes as read; a
+             response counts "HTTP/1.1 <code> <reason>" CRLF, each header field it carries when it
+             leaves the outermost router layer (after content coding) as "name: value" CRLF, CRLF,
+             and its body bytes as sent after content coding (no chunk framing). What the HTTP
+             server adds itself (date, a content-length or transfer-encoding it sets, the Allow field of a 405, chunk framing,
+             HTTP/2 frames and header compression) is not in types.
+             other = bytes - sum of the types' bytes: TLS, handshakes and what the HTTP server adds;
+             signed, since HTTP/2 header compression can make it negative.
+             estimate (the IndependentLinkAccounting model, so that the numbers compare with
+             ThinLinkBudget): with t = tlsRecordOverheadBytes on TLS and 0 on plaintext, each message
+             m of a direction with type bytes b takes w = b + t x ceil(b / tlsRecordPayloadMax) wire
+             bytes and ceil(w / segmentBytesMax) segments; the rest r = max(0, bytes - sum of w)
+             takes ceil(r / segmentBytesMax) segments; S is the direction's segment total, and
+             estimate = bytes + headerBytesPerSegment x S(this direction)
+             + reverseAckBytesPerSegment x S(other direction).
+             Worked example (TLS, one FT8 period, one Thin browser): to_client 3 ws station.tick of
+             228 B (224-byte payload, 4-byte header), 3 ws heartbeat of 28 B and 3 ws ping of 2 B,
+             each in one 29-byte TLS record, so bytes = 684 + 84 + 6 + 9 x 29 = 1035, r = 0, S = 9;
+             from_client 3 ws pong of 6 B (2-byte header, 4-byte mask), each in one record,
+             bytes = 3 x 35 = 105, S = 3. estimate to_client = 1035 + 80 x 9 + 80 x 3 = 1995
+             (133 B/s), from_client = 105 + 80 x 3 + 80 x 9 = 1065 (71 B/s).
+             Types are application bytes because only they can be told apart by message; bytes is
+             counted below TLS because only there is the total exact.
+             Implementation facts (#80 coder, 2026-11-09): periods follow the system clock's UTC (not the corrected station
+             clock) and the operating mode read every 100 ms, so a mode change ends its period within 100 ms; received
+             WebSocket text is typed only by a known command (station.get, recording.get, spectrum.thin, spectrum.detail,
+             spectrum.off), any other text is "ws other" and binary "ws binary", so a client cannot grow the set of
+             types; a request without a route is "<METHOD> unrouted"; a request is recorded when its response is
+             produced, a response when its body is dropped; a closed connection's counts go into the next period line. */
     }
     attribute def PushedStationState {
         attribute safetyReadMinimumMs : Integer = 30000;
@@ -274,7 +355,8 @@ package WstxStationProtocol {
              changes), once with free_tx_slots null when the value becomes null, and once to
              a peer that subscribes Detailed or Thin while a value exists; with or without a
              run, also while automation is never used; never to an Off peer. Its cost on the
-             thin link stays within ThinLinkBudget's Thin envelope (TC-007-005): at most
+             thin link is a target within ThinLinkBudget's Thin envelope, judged from
+             LinkTrafficLog (#80): at most
              2 x (1024 + 4 WS + 29 TLS + 3 x 160 accounted TCP/ACK) / 7.5 s, about 410 B/s
              for two FT4 browsers, half that in FT8, and in a QSO one more build per Rx period
              (at most 1.5 times that, about 615 B/s for two FT4 browsers); until a read
@@ -331,7 +413,11 @@ package WstxStationProtocol {
     dependency exchangeVerification from ExchangeStatus to WstxRequirements::'TC-021-005';
     dependency browserVerification from BrowserSnapshotPolicy to WstxRequirements::'TC-021-006';
     dependency reconnectVerification from BrowserLinkLifecycle to WstxRequirements::'TC-021-007';
-    dependency linkVerification from ThinLinkBudget to WstxRequirements::'TC-021-008';
+    dependency budgetJudgedFromLog from ThinLinkBudget to LinkTrafficLog;
+    dependency trafficLogPromise from LinkTrafficLog to WstxRequirements::'CL-003-05';
+    dependency trafficLogOwner from LinkTrafficLog to WstxArchitecture::physicalStation::backend::stations::web;
+    dependency trafficLogVerification from LinkTrafficLog to WstxRequirements::'TC-080-001';
+    dependency livenessVerification from Heartbeat to WstxRequirements::'TC-021-008';
     dependency tlsVerification from SessionSecurity to WstxRequirements::'TC-021-009';
     dependency buildPromise from ClientBuild to WstxRequirements::'CL-051-01';
     dependency pageUpdatePromise from PageUpdate to WstxRequirements::'CL-051-02';
