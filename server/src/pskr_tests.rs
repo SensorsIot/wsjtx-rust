@@ -98,6 +98,20 @@ fn client_id_carries_the_call_and_stays_legal() {
     );
 }
 
+// Proves: CL-097-05; TC-097-010. "He reports": a spot he received counts 600 s and no longer.
+#[test]
+fn reports_counts_up_to_600_s_and_no_longer() {
+    let mut h = Hearing::default();
+    h.record(
+        "HB9BLA",
+        Some("K1ABC"),
+        spot("DL1XYZ", "K1ABC", 7075512, 1000),
+        1000,
+    );
+    assert!(h.reports("K1ABC", "FT8", "40m", 1600));
+    assert!(!h.reports("K1ABC", "FT8", "40m", 1601));
+}
+
 // Proves: CL-039-20; TC-039-020. A spot counts for its band and mode inside the window, and no
 // longer.
 #[test]

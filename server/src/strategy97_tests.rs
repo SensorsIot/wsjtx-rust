@@ -1536,6 +1536,7 @@ async fn moved_at(
 // move comes at the 3rd call. Hold Tx on moves Tx alone (Rx stays 1800), off both.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_010_the_run_moves_tx_per_psk_case() {
+    // 599, not 600: the spot is aged against the wall clock, which ticks on before the check.
     for (age, case) in [(120, "not_heard"), (599, "not_heard"), (601, "no_reports")] {
         let t = leaving(|_| {}, &[K1ABC_CQ]).await;
         let (f, e) = (&t.f, t.e);
