@@ -1207,7 +1207,8 @@ attribute def ActivityOrdering {
              Look: icon only, the same size and style as "?": an inline SVG of four corners
              pointing outwards while not full screen and inwards while full screen (no font
              glyph); aria-label "Full screen" or "Leave full screen", aria-pressed false or
-             true, title "Full screen: hide the browser frame" or "Leave full screen". The
+             true, title "Full screen: hide the browser frame" or "Leave full screen", and the
+             attribute data-icon "expand" (outward corners) or "collapse" (inward corners). The
              state shown follows Document.fullscreenElement at every fullscreenchange, so it
              is right however full screen was left (the button, Esc held, the browser's own
              control, a page reload). A refused request (the promise rejects: no user
@@ -1231,11 +1232,19 @@ attribute def ActivityOrdering {
              Keyboard Lock leaves full screen on Esc, and that press does not abort either.
              A lock that fails (its promise rejects) leaves full screen working with the
              browser's Esc. HALT, Abort QSO (the QSO pane buttons) and Alt+H act as always.
-             Outside full screen Esc stays Abort QSO (KeyboardShortcuts unchanged).
+             Outside full screen a first Esc press stays Abort QSO; a repeated Escape keydown
+             (event.repeat, the key held) never aborts, so holding Esc to leave full screen
+             cannot abort through the auto-repeat that reaches the page after the exit
+             (KeyboardShortcuts).
              Keyboard: an ordinary focusable button (Tab, Enter, Space); no shortcut key (F11 is
              Rx -1 Hz, KeyboardShortcuts, so the browser's own F11 full screen does not reach
-             this page). The "?" overview lists the button and "Esc held: leave full screen", and
-             its Esc / Abort QSO entry adds "not in full screen".
+             this page). The "?" overview (the Help region): its intro reads "WSJT-X keys where the
+             function exists. Letter keys and ? are inactive while a text field has focus;
+             Alt+H always halts, Esc aborts the QSO (not in full screen)."; its Esc / Abort QSO
+             entry reads "Abort the QSO: the transmission stops now and the contact is
+             cancelled (nothing logged); the station stays ready. Not in full screen."; and a
+             new entry directly after it, "Full screen button": "Hide the browser frame and
+             show only the app; press again to leave. Esc held: leave full screen."
              Per page load only (operator 2026-11-09): the browser requires a user action for
              each request, so a new or reloaded page (also the automatic reload of
              WstxStationProtocol::PageUpdate) starts in the normal window, and the choice is
@@ -1261,7 +1270,10 @@ attribute def ActivityOrdering {
              In full screen (#96, FullScreenToggle) Esc never aborts the QSO: where the
              browser has Keyboard Lock a short Esc only closes an open dialog or menu and
              holding Esc leaves full screen; without Keyboard Lock the browser takes Esc to
-             leave full screen. */
+             leave full screen. Anywhere, in or out of full screen, an Escape keydown with
+             event.repeat true (the key held: Chrome leaves full screen while Esc is still
+             down and its auto-repeat keydowns then reach the page) never aborts the QSO; only
+             a first press does. */
     }
     verification def operatingScreen009 {
         objective { verify WstxRequirements::'CL-010-16'; }
