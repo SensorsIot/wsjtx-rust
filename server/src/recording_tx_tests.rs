@@ -267,7 +267,7 @@ fn tx_period_measures_no_level_and_marks_its_waterfall_rows() {
         .unwrap()
         .periods(
             (&identity.0, identity.1),
-            ms("2026-10-27T12:01:00.0000000Z"),
+            crate::automation_tests::due_at(ms("2026-10-27T12:01:00.0000000Z"), None),
         )
         .iter()
         .map(|p| p.start_ms - tx)

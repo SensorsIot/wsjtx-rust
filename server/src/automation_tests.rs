@@ -193,6 +193,26 @@ fn tc_020_003_configuration_is_exact_and_has_no_default_policy() {
     );
 }
 
+/// #89 WstxStrategy::FreeTxSlot Due: the instant of a slot judgement, the station time and the
+/// period start of the latest complete publication, as the slot functions take it. The tests
+/// state both; a slot function that takes the station time alone (the parent of #89) is handed
+/// that, so a test that needs the publication is red there by its assertion, not by its build.
+pub(crate) trait DueAt {
+    fn due_at(now_ms: i64, published: Option<i64>) -> Self;
+}
+impl DueAt for (i64, Option<i64>) {
+    fn due_at(now_ms: i64, published: Option<i64>) -> Self {
+        (now_ms, published)
+    }
+}
+impl DueAt for i64 {
+    fn due_at(now_ms: i64, _: Option<i64>) -> Self {
+        now_ms
+    }
+}
+pub(crate) fn due_at<T: DueAt>(now_ms: i64, published: Option<i64>) -> T {
+    T::due_at(now_ms, published)
+}
 /// Bench UTC set to 1 s after an even FT8 period E (a partner period); own periods are odd.
 pub(crate) fn at_even(f: &Mcp) -> i64 {
     let e = (now_ms().div_euclid(30_000) + 4) * 30_000;

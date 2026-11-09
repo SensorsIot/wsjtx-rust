@@ -444,6 +444,10 @@ struct Run {
     hearing: Option<Value>,
     /// WstxStrategy::CqWhenNoTarget: consecutive fresh publications with nothing listed.
     empty_publications: u32,
+    /// #89 FreeTxSlot "Waiting for the newest period": a contest Run's CQ decided in waiting
+    /// without a fresh publication waits for the newest Rx period's complete publication, at the
+    /// latest until this station time (the end of the period in progress when the wait began).
+    cq_wait: Option<i64>,
 }
 impl Run {
     #[allow(
@@ -495,6 +499,7 @@ impl Run {
             slot_since_ms: i64::MIN,
             hearing: None,
             empty_publications: 0,
+            cq_wait: None,
         }
     }
     /// WstxStrategy::LeaveRule leaving: run.left, the left station's QuietTime on this band and
@@ -531,6 +536,7 @@ impl Run {
         self.remaining = None;
         self.hearing = None;
         self.empty_publications = 0;
+        self.cq_wait = None;
     }
 }
 /// #81 WstxStrategy::StartedQso finishing guard: a run's started QSO that a run end let finish, the
@@ -776,8 +782,10 @@ impl Owner {
         let since = inner.slot_since_ms;
         // "Rebuild on decodes" (operator 2026-11-09): the build at a period start counts the
         // period just ended before its decodes exist; the publication of a counted period's
-        // decodes builds again.
-        let counted = freeslot::recent_starts(mode, rx, now);
+        // decodes builds again; #89 also the complete publication of the period in progress of
+        // the judged parity, which makes it due.
+        let published = published_start(r);
+        let counted = freeslot::recent_starts(mode, rx, (now, published));
         let decoded = r
             .latest_publication()
             .filter(|p| p.3)
@@ -799,9 +807,9 @@ impl Owner {
             .waterfall
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .periods((&key.0.1, key.0.2), now);
+            .periods((&key.0.1, key.0.2), (now, published));
         let decodes = decodes_of(r, &key.0);
-        let judged = freeslot::Judged::new(&periods, mode, rx, since, now, &decodes);
+        let judged = freeslot::Judged::new(&periods, mode, rx, since, (now, published), &decodes);
         let open = freeslot::open_slots(mode, judged.decoded(), &|f| {
             judged.numbers(f).map(|n| n.rise)
         });
@@ -1740,13 +1748,15 @@ impl Owner {
                     return stop(&mut inner, "no_client", false);
                 }
                 if waiting_reason.is_some() {
+                    // #89 a waiting reason during the wait: no decision; a new wait when it ends.
+                    run.cq_wait = None;
                     return;
                 }
                 // #63 WstxContest::ContestRun: Run calls CQ, from a slot quiet in my Rx parity
                 // (#66).
                 let run_cq = contest.is_some_and(|s| s.operation == crate::contest::Operation::Run);
                 let Some((_, first, next, _)) = fresh else {
-                    if run_cq {
+                    if run_cq && cq_decision_due(run, contact, r) {
                         return self.calling(&mut inner, contact, state);
                     }
                     return;
@@ -1853,6 +1863,7 @@ impl Owner {
     /// in my Rx parity (FreeTxSlot, #66; no called station), then enable_tx with no partner.
     fn calling(&self, inner: &mut Inner, contact: &contact_http::Station, state: &ProfileState) {
         let run = inner.run.as_mut().expect("checked");
+        run.cq_wait = None;
         let (revision, _, _) = contact.facts();
         let tx = contact.status_facts().tx_hz;
         let Some(revision) = take_slot(run, contact, state, tx, None, revision, SlotRule::Listen)
@@ -2049,6 +2060,7 @@ fn manual(inner: &mut Inner) {
         run.contact_id = None;
         run.progress = None;
         run.unanswered = 0;
+        run.cq_wait = None;
         inner.run_revision += 1;
     }
 }
@@ -2228,6 +2240,48 @@ fn utc_now(r: &recording::Recording) -> i64 {
         t.service.with(|h| h.hardware().now_utc_ms())
     })
 }
+/// #89 WstxStrategy::FreeTxSlot "Waiting for the newest period" (StrategyRun Decision timing): a
+/// contest Run's CQ decided in waiting without a fresh publication is decided now when Hold Tx is on
+/// (no decision, D16, no wait), when the newest period of its Rx parity (in progress or ended) has
+/// its complete publication (or a later period has one: publications never go back, so its own no
+/// longer comes), or when the period in progress at the start of the wait has ended; else it waits.
+fn cq_decision_due(
+    run: &mut Run,
+    contact: &contact_http::Station,
+    r: &recording::Recording,
+) -> bool {
+    let facts = contact.status_facts();
+    if facts.hold_tx {
+        run.cq_wait = None;
+        return true;
+    }
+    let mode = contact_http::mode_of(run.mode);
+    let t = freeslot::period_ms(mode);
+    let now = utc_now(r);
+    let current = now.div_euclid(t) * t;
+    let newest = if wstx_rust::transmit::parity(mode, current) == facts.parity {
+        current - t
+    } else {
+        current
+    };
+    let published = r
+        .latest_publication()
+        .and_then(|p| Some((p.3, crate::contact::parse_utc(p.4.as_deref()?)?)))
+        .is_some_and(|(complete, start)| start > newest || (start == newest && complete));
+    let deadline = *run.cq_wait.get_or_insert(current + t);
+    if published || now >= deadline {
+        run.cq_wait = None;
+        return true;
+    }
+    false
+}
+/// The period start of the latest complete receive publication (WstxStrategy::FreeTxSlot Due,
+/// #89): a partial publication names none.
+fn published_start(r: &recording::Recording) -> Option<i64> {
+    r.latest_publication()
+        .filter(|p| p.3)
+        .and_then(|p| p.4.as_deref().and_then(crate::contact::parse_utc))
+}
 /// The decodes of the run's live job as (period start, audio frequency): WstxStrategy::FreeTxSlot
 /// "decoded stations" (#66), of which the counted periods' count.
 fn decodes_of(r: &recording::Recording, identity: &(String, String, u64)) -> Vec<(i64, f64)> {
@@ -2283,17 +2337,27 @@ fn take_slot(
         wstx_rust::transmit::Parity::Odd => wstx_rust::transmit::Parity::Even,
     };
     let now = utc_now(r);
+    // #89 Due: my newest Rx period counts once its complete publication is there, also while it
+    // is in progress (its rows so far).
+    let published = published_start(r);
     let periods = r
         .waterfall
         .lock()
         .unwrap_or_else(|p| p.into_inner())
-        .periods((&run.identity.1, run.identity.2), now);
+        .periods((&run.identity.1, run.identity.2), (now, published));
     // #66: every decision judges my Rx periods only (a CQ's the other of its Tx parity), the
     // recent ones, by each slot's largest rise above the passband floor clamped at 0 (at or under
     // the floor a slot is free), clear of the stations
     // decoded in them.
     let decodes = decodes_of(r, &run.identity);
-    let judged = freeslot::Judged::new(&periods, mode, rx_parity, run.slot_since_ms, now, &decodes);
+    let judged = freeslot::Judged::new(
+        &periods,
+        mode,
+        rx_parity,
+        run.slot_since_ms,
+        (now, published),
+        &decodes,
+    );
     let decoded = judged.decoded();
     let power = |f: u32| judged.numbers(f).map(|n| n.rise);
     let hold = facts.hold_tx;
