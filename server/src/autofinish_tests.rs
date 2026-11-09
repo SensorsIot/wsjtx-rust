@@ -772,12 +772,11 @@ async fn ended_at_once(t: &Station81) {
     assert_eq!(logged(f, e), vec![]);
 }
 
-// Proves: CL-081-01; TC-081-005 (d), (e), (f), (g). After the run's end the finishing guard still
-// ends the QSO at once on (d) the radio's dial to 7.074 MHz, (e) the operating mode to FT4 and (f) the
-// browser grant revoked; (g) a safety edit disarms in the transmit owner (cause authority_changed),
-// nothing logged. Red on the parent: the QSO has already ended at the Auto off.
+// Proves: CL-081-01; TC-081-005 (d), (e), (f). After the run's end the finishing guard still ends the
+// QSO at once on (d) the radio's dial to 7.074 MHz, (e) the operating mode to FT4 and (f) the browser
+// grant revoked. Red on the parent: the QSO has already ended at the Auto off.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_081_005_band_mode_grant_and_safety_end_a_finishing_qso_at_once() {
+async fn tc_081_005_band_mode_and_grant_end_a_finishing_qso_at_once() {
     // (d)
     let t = finishing().await;
     retune(&t.f, &t.peer, 7_074_000);
@@ -801,10 +800,21 @@ async fn tc_081_005_band_mode_grant_and_safety_end_a_finishing_qso_at_once() {
             .unwrap();
     }
     ended_at_once(&t).await;
+}
 
-    // (g)
+// Proves: CL-081-01; TC-081-005 (g). A safety edit after the run's end: Enable Tx off with cause
+// authority_changed in the transmit owner, and the finishing guard cancels the contact (the edit
+// makes the run's grant no longer current); nothing keyed after it and nothing logged. Red on the
+// parent: the QSO has already ended at the Auto off; red without the guard's grant check: the contact
+// stays in roger_report.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_081_005_g_a_safety_edit_ends_a_finishing_qso_at_once() {
+    // (g) A safety edit: the transmit owner's context takes the new safety revision (the hardware
+    // double's seam stands for it) and disarms with cause authority_changed; the saved changed
+    // control is reconciled into the authorization (a new scope), so the run's grant is no longer
+    // current and the finishing guard cancels the contact.
     let t = finishing().await;
-    let (f, e) = (&t.f, t.e);
+    let f = &t.f;
     f.bench.safety_edits.fetch_add(1, Ordering::SeqCst);
     let service = &f.state.recording.transmit.get().unwrap().service;
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -817,9 +827,30 @@ async fn tc_081_005_band_mode_grant_and_safety_end_a_finishing_qso_at_once() {
         f.read("contact").await["transmit"]["last_disarm_cause"],
         "authority_changed"
     );
-    publish(f, e + 60_000, &[his("HB9BLA K1ABC RR73")]);
-    silent_through(f, e + 75_000).await;
-    assert_eq!(logged(f, e), vec![]);
+    {
+        let mut store = f.state.store.lock().unwrap();
+        let mut settings = store.document.settings();
+        settings.control = profile::Control {
+            mode: "cat".into(),
+            endpoint: Some("icom7300://COM251".into()),
+            ptt: "cat".into(),
+        };
+        store.save(settings).unwrap();
+        f.state
+            .authorization
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .authority
+            .reconcile_control(&mut store)
+            .unwrap();
+    }
+    ended_at_once(&t).await;
+    assert_eq!(
+        f.read("contact").await["transmit"]["last_disarm_cause"],
+        "authority_changed"
+    );
 }
 
 // Proves: CL-081-01; TC-081-005 (h), a regression guard (green on the parent). With Auto on and the run
