@@ -3373,6 +3373,40 @@ test('TC-097-014 the editor with the nine decisions and the selector with the sa
   assert.equal(await page.inputValue('#strategy-name'),'contest:ft8_activity','the earlier selection');
   assert.deepEqual(errors,[]);
 });
+// Proves: CL-097-07; TC-097-015 (the prompt in Chromium; oracle WstxContest D11 and
+// WstxStrategy::BuiltinStrategies): with the contest built-in "WW Digi" and a saved copy "WW Digi
+// fast" the prompt offers "WW Digi" first (chosen) and then "WW Digi fast"; its controls are the
+// contest, the period and the strategy only (no S&P/Run, repetitions or quiet time); Start sends
+// one PUT {active "WW Digi", contest {ww_digi, start, end}}; the status reads "Contest WW Digi ·
+// <period> UTC · WW Digi · Auto on" after Auto on; Start with "WW Digi fast" sends that active
+// with the same contest. Station replies are routed fixtures; the expected requests are written
+// here. Red on the branch base: the prompt's S&P/Run.
+test('TC-097-015 the contest prompt offers the contest strategies, no S&P/Run',{timeout:60000},async t=>{
+  const {builtin:_,...fastBase}=contestBuiltin('WW Digi fast','ww_digi');
+  const fast={...fastBase,filters:{...noLists(),countries:{include:[],exclude:[{kind:'country',value:'Japan',bands:null}]}},leave:{mode:'contest',tx_changes:1},cq_when_idle:false};
+  const {page,errors,s,push,settle,status}=await strategydefStation(t,{width:1366,height:768},{strategies:[fast]});
+  const period='Contest WW Digi · 08-29 12:00 to 08-30 12:00 UTC',ww={profile:'ww_digi',start:'2026-08-29T12:00Z',end:'2026-08-30T12:00Z'};
+  const open=async()=>{await page.locator('#strategy-contest').click();await page.locator('#contest-prompt[open]').waitFor();};
+  await open();
+  assert.equal(await page.inputValue('#cp-profile'),'ww_digi');
+  assert.deepEqual(await page.locator('#cp-strategy option').allTextContents(),['WW Digi','WW Digi fast'],'the built-in first');
+  assert.equal(await page.inputValue('#cp-strategy'),'WW Digi');
+  assert.deepEqual(await page.locator('#contest-prompt').evaluate(d=>[...d.querySelectorAll('input,select,textarea')].map(e=>e.id)),['cp-profile','cp-start','cp-end','cp-strategy'],'no operation, repetitions or quiet time');
+  assert.doesNotMatch(await page.locator('#contest-prompt form').textContent(),/S&P|Search and pounce|Repetitions|Quiet/i);
+  let mark=s.requests.length;
+  await page.locator('#cp-go').click();await page.waitForFunction(()=>!document.querySelector('#contest-prompt').open);await settle(s.puts,1);
+  assert.deepEqual(s.requests.slice(mark).filter(r=>r!=='GET /strategy/contests'),['PUT /strategy']);
+  assert.deepEqual([s.puts[0].configuration.active,s.puts[0].configuration.contest],['WW Digi',ww]);
+  await status(`${period} · WW Digi · Auto off`);
+  await page.locator('#qso-auto').click();await page.locator('#op-confirm[open]').waitFor();await page.locator('#op-confirm-ok').click();await settle(s.autos,1);
+  await push.strategy();await status(`${period} · WW Digi · Auto on`);
+  // The saved copy: Start sends it as active with the same contest.
+  await open();await page.selectOption('#cp-strategy','WW Digi fast');mark=s.requests.length;
+  await page.locator('#cp-go').click();await settle(s.puts,2);
+  assert.deepEqual(s.requests.slice(mark),['PUT /strategy']);
+  assert.deepEqual([s.puts[1].configuration.active,s.puts[1].configuration.contest],['WW Digi fast',ww]);
+  assert.deepEqual(errors,[]);
+});
 // Proves: CL-063-05; TC-063-012. Automatic operation (#39 strategydef): Start only selects; Auto on
 // asks the warning where the rules forbid it and sends the confirmation with POST /strategy/auto;
 // the run state and Auto off come with the pushes. Station replies are hand-written fixtures; the

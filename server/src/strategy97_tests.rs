@@ -1312,6 +1312,107 @@ async fn tc_097_011_g_unattended_the_busy_calls_count_and_tx_still_moves() {
     assert_eq!(quiet_run(f), ("stopped".into(), json!("no_client")));
 }
 
+// Proves: TC-097-015 (CL-097-07, hand-worked from WstxContest D11, WstxStrategy::BuiltinStrategies
+// and LeaveRule). WW Digi on 20m, the period in force, W1DUP a dupe in the log, Auto on. The
+// built-in "WW Digi" (cq_when_idle on): no CQ after one empty publication, the CQ after the second;
+// CQ JA1XYZ (new multiplier, farthest), CQ K1ABC and the dupe W1DUP calling my call: JA1XYZ
+// selected (first by ContestValueOrder), the CQ ended, W1DUP never answered; a JA caller of my call
+// (JA2ABC) answered at once. "WW Digi fast" (leave {contest, 1}, cq_when_idle false, countries
+// exclude Japan, tx_move_every no_reports 2): six empty publications call no CQ; JA1XYZ and the JA
+// caller have no rank, K1ABC is selected; silent without spots (no_reports, every 2nd call) Tx moves
+// after the 2nd call and K1ABC is left {tx_changes} at the 4th. A selection with operation "run" is
+// refused at contest.operation, a strategy of class strategy with the contest at contest.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_015_the_contest_built_in_and_a_saved_contest_strategy_run() {
+    let dupe = ("HB9BLA W1DUP EM12", 900.0, Some(9.0));
+    let ja_caller = ("HB9BLA JA2ABC PM85", 1300.0, Some(-12.0));
+    let k1abc = ("CQ WW K1ABC FN42", 1800.0, Some(-10.0));
+    let ja1xyz = ("CQ WW JA1XYZ PM95", 1100.0, Some(-15.0));
+    // The built-in: the CQ only on the second empty publication.
+    let t = contest_leaving("sp", |c| c["active"] = json!("WW Digi")).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, e - 120_000, &[]);
+    assert_ne!(
+        run_of(f).await["state"],
+        "calling_cq",
+        "one empty publication"
+    );
+    publish(f, e - 105_000, &[]);
+    assert_eq!(run_of(f).await["state"], "calling_cq", "the second");
+    assert_eq!(contact(f).await.1, json!("calling"));
+    publish(f, e, &[k1abc, ja1xyz, dupe]);
+    assert_eq!(
+        contact(f).await,
+        (json!("JA1XYZ"), json!("report"), json!("armed")),
+        "JA1XYZ first, the CQ ended, never W1DUP"
+    );
+    assert_eq!(run_of(f).await["state"], "contact_active");
+    publish(f, rep(e, 1), &[ja_caller, dupe]);
+    assert_eq!(contact(f).await.0, json!("JA2ABC"), "the JA caller");
+    assert_eq!(
+        run_of(f).await["left"],
+        json!({"call":"JA1XYZ","reason":"caller"})
+    );
+    // "WW Digi fast".
+    let fast = |c: &mut Value| {
+        contest_edit(c, |s| {
+            s["name"] = json!("WW Digi fast");
+            s["leave"] = json!({"mode":"contest","tx_changes":1});
+            s["cq_when_idle"] = json!(false);
+            s["filters"]["countries"]["exclude"] =
+                json!([{"kind":"country","value":"Japan","bands":null}]);
+        })
+    };
+    let t = contest_leaving("sp", fast).await;
+    let (f, e) = (&t.f, t.e);
+    for k in 0..6 {
+        publish(f, e - 180_000 + 15_000 * k, &[]);
+        assert_ne!(run_of(f).await["state"], "calling_cq", "no CQ, {k}");
+    }
+    assert_eq!(contact(f).await.0, Value::Null);
+    publish(f, e, &[ja1xyz, ja_caller, k1abc]);
+    assert_eq!(
+        contact(f).await,
+        (json!("K1ABC"), json!("report"), json!("armed")),
+        "Japan excluded"
+    );
+    let tx = || async { frequencies(f).await.1 };
+    let start = tx().await;
+    publish(f, rep(e, 1), &[]);
+    assert_eq!(tx().await, start, "no move at the 1st call");
+    publish(f, rep(e, 2), &[]);
+    let moved = tx().await;
+    assert_ne!(moved, start, "moved after the 2nd call");
+    publish(f, rep(e, 3), &[]);
+    assert_eq!(
+        (tx().await, contact(f).await.2),
+        (moved, json!("armed")),
+        "the 3rd"
+    );
+    publish(f, rep(e, 4), &[]);
+    assert_eq!(contact(f).await.2, json!("disarmed"));
+    assert_eq!(
+        run_of(f).await["left"],
+        json!({"call":"K1ABC","reason":"tx_changes"})
+    );
+    // The refusals.
+    let g = f.browser("GET", "/strategy", None).await.json;
+    let mut c = g["configuration"].clone();
+    c["contest"]["operation"] = json!("run");
+    let r = put(f, g["revision"].clone(), c).await;
+    assert_eq!(
+        (r.status.as_u16(), r.json["error"]["field"].clone()),
+        (400, json!("contest.operation"))
+    );
+    let mut c = g["configuration"].clone();
+    c["active"] = json!("Test calls");
+    let r = put(f, g["revision"].clone(), c).await;
+    assert_eq!(
+        (r.status.as_u16(), r.json["error"]["field"].clone()),
+        (400, json!("contest"))
+    );
+}
+
 // Proves: TC-097-011 (i) (CL-097-06, hand-worked from WstxContact::BusyPartner and the #97
 // coordinator default for a free text). KE1J's report to W9XYZ starts busy (paused 1); his report
 // to K2ABC keeps it (busy_with K2ABC, paused 2, remaining stays 4) and Tx stays 1500 (no TxMoveRule
