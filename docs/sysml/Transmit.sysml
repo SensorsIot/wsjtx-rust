@@ -427,8 +427,10 @@ package WstxTransmit {
              applied correction toward it by at most maxSlewMs, otherwise nothing changes
              (no fine-tuning, no search without evidence; the current time is accepted);
              on the ntp basis such evidence with |estimate| > maxResidualMs is only the
-             warning stations_off. A system clock step is subtracted from the correction
-             (station UTC continuous). unsynchronized: on the air basis such evidence;
+             warning stations_off. The applied correction is 0 on the ntp basis (a system
+             clock step leaves it 0) and starts at 0 at each change from ntp to air;
+             only on the air basis a system clock step is subtracted from a nonzero
+             correction (station UTC continuous); a correction of 0 stays 0. unsynchronized: on the air basis such evidence;
              synchronized otherwise; never unknown. The applied correction is added to
              station UTC on the air basis (NTP unavailable or not correct) for receive
              windows, period/DT, transmit planning and audio start; the SNTP offset is

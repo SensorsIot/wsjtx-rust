@@ -3479,10 +3479,15 @@ package WstxRequirements {
              mainly in one direction). Medians
              of an even count are the floor of the mean of the middle pair. A system clock
              step of more than 100 ms between observations (system time elapsed minus
-             monotonic time elapsed) discards all observations and the estimate and
-             subtracts the step from the applied correction (CL-043-03), so station UTC
-             stays continuous (a step that corrected the system clock leaves 0); a
-             correction beyond 3000 ms after that restarts at 0. */
+             monotonic time elapsed) discards all observations and the estimate; only on
+             the air basis (CL-043-03) and only from a nonzero applied correction (one set
+             by evidence) it is also subtracted, so station UTC stays continuous (a step
+             that corrected the system clock leaves 0), and a correction beyond 3000 ms
+             after that restarts at 0; a correction of 0 stays 0 (the accepted time is the
+             system clock). On the ntp basis the applied correction is 0 and a step
+             leaves it 0 (#92, the
+             coordinator's decision of 2026-11-09 from the operator's rule "OTA
+             synchronization is only used if NTP is not available or not correct"). */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/transmit/air.rs; server/src/recording.rs; server/src/transmit_http.rs";
     }
@@ -3512,8 +3517,10 @@ package WstxRequirements {
              the PC's UTC by CL-007-05 (#47), which is the fix; the applied correction
              of (3) is a deliberate difference, shown in the status line, never warned.
              capture_warning (the station, only while live receive runs; operator
-             2026-11-09 "Also on large drift"): uncorrelated while the receive clock is
-             not correlated to UTC (no re-anchoring possible), else drift_high while
+             2026-11-09 "Also on large drift"): uncorrelated while a capture epoch exists
+             and its clock is not correlated to UTC (no re-anchoring possible; null while
+             no epoch exists yet, so a receive start or restart is no entry, CL-037-02),
+             else drift_high while
              |capture_drift_ppm| (CL-007-05, known after the first 60 s) is above 1000 ppm
              (at 1000 ppm the audio frequency error reaches a quarter of the FT8 tone
              spacing at 1500 Hz, 1.5 of 6.25 Hz, and the drift within one FT8 period
@@ -3522,7 +3529,11 @@ package WstxRequirements {
              (prompt and late) re-estimates; the latest estimate counts as evidence while
              it is evidence (CL-043-02), at most 60 s old and unstepped. The station clock
              basis is ntp while the SNTP state is synchronized (NTP available and
-             correct; correction 0), else air; the SNTP offset itself is never applied.
+             correct), else air; the SNTP offset itself is never applied. The applied
+             correction is 0 while the basis is ntp (a system clock step leaves it 0);
+             at each change from ntp to air it starts at 0 (the current time accepted)
+             and moves only on evidence; a step is subtracted from it only on the air
+             basis and only from a nonzero correction (CL-043-02).
              On the ntp basis evidence with |offset| above 500 ms is the warning
              stations_off and changes nothing. On the air basis evidence with |offset -
              applied| above 500 ms moves the applied correction toward the offset by at
@@ -3594,8 +3605,9 @@ package WstxRequirements {
              none from two, -1850 ms evidence from three; four evidence; 5 of 9 (55 %) no
              evidence; the split crowd 0 stations; only the two in-range observations
              admitted; applied -1000 (unsynchronized) then -2000 (synchronized) and kept;
-             evidence ignored after 60 s + 1 ms and a 101 ms step clearing the window,
-             both synchronized with the correction kept; stepping back clears the window
+             evidence ignored after 60 s + 1 ms (correction kept) and a 101 ms step
+             clearing the window and subtracted from the nonzero correction, both
+             synchronized; stepping back clears the window
              and leaves correction 0, the +5 s step restarts at 0; residual 500 ms leaves
              the correction unchanged, 501 ms corrects it; quiet synchronized with nothing
              applied and no alternation; only synchronized plans a transmit start; without
@@ -3660,14 +3672,17 @@ package WstxRequirements {
              CL-043-01, CL-043-03, CL-009-05
              Setup: the actual station router on a disposable profile directory with the
              station clock as main wires it (SNTP monitor that never measures); the actual
-             transmit owner; the actual server and Chromium with transmit.state and GET
-             /clock fixtures where stated.
+             transmit owner; the actual server and Chromium with routed clock.state events
+             (as TC-092-005; the error-field clock entries come from clock.state, not
+             transmit.state), a transmit-configured profile and GET /clock fixtures where
+             stated.
              Steps (#92): open with clock.json missing and with a #43 file {schema_version
              1, profile_id, source ntp}; GET /clock; GET /transmit; hear twelve stations in
              two windows; POST /clock; on the transmit owner hear two then six stations,
              read its clock and UTC. In the browser: requests before Settings opens; open
-             Settings > General; an estimate fixture; transmit views synchronized/air
-             without an estimate, synchronized/ntp, synchronized/air, unsynchronized/air.
+             Settings > General; an estimate fixture; clock.state events with clock
+             synchronized/air without an estimate, synchronized/ntp, synchronized/air,
+             unsynchronized/air (warning and capture_warning null).
              Oracles: the same behaviour with and without the file, the file unchanged;
              exact view keys (no source, disagreement_ms or storage_error), state
              synchronized on the air basis; GET /transmit without clock_source,
@@ -3816,19 +3831,31 @@ package WstxRequirements {
              failed rounds; a 101 ms step with a young measurement; an empty server list
              (no round asks); no round yet; the service reader answering running, stopped,
              disabled and failing; with live receive a correlated clock at capture drift
-             1000.0, -1000.0 and 1000.1 ppm, a rate not yet known, an uncorrelated clock,
-             then receive stopped with 1500 ppm; GET /clock and GET /transmit after each.
+             1000.0, -1000.0 and 1000.1 ppm, a rate not yet known, receive running before
+             its first capture epoch, an uncorrelated epoch, then receive stopped with
+             1500 ppm. Stale correction (#92 coordinator decision 2026-11-09): on the ntp
+             basis (SNTP +12 ms) system clock steps of +300 ms and -300 ms; the
+             2026-11-09 recovery: SNTP +525 ms (air basis, crowd at +339 ms, correction
+             0), Windows Time steps the system clock +525 ms, the SNTP step gap
+             (unknown), the next round +3 ms (ntp basis); an air basis with correction
+             -2000 ms, SNTP back synchronized, then SNTP unsynchronized again. GET /clock
+             and GET /transmit after each.
              Expected (TransmitClock 500 ms / 600 s / 100 ms, CL-043-03): SNTP +12: ntp
              basis, synchronized, correction 0 in every case, warning null at -500 ms and
              stations_off at -2025, -501 and +501 ms (|offset| above 500 ms); SNTP +500
              ntp basis synchronized null, +501 air basis
-             synchronized pc_clock_off; SNTP -1900 air basis -2000 ms synchronized
-             pc_clock_off; ntp_unreachable; null at 600 s and ntp_unreachable at 600 s +
-             1 ms; null after the step, with the empty list and before the first round,
-             the station clock synchronized in each; windows_time running, stopped,
-             disabled, unknown; capture_warning null at 1000.0 and -1000.0 ppm, drift_high
-             at 1000.1 ppm, null without a known rate, uncorrelated for the uncorrelated
-             clock, null with receive stopped; GET /clock warning equals GET /transmit
+             synchronized pc_clock_off; SNTP -1900 air basis, correction starting at 0 and
+             -2000 ms after two windows, synchronized, pc_clock_off; ntp_unreachable; null
+             at 600 s and ntp_unreachable at 600 s + 1 ms; null after the step, with the
+             empty list and before the first round, the station clock synchronized in
+             each; windows_time running, stopped, disabled, unknown; capture_warning null
+             at 1000.0 and -1000.0 ppm, drift_high at 1000.1 ppm, null without a known
+             rate, null before the first epoch, uncorrelated for the uncorrelated epoch,
+             null with receive stopped; the ntp-basis steps leave correction 0 and station
+             UTC equal to the system clock; the recovery gives correction 0 and station
+             UTC equal to the system clock at every step, no clock_not_synchronized; the
+             -2000 ms correction becomes 0 when SNTP is synchronized and starts at 0 when
+             it is unsynchronized again (no stale correction); GET /clock warning equals GET /transmit
              clock_warning; no clock_source key; clock_revision increases at each change of
              a clock.state field and only then.
              2 — Isolated automated tests; Windows development PC, no public time server,
