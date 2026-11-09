@@ -405,10 +405,16 @@
   run: |
     set -euo pipefail
     run_dir=$(mktemp -d "${HARNESS_LEDGER_DIR:?}/decoder-resource.XXXXXX")
+    trap '[ -z "${HARNESS_REACH_DIR:-}" ] || cp "$run_dir"/*.json "$HARNESS_REACH_DIR"/ 2>/dev/null || true' EXIT
     python -m unittest discover -s tools -p test_windows_resource_job.py -q
     python -m unittest discover -s tools -p test_windows_process_metrics.py -q
     cargo test --release --locked --test decoder_signal --message-format=json -- --test-threads=1 --skip release_runtime_and_overlapping_window_history | python tools/windows_resource_job.py resolve --stream-log "$run_dir/ordinary.log" --receipt "$run_dir/artifact.json"
     python tools/windows_resource_job.py run --case matrix --ordinary-gate --artifact-receipt "$run_dir/artifact.json"
+  # Reachability (harness reachability.py): the ordinary passes and the matrix case are
+  # named only in the JSON run records of tools/windows_resource_job.py (artifact.json,
+  # matrix.receipt.json), which the trap copies to HARNESS_REACH_DIR.
+  reach:
+    parsers: [text, json]
   paths:
   - server/src/decoder/
   - server/src/lib.rs
@@ -583,6 +589,11 @@
   exclusive: ["*"]
   build: cargo test --release --locked --bin wstx-rust --no-run
   run: "cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_busy_period_rows_promptly -- --exact --nocapture && cargo test --release --locked --bin wstx-rust receive_http_tests::resource_station_process_delta_and_owner_release -- --exact --ignored --nocapture"
+  # Reachability (harness reachability.py): the busy-period case starts
+  # tests/receive-latency.test.cjs and prints its output only when it fails.
+  reach:
+    launches:
+      live_native_busy_period_rows_promptly: [tests/receive-latency.test.cjs]
   paths:
   - server/src/main.rs
   - server/src/profile.rs
