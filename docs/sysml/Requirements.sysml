@@ -3574,7 +3574,7 @@ package WstxRequirements {
              "Clock accepted (stations heard are not off to one side)" instead of the
              synchronized wording. */
         attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/transmit/air.rs; server/src/transmit/clock.rs; server/src/clock_http.rs; server/src/recording.rs; server/src/transmit_http.rs; server/src/main.rs; client/contact.js; client/recording.js";
+        attribute implementation : String = "server/src/transmit/air.rs; server/src/transmit/clock.rs; server/src/transmit/windows_time.rs; server/src/clock_http.rs; server/src/recording.rs; server/src/transmit_http.rs; server/src/main.rs; client/contact.js; client/recording.js";
     }
     dependency CL_043_03_to_FR_006 from 'CL-043-03' to 'FR-006';
     dependency CL_043_03_to_FR_005 from 'CL-043-03' to 'FR-005';
