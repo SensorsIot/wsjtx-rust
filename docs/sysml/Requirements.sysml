@@ -3570,7 +3570,7 @@ package WstxRequirements {
              administrator)"; running "Windows Time runs but the clock is off: Settings >
              Time & language > Date & time > Sync now"; unknown "Check the Windows Time
              service and sync the clock". GET /transmit clock_warning keeps carrying the
-             warning value for other clients. Without evidence the status line reads
+             warning value for other clients. Without evidence and with correction 0 the status line reads
              "Clock accepted (stations heard are not off to one side)" instead of the
              synchronized wording. */
         attribute coverage : ImplementationState = ImplementationState::partial;
@@ -3934,7 +3934,7 @@ package WstxRequirements {
              over 1000 ppm · check the audio device" (warn) on both profiles, gone at
              null; no /clock request before Settings opens; the clock entries open
              Settings clock, the audio entry the receive details; the status line remedy
-             texts of CL-043-03 for each windows_time value, and without evidence it
+             texts of CL-043-03 for each windows_time value, and without evidence and with correction 0 it
              begins "Clock accepted (stations heard are not off to one side)"; no source
              select; no view
              shows "Clock unknown" or "NTP and air clock disagree".
