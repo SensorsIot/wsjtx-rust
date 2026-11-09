@@ -3616,7 +3616,7 @@ package WstxRequirements {
              stations_off with SNTP +12 and correction -2000, pc_clock_off with -1900.
              2 — Isolated automated tests; Windows development PC, no audio, radio or
              network. */
-        attribute automation : AutomationState = AutomationState::partial;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-043-02';
             verify 'CL-043-03';
@@ -3699,7 +3699,7 @@ package WstxRequirements {
              blocked; the Clock line names the correction.
              2 — Isolated automated tests; Windows development PC, loopback only, no
              public time server, audio or radio. */
-        attribute automation : AutomationState = AutomationState::partial;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-043-01';
             verify 'CL-043-03';
@@ -3796,11 +3796,12 @@ package WstxRequirements {
              0; the state is never unknown.
              2 — Isolated automated tests; Windows development PC, no audio, radio or
              network. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-043-02';
             verify 'CL-043-03';
         }
+        attribute executable : String = "server/tests/transmit_air_clock.rs";
     }
     dependency CL_043_02_verified_by_TC_092_001 from 'CL-043-02' to 'TC-092-001';
     dependency CL_043_03_verified_by_TC_092_001 from 'CL-043-03' to 'TC-092-001';
@@ -3823,11 +3824,12 @@ package WstxRequirements {
              refuses.
              2 — Isolated automated tests; Windows development PC, no audio, radio or
              network. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-043-03';
             verify 'CL-009-05';
         }
+        attribute executable : String = "server/tests/transmit_air_clock.rs";
     }
     dependency CL_043_03_verified_by_TC_092_002 from 'CL-043-03' to 'TC-092-002';
     dependency CL_009_05_verified_by_TC_092_002 from 'CL-009-05' to 'TC-092-002';
@@ -3875,11 +3877,12 @@ package WstxRequirements {
              a clock.state field and only then.
              2 — Isolated automated tests; Windows development PC, no public time server,
              audio or radio. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-043-03';
             verify 'CL-009-05';
         }
+        attribute executable : String = "server/tests/transmit_air_clock.rs; server/src/clock_http_tests.rs; server/src/transmit_http_tests.rs";
     }
     dependency CL_043_03_verified_by_TC_092_003 from 'CL-043-03' to 'TC-092-003';
     dependency CL_009_05_verified_by_TC_092_003 from 'CL-009-05' to 'TC-092-003';
@@ -3898,10 +3901,11 @@ package WstxRequirements {
              unknown route.
              2 — Isolated automated tests; Windows development PC, loopback only, no
              public time server, audio or radio. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-043-01';
         }
+        attribute executable : String = "server/src/clock_http_tests.rs";
     }
     dependency CL_043_01_verified_by_TC_092_004 from 'CL-043-01' to 'TC-092-004';
     verification 'TC-092-005' {
@@ -3936,11 +3940,12 @@ package WstxRequirements {
              shows "Clock unknown" or "NTP and air clock disagree".
              2 — Isolated automated functional tests; Windows development PC, no radio or
              RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-043-03';
             verify 'CL-037-02';
         }
+        attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_043_03_verified_by_TC_092_005 from 'CL-043-03' to 'TC-092-005';
     dependency CL_037_02_verified_by_TC_092_005 from 'CL-037-02' to 'TC-092-005';
@@ -4031,11 +4036,12 @@ package WstxRequirements {
              same on both profiles.
              2 — Isolated automated tests; Windows development PC, loopback only, no
              public time server, audio or radio. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-043-01';
             verify 'CL-043-03';
         }
+        attribute executable : String = "server/src/clock_http_tests.rs";
     }
     dependency CL_043_01_verified_by_TC_092_009 from 'CL-043-01' to 'TC-092-009';
     dependency CL_043_03_verified_by_TC_092_009 from 'CL-043-03' to 'TC-092-009';
