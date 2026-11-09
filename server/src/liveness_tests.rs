@@ -52,8 +52,14 @@ pub(crate) fn parse_frame(buffer: &[u8]) -> Option<(u8, Vec<u8>, usize)> {
     let first = *buffer.first()?;
     let second = *buffer.get(1)?;
     let (length, mut at) = match second & 0x7f {
-        126 => (u16::from_be_bytes(buffer.get(2..4)?.try_into().ok()?) as usize, 4),
-        127 => (u64::from_be_bytes(buffer.get(2..10)?.try_into().ok()?) as usize, 10),
+        126 => (
+            u16::from_be_bytes(buffer.get(2..4)?.try_into().ok()?) as usize,
+            4,
+        ),
+        127 => (
+            u64::from_be_bytes(buffer.get(2..10)?.try_into().ok()?) as usize,
+            10,
+        ),
         n => (n as usize, 2),
     };
     let key = if second & 0x80 != 0 {
@@ -280,14 +286,23 @@ async fn silent_peer_is_removed_at_the_next_heartbeat_after_15_s() {
     let (answered, b) = healthy.await.unwrap();
     assert_eq!(answered.len(), 12);
     for (at, took) in &answered {
-        assert!(*took <= Duration::from_secs(2), "{at:?}: answered after {took:?}");
+        assert!(
+            *took <= Duration::from_secs(2),
+            "{at:?}: answered after {took:?}"
+        );
     }
-    assert!(answered.iter().any(|(at, _)| *at > after), "B used after A's removal");
+    assert!(
+        answered.iter().any(|(at, _)| *at > after),
+        "B used after A's removal"
+    );
 
     // Control: C answered every Ping and is still open at 60 s, and usable.
     tokio::time::sleep_until(start + Duration::from_secs(61)).await;
     assert!(
-        matches!(c.closed.try_recv(), Err(oneshot::error::TryRecvError::Empty)),
+        matches!(
+            c.closed.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ),
         "a peer answering every Ping was closed"
     );
     c.send(json!({"v":1,"type":"station.get","id":99})).await;

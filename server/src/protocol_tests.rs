@@ -198,7 +198,8 @@ async fn detailed_rows_after_a_stall_are_sent_in_order_with_bounded_catch_up() {
 // Proves: CL-054-01; TC-054-001 Thin sends keep a 2 s grid instead of drifting by the tick delay.
 #[test]
 fn thin_sends_are_anchored_to_the_previous_deadline() {
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
+    use tokio::time::Instant;
     let start = Instant::now();
     let period = Duration::from_secs(2);
     // Sends land up to 100 ms after each due time; the anchors stay on the 2 s grid.

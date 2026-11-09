@@ -992,14 +992,14 @@ async fn send(socket: &mut WebSocket, message: Message) -> bool {
         Ok(Ok(()))
     )
 }
-async fn send_control(socket: &mut WebSocket, message: Message, pending: Option<Instant>) -> bool {
+async fn send_control(
+    socket: &mut WebSocket,
+    message: Message,
+    pending: Option<tokio::time::Instant>,
+) -> bool {
     if let Some(since) = pending {
         matches!(
-            tokio::time::timeout_at(
-                (since + Duration::from_secs(2)).into(),
-                send(socket, message)
-            )
-            .await,
+            tokio::time::timeout_at(since + Duration::from_secs(2), send(socket, message)).await,
             Ok(true)
         )
     } else {
@@ -1065,7 +1065,11 @@ fn arm_detail(
 /// #54: the next live Thin pacing anchor is the previous one plus the period, so 100 ms ticks do
 /// not drift against the 1 row/s source. A send more than half a period late restarts the grid
 /// at the send, so two sends are always at least half a period (1 s live) apart.
-fn next_thin_anchor(previous: Instant, period: Duration, now: Instant) -> Instant {
+fn next_thin_anchor(
+    previous: tokio::time::Instant,
+    period: Duration,
+    now: tokio::time::Instant,
+) -> tokio::time::Instant {
     let next = previous + period;
     if now.saturating_duration_since(next) > period / 2 {
         now
@@ -1134,6 +1138,8 @@ async fn connection(
     profile: Option<Arc<ProfileState>>,
     authority: Option<ConnectionAuthority>,
 ) {
+    // Every time of this loop is the runtime's clock, so a test can drive it (TC-021-008).
+    use tokio::time::Instant;
     let recording = profile.as_ref().map(|p| p.recording.clone());
     let mut heartbeat = interval(Duration::from_secs(5));
     heartbeat.tick().await;
@@ -1210,7 +1216,7 @@ async fn connection(
         };
         tokio::select! {
             biased;
-            _ = tokio::time::sleep_until((optional_since.unwrap_or_else(Instant::now)+Duration::from_secs(2)).into()), if optional_since.is_some()=>break "optional flush stalled 2 s",
+            _ = tokio::time::sleep_until(optional_since.unwrap_or_else(Instant::now)+Duration::from_secs(2)), if optional_since.is_some()=>break "optional flush stalled 2 s",
             _ = heartbeat.tick() => {
                 if last_pong.elapsed() > Duration::from_secs(15) { break "no pong for 15 s"; }
                 if !send_control(&mut socket, Message::Text(json!({"v":1,"type":"heartbeat"}).to_string().into()),optional_since).await { break "heartbeat write"; }
