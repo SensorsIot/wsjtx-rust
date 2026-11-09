@@ -5549,7 +5549,7 @@ package WstxRequirements {
              CL-024-02
              Setup: the browser fixture of the operating screen with a hand-written contact snapshot; contact commands are recorded.
              Steps: open the fold-out; read the Activity choice with settings.activity ww_digi; choose ARRL Digi.
-             Expected: the choice offers None, NA VHF, WW Digi and ARRL Digi (since #24 S2b also Field Day and RTTY Roundup, TC-024-009, since #24 S4b also Hound, TC-024-013) and shows WW Digi; choosing sends set_activity {activity arrl_digi}; nothing transmits; no page errors.
+             Expected: the choice offers None, NA VHF, WW Digi and ARRL Digi (since #24 S2b also Field Day and RTTY Roundup, TC-024-009, since #24 S4b also Hound, TC-024-013, since #99 also EU VHF after NA VHF, TC-099-003) and shows WW Digi; choosing sends set_activity {activity arrl_digi}; nothing transmits; no page errors.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -5599,7 +5599,7 @@ package WstxRequirements {
              CL-024-03
              Setup: the browser fixture of the operating screen with a hand-written contact snapshot; contact commands are recorded.
              Steps: open the fold-out with settings activity rtty, exchange DX, serial 7; enter "1A EMA" in the Exchange entry and choose Field Day; change the exchange to "2B WI".
-             Expected: the choice offers None, NA VHF, WW Digi, ARRL Digi, Field Day and RTTY Roundup; it shows RTTY Roundup, the entry DX and the next serial 0007; choosing sends set_activity {activity field_day, exchange "1A EMA"}, the change sends {field_day, "2B WI"}; nothing transmits; no page errors.
+             Expected: the choice offers None, NA VHF, WW Digi, ARRL Digi, Field Day and RTTY Roundup (since #99 also EU VHF, TC-099-003); it shows RTTY Roundup, the entry DX and the next serial 0007; choosing sends set_activity {activity field_day, exchange "1A EMA"}, the change sends {field_day, "2B WI"}; nothing transmits; no page errors.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -5717,13 +5717,15 @@ package WstxRequirements {
     // #99 EU VHF contest message: send (#24 S3, operator 2026-11-09).
     requirement 'CL-099-01' {
         doc /* #99. The transmit packer accepts the WSJT-X EU VHF contest message (i3=5) "<CALL1> <CALL2> [R] 5nSSSS GRID6" exactly as WSJT-X 3.3.0-beta5 packs it (two hashed calls of 3-11 characters, report 52-59, serial 0001-2047, 6-character locator), with bits, CRC, parity and tones identical to ft8code and ft4sim, and refuses every shape WSJT-X rejects for this family. Details: WstxTransmit::PackMessage (family euVhf). */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute implementation : String = "server/src/transmit/pack.rs";
+        attribute coverage : ImplementationState = ImplementationState::implemented;
     }
     dependency CL_099_01_to_FR_024 from 'CL-099-01' to 'FR-024';
     dependency CL_099_01_to_FR_004 from 'CL-099-01' to 'FR-004';
     requirement 'CL-099-02' {
         doc /* #99. The operator-chosen activity eu_vhf (refused without a 6-character profile locator or with a profile callsign over 11 characters; no contact starts whose two calls exceed 16 characters together, the 37-character limit of Tx3) generates CQ TEST, Tx1 with the full calls, Tx2/Tx3 "<DX> <MYCALL> [R] 5nSSSS GRID6" from the report, the station contest serial and the profile locator's first six characters, sequences on the partner's EU VHF message counted by the hashes of my call and the DX call, makes EU VHF rows selectable, logs STX, SRX, the two-digit RS and the 6-character grid, carries UDP Status special operation 2, answers CQ TEST as its own directive and is offered in the Activity choice. Details: WstxContact::EuVhfExchange. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; server/src/logbook.rs; server/src/mcp.rs; client/contact.js";
+        attribute coverage : ImplementationState = ImplementationState::implemented;
     }
     dependency CL_099_02_to_FR_024 from 'CL-099-02' to 'FR-024';
     dependency CL_099_02_to_FR_005 from 'CL-099-02' to 'FR-005';
@@ -5734,7 +5736,7 @@ package WstxRequirements {
              Steps: pack and encode every fixture message for FT8 and FT4; read family, i3 and refusal; unpack each packed payload with a hash table that knows the two calls and with none.
              Expected: for every message the oracle encodes unaltered as i3=5 the family is euVhf, i3 5, and bits, CRC, parity and tones (FT8) and bits, codeword and tones (FT4) equal the oracle; the text equals its normalized rendering; the unpack with the table renders the same tokens and with none "<...> <...> R 590003 FN42AX"; every rejected shape is not packed as euVhf (it is refused, or packed in the family the oracle chose, with the oracle's bits); the 38-character message is refused tooLong.
              2 — Isolated automated tests; Windows development PC, no radio, audio, RF or WSJT-X installation at test time. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-099-01';
         }
