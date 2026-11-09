@@ -8759,14 +8759,15 @@ async fn tc_066_002_the_cqs_caller_move_skips_a_decoded_station() {
 // the air and carry the tx mark (#61), as the live Tx runs of 77 rows. Those periods are received
 // (I transmitted in the period after them), so they count (CL-039-09 "periods I transmitted in
 // never counted"): periods {even {now 1}, odd {now null}} at the selection (e - 30 s), 2 at the
-// slot check of the 1st repetition (+ e), 3 at the 2nd (+ e + 30 s). Red on the parent: it drops
-// each Rx period with a marked row, 1 at every slot check, as live.
+// slot check of the 1st repetition (+ e), 3 at the 2nd (+ e + 30 s). My Tx periods are never kept
+// in the per-period power, the received ones are (e - 30, e - 15, e and e + 30 s). Red on the
+// parent: it drops each Rx period with a marked row, 1 at every slot check, as live.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_066_002_received_periods_count_after_my_transmissions() {
     use std::time::{Duration, Instant};
     let f = station(true).await;
     f.state.recording.fixture_band("20m");
-    f.state.recording.fixture_live_job("ft8");
+    let (_, job, generation) = f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
     let _client = f.state.recording.clients.session();
     let mut capture = f.state.recording.fixture_capture(e - 30_000);
@@ -8824,4 +8825,17 @@ async fn tc_066_002_received_periods_count_after_my_transmissions() {
             "repetition {k}"
         );
     }
+    // The other half of the rule: my Tx periods e + 15 s and e + 45 s (every row marked) are not
+    // kept; the received ones are, the odd e - 15 s as well; e + 60 s is still in progress.
+    let kept: Vec<i64> = f
+        .state
+        .recording
+        .waterfall
+        .lock()
+        .unwrap()
+        .periods((&job, generation), f.bench.now_utc_ms())
+        .iter()
+        .map(|p| p.start_ms - e)
+        .collect();
+    assert_eq!(kept, [-30_000, -15_000, 0, 30_000], "periods kept, from e");
 }

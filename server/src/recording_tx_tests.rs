@@ -185,8 +185,9 @@ fn tx_period_has_no_decode_attempt_and_publishes_a_transmitted_view() {
     assert_eq!(page["latest_decode"], *next);
 }
 
-// Proves: CL-061-04; TC-061-005. No Rx level while on the air or in the rest of a Tx period;
-// Tx rows are marked; the next receive period measures again. Capture is never stopped.
+// Proves: CL-061-04, CL-039-09; TC-061-005. No Rx level while on the air or in the rest of a Tx
+// period; Tx rows are marked; the next receive period measures again. Capture is never stopped.
+// Neither Tx period is kept in the per-period waterfall power (#66).
 #[test]
 fn tx_period_measures_no_level_and_marks_its_waterfall_rows() {
     let fixture = Fixture::new();
@@ -209,6 +210,7 @@ fn tx_period_measures_no_level_and_marks_its_waterfall_rows() {
         descriptor: context.descriptor.clone(),
         queue: queue.clone(),
     };
+    let identity = (job.id.clone(), job.generation);
     let mut worker = LiveWorker::new(r.clone(), job, Box::new(input), "ft8");
     let run = |worker: &mut LiveWorker, first: u64, count: u64, amplitude: f32| {
         for k in 0..count {
@@ -257,6 +259,20 @@ fn tx_period_measures_no_level_and_marks_its_waterfall_rows() {
     let keyed = rows(&r);
     assert!(!keyed.is_empty());
     assert!(keyed.iter().all(|t| t == &Some(json!(true))), "{keyed:?}");
+    // #66 WstxStrategy::FreeTxSlot: neither Tx period is kept in the per-period power, also
+    // 12:00:30, keyed late (its rows before the keying unmarked).
+    let kept: Vec<i64> = r
+        .waterfall
+        .lock()
+        .unwrap()
+        .periods(
+            (&identity.0, identity.1),
+            ms("2026-10-27T12:01:00.0000000Z"),
+        )
+        .iter()
+        .map(|p| p.start_ms - tx)
+        .collect();
+    assert_eq!(kept, Vec::<i64>::new(), "periods kept, from 12:00:15");
     let s = r.receive_snapshot();
     assert_eq!(s["audio"]["state"], "running");
     assert_eq!(s["audio"]["loss_epochs"], 0, "capture is never restarted");
