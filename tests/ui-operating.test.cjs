@@ -963,6 +963,85 @@ test('TC-044-015 Tx level in Settings > Radio > Audio',{timeout:60000},async t=>
   await page.selectOption('#control-mode','disabled');assert.equal(await button.isVisible(),false,'hidden for a control without CI-V');
   assert.deepEqual(errors,[]);
 });
+// Proves: CL-068-01; TC-068-001. The last pushed SWR is the Rx/Tx strip's last item, red above 2.0,
+// display only: no request, no pointer action, no extra strip line.
+test('TC-068-001 SWR at the end of the Rx/Tx strip',{timeout:90000},async t=>{
+  // A profile without CAT, so the real server carries out the band change of step (f); the
+  // radio.tx_level pushes are injected and carry managed themselves.
+  let requests;
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{requests=stationRequests(p,app.origin);}});
+  await page.waitForFunction(()=>!!profileData&&!!window.wstxContact?.snapshot(),null,{timeout:30000});
+  const base={managed:true,level_db:-10,stored:true,alc:'available',assistant:false,result:null,meters:null,power_limit_pct:null,warnings:[],keying_confirmed:false};
+  const inject=data=>page.evaluate(d=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'radio.tx_level',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,...d}}}})),data);
+  const meters=swr=>({alc:0,po_pct:40,swr_x10:swr});
+  // What the strip shows: the visible text of its SWR item, whether that is the last item after
+  // Rx=Tx, its colour against the strip's text colour and the page's --op-error.
+  const view=()=>page.evaluate(()=>{
+    const strip=document.querySelector('#rxtx-strip'),items=[...strip.children].filter(e=>e.getClientRects().length),last=items.at(-1);
+    const probe=document.createElement('span');probe.style.color='var(--op-error)';strip.append(probe);const error=getComputedStyle(probe).color;probe.remove();
+    const swr=items.filter(e=>/SWR/.test(e.textContent));
+    return {text:swr.length?swr.map(e=>e.textContent).join('|'):null,last:swr.length===1&&swr[0]===last&&items.at(-2)?.id==='strip-rx-from-tx',stripText:strip.innerText,
+      colour:swr[0]?getComputedStyle(swr[0]).color:null,plain:getComputedStyle(strip).color,error,filtered:!!swr[0]?.closest('main.op-app'),
+      themeFilter:getComputedStyle(document.querySelector('main.op-app')).filter};
+  });
+  const shows=async(text,red,label)=>{const v=await view();assert.equal(v.text,text,`${label}: ${v.stripText}`);assert.equal(v.last,true,`${label}: the last item, after Rx=Tx`);
+    assert.notEqual(v.plain,v.error);assert.equal(v.colour,red?v.error:v.plain,`${label}: ${red?'--op-error':'the strip text colour'}`);return v;};
+  const hidden=async label=>{const v=await view();assert.equal(v.text,null,`${label}: no SWR text`);assert.doesNotMatch(v.stripText,/SWR/,label);};
+  // (a) to (c): nothing before a reading.
+  await hidden('no push yet');
+  const geometry=()=>page.evaluate(()=>{const r=s=>{const b=document.querySelector(s).getBoundingClientRect();return {top:b.top,height:b.height};};
+    return {strip:r('#rxtx-strip'),signal:r('#signal'),waterfall:r('#waterfall'),scroll:document.documentElement.scrollWidth<=innerWidth,stripScroll:(e=>e.scrollWidth<=e.clientWidth+1)(document.querySelector('#rxtx-strip'))};});
+  const without=await geometry();
+  const mark=requests.list.length;
+  await inject(base);await hidden('managed, meters null');
+  await inject({...base,meters:meters(null)});await hidden('swr_x10 null');
+  // (d) to (f): the reading, kept after a level change and a band change.
+  await inject({...base,meters:meters(14)});await shows('SWR 1.4',false,'14');
+  await inject({...base,level_db:-11,meters:meters(14)});await shows('SWR 1.4',false,'after the transmission');
+  // (g) the boundary: 2.0 plain, 2.1 and 3.0 red; the swr_fault entry as before.
+  await inject({...base,meters:meters(20)});await shows('SWR 2.0',false,'20');
+  await inject({...base,meters:meters(21)});await shows('SWR 2.1',true,'21');
+  await inject({...base,meters:meters(30),warnings:['swr_fault']});await shows('SWR 3.0',true,'30');
+  const chip=page.locator('#error-field [data-chip="tx-swr_fault"]');await chip.waitFor({timeout:5000});assert.equal(await chip.getAttribute('data-severity'),'error');
+  await inject({...base,meters:meters(14)});
+  // (h) the three themes: the red is --op-error and the plain the strip's colour, both under the theme's remap.
+  for(const theme of ['dark','day','night']){
+    await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;},theme);
+    await inject({...base,meters:meters(14)});const plain=await shows('SWR 1.4',false,`${theme} 14`);
+    await inject({...base,meters:meters(21)});const red=await shows('SWR 2.1',true,`${theme} 21`);
+    for(const v of [plain,red]){assert.equal(v.filtered,true,`${theme}: inside the themed page`);assert.equal(v.themeFilter==='none',theme==='dark',`${theme}: remapped ${v.themeFilter}`);}
+  }
+  await page.evaluate(()=>{document.documentElement.dataset.theme='dark';});
+  // (i) managed false hides; (j) another profile's push is ignored.
+  await inject({...base,managed:false,meters:meters(14)});await hidden('managed false');
+  await inject({...base,meters:meters(14)});await shows('SWR 1.4',false,'managed again');
+  await page.evaluate(d=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'radio.tx_level',data:{...d,profile_id:crypto.randomUUID(),boot_id:profileData.boot_id}}}})),{...base,meters:meters(30)});
+  await shows('SWR 1.4',false,'another profile');
+  // (k) the value adds no strip line and does not move the waterfall; at 360 px no horizontal scroll.
+  for(const [width,height] of [[1366,768],[1920,1080],[360,800]]){
+    await page.setViewportSize({width,height});
+    await inject({...base,managed:false,meters:meters(14)});await hidden(`${width}: hidden`);const off=width===1366?without:await geometry();
+    await inject({...base,meters:meters(30)});await shows('SWR 3.0',true,`${width}: shown`);const on=await geometry();
+    assert.equal(on.scroll&&on.stripScroll,true,`${width}x${height}: no horizontal scroll`);
+    if(width===360)continue;
+    for(const key of ['strip','signal','waterfall'])for(const m of ['top','height'])assert.ok(Math.abs(on[key][m]-off[key][m])<=0.5,`${width}x${height}: ${key} ${m} ${off[key][m]} -> ${on[key][m]}`);
+  }
+  await page.setViewportSize({width:1366,height:768});await inject({...base,meters:meters(14)});
+  // (l) a click on the value does nothing.
+  const before=await view();await page.locator('#strip-swr').click();await page.waitForTimeout(300);assert.deepEqual(await view(),before,'a click changes nothing');
+  // No request caused by the pushes or the click, and none by a timer.
+  await page.waitForTimeout(2500);
+  assert.deepEqual(requests.list.slice(mark),[],'no request caused by the pushes');
+  // (f) a band change keeps the reading.
+  const band=await page.evaluate(()=>[...document.querySelector('#operating-band').options].map(o=>o.value).find(v=>v&&v!==document.querySelector('#operating-band').value));
+  await page.selectOption('#operating-band',band);
+  await page.waitForFunction(b=>operatingState?.selection?.band===b,band,{timeout:20000}).catch(async e=>{throw new Error(`${e.message} ${band} ${await page.locator('#operating-selection-status').textContent()} ${JSON.stringify(requests.list.slice(mark))}`);});
+  await shows('SWR 1.4',false,`after the band change to ${band}`);
+  // (j) a station-ready of another boot hides it.
+  await page.evaluate(()=>{profileData.boot_id=crypto.randomUUID();dispatchEvent(new Event('station-ready'));});
+  await hidden('another boot');
+  assert.deepEqual(errors,[]);
+});
 // Proves: CL-044-11; TC-044-010. AGC is a Radio/CAT setting: the select is in the CAT group only
 // for an IC-7300 CAT endpoint, the read-back line follows the server's radio.agc push (the real
 // server's first event, then injected outcomes), Apply saves settings.radio, Detect radio
