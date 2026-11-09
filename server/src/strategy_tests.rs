@@ -5895,7 +5895,8 @@ async fn tc_039_043_a_silent_or_repeating_target_is_left_at_the_4th() {
     }
 }
 
-// Proves: TC-039-043 (c). A spot of my call at K1ABC 60 s old doubles x: armed after 7, left at
+// Proves: TC-039-043 (c), TC-097-009 (a) (leave {calls 4, calls_heard 8}: 4 without and 8 with the
+// spot). A spot of my call at K1ABC 60 s old doubles x: armed after 7, left at
 // the 8th, WD:8 down to 1; with Use PSK Reporter off the spot is not used: left at the 4th.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_043_a_target_that_hears_us_is_left_at_2x_and_use_off_at_x() {
