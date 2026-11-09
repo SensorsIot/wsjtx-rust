@@ -513,9 +513,15 @@ async fn exchange<S: AsyncRead + AsyncWrite + Unpin>(
     } else {
         Vec::new()
     };
+    // The router adds the Allow field of a 405 itself, after its outermost layer, as the HTTP
+    // server adds the others.
+    let added = |n: &str| {
+        ["date", "content-length", "transfer-encoding"].contains(&n)
+            || (status == 405 && n == "allow")
+    };
     let kept: usize = fields
         .iter()
-        .filter(|(n, _)| !["date", "content-length", "transfer-encoding"].contains(&n.as_str()))
+        .filter(|(n, _)| !added(n))
         .map(|(n, v)| n.len() + 2 + v.len() + 2)
         .sum();
     tally.station_sent(kind, status_line.len() + 2 + kept + 2 + body.len());
@@ -891,6 +897,63 @@ async fn link_byte_log_on_a_plaintext_profile() {
             period(line, T0, 15000, "FT8", &["thin"]);
             check(line, local.take(), false);
             drop((ws, h));
+        })
+    })
+    .await;
+    service.abort();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+// Proves: CL-003-05; TC-080-001 (review finding on #80): the set of types is bounded. A request
+// method outside the standard ones (FOO1, FOO2) on a route and on an unknown path is typed
+// "OTHER /" and "OTHER unrouted"; no client text reaches a key.
+#[tokio::test(start_paused = true)]
+async fn link_byte_log_bounds_the_request_methods() {
+    let (app, dir) = plaintext_station("link-methods");
+    let state = app.profile.clone().unwrap();
+    let clock = Arc::new(Driven {
+        utc: AtomicU64::new(T0),
+        mode: Mutex::new(Mode::Ft8),
+    });
+    let log = Log::new(Box::new(TestClock(clock.clone())));
+    crate::link_log::spawn_writer(log.clone(), state);
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = crate::link_log::Server::new(listener, None, Some(log.clone())).unwrap();
+    let service = tokio::spawn(server.serve(router(app)));
+    drive(clock, log, dir.clone(), move |control| {
+        Box::pin(async move {
+            let local = Arc::new(Tally::default());
+            let mut h = tcp(address, &local).await;
+            for (method, path, kind) in [
+                ("FOO1", "/", "OTHER /"),
+                ("FOO2", "/", "OTHER /"),
+                ("FOO1", "/nowhere", "OTHER unrouted"),
+                ("FOO2", "/nowhere/else", "OTHER unrouted"),
+            ] {
+                let r = exchange(&mut h, &local, kind, head(method, path, &[], b""), b"").await;
+                assert!(r.status >= 400, "{method} {path}: {}", r.status);
+            }
+            settle(&[&local]).await;
+            let lines = control.end(T0 + 15000, Mode::Ft8, 1).await;
+            let line = only(&lines, "local");
+            let keys: Vec<&String> = ["to_client", "from_client"]
+                .iter()
+                .flat_map(|d| line[*d]["types"].as_object().unwrap().keys())
+                .collect();
+            assert!(
+                keys.iter()
+                    .all(|k| !k.contains("FOO") && !k.contains("nowhere")),
+                "client text in a type: {keys:?}"
+            );
+            assert_eq!(line["from_client"]["types"]["OTHER /"][0], 2, "{line}");
+            assert_eq!(
+                line["from_client"]["types"]["OTHER unrouted"][0], 2,
+                "{line}"
+            );
+            check(line, local.take(), false);
+            drop(h);
         })
     })
     .await;

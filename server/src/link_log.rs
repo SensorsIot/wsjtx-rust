@@ -510,7 +510,27 @@ pub(crate) async fn http(request: Request, next: Next) -> Response {
         .extensions()
         .get::<MatchedPath>()
         .map_or("unrouted", |path| path.as_str());
-    let kind = format!("{} {route}", request.method());
+    // Only a standard method names a type; any other is "OTHER", so a client cannot grow the set.
+    use axum::http::Method;
+    let method = request.method();
+    let method = if [
+        Method::GET,
+        Method::HEAD,
+        Method::POST,
+        Method::PUT,
+        Method::DELETE,
+        Method::OPTIONS,
+        Method::PATCH,
+        Method::CONNECT,
+        Method::TRACE,
+    ]
+    .contains(method)
+    {
+        method.as_str()
+    } else {
+        "OTHER"
+    };
+    let kind = format!("{method} {route}");
     let path = request
         .uri()
         .path_and_query()
