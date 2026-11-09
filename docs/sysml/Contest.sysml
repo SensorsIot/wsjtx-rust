@@ -110,7 +110,8 @@ package WstxContest {
              "min_band_stay:5" (whole minutes). points_cap {"when": string, "share": [n, d]}
              with whole numbers 1 <= n < d. A window limit is a number or {"param": name}.
              An entry param {"name", "choices", "default"}: choices "bool" with default true or
-             false, or a list of 1..8 distinct words (1..16 characters) or of 1..8 distinct
+             false (a bool param is used directly as a true/false condition, e.g. the ARRL
+             VHF rover multiplier and my_member), or a list of 1..8 distinct words (1..16 characters) or of 1..8 distinct
              whole numbers, default one of them. by_section {VALUE: {"clause", "text"}}.
              notes, extras and unconfirmed are lists of strings of 1..200 characters; an
              unconfirmed entry is "field path: words" (e.g. "log.contest: from the contest
@@ -217,8 +218,8 @@ package WstxContest {
              field_day, rtty (RTTY Roundup message), or eu_vhf (report, serial and 6-character
              locator; accepted in the file before the station can send it, #99; until then
              the station is never in it and a contest run waits activity).
-             cq: the contest's CQ word; default the activity's word (TEST for na_vhf and
-             arrl_digi, WW, FD, RU; none for none and eu_vhf).
+             cq: the contest's CQ word; default the activity's word (TEST for na_vhf,
+             arrl_digi and eu_vhf, as #99 sends it; WW, FD, RU; none for none, a plain CQ).
              sent and rcvd: lists of Field; defaults by activity: none sent [report], rcvd
              [report, grid4]; na_vhf, ww_digi, arrl_digi [grid4] both; field_day [fd_class,
              section] both; rtty [rst, serial] both; eu_vhf [report, serial, grid6] both.
@@ -972,7 +973,7 @@ package WstxContest {
     }
     attribute def ContestDirective {
         doc /* WstxStrategy::DirectedCqRule in a contest activity: the word of the station's
-             current activity (na_vhf and arrl_digi TEST, ww_digi WW, field_day FD, rtty RU) is
+             current activity (na_vhf, arrl_digi and eu_vhf TEST, ww_digi WW, field_day FD, rtty RU) is
              answerable, also with my continent unknown. So it is not greyed, a selection needs no
              directive_confirmed, and a word outside its activity keeps the warning. It depends on
              the activity alone, not on a selected contest strategy (D2).

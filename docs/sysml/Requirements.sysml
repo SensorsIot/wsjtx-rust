@@ -6619,8 +6619,8 @@ package WstxRequirements {
         doc /* TC-098-012 — A contest run waits for mode and exchange and calls with the contest's word
              CL-098-06
              Setup: as TC-063-010 (actual station router, contact engine, transmit and radio doubles, virtual UTC) with the bundled file.
-             Steps: each step with the contest run that calls CQ: #63's operation run before #97 lands, a contest strategy with CQ when idle on after it. ZL Sprint with Auto on, activity ww_digi, FT4, on 80m; the station on FT8; Helvetia with Auto on as HB9BLA in rtty; SARL HF Digital with Auto on; Bucharest Digital in rtty with exchange #, a log holding STX 4 in the period, and a caller.
-             Expected: calling_cq with Tx6 "CQ ZLS HB9BLA JN37"; waiting mode and disarmed; waiting exchange, nothing armed; waiting activity, nothing armed; the caller answered with Tx2 carrying 0005.
+             Steps: each step with the contest run that calls CQ: #63's operation run before #97 lands, a contest strategy with CQ when idle on after it. ZL Sprint with Auto on, activity ww_digi, FT4, on 80m; the station on FT8; Helvetia with Auto on as HB9BLA in rtty; SARL HF Digital with Auto on; Bucharest Digital in rtty with exchange #, a log holding STX 4 in the period, and a caller; after #99 lands, NAC (NRRL) and ARRL 222 MHz and Up (no cq key) in eu_vhf.
+             Expected: calling_cq with Tx6 "CQ ZLS HB9BLA JN37"; waiting mode and disarmed; waiting exchange, nothing armed; waiting activity, nothing armed; the caller answered with Tx2 carrying 0005; both eu_vhf records call with Tx6 "CQ TEST HB9BLA JN37" (the eu_vhf default, as #99 sends it; before #99 lands they wait activity).
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
