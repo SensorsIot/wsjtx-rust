@@ -374,8 +374,10 @@ impl Open {
     }
 }
 /// The per-period waterfall power of the live receive (WstxStrategy::FreeTxSlot "Counted
-/// periods"): fed with every detailed row, its period and whether it belongs to a Tx period. A
-/// period I transmitted in is not kept; a new live job starts empty.
+/// periods"): fed with every detailed row, its period and whether that period is a Tx period (one
+/// I transmitted in, #61), never whether the station was on the air when the row completed (#66:
+/// the last rows of a received period complete after PTT is keyed for the next). A period I
+/// transmitted in is not kept; a new live job starts empty.
 #[derive(Debug, Default)]
 pub(crate) struct Waterfall {
     job: Option<(String, u64)>,
@@ -384,7 +386,8 @@ pub(crate) struct Waterfall {
     closed: [VecDeque<Period>; 2],
 }
 impl Waterfall {
-    /// One detailed row of live job `job` in the period starting at `start_ms`.
+    /// One detailed row of live job `job` in the period starting at `start_ms`; `tx`: that period
+    /// is a Tx period.
     pub(crate) fn row(
         &mut self,
         job: (&str, u64),

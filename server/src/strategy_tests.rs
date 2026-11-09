@@ -8747,3 +8747,95 @@ async fn tc_066_002_the_cqs_caller_move_skips_a_decoded_station() {
         )
     );
 }
+
+// Proves: CL-039-09; TC-066-002. The TC-066-003 defect (HB9BLA 2026-11-08 18:02-18:13 UTC): after
+// the run's first transmission every decision counted 0 Rx periods. A strategy run with Hold Tx on
+// (as live) selects K1ABC (CQ in the even period e at 1800 Hz) and calls him in my odd periods
+// e + 15 s and e + 45 s; the hardware double keys PTT at each period start. The detailed waterfall
+// comes from the actual live worker, fed with silent blocks from e - 30 s, observing the transmit
+// owner at each block as live. Timing (the worker's spectrum): a detailed row of 2400 frames
+// completes with its 5th 4096-point transform, 4816 frames (0.4 s) after its middle, so the last 2
+// rows of my Rx period before each Tx period (first frames 0.4 and 0.2 s before it) complete on
+// the air and carry the tx mark (#61), as the live Tx runs of 77 rows. Those periods are received
+// (I transmitted in the period after them), so they count (CL-039-09 "periods I transmitted in
+// never counted"): periods {even {now 1}, odd {now null}} at the selection (e - 30 s), 2 at the
+// slot check of the 1st repetition (+ e), 3 at the 2nd (+ e + 30 s). My Tx periods are never kept
+// in the per-period power, the received ones are (e - 30, e - 15, e and e + 30 s). Red on the
+// parent: it drops each Rx period with a marked row, 1 at every slot check, as live.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_066_002_received_periods_count_after_my_transmissions() {
+    use std::time::{Duration, Instant};
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    let (_, job, generation) = f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    let mut capture = f.state.recording.fixture_capture(e - 30_000);
+    capture.until(e);
+    let mut c = config(Some("Test calls"));
+    c["strategies"][0]["repetitions"] = json!(4);
+    select(&f, c).await;
+    publish(&f, e, &[K1ABC_CQ]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    let periods = |now: i64| json!({"even":{"now":now},"odd":{"now":null}});
+    assert_eq!(free_tx_slots(&f).await["periods"], periods(1), "selection");
+    let service = &f.state.recording.transmit.get().unwrap().service;
+    for k in 1..=2 {
+        let (rx, own) = (rep(e, k - 1), rep(e, k - 1) + 15_000);
+        // My Rx period received up to my Tx period, then PTT keyed at its start.
+        capture.until(own);
+        f.bench
+            .offset
+            .fetch_add(own - 30 - f.bench.now_utc_ms(), Ordering::SeqCst);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !service.view().transmitting {
+            assert!(Instant::now() < deadline, "{:?}", service.view());
+            f.tick();
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        let on_air: Vec<(i64, bool)> = capture
+            .until(own + 13_000)
+            .into_iter()
+            .filter(|(t, _)| (rx..own).contains(t))
+            .collect();
+        assert_eq!(
+            on_air,
+            [(own - 400, true), (own - 200, true)],
+            "repetition {k}: the Rx period's rows completed on the air"
+        );
+        f.bench.offset.fetch_add(13_000, Ordering::SeqCst);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while service.view().transmitting {
+            assert!(Instant::now() < deadline, "{:?}", service.view());
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        f.tick();
+        // The next Rx period received up to its decode 13 s in; K1ABC silent: the slot check.
+        capture.until(rep(e, k) + 13_000);
+        ended(&f, rep(e, k) + 13_000);
+        publish(&f, rep(e, k), &[]);
+        assert_eq!(
+            run_of(&f).await["slot_check"]["repetitions"],
+            json!(k),
+            "repetition {k}"
+        );
+        assert_eq!(
+            free_tx_slots(&f).await["periods"],
+            periods(k + 1),
+            "repetition {k}"
+        );
+    }
+    // The other half of the rule: my Tx periods e + 15 s and e + 45 s (every row marked) are not
+    // kept; the received ones are, the odd e - 15 s as well; e + 60 s is still in progress.
+    let kept: Vec<i64> = f
+        .state
+        .recording
+        .waterfall
+        .lock()
+        .unwrap()
+        .periods((&job, generation), f.bench.now_utc_ms())
+        .iter()
+        .map(|p| p.start_ms - e)
+        .collect();
+    assert_eq!(kept, [-30_000, -15_000, 0, 30_000], "periods kept, from e");
+}
