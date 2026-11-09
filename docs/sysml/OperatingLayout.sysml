@@ -568,7 +568,7 @@ attribute def ActivityOrdering {
              value: each free_tx_slots.state replaces it in socket order; a GET /automation
              reply (read only after automation.state, #74) replaces it only with a value whose
              at_utc_ms is later than the held one's (its null or an older value never does); a
-             new boot drops it (#74). No other request or poll; an Off peer has no waterfall
+             new boot and switching the page's display to Off drop it (#74, #82). No other request or poll; an Off peer has no waterfall
              and receives no value.
              Look (#76, operator 2026-11-08: "shorten the mark a bit so that it has a space
              in between two adjacent ones", "in green and a little bit thicker", "We do not
