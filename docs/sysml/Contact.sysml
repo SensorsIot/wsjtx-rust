@@ -1462,7 +1462,8 @@ package WstxContact {
              with two clients adds at most 2 x (224 + 2 WS + 29 TLS + 160 accounted
              TCP/ACK) / 5 s = 166 B/s per direction, so the status-only idle total stays
              within WstxStationProtocol::ThinLinkBudget 1000 B/s; Thin stays within the
-             existing 3000 B/s live envelope. TC-007-005 measures both. */
+             existing 3000 B/s live envelope. Both are targets judged from
+             WstxStationProtocol::LinkTrafficLog (#80). */
     }
     attribute def ContactWire {
         doc /* Routes of WstxContact (selected-profile mode only; environment-only mode

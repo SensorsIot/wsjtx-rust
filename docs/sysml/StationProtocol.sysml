@@ -232,13 +232,55 @@ package WstxStationProtocol {
         attribute clients : Integer = 2;
         attribute measurementSeconds : Integer = 60;
         attribute idleBytesPerSecondEachDirectionMax : Integer = 1000;
+        attribute thinBytesPerSecondEachDirectionMax : Integer = 3000;
         attribute connectedStatusDisplayMs : Integer = 2000;
-        attribute initialStatusAfterPageLoadMs : Integer = 10000;
-        doc /* Shared bottleneck, not one32kbit link per browser. Idle includes
-             heartbeat and accounted protocol overhead. Cold page/assets bytes/time
-             are reported separately. This original status-only workload has no raw
-             audio or spectrum stream; explicit Thin/live/display extensions retain
-             their own measured limits and do not inherit an unproved N-station claim. */
+        doc /* Shared bottleneck, not one32kbit link per browser. Targets of normal operation
+             (#80, operator 2026-11-09): two browsers loaded and connected, live receive on a
+             busy band (FT8, about 40 decodes per period), the waterfall on Thin, one complete
+             QSO answering a CQ, the operator sorting and scrolling Band Activity and refreshing
+             status; then Off with the same receive and the operator idle. Thin at most
+             thinBytesPerSecondEachDirectionMax and Off at most idleBytesPerSecondEachDirectionMax
+             per direction, heartbeat and accounted protocol overhead included, over
+             measurementSeconds; connected status within connectedStatusDisplayMs. No test asserts
+             these numbers: the operator judges them from LinkTrafficLog. Page and asset loading,
+             reconnection, authorization recovery, CAT, selection or mode/band changes, recording
+             replay or import and log maintenance carry no link budget. Detailed carries no
+             32 kbit/s promise. */
+    }
+    attribute def LinkTrafficLog {
+        attribute fileName : String = "link-traffic.log";
+        attribute rotateBytes : Integer = 4194304;
+        attribute tlsRecordOverheadBytes : Integer = 29;
+        attribute tlsRecordPayloadMax : Integer = 16384;
+        doc /* (#80, operator 2026-11-09) The station counts the bytes between each client and
+             itself and writes them, per period, to fileName in the profile directory: one JSON
+             line per client that had traffic in the period, written at the period's end; at
+             rotateBytes the file first moves to link-traffic.1.log, replacing the older one (as the
+             MCP audit, WstxMcp::McpCredential). A station without a profile directory writes no
+             log. The log is local: nothing of it is sent on a socket or in a response, and no
+             client reads it; the operator reads the file. Its write never delays a socket or a
+             request.
+             Period: the operating mode's (FT8 15000 ms, FT4 7500 ms; FT8 when none is selected),
+             aligned to UTC period starts; a mode change ends the open period early.
+             Client: "browser:<grant_id>" for an enrolled browser (its WebSocket connections and its
+             HTTP requests together), "mcp:<client_id>" for an MCP client, "local" for traffic
+             without either (plaintext loopback, requests refused before authentication). No
+             cookie, token, proof or request body content is logged.
+             Line: {utc_ms (period start), period_ms, mode, client, display (the display profile of
+             each of the client's sockets at the period's end: "detail", "thin", "off" or "none"),
+             to_client and from_client, each {bytes, estimate, types}}. types maps a message type to
+             [count, bytes]: "ws <type>" for a WebSocket text message by its JSON type
+             (station.status, spectrum.subscription and error replies included), "ws ping",
+             "ws pong", "ws close"; "<METHOD> <route>" for HTTP with the route's template (an
+             identifier segment as {id}), so the set of types is bounded. Counted are application
+             bytes: a WebSocket frame's header and payload; an HTTP request's or response's head as
+             HTTP/1.1 text plus its body as sent (after content coding). bytes is their sum.
+             estimate adds the link model of IndependentLinkAccounting so that the numbers compare
+             with ThinLinkBudget: per message in this direction ceil(bytes/tlsRecordPayloadMax)
+             times tlsRecordOverheadBytes on TLS (none on plaintext), and headerBytesPerSegment per
+             segment of at most segmentBytesMax (IndependentLinkAccounting) of this direction, plus
+             reverseAckBytesPerSegment per segment of the other direction. Application bytes are counted because only they can be split
+             by message type; TLS and TCP bytes per connection cannot be attributed to a type. */
     }
     attribute def PushedStationState {
         attribute safetyReadMinimumMs : Integer = 30000;
@@ -331,7 +373,11 @@ package WstxStationProtocol {
     dependency exchangeVerification from ExchangeStatus to WstxRequirements::'TC-021-005';
     dependency browserVerification from BrowserSnapshotPolicy to WstxRequirements::'TC-021-006';
     dependency reconnectVerification from BrowserLinkLifecycle to WstxRequirements::'TC-021-007';
-    dependency linkVerification from ThinLinkBudget to WstxRequirements::'TC-021-008';
+    dependency budgetJudgedFromLog from ThinLinkBudget to LinkTrafficLog;
+    dependency trafficLogPromise from LinkTrafficLog to WstxRequirements::'CL-003-05';
+    dependency trafficLogOwner from LinkTrafficLog to WstxArchitecture::physicalStation::backend::stations::web;
+    dependency trafficLogVerification from LinkTrafficLog to WstxRequirements::'TC-080-001';
+    dependency livenessVerification from Heartbeat to WstxRequirements::'TC-021-008';
     dependency tlsVerification from SessionSecurity to WstxRequirements::'TC-021-009';
     dependency buildPromise from ClientBuild to WstxRequirements::'CL-051-01';
     dependency pageUpdatePromise from PageUpdate to WstxRequirements::'CL-051-02';

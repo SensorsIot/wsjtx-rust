@@ -124,7 +124,7 @@ package WstxContest {
              /strategy): {v 1, profile_id, boot_id, profiles: [ContestProfile]}. It changes nothing;
              the browser reads it when the period prompt opens, and once per connection while a
              contest is in force (for its name), never at a plain page load or reconnect (it is several
-             kB on the 32 kbit/s link, TC-010-002) and never on a timer. */
+             kB on the 32 kbit/s link) and never on a timer. */
     }
     attribute def ContestSelection {
         attribute periodDaysMax : Integer = 31;

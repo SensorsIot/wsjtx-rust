@@ -331,8 +331,7 @@ package WstxOperatingReceive {
              /style.css,/recording.css (public, no secret or reflected input, so no
              BREACH exposure) are gzip only when the pinned algorithm positively selects
              gzip; every other negotiation, including all encodings forbidden, returns
-             the exact identity bytes, never406 (issue22 supervisor decision, CL-022-05
-             32kbit budget with the new authorization client).
+             the exact identity bytes, never406 (issue22 supervisor decision).
              No lossy application codec, changed clocks, cached facts or blanket future
              TX/QSO/MCP compression permission. Re-review allowlist when responses gain secrets. */
     }
@@ -349,17 +348,8 @@ package WstxOperatingReceive {
              public/shared cacheability. No shared compressed-body cache or stale snapshots;
              context fresh per response, not shared across requests/users. */
     }
-    requirement CombinedLinkEvidence {
-        doc /* Correct identity representations remain supported, but combined32kbit
-             Thin/Off proof specifically uses real browsers negotiatinggzip. Do not
-             claim identity meets the same budgets without measurement. Preserve
-             <=3000B/s/direction, <=2sstatus, existingWS payload/cadence/queue limits,
-             actual worker transitions and<=10s legacy status-after-load.
-             Separate Cold metrics; do not stretch observation windows or reduce work
-             or records. All original14suite assertions plus actual15th selection workload
-             remain required. WstxRequirements::TC-009-005 cases7/8 own per-browser75s
-             pending/terminal windows and independent accounted traffic. */
-    }
+    // CombinedLinkEvidence retired by #80 (operator 2026-11-09): no test measures the 32 kbit/s
+    // link; its budget is a target judged from WstxStationProtocol::LinkTrafficLog.
     attribute def SelectionStateEvent {
         attribute maximumBytes : Integer = 2048;
         attribute radioDatesDetailedMs : Integer = 2000;
@@ -898,9 +888,7 @@ package WstxOperatingReceive {
         attribute metadataBytes : Integer = 4096;
         attribute pendingReads : Integer = 1;
         attribute pendingOrdinaryMutations : Integer = 1;
-        doc /* S7: Targetengineeringbounds;existing32kbitTLS/status<=2s tests
-             mustincludeactualselection.state+mode/bandtraffic,notbodyestimatesonly.
-             Oldstrictv1routesunchanged. */
+        doc /* S7: Target engineering bounds. Old strict v1 routes unchanged. */
     }
     action def RadioFactPublication {
         doc /* S6 existingactor/executorreportsquerycompletionkind/value/provenance
@@ -969,8 +957,6 @@ package WstxOperatingReceive {
              Old/new client compatibility,384/3072/4096/1024 byte maxima+one-over,
              all safe counters and zero-effect refusals; no candidate-generated oracle.
              Thin/Off traffic has no timer read (SelectionStateEvent); an unknown stack refuses.
-             Actual mode/band controls preserve existing
-             two-browser32kbit mean<=3000B/s eachway and visible status<=2s.
              Keyboard360px/200percent.
              TC009002 separate authorizedcost4 physical IC7300/USB/CAT/browser;
              actual frequency/USB/DATA/FIL, width/notch/PBT and restore independently
@@ -1202,18 +1188,13 @@ sharing existing HTTP priority. Status/control precede optional visualization/re
 no added result parallelism. One explicit
 reconciliation read is allowed when needed, not a retry loop.
 Stop is not held behind a result read. No audio/fixture data
-is transported. Existing32kbit/s Thin/Off <=3000B/s mean each direction and <=2s visible
-status acceptance must include the actual selection.state events and mode/band traffic,
-all TLS/headers/transport, on the exact candidate. Body arithmetic is not bandwidth
-proof. Fast-link cadence is not a32kbit/s promise.
+is transported. Selection and mode/band traffic is not part of a 32 kbit/s link test; its
+bytes appear in the link byte log (WstxStationProtocol::LinkTrafficLog, #80). Fast-link
+cadence is not a32kbit/s promise.
 The browser does not poll the selection: SelectionStateEvent carries it, and an explicit
 read is never counted as a pushed one. TC-009-005 case7 defines the coverage evidence.
-Negotiated HTTP snapshot content coding is limited to12.1.1. The combined32kbit/s
-proof uses real browsers negotiating supported gzip and records actual response
-Content-Encoding; identity remains correct but has no identical-workload bandwidth
-PASS without separate measurement. Existing caps refer to logical uncompressed JSON.
-All previous14 suite registrations/assertions and the additive selection suite remain
-required; no Cold/status10s,75s Thin/Off or other oracle is relaxed.
+Negotiated HTTP snapshot content coding is limited to12.1.1. Existing caps refer to
+logical uncompressed JSON.
 
 
     */

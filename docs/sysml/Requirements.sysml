@@ -172,13 +172,13 @@ package WstxRequirements {
     dependency CL_003_04_to_FR_019 from 'CL-003-04' to 'FR-019';
     dependency CL_003_04_to_FR_021 from 'CL-003-04' to 'FR-021';
     requirement 'CL-003-05' {
-        doc /* The minimal profile MUST support two clients sharing the contract's 32 kbit/s link model and meet its traffic and visible-response budgets. Tests MUST distinguish cold page/assets loading, protocol connection and displayed-status timing, and identify the measurement layer. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
+        doc /* The minimal profile MUST support two clients sharing the contract's 32 kbit/s link model (WstxStationProtocol::ThinLinkBudget). Its traffic and visible-response budgets are targets of normal operation that the operator judges from the station's link byte log (WstxStationProtocol::LinkTrafficLog); no test asserts them (operator 2026-11-09, #80). The station MUST record that log: per period and client connection, the bytes each way by message type and the client's display profile. Page and asset loading, reconnection, authorization recovery, CAT, selection changes, recording replay or import and log maintenance carry no link budget. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/main.rs; client/app.js";
     }
     dependency CL_003_05_to_FR_021 from 'CL-003-05' to 'FR-021';
     requirement 'CL-003-06' {
-        doc /* Application output buffering and active connections MUST have explicit bounds. An unresponsive client MUST be removed under the contract's liveness/write limits without blocking another client's status requests. Test results MUST distinguish observed liveness removal from an unobserved send-timeout branch or total-memory bound. */
+        doc /* Application output buffering and active connections MUST have explicit bounds (WstxStationProtocol::Limits; design bounds, checked by review). A peer that stops answering (no Pong for more than 15 s) MUST be removed at the next heartbeat tick, without delaying another client's status requests (#80: the one liveness case that matters in normal operation, a browser that vanishes without closing). */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/main.rs; client/app.js";
     }
@@ -926,7 +926,7 @@ package WstxRequirements {
         doc /* TC-009-004 — Independent failure and shared worker
              CL-008-03, CL-008-05, CL-010-05, CL-010-07, CL-010-08
              Lose either interface, overrun/stop/reopen capture, stall CAT and combine native48k conversion, display and bounded decoder quanta for four profiles; seed live result counters2047/2048/2049, eviction/cursor and safe-integer boundaries; simulate later TX/halt ownership. Hold and release result-page/snapshot responses across a confirmed cancellation and unknown Start outcome; inject a current live frame while the recorded-input job is null.
-             Independent availability, no false ready state, no cross-profile samples/results, conversion service<=50ms quanta and native-to-canonical software backlog<=200ms under the declared workload, <=250ms normal cancel, <=2s status over the combined32kbit link; failed close retains ownership. No real RF transmission. Delayed pages preserve newer confirmed lifecycle/error state and do not advance cursors; pre-mutation reads cannot clear the unknown-outcome control barrier, while a later explicit reconciliation can. Live progress updates only its matching live owner, with no exception or false disconnection when the recorded-input job is absent.
+             Independent availability, no false ready state, no cross-profile samples/results, conversion service<=50ms quanta and native-to-canonical software backlog<=200ms under the declared workload, <=250ms normal cancel, <=2s status (no 32 kbit/s link scenario, #80); failed close retains ownership. No real RF transmission. Delayed pages preserve newer confirmed lifecycle/error state and do not advance cursors; pre-mutation reads cannot clear the unknown-outcome control barrier, while a later explicit reconciliation can. Live progress updates only its matching live owner, with no exception or false disconnection when the recorded-input job is absent.
              2 — Isolated automated tests; Windows PC, actual services/browser/link model, independently scripted device/control and decoder-step fixtures. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -1010,7 +1010,8 @@ package WstxRequirements {
     // (#50 comment 6719539569); since #37 the browser sends no re-decode, the wire
     // redecode stays refused redecode_unavailable.
     // CL-010-15 implemented (operator 2026-11-08): the Thin/Off byte budget is the browsers'
-    // (StationTickEvent), measured by TC-007-005; MCP traffic is outside that budget.
+    // (StationTickEvent), a target judged from the link byte log since #80 (CL-003-05,
+    // TC-080-001); MCP traffic is outside that budget.
     requirement 'CL-010-04' {
         doc /* Log every completed contact directly, without a review step (#41, as WSJT-X): at completion and on a manual Log QSO the server stores the contact's record in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity and sends it to the WSJT-X UDP targets as QSO Logged and Logged ADIF; exactly one record per contact identity (an identical re-log adds nothing, completion after an early Log QSO replaces it; each contact is sent to the UDP targets once), a later contact with the same station a new record, Saved only after durable acknowledgement, a failed write visibly unsaved and retried; ADI export and history with the stated limits; and (#10, operator 2026-11-03) Update logbook from ADIF, the one ADI import: an export of another logger (for example Log4OM) is consolidated into the contact log, repeatable and incremental, a record already present (same contact identity, or same call, band and mode/submode with a start within 2 minutes) adding nothing and the stored record winning, only the log's own fields kept, added records marked with their source, QSO confirmation status (LoTW, QSL and eQSL received with their dates and via) kept and, on a rerun, upgraded on records already present (a confirmation is only added, never removed; #10, operator 2026-11-04), so worked-before and award queries tell worked from confirmed per entity, band and mode, invalid records skipped and invalid optional fields dropped with their reasons in the summary, nothing sent to the UDP targets or elsewhere, and the added records feeding worked-before, DXCC and grid status. The former log review queue (OfferLogReview, discard_review, the review form) is retired. Details: WstxContact::LogRecord, DirectLog, SaveContact, UpdateLogbook, ExportAdi, ContactHistory, AdiLimits, WorkedBeforeQuery; WstxUdp::OutboundRules. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -1128,23 +1129,19 @@ package WstxRequirements {
         attribute executable : String = "server/src/contact_http_tests.rs; tests/contact.test.cjs; tests/ui-operating.test.cjs";
     }
     verification 'TC-007-005' {
-        doc /* TC-007-005 — Thin-link and local presentation
-             CL-010-06, CL-010-08, CL-010-15
-             Setup: calibrated TLS 32,000 bit/s per direction, 300 ms RTT, two-client fixture with the active result/display workload (a running waterfall: one real-shaped spectrum.frame of 128 levels per 2 s per Thin client), contact status and log page/import/export traffic. Both clients share the simulator's counted link; a control peer outside it publishes periods and makes the contact.state burst.
-             Steps: reload both pages and time the load event to Connected. Detailed, 15 s, at least 22 s after the reloads and once both clients are connected on Detailed again (the reload's assets can cost a client its socket through the 15 s pong rule, recorded with the closes): publish a 71-call period. Local presentation: an 8 s idle window, the same 8 s with filter/sort, resize, pane switches and Rx Frequency scrolling, a second idle window. Thin, 80 s: publish a period every 15 s, run one contact, open the log page and export, update the log, and press Refresh on both clients every 5.5 s (28 samples, click to changed #updated). The control peer makes at least 20 Hold Tx revisions 100 ms apart. Off, 60 s idle.
-             Expected: the request recorder shows no traffic from local presentation, no worked-before query (each record carries its status, shown in Detailed for the 71-call period), no GET /receive in the Thin window (receive.state carries it, after a socket's first event without the unchanged audio and clock) and no GET /contact after an own contact command and station.tick at 1/s Detailed and 1/5 s Thin/Off, contact.state at most 1/s with one pending GET /contact; another client's change reaches the page in transmit.state and contact.state, only what changed, with no GET /transmit and no GET /contact, the dialogue rows in order including rows following at the same sequence, an older read never replacing a pushed change, and a contact client loading after the socket's first event having the whole state from it, with no read succeeding, and the next event following; a Tune countdown alone at most once per 5 s below Detailed; with Off and two idle clients the total stays within 1000 B/s per direction, with Thin within 3000 B/s; existing byte envelopes and bounded queues hold; connected status within 2 s and first status within 10 s after page load; overhead counted from the simulator, not packet capture. Local presentation: no frame type and no route absent from both idle windows, and at most one read above the idle baseline, except a read at most 2 s after its announcement event and GET /receive/results when 29.5-33 s after that route's previous read (its 30 s safety cadence). Those excepted reads are recorded with the reason and are not counted as baseline. The burst: per client at most ceil(burst seconds)+1 events and at most a third of the revisions, the last revision announced within 3.5 s of its end. Pending GET /contact is counted from each request's start to end; a read a reload dropped has no end and does not count. station.tick spacing is taken from utc_ms: Detailed count within 1 of the seconds and spacing at least 900 ms; Thin steady spacing at least 4.9 s, with extra ticks for each transmission's transmitting change; Off 11-13 ticks. Events: tick at most 224 B, contact.state at most 2048 B. Each run records every socket's close on both sides: the browser's caller and code, the station's reason, and the WebSocket bytes per event type. A missed bound fails the test at the end, listing all of them.
-             #82 (CL-065-01, round 1 Q4): the Thin and Off windows run with a live receive and no automation run, so the station builds the open slots every period. Expected in addition: free_tx_slots.state to each Thin and Detailed client at each 15 s period start and at each publication of a counted period's decodes (80 s Thin: 5 or 6 per client, more only by one per QSO start or end of the contact and at most one per published counted period), each at most 1024 B, none to an Off client, and no request after one; with them the Thin total stays within 3000 B/s and the Off idle total within 1000 B/s per direction; the bytes per event type list free_tx_slots.state.
-             2 — Isolated automated functional tests; Windows development PC, real browser/server and the existing thin-link simulator; no radio. */
+        doc /* TC-007-005 — Pushed contact, transmit and receive state without polling
+             CL-010-15
+             #80 (operator 2026-11-09): the two-browser 32 kbit/s link workload is retired; the link budgets are targets judged from the link byte log (CL-003-05, TC-080-001). What remains are the unshaped pushed-state cases (WstxStationProtocol::PushedStationState).
+             Setup: actual candidate server and Chromium on an unshaped local connection, the contact engine and #9 transmit owner on the recording hardware double, hand-authored result rows published by a test-only control peer, a request recorder.
+             Steps: another client changes the contact and the transmit state; an own contact command, a command right after another, a stale safety revision, Esc and CQ during unanswered commands; an older GET /contact held across events; contact.js loaded after the socket's first event; a running Tune on Thin and on Detailed; receive.state with a job, audio and a refused event; contact.state carrying a contact and its dialogue rows.
+             Expected: transmit.state and contact.state carry all fields first and then only what changed, shown with no GET /transmit and no GET /contact; an own command reads no GET /contact and a refusal shows its code; the next command goes with the receipt's revision; a stale safety revision is read at once and the CQ retried; nothing queued follows an abort; an older read never replaces a pushed change; a contact client loading after the first event has the state without a read; a Tune countdown alone at most once per 5 s below Detailed; receive.state carries the job and the audio, read again only for a new state, a refused event or a failed read; dialogue rows in order including a continuation at the same sequence.
+             2 — Isolated automated functional tests; Windows development PC, real browser/server, no link simulator; no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
-        attribute executable : String = "server/src/contact_thin_tests.rs; tests/contact-thin.test.cjs; server/src/receive_http_tests.rs; tests/ui-operating.test.cjs";
+        attribute executable : String = "tests/contact.test.cjs; server/src/contact_http_tests.rs; server/src/receive_http_tests.rs; tests/ui-operating.test.cjs";
         objective {
-            verify 'CL-010-06';
-            verify 'CL-010-08';
             verify 'CL-010-15';
-            verify 'CL-065-01';
         }
     }
-    dependency CL_065_01_verified_by_TC_007_005 from 'CL-065-01' to 'TC-007-005';
     verification 'TC-007-007' {
         doc /* TC-007-007 — Live FT8 contact on the IC-7300
              CL-010-01, CL-010-02, CL-010-03, CL-010-04, CL-010-10
@@ -1255,10 +1252,8 @@ package WstxRequirements {
     dependency CL_010_04_verified_by_TC_011_002 from 'CL-010-04' to 'TC-011-002';
     dependency CL_010_04_verified_by_TC_007_007 from 'CL-010-04' to 'TC-007-007';
     dependency CL_010_06_verified_by_TC_007_003 from 'CL-010-06' to 'TC-007-003';
-    dependency CL_010_06_verified_by_TC_007_005 from 'CL-010-06' to 'TC-007-005';
     dependency CL_010_07_verified_by_TC_007_004 from 'CL-010-07' to 'TC-007-004';
     dependency CL_010_08_verified_by_TC_007_004 from 'CL-010-08' to 'TC-007-004';
-    dependency CL_010_08_verified_by_TC_007_005 from 'CL-010-08' to 'TC-007-005';
     dependency CL_010_10_verified_by_TC_008_001 from 'CL-010-10' to 'TC-008-001';
     dependency CL_010_10_verified_by_TC_007_007 from 'CL-010-10' to 'TC-007-007';
     dependency CL_010_11_verified_by_TC_010_008 from 'CL-010-11' to 'TC-010-008';
@@ -1365,8 +1360,8 @@ package WstxRequirements {
                 client download is pending; with the page's clock installed before load, drive it
                 16s (past the 12s bound and its 1-second tick), then deliver. Expect only the
                 connected state, the same socket and no new connection (#8, issue70: driven, no
-                real wait). Hold beyond 31s in real time with the download pending: expect stale
-                detection within the 31s bound plus 1-second scheduler tolerance (a measurement).
+                real wait). The former real-time 31s check with a download that never completes is
+                retired (#80, operator 2026-11-09: a setup case, not normal operation).
 
              **Oracle:** contract state transitions/time limits and observed request exchange.
              The automation cuts/restores the proxy to the actual server and checks a new snapshot
@@ -1382,59 +1377,47 @@ package WstxRequirements {
         attribute executable : String = "tests/communication.test.cjs";
     }
     verification 'TC-021-008' {
-        doc /* #### TC-021-008 — Thin-link budget and client isolation
+        doc /* #### TC-021-008 — Dead peer removal
 
-             **Clauses:** CL-003-01, CL-003-02, CL-003-05, CL-003-06, CL-003-08.
-             **Promise:** FR-021. **Level:** 2 — Isolated automated tests.
-             **Where it runs:** Windows PC, two real browser contexts and the candidate TLS server
-             through the shared portable link simulator. The stalled-reader variant uses two
-             independent local WebSocket peers against the actual server.
+             **Clauses:** CL-003-02, CL-003-06. **Promise:** FR-021. **Level:** 2 — Isolated automated tests.
+             **Where it runs:** Windows PC, the actual router in the test process; the connection loop's
+             clock is the runtime's and the test drives it (no real wait); the test holds each peer's
+             transport. #80 (operator 2026-11-09): the 32 kbit/s budget variant and the real-time
+             stalled-reader variant are retired; the link budget is judged from the link byte log
+             (TC-080-001); the write and flush deadlines are design bounds checked by review.
 
-             **Budget variant — inputs/actions and expected results:**
+             **Inputs/actions and expected results:**
 
-             1. Start two uncached browser contexts sharing the contract's minimum-rate/latency
-                profile. Report cold page and asset timings/sizes separately from protocol connection
-                and first displayed status. Expect first status within its post-load limit.
-             2. Keep both clients connected with unchanged station state for the contract's full
-                measurement interval. Expect the aggregate mean in each direction to meet the
-                [traffic budget](StationProtocol.sysml), including heartbeat
-                and accounted overhead. Report actual TLS-stream bytes plus the explicit network model;
-                do not describe these values as physical packet capture.
-             3. Click Refresh status concurrently in both existing clients. Expect each visible
-                Last updated value to change within the connected-response limit, using the existing
-                WebSocket connections rather than creating replacement test connections.
-             4. The minimal profile MUST contain no audio/spectrum stream, application payload codec
-                or negotiated WebSocket compression; verify that scope against the protocol and
-                implementation. HTTP content coding is only the bounded12.1.1 exception, verified
-                separately by TC-009-005 case8; this does not replace the existing cold/status tests. Missing browser, simulator
-                or measurement prerequisites MUST fail verification rather than silently skip it.
+             1. Peer A subscribes Thin, then neither reads nor answers Ping; its transport keeps
+                accepting writes (a vanished browser behind a kernel buffer). Expect A closed with
+                reason "no pong for 15 s" at the first heartbeat tick more than 15 s after its last
+                Pong (driven time in (15 s, 20 s]), never earlier.
+             2. Peer B sends station.get every 5 s throughout. Expect each answered within 2 s, and
+                B usable after A's removal.
+             3. Control: a peer answering every Ping stays open through 60 s of driven time.
 
-             **Stalled-reader variant — inputs/actions and expected results:**
-
-             1. Connect a peer that stops reading and has automatic Pong replies disabled. Send a
-                bounded burst of read-only status requests; concurrently query a healthy peer and
-                expect its response within the connected-response limit.
-             2. Keep the first peer unresponsive past the Pong deadline plus heartbeat-tick bound,
-                then resume reads. Expect its connection to close and the healthy peer to remain usable.
-                This verifies bounded liveness removal and isolation; it does not prove that kernel
-                buffers filled, the send-timeout branch executed or total process memory was measured.
-
-             **Oracle:** independently timed link simulator, browser-visible updates and
-             [resource/liveness rules](StationProtocol.sysml).
-             **Executable trace:** [communication.test.cjs](../../tests/communication.test.cjs),
-             `TC-021-008: 32 kbit/s shared TLS link and 60-second idle budget` and
-             `TC-021-008: stalled reader cannot block another client`.
-             The measurement report is `test-results/link-budget.json`. */
-        attribute automation : AutomationState = AutomationState::implemented;
+             **Oracle:** Limits stalePongMs 15000 and heartbeatMs 5000 and the Heartbeat rule
+             ("on the next heartbeat tick, >15 s without Pong disconnects that peer") in the
+             [liveness rules](StationProtocol.sysml). Removing the Pong check (#70 mutation M8)
+             must turn case 1 red. */
+        attribute automation : AutomationState = AutomationState::planned;
         objective {
-            verify 'CL-003-01';
             verify 'CL-003-02';
-            verify 'CL-003-05';
             verify 'CL-003-06';
-            verify 'CL-003-08';
             verify 'FR-021';
         }
-        attribute executable : String = "tests/communication.test.cjs";
+    }
+    verification 'TC-080-001' {
+        doc /* TC-080-001 — Link byte log
+             CL-003-05
+             Setup: the actual router in the test process on a selected HTTPS profile with a disposable directory, one enrolled browser grant and one MCP client; the log's period clock is driven by the test; a raw test peer writes and reads HTTP/1.1 text and WebSocket frames itself and counts every byte it wrote and read per message.
+             Steps: (a) FT8 operating mode: in one period the browser's socket subscribes Thin and sends station.get three times; the browser makes GET /profile, POST /authorization/v1/status and one refused request; the MCP client makes one tools/call; the period ends. (b) A second socket of the same grant on Off in the next period. (c) FT4: two 7.5 s periods. (d) Write lines until the file passes its rotation size. (e) A plaintext loopback profile.
+             Expected (WstxStationProtocol::LinkTrafficLog): one JSON line per client with traffic at each period end, none for a client without traffic; per message type the count and bytes each way equal the peer's own counts (WebSocket frame header plus payload; HTTP head as HTTP/1.1 text plus body as sent); the estimate each way equals the hand calculation of the IndependentLinkAccounting formula over those messages; display lists each socket's profile (thin, then thin and off); FT4 lines are 7500 ms apart; the MCP client has its own line and the browser line holds no MCP bytes; no line holds a cookie, token or proof; the file moves to link-traffic.1.log at its rotation size, replacing the older one; nothing of the log reaches a socket or response; on the plaintext profile the TLS term is zero and the client is local.
+             2 — Isolated automated functional test; Windows development PC; no browser, link simulator or radio. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-003-05';
+        }
     }
     verification 'TC-021-009' {
         doc /* #### TC-021-009 — Remote access boundary
@@ -2110,8 +2093,8 @@ package WstxRequirements {
     verification 'TC-010-002' {
         doc /* TC-010-002
              CL-006-03, CL-006-04
-             Existing independently calibrated shared TLS link: 4000 bytes/s each direction, 150 ms one-way, two real browsers. After upload/page load, replay >=60 s with both thin; issue paired status refresh at ten preselected source times. Repeat off; stall one reader, replace/cancel job and reconnect. Separately upload while refreshing.
-             Over 60 steady-state seconds thin total <=3000 accounted bytes/s each direction and every connected refresh displays <=2 s; off preserves existing <=1000 idle budget. No >1 frame/s/peer, >1024-byte event or >1 pending optional frame; no raw audio streaming. Missing rows are gaps, obsolete frames ignored, reconnection obtains snapshot before subscription. The browser sends no recording.get and no timer GET /recording; a subscribed peer (Off included) receives one recording.state after subscribing and then only on a change, within 2 s, with received_bytes alone at most once per 5 s, shown without a read; a peer without a subscription receives none. Upload bytes/time and cold asset metrics are reported separately; upload must not break status<=2 s. Counter oracle is simulator's actual-stream+defined overhead, not physical-link certification. */
+             #80 (operator 2026-11-09): the two-browser 32 kbit/s replay, Off and upload measurements, the stalled thin subscriber and the paced optional-output case are retired; the link budget is judged from the link byte log (CL-003-05, TC-080-001) and dead peer removal is TC-021-008. Actual server and browser on an unshaped local connection: import and replay a recording, an independent peer subscribes Off and another stays unsubscribed, another actor replays and imports; a read failing after an announcement; injected Thin frames with gaps, obsolete identities and more than 120 rows.
+             The browser sends no recording.get and no timer GET /recording; a subscribed peer (Off included) receives one recording.state after subscribing and then only on a change, within 2 s, with received_bytes alone at most once per 5 s, shown without a read; a peer without a subscription receives none. A failed read after an announcement closes the socket and the reconnect reads again. The browser keeps at most 120 rows, shows missing rows as gaps and ignores obsolete identities. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-006-03';
@@ -2146,7 +2129,7 @@ package WstxRequirements {
         doc /* TC-010-005
              CL-006-03, CL-006-04
              Cost2, automated Windows real browser/candidate server plus deterministic injected wire fixtures. Exercise cleartext loopback and HTTPS defaults; explicit three-profile changes, old Thin-only/older server, simultaneous Thin/Detailed peers, malformed base64 alphabet/padding/pad bits/decoded lengths/values, unknown/missing keys, safe-integer/interval edges, wrong tuples/old sockets and skipped sequences. Use alternating known quantized levels in adjacent native bins/rows and read actual getImageData at1100x850 and360x640, DPR1/2,200% zoom, splitter extremes, resize and repaint; exercise the fixed level mapping (#54 DisplayLevels: reference, Zero/Gain sliders, no automatic level) and range/legend/readout consistency. Retain actual busy FT8 recording desktop/mobile screenshots and compare their trace/noise contrast, orientation and rulers qualitatively with WSJT-X/FlexRadio reference images. Stall Detailed output with a controlled sink returning Pending, then issue status/control and cancel/off.
-             Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. At most 1 Hz Thin and, for Detailed, 5 rows/s steady with catch-up of retained rows at most 5.9 rows/s (#54 TransferDisplay); no second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve, unchanged2s removal from first pending write; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. TC-010-002 unchanged TLS32kbit/s Thin/Off regression still runs. Every origin defaults Detailed; explicit saved Thin/Off is honored and fallback attempts Thin once and labels unavailability. Pixel oracle computes integer edges/fixed source-time cell edges from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and dark unobserved areas on a full-height canvas; no blended spatial colors. New rows enter at top; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness.  Preference persistence: with disposable browser storage and actual server/Chromium, verify unchanged defaults without a valid choice; explicit Detailed/Thin/Off survives reload and reopened browser context; origins/ports and profile UUIDs are isolated while boot/revision changes preserve choice. Invalid value or denied storage uses normal defaults without page error and leaves in-memory selection usable. Inspect only versioned UUID keys and enumerated values, with no secrets. Unknown-command runtime Thin fallback preserves stored Detailed; subsequent explicit Thin replaces it. Existing subscription commands, no retry loop, Detailed bounds and Thin32kbit/s tests remain unchanged; no synthetic decoded records are used. */
+             Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. At most 1 Hz Thin and, for Detailed, 5 rows/s steady with catch-up of retained rows at most 5.9 rows/s (#54 TransferDisplay); no second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. The 32 kbit/s Thin/Off budget is judged from the link byte log (#80, TC-080-001). Every origin defaults Detailed; explicit saved Thin/Off is honored and fallback attempts Thin once and labels unavailability. Pixel oracle computes integer edges/fixed source-time cell edges from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and dark unobserved areas on a full-height canvas; no blended spatial colors. New rows enter at top; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness.  Preference persistence: with disposable browser storage and actual server/Chromium, verify unchanged defaults without a valid choice; explicit Detailed/Thin/Off survives reload and reopened browser context; origins/ports and profile UUIDs are isolated while boot/revision changes preserve choice. Invalid value or denied storage uses normal defaults without page error and leaves in-memory selection usable. Inspect only versioned UUID keys and enumerated values, with no secrets. Unknown-command runtime Thin fallback preserves stored Detailed; subsequent explicit Thin replaces it. Existing subscription commands, no retry loop, Detailed bounds and Thin32kbit/s tests remain unchanged; no synthetic decoded records are used. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-006-03';
@@ -2291,7 +2274,7 @@ package WstxRequirements {
 
              Proves CL-003-08, CL-008-03/05/07 and CL-010-05/07/08. Cost2, isolated Windows development PC:
              actual station/receive manager, converter, decoder, HTTPS API and Chromium, independent
-             native/CI-V fixtures and the existing encrypted-link model. This is planned coverage,
+             native/CI-V fixtures and TLS (no 32 kbit/s link, #80). This is planned coverage,
              not an execution verdict. TC-009-002 remains the separate authorized cost4 physical
              IC-7300/browser readback check. All existing cases remain required.
 
@@ -2340,9 +2323,10 @@ package WstxRequirements {
                 only unsupported operating controls. Invalid schema/identity is stale/error, never
                 manual fallback. Include the pushed selection.state (WstxOperatingReceive::SelectionStateEvent),
                 normal receive/results/status, mode/band traffic, stalls and explicit Stop
-                in the existing two-browser32kbit/s TLS workload. Assert each-direction mean<=3000B/s,
-                visible status<=2s, one pending selection read/ordinary mutation, status/control
-                priority and no backlog. Without a timer read: the first selection.state of a socket
+                in a two-browser workload on an unshaped TLS connection (#80, operator 2026-11-09:
+                CAT and selection tests run off the 32 kbit/s link; its budget is judged from the
+                link byte log, TC-080-001). Assert one pending selection read/ordinary mutation.
+                Without a timer read: the first selection.state of a socket
                 holds what GET /receive/selection gives, a later one the changed fields (at most 2048 B,
                 at most one per second), a change from outside shown with no read, and the radio
                 facts' new dates alone at most every 2 s on Detailed and every 30 s below it.
@@ -2350,23 +2334,21 @@ package WstxRequirements {
                 Read evidence classifies each selection read using recorded CDP initiators and the
                 caller mapping derived from the served client source (its single selection fetch, every
                 caller explicit; a caller inside a timer, a missing, ambiguous or unmapped site refuses),
-                joined to validated responses. In EACH unchanged75s Thin/Off window a browser makes at
+                joined to validated responses. In EACH Thin/Off window a browser makes at
                 most one selection read per operator gesture, and each command's pending state is
                 seen by at least one browser through an event or a read; each browser ends holding the
                 command's result. Missing coverage fails rather than fabricating pending values or
                 forcing a legal short command to last longer. Frozen negative controls refuse a timer
-                caller, an unknown stack and a lost or doubled fetch. Preserve all five CQ contexts,
-                two transitions/window,26 status refreshes, original bytes/deadlines/Off ACK/frame
-                oracles and all75s windows; no product delay, padding or traffic reduction.
+                caller, an unknown stack and a lost or doubled fetch. Preserve all five CQ contexts and
+                two transitions/window; each window is as long as its gestures need; no product
+                delay or padding.
 
              8. Bounded HTTP content coding12.1.1 (same cost2 boundary):
                 A. Real application/router + normal TLS/session: authenticate once through existing /session; for each allowlisted successful GET gzip decode must equal identity logical JSON exactly on immutable state, exact shape/caps preserved. Use independent standard decoder (Node zlib) and assert actual raw gzip magic/header/trailer + body rather than fetch auto-decoded size. Check Content-Type/Vary/Content-Length correctness; existing Vary/cache/security headers retained. Mutable facts compare frozen fixture context, never pretend two temporally distinct snapshots must match timestamps.
                 B. Table: absent/empty, identity, gzip, GZip case-insensitivity, gzip;q=0, gzip;q=0.5 vs identity;q=1, identity;q=0 with gzip acceptable, br-only, wildcard and explicit exclusions, invalid q/token/multiple header instances. Expected outcomes are frozen in the ordered12.1.1 negotiation table from the pinned source; malformed headers must follow the frozen ordered12.1.1 negotiation table without panic/leak; duplicate/wildcard selection follows the exact table, not a blanket last-q or any-q0 rule. Both gzip+identity explicitly forbidden=>406 only eligible successful GET. Preserve original401/403/404/400/409/500 on excluded error paths even with forbidden encodings. Every row of the frozen ordered table runs through the product's own response encoder (http_compression::encode_response) on an eligible successful JSON GET, never through a bare library layer (#71).
                 C. Every excluded method/path including POST/session, PUT/profile, POST/receive/select and /radio operations remains unencoded and byte/schema compatible; no duplicate mutation effects. Authenticate cookies/tokens never appear in body/debug logs. Authenticated eligible snapshots contain no credential fields; malicious literal decoded text is unchanged. Oversized logical result rejected/capped BEFORE gzip, encoded size cannot admit extra rows; valid max logical result still decodes within original cap. Request Content-Encoding:gzip must not add support or bypass request body limit. HEAD/no-body/range/already-encoded cases must not be double-compressed or misframed.
-                D. Actual two Chromium browsers on unchanged shared4000B/s/direction+150ms TLS model, actual native FT4/FT8 + CAT transitions and mode-appropriate fixtures, actual status, pushed selection state and reads, records and source/operation identities. Preserve all Thin75s/Off75s windows and >=60 checks, five CQ records, status/pending/original WS oracles. Record Content-Encoding from real response headers, raw encoded sizes via CDP as attribution, and unchanged actual proxy TLS/model counters as sole bandwidth oracle; BOTH directions <=3000B/s and existing Off requirement, all status<=2s. No arithmetic compression estimate counts as PASS. Run original14+new15 suite through ordinary integration/prepush as selected; separate old10s Connected-after-load remains required. Identity path correctness is mandatory; identity workload bandwidth remains unproven unless separately measured.
-                The read and event proof in7 applies unchanged to8D: preserve per-command pending
-                observation, exact initiator correlation and its negative controls; do not demand
-                two pending-valued replies.
+                D. Retired by #80 (operator 2026-11-09): content coding is not measured on the
+                32 kbit/s link; identity path correctness stays mandatory (A-C).
                 Include tiny `{}` (2bytes) with `identity;q=0,gzip`; selected gzip must encode
                 it despite a default library minimum-size predicate. HEAD/204/304/range/already-
                 encoded responses bypass negotiation even when all encodings are forbidden.
@@ -2415,7 +2397,8 @@ package WstxRequirements {
                changed descriptor mid-page, old sockets/epochs, reconnect, expired cursors and safe
                counters. Expect atomic monotonic view identity, truthful Partial/incomplete/stale
                labels, no invented completion and no obsolete row/cursor movement. Existing ring,
-               page/record sizes, single pending/cadence and combined32kbit/s regressions remain.
+               page/record sizes and single pending/cadence remain (the 32 kbit/s link budget is
+               judged from the link byte log, #80).
              - Hand oracle: anchor2026-10-27T12:00:00Z at frame0. FT8 starts3600/6000/8400 yield
                DT-0.2/+0.0/+0.2 in12:00:00. FT4 starts3024/5424/7824 yield the same, and frame95424
                yields+0.0 in12:00:07.5. Repeat with a nonzero canonical anchor, day rollover,
@@ -2443,18 +2426,16 @@ package WstxRequirements {
 
     // Reciprocal ownership is verification intent, not an execution verdict.
     dependency CL_003_01_verified_by_TC_021_006 from 'CL-003-01' to 'TC-021-006';
-    dependency CL_003_01_verified_by_TC_021_008 from 'CL-003-01' to 'TC-021-008';
     dependency CL_003_02_verified_by_TC_021_005 from 'CL-003-02' to 'TC-021-005';
     dependency CL_003_02_verified_by_TC_021_008 from 'CL-003-02' to 'TC-021-008';
     dependency CL_003_03_verified_by_TC_021_005 from 'CL-003-03' to 'TC-021-005';
     dependency CL_003_04_verified_by_TC_021_006 from 'CL-003-04' to 'TC-021-006';
     dependency CL_003_04_verified_by_TC_021_007 from 'CL-003-04' to 'TC-021-007';
-    dependency CL_003_05_verified_by_TC_021_008 from 'CL-003-05' to 'TC-021-008';
+    dependency CL_003_05_verified_by_TC_080_001 from 'CL-003-05' to 'TC-080-001';
     dependency CL_003_06_verified_by_TC_021_008 from 'CL-003-06' to 'TC-021-008';
     dependency CL_003_07_verified_by_TC_021_009 from 'CL-003-07' to 'TC-021-009';
     dependency CL_003_08_verified_by_TC_009_005 from 'CL-003-08' to 'TC-009-005';
     dependency CL_003_08_verified_by_TC_021_007 from 'CL-003-08' to 'TC-021-007';
-    dependency CL_003_08_verified_by_TC_021_008 from 'CL-003-08' to 'TC-021-008';
     dependency CL_005_01_verified_by_TC_022_001 from 'CL-005-01' to 'TC-022-001';
     dependency CL_005_02_verified_by_TC_022_001 from 'CL-005-02' to 'TC-022-001';
     dependency CL_005_02_verified_by_TC_022_002 from 'CL-005-02' to 'TC-022-002';
@@ -2818,9 +2799,9 @@ package WstxRequirements {
              Show proof retry/revocation/lost credential/persistence failure distinctly.
              CAT waiting/connecting/retry/unavailable/quarantined never labels retained
              frequency fresh. Audio/decoder state remains separate. No new status poll
-             stream; reuse versioned status publication/heartbeat. Existing Thin/Off
-             32kbit/s accounted-traffic regressions include new auth/recovery/status
-             messages, explicit errors and multi-peer recovery. Issue10 existing
+             stream; reuse versioned status publication/heartbeat. Its status reads and
+             recovery are not part of a 32 kbit/s link test; their bytes appear in the link
+             byte log (CL-003-05; #80, operator 2026-11-09). Issue10 existing
              continuity/stale fixes are reused; this proposal adds no duplicate helper.
              The freeze is accepted on the recorded trace (6622256637).
              Delivered: POST /authorization/v1/status reports the actual lifecycle
@@ -2834,11 +2815,9 @@ package WstxRequirements {
              station's ownership lock; also the rare ambiguous case of two serial
              interfaces with the same port name) as error port_in_use, and the browser names it
              '<port> in use by another program' (for example 'COM3 in use by another
-             program'); other unavailable causes keep radio_unavailable. Still missing:
-             only the Thin/Off accounted-traffic companion
-             including these status reads (TC-022-008), moved to the combined front-end/server
-             traffic-test issue #80 (operator 2026-11-08). */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+             program'); other unavailable causes keep radio_unavailable. The Thin/Off
+             accounted-traffic companion once planned here is retired (#80). */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/authorization_http.rs; client/recording.js; client/authorization.js; client/app.js";
     }
     dependency CL_022_05_to_FR_003 from 'CL-022-05' to 'FR-003';
@@ -3029,21 +3008,17 @@ package WstxRequirements {
              wrong media415,1025bytes413; GETnewstatus405/no effects/no fallback. Existing
              GET/profile permits absent Origin as before, not a relaxed POST policy.
              The real freeze
-             is accepted on the recorded trace (6622256637); the Thin/Off
-             traffic tests below are what is missing. Existing issue10 barriers/unknown state
-             assertions remain. Add auth recovery to existing Thin/Off accounted-traffic
-             companion tests/recording.test.cjs TC-010-002 and communication tests;
-             same ceilings/windows/controls, no assertion or source-pin weakening.
-             Automated: tests/profiles.test.cjs TC-022-008 (the original freeze
+             is accepted on the recorded trace (6622256637). Existing issue10 barriers/unknown
+             state assertions remain. The once planned Thin/Off accounted-traffic companion is
+             retired (#80, operator 2026-11-09: no 32 kbit/s link test; the link byte log shows
+             these bytes). Automated: tests/profiles.test.cjs TC-022-008 (the original freeze
              reproduction: transport cookie lost under an OPEN WebSocket without
              reload; the 401 read ends 'Connected' within2s, retained-key proof
              reconnects with one OPEN socket and zero token/session/enrollment, every
              status read is POST {"version":1} with the exact page Origin) and
              server/src/auth_tests.rs (status GET405, wrong and missing Origin403
-             before auth, strict body/media/size refusals, unknown transport401).
-             Still planned: the Thin/Off accounted-traffic companions
-             tests/communication.test.cjs and tests/recording.test.cjs TC-010-002; same traffic windows and ceilings. */
-        attribute automation : AutomationState = AutomationState::partial;
+             before auth, strict body/media/size refusals, unknown transport401). */
+        attribute automation : AutomationState = AutomationState::implemented;
         attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs";
         objective {
             verify 'CL-022-05';
