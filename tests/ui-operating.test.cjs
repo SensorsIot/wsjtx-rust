@@ -4193,7 +4193,7 @@ test('TC-024-006 the Activity choice in the QSO fold-out',{timeout:40000},async 
   await page.locator('#qso-more summary').click();
   const choice=page.locator('#contact-activity');
   await page.waitForFunction(()=>document.querySelector('#contact-activity')?.value==='ww_digi');
-  assert.deepEqual(await choice.locator('option').evaluateAll(o=>o.map(x=>[x.value,x.textContent])),[['none','None'],['na_vhf','NA VHF'],['ww_digi','WW Digi'],['arrl_digi','ARRL Digi'],['field_day','Field Day'],['rtty','RTTY Roundup'],['hound','Hound']]);
+  assert.deepEqual(await choice.locator('option').evaluateAll(o=>o.map(x=>[x.value,x.textContent])),[['none','None'],['na_vhf','NA VHF'],['eu_vhf','EU VHF'],['ww_digi','WW Digi'],['arrl_digi','ARRL Digi'],['field_day','Field Day'],['rtty','RTTY Roundup'],['hound','Hound']]);
   await choice.selectOption('arrl_digi');
   for(let i=0;i<40&&!commands.some(c=>c.action==='set_activity');i++)await page.waitForTimeout(50);
   const sent=commands.find(c=>c.action==='set_activity');
@@ -4257,6 +4257,50 @@ test('TC-024-013 the Hound choice in the QSO fold-out',{timeout:40000},async t=>
   const sent=commands.find(c=>c.action==='set_activity');
   assert.equal(sent.activity,'hound');
   assert.equal('exchange' in sent,false,'Hound takes no exchange');
+  assert.equal(commands.some(c=>c.action==='enable_tx'),false,'choosing never transmits');
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: CL-099-02; TC-099-003 (#99). The EU VHF choice: offered after NA VHF, shown with the
+// next serial, sent without an exchange; a refusal is shown and the choice returns to the
+// station's setting.
+test('TC-099-003 the EU VHF choice in the QSO fold-out',{timeout:40000},async t=>{
+  const commands=[];
+  const settings={activity:'eu_vhf',exchange:null,serial:12};
+  let refuse=false;
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:partner(),settings:{...settings}})}));
+    await p.route('**/contact/command',async route=>{
+      const body=JSON.parse(route.request().postData());commands.push(body);
+      if(refuse&&body.action==='set_activity')await route.fulfill({status:409,json:{error:{code:'profile_incomplete',field:'locator'}}});
+      else await route.fulfill({status:202,json:{v:1,accepted:true}});
+    });
+  }});
+  await page.waitForFunction(()=>window.wstxContact?.snapshot(),null,{timeout:25000});
+  await page.locator('#qso-more summary').click();
+  await page.waitForFunction(()=>document.querySelector('#contact-activity')?.value==='eu_vhf');
+  const choice=page.locator('#contact-activity');
+  const options=await choice.locator('option').evaluateAll(o=>o.map(x=>[x.value,x.textContent]));
+  assert.deepEqual(options.slice(1,3),[['na_vhf','NA VHF'],['eu_vhf','EU VHF']]);
+  assert.equal(await page.locator('#contact-serial').textContent(),'Serial 0012');
+  const toNone=async()=>{
+    Object.assign(settings,{activity:'none'});
+    await page.evaluate(()=>{document.activeElement?.blur();return window.wstxContact.load();});
+    await page.waitForFunction(()=>document.querySelector('#contact-activity')?.value==='none');
+  };
+  await toNone();
+  await choice.selectOption('eu_vhf');
+  for(let i=0;i<40&&!commands.some(c=>c.action==='set_activity');i++)await page.waitForTimeout(50);
+  const sent=commands.find(c=>c.action==='set_activity');
+  assert.equal(sent.activity,'eu_vhf');
+  assert.equal('exchange' in sent,false,'EU VHF sends no exchange');
+  await toNone();
+  refuse=true;
+  await choice.selectOption('eu_vhf');
+  for(let i=0;i<40&&commands.filter(c=>c.action==='set_activity').length<2;i++)await page.waitForTimeout(50);
+  await page.waitForFunction(()=>/profile_incomplete/.test(document.querySelector('#contact-result')?.textContent??''));
+  await page.waitForFunction(()=>document.querySelector('#contact-activity')?.value==='none');
   assert.equal(commands.some(c=>c.action==='enable_tx'),false,'choosing never transmits');
   assert.deepEqual(errors,[]);
 });

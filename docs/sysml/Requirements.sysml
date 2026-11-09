@@ -141,7 +141,7 @@ package WstxRequirements {
     }
     requirement 'FR-024' {
         doc /* Contest, special-activity and DXpedition operation — phase three
-             Offer WSJT-X's special operating activities chosen by the operator, the contest exchanges, the Hound role and the nonstandard message types, each with its decode, encode, sequencing and logging, on the shared browser/modem/QSO/log/MCP services. Approved slices (issue #24, operator 2026-11-03, WSJT-X 3.3.0-beta5 reference): S1 nonstandard/compound calls, filled-in hashed calls and free text; S2a grid-exchange contests; S2b Field Day and RTTY Roundup (ADIF contest fields, no Cabrillo); S4 classic Hound. S5 SuperFox Hound moved to its own phase-two issue #77 (operator 2026-11-08); Fox (S6) was dropped; EU VHF (S3) is backlog. */
+             Offer WSJT-X's special operating activities chosen by the operator, the contest exchanges, the Hound role and the nonstandard message types, each with its decode, encode, sequencing and logging, on the shared browser/modem/QSO/log/MCP services. Approved slices (issue #24, operator 2026-11-03, WSJT-X 3.3.0-beta5 reference): S1 nonstandard/compound calls, filled-in hashed calls and free text; S2a grid-exchange contests; S2b Field Day and RTTY Roundup (ADIF contest fields, no Cabrillo); S4 classic Hound. S5 SuperFox Hound moved to its own phase-two issue #77 (operator 2026-11-08); Fox (S6) was dropped; EU VHF (S3), decoded since S1a, is sent by issue #99 (operator 2026-11-09, CL-099-01/02). */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/decoder/hashes.rs; server/src/recording.rs; server/src/contact.rs; server/src/transmit/pack.rs";
     }
@@ -5534,8 +5534,8 @@ package WstxRequirements {
         doc /* TC-024-005 — Grid-exchange contests through the contact engine
              CL-024-02
              Setup: the contact engine against the actual #9 transmit owner core on a virtual UTC clock with its recording hardware double (no audio, PTT or radio); hand-authored standard rows; HB9BLA JN47AA; the station fixture over POST /contact/command and its UDP Status.
-             Steps: (a) set_activity ww_digi, Enable Tx with no partner, select the caller "HB9BLA S52XYZ JN76", the partner sends "HB9BLA S52XYZ RR73"; (b) set_activity na_vhf, select "CQ TEST K1ABC FN42", Enable Tx, the CQer sends "HB9BLA K1ABC R FN42"; (c) arrl_digi with my call DL/HB9BLA; (e) during a running CQ with an edited Tx6 set ww_digi, then set_report; with an active contact switch none, ww_digi, none; start station automation with ww_digi set; (d) set_activity none, an unknown activity "eu_vhf", and the settings and UDP Status of each activity.
-             Expected: (a) Tx6 "CQ WW HB9BLA JN47"; the caller's grid selects Tx3 "S52XYZ HB9BLA R JN47" (rogerReport) with Tx2 "S52XYZ HB9BLA JN47"; after RR73 Tx5 is sent, the contact completes and is logged with grid JN76 and no reports; (b) Tx6 "CQ TEST HB9BLA JN47", "K1ABC HB9BLA JN47" sent (as Tx2 since #24 S2b: Tx1 is disabled in contests), the R FN42 moves to Tx4 "K1ABC HB9BLA RRR", which completes after it is sent and the partner's 73; (c) Tx6 "CQ DL/HB9BLA" and Tx2 "K1ABC <DL/HB9BLA> JN47"; (d) none restores the report exchange (Tx2 "K1ABC HB9BLA -15"), eu_vhf is refused invalid_request field activity, settings.activity reads the choice and UDP Status special operation 0/1/5/8; (e) Tx6 becomes "CQ WW HB9BLA JN47" and a later set_report keeps it, the active contact's Tx2/Tx3 switch between "-NN"/"R-NN" and "JN47"/"R JN47", and automation start is refused not_ready activity.
+             Steps: (a) set_activity ww_digi, Enable Tx with no partner, select the caller "HB9BLA S52XYZ JN76", the partner sends "HB9BLA S52XYZ RR73"; (b) set_activity na_vhf, select "CQ TEST K1ABC FN42", Enable Tx, the CQer sends "HB9BLA K1ABC R FN42"; (c) arrl_digi with my call DL/HB9BLA; (e) during a running CQ with an edited Tx6 set ww_digi, then set_report; with an active contact switch none, ww_digi, none; start station automation with ww_digi set; (d) set_activity none, an unknown activity "q65_pileup" ("eu_vhf" until #99, TC-099-002), and the settings and UDP Status of each activity.
+             Expected: (a) Tx6 "CQ WW HB9BLA JN47"; the caller's grid selects Tx3 "S52XYZ HB9BLA R JN47" (rogerReport) with Tx2 "S52XYZ HB9BLA JN47"; after RR73 Tx5 is sent, the contact completes and is logged with grid JN76 and no reports; (b) Tx6 "CQ TEST HB9BLA JN47", "K1ABC HB9BLA JN47" sent (as Tx2 since #24 S2b: Tx1 is disabled in contests), the R FN42 moves to Tx4 "K1ABC HB9BLA RRR", which completes after it is sent and the partner's 73; (c) Tx6 "CQ DL/HB9BLA" and Tx2 "K1ABC <DL/HB9BLA> JN47"; (d) none restores the report exchange (Tx2 "K1ABC HB9BLA -15"), q65_pileup is refused invalid_request field activity, settings.activity reads the choice and UDP Status special operation 0/1/5/8; (e) Tx6 becomes "CQ WW HB9BLA JN47" and a later set_report keeps it, the active contact's Tx2/Tx3 switch between "-NN"/"R-NN" and "JN47"/"R JN47", and automation start is refused not_ready activity.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -5549,7 +5549,7 @@ package WstxRequirements {
              CL-024-02
              Setup: the browser fixture of the operating screen with a hand-written contact snapshot; contact commands are recorded.
              Steps: open the fold-out; read the Activity choice with settings.activity ww_digi; choose ARRL Digi.
-             Expected: the choice offers None, NA VHF, WW Digi and ARRL Digi (since #24 S2b also Field Day and RTTY Roundup, TC-024-009, since #24 S4b also Hound, TC-024-013) and shows WW Digi; choosing sends set_activity {activity arrl_digi}; nothing transmits; no page errors.
+             Expected: the choice offers None, NA VHF, WW Digi and ARRL Digi (since #24 S2b also Field Day and RTTY Roundup, TC-024-009, since #24 S4b also Hound, TC-024-013, since #99 also EU VHF after NA VHF, TC-099-003) and shows WW Digi; choosing sends set_activity {activity arrl_digi}; nothing transmits; no page errors.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -5599,7 +5599,7 @@ package WstxRequirements {
              CL-024-03
              Setup: the browser fixture of the operating screen with a hand-written contact snapshot; contact commands are recorded.
              Steps: open the fold-out with settings activity rtty, exchange DX, serial 7; enter "1A EMA" in the Exchange entry and choose Field Day; change the exchange to "2B WI".
-             Expected: the choice offers None, NA VHF, WW Digi, ARRL Digi, Field Day and RTTY Roundup; it shows RTTY Roundup, the entry DX and the next serial 0007; choosing sends set_activity {activity field_day, exchange "1A EMA"}, the change sends {field_day, "2B WI"}; nothing transmits; no page errors.
+             Expected: the choice offers None, NA VHF, WW Digi, ARRL Digi, Field Day and RTTY Roundup (since #99 also EU VHF, TC-099-003); it shows RTTY Roundup, the entry DX and the next serial 0007; choosing sends set_activity {activity field_day, exchange "1A EMA"}, the change sends {field_day, "2B WI"}; nothing transmits; no page errors.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -5714,6 +5714,78 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_024_01_verified_by_TC_024_004 from 'CL-024-01' to 'TC-024-004';
+    // #99 EU VHF contest message: send (#24 S3, operator 2026-11-09).
+    requirement 'CL-099-01' {
+        doc /* #99. The transmit packer accepts the WSJT-X EU VHF contest message (i3=5) "<CALL1> <CALL2> [R] 5nSSSS GRID6" exactly as WSJT-X 3.3.0-beta5 packs it (two hashed calls of 3-11 characters, report 52-59, serial 0001-2047, 6-character locator), with bits, CRC, parity and tones identical to ft8code and ft4sim, and refuses every shape WSJT-X rejects for this family. Details: WstxTransmit::PackMessage (family euVhf). */
+        attribute implementation : String = "server/src/transmit/pack.rs";
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+    }
+    dependency CL_099_01_to_FR_024 from 'CL-099-01' to 'FR-024';
+    dependency CL_099_01_to_FR_004 from 'CL-099-01' to 'FR-004';
+    requirement 'CL-099-02' {
+        doc /* #99. The operator-chosen activity eu_vhf (refused without a 6-character profile locator or with a profile callsign over 11 characters; no contact starts whose two calls exceed 16 characters together, the 37-character limit of Tx3) generates CQ TEST, Tx1 with the full calls, Tx2/Tx3 "<DX> <MYCALL> [R] 5nSSSS GRID6" from the report, the station contest serial and the profile locator's first six characters, sequences on the partner's EU VHF message counted by the hashes of my call and the DX call, makes EU VHF rows selectable, logs STX, SRX, the two-digit RS and the 6-character grid, carries UDP Status special operation 2, answers CQ TEST as its own directive and is offered in the Activity choice. Details: WstxContact::EuVhfExchange. */
+        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; server/src/logbook.rs; server/src/mcp.rs; client/contact.js";
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+    }
+    dependency CL_099_02_to_FR_024 from 'CL-099-02' to 'FR-024';
+    dependency CL_099_02_to_FR_005 from 'CL-099-02' to 'FR-005';
+    verification 'TC-099-001' {
+        doc /* TC-099-001 — EU VHF messages pack exactly as WSJT-X
+             CL-099-01
+             Setup: fixtures/transmit/ft8code-vectors.json and fixtures/transmit/ft4/ft4sim-vectors.json extended by fixtures/transmit/generate.py with WSJT-X 3.3.0-beta5 ft8code.exe and ft4sim.exe (the independent oracle; the station's code never produces a vector), with EU VHF messages WSJT-X encodes unaltered: "<K1ABC> <HB9BLA> 550001 JN37VL", "<HB9BLA> <K1ABC> R 590003 FN42AX", "<G4ABC/P> <HB9BLA> 522047 IO91NP" (lowest report, highest serial, a /P call), "<PJ4/K1ABC> <HB9BLA> 590123 FK52UD" (a compound call), "<ABC> <ABCDEFGHIJK> 570010 AA00AA" (3 and 11 characters, lowest grid), "<HB9BLA> <K1ABC> 590001 RR99XX" (highest grid) and the lower-case "<k1abc> <hb9bla> 550001 jn37vl"; and shapes it rejects or alters for this family: serials 0000 and 2048, reports 51 and 60 (510001, 600001), a five- and a seven-digit exchange, a 4-character grid, grid "SS00AA", one call without brackets, a call of 2 characters ("<AB> <HB9BLA> 550001 JN37VL") and one of 12 characters in brackets, "X" in place of R, a sixth word, and the 38-character "<K1ABCDEFGHI> <HB9BLA> R 550001 JN37VL" (11 + 6 call characters with R; a direct case against the contract limit, not an oracle vector, since ft8code takes at most 37 characters) beside the 37-character "<K1ABCDEFGH> <HB9BLA> R 550001 JN37VL" (10 + 6), which is encoded.
+             Steps: pack and encode every fixture message for FT8 and FT4; read family, i3 and refusal; unpack each packed payload with a hash table that knows the two calls and with none.
+             Expected: for every message the oracle encodes unaltered as i3=5 the family is euVhf, i3 5, and bits, CRC, parity and tones (FT8) and bits, codeword and tones (FT4) equal the oracle; the text equals its normalized rendering; the unpack with the table renders the same tokens and with none "<...> <...> R 590003 FN42AX"; every rejected shape is not packed as euVhf (it is refused, or packed in the family the oracle chose, with the oracle's bits); the 38-character message is refused tooLong.
+             2 — Isolated automated tests; Windows development PC, no radio, audio, RF or WSJT-X installation at test time. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-099-01';
+        }
+        attribute executable : String = "server/tests/transmit_vectors.rs; server/tests/transmit_ft4_vectors.rs";
+    }
+    dependency CL_099_01_verified_by_TC_099_001 from 'CL-099-01' to 'TC-099-001';
+    verification 'TC-099-002' {
+        doc /* TC-099-002 — EU VHF contacts through the contact engine and the log
+             CL-099-02
+             Setup: the contact engine against the actual #9 transmit owner core on a virtual UTC clock with its recording hardware double (no audio, PTT or radio); rows built the way the station builds them (pack, unpack, HashTable fill-in with my call and learned calls, row reader); profile HB9BLA JN37VL; the station fixture over POST /contact/command with its log and UDP Status; the logbook record validation.
+             Steps: (a) set_activity eu_vhf, Enable Tx with no partner; the caller "HB9BLA K1ABC FN42" with SNR -6 is answered; the partner sends "<HB9BLA> <K1ABC> R 590007 FN42AX", then "HB9BLA K1ABC 73"; (b) select "CQ TEST W9XYZ EN37" with SNR +3, Enable Tx; the CQer sends "<HB9BLA> <W9XYZ> 590003 EN37AB", then "HB9BLA W9XYZ RR73"; (c) the same as (a) in FT4; (d) not counted while in a contact with K1ABC: an EU VHF message to me from another call, one from K1ABC to another call, one with an unresolved 'from', and an EU VHF message to me while the activity is none; (e) refusals: set_activity eu_vhf with the profile locator JN37 and with an empty locator, with the 12-character profile callsign VP2E/HB9BLAX, and with an exchange; enter_dx of a 12-character DX call; a serial of 2048, then set_report; the profile locator changed to JN37 after the choice during a contact with K1ABC, then set_report -10; select an EU VHF row with an unresolved 'from', and one while the activity is ww_digi; (f) select the EU VHF row "<HB9BLA> <DL1ABC> 590012 JO62QM" addressed to me, and "<W9XYZ> <DL1ABC> R 570004 JO62QM" not addressed to me; edit_message tx2 "<K1ABC> <HB9BLA> 590001 JN37VL" and "<K1ABC> <HB9BLA> 590000 JN37VL"; (g) settings, contact snapshot, UDP Status, the directive of "CQ TEST K1ABC FN42"; validate_record of the logged records and of an RST "51" and "60"; (h) the 37-character limit with my call HB9BLA: enter_dx 3D2AG/K1AB (16 call characters together) and 3D2AG/K1ABC (17), then select a row "CQ 3D2AG/K1ABC" (i3=4); with the activity none, a contact with 3D2AG/K1ABC, then set_activity eu_vhf; (i) the profile locator JN37VL12, set_activity eu_vhf, select "CQ TEST K1ABC FN42" with SNR -6.
+             Expected: (a) Tx6 "CQ TEST HB9BLA JN37"; the caller's grid gives Tx2 "<K1ABC> <HB9BLA> 550001 JN37VL" (report -06, n 5); the R exchange moves to Tx4 "K1ABC HB9BLA RRR", exchange_rcvd "590007 FN42AX", dx_grid FN42AX; after the 73 the contact completes and the record has GRIDSQUARE FN42AX, STX 0001, SRX 0007, RST_SENT 55, RST_RCVD 59, no STX_STRING/SRX_STRING; settings.serial 2; (b) the selection starts with Tx1 "W9XYZ HB9BLA JN37" (Tx1 enabled); the exchange moves to Tx3 "<W9XYZ> <HB9BLA> R 560002 JN37VL" (report +03, n 6); after RR73 Tx5 "W9XYZ HB9BLA 73" is sent, completed, STX 0002, SRX 0003; (c) the same texts with Tx4 RR73 and FT4 requests; (d) nothing changes; (e) profile_incomplete field locator (twice), invalid_call field callsign and invalid_request field exchange, the activity unchanged each time; invalid_call; out_of_range field serial for set_report, the report and messages unchanged; profile_incomplete field locator for set_report -10, the report and all six messages unchanged; row_not_standard (twice); (f) DL1ABC with dx_grid JO62QM, exchange_rcvd "590012 JO62QM" and first slot tx3; then DL1ABC from the second row with first slot tx1 and exchange_rcvd null; the valid edit is accepted unaltered, serial 0000 invalid_message; (g) settings.activity eu_vhf with exchange null and the serial, contact exchange_sent/exchange_rcvd, UDP Status special operation 2, the CQ TEST answerable without directive_confirmed; the records are valid, RST "51" and "60" are refused; (h) 3D2AG/K1AB is accepted and its Tx3 "<3D2AG/K1AB> <HB9BLA> R 530001 JN37VL" has 37 characters and packs; 3D2AG/K1ABC is refused invalid_call by enter_dx and by the selection, no contact starts and the previous one is unchanged; set_activity eu_vhf is refused invalid_call field dx_call and the activity stays none; (i) Tx6 "CQ TEST HB9BLA JN37", Tx1 "K1ABC HB9BLA JN37", Tx2 "<K1ABC> <HB9BLA> 550001 JN37VL".
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-099-02';
+        }
+        attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; server/src/strategy_tests.rs";
+    }
+    dependency CL_099_02_verified_by_TC_099_002 from 'CL-099-02' to 'TC-099-002';
+    verification 'TC-099-003' {
+        doc /* TC-099-003 — The EU VHF choice in the QSO fold-out
+             CL-099-02
+             Setup: the browser fixture of the operating screen with a hand-written contact snapshot; contact commands are recorded; a recorded refusal reply.
+             Steps: open the fold-out with settings activity eu_vhf, serial 12; choose EU VHF from None; answer the choice with the refusal profile_incomplete field locator.
+             Expected: the choice offers EU VHF after NA VHF and shows it; the next serial 0012 is shown and the Exchange entry is not sent; choosing sends set_activity {activity eu_vhf} without an exchange; the refusal is shown in the error field and the choice returns to the station's setting; nothing transmits; no page errors.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-099-02';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_099_02_verified_by_TC_099_003 from 'CL-099-02' to 'TC-099-003';
+    verification 'TC-099-004' {
+        doc /* TC-099-004 — EU VHF QSO with a WSJT-X station on the air
+             CL-099-01, CL-099-02
+             Setup: HB9BLA IC-7300 at 1 W on 10, 15, 20 or 40 m (the antenna's bands), profile locator JN37VL, eu_vhf chosen, during a contest that uses EU VHF (SARL HF Digital, WIA Ross Hull) or a scheduled partner running WSJT-X in EU VHF Contest mode.
+             Steps: call CQ TEST and complete a QSO with a caller; answer a CQ TEST and complete a QSO.
+             Expected: the partner's WSJT-X decodes the station's Tx2/Tx3 with both calls resolved and moves on them; both QSOs complete and are logged with STX, SRX, RS and the partner's 6-character locator; the partner's log (or the contest's log check) shows my serial and JN37VL.
+             5 — Tests with external effects and explicit operator consent; HB9BLA radio PC, physical IC-7300. Opportunistic, not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-099-01';
+            verify 'CL-099-02';
+        }
+    }
+    dependency CL_099_01_verified_by_TC_099_004 from 'CL-099-01' to 'TC-099-004';
+    dependency CL_099_02_verified_by_TC_099_004 from 'CL-099-02' to 'TC-099-004';
     // #60 QSO pane dialogue as a table (operator 2026-11-03, final spec).
     requirement 'CL-060-01' {
         doc /* (#60) The QSO pane shows the QSO dialogue as a table with the header row "UTC | Direction | Exchange | Rep | Rx SNR | Tx SNR", and, since #37 CL-037-04 (2026-11-04), the stations calling me in their own Calling me section, no longer rows of this table. UTC is the period start HH:MM:SS with no ◂/▸ mark after it. Direction is the two calls in the Band Activity order, recipient first and sender second, with "◂" between them pointing to the recipient ("HB9BLA ◂ CT1BFP" received from CT1BFP, "CT1BFP ◂ HB9BLA" sent by me; a hashed call as decoded); a CQ is "CQ <call>" or "CQ DX <call>" without an arrow and its grid is the Exchange. Exchange is the message after the two calls; a message that is neither (free text) is all Exchange. Rep is "×N" when the identical message repeated N > 1 times, else empty (operator 2026-11-03: its own column). On every dialogue row, received and sent alike (operator 2026-11-03), Rx SNR is our measured SNR, signed, of the latest received dialogue entry at or before that row, and Tx SNR is the latest report the partner sent us at or before that row ("R-02" gives "−2", a plain report "-05" gives "−5"); each is empty only while no such value exists yet. The table is the QSO section of the fixed-height pane (#37 CL-037-04): its header row and 12 rows without scrolling (6 at most 48em wide), more scrolling inside at its newest row; it does not grow the page (TC-007-009) and the table fits 360 CSS px, the titles abbreviated and the Direction calls wrapping at their spaces there. Details: WstxOperatingLayout::QsoPane items 7 and 8. */
@@ -6219,7 +6291,7 @@ package WstxRequirements {
     }
     dependency CL_063_01_to_FR_024 from 'CL-063-01' to 'FR-024';
     requirement 'CL-063-02' {
-        doc /* In a contest activity a CQ with the activity's own word (na_vhf and arrl_digi CQ TEST, ww_digi CQ WW, field_day CQ FD, rtty CQ RU) is answerable: it is no longer greyed and an operator's selection needs no confirmation. Outside the matching activity it stays not answerable, with the warning of CL-039-03. Details: WstxContest::ContestDirective, WstxStrategy::DirectedCqRule. */
+        doc /* In a contest activity a CQ with the activity's own word (na_vhf, eu_vhf (#99) and arrl_digi CQ TEST, ww_digi CQ WW, field_day CQ FD, rtty CQ RU) is answerable: it is no longer greyed and an operator's selection needs no confirmation. Outside the matching activity it stays not answerable, with the warning of CL-039-03. Details: WstxContest::ContestDirective, WstxStrategy::DirectedCqRule. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/strategy.rs; server/src/contact_http.rs; server/src/contact.rs";
     }

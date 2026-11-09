@@ -4435,6 +4435,27 @@ async fn tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation() {
     assert_eq!(contact(&f).await.0, "K1ABC");
 }
 
+// Proves: CL-099-02; TC-099-002 (g). In eu_vhf a CQ TEST is the activity's own word: the
+// operator's selection needs no directive_confirmed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_099_002_cq_test_needs_no_confirmation_in_eu_vhf() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    publish(&f, e, &[("CQ TEST K1ABC FN42", 1000.0, Some(-1.0))]);
+    let row = live_row(&f, "CQ TEST K1ABC FN42");
+    browser_ok(&f, "set_activity", json!({"activity":"eu_vhf"})).await;
+    let selected = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":row,"replace":false})).await),
+        )
+        .await;
+    assert_eq!(selected.status, StatusCode::ACCEPTED, "{}", selected.json);
+    assert_eq!(contact(&f).await.0, "K1ABC");
+}
+
 // Proves: TC-063-003
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_063_003_the_contests_route() {
