@@ -16,6 +16,22 @@ tuning.innerHTML='<div class="op-dial"><span class="op-dial-label">DIAL MHz</spa
 const chips=document.createElement('div');chips.id='exception-chips';chips.className='op-chips';chips.setAttribute('role','group');chips.setAttribute('aria-label','Station exceptions');
 const headerActions=document.createElement('div');headerActions.className='op-header-actions';
 headerActions.innerHTML='<button type="button" data-region="logbook" id="open-logbook" title="Logbook">&#9776; Logbook</button><button type="button" data-region="server-settings" id="open-server-settings" title="Settings (F2)">&#9881; Settings</button><button type="button" data-region="help" aria-label="Help" title="Keyboard and mouse overview (?)">?</button>';
+// WstxOperatingLayout::FullScreenToggle (#96, CL-096-01): left of "?", only where the browser offers element
+// full screen (none on Safari on iPhone). The whole page goes full screen; the button follows fullscreenchange,
+// however full screen was left. Esc is locked where Keyboard Lock exists, so a short Esc does not leave
+// (contact.js: Esc never aborts while full screen). Nothing is stored and nothing is sent to the station.
+if(document.fullscreenEnabled===true){
+  const corners=(d)=>`<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
+  const expandIcon=corners('M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4'),collapseIcon=corners('M5.5 1.5v4h-4M14.5 5.5h-4v-4M10.5 14.5v-4h4M1.5 10.5h4v4');
+  const fullScreen=document.createElement('button');fullScreen.type='button';fullScreen.id='full-screen';fullScreen.className='op-fullscreen';
+  const showFullScreen=()=>{const on=!!document.fullscreenElement;fullScreen.innerHTML=on?collapseIcon:expandIcon;fullScreen.dataset.icon=on?'collapse':'expand';fullScreen.setAttribute('aria-label',on?'Leave full screen':'Full screen');fullScreen.setAttribute('aria-pressed',String(on));fullScreen.title=on?'Leave full screen':'Full screen: hide the browser frame';};
+  showFullScreen();
+  // A refused request (no user activation, a permissions policy) changes nothing and is no station problem.
+  fullScreen.addEventListener('click',()=>{const run=document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();run.catch(()=>{});});
+  const keyboardLock=on=>{try{const keyboard=navigator.keyboard;if(on)keyboard?.lock?.(['Escape'])?.catch?.(()=>{});else keyboard?.unlock?.();}catch{}};
+  document.addEventListener('fullscreenchange',()=>{showFullScreen();keyboardLock(!!document.fullscreenElement);});
+  headerActions.querySelector('[data-region=help]').before(fullScreen);
+}
 const halt=document.createElement('button');halt.id='halt-tx';halt.className='op-halt';halt.disabled=true;halt.innerHTML='<span class="op-square" aria-hidden="true"></span>HALT';halt.setAttribute('aria-label','Halt Tx');halt.title='Halt Tx: emergency stop (Alt+H)';halt.setAttribute('aria-describedby','transmit-unavailable');headerActions.append(halt);
 stationBar.replaceChildren(tuning,chips,stationConnectionNode,headerActions);
 const strip=document.createElement('section');strip.id='rxtx-strip';strip.className='op-strip';strip.setAttribute('aria-label','Rx and Tx audio frequencies');
@@ -33,8 +49,8 @@ const secondaryRegions=new Map();
 function region(id,title,intro){const section=document.createElement('section');section.id='region-'+id;section.className='op-secondary';section.hidden=true;section.setAttribute('aria-labelledby','region-title-'+id);section.innerHTML=`<header><div><span class="op-eyebrow">WSTX / ${title.toUpperCase()}</span><h2 id="region-title-${id}">${title}</h2></div><button type="button" data-region="operate" class="return-operate">&#8592; Back to operation</button></header><div class="op-secondary-body"><p class="op-muted">${intro}</p></div>`;secondaryRoot.append(section);secondaryRegions.set(id,section);return section.querySelector('.op-secondary-body');}
 const logRegion=region('logbook','Logbook','Contact history and ADIF operations are unavailable until this station offers contact logging.');
 logRegion.insertAdjacentHTML('beforeend','<p>No server-confirmed contacts are available.</p><button type="button" disabled>Import ADIF</button> <button type="button" disabled>Export ADIF</button>');
-const helpRegion=region('help','Keyboard and mouse','WSJT-X keys where the function exists. Letter keys and ? are inactive while a text field has focus; Alt+H always halts, Esc aborts the QSO.');
-helpRegion.insertAdjacentHTML('beforeend','<dl class="op-keys" id="help-keys"><div><dt>Alt+H / HALT</dt><dd>Emergency stop: halt Tx now, everything off. Panels stay open.</dd></div><div><dt>Esc / Abort QSO</dt><dd>Abort the QSO: the transmission stops now and the contact is cancelled (nothing logged); the station stays ready.</dd></div><div><dt>F1 / F3 / F5 / ?</dt><dd>This overview</dd></div></dl><p class="op-muted">The interface contains no generated callsigns or simulated radio state.</p>');
+const helpRegion=region('help','Keyboard and mouse','WSJT-X keys where the function exists. Letter keys and ? are inactive while a text field has focus; Alt+H always halts, Esc aborts the QSO (not in full screen).');
+helpRegion.insertAdjacentHTML('beforeend','<dl class="op-keys" id="help-keys"><div><dt>Alt+H / HALT</dt><dd>Emergency stop: halt Tx now, everything off. Panels stay open.</dd></div><div><dt>Esc / Abort QSO</dt><dd>Abort the QSO: the transmission stops now and the contact is cancelled (nothing logged); the station stays ready. Not in full screen.</dd></div><div><dt>Full screen button</dt><dd>Hide the browser frame and show only the app; press again to leave. Esc held: leave full screen.</dd></div><div><dt>F1 / F3 / F5 / ?</dt><dd>This overview</dd></div></dl><p class="op-muted">The interface contains no generated callsigns or simulated radio state.</p>');
 function secondary(id,title,element,parent){const detail=document.createElement('details');detail.id=id;const summary=document.createElement('summary');summary.textContent=title;detail.append(summary,element);parent.append(detail);return detail;}
 function block(id,title,parent,html=''){const section=document.createElement('section');section.id=id;section.className='op-section';section.setAttribute('aria-labelledby',id+'-title');section.innerHTML=`<h3 id="${id}-title">${title}</h3>${html}`;parent.append(section);return section;}
 const drawer=document.createElement('aside');drawer.id='settings-drawer';drawer.className='op-secondary op-drawer';drawer.hidden=true;drawer.setAttribute('aria-labelledby','drawer-title');

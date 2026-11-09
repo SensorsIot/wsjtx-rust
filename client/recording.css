@@ -440,6 +440,9 @@ main.op-app{--hl-lotw:rgba(153,0,0,.35);--hl-new_call_band:rgba(153,255,255,.2);
 body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #halt-tx,body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #abort-qso{display:none}
 #contact-messages .ct-now{padding:1px 8px;min-height:0}
 .se-goals{display:flex;flex-wrap:wrap;gap:4px 12px;margin:8px 0;border:1px solid #223848;border-radius:4px;padding:6px 10px}.se-goals legend{font-size:var(--op-font-secondary);color:#8ba4b6}
+/* #96 FullScreenToggle: icon only, the size and style of "?"; the SVG follows the text colour. */
+.op-app .op-header-actions button.op-fullscreen{display:inline-flex;align-items:center;justify-content:center;line-height:1}
+.op-app .op-header-actions button.op-fullscreen svg{width:16px;height:16px;display:block}
 .op-app .op-header-actions button.op-abort{background:#2e2a1c;border-color:#7a6a3a;color:#f0d79a;padding:8px 12px;font-weight:600}
 /* #37 QsoPane item 8 (operator 2026-11-04, "fixed in size that the things below it do not move
    all the time up and down"; "make this section big enough to accommodate also longer QSOs"):
