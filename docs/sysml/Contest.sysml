@@ -260,7 +260,7 @@ package WstxContest {
              the same internal path and the same contact engine, started only by a browser's
              selection with Auto on or Auto on (WstxStrategy::AutoToggle). Unchanged: HALT stops
              every run from any source and turns Auto off (revision + 1, pushed by
-             strategy.state; the contest, its operation and period stay); Esc
+             strategy.state; the contest, its strategy and period stay); Esc
              changes neither; ManualIntervention (a double-click always, the run resumes after the
              QSO); WatchdogFromOperator; the 8 hour run limit (run_limit) and 60 s without a client
              (no_client), finishing the QSO first, with the contest staying selected, Auto off
@@ -305,7 +305,7 @@ package WstxContest {
              publication; until it is done a QSO is held off by this run's own completed list. Band Activity follows ContestView; the status
              names "calling CQ", "<call>", "your QSO", "waiting · <reason>", "stopped · <reason>"
              or "not started · <reason>" from GET /automation on automation.state only, never a
-             timer. The prompt offers S&P and Run; AutomationClause forbidden asks
+             timer. The prompt offers the contest strategies (#97 D11; no S&P or Run); AutomationClause forbidden asks
              WstxOperatingLayout's confirmation with the clause's text when Auto is switched on
              and sends automation_confirmed true with POST /strategy/auto, nothing when
              declined; silent asks nothing, the clause is on the prompt. After a stop only Auto

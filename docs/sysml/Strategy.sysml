@@ -6,7 +6,7 @@ package WstxStrategy {
          slots of issue #66 TC-066-001..003; the ignore
          lists of issue #42, CL-042-02 and TC-042-002..003; Pounce, CL-042-03 and
          TC-042-004..005; Alert, CL-042-04 and TC-042-006..007; the strategy redesign of issue
-         #97, CL-097-01..07 and TC-097-001..016, D19): the strategies of the classes strategy (award
+         #97, CL-097-01..07 and TC-097-001..017, D19): the strategies of the classes strategy (award
          and casual strategies) and contest, the directed-CQ rule, the value order in Band Activity, the strategy editor
          popup and the strategy runs of WstxMcp::OperatingAutomation. Nothing here is an execution
          result. Where D19 and an older decision differ, D19 wins.
@@ -322,7 +322,15 @@ package WstxStrategy {
              judged by this line. A word on the
              include list that DirectedCqRule does not answer (POTA, SOTA, a number) is answerable
              for this strategy (its verdicts and its run), never for the operator's own selection,
-             whose warning stays; a continent directive and DX keep DirectedCqRule (operator
+             whose warning stays. Verdict: such a CQ is not grey for that strategy (grey false,
+             ranked by its filters and order), so Band Activity marks it and does not strike it
+             through, and Alert records it like any candidate. Run: the run's own select_row of such
+             a row passes the selection check of DirectedCqRule (the station's check of an
+             automatic select_row, contact_http, reads the active strategy of the run that sends it
+             and admits a CQ whose directive word is on that strategy's include list); every other
+             automatic select_row of a non-answerable directive stays refused
+             directive_not_answerable (an MCP or UDP command, a pounce, a run of a strategy whose
+             include list does not hold the word, a continent directive or DX not for me); a continent directive and DX keep DirectedCqRule (operator
              2026-11-09, #97 Q2: "we could define a pota/sota strategy"; the built-in POTA/SOTA,
              BuiltinStrategies). */
     }
@@ -749,7 +757,10 @@ package WstxStrategy {
              before contact_active, so during a contact a plain click (select_row without replace) on
              such a row is refused this way too and offers nothing (CL-037-05); a double-click warns. A command that is
              not the browser's (automation, MCP, UDP) can never confirm it: its select_row is
-             refused directive_not_answerable also with directive_confirmed. */
+             refused directive_not_answerable also with directive_confirmed. The one exception
+             (#97, CqTargetList): a strategy run's own select_row of a CQ whose directive word is on
+             its active strategy's CQ target include list passes, and that strategy's verdict of it
+             is not grey. */
     }
     calc def MyContinent {
         in configured : String[0..1];
@@ -781,7 +792,8 @@ package WstxStrategy {
         attribute grey : Boolean;
         doc /* One per decoded standard record with a resolved sender (others have none):
              an ignored sender (IgnoreLists) has rank null, grey false; else grey per
-             DirectedCqRule; a caller (CallerOfMyCall) and a Candidate have rank = the position
+             DirectedCqRule (#97: not grey when its directive word is on the strategy's CQ target
+             include list, CqTargetList); a caller (CallerOfMyCall) and a Candidate have rank = the position
              (0-based) in ValueOrder among the evaluated records; every other record rank null.
              why (explain only): "calls my call", "new: dxcc, grid" (#97: the new whats, with
              " on <band>" or " on <band> <MODE>" per new_per), with " · Most Wanted
@@ -1029,10 +1041,11 @@ package WstxStrategy {
              reason: he cannot call us, but he sees us on his dashboard and knows that we want a
              contact"; "check if we are not on his transmit frequency"). It takes over #84's
              auto-QRM stop (CL-039-07).
-             Busy: WstxContact::BusyPartner, judged per fresh complete publication of the target's
-             parity. A repetition (LeaveRule) after a publication in which the target is busy is a
-             paused call, when the strategy's busy_pause is on, the run is attended and the bound
-             below is not reached.
+             Busy: WstxContact::BusyPartner (from his message to another call until he ends that
+             QSO, however long he is not decoded). A repetition (LeaveRule) while the target is busy
+             is a paused call, when the strategy's busy_pause is on, the run is attended and the
+             bound below is not reached. Unattended, or past the bound, the calls count, while the
+             split move of BusyPartner still keeps Tx clear of his signal (busy_pause on).
              A paused call counts for nothing of the run: not toward leaving (the calls of mode
              calls, the change points of mode contest), not toward TxMoveRule's count; until_logged
              is not affected (a busy target is decoded). Tx keeps calling: the split move of
@@ -1066,7 +1079,12 @@ package WstxStrategy {
              names of the built-in and user strategies (#97: grouped Strategy, Contest, "DXCC
              all" first; the contest group lists the user's contest strategies and the contest in
              force, "<name> (contest)"; the contest built-ins are chosen in the contest prompt,
-             WstxContest::ContestPrompt). A change sends PUT /strategy with the
+             WstxContest::ContestPrompt). Choosing a saved contest strategy: with a contest of its
+             profile in force it sends one PUT with that active and the same contest key; with no
+             contest or another contest in force it sends nothing and opens the contest prompt on
+             its contest with that strategy chosen and the contest's period pre-filled, whose Start
+             sends active and the contest (Cancel keeps the earlier selection, and the selector shows
+             it again). Every other change sends PUT /strategy with the
              new active and nothing else: it asks nothing. With Auto off it only marks
              (ValueView); with Auto on the run of the old selection ends and that of the new
              one starts (AutoToggle); None also turns Auto off. HALT is always on screen. A
@@ -1301,9 +1319,12 @@ package WstxStrategy {
              counts Tx changes (operator 2026-11-09, #97 Q4 "6 calls on 3 slots"): a change point is a
              repetition at which TxMoveRule's case would move (k >= 1 and its count reaching k), and
              with k = 0 (stay) every repetition; at a change point with fewer than c changes made
-             Tx moves by TxMoveRule (also when no candidate is left and Tx stays) and the change
-             counts; at a change point with c changes made the run leaves (reason tx_changes). So
-             c 2 with every 2nd call leaves after 6 calls on three slots.
+             the change counts and Tx moves by TxMoveRule when the case's k >= 1 (also counted when
+             no candidate is left and Tx stays); with k = 0 Tx never moves (stay means stay, #94 "it
+             hears us, we stay"), also off a heard target that is no longer the most valuable; at a
+             change point with c changes made the run leaves (reason tx_changes). So c 2 with every
+             2nd call leaves after 6 calls on three slots, and c 2 with k 0 after 3 calls on one
+             slot.
              Progress resets every count of the contact to 0 (calls, change points, changes made).
              No change before an exit criterion (Q7): a more valuable station never ends a stay
              except as the contest mode says.
@@ -1442,9 +1463,9 @@ package WstxStrategy {
              selection and for a CQ unless it must move by the 50 Hz rule; at a move it
              is no candidate and Tx moves into the range (round 3 Q6 "Move into the range"). Status with Hold Tx on: tx_slot names the held Tx with its rise and his
              end.
-             Busy (WstxContact::BusyPartner): while the target is busy and Tx is within 50 Hz of his
-             signal, Tx moves by the 50 Hz rule above (Tx alone, Rx stays on him), with Hold Tx on
-             and off alike.
+             Busy (WstxContact::BusyPartner): when he sends to another call and Tx is not clear of
+             his signal (FT8 100 Hz, FT4 140 Hz between the lower edges), Tx alone moves to the
+             nearest candidate clear of it and Rx stays on him, with Hold Tx on and off alike.
              Nothing else during the exchange moves it; the
              "may" of the operator's rule (Tx to the partner's frequency once the QSO is
              established) is not taken. A caller of my call is a called station like any
