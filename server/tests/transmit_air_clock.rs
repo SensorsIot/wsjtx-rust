@@ -725,6 +725,22 @@ fn three_situations_correction_state_and_warnings() {
     }
 }
 
+// The real Windows Time service query (W32Time, query rights only, no administrator rights)
+// reads a state on the development PC, where Windows Time runs; a query asking for more
+// rights than a user holds (for example SERVICE_START) fails and reads unknown.
+// Proves: CL-043-03, TC-092-003.
+#[cfg(windows)]
+#[test]
+fn windows_time_service_state_is_read_without_administrator_rights() {
+    let state = clock::windows_time();
+    assert_ne!(state, clock::WindowsTime::Unknown);
+    assert_eq!(
+        StationClock::new(Monitor::new()).windows_time(),
+        state,
+        "the station clock's default reader is the real query"
+    );
+}
+
 /// A source whose rounds ask a server that never answers.
 struct Silent;
 impl Source for Silent {
