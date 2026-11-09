@@ -1,507 +1,40 @@
 #![forbid(unsafe_code)]
-//! WstxContest (#63): the contest profiles from the official rules and their schedule, the
-//! selection of a contest and its evaluation. A new contest is one more entry of PROFILES; a
-//! profile holds rule facts only, its rule enums hold the behaviour.
-use crate::contact::{Activity, civil, parse_utc};
-use crate::strategy::{Facts, Kind, Station, Verdict, maidenhead, sane_call};
-use serde_json::{Value, json};
-use std::collections::HashSet;
+//! WstxContest (#63, #98): the selection of a contest record of the contest file
+//! (contest_rules.rs) and its evaluation: the state from the log of the period (ContestLog),
+//! the serial from the log (ContestSerial), the value as projected score gain (ContestValue),
+//! the verdicts (ContestVerdict) and their order (ContestValueOrder).
+use crate::contact::{civil, parse_utc};
+pub(crate) use crate::contest_rules::{Clause, File, ModeClass, PValue, Profile};
+use crate::contest_rules::{Dim, MultKind, MyStation, Per, Vars};
+use crate::strategy::{Facts, Kind, Station, Verdict, sane_call};
+use serde_json::{Map, Value, json};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 
 #[cfg(test)]
 #[path = "contest_tests.rs"]
 mod tests;
 
-/// What makes a second QSO a dupe (WstxContest::ContestProfile).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Dupes {
-    Band,
-    BandModeClass,
-    BandGrid,
-    Call,
-}
-impl Dupes {
-    fn name(self) -> &'static str {
-        match self {
-            Dupes::Band => "band",
-            Dupes::BandModeClass => "band_mode_class",
-            Dupes::BandGrid => "band_grid",
-            Dupes::Call => "call",
-        }
-    }
-}
-/// The QSO points rule (WstxContest::ContestProfile).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Points {
-    OnePlusPer3000Km,
-    OnePlusPer500KmUp,
-    FieldDay,
-    VhfJanuary,
-    VhfJuneSeptember,
-    Kilometres,
-    OnePerCall,
-}
-impl Points {
-    fn name(self) -> &'static str {
-        match self {
-            Points::OnePlusPer3000Km => "one_plus_per_3000_km",
-            Points::OnePlusPer500KmUp => "one_plus_per_500_km_up",
-            Points::FieldDay => "field_day",
-            Points::VhfJanuary => "vhf_january",
-            Points::VhfJuneSeptember => "vhf_june_september",
-            Points::Kilometres => "kilometres",
-            Points::OnePerCall => "one_per_call",
-        }
-    }
-}
-/// The multiplier rule (WstxContest::ContestProfile).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Multipliers {
-    None,
-    FieldPerBand,
-    GridPerBand,
-}
-impl Multipliers {
-    fn name(self) -> &'static str {
-        match self {
-            Multipliers::None => "none",
-            Multipliers::FieldPerBand => "field_per_band",
-            Multipliers::GridPerBand => "grid_per_band",
-        }
-    }
-}
-/// Which logged QSOs a contest counts at all (WstxContest::ContestLog).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Counted {
-    Ft8Ft4,
-    Digital,
-    DigitalNoRtty,
-    Any,
-}
-/// What the official rules say about automatic operation (WstxContest::AutomationClause).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum AutomationClause {
-    Forbidden,
-    Silent,
-}
-impl AutomationClause {
-    fn name(self) -> &'static str {
-        match self {
-            AutomationClause::Forbidden => "forbidden",
-            AutomationClause::Silent => "silent",
-        }
-    }
-}
-/// The day a round of a contest hangs on (WstxContest::ScheduleRule).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum When {
-    /// The n-th (1-based) weekend of a month with Saturday and Sunday both in it: its Saturday.
-    FullWeekend { month: u32, n: usize },
-    /// The last such weekend: its Saturday.
-    LastFullWeekend { month: u32 },
-    /// The n-th (1-based) Saturday of a month.
-    Saturday { month: u32, n: usize },
-    /// The n-th (1-based) of a weekday (0 Sunday) in every month.
-    EveryMonth { weekday: i64, n: usize },
-    /// Not computable from the rule: the period prompt asks.
-    Asked,
-}
-/// One round: the day, and start and end (exclusive) in minutes from 00:00 UTC of that day.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Round {
-    pub when: When,
-    pub start_min: i64,
-    pub end_min: i64,
-    /// The one band of the round (FT8 Activity).
-    pub band: Option<&'static str>,
-}
-/// One occurrence of a contest.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Occurrence {
-    pub start_ms: i64,
-    pub end_ms: i64,
-    pub band: Option<&'static str>,
-}
-/// WstxContest::ContestProfile: rule facts of one contest.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Profile {
-    pub id: &'static str,
-    pub name: &'static str,
-    pub cabrillo: Option<&'static str>,
-    pub cabrillo_confirmed: bool,
-    pub activity: Activity,
-    pub bands: &'static [&'static str],
-    pub modes: &'static str,
-    pub exchange: &'static str,
-    pub dupes: Dupes,
-    pub points: Points,
-    pub multipliers: Multipliers,
-    pub counted: Counted,
-    pub score: &'static str,
-    pub automation: AutomationClause,
-    pub automation_text: &'static str,
-    pub rounds: &'static [Round],
-    pub schedule: &'static str,
-    pub notes: &'static [&'static str],
-    pub source: &'static str,
-}
-const HOUR: i64 = 60;
-const HF: &[&str] = &["160m", "80m", "40m", "20m", "15m", "10m"];
-const HF_6M: &[&str] = &["160m", "80m", "40m", "20m", "15m", "10m", "6m"];
-const VHF: &[&str] = &[
-    "6m", "5m", "4m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm",
-    "6mm", "4mm", "2.5mm", "2mm", "1mm", "submm",
-];
-const FIELD_DAY: &[&str] = &[
-    "160m", "80m", "40m", "20m", "15m", "10m", "6m", "5m", "4m", "2m", "1.25m", "70cm", "33cm",
-    "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm", "submm",
-];
-const FORBIDDEN_ARRL: &str = "Each contact must include contemporaneous direct initiation by both operators making a contact. Initiation of a contact may be by either local or remote control. Fully automated contacts are prohibited.";
-const FORBIDDEN_VHF: &str = "Each contact must include contemporaneous direct initiation by both operators making a contact. Initiation of a contact may be by either local or remote control.";
-const SILENT: &str = "The rules do not address automatic operation.";
-const VHF_NOTES: &[&str] = &[
-    "DX stations may only contact W/VE stations (2.3); W/VE stations may contact any station.",
-    "Stations may be contacted once per band from any specific grid square (2.2): a rover counts again from a new grid.",
-];
-const IARU_NOTES: &[&str] = &[
-    "Standard FT8 messages with report and 4-character locator; no serial number.",
-    "6H section: 6 hours in at most two periods with a pause of more than 2 hours (a note, not tracked).",
-    "Self-spots: only when first soliciting QSOs on a new frequency, then at most every 10 minutes.",
-];
-/// The profiles in the order the selector offers them.
-pub(crate) const PROFILES: &[Profile] = &[
-    Profile {
-        id: "ww_digi",
-        name: "WW Digi",
-        cabrillo: Some("WW-DIGI"),
-        cabrillo_confirmed: true,
-        activity: Activity::WwDigi,
-        bands: HF,
-        modes: "FT4 and FT8 only",
-        exchange: "4-character grid square",
-        dupes: Dupes::Band,
-        points: Points::OnePlusPer3000Km,
-        multipliers: Multipliers::FieldPerBand,
-        counted: Counted::Ft8Ft4,
-        score: "QSO points x grid fields, over all bands",
-        automation: AutomationClause::Forbidden,
-        automation_text: "A human operator must initiate calling each QSO partner. Autonomous systems or robots that emulate this action are prohibited. (IX.12)",
-        rounds: &[Round {
-            when: When::LastFullWeekend { month: 8 },
-            start_min: 12 * HOUR,
-            end_min: 36 * HOUR,
-            band: None,
-        }],
-        schedule: "Last full weekend of August (unconfirmed: the rules state only the dates), 1200 UTC Saturday to 1159 UTC Sunday",
-        notes: &["Self-spotting or asking to be spotted is not permitted (IX.4)."],
-        source: "http://ww-digi.com/rules/",
-    },
-    Profile {
-        id: "arrl_digi",
-        name: "ARRL Digi",
-        cabrillo: Some("ARRL-DIGI"),
-        cabrillo_confirmed: true,
-        activity: Activity::ArrlDigi,
-        bands: HF_6M,
-        modes: "Any digital mode except RTTY",
-        exchange: "4-character grid square",
-        dupes: Dupes::Band,
-        points: Points::OnePlusPer500KmUp,
-        multipliers: Multipliers::None,
-        counted: Counted::DigitalNoRtty,
-        score: "Total QSO points",
-        automation: AutomationClause::Forbidden,
-        automation_text: FORBIDDEN_ARRL,
-        rounds: &[Round {
-            when: When::FullWeekend { month: 6, n: 1 },
-            start_min: 18 * HOUR,
-            end_min: 48 * HOUR,
-            band: None,
-        }],
-        schedule: "First full weekend of June, 1800 UTC Saturday to 2359 UTC Sunday",
-        notes: &[
-            "Single-Op: 24 of 30 hours, off times of at least 60 minutes (a note, not tracked).",
-            "Alternating CQs on two or more frequencies in one band are prohibited (OPRG.3).",
-        ],
-        source: "https://contests.arrl.org/ContestRules/Digital-Rules.pdf",
-    },
-    Profile {
-        id: "arrl_field_day",
-        name: "ARRL Field Day",
-        cabrillo: Some("ARRL-FD"),
-        cabrillo_confirmed: false,
-        activity: Activity::FieldDay,
-        bands: FIELD_DAY,
-        modes: "Phone, CW and Digital; all non-CW digital modes count as one mode",
-        exchange: "Class and ARRL/RAC section (DX: class and DX)",
-        dupes: Dupes::BandModeClass,
-        points: Points::FieldDay,
-        multipliers: Multipliers::None,
-        counted: Counted::Any,
-        score: "QSO points x power multiplier + bonus points (power and bonus are not computed)",
-        automation: AutomationClause::Forbidden,
-        automation_text: FORBIDDEN_ARRL,
-        rounds: &[Round {
-            when: When::FullWeekend { month: 6, n: 4 },
-            start_min: 18 * HOUR,
-            end_min: 45 * HOUR,
-            band: None,
-        }],
-        schedule: "Fourth full weekend of June, 1800 UTC Saturday to 2059 UTC Sunday",
-        notes: &[
-            "Entries from ARRL/RAC areas and IARU Region 2; DX stations in other regions may be contacted and may submit check-logs only (1).",
-            "27 hours when set-up starts no earlier than 1800 UTC Saturday, otherwise 24 consecutive hours (a note, not tracked).",
-        ],
-        source: "https://www.arrl.org/files/file/Field-Day/2026/2026-Field-Day-Rules.pdf",
-    },
-    Profile {
-        id: "arrl_vhf_jan",
-        name: "ARRL January VHF",
-        cabrillo: Some("ARRL-VHF-JAN"),
-        cabrillo_confirmed: false,
-        activity: Activity::NaVhf,
-        bands: VHF,
-        modes: "Any mode",
-        exchange: "4-character grid square",
-        dupes: Dupes::BandGrid,
-        points: Points::VhfJanuary,
-        multipliers: Multipliers::GridPerBand,
-        counted: Counted::Any,
-        score: "QSO points x grid squares per band (fixed station)",
-        automation: AutomationClause::Forbidden,
-        automation_text: FORBIDDEN_VHF,
-        rounds: &[Round {
-            when: When::Asked,
-            start_min: 19 * HOUR,
-            end_min: 52 * HOUR,
-            band: None,
-        }],
-        schedule: "Third or fourth full weekend of January as announced (enter the date), 1900 UTC Saturday to 0359 UTC Monday",
-        notes: VHF_NOTES,
-        source: "https://contests.arrl.org/ContestRules/JanJunSep-VHF-Rules.pdf",
-    },
-    Profile {
-        id: "arrl_vhf_jun",
-        name: "ARRL June VHF",
-        cabrillo: Some("ARRL-VHF-JUN"),
-        cabrillo_confirmed: false,
-        activity: Activity::NaVhf,
-        bands: VHF,
-        modes: "Any mode",
-        exchange: "4-character grid square",
-        dupes: Dupes::BandGrid,
-        points: Points::VhfJuneSeptember,
-        multipliers: Multipliers::GridPerBand,
-        counted: Counted::Any,
-        score: "QSO points x grid squares per band (fixed station)",
-        automation: AutomationClause::Forbidden,
-        automation_text: FORBIDDEN_VHF,
-        rounds: &[Round {
-            when: When::FullWeekend { month: 6, n: 2 },
-            start_min: 18 * HOUR,
-            end_min: 51 * HOUR,
-            band: None,
-        }],
-        schedule: "Second full weekend of June, 1800 UTC Saturday to 0259 UTC Monday",
-        notes: VHF_NOTES,
-        source: "https://contests.arrl.org/ContestRules/JanJunSep-VHF-Rules.pdf",
-    },
-    Profile {
-        id: "arrl_vhf_sep",
-        name: "ARRL September VHF",
-        cabrillo: Some("ARRL-VHF-SEP"),
-        cabrillo_confirmed: false,
-        activity: Activity::NaVhf,
-        bands: VHF,
-        modes: "Any mode",
-        exchange: "4-character grid square",
-        dupes: Dupes::BandGrid,
-        points: Points::VhfJuneSeptember,
-        multipliers: Multipliers::GridPerBand,
-        counted: Counted::Any,
-        score: "QSO points x grid squares per band (fixed station)",
-        automation: AutomationClause::Forbidden,
-        automation_text: FORBIDDEN_VHF,
-        rounds: &[Round {
-            when: When::FullWeekend { month: 9, n: 2 },
-            start_min: 18 * HOUR,
-            end_min: 51 * HOUR,
-            band: None,
-        }],
-        schedule: "Second full weekend of September, 1800 UTC Saturday to 0259 UTC Monday",
-        notes: VHF_NOTES,
-        source: "https://contests.arrl.org/ContestRules/JanJunSep-VHF-Rules.pdf",
-    },
-    Profile {
-        id: "iaru_50_mgm",
-        name: "IARU R1 50 MHz MGM",
-        cabrillo: None,
-        cabrillo_confirmed: false,
-        activity: Activity::None,
-        bands: &["6m"],
-        modes: "MGM",
-        exchange: "Report and 4-character locator",
-        dupes: Dupes::Band,
-        points: Points::Kilometres,
-        multipliers: Multipliers::GridPerBand,
-        counted: Counted::Digital,
-        score: "Total kilometres x large locator squares",
-        automation: AutomationClause::Silent,
-        automation_text: SILENT,
-        rounds: &[Round {
-            when: When::Saturday { month: 4, n: 3 },
-            start_min: 14 * HOUR,
-            end_min: 38 * HOUR,
-            band: None,
-        }],
-        schedule: "Third Saturday of April, 1400 UTC Saturday to 1400 UTC Sunday",
-        notes: IARU_NOTES,
-        source: "https://www.iaru-r1.org/wp-content/uploads/2026/02/VHF_Handbook_V10_03_final.pdf",
-    },
-    Profile {
-        id: "iaru_70_mgm",
-        name: "IARU R1 70 MHz MGM",
-        cabrillo: None,
-        cabrillo_confirmed: false,
-        activity: Activity::None,
-        bands: &["4m"],
-        modes: "MGM",
-        exchange: "Report and 4-character locator",
-        dupes: Dupes::Band,
-        points: Points::Kilometres,
-        multipliers: Multipliers::GridPerBand,
-        counted: Counted::Digital,
-        score: "Total kilometres x large locator squares",
-        automation: AutomationClause::Silent,
-        automation_text: SILENT,
-        rounds: &[Round {
-            when: When::Saturday { month: 5, n: 3 },
-            start_min: 14 * HOUR,
-            end_min: 38 * HOUR,
-            band: None,
-        }],
-        schedule: "Third Saturday of May, 1400 UTC Saturday to 1400 UTC Sunday",
-        notes: IARU_NOTES,
-        source: "https://www.iaru-r1.org/wp-content/uploads/2026/02/VHF_Handbook_V10_03_final.pdf",
-    },
-    Profile {
-        id: "ft8_activity",
-        name: "FT8 Activity",
-        cabrillo: None,
-        cabrillo_confirmed: false,
-        activity: Activity::None,
-        bands: &["2m", "70cm", "23cm"],
-        modes: "FT8 and FT4; standard mode, not the VHF contest mode",
-        exchange: "Call and 4-character locator",
-        dupes: Dupes::Call,
-        points: Points::OnePerCall,
-        multipliers: Multipliers::GridPerBand,
-        counted: Counted::Digital,
-        score: "Points x locators, per round",
-        automation: AutomationClause::Silent,
-        automation_text: SILENT,
-        rounds: &[
-            Round {
-                when: When::EveryMonth { weekday: 3, n: 1 },
-                start_min: 17 * HOUR,
-                end_min: 21 * HOUR,
-                band: Some("2m"),
-            },
-            Round {
-                when: When::EveryMonth { weekday: 3, n: 2 },
-                start_min: 17 * HOUR,
-                end_min: 21 * HOUR,
-                band: Some("70cm"),
-            },
-            Round {
-                when: When::EveryMonth { weekday: 3, n: 3 },
-                start_min: 17 * HOUR,
-                end_min: 21 * HOUR,
-                band: Some("23cm"),
-            },
-        ],
-        schedule: "Each month: first Wednesday 2 m, second Wednesday 70 cm, third Wednesday 23 cm, 1700 to 2100 UTC",
-        notes: &[
-            "Self-spotting is forbidden; ON4KST is for skeds only.",
-            "Multiple simultaneous signals (Fox mode or similar) are forbidden.",
-        ],
-        source: "https://ft8activity.eu/rules/",
-    },
-];
 const DAY_MS: i64 = 86_400_000;
-/// 00:00 UTC of each day of a month that is this weekday (0 Sunday).
-fn weekdays(year: i64, month: u32, weekday: i64) -> Vec<i64> {
-    (1..=31)
-        .filter_map(|day| parse_utc(&format!("{year:04}-{month:02}-{day:02}T00:00:00Z")))
-        .filter(|ms| civil(*ms).1 == month && (ms / DAY_MS + 4).rem_euclid(7) == weekday)
-        .collect()
-}
-/// The Saturdays whose Sunday is in the same month ('full weekend', operator default #63).
-fn full_weekends(year: i64, month: u32) -> Vec<i64> {
-    let mut list = weekdays(year, month, 6);
-    list.retain(|ms| civil(ms + DAY_MS).1 == month);
-    list
-}
-impl Round {
-    /// The occurrence in this month, if the round has one there.
-    fn in_month(&self, year: i64, month: u32) -> Option<Occurrence> {
-        let day = match self.when {
-            When::FullWeekend { month: m, n } if m == month => {
-                full_weekends(year, month).get(n - 1).copied()
-            }
-            When::LastFullWeekend { month: m } if m == month => {
-                full_weekends(year, month).last().copied()
-            }
-            When::Saturday { month: m, n } if m == month => {
-                weekdays(year, month, 6).get(n - 1).copied()
-            }
-            When::EveryMonth { weekday, n } => weekdays(year, month, weekday).get(n - 1).copied(),
-            _ => None,
-        }?;
-        Some(Occurrence {
-            start_ms: day + self.start_min * 60_000,
-            end_ms: day + self.end_min * 60_000,
-            band: self.band,
-        })
-    }
-}
-impl Profile {
-    /// WstxContest::ScheduleRule: the current or next occurrence, the earliest that has not
-    /// ended; None when the rule cannot compute it.
-    pub(crate) fn next_period(&self, now_ms: i64) -> Option<Occurrence> {
-        let (year, month, ..) = civil(now_ms);
-        let first = year * 12 + i64::from(month) - 1;
-        // The month before (a round may end in the next month) to one full cycle ahead.
-        (first - 1..=first + 13)
-            .flat_map(|m| {
-                let (y, mo) = (m.div_euclid(12), m.rem_euclid(12) as u32 + 1);
-                self.rounds.iter().filter_map(move |r| r.in_month(y, mo))
-            })
-            .filter(|o| o.end_ms > now_ms)
-            .min_by_key(|o| o.start_ms)
-    }
-    fn json(&self, now_ms: i64) -> Value {
-        json!({"id":self.id,"name":self.name,"cabrillo":self.cabrillo,
-            "cabrillo_confirmed":self.cabrillo_confirmed,"activity":self.activity.name(),
-            "bands":self.bands,"modes":self.modes,"exchange":self.exchange,
-            "dupes":self.dupes.name(),"points":self.points.name(),
-            "multipliers":self.multipliers.name(),"score":self.score,
-            "automation":self.automation.name(),"automation_text":self.automation_text,
-            "schedule":self.schedule,"notes":self.notes,"source":self.source,
-            "period":self.next_period(now_ms).map(|o| json!({"start":utc_text(o.start_ms),
-                "end":utc_text(o.end_ms),"band":o.band}))})
-    }
-}
+const MINUTE_MS: i64 = 60_000;
+
 /// "YYYY-MM-DDTHH:MMZ".
 pub(crate) fn utc_text(ms: i64) -> String {
     let (y, mo, d, h, mi, _) = civil(ms);
     format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}Z")
 }
-/// The profiles of GET /strategy/contests.
-pub(crate) fn profiles_json(now_ms: i64) -> Value {
-    Value::Array(PROFILES.iter().map(|p| p.json(now_ms)).collect())
+/// The profiles of GET /strategy/contests, in file order.
+pub(crate) fn profiles_json(now_ms: i64, file: &File, me: &MyStation) -> Value {
+    Value::Array(
+        file.contests
+            .iter()
+            .map(|p| p.json(now_ms, me, file))
+            .collect(),
+    )
 }
-pub(crate) fn profile(id: &str) -> Option<&'static Profile> {
-    PROFILES.iter().find(|p| p.id == id)
+/// A record of the bundled file.
+pub(crate) fn profile(id: &str) -> Option<Arc<Profile>> {
+    crate::contest_rules::bundled().profile(id).cloned()
 }
 
 // ------------------------------------------------------------------ the selection
@@ -522,9 +55,10 @@ impl Operation {
     }
 }
 /// WstxContest::ContestSelection: the contest in force, in memory only.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Selection {
-    pub profile: &'static Profile,
+    pub file: Arc<File>,
+    pub profile: Arc<Profile>,
     pub start_ms: i64,
     pub end_ms: i64,
     pub operation: Operation,
@@ -532,22 +66,26 @@ pub(crate) struct Selection {
     pub repetitions: u64,
     /// WstxStrategy::QuietTime minutes, 1..120.
     pub quiet_minutes: u64,
+    /// #98 the entry params, every one of the record's (absent ones at their default).
+    pub entry: BTreeMap<String, PValue>,
 }
 impl PartialEq for Selection {
     fn eq(&self, o: &Self) -> bool {
-        self.profile.id == o.profile.id
+        Arc::ptr_eq(&self.profile, &o.profile)
             && (
                 self.start_ms,
                 self.end_ms,
                 self.operation,
                 self.repetitions,
                 self.quiet_minutes,
+                &self.entry,
             ) == (
                 o.start_ms,
                 o.end_ms,
                 o.operation,
                 o.repetitions,
                 o.quiet_minutes,
+                &o.entry,
             )
     }
 }
@@ -559,8 +97,16 @@ fn minute(v: &Value) -> Option<i64> {
     let ms = parse_utc(&format!("{}:00Z", &text[..16]))?;
     (utc_text(ms) == text).then_some(ms)
 }
-/// Exact ContestSelection parsing (the error names the refused field).
+/// Exact ContestSelection parsing in the bundled file (the error names the refused field).
 pub(crate) fn parse_selection(v: &Value, field: &str) -> Result<Selection, String> {
+    parse_selection_in(v, field, &crate::contest_rules::bundled())
+}
+/// Exact ContestSelection parsing in the contest file in use.
+pub(crate) fn parse_selection_in(
+    v: &Value,
+    field: &str,
+    file: &Arc<File>,
+) -> Result<Selection, String> {
     let o = v.as_object().ok_or(field)?;
     let keys = [
         "profile",
@@ -576,12 +122,15 @@ pub(crate) fn parse_selection(v: &Value, field: &str) -> Result<Selection, Strin
     if o.contains_key("automation_confirmed") {
         return Err(f("automation_confirmed"));
     }
-    if o.len() != keys.len() || !keys.iter().all(|k| o.contains_key(*k)) {
+    let with_entry = o.contains_key("entry");
+    if o.len() != keys.len() + usize::from(with_entry) || !keys.iter().all(|k| o.contains_key(*k))
+    {
         return Err(field.to_owned());
     }
     let profile = v["profile"]
         .as_str()
-        .and_then(profile)
+        .and_then(|id| file.profile(id))
+        .cloned()
         .ok_or(f("profile"))?;
     let start_ms = minute(&v["start"]).ok_or(f("start"))?;
     let end_ms = minute(&v["end"])
@@ -593,210 +142,620 @@ pub(crate) fn parse_selection(v: &Value, field: &str) -> Result<Selection, Strin
         _ => return Err(f("operation")),
     };
     let bounded = |k: &str, hi: u64| v[k].as_u64().filter(|n| (1..=hi).contains(n)).ok_or(f(k));
+    let mut entry = profile.entry_defaults();
+    if with_entry {
+        let e = v["entry"].as_object().ok_or(f("entry"))?;
+        for (name, value) in e {
+            let param = profile
+                .entry
+                .params
+                .iter()
+                .find(|p| p.name == *name)
+                .ok_or(format!("{field}.entry.{name}"))?;
+            let value = param
+                .value(value)
+                .ok_or(format!("{field}.entry.{name}"))?;
+            entry.insert(name.clone(), value);
+        }
+    }
     Ok(Selection {
+        file: file.clone(),
         profile,
         start_ms,
         end_ms,
         operation,
         repetitions: bounded("repetitions", 20)?,
         quiet_minutes: bounded("quiet_minutes", 120)?,
+        entry,
     })
 }
 impl Selection {
     pub(crate) fn json(&self) -> Value {
-        json!({"profile":self.profile.id,"start":utc_text(self.start_ms),
+        let mut v = json!({"profile":self.profile.id,"start":utc_text(self.start_ms),
             "end":utc_text(self.end_ms),"operation":self.operation.name(),
-            "repetitions":self.repetitions,"quiet_minutes":self.quiet_minutes})
+            "repetitions":self.repetitions,"quiet_minutes":self.quiet_minutes});
+        if !self.entry.is_empty() {
+            v["entry"] = Value::Object(
+                self.entry
+                    .iter()
+                    .map(|(k, p)| (k.clone(), p.json()))
+                    .collect::<Map<String, Value>>(),
+            );
+        }
+        v
     }
     pub(crate) fn in_period(&self, now_ms: i64) -> bool {
         now_ms >= self.start_ms && now_ms < self.end_ms
     }
-}
-
-// ------------------------------------------------------------------ the rules
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum ModeClass {
-    Phone,
-    Cw,
-    Digital,
-}
-fn mode_class(mode: &str) -> ModeClass {
-    match mode {
-        "CW" => ModeClass::Cw,
-        "SSB" | "USB" | "LSB" | "AM" | "FM" | "DIGITALVOICE" => ModeClass::Phone,
-        _ => ModeClass::Digital,
+    /// The clause in force for the selected section (AutomationClause).
+    pub(crate) fn clause(&self) -> Clause {
+        self.profile.clause_for(&self.entry).0
     }
-}
-impl Counted {
-    fn holds(self, mode: &str) -> bool {
-        match self {
-            Counted::Ft8Ft4 => matches!(mode, "FT8" | "FT4"),
-            Counted::Digital => mode_class(mode) == ModeClass::Digital,
-            Counted::DigitalNoRtty => mode_class(mode) == ModeClass::Digital && mode != "RTTY",
-            Counted::Any => true,
-        }
+    /// ExchangeRule: the record's CQ word.
+    pub(crate) fn cq_word(&self) -> Option<&str> {
+        self.profile.exchange.cq.as_deref()
     }
-}
-/// Kilometres between the centres of two 4-character squares on a sphere of this radius.
-fn kilometres(a: &str, b: &str, radius: f64) -> Option<f64> {
-    let (a, b) = (maidenhead(a.get(..4)?)?, maidenhead(b.get(..4)?)?);
-    let r = std::f64::consts::PI / 180.0;
-    let (la1, la2, dl) = (a.0 * r, b.0 * r, (b.1 - a.1) * r);
-    let h = ((la2 - la1) / 2.0).sin().powi(2) + la1.cos() * la2.cos() * (dl / 2.0).sin().powi(2);
-    Some(2.0 * radius * h.sqrt().min(1.0).asin())
-}
-const EARTH_KM: f64 = 6371.0;
-/// IARU R1: a factor of 111.2 km per degree.
-const IARU_RADIUS_KM: f64 = 111.2 * 180.0 / std::f64::consts::PI;
-impl Points {
-    /// The QSO points of one QSO; None when the rule needs a grid that is not known.
-    fn of(
-        self,
-        my: Option<&str>,
-        theirs: Option<&str>,
-        band: &str,
-        class: ModeClass,
-    ) -> Option<u64> {
-        let km = |radius| kilometres(my?, theirs?, radius);
-        let vhf = |high: u64, top: u64| match band {
-            "1.25m" | "70cm" => 2,
-            "33cm" | "23cm" => high,
-            "13cm" | "9cm" | "6cm" | "3cm" | "1.25cm" | "6mm" | "4mm" | "2.5mm" | "2mm" | "1mm"
-            | "submm" => top,
-            _ => 1,
-        };
-        Some(match self {
-            Points::OnePlusPer3000Km => 1 + (km(EARTH_KM)? / 3000.0).floor() as u64,
-            Points::OnePlusPer500KmUp => 1 + ((km(EARTH_KM)? / 500.0).ceil() as u64).max(1),
-            Points::FieldDay => {
-                if class == ModeClass::Phone {
-                    1
-                } else {
-                    2
-                }
-            }
-            Points::VhfJanuary => vhf(4, 8),
-            Points::VhfJuneSeptember => vhf(3, 4),
-            Points::Kilometres => {
-                let (m, t) = (my?.get(..4)?, theirs?.get(..4)?);
-                if m.eq_ignore_ascii_case(t) {
-                    50
-                } else {
-                    km(IARU_RADIUS_KM)?.floor() as u64 + 1
-                }
-            }
-            Points::OnePerCall => 1,
+    /// ExchangeRule.unsendable_for holds for my station.
+    pub(crate) fn unsendable(&self, dxcc: &crate::dxcc::Table, my_call: Option<&str>) -> bool {
+        let me = my_call.and_then(|c| dxcc.lookup(c));
+        self.profile.exchange.unsendable_for.as_ref().is_some_and(|e| {
+            e.holds(&Vars {
+                my_prefix: me.as_ref().map(|r| r.prefix.as_str()),
+                my_cont: me.as_ref().map(|r| r.continent),
+                params: Some(&self.entry),
+                sets: Some(&self.file.sets),
+                ..Vars::default()
+            })
         })
     }
-}
-impl Multipliers {
-    /// The multiplier this QSO would count for; None without one or without a grid.
-    fn key(self, band: &str, grid: Option<&str>) -> Option<String> {
-        let grid = grid?.to_ascii_uppercase();
-        match self {
-            Multipliers::None => None,
-            Multipliers::FieldPerBand => Some(format!("{}|{band}", grid.get(..2)?)),
-            Multipliers::GridPerBand => Some(format!("{}|{band}", grid.get(..4)?)),
-        }
+    /// The bands of the record (and of its rounds).
+    pub(crate) fn has_band(&self, band: &str) -> bool {
+        self.profile.bands.iter().any(|b| b == band)
+            || self
+                .profile
+                .schedule
+                .rounds
+                .iter()
+                .flat_map(|r| r.bands.iter().flatten())
+                .any(|b| b == band)
     }
 }
-/// One logged contact as a contest reads it.
-#[derive(Clone, Debug, PartialEq)]
+
+// ------------------------------------------------------------------ the log
+/// One logged contact as a contest reads it (ContestLog).
+#[derive(Clone, Debug, PartialEq, Default)]
 pub(crate) struct Qso {
     pub call: String,
+    /// GRIDSQUARE up to 6 characters.
     pub grid: Option<String>,
     pub band: Option<String>,
     pub mode: String,
+    pub submode: Option<String>,
     pub ms: i64,
+    pub my_grid: Option<String>,
+    pub stx: Option<String>,
+    pub srx: Option<String>,
+    pub srx_string: Option<String>,
+    pub state: Option<String>,
+    pub class: Option<String>,
+    pub arrl_sect: Option<String>,
+    pub rst_rcvd: Option<String>,
 }
-/// WstxContest::ContestLog: the log inside the period, by the profile's rules.
+impl Qso {
+    /// The received exchange field (ExchangeRule: where ContestLog reads it).
+    fn field(&self, name: &str) -> Option<String> {
+        match name {
+            "serial" => self.srx.clone(),
+            "section" => self.arrl_sect.clone(),
+            "fd_class" => self.class.clone(),
+            "state_province" => self.state.clone(),
+            "grid4" => self.grid.as_ref().and_then(|g| g.get(..4)).map(str::to_owned),
+            "grid6" => self.grid.clone().filter(|g| g.len() >= 6),
+            "report" | "rst" => self.rst_rcvd.clone(),
+            _ => self.srx_string.clone(),
+        }
+        .map(|s| s.to_ascii_uppercase())
+    }
+}
+/// One QSO of the period as the evaluation reads it.
+#[derive(Clone, Debug)]
+struct Item {
+    call: String,
+    ms: i64,
+    band: String,
+    mode: String,
+    class: ModeClass,
+    round: Option<usize>,
+    my_grid: Option<String>,
+    their_grid: Option<String>,
+    their: Option<crate::dxcc::Resolved>,
+    fields: Option<Qso>,
+    /// The points by PointsRule (before the cap).
+    raw: f64,
+    dupe_key: Vec<Option<String>>,
+}
+/// WstxContest::ContestLog: the log of the period by the record's rules.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Log {
-    keys: HashSet<String>,
-    on_band: HashSet<String>,
-    multipliers: HashSet<String>,
+    /// The non-dupe QSOs (scoring or not) for the dupe test: call -> dimension keys.
+    keys: HashMap<String, Vec<Vec<Option<String>>>>,
+    /// Each multiplier set's keys.
+    sets: Vec<HashSet<String>>,
+    /// all_bands sets: (set, key) -> the bands of the call's scoring QSOs.
+    band_cover: HashMap<(usize, String), HashSet<String>>,
+    /// The scoring QSOs in time order: start, points after the cap, keys added per set.
+    scoring: Vec<(i64, f64, Vec<usize>)>,
+    /// The capped QSOs that kept their points, and the scoring QSOs (for a new QSO's cap).
+    capped_kept: u64,
     pub qsos: u64,
-    pub points: u64,
+    pub points: f64,
+    /// ScoredWindow first: the operating minutes so far and the last non-dupe QSO's start.
+    operating_ms: i64,
+    last_ms: Option<i64>,
+    /// ScoredWindow best: points per unit.
+    /// ContestSerial: the highest STX of the period's contacts.
+    pub max_stx: Option<u64>,
+    names: Vec<String>,
+}
+fn upper(s: Option<&str>) -> Option<String> {
+    s.map(str::to_ascii_uppercase).filter(|s| !s.is_empty())
+}
+/// What the evaluation of one QSO needs of my station.
+struct Me<'a> {
+    s: &'a Selection,
+    dxcc: &'a crate::dxcc::Table,
+    me: Option<crate::dxcc::Resolved>,
+    station_grid: Option<String>,
+}
+impl<'a> Me<'a> {
+    fn new(s: &'a Selection, dxcc: &'a crate::dxcc::Table, call: Option<&str>, grid: Option<&str>) -> Self {
+        Self {
+            s,
+            dxcc,
+            me: call.and_then(|c| dxcc.lookup(c)),
+            station_grid: upper(grid),
+        }
+    }
+    fn vars<'b>(&'b self, it: &'b Item, estimate: bool) -> Vars<'b> {
+        let p = &self.s.profile;
+        let member = p
+            .members
+            .as_ref()
+            .and_then(|m| self.s.file.call_lists.get(m))
+            .is_some_and(|l| l.iter().any(|c| *c == it.call));
+        Vars {
+            band: &it.band,
+            class: Some(it.class),
+            my_grid: it.my_grid.as_deref(),
+            their_grid: it.their_grid.as_deref(),
+            their_centre: estimate
+                .then(|| it.their.as_ref().map(|r| (r.lat, r.lon)))
+                .flatten(),
+            my_prefix: self.me.as_ref().map(|r| r.prefix.as_str()),
+            my_cont: self.me.as_ref().map(|r| r.continent),
+            their_prefix: it.their.as_ref().map(|r| r.prefix.as_str()),
+            their_cont: it.their.as_ref().map(|r| r.continent),
+            their_member: member,
+            params: Some(&self.s.entry),
+            sets: Some(&self.s.file.sets),
+            ..Vars::default()
+        }
+    }
+    fn item(&self, q: &Qso, band: &str, mode: String) -> Item {
+        let p = &self.s.profile;
+        let my_grid = upper(q.my_grid.as_deref()).or_else(|| self.station_grid.clone());
+        let their_grid = upper(q.grid.as_deref()).filter(|g| g.len() >= 4);
+        let class = ModeClass::of(&q.mode);
+        let round = p.schedule.round_at(q.ms);
+        let mut it = Item {
+            call: q.call.to_ascii_uppercase(),
+            ms: q.ms,
+            band: band.to_owned(),
+            class,
+            round,
+            my_grid,
+            their_grid,
+            their: self.dxcc.lookup(&q.call),
+            fields: Some(q.clone()),
+            raw: 0.0,
+            dupe_key: Vec::new(),
+            mode,
+        };
+        it.dupe_key = self.dupe_key(&it);
+        it.raw = p.points.number(&self.vars(&it, false)).unwrap_or(0.0);
+        it
+    }
+    fn dupe_key(&self, it: &Item) -> Vec<Option<String>> {
+        let p = &self.s.profile;
+        p.dupe
+            .per
+            .iter()
+            .map(|d| match d {
+                Dim::Band => Some(it.band.clone()),
+                Dim::Mode => Some(it.mode.clone()),
+                Dim::ModeGroup => Some(p.modes.group(&it.mode)),
+                Dim::ModeClass => Some(it.class.name().to_owned()),
+                Dim::Round => Some(it.round.map_or("-".into(), |r| r.to_string())),
+                Dim::UtcDay => Some((it.ms.div_euclid(DAY_MS)).to_string()),
+                Dim::TheirGrid4 => it.their_grid.as_ref().and_then(|g| g.get(..4)).map(str::to_owned),
+                Dim::MyGrid4 => it.my_grid.as_ref().and_then(|g| g.get(..4)).map(str::to_owned),
+            })
+            .collect()
+    }
+    /// The multiplier keys of a QSO: (set, key) for each set it counts in.
+    fn mult_keys(&self, it: &Item) -> Vec<(usize, String)> {
+        let p = &self.s.profile;
+        let vars = self.vars(it, false);
+        let mut out = Vec::new();
+        for (i, m) in p.multipliers.iter().enumerate() {
+            if m.only.as_ref().is_some_and(|c| !c.holds(&vars)) {
+                continue;
+            }
+            let key = match &m.kind {
+                MultKind::Dxcc => it.their.as_ref().map(|r| r.prefix.clone()),
+                MultKind::Wpx => Some(crate::dxcc::wpx_prefix(&it.call)).filter(|w| !w.is_empty()),
+                MultKind::Continent => it.their.as_ref().map(|r| r.continent.to_owned()),
+                MultKind::CqZone => it.their.as_ref().map(|r| r.cq_zone.to_string()),
+                MultKind::ItuZone => it.their.as_ref().map(|r| r.itu_zone.to_string()),
+                MultKind::GridField => it.their_grid.as_ref().and_then(|g| g.get(..2)).map(str::to_owned),
+                MultKind::Grid4 => it.their_grid.as_ref().and_then(|g| g.get(..4)).map(str::to_owned),
+                MultKind::MyGrid4 => it.my_grid.as_ref().and_then(|g| g.get(..4)).map(str::to_owned),
+                MultKind::CallArea(t) => self.s.file.call_area(t, &it.call),
+                MultKind::Exchange(f) => it.fields.as_ref().and_then(|q| q.field(f)),
+                MultKind::Call => Some(it.call.clone()),
+            };
+            let Some(key) = key else { continue };
+            let round = it.round.map_or("-".into(), |r| r.to_string());
+            let scoped = match m.per {
+                Per::Contest => key,
+                Per::Band => format!("{key}|{}", it.band),
+                Per::BandMode => format!("{key}|{}|{}", it.band, it.mode),
+                Per::Round => format!("{key}|r{round}"),
+                Per::BandRound => format!("{key}|{}|r{round}", it.band),
+            };
+            out.push((i, scoped));
+        }
+        out
+    }
+}
+/// A QSO dupes an earlier one: the same call and every dimension equal (a grid missing on
+/// either side matches every grid).
+fn dupes(per: &[Dim], a: &[Option<String>], b: &[Option<String>]) -> bool {
+    per.iter().enumerate().all(|(i, d)| match (&a[i], &b[i]) {
+        (Some(x), Some(y)) => x == y,
+        _ => d.grid(),
+    })
 }
 impl Log {
-    /// Counts the QSOs in the period, oldest first; a repeat is a dupe and counts nothing.
-    pub(crate) fn of(s: &Selection, my_grid: Option<&str>, list: &[Qso]) -> Self {
-        let p = s.profile;
-        let mut log = Log::default();
+    /// Builds the state from the contacts that started in the period (any order), with the
+    /// station's call and locator for my side.
+    pub(crate) fn of(
+        s: &Selection,
+        my_call: Option<&str>,
+        my_locator: Option<&str>,
+        dxcc: &crate::dxcc::Table,
+        list: &[Qso],
+    ) -> Self {
+        let me = Me::new(s, dxcc, my_call, my_locator);
+        let p = &s.profile;
+        let mut log = Log {
+            sets: vec![HashSet::new(); p.multipliers.len()],
+            names: p.multipliers.iter().map(|m| m.name.clone()).collect(),
+            ..Log::default()
+        };
         let mut ordered: Vec<&Qso> = list
             .iter()
-            .filter(|q| q.ms >= s.start_ms && q.ms < s.end_ms && p.counted.holds(&q.mode))
+            .filter(|q| q.ms >= s.start_ms && q.ms < s.end_ms)
             .collect();
         ordered.sort_by_key(|q| q.ms);
+        // Dupes, in time order (keep best: the most points of QSOs that dupe each other).
+        let mut kept: Vec<Item> = Vec::new();
         for q in ordered {
-            let Some(band) = q.band.as_deref().filter(|b| p.bands.contains(b)) else {
+            let Some(band) = q.band.as_deref().filter(|b| s.has_band(b)) else {
                 continue;
             };
-            let grid = q.grid.as_deref().and_then(|g| g.get(..4));
-            let class = mode_class(&q.mode);
-            if log.dupe(p.dupes, &q.call, band, class, grid) {
+            let Some(mode) = p.modes.counted(&q.mode, q.submode.as_deref()) else {
                 continue;
+            };
+            if let Some(n) = q.stx.as_deref().and_then(|x| x.trim().parse::<u64>().ok()) {
+                log.max_stx = Some(log.max_stx.map_or(n, |m| m.max(n)));
             }
-            log.keys.insert(key(p.dupes, &q.call, band, class, grid));
-            log.on_band.insert(format!("{}|{band}", q.call));
+            let it = me.item(q, band, mode);
+            let earlier = kept
+                .iter()
+                .position(|k| k.call == it.call && dupes(&p.dupe.per, &k.dupe_key, &it.dupe_key));
+            match earlier {
+                None => kept.push(it),
+                Some(i) if p.dupe.best && it.raw > kept[i].raw => {
+                    kept.remove(i);
+                    kept.push(it);
+                }
+                Some(_) => {}
+            }
+        }
+        kept.sort_by_key(|k| k.ms);
+        for k in &kept {
+            log.keys
+                .entry(k.call.clone())
+                .or_default()
+                .push(k.dupe_key.clone());
+        }
+        // ScoredWindow.
+        let scores = log.window(s, &kept);
+        // points_cap over the period.
+        let scoring: Vec<&Item> = kept
+            .iter()
+            .zip(&scores)
+            .filter_map(|(k, ok)| ok.then_some(k))
+            .collect();
+        let cap = p.points_cap.as_ref().map(|c| {
+            let allowed = scoring.len() as u64 * c.n / c.d;
+            (c, allowed)
+        });
+        for it in scoring {
+            let mut points = it.raw;
+            if let Some((c, allowed)) = &cap
+                && c.when.holds(&me.vars(it, false))
+            {
+                if log.capped_kept < *allowed {
+                    log.capped_kept += 1;
+                } else {
+                    points = 0.0;
+                }
+            }
+            let added = log.add_keys(&me, it, p);
             log.qsos += 1;
-            log.points += p.points.of(my_grid, grid, band, class).unwrap_or(0);
-            if let Some(m) = p.multipliers.key(band, grid) {
-                log.multipliers.insert(m);
-            }
+            log.points += points;
+            log.scoring.push((it.ms, points, added));
         }
         log
     }
-    fn dupe(
-        &self,
-        rule: Dupes,
-        call: &str,
-        band: &str,
-        class: ModeClass,
-        grid: Option<&str>,
-    ) -> bool {
-        if rule == Dupes::BandGrid {
-            // Without a grid on either side only the band can tell.
-            return match grid {
-                None => self.on_band.contains(&format!("{call}|{band}")),
-                Some(_) => {
-                    self.keys.contains(&key(rule, call, band, class, grid))
-                        || self.keys.contains(&key(rule, call, band, class, None))
+    /// Which non-dupe QSOs score (ScoredWindow); tracks the operating time for the value.
+    fn window(&mut self, s: &Selection, kept: &[Item]) -> Vec<bool> {
+        let p = &s.profile;
+        let Some(w) = &p.schedule.window else {
+            if let Some(last) = kept.last() {
+                self.last_ms = Some(last.ms);
+            }
+            return vec![true; kept.len()];
+        };
+        let limit = p.window_limit(&s.entry).unwrap_or(f64::INFINITY);
+        if w.best {
+            let unit = if w.utc_day { DAY_MS } else { 3_600_000 };
+            let mut per: BTreeMap<i64, f64> = BTreeMap::new();
+            for k in kept {
+                *per.entry(k.ms.div_euclid(unit)).or_default() += k.raw;
+            }
+            let mut units: Vec<(i64, f64)> = per.into_iter().collect();
+            // The most points first; a tie goes to the earlier unit.
+            units.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+            let chosen: HashSet<i64> = units
+                .iter()
+                .take(limit.max(0.0) as usize)
+                .map(|u| u.0)
+                .collect();
+            return kept
+                .iter()
+                .map(|k| chosen.contains(&k.ms.div_euclid(unit)))
+                .collect();
+        }
+        let off = w.min_off_minutes * MINUTE_MS;
+        let limit_ms = (limit * 3_600_000.0) as i64;
+        let mut out = Vec::new();
+        for k in kept {
+            if let Some(prev) = self.last_ms {
+                let gap = k.ms - prev;
+                if off == 0 || gap < off {
+                    self.operating_ms += gap;
                 }
-            };
+            }
+            self.last_ms = Some(k.ms);
+            out.push(self.operating_ms <= limit_ms);
         }
-        self.keys.contains(&key(rule, call, band, class, grid))
+        out
     }
-    /// The score of the profile's rule; power and bonus points are not computed.
-    pub(crate) fn score(&self, s: &Selection) -> u64 {
-        match s.profile.multipliers {
-            Multipliers::None => self.points,
-            _ => self.points * self.multipliers.len() as u64,
+    /// Adds a scoring QSO's multiplier keys; returns how many each set gained.
+    fn add_keys(&mut self, me: &Me, it: &Item, p: &Profile) -> Vec<usize> {
+        let mut added = vec![0; p.multipliers.len()];
+        for (i, key) in me.mult_keys(it) {
+            let m = &p.multipliers[i];
+            if m.all_bands {
+                let cover = self.band_cover.entry((i, key.clone())).or_default();
+                cover.insert(it.band.clone());
+                if !p.bands.iter().all(|b| cover.contains(b)) {
+                    continue;
+                }
+            }
+            if self.sets[i].insert(key) {
+                added[i] += 1;
+            }
         }
+        added
+    }
+    /// DupeRule: a decoded station on this band, mode and grid is a dupe of the period.
+    fn is_dupe(&self, s: &Selection, it: &Item) -> bool {
+        self.keys
+            .get(&it.call)
+            .is_some_and(|l| l.iter().any(|k| dupes(&s.profile.dupe.per, k, &it.dupe_key)))
+    }
+    pub(crate) fn multipliers(&self) -> usize {
+        self.sets.iter().map(HashSet::len).sum()
+    }
+    /// The totals now (Z without projection).
+    fn totals(&self) -> Totals {
+        Totals {
+            qsos: self.qsos as f64,
+            points: self.points,
+            sets: self.sets.iter().map(|s| s.len() as f64).collect(),
+        }
+    }
+    /// ScoreRule on the totals now.
+    pub(crate) fn score(&self, s: &Selection) -> f64 {
+        score(s, &self.names, &self.totals())
     }
     pub(crate) fn summary(&self, s: &Selection) -> Value {
-        json!({"qsos":self.qsos,"multipliers":self.multipliers.len(),"points":self.points,
-            "score":self.score(s)})
+        json!({"qsos":self.qsos,"multipliers":self.multipliers(),"points":half_up(self.points),
+            "score":half_up(self.score(s))})
+    }
+    /// ContestSerial: the next serial number (1 + the highest STX of the period, 1 for none).
+    pub(crate) fn next_serial(&self) -> u64 {
+        self.max_stx.map_or(1, |m| m + 1)
     }
 }
-fn key(rule: Dupes, call: &str, band: &str, class: ModeClass, grid: Option<&str>) -> String {
-    match rule {
-        Dupes::Band => format!("{call}|{band}"),
-        Dupes::BandModeClass => format!("{call}|{band}|{class:?}"),
-        Dupes::BandGrid => format!(
-            "{call}|{band}|{}",
-            grid.map(str::to_ascii_uppercase).unwrap_or_default()
-        ),
-        Dupes::Call => call.to_owned(),
-    }
+/// Rounded half up, as the wire carries points and values.
+pub(crate) fn half_up(x: f64) -> i64 {
+    (x + 0.5).floor() as i64
 }
+/// The totals a score is computed on.
+#[derive(Clone, Debug, PartialEq)]
+struct Totals {
+    qsos: f64,
+    points: f64,
+    sets: Vec<f64>,
+}
+fn score(s: &Selection, names: &[String], t: &Totals) -> f64 {
+    let sizes: BTreeMap<String, f64> = names.iter().cloned().zip(t.sets.iter().copied()).collect();
+    s.profile
+        .score
+        .number(&Vars {
+            qsos: t.qsos,
+            points: t.points,
+            sets_sizes: Some(&sizes),
+            ..Vars::default()
+        })
+        .unwrap_or(0.0)
+}
+
+// ------------------------------------------------------------------ the value
 /// What a verdict adds in a contest (Verdict contest keys).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct ContestValue {
     pub dupe: bool,
     pub new_multiplier: bool,
-    pub points: Option<u64>,
+    /// PointsRule for this QSO now (None: not known).
+    pub points: Option<f64>,
+    /// ContestValue, the projected score gain (None without a rank).
+    pub value: Option<f64>,
 }
+/// ContestValue: the projected end state of the period at `now_ms` (Z) and its score.
+fn projected(s: &Selection, log: &Log, now_ms: i64) -> (Totals, bool) {
+    let e = ((now_ms - s.start_ms) as f64 / MINUTE_MS as f64).max(0.0);
+    let span = e.min(60.0);
+    let w = e.clamp(15.0, 60.0).max(15.0);
+    let mut t = (s.end_ms - now_ms).max(0) as f64 / MINUTE_MS as f64;
+    let mut used_up = false;
+    if let (Some(win), Some(limit)) = (&s.profile.schedule.window, s.profile.window_limit(&s.entry))
+        && !win.best
+    {
+        // A first window: at most the operating time it has left; 0 once used up.
+        let mut op = log.operating_ms;
+        if let Some(last) = log.last_ms {
+            let gap = now_ms - last;
+            if win.min_off_minutes == 0 || gap < win.min_off_minutes * MINUTE_MS {
+                op += gap.max(0);
+            }
+        }
+        let left = limit * 60.0 - op as f64 / MINUTE_MS as f64;
+        used_up = left < 0.0;
+        t = t.min(left.max(0.0));
+    }
+    let from = now_ms - (span * MINUTE_MS as f64) as i64;
+    let mut g = Totals {
+        qsos: 0.0,
+        points: 0.0,
+        sets: vec![0.0; log.sets.len()],
+    };
+    for (ms, points, added) in &log.scoring {
+        if *ms > from && *ms <= now_ms {
+            g.qsos += 1.0;
+            g.points += points;
+            for (i, a) in added.iter().enumerate() {
+                g.sets[i] += *a as f64;
+            }
+        }
+    }
+    let now = log.totals();
+    let z = Totals {
+        qsos: now.qsos + g.qsos / w * t,
+        points: now.points + g.points / w * t,
+        sets: now
+            .sets
+            .iter()
+            .zip(&g.sets)
+            .map(|(x, gx)| x + gx / w * t)
+            .collect(),
+    };
+    (z, used_up)
+}
+/// One decoded station as a hypothetical QSO now.
+fn decoded_item(me: &Me, st: &Station, f: &Facts, band: &str) -> Item {
+    let mode = st.mode.to_ascii_uppercase();
+    let mut it = Item {
+        call: f.from.to_ascii_uppercase(),
+        ms: st.now_ms,
+        band: band.to_owned(),
+        class: ModeClass::Digital,
+        round: me.s.profile.schedule.round_at(st.now_ms),
+        my_grid: me.station_grid.clone(),
+        their_grid: upper(f.grid.as_deref()),
+        their: st.dxcc.lookup(&f.from),
+        fields: None,
+        raw: 0.0,
+        dupe_key: Vec::new(),
+        mode,
+    };
+    it.dupe_key = me.dupe_key(&it);
+    it
+}
+/// The value of a hypothetical QSO with this station now: S(Z + q) - S(Z).
+fn value_of(me: &Me, log: &Log, it: &Item, now_ms: i64) -> (f64, Option<f64>, bool) {
+    let s = me.s;
+    let p = &s.profile;
+    let logged = p.points.number(&me.vars(it, false));
+    let estimate = p.points.number(&me.vars(it, true)).unwrap_or(0.0);
+    let (z, used_up) = projected(s, log, now_ms);
+    // The cap: a capped QSO keeps its points while the cap of N + 1 scoring QSOs allows it.
+    let mut points = estimate;
+    if let Some(c) = &p.points_cap
+        && c.when.holds(&me.vars(it, false))
+        && log.capped_kept >= (log.qsos + 1) * c.n / c.d
+    {
+        points = 0.0;
+    }
+    let mut added = vec![0.0; p.multipliers.len()];
+    let mut new_multiplier = false;
+    for (i, key) in me.mult_keys(it) {
+        let m = &p.multipliers[i];
+        if log.sets[i].contains(&key) {
+            continue;
+        }
+        if m.all_bands {
+            let cover = log.band_cover.get(&(i, key.clone()));
+            let complete = p
+                .bands
+                .iter()
+                .all(|b| *b == it.band || cover.is_some_and(|c| c.contains(b)));
+            if !complete {
+                continue;
+            }
+        }
+        added[i] += 1.0;
+        new_multiplier = true;
+    }
+    if used_up {
+        return (0.0, logged, new_multiplier);
+    }
+    let mut with = z.clone();
+    with.qsos += 1.0;
+    with.points += points;
+    for (x, a) in with.sets.iter_mut().zip(&added) {
+        *x += a;
+    }
+    let gain = score(s, &log.names, &with) - score(s, &log.names, &z);
+    (gain.max(0.0), logged, new_multiplier)
+}
+
+// ------------------------------------------------------------------ the verdicts
 /// One record's classification (WstxContest::ContestVerdict): kind, grey, why and the value.
 fn classify(
     s: &Selection,
@@ -804,7 +763,7 @@ fn classify(
     st: &Station,
     log: Option<&Log>,
 ) -> (Option<Kind>, bool, String, Option<ContestValue>) {
-    let p = s.profile;
+    let p = &s.profile;
     if let Some(tier) = st.ignored.get(&f.from) {
         return (
             None,
@@ -822,27 +781,38 @@ fn classify(
     let Some(band) = st.band.as_deref() else {
         return (None, false, "band unknown".to_owned(), None);
     };
-    if !p.bands.contains(&band) {
+    if !s.has_band(band) {
         return (None, false, "band not in the contest".to_owned(), None);
+    }
+    if !p.modes.counts_station(&st.mode) {
+        return (None, false, "mode not in the contest".to_owned(), None);
     }
     let Some(log) = log else {
         return (None, false, "log unreadable".to_owned(), None);
     };
-    let grid = f.grid.as_deref().and_then(|g| g.get(..4));
-    if log.dupe(p.dupes, &f.from, band, ModeClass::Digital, grid) {
+    let me = Me::new(s, &st.dxcc, Some(&st.my_call), st.my_locator.as_deref());
+    let it = decoded_item(&me, st, f, band);
+    if let Some(w) = &p.entry.workable
+        && !w.holds(&me.vars(&it, false))
+    {
+        return (None, false, "not workable".to_owned(), None);
+    }
+    if log.is_dupe(s, &it) {
         let value = ContestValue {
             dupe: true,
             ..ContestValue::default()
         };
         return (None, false, "dupe".to_owned(), Some(value));
     }
-    let call_guard = if p.dupes == Dupes::BandGrid {
+    let rover = p.dupe.per.contains(&Dim::TheirGrid4);
+    let call_guard = if rover {
         // A rover counts again from a new grid (AVHF 2.2).
         f.from.trim_end_matches("/R")
     } else {
         f.from.as_str()
     };
     let calls_me = st.calls_me(f);
+    let (gain, points, new_multiplier) = value_of(&me, log, &it, st.now_ms);
     if !calls_me {
         if !sane_call(call_guard) {
             return (None, false, "callsign guard".to_owned(), None);
@@ -850,16 +820,21 @@ fn classify(
         if !st.cq_like(f, true) {
             return (None, false, "not a CQ".to_owned(), None);
         }
+        if gain <= 0.0 {
+            let value = ContestValue {
+                dupe: false,
+                new_multiplier,
+                points,
+                value: None,
+            };
+            return (None, false, "no score".to_owned(), Some(value));
+        }
     }
     let value = ContestValue {
         dupe: false,
-        new_multiplier: p
-            .multipliers
-            .key(band, grid)
-            .is_some_and(|m| !log.multipliers.contains(&m)),
-        points: p
-            .points
-            .of(st.my_locator.as_deref(), grid, band, ModeClass::Digital),
+        new_multiplier,
+        points,
+        value: Some(gain),
     };
     let mut why = if calls_me {
         vec!["calls my call".to_owned()]
@@ -870,8 +845,9 @@ fn classify(
         why.push("new multiplier".to_owned());
     }
     if let Some(n) = value.points {
-        why.push(format!("{n} points"));
+        why.push(format!("{} points", half_up(n)));
     }
+    why.push(format!("value {}", half_up(gain)));
     (
         Some(if calls_me {
             Kind::Caller
@@ -905,19 +881,15 @@ fn record_facts(record: &Value) -> Option<Facts> {
         hz: record["frequency_hz"].as_f64(),
     })
 }
-/// WstxContest::ContestValueOrder, smaller first: callers of my call, a new multiplier, more
-/// points, the stronger SNR, then for an exact tie only the lower audio frequency and the call.
+/// WstxContest::ContestValueOrder, smaller first: callers of my call (while callers first is
+/// on: always before #97), then the larger value, the stronger SNR, then for an exact tie only
+/// the lower audio frequency and the call.
 pub(crate) fn order(a: &Verdict, b: &Verdict) -> std::cmp::Ordering {
-    let key = |v: &Verdict| {
-        let c = v.contest.unwrap_or_default();
-        (
-            v.kind != Some(Kind::Caller),
-            !c.new_multiplier,
-            std::cmp::Reverse(c.points.unwrap_or(0)),
-        )
-    };
-    key(a)
-        .cmp(&key(b))
+    let caller = |v: &Verdict| v.kind != Some(Kind::Caller);
+    let value = |v: &Verdict| -v.contest.and_then(|c| c.value).unwrap_or(0.0);
+    caller(a)
+        .cmp(&caller(b))
+        .then_with(|| value(a).total_cmp(&value(b)))
         .then_with(|| {
             let snr = |v: &Verdict| v.facts.snr.map_or(f64::INFINITY, |s| -s);
             snr(a).total_cmp(&snr(b))

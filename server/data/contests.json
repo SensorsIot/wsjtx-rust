@@ -1,0 +1,859 @@
+{
+  "format": 1,
+  "contests": [
+    {
+      "id": "ww_digi",
+      "name": "WW Digi",
+      "organiser": "CQ Communications and WWROF",
+      "source": "https://ww-digi.com/rules/",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": "WW-DIGI", "confirmed": true},
+      "schedule": {
+        "rounds": [{"day": {"full_weekend": "last", "month": 8}, "time": ["0d12:00", "1d12:00"]}],
+        "text": "Last full weekend of August, 1200 UTC Saturday to 1159 UTC Sunday"
+      },
+      "bands": ["160m", "80m", "40m", "20m", "15m", "10m"],
+      "exchange": {"activity": "ww_digi"},
+      "dupe": {"per": ["band"]},
+      "points": "1 + floor(km(grid4)/3000)",
+      "multipliers": [{"name": "fields", "kind": "grid_field", "per": "band"}],
+      "score": "points * mults",
+      "automation": {"clause": "forbidden", "ref": "IX.12", "text": "A human operator must initiate calling each QSO partner. Autonomous systems or robots that emulate this action are prohibited."},
+      "restrictions": ["no_alternating_cq", "self_spot_forbidden"],
+      "notes": ["Self-spotting or asking to be spotted is not permitted (IX.4)."]
+    },
+    {
+      "id": "arrl_digi",
+      "name": "ARRL Digi",
+      "organiser": "ARRL",
+      "source": "https://contests.arrl.org/ContestRules/Digital-Rules.pdf",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": "ARRL-DIGI", "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"full_weekend": 1, "month": 6}, "time": ["0d18:00", "2d00:00"]}],
+        "text": "First full weekend of June, 1800 UTC Saturday to 2359 UTC Sunday",
+        "window": {"limit": 24, "unit": "hour", "scored": "first", "min_off_minutes": 60}
+      },
+      "bands": ["160m", "80m", "40m", "20m", "15m", "10m", "6m"],
+      "modes": {"count": "digital_no_rtty", "as_one": "all"},
+      "exchange": {"activity": "arrl_digi"},
+      "dupe": {"per": ["band"]},
+      "points": "1 + max(1, ceil(km(grid4)/500))",
+      "score": "points",
+      "automation": {"clause": "forbidden", "ref": "OPRG.4", "text": "Each contact must include contemporaneous direct initiation by both operators making a contact. Initiation of a contact may be by either local or remote control. Fully automated contacts are prohibited."},
+      "restrictions": ["no_multistream", "no_alternating_cq", "self_spot_allowed"],
+      "notes": ["Busted or NIL QSOs are removed with a penalty of their points (not computed)."],
+      "unconfirmed": ["log.contest: from the contest calendar, not the rules"]
+    },
+    {
+      "id": "arrl_field_day",
+      "name": "ARRL Field Day",
+      "organiser": "ARRL",
+      "source": "https://www.arrl.org/files/file/Field-Day/2026/2026-Field-Day-Rules.pdf",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": "ARRL-FD", "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"full_weekend": 4, "month": 6}, "time": ["0d18:00", "1d21:00"]}],
+        "text": "Fourth full weekend of June, 1800 UTC Saturday to 2059 UTC Sunday"
+      },
+      "bands": ["160m", "80m", "40m", "20m", "15m", "10m", "6m", "5m", "4m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm", "submm"],
+      "modes": {"count": "any"},
+      "exchange": {"activity": "field_day"},
+      "dupe": {"per": ["band", "mode_class"]},
+      "points": "class{phone: 1, cw: 2, digital: 2}",
+      "score": "points",
+      "extras": ["power multiplier x1, x2 or x5", "bonus points"],
+      "automation": {"clause": "forbidden", "ref": "6.4", "text": "Each contact must include contemporaneous direct initiation by both operators making a contact. Initiation of a contact may be by either local or remote control. Fully automated contacts are prohibited."},
+      "restrictions": ["no_multistream"],
+      "notes": [
+        "Entries from ARRL/RAC areas and IARU Region 2; DX stations in other regions may be contacted and may submit check-logs only (1).",
+        "27 hours when set-up starts no earlier than 1800 UTC Saturday, otherwise 24 consecutive hours (a note, not tracked).",
+        "Class and section are the station's Field Day exchange."
+      ],
+      "unconfirmed": ["log.contest: inferred"]
+    },
+    {
+      "id": "ft_challenge",
+      "name": "FT Challenge",
+      "organiser": "RTTYcontesting.com",
+      "source": "https://www.rttycontesting.com/ft-challenge/rules/",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": "FT-CHALLENGE", "confirmed": true},
+      "schedule": {
+        "rounds": [{"day": {"full_weekend": 1, "month": 12}, "time": ["0d18:00", "2d00:00"]}],
+        "text": "First full weekend of December, 1800 UTC Saturday to 2359 UTC Sunday",
+        "window": {"limit": 24, "unit": "hour", "scored": "first", "min_off_minutes": 30}
+      },
+      "bands": ["80m", "40m", "20m", "15m", "10m"],
+      "exchange": {"activity": "none"},
+      "dupe": {"per": ["band"]},
+      "points": "if grid_known then 1 + floor(km(grid4)/3000) else 1",
+      "multipliers": [{"name": "fields", "kind": "grid_field", "per": "band"}],
+      "score": "points * mults",
+      "automation": {"clause": "forbidden", "ref": "7.13", "text": "Robotic operation is not allowed. However, transmissions within a single QSO may be automatically generated."},
+      "restrictions": ["no_multistream"],
+      "notes": ["A missing grid counts as ZZ00: 1 point, no multiplier.", "HIGH power entries are check-logs."],
+      "unconfirmed": ["score: the combined formula is inferred"]
+    },
+    {
+      "id": "nccc_ft4_sprint",
+      "name": "NCCC FT4 Sprint",
+      "organiser": "Northern California Contest Club",
+      "source": "https://www.ncccsprint.com/ft4ns.html",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": "NCCC-SPRINT-FT4", "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"weekday": "FRI", "n": "every", "months": "all"}, "time": ["0d01:00", "0d01:30"]}],
+        "text": "Every Friday 0100 to 0129 UTC"
+      },
+      "bands": ["160m", "80m", "40m", "20m", "15m", "10m", "6m"],
+      "modes": {"count": ["FT4"], "as_one": []},
+      "exchange": {"activity": "na_vhf"},
+      "dupe": {"per": ["band"]},
+      "points": "1",
+      "multipliers": [{"name": "grids", "kind": "grid4", "per": "band"}],
+      "score": "qsos * mults",
+      "notes": ["The runner may log after the caller's R report; RR73 is optional.", "100 W at most."],
+      "unconfirmed": ["log.contest: not in the rules"]
+    },
+    {
+      "id": "ft4_field_day",
+      "name": "FT4 Field Day",
+      "organiser": "ft4fd.com",
+      "source": "https://ft4fd.com/",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": "FT4-FIELD-DAY", "confirmed": true},
+      "schedule": {
+        "rounds": [{"day": {"weekday": "SAT", "n": 1, "months": [1, 4, 7, 10]}, "time": ["0d12:00", "1d12:00"]}],
+        "text": "First weekend of January, April, July and October, 1200 UTC Saturday to 1159 UTC Sunday",
+        "window": {"limit": {"param": "hours"}, "unit": "hour", "scored": "best"}
+      },
+      "bands": ["160m", "80m", "40m", "20m", "15m", "10m"],
+      "modes": {"count": ["FT4"], "as_one": []},
+      "exchange": {"activity": "none"},
+      "dupe": {"per": ["band", "their_grid4"]},
+      "points": "if same_grid4 then 10 else km(grid4, 6378.16)",
+      "score": "points",
+      "restrictions": ["standard_messages_only"],
+      "entry": {"params": [{"name": "hours", "choices": [12, 24], "default": 24}]},
+      "notes": ["A worked call must appear in two other logs (checked by the organiser).", "One transceiver within a 300 m circle."],
+      "unconfirmed": ["schedule.rounds: first weekend read as the first Saturday", "points: rounding of the distance"]
+    },
+    {
+      "id": "kansas_qp_ft",
+      "name": "Kansas QSO Party (FT)",
+      "organiser": "Kansas QSO Party",
+      "source": "https://ksqsoparty.org/rules/KSQPRules2026.pdf",
+      "checked": "2026-11-09",
+      "log": {"format": "email", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [
+          {"day": {"dates": ["2026-08-29"]}, "time": ["0d14:00", "1d02:00"]},
+          {"day": {"dates": ["2026-08-30"]}, "time": ["0d14:00", "0d20:00"]}
+        ],
+        "text": "Last weekend of August: Saturday 1400 to Sunday 0159 UTC and Sunday 1400 to 1959 UTC"
+      },
+      "bands": ["80m", "40m", "20m", "15m", "10m", "6m"],
+      "modes": {"count": ["FT8", "FT4"], "as_one": []},
+      "exchange": {"activity": "none", "rcvd": ["grid4"]},
+      "dupe": {"per": ["band", "mode"]},
+      "points": "1",
+      "score": "qsos",
+      "notes": ["A Kansas station's county also separates dupes; FT messages cannot carry it."],
+      "unconfirmed": ["schedule: only the 2026 dates were read"]
+    },
+    {
+      "id": "vermont_qp_ft",
+      "name": "Vermont QSO Party (FT)",
+      "organiser": "Radio Amateurs of Northern Vermont",
+      "source": "https://www.ranv.org/vtqso.html",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"dates": ["2027-02-06"]}, "time": ["0d00:00", "2d00:00"]}],
+        "text": "First full weekend of February, 0000 UTC Saturday to 2359 UTC Sunday"
+      },
+      "bands": ["30m", "17m", "12m"],
+      "exchange": {"activity": "none"},
+      "dupe": {"per": ["band", "mode_class"]},
+      "points": "class{digital: 2, cw: 3, phone: 1}",
+      "multipliers": [{"name": "grids", "kind": "grid4", "per": "contest"}],
+      "score": "points * floor(m.grids/3)",
+      "extras": ["power factor 1.0, 1.5 or 2.0", "out-of-state stations count at most 5 Vermont grids"],
+      "notes": ["FT modes count only on the WARC bands."],
+      "unconfirmed": ["schedule: only the 2027 date was read", "multipliers: grid scope", "log.format: not read"]
+    },
+    {
+      "id": "hawaii_qp",
+      "name": "Hawaii QSO Party",
+      "organiser": "Hawaii QSO Party",
+      "source": "https://www.hawaiiqsoparty.org/rules-page/",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"dates": ["2026-08-21"]}, "time": ["0d16:00", "2d04:00"]}],
+        "text": "Late August, Friday 1600 UTC to Sunday 0359 UTC"
+      },
+      "bands": ["160m", "80m", "40m", "20m", "15m", "10m", "6m"],
+      "modes": {"count": "any"},
+      "exchange": {"activity": "none"},
+      "dupe": {"per": ["band", "mode_class"]},
+      "points": "class{digital: 3, else: 0}",
+      "score": "points",
+      "extras": ["district, state and province multipliers (FT stations send a grid instead)"],
+      "unconfirmed": ["points: phone and CW values", "dupe: the rules contradict themselves", "schedule: only the 2026 date was read", "log.format: not read"]
+    },
+    {
+      "id": "arrl_vhf_jan",
+      "name": "ARRL January VHF",
+      "organiser": "ARRL",
+      "source": "https://contests.arrl.org/ContestRules/JanJunSep-VHF-Rules.pdf",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": "ARRL-VHF-JAN", "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"asked": true}, "time": ["0d19:00", "2d04:00"]}],
+        "text": "Third or fourth full weekend of January as announced (enter the date), 1900 UTC Saturday to 0359 UTC Monday"
+      },
+      "bands": ["6m", "5m", "4m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm", "submm"],
+      "modes": {"count": "any"},
+      "exchange": {"activity": "na_vhf"},
+      "dupe": {"per": ["band", "my_grid4", "their_grid4"]},
+      "points": "band{6m: 1, 2m: 1, 1.25m: 2, 70cm: 2, 33cm: 4, 23cm: 4, else: 8}",
+      "multipliers": [
+        {"name": "grids", "kind": "grid4", "per": "band"},
+        {"name": "activated", "kind": "my_grid4", "per": "contest", "only": "param(rover)"}
+      ],
+      "score": "points * mults",
+      "automation": {"clause": "forbidden", "ref": "OPRG.4", "text": "Each contact must include contemporaneous direct initiation by both operators making a contact. Initiation of a contact may be by either local or remote control."},
+      "restrictions": ["no_multistream", "self_spot_allowed"],
+      "entry": {"workable": "my_in(W_VE) or their_in(W_VE)", "params": [{"name": "rover", "choices": "bool", "default": false}]},
+      "notes": ["Stations may be contacted once per band from any specific grid square (2.2)."],
+      "unconfirmed": ["sets.W_VE: ARRL's exact W/VE definition"]
+    },
+    {
+      "id": "arrl_vhf_jun",
+      "name": "ARRL June VHF",
+      "organiser": "ARRL",
+      "source": "https://contests.arrl.org/ContestRules/JanJunSep-VHF-Rules.pdf",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": "ARRL-VHF-JUN", "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"full_weekend": 2, "month": 6}, "time": ["0d18:00", "2d03:00"]}],
+        "text": "Second full weekend of June, 1800 UTC Saturday to 0259 UTC Monday"
+      },
+      "bands": ["6m", "5m", "4m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm", "submm"],
+      "modes": {"count": "any"},
+      "exchange": {"activity": "na_vhf"},
+      "dupe": {"per": ["band", "my_grid4", "their_grid4"]},
+      "points": "band{6m: 1, 2m: 1, 1.25m: 2, 70cm: 2, 33cm: 3, 23cm: 3, else: 4}",
+      "multipliers": [
+        {"name": "grids", "kind": "grid4", "per": "band"},
+        {"name": "activated", "kind": "my_grid4", "per": "contest", "only": "param(rover)"}
+      ],
+      "score": "points * mults",
+      "automation": {"clause": "forbidden", "ref": "OPRG.4", "text": "Each contact must include contemporaneous direct initiation by both operators making a contact. Initiation of a contact may be by either local or remote control."},
+      "restrictions": ["no_multistream", "self_spot_allowed"],
+      "entry": {"workable": "my_in(W_VE) or their_in(W_VE)", "params": [{"name": "rover", "choices": "bool", "default": false}]},
+      "notes": ["Stations may be contacted once per band from any specific grid square (2.2)."],
+      "unconfirmed": ["sets.W_VE: ARRL's exact W/VE definition"]
+    },
+    {
+      "id": "arrl_vhf_sep",
+      "name": "ARRL September VHF",
+      "organiser": "ARRL",
+      "source": "https://contests.arrl.org/ContestRules/JanJunSep-VHF-Rules.pdf",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": "ARRL-VHF-SEP", "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"full_weekend": 2, "month": 9}, "time": ["0d18:00", "2d03:00"]}],
+        "text": "Second full weekend of September, 1800 UTC Saturday to 0259 UTC Monday"
+      },
+      "bands": ["6m", "5m", "4m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm", "submm"],
+      "modes": {"count": "any"},
+      "exchange": {"activity": "na_vhf"},
+      "dupe": {"per": ["band", "my_grid4", "their_grid4"]},
+      "points": "band{6m: 1, 2m: 1, 1.25m: 2, 70cm: 2, 33cm: 3, 23cm: 3, else: 4}",
+      "multipliers": [
+        {"name": "grids", "kind": "grid4", "per": "band"},
+        {"name": "activated", "kind": "my_grid4", "per": "contest", "only": "param(rover)"}
+      ],
+      "score": "points * mults",
+      "automation": {"clause": "forbidden", "ref": "OPRG.4", "text": "Each contact must include contemporaneous direct initiation by both operators making a contact. Initiation of a contact may be by either local or remote control."},
+      "restrictions": ["no_multistream", "self_spot_allowed"],
+      "entry": {"workable": "my_in(W_VE) or their_in(W_VE)", "params": [{"name": "rover", "choices": "bool", "default": false}]},
+      "notes": ["Stations may be contacted once per band from any specific grid square (2.2)."],
+      "unconfirmed": ["sets.W_VE: ARRL's exact W/VE definition"]
+    },
+    {
+      "id": "arrl_222_up",
+      "name": "ARRL 222 MHz and Up",
+      "organiser": "ARRL",
+      "source": "https://contests.arrl.org/ContestRules/222-MHz-Rules.pdf",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": "ARRL-222", "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"full_weekend": 1, "month": 8}, "time": ["0d18:00", "1d18:00"]}],
+        "text": "First full weekend of August, 1800 UTC Saturday to 1759 UTC Sunday"
+      },
+      "bands": ["1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm"],
+      "modes": {"count": "any"},
+      "exchange": {"activity": "eu_vhf", "sent": ["grid6"], "rcvd": ["grid6"]},
+      "dupe": {"per": ["band", "my_grid4", "their_grid4"], "keep": "best"},
+      "points": "band{1.25m: 2, 70cm: 1, 33cm: 4, 23cm: 2, 13cm: 6, 9cm: 10, 6cm: 10, 3cm: 6, else: 20} * (if same_grid6 then 1 else km(grid6))",
+      "score": "points",
+      "automation": {"clause": "forbidden", "ref": "OPRG.4", "text": "Each contact must include contemporaneous direct initiation by both operators making a contact. Initiation of a contact may be by either local or remote control. Fully automated contacts are prohibited."},
+      "unconfirmed": ["exchange.activity: EU VHF inferred", "points: distance rounding", "restrictions: self-spotting (OPRG.8.1 against PROH.4)"]
+    },
+    {
+      "id": "cq_ww_vhf",
+      "name": "CQ WW VHF (digital)",
+      "organiser": "CQ Communications",
+      "source": "https://cqww-vhf.com/rules/2026_cq_ww_vhf_rules.pdf",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": "CQ-VHF", "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"full_weekend": 3, "month": 7}, "time": ["0d14:00", "1d14:00"]}],
+        "text": "Third full weekend of July (the digital weekend), 1400 UTC Saturday to 1359 UTC Sunday"
+      },
+      "bands": ["6m", "2m"],
+      "modes": {"count": "digital"},
+      "exchange": {"activity": "na_vhf"},
+      "dupe": {"per": ["band", "their_grid4"]},
+      "points": "band{6m: 1, 2m: 2}",
+      "multipliers": [{"name": "grids", "kind": "grid4", "per": "band"}],
+      "score": "points * mults",
+      "restrictions": ["self_spot_allowed"],
+      "notes": ["Signal reports are not required."],
+      "unconfirmed": ["schedule: only the 2026 dates were read", "log.contest: not in the rules"]
+    },
+    {
+      "id": "iaru_50_mgm",
+      "name": "IARU R1 50 MHz MGM",
+      "organiser": "IARU Region 1",
+      "source": "https://www.iaru-r1.org/wp-content/uploads/2026/02/VHF_Handbook_V10_03_final.pdf",
+      "checked": "2026-11-09",
+      "log": {"format": "edi", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"weekday": "SAT", "n": 3, "months": [4]}, "time": ["0d14:00", "1d14:00"]}],
+        "text": "Third Saturday of April, 1400 UTC Saturday to 1400 UTC Sunday"
+      },
+      "bands": ["6m"],
+      "modes": {"count": "digital"},
+      "exchange": {"activity": "none"},
+      "dupe": {"per": ["band"]},
+      "points": "if same_grid4 then 50 else floor(km(grid4, iaru)) + 1",
+      "multipliers": [{"name": "squares", "kind": "grid4", "per": "band"}],
+      "score": "points * mults",
+      "restrictions": ["self_spot_limited", "single_signal"],
+      "notes": [
+        "Standard FT8 messages with report and 4-character locator; no serial number.",
+        "6H section: 6 hours in at most two periods with a pause of more than 2 hours (a note, not tracked).",
+        "Self-spots: only when first soliciting QSOs on a new frequency, then at most every 10 minutes."
+      ]
+    },
+    {
+      "id": "iaru_70_mgm",
+      "name": "IARU R1 70 MHz MGM",
+      "organiser": "IARU Region 1",
+      "source": "https://www.iaru-r1.org/wp-content/uploads/2026/02/VHF_Handbook_V10_03_final.pdf",
+      "checked": "2026-11-09",
+      "log": {"format": "edi", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"weekday": "SAT", "n": 3, "months": [5]}, "time": ["0d14:00", "1d14:00"]}],
+        "text": "Third Saturday of May, 1400 UTC Saturday to 1400 UTC Sunday"
+      },
+      "bands": ["4m"],
+      "modes": {"count": "digital"},
+      "exchange": {"activity": "none"},
+      "dupe": {"per": ["band"]},
+      "points": "if same_grid4 then 50 else floor(km(grid4, iaru)) + 1",
+      "multipliers": [{"name": "squares", "kind": "grid4", "per": "band"}],
+      "score": "points * mults",
+      "restrictions": ["self_spot_limited", "single_signal"],
+      "notes": [
+        "Standard FT8 messages with report and 4-character locator; no serial number.",
+        "6H section: 6 hours in at most two periods with a pause of more than 2 hours (a note, not tracked).",
+        "Self-spots: only when first soliciting QSOs on a new frequency, then at most every 10 minutes."
+      ]
+    },
+    {
+      "id": "ft8_activity",
+      "name": "FT8 Activity",
+      "organiser": "FT8 Activity (ft8activity.eu)",
+      "source": "https://ft8activity.eu/rules/",
+      "checked": "2026-11-09",
+      "log": {"format": "adif", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [
+          {"day": {"weekday": "WED", "n": 1, "months": "all"}, "time": ["0d17:00", "0d21:00"], "bands": ["2m"]},
+          {"day": {"weekday": "WED", "n": 2, "months": "all"}, "time": ["0d17:00", "0d21:00"], "bands": ["70cm"]},
+          {"day": {"weekday": "WED", "n": 3, "months": "all"}, "time": ["0d17:00", "0d21:00"], "bands": ["23cm"]}
+        ],
+        "text": "Each month: first Wednesday 2 m, second Wednesday 70 cm, third Wednesday 23 cm, 1700 to 2059 UTC",
+        "series": {"best": 8, "of": 12, "per": "band", "normalise": "none"}
+      },
+      "bands": ["2m", "70cm", "23cm"],
+      "exchange": {"activity": "none", "rcvd": ["grid4"]},
+      "dupe": {"per": ["round"]},
+      "points": "1",
+      "multipliers": [{"name": "locators", "kind": "grid4", "per": "round"}],
+      "score": "points * mults",
+      "restrictions": ["standard_messages_only", "no_multistream", "self_spot_forbidden"],
+      "notes": ["ON4KST is for skeds only."]
+    },
+    {
+      "id": "nac_nrrl",
+      "name": "Nordic Activity Contest (NRRL)",
+      "organiser": "NRRL",
+      "source": "https://ladxg.no/content/nrrl_nac_logrobot/nac_rules.asp",
+      "checked": "2026-11-09",
+      "log": {"format": "edi", "contest": null, "confirmed": false},
+      "schedule": {
+        "tz": "Europe/Oslo",
+        "rounds": [
+          {"day": {"weekday": "TUE", "n": 1, "months": "all"}, "time": ["0d19:00", "0d23:00"], "bands": ["2m"]},
+          {"day": {"weekday": "TUE", "n": 2, "months": "all"}, "time": ["0d19:00", "0d23:00"], "bands": ["70cm"]},
+          {"day": {"weekday": "TUE", "n": 3, "months": "all"}, "time": ["0d19:00", "0d23:00"], "bands": ["23cm"]},
+          {"day": {"weekday": "TUE", "n": 4, "months": "all"}, "time": ["0d19:00", "0d23:00"], "bands": ["13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm"]},
+          {"day": {"weekday": "THU", "n": 2, "months": "all"}, "time": ["0d19:00", "0d23:00"], "bands": ["6m"]},
+          {"day": {"weekday": "THU", "n": 3, "months": "all"}, "time": ["0d19:00", "0d23:00"], "bands": ["4m"]}
+        ],
+        "text": "Tuesdays: 1st 2 m, 2nd 70 cm, 3rd 23 cm, 4th 13 cm and up; Thursdays: 2nd 6 m, 3rd 4 m; 1900 to 2259 Norwegian time",
+        "series": {"best": 9, "of": 12, "per": "band", "normalise": "none"}
+      },
+      "bands": ["6m", "4m", "2m", "70cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm"],
+      "modes": {"count": "any"},
+      "exchange": {"activity": "eu_vhf", "sent": ["rst", "grid6"], "rcvd": ["grid6"]},
+      "dupe": {"per": ["round"]},
+      "points": "km(grid6) * band{13cm: 2, 9cm: 3, 6cm: 4, 3cm: 5, 1.25cm: 6, 6mm: 7, else: 1}",
+      "multipliers": [{"name": "squares", "kind": "grid4", "per": "round"}],
+      "score": "points + 500 * m.squares",
+      "automation": {"clause": "forbidden", "ref": "4", "text": "For MGM, fully automatic QSO software is not permitted; the operator must personally carry out all parts of the contact exchange."},
+      "entry": {"eligible": "my_in(LA)"},
+      "notes": ["The SSA, SRAL and EDR versions differ; this is the NRRL version."],
+      "unconfirmed": ["points: rounding and the same-square value", "exchange.activity: EU VHF inferred"]
+    },
+    {
+      "id": "rsgb_ft8_ac",
+      "name": "RSGB FT8 Activity Contests",
+      "organiser": "RSGB",
+      "source": "https://www.rsgbcc.org/cgi-bin/contest_rules.pl?year=2026&contest=2m4hmgmac",
+      "checked": "2026-11-09",
+      "log": {"format": "adif", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [
+          {"day": {"weekday": "WED", "n": 1, "months": "all"}, "time": ["0d17:00", "0d21:00"], "bands": ["2m"]},
+          {"day": {"weekday": "WED", "n": 2, "months": "all"}, "time": ["0d17:00", "0d21:00"], "bands": ["70cm"]}
+        ],
+        "text": "First Wednesday 2 m, second Wednesday 70 cm, 1700 to 2059 UTC (2-hour section 1900 to 2059)",
+        "series": {"best": 8, "of": 12, "per": "band", "normalise": "rank"}
+      },
+      "bands": ["2m", "70cm"],
+      "modes": {"count": ["FT8"], "as_one": []},
+      "exchange": {"activity": "none"},
+      "dupe": {"per": ["round"]},
+      "points": "if same_grid4 then 50 else ceil(km(grid4))",
+      "multipliers": [{"name": "squares", "kind": "grid4", "per": "round"}],
+      "score": "points + 500 * m.squares",
+      "restrictions": ["single_signal", "self_spot_limited", "standard_messages_only"],
+      "notes": ["Sections Open, Restricted and Low Power; for the 2-hour section enter 1900 to 2100 as the period."],
+      "unconfirmed": ["points: distance rounding for MGM"]
+    },
+    {
+      "id": "ari_ft8_activity",
+      "name": "ARI FT8 Activity",
+      "organiser": "ARI",
+      "source": "https://contest.ari.it/rules/regolamentoiacft8_2026.pdf",
+      "checked": "2026-11-09",
+      "log": {"format": "adif", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [
+          {"day": {"weekday": "WED", "n": 1, "months": [4, 5, 6, 7, 8, 9, 10]}, "time": ["0d17:00", "0d20:00"], "bands": ["2m"]},
+          {"day": {"weekday": "WED", "n": 1, "months": [11, 12, 1, 2, 3]}, "time": ["0d18:00", "0d21:00"], "bands": ["2m"]},
+          {"day": {"weekday": "WED", "n": 2, "months": [4, 5, 6, 7, 8, 9, 10]}, "time": ["0d17:00", "0d20:00"], "bands": ["70cm"]},
+          {"day": {"weekday": "WED", "n": 2, "months": [11, 12, 1, 2, 3]}, "time": ["0d18:00", "0d21:00"], "bands": ["70cm"]}
+        ],
+        "text": "First Wednesday 2 m, second Wednesday 70 cm; 1700 to 1959 UTC April to October, 1800 to 2059 UTC November to March",
+        "series": {"best": 12, "of": 12, "per": "band", "normalise": "none", "annual": "sum_times_rounds"}
+      },
+      "bands": ["2m", "70cm"],
+      "modes": {"count": ["FT8"], "as_one": []},
+      "exchange": {"activity": "none"},
+      "dupe": {"per": ["round"]},
+      "points": "1",
+      "multipliers": [{"name": "squares", "kind": "grid4", "per": "round"}],
+      "score": "points * mults",
+      "restrictions": ["standard_messages_only", "no_multistream"],
+      "entry": {"eligible": "my_in(I)"},
+      "notes": ["A log must hold at least one QSO with an Italian station."],
+      "unconfirmed": ["dupe: the rules state no dupe rule"]
+    },
+    {
+      "id": "wia_ross_hull",
+      "name": "WIA Ross Hull Memorial (digital)",
+      "organiser": "WIA",
+      "source": "https://www.wia.org.au/members/contests/rosshull",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"date": "01-01"}, "time": ["0d00:00", "31d00:00"]}],
+        "text": "1 to 31 January; the best 7 (or 2) UTC days count",
+        "window": {"limit": {"param": "days"}, "unit": "utc_day", "scored": "best"}
+      },
+      "bands": ["6m", "5m", "4m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm", "submm"],
+      "modes": {"count": "digital"},
+      "exchange": {"activity": "eu_vhf"},
+      "dupe": {"per": ["band", "mode_class", "utc_day"]},
+      "points": "ceil(km(grid6)/100) * band{6m: 2, 2m: 3, 70cm: 5, 23cm: 8, else: 10}",
+      "score": "points",
+      "entry": {"params": [{"name": "days", "choices": [7, 2], "default": 7}]},
+      "unconfirmed": ["log.format: not read"]
+    },
+    {
+      "id": "rsgb_ft4_series",
+      "name": "RSGB 80 m FT4 Club Championship",
+      "organiser": "RSGB",
+      "source": "https://www.rsgbcc.org/hf/rules/2026/r80m_ft4.shtml",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [
+          {"day": {"dates": ["2026-01-19", "2026-02-23", "2026-03-16", "2026-10-26", "2026-11-16", "2026-12-14"]}, "time": ["0d20:00", "0d22:00"]},
+          {"day": {"dates": ["2026-04-27", "2026-05-18", "2026-06-15", "2026-07-27", "2026-08-17", "2026-09-28"]}, "time": ["0d19:00", "0d21:00"]}
+        ],
+        "text": "Twelve Mondays a year (RSGB calendar), 2000 to 2159 UTC in winter, 1900 to 2059 UTC in summer",
+        "series": {"best": 9, "of": 12, "per": "contest", "normalise": "rank"}
+      },
+      "bands": ["80m"],
+      "modes": {"count": ["FT4"], "as_one": []},
+      "exchange": {"activity": "none"},
+      "dupe": {"per": ["band"]},
+      "points": "1",
+      "multipliers": [{"name": "dxcc", "kind": "dxcc", "per": "contest"}],
+      "score": "points * mults",
+      "automation": {"clause": "silent", "text": "The rules do not address automatic operation.", "by_section": {"OPEN": {"clause": "permitted", "text": "OPEN: Two radios and/or any form of automation."}}},
+      "restrictions": ["standard_messages_only"],
+      "entry": {"params": [{"name": "section", "choices": ["OPEN", "RESTRICTED"], "default": "RESTRICTED"}]},
+      "notes": ["Power 100 W or 10 W (a note)."],
+      "unconfirmed": ["bands: the research listed 80 to 10 m; the rules page is the 80 m championship"]
+    },
+    {
+      "id": "rsgb_ft4_iad",
+      "name": "RSGB FT4 International Activity Day",
+      "organiser": "RSGB",
+      "source": "https://www.rsgbcc.org/hf/rules/2026/rallband_ft4.shtml",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"dates": ["2026-04-11"]}, "time": ["0d12:00", "1d12:00"]}],
+        "text": "One Saturday in April (2026: 11 April), 1200 UTC Saturday to 1159 UTC Sunday",
+        "window": {"limit": {"param": "hours"}, "unit": "hour", "scored": "first", "min_off_minutes": 60}
+      },
+      "bands": ["160m", "80m", "40m", "20m", "15m", "10m"],
+      "modes": {"count": ["FT4"], "as_one": []},
+      "exchange": {"activity": "none"},
+      "dupe": {"per": ["band"]},
+      "points": "if same_continent then 1 else 3",
+      "multipliers": [{"name": "dxcc", "kind": "dxcc", "per": "band"}],
+      "score": "points * mults",
+      "automation": {"clause": "silent", "text": "The rules do not address automatic operation.", "by_section": {"OPEN": {"clause": "permitted", "text": "OPEN: Two radios and/or any form of automation."}}},
+      "restrictions": ["standard_messages_only"],
+      "entry": {"params": [
+        {"name": "section", "choices": ["OPEN", "RESTRICTED"], "default": "RESTRICTED"},
+        {"name": "hours", "choices": [12, 24], "default": 24}
+      ]},
+      "unconfirmed": ["multipliers: per band or per contest", "schedule: only the 2026 date was read", "log.format: not read"]
+    },
+    {
+      "id": "rsgb_eclipse_ft8",
+      "name": "RSGB Eclipse FT8",
+      "organiser": "RSGB",
+      "source": "https://www.rsgbcc.org/hf/rules/2026/r_eclipse_ft8.shtml",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"dates": ["2026-08-12"]}, "time": ["0d16:30", "0d19:30"]}],
+        "text": "12 August 2026 (one-off), 1630 to 1929 UTC"
+      },
+      "bands": ["40m"],
+      "modes": {"count": ["FT8"], "as_one": []},
+      "exchange": {"activity": "none"},
+      "dupe": {"per": []},
+      "points": "if same_continent then 1 else 3",
+      "multipliers": [{"name": "dxcc", "kind": "dxcc", "per": "contest"}],
+      "score": "points * mults",
+      "automation": {"clause": "permitted", "text": "The rules permit automatic operation."},
+      "unconfirmed": ["source: the rules page was not read in full", "automation.text", "log.format: not read"]
+    },
+    {
+      "id": "darc_ft4",
+      "name": "DARC FT4 Contest",
+      "organiser": "DARC",
+      "source": "https://www.darc.de/",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"weekday": "TUE", "n": 2, "months": [2, 5, 8, 11]}, "time": ["0d19:00", "0d20:30"]}],
+        "text": "Second Tuesday of February, May, August and November, 1900 to 2029 UTC"
+      },
+      "bands": ["80m", "40m"],
+      "modes": {"count": ["FT4"], "as_one": []},
+      "exchange": {"activity": "none"},
+      "dupe": {"per": ["band"]},
+      "points": "1",
+      "multipliers": [{"name": "prefixes", "kind": "wpx", "per": "band"}],
+      "score": "points * mults",
+      "restrictions": ["no_multistream", "self_spot_forbidden"],
+      "notes": ["Power LP or QRP (a note)."],
+      "unconfirmed": ["source: the address of the rules page", "multipliers: the prefix definition read as WPX", "automation: not read", "restrictions: from DARC's general rules"]
+    },
+    {
+      "id": "paccdigi",
+      "name": "PACCdigi",
+      "organiser": "VERON",
+      "source": "https://www.veron.nl/",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"full_weekend": 3, "month": 4}, "time": ["0d12:00", "1d12:00"]}],
+        "text": "Third full weekend of April, 1200 UTC Saturday to 1159 UTC Sunday",
+        "window": {"limit": 18, "unit": "hour", "scored": "first", "min_off_minutes": 60}
+      },
+      "bands": ["160m", "80m", "40m", "20m", "15m", "10m"],
+      "modes": {"count": ["RTTY", "FT8", "FT4"], "as_one": [["FT8", "FT4"]]},
+      "exchange": {"activity": "rtty", "unsendable_for": "my_in(PA)"},
+      "dupe": {"per": ["band", "mode_group"]},
+      "points": "if their_in(PA) then 3 else 1",
+      "score": "points",
+      "extras": ["province multipliers (PA stations send their province, which FT messages cannot carry)"],
+      "automation": {"clause": "forbidden", "text": "The use of a QSO robot is strictly prohibited. The operator must operate the equipment during the QSO."},
+      "restrictions": ["no_multistream", "self_spot_forbidden"],
+      "notes": ["A station may be logged at most 10 times per band."],
+      "unconfirmed": ["source: the address of the rules page", "schedule: only the 2026 date was read; 2027's time differs", "log.format: not read"]
+    },
+    {
+      "id": "sral_ft8",
+      "name": "SRAL FT8 (SM series)",
+      "organiser": "SRAL",
+      "source": "https://www.sral.fi/wp-content/uploads/2025/12/FT8-kilpailujen-SM-sarja-saannot-2026.pdf",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": null, "confirmed": false},
+      "schedule": {
+        "tz": "Europe/Helsinki",
+        "rounds": [{"day": {"weekday": "WED", "n": 2, "months": "all"}, "time": ["0d18:00", "0d19:00"]}],
+        "text": "Second Wednesday of each month, 1800 to 1859 Finnish time",
+        "series": {"best": 9, "of": 12, "per": "contest", "normalise": "winner_1000"}
+      },
+      "bands": ["80m", "40m"],
+      "modes": {"count": ["FT8"], "as_one": []},
+      "exchange": {"activity": "na_vhf"},
+      "dupe": {"per": ["band"]},
+      "points": "2",
+      "multipliers": [{"name": "squares", "kind": "grid4", "per": "band"}],
+      "score": "points * mults",
+      "restrictions": ["single_signal"],
+      "entry": {"eligible": "my_in(OH)", "workable": "their_in(OH)"},
+      "notes": ["1 point instead of 2 with an exchange error (checked by the organiser)."]
+    },
+    {
+      "id": "sarl_hf_digi",
+      "name": "SARL HF Digital",
+      "organiser": "SARL",
+      "source": "https://mysarl.org.za/contest-resources/",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": "SARL-HF-DIGI", "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"weekday": "SUN", "n": 2, "months": [8]}, "time": ["0d13:00", "0d16:00"]}],
+        "text": "Second Sunday of August, 1300 to 1559 UTC"
+      },
+      "bands": ["80m", "40m", "20m"],
+      "exchange": {"activity": "eu_vhf", "cq": "SARL"},
+      "dupe": {"per": ["band"]},
+      "points": "1",
+      "multipliers": [
+        {"name": "areas", "kind": "call_area:SARL", "per": "band"},
+        {"name": "triples", "kind": "call", "per": "contest", "requires": "all_bands"}
+      ],
+      "score": "qsos + 2 * m.areas + 2 * m.triples",
+      "restrictions": ["self_spot_forbidden"],
+      "notes": ["The EU VHF contest message with the contest name SARL (SARL Contest Manual 2027, 5.2)."]
+    },
+    {
+      "id": "africa_ft4",
+      "name": "Africa FT4 DX Contest",
+      "organiser": "SARL",
+      "source": "https://mysarl.org.za/contest-resources/",
+      "checked": "2026-11-09",
+      "log": {"format": "adif", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"weekday": "SAT", "n": 2, "months": [4, 9]}, "time": ["0d15:00", "0d18:00"]}],
+        "text": "Second Saturday of April and September, 1500 to 1759 UTC"
+      },
+      "bands": ["80m", "40m", "20m"],
+      "modes": {"count": ["FT4"], "as_one": []},
+      "exchange": {"activity": "none"},
+      "dupe": {"per": ["band"]},
+      "points": "if my_cont(AF) then (if same_dxcc then 4 else if their_cont(AF) then 6 else 1) else (if their_cont(AF) then 4 else 0)",
+      "points_cap": {"when": "my_cont(AF) and same_dxcc", "share": [1, 3]},
+      "score": "points",
+      "restrictions": ["standard_messages_only", "no_multistream", "single_signal", "self_spot_allowed"],
+      "notes": ["Power at most 100 W."]
+    },
+    {
+      "id": "wia_australia_day",
+      "name": "WIA Australia Day (DIGI)",
+      "organiser": "WIA",
+      "source": "https://www.wia.org.au/members/contests/australiaday/",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": "WIA-AUSTRALIA DAY", "confirmed": true},
+      "schedule": {
+        "rounds": [{"day": {"date": "01-26"}, "time": ["-1d22:00", "0d10:00"]}],
+        "text": "26 January, 2200 UTC on 25 January to 0959 UTC"
+      },
+      "bands": ["160m", "80m", "40m", "20m", "15m", "10m"],
+      "exchange": {"activity": "none"},
+      "dupe": {"per": ["band", "mode"]},
+      "points": "if not (my_in(VK) or their_in(VK)) then 0 else (if same_grid4 then 1 else km(grid4))",
+      "score": "points",
+      "automation": {"clause": "forbidden", "text": "Fully automated operation is not permitted; however, computers can be used for logging or CW reception and/or keying."},
+      "unconfirmed": ["points: distance rounding", "modes: FT8 and FT4 counted as one mode"]
+    },
+    {
+      "id": "zl_sprint_ft4",
+      "name": "ZL FT4 Sprint",
+      "organiser": "NZART",
+      "source": "https://nzart.org.nz/activities/contests/sprints/",
+      "checked": "2026-11-09",
+      "log": {"format": "email", "contest": null, "confirmed": false},
+      "schedule": {
+        "tz": "Pacific/Auckland",
+        "rounds": [{"day": {"weekday": "TUE", "n": "every", "months": [4, 8]}, "time": ["0d21:00", "0d21:30"]}],
+        "text": "Every Tuesday of April and August, 2100 to 2129 New Zealand time"
+      },
+      "bands": ["80m"],
+      "modes": {"count": ["FT4"], "as_one": []},
+      "exchange": {"activity": "ww_digi", "cq": "ZLS"},
+      "dupe": {"per": ["mode"]},
+      "points": "1",
+      "score": "qsos",
+      "unconfirmed": ["schedule: the page says 0900 UTC and 8 pm regardless of daylight saving"]
+    },
+    {
+      "id": "helvetia",
+      "name": "Helvetia Contest",
+      "organiser": "USKA",
+      "source": "https://www.uska.ch/",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"full_weekend": "last", "month": 4}, "time": ["0d13:00", "1d13:00"]}],
+        "text": "Last full weekend of April, 1300 UTC Saturday to 1259 UTC Sunday"
+      },
+      "bands": ["160m", "80m", "40m", "20m", "15m", "10m"],
+      "modes": {"count": "any"},
+      "exchange": {"activity": "rtty", "unsendable_for": "my_in(HB)"},
+      "dupe": {"per": ["band", "mode_class"]},
+      "points": "if their_in(HB) then 10 else if same_continent then 1 else 3",
+      "multipliers": [{"name": "dxcc", "kind": "dxcc", "per": "band"}],
+      "score": "points * mults",
+      "extras": ["canton multipliers (FT messages cannot carry the canton, #100)"],
+      "notes": ["Per band: CW, SSB and one digital mode."],
+      "unconfirmed": ["source: the rules PDF was not readable", "multipliers", "automation", "restrictions", "points for HB stations"]
+    },
+    {
+      "id": "pro_digi",
+      "name": "PRO Digi Contest",
+      "organiser": "PRO Radio Contest Club",
+      "source": "https://proradiocontestclub.com/PDC%20Rules.html",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": "PDC", "confirmed": true},
+      "schedule": {
+        "rounds": [{"day": {"full_weekend": 3, "month": 1}, "time": ["0d12:00", "1d12:00"]}],
+        "text": "Third full weekend of January, 1200 UTC Saturday to 1159 UTC Sunday"
+      },
+      "bands": ["80m", "40m", "20m", "15m", "10m"],
+      "modes": {"count": ["PSK63", "FT4", "RTTY"], "as_one": []},
+      "exchange": {"activity": "rtty", "rcvd": ["rst", "serial", "member_flag"]},
+      "dupe": {"per": ["band", "mode"]},
+      "points": "(if same_dxcc then 1 else 2) + (if my_member and their_member then 6 else if their_member then 2 else 0)",
+      "multipliers": [{"name": "prefixes", "kind": "wpx", "per": "band", "only": "not same_dxcc"}],
+      "score": "points * mults",
+      "restrictions": ["min_band_stay:5"],
+      "entry": {"params": [{"name": "member", "choices": "bool", "default": false}]},
+      "members": "PRO_DIGI",
+      "notes": ["A member's M suffix cannot be sent in FT messages; member points come from the member list.", "1 percent penalty per band-stay violation (not computed)."]
+    },
+    {
+      "id": "bucharest_digital",
+      "name": "Bucharest Digital Contest",
+      "organiser": "yo3test201x",
+      "source": "https://yo3test201x.blogspot.com/",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": "BUCURESTI-DIGITAL", "confirmed": true},
+      "schedule": {
+        "rounds": [{"day": {"weekday": "MON", "n": 3, "months": [3]}, "time": ["0d18:00", "0d21:00"]}],
+        "text": "Third Monday of March, 1800 to 2059 UTC"
+      },
+      "bands": ["80m", "40m"],
+      "modes": {"count": ["FT4"], "as_one": []},
+      "exchange": {"activity": "rtty"},
+      "dupe": {"per": ["band"]},
+      "points": "1",
+      "score": "qsos",
+      "restrictions": ["single_signal"],
+      "notes": ["RTTY Roundup exchange with DX: report and serial."],
+      "unconfirmed": ["organiser: only the blog's name was read"]
+    },
+    {
+      "id": "ybdxpi_ft8",
+      "name": "YB DX Contest FT8",
+      "organiser": "YBDXPI",
+      "source": "https://contest.ybdxpi.net/ft8/rules/",
+      "checked": "2026-11-09",
+      "log": {"format": "cabrillo", "contest": null, "confirmed": false},
+      "schedule": {
+        "rounds": [{"day": {"dates": ["2026-11-07"]}, "time": ["0d00:00", "2d00:00"]}],
+        "text": "Early November (2026: 7 and 8 November), 0000 UTC Saturday to 2359 UTC Sunday"
+      },
+      "bands": ["160m", "80m", "40m", "20m", "15m", "10m"],
+      "modes": {"count": ["FT8"], "as_one": []},
+      "exchange": {"activity": "none", "rcvd": ["grid4"]},
+      "dupe": {"per": ["band"]},
+      "points": "if their_member then 5 else if same_dxcc then 1 else if same_continent then 2 else 3",
+      "multipliers": [
+        {"name": "prefixes", "kind": "wpx", "per": "band"},
+        {"name": "dxcc", "kind": "dxcc", "per": "band"}
+      ],
+      "score": "points * mults",
+      "restrictions": ["single_signal"],
+      "members": "YBDXPI",
+      "unconfirmed": ["schedule: dates vary by year", "members: the source of the member list", "log.format: not read"]
+    }
+  ],
+  "sets": {
+    "W_VE": ["K", "KL", "KH6", "VE"],
+    "VK": ["VK"],
+    "PA": ["PA"],
+    "HB": ["HB"],
+    "OH": ["OH"],
+    "I": ["I"],
+    "LA": ["LA"]
+  },
+  "call_areas": {
+    "SARL": {
+      "ZS1": "1", "ZR1": "1", "ZU1": "1",
+      "ZS2": "2", "ZR2": "2", "ZU2": "2",
+      "ZS3": "3", "ZR3": "3", "ZU3": "3",
+      "ZS4": "4", "ZR4": "4", "ZU4": "4",
+      "ZS5": "5", "ZR5": "5", "ZU5": "5",
+      "ZS6": "6", "ZR6": "6", "ZU6": "6",
+      "V5": "7",
+      "3DA": "8", "7P": "8", "7Q": "8", "9J": "8", "C9": "8", "A2": "8", "D2": "8", "Z2": "8", "ZD7": "8", "ZD9": "8", "ZS7": "8", "ZS8": "8", "FR": "8", "3B8": "8", "5R": "8", "FH": "8", "D6": "8",
+      "*": "9"
+    }
+  },
+  "call_lists": {
+    "PRO_DIGI": [],
+    "YBDXPI": []
+  }
+}

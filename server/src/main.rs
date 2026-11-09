@@ -51,6 +51,8 @@ mod selection_http;
 mod selection_http_tests;
 use wstx_rust::{audio, decoder, source};
 mod contest;
+mod contest_rules;
+mod subdivisions;
 mod most_wanted;
 mod spectrum;
 mod strategy;

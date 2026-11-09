@@ -245,6 +245,10 @@ impl Cty {
     pub fn entity_count(&self) -> usize {
         self.entities.len()
     }
+    /// #98 WstxContest::ReferenceSets: this is the primary prefix of an entity.
+    pub fn has_primary(&self, prefix: &str) -> bool {
+        self.entities.iter().any(|e| e.prefix == prefix)
+    }
     /// The entity full names, for the Most Wanted mapping's test.
     #[cfg(test)]
     pub fn entity_names(&self) -> impl Iterator<Item = &str> {

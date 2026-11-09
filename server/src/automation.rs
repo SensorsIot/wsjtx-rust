@@ -1309,18 +1309,28 @@ impl Owner {
             return Some("call");
         }
         // An award strategy waits in any activity, a contest for its own (WstxContest::ContestRun).
-        let wanted = contest.map_or(crate::contact::Activity::None, |c| c.profile.activity);
-        if contact.status_facts().activity != wanted {
+        // #98 an eu_vhf record waits activity until the station can be set to it (#99).
+        let wanted = match contest {
+            None => Some(crate::contact::Activity::None),
+            Some(c) => c.profile.station_activity(),
+        };
+        if wanted != Some(contact.status_facts().activity) {
             return Some("activity");
         }
         if let Some(c) = contest {
-            if !strategy::station_band(r).is_some_and(|b| c.profile.bands.contains(&b)) {
+            if !strategy::station_band(r).is_some_and(|b| c.has_band(b)) {
                 return Some("band");
             }
-            let now = r.transmit.get().map_or_else(contact_http::wall_ms, |t| {
-                t.service.with(|h| h.hardware().now_utc_ms())
-            });
-            if !c.in_period(now) {
+            // #98 the station's mode is counted by the record.
+            if !c.profile.modes.counts_station(r.operating_mode()) {
+                return Some("mode");
+            }
+            // #98 the station can send the exchange its side owes.
+            let (dxcc, _) = state.logbook.dxcc();
+            if c.unsendable(&dxcc, contact_http::my_call(state).as_deref()) {
+                return Some("exchange");
+            }
+            if !c.in_period(strategy::utc_now_ms(r)) {
                 return Some("outside_period");
             }
         }

@@ -643,12 +643,14 @@ impl Config {
     /// The contest in force (WstxContest::ContestSelection): with Auto on it runs
     /// (WstxContest::ContestRun), with Auto off it only marks.
     pub(crate) fn automatic_contest(&self) -> Option<crate::contest::Selection> {
-        self.contest
+        self.contest.clone()
     }
-    /// A contest whose WstxContest::AutomationClause is forbidden: Auto on needs the confirmation.
+    /// A contest whose WstxContest::AutomationClause (of the selected section) is forbidden:
+    /// Auto on needs the confirmation.
     pub(crate) fn forbidden_contest(&self) -> bool {
         self.contest
-            .is_some_and(|c| c.profile.automation == crate::contest::AutomationClause::Forbidden)
+            .as_ref()
+            .is_some_and(|c| c.clause() == crate::contest::Clause::Forbidden)
     }
     /// A selection: an active strategy or a contest (WstxStrategy::AutoToggle).
     pub(crate) fn selected(&self) -> bool {
@@ -658,9 +660,9 @@ impl Config {
     /// strategy run (its repetitions and quiet time, callers first; the contest evaluates,
     /// not the goals or the value list).
     pub(crate) fn run_strategy(&self) -> Option<Strategy> {
-        match self.contest {
+        match &self.contest {
             Some(c) => Some(Strategy {
-                name: c.profile.name.to_owned(),
+                name: c.profile.name.clone(),
                 goals: Vec::new(),
                 needed: Needed::NotWorked,
                 region: Region::All,
@@ -811,6 +813,11 @@ pub(crate) struct Station {
     pub activity: Activity,
     /// #63 the profile locator, for a contest's distance points.
     pub my_locator: Option<String>,
+    /// #98 WstxContest::ContestDirective: the selected contest's CQ word while the station is
+    /// in the record's activity.
+    pub contest_cq: Option<String>,
+    /// #98 the station's UTC clock (ms) for the contest value's projection.
+    pub now_ms: i64,
 }
 /// The list an ignored call is on (the session list wins when on both).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -898,6 +905,14 @@ pub(crate) fn answerable_in(
 ) -> bool {
     (target.is_some() && target == activity.cq()) || answerable(target, mine, sender)
 }
+/// #98 WstxContest::ContestDirective: the selected contest's CQ word while the station is in
+/// the record's activity (None without a contest, in another activity or without a word).
+pub(crate) fn contest_word(config: &Config, activity: Activity) -> Option<String> {
+    let c = config.contest.as_ref()?;
+    (c.profile.station_activity() == Some(activity))
+        .then(|| c.cq_word().map(str::to_owned))
+        .flatten()
+}
 /// The DirectedCqRule text of a CQ that is not answerable.
 fn not_for_me(target: &str, mine: Option<&str>) -> String {
     format!("CQ {target} — not for {}", mine.unwrap_or("this station"))
@@ -920,6 +935,9 @@ pub(crate) fn selection_warning(
         .config(state)
         .unwrap_or_default();
     let mine = my_continent(&config, call.as_deref(), locator.as_deref(), &dxcc);
+    if f.target.is_some() && f.target == contest_word(&config, activity) {
+        return None;
+    }
     (!answerable_in(
         activity,
         f.target.as_deref(),
@@ -937,12 +955,14 @@ impl Station {
     }
     /// A CQ that is not answerable is greyed and is never a candidate nor answered by a run.
     pub(crate) fn greyed(&self, f: &Facts) -> bool {
-        !answerable_in(
-            self.activity,
-            f.target.as_deref(),
-            self.my_continent.as_deref(),
-            self.dxcc.continent(&f.from),
-        )
+        let contest_word = f.target.is_some() && f.target == self.contest_cq;
+        !contest_word
+            && !answerable_in(
+                self.activity,
+                f.target.as_deref(),
+                self.my_continent.as_deref(),
+                self.dxcc.continent(&f.from),
+            )
     }
     /// The DirectedCqRule text of a greyed record.
     pub(crate) fn directive_text(&self, f: &Facts) -> String {
@@ -1066,7 +1086,13 @@ impl Verdict {
         if let Some(c) = self.contest {
             v["dupe"] = json!(c.dupe);
             v["new_multiplier"] = json!(c.new_multiplier);
-            v["points"] = json!(c.points);
+            v["points"] = json!(c.points.map(crate::contest::half_up));
+            // #98 ContestValue rounded half up; null without a rank.
+            v["value"] = json!(
+                c.value
+                    .filter(|_| self.rank.is_some())
+                    .map(crate::contest::half_up)
+            );
         }
         v
     }
@@ -1272,12 +1298,26 @@ pub(crate) fn station(state: &ProfileState, config: &Config, window: Window) -> 
         worked,
         mode,
         most_wanted,
+        contest_cq: contest_word(config, activity),
         activity,
         my_locator: locator,
+        now_ms: utc_now_ms(r),
     }
 }
-/// (log revision, profile, start, end, my locator) of a built ContestLog.
-type ContestKey = (u64, &'static str, i64, i64, Option<String>);
+/// The station's UTC clock (the transmit hardware clock, else the wall clock).
+pub(crate) fn utc_now_ms(r: &crate::recording::Recording) -> i64 {
+    r.transmit.get().map_or_else(contact_http::wall_ms, |t| {
+        t.service.with(|h| h.hardware().now_utc_ms())
+    })
+}
+/// (log revision, selection, my call, my locator, cty.dat) of a built ContestLog.
+type ContestKey = (
+    u64,
+    crate::contest::Selection,
+    Option<String>,
+    Option<String>,
+    usize,
+);
 type ContestCache = Mutex<Option<(ContestKey, Arc<crate::contest::Log>)>>;
 /// #63 WstxContest::ContestLog of a selection from the stored log, kept for the station step;
 /// None when it is unreadable. On a blocking thread (routes, the build of a later step).
@@ -1285,15 +1325,16 @@ fn contest_log(
     log: &logbook::Logbook,
     cache: &ContestCache,
     s: &crate::contest::Selection,
-    my_locator: Option<&str>,
+    (my_call, my_locator): (Option<&str>, Option<&str>),
 ) -> Option<Arc<crate::contest::Log>> {
     let (revision, list) = log.contest_qsos(s.start_ms, s.end_ms).ok()?;
+    let (dxcc, _) = log.dxcc();
     let key = (
         revision,
-        s.profile.id,
-        s.start_ms,
-        s.end_ms,
+        s.clone(),
+        my_call.map(str::to_owned),
         my_locator.map(str::to_owned),
+        Arc::as_ptr(&dxcc.cty) as usize,
     );
     let mut held = cache.lock().unwrap_or_else(|p| p.into_inner());
     if let Some((k, built)) = held.as_ref()
@@ -1301,7 +1342,9 @@ fn contest_log(
     {
         return Some(built.clone());
     }
-    let built = Arc::new(crate::contest::Log::of(s, my_locator, &list));
+    let built = Arc::new(crate::contest::Log::of(
+        s, my_call, my_locator, &dxcc, &list,
+    ));
     *held = Some((key, built.clone()));
     Some(built)
 }
@@ -1442,7 +1485,13 @@ impl Owner {
         s: &crate::contest::Selection,
         my_locator: Option<&str>,
     ) -> Option<Arc<crate::contest::Log>> {
-        contest_log(&state.logbook, &self.contest_log, s, my_locator)
+        let (call, _) = contact_http::profile_facts(state);
+        contest_log(
+            &state.logbook,
+            &self.contest_log,
+            s,
+            (call.as_deref(), my_locator),
+        )
     }
     /// #63 WstxContest::ContestLog for the station step: the last built one of this contest at
     /// once; one behind the log is built on its own thread for a later step.
@@ -1453,9 +1502,9 @@ impl Owner {
         my_locator: Option<&str>,
     ) -> Option<Arc<crate::contest::Log>> {
         use std::sync::atomic::Ordering;
-        let same = |k: &ContestKey| {
-            (k.1, k.2, k.3, k.4.as_deref()) == (s.profile.id, s.start_ms, s.end_ms, my_locator)
-        };
+        let (call, _) = contact_http::profile_facts(state);
+        let same =
+            |k: &ContestKey| (&k.1, k.2.as_deref(), k.3.as_deref()) == (s, call.as_deref(), my_locator);
         let (behind, last) = {
             let held = self.contest_log.lock().unwrap_or_else(|p| p.into_inner());
             match held.as_ref().filter(|(k, _)| same(k)) {
@@ -1473,9 +1522,14 @@ impl Owner {
                 self.contest_log.clone(),
                 self.contest_building.clone(),
             );
-            let (selection, locator) = (*s, my_locator.map(str::to_owned));
+            let (selection, locator) = (s.clone(), my_locator.map(str::to_owned));
             std::thread::spawn(move || {
-                contest_log(&log, &cache, &selection, locator.as_deref());
+                contest_log(
+                    &log,
+                    &cache,
+                    &selection,
+                    (call.as_deref(), locator.as_deref()),
+                );
                 building.store(false, Ordering::Release);
             });
         }
@@ -1964,7 +2018,7 @@ impl Owner {
             return Err(("stale_revision", Some("expected_revision".into())));
         }
         let before = inner.config.as_ref().and_then(|c| c.active.clone());
-        let contest_before = inner.config.as_ref().and_then(|c| c.contest);
+        let contest_before = inner.config.as_ref().and_then(|c| c.contest.clone());
         let changed = config.active != before || config.contest != contest_before;
         if inner.revision >= MAX_SAFE {
             return Err(("counter_exhausted", None));
@@ -2072,7 +2126,7 @@ impl Owner {
             .ok_or(("not_configured", Some("configuration".into())))?;
         self.most_wanted_load(state);
         // WstxContest::ContestVerdict: a draft is a preview; else the contest in force.
-        let contest = config.contest.filter(|_| draft.is_none());
+        let contest = config.contest.clone().filter(|_| draft.is_none());
         let chosen = match draft {
             Some(s) => Some(s),
             None if contest.is_some() => None,
@@ -2382,9 +2436,32 @@ pub async fn contests_route(
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as i64);
-    Json(json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,
-        "profiles":crate::contest::profiles_json(now)}))
+    let (me, file, view) = match app.profile.clone() {
+        Some(state) => {
+            let me = my_station(&state);
+            let (file, view) = state.logbook.contests();
+            (me, file, view)
+        }
+        None => (
+            crate::contest_rules::MyStation::default(),
+            crate::contest_rules::bundled(),
+            json!({"source":"bundled","contests":crate::contest_rules::bundled().contests.len(),
+                "upload_unreadable":false}),
+        ),
+    };
+    Json(json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"file":view,
+        "profiles":crate::contest::profiles_json(now, &file, &me)}))
     .into_response()
+}
+/// #98 my station's entity and continent for the prompt's notes (eligible, exchange).
+pub(crate) fn my_station(state: &ProfileState) -> crate::contest_rules::MyStation {
+    let (call, _) = contact_http::profile_facts(state);
+    let (dxcc, _) = state.logbook.dxcc();
+    let r = call.and_then(|c| dxcc.lookup(&c));
+    crate::contest_rules::MyStation {
+        prefix: r.as_ref().map(|r| r.prefix.clone()),
+        continent: r.map(|r| r.continent.to_owned()),
+    }
 }
 /// POST /strategy/most-wanted/download.
 pub async fn most_wanted_download_route(

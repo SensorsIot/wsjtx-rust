@@ -964,7 +964,46 @@ pub struct Logbook {
     worked_building: Mutex<Vec<Option<(u32, u32)>>>,
     /// #10 the worked-before index for the records revision it was built from.
     worked_index: Mutex<Option<(u64, std::sync::Arc<WorkedIndex>)>>,
+    /// #98 the contest file in use (WstxContest::ContestFile).
+    contests: Mutex<ContestsState>,
 }
+/// #98 the contest file of this profile: the bundled one unless an upload replaced it.
+struct ContestsState {
+    file: Arc<crate::contest_rules::File>,
+    uploaded: bool,
+    /// The stored upload could not be read or does not validate: the bundled file is used
+    /// and the stored file is left untouched.
+    unreadable: bool,
+}
+/// Why a contest file replacement was refused.
+#[derive(Debug)]
+pub enum ContestsError {
+    Invalid(crate::contest_rules::Fault),
+    Store(StoreError),
+}
+fn load_contests(path: &Path, table: &crate::dxcc::Table) -> ContestsState {
+    let bundled = |unreadable| ContestsState {
+        file: crate::contest_rules::bundled(),
+        uploaded: false,
+        unreadable,
+    };
+    match fs::read(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => bundled(false),
+        read => match read
+            .ok()
+            .and_then(|b| crate::contest_rules::File::parse(&b, table).ok())
+        {
+            Some(file) => ContestsState {
+                file: Arc::new(file),
+                uploaded: true,
+                unreadable: false,
+            },
+            None => bundled(true),
+        },
+    }
+}
+/// The stored name of an uploaded contest file, beside contacts.adi.
+pub const CONTESTS_FILE_NAME: &str = "contests.json";
 struct DxccState {
     table: crate::dxcc::Table,
     /// The uploaded cty.dat exists but could not be read or parsed: the bundled
@@ -1109,6 +1148,8 @@ impl Logbook {
             .map(|(i, r)| (r.contact_id.clone(), i))
             .collect::<HashMap<_, _>>();
         let available = available && ids.len() == records.len();
+        let dxcc = load_dxcc(&directory.join(crate::dxcc::FILE_NAME));
+        let contests = load_contests(&directory.join(CONTESTS_FILE_NAME), &dxcc.table);
         Self {
             directory: directory.to_owned(),
             inner: Mutex::new(Inner {
@@ -1122,11 +1163,12 @@ impl Logbook {
                 #[cfg(test)]
                 fault: None,
             }),
-            dxcc: Mutex::new(load_dxcc(&directory.join(crate::dxcc::FILE_NAME))),
+            dxcc: Mutex::new(dxcc),
             worked_set: Mutex::new(None),
             worked_windows: Mutex::new(Vec::new()),
             worked_building: Mutex::new(Vec::new()),
             worked_index: Mutex::new(None),
+            contests: Mutex::new(contests),
         }
     }
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, Inner>, StoreError> {
@@ -1468,21 +1510,99 @@ impl Logbook {
         end_ms: i64,
     ) -> Result<(u64, Vec<crate::contest::Qso>), StoreError> {
         let inner = self.lock()?;
+        let at = |name: &str| FIELDS.iter().position(|f| *f == name).unwrap_or(0);
+        let (my_grid, stx, srx, srx_string, state, class, arrl_sect, rst_rcvd) = (
+            at("my_gridsquare"),
+            at("stx"),
+            at("srx"),
+            at("srx_string"),
+            at("state"),
+            at("class"),
+            at("arrl_sect"),
+            at("rst_rcvd"),
+        );
         let list = inner
             .records
             .iter()
             .filter_map(|r| {
                 let ms = r.start_seconds()? * 1000;
+                // #98 ContestLog: each record with its own fields; only those of the period
+                // are copied.
                 (ms >= start_ms && ms < end_ms).then(|| crate::contest::Qso {
                     call: r.values[CALL].as_deref().unwrap_or("").to_ascii_uppercase(),
                     grid: r.values[GRID].clone(),
                     band: r.effective_band(),
-                    mode: r.effective_mode(),
+                    mode: r.values[MODE].as_deref().unwrap_or("").to_ascii_uppercase(),
+                    submode: r.values[SUBMODE].clone(),
                     ms,
+                    my_grid: r.values[my_grid].clone(),
+                    stx: r.values[stx].clone(),
+                    srx: r.values[srx].clone(),
+                    srx_string: r.values[srx_string].clone(),
+                    state: r.values[state].clone(),
+                    class: r.values[class].clone(),
+                    arrl_sect: r.values[arrl_sect].clone(),
+                    rst_rcvd: r.values[rst_rcvd].clone(),
                 })
             })
             .collect();
         Ok((inner.revision, list))
+    }
+    /// #98 the contest file in use and its view {source, contests, upload_unreadable}.
+    pub fn contests(&self) -> (Arc<crate::contest_rules::File>, Value) {
+        let c = self.contests.lock().unwrap_or_else(|p| p.into_inner());
+        (
+            c.file.clone(),
+            json!({"source":if c.uploaded {"uploaded"} else {"bundled"},
+                "contests":c.file.contests.len(),"upload_unreadable":c.unreadable}),
+        )
+    }
+    /// #98 replaces the profile's contest file with `text` (validated completely first), or
+    /// with None removes the upload so the bundled file applies. Written beside the log,
+    /// flushed and renamed through the gate; the file in use changes only after that.
+    pub fn replace_contests(&self, text: Option<&str>, gate: Gate) -> Result<(), ContestsError> {
+        let (table, _) = self.dxcc();
+        let parsed = text
+            .map(|t| crate::contest_rules::File::parse(t.as_bytes(), &table))
+            .transpose()
+            .map_err(ContestsError::Invalid)?;
+        let mut state = self.contests.lock().unwrap_or_else(|p| p.into_inner());
+        let target = self.directory.join(CONTESTS_FILE_NAME);
+        match text {
+            Some(t) => {
+                let temporary = self.directory.join(format!(
+                    ".contests-{}.tmp",
+                    crate::profile::new_uuid()
+                        .map_err(|_| ContestsError::Store(StoreError::Unavailable))?
+                ));
+                let written = (|| {
+                    let mut file = OpenOptions::new()
+                        .create_new(true)
+                        .write(true)
+                        .open(&temporary)?;
+                    file.write_all(t.as_bytes())?;
+                    file.sync_all()
+                })();
+                let result = written
+                    .map_err(|_| StoreError::Unavailable)
+                    .and_then(|()| gated_io(gate, &mut || fs::rename(&temporary, &target)));
+                if result.is_err() {
+                    let _ = fs::remove_file(&temporary);
+                }
+                result
+            }
+            None => gated_io(gate, &mut || match fs::remove_file(&target) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                other => other,
+            }),
+        }
+        .map_err(ContestsError::Store)?;
+        *state = ContestsState {
+            uploaded: parsed.is_some(),
+            file: parsed.map_or_else(crate::contest_rules::bundled, Arc::new),
+            unreadable: false,
+        };
+        Ok(())
     }
     /// #55 the country table in use and whether an uploaded file was unreadable.
     pub fn dxcc(&self) -> (crate::dxcc::Table, bool) {
