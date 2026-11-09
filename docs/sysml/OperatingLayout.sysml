@@ -521,7 +521,11 @@ attribute def ActivityOrdering {
         attribute hasTxFromRx : Boolean = true;
         attribute hasRxFromTx : Boolean = true;
         attribute markersDraggable : Boolean = true;
-        doc /* `Rx [Hz] [-][+]  Tx [Hz] [-][+]  [Tx=Rx] [Rx=Tx]` under the waterfall; Hold Tx
+        attribute hasSwrValue : Boolean = true;
+        attribute swrRedAboveX10 : Integer = 20;
+        doc /* `Rx [Hz] [-][+]  Tx [Hz] [-][+]  [Tx=Rx] [Rx=Tx]  SWR x.x` under the waterfall
+             (SWR x.x since #68, CL-068-01: the last pushed radio.tx_level SWR, hidden without
+             one, red above swrRedAboveX10 = 20, i.e. 2.1 and up, display only); Hold Tx
              (hasHoldTx) is in the ControlPanel below the QSO pane since #37 (operator
              2026-11-03); the frequencies themselves stay here.
              Exact Hz can be typed; the buttons, the mouse wheel and the arrow keys step
@@ -581,6 +585,7 @@ attribute def ActivityOrdering {
     }
     dependency freeTxSlotMarksClause from FreeTxSlotMarks to WstxRequirements::'CL-065-02';
     dependency freeTxSlotMarksMapping from FreeTxSlotMarks to RxTxStrip;
+    dependency rxTxStripSwrClause from RxTxStrip to WstxRequirements::'CL-068-01';
     enum def BandActivitySlot {
         enum mycall; enum new_continent; enum new_continent_band; enum new_cq_zone; enum new_cq_zone_band;
         enum new_itu_zone; enum new_itu_zone_band; enum new_dxcc; enum new_dxcc_band; enum new_grid;
