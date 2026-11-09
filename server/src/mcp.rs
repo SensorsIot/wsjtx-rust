@@ -152,16 +152,37 @@ pub(crate) async fn principal_guard(
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
-    if app.profile.is_some()
+    // #80: on a counted connection the grant of an accepted browser credential is also the
+    // client the link byte log puts the connection's traffic on.
+    let counted = crate::link_log::Link::of(&request).is_some();
+    let tool = tool_route(request.method(), request.uri().path());
+    let access = if app.profile.is_some()
         && request.headers().contains_key(header::COOKIE)
-        && !tool_route(request.method(), request.uri().path())
-        && let Ok(Some(access)) =
-            authorization_http::operating_access_async(request.headers(), &app).await
-        && !access.principal.is_operator()
+        && (!tool || counted)
     {
+        authorization_http::operating_access_async(request.headers(), &app)
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    if !tool && access.as_ref().is_some_and(|a| !a.principal.is_operator()) {
         return authorization_http::mapped(authorization::Error::Unauthorized);
     }
-    next.run(request).await
+    let mut response = next.run(request).await;
+    if counted
+        && let Some(access) = access
+        && access.principal.is_operator()
+    {
+        response
+            .extensions_mut()
+            .insert(crate::link_log::Credential(format!(
+                "browser:{}",
+                access.grant_id
+            )));
+    }
+    response
 }
 /// WstxMcp::ToolCatalog, in this fixed order.
 pub fn tools() -> Value {
@@ -420,7 +441,14 @@ pub async fn endpoint(
         p.recording.clients.mcp_request();
     }
     let action = audit_action(&body);
-    let response = dispatch(&app, &caller.transport, &headers, query, body).await;
+    let mut response = dispatch(&app, &caller.transport, &headers, query, body).await;
+    // #80: the link byte log puts this connection's traffic on the MCP client.
+    response
+        .extensions_mut()
+        .insert(crate::link_log::Credential(format!(
+            "mcp:{}",
+            caller.client_id
+        )));
     let status = response
         .extensions()
         .get::<ToolStatus>()

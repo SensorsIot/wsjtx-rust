@@ -22,6 +22,9 @@ mod freeslot;
 mod http_compression;
 #[cfg(test)]
 mod http_compression_tests;
+mod link_log;
+#[cfg(test)]
+mod link_log_tests;
 #[cfg(test)]
 mod liveness_tests;
 mod logbook;
@@ -68,7 +71,7 @@ use axum::{
     extract::{
         State, WebSocketUpgrade,
         rejection::BytesRejection,
-        ws::{CloseFrame, Message, WebSocket},
+        ws::{CloseFrame, Message},
     },
     http::{HeaderMap, StatusCode, header},
     response::{Html, IntoResponse, Response},
@@ -476,6 +479,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         None => None,
     };
+    // #80 WstxStationProtocol::LinkTrafficLog: a station with a profile directory counts the
+    // bytes of every accepted connection and writes them per period; without one, no log.
+    let log = profile.as_ref().map(|state| {
+        let log = link_log::Log::new(Box::new(link_log::StationClock(state.recording.clone())));
+        link_log::spawn_writer(log.clone(), state.clone());
+        log
+    });
     let state = App {
         origin: origin.clone(),
         profile,
@@ -486,17 +496,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let app = router(state);
     println!("WSTX address {scheme}://{address}");
-    if let Some(tls) = tls {
-        let server = axum_server::from_tcp_rustls(listener, tls)
-            .map_err(|_| error("resource_unavailable", "Listener unavailable"))?;
-        println!("WSTX listening {origin}");
-        server.serve(app.into_make_service()).await?;
-    } else {
-        let listener = tokio::net::TcpListener::from_std(listener)
-            .map_err(|_| error("resource_unavailable", "Listener unavailable"))?;
-        println!("WSTX listening {origin}");
-        axum::serve(listener, app).await?;
-    }
+    let server = link_log::Server::new(listener, tls, log)
+        .map_err(|_| error("resource_unavailable", "Listener unavailable"))?;
+    println!("WSTX listening {origin}");
+    server.serve(app).await?;
     Ok(())
 }
 fn router(state: App) -> Router {
@@ -584,6 +587,8 @@ fn router(state: App) -> Router {
             response
         }))
         .layer(axum::middleware::from_fn(http_compression::encode))
+        // #80: outermost, so a response is counted as it leaves the router (after content coding).
+        .layer(axum::middleware::from_fn(link_log::http))
         .with_state(state)
 }
 fn startup_error(code: &str, path: &std::path::Path) -> String {
@@ -887,7 +892,13 @@ async fn session(
     }
 }
 
-async fn upgrade(State(app): State<App>, headers: HeaderMap, ws: WebSocketUpgrade) -> Response {
+async fn upgrade(
+    State(app): State<App>,
+    link: Option<axum::Extension<axum::extract::ConnectInfo<link_log::Link>>>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Response {
+    let link = link.and_then(|link| link.0.0.0);
     if !allowed_origin(&headers, &app) {
         return StatusCode::FORBIDDEN.into_response();
     }
@@ -924,7 +935,7 @@ async fn upgrade(State(app): State<App>, headers: HeaderMap, ws: WebSocketUpgrad
             let _permit = permit;
             // #39 an authenticated client is here (WstxStrategy::StrategyRun).
             let _client = app.profile.as_ref().map(|p| p.recording.clients.session());
-            connection(socket, app.profile, authority).await
+            connection(link_log::Socket::new(socket, link), app.profile, authority).await
         })
 }
 
@@ -986,14 +997,14 @@ fn reply(text: &str) -> Value {
     }
 }
 
-async fn send(socket: &mut WebSocket, message: Message) -> bool {
+async fn send(socket: &mut link_log::Socket, message: Message) -> bool {
     matches!(
         timeout(Duration::from_secs(2), socket.send(message)).await,
         Ok(Ok(()))
     )
 }
 async fn send_control(
-    socket: &mut WebSocket,
+    socket: &mut link_log::Socket,
     message: Message,
     pending: Option<tokio::time::Instant>,
 ) -> bool {
@@ -1134,7 +1145,7 @@ impl ConnectionAuthority {
     }
 }
 async fn connection(
-    mut socket: WebSocket,
+    mut socket: link_log::Socket,
     profile: Option<Arc<ProfileState>>,
     authority: Option<ConnectionAuthority>,
 ) {
@@ -1411,6 +1422,7 @@ async fn connection(
                                 } else {
                                     display_profile = if command=="spectrum.detail" {"detail"} else if command=="spectrum.thin" {"thin"} else {"off"};
                                     subscribed = true;
+                                    socket.display(display_profile);
                                     if display_profile=="off" { free_tx_slots_seen=None; }
                                     if display_profile=="detail" { next_detail=arm_detail(&mut detail_tick,tokio::time::Instant::now(),false); }
                                     let state=r.state.lock().unwrap();

@@ -18,6 +18,7 @@ serde_path_to_error = "0.1"
 rustfft = "=6.4.1"
 futures-sink = "0.3"
 futures-core = "0.3"
+http-body = "1"
 tower-http = { version = "=0.7.1", default-features = false, features = ["compression-gzip"] }
 tower = { version = "=0.5.3", default-features = false, features = ["util"] }
 base64 = "=0.22.1"
@@ -29,6 +30,8 @@ rustls-native-certs = { version = "0.8", default-features = false }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
+h2 = "0.4"
+tokio-rustls = { version = "0.26", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_Devices_Communication", "Win32_Devices_SerialCommunication", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Registry", "Win32_System_Pipes", "Win32_System_Threading", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_System_Performance", "Win32_System_SystemInformation", "Win32_System_Console", "Win32_Media_Audio", "Win32_Media_KernelStreaming", "Win32_Media_Multimedia", "Win32_UI_Shell_PropertiesSystem", "Win32_Devices_FunctionDiscovery", "Win32_Security"] }
