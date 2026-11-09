@@ -615,6 +615,51 @@ fn tc_097_004_off_the_strategy_bands_nothing_is_ranked() {
     );
 }
 
+// Proves: TC-097-004 (CL-097-02, the run steps). "Test calls" with bands ["20m", "40m"], Auto on:
+// on 15m with CQ K1ABC published the run waits with reason band and arms nothing; after the retune
+// to 20m it selects K1ABC from the next publication; the retune to 17m in that contact disarms and
+// cancels it at the next step with no retry entry, and the run waits band.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_004_the_run_waits_off_the_strategy_bands() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("15m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    let mut c = config(Some("Test calls"));
+    c["strategies"][0]["bands"] = json!(["20m", "40m"]);
+    select(&f, c).await;
+    publish(&f, e, &[K1ABC_CQ]);
+    assert_eq!(
+        (
+            run_of(&f).await["state"].clone(),
+            run_of(&f).await["reason"].clone()
+        ),
+        (json!("waiting"), json!("band"))
+    );
+    assert_eq!(contact(&f).await.2, json!("disarmed"), "nothing armed");
+    f.state.recording.fixture_band("20m");
+    f.tick();
+    publish(&f, rep(e, 1), &[K1ABC_CQ]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+    f.state.recording.fixture_band("17m");
+    f.tick();
+    f.tick();
+    assert_eq!(
+        contact(&f).await,
+        (Value::Null, json!("cancelled"), json!("disarmed"))
+    );
+    let run = run_of(&f).await;
+    assert_eq!(
+        (&run["state"], &run["reason"], &run["quiet"]),
+        (&json!("waiting"), &json!("band"), &json!([])),
+        "no retry entry"
+    );
+}
+
 /// The hand log of TC-097-005 on 40m FT8: DL1ABC 40m FT8 (not confirmed), F1ABC 40m FT4
 /// (confirmed), JA1XYZ 20m FT8 (confirmed).
 fn new_log() -> Arc<Worked> {
@@ -929,6 +974,112 @@ async fn tc_097_006_the_pota_sota_run_selects_and_arms_cq_pota() {
         (json!("K1ABC"), json!("replying"), json!("armed")),
         "the run's own select_row of CQ POTA passes; CQ JA stays refused"
     );
+}
+
+// Proves: TC-097-006 (CL-097-02, CqTargetList and DirectedCqRule: the include list admits only the
+// run's own select_row). With POTA/SOTA active (Auto off) the operator's double-click of CQ POTA
+// K1ABC still gets the directive warning (409 directive_not_answerable) and an MCP select_row of it
+// is refused directive_not_answerable; a run of "Test calls" (no POTA on its include list) never
+// selects CQ POTA K1ABC.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_006_only_the_runs_own_select_row_passes_the_directive() {
+    let pota = ("CQ POTA K1ABC FN42", 1500.0, Some(-5.0));
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    save(&f, config(Some("POTA/SOTA"))).await;
+    publish(&f, e, &[pota]);
+    let row = live_row(&f, "CQ POTA K1ABC FN42");
+    let w = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":row,"replace":false})).await),
+        )
+        .await;
+    assert_eq!(
+        (w.status, w.json["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("directive_not_answerable")),
+        "the operator's warning"
+    );
+    let m = mcp_contact(&f, "select_row", json!({"row":row,"replace":false})).await;
+    assert_eq!(
+        m["result"]["error"]["code"], "directive_not_answerable",
+        "{m}"
+    );
+    assert_eq!(contact(&f).await.0, Value::Null);
+
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    select(&f, config(Some("Test calls"))).await;
+    publish(&f, e, &[pota]);
+    publish(&f, rep(e, 1), &[pota]);
+    assert_eq!(contact(&f).await.0, Value::Null, "never selected (grey)");
+}
+
+// Proves: TC-097-007 (CL-097-02, the run steps; oracle: the operator's decision 2 on #97). A
+// duplicate of Casual (call per band, not worked, callers_first on, min SNR -10 dB): W1AW, worked
+// on 20m, calling my call is never answered by the run; N1NEW calling my call is; in a QSO with
+// K1ABC his answer -05 decoded at -15 dB (below the minimum) is progress (roger report due, not
+// left); the operator's double-click of W1AW's call starts a manual QSO with W1AW.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_007_the_run_answers_only_callers_that_pass_the_filters() {
+    let w1aw = ("HB9BLA W1AW FN31", 1200.0, Some(5.0));
+    let setup = || async {
+        let f = station(true).await;
+        f.state.recording.fixture_band("20m");
+        f.state.recording.fixture_live_job("ft8");
+        let e = at_even(&f);
+        let client = f.state.recording.clients.session();
+        import_adi(&f, &logged_before("W1AW", "FN31", e));
+        let mut c = config(None);
+        let mut s = strategy_json("Casual dup");
+        s["filters"]["new_per"] = json!("band");
+        s["filters"]["min_snr_db"] = json!(-10);
+        c["strategies"] = json!([s]);
+        c["active"] = json!("Casual dup");
+        select(&f, c).await;
+        (f, e, client)
+    };
+    let (f, e, _client) = setup().await;
+    publish(&f, e, &[w1aw]);
+    assert_eq!(contact(&f).await.0, Value::Null, "W1AW not answered");
+    publish(
+        &f,
+        rep(e, 1),
+        &[w1aw, ("HB9BLA N1NEW FN31", 1300.0, Some(-8.0))],
+    );
+    assert_eq!(contact(&f).await.0, json!("N1NEW"));
+
+    let (f, e, _client) = setup().await;
+    publish(&f, e, &[("CQ K1ABC FN42", 1800.0, Some(-5.0))]);
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    publish(&f, rep(e, 1), &[("HB9BLA K1ABC -05", 1800.0, Some(-15.0))]);
+    assert_eq!(
+        contact(&f).await,
+        (json!("K1ABC"), json!("roger_report"), json!("armed")),
+        "progress below the minimum SNR"
+    );
+    assert_eq!(run_of(&f).await["left"], Value::Null);
+
+    let (f, e, _client) = setup().await;
+    publish(&f, e, &[w1aw]);
+    let row = live_row(&f, "HB9BLA W1AW FN31");
+    let r = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":row,"replace":false})).await),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.json);
+    f.tick();
+    assert_eq!(contact(&f).await.0, json!("W1AW"), "the manual QSO");
+    assert_eq!(run_of(&f).await["state"], "manual");
 }
 
 // Proves: TC-097-007
