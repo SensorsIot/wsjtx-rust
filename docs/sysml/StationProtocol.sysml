@@ -313,7 +313,13 @@ package WstxStationProtocol {
              bytes = 3 x 35 = 105, S = 3. estimate to_client = 1035 + 80 x 9 + 80 x 3 = 1995
              (133 B/s), from_client = 105 + 80 x 3 + 80 x 9 = 1065 (71 B/s).
              Types are application bytes because only they can be told apart by message; bytes is
-             counted below TLS because only there is the total exact. */
+             counted below TLS because only there is the total exact.
+             Implementation facts (#80 coder, 2026-11-09): periods follow the system clock's UTC (not the corrected station
+             clock) and the operating mode read every 100 ms, so a mode change ends its period within 100 ms; received
+             WebSocket text is typed only by a known command (station.get, recording.get, spectrum.thin, spectrum.detail,
+             spectrum.off), any other text is "ws other" and binary "ws binary", so a client cannot grow the set of
+             types; a request without a route is "<METHOD> unrouted"; a request is recorded when its response is
+             produced, a response when its body is dropped; a closed connection's counts go into the next period line. */
     }
     attribute def PushedStationState {
         attribute safetyReadMinimumMs : Integer = 30000;

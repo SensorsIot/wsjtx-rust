@@ -174,7 +174,7 @@ package WstxRequirements {
     requirement 'CL-003-05' {
         doc /* The minimal profile MUST support two clients sharing the contract's 32 kbit/s link model (WstxStationProtocol::ThinLinkBudget). Its traffic budgets are targets of normal operation that the operator judges from the station's link byte log, and its visible-response target is watched in the live check after each deploy (operator 2026-11-09) (WstxStationProtocol::LinkTrafficLog); no test asserts them (operator 2026-11-09, #80). The station MUST record that log: per period and client (an enrolled browser, an MCP client or local), the bytes each way in total and by message type, and the display profile of each of the client's sockets. Page and asset loading, reconnection, authorization recovery, CAT, selection changes, recording replay or import and log maintenance carry no link budget. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs; client/app.js";
+        attribute implementation : String = "server/src/main.rs; server/src/link_log.rs; server/src/mcp.rs; client/app.js";
     }
     dependency CL_003_05_to_FR_021 from 'CL-003-05' to 'FR-021';
     requirement 'CL-003-06' {
