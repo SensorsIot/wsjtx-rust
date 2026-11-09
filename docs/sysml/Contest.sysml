@@ -247,6 +247,9 @@ package WstxContest {
              as a strategy run selects, not in its QuietTime. Leaving: WstxStrategy::LeaveRule with
              the contest's repetitions and quiet_minutes; no skip (WstxStrategy D6).
              run: while waiting and no reason it decides the slot (FreeTxSlot, no called station;
+             waiting for the newest Rx period's complete publication and deciding at once when it
+             arrives, at the latest when the period in progress ends, FreeTxSlot Due, #89,
+             WstxStrategy::StrategyRun Decision timing;
              with Hold Tx on the held Tx, no decision, WstxStrategy D16) and
              sends enable_tx with no partner, which calls CQ with the activity's Tx6; state
              calling_cq. WstxContact::CallFirst does not answer a CQ started by automation. On each
