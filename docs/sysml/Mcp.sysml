@@ -239,7 +239,8 @@ package WstxMcp {
              current unexpired transport stops authority_lost; the run deadline stops
              time_limit; a contact armed by the run is disarmed (Enable Tx off, never a
              Halt) on these and on contact_changed (run's contact gone or replaced) and
-             no_answer.
+             no_answer, except that a started QSO is finished at time_limit, at a stop and when
+             an Auto on ends the run (#81, WstxStrategy::StartedQso).
              waiting: a contact calling or in progress that the run did not create (an
              operator's CQ or contact) stops contact_changed and is left as it is (a strategy
              run: state manual, WstxStrategy::ManualIntervention); on a
@@ -328,7 +329,8 @@ package WstxMcp {
              owner or no current safety revision), stale_revision safety_revision; then
              run_revision + 1 and a new run id. stop: a current
              unstopped run id, else 409 stale_request; dispatch ends before the receipt,
-             then the run's contact is disarmed. Accepted: 202 {v:1, profile_id, boot_id,
+             then the run's contact is disarmed, unless it is a started QSO, which is finished
+             (#81, WstxStrategy::StartedQso). Accepted: 202 {v:1, profile_id, boot_id,
              command_id, accepted:true, policy_revision, run_revision, run_id, state
              off|waiting|contact_active|calling_cq|manual|stopped} (calling_cq: only a contest Run, WstxContest::ContestRun). run_revision also advances on every run
              change (selection, contact transition, counters, stop). Counters at

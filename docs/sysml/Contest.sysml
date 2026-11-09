@@ -234,9 +234,10 @@ package WstxContest {
              QSO); WatchdogFromOperator; the 8 hour run limit (run_limit) and 60 s without a client
              (no_client), finishing the QSO first, with the contest staying selected, Auto off
              and the reason shown; the grant (authority_lost); WstxStrategy::FreeTxSlot; an
-             AutomationCommand start of what it left is refused operator_required. A contact ends
-             at once at the end of the period (the run waits outside_period) and when the
-             contest is deselected (WstxStrategy::StrategyRun "Ends at once").
+             AutomationCommand start of what it left is refused operator_required. A contact that
+             is no started QSO ends at once at the end of the period (the run waits
+             outside_period) and when the contest is deselected (WstxStrategy::StrategyRun
+             "Ends at once"); a started QSO is finished (#81, WstxStrategy::StartedQso).
              Waiting reasons in a contest (run.reason while state waiting), besides no_receive,
              auto_seq and call: activity (the station's activity is not the profile's), band (the
              station band is not in the profile), outside_period (the station clock is outside

@@ -388,8 +388,8 @@ package WstxStrategy {
              AutomationConfiguration has pounce = <call> (strategy false): one run at a time,
              so at most one pounce and never beside a strategy run (configure and
              start are refused state_conflict run while any run is active; switching Auto on ends a
-             running pounce, WstxStrategy::AutoToggle; a selection with Auto off leaves it and its
-             contact alone). Start also
+             running pounce, WstxStrategy::AutoToggle, and finishes its started QSO, StartedQso;
+             a selection with Auto off leaves it and its contact alone). Start also
              needs a known station band (station_band: CAT dial band, else the operating
              selection band; unknown: not_ready band) and captures it with the mode; it
              needs no active strategy. The run snapshot names it: pounce {call, band}
@@ -756,7 +756,8 @@ package WstxStrategy {
              starts: Auto goes off and the snapshot's strategy_refusal names the reason
              (transmit_unavailable) until the next Auto on or selection. A selection change ends
              the run (a contact the run armed is disarmed, and cancelled so that the next can
-             start; a manual contact is left alone).
+             start, unless it is a started QSO, which is finished, StartedQso; a manual contact
+             is left alone).
              max_contacts and max_run_minutes do not apply and read null. Run limit (operator
              decision 2026-11-06; the constant automation::STRATEGY_RUN_MAX, no setting): a run lasts
              at most 8 hours from its start, also with a browser open; a new start
@@ -790,10 +791,11 @@ package WstxStrategy {
              Ends at once (Q6; the contact is disarmed and cancelled at the next station step,
              no QuietTime): a band change (the station band differs from the band at the
              target's selection; the station never changes band or mode itself), a mode change
-             (a new live identity), the end of a contest period, a contest deselected, HALT,
-             Auto off. The run goes on after a band or mode change (it waits and selects from the
+             (a new live identity), HALT; and, for a contact that is no started QSO, the end of
+             a contest period, a contest deselected, Auto off (#81: a started QSO is finished,
+             StartedQso). The run goes on after a band or mode change (it waits and selects from the
              next publication on the new band or mode) and after a period end (it waits
-             outside_period); it stops after the others.
+             outside_period; manual while a started QSO finishes); it stops after the others.
              Receive: a strategy run has no receive identity of its own. Without FT8 or FT4
              receive it waits with reason no_receive; when receive starts or the live identity
              changes it re-identifies and waits instead of stopping; last_decode restarts at
@@ -832,14 +834,68 @@ package WstxStrategy {
              invalid_request field automation_confirmed, Auto stays off), the browser asking the
              WstxContest::ContestPrompt warning first. A selection change while Auto is on to a
              contest whose clause is forbidden turns Auto off instead of starting it: the
-             confirmation goes only with Auto on. auto false ends the run. Selecting None
-             turns Auto off. The GET /strategy snapshot carries auto (boolean) and
+             confirmation goes only with Auto on. auto false ends the run; a QSO the run has
+             started is finished as an ordinary contact (StartedQso, #81: Auto only decides
+             whether new QSOs start). Selecting None turns Auto off. The GET /strategy snapshot carries auto (boolean) and
              strategy_refusal; a change increments the strategy revision and is pushed by
              strategy.state. The reply is the GET /strategy snapshot.
              Browser: the Auto button reads the snapshot's auto (never a local guess); it is
              disabled without a selection or without transmit capability, with the reason as its
-             title; a click sends POST /strategy/auto with the other value (for a forbidden
-             contest after the confirmation). */
+             title; enabled, its title is "Auto on: the selection transmits. Click to switch
+             Auto off; a QSO already started is finished" while on (#81) and "Auto off: the
+             selection only marks. Click to let it transmit" while off; a click sends POST
+             /strategy/auto with the other value (for a forbidden contest after the
+             confirmation). */
+    }
+    attribute def StartedQso {
+        doc /* Courtesy (#81, operator 2026-11-08: "A started QSO should always be finished out
+             of courtesy. If we did not answer, then this does not count as a QSO"; "Auto only
+             starts"). For every run of WstxMcp::OperatingAutomation: a strategy or contest
+             run, a pounce and an MCP policy run.
+             Started: the run's contact is a started QSO when its dialogue (the contact
+             engine's, WstxContact::ContactSnapshot; never the run's own memory) holds a
+             decoded message of the partner to my call and an own transmission to the partner
+             that has started (keyed, also one still on the air). No started QSO: a station
+             that called my call before our transmission to it started (a reply only armed),
+             and a station we called that has sent nothing to my call (a Tx1 to a CQ, also one
+             on the air).
+             Finishing ends: Auto off; None; another strategy or contest selection (with Auto
+             on the new run starts); a contest deselected; an Auto on that ends a pounce or MCP
+             policy run; AutomationCommand stop; a policy run's time_limit; and, without
+             ending the run, the end of a contest period (the run is manual while the QSO
+             finishes, then waits outside_period). At each the run ends (or waits) at once
+             as before, with the stop reason it has today, and every end turns Auto off as
+             before; a started QSO is not disarmed or cancelled: it stays armed and is
+             finished as an ordinary contact. The contact engine sequences it with Auto Seq to
+             its end and logs it once (WstxContact::QsoAndLogging). The run's rules for it end
+             with the run: no LeaveRule, no QuietTime, no slot check, no WD:n, no target
+             subscription (HearingFeed), and no StrategyWatchdog exemption: the Tx watchdog's
+             stop at N applies from the next send (WstxContact::TxWatchdog; a message already
+             repeated N times under the exemption is not sent again). Tx and Rx stay where
+             they are (FreeTxSlot: nothing else moves them in the exchange). Nothing new is
+             selected, called or answered for it and its CQ is not called again. A run started
+             meanwhile (Auto on, a selection with Auto on) finds it as a contact it did not
+             select (ManualIntervention) and resumes when it has ended. The same request again
+             (Auto off, None, stop) changes nothing.
+             Not started at a finishing end: the contact is disarmed and cancelled at once as
+             before; a transmission already on the air (the run's CQ, a Tx1, a reply)
+             finishes its period (WstxContact::SetEnableTx) and nothing after it is keyed.
+             Still at once (Enable Tx off and the contact cancelled, nothing logged): HALT from
+             any source; Abort QSO; an operator's selection of another station (a double-click,
+             WstxContact::ChangeContact); the Tx watchdog's stop; the grant revoked or a safety
+             edit (authority_lost; a safety edit disarms in the transmit owner itself,
+             authorityChanged); a band change or a mode change by the operator; a station
+             restart (transmit is disarmed at every start); and the run's leaving while it runs
+             (LeaveRule at x, a policy run's no_answer, a pounce's wait again). Unchanged:
+             unattended or past the run limit the run itself finishes the QSO in progress
+             (StrategyRun).
+             Finishing guard: until the finished QSO's contact has ended (completed, cancelled,
+             disarmed or replaced) the automation owner keeps, in memory only and in no
+             snapshot, its contact id, the station band and mode at the run's end and the
+             run's grant; at each station step it disarms and cancels that contact when the
+             station band or the mode differs or the grant is no longer current (revoked, or a
+             safety edit). It never arms, selects, answers or moves a frequency. A new run, a
+             restart or the contact's end drops it. */
     }
     attribute def PskrUse {
         doc /* Use PSK Reporter (Q17, Q29): a toggle next to Auto (WstxOperatingLayout::QsoPane),
@@ -1105,6 +1161,11 @@ package WstxStrategy {
     dependency strategyWatchdogOwner from StrategyWatchdog to WstxContact::TxWatchdog;
     dependency automationPath from StrategyRun to WstxMcp::OperatingAutomation;
     dependency autoClause from AutoToggle to WstxRequirements::'CL-039-22';
+    dependency autoFinishClause from AutoToggle to WstxRequirements::'CL-081-01';
+    dependency startedQsoClause from StartedQso to WstxRequirements::'CL-081-01';
+    dependency startedQsoRun from StrategyRun to StartedQso;
+    dependency startedQsoAutomation from StartedQso to WstxMcp::OperatingAutomation;
+    dependency startedQsoWatchdog from StartedQso to WstxContact::TxWatchdog;
     dependency pskrUseClause from PskrUse to WstxRequirements::'CL-039-20';
     dependency leaveClause from LeaveRule to WstxRequirements::'CL-039-23';
     dependency quietClause from QuietTime to WstxRequirements::'CL-039-23';
