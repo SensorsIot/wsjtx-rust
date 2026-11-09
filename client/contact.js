@@ -232,7 +232,7 @@ function render(){
   // The partner's latest message to me, with SNR and the repeat count (ContactSnapshot last_rcvd).
   const h=qso?c.last_rcvd:null,heard=$('qso-heard');heard.hidden=!h;
   heard.textContent=h?`\u25C2 ${h.text}  ${snrText(h.snr)}${h.count>1?` \u00D7${h.count}`:''}`.trimEnd():'';
-  const wd=snap?.watchdog;$('contact-watchdog').textContent=!wd?'':wd.tx_expired?`Tx watchdog: same message sent ${snap.settings.tx_calls} times`:armed?`WD:${wd.tx_remaining_calls??'∞'}`:'';
+  const wd=snap?.watchdog;$('contact-watchdog').textContent=!wd?'':wd.tx_expired?`Tx watchdog: same message sent ${snap.settings.tx_calls} times`:armed?watchdogText(wd):'';
   // The status line is for exceptions only: unknown state, a refusal, a pending halt.
   const problems=!snap?['Contact state unavailable']:[t?.refusal?`Refused ${t.refusal}`:'',t?.halt_state==='pending'?'Halt pending (RF stop not confirmed)':''].filter(Boolean);
   $('contact-state').textContent=problems.join(' · ');$('contact-state').hidden=!problems.length;
@@ -338,14 +338,33 @@ function loadAutomation(){
   const loading=automationLoading=stationFetch('/automation',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(a=>{
     // WstxStationProtocol::PushedStationState: a reply of another boot is discarded.
     if(loading!==automationLoading||a?.v!==1||a.boot_id!==profileData?.boot_id)return;
-    automationView=a;freeTxSlotsRead(a);pskrLinesShow();dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));
+    automationView=a;freeTxSlotsRead(a);pskrLinesShow();leaveShow();dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));
   }).catch(()=>{}).finally(()=>{if(loading===automationLoading)automationLoading=null;});
   return loading;
+}
+// #97 WstxStrategy::LeaveCountLabel (#91): WD:n is the Tx watchdog only; in a strategy run's own
+// contact (tx_remaining_calls null) the run's leave label stands where WD:n stood.
+function leaveLabel(){
+  const run=automationView?.run,l=run?.leave;
+  if(!l||run.contact_id!==snap?.contact?.id)return '';
+  const n=l.remaining;
+  return l.mode==='calls'?`Leave in ${n} calls`:l.mode==='until_logged'?(n==null?'Until logged':`Until logged · leave if gone ${n} min`):l.staying?'Stay · most valuable':`Leave in ${n} Tx changes`;
+}
+function watchdogText(wd){
+  if(typeof wd.tx_remaining_calls==='number')return `WD:${wd.tx_remaining_calls}`;
+  return leaveLabel();
+}
+/// A new run snapshot redraws the leave label (the QSO pane's watchdog line and the station bar).
+function leaveShow(){
+  const wd=snap?.watchdog;
+  if(wd&&!wd.tx_expired&&snap.transmit?.arm_state==='armed')$('contact-watchdog').textContent=watchdogText(wd);
+  stationTx();
 }
 function stationTx(){
   const t=snap?.transmit,capable=transmitCapable(),wd=snap?.watchdog,armed=t?.arm_state==='armed';
   stationTxNode.hidden=!capable||!(armed||tick?.transmitting||wd?.tx_expired);if(stationTxNode.hidden)return;
-  stationTxNode.textContent=`${tick?.transmitting?'TRANSMITTING':armed?'Tx on':'Tx off'}${armed?` · WD:${wd.tx_remaining_calls??'∞'}`:wd.tx_expired?` · Tx watchdog: same message sent ${snap.settings.tx_calls} times`:''}${t.last_text?` · last ${t.last_text}`:''}`;
+  const count=armed?watchdogText(wd):'';
+  stationTxNode.textContent=`${tick?.transmitting?'TRANSMITTING':armed?'Tx on':'Tx off'}${count?` · ${count}`:!armed&&wd.tx_expired?` · Tx watchdog: same message sent ${snap.settings.tx_calls} times`:''}${t.last_text?` · last ${t.last_text}`:''}`;
 }
 document.addEventListener('pointerdown',event=>{
   if(typeof currentRegion==='undefined'||currentRegion==='operate')return;
@@ -1188,7 +1207,7 @@ function showRun(){
     // WstxContest::ContestView, ContestRun: the operation, Auto (off is colouring only) and the run
     // state from GET /automation, read on automation.state only.
     const state=refusal?` · not started · ${words_(refusal)}`:on?` · ${doing()??`waiting${run.reason?` · ${words_(run.reason)}`:''}`}`:stopped;
-    statusNode.dataset.active=String(!!on);statusNode.textContent=`Contest ${selectedProfile()?.name??contest.profile} · ${when(contest.start)} to ${when(contest.end)} UTC · ${{sp:'S&P',run:'Run'}[contest.operation]??contest.operation} · Auto ${auto()?'on':'off'}${state}${tally}`;
+    statusNode.dataset.active=String(!!on);statusNode.textContent=`Contest ${selectedProfile()?.name??contest.profile} · ${when(contest.start)} to ${when(contest.end)} UTC · ${config()?.active??''} · Auto ${auto()?'on':'off'}${state}${tally}`;
     return;
   }
   // None (or no strategy snapshot yet): a strategy run the HALT or a selection ended; without a
@@ -1529,17 +1548,18 @@ const contestPrompt=document.createElement('dialog');contestPrompt.id='contest-p
 contestPrompt.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="contest-prompt-title">Contest strategy</h2><button type="button" class="op-halt-small" id="contest-prompt-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button></header>
 <div class="se-options"><label>Contest<select id="cp-profile"></select></label><label>Start (UTC)<input id="cp-start" type="datetime-local" step="60"></label><label>End (UTC)<input id="cp-end" type="datetime-local" step="60"></label></div>
 <p id="cp-schedule" class="op-muted"></p><p id="cp-activity" class="op-muted"></p>
-<fieldset class="se-options"><legend>Operation</legend><label class="op-check"><input type="radio" name="cp-operation" value="sp" checked>S&amp;P: search and pounce</label><label class="op-check"><input type="radio" name="cp-operation" value="run">Run: calls CQ</label></fieldset>
-<fieldset class="se-options"><legend>Exit</legend><label>Repetitions before leaving<input id="cp-repetitions" type="number" min="1" max="20" step="1" value="2"></label><label>Quiet time (minutes)<input id="cp-quiet" type="number" min="1" max="120" step="1" value="10"></label></fieldset>
+<div class="se-options"><label>Strategy<select id="cp-strategy"></select></label></div>
 <p class="op-muted">Band Activity follows the contest rules. It transmits only while Auto (beside CQ) is on; with Auto off you operate.</p>
 <ul id="cp-notes" class="op-muted"></ul><p id="cp-result" class="op-muted" role="status"></p><menu><button value="cancel" type="submit">Cancel</button><button type="button" class="op-primary" id="cp-go">Start</button></menu></form>`;
 document.querySelector('main').append(contestPrompt);
 function contestFill(keep){
   const p=contests.find(x=>x.id===$('cp-profile').value)??contests[0];if(!p)return;
   const minute=t=>t?t.slice(0,16):'';
-  // WstxContest::ContestPrompt: S&P, 2 repetitions and 10 minutes unless a selection in force says otherwise.
-  const wanted=keep?.operation??'sp';for(const r of contestPrompt.querySelectorAll('input[name=cp-operation]'))r.checked=r.value===wanted;
-  $('cp-repetitions').value=String(keep?.repetitions??2);$('cp-quiet').value=String(keep?.quiet_minutes??10);
+  // #97 WstxContest::ContestPrompt: the profile's contest built-in first (the default), then every
+  // saved contest strategy of that profile; the active one when a selection of it is in force.
+  const ofProfile=[...builtins(),...(config()?.strategies??[])].filter(s=>s.class==='contest'&&s.contest===p.id);
+  $('cp-strategy').replaceChildren(...ofProfile.map(s=>{const o=document.createElement('option');o.value=s.name;o.textContent=s.name;return o;}));
+  const active=config()?.active;if(keep&&ofProfile.some(s=>s.name===active))$('cp-strategy').value=active;
   $('cp-start').value=minute(keep?.start??p.period?.start);$('cp-end').value=minute(keep?.end??p.period?.end);
   $('cp-schedule').textContent=`${p.schedule}${p.period?.band?` · this round ${p.period.band}`:''}${p.period?'':' · enter the date'}`;
   const on=window.wstxContact?.snapshot()?.settings?.activity??'none';
@@ -1561,9 +1581,9 @@ $('cp-go').addEventListener('click',async()=>{
   const utc=t=>`${t.slice(0,16)}Z`;contestSummary=null;
   // Start only selects: whether it transmits is the Auto toggle's, which asks a forbidden clause's
   // warning (WstxStrategy::AutoToggle); the clause is on screen here.
-  const profile=$('cp-profile').value,operation=contestPrompt.querySelector('input[name=cp-operation]:checked').value;
-  const contest={profile,start:utc(start),end:utc(end),operation,repetitions:Number($('cp-repetitions').value),quiet_minutes:Number($('cp-quiet').value)};
-  const ok=await saveConfiguration({...c,active:null,contest},'Contest');
+  const profile=$('cp-profile').value,active=$('cp-strategy').value;
+  const contest={profile,start:utc(start),end:utc(end)};
+  const ok=await saveConfiguration({...c,active,contest},'Contest');
   if(ok)contestPrompt.close('ok');else $('cp-result').textContent=statusNode.textContent;
 });
 // WstxStrategy::Strategy: the browser's new strategy.
