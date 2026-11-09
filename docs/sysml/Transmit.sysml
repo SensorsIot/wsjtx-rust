@@ -404,44 +404,54 @@ package WstxTransmit {
              offset is reported, never applied: the station does not set the system
              clock. WstxRadioIO receive clock external accuracy stays unknown.
              PlanTransmitStart refuses anything but synchronized; the state it receives
-             is the station clock's (AirClock: by the profile's clock source, #43). */
+             is the station clock's (AirClock, #43), which is never unknown and does not
+             depend on this SNTP state (#92). The
+             monitor records whether any round since start asked a server, for the
+             warning ntp_unreachable (#92). #92 situation 1: the station never sets the
+             Windows clock and never starts or configures a service (it runs without
+             administrator rights); it reads the Windows Time service state (running,
+             stopped, disabled; unknown when the query fails) without administrator
+             rights, for the remedy of the warning pc_clock_off (CL-043-03). */
     }
     attribute def AirClock {
         attribute minSnrDb : Integer = -20;
         attribute maxDtMs : Integer = 3000;
         attribute windowS : Integer = 120;
-        attribute minHeard : Integer = 3;
-        attribute trimMs : Integer = 400;
         attribute minStations : Integer = 4;
-        attribute minConfidencePct : Integer = 60;
-        attribute hysteresisMs : Integer = 50;
-        attribute maxSlewMs : Integer = 1000;
-        attribute huntWindows : Integer = 4;
-        attribute huntMs : Integer = 1000;
+        attribute sameSidePct : Integer = 80;
+        attribute sideMarginMs : Integer = 100;
+        attribute maxSlewPerPeriodMs : Integer = 1000;
         attribute maxAgeS : Integer = 60;
-        attribute maxResidualMs : Integer = 500;
-        attribute maxDisagreementMs : Integer = 200;
-        assert constraint robust { minHeard < minStations and hysteresisMs < maxResidualMs and maxDisagreementMs < maxResidualMs }
-        doc /* #43 the clock from the air (WstxRequirements CL-043-01..03, defaults chosen
-             on the CR): the station clock combines TransmitClock (SNTP) with an estimate
-             of its offset from the DT of decoded stations by the profile's clock source
-             ntp|air|both (clock.json). Observations: decodes with a concrete sending call
-             other than the profile's own, SNR >= minSnrDb and |raw DT| <= maxDtMs, raw DT
-             against the uncorrected system clock; the last windowS; one median vote per
-             station, none below minHeard stations, votes beyond trimMs of the median
-             trimmed; offset = -median of the rest; confident with minStations and
-             minConfidencePct. Each completed decode window re-estimates and moves the
-             applied correction toward a confident estimate beyond hysteresisMs by at
-             most maxSlewMs; until the first confident estimate, every huntWindows windows
-             without one alternate it between 0 and +huntMs (acquisition of a slow clock).
-             A system clock step is subtracted from it (station UTC continuous).
-             synchronized: confident, at most maxAgeS old, unstepped,
-             |estimate - applied| <= maxResidualMs. The applied correction is added to
-             station UTC on the air basis (air, or both while SNTP is not synchronized)
-             for receive windows, period/DT, transmit planning and audio start; the
-             system clock is never set. Estimating from raw DT keeps the correction out
-             of its own input, so it cannot oscillate with the receive windows or the
-             capture drift tracker (WstxRadioIO, #47). */
+        attribute txBoundMs : Integer = 1000;
+        attribute maxStepRestartMs : Integer = 3000;
+        assert constraint robust { minStations >= 2 and sideMarginMs < txBoundMs and maxSlewPerPeriodMs <= txBoundMs and txBoundMs < maxStepRestartMs }
+        doc /* #43 the clock from the air (WstxRequirements CL-043-01..03); #92 the
+             air is the reference (operator 2026-11-09: "accept the OTA time as the
+             reference"; "Our station should always be in the middle"): station UTC is
+             always the system clock plus this correction, without a source setting or
+             basis; TransmitClock (SNTP) only measures the system clock for warnings.
+             Observations: decodes with a concrete sending call other than the profile's
+             own, SNR >= minSnrDb and |raw DT| <= maxDtMs, raw DT against the uncorrected
+             system clock; the last windowS; one vote per station, the median of its raw
+             DT plus the current correction; median of all votes (no trimming); plus and
+             minus the votes beyond +sideMarginMs and -sideMarginMs. Evidence: at least
+             minStations votes and plus or minus at least sameSidePct of them. Each
+             completed decode window re-estimates; an estimate counts while at most
+             maxAgeS old and unstepped; evidence moves the correction toward the middle
+             (correction minus the median) by at most maxSlewPerPeriodMs in total within
+             one period; without evidence (mixed sides, fewer stations, no estimate) the
+             last correction is kept; it starts at 0; no search. A system clock step
+             above 100 ms is subtracted from a nonzero correction (station UTC
+             continuous), a correction of 0 stays 0, and a correction beyond
+             maxStepRestartMs after a step restarts at 0. unsynchronized: a counting
+             evidence estimate with |median| > txBoundMs; synchronized otherwise; never
+             unknown; the SNTP state never changes it. The correction is added to station
+             UTC for receive windows, period/DT, transmit planning and audio start; the
+             SNTP offset is never applied and the system clock is never set. Warnings
+             pc_clock_off, ntp_unreachable and stations_off as CL-043-03. Taking each
+             vote from raw DT keeps the estimate independent of the windows it aligns,
+             so the correction converges to the middle without oscillating with the
+             receive windows or the capture drift tracker (WstxRadioIO, #47). */
     }
     action def PttControl {
         in enable : Boolean;
@@ -613,12 +623,12 @@ package WstxTransmit {
              and never wait for a browser; the keyed/transmitting indication also
              follows station.tick (one extra tick at each transmit start/stop).
              GET /transmit: exactly {v:1,profile_id,boot_id,transmit,ptt,transmitting,
-             clock,clock_measurement,clock_source,clock_warning,watchdog,outcomes,startup_release} with transmit exactly the WstxContact read view
+             clock,clock_measurement,clock_warning,watchdog,outcomes,startup_release} (no clock_source since #92) with transmit exactly the WstxContact read view
              without its safety_revision: {capability,arm_state,last_disarm_cause,tune,pending_sequence,last_text,
              last_period_utc,halt_state,refusal}, ptt released|keyed|indeterminate,
-             clock synchronized|unsynchronized|unknown (the station clock: TransmitClock
-             and AirClock by clock_source ntp|air|both), clock_warning null or
-             ntp_air_disagree (AirClock),
+             clock synchronized|unsynchronized (the station clock: TransmitClock
+             and AirClock, never unknown, #92), clock_warning null, pc_clock_off,
+             ntp_unreachable or stations_off (AirClock, CL-043-03),
              clock_measurement null before the first answer, else exactly the latest
              measurement {server,offset_ms,round_trip_ms,age_ms} (server as configured,
              age at the read), watchdog exactly {tx_calls,

@@ -76,7 +76,7 @@ for(const id of ['display-name','callsign','locator']){const input=document.getE
 stationFields.insertAdjacentHTML('beforeend','<p class="op-apply-row"><button type="submit" form="settings" class="op-apply">Apply &#10227;</button></p><p id="general-apply-result" class="op-muted" role="status"></p>');
 for(const type of ['input','change'])stationFields.addEventListener(type,event=>{if(event.target.form===serverForm&&event.target.id!=='station-continent')serverForm.dispatchEvent(new Event(type));});
 generalSection.append(stationFields);
-block('settings-clock','Clock',generalSection,'<p id="clock-setting">Station clock: system UTC. Measured offset unavailable.</p>');
+block('settings-clock','Clock',generalSection,'<p id="clock-setting">Station clock: waiting for the station</p>');
 const displaySettings=block('settings-display','Display',generalSection,'<p class="op-muted">Display settings affect this browser only and apply at once.</p>');
 const browserSettings=block('settings-browsers','Access &amp; grants',generalSection,'<p class="op-muted">This browser holds its own station authorization. Logging out or forgetting the credential needs the station access token to authorize again.</p>');
 browserSettings.append(document.querySelector('#authorization-actions'));
@@ -1261,9 +1261,7 @@ async function transmitPost(path,extra){
 function transmitShow(){
   const on=transmitConfigured();transmitDetails.hidden=!on;halt.disabled=!on;const qsoHalt=document.querySelector('#qso-halt');if(qsoHalt)qsoHalt.disabled=!on;
   if(on)halt.removeAttribute('aria-describedby');else halt.setAttribute('aria-describedby','transmit-unavailable');
-  const v=transmitView,status=document.querySelector('#transmit-status');
-  const setting=document.querySelector('#clock-setting'),m0=v?.clock_measurement,ageS=m=>Math.round((m.age_ms+performance.now()-transmitViewAt)/1000);
-  setting.textContent=!on||!v?'Station clock: system UTC. Measured offset unavailable (no transmit configuration).':`Station clock: system UTC${{air:' corrected from the air',both:', NTP with air fallback'}[v.clock_source]??''}, ${v.clock}${m0?` · offset ${m0.offset_ms>=0?'+':''}${m0.offset_ms} ms against ${m0.server}, measured ${ageS(m0)} s ago`:' · no SNTP measurement'}`;
+  const v=transmitView,status=document.querySelector('#transmit-status'),ageS=m=>Math.round((m.age_ms+performance.now()-transmitViewAt)/1000);
   chipsShow();
   if(!on||!v){status.textContent='Transmit unavailable';return;}
   const t=v.transmit,m=v.clock_measurement,clock=m?` ${m.offset_ms>=0?'+':''}${m.offset_ms} ms ${m.server} ${ageS(m)} s ago`:'';
@@ -1295,6 +1293,17 @@ function transmitApply(changed){
   for(const [key,value] of Object.entries(changed))view[key]=['transmit','watchdog'].includes(key)&&view[key]?{...view[key],...value}:value;
   transmitView=view;if('clock_measurement' in changed)transmitViewAt=performance.now();
 }
+// #92 CL-043-01 clock.state (every profile): the browser holds the station clock state from these
+// events, without GET /clock and without a timer; the error field and the Clock line read it.
+let clockState=null;
+function clockSettingShow(){
+  const c=clockState?.clock;
+  document.querySelector('#clock-setting').textContent=c?`Station clock ${c.state}, correction ${c.correction_ms>0?'+':''}${c.correction_ms} ms`:'Station clock: waiting for the station';
+  chipsShow();
+}
+addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='clock.state')return;
+  const d=message.data;if(!d?.clock||(profileData&&d.profile_id!==profileData.profile_id))return;
+  clockState=d;clockSettingShow();});
 setInterval(transmitShow,2000);
 addEventListener('station-ready',()=>transmitShow());
 addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='transmit.state')return;

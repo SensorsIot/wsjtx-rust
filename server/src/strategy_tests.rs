@@ -8138,13 +8138,13 @@ async fn tc_039_050_a_period_counts_only_when_its_levels_reach_bin_921() {
 
 /// A status WebSocket peer over the served router with the browser's cookie and Origin and one
 /// display subscription (RFC 6455 frames written and read here; client frames masked).
-struct Peer {
+pub(crate) struct Peer {
     stream: std::net::TcpStream,
     pending: Vec<u8>,
     inbox: Vec<Value>,
 }
 impl Peer {
-    fn open(address: std::net::SocketAddr, f: &Mcp, subscription: &str) -> Peer {
+    pub(crate) fn open(address: std::net::SocketAddr, f: &Mcp, subscription: &str) -> Peer {
         use std::io::{Read, Write};
         let mut stream = std::net::TcpStream::connect(address).unwrap();
         stream
@@ -8216,7 +8216,7 @@ impl Peer {
         self.stream.write_all(&frame).unwrap();
     }
     /// The text messages received within `wait` (a ping is answered).
-    fn read(&mut self, wait: Duration) -> Vec<Value> {
+    pub(crate) fn read(&mut self, wait: Duration) -> Vec<Value> {
         use std::io::Read;
         let (deadline, mut out) = (Instant::now() + wait, std::mem::take(&mut self.inbox));
         while Instant::now() < deadline {
@@ -8304,7 +8304,7 @@ fn step_at(f: &Mcp, at: i64) {
     f.tick();
 }
 /// The served router of `f` on a local port, with its server task.
-async fn serve(f: &Mcp) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+pub(crate) async fn serve(f: &Mcp) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let app = f.app.clone();

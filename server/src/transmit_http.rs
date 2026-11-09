@@ -65,8 +65,8 @@ impl Hardware for StationHardware {
         self.origin.elapsed().as_millis() as i64
     }
     fn now_utc_ms(&self) -> i64 {
-        // #43: station UTC is the system clock plus the clock-from-the-air correction
-        // (0 on the NTP basis); the system clock itself is never set.
+        // #43/#92: station UTC is always the system clock plus the clock-from-the-air
+        // correction; the system clock itself is never set.
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
@@ -74,8 +74,8 @@ impl Hardware for StationHardware {
             + self.clock.correction_ms()
     }
     fn clock(&self) -> ClockState {
-        // WstxTransmit::TransmitClock and AirClock: only reads the latest SNTP
-        // measurement and air estimate, combined by the profile's clock source.
+        // WstxTransmit::AirClock (#92): the station clock state, never unknown; the SNTP
+        // state only warns and never refuses.
         self.clock.state()
     }
     fn clock_measurement(&self) -> Option<Measurement> {
@@ -346,8 +346,7 @@ pub(crate) fn view_json(r: &recording::Recording, v: &View) -> Value {
             "halt_state":halt,"refusal":v.refusal.map(name)},
         "ptt":name(v.ptt),"transmitting":v.transmitting,"clock":name(v.clock),
         "clock_measurement":v.clock_measurement.as_ref().map(measurement),
-        "clock_source":r.clock.get().map_or("ntp",|c|c.station.source().name()),
-        "clock_warning":r.clock.get().is_some_and(|c|c.station.view().warning).then_some("ntp_air_disagree"),
+        "clock_warning":r.clock.get().and_then(|c|c.station.view().warning).map(wstx_rust::transmit::air::Warning::name),
         "watchdog":{"tx_calls":v.tx_calls,"tx_remaining_calls":v.tx_remaining_calls,"tx_expired":v.tx_expired,
             "tune_seconds":v.tune_seconds,"tune_remaining_seconds":v.tune_remaining_seconds},
         "outcomes":recent,"startup_release":name(v.startup_release)})

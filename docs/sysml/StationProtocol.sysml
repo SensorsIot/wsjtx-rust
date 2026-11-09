@@ -331,9 +331,10 @@ package WstxStationProtocol {
              display subscription (Detailed, Thin, Off), so an idle Off peer receives
              almost nothing beyond heartbeat and station.tick. HTTP carries commands and
              one snapshot read per state on (re)connect. transmit.state, contact.state,
-             selection.state and receive.state carry their state (WstxTransmit::TransmitWire,
-             WstxContact::ContactStateEvent, WstxOperatingReceive::SelectionStateEvent, the
-             receive wire); decode records are not carried yet;
+             selection.state, receive.state and clock.state (#92, every profile) carry
+             their state (WstxTransmit::TransmitWire, WstxContact::ContactStateEvent,
+             WstxOperatingReceive::SelectionStateEvent, the receive wire, WstxRequirements
+             CL-043-01); decode records are not carried yet;
              a state not yet carried is read after its announcement event (one pending read
              per state and browser) and after the browser's own mutation; a browser does not
              poll on a timer, except a safety read of a state not yet carried no more often

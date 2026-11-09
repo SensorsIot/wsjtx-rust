@@ -27,11 +27,11 @@ fn gate(revision: u64) -> Gate {
         configuration: cat::Configuration::parse(ENDPOINT).unwrap(),
     }
 }
-/// The station clock of a profile on the default NTP source.
+/// The station clock of a profile (#92: the air is the reference, SNTP only warns).
 pub(crate) fn ntp_clock(
     ntp: Arc<wstx_rust::transmit::clock::Monitor>,
 ) -> Arc<wstx_rust::transmit::air::StationClock> {
-    wstx_rust::transmit::air::StationClock::new(ntp, wstx_rust::transmit::air::Source::Ntp)
+    wstx_rust::transmit::air::StationClock::new(ntp)
 }
 fn ptt_setters(writes: &[Vec<u8>]) -> usize {
     writes
@@ -153,9 +153,12 @@ async fn app_with(
     std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
     let (store, _) = profile::Store::open(&dir).unwrap();
     let recording = recording::Recording::open(&dir, id.clone(), boot.clone());
+    // As main wires it: one station clock for the clock view and the transmit owner.
+    let clock = crate::clock_http::Clock::new(clock);
+    let _ = recording.clock.set(clock.clone());
     let _ = recording
         .transmit
-        .set(transmit_http::Station::start(ntp_clock(clock)).unwrap());
+        .set(transmit_http::Station::start(clock.station.clone()).unwrap());
     let origin = "http://127.0.0.1:18001".to_string();
     let app = App {
         origin: origin.clone(),
@@ -218,7 +221,6 @@ async fn transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms
             "boot_id",
             "clock",
             "clock_measurement",
-            "clock_source",
             "clock_warning",
             "outcomes",
             "profile_id",
@@ -244,14 +246,11 @@ async fn transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms
             "tune"
         ]
     );
-    // No SNTP measurement yet: the clock is unknown, not synchronized.
-    assert_eq!(view["clock"], "unknown");
+    // No SNTP measurement yet: the station clock is never unknown (#92), no warning before
+    // the first round.
+    assert_eq!(view["clock"], "synchronized");
     assert_eq!(view["clock_measurement"], Value::Null);
-    // #43: the default clock source, no NTP/air warning.
-    assert_eq!(
-        (&view["clock_source"], &view["clock_warning"]),
-        (&json!("ntp"), &Value::Null)
-    );
+    assert_eq!(view["clock_warning"], Value::Null);
     assert_eq!(view["transmit"]["arm_state"], "disarmed");
     assert_eq!(view["transmit"]["last_disarm_cause"], "startup");
     assert_eq!(view["transmit"]["capability"], "unsupported");
@@ -459,8 +458,9 @@ fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() 
     let _ = std::fs::remove_dir_all(&directory);
 }
 
-// Proves: CL-009-05; TC-006-003. GET /transmit reports the station's SNTP measurement
-// (exact keys) and the clock state the transmit owner plans with.
+// Proves: CL-009-05; TC-006-003, TC-092-003. GET /transmit reports the station's SNTP
+// measurement (exact keys) and the clock state the transmit owner plans with: the station
+// clock, which SNTP never makes unsynchronized (#92); SNTP beyond 500 ms only warns.
 #[tokio::test]
 async fn transmit_wire_shows_the_sntp_clock_measurement() {
     use wstx_rust::transmit::clock::{Measurement, Monitor};
@@ -496,7 +496,8 @@ async fn transmit_wire_shows_the_sntp_clock_measurement() {
         system: std::time::SystemTime::now(),
     }));
     let (_, view) = call(&router, "GET", "/transmit", None, None).await;
-    assert_eq!(view["clock"], "unsynchronized");
+    assert_eq!(view["clock"], "synchronized");
+    assert_eq!(view["clock_warning"], "pc_clock_off");
     assert_eq!(view["clock_measurement"]["server"], "time.windows.com");
     let _ = std::fs::remove_dir_all(&dir);
 }

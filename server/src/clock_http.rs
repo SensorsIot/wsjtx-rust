@@ -1,82 +1,32 @@
-//! #43 CL-043-01: the profile's clock source (NTP, from the air, both), persisted in
-//! clock.json next to profile.json, and the clock view of Settings > General > Clock,
-//! read on demand (GET /clock) rather than on the thin status link.
+//! #43/#92 CL-043-01: the station clock view of Settings > General > Clock, read on demand
+//! (GET /clock) rather than on the thin status link, and the pushed clock.state event for
+//! every profile. There is no source setting: clock.json (#43) is neither read nor written,
+//! and POST /clock no longer exists.
 use crate::*;
 use axum::extract::RawQuery;
-use recording_http::{authorize, error, parse, syntax};
-use serde::{Deserialize, Serialize};
+use recording_http::{authorize, error};
 use wstx_rust::transmit::ClockState;
-use wstx_rust::transmit::air::{Basis, Source, StationClock};
+use wstx_rust::transmit::air::{StationClock, Warning};
 
 #[cfg(test)]
 #[path = "clock_http_tests.rs"]
 mod tests;
 
-pub(crate) const FILE: &str = "clock.json";
-const FILE_LIMIT: u64 = 1024;
+/// The clock.state event is at most this long (CL-043-01).
+pub(crate) const EVENT_LIMIT: usize = 512;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Record {
-    schema_version: u8,
-    profile_id: String,
-    source: String,
-}
-/// The station clock of the selected profile and where its source is saved.
+/// The station clock of the selected profile and the station-wide clock_revision.
 pub(crate) struct Clock {
     pub(crate) station: Arc<StationClock>,
-    directory: PathBuf,
-    profile: String,
-    storage_error: Mutex<Option<&'static str>>,
+    /// The clock.state fields last seen and their revision.
+    revision: Mutex<(Value, u64)>,
 }
 impl Clock {
-    /// Reads the saved source: missing is NTP; foreign, malformed, oversize or unknown
-    /// is NTP with storage_error invalid_clock (the next save replaces it).
-    pub(crate) fn load(
-        directory: &std::path::Path,
-        profile: &str,
-        ntp: Arc<wstx_rust::transmit::clock::Monitor>,
-    ) -> Arc<Self> {
-        let path = directory.join(FILE);
-        let (source, storage_error) = match std::fs::metadata(&path) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Source::Ntp, None),
-            Err(_) => (Source::Ntp, Some("storage_unavailable")),
-            Ok(_) => match recording::bounded_json::<Record>(&path, FILE_LIMIT) {
-                Ok(r) if r.schema_version == 1 && r.profile_id == profile => {
-                    match Source::parse(&r.source) {
-                        Some(s) => (s, None),
-                        None => (Source::Ntp, Some("invalid_clock")),
-                    }
-                }
-                _ => (Source::Ntp, Some("invalid_clock")),
-            },
-        };
+    pub(crate) fn new(ntp: Arc<wstx_rust::transmit::clock::Monitor>) -> Arc<Self> {
         Arc::new(Self {
-            station: StationClock::new(ntp, source),
-            directory: directory.to_path_buf(),
-            profile: profile.into(),
-            storage_error: Mutex::new(storage_error),
+            station: StationClock::new(ntp),
+            revision: Mutex::new((Value::Null, 0)),
         })
-    }
-    /// Saves and applies `source`; a failed write changes nothing.
-    fn set(&self, source: Source) -> std::result::Result<(), &'static str> {
-        let record = Record {
-            schema_version: 1,
-            profile_id: self.profile.clone(),
-            source: source.name().into(),
-        };
-        let mut storage_error = self.storage_error.lock().unwrap();
-        match profile::atomic_json(&self.directory, FILE, &record) {
-            Ok(()) => {
-                *storage_error = None;
-                self.station.set_source(source);
-                Ok(())
-            }
-            Err(_) => {
-                *storage_error = Some("storage_unavailable");
-                Err("storage_unavailable")
-            }
-        }
     }
 }
 fn state(s: ClockState) -> &'static str {
@@ -86,33 +36,48 @@ fn state(s: ClockState) -> &'static str {
         ClockState::Unknown => "unknown",
     }
 }
+/// The clock fields of clock.state and their clock_revision, which increases at each change
+/// any reader observes (GET /clock and every peer's push read the same counter).
+fn fields(r: &recording::Recording, c: &Clock, v: &wstx_rust::transmit::air::View) -> (Value, u64) {
+    let pc_clock_off = v.warning == Some(Warning::PcClockOff);
+    let fields = json!({"state":state(v.state),"correction_ms":v.correction_ms,
+        "warning":v.warning.map(Warning::name),
+        "ntp_offset_ms":v.ntp.as_ref().filter(|_|pc_clock_off).map(|m|m.offset_ms),
+        "capture_warning":r.capture_warning()});
+    let mut seen = c.revision.lock().unwrap_or_else(|p| p.into_inner());
+    if seen.0 != fields {
+        *seen = (fields.clone(), seen.1 + 1);
+    }
+    (fields, seen.1)
+}
+/// GET /clock: exactly the view of CL-043-01.
 pub(crate) fn view(r: &recording::Recording, c: &Clock) -> Value {
     let v = c.station.view();
-    let ntp = v.ntp.as_ref().map(|m| {
+    let (fields, revision) = self::fields(r, c, &v);
+    let measurement = v.ntp.as_ref().map(|m| {
         json!({"server":m.server,"offset_ms":m.offset_ms,"round_trip_ms":m.round_trip_ms,
             "age_ms":u64::try_from(m.taken.elapsed().as_millis()).unwrap_or(u64::MAX)})
     });
-    let air = v.air.map(|(e, age)| {
-        json!({"offset_ms":e.offset_ms,"stations":e.stations,"heard":e.heard,
-            "confidence_pct":e.confidence_pct,"age_ms":age.max(0)})
+    let estimate = v.air.map(|(e, age)| {
+        json!({"median_dt_ms":e.median_dt_ms,"stations":e.stations,"plus":e.plus,"minus":e.minus,"age_ms":age.max(0)})
     });
-    json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"source":v.source.name(),
-        "state":state(v.state),"basis":if v.basis==Basis::Air {"air"} else {"ntp"},
+    json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"state":fields["state"],
         "correction_ms":v.correction_ms,
-        "ntp":{"state":state(v.ntp_state),"measurement":ntp},
-        "air":{"state":state(v.air_state),"applied_ms":v.air_applied_ms,"estimate":air},
-        "disagreement_ms":v.disagreement_ms,"warning":v.warning.then_some("ntp_air_disagree"),
-        "storage_error":*c.storage_error.lock().unwrap()})
+        "ntp":{"state":state(v.ntp_state),"measurement":measurement,"windows_time":c.station.windows_time().name()},
+        "air":{"estimate":estimate},
+        "warning":fields["warning"],"capture_warning":fields["capture_warning"],"clock_revision":revision})
+}
+/// The clock.state event and its clock_revision; None without a station clock.
+pub(crate) fn state_event(r: &recording::Recording) -> Option<(u64, String)> {
+    let c = r.clock.get()?;
+    let v = c.station.view();
+    let (clock, revision) = fields(r, c, &v);
+    let text = json!({"v":1,"type":"clock.state","data":{"profile_id":r.profile,"boot_id":r.boot,
+        "clock_revision":revision,"clock":clock}})
+    .to_string();
+    (text.len() <= EVENT_LIMIT).then_some((revision, text))
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Edit {
-    v: u64,
-    profile_id: String,
-    boot_id: String,
-    source: String,
-}
 fn clock(r: &recording::Recording) -> std::result::Result<Arc<Clock>, &'static str> {
     r.clock.get().cloned().ok_or("not_found")
 }
@@ -142,49 +107,13 @@ pub async fn snapshot(
     if let Err(e) = empty(body) {
         return error(e);
     }
-    match clock(&r) {
-        Ok(c) => Json(view(&r, &c)).into_response(),
-        Err(e) => error(e),
-    }
-}
-/// POST /clock {v, profile_id, boot_id, source}: saves the source, effective at once.
-pub async fn update(
-    State(app): State<App>,
-    headers: HeaderMap,
-    RawQuery(query): RawQuery,
-    body: std::result::Result<Bytes, BytesRejection>,
-) -> Response {
-    let r = match authorize(&app, &headers, true).await {
-        Ok(r) => r,
-        Err(e) => return error(e),
-    };
-    if query.is_some() {
-        return error("invalid_request");
-    }
-    let b: Edit = match parse(&headers, body) {
-        Ok(b) => b,
-        Err(e) => return error(e),
-    };
-    if let Err(e) = syntax(b.v, &b.profile_id, &b.boot_id, 0) {
-        return error(e);
-    }
-    if b.profile_id != r.profile {
-        return error("wrong_profile");
-    }
-    if b.boot_id != r.boot {
-        return error("state_conflict");
-    }
-    let Some(source) = Source::parse(&b.source) else {
-        return error("invalid_request");
-    };
     let c = match clock(&r) {
         Ok(c) => c,
         Err(e) => return error(e),
     };
-    let saved = c.clone();
-    match tokio::task::spawn_blocking(move || saved.set(source)).await {
-        Ok(Ok(())) => Json(view(&r, &c)).into_response(),
-        Ok(Err(e)) => error(e),
+    // The Windows Time query is a blocking service-manager call.
+    match tokio::task::spawn_blocking(move || view(&r, &c)).await {
+        Ok(v) => Json(v).into_response(),
         Err(_) => error("storage_unavailable"),
     }
 }

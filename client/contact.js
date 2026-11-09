@@ -519,14 +519,31 @@ $('mcp-create').addEventListener('click',async()=>{
 $('mcp-token-copy').addEventListener('click',()=>navigator.clipboard?.writeText($('mcp-token-value').textContent).then(()=>{$('mcp-result').textContent='Token copied';},()=>{$('mcp-result').textContent='Copy failed: select the token and copy it';}));
 $('mcp-token-done').addEventListener('click',()=>{$('mcp-token-value').textContent='';$('mcp-token').hidden=true;});
 new MutationObserver(()=>{if(!document.querySelector('#settings-drawer').hidden)loadMcp();else $('mcp-token-done').click();}).observe(document.querySelector('#settings-drawer'),{attributes:true,attributeFilter:['hidden']});
-// #43 CL-043-01: the clock source, saved at once. The clock view is read on demand when the
-// drawer opens (at most every 10 s) or on the General tab, never polled on the thin link.
-$('settings-clock').insertAdjacentHTML('beforeend','<label>Clock source<select id="clock-source" disabled><option value="ntp">NTP (default)</option><option value="air">From the air</option><option value="both">Both: NTP, air as fallback</option></select></label><p id="clock-air" class="op-muted" role="status">Clock from the air unknown</p><p id="clock-result" class="op-muted" role="status"></p>');
+// #43/#92 CL-043-01/03: Settings > General > Clock, a status line only (no source setting). The
+// clock view is read on demand when the drawer opens (at most every 10 s) or on the General tab,
+// never polled on the thin link.
+$('settings-clock').insertAdjacentHTML('beforeend','<p id="clock-air" class="op-muted" role="status"></p>');
 let clockView=null,clockRead=-Infinity,clockLoading=null;
-const signedMs=ms=>`${ms>=0?'+':''}${ms} ms`;
+const signedMs=ms=>`${ms>0?'+':''}${ms} ms`;
+// CL-043-03 warning texts (error field and status line) and the pc_clock_off remedy by windows_time.
+function clockWarningText(warning,ntpOffsetMs,correctionMs){
+  if(warning==='pc_clock_off')return `PC clock ${Math.abs(ntpOffsetMs??0)} ms ${ntpOffsetMs<0?'fast':'slow'} vs NTP \u00b7 see Settings`;
+  if(warning==='ntp_unreachable')return 'NTP not reachable \u00b7 check the network';
+  if(warning==='stations_off')return `Clock corrected ${correctionMs>0?'+':''}${correctionMs} ms from the air \u00b7 PC clock matches NTP, check audio latency`;
+  return null;
+}
+const captureWarningText={uncorrelated:'Audio timing not tied to the PC clock \u00b7 DT may be off',drift_high:'Sound card clock drifts over 1000 ppm \u00b7 check the audio device'};
+const clockRemedy={stopped:'Windows Time service is stopped: start it and set it to Automatic (services.msc, as administrator)',disabled:'Windows Time service is disabled: set it to Automatic and start it (services.msc, as administrator)',running:'Windows Time runs but the clock is off: Settings > Time & language > Date & time > Sync now',unknown:'Check the Windows Time service and sync the clock'};
 function clockShow(){
-  const v=clockView,select=$('clock-source');select.disabled=!v;if(!v)return;select.value=v.source;const e=v.air.estimate;
-  $('clock-air').textContent=`Clock ${v.state} by ${v.basis==='air'?'the air':'NTP'}${v.correction_ms?`, correction ${signedMs(v.correction_ms)}`:''} \u00b7 from the air: ${e?`${signedMs(e.offset_ms)}, ${e.stations} of ${e.heard} stations (${e.confidence_pct} %), ${Math.round(e.age_ms/1000)} s ago, ${v.air.state}`:'too few stations heard'}${v.warning?` \u00b7 NTP and air disagree by ${v.disagreement_ms} ms`:''}${v.storage_error?` \u00b7 ${v.storage_error}`:''}`;
+  const v=clockView;if(!v)return;const e=v.air.estimate,m=v.ntp.measurement;
+  // Without evidence and without a correction the PC clock is accepted as it is.
+  const evidence=!!e&&e.stations>=4&&5*Math.max(e.plus,e.minus)>=4*e.stations;
+  const parts=[!evidence&&v.correction_ms===0?'Clock accepted (stations heard are not off to one side)':`Clock ${v.state}, correction ${signedMs(v.correction_ms)}`,
+    e?`stations heard: ${e.stations}, ${e.plus} above +0.1 s, ${e.minus} below -0.1 s, median DT ${e.median_dt_ms<0?'-':'+'}${(Math.abs(e.median_dt_ms)/1000).toFixed(2)} s, ${Math.round(e.age_ms/1000)} s ago`:'no stations heard',
+    m?`NTP ${signedMs(m.offset_ms)}`:'NTP not measured'];
+  const warning=clockWarningText(v.warning,m?.offset_ms,v.correction_ms);if(warning)parts.push(warning);
+  if(v.warning==='pc_clock_off')parts.push(clockRemedy[v.ntp.windows_time]??clockRemedy.unknown);
+  $('clock-air').textContent=parts.join(' \u00b7 ');
 }
 function loadClock(force=false){
   if(clockLoading||(!force&&performance.now()-clockRead<10000))return clockLoading;
@@ -534,16 +551,6 @@ function loadClock(force=false){
   clockLoading=stationFetch('/clock',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(v?.v===1){clockView=v;clockShow();}}).catch(()=>{}).finally(()=>{clockLoading=null;});
   return clockLoading;
 }
-$('clock-source').addEventListener('change',async event=>{
-  const select=event.target,v=clockView;if(!v)return;select.disabled=true;$('clock-result').textContent='Saving';
-  try{
-    const response=await stationFetch('/clock',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:v.profile_id,boot_id:v.boot_id,source:select.value}),signal:AbortSignal.timeout(10000)});
-    const data=await response.json().catch(()=>null);
-    if(!response.ok||data?.v!==1)throw new Error(data?.error?.code??String(response.status));
-    clockView=data;$('clock-result').textContent='Saved';
-  }catch(error){$('clock-result').textContent=`Not saved \u00b7 ${error.message}`;}
-  clockShow();
-});
 new MutationObserver(()=>{if(!document.querySelector('#settings-drawer').hidden)loadClock();}).observe(document.querySelector('#settings-drawer'),{attributes:true,attributeFilter:['hidden']});
 document.querySelector('#tab-general')?.addEventListener('click',()=>loadClock(true));
 let startupView=null,startupLoading=null;
@@ -1053,9 +1060,13 @@ window.wstxChipsShow=function(){
     const level=document.querySelector('#settings-audio .op-input-meter')?.dataset.level;
     if(active&&level==='low')list.push(chip('level','warn','Audio level low',open('settings-audio')));
     if(active&&level==='high')list.push(chip('level','warn','Audio overdriven',open('settings-audio')));
-    if(transmitConfigured()&&transmitView?.clock==='unsynchronized')list.push(chip('clock','error','Clock off \u00b7 Tx blocked',open('settings-clock')));
-    else if(transmitConfigured()&&transmitView?.clock==='unknown'&&['air','both'].includes(transmitView.clock_source))list.push(chip('clock','error','Clock unknown \u00b7 Tx blocked',open('settings-clock')));
-    if(transmitConfigured()&&transmitView?.clock_warning)list.push(chip('clock-warning','warn','NTP and air clock disagree',open('settings-clock')));
+    // #92 CL-043-03: the clock entries come from clock.state; Clock off only while transmit is
+    // configured, the yellow warnings on every profile.
+    const clock=clockState?.clock;
+    if(transmitConfigured()&&clock?.state==='unsynchronized')list.push(chip('clock','error','Clock off \u00b7 Tx blocked',open('settings-clock')));
+    const clockWarning=clock&&clockWarningText(clock.warning,clock.ntp_offset_ms,clock.correction_ms);
+    if(clockWarning)list.push(chip('clock-warning','warn',clockWarning,open('settings-clock')));
+    if(captureWarningText[clock?.capture_warning])list.push(chip('capture-warning','warn',captureWarningText[clock.capture_warning],open('receive-details')));
     if(uncertainMutation)list.push(chip('receive','warn',receiveFailure||'Receive outcome unknown',open('receive-details')));
     else if(operatingFailure&&operatingSupported!==false)list.push(chip('selection','warn',operatingFailure,open('receive-details')));
     else if(operatingUnknown)list.push(chip('selection','warn','Band/mode outcome unknown',open('receive-details')));

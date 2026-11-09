@@ -2685,10 +2685,11 @@ test('TC-006-003 transmit status shows the SNTP clock measurement',{timeout:4500
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
     view=await (await fetch(app.origin+'/transmit')).json();
   }});
-  assert.equal(view.clock,'unknown','isolated server never measured');assert.equal(view.clock_measurement,null);
+  // #92: the station clock is never unknown; the isolated server never measured SNTP.
+  assert.equal(view.clock,'synchronized');assert.equal(view.clock_measurement,null);
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   const status=async()=>page.evaluate(v=>{profileData.settings.control.ptt='cat';transmitView=null;transmitApply(v);transmitShow();return document.querySelector('#transmit-status').textContent;},view);
-  assert.match(await status(),/ · clock unknown · halt /,'no measurement: state only');
+  assert.match(await status(),/ · clock synchronized · halt /,'no measurement: state only');
   view={...view,clock:'synchronized',clock_measurement:{server:'ch.pool.ntp.org',offset_ms:12,round_trip_ms:20,age_ms:34400}};
   assert.match(await status(),/ · clock synchronized \+12 ms ch\.pool\.ntp\.org 34 s ago · halt /);
   view={...view,clock:'unsynchronized',clock_measurement:{server:'time.windows.com',offset_ms:-2089,round_trip_ms:22,age_ms:5600}};
@@ -2721,51 +2722,94 @@ test('TC-007-005 contact.state rows arrive in order and a continuation is shown'
   assert.deepEqual(reads,[],'no GET /contact');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-043-01, CL-009-05; TC-043-003. Settings > General > Clock reads GET /clock only
-// when Settings opens, saves the clock source with one exact POST, shows the air estimate
-// (offset, stations used, confidence, age), and the clock chips appear only when transmit is
-// not synchronized or NTP and air disagree.
-test('TC-043-003 the clock source and the clock from the air are shown in Settings and as chips',{timeout:60000},async t=>{
-  let view;
-  const {page,app,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
-    view=await (await fetch(app.origin+'/transmit')).json();
-  }});
-  const requests=[],posts=[];
-  page.on('request',r=>{const p=new URL(r.url()).pathname;requests.push(`${r.method()} ${p}`);if(r.method()==='POST'&&p==='/clock')posts.push(JSON.parse(r.postData()));});
-  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});await page.waitForTimeout(500);
+// #92: one routed clock.state event into the page (the socket's own first one has arrived).
+const clockEvent=(page,clock)=>page.evaluate(clock=>{dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'clock.state',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,clock_revision:(clockState?.clock_revision??0)+1,clock:{state:'synchronized',correction_ms:0,warning:null,ntp_offset_ms:null,capture_warning:null,...clock}}}}}));window.wstxChipsShow();},clock);
+// The error-field entries of the clock and audio clock (key, severity, text) with `ptt` set in the page.
+const clockEntries=(page,ptt)=>page.evaluate(ptt=>{profileData.settings.control.ptt=ptt;window.wstxChipsShow();return [...document.querySelectorAll('#exception-chips [data-chip^=clock],#exception-chips [data-chip=capture-warning]')].map(b=>[b.dataset.chip,b.dataset.severity,b.textContent.slice(2)]);},ptt);
+// Proves: CL-043-01, CL-043-03, CL-009-05; TC-043-003. Settings > General > Clock reads GET
+// /clock only when Settings opens and shows the status line (no source select); the clock
+// entries come from routed clock.state with transmit configured; the Clock line names the
+// correction.
+test('TC-043-003 the clock view in Settings and the clock entries from clock.state',{timeout:60000},async t=>{
+  const {page,app,errors}=await fixture(t,{width:1366,height:768});
+  const requests=[];
+  page.on('request',r=>{const p=new URL(r.url()).pathname;requests.push(`${r.method()} ${p}`);});
+  await page.waitForFunction(()=>!!window.wstxContact&&clockState!==null,null,{timeout:30000});await page.waitForTimeout(500);
   assert.equal(requests.some(r=>r.endsWith(' /clock')),false,'no /clock request before Settings opens');
   const initial=await (await fetch(app.origin+'/clock')).json();
-  assert.equal(initial.source,'ntp','the default source');
+  assert.equal(await page.evaluate(()=>clockState.clock_revision),initial.clock_revision,'the pushed state is the station\'s');
+  const estimate={...initial,state:'synchronized',correction_ms:-1980,ntp:{state:'synchronized',measurement:{server:'ch.pool.ntp.org',offset_ms:12,round_trip_ms:20,age_ms:34000},windows_time:'running'},air:{estimate:{median_dt_ms:20,stations:14,plus:2,minus:3,age_ms:3400}},warning:null,capture_warning:null};
+  await page.route('**/clock',route=>route.fulfill({json:estimate}));
   await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
-  await page.locator('#clock-source:enabled').waitFor();
-  assert.equal(await page.locator('#settings-general #settings-clock #clock-source').count(),1,'in Settings > General > Clock');
-  assert.equal(await page.locator('#clock-source').inputValue(),'ntp');
-  assert.match(await page.locator('#clock-air').textContent(),/^Clock unknown by NTP · from the air: too few stations heard$/);
-  await page.locator('#clock-source').selectOption('air');await page.locator('#clock-result').filter({hasText:'Saved'}).waitFor();
-  assert.deepEqual(posts,[{v:1,profile_id:initial.profile_id,boot_id:initial.boot_id,source:'air'}],'exactly one exact-key save');
-  assert.equal((await (await fetch(app.origin+'/clock')).json()).source,'air','the station stored it');
-  const estimate={...initial,source:'air',state:'synchronized',basis:'air',correction_ms:-1980,air:{state:'synchronized',applied_ms:-1980,estimate:{offset_ms:-1985,stations:12,heard:14,confidence_pct:85,age_ms:3400}},disagreement_ms:null,warning:null};
-  await page.route('**/clock',route=>route.request().method()==='GET'?route.fulfill({json:estimate}):route.continue());
-  await page.locator('#tab-general').click();
-  await page.locator('#clock-air').filter({hasText:'12 of 14'}).waitFor();
-  assert.equal(await page.locator('#clock-air').textContent(),'Clock synchronized by the air, correction -1980 ms · from the air: -1985 ms, 12 of 14 stations (85 %), 3 s ago, synchronized');
-  Object.assign(estimate,{source:'both',basis:'ntp',correction_ms:0,disagreement_ms:340,warning:'ntp_air_disagree'});await page.locator('#tab-general').click();
-  await page.locator('#clock-air').filter({hasText:'disagree'}).waitFor();
-  assert.match(await page.locator('#clock-air').textContent(),/^Clock synchronized by NTP · from the air: .* · NTP and air disagree by 340 ms$/);
-  await page.route('**/clock',route=>route.request().method()==='POST'?route.fulfill({status:409,json:{error:{code:'state_conflict'}}}):route.fallback());
-  await page.locator('#clock-source').selectOption('ntp');await page.locator('#clock-result').filter({hasText:'Not saved'}).waitFor();
-  assert.match(await page.locator('#clock-result').textContent(),/state_conflict/);
-  assert.equal(await page.locator('#clock-source').inputValue(),'both','a refusal restores the shown source');
+  await page.locator('#clock-air').filter({hasText:'stations heard: 14'}).waitFor();
+  assert.equal(await page.locator('#settings-general #settings-clock #clock-air').count(),1,'in Settings > General > Clock');
+  assert.equal(await page.locator('#clock-source').count(),0,'no source select');
+  assert.equal(await page.locator('#clock-air').textContent(),'Clock synchronized, correction -1980 ms · stations heard: 14, 2 above +0.1 s, 3 below -0.1 s, median DT +0.02 s, 3 s ago · NTP +12 ms');
   await page.locator('#settings-drawer .return-operate').click();
-  // Chips from the GET /transmit view (CAT PTT set in the page only).
-  const chips=async next=>{view={...view,...next};return page.evaluate(v=>{profileData.settings.control.ptt='cat';transmitView=null;transmitApply(v);transmitShow();window.wstxChipsShow();return [...document.querySelectorAll('#exception-chips [data-chip^=clock]')].map(b=>b.textContent);},view);};
-  assert.deepEqual(await chips({clock:'unknown',clock_source:'air',clock_warning:null}),['✖ Clock unknown · Tx blocked'],'air without enough stations refuses transmit');
-  assert.match(await page.locator('#clock-setting').textContent(),/^Station clock: system UTC corrected from the air, unknown/);
-  assert.deepEqual(await chips({clock:'unknown',clock_source:'ntp'}),[],'NTP unknown keeps no chip, as before');
-  assert.deepEqual(await chips({clock:'synchronized',clock_source:'air'}),[],'synchronized: no chip');
-  assert.deepEqual(await chips({clock:'synchronized',clock_source:'both',clock_warning:'ntp_air_disagree'}),['⚠ NTP and air clock disagree']);
-  assert.deepEqual(await chips({clock:'unsynchronized',clock_source:'both',clock_warning:null}),['✖ Clock off · Tx blocked']);
-  assert.equal(posts.length,2,'one save plus the refused one');
+  const chips=[];
+  for(const clock of [{state:'synchronized',correction_ms:0},{state:'synchronized',correction_ms:-1980},{state:'unsynchronized',correction_ms:-1980}]){
+    await clockEvent(page,clock);chips.push((await clockEntries(page,'cat')).map(e=>e[2]));
+  }
+  assert.deepEqual(chips,[[],[],['Clock off · Tx blocked']]);
+  assert.equal(await page.locator('#clock-setting').textContent(),'Station clock unsynchronized, correction -1980 ms','the Clock line names the correction');
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-043-03, CL-037-02; TC-092-005. The clock entries in the error field from routed
+// clock.state (texts of CL-043-03): Clock off only with transmit configured, the yellow entries
+// on a receive-only profile too, each opening its detail; the Settings status line remedies by
+// Windows Time and the accepted wording without evidence; no GET /clock outside Settings, no
+// source select, no Clock unknown or disagreement text anywhere.
+test('TC-092-005 clock entries in the error field and the clock status line',{timeout:90000},async t=>{
+  const {page,app,errors}=await fixture(t,{width:1366,height:768});
+  const requests=[];
+  page.on('request',r=>{if(new URL(r.url()).pathname==='/clock')requests.push(r.method());});
+  await page.waitForFunction(()=>!!window.wstxContact&&clockState!==null,null,{timeout:30000});
+  const entries=async(clock,ptt)=>{await clockEvent(page,clock);return clockEntries(page,ptt);};
+  // Transmit configured.
+  assert.deepEqual(await entries({warning:'pc_clock_off',ntp_offset_ms:525},'cat'),[['clock-warning','warn','PC clock 525 ms slow vs NTP · see Settings']]);
+  assert.deepEqual(await entries({warning:'pc_clock_off',ntp_offset_ms:-620},'cat'),[['clock-warning','warn','PC clock 620 ms fast vs NTP · see Settings']]);
+  assert.deepEqual(await entries({warning:'ntp_unreachable'},'cat'),[['clock-warning','warn','NTP not reachable · check the network']]);
+  assert.deepEqual(await entries({warning:'stations_off',correction_ms:-1980},'cat'),[['clock-warning','warn','Clock corrected -1980 ms from the air · PC clock matches NTP, check audio latency']]);
+  assert.deepEqual(await entries({},'cat'),[],'null: no clock entry');
+  assert.deepEqual(await entries({state:'unsynchronized',warning:'pc_clock_off',ntp_offset_ms:525},'cat'),[['clock','error','Clock off · Tx blocked'],['clock-warning','warn','PC clock 525 ms slow vs NTP · see Settings']]);
+  // Receive-only: the same yellow entries, never Clock off.
+  assert.deepEqual(await entries({state:'unsynchronized',warning:'pc_clock_off',ntp_offset_ms:525},'disabled'),[['clock-warning','warn','PC clock 525 ms slow vs NTP · see Settings']]);
+  assert.deepEqual(await entries({warning:'ntp_unreachable'},'disabled'),[['clock-warning','warn','NTP not reachable · check the network']]);
+  assert.deepEqual(await entries({warning:'stations_off',correction_ms:-1980},'disabled'),[['clock-warning','warn','Clock corrected -1980 ms from the air · PC clock matches NTP, check audio latency']]);
+  // The audio clock on both profiles, gone at null.
+  for(const ptt of ['cat','disabled']){
+    assert.deepEqual(await entries({capture_warning:'uncorrelated'},ptt),[['capture-warning','warn','Audio timing not tied to the PC clock · DT may be off']]);
+    assert.deepEqual(await entries({capture_warning:'drift_high'},ptt),[['capture-warning','warn','Sound card clock drifts over 1000 ppm · check the audio device']]);
+    assert.deepEqual(await entries({},ptt),[]);
+  }
+  assert.deepEqual(requests,[],'no /clock request before Settings opens');
+  // Each entry opens its detail.
+  await entries({warning:'ntp_unreachable',capture_warning:'drift_high'},'disabled');
+  await page.locator('#exception-chips [data-chip=clock-warning]').click();
+  assert.equal(await page.locator('#settings-drawer').isVisible(),true);assert.equal(await inViewport(page,'#settings-clock'),true);
+  await page.locator('#settings-drawer .return-operate').click();
+  await page.locator('#exception-chips [data-chip=capture-warning]').click();
+  assert.equal(await page.locator('#settings-drawer').isVisible(),true);assert.equal(await inViewport(page,'#receive-details'),true);
+  await page.locator('#settings-drawer .return-operate').click();
+  // Settings > General > Clock: the remedy by windows_time; without evidence the accepted wording.
+  const base=await (await fetch(app.origin+'/clock')).json();
+  let view={...base,state:'synchronized',correction_ms:0,ntp:{state:'unsynchronized',measurement:{server:'ch.pool.ntp.org',offset_ms:525,round_trip_ms:20,age_ms:5000},windows_time:'stopped'},air:{estimate:{median_dt_ms:-20,stations:6,plus:1,minus:2,age_ms:2000}},warning:'pc_clock_off'};
+  await page.route('**/clock',route=>route.fulfill({json:view}));
+  const remedy={stopped:'Windows Time service is stopped: start it and set it to Automatic (services.msc, as administrator)',disabled:'Windows Time service is disabled: set it to Automatic and start it (services.msc, as administrator)',running:'Windows Time runs but the clock is off: Settings > Time & language > Date & time > Sync now',unknown:'Check the Windows Time service and sync the clock'};
+  await page.locator('#open-server-settings').click();
+  for(const time of ['stopped','disabled','running','unknown']){
+    view={...view,ntp:{...view.ntp,windows_time:time}};
+    await page.locator('#tab-general').click();
+    await page.locator('#clock-air').filter({hasText:remedy[time]}).waitFor();
+    assert.equal(await page.locator('#clock-air').textContent(),`Clock accepted (stations heard are not off to one side) · stations heard: 6, 1 above +0.1 s, 2 below -0.1 s, median DT -0.02 s, 2 s ago · NTP +525 ms · PC clock 525 ms slow vs NTP · see Settings · ${remedy[time]}`);
+  }
+  view={...view,correction_ms:-1980,ntp:{...view.ntp,state:'synchronized',measurement:{...view.ntp.measurement,offset_ms:12}},warning:'stations_off'};
+  await page.locator('#tab-general').click();
+  await page.locator('#clock-air').filter({hasText:'Clock corrected'}).waitFor();
+  assert.match(await page.locator('#clock-air').textContent(),/^Clock synchronized, correction -1980 ms · .* · NTP \+12 ms · Clock corrected -1980 ms from the air · PC clock matches NTP, check audio latency$/);
+  assert.equal(await page.locator('#clock-source').count(),0,'no source select');
+  const all=await page.evaluate(()=>document.body.innerText);
+  assert.doesNotMatch(all,/Clock unknown|NTP and air clock disagree/);
   assert.deepEqual(errors,[]);
 });
 

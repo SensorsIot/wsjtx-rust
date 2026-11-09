@@ -1,14 +1,18 @@
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 //! Pure FT8/FT4 transmit preparation: message packing, channel symbols, waveform and
 //! period scheduling; `service` is the slice B transmit owner (arming, PTT, audio, halt),
 //! `clock` the station's SNTP clock measurement (TransmitClock) and `air` the clock from
-//! the air and the station clock combining both by the profile's source (#43).
+//! the air, the reference of the station clock (#43, #92).
 pub mod air;
 pub mod clock;
 mod pack;
 mod schedule;
 pub mod service;
 mod waveform;
+// #92: the one Windows Time service query (Win32 FFI), read-only.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+mod windows_time;
 use crate::decoder::{Channel, Mode};
 pub use pack::{Family, PackError, Packed, pack};
 pub use schedule::{ClockState, Parity, ScheduleError, Start, next_period, parity, plan_start};
