@@ -5962,10 +5962,11 @@ package WstxRequirements {
              Steps: (a) FT8 a flat floor of 30 dB everywhere (floor 30.65, every rise -0.65) and an undecoded station band 12 dB above it over 1000..1050 Hz in all 4 periods. (b) FT8 the flat floor and a decode at 1000.0 Hz; FT4 the same. (c) The join: FT8 open sets {2110, 2160}, {2100, 2110, 2130}, {2650}, every 5th grid point {300, 350, ..., 2650}; FT4 {300}, {300, 390}. (d) Values: a slot window whose largest rise is 0.4 dB and one whose is 0.6 dB. (e) A station decoded and 20 dB above the floor only in periods of the other parity. (f) Decodes in periods that do not count: the 5th older period, one before a band change, one older than the last 4 of the parity on the clock. (g) Decodes overlapping every grid point. (h) No counted period. (i) A slot on the floor in 3 periods and 3 dB above it in one.
              Expected (hand computation recorded in the test; oracle: the open rule of CL-065-01 and FreeTxSlot's floor and value, the flat-floor floor F + 0.65 of TC-039-050): (a) 950 and 1050 open, 960..1040 closed: open [[300, 1000], [1050, 2700]]; (b) FT8 the same; FT4 920..1080 closed, 910 and 1090 open: [[300, 1000], [1090, 2700]]; (c) [[2110, 2160], [2160, 2210]] (touching, not joined); [[2100, 2180]]; [[2650, 2700]]; 48 ranges [[300, 350], ..., [2650, 2700]]; FT4 [[300, 390]]; [[300, 390], [390, 480]]; (d) 0.4 open (value 0), 0.6 closed (value 1); (e) nothing closed by it; (f) those decodes close nothing; (g) open [] (no fallback); (h) open [], periods 0; (i) closed (its busiest period counts). Red on the parent: no open-slot function (the five-best list).
              2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-01';
         }
+        attribute executable : String = "server/src/freeslot_tests.rs";
     }
     dependency CL_065_01_verified_by_TC_082_001 from 'CL-065-01' to 'TC-082-001';
     verification 'TC-082-002' {
@@ -5975,10 +5976,11 @@ package WstxRequirements {
              Steps: (a) Listening without a run: read GET /automation free_tx_slots right after 4 consecutive period starts (FT8 at :00, :15, :30, :45; FT4 7.5 s apart), with one slot loud only in the even periods and one loud only in the period in progress. (b) Enable Tx on for my own CQ with Tx even in the middle of a period, then 4 period starts, then Enable Tx off with no contact. (c) A manual contact with a caller decoded in the odd periods (Tx even) through two periods. (d) A strategy run waiting, then its CQ decision and its contact; the same tables as for the run's choice on the parent. (e) A station band change; the live job stopped; restarted.
              Expected (hand computation recorded in the test; oracle: CL-065-01's parity rule and the operator's round 1 Q3 and round 2 Q1 answers): (a) rx_parity even, odd, even, odd at :00, :15, :30, :45 (the parity of the period in progress), qso false, at_utc_ms the period start; the even-loud slot closed in the even builds, open in the odd ones; the slot loud only in the period in progress not closed at that period's start; periods the counted periods of that parity before the period in progress (at most 4). (b) At Enable Tx at once a build with qso true and rx_parity odd; rx_parity odd at every following start, open changing only at builds at even period starts (when an odd period has ended); at Enable Tx off at once a build with qso false and the parity of the period in progress. (c) qso true, rx_parity odd, the caller's slot closed. (d) The waiting run as (a); in its CQ and contact as (b); the run's choice and tx_slot equal the parent's for the same tables, and the value has no run_id. (e) After the band change only later periods count (the first build periods 0, open []); a stopped live job: null; restarted: a value from its first period. Red on the parent: no value without a run, no alternation.
              2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-01';
         }
+        attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_065_01_verified_by_TC_082_002 from 'CL-065-01' to 'TC-082-002';
     verification 'TC-082-003' {
@@ -5988,10 +5990,11 @@ package WstxRequirements {
              Steps: 60 s of FT8 listening; 30 s of FT4 listening; Enable Tx on and off in the middle of a period; a fourth peer subscribes Thin; the live receive stops; a value with 48 ranges at 4-digit numbers.
              Expected (oracle: CL-065-01 and WstxStationProtocol::PushedStationState): GET /automation free_tx_slots with exactly {at_utc_ms, mode, rx_parity, qso, periods, open}, equal to the MCP view's; each Detailed and Thin peer one free_tx_slots.state per build (FT8 4 in 60 s, FT4 4 in 30 s, plus one at each QSO start and end), data.free_tx_slots equal to the GET value of that build; none to Off; zero automation.state throughout; the fourth peer exactly one with the current value; after the receive stops one event with free_tx_slots null, GET null, no further event; at most 1024 bytes also for the 48-range value with two UUIDs and a 13-digit at_utc_ms; no run_id, slots, rise_db, level_db or floor_db anywhere in it. Red on the parent: no event and null without a run.
              2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-01';
         }
+        attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_065_01_verified_by_TC_082_003 from 'CL-065-01' to 'TC-082-003';
     verification 'TC-082-004' {
@@ -6001,10 +6004,11 @@ package WstxRequirements {
              Steps: open Settings > Expert; push FT8 open [[300, 1000], [1050, 2700]]; push [[2110, 2160], [2160, 2210]]; FT4 [[300, 390], [390, 480]]; a newer value; open []; null; while a value is held a GET /automation reply with an older value, one with null, then one with a later value; an event that arrives before the contact client's script has loaded; a new boot; in each theme read the pixel at a bar's centre, at the Rx and Tx lines' centre and at the ruler background; click and double-click the waterfall at a mark and drag the Tx marker across it; an Off page.
              Expected (oracle: CL-050-07 mapping, the operator's #76 and #82 answers): no "Show free Tx slots" checkbox; one bar per range, 8 CSS px high (within 0.5 px) at the bottom of the ruler, edges within 1 px of x(lo) + 2 and x(hi) - 2; the touching ranges two bars with a 4 px gap (within 1 px), also FT4; no text in the marks layer; in each theme the bar pixel differs from the drawn Rx line, Tx line and ruler background by at least 40 in the sum of the R, G and B differences; the waterfall top and height unchanged; redrawn on the newer value; none for [] and for null; the older and the null GET reply leave the marks unchanged, the later one replaces them; the early event's marks drawn once the client has loaded, with no request; from the new boot on no mark of the old boot until the new boot's first event; the same set_frequency requests as without marks, Rx and Tx lines unchanged; no request after an event and no timer request; at 360x800 no horizontal overflow and no page error; the Off page no marks and no event. Red on the parent: no mark without a run, and none with the checkbox off by default.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-02';
         }
+        attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_065_02_verified_by_TC_082_004 from 'CL-065-02' to 'TC-082-004';
     verification 'TC-082-005' {

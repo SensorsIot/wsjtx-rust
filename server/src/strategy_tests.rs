@@ -7725,9 +7725,21 @@ fn decoded_in(f: &Mcp, period: i64, hz: &[f64]) {
         .recording
         .fixture_publish_period(&crate::contact_http_tests::period_text(period), records);
 }
-/// The value of the run's last decision.
-async fn slots_of(f: &Mcp) -> Value {
-    free_tx_slots(f).await["slots"].clone()
+/// The open ranges of the station's latest build (#82), as [lo, hi) pairs.
+async fn open_ranges(f: &Mcp) -> Vec<(u64, u64)> {
+    free_tx_slots(f).await["open"]
+        .as_array()
+        .expect("open")
+        .iter()
+        .map(|r| (r[0].as_u64().unwrap(), r[1].as_u64().unwrap()))
+        .collect()
+}
+/// Whether my FT8 signal [hz, hz + 50) lies inside one open range of the latest build.
+async fn in_open(f: &Mcp, hz: u64) -> bool {
+    open_ranges(f)
+        .await
+        .iter()
+        .any(|(lo, hi)| *lo <= hz && hz + 50 <= *hi)
 }
 const K1ABC_2400: (&str, f64, Option<f64>) = ("CQ K1ABC FN42", 2400.0, Some(-5.0));
 
@@ -7814,9 +7826,10 @@ async fn tc_039_050_the_roll_off_is_compared_above_the_passband_floor() {
 // periods, the current Tx 1500 on a slot 5 dB above it (1500..1550, bins 512..529, at 35), every
 // other slot on the floor. Its value is 35 - 30.65 = 4.35, 4; a floor slot's rise -0.65, free: 0.
 // The selection of K1ABC (2400) with Hold Tx off leaves 1500 for the nearest floor slot: 1450
-// (bins 495..511) and 1550 (bins 530..546), both 50 Hz away, the lower; tx_slot {1450, 0}, listed
-// first {1450, 0, 30, 31} (level and floor as measured). With Hold Tx on Tx stays on 1500 and
-// tx_slot names its value 4. Red on the parent: every rise 0 over its own usual level, Tx kept.
+// (bins 495..511) and 1550 (bins 530..546), both 50 Hz away, the lower; tx_slot {1450, 0}, and
+// 1450 lies in an open range of the station's build (#82: it overlaps no decode). With Hold Tx on
+// Tx stays on 1500 and tx_slot names its value 4. Red on the parent: every rise 0 over its own
+// usual level, Tx kept.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_a_steady_station_on_the_current_tx_is_a_rise_above_the_floor() {
     let rows = |f: &Mcp, e: i64| {
@@ -7833,10 +7846,7 @@ async fn tc_039_050_a_steady_station_on_the_current_tx_is_a_rise_above_the_floor
             json!({"hz":1450,"power_db":0,"his_end":"unknown"})
         )
     );
-    assert_eq!(
-        slots_of(&t.f).await[0],
-        json!({"hz":1450,"rise_db":0,"level_db":30,"floor_db":31})
-    );
+    assert!(in_open(&t.f, 1450).await, "{:?}", open_ranges(&t.f).await);
     let t = held_run_with("ft8", None, rows, &[K1ABC_2400]).await;
     assert_eq!(
         frequencies(&t.f).await,
@@ -7854,8 +7864,9 @@ async fn tc_039_050_a_steady_station_on_the_current_tx_is_a_rise_above_the_floor
 // on the floor in 3 periods and 6 dB above it in the oldest: its largest rise 36 - 30.65 = 5.35, 5.
 // Slot B 1950 (bins 666..682) 3 dB above the floor in all 4: 33 - 30.65 = 2.35, 2; the slots
 // overlapping it in part hold busy bins and read more (1940: 3 busy and 14 of B, 34.2). So B wins
-// with 2 against 5 (the mean, 0.85 against 2.35, would keep A); listed first {1950, 2, 33, 31}.
-// Red on the parent: every rise over its own usual level is 0 but A's.
+// with 2 against 5 (the mean, 0.85 against 2.35, would keep A). No slot is at 0, so the station's
+// build has no open range (#82). Red on the parent: every rise over its own usual level is 0 but
+// A's.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_the_busiest_counted_period_counts() {
     let rows = |f: &Mcp, e: i64| {
@@ -7881,17 +7892,14 @@ async fn tc_039_050_the_busiest_counted_period_counts() {
             json!({"hz":1950,"power_db":2,"his_end":"unknown"})
         )
     );
-    assert_eq!(
-        slots_of(f).await[0],
-        json!({"hz":1950,"rise_db":2,"level_db":33,"floor_db":31})
-    );
+    assert_eq!(open_ranges(f).await, Vec::<(u64, u64)>::new());
 }
 
 // Proves: CL-039-09, CL-065-01; TC-039-050 (d), (k). The floor follows each period: my counted Rx
 // periods flat 30 in the two older and 32 in the two later. A floor slot reads -0.65 in each (30
 // against 30.65, 32 against 32.65), so its value is 0, not raised by the floor change; Tx 1500
-// kept, tx_slot {1500, 0}; of the equal rises the latest counts: listed {1500, 0, 32, 33}. Red on
-// the parent: its rise over the usual level is 31 - 30, 1.
+// kept, tx_slot {1500, 0}, and 1500 lies in an open range of the station's build (#82). Red on the
+// parent: its rise over the usual level is 31 - 30, 1.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_a_floor_change_does_not_raise_a_free_slot() {
     let rows = |f: &Mcp, e: i64| {
@@ -7909,10 +7917,7 @@ async fn tc_039_050_a_floor_change_does_not_raise_a_free_slot() {
             json!({"hz":1500,"power_db":0,"his_end":"unknown"})
         )
     );
-    assert_eq!(
-        slots_of(f).await[0],
-        json!({"hz":1500,"rise_db":0,"level_db":32,"floor_db":33})
-    );
+    assert!(in_open(f, 1500).await, "{:?}", open_ranges(f).await);
 }
 
 // Proves: CL-039-09; TC-039-050 (e), (k). One counted period is enough to compare: one Rx period, a
@@ -8002,10 +8007,7 @@ async fn tc_039_050_after_a_band_change_only_later_periods_count() {
             json!({"hz":1500,"power_db":0,"his_end":"unknown"})
         )
     );
-    assert_eq!(
-        free_tx_slots(&f).await["periods"],
-        json!({"even":{"now":1},"odd":{"now":null}})
-    );
+    assert_eq!(free_tx_slots(&f).await["periods"], json!(1));
 }
 
 // Proves: CL-039-09; TC-039-050 (h), (k). Values compare in whole dB. One Rx period busy (comb_row,
@@ -8087,7 +8089,7 @@ async fn tc_039_050_a_period_counts_only_when_its_levels_reach_bin_921() {
         );
         assert_eq!(
             free_tx_slots(f).await["periods"],
-            json!({"even":{"now":now},"odd":{"now":null}}),
+            json!(now),
             "{bins_len} bins"
         );
     }
@@ -8197,6 +8199,26 @@ impl Peer {
         }
         out
     }
+    /// The next free_tx_slots.state message within 5 s (what follows it stays for the next read);
+    /// none of the messages read is an automation.state (automation is never used, #82).
+    fn next_free_tx_slots(&mut self) -> Option<Value> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            let messages = tokio::task::block_in_place(|| self.read(Duration::from_millis(100)));
+            assert!(
+                messages.iter().all(|m| m["type"] != "automation.state"),
+                "{messages:?}"
+            );
+            if let Some(i) = messages
+                .iter()
+                .position(|m| m["type"] == "free_tx_slots.state")
+            {
+                self.inbox = messages[i + 1..].to_vec();
+                return Some(messages[i].clone());
+            }
+        }
+        None
+    }
     /// The free_tx_slots.state messages received within 2.5 s (two contact ticks and more).
     fn free_tx_slots(&mut self) -> Vec<Value> {
         let messages = tokio::task::block_in_place(|| self.read(Duration::from_millis(2500)));
@@ -8219,34 +8241,6 @@ fn frame(b: &[u8]) -> Option<(u8, Vec<u8>, usize)> {
     let payload = b.get(at..at + len)?.to_vec();
     Some((b[0] & 0x0f, payload, at + len))
 }
-/// The waterfall before the selection in e: my Rx parity (even, e - 30 s) busy (comb_row, floor 20,
-/// busy 40: floor 20.65, a slot off the bands at least 10) with quiet bands at their slots, my Tx
-/// parity (odd, e - 15 s) a flat 20 (not judged, #66). A band slot's value is its level - 20.65
-/// clamped at 0: 1000 at 0 (on the floor, free), 1300 at 1, 2000 at 2, 700 at 3, 2400 at 4, 1700
-/// at 5. A slot shifted from a band by less than 50 Hz overlaps that band's listed slot and is
-/// skipped, one shifted by 50 Hz or more holds busy bins; so the five listed are 1000, 1300, 2000,
-/// 700, 2400 (1700 is the sixth), each level its band's and floor 21.
-fn free_rows(f: &Mcp, e: i64) {
-    let bands = [
-        (bins(1000, 1050), 20),
-        (bins(1300, 1350), 22),
-        (bins(2000, 2050), 23),
-        (bins(700, 750), 24),
-        (bins(2400, 2450), 25),
-        (bins(1700, 1750), 26),
-    ];
-    comb_row(f, e - 30_000, 20, 40, &bands, false);
-    wf_row(f, e - 15_000, 20, &[], false);
-}
-/// The five of `free_rows`: {hz, rise_db, level_db, floor_db}.
-fn free_rows_slots() -> Value {
-    json!([{"hz":1000,"rise_db":0,"level_db":20,"floor_db":21},
-        {"hz":1300,"rise_db":1,"level_db":22,"floor_db":21},
-        {"hz":2000,"rise_db":2,"level_db":23,"floor_db":21},
-        {"hz":700,"rise_db":3,"level_db":24,"floor_db":21},
-        {"hz":2400,"rise_db":4,"level_db":25,"floor_db":21}])
-}
-const K1ABC_2600: (&str, f64, Option<f64>) = ("CQ K1ABC FN42", 2600.0, Some(-10.0));
 /// GET /automation free_tx_slots, checked to be the MCP automation view's.
 async fn free_tx_slots(f: &Mcp) -> Value {
     let get = f.browser("GET", "/automation", None).await.json;
@@ -8262,246 +8256,422 @@ async fn free_tx_slots(f: &Mcp) -> Value {
     get["free_tx_slots"].clone()
 }
 
-// Proves: CL-065-01; TC-065-002 (the snapshot and the socket). A strategy run, Hold Tx off, Tx 1500,
-// Detailed, Thin and Off peers on the served router. Before any run: null. The selection of K1ABC
-// (CQ at 2600, even: my Rx parity even) on `free_rows`: exactly the keys of the value, the run's id,
-// at_utc_ms the station clock (held still over the decision), the five of `free_rows` and the
-// period counts (one even period now, my Tx parity not judged: null, #66); tx_slot and the move to
-// 1000 exactly as the choice decides them. One free_tx_slots.state each to the Detailed and Thin
-// peers, data its value, none to Off; at most 1024 bytes, also with five slots at their longest
-// numbers (-999). The slot check of the unanswered repetition (nothing new counted): the same
-// list in a new event with a later at_utc_ms. A Thin peer subscribing now gets it once. Auto off
-// ends the run: null and no event.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_065_002_free_tx_slots_in_the_snapshot_and_on_the_socket() {
-    let f = station(true).await;
-    f.state.recording.fixture_band("20m");
-    f.state.recording.fixture_live_job("ft8");
-    let e = at_even(&f);
-    let _client = f.state.recording.clients.session();
+// #82 WstxStrategy::FreeTxSlots: the station's open slots with or without a run (TC-082-002,
+// TC-082-003). Oracle: CL-065-01's parity rule and build times (the operator's round 1 Q3 and round
+// 2 Q1 answers), its open rule worked by hand from the hand-authored rows below, and the model's
+// exact keys (WstxMcp::AutomationWire, WstxStationProtocol::PushedStationState).
+
+/// The station clock stands still at `at`; then one station step (the build runs in it).
+fn step_at(f: &Mcp, at: i64) {
+    f.bench.frozen.store(at, Ordering::SeqCst);
+    f.tick();
+}
+/// The served router of `f` on a local port, with its server task.
+async fn serve(f: &Mcp) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let app = f.app.clone();
     let server = tokio::spawn(async move {
         axum::serve(listener, crate::router(app)).await.unwrap();
     });
+    (address, server)
+}
+/// The listening rows before the even period e: my even periods e - 60 and e - 30 s flat 30 with
+/// an undecoded station 12 dB up over 1000..1050 Hz (bins 342..358), the odd e - 45 and e - 15 s
+/// flat 30 with one over 2000..2050 Hz (bins 683..699), and the even period e itself flat 30 with
+/// one over 1500..1550 Hz (bins 512..529). A slot holding k raised bins of its n (17 or 18) reads
+/// 12k / n - 0.65 in that period: closed from k = 2 (0.76, 1), open at k = 0. So 1000..1050 closes
+/// 960..1040 (960 holds 3, 1040 4; 950 and 1050 none), 2000..2050 closes 1960..2040 and
+/// 1500..1550 closes 1460..1540.
+fn listening_rows(f: &Mcp, e: i64) {
+    for back in [60_000, 30_000] {
+        wf_row(f, e - back, 30, &[(1000, 1050, 42)], false);
+        wf_row(f, e - back + 15_000, 30, &[(2000, 2050, 42)], false);
+    }
+    wf_row(f, e, 30, &[(1500, 1550, 42)], false);
+}
+/// The build of GET /automation free_tx_slots (with the MCP view's), its keys exactly #82's.
+async fn build_of(f: &Mcp) -> Value {
+    let v = free_tx_slots(f).await;
+    let mut keys: Vec<&String> = v.as_object().expect("a value").keys().collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        ["at_utc_ms", "mode", "open", "periods", "qso", "rx_parity"],
+        "{v}"
+    );
+    v
+}
+fn listening(at: i64, rx: &str, periods: u64, open: Value) -> Value {
+    json!({"at_utc_ms":at,"mode":"ft8","rx_parity":rx,"qso":false,"periods":periods,"open":open})
+}
+
+// Proves: CL-065-01; TC-082-002 (a), (d). Listening on 20 m FT8 with no run, then with a strategy
+// run waiting (Test calls, nothing to call), on `listening_rows`, read right after the period
+// starts e, e + 15, e + 30 and e + 45 s: rx_parity even, odd, even, odd (the parity of the period
+// in progress, the Rx parity for transmitting in the next one), qso false, at_utc_ms the period
+// start. At e: my even e - 30 and e - 60 s count (2), e itself in progress does not: open
+// [[300, 1000], [1050, 2700]] (1000 closed, 1500 open). At e + 15 s: the odd e - 15 and e - 45 s
+// (2): [[300, 2000], [2050, 2700]] (1000 open). At e + 30 s: e, e - 30 and e - 60 s (3), e's station
+// now counted: [[300, 1000], [1050, 1500], [1550, 2700]]. At e + 45 s as at e + 15 s. The waiting
+// run gives the same values, with no run_id. Red on the parent: no value without a run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_082_002_listening_alternates_the_parity_every_period_with_or_without_a_waiting_run() {
+    for waiting in [false, true] {
+        let f = station(true).await;
+        f.state.recording.fixture_band("20m");
+        f.state.recording.fixture_live_job("ft8");
+        let e = at_even(&f);
+        let _client = f.state.recording.clients.session();
+        listening_rows(&f, e);
+        if waiting {
+            select(&f, config(Some("Test calls"))).await;
+            assert_eq!(run_state(&f).await.0, "waiting");
+        }
+        let even = json!([[300, 1000], [1050, 2700]]);
+        let odd = json!([[300, 2000], [2050, 2700]]);
+        let counted = json!([[300, 1000], [1050, 1500], [1550, 2700]]);
+        for (at, expected) in [
+            (e, listening(e, "even", 2, even)),
+            (e + 15_000, listening(e + 15_000, "odd", 2, odd.clone())),
+            (e + 30_000, listening(e + 30_000, "even", 3, counted)),
+            (e + 45_000, listening(e + 45_000, "odd", 2, odd)),
+        ] {
+            step_at(&f, at);
+            assert_eq!(build_of(&f).await, expected, "waiting {waiting}");
+        }
+        if waiting {
+            assert_eq!(run_state(&f).await.0, "waiting");
+        }
+    }
+}
+
+// Proves: CL-065-01; TC-082-002 (b), (c). (b) My own CQ, Tx even, Enable Tx on in the middle of
+// the odd period e + 15 s (not my Tx period, so nothing is keyed): a build at once (at_utc_ms the
+// click's e + 16 s) with qso true and rx_parity odd; Enable Tx off at e + 20 s: at once a build with
+// qso false. (c) A manual contact: K1ABC's CQ decoded at 900 Hz in the odd period e - 15 s; the
+// operator double-clicks it at e + 61 s, in the even period e + 60 s, my Tx parity even (replying,
+// Enable Tx off: nothing keyed). Listening just before, rx_parity even; at once qso true and
+// rx_parity odd (the contact's Rx parity: e + 45, e + 15, e - 15 and e - 45 s count, 4), and at
+// the period starts after it odd: e + 75 and e + 90 s. The caller's slot is closed: |f - 900| below
+// 50 closes 860..940. The open ranges change only at builds at even starts: a station over
+// 2400..2450 Hz (bins 820..836) in the odd period e + 75 s, closing 2360..2440 (2360 holds 3 of its
+// bins, 2440 4; 2350 and 2450 none), is not in the build at e + 75 s, nor at e + 89 s (no build
+// within a period), and is from e + 90 s on. Red on the parent: no value without a run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_082_002_a_qso_holds_its_rx_parity_and_builds_at_once_at_its_start_and_end() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    for back in [60_000, 30_000] {
+        wf_row(&f, e - back, 30, &[], false);
+        wf_row(&f, e - back + 15_000, 30, &[], false);
+    }
+    publish(&f, e - 15_000, &[("CQ K1ABC FN42", 900.0, Some(-5.0))]);
+    let caller = json!([[300, 900], [950, 2700]]);
+
+    // (b) my own CQ, Tx even.
+    browser_ok(&f, "set_parity", json!({"parity":"even"})).await;
+    step_at(&f, e + 15_000);
+    assert_eq!(
+        build_of(&f).await,
+        listening(e + 15_000, "odd", 2, caller.clone())
+    );
+    f.bench.frozen.store(e + 16_000, Ordering::SeqCst);
+    let safety = f.read("contact").await["transmit"]["safety_revision"].clone();
+    browser_ok(
+        &f,
+        "enable_tx",
+        json!({"enabled":true,"safety_revision":safety}),
+    )
+    .await;
+    step_at(&f, e + 16_000);
+    assert_eq!(contact(&f).await.2, json!("armed"));
+    let v = build_of(&f).await;
+    assert_eq!(
+        (&v["at_utc_ms"], &v["qso"], &v["rx_parity"]),
+        (&json!(e + 16_000), &json!(true), &json!("odd")),
+        "Enable Tx on: at once"
+    );
+    f.bench.frozen.store(e + 20_000, Ordering::SeqCst);
+    browser_ok(
+        &f,
+        "enable_tx",
+        json!({"enabled":false,"safety_revision":null}),
+    )
+    .await;
+    step_at(&f, e + 20_000);
+    assert_eq!(
+        build_of(&f).await,
+        listening(e + 20_000, "odd", 2, caller.clone()),
+        "Enable Tx off: at once"
+    );
+    browser_ok(&f, "cancel", json!({})).await;
+
+    // (c) a manual contact with K1ABC (decoded in the odd e - 15 s).
+    for back in [0, 30_000] {
+        wf_row(&f, e + back, 30, &[], false);
+        wf_row(&f, e + back + 15_000, 30, &[], false);
+    }
+    step_at(&f, e + 61_000);
+    let v = build_of(&f).await;
+    assert_eq!(
+        (&v["rx_parity"], &v["qso"]),
+        (&json!("even"), &json!(false))
+    );
+    browser_ok(
+        &f,
+        "select_row",
+        json!({"row":live_row(&f, "CQ K1ABC FN42"),"replace":true,"directive_confirmed":true}),
+    )
+    .await;
+    step_at(&f, e + 61_000);
+    assert_eq!(contact(&f).await.1, json!("replying"));
+    assert_eq!(
+        build_of(&f).await,
+        json!({"at_utc_ms":e + 61_000,"mode":"ft8","rx_parity":"odd","qso":true,"periods":4,
+            "open":caller}),
+        "the QSO: at once, its Rx parity"
+    );
+    step_at(&f, e + 75_000);
+    let v = build_of(&f).await;
+    assert_eq!(
+        (&v["at_utc_ms"], &v["rx_parity"], &v["open"]),
+        (&json!(e + 75_000), &json!("odd"), &caller)
+    );
+    wf_row(&f, e + 75_000, 30, &[(2400, 2450, 42)], false);
+    step_at(&f, e + 89_000);
+    assert_eq!(
+        build_of(&f).await["at_utc_ms"],
+        json!(e + 75_000),
+        "no build within a period"
+    );
+    step_at(&f, e + 90_000);
+    let v = build_of(&f).await;
+    assert_eq!(
+        (&v["at_utc_ms"], &v["rx_parity"], &v["qso"], &v["periods"]),
+        (&json!(e + 90_000), &json!("odd"), &json!(true), &json!(4))
+    );
+    assert_eq!(v["open"], json!([[300, 900], [950, 2400], [2450, 2700]]));
+}
+
+// Proves: CL-065-01; TC-082-002 (e). Listening on flat rows (my even e - 60 and e - 30 s): at e + 1 s
+// 2 periods count. A station band change (20 m to 40 m) at e + 2 s builds at once: only later
+// periods count, periods 0 and open []. The live receive stops: null (GET and MCP). A new live job
+// starts: a value at once from its first period (periods 0, open []); its odd period e + 15 s
+// received, at e + 45 s it counts: periods 1, open [[300, 2700]]. Red on the parent: null without a
+// run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_082_002_a_band_change_and_a_new_live_job_count_anew_no_receive_is_null() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    for back in [60_000, 30_000] {
+        wf_row(&f, e - back, 30, &[], false);
+    }
+    step_at(&f, e + 1_000);
+    assert_eq!(
+        build_of(&f).await,
+        listening(e + 1_000, "even", 2, json!([[300, 2700]]))
+    );
+    f.state.recording.fixture_band("40m");
+    step_at(&f, e + 2_000);
+    assert_eq!(
+        build_of(&f).await,
+        listening(e + 2_000, "even", 0, json!([])),
+        "after the band change"
+    );
+    f.state.recording.fixture_stop_live_job();
+    step_at(&f, e + 3_000);
+    assert_eq!(free_tx_slots(&f).await, Value::Null, "no live receive");
+    f.state.recording.fixture_live_job("ft8");
+    step_at(&f, e + 4_000);
+    assert_eq!(
+        build_of(&f).await,
+        listening(e + 4_000, "even", 0, json!([])),
+        "a new live job"
+    );
+    wf_row(&f, e + 15_000, 30, &[], false);
+    step_at(&f, e + 45_000);
+    assert_eq!(
+        build_of(&f).await,
+        listening(e + 45_000, "odd", 1, json!([[300, 2700]]))
+    );
+}
+
+// Proves: CL-065-01; TC-082-003, TC-082-002 (a) in FT4, TC-065-002 (#82: replaced by TC-082-003).
+// Automation never used (no configuration, no run), Detailed, Thin
+// and Off peers on the served router, flat rows. FT8: a build at each of the 4 period starts e,
+// e + 15, e + 30 and e + 45 s, and one at Enable Tx on (e + 50 s, Tx even: the odd period is not
+// mine) and one at Enable Tx off (e + 55 s): each Detailed and Thin peer gets one free_tx_slots.state
+// per build, data {profile_id, boot_id, free_tx_slots} with the GET value of that build (exact keys
+// {at_utc_ms, mode, rx_parity, qso, periods, open}, equal to the MCP view's), none to Off. A fourth
+// peer subscribing Thin gets exactly one, the current value. FT4: a new live job (mode ft4) at
+// e + 60 s builds at once, then at e + 67.5, e + 75 and e + 82.5 s: 4 in 30 s, rx_parity even, odd,
+// even, odd (TC-082-002 (a) in FT4). The live receive
+// stops: one event with free_tx_slots null, GET null, no further event. No automation.state to any
+// peer, and none of run_id, slots, rise_db, level_db, floor_db or listening in an event. The 48-range
+// value with two UUIDs and a 13-digit at_utc_ms is at most 1024 bytes. Red on the parent: no event
+// and null without a run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_082_003_free_tx_slots_on_the_socket_and_in_the_snapshot_without_a_run() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    for back in [60_000, 45_000, 30_000, 15_000] {
+        wf_row(&f, e - back, 30, &[], false);
+    }
+    let (address, server) = serve(&f).await;
     let mut peers: Vec<Peer> = tokio::task::block_in_place(|| {
         ["spectrum.detail", "spectrum.thin", "spectrum.off"]
             .iter()
             .map(|s| Peer::open(address, &f, s))
             .collect()
     });
-    assert_eq!(free_tx_slots(&f).await, Value::Null, "before any run");
-    hold_off(&f).await;
-    free_rows(&f, e);
-    let _feed = attach_feed(&f);
-    let mut c = config(Some("Test calls"));
-    c["strategies"][0]["repetitions"] = json!(4);
-    select(&f, c).await;
     assert_eq!(
         free_tx_slots(&f).await,
         Value::Null,
-        "before the run's first decision"
+        "before the first build"
     );
-    let at = f.bench.now_utc_ms();
-    f.bench.frozen.store(at, Ordering::SeqCst);
-    publish(&f, e, &[K1ABC_2600]);
-    f.bench.frozen.store(0, Ordering::SeqCst);
-    assert_eq!(contact(&f).await.0, json!("K1ABC"));
-    assert_eq!(
-        frequencies(&f).await,
-        (
-            json!(1000),
-            json!(1000),
-            json!({"hz":1000,"power_db":0,"his_end":"unknown"})
-        ),
-        "the choice as without the list"
-    );
-    let run_id = run_of(&f).await["id"].clone();
-    let first = free_tx_slots(&f).await;
-    assert_eq!(
-        first,
-        json!({"run_id":run_id,"at_utc_ms":at,"mode":"ft8","rx_parity":"even","listening":false,
-            "periods":{"even":{"now":1},"odd":{"now":null}},
-            "slots":free_rows_slots()})
-    );
-    let event = json!({"v":1,"type":"free_tx_slots.state",
-        "data":{"profile_id":f.id,"boot_id":f.boot,"free_tx_slots":first}});
-    for (i, name) in [(0, "Detailed"), (1, "Thin")] {
+    let event = |v: &Value| {
+        json!({"v":1,"type":"free_tx_slots.state",
+            "data":{"profile_id":f.id,"boot_id":f.boot,"free_tx_slots":v}})
+    };
+    let mut sent = Vec::new();
+    let mut each = async |peers: &mut Vec<Peer>, label: &str, null: bool| {
+        let v = if null {
+            free_tx_slots(&f).await
+        } else {
+            build_of(&f).await
+        };
+        for (i, peer) in peers.iter_mut().enumerate() {
+            if i == 2 {
+                // The Off peer, read (and its pings answered) at every build: never one.
+                let off = tokio::task::block_in_place(|| peer.read(Duration::from_millis(50)));
+                assert!(
+                    off.iter()
+                        .all(|m| m["type"] != "free_tx_slots.state"
+                            && m["type"] != "automation.state"),
+                    "Off: {label}: {off:?}"
+                );
+                continue;
+            }
+            let got = peer.next_free_tx_slots();
+            assert_eq!(got.as_ref(), Some(&event(&v)), "peer {i}: {label}");
+            sent.push(got.unwrap());
+        }
+        v
+    };
+    browser_ok(&f, "set_parity", json!({"parity":"even"})).await;
+    for (k, rx) in [(0, "even"), (1, "odd"), (2, "even"), (3, "odd")] {
+        step_at(&f, e + 15_000 * k);
+        let v = each(&mut peers, &format!("FT8 build {k}"), false).await;
         assert_eq!(
-            peers[i].free_tx_slots(),
-            std::slice::from_ref(&event),
-            "{name}"
+            (&v["at_utc_ms"], &v["rx_parity"], &v["qso"], &v["mode"]),
+            (
+                &json!(e + 15_000 * k),
+                &json!(rx),
+                &json!(false),
+                &json!("ft8")
+            )
         );
     }
-    assert_eq!(peers[2].free_tx_slots(), Vec::<Value>::new(), "Off");
-    let r = &f.state.recording;
-    assert!(crate::automation::free_tx_slots_event(r, &first).len() <= 1024);
-    let longest = json!({"hz":2650,"rise_db":-999,"level_db":-999,"floor_db":-999});
-    let value = json!({"run_id":profile::new_uuid().unwrap(),"at_utc_ms":i64::from(i32::MAX) * 1000,
-        "mode":"ft8","rx_parity":"even","listening":true,
-        "periods":{"even":{"now":4},"odd":{"now":null}},"slots":vec![longest; 5]});
-    let longest = crate::automation::free_tx_slots_event(r, &value);
-    assert!(longest.len() <= 1024, "{} bytes: {longest}", longest.len());
-
-    // The slot check of the unanswered repetition: the same list, a later decision.
-    transmit_own_period(&f, e + 15_000).await;
-    publish(&f, rep(e, 1), &[]);
-    assert_eq!(run_of(&f).await["slot_check"]["repetitions"], 1);
-    let second = free_tx_slots(&f).await;
-    assert!(
-        second["at_utc_ms"].as_i64() > first["at_utc_ms"].as_i64(),
-        "{second}"
-    );
-    let mut same = second.clone();
-    same["at_utc_ms"] = first["at_utc_ms"].clone();
-    assert_eq!(same, first, "the same list");
-    let event = json!({"v":1,"type":"free_tx_slots.state",
-        "data":{"profile_id":f.id,"boot_id":f.boot,"free_tx_slots":second}});
-    for (i, name) in [(0, "Detailed"), (1, "Thin")] {
-        assert_eq!(
-            peers[i].free_tx_slots(),
-            std::slice::from_ref(&event),
-            "{name}, second"
-        );
-    }
-    assert_eq!(peers[2].free_tx_slots(), Vec::<Value>::new(), "Off, second");
+    f.bench.frozen.store(e + 50_000, Ordering::SeqCst);
+    let safety = f.read("contact").await["transmit"]["safety_revision"].clone();
+    browser_ok(
+        &f,
+        "enable_tx",
+        json!({"enabled":true,"safety_revision":safety}),
+    )
+    .await;
+    step_at(&f, e + 50_000);
+    let v = each(&mut peers, "QSO start", false).await;
+    assert_eq!(v["qso"], true);
+    f.bench.frozen.store(e + 55_000, Ordering::SeqCst);
+    browser_ok(
+        &f,
+        "enable_tx",
+        json!({"enabled":false,"safety_revision":null}),
+    )
+    .await;
+    step_at(&f, e + 55_000);
+    let current = each(&mut peers, "QSO end", false).await;
+    assert_eq!(current["qso"], false);
     let mut late = tokio::task::block_in_place(|| Peer::open(address, &f, "spectrum.thin"));
     assert_eq!(
         late.free_tx_slots(),
-        [event],
-        "a peer subscribing Thin gets it once"
+        [event(&current)],
+        "a peer subscribing Thin gets the current value once"
     );
-    assert_eq!(late.free_tx_slots(), Vec::<Value>::new(), "once");
     peers.push(late);
 
-    assert_eq!(auto(&f, false, None).await.status, StatusCode::OK);
-    f.tick();
-    assert_eq!(run_of(&f).await["state"], "stopped");
-    assert_eq!(free_tx_slots(&f).await, Value::Null, "after the run's end");
+    f.state.recording.fixture_live_job("ft4");
+    // FT4 periods of 7.5 s: e + 60 s is even (e a multiple of 30 s), the parity alternates.
+    for (k, (at, rx)) in [
+        (e + 60_000, "even"),
+        (e + 67_500, "odd"),
+        (e + 75_000, "even"),
+        (e + 82_500, "odd"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        step_at(&f, at);
+        let v = each(&mut peers, &format!("FT4 build {k}"), false).await;
+        assert_eq!(
+            (&v["at_utc_ms"], &v["mode"], &v["rx_parity"]),
+            (&json!(at), &json!("ft4"), &json!(rx))
+        );
+    }
+    f.state.recording.fixture_stop_live_job();
+    step_at(&f, e + 85_000);
+    assert_eq!(each(&mut peers, "receive stopped", true).await, Value::Null);
+    step_at(&f, e + 90_000);
     for (i, peer) in peers.iter_mut().enumerate() {
         assert_eq!(
             peer.free_tx_slots(),
             Vec::<Value>::new(),
-            "peer {i} after the end"
+            "peer {i}: no further event"
         );
     }
-    server.abort();
-}
-
-// Proves: CL-065-01; TC-065-002 (the period counts, the CQ, Hold Tx on). Only my Rx parity counted
-// since the band change (20 m to 40 m, then one even period flat 40, floor 40.65): every slot free,
-// 0 (rise -0.65), so from Tx 1500 the list is the tie rule's 1500, 1450, 1550, 1400, 1600 (each 50 Hz from the
-// nearer listed one), level 40, floor 41; periods {even {now 1}, odd {now null}} (#66: my Tx
-// parity is not judged). A CQ ("Casual 20 m", Hold Tx off, cq_rows with my odd Tx parity loud at
-// 1500): listening, my Rx parity even, periods {even {now 4}, odd {now null}}; the loud Tx parity
-// changes nothing: the CQ stays on 1500 at 0 and the list is again 1500, 1450, 1550, 1400, 1600,
-// level 20, floor 21. Hold Tx on: the selection of K1ABC at 2600 on `free_rows` keeps Tx 1500
-// (tx_slot 1500 with its value: all 18 bins busy, 40 - 20.65, 19) and the list is filled as with
-// it off.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_065_002_period_counts_a_cq_and_hold_tx_on() {
-    let f = station(true).await;
-    f.state.recording.fixture_band("20m");
-    f.state.recording.fixture_live_job("ft8");
-    let e = at_even(&f);
-    let _client = f.state.recording.clients.session();
-    hold_off(&f).await;
-    select(&f, config(Some("Test calls"))).await;
-    wf_row(&f, e - 15_000, 0, &[], false);
-    f.tick();
-    f.state.recording.fixture_band("40m");
-    f.tick();
-    wf_row(&f, rep(e, 1), 40, &[], false);
-    ended(&f, rep(e, 2));
-    publish(&f, rep(e, 2), &[K1ABC_2600]);
-    assert_eq!(contact(&f).await.0, json!("K1ABC"));
-    let v = free_tx_slots(&f).await;
-    assert_eq!(v["periods"], json!({"even":{"now":1},"odd":{"now":null}}));
-    let slot = |hz: u32| json!({"hz":hz,"rise_db":0,"level_db":40,"floor_db":41});
-    assert_eq!(
-        v["slots"],
-        json!([slot(1500), slot(1450), slot(1550), slot(1400), slot(1600)])
+    let off = tokio::task::block_in_place(|| peers[2].read(Duration::from_millis(500)));
+    assert!(
+        off.iter()
+            .all(|m| m["type"] != "free_tx_slots.state" && m["type"] != "automation.state"),
+        "{off:?}"
     );
-    assert_eq!(run_of(&f).await["tx_slot"]["hz"], 1500);
-
-    let t = casual(true).await;
-    let (f, e) = (&t.f, t.e);
-    hold_off(f).await;
-    cq_rows(f, e, wstx_rust::transmit::Parity::Odd);
-    publish(f, e, &[]);
-    publish(f, rep(e, 1), &[]);
-    assert_eq!(run_of(f).await["state"], "calling_cq");
-    assert_eq!(
-        run_of(f).await["tx_slot"],
-        json!({"hz":1500,"power_db":0,"his_end":"unknown"})
-    );
-    let v = free_tx_slots(f).await;
-    assert_eq!(
-        (
-            v["listening"].clone(),
-            v["rx_parity"].clone(),
-            v["periods"].clone()
-        ),
-        (
-            json!(true),
-            json!("even"),
-            json!({"even":{"now":4},"odd":{"now":null}})
-        )
-    );
-    let slot = |hz: u32| json!({"hz":hz,"rise_db":0,"level_db":20,"floor_db":21});
-    assert_eq!(
-        v["slots"],
-        json!([slot(1500), slot(1450), slot(1550), slot(1400), slot(1600)])
-    );
-
-    let t = held_run_with("ft8", None, free_rows, &[K1ABC_2600]).await;
-    let f = &t.f;
-    assert_eq!(
-        frequencies(f).await,
-        (
-            json!(2600),
-            json!(1500),
-            json!({"hz":1500,"power_db":19,"his_end":"unknown"})
-        ),
-        "Tx held"
-    );
-    let v = free_tx_slots(f).await;
-    assert_eq!(v["slots"], free_rows_slots());
-    assert_eq!(v["listening"], false);
-}
-
-// Proves: CL-065-01; TC-065-002 (no run, no event). A station whose automation is never used, with
-// Detailed and Thin peers for 6 s: zero free_tx_slots.state and zero automation.state messages, and
-// GET /automation free_tx_slots null (WstxMcp::AutomationIndicator).
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_065_002_no_run_sends_no_free_tx_slots_and_no_automation_state() {
-    let f = station(true).await;
-    f.state.recording.fixture_live_job("ft8");
-    let _client = f.state.recording.clients.session();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let app = f.app.clone();
-    let server = tokio::spawn(async move {
-        axum::serve(listener, crate::router(app)).await.unwrap();
-    });
-    let mut peers: Vec<Peer> = tokio::task::block_in_place(|| {
-        ["spectrum.detail", "spectrum.thin"]
-            .iter()
-            .map(|s| Peer::open(address, &f, s))
-            .collect()
-    });
-    for peer in &mut peers {
-        let messages = tokio::task::block_in_place(|| peer.read(Duration::from_secs(3)));
-        let kinds: Vec<&Value> = messages
-            .iter()
-            .map(|m| &m["type"])
-            .filter(|t| *t == "free_tx_slots.state" || *t == "automation.state")
-            .collect();
-        assert_eq!(kinds, Vec::<&Value>::new());
-        assert!(!messages.is_empty(), "the peer receives its other events");
+    assert_eq!(sent.len(), 2 * 6 + 3 * 5, "one per build and peer");
+    for m in &sent {
+        let text = m.to_string();
+        for word in [
+            "run_id",
+            "\"slots\"",
+            "rise_db",
+            "level_db",
+            "floor_db",
+            "listening",
+        ] {
+            assert!(!text.contains(word), "{word} in {text}");
+        }
     }
-    assert_eq!(free_tx_slots(&f).await, Value::Null);
+    let r = &f.state.recording;
+    let worst: Vec<(u32, u32)> = (300..=2650).step_by(50).map(|f| (f, f + 50)).collect();
+    let value = crate::freeslot::value(
+        9_999_999_999_999,
+        wstx_rust::decoder::Mode::Ft8,
+        wstx_rust::transmit::Parity::Even,
+        true,
+        4,
+        &worst,
+    );
+    let longest = crate::automation::free_tx_slots_event(r, &value);
+    assert!(longest.len() <= 1024, "{} bytes: {longest}", longest.len());
     server.abort();
 }
 
@@ -8564,14 +8734,19 @@ fn reports(hz: &[f64]) -> Vec<(&'static str, f64, Option<f64>)> {
 // the even decodes leave the candidates 300..400, 720..800, 1010..1050, 1250..1310, 1450..1680,
 // 1890..1960, 2120..2130 and 2240..2650 (with Hold Tx on 810..1000 is also within 50 Hz of Rx
 // 906); each lies on the floor in every even period, rise -0.65, so free: 0 (#66 "At or under
-// floor = free"), and the latest period counts (level 32, floor 32.65). Ranked from Tx 1930 by
-// distance, skipping a slot within 50 Hz of a listed one: 1930, 2120 (190 Hz), 1680 (250 Hz),
-// 1630 (300 Hz), 2240 (310 Hz, after 1620, which is skipped), each {0, 32, 33}: none in 800..1330,
-// none on an even decode; DL5XU (1976) and A61DD (765), decoded only in my odd periods, do not
-// count; periods {even {now 3}, odd {now null}}.
+// floor = free"), and the latest period counts (level 32, floor 32.65). #82: the open slots are
+// those decode-free grid points with no clearance of Rx (D1), the same with Hold Tx on and off: a
+// decode d closes (d - 50, d + 50), so the even clusters 450.7..451.5, 543.0..660.8, 895.4..896.8,
+// 1101.5..1198.6, 1362.9..1399.1, 1737.9..1835.3, 2011.2..2061.6 and 2180.1..2181.1 leave open
+// 300..400, 720..840, 950..1050, 1250..1310, 1450..1680, 1890..1960, 2120..2130 and 2240..2650
+// (edges: 400 is 50.7 Hz below 450.7, 840 55.4 below 895.4, 950 53.2 above 896.8, 1310 52.9 below
+// 1362.9, 2130 50.1 below 2180.1), each signal [f, f + 50) joined into [300, 450), [720, 890),
+// [950, 1100), [1250, 1360), [1450, 1730), [1890, 2010), [2120, 2180), [2240, 2700): none
+// overlaps a station decoded in my even periods; DL5XU (1976) and A61DD (765), decoded only in my
+// odd periods, close nothing; qso true (the run's CQ is armed), rx_parity even, periods 3.
 // Hold Tx on: the CQ on the held 1930, Rx 906, tx_slot {1930, 0}. Hold Tx off: the CQ's slot 1930
-// (the current Tx among the quietest), Rx = Tx, the first listed. Red on the parent: its list
-// ranks by the rise over each slot's own usual level and holds slots on RK3AW.
+// (the current Tx among the quietest), Rx = Tx. Red on the parent: no open ranges (its list ranked
+// five slots by the rise over each slot's own usual level).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_066_001_the_capture_lists_free_slots_off_the_busy_region() {
     for hold in [true, false] {
@@ -8618,18 +8793,22 @@ async fn tc_066_001_the_capture_lists_free_slots_off_the_busy_region() {
         );
         let v = free_tx_slots(f).await;
         assert_eq!(
-            (&v["rx_parity"], &v["listening"], &v["periods"]),
-            (
-                &json!("even"),
-                &json!(true),
-                &json!({"even":{"now":3},"odd":{"now":null}})
-            ),
+            (&v["rx_parity"], &v["qso"], &v["periods"]),
+            (&json!("even"), &json!(true), &json!(3)),
             "Hold Tx {hold}"
         );
-        let slot = |hz: u32| json!({"hz":hz,"rise_db":0,"level_db":32,"floor_db":33});
         assert_eq!(
-            v["slots"],
-            json!([slot(1930), slot(2120), slot(1680), slot(1630), slot(2240)]),
+            v["open"],
+            json!([
+                [300, 450],
+                [720, 890],
+                [950, 1100],
+                [1250, 1360],
+                [1450, 1730],
+                [1890, 2010],
+                [2120, 2180],
+                [2240, 2700]
+            ]),
             "Hold Tx {hold}"
         );
     }
@@ -8640,9 +8819,9 @@ async fn tc_066_001_the_capture_lists_free_slots_off_the_busy_region() {
 // two older and 32 in the two later; a station decoded at 659.5 Hz at 38 dB in all 4 even periods,
 // stations decoded at 659.7 and 691.8 Hz at 38 dB in all 4 odd periods. The selection of K1ABC
 // (2400, Hold Tx off): 1550 is free, 0 (rise -0.65), like every free slot (610..700 is on the
-// decoded station), so Tx stays on 1550, tx_slot {1550, 0}; the list by distance 1550, 1500, 1600
-// (both 50 Hz, the lower first), 1450, 1650, each {0, 32, 33}. Red on the parent: it moves Tx to 680 (rise 0 on
-// the station against 1 on the free slots), as live.
+// decoded station), so Tx stays on 1550, tx_slot {1550, 0}. #82: the station's open slots close
+// 610..700 (|f - 659.5| below 50) and nothing for the odd stations: [300, 650), [710, 2700). Red on
+// the parent: it moves Tx to 680 (rise 0 on the station against 1 on the free slots), as live.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_066_002_the_0729_case_keeps_tx_off_the_station() {
     let rows = |f: &Mcp, e: i64| {
@@ -8675,11 +8854,7 @@ async fn tc_066_002_the_0729_case_keeps_tx_off_the_station() {
             json!({"hz":1550,"power_db":0,"his_end":"unknown"})
         )
     );
-    let slot = |hz: u32| json!({"hz":hz,"rise_db":0,"level_db":32,"floor_db":33});
-    assert_eq!(
-        slots_of(f).await,
-        json!([slot(1550), slot(1500), slot(1600), slot(1450), slot(1650)])
-    );
+    assert_eq!(open_ranges(f).await, [(300, 650), (710, 2700)]);
 }
 
 // Proves: CL-039-09; TC-039-049 (f); TC-066-002 (g). Hold Tx on, the selection of K1ABC at 1520,
@@ -8759,8 +8934,8 @@ async fn tc_066_002_the_cqs_caller_move_skips_a_decoded_station() {
 // rows of my Rx period before each Tx period (first frames 0.4 and 0.2 s before it) complete on
 // the air and carry the tx mark (#61), as the live Tx runs of 77 rows. Those periods are received
 // (I transmitted in the period after them), so they count (CL-039-09 "periods I transmitted in
-// never counted"): periods {even {now 1}, odd {now null}} at the selection (e - 30 s), 2 at the
-// slot check of the 1st repetition (+ e), 3 at the 2nd (+ e + 30 s). My Tx periods are never kept
+// never counted"): the station's build counts 1 period at the selection (e - 30 s, #82 periods),
+// 2 at the slot check of the 1st repetition (+ e), 3 at the 2nd (+ e + 30 s). My Tx periods are never kept
 // in the per-period power, the received ones are (e - 30, e - 15, e and e + 30 s). Red on the
 // parent: it drops each Rx period with a marked row, 1 at every slot check, as live.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -8778,7 +8953,7 @@ async fn tc_066_002_received_periods_count_after_my_transmissions() {
     select(&f, c).await;
     publish(&f, e, &[K1ABC_CQ]);
     assert_eq!(contact(&f).await.0, json!("K1ABC"));
-    let periods = |now: i64| json!({"even":{"now":now},"odd":{"now":null}});
+    let periods = |now: i64| json!(now);
     assert_eq!(free_tx_slots(&f).await["periods"], periods(1), "selection");
     let service = &f.state.recording.transmit.get().unwrap().service;
     for k in 1..=2 {

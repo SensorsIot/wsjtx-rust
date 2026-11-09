@@ -1426,17 +1426,16 @@ test('TC-050-007 the waterfall pointer, Rx/Tx lines and axis share one frequency
   }
 });
 
-// #65 WstxOperatingLayout::FreeTxSlotMarks (TC-065-003). Oracle: the CL-050-07 mapping (the waterfall
-// canvas's own box carries 0..3000 Hz), the operator's #65 answers R1-R3 (issue #65 Functionality 3)
-// and #76 numbers (bars 8 px high, 2 px inset at each end, a drawn colour difference of at least 40);
-// the automation snapshot and the free_tx_slots values are hand-written fixtures.
-const freeTxValue=(run_id,slots,{mode='ft8',at=1}={})=>({run_id,at_utc_ms:at,mode,rx_parity:'even',listening:false,
-  periods:{even:{now:1},odd:{now:null}},slots:slots.map(([hz,rise])=>({hz,rise_db:rise,level_db:21+rise,floor_db:21}))});
+// #82 WstxOperatingLayout::FreeTxSlotMarks (TC-082-004). Oracle: the CL-050-07 mapping (the waterfall
+// canvas's own box carries 0..3000 Hz), the operator's #82 answers ("open slots are shown all the time
+// as a part of the waterfall", "nothing else on screen") and #76 numbers (bars 8 px high, 2 px inset
+// at each end, a drawn colour difference of at least 40); the free_tx_slots values are hand-written.
+const freeTxValue=(open,{mode='ft8',at=1,qso=false}={})=>({at_utc_ms:at,mode,rx_parity:'even',qso,periods:4,open});
 // The ruler's marks, the waterfall box and the Rx/Tx lines as the page shows them.
 const freeTxMarks=page=>page.evaluate(()=>{
   const box=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
   const layer=document.querySelector('#frequency-ruler > #free-tx-slots'),shown=e=>e.checkVisibility()&&e.getBoundingClientRect().width>0;
-  const bars=layer?[...layer.querySelectorAll('.fts-bar')].filter(shown).map(b=>({...box(b),hz:Number(b.dataset.hz),rank:Number(b.dataset.rank),pointer:getComputedStyle(b).pointerEvents})):[];
+  const bars=layer?[...layer.querySelectorAll('.fts-bar')].filter(shown).map(b=>({...box(b),lo:Number(b.dataset.lo),hi:Number(b.dataset.hi),pointer:getComputedStyle(b).pointerEvents})):[];
   const wf=document.querySelector('#waterfall').getBoundingClientRect(),line=key=>box(document.querySelector(`#waterfall-wrap .ct-${key}`));
   return {bars,text:layer?.textContent??'',ruler:box(document.querySelector('#frequency-ruler')),wf:{x:wf.left,w:wf.width,top:wf.top,height:wf.height},rx:line('rx'),tx:line('txm'),
     overflow:document.documentElement.scrollWidth>innerWidth};
@@ -1451,73 +1450,77 @@ const freeTxPixels=async(page,points)=>{const png=(await page.screenshot({scale:
     const g=new OffscreenCanvas(img.width,img.height).getContext('2d');g.drawImage(img,0,0);
     return points.map(([x,y])=>[...g.getImageData(Math.floor(x),Math.floor(y),1,1).data.slice(0,3)]);},[png,points]);};
 const rgbDifference=(a,b)=>a.reduce((s,v,i)=>s+Math.abs(v-b[i]),0);
-// Every listed slot a bar 8 px high at the bottom of the ruler from x(hz) + 2 to x(hz + width) - 2
+// Every open range [lo, hi) a bar 8 px high at the bottom of the ruler from x(lo) + 2 to x(hi) - 2
 // within 1 px of the mapping; no text in the marks layer; no horizontal overflow.
-function freeTxGeometry(m,slots,width,label){
+function freeTxGeometry(m,open,label){
   const x=hz=>m.wf.x+hz*m.wf.w/3000;
-  assert.deepEqual(m.bars.map(b=>[b.rank,b.hz]),slots.map(([hz],i)=>[i+1,hz]),`${label}: one bar per listed slot`);
+  assert.deepEqual(m.bars.map(b=>[b.lo,b.hi]),open,`${label}: one bar per open range`);
   for(const b of m.bars){
-    assert.ok(Math.abs(b.left-(x(b.hz)+2))<=1&&Math.abs(b.right-(x(b.hz+width)-2))<=1,`${label}: bar ${b.hz} at ${b.left}-${b.right}, mapping ${x(b.hz)}-${x(b.hz+width)} less 2 px each end`);
-    assert.ok(Math.abs(b.height-8)<=.5,`${label}: bar ${b.hz} ${b.height} px high`);
-    assert.ok(Math.abs(b.bottom-m.ruler.bottom)<=.5&&b.top>=m.ruler.top-.5,`${label}: bar ${b.hz} at the bottom of the ruler`);
+    assert.ok(Math.abs(b.left-(x(b.lo)+2))<=1&&Math.abs(b.right-(x(b.hi)-2))<=1,`${label}: bar ${b.lo} at ${b.left}-${b.right}, mapping ${x(b.lo)}-${x(b.hi)} less 2 px each end`);
+    assert.ok(Math.abs(b.height-8)<=.5,`${label}: bar ${b.lo} ${b.height} px high`);
+    assert.ok(Math.abs(b.bottom-m.ruler.bottom)<=.5&&b.top>=m.ruler.top-.5,`${label}: bar ${b.lo} at the bottom of the ruler`);
     assert.equal(b.pointer,'none');
   }
   assert.equal(m.text.trim(),'',`${label}: no text on the marks`);
   assert.equal(m.overflow,false,`${label}: horizontal overflow`);
 }
-// Two slots exactly one width apart: two bars with a 4 px gap between them (within 1 px).
+// Two touching ranges (the first's hi the second's lo): two bars with a 4 px gap (within 1 px).
 function freeTxGap(m,low,high,label){
-  const a=m.bars.find(b=>b.hz===low),b=m.bars.find(b=>b.hz===high);
-  assert.ok(a&&b,`${label}: bars ${low} and ${high}`);
+  const a=m.bars.find(b=>b.lo===low),b=m.bars.find(b=>b.lo===high);
+  assert.ok(a&&b&&a.hi===b.lo,`${label}: touching bars ${low} and ${high}`);
   assert.ok(Math.abs(b.left-a.right-4)<=1,`${label}: gap ${b.left-a.right} px between ${low} and ${high}`);
 }
-// Proves: CL-065-02; TC-065-003 the Free Tx slots marks above the waterfall: the Expert checkbox (off
-// by default, per browser), 8 px bars inset 2 px at each end on the waterfall's mapping with a 4 px gap
-// between adjacent slots, no text, a drawn colour apart from the Rx line, Tx line and ruler in each
-// theme, the marks only for the snapshot's run, no pointer input and no request of their own.
-test('TC-065-003 Free Tx slots marks above the waterfall',{timeout:180000},async t=>{
+// Proves: CL-065-02; TC-082-004, TC-065-003 (#82: replaced by TC-082-004) the open slot marks are always part of the waterfall: no checkbox, a
+// bar per open range [lo, hi) inset 2 px at each end on the waterfall's mapping (touching ranges a
+// 4 px gap), 8 px, no text, a drawn colour apart from the Rx line, Tx line and ruler in each theme,
+// with automation never used (no run, no run_id match); the held value replaced by each event, by a
+// GET /automation reply only with a later at_utc_ms, dropped at a new boot; an event carried before
+// the operating client loaded drawn once it has; no pointer input and no request of their own.
+test('TC-082-004 open slot marks always on the waterfall',{timeout:180000},async t=>{
   for(const scale of [1,2]){
-    const commands=[],settings={rx_hz:1500,tx_hz:1200,hold_tx:false},runId=crypto.randomUUID(),requests=[];
-    const automation={runRevision:1,run:{id:runId,state:'waiting',reason:null,mode:'ft8',completed_contacts:0,unanswered_periods:0,contact_id:null,selected:null,last_decision:null,given_up:[],left:null,quiet:[],hearing:null,tx_slot:null,slot_check:null,pounce:{call:'K1ABC',band:'40m'}},value:null};
-    const {page,app,errors}=await fixture(t,{width:1366,height:768},{deviceScaleFactor:scale,beforeNavigate:async(p,app)=>{
+    const commands=[],settings={rx_hz:1500,tx_hz:1200,hold_tx:false},requests=[];
+    const automation={runRevision:0,value:null},early=freeTxValue([[300,1000],[1050,2700]],{at:1});
+    const {page,errors}=await fixture(t,{width:1366,height:768},{deviceScaleFactor:scale,beforeNavigate:async(p,app)=>{
       const base=await (await fetch(app.origin+'/profile')).json();
       p.on('request',r=>{const u=new URL(r.url());if(u.origin===app.origin&&u.pathname!=='/'&&!/\.(js|css|svg|png|ico|woff2?)$/.test(u.pathname))requests.push(`${r.method()} ${u.pathname}`);});
       await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{settings})}));
       await contactCommands(p,commands);
-      await p.route('**/automation',route=>route.fulfill({json:{v:1,profile_id:base.profile_id,boot_id:base.boot_id,policy_revision:1,run_revision:automation.runRevision,configuration:{strategy:false,pounce:'K1ABC'},run:automation.run,strategy_refusal:null,free_tx_slots:automation.value}}));
+      await p.route('**/automation',route=>route.fulfill({json:{v:1,profile_id:base.profile_id,boot_id:base.boot_id,policy_revision:0,run_revision:automation.runRevision,configuration:null,run:null,strategy_refusal:null,free_tx_slots:automation.value}}));
+      // An event the socket carries before the operating client (contact.js) has loaded.
+      const injected=deferred();
+      await p.routeWebSocket(/\/ws$/,ws=>{const station=ws.connectToServer();let first=true;station.onMessage(m=>{ws.send(m);if(first){first=false;ws.send(JSON.stringify({v:1,type:'free_tx_slots.state',data:{profile_id:base.profile_id,boot_id:base.boot_id,free_tx_slots:early}}));injected.resolve();}});});
+      await p.route('**/contact.js',async route=>{await injected.promise;await route.continue();});
     }});
-    // #74: the run is announced by automation.state (the station sends one to a new subscriber
-    // while a revision is nonzero); GET /automation is read only after it.
-    await page.waitForFunction(()=>!!window.wstxContact?.snapshot(),null,{timeout:20000});
-    await page.evaluate(r=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:1,run_revision:r}}}})),automation.runRevision);
-    // The run is read (the station element marks an active run).
-    await page.waitForFunction(()=>window.wstxContact?.snapshot()&&!document.querySelector('#contact-rx').disabled&&document.querySelector('#station-automation')?.dataset.active==='true',null,{timeout:20000}).catch(async e=>{throw new Error(`${e.message} ${JSON.stringify(await page.evaluate(()=>[!!window.wstxContact?.snapshot(),document.querySelector('#contact-rx')?.disabled,document.querySelector('#station-automation')?.dataset.active,document.querySelector('#station-automation')?.textContent]))} ${JSON.stringify(requests)} ${errors}`);});
+    await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#contact-rx').disabled,null,{timeout:20000});
+    await freeTxSettled(page);
+    freeTxGeometry(await freeTxMarks(page),early.open,`dpr ${scale}: the early event, drawn once the client loaded`);
     const push=v=>page.evaluate(v=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'free_tx_slots.state',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,free_tx_slots:v}}}})),v);
     const reads=()=>requests.filter(r=>r==='GET /automation').length;
-    // FT8 2110 and 2160 Hz are exactly one width apart; FT4 2110 and 2200 Hz likewise.
-    const first=[[1000,0],[1300,1],[2110,-1],[700,3],[2160,4]],ft4=[[1000,0],[1300,1],[2110,-1],[700,3],[2200,4]];
-    const option=page.locator('#settings-expert label:has(#free-tx-slots-show)');
-    const setOption=async on=>{await page.locator('#open-server-settings').click();const box=page.locator('#free-tx-slots-show');if(await box.isChecked()!==on)await box.click();await page.locator('.op-secondary:not([hidden]) .return-operate').click();};
     if(scale===1){
-      assert.equal((await option.textContent()).trim(),'Show free Tx slots');
-      assert.equal(await page.locator('#free-tx-slots-show').isChecked(),false,'off by default');
+      // No setting: no checkbox and no storage key.
+      await page.locator('#open-server-settings').click();
+      assert.equal(await page.locator('#free-tx-slots-show').count(),0,'no "Show free Tx slots" checkbox');
+      assert.equal((await page.locator('#settings-expert').textContent()).includes('Show free Tx slots'),false);
+      await page.locator('.op-secondary:not([hidden]) .return-operate').click();
+      assert.equal(await page.evaluate(()=>localStorage.getItem('wstx.free-tx-slots.v1')),null);
     }
+    await push(null);
     const before=await freeTxMarks(page),readsBefore=reads();
+    assert.deepEqual(before.bars,[],'null: no marks');
+    // Touching FT8 ranges [2110, 2160) and [2160, 2210); FT4 [300, 390) and [390, 480).
+    const first=[[300,1000],[1050,1500],[2110,2160],[2160,2210],[2400,2700]],ft4=[[300,390],[390,480],[1090,2700]];
     // The event is handled within the dispatch: the read after it sees its effect.
-    await push(freeTxValue(runId,first));
-    assert.deepEqual((await freeTxMarks(page)).bars,[],'no marks while the option is off');
-    if(scale===1)assert.equal(await page.evaluate(()=>localStorage.getItem('wstx.free-tx-slots.v1')),null);
-    await setOption(true);
+    await push(freeTxValue(first,{at:10}));
     for(const [width,height] of scale===1?[[1366,768],[1920,1080],[360,800]]:[[1366,768],[360,800]]){
       await page.setViewportSize({width,height});await freeTxSettled(page);
       const label=`${width}x${height} dpr ${scale}`,m=await freeTxMarks(page);
       // A phone: a bar may vanish; only no overflow and no page error.
       if(width===360){assert.equal(m.overflow,false,`${label}: horizontal overflow`);assert.equal(m.text.trim(),'',`${label}: no text on the marks`);continue;}
-      freeTxGeometry(m,first,50,label);
+      freeTxGeometry(m,first,label);
       freeTxGap(m,2110,2160,label);
       if(width===1366){assert.deepEqual(m.wf,before.wf,`${label}: the waterfall does not move`);assert.deepEqual([m.rx,m.tx],[before.rx,before.tx],`${label}: the Rx and Tx lines unchanged`);}
       // Nothing of the marks under the pointer.
-      for(const b of m.bars)assert.equal(await page.evaluate(([x,y])=>!!document.elementFromPoint(x,y)?.closest('#free-tx-slots'),[(b.left+b.right)/2,(b.top+b.bottom)/2]),false,`${label}: bar ${b.hz} takes no pointer input`);
+      for(const b of m.bars)assert.equal(await page.evaluate(([x,y])=>!!document.elementFromPoint(x,y)?.closest('#free-tx-slots'),[(b.left+b.right)/2,(b.top+b.bottom)/2]),false,`${label}: bar ${b.lo} takes no pointer input`);
     }
     await page.setViewportSize({width:1366,height:768});await freeTxSettled(page);
     if(scale===2){assert.equal(reads(),readsBefore,'no request after an event');assert.deepEqual(errors,[]);continue;}
@@ -1525,26 +1528,26 @@ test('TC-065-003 Free Tx slots marks above the waterfall',{timeout:180000},async
     // line's centre pixel and the ruler background in the 2110/2160 Hz gap, at the bars' height.
     for(const theme of ['dark','day','night']){
       await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;},theme);await freeTxSettled(page);
-      const m=await freeTxMarks(page),y=(m.bars[0].top+m.bars[0].bottom)/2,a=m.bars.find(b=>b.hz===2110),b=m.bars.find(b=>b.hz===2160);
+      const m=await freeTxMarks(page),y=(m.bars[0].top+m.bars[0].bottom)/2,a=m.bars.find(b=>b.lo===2110),b=m.bars.find(b=>b.lo===2160);
       const centre=r=>[(r.left+r.right)/2,(r.top+r.bottom)/2];
       const [rx,tx,ruler,...bars]=await freeTxPixels(page,[centre(m.rx),centre(m.tx),[(a.right+b.left)/2,y],...m.bars.map(centre)]);
       for(const [i,bar] of bars.entries())for(const [name,other] of [['Rx line',rx],['Tx line',tx],['ruler background',ruler]])
-        assert.ok(rgbDifference(bar,other)>=40,`${theme}: bar ${m.bars[i].hz} ${bar} against the ${name} ${other}: ${rgbDifference(bar,other)}`);
+        assert.ok(rgbDifference(bar,other)>=40,`${theme}: bar ${m.bars[i].lo} ${bar} against the ${name} ${other}: ${rgbDifference(bar,other)}`);
     }
     await page.evaluate(()=>{document.documentElement.dataset.theme='dark';});
-    // A newer value redraws; FT4 bars are 90 Hz wide.
-    const newer=[[1100,0],[2200,2],[600,5]];
-    await push(freeTxValue(runId,newer,{at:2}));
-    freeTxGeometry(await freeTxMarks(page),newer,50,'newer value');
-    await push(freeTxValue(runId,ft4,{mode:'ft4',at:3}));
-    const four=await freeTxMarks(page);freeTxGeometry(four,ft4,90,'FT4');freeTxGap(four,2110,2200,'FT4');
-    // No marks for another run, for an empty list, and with no run.
-    await push(freeTxValue(crypto.randomUUID(),first,{at:4}));
-    assert.deepEqual((await freeTxMarks(page)).bars,[],'another run_id');
-    await push(freeTxValue(runId,[],{at:5}));
-    assert.deepEqual((await freeTxMarks(page)).bars,[],'empty slots');
-    await push(freeTxValue(runId,first,{at:6}));
-    assert.equal((await freeTxMarks(page)).bars.length,5);
+    // A newer value redraws (also an older at_utc_ms: events replace in socket order); FT4 alike.
+    const newer=[[600,1100],[2200,2700]];
+    await push(freeTxValue(newer,{at:20}));
+    freeTxGeometry(await freeTxMarks(page),newer,'newer value');
+    await push(freeTxValue(ft4,{mode:'ft4',at:30}));
+    const four=await freeTxMarks(page);freeTxGeometry(four,ft4,'FT4');freeTxGap(four,300,390,'FT4');
+    // [] and null: no marks; a value again: its marks.
+    await push(freeTxValue([],{at:40}));
+    assert.deepEqual((await freeTxMarks(page)).bars,[],'open []');
+    await push(null);
+    assert.deepEqual((await freeTxMarks(page)).bars,[],'null');
+    await push(freeTxValue(first,{at:50}));
+    freeTxGeometry(await freeTxMarks(page),first,'again');
     // Timer: nothing is read while the marks stand.
     await page.waitForTimeout(2500);
     assert.equal(reads(),readsBefore,'no request after an event and no timer request');
@@ -1560,25 +1563,33 @@ test('TC-065-003 Free Tx slots marks above the waterfall',{timeout:180000},async
       return commands.slice(n).map(c=>[c.action,c.rx_hz,c.tx_hz]);
     };
     const withMarks=await actions();
-    await setOption(false);
-    assert.deepEqual((await freeTxMarks(page)).bars,[],'checkbox off: no marks');
+    await push(null);
     const without=await actions();
     assert.deepEqual(withMarks,without,'the same requests as without marks');
     assert.equal(withMarks[0][0],'set_frequency');
-    await setOption(true);
-    assert.equal((await freeTxMarks(page)).bars.length,5,'on again');
-    // The run ends: the snapshot has run null.
-    const readsEnd=reads();automation.run=null;automation.value=null;automation.runRevision++;
-    await page.evaluate(r=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:1,run_revision:r}}}})),automation.runRevision);
-    await page.waitForFunction(()=>document.querySelector('#station-automation')?.dataset.active==='false');
-    assert.deepEqual((await freeTxMarks(page)).bars,[],'run null');
-    assert.equal(reads(),readsEnd+1,'one read on automation.state');
-    // Per browser: on after a reload, off in another browser context.
-    await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
-    assert.equal(await page.locator('#free-tx-slots-show').isChecked(),true,'on after a reload');
-    const other=await browser.newContext({viewport:{width:1366,height:768}});t.after(()=>other.close());
-    const second=await other.newPage();await second.goto(app.origin);await second.locator('#free-tx-slots-show').waitFor({state:'attached'});
-    assert.equal(await second.locator('#free-tx-slots-show').isChecked(),false,'off in another browser');
+    // GET /automation (read only after automation.state, #74) replaces the held value only with a
+    // later at_utc_ms: an older value and null leave the marks, a later one replaces them.
+    await push(freeTxValue(first,{at:100}));
+    const announce=()=>page.evaluate(r=>new Promise(done=>{addEventListener('wstx-automation',()=>done(),{once:true});dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:0,run_revision:r}}}}));}),++automation.runRevision);
+    for(const [value,label] of [[freeTxValue(newer,{at:99}),'an older reply'],[null,'a null reply'],[freeTxValue(newer,{at:100}),'a reply of the same build']]){
+      automation.value=value;await announce();
+      freeTxGeometry(await freeTxMarks(page),first,`${label} leaves the marks`);
+    }
+    automation.value=freeTxValue(newer,{at:101});await announce();
+    freeTxGeometry(await freeTxMarks(page),newer,'a later reply replaces them');
+    assert.equal(reads(),readsBefore+4,'one read per automation.state');
+    // An Off page: its held value goes, no marks (the station sends an Off peer no value,
+    // TC-082-003); back on Detailed, the next event draws again.
+    await chooseDisplay(page,'off');
+    assert.deepEqual((await freeTxMarks(page)).bars,[],'Off: no marks');
+    await chooseDisplay(page,'detail');
+    await push(freeTxValue(first,{at:200}));
+    freeTxGeometry(await freeTxMarks(page),first,'Detailed again');
+    // A new boot drops the held value at once; the new boot's first event draws again.
+    await page.evaluate(()=>dispatchEvent(new Event('station-boot')));
+    assert.deepEqual((await freeTxMarks(page)).bars,[],'a new boot: no mark of the old boot');
+    await push(freeTxValue(ft4,{mode:'ft4',at:5}));
+    freeTxGeometry(await freeTxMarks(page),ft4,'the new boot\'s first event');
     assert.equal(commands.some(c=>c.action==='enable_tx'),false);
     assert.deepEqual(errors,[]);
   }
@@ -3476,7 +3487,7 @@ test('TC-074-003 on a new boot every view drops the previous boot at once, disca
     const pskrOf=phase=>phase==='A'?{v:1,profile_id:base.profile_id,boot_id:A,enabled:true,use:true,state:'connected',error:null,last_spot_utc_s:T-30,storage_error:null}:{v:1,profile_id:base.profile_id,boot_id:B,enabled:false,use:false,state:'off',error:null,last_spot_utc_s:null,storage_error:null};
     const alertsOf=phase=>({v:1,profile_id:base.profile_id,boot_id:phase==='A'?A:B,revision:1,alerts:phase==='A'?[{id:1,utc:'2026-10-27T12:00:00.0000000Z',call:'K1ABC',message:'CQ K1ABC FN42',rule:'CQ',band:'40m',mode:'ft8',snr_db:-12,dxcc:'United States'}]:[]});
     const automationOf=phase=>phase==='A'?{v:1,profile_id:base.profile_id,boot_id:A,policy_revision:1,run_revision:1,configuration:{strategy:true},
-      run:strategyRunOf('contact_active',{id:runId,selected:{source_id:'s',job_id:'j',generation:1,sequence:3,call:'K1ABC'},hearing:{state:'heard',spot_utc_s:T-75,snr_db:-12},tx_slot:{hz:1420,power_db:20,his_end:'yes'}}),strategy_refusal:null,free_tx_slots:freeTxValue(runId,[[1000,0],[1300,1]])}:
+      run:strategyRunOf('contact_active',{id:runId,selected:{source_id:'s',job_id:'j',generation:1,sequence:3,call:'K1ABC'},hearing:{state:'heard',spot_utc_s:T-75,snr_db:-12},tx_slot:{hz:1420,power_db:20,his_end:'yes'}}),strategy_refusal:null,free_tx_slots:null}:
       {v:1,profile_id:base.profile_id,boot_id:B,policy_revision:0,run_revision:0,configuration:null,run:null,strategy_refusal:null,free_tx_slots:null};
     // The station of both boots for a page: replies and socket messages name the boot of the phase.
     const routes=async p=>{
@@ -3510,9 +3521,10 @@ test('TC-074-003 on a new boot every view drops the previous boot at once, disca
     }});
     const announce=(type,data)=>page.evaluate(([type,data])=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type,data}}})),[type,data]);
     await page.waitForFunction(()=>document.querySelector('#strategy-name')?.disabled===false&&!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-pskr').disabled&&!document.querySelector('#monitor-off-startup').disabled,null,{timeout:30000});
-    await page.locator('#open-server-settings').click();await page.locator('#free-tx-slots-show').check();await page.locator('.op-secondary:not([hidden]) .return-operate').click();
-    // Boot A: the run announced; AGC, Tx level and transmit pushed.
+    // Boot A: the run announced; its open slots (#82: always shown, no checkbox), AGC, Tx level and
+    // transmit pushed.
     await announce('automation.state',{profile_id:base.profile_id,boot_id:A,policy_revision:1,run_revision:1});
+    await announce('free_tx_slots.state',{profile_id:base.profile_id,boot_id:A,free_tx_slots:freeTxValue([[1000,1050],[1300,1350]])});
     await announce('radio.agc',{profile_id:base.profile_id,boot_id:A,target:'SLOW',connection_generation:1,value:'SLOW',result:'unchanged',trigger:'connect'});
     await announce('radio.tx_level',{profile_id:base.profile_id,boot_id:A,managed:true,level_db:-10,stored:true,alc:'available',assistant:false,result:null,meters:null,power_limit_pct:null,warnings:[],keying_confirmed:false});
     await announce('transmit.state',{profile_id:base.profile_id,boot_id:A,changed:{transmitting:false}});

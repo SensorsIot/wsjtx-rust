@@ -440,10 +440,6 @@ struct Run {
     /// time from which periods count (Inner's).
     tx_slot: Option<Value>,
     slot_since_ms: i64,
-    /// #65 WstxStrategy::FreeTxSlots: the last slot decision's value, set with tx_slot, and its
-    /// free_tx_slots.state event cursor (Owner's, never reused across runs); None before the
-    /// first decision and after the run's end.
-    free_tx_slots: Option<(u64, Value)>,
     /// WstxStrategy::PskrUse: the run's own contact's target hearing us.
     hearing: Option<Value>,
     /// WstxStrategy::CqWhenNoTarget: consecutive fresh publications with nothing listed.
@@ -497,7 +493,6 @@ impl Run {
             remaining: None,
             tx_slot: None,
             slot_since_ms: i64::MIN,
-            free_tx_slots: None,
             hearing: None,
             empty_publications: 0,
         }
@@ -563,13 +558,29 @@ struct Inner {
     /// waterfall periods count (a retune keeps the live job), for every run.
     slot_band: Option<&'static str>,
     slot_since_ms: i64,
+    /// #82 WstxStrategy::FreeTxSlots: the station's latest built value (null without a live
+    /// receive) with its free_tx_slots.state cursor, None before the first build; and what that
+    /// build judged, so that a new period, a QSO start or end, a new live job, mode or band
+    /// builds again.
+    free_tx_slots: Option<(u64, Value)>,
+    free_tx_slots_key: Option<FreeKey>,
 }
+/// What one open-slot build judges (#82 Built): the live job, its mode, a QSO, the judged parity,
+/// the period in progress and the band change the periods count from.
+type FreeKey = (
+    (String, String, u64),
+    &'static str,
+    bool,
+    wstx_rust::transmit::Parity,
+    i64,
+    i64,
+);
 /// The automation owner of one station (one per contact engine).
 #[derive(Default)]
 pub(crate) struct Owner {
     inner: Mutex<Inner>,
-    /// #65 the free_tx_slots.state cursor: one more at each slot decision of any run.
-    free_tx_slots_decisions: std::sync::atomic::AtomicU64,
+    /// #82 the free_tx_slots.state cursor: one more at each build of the station's value.
+    free_tx_slots_builds: std::sync::atomic::AtomicU64,
     /// Test seam: added to the monotonic clock of every automation step.
     #[cfg(test)]
     pub(crate) skew: Mutex<Duration>,
@@ -687,21 +698,109 @@ impl Owner {
                 "tx_slot":run.tx_slot,"slot_check":run.slot_check,
                 "pounce":run.pounce.as_ref().map(|(call, band)| json!({"call":call,"band":band}))})
         });
-        let free_tx_slots = inner
-            .run
-            .as_ref()
-            .and_then(|run| run.free_tx_slots.as_ref())
-            .map(|(_, value)| value);
+        let free_tx_slots = inner.free_tx_slots.as_ref().map(|(_, value)| value);
         json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"policy_revision":inner.policy_revision,
             "run_revision":inner.run_revision,"configuration":inner.configuration.as_ref().map(Config::json),"run":run,
             "strategy_refusal":inner.strategy_refusal,"free_tx_slots":free_tx_slots})
     }
-    /// #65 free_tx_slots.state: the current run's last decision value with its cursor, None
-    /// without a run's value (never an event without a run).
-    pub(crate) fn free_tx_slots_event(&self, r: &recording::Recording) -> Option<(u64, String)> {
+    /// #82 free_tx_slots.state: the station's latest built value with its cursor and whether it
+    /// is null, None before the first build (with or without a run) and while the peer holds
+    /// build `seen` already.
+    pub(crate) fn free_tx_slots_event(
+        &self,
+        r: &recording::Recording,
+        seen: Option<u64>,
+    ) -> Option<(u64, String, bool)> {
         let inner = self.lock();
-        let (cursor, value) = inner.run.as_ref()?.free_tx_slots.as_ref()?;
-        Some((*cursor, free_tx_slots_event(r, value)))
+        let (cursor, value) = inner.free_tx_slots.as_ref()?;
+        (seen != Some(*cursor)).then(|| (*cursor, free_tx_slots_event(r, value), value.is_null()))
+    }
+    /// #82 WstxStrategy::FreeTxSlots Built (main.rs station timer, after the automation step):
+    /// the station's open slots of my Rx parity, with or without a run, a QSO or Auto, built
+    /// again at each period start and at once when a QSO starts or ends or the live job, its
+    /// mode or the station band changes; null without a live receive.
+    pub(crate) fn build_free_tx_slots(
+        &self,
+        contact: &contact_http::Station,
+        state: &ProfileState,
+    ) {
+        let r = &state.recording;
+        let mut inner = self.lock();
+        let mode_name = r.operating_mode();
+        let live = r
+            .live_identity()
+            .filter(|(_, _, _, m)| matches!(*m, "ft8" | "ft4") && *m == mode_name);
+        let Some((source, job, generation, mode_name)) = live else {
+            inner.free_tx_slots_key = None;
+            if inner
+                .free_tx_slots
+                .as_ref()
+                .is_some_and(|(_, v)| !v.is_null())
+            {
+                let cursor = self.next_free_tx_slots();
+                inner.free_tx_slots = Some((cursor, Value::Null));
+            }
+            return;
+        };
+        let identity = (source, job, generation);
+        let mode = contact_http::mode_of(mode_name);
+        let now = utc_now(r);
+        // D5: a QSO is Enable Tx on (my own CQ included) or a contact in progress; Tune alone
+        // does not count.
+        let armed = r.transmit.get().is_some_and(|t| {
+            t.service.view().arm_state == wstx_rust::transmit::service::ArmState::Armed
+        });
+        let (_, facts, _) = contact.facts();
+        let qso = armed
+            || facts.as_ref().is_some_and(|c| {
+                matches!(
+                    c.state,
+                    "replying" | "report" | "roger_report" | "rogers" | "signoff"
+                )
+            });
+        let period = freeslot::period_ms(mode);
+        let start = now.div_euclid(period) * period;
+        // In a QSO the contact's Rx parity, the other of its Tx parity; only listening the parity
+        // of the period in progress, the Rx parity for transmitting in the next period.
+        let rx = if qso {
+            match contact.status_facts().parity {
+                wstx_rust::transmit::Parity::Even => wstx_rust::transmit::Parity::Odd,
+                wstx_rust::transmit::Parity::Odd => wstx_rust::transmit::Parity::Even,
+            }
+        } else {
+            wstx_rust::transmit::parity(mode, start)
+        };
+        let since = inner.slot_since_ms;
+        let key: FreeKey = (identity, mode_name, qso, rx, start, since);
+        if inner.free_tx_slots_key.as_ref() == Some(&key) {
+            return;
+        }
+        let periods = r
+            .waterfall
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .periods((&key.0.1, key.0.2), now);
+        let decodes = decodes_of(r, &key.0);
+        let judged = freeslot::Judged::new(&periods, mode, rx, since, now, &decodes);
+        let open = freeslot::open_slots(mode, judged.decoded(), &|f| {
+            judged.numbers(f).map(|n| n.rise)
+        });
+        let value = freeslot::value(
+            now,
+            mode,
+            rx,
+            qso,
+            judged.count(),
+            &freeslot::open_ranges(mode, &open),
+        );
+        let cursor = self.next_free_tx_slots();
+        inner.free_tx_slots = Some((cursor, value));
+        inner.free_tx_slots_key = Some(key);
+    }
+    fn next_free_tx_slots(&self) -> u64 {
+        self.free_tx_slots_builds
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1
     }
     fn receipt(r: &recording::Recording, inner: &Inner, command_id: &str) -> Value {
         let (run_id, state) = inner.run.as_ref().map_or((Value::Null, "off"), |run| {
@@ -1010,8 +1109,6 @@ impl Owner {
         if let Some(run) = inner.run.as_mut() {
             run.state = RunState::Stopped;
             run.reason = Some(reason);
-            // #65 FreeTxSlots: no value after the run's end (and no event for it).
-            run.free_tx_slots = None;
             inner.run_revision = inner.run_revision.saturating_add(1).min(MAX_SAFE);
         }
     }
@@ -2178,8 +2275,7 @@ fn take_slot(
     let decodes = decodes_of(r, &run.identity);
     let judged = freeslot::Judged::new(&periods, mode, rx_parity, run.slot_since_ms, now, &decodes);
     let decoded = judged.decoded();
-    let numbers = |f: u32| judged.numbers(f);
-    let power = |f: u32| numbers(f).map(|n| n.rise);
+    let power = |f: u32| judged.numbers(f).map(|n| n.rise);
     let hold = facts.hold_tx;
     // His end: the frequencies the target decodes from my Tx parity, only while the feed
     // follows this very target (a pounce, a plain run and a CQ have none).
@@ -2219,25 +2315,8 @@ fn take_slot(
         }
         _ => freeslot::quietest_clear(mode, current, &avoid, decoded, his.as_deref(), &power),
     };
+    // Auto's own ranking (#82 D18: not on screen; the station's open slots are built apart).
     run.tx_slot = Some(slot.json());
-    // #65 WstxStrategy::FreeTxSlots: the decision's own candidates and compared value, set
-    // together with tx_slot (every rule, also where the choice uses no power).
-    let slots = freeslot::free_slots(mode, current, &avoid, decoded, his.as_deref(), &numbers);
-    let value = freeslot::value(
-        &run.id,
-        now,
-        mode,
-        rx_parity,
-        listening,
-        freeslot::period_counts(rx_parity, judged.count()),
-        &slots,
-    );
-    let cursor = contact
-        .automation
-        .free_tx_slots_decisions
-        .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-        + 1;
-    run.free_tx_slots = Some((cursor, value));
     let unchanged = if hold {
         facts.tx_hz == slot.hz
     } else {
@@ -2286,7 +2365,8 @@ fn fresh_records(
         })
         .collect()
 }
-/// #65 free_tx_slots.state: carries its state, the run's last decision value (at most 1024 bytes).
+/// #82 free_tx_slots.state: carries its state, the station's latest built value (at most 1024
+/// bytes).
 pub(crate) fn free_tx_slots_event(r: &recording::Recording, value: &Value) -> String {
     json!({"v":1,"type":"free_tx_slots.state","data":{"profile_id":r.profile,"boot_id":r.boot,
         "free_tx_slots":value}})

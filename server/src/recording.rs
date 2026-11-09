@@ -827,6 +827,13 @@ impl Recording {
         self.sync_transmit_mode();
         (source_id, id, generation)
     }
+    /// Test seam: the live receive stops (no job, no live state), as after a receive stop.
+    #[cfg(test)]
+    pub(crate) fn fixture_stop_live_job(&self) {
+        let mut s = self.state.lock().unwrap();
+        s.job = None;
+        s.live = None;
+    }
     /// Test seam: one detailed waterfall row of the live job in the period starting at
     /// `period_start_ms` (FT8 periods), with its levels per native bin, as the receive worker
     /// feeds WstxStrategy::FreeTxSlot.

@@ -11,8 +11,10 @@ use crate::contact_http_tests::{Bench, now_ms, period_text, record_exchange};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Command, Stdio};
 
-// Proves: CL-010-06, CL-010-08, CL-010-15; TC-007-005. Runs both browsers through every
-// TC-007-005 phase on the counted link and fails unless both complete them.
+// Proves: CL-010-06, CL-010-08, CL-010-15, CL-065-01; TC-007-005. Runs both browsers through every
+// TC-007-005 phase on the counted link and fails unless both complete them; #82: the live receive
+// with no automation run makes the station push its open slots every period in the Thin and Off
+// windows (asserted in tests/contact-thin.test.cjs).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn contact_thin_link_two_clients() {
     rustls::crypto::ring::default_provider()

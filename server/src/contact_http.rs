@@ -1281,6 +1281,8 @@ pub(crate) fn station_tick(state: &ProfileState) {
         s.strategy.alert_step(state);
         s.tick(state);
         s.automation.tick(s, state, publication);
+        // #82 WstxStrategy::FreeTxSlots: the station's open slots, with or without a run.
+        s.automation.build_free_tx_slots(s, state);
         // WstxStrategy::AutoToggle: every run end turns Auto off.
         let epoch = s.strategy.auto_epoch();
         s.strategy

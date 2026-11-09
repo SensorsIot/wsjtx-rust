@@ -19,6 +19,9 @@ let socket, timer, pendingId, handshakeProbe;
 // WstxMcp::AutomationIndicator (#74): the socket that has carried an automation.state, so that
 // the operating client, loaded after the first snapshots, reads GET /automation only after one.
 let automationAnnounced = null;
+// #82 FreeTxSlotMarks: the socket's latest free_tx_slots.state value, for an operating client that
+// loads after it.
+let freeTxSlotsHeld = null;
 let retry = 1000, lastMessage = 0, nextId = 1;
 function stale() { connection.textContent = 'Disconnected · stale'; connection.dataset.state = 'stale'; refresh.disabled = true; window.dispatchEvent(new Event('station-stale')); }
 function requestStatus() {
@@ -98,6 +101,7 @@ async function connect() {
       if (message.v !== 1) throw new Error('Unsupported version');
       lastMessage = Date.now();
       if (message.type === 'automation.state') automationAnnounced = current;
+      if (message.type === 'free_tx_slots.state' && message.data) freeTxSlotsHeld = {current, value: message.data.free_tx_slots};
       window.dispatchEvent(new CustomEvent('station-message', {detail: {message, current}}));
       // WstxStationProtocol::PushedStationState: the first status of a socket reads the profile, then only a newer announced revision does.
       if (message.type === 'profile.state' && profileRefresh.initialized && (message.data?.boot_id !== profileData?.boot_id || message.data?.revision > profileData?.revision)) refreshProfile(current, profileRefresh).catch(() => disconnect(current));

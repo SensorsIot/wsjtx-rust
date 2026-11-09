@@ -1166,7 +1166,7 @@ async fn connection(
     let mut transmit_sent_at = Instant::now();
     // WstxMcp::AutomationStateEvent: only after a change since boot (no event while unused).
     let mut automation_seen: Option<(u64, u64)> = Some((0, 0));
-    // #65 free_tx_slots.state: the decision this Detailed or Thin peer holds (None: none, also
+    // #82 free_tx_slots.state: the build this Detailed or Thin peer holds (None: none, also
     // while Off, so that a peer coming from Off gets the current value once).
     let mut free_tx_slots_seen: Option<u64> = None;
     // #39 WstxStrategy::StrategyHttp strategy.state: only after a change since this peer subscribed.
@@ -1279,12 +1279,14 @@ async fn connection(
                         Err(_)=>break "optional write error",
                     }
                 }
-                if display_profile!="off" && let Some((decision,text))=r.contact.get().and_then(|c|c.automation.free_tx_slots_event(r)) && free_tx_slots_seen!=Some(decision) {
-                    match optional_write(&mut socket,Message::Text(text.into())) {
+                if display_profile!="off" && let Some((build,text,null))=r.contact.get().and_then(|c|c.automation.free_tx_slots_event(r,free_tx_slots_seen)) {
+                    // #82: a null goes only to a peer that holds a value (once when it becomes null).
+                    if null && free_tx_slots_seen.is_none() { free_tx_slots_seen=Some(build); }
+                    else { match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
-                        Ok(Some(flushed))=>{free_tx_slots_seen=Some(decision);if !flushed {optional_since=Some(Instant::now());continue;}},
+                        Ok(Some(flushed))=>{free_tx_slots_seen=Some(build);if !flushed {optional_since=Some(Instant::now());continue;}},
                         Err(_)=>break "optional write error",
-                    }
+                    } }
                 }
                 let strategy=r.contact.get().map_or(0,|c|c.strategy.revision());
                 if strategy_seen.is_none() { strategy_seen=Some(strategy); }
