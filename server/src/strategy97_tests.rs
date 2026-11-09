@@ -1264,3 +1264,34 @@ async fn tc_097_011_h_a_grid_to_another_starts_busy_and_his_73_ends_it() {
     assert_eq!(run_of(f).await["leave"], leave_of(3, false, 1), "the 73");
     assert_eq!(contact(f).await.2, json!("armed"));
 }
+
+// Proves: TC-097-011 (i) (CL-097-06, hand-worked from WstxContact::BusyPartner and the #97
+// coordinator default for a free text). KE1J's report to W9XYZ starts busy (paused 1); his report
+// to K2ABC keeps it (busy_with K2ABC, paused 2, remaining stays 4) and Tx stays 1500 (no TxMoveRule
+// move while busy, although tx_move_every no_reports 1 moves at every counted call); his free text
+// "TNX QSO" in his period at 1205 Hz (within 10 Hz of his last decode at 1200) ends it and that
+// publication's call counts (remaining 3). Red on the parent: the free text does not end busy
+// (busy true, paused 3, remaining 4).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_011_i_busy_holds_across_a_further_station_and_ends_with_his_free_text() {
+    let t = calling_busy_ke1j(true).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, rep(e, 1), &[KE1J_BUSY]);
+    assert_eq!(run_of(f).await["leave"], leave_of(4, true, 1));
+    assert_eq!(frequencies(f).await.1, json!(1500));
+    publish(f, rep(e, 2), &[("K2ABC KE1J -05", 1200.0, Some(-7.0))]);
+    assert_eq!(run_of(f).await["leave"], leave_of(4, true, 2), "K2ABC");
+    assert_eq!(
+        f.read("contact").await["watchdog"]["busy_with"],
+        json!("K2ABC")
+    );
+    assert_eq!(frequencies(f).await.1, json!(1500), "no move while busy");
+    publish(f, rep(e, 3), &[("TNX QSO", 1205.0, Some(-7.0))]);
+    assert_eq!(run_of(f).await["leave"], leave_of(3, false, 2), "free text");
+    assert_eq!(contact(f).await.2, json!("armed"));
+    assert_ne!(
+        frequencies(f).await.1,
+        json!(1500),
+        "the counted call moves"
+    );
+}

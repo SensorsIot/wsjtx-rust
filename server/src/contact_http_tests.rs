@@ -1012,6 +1012,7 @@ fn direct_log_record_fields_from_the_confirmed_dial() {
         last_rcvd: None,
         dialogue: Default::default(),
         busy_with: None,
+        his_last: None,
     };
     let record = contact_http::Station::record_of(
         &c,

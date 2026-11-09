@@ -49,6 +49,17 @@ pub fn period_ms(mode: Mode) -> i64 {
         Mode::Ft4 => 7_500,
     }
 }
+/// #97 BusyPartner: a decoded free text counts as the partner's when it lies in his period
+/// (the parity of his last decode) within BUSY_FREE_TEXT_HZ of his last decode's frequency.
+fn free_text_of_his(mode: Mode, his_last: Option<(i64, f64)>, row: &Row) -> bool {
+    let (Some((his_period, his_hz)), Some(period)) = (his_last, row.period_start_ms) else {
+        return false;
+    };
+    let p = period_ms(mode);
+    period.div_euclid(p).rem_euclid(2) == his_period.div_euclid(p).rem_euclid(2)
+        && (row.frequency_hz - his_hz).abs() <= BUSY_FREE_TEXT_HZ
+        && transmit::pack(&row.text).is_ok_and(|m| matches!(m.family, Family::FreeText))
+}
 /// asprintf("%+2.2d"): sign plus at least two digits (-05, +03, +00, -15, +49).
 pub fn render_report(db: i32) -> String {
     format!("{db:+03}")
@@ -735,7 +746,12 @@ pub struct Contact {
     /// "<...>" for an unresolved hash), from his message to it with a grid, report or R-report
     /// until he ends that QSO.
     pub busy_with: Option<String>,
+    /// #97 BusyPartner: the period start (Unix ms) and audio frequency of the partner's last
+    /// decoded message, so a free text (which has no sender) can be judged his.
+    pub his_last: Option<(i64, f64)>,
 }
+/// A free text counts as the partner's within this many Hz of his last decode (BusyPartner).
+pub const BUSY_FREE_TEXT_HZ: f64 = 10.0;
 /// At most this many dialogue entries are kept (the oldest is dropped).
 pub const DIALOGUE_MAX: usize = 16;
 /// One QSO dialogue entry: received from the partner (rx) or transmitted (tx).
@@ -1180,6 +1196,7 @@ impl Engine {
         c.dx_grid = None;
         c.dialogue.clear();
         c.busy_with = None;
+        c.his_last = None;
         for message in &mut c.messages[..5] {
             *message = None;
         }
@@ -1345,6 +1362,11 @@ impl Engine {
                 .as_ref()
                 .filter(|_| active && same)
                 .and_then(|c| c.busy_with.clone()),
+            his_last: self
+                .contact
+                .as_ref()
+                .filter(|_| active && same)
+                .and_then(|c| c.his_last),
         });
         self.settings.report = report;
         Ok(())
@@ -1633,6 +1655,7 @@ impl Engine {
                     c.dx_grid = None;
                     c.dialogue.clear();
                     c.busy_with = None;
+                    c.his_last = None;
                     for i in 0..5 {
                         c.messages[i] = None;
                     }
@@ -1877,6 +1900,7 @@ impl Engine {
                         last_rcvd: None,
                         dialogue: VecDeque::new(),
                         busy_with: None,
+                        his_last: None,
                     });
                 }
                 if !ctx.automatic
@@ -2107,7 +2131,23 @@ impl Engine {
             };
             // EuVhfExchange (#99): an EU VHF message counts only in eu_vhf, by the hash of
             // my call and of the DX call, never by the call the table filled in.
+            if row.standard.is_none() && row.vhf.is_none() && row.dxpedition.is_none() {
+                // BusyPartner: a free text has no sender; it counts as his (and ends his other
+                // QSO) when decoded in his period within 10 Hz of his last decode.
+                if let Some(c) = self.contact.as_mut()
+                    && c.busy_with.is_some()
+                    && free_text_of_his(c.mode, c.his_last, row)
+                {
+                    c.busy_with = None;
+                }
+                continue;
+            }
             if let Some(v) = row.vhf.as_deref() {
+                if v.sent_by(&dx)
+                    && let Some(c) = self.contact.as_mut()
+                {
+                    c.his_last = row.period_start_ms.map(|p| (p, row.frequency_hz));
+                }
                 if self.settings.activity == Activity::EuVhf && v.to_me(&my) && v.sent_by(&dx) {
                     // Any message from him to my call ends his other QSO (BusyPartner).
                     if let Some(c) = self.contact.as_mut() {
@@ -2130,6 +2170,9 @@ impl Engine {
             };
             if std.from.call() != Some(dx.as_str()) {
                 continue;
+            }
+            if let Some(c) = self.contact.as_mut() {
+                c.his_last = row.period_start_ms.map(|p| (p, row.frequency_hz));
             }
             let other = match &std.to {
                 Call::Sign(to) | Call::Hashed(to) if *to == my => None,

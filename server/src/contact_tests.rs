@@ -919,6 +919,35 @@ fn tc_097_017_a_busy_starts_and_ends_by_his_own_messages() {
     );
 }
 
+// Proves: TC-097-017 (a) (CL-097-06, WstxContact::BusyPartner, #97 coordinator default). A free
+// text has no sender: "TNX QSO" ends busy only when decoded in his period (the parity of his last
+// decode) within 10 Hz of his last decode. FT8, his report to W9XYZ at 1200 Hz in period 0: a free
+// text at 1211 Hz (11 Hz) and one at 1200 Hz in my period (period 1) keep busy; one at 1210 Hz
+// (10 Hz) in his period 2 ends it, as does one at 1190 Hz. Red on the parent: no free text ends it.
+#[test]
+fn tc_097_017_a_his_free_text_within_10_hz_in_his_period_ends_busy() {
+    let busy = |s: &Station| s.engine.contact.as_ref().unwrap().busy_with.clone();
+    let free = |s: &mut Station, n: i64, hz: f64| {
+        let t = len(s.mode);
+        s.run(P0 + (n + 1) * t + 900);
+        let mut row = s.row(P0 + n * t, "W9XYZ KE1J -07", hz, None);
+        row.text = "TNX QSO".into();
+        row.standard = None;
+        s.deliver(&[row]);
+    };
+    for (end_hz, n) in [(1210.0, 2), (1190.0, 2)] {
+        let mut s = calling_ke1j(Mode::Ft8, 6);
+        ke1j_says(&mut s, 0, 900, "W9XYZ KE1J -07", 1200.0);
+        assert_eq!(busy(&s).as_deref(), Some("W9XYZ"));
+        free(&mut s, 1, 1200.0);
+        assert_eq!(busy(&s).as_deref(), Some("W9XYZ"), "my period keeps busy");
+        free(&mut s, n, 1211.0);
+        assert_eq!(busy(&s).as_deref(), Some("W9XYZ"), "11 Hz keeps busy");
+        free(&mut s, n + 2, end_hz);
+        assert_eq!(busy(&s), None, "{end_hz} Hz in his period ends busy");
+    }
+}
+
 // Proves: TC-097-017 (b) (CL-097-06, WstxContact::TxWatchdog stop point). FT8, limit 6, six
 // counted Tx1 sends: the send due in period 13 is at the limit. KE1J's busy start published 1.1 s
 // into that period: the send is planned late, keyed and paused (counted stays 6). Published 1.3 s
