@@ -1048,7 +1048,8 @@ package WstxStrategy {
              split move of BusyPartner still keeps Tx clear of his signal (busy_pause on).
              A paused call counts for nothing of the run: not toward leaving (the calls of mode
              calls, the change points of mode contest), not toward TxMoveRule's count; until_logged
-             is not affected (a busy target is decoded). Tx keeps calling: the split move of
+             is not affected (it counts minutes without his decode, not calls; busy or not, its
+             gone timer runs only while he is not decoded). Tx keeps calling: the split move of
              WstxContact::BusyPartner keeps Tx clear of his signal; no TxMoveRule move is made while
              he is busy.
              Bound (operator 2026-11-09, #97 Q5): at most N paused calls per message, N the
@@ -1071,7 +1072,8 @@ package WstxStrategy {
              The browser shows it where WD:n stood for the run (the QSO pane's watchdog line and the
              station bar's transmit state), as: "Leave in <n> calls", "Until logged · leave if gone
              <n> min" ("Until logged" while he is decoded), "Leave in <n> Tx changes", "Stay · most
-             valuable"; while busy " · <call> busy, not counted (<k>/<N>)" is appended. WD:n is never
+             valuable"; while busy " · <call> busy with <other>, not counted (<k>/<N>)" is appended (the text of
+             WstxContact::BusyPartner). WD:n is never
              used for it. A manual contact, a pounce and an MCP run have leave null. */
     }
     attribute def StrategySelector {
