@@ -184,6 +184,9 @@ struct Inner {
     /// SWR stopped transmitting; held until a later reading or Set level shows it clear.
     swr_fault: bool,
     revision: u64,
+    /// Test seam only (#87): a fixture's bound of one meter read instead of METER_READ.
+    #[cfg(test)]
+    read_bound: Option<Duration>,
 }
 #[derive(Default)]
 pub(crate) struct Owner {
@@ -198,6 +201,19 @@ impl Owner {
     }
     pub(crate) fn level_db(&self) -> i32 {
         self.lock().level_db
+    }
+    /// The bound of one meter read (CL-044-12: 400 ms); in tests the fixture's override.
+    fn read_bound(&self) -> Duration {
+        #[cfg(test)]
+        if let Some(bound) = self.lock().read_bound {
+            return bound;
+        }
+        METER_READ
+    }
+    /// Test seam only (#87): every meter read of this owner takes `bound` instead.
+    #[cfg(test)]
+    pub(crate) fn set_read_bound(&self, bound: Duration) {
+        self.lock().read_bound = Some(bound);
     }
     #[cfg(test)]
     pub(crate) fn result(&self) -> Option<&'static str> {
@@ -337,7 +353,7 @@ pub(crate) fn tick(recording: &Arc<Recording>, radio: Option<profile::Radio>, no
     let spawned = std::thread::Builder::new()
         .name("tx-meters".into())
         .spawn(move || {
-            let meters = actor.read_meters(Instant::now() + METER_READ);
+            let meters = actor.read_meters(Instant::now() + owner.tx_level.read_bound());
             owner.tx_level.lock().reading = false;
             if let Ok(meters) = meters {
                 owner.tx_level.record(meters);
@@ -361,7 +377,8 @@ pub(crate) fn on_meter_due(state: &Arc<ProfileState>) -> Option<std::thread::Joi
     std::thread::Builder::new()
         .name("tx-monitor".into())
         .spawn(move || {
-            if let Ok(meters) = actor.read_meters(Instant::now() + METER_READ) {
+            let bound = running.recording.tx_level.read_bound();
+            if let Ok(meters) = actor.read_meters(Instant::now() + bound) {
                 monitor(&running, &meters);
             }
         })
@@ -501,7 +518,7 @@ fn assistant(
         let Some(actor) = recording.radio_actor() else {
             break (None, "radio_unavailable");
         };
-        let meters = match actor.read_meters(Instant::now() + METER_READ) {
+        let meters = match actor.read_meters(Instant::now() + recording.tx_level.read_bound()) {
             Ok(meters) => meters,
             // A read cancelled by the release of a HALT is an abort, not a radio error.
             Err(_) if lost() => break (None, "aborted"),
