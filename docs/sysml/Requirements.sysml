@@ -463,17 +463,15 @@ package WstxRequirements {
              recent measurement or when the system clock stepped by more than 100 ms
              since it; report the offset, server and age on GET /transmit and with the
              transmit state in the browser. #43, #92 (operator 2026-11-09: "we always
-             know the time. It just might be wrong ... never an unknown time"): the
-             profile's clock source (CL-043-01) selects the station clock state transmit
-             is admitted by, which is never unknown: Both (default) synchronized while
-             this SNTP state is synchronized, else the air state; NTP this SNTP state
-             with unknown read as synchronized (the current time accepted); From the air
-             the AirClock state (unsynchronized only while evidence from at least 3
-             agreeing stations says the station clock is more than 500 ms off and the
-             correction has not yet caught up, otherwise synchronized: the current time
-             is accepted) (CL-043-03). Transmit is refused for the clock only while the
-             station clock is unsynchronized. GET /transmit also reports clock_source and
-             clock_warning. Details: WstxTransmit::TransmitClock, AirClock, TransmitWire. */
+             know the time. It just might be wrong ... never an unknown time"): transmit
+             is admitted by the station clock state of CL-043-03, which is never unknown:
+             synchronized while this SNTP state is synchronized, else the air state
+             (unsynchronized only while evidence from at least 3 agreeing stations says
+             the station clock is more than 500 ms off and the correction has not yet
+             caught up, otherwise synchronized: the current time is accepted). Transmit
+             is refused for the clock only while the station clock is unsynchronized.
+             GET /transmit also reports clock_warning. Details:
+             WstxTransmit::TransmitClock, AirClock, TransmitWire. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/transmit/clock.rs; server/src/transmit/air.rs; server/src/transmit_http.rs; server/src/main.rs; client/recording.js";
     }
@@ -3425,39 +3423,39 @@ package WstxRequirements {
 
     // #43 Optional clock from the air (defaults chosen on the CR, recorded in AirClock).
     requirement 'CL-043-01' {
-        doc /* Each station profile selects its clock source: ntp (the CL-009-05 SNTP
-             measurement), air (the clock from the air, CL-043-02) or both (default,
-             #92 operator 2026-11-09: NTP while it is available and correct, the clock
-             from the air only while NTP is unavailable or not correct, and the
-             cross-check). The source is persisted in clock.json next to profile.json of
-             the selected profile, written atomically like the profile's other private
-             files: {schema_version 1, profile_id, source ntp|air|both}. A missing file
-             reads as both (a new profile and every profile that never saved start with
-             both; a saved source stays as saved); a foreign, malformed, oversize (over
-             1024 bytes), extra-key or out-of-domain file reads as both with
-             storage_error invalid_clock and is replaced by the next save, an unreadable
-             one as both with storage_error storage_unavailable; a failed write keeps the
-             previous source and reports storage_error storage_unavailable. GET /transmit
-             clock_source always equals the source of GET /clock. GET /clock (operating
-             access, no query, empty body) returns exactly {v 1, profile_id, boot_id,
-             source, state synchronized|unsynchronized (never unknown, #92), basis
-             ntp|air, correction_ms, ntp {state,
-             measurement null | {server, offset_ms, round_trip_ms, age_ms}}, air {state,
-             applied_ms, estimate null | {offset_ms, stations, heard, confidence_pct,
-             age_ms}}, disagreement_ms null | integer, warning null | ntp_unsynchronized |
-             ntp_unreachable | ntp_air_disagree,
-             storage_error null | invalid_clock | storage_unavailable}. POST /clock {v,
-             profile_id, boot_id, source}, exact keys, with the same Origin, authorization,
-             media, 1024-byte body and refusal codes as POST /receive/startup (an unknown
-             source is invalid_request), saves the source, applies it at once (no restart)
-             and returns the view. The operator control is Settings > General > Clock: a
-             source select saved on change, and a status line with state, basis,
-             correction, the air offset, stations used of stations heard, confidence and
-             age, and the warning text of CL-043-03; the browser reads GET /clock only when
-             the Settings drawer opens (at most every 10 s) or the General tab is chosen,
+        doc /* (#43; #92 operator 2026-11-09: the three situations of CL-043-03 are fixed
+             behaviour) The station clock has no source setting: it always uses NTP while
+             NTP is available and correct and the clock from the air (CL-043-02) only
+             while it is not. clock.json (#43) is no longer read or written; a file left
+             by #43 is ignored and left in place. POST /clock no longer exists (the
+             router's answer for an unknown route), and GET /transmit has no
+             clock_source. GET /clock (operating access, no query, empty body) returns
+             exactly {v 1, profile_id, boot_id, state synchronized|unsynchronized (never
+             unknown), basis ntp|air, correction_ms, ntp {state, measurement null |
+             {server, offset_ms, round_trip_ms, age_ms}, windows_time running | stopped |
+             disabled | unknown}, air {state, applied_ms, estimate null | {offset_ms,
+             stations, heard, confidence_pct, age_ms}}, warning null | pc_clock_off |
+             ntp_unreachable | stations_off, capture_warning null | uncorrelated |
+             drift_high, clock_revision}. Pushed state (#92 operator 2026-11-09
+             "Everywhere"; WstxStationProtocol::PushedStationState): a WebSocket event
+             exactly {v:1, type:"clock.state", data:{profile_id, boot_id,
+             clock_revision, clock:{state, basis, correction_ms, warning, ntp_offset_ms,
+             capture_warning}}}, at most 512 bytes, for every profile (receive-only
+             too), sent to each peer with a display subscription once after its first
+             subscription and then when a field of clock changes, coalesced to at most
+             one per second per peer and sent within 1 s of the change; clock_revision is
+             a station-wide safe integer increasing at each change of those fields (GET
+             /clock carries the same value); ntp_offset_ms is the SNTP offset while
+             warning is pc_clock_off, else null, so a healthy clock sends no event per
+             SNTP round. The browser holds the clock state from these events (no GET
+             /clock and no timer for it). The operator view is Settings > General >
+             Clock: a status line with state, basis, correction, the air offset, stations
+             used of stations heard, confidence and age, the warning text and remedy of
+             CL-043-03; for these details the browser reads GET /clock only when the
+             Settings drawer opens (at most every 10 s) or the General tab is chosen,
              never on a timer, so the thin link carries no clock polling. */
         attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/clock_http.rs; server/src/main.rs; server/src/recording.rs; client/contact.js";
+        attribute implementation : String = "server/src/clock_http.rs; server/src/main.rs; server/src/recording.rs; server/src/transmit_http.rs; client/contact.js; client/recording.js";
     }
     dependency CL_043_01_to_FR_006 from 'CL-043-01' to 'FR-006';
     dependency CL_043_01_to_FR_016 from 'CL-043-01' to 'FR-016';
@@ -3477,8 +3475,8 @@ package WstxRequirements {
              UTC minus system UTC, the sign of an SNTP offset); stations = the votes kept,
              heard = all votes, confidence_pct = floor(100 stations / heard). An estimate
              is evidence (#92, operator 2026-11-09: "3 stations") with at least 3
-             stations kept and confidence_pct at least 60; the same bound gates the
-             disagreement warning (CL-043-03). Medians
+             stations kept and confidence_pct at least 60 (the stations heard differ
+             mainly in one direction). Medians
              of an even count are the floor of the mean of the middle pair. A system clock
              step of more than 100 ms between observations (system time elapsed minus
              monotonic time elapsed) discards all observations and the estimate and
@@ -3494,53 +3492,85 @@ package WstxRequirements {
         doc /* (#43; #92 operator 2026-11-09: "we always know the time. It just might be
              wrong ... never an unknown time"; "Only if we have a good reason that we are
              off, we have to synchronize"; "No fine-tuning"; "OTA synchronization is only
-             used if NTP is not available or not correct") Each completed live decode
-             window (prompt and late) re-estimates. The latest estimate counts as
-             evidence while it is evidence (CL-043-02), at most 60 s old and unstepped.
-             When evidence says |offset - applied| is above 500 ms the applied correction
-             moves toward the offset by at most 1000 ms in that window (rate limit);
-             otherwise the correction never changes (no fine-tuning): at start
-             (correction 0), on a quiet band, with fewer than 3 agreeing stations or with
-             stations that do not agree the current time is accepted. There is no search
-             (no alternation of the correction without evidence). The station clock
-             basis is air for source air, and for source both while the SNTP state is
-             not synchronized (NTP unavailable or not correct); otherwise ntp. The SNTP
-             offset itself is never applied. On the air basis station UTC is the system
-             clock plus the applied correction (on the ntp basis plus 0), used alike for
-             live receive window alignment, period_start_utc and DT of results (in
-             addition to the capture drift, #47), transmit planning and audio start
-             (CL-009-02), the contact engine and UDP times; the Windows clock is never
-             set. The air state is unsynchronized while evidence says |offset - applied|
-             is above 500 ms, else synchronized. The station clock is never unknown: air
-             the air state; both synchronized while the SNTP state is synchronized, else
-             the air state; ntp the SNTP state with unknown read as synchronized.
-             Transmit is refused for the clock (clock_not_synchronized) only while the
-             station clock is unsynchronized. Because the estimate is taken from raw DT,
-             applying the correction never changes the estimate's input: the correction
-             converges without oscillating, and with the live window coverage of
-             corrected DT (-1.7 s to +2.56 s) finds offsets (true minus system UTC) of
-             about -2.5 s to +1.7 s; outside them too few stations decode, there is no
-             evidence and the time is accepted. When a current SNTP measurement (state not
-             unknown) and an air estimate that is evidence both exist, disagreement_ms =
-             |SNTP offset - air offset|. Warning: with source ntp or both
-             ntp_unsynchronized while the SNTP state is unsynchronized, else
-             ntp_unreachable while at least one SNTP round since start has asked a server
-             and no valid measurement is at most 600 s old (not in the gap after a
-             detected step, before the first round ends or with an empty server list);
-             otherwise with source both ntp_air_disagree for a disagreement above 200 ms;
-             with source air none. GET /clock warning and GET /transmit clock_warning
-             carry the same value. Error field entries (CL-037-02), only while transmit is
-             configured: "Clock off · Tx blocked" (error) while the station clock is
-             unsynchronized; one warn entry per warning, also while transmit works:
-             ntp_unsynchronized "NTP: PC clock <n> ms slow · check the Windows time"
-             ("fast" for a negative offset, n = |SNTP offset_ms|), ntp_unreachable "NTP
-             not reachable · check the network", ntp_air_disagree "NTP and air clock
-             disagree"; each opens Settings > General > Clock and disappears when its
-             condition clears. The Settings clock status line appends the same text and,
-             on the air basis without evidence, reads "Clock accepted (no evidence it is
-             off)" instead of the synchronized wording. */
+             used if NTP is not available or not correct"; "computer time not NTP time
+             --> try to fix and if not possible, warning; WSJTX time not computer time
+             --> try to fix and if not possible, warning; our station is out of sync
+             with other Stations (mainly differences in one direction only) --> if no
+             ntp available, synch with other stations. if computer time is ntp time:
+             warning"; the 200 ms NTP/air disagreement warning: "Drop it") Three
+             situations, each fixed where the station can and otherwise warned.
+             (1) PC clock against NTP: the SNTP state of CL-009-05. The station never
+             sets the Windows clock and never starts or configures a service (it runs
+             without administrator rights); it reads the Windows Time service state
+             (running, stopped or disabled; unknown when the query fails) without
+             administrator rights and names the remedy. Warning pc_clock_off while the
+             SNTP state is unsynchronized; else ntp_unreachable while at least one SNTP
+             round since start has asked a server and no valid measurement is at most
+             600 s old (not in the gap after a detected step, before the first round
+             ends or with an empty server list).
+             (2) Station time against the PC clock: the capture clock is re-anchored to
+             the PC's UTC by CL-007-05 (#47), which is the fix; the applied correction
+             of (3) is a deliberate difference, shown in the status line, never warned.
+             capture_warning (the station, only while live receive runs; operator
+             2026-11-09 "Also on large drift"): uncorrelated while the receive clock is
+             not correlated to UTC (no re-anchoring possible), else drift_high while
+             |capture_drift_ppm| (CL-007-05, known after the first 60 s) is above 1000 ppm
+             (at 1000 ppm the audio frequency error reaches a quarter of the FT8 tone
+             spacing at 1500 Hz, 1.5 of 6.25 Hz, and the drift within one FT8 period
+             15 ms; a sound card crystal is normally within 100 ppm), else null.
+             (3) Out of step with the stations heard: each completed live decode window
+             (prompt and late) re-estimates; the latest estimate counts as evidence while
+             it is evidence (CL-043-02), at most 60 s old and unstepped. The station clock
+             basis is ntp while the SNTP state is synchronized (NTP available and
+             correct; correction 0), else air; the SNTP offset itself is never applied.
+             On the ntp basis evidence with |offset| above 500 ms is the warning
+             stations_off and changes nothing. On the air basis evidence with |offset -
+             applied| above 500 ms moves the applied correction toward the offset by at
+             most 1000 ms in that window (rate limit); otherwise the correction never
+             changes (no fine-tuning): at start (correction 0), on a quiet band, with
+             fewer than 3 agreeing stations or with stations that do not agree the
+             current time is accepted; there is no search (no change of the correction
+             without evidence). On the air basis station UTC is the system clock plus the
+             applied correction (on the ntp basis plus 0), used alike for live receive
+             window alignment, period_start_utc and DT of results (in addition to the
+             capture drift, #47), transmit planning and audio start (CL-009-02), the
+             contact engine and UDP times. The station clock is never unknown:
+             synchronized while the SNTP state is synchronized; else unsynchronized while
+             evidence says |offset - applied| is above 500 ms, else synchronized (the air
+             state reports the same rule). Transmit is refused for the clock
+             (clock_not_synchronized) only while the station clock is unsynchronized.
+             Because the estimate is taken from raw DT, applying the correction never
+             changes the estimate's input: the correction converges without oscillating,
+             and with the live window coverage of corrected DT (-1.7 s to +2.56 s) finds
+             offsets (true minus system UTC) of about -2.5 s to +1.7 s; outside them too
+             few stations decode, there is no evidence and the time is accepted.
+             GET /clock warning and GET /transmit clock_warning carry the same value, the
+             first that holds of pc_clock_off, ntp_unreachable, stations_off. Error field
+             entries (CL-037-02), from clock.state (CL-043-01): while transmit is
+             configured "Clock off · Tx blocked" (error) while the station clock is
+             unsynchronized; for every profile (operator 2026-11-09 "Everywhere") one warn
+             entry per warning and capture_warning, also while transmit works:
+             pc_clock_off "PC clock <n> ms slow vs
+             NTP · see Settings" ("fast" for a negative offset, n = |SNTP offset_ms|),
+             ntp_unreachable "NTP not reachable · check the network", stations_off
+             "Stations heard more than 0.5 s off · PC clock matches NTP" (the Settings
+             status line shows their offset); uncorrelated "Audio timing not tied to the
+             PC clock · DT may be off"; drift_high "Sound card clock drifts over
+             1000 ppm · check the audio device". The clock entries open Settings >
+             General > Clock, the audio entries the receive details (which read GET
+             /receive/clock on demand); each disappears when its condition clears. The Settings clock status
+             line appends the warning text and for pc_clock_off the remedy by
+             windows_time: stopped "Windows Time service is stopped: start it and set it
+             to Automatic (services.msc, as administrator)"; disabled "Windows Time
+             service is disabled: set it to Automatic and start it (services.msc, as
+             administrator)"; running "Windows Time runs but the clock is off: Settings >
+             Time & language > Date & time > Sync now"; unknown "Check the Windows Time
+             service and sync the clock". GET /transmit clock_warning keeps carrying the
+             warning value for other clients. On the air basis without evidence it reads
+             "Clock accepted (no evidence it is off)" instead of the synchronized
+             wording. */
         attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/transmit/air.rs; server/src/transmit/clock.rs; server/src/clock_http.rs; server/src/recording.rs; server/src/transmit_http.rs; client/contact.js; client/recording.js";
+        attribute implementation : String = "server/src/transmit/air.rs; server/src/transmit/clock.rs; server/src/clock_http.rs; server/src/recording.rs; server/src/transmit_http.rs; server/src/main.rs; client/contact.js; client/recording.js";
     }
     dependency CL_043_03_to_FR_006 from 'CL-043-03' to 'FR-006';
     dependency CL_043_03_to_FR_005 from 'CL-043-03' to 'FR-005';
@@ -3558,8 +3588,7 @@ package WstxRequirements {
              3000; run windows through the rate limit, the 500 ms deadband, age 60 s /
              60 s + 1 ms, a 100/101 ms system clock step, the 2 s fast system clock
              stepped back to UTC, a +5 s step, residuals 500/501 ms and a quiet band; the
-             source combination table; Both with SNTP +12 ms, -1900 ms, -2226 ms and
-             -2225 ms against the air.
+             combination table: no SNTP, SNTP +12 ms and SNTP -1900 ms against the air.
              Oracles (hand-computed; #92): -2025 ms 12/12 100 %; +1475 ms; with the bad
              clock -2025 ms 12 of 13 92 %; the chatty station one vote (-2050 ms 13/13);
              none from two, -1850 ms evidence from three; four evidence; 5 of 9 (55 %) no
@@ -3569,12 +3598,10 @@ package WstxRequirements {
              both synchronized with the correction kept; stepping back clears the window
              and leaves correction 0, the +5 s step restarts at 0; residual 500 ms leaves
              the correction unchanged, 501 ms corrects it; quiet synchronized with nothing
-             applied and no alternation; only synchronized plans a transmit start; ntp
-             source uncorrected and synchronized without SNTP, air corrected -2000 ms and
-             synchronized; Both on SNTP +12 ms uncorrected with disagreement 2037 ms
-             warned ntp_air_disagree, on the air basis -2000 ms at -1900 ms (125 ms) with
-             warning ntp_unsynchronized, also at -2226 and -2225 ms (the disagreement
-             boundary is TC-092-003).
+             applied and no alternation; only synchronized plans a transmit start; without
+             SNTP the air basis corrected -2000 ms and synchronized; SNTP +12 ms the ntp
+             basis uncorrected with warning stations_off (air -2025 ms); SNTP -1900 ms the
+             air basis -2000 ms synchronized with warning pc_clock_off.
              2 — Isolated automated tests; Windows development PC, no audio, radio or
              network. */
         attribute automation : AutomationState = AutomationState::partial;
@@ -3595,7 +3622,8 @@ package WstxRequirements {
              of TC-043-001 plus a +1.2 s bad clock, decodable only while their corrected DT
              lies in the live window coverage -1.7 s to +2.56 s, both windows completing
              each period; (b) the actual live worker, window buffer and ClockTracker with
-             a scripted capture clock 300 ppm slow (actual Recording, clock source air).
+             a scripted capture clock 300 ppm slow (actual Recording, no SNTP measurement:
+             the air basis).
              Steps: (a) station clock errors -2 s, +1.5 s, +0.6 s, 0, +2 s and +3 s; the negative
              control replaces the correction in full by an estimate from corrected DT;
              (b) 301 s of capture, the air correction becoming -2000 ms at 150 s; then
@@ -3628,39 +3656,30 @@ package WstxRequirements {
     dependency CL_043_03_verified_by_TC_043_002 from 'CL-043-03' to 'TC-043-002';
     dependency CL_007_05_verified_by_TC_043_002 from 'CL-007-05' to 'TC-043-002';
     verification 'TC-043-003' {
-        doc /* TC-043-003 — Clock source setting, wire and display
+        doc /* TC-043-003 — Clock view, wire and display
              CL-043-01, CL-043-03, CL-009-05
              Setup: the actual station router on a disposable profile directory with the
              station clock as main wires it (SNTP monitor that never measures); the actual
              transmit owner; the actual server and Chromium with transmit.state and GET
              /clock fixtures where stated.
-             Steps: load clock.json missing, air, both, gps, AIR, a foreign profile,
-             schema 2, an extra key, 1024 padding bytes and malformed JSON; GET /clock;
-             POST air; GET /transmit; hear twelve stations in two windows; POST with another
-             profile, another boot, v 2, source gps, an extra key, a missing key, a foreign
-             or missing Origin and a query; reopen; on the transmit owner with source air
-             hear two then six stations, read its clock and UTC, switch to ntp. In the
-             browser: requests before Settings opens; open Settings > General; choose From
-             the air; an estimate and a Both-disagreement fixture; a refused save; transmit
-             views synchronized/air without an estimate, synchronized/ntp,
-             synchronized/air, synchronized/both with the warning ntp_air_disagree,
-             unsynchronized/both.
-             Oracles (#92): both for missing and every invalid file (invalid_clock),
-             air/both read; exact view keys, default both synchronized; the file exactly
-             {schema_version 1, profile_id, source air}; GET /transmit clock_source air,
+             Steps (#92): open with clock.json missing and with a #43 file {schema_version
+             1, profile_id, source ntp}; GET /clock; GET /transmit; hear twelve stations in
+             two windows; POST /clock; on the transmit owner hear two then six stations,
+             read its clock and UTC. In the browser: requests before Settings opens; open
+             Settings > General; an estimate fixture; transmit views synchronized/air
+             without an estimate, synchronized/ntp, synchronized/air, unsynchronized/air.
+             Oracles: the same behaviour with and without the file, the file unchanged;
+             exact view keys (no source, disagreement_ms or storage_error), state
+             synchronized on the air basis; GET /transmit without clock_source,
              clock_warning null, clock synchronized; estimate -1555 ms 12/12 100 % with
-             correction -1555 ms synchronized; 403 wrong_profile, 409 state_conflict, 400
-             unsupported_version, 400 invalid_request (three), 403 forbidden_origin (two),
-             400; source still air and read back after reopen; the owner synchronized
-             with correction 0 with two stations (no evidence), corrected with six,
-             synchronized, station UTC 2000 ms (+-10 ms) behind the system clock; ntp
-             synchronized (SNTP unknown accepted) and uncorrected. Browser: no /clock
-             request before Settings opens; one POST {v 1, profile_id, boot_id, source
-             air}; the status line exactly "Clock synchronized by the air, correction
+             correction -1555 ms synchronized; POST /clock answered as an unknown route;
+             the owner synchronized with correction 0 with two stations (no evidence),
+             corrected with six, synchronized, station UTC 2000 ms (+-10 ms) behind the
+             system clock. Browser: no /clock request before Settings opens; no source
+             select; the status line exactly "Clock synchronized by the air, correction
              -1980 ms · from the air: -1985 ms, 12 of 14 stations (85 %), 3 s ago,
-             synchronized"; the disagreement text; a refusal shows its code and restores
-             the shown source; chips exactly none, none, none, NTP and air clock
-             disagree, Clock off · Tx blocked; the Clock line names the air correction.
+             synchronized"; chips exactly none, none, none, Clock off · Tx blocked; the
+             Clock line names the air correction.
              2 — Isolated automated tests; Windows development PC, loopback only, no
              public time server, audio or radio. */
         attribute automation : AutomationState = AutomationState::partial;
@@ -3682,34 +3701,29 @@ package WstxRequirements {
              keep the PC clock disciplined by NTP and need no administrator rights (agents
              have none); step (5), the issue's offset-clock check, is performed by the
              operator with administrator rights.
-             Steps: (1) source ntp: read GET /clock for three periods (SNTP offset, air
-             estimate). (2) choose From the air in Settings > General > Clock; read GET
-             /clock and GET /transmit for three periods; read Band Activity DT. (3) choose
-             Both, then the source the profile had. (4) with the operator's consent for transmit, with From
-             the air synchronized, arm and send one CQ; check PSK Reporter spots of
-             HB9BLA and a partner's DT. (5) operator, administrator: stop Windows Time
-             (w32time) and any clock tool, set source From the air, set the PC clock
-             1.5 s fast, wait four FT8 periods, read GET /clock, GET /transmit and Band
-             Activity DT; repeat with the PC clock 1.5 s slow and 2.0 s slow; restore the
-             clock and its service and the source the profile had.
-             Expected (#92): (1) state synchronized by NTP with |SNTP offset| at most
-             500 ms, the air estimate evidence and within 200 ms of the SNTP offset (the
-             Both disagreement bound; the crowd's own mean DT bias, typically +0.1 to
-             +0.2 s, is recorded), disagreement_ms reported; (2) state synchronized,
-             correction_ms 0 while the estimate is within 500 ms (the time accepted),
-             Band Activity median DT within +-0.5 s, GET /transmit
-             clock synchronized and clock_source air; no clock chip; (3) Both on the ntp
-             basis with no warning while they agree within 200 ms; (4) the transmission is
-             admitted, starts at the period start + 0.5 s of station UTC, and PSK Reporter
-             spots and the partner's DT (within +-0.5 s) confirm the transmitted timing;
-             (5) within four periods state synchronized by the air with correction_ms
+             Steps (#92): (1) read GET /clock and GET /transmit for three periods (SNTP
+             offset, air estimate); read Band Activity DT. (2)-(3) none (no source
+             setting). (4) with the operator's consent for transmit, arm and send one CQ;
+             check PSK Reporter spots of HB9BLA and a partner's DT. (5) operator,
+             administrator: stop Windows Time (w32time) and any clock tool, set the PC
+             clock 1.5 s fast, wait four FT8 periods and one SNTP round, read GET /clock,
+             GET /transmit and Band Activity DT; repeat with the PC clock 1.5 s slow and
+             2.0 s slow; restore the clock and its service.
+             Expected: (1) state synchronized on the ntp basis with |SNTP offset| at most
+             500 ms, correction 0, the air estimate (the crowd's own mean DT bias,
+             typically +0.1 to +0.2 s, is recorded), warning null while the estimate is
+             within 500 ms; GET /transmit clock synchronized; no clock chip; (4) the
+             transmission is admitted, starts at the period start + 0.5 s of station UTC,
+             and PSK Reporter spots and the partner's DT (within +-0.5 s) confirm the
+             transmitted timing; (5) warning pc_clock_off with windows_time stopped;
+             within four periods state synchronized by the air with correction_ms
              within 200 ms of -1500 and +1500 ms respectively, Band Activity median DT
              within +-0.5 s; at 2.0 s slow (the edge of the found range) correction_ms
              either within 200 ms of +2000 ms (enough edge stations decode) or 0 (the time
              accepted), state synchronized either way; each time GET /transmit clock
              synchronized (transmit admitted); a
              transmission under step (4)'s consent is spotted on time.
-             Steps (1)-(3) and (5) without transmit are receive-only, cost 4; transmit
+             Steps (1) and (5) without transmit are receive-only, cost 4; transmit
              steps are cost 5.
              5 — Live with transmit and external effects; explicit operator consent;
              HB9BLA. Not run by the automated gate. */
@@ -3725,31 +3739,37 @@ package WstxRequirements {
     dependency CL_043_02_verified_by_TC_043_004 from 'CL-043-02' to 'TC-043-004';
     dependency CL_043_03_verified_by_TC_043_004 from 'CL-043-03' to 'TC-043-004';
     dependency CL_009_05_verified_by_TC_043_004 from 'CL-009-05' to 'TC-043-004';
-    // #92 The station clock is always known: corrected only on evidence, NTP warnings.
+    // #92 Time synchronization in three situations: the station clock is always known.
     verification 'TC-092-001' {
         doc /* TC-092-001 — Evidence rule of the clock from the air
              CL-043-02, CL-043-03
-             Setup: the pure AirClock and StationClock (source air) on explicit clocks with
-             a fake SNTP monitor; hand-written raw DT votes, one per station; no receive,
-             radio or network.
+             Setup: the pure AirClock and StationClock on explicit clocks with a fake SNTP
+             monitor without a measurement (the air basis); hand-written raw DT votes, one
+             per station; no receive, radio or network.
              Steps: complete windows with no station; one station at raw DT -1000 ms; two
              agreeing at -1000; three agreeing at -1000; three at -1000, -1000 and 0; three
              agreeing at -400; four at -1000, -1000, -1000 and +500; five at -1000, -1000,
              -1000, 0 and +100; six at -1000, -1000, -1000, 0, +50 and +100; evidence with
-             residuals 500, 501 and 1501 ms; evidence 60 s and 60 s + 1 ms old; a 101 ms
-             system clock step; 20 quiet windows from start.
+             residuals 500, 501 and 1501 ms; evidence 60 s and 60 s + 1 ms old; three
+             agreeing stations observed once, then a window 120 s and one 120 s + 1 ms
+             after the observations; a 101 ms system clock step; with correction -1000 ms
+             a forward system clock step of 2000 ms and, from the same start, of 2001 ms;
+             20 quiet windows from start.
              Expected (hand-computed medians; independent oracle: CL-043-02/03 and the
              operator's rule of 2026-11-09): synchronized with correction 0 and no
              estimate or no evidence for none, one, two, and -1000/-1000/0 (2 of 3
              kept); three agreeing: evidence +1000 ms 3/3, correction +1000,
              synchronized; three at -400: correction 0 (deadband); four: +1000 ms 3 of 4
-             (75 %) evidence; five: +1000 ms 3 of 5 (60 %) evidence; six: median -500,
-             0 kept, no evidence; residual 500 correction unchanged, 501 corrected to the
-             offset, 1501 moved by 1000 and unsynchronized until the next window, then
-             corrected and synchronized; 60 s counts, 60 s + 1 ms is ignored
-             (synchronized, correction kept); the step clears the window, synchronized;
-             20 quiet windows keep correction 0 (no alternation); the state is never
-             unknown.
+             (75 %) evidence; five: +1000 ms 3 of 5 (60 %) evidence; six heard: median of
+             the middle pair -1000 and 0 is -500, every vote 500 ms from it, 0 kept, no
+             evidence; residual 500 correction unchanged, 501 corrected to the offset,
+             1501 moved by 1000 and unsynchronized until the next window, then corrected
+             and synchronized; evidence 60 s old counts, 60 s + 1 ms is ignored
+             (synchronized, correction kept); the observations count at 120 s (evidence)
+             and not at 120 s + 1 ms (no estimate); the 101 ms step clears the window,
+             synchronized; the 2000 ms step leaves correction -3000 ms, the 2001 ms step
+             restarts it at 0; 20 quiet windows keep correction 0 (no alternation); the
+             state is never unknown.
              2 — Isolated automated tests; Windows development PC, no audio, radio or
              network. */
         attribute automation : AutomationState = AutomationState::planned;
@@ -3763,7 +3783,7 @@ package WstxRequirements {
     verification 'TC-092-002' {
         doc /* TC-092-002 — Replay of the 10 m FT4 refusals of 2026-11-09
              CL-043-03, CL-009-05
-             Setup: StationClock with source both, a fake SNTP monitor holding a current
+             Setup: StationClock with a fake SNTP monitor holding a current
              measurement +525 ms (unsynchronized); the air votes of an FT4 crowd of 6
              stations of which 4 agree at offset +339 ms; PlanTransmitStart on the
              station clock.
@@ -3772,7 +3792,7 @@ package WstxRequirements {
              Expected (independent oracle: the operator's rule of 2026-11-09 and the
              observed 2026-11-09 values): correction 0 throughout (339 < 500 ms);
              station clock synchronized on the air basis in every window; every start
-             planned (no clock_not_synchronized); warning ntp_unsynchronized throughout.
+             planned (no clock_not_synchronized); warning pc_clock_off throughout.
              Red on the parent, which falls to unknown and refuses.
              2 — Isolated automated tests; Windows development PC, no audio, radio or
              network. */
@@ -3785,25 +3805,32 @@ package WstxRequirements {
     dependency CL_043_03_verified_by_TC_092_002 from 'CL-043-03' to 'TC-092-002';
     dependency CL_009_05_verified_by_TC_092_002 from 'CL-009-05' to 'TC-092-002';
     verification 'TC-092-003' {
-        doc /* TC-092-003 — Source combination and NTP warnings
+        doc /* TC-092-003 — The three situations: basis and warnings
              CL-043-03, CL-009-05
              Setup: StationClock with a fake SNTP monitor that records rounds (asked a
-             server or not, answer or none) and an air estimate set directly; explicit
-             clocks.
-             Steps: source both with SNTP +12 ms and air -2025 ms (evidence); SNTP
-             -1900 ms and air -2025; SNTP +12 with air -188 and -189 ms; one round asked
-             with no answer and no measurement; a measurement 600 s and 600 s + 1 ms old
-             after failed rounds; a 101 ms step with a young measurement; an empty server
-             list (no round asks); no round yet. Source ntp with SNTP +525 ms and with
-             SNTP unknown. Source air with each SNTP case.
-             Expected (TransmitClock 500 ms / 600 s / 100 ms, AirClock 200 ms): both:
-             ntp basis synchronized with ntp_air_disagree (2037); air basis -2000 ms
-             synchronized with ntp_unsynchronized; null at 200 ms and ntp_air_disagree at
-             201 ms; ntp_unreachable; null at 600 s and ntp_unreachable at 600 s + 1 ms;
-             null after the step, with the empty list and before the first round, the
-             station clock synchronized in each. ntp: +525 unsynchronized with
-             ntp_unsynchronized; SNTP unknown synchronized and uncorrected. air: never a
-             warning. GET /clock warning equals GET /transmit clock_warning.
+             server or not, answer or none), an air estimate set directly and a fake
+             Windows Time service reader; explicit clocks.
+             Steps: SNTP +12 ms with air evidence -2025 ms, -500 ms, -501 ms and +501 ms;
+             SNTP +500 and +501 ms; SNTP -1900 ms with air -2025 ms; one round asked with
+             no answer and no measurement; a measurement 600 s and 600 s + 1 ms old after
+             failed rounds; a 101 ms step with a young measurement; an empty server list
+             (no round asks); no round yet; the service reader answering running, stopped,
+             disabled and failing; with live receive a correlated clock at capture drift
+             1000.0, -1000.0 and 1000.1 ppm, a rate not yet known, an uncorrelated clock,
+             then receive stopped with 1500 ppm; GET /clock and GET /transmit after each.
+             Expected (TransmitClock 500 ms / 600 s / 100 ms, CL-043-03): SNTP +12: ntp
+             basis, synchronized, correction 0 in every case, warning null at -500 ms and
+             stations_off at -2025, -501 and +501 ms (|offset| above 500 ms); SNTP +500
+             ntp basis synchronized null, +501 air basis
+             synchronized pc_clock_off; SNTP -1900 air basis -2000 ms synchronized
+             pc_clock_off; ntp_unreachable; null at 600 s and ntp_unreachable at 600 s +
+             1 ms; null after the step, with the empty list and before the first round,
+             the station clock synchronized in each; windows_time running, stopped,
+             disabled, unknown; capture_warning null at 1000.0 and -1000.0 ppm, drift_high
+             at 1000.1 ppm, null without a known rate, uncorrelated for the uncorrelated
+             clock, null with receive stopped; GET /clock warning equals GET /transmit
+             clock_warning; no clock_source key; clock_revision increases at each change of
+             a clock.state field and only then.
              2 — Isolated automated tests; Windows development PC, no public time server,
              audio or radio. */
         attribute automation : AutomationState = AutomationState::planned;
@@ -3815,17 +3842,18 @@ package WstxRequirements {
     dependency CL_043_03_verified_by_TC_092_003 from 'CL-043-03' to 'TC-092-003';
     dependency CL_009_05_verified_by_TC_092_003 from 'CL-009-05' to 'TC-092-003';
     verification 'TC-092-004' {
-        doc /* TC-092-004 — Default clock source both
+        doc /* TC-092-004 — No clock source setting
              CL-043-01
              Setup: the actual station router on a disposable profile directory, SNTP
-             monitor that never measures.
-             Steps: open with clock.json missing, a foreign profile, malformed JSON,
-             1025 bytes, an extra key, an unreadable file; saved ntp, air and both; GET
-             /clock and GET /transmit each time; POST ntp and reopen.
-             Expected (CL-043-01): source both with storage_error null, invalid_clock (four)
-             and storage_unavailable; saved sources read back unchanged; GET /transmit
-             clock_source equal to GET /clock source in every case; ntp after reopen;
-             state never unknown.
+             monitor that never measures, twelve stations heard at a clock 2 s fast.
+             Steps: open with clock.json missing, then with #43 files {source ntp},
+             {source air} and malformed JSON; GET /clock and GET /transmit each time;
+             POST /clock {v 1, profile_id, boot_id, source ntp}.
+             Expected (CL-043-01): in every case the same view: exactly the keys of
+             CL-043-01 (no source, disagreement_ms or storage_error), basis air,
+             correction -2000 ms after two windows, synchronized; GET /transmit without
+             clock_source; each file byte for byte unchanged; POST /clock answered as an
+             unknown route.
              2 — Isolated automated tests; Windows development PC, loopback only, no
              public time server, audio or radio. */
         attribute automation : AutomationState = AutomationState::planned;
@@ -3835,24 +3863,33 @@ package WstxRequirements {
     }
     dependency CL_043_01_verified_by_TC_092_004 from 'CL-043-01' to 'TC-092-004';
     verification 'TC-092-005' {
-        doc /* TC-092-005 — NTP entries in the error field and the clock status line
+        doc /* TC-092-005 — Clock entries in the error field and the clock status line
              CL-043-03, CL-037-02
-             Setup: the actual server and Chromium at 1366x768 with routed transmit.state
-             and GET /clock fixtures; a transmit-configured and a receive-only profile.
-             Steps: transmit configured, clock synchronized, source both, with
-             clock_warning ntp_unsynchronized and offset +525 ms, then -620 ms;
-             ntp_unreachable; ntp_air_disagree; null; clock unsynchronized with
-             ntp_unsynchronized; the receive-only profile with ntp_unsynchronized; click
-             the entry; open Settings > General > Clock with a GET /clock warning
-             ntp_unsynchronized and with an air basis view without evidence.
-             Expected (CL-043-03 texts, CL-037-02): exactly one warn entry "NTP: PC clock
-             525 ms slow · check the Windows time" and no clock entry; "NTP: PC clock
-             620 ms fast · check the Windows time"; "NTP not reachable · check the
-             network"; "NTP and air clock disagree"; "No problems"; the two entries "Clock
-             off · Tx blocked" (error) and the NTP entry (warn); no entry for receive only;
-             the click opens Settings clock; the status line ends with "· NTP: PC clock
-             525 ms slow · check the Windows time" and, without evidence, begins "Clock
-             accepted (no evidence it is off)"; no view shows "Clock unknown".
+             Setup: the actual server and Chromium at 1366x768 with routed transmit.state,
+             receive state and GET /clock fixtures; a transmit-configured and a
+             receive-only profile.
+             Steps: routed clock.state events (no GET /clock outside Settings): transmit
+             configured, clock synchronized, with warning pc_clock_off and ntp_offset_ms
+             +525, then -620; ntp_unreachable; stations_off; null; clock unsynchronized
+             with pc_clock_off; the receive-only profile with pc_clock_off, ntp_unreachable
+             and stations_off; capture_warning uncorrelated, drift_high, then null on both
+             profiles; count the /clock requests; click each entry; open Settings >
+             General > Clock with GET /clock warning pc_clock_off and windows_time
+             stopped, disabled, running and unknown, and with an air basis view without
+             evidence.
+             Expected (CL-043-03 texts, CL-037-02): exactly one warn entry "PC clock
+             525 ms slow vs NTP · see Settings" and no clock entry; "PC clock 620 ms fast
+             vs NTP · see Settings"; "NTP not reachable · check the network"; "Stations
+             heard more than 0.5 s off · PC clock matches NTP"; "No problems"; the two entries
+             "Clock off · Tx blocked" (error) and the PC clock entry (warn); the same three
+             warn entries on the receive-only profile and never "Clock off" there; "Audio
+             timing not tied to the PC clock · DT may be off" and "Sound card clock drifts
+             over 1000 ppm · check the audio device" (warn) on both profiles, gone at
+             null; no /clock request before Settings opens; the clock entries open
+             Settings clock, the audio entry the receive details; the status line remedy
+             texts of CL-043-03 for each windows_time value, and without evidence it
+             begins "Clock accepted (no evidence it is off)"; no source select; no view
+             shows "Clock unknown" or "NTP and air clock disagree".
              2 — Isolated automated functional tests; Windows development PC, no radio or
              RF. */
         attribute automation : AutomationState = AutomationState::planned;
@@ -3869,9 +3906,10 @@ package WstxRequirements {
              Setup: the deployed candidate on HB9BLA, receive running.
              Steps: read GET /clock and GET /transmit for three periods; look at the error
              field.
-             Expected: source as saved (both), state synchronized or unsynchronized, never
-             unknown; warning null while |SNTP offset| is at most 500 ms, else
-             ntp_unsynchronized, the same value in both reads; the error field matches it.
+             Expected: no source key; state synchronized or unsynchronized, never
+             unknown; ntp.windows_time as Windows reports it; warning null while |SNTP
+             offset| is at most 500 ms and the crowd within 500 ms, else the CL-043-03
+             value, the same in both reads; the error field matches it.
              3 — Live read-only; HB9BLA. Not run by the automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
         objective {
@@ -3882,19 +3920,20 @@ package WstxRequirements {
     dependency CL_043_01_verified_by_TC_092_006 from 'CL-043-01' to 'TC-092-006';
     dependency CL_043_03_verified_by_TC_092_006 from 'CL-043-03' to 'TC-092-006';
     verification 'TC-092-007' {
-        doc /* TC-092-007 — Live PC clock offset with source both
+        doc /* TC-092-007 — Live PC clock offset
              CL-043-03
              Setup: HB9BLA, FT8 receive on a band with at least ten stations heard; the
              operator with administrator rights stops Windows Time (w32time) and any
-             clock tool; source both.
+             clock tool.
              Steps: set the PC clock 1.5 s fast, wait four FT8 periods and one SNTP round,
-             read GET /clock, GET /transmit and the error field; set it 0.4 s fast and
-             repeat; restore the clock and its service and wait 60 s.
+             read GET /clock, GET /transmit, the error field and Settings clock; set it
+             0.4 s fast and repeat; restore the clock and its service and wait 60 s.
              Expected: at 1.5 s correction_ms within 200 ms of -1500, state synchronized
-             on the air basis, the warn entry "NTP: PC clock n ms fast · check the Windows
-             time" with n 1300 to 1700, no Clock off; at 0.4 s correction_ms 0, state
-             synchronized, the NTP entry shown if SNTP measures above 500 ms, else none;
-             after the restore the entry is gone within 60 s.
+             on the air basis, the warn entry "PC clock n ms fast vs NTP · see Settings"
+             with n 1300 to 1700, Settings naming the stopped Windows Time service and its
+             remedy, no Clock off; at 0.4 s the ntp basis, correction_ms 0, synchronized,
+             no PC clock entry (SNTP within 500 ms); after the restore the entry is gone
+             within 60 s.
              4 — Live receive-only; operator with administrator rights. Not run by the
              automated gate. */
         attribute automation : AutomationState = AutomationState::planned;
@@ -3906,13 +3945,12 @@ package WstxRequirements {
     verification 'TC-092-008' {
         doc /* TC-092-008 — Live call on a sparse band with NTP not correct
              CL-043-03, CL-009-05
-             Setup: HB9BLA, IC-7300, 10 m FT4 with few stations; source both; the
-             operator's consent for transmit; NTP unsynchronized or unreachable (the
-             operator's choice how).
+             Setup: HB9BLA, IC-7300, 10 m FT4 with few stations; the operator's consent
+             for transmit; NTP unsynchronized or unreachable (the operator's choice how).
              Steps: call stations or CQ for ten own periods; read GET /transmit and the
              error field.
              Expected (the reported failure of 2026-11-09): no clock_not_synchronized
-             refusal over the ten periods; the yellow NTP entry shown; PSK Reporter spots
+             refusal over the ten periods; the yellow PC clock or NTP entry shown; PSK Reporter spots
              or a partner's DT within +-1 s.
              5 — Live with transmit and external effects; explicit operator consent;
              HB9BLA. Not run by the automated gate. */
@@ -3924,6 +3962,35 @@ package WstxRequirements {
     }
     dependency CL_043_03_verified_by_TC_092_008 from 'CL-043-03' to 'TC-092-008';
     dependency CL_009_05_verified_by_TC_092_008 from 'CL-009-05' to 'TC-092-008';
+    verification 'TC-092-009' {
+        doc /* TC-092-009 — clock.state pushed to every profile
+             CL-043-01, CL-043-03
+             Setup: the actual server with a receive-only and a transmit-configured
+             profile, a fake SNTP monitor and capture drift source, two WebSocket peers
+             subscribed Detailed and Thin; loopback only.
+             Steps: subscribe; wait 10 s with nothing changing; let the SNTP offset move
+             from +12 to +40 ms (synchronized); set it to +525 ms; then +530 ms; three
+             changes within 300 ms; set capture drift 1500 ppm; restore all; compare each
+             event with GET /clock.
+             Expected (CL-043-01): one event per peer after subscribing, exactly
+             {v:1,type:"clock.state",data:{profile_id,boot_id,clock_revision,clock:{state,
+             basis,correction_ms,warning,ntp_offset_ms,capture_warning}}}, at most 512
+             bytes; no event while nothing changes and none for +12 to +40 ms
+             (ntp_offset_ms null); one event within 1 s with warning pc_clock_off and
+             ntp_offset_ms 525, one with 530; the three quick changes coalesced into at
+             most one event per second per peer, the last state delivered; capture_warning
+             drift_high, then null; clock_revision increasing, equal to GET /clock's; the
+             same on both profiles.
+             2 — Isolated automated tests; Windows development PC, loopback only, no
+             public time server, audio or radio. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-043-01';
+            verify 'CL-043-03';
+        }
+    }
+    dependency CL_043_01_verified_by_TC_092_009 from 'CL-043-01' to 'TC-092-009';
+    dependency CL_043_03_verified_by_TC_092_009 from 'CL-043-03' to 'TC-092-009';
 
     // #44 Automatic radio detection and setup (operator decision 2026-11-01 on issue #44:
     // IC-7300 settings may be written via CI-V, each read back, old values kept for undo).

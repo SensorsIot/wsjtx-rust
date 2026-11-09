@@ -437,9 +437,10 @@ attribute def ActivityOrdering {
         enum linkStale; enum catLost; enum catSetupUnconfirmed; enum audioUnavailable;
         enum audioLevelLow; enum audioLevelHigh; enum clockOff; enum receiveStopped;
         enum receiveOutcomeUnknown; enum bandModeFailed; enum transmitRefused;
-        // #43 CL-043-03: NTP/air disagree. #92: the station clock is never unknown (no
-        // clockUnknown); NTP not correct while the clock source uses NTP.
-        enum clockDisagree; enum ntpUnsynchronized; enum ntpUnreachable;
+        // #92 CL-043-03: the three clock situations; the station clock is never unknown
+        // (no clockUnknown) and the NTP/air disagreement is dropped (no clockDisagree).
+        enum pcClockOff; enum ntpUnreachable; enum stationsOff; enum audioClockUncorrelated;
+        enum audioClockDrift;
         enum stationUpdated; enum stationDataRejected;
         // #44 CL-044-14: persistent Tx trouble from the meter read of each transmission.
         enum txAlcHigh; enum txPowerLow; enum txSwrHigh; enum txSwrFault;
@@ -1082,8 +1083,9 @@ attribute def ActivityOrdering {
              stale); catLost / catSetupUnconfirmed, the CAT status not ready or not
              commissioned; audioUnavailable, the audio input unavailable, and "No audio input"
              without a configured input; audioLevelLow / audioLevelHigh, the input level too
-             low or overdriven while receive runs; clockOff (Tx blocked), clockDisagree,
-             ntpUnsynchronized and ntpUnreachable (warn, #92), as CL-043-03; receiveStopped and receiveOutcomeUnknown;
+             low or overdriven while receive runs; clockOff (Tx blocked), pcClockOff,
+             ntpUnreachable, stationsOff, audioClockUncorrelated and audioClockDrift (warn,
+             every profile, from clock.state, #92), as CL-043-03; receiveStopped and receiveOutcomeUnknown;
              bandModeFailed, a failed or unknown band/mode change; transmitRefused "Tx refused
              · <reason>", while the contact snapshot's transmit refusal names a reason the
              operator must fix (transmit unsupported or unavailable, radio unavailable or lost,
@@ -1115,9 +1117,10 @@ attribute def ActivityOrdering {
              WstxStrategy::Alert: Sound and Browser notification checkboxes, both off by
              default, and the alert history newest first with Clear; #39 the Most Wanted
              section of WstxStrategy::MostWantedList: status with the date and source attribution, and one button Update Most Wanted), clock
-             (the SNTP state, and #43 CL-043-01 the clock source NTP / From the air /
-             Both (default, #92) with the air estimate, read with GET /clock when the drawer opens,
-             saved on change with POST /clock, a plain setting without restart mark),
+             (#43/#92 CL-043-01 a status line only, no source setting: the SNTP state,
+             the Windows Time service state, the basis, the correction and the air
+             estimate, the warning and its remedy, read with GET /clock when the drawer
+             opens),
              display (theme Day/Dark/Night and its switch, waterfall display
              preferences), access and grants (log out, forget credential), MCP/automation,
              and "Monitor off at startup" (#45 CL-045-01: read with GET /receive/startup,
