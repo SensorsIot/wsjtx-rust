@@ -73,7 +73,7 @@ The paths a harness change may touch; everything else is product:
   another submodule is a product change)
 
 They are declared as `harness_paths` in `.harness/config.yaml`: a push that changes only
-these paths is a harness change, reviewed and not gated.
+these paths is a harness change: no review and no gate (harness Harness-Changes.md).
 
 Maintained with the harness but inputs of product suites, so a change to them is gated
 as a CR: `.github/workflows/windows-rust.yml` (the CI build), `tools/sysml.py` and

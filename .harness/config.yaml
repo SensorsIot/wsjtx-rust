@@ -6,7 +6,7 @@ main: master
 remote: origin
 override_env: HARNESS_GATE_OVERRIDE
 # Harness paths beyond harness/ and .harness/ (docs/harness/Harness-Overview.md). A push
-# that changes only harness paths is reviewed, not gated.
+# that changes only harness paths has no review and no gate.
 harness_paths:
   - docs/harness/
   - AGENTS.md
