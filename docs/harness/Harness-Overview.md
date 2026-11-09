@@ -126,5 +126,5 @@ GitHub issues of `SensorsIot/wsjtx-rust` are the project's one to-do list.
 - **Types say what:** `Bug`, `Feature`, `Task`.
 - **Ageing:** an open issue is overdue 30 days after it was created; a `waiting` issue
   never ages and names what it waits for.
-- **Priority:** prerequisites first, then `Bug`, then `Task`, then `Feature`; within
+- **Priority:** harness issues first ([intake](../../harness/core/docs/CR-Process.md#intake-and-authorization)), then prerequisites, then `Bug`, then `Task`, then `Feature`; within
   a type, the oldest first.
