@@ -3545,9 +3545,9 @@ package WstxRequirements {
              oscillating; with the live window coverage of corrected DT (-1.7 s to
              +2.56 s) it finds system clock errors of about -2.5 s to +1.7 s; outside
              them too few stations decode, there is no evidence and the time is
-             accepted. stations_off (#92 open question, recommended): while the SNTP
-             state is synchronized and |correction| is above 500 ms, the cause lies
-             outside the PC clock (for example audio latency).
+             accepted. stations_off (#92 operator 2026-11-09 "Note above 500 ms"):
+             while the SNTP state is synchronized and |correction| is above 500 ms, the
+             cause lies outside the PC clock (for example audio latency).
              GET /clock warning and GET /transmit clock_warning carry the same value, the
              first that holds of pc_clock_off, ntp_unreachable, stations_off. Error field
              entries (CL-037-02), from clock.state (CL-043-01): while transmit is
@@ -3591,7 +3591,8 @@ package WstxRequirements {
              decoded twenty times; two and three stations at +1850; four at +1850; five
              at +1850 among nine scattered around 0; a crowd split at -500 and +500;
              observe the own call (any case), SNR -20.5/None/NaN, |DT| 3001 and 3000; a
-             quiet band after a correction; evidence 60 s and 60 s + 1 ms old; a 100/101
+             quiet band after a correction; the estimate of the 2 s ahead crowd (median
+             +2025 ms) with no further window, read 60 s and 60 s + 1 ms later; a 100/101
              ms system clock step with correction -2000; the 2 s fast system clock stepped
              back to UTC; a +5 s step; the 2 s ahead crowd with SNTP +12 ms, with SNTP
              -1900 ms and without SNTP.
@@ -3605,8 +3606,9 @@ package WstxRequirements {
              chatty station one vote; two and three stations no evidence; four at +1850
              evidence, -1000 then -1850; five of nine (55 %) no evidence; the split crowd
              mixed (50 %); only the two in-range observations admitted; the quiet band
-             keeps the last correction, synchronized; evidence 60 s old counts, 60 s +
-             1 ms does not (correction kept, synchronized); the 100 ms step changes
+             keeps the last correction, synchronized; that estimate (median +2025 ms)
+             is unsynchronized at 60 s and synchronized at 60 s + 1 ms, the correction
+             -1000 ms both times; the 100 ms step changes
              nothing, the 101 ms step clears the window and makes the correction -2101
              (forward step); stepping back to UTC leaves correction 0; the +5 s step
              restarts at 0; only synchronized plans a transmit start; correction and state
@@ -3769,7 +3771,8 @@ package WstxRequirements {
              at +101; four at -100; four at -101; four at +600 and four at -600; four at
              +1000; four at +1001; four at +2500 for three periods, with two windows in
              the first; a quiet band for 20 periods after a correction of -1500 ms;
-             evidence 60 s and 60 s + 1 ms old; observations 120 s and 120 s + 1 ms old;
+             from start four votes at +1500 ms in one window and then no further window,
+             read 60 s and 60 s + 1 ms later; observations 120 s and 120 s + 1 ms old;
              a 100 ms and a 101 ms system clock step; with correction -1000 ms forward
              steps of 2000 ms and, from the same start, 2001 ms; with correction 0 a
              +525 ms step.
@@ -3785,8 +3788,9 @@ package WstxRequirements {
              +2500: -1000 in the first period (the second window of that period adds
              nothing), -2000 in the second (unsynchronized, median +1500), -2500 in the
              third (median +500, synchronized); the quiet band keeps -1500, synchronized
-             (no reset, no alternation); evidence 60 s old counts, 60 s + 1 ms does not
-             (synchronized); observations count at 120 s and not at 120 s + 1 ms; the
+             (no reset, no alternation); the estimate of four votes at +1500 ms with no
+             further window: unsynchronized at 60 s, synchronized at 60 s + 1 ms, the
+             correction -1000 ms both times; observations count at 120 s and not at 120 s + 1 ms; the
              100 ms step changes nothing, the 101 ms step clears the window; the 2000 ms
              step leaves -3000 ms, the 2001 ms step restarts at 0; the +525 ms step leaves
              0; the state is never unknown.
@@ -3862,7 +3866,9 @@ package WstxRequirements {
              uncorrelated for the uncorrelated epoch, null with receive stopped; the
              steps leave correction 0 and station UTC equal to the system clock; the
              recovery gives correction 0 and station UTC equal to the system clock at
-             every step, pc_clock_off until the +3 ms round, then null, no
+             every step, pc_clock_off until the +525 ms step, null in the SNTP step gap
+             (SNTP unknown with a young measurement: neither warning applies) and after
+             the +3 ms round, no
              clock_not_synchronized; the -2000 ms correction is kept through every SNTP
              change (SNTP never resets it); GET /clock warning equals GET /transmit
              clock_warning; no clock_source key; clock_revision increases at each change of
