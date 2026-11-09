@@ -22,6 +22,8 @@ mod freeslot;
 mod http_compression;
 #[cfg(test)]
 mod http_compression_tests;
+#[cfg(test)]
+mod liveness_tests;
 mod logbook;
 mod logbook_http;
 mod mcp;
