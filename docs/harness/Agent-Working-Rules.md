@@ -92,7 +92,7 @@ rules around it. Agent memory only points here.
 ## Agent role additions
 
 This project's layer of the [agent roles](../../harness/core/docs/Parallel-Work.md#agent-roles),
-installed with `python harness/core/tools/install_skills.py --project . --host claude --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --agent definer --agent checker --agent coder --agent reviewer --agent harness-improver`.
+installed with `python harness/core/tools/install_skills.py --project . --host claude --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --skill improvement --agent definer --agent checker --agent coder --agent reviewer --agent harness-improver --agent tester --agent prober --agent explainer`.
 
 ### Role: definer
 
@@ -182,6 +182,45 @@ guard:
 The harness-improver posts on a harness issue in the posting form under "Role: every"
 below, with `--repo SensorsIot/harness` between the number and `--body`; the hook refuses
 any other repository, for reading too.
+
+### Role: tester
+
+```yaml
+guard:
+  commands:
+    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|\.harness/deploy/(radio-preflight|live-page-check))\.ps1( .*)?'
+  writes: ["D:/wstx-tmp/live/**"]
+```
+
+The live-test binding is [Preserve the runtime](HB9BLA-HANDOFF.md#preserve-the-runtime):
+the radio preflight and its lease before keying, the power the test sets, the bands, no
+abort at or after RR73 or 73, a contact you did not start, and the settings a cost-4/5
+test sets back. A run writes under `D:/wstx-tmp/live/<issue>/`
+([limits for experiments](Project-Specifics.md#limits-for-experiments)): its log, and its
+scripts, which act on the station only through the station client
+`.git/harness-parallel/resources/station-update/agent-client.ps1` (dot-sourced:
+`Open-AgentSession`, `Agent-Get`, `Agent-Post`). It runs them, and the radio preflight or
+the live page check, as
+`powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/live/<issue>/<name>.ps1 …`
+or `… -File .harness/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <value>`. It
+installs nothing and restarts the station only through those deploy scripts.
+
+### Role: prober
+
+```yaml
+guard:
+  commands:
+    - '(python|py)(\.exe)? D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\.py( .*)?'
+    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\.ps1( .*)?'
+  writes: ["D:/wstx-tmp/experiments/**"]
+```
+
+The experiment folder is `D:/wstx-tmp/experiments/<issue>/`, within the
+[limits for experiments](Project-Specifics.md#limits-for-experiments); its scripts run as
+`python D:/wstx-tmp/experiments/<issue>/<name>.py …` or
+`powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/<issue>/<name>.ps1 …`.
+They read recordings, logs and the code; they do not use the station client, open COM3 or
+key the radio: that is a live test for the tester.
 
 ### Role: every
 
