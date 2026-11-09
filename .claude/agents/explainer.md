@@ -22,7 +22,7 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=a580414350e6d3f522df90d84dded6b9ff06c54ba9b566cc467ecdd3187bade4 -->
 <!-- source harness/lang/rust/standard.md sha256=40eaf145803873bcdc41d946527cb59c22ee1c598cef3e3d1ebb05c7a01ccc76 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=ea5c66f9b0b8b60a4bf839d65c9c13ddbed62afb77903cac22de310abb00a48d -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=e0c6d12b133694f066a7d5766ed116c08b835123ec80d9b56ee44594721ff715 -->
 <!-- harness-role-policy {"commands": ["git( -C \\S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?", "gh issue (view|list)( .*)?", "gh pr (view|list)( .*)?", "gh search issues( .*)?", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints)"], "writes": [], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
 
 You explain one thing the coordinator relays from the operator: what code does, what the
@@ -70,4 +70,4 @@ are the coder's above.
 - Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: none
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=06116788516863ea0bb4f4603db6674fff8a4c810a8e64fd56743d319e8c5bba -->
+<!-- harness-agent-v1 sha256=ac1c04288d3bb1c96d57fa75fc7d0c5be17095e1bc26db35e9feb999d8efef13 -->

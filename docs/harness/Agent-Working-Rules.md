@@ -126,8 +126,9 @@ says; the hook refuses any other first line.
 guard:
   commands:
     - 'node --test( --test-concurrency=1| --test-name-pattern=([\[\]A-Za-z0-9_.,:^+=/-]+|''[^'']+'')){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
+    - 'python (\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/)?fixtures/transmit/generate\.py( --(bin|compare-bin|ft4sim) C:/WSJT/[A-Za-z0-9._/-]+)+'
   deny:
-    - '^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test'
+    - '^(?!(python3?|py)(\.exe)? \S*red_on_parent\.py )(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test'
   model:
     facts:
       - '\s*attribute (coverage|automation|executable) : .*;\s*'
@@ -149,6 +150,13 @@ guard:
   from a session inside the worktree or by its absolute path. `WSTX_TEST_EXE` (read by
   `tests/support.cjs`) runs the tests on the role's own build; its `<worktree>` is the one
   every test file of the command lies in.
+- **Oracle generator and node red on the parent** (harness#44): the coder runs the WSJT-X
+  vector generator itself, from the project folder with the worktree path and only reference
+  binaries under `C:/WSJT/` (`python .git/harness-parallel/worktrees/<worktree>/fixtures/transmit/generate.py
+  --bin … --compare-bin …`, then `--ft4sim …`), and proves a Node test red on the parent through
+  `red_on_parent.py … -- bash -c "cargo build --locked --bin wstx-rust && NODE_PATH=D:/Github/wsjtx-rust/node_modules
+  node --test --test-concurrency=1 --test-name-pattern=<pattern> tests/<file>"` without `WSTX_TEST_EXE`, so
+  the tests run on the build of the temporary tree (its pack `CARGO_TARGET_DIR`).
 - **Delivery facts** in the model are a requirement's `coverage`, a case's `automation`
   and its `executable` binding
   ([source bindings](Project-Specifics.md#canonical-model-catalog-and-source-bindings));
