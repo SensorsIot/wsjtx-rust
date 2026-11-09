@@ -282,7 +282,7 @@ package WstxContest {
     }
     attribute def ContestDirective {
         doc /* WstxStrategy::DirectedCqRule in a contest activity: the word of the station's
-             current activity (na_vhf and arrl_digi TEST, ww_digi WW, field_day FD, rtty RU) is
+             current activity (na_vhf, eu_vhf and arrl_digi TEST, ww_digi WW, field_day FD, rtty RU) is
              answerable, also with my continent unknown. So it is not greyed, a selection needs no
              directive_confirmed, and a word outside its activity keeps the warning. It depends on
              the activity alone, not on a selected contest strategy (D2). */
