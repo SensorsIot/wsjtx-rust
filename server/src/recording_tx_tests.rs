@@ -50,6 +50,74 @@ impl LiveInput for Blocks {
     }
 }
 
+/// Router test seam (#66, TC-066-002): the actual live worker of the injected live job
+/// (`fixture_live_job`, FT8), its capture clock putting canonical frame 0 at station UTC
+/// `anchor_ms` (a period start), fed with silent blocks. The worker observes the station's own
+/// transmit owner (on the Router the hardware double) at each block, as live.
+pub(crate) struct Capture {
+    worker: LiveWorker,
+    queue: Arc<Mutex<VecDeque<SampleBlock>>>,
+    context: source::SourceContext,
+    anchor_ms: i64,
+    next: u64,
+}
+impl Capture {
+    /// Feeds the blocks of the capture up to station UTC `until_ms`; the detailed rows completed
+    /// meanwhile, each as (the station UTC of its first frame, whether its frame is marked tx).
+    pub(crate) fn until(&mut self, until_ms: i64) -> Vec<(i64, bool)> {
+        let end = u64::try_from((until_ms - self.anchor_ms) * 12).unwrap();
+        let mut rows = Vec::new();
+        while self.next < end {
+            let count = (end - self.next).min(source::LIVE_BLOCK_FRAMES as u64);
+            let samples: Arc<[f32]> = Arc::from(vec![0.0; count as usize]);
+            self.queue.lock().unwrap().push_back(
+                SampleBlock::live(&self.context, self.next, samples, self.next == 0).unwrap(),
+            );
+            self.next += count;
+            assert!(self.worker.step().unwrap().is_none());
+            let mut s = self.worker.owner.state.lock().unwrap();
+            rows.extend(s.detail_recent.drain(..).map(|f| {
+                let first = f["data"]["first_frame"].as_i64().unwrap();
+                (self.anchor_ms + first / 12, f["data"].get("tx").is_some())
+            }));
+        }
+        rows
+    }
+}
+impl Recording {
+    pub(crate) fn fixture_capture(self: &Arc<Self>, anchor_ms: i64) -> Capture {
+        relative_clock(
+            self,
+            "ft8",
+            &crate::contact_http_tests::period_text(anchor_ms),
+            0,
+        );
+        let (job, context) = {
+            let s = self.state.lock().unwrap();
+            let l = s.live.as_ref().unwrap();
+            (
+                s.job.clone().unwrap(),
+                source::SourceContext {
+                    descriptor: l.source.clone().unwrap(),
+                    timing: Arc::new(l.timing.clone().unwrap()),
+                },
+            )
+        };
+        let queue = Arc::new(Mutex::new(VecDeque::new()));
+        let input = Blocks {
+            descriptor: context.descriptor.clone(),
+            queue: queue.clone(),
+        };
+        Capture {
+            worker: LiveWorker::new(self.clone(), job, Box::new(input), "ft8"),
+            queue,
+            context,
+            anchor_ms,
+            next: 0,
+        }
+    }
+}
+
 // Proves: CL-061-04; TC-061-005. The noted Tx period 12:00:15 gets no decode attempt and a
 // transmitted view; the receive period after it is decoded as before.
 #[test]

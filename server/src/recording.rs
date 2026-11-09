@@ -2662,7 +2662,11 @@ impl LiveWorker {
                 } else {
                     l.accumulate_level(&block.samples, Instant::now());
                 }
-                // #39 WstxStrategy::FreeTxSlot: each row's period, for the per-period power.
+                // #39 WstxStrategy::FreeTxSlot: each row's period, for the per-period power, and
+                // whether that period is a Tx period. The row's mark (#61) also holds while on the
+                // air, which the per-period power must not use: a detailed row completes 0.4 s
+                // after its middle (its last 4096-point transform), so keying PTT at a Tx period's
+                // start marks the last 2 rows of the received period before it (#66 TC-066-003).
                 let drift = l.capture_drift.map_or(0, |(d, _)| d) + l.clock_correction;
                 let period_ms = if l.mode == "ft4" { 7500 } else { 15000 };
                 let tx_rows = frames
@@ -2670,8 +2674,10 @@ impl LiveWorker {
                     .flatten()
                     .map(|row| {
                         let middle = (row.first + row.end) / 2;
+                        let tx_period = self.owner.tx_period_at(l, middle);
                         (
-                            keyed || self.owner.tx_period_at(l, middle),
+                            keyed || tx_period,
+                            tx_period,
                             period_start_ms(l.timing.as_ref(), l.mode, middle, drift),
                         )
                     })
@@ -2687,7 +2693,7 @@ impl LiveWorker {
                         levels,
                         detailed,
                     },
-                    (tx, period),
+                    (tx, tx_period, period),
                 ) in frames.into_iter().flatten().zip(tx_rows)
                 {
                     if detailed && let Some(start) = period {
@@ -2700,7 +2706,7 @@ impl LiveWorker {
                                 start,
                                 period_ms,
                                 &levels,
-                                tx,
+                                tx_period,
                             );
                     }
                     let sequence = first / if detailed { 2400 } else { 12000 };
