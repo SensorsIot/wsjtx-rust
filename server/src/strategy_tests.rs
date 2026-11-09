@@ -3969,7 +3969,7 @@ async fn tc_042_004_pounce_answers_the_chosen_call_in_the_next_own_period_and_en
     // Auto Seq runs the QSO; its completion ends the pounce.
     publish(&f, e + 30_000, &[("HB9BLA K1ABC -05", 1505.0, Some(-6.0))]);
     publish(&f, e + 60_000, &[("HB9BLA K1ABC RR73", 1505.0, Some(-6.0))]);
-    transmit_own_period(&f, e + 75_000).await;
+    transmit_own_period(&f, e + 45_000).await;
     assert_eq!(last_text(&f).as_deref(), Some("K1ABC HB9BLA 73"));
     assert_eq!(contact(&f).await.1, json!("completed"));
     f.tick();
@@ -4940,7 +4940,7 @@ async fn tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller() {
         e + 30_000,
         &[("HB9BLA JA1XYZ RR73", 1400.0, Some(-18.0))],
     );
-    transmit_own_period(&f, e + 45_000).await;
+    transmit_own_period(&f, e + 15_000).await;
     assert_eq!(contact(&f).await.1, json!("completed"));
     f.tick();
     f.tick();
@@ -5010,8 +5010,7 @@ async fn tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller() {
     assert_eq!(run_state(&f).await.0, "calling_cq");
     assert_eq!(contact(&f).await.2, json!("armed"));
     // The end of the period, by the station clock: the same, and it stays.
-    f.bench.offset.fetch_add(3 * 3_600_000, Ordering::SeqCst);
-    f.tick();
+    crate::automation_tests::jump_and_tick(&f, 3 * 3_600_000);
     assert_eq!(
         run_state(&f).await,
         ("waiting".into(), json!("outside_period"))
@@ -6486,8 +6485,7 @@ async fn tc_039_044_run_leaves_a_silent_caller_and_keeps_it_quiet() {
 async fn tc_039_044_period_end_and_deselect_end_the_contact_at_once() {
     let t = contest_calling(|_| {}).await;
     let f = &t.f;
-    f.bench.offset.fetch_add(3 * 3_600_000, Ordering::SeqCst);
-    f.tick();
+    crate::automation_tests::jump_and_tick(f, 3 * 3_600_000);
     assert_eq!(
         contact(f).await,
         (Value::Null, json!("cancelled"), json!("disarmed"))
@@ -6693,10 +6691,10 @@ async fn tc_039_045_the_watchdog_and_no_client_end_the_cq_and_its_slot_is_quiet(
             json!({"hz":900,"power_db":0,"his_end":"unknown"})
         )
     );
+    transmit_own_period(f, e + 15_000).await;
     transmit_own_period(f, rep(e, 1) + 15_000).await;
-    transmit_own_period(f, rep(e, 2) + 15_000).await;
     let keys = f.keys();
-    not_keyed_in(f, rep(e, 3) + 15_000).await;
+    not_keyed_in(f, rep(e, 2) + 15_000).await;
     f.tick();
     f.tick();
     assert_eq!(run_state(f).await, ("stopped".into(), json!("tx_watchdog")));
@@ -8787,6 +8785,7 @@ async fn tc_066_002_received_periods_count_after_my_transmissions() {
         let (rx, own) = (rep(e, k - 1), rep(e, k - 1) + 15_000);
         // My Rx period received up to my Tx period, then PTT keyed at its start.
         capture.until(own);
+        crate::automation_tests::assert_bound(&f, own);
         f.bench
             .offset
             .fetch_add(own - 30 - f.bench.now_utc_ms(), Ordering::SeqCst);

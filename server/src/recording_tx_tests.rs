@@ -319,6 +319,12 @@ fn transmit_owner_on_the_air_records_the_tx_period_and_suspends_the_level() {
             c.arm(3).unwrap();
             c.set_tune(true, 1500).unwrap();
         });
+        // #87: a read that meets the transmit owner busy keeps the last known state, so the
+        // state is read until seen; 5 s is a hang guard only.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while r.rx_level().is_some() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
         assert_eq!(r.rx_level(), None, "{mode}: no level while on the air");
         // A block of a receive period (12:01:00) while on the air: the measurement is reset.
         let queue = Arc::new(Mutex::new(VecDeque::from([SampleBlock::live(
@@ -344,7 +350,10 @@ fn transmit_owner_on_the_air_records_the_tx_period_and_suspends_the_level() {
             "{mode}: no level accumulated while on the air"
         );
         station.service.with(|c| c.set_tune(false, 1500).unwrap());
-        r.observe_transmit();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while r.observe_transmit() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
         let tx = r.tx.lock().unwrap();
         assert!(!tx.keyed, "{mode}: released");
         assert!(

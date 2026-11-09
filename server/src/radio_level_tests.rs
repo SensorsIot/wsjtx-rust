@@ -122,14 +122,20 @@ fn station(ic7300: Ic7300) -> (Fixture, Arc<Mutex<Ic7300>>) {
         .recording
         .radio_connect(cat::Configuration::parse("COM3").unwrap(), 0)
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + HANG_GUARD;
     while actor(&f).snapshot().unwrap().state != cat::State::Ready {
         assert!(Instant::now() < deadline, "CAT owner not ready");
         std::thread::sleep(Duration::from_millis(5));
     }
     ic7300.lock().unwrap().writes.clear();
+    // #87: the scripted radio answers at once, so a read's time is scheduling only; the
+    // station's meter reads take the hang guard (the contract's 400 ms is the default,
+    // the_meter_read_bound_is_400_ms_without_an_override).
+    f.state.recording.tx_level.set_read_bound(HANG_GUARD);
     (f, ic7300)
 }
+/// The bound of every wait of these tests: a hang guard, never a measurement (#87).
+const HANG_GUARD: Duration = Duration::from_secs(5);
 fn actor(f: &Fixture) -> Arc<cat::actor::Actor> {
     f.state.recording.radio_actor().unwrap()
 }
@@ -165,7 +171,7 @@ fn stored(f: &Fixture) -> Option<Value> {
 #[test]
 fn meters_are_read_only_under_the_transmit_hold_in_the_manual_frames() {
     let (f, r) = station(radio(fixed([0x01, 0x20])));
-    let deadline = || Instant::now() + Duration::from_millis(400);
+    let deadline = || Instant::now() + HANG_GUARD;
     // No hold: refused, no byte.
     assert_eq!(actor(&f).read_meters(deadline()), Err(cat::Error::Busy));
     assert!(r.lock().unwrap().writes.is_empty());
@@ -195,6 +201,16 @@ fn meters_are_read_only_under_the_transmit_hold_in_the_manual_frames() {
     hold(&f);
     let meters = actor(&f).read_meters(deadline()).unwrap();
     assert_eq!((meters.alc, meters.po), (None, Some(143)));
+}
+
+// Proves: CL-044-12. A meter read is bounded at 400 ms (the contract's number); only a test
+// fixture's override changes it (#87).
+#[test]
+fn the_meter_read_bound_is_400_ms_without_an_override() {
+    let owner = Owner::default();
+    assert_eq!(owner.read_bound(), Duration::from_millis(400));
+    owner.set_read_bound(HANG_GUARD);
+    assert_eq!(owner.read_bound(), HANG_GUARD);
 }
 
 // Proves: TC-044-013 (c)
@@ -473,8 +489,14 @@ fn tune_meters_are_read_once_a_second_and_pushed_as_one_event() {
         c.arm(3).unwrap();
         c.set_tune(true, 1500).unwrap();
     });
-    tick(recording, settings, now);
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + HANG_GUARD;
+    // #87: a tick that meets the transmit owner busy (its try-lock) starts no read; the next
+    // tick at the same instant tries again.
+    while recording.tx_level.lock().read_at.is_none() {
+        assert!(Instant::now() < deadline, "no read started");
+        tick(recording, settings, now);
+        std::thread::sleep(Duration::from_millis(1));
+    }
     while meter_frames(&r).len() < 3 || recording.tx_level.alc() != Alc::Available {
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(1));
@@ -484,9 +506,13 @@ fn tune_meters_are_read_once_a_second_and_pushed_as_one_event() {
         v["data"]["meters"],
         json!({"alc":7,"po_pct":50,"swr_x10":10})
     );
-    // Within the second: nothing; after it: one more read.
+    // Within the second: nothing (the tick starts no read, read at once after it); after
+    // it: one more read.
     tick(recording, settings, now + Duration::from_millis(900));
-    std::thread::sleep(Duration::from_millis(30));
+    {
+        let i = recording.tx_level.lock();
+        assert_eq!((i.read_at, i.reading), (Some(now), false));
+    }
     assert_eq!(meter_frames(&r).len(), 3);
     // A tick while the first read is still finishing passes; the next one reads.
     while meter_frames(&r).len() < 6 {

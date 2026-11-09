@@ -77,6 +77,7 @@ async fn finished(f: &Mcp, e: i64, beside: &[(&str, f64, Option<f64>)]) {
 /// Into the own period `own` until its transmission is on the air, then 2 s into it with one station
 /// step; the key-on time.
 async fn on_the_air(f: &Mcp, own: i64) -> i64 {
+    crate::automation_tests::assert_bound(f, own);
     let service = &f.state.recording.transmit.get().unwrap().service;
     f.bench
         .offset
@@ -457,10 +458,7 @@ async fn tc_081_003_a_contest_deselected_or_its_period_end_finishes_the_qso() {
     let (f, e) = (&t.f, t.e);
     // An hour later (the same period phase): past the period's end.
     let later = e + 3_600_000;
-    f.bench
-        .offset
-        .fetch_add(later + 1_000 - f.bench.now_utc_ms(), Ordering::SeqCst);
-    f.tick();
+    crate::automation_tests::jump_and_tick(f, later + 1_000 - f.bench.now_utc_ms());
     assert_eq!(run_state(f).await, ("manual".into(), Value::Null));
     assert_eq!(contact(f).await.2, json!("armed"));
     contest_finished(f, later + 15_000, e).await;
