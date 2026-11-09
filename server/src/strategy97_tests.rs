@@ -1249,3 +1249,18 @@ async fn tc_097_011_f_busy_pause_off_counts_and_keeps_the_wsjtx_stop() {
     assert_eq!(contact(f).await.2, json!("disarmed"));
     assert_eq!(frequencies(f).await.1, json!(1500), "no split move");
 }
+
+// Proves: TC-097-011 (h) (CL-097-06, hand-worked from WstxContact::BusyPartner). KE1J's grid to
+// W9XYZ starts busy (leave.busy true, paused 1, remaining stays 4); his 73 to W9XYZ ends it and
+// that publication's call counts (busy false, remaining 3). Red on the parent: a grid to another
+// call is no busy start (the call counts, remaining 3, busy false).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_011_h_a_grid_to_another_starts_busy_and_his_73_ends_it() {
+    let t = calling_busy_ke1j(true).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, rep(e, 1), &[("W9XYZ KE1J FN42", 1200.0, Some(-7.0))]);
+    assert_eq!(run_of(f).await["leave"], leave_of(4, true, 1), "the grid");
+    publish(f, rep(e, 2), &[("W9XYZ KE1J 73", 1200.0, Some(-7.0))]);
+    assert_eq!(run_of(f).await["leave"], leave_of(3, false, 1), "the 73");
+    assert_eq!(contact(f).await.2, json!("armed"));
+}
