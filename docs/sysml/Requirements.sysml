@@ -6804,10 +6804,11 @@ package WstxRequirements {
              Steps: (a) KE1J sends W9XYZ KE1J -07 at 1200 Hz for two of his periods, then W9XYZ KE1J RR73, then CQ; (b) KE1J sends W9XYZ KE1J R-09 at 1510 Hz; (c) after (a)'s report, three periods without a decode of KE1J, then W9XYZ KE1J RR73; (d) KE1J busy for 5 periods; (e) KE1J sends HB9BLA KE1J -10 after being busy; (f) (a) and (b) with busy_pause off; (g) KE1J busy at 1510 Hz while the run is unattended; (h) KE1J sends W9XYZ KE1J FN42 and later W9XYZ KE1J 73; (i) KE1J goes on from W9XYZ to K2ABC with a report, then sends free text.
              Expected (hand-worked from WstxContact::BusyPartner and WstxStrategy::BusyPause): (a) our call keyed in every period, leave.busy true, paused 1 and 2, remaining stays 4; the RR73 ends it and the next call counts (remaining 3); (b) Tx moves before our next period to 1410 (the nearest candidate at least 100 Hz from 1510, FT8), Rx stays 1800, Enable Tx stays on, the call goes on; (c) the three calls without his decode stay paused (busy holds), the call after the RR73 counts; (d) 3 paused calls, the 4th and 5th count (N = 3); (e) progress resets every count; (f) the calls count and KE1J is left at the 4th; (b) disarms as partnerWorksOther does; (g) the calls count (no pause unattended) and Tx still moves to 1410, Enable Tx on, until the stop at N; (h) the grid to another starts busy, the 73 ends it; (i) busy holds across K2ABC and ends with the free text; no TxMoveRule move while busy. Red on the parent: the busy calls count and (b) disarms.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-097-06';
         }
+        attribute executable : String = "server/src/strategy97_tests.rs";
     }
     dependency CL_097_06_verified_by_TC_097_011 from 'CL-097-06' to 'TC-097-011';
     verification 'TC-097-012' {
@@ -6817,10 +6818,11 @@ package WstxRequirements {
              Steps: (a) the reproduction of 2026-11-09 14:39 UTC: KE1J works W9XYZ for 8 of his periods (reports at 1200 Hz), then W9XYZ KE1J RR73, then silent; (b) KE1J works a station at 1520 Hz; (c) KE1J busy for 10 periods; (d) after the stop, the operator's Enable Tx; (e) the limit set to 2 and (c) again.
              Expected (oracle: operator #93 "Keep calling, don't count" and the bound of WstxContact::TxWatchdog): (a) our Tx1 keyed in each of the 8 periods, the first 6 paused (WD:6 with " · KE1J busy with W9XYZ, not counted (k/6)", tx_expired false), the 7th and 8th counted (WD:5, WD:4), then counted after the RR73, stopped at the 12th send with "Tx watchdog: same message sent 6 times"; (b) Tx moves to 1380 (the nearest candidate at least 140 Hz from 1520, FT4), Rx stays 1800, Enable Tx stays on, Hold Tx still on; (c) stopped at the 12th send; (d) the counts restart; (e) 2 paused, stopped at the 4th send. Red on the parent: stopped at the 6th send in (a), (b) disarms.
              2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-097-06';
         }
+        attribute executable : String = "server/src/contact_tests.rs";
     }
     dependency CL_097_06_verified_by_TC_097_012 from 'CL-097-06' to 'TC-097-012';
     verification 'TC-097-013' {
@@ -6890,10 +6892,11 @@ package WstxRequirements {
              Steps: (a) start and end: KE1J to W9XYZ with a grid, a report, an R-report; KE1J to "<...>" whose hash is not my call's, and one whose hash is my call's; then each end in turn: RR73, RRR, 73 to W9XYZ, CQ KE1J, free text "TNX QSO", HB9BLA KE1J -10. (b) timing: the publication that starts busy arriving 1.1 s into my period, and in another run 1.3 s (the stop point 1.2 s), with the message at its limit. (c) split table, FT8: KE1J to W9XYZ with |Tx - his frequency| 0, 50, 51, 99, 100 Hz; FT4: 139 and 140 Hz; the only candidates clear of him below 500 Hz and at 500 Hz; a decoded station on the nearest clear candidate; a PSK spot of KE1J decoding another sender within 50 Hz of the nearest clear candidate in my Tx parity, and in the other parity; his decode arriving before the audio start of my next send, and after it; set_frequency refused for the move; the operator clicking Tx onto his signal while he is still busy, then his next message to W9XYZ. (d) marker: GET /contact while busy with W9XYZ, with a 13-character other call and the maximum snapshot shape of TC-007-004; the QSO pane and the station bar.
              Expected (hand-worked from WstxContact::BusyPartner and TxWatchdog): (a) the grid, report and R-report start busy_with W9XYZ; the unresolved hash starts busy_with "<...>", the hash of my call is a message to me (progress, no busy); each end clears busy_with and the next send counts; (b) at 1.1 s the send at the limit is paused and keyed; at 1.3 s it is stopped by the Tx watchdog (Enable Tx off, txWatchdog) and the busy counts from the next send; (c) FT8 0, 50, 51 and 99 Hz move Tx, 100 Hz does not; FT4 139 moves, 140 does not; never below 500 Hz (500 chosen when it is the nearest clear); the decoded station's slot skipped while another is clear; the slot near his PSK frequency of my Tx parity skipped (the other parity does not skip); before the audio start the pending request carries the new offset, after it that send finishes at the old offset and the next is moved; the refused move turns Enable Tx off with cause operator (the partnerWorksOther stop), nothing keyed on his signal; the operator's Tx kept until his next message to W9XYZ, then moved again; (d) watchdog.busy_with "W9XYZ" and paused_calls k, GET /contact at most 4096 bytes in the maximum shape with the 13-character call; " · KE1J busy with W9XYZ, not counted (k/6)" after WD:n in the QSO pane and the station bar, gone with busy_with null. Red on the parent: (c) disarms at 0 and 50 Hz, no busy_with key.
              2 — Isolated automated functional and browser tests; Windows development PC, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-097-06';
         }
+        attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; server/src/strategy97_tests.rs; tests/ui-operating.test.cjs";
     }
     dependency CL_097_06_verified_by_TC_097_017 from 'CL-097-06' to 'TC-097-017';
 
