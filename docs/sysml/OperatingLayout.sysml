@@ -390,6 +390,9 @@ attribute def ActivityOrdering {
              receive-only station), beside it Abort QSO (Esc, WstxContact::AbortQso,
              enabled while a contact is in progress, armed or transmitting) and a compact
              transmit state with the last transmitted text, Tx watchdog remaining calls WD:n
+             (#97, #91: the Tx watchdog only; in a strategy run's own contact the run's leave label
+             instead, WstxStrategy::LeaveCountLabel; a busy partner appended,
+             WstxContact::BusyPartner)
              or "Tx watchdog: same message sent N times", visible in every region. Radio toolbar (its period
              and level slots): UTC clock, Tx progress v/15 with Transmitting label, Rx
              level meter 0..90 dB with high/low text labels

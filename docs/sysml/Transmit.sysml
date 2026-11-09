@@ -573,8 +573,9 @@ package WstxTransmit {
         doc /* WstxContact::TxWatchdog (#39, 2026-11-06): the owner holds the limit, 1..99
              repetitions (default 6 at each start), and no count: the contact consumer
              compares its dialogue Rep with the limit and reports that Rep for
-             tx_remaining_calls (a strategy run's own contact has no stop and reports
-             what counts down to its next check: WstxStrategy::StrategyWatchdog). At the consumer's stop the owner disarms (txWatchdog)
+             tx_remaining_calls (#97: the Tx watchdog's only; a strategy run's own contact, which has
+             no stop while attended, reports none: WstxStrategy::StrategyWatchdog, LeaveCountLabel;
+             a busy partner's paused calls are not counted: WstxContact::BusyPartner). At the consumer's stop the owner disarms (txWatchdog)
              without keying, so PTT is never keyed for that send and no halt happens (HALT
              is the operator's emergency stop only), and reports tx_expired until the next
              Arm. A request submitted directly on the transmit route has no dialogue and
