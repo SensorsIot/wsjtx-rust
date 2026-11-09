@@ -234,6 +234,36 @@ pub struct Row {
     /// A 0.1 DXpedition message "RR73_TO RR73; REPORT_TO <FOX> REPORT" (#24 S4b,
     /// HoundOperation); such a row is never a standard message.
     pub dxpedition: Option<Box<Dxpedition>>,
+    /// An i3=5 EU VHF message (#99, EuVhfExchange); such a row is never a standard message.
+    pub vhf: Option<Box<Vhf>>,
+}
+/// The fields of an EU VHF message: both calls hashed, with their received hashes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Vhf {
+    pub to: Call,
+    pub from: Call,
+    /// The 12-bit hash of 'to' and the 22-bit hash of 'from' as received.
+    pub to_h12: u32,
+    pub from_h22: u32,
+    pub ack: bool,
+    /// The RS 52..59.
+    pub report: u32,
+    pub serial: u32,
+    pub grid: String,
+}
+impl Vhf {
+    /// Its last two words, "5nSSSS GRID6" (WSJT-X right(13)).
+    pub fn exchange(&self) -> String {
+        format!("{}{:04} {}", self.report, self.serial, self.grid)
+    }
+    /// Addressed to `my` call: its 'to' hash is the 12-bit hash of my call.
+    pub fn to_me(&self, my: &str) -> bool {
+        wstx_rust::decoder::ihashcall(my, 12) == Some(self.to_h12)
+    }
+    /// Sent by `dx`: its 'from' hash is the 22-bit hash of the DX call.
+    pub fn sent_by(&self, dx: &str) -> bool {
+        wstx_rust::decoder::ihashcall(dx, 22) == Some(self.from_h22)
+    }
 }
 /// The fields of a 0.1 DXpedition multi-message (WstxOfflineDecode Dxpedition fields).
 #[derive(Clone, Debug, PartialEq)]
@@ -267,6 +297,8 @@ pub enum Activity {
     #[default]
     None,
     NaVhf,
+    /// EuVhfExchange (#99): the EU VHF contest message, i3=5.
+    EuVhf,
     WwDigi,
     ArrlDigi,
     FieldDay,
@@ -279,6 +311,7 @@ impl Activity {
         match self {
             Activity::None => "none",
             Activity::NaVhf => "na_vhf",
+            Activity::EuVhf => "eu_vhf",
             Activity::WwDigi => "ww_digi",
             Activity::ArrlDigi => "arrl_digi",
             Activity::FieldDay => "field_day",
@@ -290,6 +323,7 @@ impl Activity {
         [
             Self::None,
             Self::NaVhf,
+            Self::EuVhf,
             Self::WwDigi,
             Self::ArrlDigi,
             Self::FieldDay,
@@ -312,6 +346,7 @@ impl Activity {
         match self {
             Activity::None => 0,
             Activity::NaVhf => 1,
+            Activity::EuVhf => 2,
             Activity::WwDigi => 5,
             Activity::ArrlDigi => 8,
             Activity::FieldDay => 3,
@@ -319,7 +354,8 @@ impl Activity {
             Activity::Hound => 7,
         }
     }
-    /// A contest activity (not none, not hound): Tx1 disabled, the contest serial counts.
+    /// A contest activity (not none, not hound): the contest serial counts, and Tx1 is
+    /// disabled except in eu_vhf (MW ~8203).
     fn contest_like(self) -> bool {
         !matches!(self, Activity::None | Activity::Hound)
     }
@@ -327,7 +363,7 @@ impl Activity {
     pub fn cq(self) -> Option<&'static str> {
         match self {
             Activity::None | Activity::Hound => None,
-            Activity::NaVhf | Activity::ArrlDigi => Some("TEST"),
+            Activity::NaVhf | Activity::EuVhf | Activity::ArrlDigi => Some("TEST"),
             Activity::WwDigi => Some("WW"),
             Activity::FieldDay => Some("FD"),
             Activity::Rtty => Some("RU"),
@@ -371,29 +407,32 @@ pub fn contest_exchange(activity: Activity, text: Option<&str>) -> Option<Option
     ok.then(|| Some(words.join(" ")))
 }
 /// The sent exchange of Tx2 (Tx3 adds R): the report, my grid in a grid-exchange
-/// contest, the Field Day exchange, or "5n9 X" in RTTY Roundup (MW genStdMsgs ~9741).
+/// contest, the Field Day exchange, "5n9 X" in RTTY Roundup (MW genStdMsgs ~9741), or
+/// "5nSSSS GRID6" in EU VHF (MW ~9774-9779, #99).
 fn sent_exchange(
     activity: Activity,
-    grid4: &str,
+    locator: &str,
     report: i32,
     exchange: &str,
     serial: u32,
 ) -> String {
+    let grid4 = locator.get(..4).unwrap_or(locator);
+    let n = ((report + 36) / 6).clamp(2, 9);
     match activity {
         Activity::None | Activity::Hound => render_report(report),
         Activity::NaVhf | Activity::WwDigi | Activity::ArrlDigi => grid4.to_owned(),
         Activity::FieldDay => exchange.to_owned(),
-        Activity::Rtty => {
-            let n = ((report + 36) / 6).clamp(2, 9);
-            match exchange {
-                "DX" | "#" => format!("5{n}9 {serial:04}"),
-                x => format!("5{n}9 {x}"),
-            }
-        }
+        Activity::Rtty => match exchange {
+            "DX" | "#" => format!("5{n}9 {serial:04}"),
+            x => format!("5{n}9 {x}"),
+        },
+        // A locator shorter than six characters gives no packable message.
+        Activity::EuVhf => format!("5{n}{serial:04} {}", locator.get(..6).unwrap_or("")),
     }
 }
 /// ContestReceivedKind: in a grid-exchange contest a grid is the report and R+grid the
-/// roger report (DecodedMessageReaction.cpp ~533-547, #24 S2a).
+/// roger report (DecodedMessageReaction.cpp ~533-547, #24 S2a); not in eu_vhf, where a
+/// grid stays a grid (DMR ~534, #99).
 pub fn classify_in(standard: &Standard, activity: Activity) -> Received {
     match (&standard.exchange, activity) {
         // ContestExchange: an exchange of the activity's own family (#24 S2b).
@@ -404,7 +443,7 @@ pub fn classify_in(standard: &Standard, activity: Activity) -> Received {
                 Received::SignalReport
             }
         }
-        (Exchange::Grid(_), a) if a.contest_like() => {
+        (Exchange::Grid(_), a) if a.contest_like() && a != Activity::EuVhf => {
             if standard.ack {
                 Received::RogerReport
             } else {
@@ -457,7 +496,8 @@ pub fn first_slot(to_is_my_call: bool, received: Received, tx1_skipped: bool) ->
 }
 
 // ---------------------------------------------------------------- messages
-/// A generated message: standard, nonstandard or a Field Day / RTTY Roundup exchange.
+/// A generated message: standard, nonstandard or a Field Day / RTTY Roundup / EU VHF
+/// exchange.
 fn generated_text(text: &str) -> Option<String> {
     let packed = transmit::pack(text).ok()?;
     matches!(
@@ -467,12 +507,13 @@ fn generated_text(text: &str) -> Option<String> {
             | Family::Nonstandard
             | Family::FieldDay
             | Family::RttyRoundup
+            | Family::EuVhf
     )
     .then_some(packed.text)
 }
-/// An operator-edited slot text (StandardMessageSet): standard, nonstandard, a Field Day or
-/// RTTY Roundup exchange (#24 S2b) or free text of at most 13 characters, packed unaltered
-/// and normalized.
+/// An operator-edited slot text (StandardMessageSet): standard, nonstandard, a Field Day,
+/// RTTY Roundup (#24 S2b) or EU VHF (#99) exchange or free text of at most 13 characters,
+/// packed unaltered and normalized.
 pub fn slot_text(text: &str) -> Option<String> {
     let packed = transmit::pack(text).ok()?;
     matches!(
@@ -483,6 +524,7 @@ pub fn slot_text(text: &str) -> Option<String> {
             | Family::FreeText
             | Family::FieldDay
             | Family::RttyRoundup
+            | Family::EuVhf
     )
     .then_some(packed.text)
 }
@@ -544,11 +586,12 @@ pub fn generate_with(
     generate_contest(my_call, grid4, dx, report, tx4, activity, None, 1)
 }
 /// StandardMessageSet with the activity's exchange (ContestExchange): Field Day and RTTY
-/// Roundup need their configured exchange and both calls standard.
+/// Roundup need their configured exchange and both calls standard; EU VHF (#99) sends
+/// both calls hashed in Tx2/Tx3 with the first six characters of `locator`.
 #[allow(clippy::too_many_arguments)]
 pub fn generate_contest(
     my_call: &str,
-    grid4: &str,
+    locator: &str,
     dx: Option<&str>,
     report: i32,
     tx4: Tx4,
@@ -560,7 +603,8 @@ pub fn generate_contest(
         Some(_) => exchange?,
         None => "",
     };
-    let sent = sent_exchange(activity, grid4, report, exchange, serial);
+    let grid4 = locator.get(..4).unwrap_or(locator);
+    let sent = sent_exchange(activity, locator, report, exchange, serial);
     let (r, rr) = match activity {
         Activity::None | Activity::Hound => (sent.clone(), format!("R{sent}")),
         _ => (sent.clone(), format!("R {sent}")),
@@ -589,8 +633,13 @@ pub fn generate_contest(
         } else {
             signoff.clone()
         });
-        set[1] = Some(format!("{exchange} {r}"));
-        set[2] = Some(format!("{exchange} {rr}"));
+        if activity == Activity::EuVhf {
+            set[1] = Some(format!("<{dx}> <{my_call}> {r}"));
+            set[2] = Some(format!("<{dx}> <{my_call}> {rr}"));
+        } else {
+            set[1] = Some(format!("{exchange} {r}"));
+            set[2] = Some(format!("{exchange} {rr}"));
+        }
         set[3] = Some(format!(
             "{signoff} {}",
             if tx4 == Tx4::Rr73 { "RR73" } else { "RRR" }
@@ -794,16 +843,20 @@ pub struct Ctx {
     pub automatic: bool,
 }
 impl Ctx {
-    fn grid4(&self) -> Option<String> {
+    /// The whole profile locator (at least 4 characters), upper case: the messages send its
+    /// first four, Tx2/Tx3 of eu_vhf its first six (EuVhfExchange, #99).
+    fn grid(&self) -> Option<String> {
         self.locator
             .as_deref()
-            .filter(|l| l.len() >= 4)
-            .map(|l| l[..4].to_ascii_uppercase())
+            .filter(|l| l.len() >= 4 && l.is_ascii())
+            .map(str::to_ascii_uppercase)
     }
     fn mode(&self) -> Mode {
         self.mode.unwrap_or(Mode::Ft8)
     }
 }
+// One command per request, moved once: boxing its row would buy nothing.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
     SelectRow {
@@ -893,7 +946,12 @@ pub struct Engine {
     pub hound: Hound,
     /// The random calling offset of ClassicTxStart: a value in lo..hi.
     pub random_hz: Box<dyn FnMut(u32, u32) -> u32 + Send>,
+    /// The field of the last refused command, when its refusal names one (EuVhfExchange:
+    /// locator, callsign, dx_call, serial; #99).
+    pub refusal_field: Option<&'static str>,
 }
+/// A refusal code with its field.
+type Refused = (&'static str, Option<&'static str>);
 /// HoundTransmissionPolicy ReplyState.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum HoundReply {
@@ -971,7 +1029,49 @@ impl Engine {
             last_rr73_ms: None,
             hound: Hound::default(),
             random_hz: time_random(),
+            refusal_field: None,
         }
+    }
+    /// The refusal `code`, remembering its field.
+    fn refuse(&mut self, (code, field): Refused) -> Result<(), &'static str> {
+        self.refusal_field = field;
+        Err(code)
+    }
+    /// EuVhfExchange (#99): why `activity`'s Tx2/Tx3 to `dx` cannot be generated (the
+    /// 37-character limit bounds the two hashed calls to 16 characters together); the
+    /// pair refusal names `pair_field`. None outside eu_vhf or when it can be generated.
+    fn eu_vhf_refusal(
+        &self,
+        ctx: &Ctx,
+        activity: Activity,
+        dx: Option<&str>,
+        pair_field: Option<&'static str>,
+    ) -> Option<Refused> {
+        if activity != Activity::EuVhf {
+            return None;
+        }
+        if ctx.grid().is_none_or(|l| l.len() < 6) {
+            return Some(("profile_incomplete", Some("locator")));
+        }
+        let my = ctx.call.as_deref()?;
+        if my.len() > 11 {
+            return Some(("invalid_call", Some("callsign")));
+        }
+        let dx = dx?;
+        if dx.len() > 11 || dx.len() + my.len() > 16 {
+            return Some(("invalid_call", pair_field));
+        }
+        if !(1..=2047).contains(&self.settings.serial) {
+            return Some(("out_of_range", Some("serial")));
+        }
+        None
+    }
+    /// The active contact's DX call (the partner whose messages a command regenerates).
+    fn active_dx(&self) -> Option<String> {
+        self.contact
+            .as_ref()
+            .filter(|c| c.state.active())
+            .and_then(|c| c.dx_call.clone())
     }
     fn is_hound(&self) -> bool {
         self.settings.activity == Activity::Hound
@@ -1062,9 +1162,15 @@ impl Engine {
         replace: bool,
         mode: Mode,
     ) -> Result<(), &'static str> {
-        let (Some(call), Some(grid4)) = (ctx.call.clone(), ctx.grid4()) else {
+        let (Some(call), Some(locator)) = (ctx.call.clone(), ctx.grid()) else {
             return Err("profile_incomplete");
         };
+        // EuVhfExchange: no contact starts whose Tx2/Tx3 cannot be packed (#99).
+        if let Some(refused) =
+            self.eu_vhf_refusal(ctx, self.settings.activity, Some(dx.as_str()), None)
+        {
+            return self.refuse(refused);
+        }
         // The same partner in the other mode is a different contact (ContactMode).
         let same = self
             .contact
@@ -1096,7 +1202,7 @@ impl Engine {
             .filter(|_| active && same)
             .map_or_else(|| tx4_default(mode), |c| c.tx4);
         let mut messages = self
-            .generate(&call, &grid4, Some(&dx), report, tx4)
+            .generate(&call, &locator, Some(&dx), report, tx4)
             .ok_or("invalid_call")?;
         // A text already sent to the same active partner stays, also when it was edited:
         // regenerating it would make a new message, whose Rep restarts the Tx watchdog.
@@ -1181,7 +1287,7 @@ impl Engine {
     fn generate(
         &self,
         call: &str,
-        grid4: &str,
+        locator: &str,
         dx: Option<&str>,
         report: i32,
         tx4: Tx4,
@@ -1189,7 +1295,7 @@ impl Engine {
         let s = &self.settings;
         generate_contest(
             call,
-            grid4,
+            locator,
             dx,
             report,
             tx4,
@@ -1198,10 +1304,11 @@ impl Engine {
             s.serial,
         )
     }
-    /// WSJT-X disables Tx1 in every contest activity (MW ~8190) as Skip Tx1 does.
-    /// A Hound never skips Tx1 (MW elide_tx1_not_allowed).
+    /// WSJT-X disables Tx1 in every contest activity (MW ~8190) as Skip Tx1 does, except
+    /// in eu_vhf (MW ~8203, #99). A Hound never skips Tx1 (MW elide_tx1_not_allowed).
     fn tx1_disabled(&self) -> bool {
-        !self.is_hound() && (self.settings.tx1_skip || self.settings.activity.contest_like())
+        let a = self.settings.activity;
+        !self.is_hound() && (self.settings.tx1_skip || (a.contest_like() && a != Activity::EuVhf))
     }
     /// ContestExchange: a contact handed to the log for the first time counts the serial.
     fn count_serial(&mut self) {
@@ -1209,17 +1316,95 @@ impl Engine {
             self.settings.serial = self.settings.serial.saturating_add(1);
         }
     }
+    /// EuVhfExchange (#99): a command that regenerates the active contact's messages is
+    /// refused, changing nothing, while its Tx2/Tx3 cannot be generated.
+    fn check_regeneration(&mut self, ctx: &Ctx, activity: Activity) -> Result<(), &'static str> {
+        let dx = self.active_dx();
+        match dx.and_then(|dx| self.eu_vhf_refusal(ctx, activity, Some(&dx), Some("callsign"))) {
+            Some(refused) => self.refuse(refused),
+            None => Ok(()),
+        }
+    }
     fn regenerate(&mut self, ctx: &Ctx) {
-        let (Some(call), Some(grid4)) = (ctx.call.clone(), ctx.grid4()) else {
+        let (Some(call), Some(grid)) = (ctx.call.clone(), ctx.grid()) else {
             return;
         };
         let set = self
             .contact
             .as_ref()
-            .and_then(|c| self.generate(&call, &grid4, c.dx_call.as_deref(), c.report, c.tx4));
+            .and_then(|c| self.generate(&call, &grid, c.dx_call.as_deref(), c.report, c.tx4));
         if let (Some(c), Some(set)) = (self.contact.as_mut(), set) {
             c.messages[1..4].clone_from_slice(&set[1..4]);
         }
+    }
+    /// After an accepted selection of `row`: Rx follows the row, Tx too unless held, to me
+    /// or a Hound; the parity is the row's opposite; the row is never counted again.
+    fn follow_selection(&mut self, row: &Row, to_me: bool, hound: bool) {
+        let rx = (row.frequency_hz.round().max(0.0) as u32).min(RX_MAX_HZ);
+        let mode = row.mode;
+        self.settings.rx_hz = rx;
+        // A Hound selection never moves the Tx offset (DMR ~330).
+        if !hound && !self.settings.hold_tx && !to_me && (TX_MIN_HZ..=tx_max_hz(mode)).contains(&rx)
+        {
+            self.settings.tx_hz = rx;
+        }
+        if let Some(p) = row.period_start_ms.filter(|_| !hound) {
+            self.settings.parity = match transmit::parity(mode, p) {
+                Parity::Even => Parity::Odd,
+                Parity::Odd => Parity::Even,
+            };
+        }
+        // The selected row itself is never counted again as a received message.
+        if let Some(p) = row.period_start_ms {
+            self.count(row.key.clone(), (p, row.text.clone()));
+        }
+    }
+    /// SelectDecodedRow of an EU VHF row (EuVhfExchange, #99): while eu_vhf is set and its
+    /// 'from' is filled in, the DX call is that call and the grid its locator; addressed to
+    /// me (by the 12-bit hash of my call) it starts with Tx3 (Tx4 after R) and sets
+    /// exchange_rcvd (D7), otherwise it replies with Tx1.
+    fn select_vhf<H: Hardware>(
+        &mut self,
+        core: Option<&mut Core<H>>,
+        ctx: &Ctx,
+        row: Row,
+        replace: bool,
+    ) -> Result<(), &'static str> {
+        let v = row.vhf.as_deref().ok_or("row_not_standard")?.clone();
+        if self.settings.activity != Activity::EuVhf {
+            return Err("row_not_standard");
+        }
+        let Call::Hashed(dx) = &v.from else {
+            return Err("row_not_standard");
+        };
+        let my = ctx.call.clone().ok_or("profile_incomplete")?;
+        let to_me = v.to_me(&my);
+        let first = match (to_me, v.ack) {
+            (true, false) => Slot::Tx3,
+            (true, true) => Slot::Tx4,
+            (false, _) => first_slot(false, Received::Other, self.tx1_disabled()),
+        };
+        let report = row.snr_db.map_or(self.settings.report, report_from_snr);
+        self.prepare(
+            core,
+            ctx,
+            Origin::DecodedRow,
+            dx.clone(),
+            Some(v.grid.clone()),
+            report,
+            first,
+            replace,
+            row.mode,
+        )?;
+        self.follow_selection(&row, to_me, false);
+        if to_me && let Some(c) = self.contact.as_mut() {
+            c.exchange_rcvd = Some(v.exchange());
+            if let Some(p) = row.period_start_ms {
+                c.last_counted_end = Some(p + period_ms(row.mode));
+                c.heard(&row, p);
+            }
+        }
+        Ok(())
     }
     /// Applies one accepted-or-refused operating command. Ok means accepted (the caller
     /// advances the revision); a refusal changes nothing.
@@ -1234,7 +1419,12 @@ impl Engine {
             .as_ref()
             .map_or(Capability::Unsupported, |c| c.view().capability);
         let abort = matches!(command, Command::Abort);
+        self.refusal_field = None;
         match command {
+            // EuVhfExchange (#99): an EU VHF row, selectable only while eu_vhf is set.
+            Command::SelectRow { row, replace } if row.standard.is_none() && row.vhf.is_some() => {
+                self.select_vhf(core.as_deref_mut(), ctx, row, replace)?;
+            }
             Command::SelectRow { row, replace } => {
                 let Some(std) = row.standard.clone() else {
                     return Err("row_not_standard");
@@ -1268,9 +1458,7 @@ impl Engine {
                     _ if hound => Slot::Tx1,
                     slot => slot,
                 };
-                let rx = (row.frequency_hz.round().max(0.0) as u32).min(RX_MAX_HZ);
                 let mode = row.mode;
-                let tx_max = tx_max_hz(mode);
                 self.prepare(
                     core.as_deref_mut(),
                     ctx,
@@ -1282,22 +1470,7 @@ impl Engine {
                     replace,
                     mode,
                 )?;
-                self.settings.rx_hz = rx;
-                // A Hound selection never moves the Tx offset (DMR ~330).
-                if !hound && !self.settings.hold_tx && !to_me && (TX_MIN_HZ..=tx_max).contains(&rx)
-                {
-                    self.settings.tx_hz = rx;
-                }
-                if let Some(p) = row.period_start_ms.filter(|_| !hound) {
-                    self.settings.parity = match transmit::parity(mode, p) {
-                        Parity::Even => Parity::Odd,
-                        Parity::Odd => Parity::Even,
-                    };
-                }
-                // The selected row itself is never counted again as a received message.
-                if let Some(p) = row.period_start_ms {
-                    self.count(row.key.clone(), (p, row.text.clone()));
-                }
+                self.follow_selection(&row, to_me, hound);
                 // FT4 RTTY Roundup: the operator's selection right after an RR73 thanks the
                 // previous partner with "TU; " in Tx3 (MW genStdMsgs ~9783).
                 let tu = mode == Mode::Ft4
@@ -1434,6 +1607,7 @@ impl Engine {
                 if !(REPORT_MIN..=REPORT_MAX).contains(&report) {
                     return Err("invalid_report");
                 }
+                self.check_regeneration(ctx, self.settings.activity)?;
                 self.settings.report = report;
                 if let Some(c) = self.contact.as_mut() {
                     c.report = report;
@@ -1453,10 +1627,12 @@ impl Engine {
                 }
             }
             Command::SetTx4(form) => {
-                let c = self.contact.as_mut().ok_or("no_contact")?;
+                let c = self.contact.as_ref().ok_or("no_contact")?;
                 if c.mode == Mode::Ft4 && form != Tx4::Rr73 {
                     return Err("out_of_range");
                 }
+                self.check_regeneration(ctx, self.settings.activity)?;
+                let c = self.contact.as_mut().ok_or("no_contact")?;
                 c.tx4 = form;
                 self.regenerate(ctx);
             }
@@ -1492,6 +1668,14 @@ impl Engine {
                 if activity == Activity::Hound && ctx.mode() != Mode::Ft8 {
                     return Err("state_conflict");
                 }
+                // EuVhfExchange (#99): a 6-character locator, a callsign of at most 11
+                // characters, and an active contact whose Tx2/Tx3 can be packed.
+                let dx = self.active_dx();
+                if let Some(refused) =
+                    self.eu_vhf_refusal(ctx, activity, dx.as_deref(), Some("dx_call"))
+                {
+                    return self.refuse(refused);
+                }
                 if activity == Activity::Hound {
                     // MW ~11352: Tx even/1st off, Hold Tx on, Tx1 unless Tx3.
                     self.settings.parity = Parity::Odd;
@@ -1515,9 +1699,9 @@ impl Engine {
                 }
                 self.regenerate(ctx);
                 // The CQ message follows the activity (genCQMsg m_cqStr).
-                let set = match (ctx.call.as_deref(), ctx.grid4(), self.contact.as_ref()) {
-                    (Some(call), Some(grid4), Some(c)) => {
-                        self.generate(call, &grid4, None, c.report, c.tx4)
+                let set = match (ctx.call.as_deref(), ctx.grid(), self.contact.as_ref()) {
+                    (Some(call), Some(grid), Some(c)) => {
+                        self.generate(call, &grid, None, c.report, c.tx4)
                     }
                     _ => None,
                 };
@@ -1551,7 +1735,7 @@ impl Engine {
                 if capability == Capability::Unsupported {
                     return Err("transmit_unavailable");
                 }
-                let (Some(call), Some(grid4)) = (ctx.call.clone(), ctx.grid4()) else {
+                let (Some(call), Some(grid)) = (ctx.call.clone(), ctx.grid()) else {
                     return Err("profile_incomplete");
                 };
                 if !ctx.granted {
@@ -1571,7 +1755,7 @@ impl Engine {
                 }
                 let cq = if needs_cq {
                     let set = self
-                        .generate(&call, &grid4, None, self.settings.report, Tx4::Rrr)
+                        .generate(&call, &grid, None, self.settings.report, Tx4::Rrr)
                         .ok_or("profile_incomplete")?;
                     Some((set, (self.new_id)().ok_or("storage_unavailable")?))
                 } else {
@@ -1752,9 +1936,10 @@ impl Engine {
                             {
                                 c.report_sent = Some(submitted.report);
                             }
-                            // ContestExchange: xSent is the last two words of Tx2 (MW ~8012).
+                            // ContestExchange: xSent is the last two words of Tx2 (MW ~8012),
+                            // also in EU VHF (#99, MW ~8008).
                             if matches!(submitted.slot, Slot::Tx2 | Slot::Tx3)
-                                && c.activity.contest().is_some()
+                                && (c.activity.contest().is_some() || c.activity == Activity::EuVhf)
                                 && let Some(tx2) = &c.messages[1]
                             {
                                 let words = tx2.split(' ').collect::<Vec<_>>();
@@ -1832,69 +2017,57 @@ impl Engine {
             let Some(c) = self.contact.as_ref() else {
                 break;
             };
-            let (Some(dx), Some(std)) = (c.dx_call.clone(), row.standard.as_ref()) else {
+            let Some(dx) = c.dx_call.clone() else {
                 continue;
             };
             // Only rows of the contact's own mode count (ContactMode isolation).
-            if row.mode != c.mode || std.from.call() != Some(dx.as_str()) || !c.state.active() {
+            if row.mode != c.mode || !c.state.active() {
                 continue;
             }
-            let Some(my) = ctx.call.as_deref() else {
+            let Some(my) = ctx.call.clone() else {
                 continue;
             };
+            // EuVhfExchange (#99): an EU VHF message counts only in eu_vhf, by the hash of
+            // my call and of the DX call, never by the call the table filled in.
+            if let Some(v) = row.vhf.as_deref() {
+                if self.settings.activity == Activity::EuVhf && v.to_me(&my) && v.sent_by(&dx) {
+                    let received = if v.ack {
+                        Received::RogerReport
+                    } else {
+                        Received::SignalReport
+                    };
+                    self.counted(core.as_deref_mut(), now, row, received, |c| {
+                        c.exchange_rcvd = Some(v.exchange());
+                        c.dx_grid = Some(v.grid.clone());
+                    });
+                }
+                continue;
+            }
+            let Some(std) = row.standard.as_ref() else {
+                continue;
+            };
+            if std.from.call() != Some(dx.as_str()) {
+                continue;
+            }
             match std.to.call() {
                 Some(to) if to == my => {
-                    let Some(period) = row.period_start_ms else {
-                        continue;
-                    };
-                    // Decoded in the partner's period (the parity opposite to mine).
-                    if transmit::parity(row.mode, period) == self.settings.parity {
-                        continue;
-                    }
-                    if !self.count(row.key.clone(), (period, row.text.clone())) {
-                        continue;
-                    }
                     let received = classify_in(std, self.settings.activity);
-                    let auto = self.settings.auto_seq;
-                    let c = self.contact.as_mut().expect("checked");
-                    c.heard(row, period);
-                    if let Exchange::Report(r) = std.exchange {
-                        c.report_rcvd = Some(r.clamp(REPORT_MIN, REPORT_MAX));
-                    }
-                    if let Exchange::Contest(_, text) = &std.exchange
-                        && matches!(received, Received::SignalReport | Received::RogerReport)
-                    {
-                        c.exchange_rcvd = Some(text.clone());
-                    }
-                    if std.exchange == Exchange::Rr73 {
-                        self.last_rr73_ms = Some(ctx.now_utc_ms);
-                    }
-                    c.last_counted_end = Some(
-                        c.last_counted_end
-                            .unwrap_or(i64::MIN)
-                            .max(period + period_ms(row.mode)),
-                    );
-                    if !auto {
-                        // Auto Seq off: nothing changes, but the step Auto Seq would take
-                        // is offered (e.g. Tx5 after an RR73), never silently dropped.
-                        if let Some(next) = transition(c.state, received)
-                            .filter(|s| *s != State::Completed && s.slot() != c.next)
+                    let counted = self.counted(core.as_deref_mut(), now, row, received, |c| {
+                        if let Exchange::Report(r) = std.exchange {
+                            c.report_rcvd = Some(r.clamp(REPORT_MIN, REPORT_MAX));
+                        }
+                        if let Exchange::Contest(_, text) = &std.exchange
+                            && matches!(received, Received::SignalReport | Received::RogerReport)
                         {
-                            c.suggested = Some(next.slot());
+                            c.exchange_rcvd = Some(text.clone());
                         }
-                        continue;
-                    }
-                    c.suggested = None;
-                    if let Some(next) = transition(c.state, received) {
-                        if next == State::Completed {
-                            self.complete(core.as_deref_mut(), now);
-                        } else {
-                            c.state = next;
-                            c.next = next.slot();
-                        }
+                    });
+                    if counted && std.exchange == Exchange::Rr73 {
+                        self.last_rr73_ms = Some(ctx.now_utc_ms);
                     }
                 }
                 Some(_) => {
+                    let c = self.contact.as_ref().expect("checked");
                     // partnerWorksOther: the 50 Hz rule (MW auto_sequence 25/50).
                     let applies = c.state == State::Replying
                         || (c.state == State::Report && c.started_tx1_skipped);
@@ -1957,11 +2130,64 @@ impl Engine {
         }
         false
     }
+    /// A partner message to my call (receivedFromPartner): counted once, in the partner's
+    /// period; `apply` takes its fields; then AutoSequence (or, with Auto Seq off, the
+    /// suggestion). Returns whether it was counted.
+    fn counted<H: Hardware>(
+        &mut self,
+        core: Option<&mut Core<H>>,
+        now: i64,
+        row: &Row,
+        received: Received,
+        apply: impl FnOnce(&mut Contact),
+    ) -> bool {
+        let Some(period) = row.period_start_ms else {
+            return false;
+        };
+        // Decoded in the partner's period (the parity opposite to mine).
+        if transmit::parity(row.mode, period) == self.settings.parity {
+            return false;
+        }
+        if !self.count(row.key.clone(), (period, row.text.clone())) {
+            return false;
+        }
+        let auto = self.settings.auto_seq;
+        let Some(c) = self.contact.as_mut() else {
+            return false;
+        };
+        c.heard(row, period);
+        apply(c);
+        c.last_counted_end = Some(
+            c.last_counted_end
+                .unwrap_or(i64::MIN)
+                .max(period + period_ms(row.mode)),
+        );
+        if !auto {
+            // Auto Seq off: nothing changes, but the step Auto Seq would take
+            // is offered (e.g. Tx5 after an RR73), never silently dropped.
+            if let Some(next) = transition(c.state, received)
+                .filter(|s| *s != State::Completed && s.slot() != c.next)
+            {
+                c.suggested = Some(next.slot());
+            }
+            return true;
+        }
+        c.suggested = None;
+        if let Some(next) = transition(c.state, received) {
+            if next == State::Completed {
+                self.complete(core, now);
+            } else {
+                c.state = next;
+                c.next = next.slot();
+            }
+        }
+        true
+    }
     /// WstxContact::CallFirst (#10, MW readFromStdout cbFirst): while my own CQ runs
     /// with Auto Seq and Call 1st on, the first row of this step in decode order that
     /// calls me with a grid or a report (not R+report, RRR, RR73 or 73) is answered as a
     /// selection of that row (Enable Tx unchanged, not operator activity).
-    fn call_first<H: Hardware>(&mut self, core: Option<&mut Core<H>>, ctx: &Ctx, rows: &[Row]) {
+    fn call_first<H: Hardware>(&mut self, mut core: Option<&mut Core<H>>, ctx: &Ctx, rows: &[Row]) {
         if !self.settings.call_first || !self.settings.auto_seq {
             return;
         }
@@ -1984,11 +2210,13 @@ impl Engine {
         let parity = self.settings.parity;
         let mut ordered: Vec<&Row> = rows.iter().collect();
         ordered.sort_by_key(|r| r.key.sequence);
-        let caller = ordered.into_iter().find(|row| {
-            let Some(std) = row.standard.as_ref() else {
-                return false;
-            };
-            row.mode == mode
+        let callers: Vec<Row> = ordered
+            .into_iter()
+            .filter(|row| {
+                let Some(std) = row.standard.as_ref() else {
+                    return false;
+                };
+                row.mode == mode
                 && std.to == Call::Sign(my.to_owned())
                 && matches!(std.from, Call::Sign(_))
                 // AutoRespondPeriod.cpp isDirectAutoRespondCandidate: an exchange that is
@@ -2001,23 +2229,28 @@ impl Engine {
                     .period_start_ms
                     .is_some_and(|p| transmit::parity(row.mode, p) != parity)
                 && !self.counted_rows.contains(&row.key)
-        });
-        let Some(row) = caller.cloned() else {
-            return;
-        };
+            })
+            .cloned()
+            .collect();
         let automatic = Ctx {
             automatic: true,
             ..ctx.clone()
         };
-        // A refusal (e.g. an incomplete profile) leaves the CQ running.
-        let _ = self.command(
-            Command::SelectRow {
-                row,
-                replace: false,
-            },
-            core,
-            &automatic,
-        );
+        // A refusal (e.g. an incomplete profile, or in eu_vhf a pair of calls too long
+        // for Tx3, #99) leaves the CQ running and goes on to the next caller.
+        for row in callers {
+            let selected = self.command(
+                Command::SelectRow {
+                    row,
+                    replace: false,
+                },
+                core.as_deref_mut(),
+                &automatic,
+            );
+            if selected.is_ok() {
+                break;
+            }
+        }
     }
     /// The material state a revision covers (sequence, transmit and watchdog view).
     pub fn fingerprint<H: Hardware>(&self, core: Option<&Core<H>>) -> String {
@@ -2407,6 +2640,11 @@ pub struct LogFields {
     /// ContestExchange ADIF fields (AdifQso::to_adif), (name, value) in LogRecord order.
     pub contest: Vec<(&'static str, String)>,
 }
+/// An EU VHF exchange "5nSSSS GRID6" as (RS "5n", serial "SSSS").
+fn eu_vhf_exchange(x: &str) -> Option<(&str, &str)> {
+    let first = x.split(' ').next()?;
+    (first.len() == 6 && first.bytes().all(|b| b.is_ascii_digit())).then(|| first.split_at(2))
+}
 /// AdifQso::to_adif for the contest exchanges of `activity` (ContestExchange).
 pub fn contest_fields(
     activity: Activity,
@@ -2415,6 +2653,15 @@ pub fn contest_fields(
 ) -> Vec<(&'static str, String)> {
     let serial = |w: &str| w.parse::<u32>().is_ok_and(|n| n > 0);
     let mut out = Vec::new();
+    // EU VHF (#99, AdifQso mid(2)): STX and SRX are the four serial digits of "5nSSSS".
+    if activity == Activity::EuVhf {
+        for (name, x) in [("stx", sent), ("srx", rcvd)] {
+            if let Some((_, digits)) = x.and_then(eu_vhf_exchange) {
+                out.push((name, digits.to_owned()));
+            }
+        }
+        return out;
+    }
     if let Some(x) = sent {
         let w = x.split(' ').collect::<Vec<_>>();
         if w.len() == 2 && serial(w[1]) {
@@ -2450,12 +2697,15 @@ impl Contact {
             grid: c.dx_grid.clone(),
             mode: c.mode,
             // RTTY Roundup logs the 5n9 of each exchange as the RST (logqso.cpp ~396).
+            // EU VHF logs the RS actually exchanged, "55" (#99, operator 2026-11-09).
             rst_sent: match (c.activity, &c.exchange_sent) {
                 (Activity::Rtty, Some(x)) => x.split(' ').next().map(str::to_owned),
+                (Activity::EuVhf, Some(x)) => eu_vhf_exchange(x).map(|(rs, _)| rs.to_owned()),
                 _ => c.report_sent.map(render_report),
             },
             rst_rcvd: match (c.activity, &c.exchange_rcvd) {
                 (Activity::Rtty, Some(x)) => x.split(' ').next().map(str::to_owned),
+                (Activity::EuVhf, Some(x)) => eu_vhf_exchange(x).map(|(rs, _)| rs.to_owned()),
                 _ => c.report_rcvd.map(render_report),
             },
             start_utc_ms: start,
