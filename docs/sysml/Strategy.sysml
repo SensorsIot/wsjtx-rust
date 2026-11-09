@@ -889,13 +889,14 @@ package WstxStrategy {
              (LeaveRule at x, a policy run's no_answer, a pounce's wait again). Unchanged:
              unattended or past the run limit the run itself finishes the QSO in progress
              (StrategyRun).
-             Finishing guard: until the finished QSO's contact has ended (completed, cancelled,
-             disarmed or replaced) the automation owner keeps, in memory only and in no
-             snapshot, its contact id, the station band and mode at the run's end and the
-             run's grant; at each station step it disarms and cancels that contact when the
-             station band or the mode differs or the grant is no longer current (revoked, or a
-             safety edit). It never arms, selects, answers or moves a frequency. A new run, a
-             restart or the contact's end drops it. */
+             Finishing guard: while the finished QSO's contact is still active and not
+             replaced, the automation owner keeps, in memory only and in no snapshot, its
+             contact id, the station band and mode at the run's end, the run's grant and the
+             HALT count; at each station step it disarms and cancels that contact when the
+             station band or the mode differs, the grant is no longer current (revoked, or a
+             safety edit) or the HALT count has grown. It never arms, selects, answers or
+             moves a frequency. The guard ends when the contact is no longer active or is
+             replaced, when a new run starts, or on a restart. */
     }
     attribute def PskrUse {
         doc /* Use PSK Reporter (Q17, Q29): a toggle next to Auto (WstxOperatingLayout::QsoPane),
