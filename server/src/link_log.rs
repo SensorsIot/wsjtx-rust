@@ -298,7 +298,10 @@ impl Log {
                 let to = c.to_client.segments(c.written);
                 let from = c.from_client.segments(c.read);
                 let direction = |bytes: u64, messages: &Messages, mine: u64, other: u64| {
-                    let typed: u64 = messages.types.values().map(|(_, b)| *b).sum();
+                    let typed = messages
+                        .types
+                        .values()
+                        .fold(0u64, |sum, (_, b)| sum.saturating_add(*b));
                     let types: serde_json::Map<String, Value> = messages
                         .types
                         .iter()
