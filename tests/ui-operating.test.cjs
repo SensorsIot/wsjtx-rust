@@ -714,6 +714,42 @@ test('TC-097-017 the busy marker follows WD:n and the leave label',{timeout:4000
   assert.deepEqual(errors,[]);
 });
 
+// Proves: TC-097-013 (b), (c), (d), (e) (CL-097-04; oracle WstxStrategy::LeaveCountLabel and
+// WstxContact::ContactSnapshot). In a run's own contact (tx_remaining_calls null) the QSO pane's
+// watchdog line is the leave label: "Leave in 4 calls" .. "Leave in 1 calls"; a contest stay "Stay ·
+// most valuable", never "WD:∞"; until_logged "Until logged", then "Until logged · leave if gone 7
+// min". Unattended (an integer count) and in a manual contact it is WD:n, 6 down to 1. Station
+// replies are routed fixtures.
+test('TC-097-013 the leave label stands where WD:n stood in a run\'s own contact',{timeout:40000},async t=>{
+  let watchdog={tx_remaining_calls:null,tx_expired:false,tune_remaining_seconds:0,busy_with:null,paused_calls:0},run=null;
+  const contact=partner('replying');
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:{...contactSnapshot(base,{contact,transmit:{arm_state:'armed'}}),watchdog}}));
+    await p.route('**/automation',async route=>{const a=await (await route.fetch()).json();if(run)a.run=run;return route.fulfill({json:a});});
+  }});
+  await page.waitForFunction(()=>!!window.wstxContact?.snapshot(),null,{timeout:25000});
+  let revision=100;
+  const shows=async(wd,leave,text)=>{
+    watchdog={...watchdog,tx_remaining_calls:wd};
+    run=leave&&{id:'7d1f6c2e-0000-4000-8000-000000000097',state:'contact_active',contact_id:contact.id,leave:{busy:false,paused:0,staying:false,...leave}};
+    await page.evaluate(()=>window.wstxContact.load());
+    await page.evaluate(r=>new Promise(done=>{addEventListener('wstx-automation',()=>done(),{once:true});dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:0,run_revision:r}}}}));}),revision++);
+    await page.waitForFunction(x=>document.querySelector('#contact-watchdog').textContent===x,text,{timeout:10000}).catch(()=>{});
+    assert.equal(await page.locator('#contact-watchdog').textContent(),text);
+  };
+  for(const n of [4,3,2,1])await shows(null,{mode:'calls',remaining:n},`Leave in ${n} calls`);
+  await shows(null,{mode:'contest',remaining:null,staying:true},'Stay · most valuable');
+  assert.doesNotMatch(await page.locator('#station-tx').textContent(),/WD:∞/);
+  await shows(null,{mode:'until_logged',remaining:null},'Until logged');
+  await shows(null,{mode:'until_logged',remaining:7},'Until logged · leave if gone 7 min');
+  // Unattended: the Tx watchdog's count.
+  await shows(5,{mode:'calls',remaining:3},'WD:5');
+  // A manual contact: WD:6 down to WD:1.
+  for(const n of [6,5,4,3,2,1])await shows(n,null,`WD:${n}`);
+  assert.deepEqual(errors,[]);
+});
+
 // Proves: CL-050-05, CL-039-21; TC-050-005, TC-039-022 (WD:∞ for a null count). #37 (operator 2026-11-02, a CQ run on 40 m): while my CQ
 // runs the header says "Calling CQ" with the Tx period, also after a receive refresh; the
 // message line is "▶ TX now" while the station transmits and "▸ next" otherwise; an empty

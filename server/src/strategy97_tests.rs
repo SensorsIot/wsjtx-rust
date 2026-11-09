@@ -1460,6 +1460,43 @@ async fn tc_097_009_g_a_caller_is_answered_at_once_in_each_mode() {
     }
 }
 
+// Proves: TC-097-013 (g) (CL-097-04, WstxContact::ContactSnapshot and Transmit's watchdog):
+// GET /transmit watchdog.tx_remaining_calls is null in the attended run's own contact, the Tx
+// watchdog's integer once the run is unattended (no client for 60 s) and in a manual contact (the
+// operator's double-click of CQ K1ABC, no run).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_013_get_transmit_null_only_in_the_attended_runs_own_contact() {
+    async fn transmit_wd(f: &Mcp) -> Value {
+        f.browser("GET", "/transmit", None).await.json["watchdog"]["tx_remaining_calls"].clone()
+    }
+    let mut t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    assert_eq!(transmit_wd(&t.f).await, Value::Null, "attended");
+    drop(t.client.take());
+    let f = &t.f;
+    f.tick();
+    at_skew(f, 60);
+    f.tick();
+    assert_eq!(transmit_wd(f).await, json!(6), "unattended");
+
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    publish(&f, e, &[K1ABC_CQ]);
+    let row = live_row(&f, "CQ K1ABC FN42");
+    let r = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "select_row", json!({"row":row,"replace":false})).await),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.json);
+    f.tick();
+    assert_eq!(contact(&f).await.0, json!("K1ABC"));
+    assert!(transmit_wd(&f).await.is_u64(), "manual: an integer");
+}
+
 /// A spot of DL1XYZ received by K1ABC `age_s` ago (K1ABC reports, not my call).
 fn reports_spot(age_s: i64) -> String {
     spot_of(
