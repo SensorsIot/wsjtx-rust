@@ -10,7 +10,7 @@ use super::*;
 #[path = "contact_thin_tests.rs"]
 mod contact_thin_tests;
 use axum::body::Body;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use tower::ServiceExt;
 use wstx_rust::transmit::service::{
     AudioError, AudioPoll, Capability, Context, Hardware, Program, PttError,
@@ -29,6 +29,8 @@ pub(crate) struct Bench {
     pub(crate) frozen: Arc<AtomicI64>,
     /// Every Tx level handed to the hardware (#44 CL-044-12).
     pub(crate) levels: Arc<Mutex<Vec<i32>>>,
+    /// Safety edits since the start: the safety revision is 3 plus this (#81 TC-081-005 (g)).
+    pub(crate) safety_edits: Arc<AtomicU64>,
 }
 impl Hardware for Bench {
     fn set_level_db(&mut self, level_db: i32) {
@@ -58,7 +60,7 @@ impl Hardware for Bench {
         }
         Context {
             capability: Capability::Available,
-            safety_revision: Some(3),
+            safety_revision: Some(3 + self.safety_edits.load(Ordering::SeqCst)),
             radio_transmitting: Some(false),
         }
     }

@@ -538,8 +538,20 @@ impl Run {
         self.empty_publications = 0;
     }
 }
+/// #81 WstxStrategy::StartedQso finishing guard: a run's started QSO that a run end let finish, the
+/// station band and mode at that end, the run's grant and the transmit owner's HALT count then
+/// (memory only, in no snapshot). It never arms, selects, answers or moves a frequency.
+struct Finishing {
+    contact_id: String,
+    band: Option<&'static str>,
+    mode: &'static str,
+    access: authorization::Access,
+    halts: Option<u64>,
+}
 #[derive(Default)]
 struct Inner {
+    /// #81 the started QSO a run end let finish, until it has ended or a new run starts.
+    finishing: Option<Finishing>,
     policy_revision: u64,
     run_revision: u64,
     configuration: Option<Config>,
@@ -887,6 +899,8 @@ impl Owner {
                 let last_decode = r.latest_publication().map_or(0, |p| p.0);
                 let deadline = self.now() + Duration::from_secs(config.max_run_minutes * 60);
                 inner.strategy_refusal = None;
+                // #81 a new run drops the finishing guard.
+                inner.finishing = None;
                 inner.run = Some(Run::new(
                     id,
                     mode,
@@ -913,10 +927,12 @@ impl Owner {
                     return Err(("stale_request", Some("run_id")));
                 }
                 // Future dispatch ends before the acknowledgement; a contact armed by
-                // this run is disarmed through the same Enable Tx path (not a Halt).
+                // this run is disarmed through the same Enable Tx path (not a Halt), unless it
+                // is a started QSO, which is finished (#81).
                 let (armed, own_cq) = (run.state.armed(), run.state == RunState::CallingCq);
+                let kept = Self::keep_started(&mut inner, &contact, state);
                 Self::finish(&mut inner, "stopped");
-                if armed {
+                if armed && !kept {
                     disarm(&contact, state);
                 }
                 // A run's CQ is never left behind (it would read as the operator's contact).
@@ -934,6 +950,62 @@ impl Owner {
             .push_back((command_id, body, receipt.clone()));
         Ok((StatusCode::ACCEPTED, receipt))
     }
+    /// #81 WstxStrategy::StartedQso at a finishing end: true when the run's own contact is a
+    /// started QSO (the contact engine's dialogue decides), which then stays armed and is finished
+    /// as an ordinary contact under the finishing guard.
+    fn keep_started(
+        inner: &mut Inner,
+        contact: &contact_http::Station,
+        state: &ProfileState,
+    ) -> bool {
+        let Some(run) = inner
+            .run
+            .as_ref()
+            .filter(|run| run.state == RunState::ContactActive)
+        else {
+            return false;
+        };
+        let (_, facts, _) = contact.facts();
+        let Some(id) = facts
+            .filter(|c| c.started && Some(&c.id) == run.contact_id.as_ref())
+            .map(|c| c.id)
+        else {
+            return false;
+        };
+        let r = &state.recording;
+        inner.finishing = Some(Finishing {
+            contact_id: id,
+            band: strategy::station_band(r),
+            mode: r.operating_mode(),
+            access: run.access.clone(),
+            halts: r.transmit.get().map(|t| t.service.halt_requests()),
+        });
+        true
+    }
+    /// #81 the finishing guard at each station step: the finished QSO's contact is disarmed and
+    /// cancelled when the station band or mode differs from the run's end, the run's grant is no
+    /// longer current or a HALT came from any source (StartedQso "Still at once": Enable Tx off and
+    /// the contact cancelled); the guard ends with that contact.
+    fn guard_finishing(inner: &mut Inner, contact: &contact_http::Station, state: &ProfileState) {
+        let Some(g) = inner.finishing.as_ref() else {
+            return;
+        };
+        let (_, facts, _) = contact.facts();
+        if !facts.is_some_and(|c| c.id == g.contact_id && c.active) {
+            inner.finishing = None;
+            return;
+        }
+        let r = &state.recording;
+        // The grant itself (revoked, or a safety edit), as for a strategy run.
+        let current = grant_current(state, &g.access, "", true, Instant::now());
+        let halted = r.transmit.get().map(|t| t.service.halt_requests()) != g.halts;
+        if strategy::station_band(r) != g.band || r.operating_mode() != g.mode || !current || halted
+        {
+            inner.finishing = None;
+            cancel(contact, state);
+            disarm(contact, state);
+        }
+    }
     fn finish(inner: &mut Inner, reason: &'static str) {
         if let Some(run) = inner.run.as_mut() {
             run.state = RunState::Stopped;
@@ -944,9 +1016,10 @@ impl Owner {
         }
     }
     /// WstxStrategy::StrategyRun: a browser's selection change or Auto on (no strategy lock
-    /// held). Any run ends: a contact it armed is disarmed, and cancelled when another
-    /// strategy starts; with `start` (Auto on) and a selection a run starts with the request's
-    /// grant. True when a run started; a refused start names why in strategy_refusal.
+    /// held). Any run ends: a contact it armed is disarmed and cancelled, except a started QSO,
+    /// which is finished (#81, StartedQso); with `start` (Auto on) and a selection a run starts
+    /// with the request's grant. True when a run started; a refused start names why in
+    /// strategy_refusal.
     pub(crate) fn selected(
         &self,
         contact: &contact_http::Station,
@@ -976,12 +1049,16 @@ impl Owner {
             .as_ref()
             .filter(|run| run.state != RunState::Stopped && (start || run.config.strategy))
             .map(|run| (run.state.armed(), run.state == RunState::CallingCq));
+        // #81 a started QSO is finished (WstxStrategy::StartedQso).
+        let kept = running.is_some() && Self::keep_started(&mut inner, contact, state);
         if running.is_some() {
             Self::finish(&mut inner, "stopped");
         }
-        // A selection change, None, a contest deselected: the run's contact is disarmed and
-        // cancelled at once (WstxStrategy::StrategyRun "Ends at once").
-        if let Some((true, _)) = running {
+        // A selection change, None, a contest deselected: the run's contact that is no started
+        // QSO is disarmed and cancelled at once (WstxStrategy::StrategyRun "Ends at once").
+        if let Some((true, _)) = running
+            && !kept
+        {
             cancel(contact, state);
             disarm(contact, state);
         }
@@ -1019,6 +1096,9 @@ impl Owner {
         })();
         match started {
             Ok(run) => {
+                // #81 a new run drops the finishing guard: it waits for the QSO as for the
+                // operator's contact (ManualIntervention).
+                inner.finishing = None;
                 inner.configuration = Some(run.config.clone());
                 inner.policy_revision = inner.policy_revision.saturating_add(1).min(MAX_SAFE);
                 inner.run = Some(run);
@@ -1043,8 +1123,9 @@ impl Owner {
         self.lock().strategy_refusal
     }
     /// WstxStrategy::AutoToggle Auto off: the strategy or contest run ends at once, stopped; a
-    /// contact it armed (its CQ too) is disarmed and cancelled. A pounce or MCP run is not
-    /// Auto's and is left alone.
+    /// contact it armed (its CQ too) is disarmed and cancelled, except a started QSO, which is
+    /// finished as an ordinary contact (#81, StartedQso). A pounce or MCP run is not Auto's and is
+    /// left alone.
     pub(crate) fn end_strategy_run(&self, contact: &contact_http::Station, state: &ProfileState) {
         let mut inner = self.lock();
         let Some(armed) = inner
@@ -1055,8 +1136,9 @@ impl Owner {
         else {
             return;
         };
+        let kept = Self::keep_started(&mut inner, contact, state);
         Self::finish(&mut inner, "stopped");
-        if armed {
+        if armed && !kept {
             cancel(contact, state);
             disarm(contact, state);
         }
@@ -1143,6 +1225,8 @@ impl Owner {
             }
             inner.slot_band = Some(b);
         }
+        // #81 a finishing QSO still ends at once on a band or mode change, a lost grant or a HALT.
+        Self::guard_finishing(&mut inner, contact, state);
         let since = inner.slot_since_ms;
         let Some(run) = inner.run.as_mut() else {
             return;
@@ -1199,7 +1283,9 @@ impl Owner {
             return stop(&mut inner, "authority_lost", armed);
         }
         if !is_strategy && now >= run.deadline {
-            return stop(&mut inner, "time_limit", armed);
+            // #81 a started QSO is finished.
+            let kept = Self::keep_started(&mut inner, contact, state);
+            return stop(&mut inner, "time_limit", armed && !kept);
         }
         // #42 Pounce: a station band change ends it.
         if let Some((_, band)) = &run.pounce
@@ -1392,7 +1478,13 @@ impl Owner {
                     );
                 };
                 // StrategyRun "Ends at once": a band change since the target's selection and the
-                // end of a contest period disarm and cancel at the next step, with no quiet time.
+                // end of a contest period disarm and cancel at the next step, with no quiet time;
+                // at the period end a started QSO is finished, the run manual meanwhile (#81).
+                if band == run.target.band && waiting_reason == Some("outside_period") && c.started
+                {
+                    Self::keep_started(&mut inner, contact, state);
+                    return manual(&mut inner);
+                }
                 if band != run.target.band || waiting_reason == Some("outside_period") {
                     run.wait();
                     run.reason = waiting_reason;

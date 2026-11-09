@@ -3014,14 +3014,14 @@ const strategyRunOf=(state,extra={})=>({id:'7d1f6c2e-0000-4000-8000-000000000039
 // WstxContest::ContestSelection; WstxMcp::AutomationWire). The station changes its state on a
 // command; the page learns it only from the pushes strategy.state, pskr.state and automation.state.
 async function strategydefStation(t,viewport,{strategies=[userStrategy('Mine')]}={}){
-  const s={view:null,pskr:null,automation:{policy:0,runRevision:0,configuration:null,run:null,refusal:null},transmit:{},puts:[],autos:[],uses:[],requests:[],commands:[]};
+  const s={view:null,pskr:null,automation:{policy:0,runRevision:0,configuration:null,run:null,refusal:null},transmit:{},contact:null,puts:[],autos:[],uses:[],requests:[],commands:[]};
   const {page,errors,app}=await fixture(t,viewport,{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();s.base=base;
     s.view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:4,configuration:{continent:null,active:null,strategies,ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[],most_wanted:null,most_wanted_unreadable:false,most_wanted_attribution:'',builtin_strategies:BUILTIN_STRATEGIES,auto:false,strategy_refusal:null};
     s.pskr={v:1,profile_id:base.profile_id,boot_id:base.boot_id,enabled:true,use:true,state:'connected',error:null,last_spot_utc_s:null,storage_error:null};
     // Every HTTP request of the page to the station except its static files.
     p.on('request',r=>{const u=new URL(r.url());if(u.origin===app.origin&&u.pathname!=='/'&&!/\.(js|css|svg|png|ico|woff2?)$/.test(u.pathname))s.requests.push(`${r.method()} ${u.pathname}`);});
-    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{transmit:s.transmit})}));
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{transmit:s.transmit,contact:s.contact})}));
     await contactCommands(p,s.commands);
     // None turns Auto off (WstxStrategy::AutoToggle); another selection keeps it.
     await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());s.puts.push(b);s.view={...s.view,revision:s.view.revision+1,configuration:b.configuration,auto:b.configuration.active||b.configuration.contest?s.view.auto:false};}await route.fulfill({json:s.view});});
@@ -3117,6 +3117,31 @@ test('TC-039-046 Auto and PSK follow only the push, one POST per click, their di
   await page.waitForFunction(()=>document.querySelector('#qso-auto').disabled&&document.querySelector('#qso-auto').getAttribute('aria-pressed')==='false');
   assert.equal(s.autos.length,1,'the browser never switched Auto itself');
   assert.equal(s.commands.some(c=>c.action==='enable_tx'),false,'the browser never arms for a strategy');
+  assert.deepEqual(errors,[]);
+});
+// Proves: CL-081-01; TC-081-006 (#81, WstxStrategy::AutoToggle, StrategySelector): with Auto on the Auto
+// button's title says that a QSO already started is finished; after the pushed Auto off with the run
+// stopped and the contact still in progress the button is grey with the off title, the strategy line
+// reads "Strategy New calls · Auto off" and the QSO pane still shows K1ABC. Expected texts are the model's.
+test('TC-081-006 the Auto button says that Auto off finishes a QSO already started',{timeout:90000},async t=>{
+  const {page,errors,s,push,status}=await strategydefStation(t,{width:1366,height:768});
+  const auto=page.locator('#qso-auto');
+  s.contact=partner('roger_report',{report_rcvd:'-05',next_slot:'tx3'});s.transmit={arm_state:'armed'};
+  await page.evaluate(()=>window.wstxContact.load());
+  await page.waitForFunction(()=>window.wstxContact.snapshot()?.contact?.dx_call==='K1ABC');
+  await push.strategy({configuration:{...s.view.configuration,active:'New calls'},auto:true});
+  await push.run(strategyRunOf('contact_active',{selected:{source_id:'s',job_id:'j',generation:1,sequence:3,call:'K1ABC'}}));
+  await page.waitForFunction(()=>document.querySelector('#qso-auto').getAttribute('aria-pressed')==='true');
+  assert.deepEqual(await toggle(auto),{pressed:'true',disabled:false,title:'Auto on: the selection transmits. Click to switch Auto off; a QSO already started is finished',background:TOGGLE_ON});
+  await status('Strategy New calls · K1ABC');
+  // The station's Auto off: the run stopped, the started QSO still in progress.
+  await push.strategy({auto:false});
+  await push.run(strategyRunOf('stopped',{reason:'stopped'}));
+  await page.waitForFunction(()=>document.querySelector('#qso-auto').getAttribute('aria-pressed')==='false');
+  assert.deepEqual(await toggle(auto),{pressed:'false',disabled:false,title:'Auto off: the selection only marks. Click to let it transmit',background:TOGGLE_OFF});
+  await status('Strategy New calls · Auto off');
+  assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'K1ABC · FN42','the QSO pane keeps the contact');
+  assert.equal(s.autos.length,0,'the browser sent nothing');
   assert.deepEqual(errors,[]);
 });
 // Proves: CL-039-20; TC-039-046 (#39 strategydef, WstxStrategy::PskrUse, WstxOperatingLayout::QsoPane): the two PSK

@@ -117,6 +117,9 @@ pub(crate) struct Facts {
     pub active: bool,
     /// The engine's own transmit period parity.
     pub parity: Parity,
+    /// #81 WstxStrategy::StartedQso: a contact with a partner in progress whose dialogue holds a
+    /// counted message of the partner to my call and an own transmission that has started.
+    pub started: bool,
 }
 pub(crate) struct StatusFacts {
     pub dx_call: Option<String>,
@@ -315,6 +318,7 @@ impl Station {
             report_rcvd: c.report_rcvd,
             active: c.state.active() || c.state == contact::State::Calling,
             parity: e.settings.parity,
+            started: c.started(),
         });
         (e.revision, facts, e.settings.auto_seq)
     }
