@@ -108,8 +108,7 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `operating-layout` | Operating screen, settings drawer, receive races, logbook, strategy, UDP editor, transmit status | Router and the HTTP owners the operating page calls; page, recording, contact and logbook clients; its test file |
 | `contact-browser` | Contact engine, QSO sequencing, logging and halt through the browser | Router, contact/logbook/transmit owners, contact/logbook/recording clients, contact test |
 | `radio-selection` | H1 compression negotiation, commissioning, browser selection cases | Router, compression, selection/radio/CAT/receive/source owners, status and recording clients, selection test |
-| `radio-selection-thin` | Timing: the 75 s native/CAT/TLS two-browser Thin and Off workload | Timing inputs: router, compression, selection/CAT/receive/spectrum owners, status and recording clients, its Rust and browser test files and link helpers |
-| `contact-thin` | Timing: TC-007-005 two browsers on the 32 kbit/s link with contact, log, status and presentation traffic | Timing inputs: router, compression, recording, selection and log owners, contact/log/transmit/receive/selection HTTP owners, the client scripts, the test and the link simulator |
+| `radio-selection-thin` | Timing: the native/CAT selection workload on an unshaped TLS connection (no 32 kbit/s link since #80) and its 4230-5000 ms native setup bound | Timing inputs: router, compression, selection/CAT/receive/spectrum owners, status and recording clients, its Rust and browser test files and link helpers |
 | `native-flex` | FR-023 native FlexRadio against the loopback emulator: route isolation, reconciliation, capacity, mixed profiles, push-only status | Native session and status (`flex/`, `flex_http.rs`), router, authorization, profile, radio setup, recording, receive, selection and startup owners, page, recording and contact clients, its test and emulator |
 | `mcp` | MCP client grant and refusals | Router, MCP/automation/authorization owners, authorization client, MCP test and credential helper |
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, plus Node package metadata |
@@ -126,8 +125,8 @@ All existing test files remain registered. The recording test file is partitione
 names: `^TC-018-` goes to storage, except its two 250 ms cancellation bounds;
 those, `^TC-010-002` and the TC-010-005 Detailed peer cadence go to thin-link checks,
 and the complement to display. The communication test file sends `^TC-021-007`
-(silence detection and recovery bounds), `^TC-021-008` and the link simulator check
-to `protocol-thin`, the complement to `protocol`. The radio selection Rust fixture `live_native_selection_tls_thin_and_off`
+(silence detection and recovery bounds) to `protocol-thin`, the complement to `protocol`;
+TC-021-008 (dead peer removal on a driven clock) and TC-080-001 (the link byte log) are Rust tests in `wstx-rust` (#80). The radio selection Rust fixture `live_native_selection_tls_thin_and_off`
 runs in `radio-selection-thin`, the other selection tests in `radio-selection`. Each
 complement includes future names instead of silently omitting them. No test assertion,
 budget or test case is removed by selection.
@@ -140,7 +139,7 @@ keyed, in a contact or an automation run. `live-station-browser` gates the same 
 
 Measurements run only when the change touches time-critical code (harness#28). Every
 timing, latency, cadence or throughput promise lives in a **timing suite** (`timing: true`:
-`protocol-thin`, `recording-thin`, `radio-selection-thin`, `contact-thin`, `live-station-latency`,
+`protocol-thin`, `recording-thin`, `radio-selection-thin`, `live-station-latency`,
 `decoder-quality`). A timing suite has no `select`; its `timing_inputs` name the code that
 sets the measured time, and nothing else selects it: no functional owner, unmapped-input
 or unowned-path fallback, `.harness/` edit or dependency
@@ -148,7 +147,7 @@ or unowned-path fallback, `.harness/` edit or dependency
 The gate lists a timing suite the change reads but does not time as `TIMING ... not run`.
 
 The timing inputs are, per suite: the router `main.rs` (status websocket, thin anchors
-and detail cadence) and HTTP compression for the three link suites; the status client
+and detail cadence) and HTTP compression for the link suites `protocol-thin` and `recording-thin` and for `radio-selection-thin`; the status client
 (`app.js`, `index.html`, `style.css`) for `protocol-thin`, and the status and receive
 clients (`app.js`, `index.html`, `recording.js`) for the two others, because those clients
 read over the 32 kbit/s link and cross it cold (the #55 cold-load red came from a
@@ -156,8 +155,6 @@ client-only change; `recording.js` re-reading `/audio/endpoints` every 5 s, 1b47
 the one real catch of 481 green minutes); the recording/spectrum producers for
 `recording-thin`; the selection, CAT, receive and spectrum owners for `radio-selection-thin`,
 but not capture, whose bounds rerun on request (harness#38);
-the recording, selection and log owners, the HTTP owners of the contact, log, transmit, receive and
-selection traffic and the client scripts of the 10 s first status for `contact-thin`;
 the receive/source/audio/decoder pipeline and the recording client that polls and paints
 the rows for `live-station-latency`; the production decoder sources (every one sets the
 checkpoint spacing, per-item work or budgets the quantum, latency and matrix measure),
@@ -188,9 +185,9 @@ promise: a mixed group would declare `timing_inputs` and guard those assertions 
 
 The gate runs up to three groups at a time (`gate.parallel: 3` in
 `.harness/config.yaml`), longest first, and prints each group's output whole in name
-order. `protocol-thin`, `recording-thin`, `radio-selection-thin` and `contact-thin` run beside other groups
-(`gate.timing_alone: false`). Most of their bounds are wall-clock and byte bounds on the
-simulated 32 kbit/s link; besides those, `recording-thin` holds two local 250 ms TC-018
+order. `protocol-thin`, `recording-thin` and `radio-selection-thin` run beside other groups
+(`gate.timing_alone: false`). The bounds of the first two are wall-clock bounds on the
+simulated 32 kbit/s link (byte budgets are judged from the link byte log since #80, not tested); besides those, `recording-thin` holds two local 250 ms TC-018
 cancellation bounds (one while four stations replay a recording) and
 `radio-selection-thin` the 4230-5000 ms native setup and 2 s Off-acknowledgement bounds.
 All were measured stable beside other groups on HB9BLA (harness#28, 2026-11-03): three
