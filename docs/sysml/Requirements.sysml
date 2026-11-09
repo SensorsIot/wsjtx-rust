@@ -4341,7 +4341,7 @@ package WstxRequirements {
     dependency CL_039_04_to_FR_019 from 'CL-039-04' to 'FR-019';
     requirement 'CL-039-05' {
         doc /* Selecting a strategy marks its candidates; it transmits only while Auto is on (CL-039-22), through the existing station automation and contact engine (no second engine), with no confirmation and no client decision: the browser sends only the selection and the toggle, and HALT is always on screen. An award strategy calls CQ only with CQ when no target (CL-039-22) and goes on after each QSO without a contact limit, waiting for the next opportunity, for at most 8 hours from its start, also with a browser open (operator decision 2026-11-06: a new start gives a new 8 hours); it answers callers of my call (first with Callers of my call first), then the best candidate; it leaves a station by the leave rule (CL-039-23) and may call it again after its quiet time; it never selects a station the operator cancelled or aborted again in that run, nor one completed in that run on this band and mode. It follows its grant, not the transport of the starting request: a page reload or a second tab does not stop it, a revoked grant does. Unattended (operator decision, #39 comment 6685226511) and at the run limit ("Finish the QSO first", operator 2026-11-07): with no authenticated client (a status WebSocket session, or an authenticated MCP request) for 60 s, or past 8 hours, it selects no new station and answers no caller, its own CQ ends at once, a QSO the partner is answering is completed, otherwise the contact ends at x repetitions, and it stops with the reason no_client or run_limit; only an Auto on restarts it, never an AutomationCommand start. A band or mode change by the operator and HALT end the contact at once; Auto off, None, another selection, a contest deselected and the end of a contest period end at once a contact that is no started QSO and let a started QSO finish (#81, CL-081-01). It waits instead of stopping across a receive restart; a refused start or a stop turns Auto off with the reason shown and leaves the strategy selected. HALT from any source stops the run and turns Auto off, pushed to the browser; the selection stays. Esc does not. A double-click is always possible and is a manual intervention: the run waits for that QSO to end and resumes. An MCP principal cannot select a strategy nor switch Auto. Every Auto decision is taken at the earliest moment the information it needs is available, never later (#89, operator 2026-11-09: "decision always fastest when needed info is available. this is a general rule for the auto mode"). Details: WstxStrategy::StrategyRun (Decision timing), AutoToggle, StrategySelector, ManualIntervention, SaneCall; WstxMcp::OperatingAutomation. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/automation.rs; server/src/strategy.rs; client/contact.js";
     }
     dependency CL_039_05_to_FR_020 from 'CL-039-05' to 'FR-020';
@@ -4463,7 +4463,7 @@ package WstxRequirements {
     dependency CL_039_08_verified_by_TC_039_009 from 'CL-039-08' to 'TC-039-009';
     requirement 'CL-039-09' {
         doc /* A strategy or contest run or a pounce calls from the quietest Tx slot: the slot where the target can answer us, a free slot on my side, judged in every decision (a selection, a slot check, a CQ) in my Rx periods only (his Tx parity; #66 operator 2026-11-08 "judge the parity I will receive in"), and only in recent ones: the counted periods among the last 4 periods of my Rx parity that are due: ended on the clock, or earlier, while in progress, once their complete decodes are published, never before they start (#66 "Only if recent"; #89 operator 2026-11-09 "Count once decoded": a decision on the publication of my newest Rx period counts it; every contest Run CQ decided in waiting without a fresh publication, at Auto on, when a reason ends, when a manual contact ends or Esc gives a caller up, after a completion or a leaving, waits for that publication and decides at once when it arrives, at the latest when the period in progress ends, CL-039-05 decision timing), periods I transmitted in never counted. Slots are compared with each other across the whole passband (#66, operator 2026-11-08 "We want to have the quiet slots overall. Across the entire bandwidth of FT8."), not by their own usual level: in each counted period a slot's rise is its level minus the WSJT-X passband floor fitted to that period (so the receive filter's roll-off does not favour the edges), and its value is its largest rise over the counted periods clamped at 0 (#66, operator 2026-11-08 "At or under floor = free": a slot at or below the floor is free, so a sharp filter knee the floor cannot follow never makes the edges win); compared in whole dB, the lowest value winning; a tie keeps the current Tx when it is among the quietest, else goes nearer the current Tx, then lower; there is no threshold. A slot whose signal overlaps a station decoded in a counted period (less than one signal width from his decoded frequency) is left out while any other is free. Where known it is free at his end: at least 50 Hz from every frequency his PSK Reporter spots show him decoding, counting only spots from my Tx parity (ignored when that leaves no slot). Hold Tx off: Rx = Tx, the slot sets both, decided at each selection, before a CQ and at each slot check (CL-039-21). Hold Tx on (CL-039-08): Rx stays on the station and the slot sets Tx alone, only at the slot check of a target that does not hear us, or as the nearest slot 50 Hz away when the station is within 50 Hz of Tx; a CQ goes out on the held Tx. Every slot the run chooses lies inside the Tx range (FT8 300..2650, FT4 300..2610) and at least 50 Hz from the called station's signal and from Rx; without power data the current Tx is kept. Details: WstxStrategy::FreeTxSlot. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/freeslot.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js";
     }
     dependency CL_039_09_to_FR_007 from 'CL-039-09' to 'FR-007';
@@ -6049,11 +6049,12 @@ package WstxRequirements {
              Steps: (a) a decision at P + 14.1 s with P's complete publication; (b) the same instant without it; (c) only a partial publication of P; (d) undecoded, in every period a flat 30 dB in every bin (floor 30.65, TC-039-050), except in P the 18 bins k = 512..529 of [1500, 1550) Hz at 42 dB in P's rows 3..64 (62 rows of 0.2 s, 0.6..12.8 s) and 30 dB in its other rows; the test feeds P's rows 0..69 (the 70 rows complete at P + 14.1 s) for the decision at (a), then rows 70..74 and a decision at P + 15.2 s; (e) a decision at P + 15.2 s, P ended without its publication, then after it; (f) FT4 a decision at P + 6.9 s with P's complete publication; (g) a complete publication naming the next odd period P + 2, published while P + 1 is in progress (a period not yet begun).
              Expected (hand computation recorded in the test; oracle: WstxStrategy::FreeTxSlot Due): (a) counted P and the 3 odd periods before it, the 4th older not; a decode at 2340 Hz in P closes the candidates 2300..2380 (|f - d| below 50); (b) P not counted, the 4 before it counted, 2340 closes nothing; (c) as (b); (d) at P + 14.1 s slot 1500 level (62 x 42 + 8 x 30) / 70 = 40.63, floor 30.65 (the band's 18 bins lie above each segment's 8th lowest level, so the flat-floor fit stands), rise 9.98, value 10 (every other period and every slot outside the band 0); at P + 15.2 s with all 75 rows level (62 x 42 + 13 x 30) / 75 = 39.92, rise 9.27, value 9; (e) P counted by its levels, 2340 closes nothing until the publication, then closes; (f) P counted; (g) P + 2 not due and not counted, its decodes close nothing. Red on the parent: (a) P not counted and 2340 open; (d) value 0.
              2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-09';
             verify 'CL-065-01';
         }
+        attribute executable : String = "server/src/freeslot_tests.rs; server/src/newest_rx_tests.rs";
     }
     dependency CL_039_09_verified_by_TC_089_001 from 'CL-039-09' to 'TC-089-001';
     dependency CL_065_01_verified_by_TC_089_001 from 'CL-065-01' to 'TC-089-001';
@@ -6064,10 +6065,11 @@ package WstxRequirements {
              Steps: a strategy run with Hold Tx off selects HA7NB (1001 Hz) on P's complete publication at P + 14.1 s; Hold Tx on, a slot check of a target that does not hear us with a station decoded on Tx only in P; the same selection by a pounce; a station decoded only in the 5th older odd period.
              Expected (hand computation recorded in the test; oracle: FreeTxSlot Due and Choice): Tx and Rx to the hand-computed nearest free slot clear of 2340 and 1001, tx_slot.hz not 2340; at the slot check Tx alone moves off the station; the pounce as the selection; the 5th older station closes nothing. Red on the parent: Tx stays on 2340.
              2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-09';
         }
+        attribute executable : String = "server/src/newest_rx_tests.rs";
     }
     dependency CL_039_09_verified_by_TC_089_002 from 'CL-039-09' to 'TC-089-002';
     verification 'TC-089-003' {
@@ -6077,10 +6079,11 @@ package WstxRequirements {
              Steps: (a) in a QSO with Tx even, the complete publication of the odd period P at P + 14.1 s with a station decoded at 1200 Hz in P; (b) listening without a run, P's complete publication, then the next period start; (c) only a partial publication of P; (d) a publication of the other parity.
              Expected (hand computation recorded in the test; oracle: CL-065-01): (a) one build at once with periods counting P, the slot overlapping 1200 Hz closed, at_utc_ms the publication time; (b) a build with P's parity counting P, at the next period start the parity flips as before; (c) no build counting P; (d) the judged periods unchanged. Red on the parent: no build at P's publication, the 1200 Hz slot open until the next period start.
              2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-01';
         }
+        attribute executable : String = "server/src/newest_rx_tests.rs";
     }
     dependency CL_065_01_verified_by_TC_089_003 from 'CL-065-01' to 'TC-089-003';
     verification 'TC-089-004' {
@@ -6090,11 +6093,12 @@ package WstxRequirements {
              Steps: (a) Auto on at P + 5 s, P's complete publication at P + 14.1 s; (b) the same with no publication of P; (c) Hold Tx on; (d) Auto off, and separately Halt, during the wait; (e) Auto on while the odd period is in progress and the newest even period is published; (f) Auto on sent twice during the wait; (g) Hold Tx off, the run manual for the operator's contact (a double-click), that contact ended by Esc at P + 5 s (the run back to waiting, as TC-063-010), P's complete publication at P + 14.1 s; the same with the manual contact completed at P + 5 s.
              Expected (oracle: WstxStrategy::FreeTxSlot Waiting for the newest period and StrategyRun Decision timing, #89 round 1 Q1 "decision always fastest when needed info is available"): (a) no set_frequency and no enable_tx before P + 14.1 s, then at that publication, in the same station step, the slot chosen with P counted (not the station's slot), enable_tx, the CQ keyed at the next period start; (b) the decision at P + 15.0 s with P counted by its levels; (c) enable_tx at once, no wait; (d) no decision and no enable_tx; (e) decision and CQ at once; (f) one decision; (g) in both, no set_frequency and no enable_tx of the run between the contact's end and P + 14.1 s, then as (a). Red on the parent: (a) and (g) the CQ at P + 5 s with P not counted.
              2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-09';
             verify 'CL-039-05';
         }
+        attribute executable : String = "server/src/newest_rx_tests.rs";
     }
     dependency CL_039_09_verified_by_TC_089_004 from 'CL-039-09' to 'TC-089-004';
     dependency CL_039_05_verified_by_TC_089_004 from 'CL-039-05' to 'TC-089-004';

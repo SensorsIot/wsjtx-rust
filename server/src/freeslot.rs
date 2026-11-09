@@ -19,8 +19,8 @@ mod tests;
 pub(crate) const CLEARANCE_HZ: i64 = 50;
 /// FreeTxSlot stepHz: the candidate grid.
 pub(crate) const STEP_HZ: u32 = 10;
-/// FreeTxSlot periodsPerParity: the last periods of my Rx parity on the clock whose received ones
-/// count (#66 "Only if recent").
+/// FreeTxSlot periodsPerParity: the last due periods of my Rx parity whose received ones count
+/// (#66 "Only if recent", #89 Due).
 pub(crate) const PERIODS_PER_PARITY: usize = 4;
 /// The detailed waterfall's native bin: 12000 Hz over a 4096-point transform (about 2.93 Hz).
 pub(crate) const BIN_HZ: f64 = 12000.0 / 4096.0;
@@ -401,9 +401,14 @@ impl Waterfall {
             kept.push_back(period);
         }
     }
-    /// The received periods of `job`, oldest first, with the open one once it has ended at
-    /// `now_ms`.
-    pub(crate) fn periods(&self, job: (&str, u64), now_ms: i64) -> Vec<Period> {
+    /// The received periods of `job`, oldest first, with the open one once it is due at `now_ms`
+    /// (`due`: ended, or in progress with its complete publication `published`, #89), over the
+    /// rows received so far.
+    pub(crate) fn periods(
+        &self,
+        job: (&str, u64),
+        (now_ms, published): (i64, Option<i64>),
+    ) -> Vec<Period> {
         if self
             .job
             .as_ref()
@@ -415,7 +420,7 @@ impl Waterfall {
         if let Some(open) = self
             .open
             .as_ref()
-            .filter(|o| o.start_ms + o.period_ms <= now_ms)
+            .filter(|o| due(o.start_ms, o.period_ms, now_ms, published))
             .and_then(Open::period)
         {
             out.push(open);
@@ -424,12 +429,27 @@ impl Waterfall {
         out
     }
 }
-/// The starts of the last PERIODS_PER_PARITY periods of my Rx parity `rx` on the clock before the
-/// period in progress at `now_ms`, the latest first (FT8 the last 2 minutes, FT4 the last minute).
-pub(crate) fn recent_starts(mode: Mode, rx: Parity, now_ms: i64) -> Vec<i64> {
+/// WstxStrategy::FreeTxSlot Due (#89, operator 2026-11-09 "Count once decoded"): the period of
+/// `period_ms` starting at `start_ms` has ended at `now_ms`, or is in progress and `published` (the
+/// period start of the latest complete publication) names it; a period not yet started is never
+/// due, also when a publication names it.
+pub(crate) fn due(start_ms: i64, period_ms: i64, now_ms: i64, published: Option<i64>) -> bool {
+    start_ms + period_ms <= now_ms || (start_ms <= now_ms && published == Some(start_ms))
+}
+/// The starts of the last PERIODS_PER_PARITY due periods of my Rx parity `rx` at `now_ms`, the
+/// latest first (FT8 about the last 2 minutes, FT4 the last minute): the ended ones, and the period
+/// in progress first when its complete publication `published` is there (#89).
+pub(crate) fn recent_starts(
+    mode: Mode,
+    rx: Parity,
+    (now_ms, published): (i64, Option<i64>),
+) -> Vec<i64> {
     let t = period_ms(mode);
     let mut start = now_ms.div_euclid(t) * t;
     let mut out = Vec::with_capacity(PERIODS_PER_PARITY);
+    if parity(mode, start) == rx && due(start, t, now_ms, published) {
+        out.push(start);
+    }
     while out.len() < PERIODS_PER_PARITY {
         start -= t;
         if parity(mode, start) == rx {
@@ -471,7 +491,7 @@ pub(crate) struct Counted<'a> {
 }
 /// What one slot decision judges (WstxStrategy::FreeTxSlot Parity, Counted periods, Floor,
 /// Value, decoded stations): the counted periods, my Rx parity's received periods among its last
-/// PERIODS_PER_PARITY on the clock, from a band change on, with a floor; and the stations decoded
+/// PERIODS_PER_PARITY due ones (#89), from a band change on, with a floor; and the stations decoded
 /// in them.
 #[derive(Debug)]
 pub(crate) struct Judged<'a> {
@@ -482,16 +502,17 @@ pub(crate) struct Judged<'a> {
 impl<'a> Judged<'a> {
     /// `periods` the received periods of the live job and `decodes` its decodes (period start,
     /// audio frequency); my Rx parity `rx`, from `since_ms` on (a station band change), at the
-    /// decision's station time `now_ms`.
+    /// decision's station time `now_ms`, `published` the period start of the latest complete
+    /// publication (#89: the period in progress it names is due).
     pub(crate) fn new(
         periods: &'a [Period],
         mode: Mode,
         rx: Parity,
         since_ms: i64,
-        now_ms: i64,
+        (now_ms, published): (i64, Option<i64>),
         decodes: &[(i64, f64)],
     ) -> Self {
-        let starts = recent_starts(mode, rx, now_ms);
+        let starts = recent_starts(mode, rx, (now_ms, published));
         let mut counted: Vec<Counted<'a>> = periods
             .iter()
             .filter(|p| p.start_ms >= since_ms && starts.contains(&p.start_ms))
