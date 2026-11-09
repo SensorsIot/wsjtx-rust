@@ -4553,28 +4553,60 @@ test('TC-037-002 a long problem scrolls inside the error field on screen and the
   await page.screenshot({path:'test-results/ui-operating/error-field-long-360x800.png'});
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-061-02; TC-061-003. Scripted contact snapshots and command replies (presentation fixtures): the CQ
-// button retries a stale_revision refusal of its enable_tx with the reloaded revision, at most twice.
+// Proves: CL-061-02; TC-061-003 (#83). Scripted contact snapshots, command replies and contact.state events
+// (presentation fixtures): the CQ button retries a stale_revision refusal of its enable_tx with the reloaded
+// revision, at most twice, after the contract's wait of up to 2.5 s for a newer revision (ContactStateEvent):
+// the first click on the fallback (GET /contact after 2.5 s on the paused page clock), the second on the event.
+// Every wait is on an event with a 10 s hang guard; no fourth enable_tx is shown by the command order.
 test('TC-061-003 CQ retries a stale_revision refusal with the reloaded snapshot',{timeout:40000},async t=>{
-  const commands=[];let contact=null,revision=3,stale=0;
+  const commands=[],arrivals=[];let revision=3,stale=0;
+  const arrival=n=>(arrivals[n]??=deferred()).promise;
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
-    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot({...base,revision,sequence:revision},{contact})}));
+    await p.clock.install();
+    // The page's contact requests in the order it issues them, counted at the fetch call.
+    await p.addInitScript(()=>{const original=window.fetch;window.__contact=[];
+      window.fetch=function(input,init){const path=new URL(input instanceof Request?input.url:String(input),location.href).pathname;
+        if(path==='/contact'||path==='/contact/command')window.__contact.push(`${(init?.method??'GET').toUpperCase()} ${path}`);return original.call(this,input,init);};});
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot({...base,revision,sequence:revision})}));
     // The station refuses the next `stale` commands (its revision moved: the last 73 period ended) and moves it on.
-    await p.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());commands.push(b);
+    await p.route('**/contact/command',async route=>{const b=JSON.parse(route.request().postData());commands.push(b);(arrivals[commands.length]??=deferred()).resolve();
       if(stale>0){stale--;revision++;await route.fulfill({status:409,json:{v:1,error:{code:'stale_revision'}}});}else await route.fulfill({status:202,json:{v:1,accepted:true}});});
   }});
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-cq').disabled,null,{timeout:25000});
   // WstxTransmit late start (live 2026-11-06, #10): a click 10 s into my Tx period keys at once for the rest.
   assert.equal(await page.locator('#qso-cq').getAttribute('title'),'Call CQ: keys at once for the rest of my Tx period when it is early enough, otherwise from my next Tx period');
-  const sent=async(m,count)=>{for(let i=0;i<80&&commands.length<m+count;i++)await page.waitForTimeout(50);await page.waitForTimeout(300);return commands.slice(m).map(c=>[c.action,c.enabled,c.contact_revision]);};
-  stale=1;let m=commands.length;await page.locator('#qso-cq').click();
-  assert.deepEqual(await sent(m,2),[['enable_tx',true,3],['enable_tx',true,4]],'CQ: refused once, sent again with the reloaded revision');
-  await page.locator('#contact-result').filter({hasText:'CQ: accepted'}).waitFor();
-  // At most two retries: a third refusal stays shown.
+  // From here on page time moves only by runFor: a retry before 2.5 s, or by a timer, cannot pass.
+  await page.clock.pauseAt(await page.evaluate(()=>Date.now())+1000);
+  const guard=(promise,what)=>{let timer;return Promise.race([promise,new Promise((_,fail)=>{timer=setTimeout(()=>fail(new Error(`hang guard 10 s: ${what}`)),10000);})]).finally(()=>clearTimeout(timer));};
+  const recorded=(n,what)=>guard(arrival(n),what);
+  const result=text=>page.locator('#contact-result').filter({hasText:text}).waitFor({timeout:10000});
+  const requests=async from=>(await page.evaluate(()=>window.__contact.slice())).slice(from);
+  const sent=m=>commands.slice(m).map(c=>[c.action,c.enabled,c.contact_revision]);
+  const refusal='CQ: refused · stale_revision';
+  // The station's contact.state with the moved revision, carrying the shown snapshot one sequence above it.
+  const push=async r=>{await page.evaluate(r=>{const s=window.wstxContact.snapshot();dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'contact.state',data:{profile_id:s.profile_id,boot_id:s.boot_id,contact_revision:r,snapshot_sequence:s.snapshot_sequence+1,monotonic_ms:2000,utc_ms:Date.now(),changed:{transmit:s.transmit,settings:s.settings,contact:s.contact&&{...s.contact,dialogue_from:0,dialogue:s.contact.dialogue??[]},log:s.log,watchdog:s.watchdog}}}}}));},r);
+    await page.waitForFunction(r=>window.wstxContact.snapshot()?.contact_revision===r,r,{timeout:10000});};
+  // Fallback branch: one refusal and no contact.state; the retry waits 2.5 s, then reads GET /contact.
+  stale=1;let m=commands.length,from=(await requests(0)).length;await page.locator('#qso-cq').click();
+  await recorded(m+1,'the first enable_tx');await result(refusal);
+  await page.clock.runFor(2499);
+  assert.deepEqual(await requests(from),['POST /contact/command'],'2499 ms after the refusal: no GET /contact and no second command');
+  await page.clock.runFor(1);
+  await recorded(m+2,'the retry after 2500 ms');
+  const order=await requests(from);
+  assert.deepEqual(order.slice(0,order.indexOf('POST /contact/command',1)+1),['POST /contact/command','GET /contact','POST /contact/command'],'one GET /contact before the retry');
+  assert.deepEqual(sent(m),[['enable_tx',true,3],['enable_tx',true,4]],'CQ: refused once, sent again with the reloaded revision');
+  await result('CQ: accepted');
+  // Event branch, the clock still paused: each refusal is followed by the station's contact.state.
   stale=3;m=commands.length;await page.locator('#qso-cq').click();
-  assert.deepEqual(await sent(m,3),[['enable_tx',true,4],['enable_tx',true,5],['enable_tx',true,6]]);
-  await page.locator('#contact-result').filter({hasText:'CQ: refused · stale_revision'}).waitFor();
+  for(let k=1;k<=3;k++){await recorded(m+k,`enable_tx ${k} of the second click`);await result(refusal);await push(revision);}
+  assert.deepEqual(sent(m),[['enable_tx',true,4],['enable_tx',true,5],['enable_tx',true,6]],'at most two retries');
+  // A third refusal stays shown; revision 7 is held, so a fourth retry would by now be in the command order.
+  assert.match(await page.locator('#contact-result').textContent(),/^CQ: refused · stale_revision/,'the third refusal stays shown');
+  await page.locator('#contact-tune').click();
+  await recorded(m+4,'the Tune command');
+  assert.deepEqual(sent(m),[['enable_tx',true,4],['enable_tx',true,5],['enable_tx',true,6],['tune',true,7]],'the next command is tune: no fourth enable_tx');
   assert.deepEqual(errors,[]);
 });
 
