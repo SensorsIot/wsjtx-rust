@@ -229,7 +229,8 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
     const edges=gets.flatMap(r=>[[r.at,1],[r.end??end,-1]]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);let open=0,maxPending=0;for(const [,d]of edges){open+=d;maxPending=Math.max(maxPending,open);}
     const ticks=s.ticks.filter(k=>k.utc>=wall&&k.utc<wall+span*1000),states=between(s.states,start,end);
     const churnStates=report.churn?between(s.states,report.churn.start,report.churn.end+2500).length:null;
-    return {worked,maxPendingContactGets:maxPending,contactGets:gets.length,ticks:ticks.length,tickUtcSpacingMs:ticks.slice(1).map((k,n)=>k.utc-ticks[n].utc),tickTransmitting:ticks.map(k=>k.transmitting),states:states.length,stateSpacingMs:states.slice(1).map((x,n)=>Math.round(x.at-states[n].at)),churnStates,maxStateBytes:Math.max(0,...states.map(x=>x.bytes)),maxTickBytes:Math.max(0,...ticks.map(x=>x.bytes)),routes:requests.reduce((m,r)=>(m[`${r.method} ${r.path}`]=(m[`${r.method} ${r.path}`]??0)+1,m),{})};
+    const free=between(s.frames,start,end).filter(f=>f.type==='free_tx_slots.state').map(f=>f.bytes);
+    return {worked,free,maxPendingContactGets:maxPending,contactGets:gets.length,ticks:ticks.length,tickUtcSpacingMs:ticks.slice(1).map((k,n)=>k.utc-ticks[n].utc),tickTransmitting:ticks.map(k=>k.transmitting),states:states.length,stateSpacingMs:states.slice(1).map((x,n)=>Math.round(x.at-states[n].at)),churnStates,maxStateBytes:Math.max(0,...states.map(x=>x.bytes)),maxTickBytes:Math.max(0,...ticks.map(x=>x.bytes)),routes:requests.reduce((m,r)=>(m[`${r.method} ${r.path}`]=(m[`${r.method} ${r.path}`]??0)+1,m),{})};
   });
   report.phases.thin={state:'checking',seconds:span,frames:seen.map(s=>frameBytes(between(s.frames,start,end))),sharedBytesPerSecond:traffic,statusMs:latencies.slice(),publishes,churn:report.churn,clients:thin};await save();
   console.log(`Thin ${span.toFixed(1)} s ${JSON.stringify(traffic)}`);
@@ -265,6 +266,13 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
     bound(c.churnStates*3<=report.churn.revisions,`client ${i}: ${c.churnStates} contact.state for ${report.churn.revisions} revisions is not coalesced`);
     bound(seen[i].states.some(x=>x.revision>=report.churn.last&&x.at<=report.churn.end+3500),`client ${i}: the last churn revision ${report.churn.last} not announced in time`);
     bound(c.states>=2,`client ${i}: contact.state announced the contact (${c.states})`);
+    // #82 (CL-065-01): a live receive and no automation run, so the station builds its open slots
+    // at each 15 s period start (5 or 6 in 80 s), at the contact's QSO start and end (one more
+    // each) and again at most once per published period whose decodes count ("Rebuild on
+    // decodes"), each at most 1024 B, with no read after it (the event carries the state).
+    bound(c.free.length>=5&&c.free.length<=6+2+publishes.length,`client ${i}: ${c.free.length} free_tx_slots.state in ${span} s`);
+    bound(c.free.every(b=>b<=1024),`client ${i}: free_tx_slots.state sizes ${c.free}`);
+    bound((c.routes['GET /automation']??0)===0,`client ${i}: ${c.routes['GET /automation']} GET /automation after free_tx_slots.state`);
   }
   await soft('contact log read',async()=>{const final=await pages[0].evaluate(async()=>{const r=await stationFetch('/contacts?cursor=0&limit=10',{signal:AbortSignal.timeout(30000)});return r.json();});
     bound(final.records.filter(r=>r.call==='K1ABC').length===1,`the completed contact is logged once: ${final.records.filter(r=>r.call==='K1ABC').length}`);});
@@ -279,6 +287,8 @@ if(!process.env.WSTX_THIN_CONTACT_FIXTURE){
     report.phases.off={seconds:span,frames:seen.map(s=>frameBytes(between(s.frames,start,end))),sharedBytesPerSecond:off,ticks:ticks.map(x=>x.length),utcSpacingMs:ticks.map(x=>x.slice(1).map((k,n)=>k.utc-x[n].utc)),routes:seen.map(s=>between(s.requests,start,end).map(r=>`${r.method} ${r.path}`))};await save();
     console.log(`Off ${span.toFixed(1)} s ${JSON.stringify(off)}`);
     for(const [i,f]of report.phases.off.frames.entries())bound(f.byType['spectrum.frame']===undefined,`client ${i}: spectrum.frame on Off`);
+    // #82: an Off peer never gets free_tx_slots.state.
+    for(const [i,f]of report.phases.off.frames.entries())bound(f.byType['free_tx_slots.state']===undefined,`client ${i}: free_tx_slots.state on Off`);
     bound(off.up<=1000,`Off idle counted uplink ${off.up} B/s`);bound(off.down<=1000,`Off idle counted downlink ${off.down} B/s`);
     for(const x of ticks){bound(x.length>=11&&x.length<=13,`Off ticks in 60 s: ${x.length}`);for(let n=1;n<x.length;n++)bound(x[n].utc-x[n-1].utc>=4900,`Off tick spacing ${x[n].utc-x[n-1].utc}`);}
   }

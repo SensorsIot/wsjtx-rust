@@ -160,7 +160,7 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 .ct-marker{position:absolute;top:0;bottom:0;width:0;margin-left:-1.5px;border-left:3px solid;pointer-events:none;z-index:1;box-shadow:0 0 0 1px rgba(0,0,0,.55)}
 .ct-rx{border-color:#30d050;color:#30d050}
 .ct-txm{border-color:#ff4040;color:#ff6060}
-/* #65/#76 FreeTxSlotMarks: the run's Free Tx slots in the frequency ruler (contact.js), 8 px pale
+/* #65/#76/#82 FreeTxSlotMarks: the station's open slots in the frequency ruler (contact.js), 8 px pale
    green bars without text, set apart from the Rx green, the Tx red and the ruler in every theme
    (Day and Night remap them with the page); no pointer input; inside the ruler, the waterfall stays. */
 #free-tx-slots{position:absolute;inset:0;overflow:hidden;pointer-events:none}

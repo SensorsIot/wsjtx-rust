@@ -549,39 +549,44 @@ attribute def ActivityOrdering {
     }
     attribute def FreeTxSlotMarks {
         attribute marksTakePointer : Boolean = false;
-        attribute offByDefault : Boolean = true;
+        attribute alwaysShown : Boolean = true;
         attribute hasLabels : Boolean = false;
         attribute barHeightPx : Integer = 8;
         attribute endInsetPx : Integer = 2;
         attribute minColourDifference : Integer = 40;
-        assert constraint marksRules { not marksTakePointer and offByDefault and not hasLabels }
+        assert constraint marksRules { not marksTakePointer and alwaysShown and not hasLabels }
         doc /* CL-065-02 (#65, operator 2026-11-08: "show it above the waterfall as
-             visually that I can place the TX frequency according to that"). With the
-             Settings > Expert checkbox "Show free Tx slots" on (per browser, browser
-             storage, off by default, operative), while the automation snapshot has a run,
-             the latest free_tx_slots (from GET /automation and free_tx_slots.state, no
-             other request or poll) belongs to that run (run_id) and lists slots, each slot
-             is a bar in the frequency ruler directly above the waterfall over the slot hz
-             to hz + width (FT8 50 Hz, FT4 90 Hz, from its mode), on the waterfall's one
-             frequency mapping (RxTxStrip, CL-050-07).
+             visually that I can place the TX frequency according to that"; #82, operator
+             2026-11-09: "open slots are shown all the time as a part of the waterfall", "we
+             just want to mark open slots, nothing else on screen"; WstxStrategy D18). Part of
+             the waterfall, with no setting (#82 removes the Settings > Expert checkbox "Show
+             free Tx slots"; its browser storage key is no longer read): on every page with
+             the waterfall, each open range [lo_hz, hi_hz) of the latest held free_tx_slots
+             (WstxStrategy::FreeTxSlots) is a bar in the frequency ruler directly above the
+             waterfall over lo to hi, on the waterfall's one frequency mapping (RxTxStrip,
+             CL-050-07), with or without a run, a QSO or Auto (no run_id match). The held
+             value: each free_tx_slots.state replaces it in socket order; a GET /automation
+             reply (read only after automation.state, #74) replaces it only with a value whose
+             at_utc_ms is later than the held one's (its null or an older value never does); a
+             new boot and switching the page's display to Off drop it (#74, #82). No other request or poll; an Off peer has no waterfall
+             and receives no value.
              Look (#76, operator 2026-11-08: "shorten the mark a bit so that it has a space
              in between two adjacent ones", "in green and a little bit thicker", "We do not
              need any text on the open slots, just the sign"): each bar is barHeightPx (8)
              CSS px high at the bottom of the ruler and is shortened by endInsetPx (2) CSS px
-             at each end, from x(hz) + 2 to x(hz + width) - 2 (edges within 1 px), so two
-             slots exactly one width apart (FT8 2110 and 2160 Hz) show a gap of 4 px; where
-             a slot is narrower than both insets (a phone) the bar may vanish. The marks
-             carry no text (hasLabels false: no rank, no rise). The colour is one pale green in
+             at each end, from x(lo) + 2 to x(hi) - 2 (edges within 1 px), so two touching
+             ranges (FT8 [2110, 2160) and [2160, 2210)) show a gap of 4 px; where a range is
+             narrower than both insets (a phone) the bar may vanish. The marks
+             carry no text (hasLabels false: no rank, no rise, no number). The colour is one pale green in
              the base (dark) theme that the Day and Night themes remap like the rest of the
              page; as drawn, in each theme a bar's pixel differs from the drawn Rx line's,
              the Tx line's and the ruler background's by at least minColourDifference (40)
              in the sum of the R, G and B differences. Bars take no pointer input (click,
              double-click and marker drag act as without them); the Rx and Tx lines are
              unchanged; the marks fit inside the ruler and never move the waterfall.
-             They stay until the next decision and go when the run ends, when another run's
-             value arrives and when the checkbox is off. No horizontal overflow at 360 px.
-             The numbers (rank, rise) are in GET /automation and the MCP automation view
-             only (WstxStrategy::FreeTxSlots). */
+             They are redrawn on every new held value (every period) and go when the value is
+             null, when open is [] and at a new boot. No horizontal overflow at 360 px. Auto's
+             ranking and the chosen slot are not drawn (the Tx line shows where Tx is). */
     }
     dependency freeTxSlotMarksClause from FreeTxSlotMarks to WstxRequirements::'CL-065-02';
     dependency freeTxSlotMarksMapping from FreeTxSlotMarks to RxTxStrip;
@@ -1145,8 +1150,8 @@ attribute def ActivityOrdering {
              FT8 decode windows and the latest window's counters, CL-052-01), selection
              refresh, connection details, the saved audio endpoint IDs (CL-044-08),
              recordings/replay and the
-             raw transmit test panel (WstxTransmit, #9), and "Show free Tx slots" (#65,
-             FreeTxSlotMarks; per browser, off by default).
+             raw transmit test panel (WstxTransmit, #9). (#82 removes #65's "Show free Tx
+             slots": the open slots are always part of the waterfall, FreeTxSlotMarks.)
              Operative changes (display, theme, watchdogs) apply immediately and never
              interrupt decoding. Restart changes (the saved profile: station, CAT, audio,
              PTT) take effect only on Apply (the existing revision-aware profile save) and,

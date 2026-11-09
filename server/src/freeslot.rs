@@ -42,7 +42,7 @@ pub(crate) fn width_hz(mode: Mode) -> u32 {
         Mode::Ft4 => 90,
     }
 }
-fn period_ms(mode: Mode) -> i64 {
+pub(crate) fn period_ms(mode: Mode) -> i64 {
     match mode {
         Mode::Ft8 => 15_000,
         Mode::Ft4 => 7_500,
@@ -271,82 +271,45 @@ pub(crate) fn held(
     }
 }
 
-/// WstxStrategy::FreeTxSlots slotsListed.
-pub(crate) const SLOTS_LISTED: usize = 5;
 /// The numbers of one slot of a decision: its largest rise above the passband floor over the
 /// counted periods (#66; the compared value is that rise clamped at 0, `compared`), and the level
 /// and the floor of that busiest period as measured, in dB.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Numbers {
     pub rise: f64,
+    /// The measured level and floor, read by TC-039-010 and TC-039-050; the station uses the rise
+    /// only (#82: no per-slot numbers on the wire).
     pub level: f64,
     pub floor: f64,
 }
-/// One listed Free Tx slot, each number rounded to whole dB on its own: rise_db the compared value
-/// (never negative), level_db and floor_db as measured.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Listed {
-    pub hz: u32,
-    pub rise_db: i64,
-    pub level_db: i64,
-    pub floor_db: i64,
-}
-impl Listed {
-    pub(crate) fn json(&self) -> Value {
-        json!({"hz":self.hz,"rise_db":self.rise_db,"level_db":self.level_db,"floor_db":self.floor_db})
-    }
-}
-/// WstxStrategy::FreeTxSlots (#65): the best candidates of one decision, exactly its candidates
-/// (`candidates`, as `quietest_clear`) and its compared value (`compared` of `numbers`' rise), the
-/// lower first, then nearer `current` (the current Tx itself first), then the lower frequency;
-/// walking that ranking a candidate closer than the slot width to one already listed is skipped;
-/// at most SLOTS_LISTED. No power (a candidate without numbers, as the choice's "No power yet"):
-/// empty.
-pub(crate) fn free_slots(
+/// WstxStrategy::FreeTxSlots Open (#82): the Tx frequencies f of FreeTxSlot's candidate grid
+/// (every STEP_HZ inside the Tx range, `band`) whose compared value is 0 (at or under the floor;
+/// None, no counted period, is not 0) and whose signal [f, f + width) overlaps no station
+/// `decoded` in a counted period. No other filter, no fallback, no ranking, no limit.
+pub(crate) fn open_slots(
     mode: Mode,
-    current: u32,
-    avoid: &[u32],
     decoded: &[f64],
-    his: Option<&[u32]>,
-    numbers: &dyn Fn(u32) -> Option<Numbers>,
-) -> Vec<Listed> {
-    let (candidates, _) = candidates(mode, current, avoid, decoded, his);
-    let Some(mut ranked) = candidates
-        .iter()
-        .map(|f| numbers(*f).map(|n| (*f, n)))
-        .collect::<Option<Vec<(u32, Numbers)>>>()
-    else {
-        return Vec::new();
-    };
-    ranked.sort_by_key(|(f, n)| {
-        (
-            compared(n.rise),
-            (i64::from(*f) - i64::from(current)).abs(),
-            *f,
-        )
-    });
-    let width = i64::from(width_hz(mode));
-    let mut listed: Vec<Listed> = Vec::new();
-    for (f, n) in ranked {
-        if listed.len() == SLOTS_LISTED {
-            break;
-        }
-        if listed
-            .iter()
-            .any(|l| (i64::from(l.hz) - i64::from(f)).abs() < width)
-        {
-            continue;
-        }
-        listed.push(Listed {
-            hz: f,
-            rise_db: compared(n.rise),
-            level_db: n.level.round() as i64,
-            floor_db: n.floor.round() as i64,
-        });
-    }
-    listed
+    value: &dyn Fn(u32) -> Option<f64>,
+) -> Vec<u32> {
+    let ((low, high), width) = (band(mode), width_hz(mode));
+    (low..=high)
+        .step_by(STEP_HZ as usize)
+        .filter(|f| !occupied(*f, decoded, width) && value(*f).map(compared) == Some(0))
+        .collect()
 }
-
+/// WstxStrategy::FreeTxSlots Open ranges (#82): the union of the half-open signals [f, f + width)
+/// of the ascending open `slots`; overlapping signals join, touching ones stay separate.
+pub(crate) fn open_ranges(mode: Mode, slots: &[u32]) -> Vec<(u32, u32)> {
+    let width = width_hz(mode);
+    let mut ranges: Vec<(u32, u32)> = Vec::new();
+    for f in slots {
+        match ranges.last_mut() {
+            Some((_, hi)) if *f < *hi => *hi = (*hi).max(f + width),
+            _ => ranges.push((*f, f + width)),
+        }
+    }
+    ranges
+}
 /// One received period: its start and the mean level of each detailed bin over its rows.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Period {
@@ -597,26 +560,22 @@ fn parity_name(of: Parity) -> &'static str {
         Parity::Odd => "odd",
     }
 }
-/// The period counts of a decision (#65 FreeTxSlots `periods`, #66): for my Rx parity `rx` the
-/// number of counted periods, null for my Tx parity, which is not judged.
-pub(crate) fn period_counts(rx: Parity, now: usize) -> Value {
-    let count = |of: Parity| json!({"now":(of == rx).then_some(now)});
-    json!({"even":count(Parity::Even),"odd":count(Parity::Odd)})
-}
-/// The value of one decision (#65 FreeTxSlots, WstxMcp::AutomationWire free_tx_slots).
+/// The value of one build (#82 WstxStrategy::FreeTxSlots, WstxMcp::AutomationWire
+/// free_tx_slots): {at_utc_ms, mode, rx_parity, qso, periods (the counted number), open [[lo_hz,
+/// hi_hz], ...]}, no per-slot numbers.
 pub(crate) fn value(
-    run_id: &str,
     at_utc_ms: i64,
     mode: Mode,
     rx: Parity,
-    listening: bool,
-    periods: Value,
-    slots: &[Listed],
+    qso: bool,
+    periods: usize,
+    open: &[(u32, u32)],
 ) -> Value {
     let mode = match mode {
         Mode::Ft8 => "ft8",
         Mode::Ft4 => "ft4",
     };
-    json!({"run_id":run_id,"at_utc_ms":at_utc_ms,"mode":mode,"rx_parity":parity_name(rx),
-        "listening":listening,"periods":periods,"slots":slots.iter().map(Listed::json).collect::<Vec<_>>()})
+    let open: Vec<[u32; 2]> = open.iter().map(|(lo, hi)| [*lo, *hi]).collect();
+    json!({"at_utc_ms":at_utc_ms,"mode":mode,"rx_parity":parity_name(rx),"qso":qso,
+        "periods":periods,"open":open})
 }

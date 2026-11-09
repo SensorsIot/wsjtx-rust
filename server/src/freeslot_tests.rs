@@ -489,62 +489,27 @@ fn tc_039_050_the_roll_off_floor_matches_the_numpy_reference() {
 // #66 decoded stations (TC-066-002). Oracle: the operator's rule of 2026-11-08 (issue #66
 // Functionality 5): a candidate f is left out while another is free when |f - d| is below the width
 // (FT8 50 Hz, FT4 90 Hz) for a station decoded at d in a counted period; with none free all come
-// back; his end applies among those left.
+// back; his end applies among those left. #82: the marks are the open slots of the same decoded
+// stations (TC-066-002 (j)): no open signal overlaps a counted decode, also where every candidate
+// is overlapped (open is [], no fallback, while the choice still uses all candidates).
 
-/// The listed hz of a decision, checked against the choice (1.7 Agreement) and, while a candidate
-/// is free, against the decoded stations.
-fn list(
-    mode: Mode,
-    current: u32,
-    avoid: &[u32],
-    decoded: &[f64],
-    his: Option<&[u32]>,
-    numbers: &dyn Fn(u32) -> Option<Numbers>,
-) -> Vec<u32> {
-    let listed = free_slots(mode, current, avoid, decoded, his, numbers);
-    let chosen = quietest_clear(mode, current, avoid, decoded, his, &|f| {
-        numbers(f).map(|n| n.rise)
-    });
-    match listed.first() {
-        Some(first) => assert_eq!(
-            (first.hz, Some(first.rise_db)),
-            (chosen.hz, chosen.power_db),
-            "the first listed is the chosen slot"
-        ),
-        None => assert_eq!(chosen.power_db, None, "an empty list only without power"),
-    }
-    assert!(listed.len() <= SLOTS_LISTED);
-    let (low, high) = band(mode);
+/// The open frequencies of one build (`open_slots`), checked never to overlap a decoded station.
+fn open_of(mode: Mode, decoded: &[f64], value: &dyn Fn(u32) -> Option<f64>) -> Vec<u32> {
+    let open = open_slots(mode, decoded, value);
     let width = width_hz(mode);
-    let free = (low..=high)
-        .step_by(STEP_HZ as usize)
-        .any(|f| clear_of_all(f, avoid, width) && !occupied(f, decoded, width));
-    if free {
-        assert!(
-            listed.iter().all(|l| !occupied(l.hz, decoded, width)),
-            "{listed:?} on {decoded:?}"
-        );
-    }
-    listed.iter().map(|l| l.hz).collect()
-}
-/// A value table as Numbers: `floor` everywhere, the listed candidates at their own value; the
-/// level 20 dB above the floor of 20 plus the value.
-fn values(floor: f64, levels: &[(u32, f64)]) -> impl Fn(u32) -> Option<Numbers> {
-    let t = table(floor, levels);
-    move |f| {
-        t(f).map(|rise| Numbers {
-            rise,
-            level: 20.0 + rise,
-            floor: 20.0,
-        })
-    }
+    assert!(
+        open.iter().all(|f| !occupied(*f, decoded, width)),
+        "{open:?} on {decoded:?}"
+    );
+    open
 }
 
 // Proves: CL-039-09, CL-065-01; TC-066-002 (b), (c), (j). The overlap boundary is the width: a
 // station decoded at 1000.0 Hz leaves out FT8 960 and 1040 (40 Hz) and keeps 950 and 1050 (50 Hz),
 // FT4 920 and 1080 (80 Hz) out and 910 and 1090 (90 Hz) kept; at 1000.4 Hz 1050 (49.6 Hz) is out.
-// Each case makes the tested candidate the only quiet one (20 against 40). Stations decoded every
-// 40 Hz overlap every candidate: all come back, the quietest 1800 chosen and first listed.
+// Each case makes the tested candidate the only quiet one (20 against 40); with it the only one at
+// 0 it is the only open slot when kept, and none is open when left out. Stations decoded every 40 Hz
+// overlap every candidate: all come back for the choice, the quietest 1800 chosen, and open is [].
 #[test]
 fn tc_066_002_a_candidate_on_a_decoded_station_is_left_out_while_one_is_free() {
     let chosen = |mode: Mode, quiet: u32, decoded: f64| {
@@ -567,15 +532,9 @@ fn tc_066_002_a_candidate_on_a_decoded_station_is_left_out_while_one_is_free() {
             kept,
             "{mode:?} {quiet}"
         );
-        let listed = list(
-            mode,
-            1500,
-            &[],
-            &[1000.0],
-            None,
-            &values(40.0, &[(quiet, 0.0)]),
-        );
-        assert_eq!(listed[0] == quiet, kept, "{mode:?} {quiet} listed");
+        let open = open_of(mode, &[1000.0], &table(40.0, &[(quiet, 0.0)]));
+        let expected = if kept { vec![quiet] } else { vec![] };
+        assert_eq!(open, expected, "{mode:?} {quiet} open");
     }
     assert_ne!(chosen(Mode::Ft8, 1050, 1000.4), 1050, "49.6 Hz");
     let everywhere: Vec<f64> = (280..=2700).step_by(40).map(f64::from).collect();
@@ -586,15 +545,9 @@ fn tc_066_002_a_candidate_on_a_decoded_station_is_left_out_while_one_is_free() {
         "all overlapped: all back"
     );
     assert_eq!(
-        list(
-            Mode::Ft8,
-            1500,
-            &[],
-            &everywhere,
-            None,
-            &values(40.0, &[(1800, 0.0)])
-        )[0],
-        1800
+        open_of(Mode::Ft8, &everywhere, &table(40.0, &[(1800, 0.0)])),
+        Vec::<u32>::new(),
+        "all overlapped: no open slot, no fallback"
     );
 }
 
@@ -626,10 +579,8 @@ fn tc_066_002_only_my_rx_parity_is_judged() {
         quietest_clear(Mode::Ft8, 1500, &[], j.decoded(), None, &rises(&j)),
         slot(1560, Some(0), HisEnd::Unknown)
     );
-    assert_eq!(
-        list(Mode::Ft8, 1500, &[], j.decoded(), None, &|f| j.numbers(f))[0],
-        1560
-    );
+    let open = open_of(Mode::Ft8, j.decoded(), &rises(&j));
+    assert!(open.contains(&1560) && !open.contains(&1500), "{open:?}");
     let cq = [
         period(1, false, 30, &[]),
         period(1, true, 30, &[(1500, 1550, 50)]),
@@ -693,7 +644,8 @@ fn tc_066_002_decodes_of_periods_that_do_not_count_leave_nothing_out() {
 // decoded stations leave: a station decoded at 1500 leaves out 1460..1540 and his frequency 1450 of
 // my Tx parity 1410..1490, so on a flat table the nearest left is 1550 (his_end yes); his
 // frequencies every 40 Hz leave none, his end is ignored, and of the decode-free ones 1450 and
-// 1550 (both 50 Hz away) the lower, his_end no. The first listed is the choice.
+// 1550 (both 50 Hz away) the lower, his_end no. The open slots apply no his end (#82 D1): 1450
+// stays open, 1460..1540 (on the decoded station) do not.
 #[test]
 fn tc_066_002_his_end_applies_among_the_candidates_left_by_decodes() {
     let flat = table(20.0, &[]);
@@ -706,229 +658,194 @@ fn tc_066_002_his_end_applies_among_the_candidates_left_by_decodes() {
         quietest_clear(Mode::Ft8, 1500, &[], &[1500.0], Some(&his), &flat),
         slot(1450, Some(20), HisEnd::No)
     );
-    let flat = values(0.0, &[]);
-    assert_eq!(
-        list(Mode::Ft8, 1500, &[], &[1500.0], Some(&[1450]), &flat)[0],
-        1550
-    );
-    assert_eq!(
-        list(Mode::Ft8, 1500, &[], &[1500.0], Some(&his), &flat)[0],
-        1450
-    );
+    let open = open_of(Mode::Ft8, &[1500.0], &table(0.0, &[]));
+    assert!(open.contains(&1450) && open.contains(&1550), "{open:?}");
+    assert!(!open.iter().any(|f| (1460..=1540).contains(f)), "{open:?}");
 }
 
-// #65 WstxStrategy::FreeTxSlots (TC-065-001). Oracle: the operator's rules of 2026-11-08 (issue #65
-// Functionality 1.2-1.7), worked by hand in each test from value tables written here; every list is
-// also checked against the choice (1.7): its first slot is quietest_clear's hz and power_db.
+// #82 WstxStrategy::FreeTxSlots Open and Open ranges (TC-082-001). Oracle: the open rule of
+// CL-065-01 (value 0 and no counted decode overlapped, no other filter, no fallback, no ranking, no
+// limit) and FreeTxSlot's floor and value, the flat-floor floor F + 0.65 of TC-039-050; every range
+// below is a hand computation written in the comment above its test.
 
-/// The listed hz of a decision without decoded stations.
-fn listed(
-    mode: Mode,
-    current: u32,
-    avoid: &[u32],
-    his: Option<&[u32]>,
-    numbers: &dyn Fn(u32) -> Option<Numbers>,
-) -> Vec<u32> {
-    list(mode, current, avoid, &[], his, numbers)
+/// The open ranges of one build as [lo, hi) pairs.
+fn ranges_of(mode: Mode, decoded: &[f64], value: &dyn Fn(u32) -> Option<f64>) -> Vec<(u32, u32)> {
+    open_ranges(mode, &open_of(mode, decoded, value))
+}
+/// Four counted even FT8 periods (my Rx parity even at NOW), each a flat 30 with `bands` raised.
+fn four(bands: &[(u32, u32, u8)]) -> Vec<Period> {
+    (1..=4).rev().map(|b| period(b, false, 30, bands)).collect()
 }
 
-// Proves: CL-065-01; TC-065-001 (count, rank order, no power). Seven separate quiet places from Tx
-// 1500 on a floor of value 10: 400 at 0, 700 at 1, 1000, 1300 and 1800 at 2, 2100 at 3, 2400 at 4.
-// Rank: 0, 1, then the three at 2 by distance to 1500 (1300 200 Hz, 1800 300 Hz, 1000 500 Hz):
-// exactly 5, 2100 and 2400 are not listed. Three candidates only: called stations every 150 to 200
-// Hz leave exactly 1000, 1500 and 2000 (each excludes the 19 grid slots within 90 Hz), all at value
-// 0: 1500 (the current Tx), then 1000 and 2000 at 500 Hz, the lower first; 3 listed. No power: an
-// empty list, also when one candidate alone has none (the choice's "No power yet").
+// Proves: CL-065-01; TC-082-001 (a), (b), TC-065-001 (#82: replaced by TC-082-001). (a) Four counted periods flat 30 (floor 30.65, rise -0.65
+// everywhere, value 0) with an undecoded station band 12 dB up over 1000..1050 Hz (bins 342..358):
+// 950 covers bins 325..341 (to 999.0 Hz), all on the floor: open; 960 covers 328..344, 3 of them
+// raised, (3 x 42 + 14 x 30) / 17 - 30.65 = 1.47, 1: closed; 1040 covers 355..371, 4 raised, 2.17,
+// 2: closed; 1050 covers 359..375, none raised: open. The open grid 300..950 joins (10 Hz steps,
+// 50 Hz signals) into [300, 1000), 1050..2650 into [1050, 2700). (b) The flat floor and a station
+// decoded at 1000.0 Hz: FT8 960..1040 closed (|f - 1000| below 50), 950 and 1050 open: the same
+// ranges; FT4 (90 Hz, 300..2610) 920..1080 closed, 910 and 1090 open: [300, 1000), [1090, 2700).
 #[test]
-fn tc_065_001_five_listed_in_rank_order_fewer_when_fewer_none_without_power() {
-    let seven = values(
-        10.0,
-        &[
-            (400, 0.0),
-            (700, 1.0),
-            (1000, 2.0),
-            (1300, 2.0),
-            (1800, 2.0),
-            (2100, 3.0),
-            (2400, 4.0),
-        ],
-    );
-    assert_eq!(
-        listed(Mode::Ft8, 1500, &[], None, &seven),
-        [400, 700, 1300, 1800, 1000]
-    );
-    let called = [
-        300, 450, 600, 750, 900, 1100, 1250, 1400, 1600, 1750, 1900, 2100, 2250, 2400, 2550, 2700,
-    ];
-    assert_eq!(
-        listed(Mode::Ft8, 1500, &called, None, &values(0.0, &[])),
-        [1500, 1000, 2000]
-    );
-    assert_eq!(
-        listed(Mode::Ft8, 1500, &[], None, &|_| None),
-        Vec::<u32>::new()
-    );
-    let one_without = |f: u32| {
-        (f != 2000).then_some(Numbers {
-            rise: 0.0,
-            level: 20.0,
-            floor: 20.0,
-        })
-    };
-    assert_eq!(
-        free_slots(Mode::Ft8, 1500, &[], &[], None, &one_without),
-        Vec::new()
-    );
-}
-
-// Proves: CL-065-01; TC-065-001 (whole dB and the tie rule). Tx 1500 at 0.4 against 1800 at 0.0 on a
-// floor of 5: both are 0 in whole dB, a tie, and the current Tx comes first; at 0.6 1500 is 1 dB and
-// 1800 comes first. Equal values on both sides of Tx 1500: 1300 and 1600 at 0, the nearer (1600,
-// 100 Hz) first; 1400 and 1600 at 0, equally near: the lower first.
-#[test]
-fn tc_065_001_ties_in_whole_db_keep_the_current_tx_then_nearer_then_lower() {
-    let tied = listed(
-        Mode::Ft8,
-        1500,
-        &[],
-        None,
-        &values(5.0, &[(1500, 0.4), (1800, 0.0)]),
-    );
-    assert_eq!(tied[..2], [1500, 1800]);
-    let louder = listed(
-        Mode::Ft8,
-        1500,
-        &[],
-        None,
-        &values(5.0, &[(1500, 0.6), (1800, 0.0)]),
-    );
-    assert_eq!(louder[..2], [1800, 1500]);
-    let sides = listed(
-        Mode::Ft8,
-        1500,
-        &[],
-        None,
-        &values(5.0, &[(1300, 0.0), (1600, 0.0)]),
-    );
-    assert_eq!(sides[..2], [1600, 1300]);
-    let equal = listed(
-        Mode::Ft8,
-        1500,
-        &[],
-        None,
-        &values(5.0, &[(1400, 0.0), (1600, 0.0)]),
-    );
-    assert_eq!(equal[..2], [1400, 1600]);
-}
-
-// Proves: CL-065-01; TC-065-001 (non-overlap at the slot width). FT8 (50 Hz), Tx 1500, floor 10:
-// 1000 at 0, 1040 at 1, 1050 at 2. 1040 is 40 Hz from the listed 1000 and skipped, 1050 is 50 Hz
-// away and listed; then the floor by distance to 1500: 1500, 1450 and 1550 (each 50 Hz from 1500).
-// FT4 (90 Hz): 1000 at 0, 1080 at 1, 1090 at 2: 1080 skipped, 1090 listed, then 1500, 1410, 1590.
-#[test]
-fn tc_065_001_a_candidate_closer_than_the_slot_width_is_skipped() {
-    let ft8 = values(10.0, &[(1000, 0.0), (1040, 1.0), (1050, 2.0)]);
-    assert_eq!(
-        listed(Mode::Ft8, 1500, &[], None, &ft8),
-        [1000, 1050, 1500, 1450, 1550]
-    );
-    let ft4 = values(10.0, &[(1000, 0.0), (1080, 1.0), (1090, 2.0)]);
-    assert_eq!(
-        listed(Mode::Ft4, 1500, &[], None, &ft4),
-        [1000, 1090, 1500, 1410, 1590]
-    );
-}
-
-// Proves: CL-065-01; TC-065-001 (the decision's candidates). The called station at 1000 forbids
-// 910..1090 (FT8: 50 Hz signal, 50 Hz clearance): 950 at 1 and 1090 at 0 are never listed, 1100 at
-// 1 (100 Hz above him) is first. My Rx at 1000 with Hold Tx on is in `avoid` as well (the station
-// at 2000): 1050 at 0 is not listed; with Hold Tx off only the station is: 1050 is first. His
-// decoded frequency 1200 of my Tx parity excludes 1160..1240: 1200 at 0 is not listed, 1250 at 1
-// (50 Hz away) is first; his frequencies everywhere leave every candidate, 1200 first.
-#[test]
-fn tc_065_001_only_the_decisions_candidates_are_listed() {
-    let near_him = values(10.0, &[(950, 1.0), (1090, 0.0), (1100, 1.0)]);
-    let l = listed(Mode::Ft8, 1500, &[1000], None, &near_him);
-    assert_eq!(l[0], 1100);
-    assert!(l.iter().all(|f| !(910..=1090).contains(f)), "{l:?}");
-    let near_rx = values(10.0, &[(1050, 0.0)]);
-    assert!(!listed(Mode::Ft8, 1500, &[2000, 1000], None, &near_rx).contains(&1050));
-    assert_eq!(listed(Mode::Ft8, 1500, &[2000], None, &near_rx)[0], 1050);
-    let at_his = values(10.0, &[(1200, 0.0), (1250, 1.0)]);
-    let l = listed(Mode::Ft8, 1500, &[], Some(&[1200]), &at_his);
-    assert_eq!(l[0], 1250);
-    assert!(l.iter().all(|f| !(1160..=1240).contains(f)), "{l:?}");
-    let everywhere: Vec<u32> = (300..=2700).step_by(10).collect();
-    assert_eq!(
-        listed(Mode::Ft8, 1500, &[], Some(&everywhere), &at_his)[0],
-        1200
-    );
-}
-
-// Proves: CL-065-01; TC-065-001 (the numbers). A rise of -1.4 (level 18.4, floor 19.8) is listed as
-// rise_db 0 (clamped, #66 "At or under floor = free"), level_db 18, floor_db 20 as measured: each
-// rounded on its own. Clamped, it ties with a rise of 0.0 at 1300: the nearer to Tx 1500 first, so
-// 1300 before 1000. My Tx parity higher changes nothing (#66): my Rx parity even flat 20 (floor
-// 20.65), my odd period flat 30: 1500 reads rise -0.65, level 20, floor 20.65 and is listed
-// {1500, 0, 20, 21}, for a selection and for a CQ alike; the period counts are {even {now 1}, odd
-// {now null}}, and the other way round for my Rx parity odd.
-#[test]
-fn tc_065_001_rise_level_and_floor_round_alone_and_my_tx_parity_changes_nothing() {
-    let numbers = |f: u32| {
-        Some(if f == 1000 {
-            Numbers {
-                rise: -1.4,
-                level: 18.4,
-                floor: 19.8,
-            }
-        } else {
-            Numbers {
-                rise: 5.0,
-                level: 25.0,
-                floor: 20.0,
-            }
-        })
-    };
-    assert_eq!(
-        free_slots(Mode::Ft8, 1500, &[], &[], None, &numbers)[0],
-        Listed {
-            hz: 1000,
-            rise_db: 0,
-            level_db: 18,
-            floor_db: 20
-        }
-    );
-    assert_eq!(listed(Mode::Ft8, 1500, &[], None, &numbers)[0], 1000);
-    let tied = |f: u32| {
-        numbers(f).map(|n| match f {
-            1300 => Numbers {
-                rise: 0.0,
-                level: 20.0,
-                floor: 20.0,
-            },
-            _ => n,
-        })
-    };
-    assert_eq!(listed(Mode::Ft8, 1500, &[], None, &tied)[..2], [1300, 1000]);
-    let periods = [period(1, false, 20, &[]), period(1, true, 30, &[])];
+fn tc_082_001_a_station_closes_its_slots_and_the_open_ones_join_into_ranges() {
+    let periods = four(&[(1000, 1050, 42)]);
     let j = Judged::new(&periods, Mode::Ft8, Parity::Even, i64::MIN, NOW, &[]);
-    let n = j.numbers(1500).unwrap();
-    assert!(close(n.rise, -0.65) && close(n.level, 20.0) && close(n.floor, 20.65));
+    assert_eq!(j.count(), 4);
+    let open = open_of(Mode::Ft8, j.decoded(), &rises(&j));
+    assert!(open.contains(&950) && open.contains(&1050), "{open:?}");
+    assert!(!open.iter().any(|f| (960..=1040).contains(f)), "{open:?}");
+    let expected = vec![(300, 1000), (1050, 2700)];
+    assert_eq!(open_ranges(Mode::Ft8, &open), expected, "(a)");
+    let flat = table(-0.65, &[]);
+    assert_eq!(ranges_of(Mode::Ft8, &[1000.0], &flat), expected, "(b) FT8");
+    let ft4 = open_of(Mode::Ft4, &[1000.0], &flat);
+    assert!(ft4.contains(&910) && ft4.contains(&1090), "{ft4:?}");
+    assert!(!ft4.iter().any(|f| (920..=1080).contains(f)), "{ft4:?}");
     assert_eq!(
-        free_slots(Mode::Ft8, 1500, &[], &[], None, &|f| j.numbers(f))[0],
-        Listed {
-            hz: 1500,
-            rise_db: 0,
-            level_db: 20,
-            floor_db: 21
-        }
+        open_ranges(Mode::Ft4, &ft4),
+        [(300, 1000), (1090, 2700)],
+        "(b) FT4"
+    );
+}
+
+// Proves: CL-065-01; TC-082-001 (c). The join of half-open signals [f, f + width): FT8 2110 and
+// 2160 touch (2160 = 2110 + 50) and stay two ranges; 2100, 2110 and 2130 overlap into [2100,
+// 2180); the top slot 2650 is [2650, 2700); every 5th grid point 300, 350, ..., 2650 touches the
+// next: 48 ranges (2400 / 50), the worst case. FT4 (90 Hz): 300 is [300, 390); 300 and 390 touch:
+// two ranges. Every range is at least one width long, ascending and disjoint.
+#[test]
+fn tc_082_001_touching_signals_stay_apart_and_overlapping_ones_join() {
+    assert_eq!(
+        open_ranges(Mode::Ft8, &[2110, 2160]),
+        [(2110, 2160), (2160, 2210)]
+    );
+    assert_eq!(open_ranges(Mode::Ft8, &[2100, 2110, 2130]), [(2100, 2180)]);
+    assert_eq!(open_ranges(Mode::Ft8, &[2650]), [(2650, 2700)]);
+    let fifth: Vec<u32> = (300..=2650).step_by(50).collect();
+    let worst = open_ranges(Mode::Ft8, &fifth);
+    assert_eq!(worst.len(), 48);
+    assert_eq!(
+        worst,
+        fifth.iter().map(|f| (*f, f + 50)).collect::<Vec<_>>()
+    );
+    assert_eq!(open_ranges(Mode::Ft4, &[300]), [(300, 390)]);
+    assert_eq!(
+        open_ranges(Mode::Ft4, &[300, 390]),
+        [(300, 390), (390, 480)]
+    );
+    assert_eq!(open_ranges(Mode::Ft8, &[]), Vec::<(u32, u32)>::new());
+    for r in [&worst, &open_ranges(Mode::Ft8, &[300, 310, 900, 2650])] {
+        assert!(r.iter().all(|(lo, hi)| hi - lo >= 50), "{r:?}");
+        assert!(r.windows(2).all(|w| w[0].1 <= w[1].0), "{r:?}");
+    }
+}
+
+// Proves: CL-065-01; TC-082-001 (d), (g), (h). (d) Values compare in whole dB: a slot whose largest
+// rise is 0.4 dB is 0, open; one at 0.6 dB is 1, closed (every other slot 5 dB, closed): exactly
+// 1200 (0.0) and 1500 (0.4) open. (g) Stations decoded every 40 Hz overlap every grid point: open
+// [] (no fallback). (h) No counted period: no value, open [], periods 0.
+#[test]
+fn tc_082_001_whole_db_no_fallback_and_no_counted_period() {
+    let values = table(5.0, &[(1200, 0.0), (1500, 0.4), (1800, 0.6)]);
+    assert_eq!(open_of(Mode::Ft8, &[], &values), [1200, 1500], "(d)");
+    let everywhere: Vec<f64> = (280..=2700).step_by(40).map(f64::from).collect();
+    assert_eq!(
+        ranges_of(Mode::Ft8, &everywhere, &table(-0.65, &[])),
+        Vec::<(u32, u32)>::new(),
+        "(g) all overlapped"
+    );
+    let none: [Period; 0] = [];
+    let j = Judged::new(&none, Mode::Ft8, Parity::Even, i64::MIN, NOW, &[]);
+    assert_eq!(j.count(), 0);
+    assert_eq!(
+        ranges_of(Mode::Ft8, j.decoded(), &rises(&j)),
+        Vec::<(u32, u32)>::new(),
+        "(h)"
+    );
+}
+
+// Proves: CL-065-01; TC-082-001 (e), (f), (i). (e) A station decoded and 20 dB above the floor at
+// 1560..1610 Hz only in the odd periods (the other parity, my Rx parity even): it closes nothing,
+// open [[300, 2700]]. (f) A station decoded at 1500 in a period that does not count closes nothing:
+// the 5th older even period, a period before a band change, a period older than the last 4 of the
+// parity on the clock; in the last counted period it closes 1460..1540: [300, 1500), [1550, 2700).
+// (i) A slot on the floor in 3 periods and 3 dB above it in one (1500..1550, bins 512..529, at 33
+// in the oldest): its busiest period counts, 33 - 30.65 = 2.35, 2: closed. Its neighbours read k
+// raised bins of 17 in that period, 3k / 17 - 0.65: 1470 (bins 502..518, k 7) and 1530 (523..539,
+// k 7) 0.59, 1: closed; 1460 (499..515) and 1540 (526..542), k 4, 0.06, 0: open. So [300, 1510),
+// [1540, 2700).
+#[test]
+fn tc_082_001_other_parity_and_uncounted_decodes_close_nothing_the_busiest_period_counts() {
+    let mut both = four(&[]);
+    both.push(period(1, true, 30, &[(1560, 1610, 50)]));
+    let odd = both[4].start_ms;
+    let j = Judged::new(
+        &both,
+        Mode::Ft8,
+        Parity::Even,
+        i64::MIN,
+        NOW,
+        &[(odd, 1560.0)],
+    );
+    let all = vec![(300, 2700)];
+    assert_eq!(ranges_of(Mode::Ft8, j.decoded(), &rises(&j)), all, "(e)");
+    let five: Vec<Period> = (1..=5).rev().map(|b| period(b, false, 30, &[])).collect();
+    let at = |b: i64| EVEN - 30_000 * b;
+    let gap = [
+        period(6, false, 30, &[]),
+        period(2, false, 30, &[]),
+        period(1, false, 30, &[]),
+    ];
+    let on_1500 = vec![(300, 1500), (1550, 2700)];
+    for (name, periods, since, decode, expected) in [
+        ("counted", &five[..], i64::MIN, at(1), &on_1500),
+        ("5th older", &five[..], i64::MIN, at(5), &all),
+        ("before a band change", &five[..], at(2) - 500, at(3), &all),
+        ("older than the window", &gap[..], i64::MIN, at(6), &all),
+    ] {
+        let j = Judged::new(
+            periods,
+            Mode::Ft8,
+            Parity::Even,
+            since,
+            NOW,
+            &[(decode, 1500.0)],
+        );
+        assert_eq!(
+            &ranges_of(Mode::Ft8, j.decoded(), &rises(&j)),
+            expected,
+            "(f) {name}"
+        );
+    }
+    let mut busiest = four(&[]);
+    busiest[0] = period(4, false, 30, &[(1500, 1550, 33)]);
+    let j = Judged::new(&busiest, Mode::Ft8, Parity::Even, i64::MIN, NOW, &[]);
+    assert!(close(j.numbers(1500).unwrap().rise, 2.35));
+    assert_eq!(
+        ranges_of(Mode::Ft8, j.decoded(), &rises(&j)),
+        [(300, 1510), (1540, 2700)],
+        "(i)"
+    );
+}
+
+// Proves: CL-065-01; TC-082-001, TC-065-001 (#82: replaced by TC-082-001). The value of one build has exactly {at_utc_ms, mode, rx_parity,
+// qso, periods, open} with the ranges as [lo_hz, hi_hz] integer pairs (WstxStrategy::FreeTxSlots
+// Value): no run_id, listening, slots or per-slot numbers.
+#[test]
+fn tc_082_001_the_value_of_a_build() {
+    assert_eq!(
+        value(
+            NOW,
+            Mode::Ft4,
+            Parity::Odd,
+            true,
+            3,
+            &[(300, 1000), (1090, 2700)]
+        ),
+        json!({"at_utc_ms":NOW,"mode":"ft4","rx_parity":"odd","qso":true,"periods":3,
+            "open":[[300,1000],[1090,2700]]})
     );
     assert_eq!(
-        period_counts(Parity::Even, j.count()),
-        json!({"even":{"now":1},"odd":{"now":null}})
-    );
-    assert_eq!(
-        period_counts(Parity::Odd, 3),
-        json!({"even":{"now":null},"odd":{"now":3}})
+        value(NOW, Mode::Ft8, Parity::Even, false, 0, &[]),
+        json!({"at_utc_ms":NOW,"mode":"ft8","rx_parity":"even","qso":false,"periods":0,"open":[]})
     );
 }

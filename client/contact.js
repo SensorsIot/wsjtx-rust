@@ -881,38 +881,39 @@ waterfall?.addEventListener('click',event=>{
   pointerTimer=setTimeout(()=>pointer(null,hz,'Tx frequency'),250);
 });
 waterfall?.addEventListener('dblclick',event=>{clearTimeout(pointerTimer);const hz=pointerHz(event);pointer(hz,hz,'Rx and Tx frequency');});
-// #65 WstxOperatingLayout::FreeTxSlotMarks: the latest free_tx_slots (GET /automation, read on
-// automation.state only, and each free_tx_slots.state event; no other request) as
-// bars over hz to hz + width in the frequency ruler, on the waterfall's one mapping (CL-050-07),
-// while "Show free Tx slots" is on and the value belongs to the snapshot's run.
+// #82 WstxOperatingLayout::FreeTxSlotMarks: part of the waterfall, no setting. Each open range
+// [lo, hi) of the latest held free_tx_slots is a bar over lo..hi in the frequency ruler, on the
+// waterfall's one mapping (CL-050-07), with or without a run (no run_id match). The held value:
+// each free_tx_slots.state replaces it in socket order; a GET /automation reply (read only after
+// automation.state, #74) only with a later at_utc_ms; a new boot drops it. No other request.
 let freeTxSlots=null;
 const freeTxLayer=document.createElement('div');freeTxLayer.id='free-tx-slots';freeTxLayer.setAttribute('aria-hidden','true');freeTxLayer.hidden=true;
-const freeTxValue=v=>v&&typeof v==='object'&&typeof v.run_id==='string'&&Array.isArray(v.slots)&&['ft8','ft4'].includes(v.mode);
-// A read that left before a newer event of the same running run does not take it back.
+const freeTxValue=v=>v===null||!!v&&typeof v==='object'&&Number.isSafeInteger(v.at_utc_ms)&&Array.isArray(v.open)&&['ft8','ft4'].includes(v.mode);
+// A reply's null or older value never replaces the held one (the event is pushed every period).
 function freeTxSlotsRead(a){
-  const v=freeTxValue(a.free_tx_slots)?a.free_tx_slots:null,running=a.run&&a.run.state!=='stopped';
-  if(!(running&&freeTxSlots?.run_id===a.run.id&&(!v||v.run_id===freeTxSlots.run_id&&v.at_utc_ms<freeTxSlots.at_utc_ms)))freeTxSlots=v;
-  freeTxSlotMarks();
+  const v=a.free_tx_slots;
+  if(v&&freeTxValue(v)&&!(freeTxSlots&&v.at_utc_ms<=freeTxSlots.at_utc_ms)){freeTxSlots=v;freeTxSlotMarks();}
 }
-// #76 look: no text on the marks; each bar is shortened by 2 px at each end, so slots one width
-// apart show a 4 px gap. A slot narrower than both insets (a phone) draws no bar.
+function freeTxSlotsPushed(v){if(freeTxValue(v)){freeTxSlots=v;freeTxSlotMarks();}}
+// #76 look: no text on the marks; each bar is shortened by 2 px at each end, so touching ranges
+// show a 4 px gap. A range narrower than both insets (a phone) draws no bar.
 const freeTxInsetPx=2;
 function freeTxSlotMarks(){
   const ruler=document.querySelector('#frequency-ruler'),axis=window.wstxWaterfallAxis;if(!ruler||!axis)return;
   if(freeTxLayer.parentNode!==ruler)ruler.append(freeTxLayer);
-  const v=freeTxSlots,run=automationView?.run;
-  const show=window.wstxFreeTxSlotsShown?.()===true&&!!run&&!!v&&v.run_id===run.id&&v.slots.length>0;
+  const v=freeTxSlots,show=!!v&&v.open.length>0;
   freeTxLayer.replaceChildren();freeTxLayer.hidden=!show;if(!show)return;
-  const width=v.mode==='ft4'?90:50;
-  v.slots.forEach((s,i)=>{
-    if(!Number.isInteger(s?.hz)||!Number.isInteger(s.rise_db))return;
-    const left=axis.x(s.hz,ruler)+freeTxInsetPx,right=axis.x(s.hz+width,ruler)-freeTxInsetPx;
-    const bar=document.createElement('div');bar.className='fts-bar';bar.dataset.rank=String(i+1);bar.dataset.hz=String(s.hz);bar.style.left=`${left}px`;bar.style.width=`${Math.max(0,right-left)}px`;
+  for(const r of v.open){
+    if(!Array.isArray(r)||!Number.isInteger(r[0])||!Number.isInteger(r[1])||r[1]<=r[0])continue;
+    const left=axis.x(r[0],ruler)+freeTxInsetPx,right=axis.x(r[1],ruler)-freeTxInsetPx;
+    const bar=document.createElement('div');bar.className='fts-bar';bar.dataset.lo=String(r[0]);bar.dataset.hi=String(r[1]);bar.style.left=`${left}px`;bar.style.width=`${Math.max(0,right-left)}px`;
     freeTxLayer.append(bar);
-  });
+  }
 }
 window.wstxFreeTxSlotMarks=freeTxSlotMarks;
-addEventListener('wstx-free-tx-slots',freeTxSlotMarks);
+// An Off page has no waterfall and gets no value: its held value goes (a peer coming back from Off
+// gets the current value once, PushedStationState).
+document.querySelector('#display-profile')?.addEventListener('change',event=>{if(event.target.value==='off'){freeTxSlots=null;freeTxSlotMarks();}});
 {const ruler=document.querySelector('#frequency-ruler');if(ruler)new ResizeObserver(()=>freeTxSlotMarks()).observe(ruler);}
 const period=document.querySelector('#radio-toolbar .op-period'),meter=document.querySelector('#settings-audio .op-input-meter');
 function displays(){
@@ -971,8 +972,8 @@ addEventListener('station-message',event=>{
   const d=message.data;
   if(message.type==='contact.state'&&d?.changed)stateShow();
   else if(message.type==='automation.state'&&d)loadAutomation();
-  // #65 free_tx_slots.state carries its state: no read after it.
-  else if(message.type==='free_tx_slots.state'&&freeTxValue(d?.free_tx_slots)){freeTxSlots=d.free_tx_slots;freeTxSlotMarks();}
+  // #82 free_tx_slots.state carries its state: no read after it.
+  else if(message.type==='free_tx_slots.state'&&d)freeTxSlotsPushed(d.free_tx_slots);
   else if(message.type==='station.tick'&&d&&Number.isSafeInteger(d.utc_ms)&&[15000,7500].includes(d.period_ms)){
     const changed=tick?.transmitting!==d.transmitting;stationSample(d.utc_ms);
     tick={utc:d.utc_ms,at:performance.now(),period:d.period_ms,transmitting:d.transmitting===true,level:Number.isInteger(d.rx_level_db)?d.rx_level_db:null};$('contact-tx').max=d.period_ms===7500?'2916':'2950';
@@ -982,6 +983,8 @@ addEventListener('station-message',event=>{
 render();
 // This client loads after the first snapshots: an automation.state the socket already carried is read now.
 if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){readySocket=socket;load();loadStartup();loadPskr();if(automationAnnounced===socket)loadAutomation();}
+// #82: a free_tx_slots.state the socket carried before this client loaded is drawn now.
+if(freeTxSlotsHeld&&freeTxSlotsHeld.current===socket)freeTxSlotsPushed(freeTxSlotsHeld.value);
 // WstxTransmit::TransmitWire: explicit requests only; the server plans, keys and halts.
 document.querySelector('#transmit-status').insertAdjacentHTML('afterend','<label>Message<input id="tx-message" maxlength="37" value="CQ"></label><label>Mode<select id="tx-mode" disabled title="Follows the station operating mode"><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label><label>Tx offset Hz<input id="tx-offset" type="number" min="200" max="2950" value="1500"></label><label>Period<select id="tx-parity"><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><p><button type="button" id="tx-arm">Arm (Enable Tx)</button> <button type="button" id="tx-disarm">Disarm</button> <button type="button" id="tx-send">Send next period</button> <button type="button" id="tx-tune">Tune</button></p>');
 let transmitSequence=0;

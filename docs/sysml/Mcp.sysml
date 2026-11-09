@@ -287,9 +287,11 @@ package WstxMcp {
              other than that of its held automation state, it drops that state at once and
              holds the never-used state (configuration, run, strategy_refusal and
              free_tx_slots null) without a request; an automation.state of the new boot then
-             reads GET /automation; a snapshot reply of another boot is discarded. The run's Free Tx slots are pushed
-             by free_tx_slots.state at each run decision only (WstxStrategy::FreeTxSlots),
-             so they keep this rule. */
+             reads GET /automation; a snapshot reply of another boot is discarded. "No event"
+             concerns automation.state: free_tx_slots.state (#82, WstxStrategy::FreeTxSlots)
+             carries the station's open slots, not automation state, and is pushed every
+             period also while automation is never used; the browser reads nothing after
+             it. */
     }
     attribute def AutomationWire {
         attribute receiptsRetained : Integer = 16;
@@ -307,8 +309,9 @@ package WstxMcp {
              WstxStrategy::FreeTxSlot), slot_check (null or {repetitions,
              hears_us, hz}, WstxStrategy::StrategyWatchdog), pounce (null or
              {call, band}, #42)), strategy_refusal (null or why the last selection started no run,
-             WstxStrategy::StrategyRun), free_tx_slots (null without a run and before its
-             first slot decision, else the last decision's value, WstxStrategy::FreeTxSlots)};
+             WstxStrategy::StrategyRun), free_tx_slots (the station's open slots, with
+             or without a run: null without a live receive, else the latest built value,
+             WstxStrategy::FreeTxSlots, #82)};
              existing auth and Origin rules of GET routes.
              POST /automation/command (AutomationCommand): exactly {v, profile_id, boot_id,
              command_id, action} plus configure {expected_policy_revision, configuration};

@@ -75,6 +75,16 @@ package WstxStrategy {
             goes; only my Rx periods count, in every decision (FreeTxSlot). It replaces D16's
             "Relative to its own usual level" and CL-039-09's "while only listening the slot
             must be quiet in both parities".
+         D18 Open slots all the time (#82, operator 2026-11-09: "open slots are shown all the
+            time as a part of the waterfall"; "we want to signal the other station a free
+            frequency on our side when he will be transmitting"; "we just want to mark open
+            slots, nothing else on screen. auto mode could use a quality ranking for its
+            decision which of them to select"; round 1 Q1-Q4 (a): also without a run, built at
+            each period start for the next period, pushed to Detailed and Thin every period).
+            The station marks every open slot, with or without a run, a QSO or Auto
+            (FreeTxSlots); Auto's choice keeps its own ranking (FreeTxSlot), not shown. It
+            replaces #65's five best of each run decision, its run_id match, "no list without a
+            run" and the "Show free Tx slots" checkbox.
          D7 Manual intervention (#39, 2026-11-04): a double-click is always possible, also
             during a strategy; the strategy stays selected and resumes after the manual
             QSO (ManualIntervention).
@@ -1076,33 +1086,56 @@ package WstxStrategy {
              clamped at 0 (null without power). */
     }
     attribute def FreeTxSlots {
-        attribute slotsListed : Integer = 5;
-        doc /* Free Tx slots (#65, operator 2026-11-08): the best candidates of each slot
-             decision of a run, for the operator to compare with the waterfall and to place
-             Tx by hand (WstxOperatingLayout::FreeTxSlotMarks). At every decision of
-             FreeTxSlot (every rule, also with Hold Tx on where the choice uses no power;
-             strategy and contest runs and pounces) and at no other time: no list without a
-             run, none between decisions. Candidates and compared value are exactly the
-             decision's (FreeTxSlot Candidates with the decoded stations, his end, Value: the
-             largest rise above the passband floor in my Rx parity clamped at 0, #66). Ranked by the
-             whole-dB value, then nearer the
-             current Tx, then lower; walking the ranking a candidate closer than the slot
-             width (FT8 50 Hz, FT4 90 Hz) to one already listed is skipped; at most
-             slotsListed (5); none without power. Where the decision's rule uses power the
-             first listed is the chosen slot. The choice and tx_slot are unchanged. A
-             decision is one that sets tx_slot: a repetition whose target has answered or is
-             known to hear us is no slot check decision (StrategyWatchdog: it keeps its slot),
-             so it lists nothing and the last list stays (#66).
-             Value: {run_id, at_utc_ms (station time of the decision), mode ft8|ft4,
-             rx_parity even|odd (the judged parity), listening (true at a CQ decision),
-             periods {even, odd: {now (the counted periods of the value, at most
-             periodsPerParity; null for my Tx parity, which is not judged)}}, slots [{hz,
-             rise_db (the compared value, clamped at 0, never negative), level_db, floor_db
-             (the level and the floor of the busiest period as measured, not clamped, so
-             level_db may lie below floor_db when rise_db is 0)}] in rank order}, each dB
-             rounded on its own (#66 replaces usual_db and periods usual). It is GET /automation free_tx_slots
-             (WstxMcp::AutomationWire) and the free_tx_slots.state event
-             (WstxStationProtocol::PushedStationState). */
+        attribute eventBytesMax : Integer = 1024;
+        attribute rangesMaxFt8 : Integer = 48;
+        attribute rangesMaxFt4 : Integer = 26;
+        doc /* Open Tx slots (#65, replaced by #82, D18): every free frequency on my side at
+             the time the other station will be transmitting, for the operator to see on the
+             waterfall and to place Tx by hand (WstxOperatingLayout::FreeTxSlotMarks). The
+             station's own value, built with or without an automation run, a QSO or Auto (no
+             run_id, no ranking, no limit; #65's five best of each run decision go).
+             Judged parity (round 2 Q1, "when he will be transmitting"): my Rx parity, the
+             periods the other station transmits in (#66). In a QSO (Enable Tx on, my own CQ
+             included, or a contact in progress, replying..signoff; by a run or by hand) the
+             contact's Rx parity, the other of its Tx parity, so the value stays on that one
+             parity. Otherwise (only listening: no run, a run waiting, Tune alone) the next
+             period I could transmit in is the one after the period P in progress, and its Rx
+             parity is P's own (round 1 Q3): the parity alternates every period.
+             Counted periods, floor and value: FreeTxSlot's, unchanged (the last
+             periodsPerParity periods of that parity on the clock before the period in
+             progress, a period I transmitted in or did not receive leaving a gap; the WSJT-X
+             passband floor; a slot's largest rise above it in those periods, clamped at 0 in
+             whole dB). They are taken from the station's live job in the station's operating
+             mode (WstxContact::StationOperatingMode), from the last station band change on
+             and from a new live identity's first period (FreeTxSlot Band, kept by the station,
+             not by a run).
+             Open (round 2 Q2): a Tx frequency f of FreeTxSlot's candidate grid (stepHz 10 Hz
+             steps with my whole signal inside the Tx range, FT8 300..2650, FT4 300..2610) is
+             open when its compared value is 0 (at or under the floor) and its signal
+             [f, f + width) (FT8 50 Hz, FT4 90 Hz) overlaps no station decoded in a counted
+             period (|f - d| below the width, d the decoded audio frequency). Nothing else
+             applies: no clearance of a called station or of my Rx, no his end, no fallback
+             when none is open, no ranking. The partner and every other decoded station of the
+             counted periods close their own slots.
+             Open ranges: the union of the signals [f, f + width) of the open f, as half-open
+             intervals; overlapping intervals join, touching ones stay separate. Each range is
+             [lo_hz, hi_hz) with lo an open f and hi an open f + width, at least one width
+             long, ascending and disjoint. So at most rangesMaxFt8 (48, 2400 / 50) in FT8 and
+             rangesMaxFt4 (26, floor of 2400 / 90) in FT4.
+             Built: at each period start on the station clock; when the decodes of a counted
+             period are published (operator 2026-11-09, Rebuild on decodes); at once when a QSO starts or ends (the judged parity may change); at once when the live job, its mode or the
+             station band changes. Without a live receive (no live job) the value is null; with
+             no counted period open is [].
+             Value: null or {at_utc_ms (station time of the build), mode ft8|ft4, rx_parity
+             even|odd (the judged parity), qso (true in a QSO), periods (the number of counted
+             periods, 0..periodsPerParity), open [[lo_hz, hi_hz], ...]}, integers in Hz, no
+             per-slot numbers. It is GET /automation free_tx_slots (WstxMcp::AutomationWire)
+             and the free_tx_slots.state event (WstxStationProtocol::PushedStationState), at
+             most eventBytesMax (1024) bytes with the most ranges at their longest numbers.
+             Auto's choice is FreeTxSlot's, unchanged: its own candidates (clear of the called
+             station and with Hold Tx on of my Rx, his end where known), its own ranking (the
+             lowest value, then the current Tx, nearer it, lower) and tx_slot in the run status.
+             That ranking is not on screen. */
     }
     calc def SaneCall {
         in call : String;
