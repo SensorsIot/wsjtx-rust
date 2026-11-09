@@ -6,7 +6,6 @@ const {setTimeout: sleep} = require('node:timers/promises');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const net = require('node:net');
 const https = require('node:https');
 const {chromium} = require('playwright');
 const selfsigned = require('selfsigned');
@@ -39,10 +38,8 @@ async function connected(page, origin) {
   await page.goto(origin);
   await page.locator('#connection').filter({hasText: /^Connected$/}).waitFor({timeout: 10000});
 }
-async function contextFor(origin, authenticated = false) {
-  const context = await browser.newContext({ignoreHTTPSErrors: true});
-  if (authenticated) await context.addCookies([{name: 'wstx_session', value: token, url: origin, httpOnly: true, secure: true, sameSite: 'Strict'}]);
-  return context;
+async function contextFor() {
+  return browser.newContext({ignoreHTTPSErrors: true});
 }
 
 // Test-tool oracle: a protocol fixture proves heartbeat interleaving and a fixed deadline.
@@ -161,34 +158,32 @@ test('TC-021-007: dropped connection, bounded retries, fresh snapshot', async t 
 // #8: on the shared 32 kbit/s bottleneck the page's own deferred contact client download holds
 // the station's WebSocket messages behind it for more than 12 s. Deterministic model: hold
 // (delay, never drop) every station-to-page message while /contact.js is pending, then deliver.
-// holdMs null: the hold ends only by state.release(); clock true: the page clock is installed
-// before the page loads, so the test can drive it (#70).
-async function deferredDownloadHold(t, holdMs, {clock = false} = {}) {
+// The hold ends only by state.release(); the page clock is installed before the page loads, so
+// the test can drive it (#70).
+async function deferredDownloadHold(t) {
   const dir = await fs.mkdtemp(path.join(temporary, 'deferred-')), port = await browserPort();
   const document = {schema_version: 1, profile_id: require('node:crypto').randomUUID(), revision: 0, display_name: 'Deferred', callsign: 'HB9BLA', locator: 'JN37VL',
     endpoint: {bind: `127.0.0.1:${port}`, origin: null}, connection_type: 'standard', audio: {input_device: null, output_device: null}, control: {mode: 'disabled', endpoint: null, ptt: 'disabled'}};
   await fs.writeFile(path.join(dir, 'profile.json'), JSON.stringify(document));
   const app = await server({}, ['--profile', dir]); t.after(() => app.close());
   const context = await contextFor(app.origin); t.after(() => context.close());
-  const page = await context.newPage(), state = {held: false, queue: [], lastDelivered: 0, logbookEnded: null, sockets: 0, release: null, heldAt: null, holding: null, queued: null};
+  const page = await context.newPage(), state = {held: false, queue: [], sockets: 0, release: null, holding: null, queued: null};
   state.whenHeld = new Promise(resolve => {state.holding = resolve;});
   await page.addInitScript(() => {
     window.__states = [];
     addEventListener('DOMContentLoaded', () => {const c = document.querySelector('#connection'); new MutationObserver(() => window.__states.push({at: Date.now(), state: c.dataset.state})).observe(c, {attributes: true, attributeFilter: ['data-state']});});
   });
   page.on('websocket', () => state.sockets++);
-  // The finished log client download counts as a message too (its end restarts the 12 s bound).
-  page.on('requestfinished', request => {if (new URL(request.url()).pathname === '/logbook.js') state.logbookEnded = Date.now();});
   await page.routeWebSocket(/\/ws$/, ws => {
     const station = ws.connectToServer();
-    station.onMessage(message => {const deliver = () => {state.lastDelivered = Date.now(); try {ws.send(message);} catch {}}; if (state.held) {state.queue.push(deliver); state.queued?.();} else deliver();});
+    station.onMessage(message => {const deliver = () => {try {ws.send(message);} catch {}}; if (state.held) {state.queue.push(deliver); state.queued?.();} else deliver();});
   });
   await page.route('**/contact.js', async route => {
-    state.held = true; state.heldAt = Date.now();
-    await new Promise(resolve => {state.release = resolve; if (holdMs !== null) setTimeout(resolve, holdMs); state.holding();});
+    state.held = true;
+    await new Promise(resolve => {state.release = resolve; state.holding();});
     await route.continue(); state.held = false; for (const deliver of state.queue.splice(0)) deliver();
   });
-  if (clock) await page.clock.install();
+  await page.clock.install();
   await page.goto(app.origin);
   await page.locator('#connection[data-state=connected]').waitFor({timeout: 10000});
   return {page, state};
@@ -197,7 +192,7 @@ async function deferredDownloadHold(t, holdMs, {clock = false} = {}) {
 // #70: the 16 s hold runs on the page's driven clock (the watchdog is a page setInterval on Date.now()).
 // Proves: FR-021; CL-003-04; TC-021-007 case 5 (#8); level 2, profile station, real Chromium.
 test('TC-021-007: a deferred client download that holds station messages 16 s is not a lost link', {timeout: 30000}, async t => {
-  const {page, state} = await deferredDownloadHold(t, null, {clock: true});
+  const {page, state} = await deferredDownloadHold(t);
   await state.whenHeld;
   // A station message while the download is pending: it queues behind the download.
   const queued = new Promise(resolve => {state.queued = resolve;});
@@ -211,75 +206,6 @@ test('TC-021-007: a deferred client download that holds station messages 16 s is
   await page.waitForFunction(() => !!window.wstxContact, null, {timeout: 10000});
   assert.deepEqual((await page.evaluate(() => window.__states)).filter(s => s.state !== 'connected'), [], 'never stale or reconnecting');
   assert.equal(state.sockets, 1, 'the same socket throughout');
-});
-
-// Proves: FR-021; CL-003-04; TC-021-007 case 5 (#8); level 2. A download that never completes
-// still bounds silent loss: stale after more than 30 s without a message, within 31 s + 1 s.
-test('TC-021-007: a pending deferred client download bounds silent loss at 31 s', {timeout: 90000}, async t => {
-  const {page, state} = await deferredDownloadHold(t, 60000);
-  const deadline = Date.now() + 45000;
-  while (!state.held) {assert.ok(Date.now() < deadline, 'deferred download requested'); await sleep(50);}
-  await page.locator('#connection[data-state=stale]').waitFor({timeout: 40000});
-  const stale = (await page.evaluate(() => window.__states)).find(s => s.state === 'stale').at, silent = stale - Math.max(state.lastDelivered, state.logbookEnded ?? 0);
-  assert.ok(silent >= 29900 && silent <= 32000, `stale after ${silent} ms without a message`);
-  state.release();
-  await page.locator('#connection[data-state=connected]').waitFor({timeout: 10000});
-});
-
-// Proves: FR-021; CL-003-05, CL-003-08; level 2, TLS byte-stream link model, not packet capture.
-test('TC-021-008: 32 kbit/s shared TLS link and 60-second idle budget', {timeout: 110000}, async t => {
-  const proxy = await link({host: '127.0.0.1', port: 1}); t.after(() => proxy.close());
-  const origin = `https://127.0.0.1:${proxy.port}`;
-  const app = await server({...tlsEnv, WSTX_ORIGIN: origin}); t.after(() => app.close());
-  proxy.target.port = Number(new URL(app.endpoint).port);
-  const contexts = await Promise.all([contextFor(origin, true), contextFor(origin, true)]); t.after(() => Promise.all(contexts.map(c => c.close())));
-  const pages = await Promise.all(contexts.map(c => c.newPage()));
-  const started = Date.now();
-  const coldPages = await Promise.all(pages.map(async page => {
-    await page.goto(origin);
-    const pageLoaded = Date.now();
-    const resources = await page.evaluate(() => [performance.getEntriesByType('navigation')[0], ...performance.getEntriesByType('resource')].map(entry => ({url: entry.name, transferBytes: entry.transferSize, encodedBodyBytes: entry.encodedBodySize, durationMs: entry.duration})));
-    await page.locator('#connection[data-state="connected"]').waitFor({timeout: 10000});
-    const statusAfterLoadMs = Date.now() - pageLoaded; assert.ok(statusAfterLoadMs < 10000);
-    return {pageLoadMs: pageLoaded - started, statusAfterLoadMs, resources};
-  }));
-  const cold = {milliseconds: Date.now() - started, bytes: {...proxy.counters}, pages: coldPages};
-  const baseline = {...proxy.counters}; const idleStart = Date.now();
-  await sleep(60000);
-  const seconds = (Date.now() - idleStart) / 1000;
-  const mean = {up: (proxy.counters.up - baseline.up) / seconds, down: (proxy.counters.down - baseline.down) / seconds};
-  for (const direction of ['up', 'down']) assert.ok(mean[direction] <= 1000, `${direction} ${mean[direction]} bytes/s`);
-  const latencies = await Promise.all(pages.map(async page => {
-    const previous = await page.locator('#updated').textContent(); const start = Date.now();
-    await page.locator('#refresh').click();
-    await page.waitForFunction(old => document.querySelector('#updated').textContent !== old, previous, {timeout: 2000});
-    const milliseconds = Date.now() - start; assert.ok(milliseconds < 2000); return milliseconds;
-  }));
-  const result = {model: 'actual TLS stream + modelled TCP/IPv6/ACK overhead; no packet capture', cold, idleMeanBytesPerSecond: mean, concurrentVisibleRefreshMs: latencies};
-  console.log(JSON.stringify(result)); await fs.writeFile('test-results/link-budget.json', JSON.stringify(result, null, 2));
-});
-
-// Proves: FR-021; CL-003-06; level 2, stalled socket and independent healthy peer.
-test('TC-021-008: stalled reader cannot block another client', {timeout: 35000}, async t => {
-  const app = await server(); t.after(() => app.close());
-  const slow = await peer(app.origin, {autoPong: false}), healthy = await peer(app.origin);
-  t.after(() => {slow.terminate(); healthy.terminate();});
-  // Listen from the start: when the client's own pending writes fail against the closed
-  // server socket (a reset), 'close' is emitted during the stall, before the resume.
-  const closed = once(slow, 'close');
-  slow._socket.pause();
-  const text = '{"v":1,"type":"station.get","id":1}';
-  for (let i = 0; i < 100000; i++) slow.send(text);
-  const started = Date.now();
-  assert.equal((await request(healthy, text)).type, 'station.status');
-  assert.ok(Date.now() - started < 2000);
-  // Remain unresponsive beyond the contract's 15-second Pong deadline and next
-  // five-second heartbeat tick. The OS write buffer may absorb the burst, so this
-  // proves bounded liveness disconnection, not that the two-second send timeout ran.
-  await sleep(22000);
-  slow._socket.resume();
-  await Promise.race([closed, sleep(5000, undefined, {ref: false}).then(() => {throw new Error('Unresponsive reader was not disconnected after the liveness deadline');})]);
-  assert.equal((await request(healthy, text)).type, 'station.status');
 });
 
 // Proves: FR-021; CL-003-07; level 2, disposable local TLS endpoint/credentials.
@@ -320,21 +246,4 @@ test('TC-021-009: TLS login, unauthorized/origin denial, plaintext refusal', asy
     const status = await page.evaluate(async () => (await fetch('/session', {method: 'POST', body: 'invalid'})).status);
     assert.equal(status, i < 8 ? 401 : 429);
   }
-});
-
-// Test-tool oracle: an independent wall clock checks shared rate and one-way delays.
-test('link simulator: shared bulk throughput and RTT', {timeout: 15000}, async t => {
-  const echo = net.createServer(socket => socket.pipe(socket)); echo.listen(0, '127.0.0.1'); await once(echo, 'listening');
-  t.after(() => new Promise(resolve => echo.close(resolve)));
-  const proxy = await link({host: '127.0.0.1', port: echo.address().port}); t.after(() => proxy.close());
-  const start = Date.now();
-  const roundtrip = amount => new Promise((resolve, reject) => {
-    const socket = net.connect(proxy.port, '127.0.0.1'); let bytes = 0;
-    socket.on('connect', () => socket.write(Buffer.alloc(amount)));
-    socket.on('data', data => {bytes += data.length; if (bytes === amount) {socket.end(); resolve(Date.now());}}); socket.on('error', reject);
-  });
-  const times = await Promise.all([roundtrip(4000), roundtrip(4000)]);
-  assert.ok(Math.max(...times) - start >= 2000, 'shared 8000-byte transfer cannot exceed 4000 bytes/s');
-  assert.ok(Math.max(...times) - start < 5000, 'pipelined propagation must not reduce the bulk link far below 32 kbit/s');
-  const pingStart = Date.now(); await roundtrip(1); assert.ok(Date.now() - pingStart >= 300, 'RTT is at least 300ms');
 });

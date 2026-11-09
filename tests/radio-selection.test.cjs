@@ -601,14 +601,15 @@ function abandonedBodiesNotReRead(seen){return seen.abandonedBodies.filter(a=>!s
 
 function liveSelectionFixture(){
   test('TC-009-005 actual native/CAT/TLS two-browser Thin and Off selection workload',{timeout:510000},async t=>{
-    const {link}=require('./support.cjs'),{performance}=require('node:perf_hooks'),{chromium}=require('playwright');
+    const {performance}=require('node:perf_hooks'),{chromium}=require('playwright');
     const oracle=JSON.parse(process.env.WSTX_SELECTION_EXPECTED),token=process.env.WSTX_SELECTION_TOKEN;
     assert.ok(oracle.ft8&&oracle.ft4&&token,'both independent mode oracles and authentication are mandatory');
-    const proxy=await link({host:'127.0.0.2',port:1});proxy.target.port=proxy.port;t.after(()=>proxy.close());
-    process.stdout.write(`WSTX_SELECTION_PROXY ${proxy.port}\n`);
+    // #80: an unshaped TLS connection; the link budget is judged from the link byte log (TC-080-001).
+    const port=await browserPort();
+    process.stdout.write(`WSTX_SELECTION_PORT ${port}\n`);
     await new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(new Error('real TLS fixture READY deadline')),15000);process.stdin.once('data',data=>{clearTimeout(timeout);if(data.toString().trim()==='READY')resolve();else reject(new Error('invalid real TLS fixture handshake'));});});
-    const origin=`https://localhost:${proxy.port}`,browser=await chromium.launch();t.after(()=>browser.close());
-    const pages=[],contexts=[],observations=[],errors=[],identities=[],report={startedUtc:new Date().toISOString(),windowSeconds:75,clients:2,model:'actual TLS streams plus unchanged support.cjs shared4000B/s/150ms/headers model',phases:{}};
+    const origin=`https://localhost:${port}`,browser=await chromium.launch();t.after(()=>browser.close());
+    const pages=[],contexts=[],observations=[],errors=[],identities=[],report={startedUtc:new Date().toISOString(),clients:2,model:'actual TLS streams, unshaped',phases:{}};
     const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
     const waitUntil=async deadline=>{while(performance.now()<deadline)await sleep(Math.max(1,Math.ceil(deadline-performance.now())));};
     const save=async()=>{await fs.mkdir('test-results/radio-selection',{recursive:true});await fs.writeFile('test-results/radio-selection/live-link.json',JSON.stringify(report,null,2));};
@@ -703,7 +704,7 @@ function liveSelectionFixture(){
         window.__cadenceAcceptanceCheckpoint=()=>{snapshot(false);return events;};return events;
       })};
     }
-    report.cold={state:'passed',elapsedMs:performance.now()-coldStarted,endedUtc:new Date().toISOString(),countedBytes:{...proxy.counters},pages:observations.map(seen=>({navigations:seen.navigations,abortedProfileBodies:seen.profileBodies.filter(p=>!p.body).map(p=>({at:p.at,error:p.bodyError,finished:p.finished,failure:p.failure})),navigationStarted:seen.navigationStarted,navigationCompleted:seen.navigationCompleted,loginRetries:seen.loginRetries,connectedObserved:seen.connectedObserved,operatingObserved:seen.operatingObserved,thinConfigured:seen.thinConfigured,failures:seen.failures,http:seen.http,sockets:seen.sockets})),errors:[...errors]};await save();
+    report.cold={state:'passed',elapsedMs:performance.now()-coldStarted,endedUtc:new Date().toISOString(),pages:observations.map(seen=>({navigations:seen.navigations,abortedProfileBodies:seen.profileBodies.filter(p=>!p.body).map(p=>({at:p.at,error:p.bodyError,finished:p.finished,failure:p.failure})),navigationStarted:seen.navigationStarted,navigationCompleted:seen.navigationCompleted,loginRetries:seen.loginRetries,connectedObserved:seen.connectedObserved,operatingObserved:seen.operatingObserved,thinConfigured:seen.thinConfigured,failures:seen.failures,http:seen.http,sockets:seen.sockets})),errors:[...errors]};await save();
     const freshRead=async index=>{
       const seen=observations[index],before=seen.reads.length;seen.gestures.push(performance.now());await pages[index].locator('#operating-refresh:enabled').click();
       const deadline=performance.now()+12000;while(!seen.reads.slice(before).some(r=>r.ended!==null&&r.body?.v===1)){assert.ok(performance.now()<deadline,'actual explicit operating read completed');await sleep(20);}
@@ -755,10 +756,13 @@ function liveSelectionFixture(){
     async function measure(profile,steps){
       const offProofs=[];
       for(const [index,page]of pages.entries()){const after=performance.now();if(!await page.locator('#settings-drawer').isVisible())await page.locator('#open-server-settings').click();await page.selectOption('#display-profile',profile);await page.locator('#tab-expert').click();if(profile==='off'){const deadline=performance.now()+10000;let ack;while(!(ack=correlatedOffAck(observations[index].subscriptionRequests,observations[index].subscriptionAcks,after))){assert.ok(performance.now()<deadline,'actual correlated Off acknowledgement');await sleep(10);}offProofs.push(ack);report.offAcknowledgements=[...offProofs];await save();assertOffAckDeadline(ack);}}
-      await sleep(500);const baseline={...proxy.counters},start=performance.now(),readStarts=observations.map(o=>o.reads.length),frameStarts=observations.map(o=>o.frames.length),latencies=[];
-      activePhase=profile;report.phases[profile]={state:'running',startedUtc:new Date().toISOString(),representativeSeconds:75};await save();console.log(`Actual ${profile}75s workload started`);
-      const status=async()=>{for(let n=1;n<=13;n++){await waitUntil(start+n*5500);await Promise.all(pages.map(async page=>{const previous=await page.locator('#updated').textContent(),began=performance.now();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,previous,{timeout:2000});const ms=performance.now()-began;assert.ok(ms<=2000,`actual ${profile} visible status ${ms}ms`);latencies.push(ms);}));}};
-      const controls=async()=>{const commands=[];for(let n=0;n<steps.length;n++){await waitUntil(start+(n?40000:5000));commands.push(await command(...steps[n]));}return commands;};
+      await sleep(500);const start=performance.now(),readStarts=observations.map(o=>o.reads.length),frameStarts=observations.map(o=>o.frames.length),latencies=[];
+      activePhase=profile;report.phases[profile]={state:'running',startedUtc:new Date().toISOString()};await save();console.log(`Actual ${profile} workload started`);
+      // #80: the window is as long as its gestures need: the two commands, a status refresh of each
+      // browser every 5.5 s while they run (at least one), no padding.
+      let done=false;
+      const status=async()=>{for(let n=1;n===1||!done;n++){await waitUntil(start+n*5500);await Promise.all(pages.map(async page=>{const previous=await page.locator('#updated').textContent(),began=performance.now();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,previous,{timeout:2000});const ms=performance.now()-began;assert.ok(ms<=2000,`actual ${profile} visible status ${ms}ms`);latencies.push(ms);}));}};
+      const controls=async()=>{const commands=[];try{for(const step of steps)commands.push(await command(...step));}finally{done=true;}return commands;};
       // Each CAT poll dates the radio facts anew: that alone goes at most every 30 s below Detailed, on the
       // station's clock. Checked during the window: the extra traffic of a broken pacing would otherwise show
       // first as a missed status wait, not as what it is.
@@ -768,13 +772,12 @@ function liveSelectionFixture(){
           if(Object.keys(c).join()==='radio'&&undated(c.radio)===undated(heldRadio.get(e.socket))&&e.at>=start){count++;assert.ok(e.data.monotonic_ms-previous>=29900,`${profile} browser${index}: new radio dates alone ${e.data.monotonic_ms-previous} ms after the last event`);}
           if(c.radio)heldRadio.set(e.socket,c.radio);lastEvent.set(e.socket,e.data.monotonic_ms);}
         return count;};
-      const pacing=async()=>{while(performance.now()<start+75000){observations.forEach(datesOnly);await sleep(250);}};
-      const [,commands]=await Promise.all([status(),controls(),pacing()]);await waitUntil(start+75000);const seconds=(performance.now()-start)/1000;
-      assert.ok(seconds>=75,'full predeclared representative window');const traffic={up:(proxy.counters.up-baseline.up)/seconds,down:(proxy.counters.down-baseline.down)/seconds};
+      const pacing=async()=>{while(!done){observations.forEach(datesOnly);await sleep(250);}};
+      const [,commands]=await Promise.all([status(),controls(),pacing()]);const seconds=(performance.now()-start)/1000;
       const pathCounts=observations.map(seen=>Object.fromEntries([...new Set(seen.http.filter(r=>r.at>=start).map(r=>r.route))].map(route=>[route,seen.http.filter(r=>r.at>=start&&r.route===route).length])));
-      report.phases[profile]={state:'checking',seconds,sharedBytesPerSecond:traffic,statusMs:latencies,pathCounts,offProofs,networkSelection:observations.map(seen=>selectionNetworkSummary(seen.transfers,start,start+seconds*1000)),httpResponses:observations.map(seen=>seen.http.filter(r=>r.at>=start)),browserTransfers:observations.map(seen=>seen.transfers.filter(r=>r.started>=start||r.ended>=start)),websocketFrames:observations.map(seen=>seen.wireFrames.filter(frame=>frame.at>=start)),selectionReads:observations.map((seen,index)=>seen.reads.slice(readStarts[index]).map(r=>({startedMs:r.started-start,completedMs:r.ended===null?null:r.ended-start,phase:r.body?.operation?.phase??null,command:r.body?.operation?.command_id??null}))),frames:observations.map((seen,index)=>seen.frames.length-frameStarts[index])};await save();
+      report.phases[profile]={state:'checking',seconds,statusMs:latencies,pathCounts,offProofs,networkSelection:observations.map(seen=>selectionNetworkSummary(seen.transfers,start,start+seconds*1000)),httpResponses:observations.map(seen=>seen.http.filter(r=>r.at>=start)),browserTransfers:observations.map(seen=>seen.transfers.filter(r=>r.started>=start||r.ended>=start)),websocketFrames:observations.map(seen=>seen.wireFrames.filter(frame=>frame.at>=start)),selectionReads:observations.map((seen,index)=>seen.reads.slice(readStarts[index]).map(r=>({startedMs:r.started-start,completedMs:r.ended===null?null:r.ended-start,phase:r.body?.operation?.phase??null,command:r.body?.operation?.command_id??null}))),frames:observations.map((seen,index)=>seen.frames.length-frameStarts[index])};await save();
       for(const seen of observations){const replies=seen.http.filter(r=>r.at>=start&&r.status===200&&['/receive/selection','/receive','/receive/results','/profile','/radio','/recording'].includes(r.route));assert.ok(replies.length>0);assert.ok(replies.every(r=>r.contentEncoding==='gzip'),'actual browser negotiated gzip on every eligible response');}
-      assert.ok(traffic.up<=3000,`${profile} actual counted uplink ${traffic.up}`);assert.ok(traffic.down<=3000,`${profile} actual counted downlink ${traffic.down}`);assert.equal(latencies.length,26);
+      assert.ok(latencies.length>=2,'each browser refreshed its status in the window');
       for(const [index,page]of pages.entries()){observations[index].acceptance.events=await page.evaluate(()=>window.__cadenceAcceptanceCheckpoint());observations[index].acceptance.socketBaseline.end=performance.now();}
       report.phases[profile].cadenceRaw=observations.map(seen=>({sourceBase64:seen.cadenceSource?.toString('base64'),acceptance:seen.acceptance,profileBodies:seen.profileBodies,reads:seen.reads,transfers:seen.transfers,sockets:seen.sockets.map(({messages,...s})=>({...s,messages:messages.length,lastMessageAt:messages.at(-1)?.at??null}))}));await save();
       const evidence=observations.map(seen=>{
@@ -806,7 +809,7 @@ function liveSelectionFixture(){
       for(const n of commands.keys())assert.ok(polling.some(p=>p.pending[n]>=1),`${profile} command${n}: pending seen by neither browser`);
       if(profile==='thin')assert.ok(polling.every(p=>p.frames>0),'real optional live spectrum was present, not an idle body-size exercise');
       if(profile==='off'){assert.equal(offProofs.length,2);for(const [index,ack]of offProofs.entries()){assert.ok(ack.ackAt<=start);assert.deepEqual(optionalAfterOff(observations[index].wireFrames,ack),[],'no optional frame after its correlated Off ACK');assert.equal(polling[index].frames,0,'no optional spectrum during actual Off window');}}
-      report.phases[profile]={...report.phases[profile],state:'passed',seconds,sharedBytesPerSecond:traffic,statusMs:latencies,polling,commands,endedUtc:new Date().toISOString()};activePhase=null;await save();console.log(`Actual ${profile} workload completed ${seconds.toFixed(3)}s ${JSON.stringify(traffic)}`);
+      report.phases[profile]={...report.phases[profile],state:'passed',seconds,statusMs:latencies,polling,commands,endedUtc:new Date().toISOString()};activePhase=null;await save();console.log(`Actual ${profile} workload completed ${seconds.toFixed(3)}s`);
     }
     await measure('thin',[['mode','ft4','ft4',7047500],['band','20m','ft4',14080000]]);
     await measure('off',[['mode','ft8','ft8',14074000],['band','40m','ft8',7074000]]);

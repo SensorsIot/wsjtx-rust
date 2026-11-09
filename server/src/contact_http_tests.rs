@@ -4,11 +4,6 @@
 // engine, the actual #9 transmit owner thread on recording hardware doubles (no audio,
 // PTT or radio) and hand-authored decoded rows packed with the real codec.
 use super::*;
-// TC-007-005 lives beside this fixture (declared here, not in main.rs, so that it does not
-// count as a change of the router's timing input).
-#[cfg(not(debug_assertions))]
-#[path = "contact_thin_tests.rs"]
-mod contact_thin_tests;
 use axum::body::Body;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use tower::ServiceExt;

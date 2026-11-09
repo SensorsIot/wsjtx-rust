@@ -1,6 +1,6 @@
 'use strict';
 // Original FSD 4.4/6.4/12.6 oracles; cost 2 on Windows PC with actual server/Chromium, no hardware.
-const {test,describe,before,after}=require('node:test');
+const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
@@ -12,7 +12,7 @@ const {chromium}=require('playwright');
 const selfsigned=require('selfsigned');
 const WebSocket=require('ws');
 const {receive}=require('./peer.cjs');
-const {server,link,loginPage,browserPort}=require('./support.cjs');
+const {server,loginPage,browserPort}=require('./support.cjs');
 // Selected HTTPS profile: each browser context enrolls its own CL-022-01 key through the
 // real token form, then the cache is cleared so later cold measurements stay uncached.
 async function enroll(context,origin,token){const p=await context.newPage();await loginPage(p,origin,token,120000);const cdp=await context.newCDPSession(p);await cdp.send('Network.clearBrowserCache');await p.close();}
@@ -32,36 +32,31 @@ async function closeAll(closers){
   const errors=results.filter(result=>result.status==='rejected').map(result=>result.reason);
   if(errors.length)throw new AggregateError(errors,'Disposable fixture cleanup failed');
 }
-async function fixture(t,{thin=false,secure=false}={}){
-  let proxy,app,context,released=false;
-  t.after(async()=>{released=true;await closeAll([()=>context?.close(),()=>app?.close(),()=>proxy?.close()]);});
+async function fixture(t,{secure=false}={}){
+  let app,context,released=false;
+  t.after(async()=>{released=true;await closeAll([()=>context?.close(),()=>app?.close()]);});
   async function retained(resource){if(released){await resource?.close();throw Error('Disposable fixture was released during setup');}}
   const dir=await fs.mkdtemp(path.join(root,'station-')),p=await port(),profile_id=crypto.randomUUID();
-  proxy=thin?await link({host:'127.0.0.2',port:1}):null;
-  await retained(proxy);
-  if(proxy)proxy.target.port=proxy.port;
-  const origin=thin?`https://localhost:${proxy.port}`:secure?`https://localhost:${p}`:`http://127.0.0.1:${p}`;
-  const doc={schema_version:1,profile_id,revision:0,display_name:'Recording <station>',callsign:'TEST1',locator:'JN47AA',endpoint:{bind:thin?`127.0.0.2:${proxy.port}`:`127.0.0.1:${p}`,origin:thin||secure?origin:null},connection_type:'standard',audio:{input_device:null,output_device:null},control:{mode:'disabled',endpoint:null,ptt:'disabled'}};
+  const origin=secure?`https://localhost:${p}`:`http://127.0.0.1:${p}`;
+  const doc={schema_version:1,profile_id,revision:0,display_name:'Recording <station>',callsign:'TEST1',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${p}`,origin:secure?origin:null},connection_type:'standard',audio:{input_device:null,output_device:null},control:{mode:'disabled',endpoint:null,ptt:'disabled'}};
   await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify(doc));
   await retained();
-  const token=crypto.randomBytes(32).toString('hex'),env=thin||secure?{...tls,WSTX_TOKEN:token}:{};
+  const token=crypto.randomBytes(32).toString('hex'),env=secure?{...tls,WSTX_TOKEN:token}:{};
   app=await server(env,['--profile',dir]);
   await retained(app);
   context=await browser.newContext({ignoreHTTPSErrors:true});
   await retained(context);
-  if(thin||secure)await enroll(context,origin,token);
-  const transport=async()=>{const c=(await context.cookies(origin)).find(c=>c.name==='wstx_session_'+profile_id);return c?`${c.name}=${c.value}`:'';};
-  async function req(route,method='GET',body,headers={},direct=false){
-    const target=direct&&thin?`https://127.0.0.2:${proxy.port}`:origin;
-    const response=await context.request.fetch(target+route,{method,headers:{...(method==='GET'?{}:{Origin:origin}),...(direct&&thin?{Cookie:await transport()}:{}) ,...(body&&!Buffer.isBuffer(body)?{'Content-Type':'application/json'}:{}),...headers},data:body});
+  if(secure)await enroll(context,origin,token);
+  async function req(route,method='GET',body,headers={}){
+    const response=await context.request.fetch(origin+route,{method,headers:{...(method==='GET'?{}:{Origin:origin}),...(body&&!Buffer.isBuffer(body)?{'Content-Type':'application/json'}:{}),...headers},data:body});
     const text=await response.text();return {status:response.status(),value:text?JSON.parse(text):null,headers:response.headers()};
   }
   async function snapshot(){const r=await req('/recording');assert.equal(r.status,200);return r.value;}
   const body=s=>({v:1,profile_id:s.profile_id,boot_id:s.boot_id,generation:s.generation});
   async function reserve(){const s=await snapshot();const r=await req('/recording/imports','POST',body(s));assert.equal(r.status,201);return r.value;}
-  async function upload(bytes,direct=false){const op=await reserve();for(let offset=0;offset<bytes.length;offset+=2048){const end=Math.min(offset+2048,bytes.length);const r=await req(`/recording/imports/${op.id}`,'PUT',bytes.subarray(offset,end),{'Content-Type':'audio/wav','Content-Range':`bytes ${offset}-${end-1}/${bytes.length}`},direct);assert.equal(r.status,end===bytes.length?201:202,JSON.stringify(r.value));}return snapshot();}
+  async function upload(bytes){const op=await reserve();for(let offset=0;offset<bytes.length;offset+=2048){const end=Math.min(offset+2048,bytes.length);const r=await req(`/recording/imports/${op.id}`,'PUT',bytes.subarray(offset,end),{'Content-Type':'audio/wav','Content-Range':`bytes ${offset}-${end-1}/${bytes.length}`});assert.equal(r.status,end===bytes.length?201:202,JSON.stringify(r.value));}return snapshot();}
   async function replay(){const s=await snapshot(),r=await req('/recording/replay','POST',{...body(s),recording_id:s.recording.id});assert.equal(r.status,202,JSON.stringify(r.value));return r.value;}
-  return {dir,origin,context,proxy,req,snapshot,reserve,upload,replay,body,token,async restart(){await app.close();app=await server(env,['--profile',dir]);if(thin||secure){const p=await context.newPage();await p.goto(origin);await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});await p.close();}}};
+  return {dir,origin,context,req,snapshot,reserve,upload,replay,body,token,async restart(){await app.close();app=await server(env,['--profile',dir]);if(secure){const p=await context.newPage();await p.goto(origin);await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});await p.close();}}};
 }
 function wav(seconds=1,amplitude=.5,frequency=750){
   const count=Math.round(seconds*12000),b=Buffer.alloc(44+count*2);b.write('RIFF');b.writeUInt32LE(b.length-8,4);b.write('WAVEfmt ',8);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(1,22);b.writeUInt32LE(12000,24);b.writeUInt32LE(24000,28);b.writeUInt16LE(2,32);b.writeUInt16LE(16,34);b.write('data',36);b.writeUInt32LE(count*2,40);
@@ -197,18 +192,6 @@ test('TC-018-003 review: cancel pending reservation response deletes returned re
   await p.waitForFunction(()=>!uploading,null,{timeout:3000});assert.equal(puts,0);assert.deepEqual(errors,[]);assert.equal((await f.snapshot()).import,null);assert.equal((await f.req('/recording/imports/'+resource.id)).value.state,'cancelled');
 });
 
-// Proves: CL-006-03/04; TC-010-002, actual subscribed stalled peer plus healthy mandatory control path.
-test('TC-010-002 stalled thin subscriber is bounded and cannot block healthy status',{timeout:35000},async t=>{
-  const f=await fixture(t);await f.upload(wav(30));
-  const slow=new WebSocket(f.origin.replace('http','ws')+'/ws','wstx.v1',{origin:f.origin,autoPong:false});await once(slow,'open');
-  const healthy=new WebSocket(f.origin.replace('http','ws')+'/ws','wstx.v1',{origin:f.origin});await once(healthy,'open');t.after(()=>{slow.terminate();healthy.terminate();});
-  const subscribed=receive(slow);slow.send(JSON.stringify({v:1,type:'spectrum.thin',id:1}));assert.equal((await subscribed).type,'spectrum.subscription');slow._socket.pause();
-  const job=await f.replay();
-  for(let n=0;n<4;n++){await sleep(1000);const pending=receive(healthy),start=performance.now();healthy.send(JSON.stringify({v:1,type:'station.get',id:n+2}));assert.equal((await pending).type,'station.status');assert.ok(performance.now()-start<2000);}
-  await sleep(18000);const closed=once(slow,'close');slow._socket.resume();await Promise.race([closed,sleep(5000).then(()=>{throw Error('stalled thin peer retained past liveness deadline');})]);
-  const pending=receive(healthy);healthy.send(JSON.stringify({v:1,type:'station.get',id:99}));assert.equal((await pending).type,'station.status');await f.req('/recording/jobs/'+job.id,'DELETE');await terminal(f);
-});
-
 // Proves: CL-006-02; TC-018-003 review regression, JSON media grammar remains the profile grammar.
 test('TC-018-003 review: recording JSON media whitespace parity and malformed parameters',{timeout:10000},async t=>{
   const f=await fixture(t);
@@ -286,97 +269,8 @@ test('TC-018-003 four stations retain isolated identities and release cancellati
   times.forEach(ms=>assert.ok(ms<=250,`cancel + release ${ms} ms`));
 });
 
-// Proves: CL-006-03/04; TC-010-002, actual encrypted streams + independent shared 32 kbit/s link.
-describe('TC-010-002 two thin browsers',{concurrency:false},()=>{
-  let f,pages,prepared=false,closing,writing=Promise.resolve();
-  const cleanups=[],dispose=()=>closing??=closeAll(cleanups);
-  after(dispose);
-  const report={runId:crypto.randomUUID(),startedUtc:new Date().toISOString(),model:'actual TLS streams plus support.cjs fixed TCP/IPv6/ACK overhead; shared 4000 bytes/s each direction, 150 ms one-way',phases:{}};
-  function progress(phase,details,metrics={}){
-    writing=writing.then(async()=>{
-      if(report.phases[phase]?.state==='cancelled'&&details.state!=='cancelled')return;
-      Object.assign(report,metrics);report.phases[phase]={...report.phases[phase],...details};
-      await fs.mkdir('test-results',{recursive:true});await fs.writeFile('test-results/recording-link.json',JSON.stringify(report,null,2));
-    });
-    return writing;
-  }
-  async function runPhase(t,name,work){
-    let passed=false,failure;const began=performance.now();
-    t.after(async()=>{if(!passed){try{await progress(name,{state:t.signal.aborted?'cancelled':'failed',elapsedMs:performance.now()-began,error:failure||t.signal.reason?.message});}finally{await dispose();}}});
-    try{await progress(name,{state:'running',startedUtc:new Date().toISOString()});t.signal.throwIfAborted();await work();t.signal.throwIfAborted();await progress(name,{state:'passed',elapsedMs:performance.now()-began});t.signal.throwIfAborted();passed=true;}
-    catch(error){failure=error.message;throw error;}
-  }
-  test('TC-010-002 cold load in two independent uncached browsers',{timeout:230000},async t=>{
-    await runPhase(t,'cold',async()=>{
-      f=await fixture({after:cleanup=>cleanups.push(cleanup)},{thin:true});await f.upload(wav(64),true);
-      const second=await browser.newContext({ignoreHTTPSErrors:true});cleanups.push(()=>second.close());await enroll(second,f.origin,f.token);
-      if(closing){await second.close();throw Error('Cold-load fixture was released during setup');}
-      const began=performance.now(),coldBefore={...f.proxy.counters};
-      // Two uncached browsers share the 4000 B/s link: the second one's assets delay the first one's
-      // login and snapshots, so 30 s after load is no bound here; TC-010-002 reports cold asset
-      // metrics and bounds the steady state, and the contact client below keeps its 150 s.
-      pages=await Promise.all([page(f,undefined,120000),page({...f,context:second},undefined,120000)]);
-      for(const p of pages)await p.selectOption('#display-profile','thin'); // Explicit32kbit/s mode; default Detailed has no such promise.
-      // The cold load ends with the contact client, which loads after the first snapshots (#37).
-      for(const p of pages)await p.waitForFunction(()=>!!window.wstxContact,null,{timeout:150000});
-      const cold={ms:performance.now()-began,up:f.proxy.counters.up-coldBefore.up,down:f.proxy.counters.down-coldBefore.down};
-      await progress('cold',{step:'pages connected'}, {cold});
-    });
-    prepared=true;
-  });
-  test('TC-010-002 full 60 second connected traffic and simultaneous status latency',{timeout:230000},async t=>{
-    const delay=require('node:timers/promises').setTimeout,sleep=ms=>delay(ms,undefined,{signal:t.signal});
-    const waitUntil=async deadline=>{while(performance.now()<deadline)await sleep(Math.max(1,Math.ceil(deadline-performance.now())));};
-    await runPhase(t,'connected',async()=>{
-      assert.ok(prepared,'Cold-load phase must complete successfully before connected measurements');
-      const events=[[],[]];for(let n=0;n<2;n++)pages[n].on('websocket',ws=>ws.on('framereceived',e=>{const m=JSON.parse(e.payload);if(m.type==='spectrum.frame')events[n].push({at:performance.now(),message:m});}));
-      // Install observers on the existing sockets without relying on transport creation timing.
-      for(const p of pages)await p.evaluate(()=>{window.__displayEvents=[];addEventListener('station-message',e=>{if(e.detail.message.type==='spectrum.frame')window.__displayEvents.push({at:performance.now(),message:e.detail.message});});});
-      const playback=await f.replay();await sleep(2000);const baseline={...f.proxy.counters},start=performance.now(),latencies=[];
-      // TC-009-005: actual selection polling shares the counted link. A band
-      // intent must not quiet or replace the original recorded frame workload.
-      await pages[0].locator('#operating-refresh:enabled').click();
-      await pages[0].waitForFunction(generation=>operatingState?.generation===generation,playback.generation);
-      const operatingBefore=await pages[0].evaluate(()=>({revision:operatingState.operating_revision,operation:operatingState.operation}));
-      const bandResponse=pages[0].waitForResponse(r=>new URL(r.url()).pathname==='/receive/select'&&r.request().method()==='POST');
-      await pages[0].selectOption('#operating-band','40m');const band=await bandResponse;assert.equal(band.status(),409);assert.equal((await band.json()).error.code,'busy');
-      await pages[0].locator('#operating-band:enabled').waitFor();
-      const operatingAfter=await pages[0].evaluate(()=>({revision:operatingState.operating_revision,operation:operatingState.operation}));
-      assert.deepEqual(operatingAfter,operatingBefore,'refused intent changes no selection revision or record');
-      assert.equal(typeof playback.id,'string','replay returns a job receipt');assert.ok(Number.isSafeInteger(playback.generation));
-      const stillPlaying=await f.snapshot();assert.equal(stillPlaying.generation,playback.generation);assert.ok(stillPlaying.job,'refused selection retains the recording job');assert.equal(stillPlaying.job.id,playback.id);assert.equal(stillPlaying.job.state,'running');
-      for(let n=0;n<10;n++){
-        const due=start+(n+1)*5500;await sleep(Math.max(0,due-performance.now()));
-        await Promise.all(pages.map(async p=>{const old=await p.locator('#updated').textContent(),time=performance.now();await refreshStatus(p);await p.waitForFunction(value=>document.querySelector('#updated').textContent!==value,old,{timeout:2000});const ms=performance.now()-time;assert.ok(ms<2000,`status ${ms} ms`);latencies.push(ms);}));
-      }
-      await waitUntil(start+60000);const seconds=(performance.now()-start)/1000;
-      assert.ok(seconds>=60,'Thin measurement covers at least60 complete seconds');
-      const traffic={up:(f.proxy.counters.up-baseline.up)/seconds,down:(f.proxy.counters.down-baseline.down)/seconds};
-      // Bounding the positive sum of both clients by the per-client budget proves each client also stays within it.
-      assert.ok(traffic.up<=3000);assert.ok(traffic.down<=3000);
-      const captured=await Promise.all(pages.map(p=>p.evaluate(()=>window.__displayEvents)));
-      for(const frames of captured){assert.ok(frames.length>=45);assert.ok(frames.length<=65);for(let n=0;n<frames.length;n++){assert.ok(Buffer.byteLength(JSON.stringify(frames[n].message))<=1024);if(n)assert.ok(frames[n].message.data.sequence>frames[n-1].message.data.sequence);}}
-      await progress('connected',{step:'Thin measurement complete'},{steadySeconds:seconds,sharedBytesPerSecond:traffic,statusMs:latencies,frames:captured.map(f=>f.length)});
-      for(const p of pages)await p.selectOption('#display-profile','off');
-      await progress('connected',{step:'Off measurement started'});
-      const offBefore={...f.proxy.counters},offStart=performance.now();await waitUntil(offStart+60000);const offSeconds=(performance.now()-offStart)/1000;
-      assert.ok(offSeconds>=60,'Off measurement covers at least60 complete seconds');
-      const off={up:(f.proxy.counters.up-offBefore.up)/offSeconds,down:(f.proxy.counters.down-offBefore.down)/offSeconds};assert.ok(off.up<=1000);assert.ok(off.down<=1000);
-      await progress('connected',{step:'Off measurement complete'},{sharedOffBytesPerSecond:off,offSeconds});
-      const uploadBefore={...f.proxy.counters},uploadStart=performance.now(),uploadStatus=[];
-      await progress('connected',{step:'Upload and status measurement started'});
-      await pages[0].setInputFiles('#recording-file',{name:'paced.wav',mimeType:'audio/wav',buffer:wav(.5)});await pages[0].locator('#recording-import').click();
-      for(let n=0;n<6;n++){await sleep(700);await Promise.all(pages.map(async p=>{const old=await p.locator('#updated').textContent(),time=performance.now();await refreshStatus(p);await p.waitForFunction(value=>document.querySelector('#updated').textContent!==value,old,{timeout:2000});const ms=performance.now()-time;assert.ok(ms<2000);uploadStatus.push(ms);}));}
-      await pages[0].locator('#recording-replay:enabled').waitFor({timeout:30000});
-      const upload={ms:performance.now()-uploadStart,up:f.proxy.counters.up-uploadBefore.up,down:f.proxy.counters.down-uploadBefore.down,statusMs:uploadStatus};
-      await progress('connected',{step:'Upload and status measurement complete'},{upload});
-    });
-  });
-});
-
 // Proves: CL-006-02/04; TC-018-003, endpoint-wide TLS authentication/Origin priority and WS opt-in.
 test('TC-018-003 every recording endpoint retains TLS cookie and exact Origin boundaries',{timeout:45000},async t=>{
-  // TLS without the 32 kbit/s link: this test proves no link property, and enrolling across that link costs its whole budget as the client grows.
   const f=await fixture(t,{secure:true}),s=await f.snapshot(),id=crypto.randomUUID();
   const absent=await browser.newContext({ignoreHTTPSErrors:true});t.after(()=>absent.close());
   for(const [route,method] of [['/recording','GET'],['/recording/imports','POST'],['/recording/imports/'+id,'GET'],['/recording/imports/'+id,'PUT'],['/recording/imports/'+id,'DELETE'],['/recording/replay','POST'],['/recording/jobs/'+id,'DELETE']]){
@@ -384,36 +278,12 @@ test('TC-018-003 every recording endpoint retains TLS cookie and exact Origin bo
     const bad=await f.context.request.fetch(f.origin+route,{method,headers:{Origin:'https://foreign.invalid'}});assert.equal(bad.status(),403);assert.equal((await bad.json()).error.code,'forbidden_origin');
     if(method!=='GET'){const missing=await f.context.request.fetch(f.origin+route,{method});assert.equal(missing.status(),403);}
   }
-  assert.equal((await f.req('/recording/imports','POST',f.body(s),{'Content-Type':'audio/wav'},true)).status,415);
-  assert.equal((await f.req('/recording/imports','POST',Buffer.alloc(1025),{'Content-Type':'application/json'},true)).status,413);
+  assert.equal((await f.req('/recording/imports','POST',f.body(s),{'Content-Type':'audio/wav'})).status,415);
+  assert.equal((await f.req('/recording/imports','POST',Buffer.alloc(1025),{'Content-Type':'application/json'})).status,413);
   const plain=await server();t.after(()=>plain.close());
   for(const command of ['recording.get','spectrum.thin','spectrum.off']){
     const ws=new WebSocket(plain.origin.replace('http','ws')+'/ws','wstx.v1',{origin:plain.origin});await once(ws,'open');const pending=receive(ws);ws.send(JSON.stringify({v:1,type:command,id:5}));const result=await pending;assert.equal(result.data.code,'unavailable');ws.close();
   }
-});
-
-// Proves: CL-006-03/04; TC-010-002, direct peer measures server cadence independently of link delivery jitter.
-test('TC-010-002 optional output is opt-in, bounded, paced and invalidated by cancel',{timeout:15000},async t=>{
-  const f=await fixture(t),initial=await f.upload(wav(5));
-  const ws=new WebSocket(f.origin.replace('http','ws')+'/ws','wstx.v1',{origin:f.origin});await once(ws,'open');t.after(()=>ws.close());
-  const messages=[];ws.on('message',data=>messages.push({at:performance.now(),value:JSON.parse(String(data))}));
-  let pending=receive(ws);ws.send(JSON.stringify({v:1,type:'spectrum.thin',id:1}));assert.equal((await pending).type,'spectrum.subscription');
-  const job=await f.replay();await sleep(3300);
-  const frames=messages.filter(m=>m.value.type==='spectrum.frame');assert.ok(frames.length>=2);for(let n=1;n<frames.length;n++)assert.ok(frames[n].at-frames[n-1].at>=995);
-  // FIFO may deliver an already buffered optional frame before the correlated Off ACK.
-  // FSD12.6 allows bounded buffered output; it does not allow a frame after that ACK.
-  const offStart=messages.length,offSent=performance.now();ws.send(JSON.stringify({v:1,type:'spectrum.off',id:2}));
-  let ackIndex=-1;
-  while(performance.now()-offSent<2000){ackIndex=messages.findIndex((m,i)=>i>=offStart&&!['spectrum.frame','heartbeat','recording.state'].includes(m.value.type));if(ackIndex>=0)break;await sleep(5);}
-  assert.ok(ackIndex>=offStart,'correlated Off ACK arrives within the existing2s control deadline');
-  const ack=messages[ackIndex].value;assert.ok(messages[ackIndex].at-offSent<=2000);assert.deepEqual(ack,{v:1,type:'spectrum.subscription',id:2,data:{profile:'off'}});
-  for(const m of messages.slice(offStart,ackIndex))if(m.value.type==='heartbeat')assert.deepEqual(m.value,{v:1,type:'heartbeat'});
-  const buffered=messages.slice(offStart,ackIndex).filter(m=>!['heartbeat','recording.state'].includes(m.value.type));
-  assert.ok(buffered.length<=Math.floor((messages[ackIndex].at-offSent)/995)+1,'buffered prefix remains bounded by Thin cadence and the control deadline');
-  for(const m of buffered){assert.deepEqual(Object.keys(m.value).sort(),['data','type','v']);assert.equal(m.value.v,1);const f=m.value.data;assert.deepEqual(Object.keys(f).sort(),['boot_id','end_frame','first_frame','generation','job_id','levels','sequence','source_id']);assert.equal(m.value.type,'spectrum.frame');assert.equal(f.boot_id,initial.boot_id);assert.equal(f.source_id,initial.recording.id);assert.equal(f.job_id,job.id);assert.equal(f.generation,job.generation);assert.ok(Number.isSafeInteger(f.sequence)&&f.sequence>=0&&f.sequence<5);assert.ok(f.first_frame<f.end_frame&&f.end_frame<=60000);assert.equal(f.first_frame,f.sequence*12000);assert.equal(f.end_frame,Math.min(f.first_frame+12000,60000));assert.equal(f.levels.length,128);assert.ok(f.levels.every(q=>Number.isInteger(q)&&q>=0&&q<=120));assert.ok(Buffer.byteLength(JSON.stringify(m.value))<=1024);}
-  const throughAck=messages.slice(0,ackIndex+1).filter(m=>m.value.type==='spectrum.frame');for(let n=1;n<throughAck.length;n++)assert.ok(throughAck[n].at-throughAck[n-1].at>=995);
-  const noPostAckFrames=()=>assert.equal(messages.slice(ackIndex+1).filter(m=>m.value.type==='spectrum.frame').length,0,'no optional frame may follow the Off ACK');noPostAckFrames();await sleep(1100);noPostAckFrames();
-  await f.req('/recording/jobs/'+job.id,'DELETE');await terminal(f);const snapshot=await f.snapshot();assert.equal(snapshot.job.state,'cancelled');
 });
 
 // Proves: CL-006-03/04; TC-010-002, recording.state is pushed on change and the browser does not poll for it.

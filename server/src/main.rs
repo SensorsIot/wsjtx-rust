@@ -1472,6 +1472,6 @@ async fn connection(
         .push(json!({"utc_ms":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0,|d|d.as_millis() as u64),"reason":reason}));
     let _ = reason;
 }
-/// Why each socket of this test process ended, recorded per run by TC-007-005.
+/// Why each socket of this test process ended (TC-021-008 reads the close reason).
 #[cfg(test)]
 pub(crate) static SOCKET_CLOSES: Mutex<Vec<Value>> = Mutex::new(Vec::new());
