@@ -1460,6 +1460,136 @@ async fn tc_097_009_g_a_caller_is_answered_at_once_in_each_mode() {
     }
 }
 
+/// A spot of DL1XYZ received by K1ABC `age_s` ago (K1ABC reports, not my call).
+fn reports_spot(age_s: i64) -> String {
+    spot_of(
+        "DL1XYZ",
+        "K1ABC",
+        14_075_000,
+        "20m",
+        crate::contact_http_tests::now_ms() / 1000 - age_s,
+    )
+}
+fn moves_of(tx_move_every: Value) -> impl FnOnce(&mut Value) {
+    move |c: &mut Value| c["strategies"][0]["tx_move_every"] = tx_move_every
+}
+/// Whether Tx moved at each of the calls `from..=to` (the run's slot_check.moved).
+async fn moved_at(
+    f: &Mcp,
+    e: i64,
+    from: i64,
+    to: i64,
+    rows: &[(&str, f64, Option<f64>)],
+) -> Vec<bool> {
+    let mut seen = Vec::new();
+    for k in from..=to {
+        publish(f, rep(e, k), rows);
+        seen.push(run_of(f).await["slot_check"]["moved"] == json!(true));
+    }
+    seen
+}
+
+// Proves: TC-097-010 (CL-097-05, the run steps, hand-worked from WstxStrategy::TxMoveRule and
+// HearingFeed "He reports"). The PSK case of slot_check: K1ABC's report of another sender 120 s and
+// 599 s old is not_heard; none (the only report 601 s old is outside the window) is no_reports;
+// slot_check carries case, hears_us, moved and hz. k per case over 6 calls: {0, 0, 0} never moves;
+// {2, 2, 2} not_heard moves at the 2nd, 4th and 6th. The case changing from no_reports (k 1) to heard
+// (k 0) after the 1st call: moved at the 1st, never after. His answer after the 2nd call: no move
+// after it. A busy-paused call between two calls (k 2, busy_pause on) is not counted toward k: the
+// move comes at the 3rd call. Hold Tx on moves Tx alone (Rx stays 1800), off both.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_010_the_run_moves_tx_per_psk_case() {
+    for (age, case) in [(120, "not_heard"), (599, "not_heard"), (601, "no_reports")] {
+        let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+        let (f, e) = (&t.f, t.e);
+        t.feed.inject(&reports_spot(age));
+        publish(f, rep(e, 1), &[]);
+        let s = run_of(f).await["slot_check"].clone();
+        assert_eq!(
+            (
+                &s["case"],
+                &s["hears_us"],
+                s["moved"].is_boolean(),
+                s["hz"].is_u64()
+            ),
+            (&json!(case), &json!(false), true, true),
+            "a report {age} s old: {s}"
+        );
+    }
+    let t = leaving(
+        moves_of(json!({"heard":0,"not_heard":0,"no_reports":0})),
+        &[K1ABC_CQ],
+    )
+    .await;
+    assert_eq!(moved_at(&t.f, t.e, 1, 3, &[]).await, [false; 3], "k 0");
+    let t = leaving(
+        moves_of(json!({"heard":2,"not_heard":2,"no_reports":2})),
+        &[K1ABC_CQ],
+    )
+    .await;
+    t.feed.inject(&reports_spot(120));
+    assert_eq!(
+        moved_at(&t.f, t.e, 1, 3, &[]).await,
+        [false, true, false],
+        "k 2"
+    );
+    // The case change (no_reports k 1 to heard k 0).
+    let t = leaving(
+        moves_of(json!({"heard":0,"not_heard":1,"no_reports":1})),
+        &[K1ABC_CQ],
+    )
+    .await;
+    let (f, e) = (&t.f, t.e);
+    assert_eq!(moved_at(f, e, 1, 1, &[]).await, [true], "no_reports");
+    t.feed.inject(&heard_spot(60));
+    assert_eq!(moved_at(f, e, 2, 3, &[]).await, [false, false], "heard");
+    // No move after his answer.
+    let t = leaving(
+        moves_of(json!({"heard":1,"not_heard":1,"no_reports":1})),
+        &[K1ABC_CQ],
+    )
+    .await;
+    let (f, e) = (&t.f, t.e);
+    moved_at(f, e, 1, 2, &[]).await;
+    let before = frequencies(f).await.1;
+    publish(f, rep(e, 3), &[("HB9BLA K1ABC -05", 1800.0, Some(-5.0))]);
+    publish(f, rep(e, 4), &[]);
+    assert_eq!(frequencies(f).await.1, before, "no move after the answer");
+    // A busy-paused call is not counted toward k.
+    let t = leaving(
+        |c| {
+            c["strategies"][0]["busy_pause"] = json!(true);
+            c["strategies"][0]["tx_move_every"] = json!({"heard":2,"not_heard":2,"no_reports":2});
+        },
+        &[K1ABC_CQ],
+    )
+    .await;
+    let (f, e) = (&t.f, t.e);
+    assert_eq!(moved_at(f, e, 1, 1, &[]).await, [false]);
+    publish(f, rep(e, 2), &[("W9XYZ K1ABC -07", 1200.0, Some(-7.0))]);
+    assert_eq!(run_of(f).await["leave"]["paused"], json!(1));
+    let before = frequencies(f).await.1;
+    publish(f, rep(e, 3), &[("W9XYZ K1ABC RR73", 1200.0, Some(-7.0))]);
+    assert_ne!(frequencies(f).await.1, before, "moved at the 3rd call");
+    // Hold Tx on: Tx alone, Rx stays on K1ABC; off: both.
+    for (hold, rx_follows) in [(true, false), (false, true)] {
+        let t = leaving_from(
+            hold,
+            moves_of(json!({"heard":1,"not_heard":1,"no_reports":1})),
+            &[K1ABC_CQ],
+        )
+        .await;
+        let (f, e) = (&t.f, t.e);
+        publish(f, rep(e, 1), &[]);
+        let (rx, tx, _) = frequencies(f).await;
+        assert_eq!(run_of(f).await["slot_check"]["moved"], true, "hold {hold}");
+        assert_eq!(rx == tx, rx_follows, "hold {hold}: rx {rx} tx {tx}");
+        if hold {
+            assert_eq!(rx, json!(1800));
+        }
+    }
+}
+
 // Proves: TC-097-010
 #[test]
 fn tc_097_010_auto_slot_from_500_hz_upper_edge_ties_and_the_move_rule() {
