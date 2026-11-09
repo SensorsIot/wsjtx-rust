@@ -270,7 +270,11 @@ pub(crate) async fn run_state(f: &Mcp) -> (String, Value) {
 /// One own (odd) transmission of the pending request in period `own`, run to completion.
 pub(crate) async fn not_keyed_in(f: &Mcp, own: i64) {
     let service = &f.state.recording.transmit.get().unwrap().service;
-    // The Tx watchdog stops 1.2 s into the due period.
+    // A request still pending at the limit is stopped at once, at this instant (#87: a tick
+    // after the jump would race the transmit service's late start); a run's change it
+    // reads at a tick (such as its attendance) applies from the next one.
+    f.tick();
+    // Without a pending request the Tx watchdog stops 1.2 s into the due period.
     f.bench
         .offset
         .fetch_add(own + 1_300 - f.bench.now_utc_ms(), Ordering::SeqCst);
@@ -283,22 +287,85 @@ pub(crate) async fn not_keyed_in(f: &Mcp, own: i64) {
     assert!(!service.view().transmitting);
     f.tick();
 }
+/// The own period a pending request is bound to, by the contact engine's submission rule
+/// (contact.rs `submit`): the next period of the contact's parity at or after
+/// max(now + LEAD_MS, the last started period + one period). None without a pending request.
+fn bound_period(f: &Mcp) -> Option<i64> {
+    let view = f.state.recording.transmit.get().unwrap().service.view();
+    view.pending_sequence?;
+    let mode = crate::contact_http::mode_of(f.state.recording.operating_mode());
+    let parity = f.state.recording.contact.get()?.status_facts().parity;
+    let lead = f.bench.now_utc_ms() + crate::contact::LEAD_MS;
+    let floor = view
+        .last_period_utc_ms
+        .map_or(lead, |p| lead.max(p + crate::contact::period_ms(mode)));
+    Some(wstx_rust::transmit::next_period(mode, floor, parity))
+}
+/// Fails at once when a pending request is bound to another period than `own`: a clock
+/// moved past that period would race the transmit service's StalePeriod refusal (#87).
+pub(crate) fn assert_bound(f: &Mcp, own: i64) {
+    if let Some(bound) = bound_period(f) {
+        assert_eq!(
+            own, bound,
+            "own period {own}: the pending request is bound to period {bound}"
+        );
+    }
+}
+/// Moves the bench UTC forward to `to` (never back: the clock may already be past it).
+fn advance_to(f: &Mcp, to: i64) {
+    f.bench
+        .offset
+        .fetch_add((to - f.bench.now_utc_ms()).max(0), Ordering::SeqCst);
+}
+/// One own transmission of the pending request in period `own`, run to completion. The
+/// bench clock moves only to the request's own period, so the transmit service never
+/// meets a period the clock has passed (#87): `own` must be the period the pending
+/// request is bound to. Each step waits on the transmit owner's event; the 5 s deadline
+/// is a hang guard only.
 pub(crate) async fn transmit_own_period(f: &Mcp, own: i64) {
+    assert_bound(f, own);
     let service = &f.state.recording.transmit.get().unwrap().service;
+    let mode = crate::contact_http::mode_of(f.state.recording.operating_mode());
+    let audio_start = wstx_rust::transmit::plan_start(
+        mode,
+        own,
+        wstx_rust::transmit::ClockState::Synchronized,
+        own,
+        48_000,
+    )
+    .unwrap()
+    .audio_start_ms;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let wait = async |done: &dyn Fn(&wstx_rust::transmit::service::View) -> bool, tick: bool| {
+        loop {
+            let view = service.view();
+            if done(&view) {
+                break;
+            }
+            assert!(Instant::now() < deadline, "{view:?}");
+            if tick {
+                f.tick();
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    };
     f.bench
         .offset
         .fetch_add(own - 30 - f.bench.now_utc_ms(), Ordering::SeqCst);
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !service.view().transmitting {
-        assert!(Instant::now() < deadline, "{:?}", service.view());
-        f.tick();
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-    f.bench.offset.fetch_add(13_000, Ordering::SeqCst);
-    while service.view().transmitting {
-        assert!(Instant::now() < deadline, "{:?}", service.view());
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    wait(
+        &|v| v.ptt == wstx_rust::transmit::service::PttState::Keyed,
+        true,
+    )
+    .await;
+    advance_to(f, audio_start);
+    wait(&|v| v.transmitting, true).await;
+    // Past the end of the longest (FT8) waveform.
+    advance_to(f, audio_start + 13_000);
+    wait(
+        &|v| !v.transmitting && v.ptt == wstx_rust::transmit::service::PttState::Released,
+        false,
+    )
+    .await;
     f.tick();
 }
 

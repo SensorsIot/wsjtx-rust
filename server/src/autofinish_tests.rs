@@ -77,6 +77,7 @@ async fn finished(f: &Mcp, e: i64, beside: &[(&str, f64, Option<f64>)]) {
 /// Into the own period `own` until its transmission is on the air, then 2 s into it with one station
 /// step; the key-on time.
 async fn on_the_air(f: &Mcp, own: i64) -> i64 {
+    crate::automation_tests::assert_bound(f, own);
     let service = &f.state.recording.transmit.get().unwrap().service;
     f.bench
         .offset
