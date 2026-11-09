@@ -4859,6 +4859,10 @@ async function fullScreenFixture(t,viewport,variant,{rows=false}={}){
   return {...f,commands,requests,button,
     aborts:()=>commands.filter(c=>c.action==='abort').length,
     full:()=>page.evaluate(()=>document.fullscreenElement===document.documentElement),
+    // A change of state is complete once the browser's state has changed and the fullscreenchange event has
+    // reached the page (the button follows that event; Chromium may resolve the request's promise before it).
+    entered:()=>page.waitForFunction(()=>!!document.fullscreenElement&&document.querySelector('#full-screen')?.getAttribute('aria-pressed')==='true',null,{timeout:5000}),
+    left:()=>page.waitForFunction(()=>!document.fullscreenElement&&document.querySelector('#full-screen')?.getAttribute('aria-pressed')==='false',null,{timeout:5000}),
     prepared:()=>page.evaluate(()=>window.wstxContact.snapshot()?.contact?.state==='replying'),
     look:()=>button.evaluate(b=>({label:b.getAttribute('aria-label'),pressed:b.getAttribute('aria-pressed'),title:b.title,icon:b.dataset.icon,svg:b.querySelectorAll('svg').length,text:b.textContent.trim()})),
     locks:()=>page.evaluate(()=>window.__keyboardLock),
@@ -4882,7 +4886,7 @@ test('TC-096-001 the full-screen button left of ?, its states, Esc in and after 
   assert.deepEqual(await x.look(),fullScreenOff);
   const corners=()=>button.locator('svg path').getAttribute('d'),outwards=await corners();
   assert.deepEqual(await x.overflow(),{page:false,bar:false,scroll:false},'(j) 1366x768 normal window');
-  await x.quiet(async()=>{await button.click();await page.waitForFunction(()=>!!document.fullscreenElement);},'enter');
+  await x.quiet(async()=>{await button.click();await x.entered();},'enter');
   assert.equal(await x.full(),true,'the whole page (the document element) is full screen');
   assert.deepEqual(await x.look(),fullScreenOn);assert.notEqual(await corners(),outwards,'the corners turn inwards');
   await page.waitForFunction(()=>window.__keyboardLock.length>0);
@@ -4897,15 +4901,15 @@ test('TC-096-001 the full-screen button left of ?, its states, Esc in and after 
   await page.keyboard.press('Escape');await page.locator('#ba-menu').waitFor({state:'hidden'});
   assert.equal(x.aborts(),0);
   // The button leaves; outside full screen a first Esc is Abort QSO, as before.
-  await x.quiet(async()=>{await button.click();await page.waitForFunction(()=>!document.fullscreenElement);},'leave');
+  await x.quiet(async()=>{await button.click();await x.left();},'leave');
   assert.deepEqual(await x.look(),fullScreenOff);
   await page.keyboard.press('Escape');
   for(let i=0;i<40&&!x.aborts();i++)await page.waitForTimeout(50);
   await page.waitForTimeout(500);assert.equal(x.aborts(),1,'after leaving, Esc sends one abort');
   // (c) Full screen left from outside (the browser on Esc held, its own control): the button follows and the lock
   // is released; the held key's repeated keydowns that reach the page afterwards never abort.
-  await x.quiet(async()=>{await button.click();await page.waitForFunction(()=>!!document.fullscreenElement);},'enter again');
-  await page.evaluate(()=>document.exitFullscreen());await page.waitForFunction(()=>!document.fullscreenElement);
+  await x.quiet(async()=>{await button.click();await x.entered();},'enter again');
+  await page.evaluate(()=>document.exitFullscreen());await x.left();
   assert.deepEqual(await x.look(),fullScreenOff);assert.equal(await corners(),outwards);
   await page.waitForFunction(()=>window.__keyboardLock.filter(c=>c[0]==='unlock').length===2);
   assert.deepEqual(await x.locks(),[['lock',['Escape']],['unlock'],['lock',['Escape']],['unlock']],'one unlock per leave');
@@ -4914,12 +4918,12 @@ test('TC-096-001 the full-screen button left of ?, its states, Esc in and after 
   // (d) An ordinary focusable button: Tab reaches it, Enter enters, Space leaves.
   await page.locator('#open-server-settings').focus();await page.keyboard.press('Tab');
   assert.equal(await button.evaluate(b=>document.activeElement===b),true,'Tab after Settings reaches the button');
-  await x.quiet(async()=>{await page.keyboard.press('Enter');await page.waitForFunction(()=>!!document.fullscreenElement);},'Enter');
-  await x.quiet(async()=>{await page.keyboard.press('Space');await page.waitForFunction(()=>!document.fullscreenElement);},'Space');
+  await x.quiet(async()=>{await page.keyboard.press('Enter');await x.entered();},'Enter');
+  await x.quiet(async()=>{await page.keyboard.press('Space');await x.left();},'Space');
   // (j) 360x800 in both states.
   await page.setViewportSize({width:360,height:800});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   assert.deepEqual({...await x.overflow(),scroll:false},{page:false,bar:false,scroll:false},'(j) 360x800 normal window');
-  await button.click();await page.waitForFunction(()=>!!document.fullscreenElement);
+  await button.click();await x.entered();
   assert.deepEqual({...await x.overflow(),scroll:false},{page:false,bar:false,scroll:false},'(j) 360x800 full screen');
   await page.screenshot({path:'test-results/ui-operating/full-screen-360x800.png'});
   // (e) A reload starts in the normal window with the button off; nothing is stored.
@@ -4940,7 +4944,7 @@ test('TC-096-001 the full-screen button left of ?, its states, Esc in and after 
 test('TC-096-001 without Keyboard Lock the button enters full screen and Esc in full screen never aborts',{timeout:60000},async t=>{
   const x=await fullScreenFixture(t,{width:1366,height:768},'noKeyboard'),{page,errors,button}=x;
   assert.equal(await page.evaluate(()=>navigator.keyboard),undefined);
-  await x.quiet(async()=>{await button.click();await page.waitForFunction(()=>!!document.fullscreenElement);},'enter');
+  await x.quiet(async()=>{await button.click();await x.entered();},'enter');
   assert.equal(await x.full(),true);assert.deepEqual(await x.look(),fullScreenOn);assert.deepEqual(await x.locks(),[],'no lock call');
   await page.keyboard.press('Escape');await page.waitForTimeout(500);
   assert.equal(x.aborts(),0,'Esc in full screen sends no abort');assert.equal(await x.prepared(),true);
