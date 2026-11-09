@@ -5995,9 +5995,9 @@ package WstxRequirements {
     verification 'TC-061-003' {
         doc /* TC-061-003 — CQ retries a stale_revision refusal
              CL-061-02
-             Setup: actual station Router and browser client with scripted contact snapshots and contact command replies (explicit presentation fixtures).
-             Steps: click CQ while the station refuses one command with stale_revision and moves its revision; click CQ while it refuses three.
-             Expected (independent: the scripted revisions): CQ sends enable_tx with revision 3, then 4 (accepted); then 4, 5, 6 and shows the refusal. On the parent client CQ sends once.
+             Setup: actual station Router and browser client with scripted contact snapshots, contact command replies and contact.state events pushed through the station-message handler of the client (explicit presentation fixtures); Playwright page clock.
+             Steps: click CQ while the station refuses one command with stale_revision, moves its revision and sends no contact.state; move the page clock past 2.5 s. Click CQ while it refuses three, sending a contact.state with the moved revision after each; after the third refusal, wait for revision 7 in the snapshot, then click Tune.
+             Expected (independent: the scripted revisions and the contract limit of two retries): CQ sends enable_tx with revision 3, then 4 after the reload (accepted); then 4, 5, 6 and shows the refusal; the next command is tune, with no fourth enable_tx. Every wait is on an event, with a 10 s hang guard (#83). On the parent client CQ sends once.
              2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
