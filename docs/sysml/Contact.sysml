@@ -163,7 +163,9 @@ package WstxContact {
              exchange. serial is the station's contest serial number: 1 at boot,
              incremented by one each time a contact is logged (DirectLog, completion or
              Log QSO of a contact not yet logged) while an activity other than none is set
-             (MW ~10542), never reset by set_activity. set_activity also sets the activity of the
+             (MW ~10542), never reset by set_activity. #98: while a contest is selected the
+             serial is WstxContest::ContestSerial (from the log of its period) instead; this
+             boot counter applies only without one. set_activity also sets the activity of the
              current contact (its messages are regenerated and its log fields follow it).
              DIFFERENT from WSJT-X: a contest contact without exchange_sent or
              exchange_rcvd is still logged (logqso.cpp ~415 refuses it), the RTTY RST of

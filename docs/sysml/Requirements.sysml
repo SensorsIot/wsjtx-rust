@@ -6213,14 +6213,14 @@ package WstxRequirements {
     }
     dependency CL_061_05_verified_by_TC_061_009 from 'CL-061-05' to 'TC-061-009';
     requirement 'CL-063-01' {
-        doc /* The station holds one profile per contest from the official rules: WW Digi, ARRL Digi, ARRL Field Day, ARRL January, June and September VHF, IARU R1 50 MHz and 70 MHz MGM and FT8 Activity, usable everywhere in the world; a limit that depends on the location or the entry class is a note, not a refusal. Each profile holds the schedule rule, bands, modes, exchange, dupe, points and multiplier rules, the automation clause as the rules word it, notes and the source, as data, so that a new contest is one more entry. Its period is pre-computed from the schedule rule for the current or next occurrence; ARRL January VHF is not computed. GET /strategy/contests reads them. Details: WstxContest::ContestProfile, ScheduleRule, AutomationClause, ProfileTable, ContestHttp. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
+        doc /* The station holds one profile per contest from the official rules: WW Digi, ARRL Digi, ARRL Field Day, ARRL January, June and September VHF, IARU R1 50 MHz and 70 MHz MGM and FT8 Activity, usable everywhere in the world; a limit that depends on the location or the entry class is a note, not a refusal. Each profile holds the schedule rule, bands, modes, exchange, dupe, points and multiplier rules, the automation clause as the rules word it, notes and the source, as data, so that a new contest is one more entry. Its period is pre-computed from the schedule rule for the current or next occurrence; ARRL January VHF is not computed. GET /strategy/contests reads them. Details: WstxContest::ContestProfile, ScheduleRule, AutomationClause, ProfileTable, ContestHttp. #98: the nine compiled profiles become records of the contest file with 35 contests (CL-098-01, CL-098-02); the wire of GET /strategy/contests grows (CL-098-06). */
+        attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/contest.rs; server/src/strategy.rs; server/src/main.rs";
     }
     dependency CL_063_01_to_FR_024 from 'CL-063-01' to 'FR-024';
     requirement 'CL-063-02' {
-        doc /* In a contest activity a CQ with the activity's own word (na_vhf and arrl_digi CQ TEST, ww_digi CQ WW, field_day CQ FD, rtty CQ RU) is answerable: it is no longer greyed and an operator's selection needs no confirmation. Outside the matching activity it stays not answerable, with the warning of CL-039-03. Details: WstxContest::ContestDirective, WstxStrategy::DirectedCqRule. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
+        doc /* In a contest activity a CQ with the activity's own word (na_vhf and arrl_digi CQ TEST, ww_digi CQ WW, field_day CQ FD, rtty CQ RU) is answerable: it is no longer greyed and an operator's selection needs no confirmation. Outside the matching activity it stays not answerable, with the warning of CL-039-03. Details: WstxContest::ContestDirective, WstxStrategy::DirectedCqRule. #98: with a contest selected its own CQ word as well (CL-098-05). */
+        attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/strategy.rs; server/src/contact_http.rs; server/src/contact.rs";
     }
     dependency CL_063_02_to_FR_024 from 'CL-063-02' to 'FR-024';
@@ -6231,6 +6231,7 @@ package WstxRequirements {
              Setup: the profile table as compiled; an expected table written by hand from the rule sources listed on #63.
              Steps: read id, activity, dupes, points, multipliers, automation clause, bands, Cabrillo mark and the notes of each profile.
              Expected: the nine ids in selector order; WW Digi bands 160 to 10 m, dupes per band, 1 + 1 per 3000 km, grid field per band, forbidden; ARRL Digi with 6 m, 1 + 1 per 500 km rounded up, no multiplier, forbidden; Field Day per band and mode class, forbidden, check-log note, Cabrillo unconfirmed; the three VHF per band and grid, grid per band, forbidden, W/VE note; Field Day and VHF with every ADIF band from 50 MHz (6 m, 5 m, 4 m, 2 m up to submm); IARU 6 m and 4 m, kilometres, grid per band, silent, 6 hours note; FT8 Activity 2 m, 70 cm, 23 cm, one per call, silent; no RTTY Roundup; no id twice.
+             #98: the nine profiles become records of the bundled contest file; this case is replaced by TC-098-001 (the 35 records, these nine among them with the #98 corrections: WW Digi confirmed, ARRL Digi with its window, ARRL VHF with rover and workable, FT8 Activity per round), and its test is rewritten to it.
              2 — Isolated automated tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -6283,15 +6284,15 @@ package WstxRequirements {
     dependency CL_063_02_verified_by_TC_063_004 from 'CL-063-02' to 'TC-063-004';
 
     requirement 'CL-063-03' {
-        doc /* The operator selects a contest with its period, its operation (S&P or Run), its repetitions before leaving (default 2) and its quiet time (default 10 min) through a prompt pre-filled from the schedule rule (empty for ARRL January VHF, which the prompt asks), shown with the strategy and editable; with Auto off it only colours (CL-039-22). It is exclusive with an award strategy, is held in station memory only, and None ends it. The log is evaluated only inside that period: dupes by the profile's rule, multipliers, points and the score. Choosing an activity sets no strategy and selecting a contest sets no activity. Details: WstxContest::ContestSelection, ContestLog, ContestPrompt. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
+        doc /* The operator selects a contest with its period, its operation (S&P or Run), its repetitions before leaving (default 2) and its quiet time (default 10 min) through a prompt pre-filled from the schedule rule (empty for ARRL January VHF, which the prompt asks), shown with the strategy and editable; with Auto off it only colours (CL-039-22). It is exclusive with an award strategy, is held in station memory only, and None ends it. The log is evaluated only inside that period: dupes by the profile's rule, multipliers, points and the score. Choosing an activity sets no strategy and selecting a contest sets no activity. Details: WstxContest::ContestSelection, ContestLog, ContestPrompt. #98: the log is read with each record's own fields and the record's rules (CL-098-04); the selection carries entry parameters (CL-098-06). */
+        attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/contest.rs; server/src/strategy.rs; server/src/logbook.rs; client/contact.js";
     }
     dependency CL_063_03_to_FR_024 from 'CL-063-03' to 'FR-024';
     dependency CL_063_03_to_FR_019 from 'CL-063-03' to 'FR-019';
     requirement 'CL-063-04' {
-        doc /* With a contest in force Band Activity lists only the stations that can be called (non-dupe in the period, directive allows it, a CQ or an RR73/73, on a band of the contest), ordered by callers of my call, new multiplier, QSO points, SNR, with the partner on top; a Show all toggle (off) shows the rest. Colour only for the callable, a new multiplier apart; a dupe and a directed CQ dimmed. The station evaluates, the browser renders after a publication, never on a timer. A contest also works by hand: every row stays selectable with Show all. Details: WstxContest::ContestVerdict, ContestValueOrder, ContestView. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
+        doc /* With a contest in force Band Activity lists only the stations that can be called (non-dupe in the period, directive allows it, a CQ or an RR73/73, on a band of the contest), ordered by callers of my call, new multiplier, QSO points, SNR, with the partner on top; a Show all toggle (off) shows the rest. Colour only for the callable, a new multiplier apart; a dupe and a directed CQ dimmed. The station evaluates, the browser renders after a publication, never on a timer. A contest also works by hand: every row stays selectable with Show all. Details: WstxContest::ContestVerdict, ContestValueOrder, ContestView. #98: ordered by callers of my call, then the projected score gain, then SNR; not workable and no-score stations are not callable (CL-098-05). */
+        attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/contest.rs; server/src/strategy.rs; client/contact.js; client/recording.css";
     }
     dependency CL_063_04_to_FR_024 from 'CL-063-04' to 'FR-024';
@@ -6302,6 +6303,7 @@ package WstxRequirements {
              Setup: distances computed apart from this code (haversine, R 6371 km; IARU 111.2 km per degree): JN37-FN42 5894.6 km, JN37-JO62 701.6, JN37-JN38 111.2, JN37-PM95 9624.3.
              Steps: each points rule for those pairs, a six-character locator, the same square, no grid; the VHF band tables; Field Day per mode; the multiplier keys.
              Expected: WW 2, 1, 1, 4; ARRL 13, 3, 2, 21; IARU 5895, 702, 112, 9625; the same large square 50; ARRL same square 2 (the minimum distance value); no grid none; 1 per call; January 1,1,2,2,4,4,8,8 and June/September 1,1,2,2,3,3,4,4 for 6 m, 2 m, 1.25 m, 70 cm, 33 cm, 23 cm, 13 cm, 3 cm; Field Day digital 2, CW 2, phone 1; keys FN|20m and FN42|6m, none without a rule or a grid.
+             #98: the same hand values hold for the points expressions of these contests (WstxContest::PointsRule), checked by TC-098-004; this test is rewritten to evaluate the expressions.
              2 \— Isolated automated tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -6316,6 +6318,7 @@ package WstxRequirements {
              Setup: hand-written QSO lists and decoded records for HB9BLA JN37 in EU on 20 m with activity ww_digi.
              Steps: a WW Digi log with a QSO before the period, one at its exclusive end, a repeat in FT4, another band, SSB and 30 m; ARRL VHF with a rover and without a grid; Field Day SSB; FT8 Activity on another band; ARRL Digi with RTTY. Verdicts for a known field, a new far field, a new near field, a dupe, CQ NA, no CQ, another station's RR73, a weak caller, a dupe caller; on 30 m; without a log; a /R CQ in ARRL VHF and IARU.
              Expected: 2 QSOs, 2 multipliers, 4 points, score 8, nothing outside the period counted; VHF dupe on the same grid only, every grid without a logged grid; Field Day digital no dupe of SSB; a Field Day exchange to my call a caller with 2 points or a dupe, to another call not a CQ; FT8 Activity a dupe on another band; ARRL Digi 1 QSO, 13 points, score 13. Rank order caller, far new multiplier, near new multiplier, the known field, the RR73; the dupes rank null with dupe true, also the caller; greyed CQ NA; nothing ranked on 30 m or without a log; the wire form of a verdict; the rover ranked in ARRL VHF, refused callsign guard in IARU.
+             #98: the rank order follows ContestValue (TC-098-007) and the wire form adds value; the CQ NA case and the ARRL VHF rover keep their verdicts; JN37 is read from MY_GRIDSQUARE where the records carry it. The test is updated to these.
              2 \— Isolated automated tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -6359,8 +6362,8 @@ package WstxRequirements {
     dependency CL_063_03_verified_by_TC_063_008 from 'CL-063-03' to 'TC-063-008';
     dependency CL_063_04_verified_by_TC_063_008 from 'CL-063-04' to 'TC-063-008';
     requirement 'CL-063-05' {
-        doc /* With Auto on a contest runs as S&P or Run. S&P calls the most valuable callable station, Run calls CQ with the contest's message and answers the most valuable non-dupe caller (new multiplier, QSO points, SNR), not the first decoded; a dupe caller is never answered and never ends a stay. Leaving follows CL-039-23 with the contest's repetitions and quiet time. Where the rules forbid automatic operation the browser shows the clause as a warning when Auto is switched on and transmits only after the operator's confirmation, and the station refuses Auto on without it; where they are silent a short note. It waits while the activity, the band or the period do not fit the contest; a contest can still be operated by hand. Details: WstxContest::ContestRun, AutomationClause, ContestSelection; WstxStrategy::AutoToggle, LeaveRule. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
+        doc /* With Auto on a contest runs as S&P or Run. S&P calls the most valuable callable station, Run calls CQ with the contest's message and answers the most valuable non-dupe caller (new multiplier, QSO points, SNR), not the first decoded; a dupe caller is never answered and never ends a stay. Leaving follows CL-039-23 with the contest's repetitions and quiet time. Where the rules forbid automatic operation the browser shows the clause as a warning when Auto is switched on and transmits only after the operator's confirmation, and the station refuses Auto on without it; where they are silent a short note. It waits while the activity, the band or the period do not fit the contest; a contest can still be operated by hand. Details: WstxContest::ContestRun, AutomationClause, ContestSelection; WstxStrategy::AutoToggle, LeaveRule. #98: it also waits for the mode and for an exchange the station cannot send, and its CQ carries the contest's word (CL-098-06). */
+        attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/automation.rs; server/src/contest.rs; server/src/strategy.rs; server/src/logbook.rs; client/contact.js";
     }
     dependency CL_063_05_to_FR_024 from 'CL-063-05' to 'FR-024';
@@ -6428,6 +6431,234 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_063_05_verified_by_TC_063_012 from 'CL-063-05' to 'TC-063-012';
+    // #98 Contest data: 35 FT8/FT4 contests as a replaceable validated file, state from the log, value as projected score gain (operator 2026-11-09).
+    requirement 'CL-098-01' {
+        doc /* All contests the station offers are the records of one validated contest file: a bundled file embedded in the station, replaceable per station profile by an upload that is validated completely first (as cty.dat, #55); a refused upload names the first fault's path and changes nothing, an unreadable stored upload leaves the bundled file in use and is reported, a replacement is refused while a contest is selected, and Settings > General shows the file in use with Upload and Use bundled. A new contest is one more record. Details: WstxContest::ContestFile, ContestFileHttp. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_098_01_to_FR_024 from 'CL-098-01' to 'FR-024';
+    dependency CL_098_01_to_FR_019 from 'CL-098-01' to 'FR-019';
+    requirement 'CL-098-02' {
+        doc /* A contest record states its identity and source (with the date the rules were checked), log format and name, schedule (rounds by day rules in UTC or a local time zone, an optional series shown but not computed, an optional scored window), bands, counted modes, exchange (the activity it is operated in, its CQ word, the fields sent and received, the side that cannot send it), dupe dimensions, points and score as small expressions, multipliers (kind and scope), extras not computed, the automation clause (forbidden, silent or permitted, per section), restrictions as notes, entry conditions and parameters, notes and unconfirmed facts. The bundled file holds the 35 FT8/FT4 contests of the research on #98. Details: WstxContest::ContestProfile, ScheduleRule, ScoredWindow, SeriesRule, ModeRule, ExchangeRule, DupeRule, ContestExpression, PointsRule, MultiplierRule, ScoreRule, AutomationClause, EntryRule, ProfileTable. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_098_02_to_FR_024 from 'CL-098-02' to 'FR-024';
+    requirement 'CL-098-03' {
+        doc /* Reference data: named DXCC entity sets (by cty.dat primary prefix), call-area tables and club member lists live in the contest file; one table of US states, VE provinces and ARRL/RAC sections from the ADIF enumerations is bundled with the station, holds every RTTY Roundup value and Field Day section the decoder knows, and is the table #97's US-state filter reads. CQ and ITU zones, continent, entity and WPX prefix stay those of cty.dat and the WPX rule. Details: WstxContest::ReferenceSets, Subdivisions. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_098_03_to_FR_024 from 'CL-098-03' to 'FR-024';
+    requirement 'CL-098-04' {
+        doc /* The contest state is read from the log of the selected period only, with each record's own fields (MY_GRIDSQUARE for my locator, the received exchange fields, STX), by the record's dupe, window, points, multiplier and score rules; no separate contest store. While a contest is selected the serial number sent is one more than the highest STX of the period's contacts and of contacts handed to the log but not yet visible, 1 for none, so a restart continues the count; without a contest the boot counter of WSJT-X applies. Details: WstxContest::ContestLog, ContestSerial. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_098_04_to_FR_024 from 'CL-098-04' to 'FR-024';
+    requirement 'CL-098-05' {
+        doc /* With a contest in force the callable stations are ordered by callers of my call first, then the projected score gain (the record's score with the QSO added minus without, on the period's totals projected to its end), then SNR, then frequency and call for an exact tie. The contest's rules come first and the operator's filters (#97) only narrow them: a station the record's workable rule excludes, a station in a mode the record does not count and a non-caller worth nothing are not callable; a dupe stays not callable. With a contest selected its CQ word is answerable and carried by the station's CQ. Details: WstxContest::ContestValue, ContestVerdict, ContestValueOrder, ContestDirective. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_098_05_to_FR_024 from 'CL-098-05' to 'FR-024';
+    dependency CL_098_05_to_FR_010 from 'CL-098-05' to 'FR-010';
+    requirement 'CL-098-06' {
+        doc /* The contest prompt offers every record with its entry parameters, the date its rules were checked, its CQ word, the clause of the chosen section, the series, window and extras in words, the unconfirmed facts, a note when the operator is not eligible and one when the station cannot send its exchange; the selection carries the entry parameters. A contest run also waits for a counted mode and for an exchange the station can send, and calls CQ with the contest's word. Details: WstxContest::ContestPrompt, ContestSelection, ContestHttp, ContestRun. */
+        attribute coverage : ImplementationState = ImplementationState::target;
+    }
+    dependency CL_098_06_to_FR_024 from 'CL-098-06' to 'FR-024';
+    dependency CL_098_06_to_FR_019 from 'CL-098-06' to 'FR-019';
+    dependency CL_098_06_to_FR_020 from 'CL-098-06' to 'FR-020';
+    verification 'TC-098-001' {
+        doc /* TC-098-001 — The bundled contest file holds the 35 contests
+             CL-098-02, CL-098-03
+             Setup: the bundled file as embedded; an expected table written by hand from the research on #98 (first comment, sections 4.1 to 4.3) and WstxContest::ProfileTable, not from the file.
+             Steps: validate the bundled file against the bundled cty.dat; read each record's id, activity, cq, bands, counted modes, dupe dimensions, points, multipliers, score, clause, entry rules and unconfirmed list; read the sets.
+             Expected: valid; the 35 ids in ProfileTable order and none twice; per record the hand table's values (WW Digi with its schedule confirmed; ARRL Digi with window 24 h first, off 60 min; ARRL VHF with the rover multiplier and workable my_in(W_VE) or their_in(W_VE); FT8 Activity dupe per round; ZL Sprint cq ZLS; SARL HF Digital eu_vhf with cq SARL; Helvetia and PACCdigi with unsendable_for); every record with checked 2026-11-09 or the research's date and a source URL; the sets W_VE, VK, PA, HB, OH, I, LA present; no RTTY Roundup record.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-098-02';
+            verify 'CL-098-03';
+        }
+    }
+    dependency CL_098_02_verified_by_TC_098_001 from 'CL-098-02' to 'TC-098-001';
+    dependency CL_098_03_verified_by_TC_098_001 from 'CL-098-03' to 'TC-098-001';
+    verification 'TC-098-002' {
+        doc /* TC-098-002 — Validation refuses every fault and names it
+             CL-098-01, CL-098-02
+             Setup: a minimal valid hand-written file of one record; one mutation of it per step, written in the test.
+             Steps: not JSON; an unknown key at top level, in a record, in a round; a missing required key; no contests; an id with a capital letter and one twice; a name of 41 characters; checked 2026-02-30; an unknown band and an unknown mode; a round ending at its start; a time zone Mars/Base; a cq word of 5 letters and one with a digit among letters; points using an unknown variable, an unknown function, an unknown set, param(rover) without that entry param, a condition where a number is needed; score using m.nosuch; window best with score points * mults; a set member XX9 that is no cty.dat primary prefix; text of bytesMax + 1 bytes; the minimal file.
+             Expected: each refused with the JSON path of its fault (e.g. contests[0].points) and a reason; the bytes limit refused; the minimal file accepted. Each refused input leaves the file in use unchanged.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-098-01';
+            verify 'CL-098-02';
+        }
+    }
+    dependency CL_098_01_verified_by_TC_098_002 from 'CL-098-01' to 'TC-098-002';
+    dependency CL_098_02_verified_by_TC_098_002 from 'CL-098-02' to 'TC-098-002';
+    verification 'TC-098-003' {
+        doc /* TC-098-003 — The period from the new day rules and time zones
+             CL-098-02
+             Setup: hand-written records with the schedules of DARC FT4, NCCC FT4 Sprint, SRAL FT8 (Europe/Helsinki), ARI FT8 Activity (seasonal rounds), WIA Australia Day, ZL Sprint (Pacific/Auckland), a dates list with past dates only, and #63's WW Digi; instants and expected periods from a calendar, not from the code.
+             Steps: the current or next occurrence of each at 2026-11-09T12:00Z; ARI again at 2026-04-01T00:00Z.
+             Expected: DARC 2026-11-10 19:00 to 20:30; NCCC 2026-11-13 01:00 to 01:30; SRAL 2026-11-11 16:00 to 17:00 (18:00 EET); ARI 2026-11-11 18:00 to 21:00 band 70cm; Australia Day 2027-01-25 22:00 to 2027-01-26 10:00; ZL Sprint 2027-04-06 09:00 to 09:30 (21:00 NZST); the past dates list none; WW Digi 2027-08-28 12:00 to 2027-08-29 12:00; ARI at 2026-04-01 2026-04-01 17:00 to 20:00 band 2m (the April round). All UTC, end exclusive.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-098-02';
+        }
+    }
+    dependency CL_098_02_verified_by_TC_098_003 from 'CL-098-02' to 'TC-098-003';
+    verification 'TC-098-004' {
+        doc /* TC-098-004 — Points, multiplier and score expressions by hand
+             CL-098-02
+             Setup: distances computed apart from this code (haversine, R 6371 km unless stated; IARU 111.2 km per degree; R 6378.16 km for FT4 Field Day), recorded with their steps in the test: TC-063-005's pairs (JN37-FN42 5894.6 km, JN37-JO62 701.6, JN37-JN38 111.2, JN37-PM95 9624.3) and the same pairs at 6378.16 km and from JN37VL to 6-character locators.
+             Steps: each #63 rule as its expression for those pairs; RSGB FT8 AC, FT4 Field Day, Ross Hull and ARRL 222 with their bands; Africa FT4 as HB9BLA (EU) with DL and ZS, and as ZS1ABC (AF) with ZS, 5H and DL, the cap with 3 ZS QSOs among 6; PRO Digi with my_member and their_member in the four combinations; YBDXPI; the scores points + 500 * m.squares, qsos + 2 * m.areas + 2 * m.triples (a call on 80, 40 and 20 m) and points * floor(m.grids/3) on hand totals; x/0; an unknown grid.
+             Expected: the #63 values of TC-063-005 unchanged; RSGB JN37-JO62 702 and the same square 50; Africa as EU: DL 0, ZS 4; as AF: ZS 4, 5H 6, DL 1, the third ZS of 6 QSOs 4 and a fourth 0; PRO Digi same entity 1, other 2, plus 6 both members, plus 2 they only; the hand totals' scores; x/0 is 0; no grid: 0 points where km is needed, FT Challenge 1.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-098-02';
+        }
+    }
+    dependency CL_098_02_verified_by_TC_098_004 from 'CL-098-02' to 'TC-098-004';
+    verification 'TC-098-005' {
+        doc /* TC-098-005 — The contest state from the log
+             CL-098-04
+             Setup: hand-written ADIF records (as the log stores them) and records of the bundled file.
+             Steps: ARRL June VHF with param rover yes: QSOs from MY_GRIDSQUARE JN37 and JN38 with the same W1 call on 6m, and one without MY_GRIDSQUARE (station JN37VL); ARRL 222 with two QSOs of one call between the same pair of grids, 120 km and 150 km; PACCdigi with FT8 then FT4 of one call on one band (as_one) and Kansas with FT8 then FT4 (apart); Ross Hull with one call on two UTC days; a record with window limit 1 hour, off 60 min, first, with QSOs at 00:00, 00:40, 01:50, 02:10, 02:30; a record with window best 2 hours over hour points 3, 7, 5; Field Day with ARRL_SECT and CLASS read; a QSO without band.
+             Expected: the rover's two QSOs both count, my_grid4 multiplier 2, the one without MY_GRIDSQUARE uses JN37; ARRL 222 counts one QSO with the 150 km points (keep best); PACCdigi the FT4 QSO a dupe, Kansas both count; Ross Hull both count; the window scores the first four, not 02:30; best scores 12; the Field Day fields are read; the QSO without band counts nothing; the tally qsos, multipliers, points and score of each by hand.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-098-04';
+        }
+    }
+    dependency CL_098_04_verified_by_TC_098_005 from 'CL-098-04' to 'TC-098-005';
+    verification 'TC-098-006' {
+        doc /* TC-098-006 — The serial number from the log
+             CL-098-04
+             Setup: the actual contact engine and log on a disposable station profile, activity rtty with exchange #, the contest bucharest_digital selected for a period; a scripted partner; virtual UTC.
+             Steps: the first contact in an empty period; a log with STX 7 and 12 in the period on 40 m FT4 (one of them a dupe), STX 13 on 30 m, STX 40 before the period; a contact handed to the log whose record is not yet visible when the next one starts; a contact ended without logging; a restart of the station on the same log; no contest selected.
+             Expected: Tx2 "... 5n9 0001"; then 0013 (30 m is not in the contest, the dupe counts); the next after the handed-over contact one higher; the ended contact's number sent again by the next; after the restart the count continues from the log; without a contest the boot counter (1 at boot) as before.
+             2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-098-04';
+        }
+    }
+    dependency CL_098_04_verified_by_TC_098_006 from 'CL-098-04' to 'TC-098-006';
+    verification 'TC-098-007' {
+        doc /* TC-098-007 — The value: projected score gain
+             CL-098-05
+             Setup: hand totals and logs, values hand computed with their steps in the test from ContestValue's rule (the rule as settled by Q1 and Q4 on #98; the numbers below are those of the recommended answers).
+             Steps: WW Digi, 24 h period, now 60 min after its start, log Q 10, P 20, M 6 all in that hour: A a new field with 1 point, B a known field with 5 points, C a new field with 4 points; the same three 5 minutes after the start with Q 1, P 2, M 1; RSGB FT8 AC: a new square at 300 km and a known square at 900 km; YBDXPI with P 100, M 40 and no QSO in the last hour: a new DXCC and new prefix with 3 points, a new prefix only with 5 points; SARL HF Digital: a call worked on 80 and 40 m, now on 20 m; a caller of my call with the smallest value; equal values with different SNR; WW Digi CQ from a VK call without a grid; a candidate after an ARRL Digi window is used up.
+             Expected: P and M projected to 480 and 144, values A 625, B 720, C 1060, order C, B, A; at 5 minutes (15 counted) the hand values; RSGB 800 and 900, the known square first; YBDXPI 326 and 305, the first first; SARL 3; the caller first; the stronger first; the VK station's value from the hand distance to the cty.dat VK centre, its logged score 0 points; the used-up window value 0.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-098-05';
+        }
+    }
+    dependency CL_098_05_verified_by_TC_098_007 from 'CL-098-05' to 'TC-098-007';
+    verification 'TC-098-008' {
+        doc /* TC-098-008 — The contest rules before the operator's filters
+             CL-098-05
+             Setup: hand-written decoded records for HB9BLA JN37VL (EU); records of the bundled file; the station's activity and mode set per step.
+             Steps: ARRL June VHF on 6m: CQ TEST W1AW FN31, CQ TEST G4ABC IO91, G4ABC calling my call; NCCC FT4 Sprint with the station on FT8; Africa FT4 on 40m FT4: CQ DL1ABC JO62 and CQ ZS6ABC KG33; ZL Sprint with activity ww_digi: CQ ZLS ZL1ABC RF72 with the contest selected, without it, and with activity none; the station's Tx6 with ZL Sprint selected in ww_digi; SRAL as HB9BLA.
+             Expected: W1AW ranked; G4ABC not workable, also as a caller, rank null; NCCC every record mode not in the contest; DL1ABC no score, ZS6ABC ranked with value 4; CQ ZLS answerable (not greyed) only with the contest selected in ww_digi, greyed otherwise; Tx6 "CQ ZLS HB9BLA JN37"; SRAL: eligible false on the wire, CQ TEST OH2ABC KP20 ranked, CQ TEST DL1ABC JO62 not workable.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-098-05';
+        }
+    }
+    dependency CL_098_05_verified_by_TC_098_008 from 'CL-098-05' to 'TC-098-008';
+    verification 'TC-098-009' {
+        doc /* TC-098-009 — Replacing the contest file
+             CL-098-01
+             Setup: the actual station router on a disposable selected HTTPS profile with one grant; a valid hand-written file of two records; an invalid one.
+             Steps: GET /strategy/contests; PUT the valid file; GET; select one of its records; PUT again while it is selected; deselect; PUT the invalid file; PUT text null; a stored contests.json made unreadable and the station restarted; PUT with a wrong Origin, a stale boot, a revoked grant, an extra key, by an MCP principal.
+             Expected: file source bundled, 35 contests; 200 and source uploaded, 2 contests, the file beside contacts.adi; the selection accepted; 409 state_conflict field contest, file unchanged; 400 invalid_contests with path and reason, file unchanged; bundled again; bundled in use with upload_unreadable true and the stored file untouched; 403, 409, 401, 400 invalid_request, refused; nothing changed by any refusal.
+             2 — Isolated automated tests; Windows development PC, no radio. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-098-01';
+        }
+    }
+    dependency CL_098_01_verified_by_TC_098_009 from 'CL-098-01' to 'TC-098-009';
+    verification 'TC-098-010' {
+        doc /* TC-098-010 — Entry parameters on the selection
+             CL-098-06
+             Setup: exact-parse table; records of the bundled file.
+             Steps: RSGB FT4 Series with entry {section OPEN}, {section RESTRICTED}, none; ARRL June VHF with {rover "yes"} and with {rover 3}; an unknown param; FT4 Field Day with {hours 12}; the GET /strategy snapshot.
+             Expected: the clause permitted for OPEN and silent for RESTRICTED and the default; rover accepted, 3 refused contest.entry.rover; the unknown refused contest.entry.NAME; the window limit 12; the snapshot shows every param of the record with its value or default.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-098-06';
+        }
+    }
+    dependency CL_098_06_verified_by_TC_098_010 from 'CL-098-06' to 'TC-098-010';
+    verification 'TC-098-011' {
+        doc /* TC-098-011 — The prompt, the value and the file control in the browser
+             CL-098-01, CL-098-06
+             Setup: actual browser with hand-written station replies for GET and PUT /strategy, GET and PUT /strategy/contests and POST /strategy/evaluate.
+             Steps: open the prompt on WW Digi, SRAL FT8, Helvetia (station HB9BLA), SARL HF Digital, RSGB FT4 Series; change the section; Start; a verdict list with value; Show all with a not workable and a no-score row; Settings > General with the file control, an upload refused with a path, Use bundled; the prompt at 360 px.
+             Expected: each record's params, checked date, CQ word, series, window and extras in words and its unconfirmed facts; SRAL "You are not eligible"; Helvetia and SARL "The station cannot send this contest's exchange yet"; the clause text follows the section; one PUT with entry; the hover names the value; not workable and no-score rows dimmed, uncoloured; the file line, the refusal's path and reason, no change; no sideways overflow on the phone.
+             2 — Isolated automated browser test; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-098-01';
+            verify 'CL-098-06';
+        }
+    }
+    dependency CL_098_01_verified_by_TC_098_011 from 'CL-098-01' to 'TC-098-011';
+    dependency CL_098_06_verified_by_TC_098_011 from 'CL-098-06' to 'TC-098-011';
+    verification 'TC-098-012' {
+        doc /* TC-098-012 — A contest run waits for mode and exchange and calls with the contest's word
+             CL-098-06
+             Setup: as TC-063-010 (actual station router, contact engine, transmit and radio doubles, virtual UTC) with the bundled file.
+             Steps: ZL Sprint Run with Auto on, activity ww_digi, FT4, on 80m; the station on FT8; Helvetia S&P with Auto on as HB9BLA in rtty; SARL HF Digital with Auto on; Bucharest Digital Run in rtty with exchange # and a caller.
+             Expected: calling_cq with Tx6 "CQ ZLS HB9BLA JN37"; waiting mode and disarmed; waiting exchange, nothing armed; waiting activity, nothing armed; the caller answered with the serial from the log in Tx2.
+             2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-098-06';
+        }
+    }
+    dependency CL_098_06_verified_by_TC_098_012 from 'CL-098-06' to 'TC-098-012';
+    verification 'TC-098-013' {
+        doc /* TC-098-013 — The subdivision table
+             CL-098-03
+             Setup: the bundled table; an expected list written by hand from the ADIF 3.1 STATE (DXCC 291, 6, 110), VE_PROV and ARRL_SECT enumerations; the decoder's RTTY Roundup values and Field Day sections.
+             Steps: read the table; map sections EMA, WMA, PAC, SDG, ONE and DX; look up every decoder value.
+             Expected: the 50 states and DC and the 13 provinces and territories with the hand list's codes; EMA and WMA to MA, PAC to HI, SDG to CA, ONE to ON, DX to none; every decoder RTTY value and Field Day section (but DX) present; rtty_ru true exactly for the RTTY values.
+             2 — Isolated automated tests; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-098-03';
+        }
+    }
+    dependency CL_098_03_verified_by_TC_098_013 from 'CL-098-03' to 'TC-098-013';
+    verification 'TC-098-014' {
+        doc /* TC-098-014 — A real contest period on the station, colouring only
+             CL-098-04, CL-098-05, CL-098-06
+             Setup: the installed station on HB9BLA after the deploy, IC-7300 on 40 m, the operator's browser; the DARC FT4 Contest on 2026-11-10 19:00 to 20:30 UTC or the next contest of the file on 10, 15, 20 or 40 m.
+             Steps: open the prompt, select the contest with S&P and Auto off; watch Band Activity for 15 minutes; log one QSO by hand with a station of the list; reopen the prompt.
+             Expected: the pre-filled period of the file; only callable stations listed, ordered by value with callers first, the hover naming value and points; after the QSO its call a dupe on 40 m, the tally 1 QSO and the score by the record's rule; nothing transmitted automatically.
+             5 — Live on the station with RF only by the operator's own QSO, operator consent; HB9BLA. Not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-098-04';
+            verify 'CL-098-05';
+            verify 'CL-098-06';
+        }
+    }
+    dependency CL_098_04_verified_by_TC_098_014 from 'CL-098-04' to 'TC-098-014';
+    dependency CL_098_05_verified_by_TC_098_014 from 'CL-098-05' to 'TC-098-014';
+    dependency CL_098_06_verified_by_TC_098_014 from 'CL-098-06' to 'TC-098-014';
     // #74 An open page after a station restart (operator 2026-11-08, one grill-me round).
     requirement 'CL-074-01' {
         doc /* (#74, live acceptance 2026-11-08, #39 comment 6719540492: after a station restart an open page kept "Strategy Farthest new on band · Auto off" until reloaded, while the station had None and Auto off) After a station restart an open page shows the new boot's state without a reload, within the push rule. When the browser learns a boot_id other than the one a view's held station state belongs to, that view drops the state at once and shows the form of a freshly loaded page before its reads; it never shows a value of the previous boot, alone or with values of the new boot; a snapshot reply naming another boot is discarded; once the new boot's reads and first events have arrived the page equals a freshly loaded one. The automation view reads GET /automation only after an automation.state event, never once per socket, and on a new boot holds the never-used state without a request. The strategy element's line is drawn from the current strategy and automation snapshots together at each change of either; with None and no strategy run it shows the automation text, "Automation idle" without a run. No new request kind, no retry timer, no server change. Details: WstxStationProtocol::PushedStationState, WstxMcp::AutomationIndicator, WstxStrategy::StrategySelector. */
