@@ -6666,10 +6666,11 @@ package WstxRequirements {
              Steps: PUT one strategy of each class with every key at its bounds (bands null and 32 bands; new with 1 and 7 whats; countries with 64 entries in each list, each {kind "prefix", value of 3 characters, bands null} except one entry with a 13-character prefix and one with 32 bands, states 51, cq_targets 32 of 8 characters; the test asserts the encoded body is below 32768 bytes; order with 16 criteria; each leave mode at its lower and upper bounds; tx_move_every 0 and 20; retry_minutes 1 and 120); then one refusal each: band "11m", a repeated band, 33 bands; new [] and a repeated what; new_per "slot"; a country entry of kind "call", prefix "VK-9", a prefix of 14 characters, an entry with 33 bands, a country name not in the table, 65 entries; state "XX" and "PR", 52 states; a CQ target of 9 characters and "PO-TA", 33 CQ targets; an order with a repeat and with 17; leave calls 0 and 21, calls_heard below calls and 41, gone_minutes 0 and 61, tx_changes 0 and 21, mode "never"; tx_move_every -1, 21 and a missing case; retry_minutes 0 and 121; a contest strategy with order [most_wanted], with filters.new, with contest null and "unknown"; a class strategy with contest "ww_digi"; class "award" and "casual" (refused values); names "DXCC all" and "casual"; each schema 3 key (goals, needed, value, window, repetitions, quiet_minutes, cq_when_no_target) and builtin; a configuration whose body exceeds 32768 bytes.
              Expected: the first PUT accepted with revision + 1 and read back key for key; each refusal 400 invalid_request naming exactly its field path (strategies[0].bands[0], strategies[0].filters.countries.include[0].value, strategies[0].leave.calls_heard, strategies[0].class, strategies[1].order, strategies[1].contest, strategies[0].name ...; strategy 0 of class strategy, 1 of class contest), nothing stored; the oversized body refused as every oversized body. Red on the parent: the schema 4 keys are refused.
              2 — Isolated automated tests; Windows development PC, no radio. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-097-01';
         }
+        attribute executable : String = "server/src/strategy97_tests.rs";
     }
     dependency CL_097_01_verified_by_TC_097_001 from 'CL-097-01' to 'TC-097-001';
     verification 'TC-097-002' {
@@ -6679,10 +6680,11 @@ package WstxRequirements {
              Steps: a schema 3 file at revision 7 with "Mine" (goals [dxcc_band, new_call], needed not_confirmed, value [new_dxcc_slot, snr], repetitions 5, quiet_minutes 15, cq_when_no_target true, treat_73_as_cq false, window today, region dx), "Grid" (goals [grid]), "DXCC all", "dxcc all copy" and "Casual"; GET /strategy; PUT one change; read the file; a schema 3 file with an otherwise malformed strategy; a schema 2 file with calls_per_station; a schema 1 file. Then the TC-039-030 goal fixtures evaluated through their mapped schema 4 strategies.
              Expected: revision 7; "Mine" class strategy, new [dxcc, call], new_per band (the most specific of band and ever), new_means not_confirmed, worked_since today, region dx, treat_73_as_cq false, the three lists empty, order [new_dxcc_band_mode, snr], contest null, leave {calls, 5, 10}, tx_move_every {0, 1, 2}, busy_pause true, cq_when_idle true, retry_minutes 15; "Grid" new [grid] per ever; "DXCC all" renamed "DXCC all copy 2" ("dxcc all copy" is taken, ignoring case) and "Casual" renamed "Casual copy", configuration_note listing both; the malformed file configuration null with invalid_configuration; schema 2 and 1 upgraded as before, then to schema 4; after the PUT the file is schema 4 at revision 8 and configuration_note []; each mapped goal gives the verdicts TC-039-030 expects of its goal (property: the same ranked set). Red on the parent: schema 3 stays and the colliding names are dropped.
              2 — Isolated automated tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-097-01';
         }
+        attribute executable : String = "server/src/strategy97_tests.rs";
     }
     dependency CL_097_01_verified_by_TC_097_002 from 'CL-097-01' to 'TC-097-002';
     verification 'TC-097-003' {
@@ -6692,11 +6694,12 @@ package WstxRequirements {
              Steps: GET /strategy; PUT active "DXCC all", "casual", "New calls"; PUT active "WW Digi" without a contest selection and with {ww_digi, start, end}; a station restart; GET /strategy.
              Expected: builtin_strategies exactly DXCC all, New DXCC on band, New DXCC, Casual, POTA/SOTA in this order, all five class strategy, with every key of the table (POTA/SOTA: worked_since today, cq_targets include [POTA, SOTA], cq_when_idle false), then one contest built-in per profile (class contest, contest its id, order [], leave {contest, 2}, tx_move_every {0, 2, 2}, busy_pause false, cq_when_idle true, retry_minutes 10), none in configuration.strategies; "DXCC all" accepted; "casual" and "New calls" refused field active; "WW Digi" refused field contest without the selection and accepted with it; after the restart active None and auto false (DXCC all is the default in the list, not selected). Red on the parent: the eight old presets.
              2 — Isolated automated tests; Windows development PC, no radio. */
-        attribute automation : AutomationState = AutomationState::planned;
+        attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-097-01';
             verify 'CL-097-07';
         }
+        attribute executable : String = "server/src/strategy97_tests.rs";
     }
     dependency CL_097_01_verified_by_TC_097_003 from 'CL-097-01' to 'TC-097-003';
     dependency CL_097_07_verified_by_TC_097_003 from 'CL-097-07' to 'TC-097-003';
