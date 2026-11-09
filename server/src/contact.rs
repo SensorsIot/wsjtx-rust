@@ -2143,11 +2143,6 @@ impl Engine {
                 continue;
             }
             if let Some(v) = row.vhf.as_deref() {
-                if v.sent_by(&dx)
-                    && let Some(c) = self.contact.as_mut()
-                {
-                    c.his_last = row.period_start_ms.map(|p| (p, row.frequency_hz));
-                }
                 if self.settings.activity == Activity::EuVhf && v.to_me(&my) && v.sent_by(&dx) {
                     // Any message from him to my call ends his other QSO (BusyPartner).
                     if let Some(c) = self.contact.as_mut() {
