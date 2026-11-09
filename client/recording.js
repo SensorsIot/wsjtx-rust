@@ -1196,7 +1196,15 @@ function validTxLevelEvent(d){
   return operatingShape(d,'profile_id,boot_id,managed,level_db,stored,alc,assistant,result,meters,power_limit_pct,warnings,keying_confirmed')&&typeof d.keying_confirmed==='boolean'&&Array.isArray(d.warnings)&&d.warnings.every(w=>typeof w==='string')&&typeof d.managed==='boolean'&&Number.isSafeInteger(d.level_db)&&typeof d.stored==='boolean'&&['unknown','available','unavailable'].includes(d.alc)&&
     typeof d.assistant==='boolean'&&(d.result===null||typeof d.result==='string')&&(d.power_limit_pct===null||Number.isSafeInteger(d.power_limit_pct))&&(m===null||operatingShape(m,'alc,po_pct,swr_x10')&&meter(m.alc)&&meter(m.po_pct)&&meter(m.swr_x10));
 }
+// #68 CL-068-01: the last pushed SWR at the end of the Rx/Tx strip, red above 2.0; display only.
+const SWR_RED_ABOVE_X10=20;
+function stripSwrShow(){
+  const out=document.getElementById('strip-swr');if(!out)return;
+  const v=txLevelState,swr=v?.managed?v.meters?.swr_x10??null:null;
+  out.hidden=swr===null;out.textContent=swr===null?'':`SWR ${(swr/10).toFixed(1)}`;out.classList.toggle('op-swr-high',swr!==null&&swr>SWR_RED_ABOVE_X10);
+}
 function txLevelShow(){
+  stripSwrShow();
   document.getElementById('discovery-state').textContent=txLevelState?.keying_confirmed?'Radio discovery on start is on: the station looks for a free radio when it starts.':'Radio discovery on start is off until confirmed once: tick the line below and press Detect radio.';
   const managed=agcManaged(),v=txLevelState;document.getElementById('tx-level').hidden=!managed;if(!managed)return;
   const line=document.getElementById('tx-level-line'),meters=document.getElementById('tx-meters'),slider=document.getElementById('tx-level-slider');
