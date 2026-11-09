@@ -663,7 +663,8 @@ async fn finishing() -> Station81 {
 }
 
 // Proves: CL-081-01; TC-081-005 (a), (b), (c). What still ends a finishing QSO at once: (a) HALT 2 s
-// into our next R-report: the transmission stops, nothing is keyed after it, nothing logged; (b) Abort
+// into our next R-report: the transmission stops and the contact is cancelled (the finishing guard),
+// nothing is keyed after it and nothing logged, also after his RR73; (b) Abort
 // QSO likewise, the contact cancelled, no halt; (c) a double-click of W1AW calling my call replaces
 // K1ABC's contact and calls W1AW; K1ABC is never logged. Red on the parent: the QSO has already ended
 // at the Auto off.
@@ -686,8 +687,18 @@ async fn tc_081_005_halt_abort_and_a_double_click_end_a_finishing_qso_at_once() 
         f.read("contact").await["transmit"]["last_disarm_cause"],
         "halt"
     );
+    // StartedQso "Still at once": Enable Tx off and the contact cancelled at the step of the HALT.
+    assert_eq!(
+        contact(f).await,
+        (Value::Null, json!("cancelled"), json!("disarmed"))
+    );
     publish(f, e + 90_000, &[his("HB9BLA K1ABC RR73")]);
     silent_through(f, e + 105_000).await;
+    assert_eq!(
+        contact(f).await,
+        (Value::Null, json!("cancelled"), json!("disarmed")),
+        "his RR73 changes nothing"
+    );
     assert_eq!(logged(f, e), vec![]);
 
     // (b)

@@ -539,13 +539,14 @@ impl Run {
     }
 }
 /// #81 WstxStrategy::StartedQso finishing guard: a run's started QSO that a run end let finish, the
-/// station band and mode at that end and the run's grant (memory only, in no snapshot). It never
-/// arms, selects, answers or moves a frequency.
+/// station band and mode at that end, the run's grant and the transmit owner's HALT count then
+/// (memory only, in no snapshot). It never arms, selects, answers or moves a frequency.
 struct Finishing {
     contact_id: String,
     band: Option<&'static str>,
     mode: &'static str,
     access: authorization::Access,
+    halts: Option<u64>,
 }
 #[derive(Default)]
 struct Inner {
@@ -977,12 +978,14 @@ impl Owner {
             band: strategy::station_band(r),
             mode: r.operating_mode(),
             access: run.access.clone(),
+            halts: r.transmit.get().map(|t| t.service.halt_requests()),
         });
         true
     }
     /// #81 the finishing guard at each station step: the finished QSO's contact is disarmed and
-    /// cancelled when the station band or mode differs from the run's end or the run's grant is no
-    /// longer current; the guard ends with that contact.
+    /// cancelled when the station band or mode differs from the run's end, the run's grant is no
+    /// longer current or a HALT came from any source (StartedQso "Still at once": Enable Tx off and
+    /// the contact cancelled); the guard ends with that contact.
     fn guard_finishing(inner: &mut Inner, contact: &contact_http::Station, state: &ProfileState) {
         let Some(g) = inner.finishing.as_ref() else {
             return;
@@ -995,7 +998,9 @@ impl Owner {
         let r = &state.recording;
         // The grant itself (revoked, or a safety edit), as for a strategy run.
         let current = grant_current(state, &g.access, "", true, Instant::now());
-        if strategy::station_band(r) != g.band || r.operating_mode() != g.mode || !current {
+        let halted = r.transmit.get().map(|t| t.service.halt_requests()) != g.halts;
+        if strategy::station_band(r) != g.band || r.operating_mode() != g.mode || !current || halted
+        {
             inner.finishing = None;
             cancel(contact, state);
             disarm(contact, state);
@@ -1220,7 +1225,7 @@ impl Owner {
             }
             inner.slot_band = Some(b);
         }
-        // #81 a finishing QSO still ends at once on a band or mode change or a lost grant.
+        // #81 a finishing QSO still ends at once on a band or mode change, a lost grant or a HALT.
         Self::guard_finishing(&mut inner, contact, state);
         let since = inner.slot_since_ms;
         let Some(run) = inner.run.as_mut() else {
