@@ -28,8 +28,8 @@ gate:
   parallel: 3
   # protocol-thin, recording-thin and radio-selection-thin run beside other groups: measured
   # stable there (harness#28; Project-Specifics.md, Parallel groups). The CPU measurements
-  # keep exclusive: ["*"], and the CPU-heavy decoder groups stay apart from these three
-  # (link-measurement tag) in suites.yaml.
+  # keep exclusive: ["*"], and the CPU-heavy decoder groups stay apart from protocol-thin and
+  # recording-thin (link-measurement tag) in suites.yaml.
   timing_alone: false
   # D: has the room; C: reached 0 MB free beside the live station (harness#35). A machine
   # without D: falls back to the default; old folders in the default root are pruned too.
