@@ -68,9 +68,9 @@ rules around it. Agent memory only points here.
   Continuation state uses the bounded [checkpoint](../../harness/core/docs/CR-Reporting.md#restart-and-handoff-checkpoint).
   Required evidence lives in these records, rather than only in a session or chat;
   the issue is not a running diary.
-- **Records are cited as read.** A comment or other GitHub record is cited by the id or
-  url read from `gh` (`gh api repos/<owner>/<repo>/issues/<n>/comments --jq '.[] | .html_url'`),
-  never from memory.
+- **Records are cited as read.** A comment, commit, run or other record is cited by the
+  id, sha or url read from its source (`gh api repos/<owner>/<repo>/issues/<n>/comments --jq '.[] | .html_url'`,
+  `git log`, `gh run list`), never from memory.
 - **Written for a person.** The title states the problem in plain words; the body opens
   with the problem, the decision or task and a status checklist, readable on a phone.
   Commits, test IDs and paths go below, in a collapsed
@@ -125,7 +125,7 @@ says; the hook refuses any other first line.
 ```yaml
 guard:
   commands:
-    - 'node --test( --test-concurrency=1| --test-name-pattern=[A-Za-z0-9_.,:^+=/-]+){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
+    - 'node --test( --test-concurrency=1| --test-name-pattern=([\[\]A-Za-z0-9_.,:^+=/-]+|''[^'']+'')){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
   deny:
     - '^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test'
   model:
@@ -144,9 +144,11 @@ guard:
   WSTX_TEST_EXE=D:/wstx-build/<worktree>/debug/wstx-rust.exe node --test
   --test-concurrency=1 --test-name-pattern=<pattern>
   .git/harness-parallel/worktrees/<worktree>/<test file> …`: each prefix and both options
-  optional, the two prefixes in that order and no other, the pattern without spaces or
-  shell characters. `WSTX_TEST_EXE` (read by `tests/support.cjs`) runs the tests on the
-  role's own build; its `<worktree>` is the one every test file of the command lies in.
+  optional, the two prefixes in that order and no other, the pattern bare (letters, digits,
+  brackets and `_.,:^+=/-`) or in single quotes without a `'`. A test file may also be named
+  from a session inside the worktree or by its absolute path. `WSTX_TEST_EXE` (read by
+  `tests/support.cjs`) runs the tests on the role's own build; its `<worktree>` is the one
+  every test file of the command lies in.
 - **Delivery facts** in the model are a requirement's `coverage`, a case's `automation`
   and its `executable` binding
   ([source bindings](Project-Specifics.md#canonical-model-catalog-and-source-bindings));
@@ -160,7 +162,7 @@ guard:
 ```yaml
 guard:
   commands:
-    - 'node --test( --test-concurrency=1| --test-name-pattern=[A-Za-z0-9_.,:^+=/-]+){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
+    - 'node --test( --test-concurrency=1| --test-name-pattern=([\[\]A-Za-z0-9_.,:^+=/-]+|''[^'']+'')){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
   deny:
     - '^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test'
 ```
