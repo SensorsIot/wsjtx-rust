@@ -1068,6 +1068,247 @@ fn tc_097_008_snr_bucket_hears_us_and_the_new_criteria() {
     );
 }
 
+/// TC-097-009: the leave mode of "Test calls" (the TC-039-043 setup).
+fn until_logged(c: &mut Value) {
+    c["strategies"][0]["leave"] = json!({"mode":"until_logged","gone_minutes":10});
+}
+fn contest_style(heard: u64, no_reports: u64) -> impl FnOnce(&mut Value) {
+    move |c: &mut Value| {
+        c["strategies"][0]["leave"] = json!({"mode":"contest","tx_changes":2});
+        c["strategies"][0]["tx_move_every"] =
+            json!({"heard":heard,"not_heard":2,"no_reports":no_reports});
+    }
+}
+fn left_for(call: &str, reason: &str) -> Value {
+    json!({"call":call,"reason":reason})
+}
+/// The Tx offset after each publication of `rows` at the partner periods `from..=to`, and whether
+/// the contact is still armed then.
+async fn calls(
+    f: &Mcp,
+    e: i64,
+    from: i64,
+    to: i64,
+    rows: &[(&str, f64, Option<f64>)],
+) -> Vec<(Value, bool)> {
+    let mut seen = Vec::new();
+    for k in from..=to {
+        publish(f, rep(e, k), rows);
+        seen.push((frequencies(f).await.1, contact(f).await.2 == json!("armed")));
+    }
+    seen
+}
+
+// Proves: TC-097-009 (a) (CL-097-04, hand-worked from WstxStrategy::LeaveRule calls). A spot of my
+// call at K1ABC 598 s old: heard, so the leaving is at 8 (remaining 8 - k after the first 4 calls);
+// 3 s later the spot is older than 600 s and the 5th call leaves at 4 {K1ABC, repetitions}.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_009_a_the_spot_ageing_past_600_s_brings_the_leaving_back_to_calls() {
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    t.feed.inject(&heard_spot(598));
+    for k in 1..=4 {
+        publish(f, rep(e, k), &[]);
+        assert_eq!(run_of(f).await["leave"]["remaining"], json!(8 - k), "{k}");
+    }
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    publish(f, rep(e, 5), &[]);
+    assert_eq!(contact(f).await.2, json!("disarmed"));
+    assert_eq!(run_of(f).await["left"], left_for("K1ABC", "repetitions"));
+}
+
+// Proves: TC-097-009 (b) (CL-097-04, LeaveRule until_logged, gone_minutes 10). K1ABC calling CQ
+// every period for 30 minutes (60 publications) is never left. K1ABC last decoded at t0 (= e), then
+// silent: the publication at t0 + 9 min 45 s (my parity) leaves nothing, the one at t0 + 10 min
+// (his) leaves {K1ABC, gone}. His answer -05 at t0 + 30 s, then silent: not left at t0 + 10 min
+// (9 min 30 s after it), left at t0 + 10 min 30 s.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_009_b_until_logged_leaves_only_when_gone_10_minutes() {
+    let t = leaving(until_logged, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    for k in 1..=60 {
+        publish(f, rep(e, k), &[K1ABC_CQ]);
+    }
+    assert_eq!(
+        (contact(f).await.2, run_of(f).await["left"].clone()),
+        (json!("armed"), Value::Null),
+        "never left while decoded"
+    );
+    assert_eq!(run_of(f).await["leave"]["mode"], "until_logged");
+
+    let t = leaving(until_logged, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, rep(e, 1), &[]);
+    publish(f, e + 585_000, &[]);
+    assert_eq!(contact(f).await.2, json!("armed"), "t0 + 9 min 45 s");
+    publish(f, e + 600_000, &[]);
+    assert_eq!(contact(f).await.2, json!("disarmed"), "t0 + 10 min");
+    assert_eq!(run_of(f).await["left"], left_for("K1ABC", "gone"));
+
+    let t = leaving(until_logged, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    publish(f, rep(e, 1), &[("HB9BLA K1ABC -05", 1800.0, Some(-5.0))]);
+    publish(f, rep(e, 20), &[]);
+    assert_eq!(
+        contact(f).await.2,
+        json!("armed"),
+        "9 min 30 s after his answer"
+    );
+    publish(f, rep(e, 21), &[]);
+    assert_eq!(run_of(f).await["left"], left_for("K1ABC", "gone"));
+}
+
+// Proves: TC-097-009 (c) (CL-097-04, LeaveRule contest {tx_changes 2}, TxMoveRule). Silent with no
+// spot (no_reports, k 2): Tx moves after the 2nd and the 4th call, left {tx_changes} at the 6th.
+// Calling CQ with a spot and nothing more valuable: stays 20 periods. A more valuable station
+// (+5 dB under order [snr]) from the 3rd period: heard 0 never moves, left at the 5th; heard 1
+// moves at the 3rd and 4th, left at the 5th. no_reports 0: never moves, left at the 3rd.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_009_c_contest_style_change_points_and_the_stay() {
+    let better = ("CQ N1NEW FN31", 1300.0, Some(5.0));
+    let t = leaving(contest_style(0, 2), &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    let start = frequencies(f).await.1;
+    let seen = calls(f, e, 1, 5, &[]).await;
+    let txs: Vec<&Value> = seen.iter().map(|s| &s.0).collect();
+    assert!(seen.iter().all(|s| s.1), "armed through the 5th");
+    assert_eq!(txs[0], &start, "the 1st: no move");
+    assert_ne!(txs[1], &start, "moved after the 2nd");
+    assert_eq!(txs[2], txs[1], "the 3rd: no move");
+    assert_ne!(txs[3], txs[2], "moved after the 4th");
+    assert_eq!(txs[4], txs[3], "the 5th: no move");
+    publish(f, rep(e, 6), &[]);
+    assert_eq!(run_of(f).await["left"], left_for("K1ABC", "tx_changes"));
+
+    let t = leaving(contest_style(0, 2), &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    t.feed.inject(&heard_spot(60));
+    let start = frequencies(f).await.1;
+    let seen = calls(f, e, 1, 20, &[K1ABC_CQ]).await;
+    assert!(seen.iter().all(|s| s.1 && s.0 == start), "stays 20 periods");
+    assert_eq!(run_of(f).await["leave"]["staying"], true);
+
+    for (heard, moves) in [(0, false), (1, true)] {
+        let t = leaving(contest_style(heard, 2), &[K1ABC_CQ]).await;
+        let (f, e) = (&t.f, t.e);
+        t.feed.inject(&heard_spot(60));
+        let start = frequencies(f).await.1;
+        calls(f, e, 1, 2, &[K1ABC_CQ]).await;
+        let seen = calls(f, e, 3, 4, &[K1ABC_CQ, better]).await;
+        assert!(seen.iter().all(|s| s.1), "heard {heard}");
+        assert_eq!(seen[0].0 != start, moves, "heard {heard}: the 3rd");
+        assert_eq!(seen[1].0 != seen[0].0, moves, "heard {heard}: the 4th");
+        publish(f, rep(e, 5), &[K1ABC_CQ, better]);
+        assert_eq!(
+            run_of(f).await["left"],
+            left_for("K1ABC", "tx_changes"),
+            "heard {heard}: the 5th"
+        );
+    }
+
+    let t = leaving(contest_style(0, 0), &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    let start = frequencies(f).await.1;
+    let seen = calls(f, e, 1, 2, &[]).await;
+    assert!(seen.iter().all(|s| s.1 && s.0 == start), "no_reports 0");
+    publish(f, rep(e, 3), &[]);
+    assert_eq!(run_of(f).await["left"], left_for("K1ABC", "tx_changes"));
+}
+
+// Proves: TC-097-009 (d), (e) (CL-097-04, LeaveRule and the retry pause). (d) His answer after the
+// 3rd call brings the count back (remaining 4). (e) retry_minutes 10: after the leaving at the 4th,
+// K1ABC's call to my call at 5 min is not answered, his CQ at 9 min 59 s not selected, at 10 min
+// selected.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_009_d_e_an_answer_resets_and_the_retry_pause() {
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    calls(f, e, 1, 3, &[]).await;
+    assert_eq!(run_of(f).await["leave"]["remaining"], json!(1));
+    publish(f, rep(e, 4), &[("HB9BLA K1ABC -05", 1800.0, Some(-5.0))]);
+    assert_eq!(run_of(f).await["leave"]["remaining"], json!(4), "(d)");
+
+    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let (f, e) = (&t.f, t.e);
+    calls(f, e, 1, 4, &[]).await;
+    assert_eq!(run_of(f).await["left"], left_for("K1ABC", "repetitions"));
+    at_skew(f, 300);
+    publish(f, rep(e, 5), &[("HB9BLA K1ABC FN42", 1800.0, Some(-5.0))]);
+    assert_eq!(contact(f).await.0, Value::Null, "not answered at 5 min");
+    at_skew(f, 599);
+    publish(f, rep(e, 6), &[K1ABC_CQ]);
+    assert_eq!(
+        contact(f).await.0,
+        Value::Null,
+        "not selected at 9 min 59 s"
+    );
+    at_skew(f, 600);
+    publish(f, rep(e, 7), &[K1ABC_CQ]);
+    assert_eq!(contact(f).await.0, json!("K1ABC"), "selected at 10 min");
+}
+
+// Proves: TC-097-009 (f) (CL-097-04: unattended no stay, the stop at N). No client for 60 s, Tx
+// watchdog 6, K1ABC calling CQ every period with a spot of my call: until_logged and contest both
+// key 6 calls and the Tx watchdog stops the 7th; the run stops no_client (calls: TC-039-033).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_009_f_unattended_until_logged_and_contest_end_at_the_stop_at_n() {
+    for (name, edit) in [
+        (
+            "until_logged",
+            Box::new(until_logged) as Box<dyn FnOnce(&mut Value)>,
+        ),
+        ("contest", Box::new(contest_style(0, 2))),
+    ] {
+        let mut t = leaving(edit, &[K1ABC_CQ]).await;
+        let e = t.e;
+        t.feed.inject(&heard_spot(60));
+        drop(t.client.take());
+        let f = &t.f;
+        f.tick();
+        at_skew(f, 60);
+        assert_eq!(quiet_run(f).0, "contact_active", "{name}");
+        transmit_own_period(f, e + 15_000).await;
+        for k in 1..=5 {
+            publish(f, rep(e, k), &[K1ABC_CQ]);
+            transmit_own_period(f, rep(e, k) + 15_000).await;
+        }
+        publish(f, rep(e, 6), &[K1ABC_CQ]);
+        not_keyed_in(f, rep(e, 6) + 15_000).await;
+        assert_eq!(quiet_contact(f).await.2, json!("disarmed"), "{name}");
+        f.tick();
+        assert_eq!(
+            quiet_run(f),
+            ("stopped".into(), json!("no_client")),
+            "{name}"
+        );
+    }
+}
+
+// Proves: TC-097-009 (g) (CL-097-04, the caller exception). In each mode a new caller of my call at
+// the 2nd call: left {K1ABC, caller} and N1NEW selected from the same publication.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_009_g_a_caller_is_answered_at_once_in_each_mode() {
+    for (name, edit) in [
+        (
+            "calls",
+            Box::new(|_: &mut Value| {}) as Box<dyn FnOnce(&mut Value)>,
+        ),
+        ("until_logged", Box::new(until_logged)),
+        ("contest", Box::new(contest_style(0, 2))),
+    ] {
+        let t = leaving(edit, &[K1ABC_CQ]).await;
+        let (f, e) = (&t.f, t.e);
+        publish(f, rep(e, 1), &[]);
+        publish(f, rep(e, 2), &[("HB9BLA N1NEW FN31", 1200.0, Some(-8.0))]);
+        assert_eq!(contact(f).await.0, json!("N1NEW"), "{name}");
+        assert_eq!(
+            run_of(f).await["left"],
+            left_for("K1ABC", "caller"),
+            "{name}"
+        );
+    }
+}
+
 // Proves: TC-097-010
 #[test]
 fn tc_097_010_auto_slot_from_500_hz_upper_edge_ties_and_the_move_rule() {

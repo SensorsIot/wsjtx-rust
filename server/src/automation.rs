@@ -1680,7 +1680,7 @@ impl Owner {
                 let busy_pause = chosen.1.busy_pause && !run.unattended;
                 let busy_now = contact.busy_facts().0;
                 let tx_limit = u64::from(view.as_ref().map_or(6, |v| v.tx_calls));
-                if let Some((_, first, next, _)) = fresh.filter(|_| partner_period) {
+                if let Some((_, first, next, published)) = fresh.filter(|_| partner_period) {
                     let records = fresh_records(r, &run.identity, first, next);
                     let seen = assess(
                         run,
@@ -1705,11 +1705,18 @@ impl Owner {
                     let retry = chosen.1.retry_minutes;
                     // #97 LeaveRule until_logged: gone at the first publication of his parity
                     // whose period start is g minutes or more after his newest decode (also after
-                    // his answer); attended only (unattended the stop at N is back).
-                    let period_ms = records
-                        .first()
-                        .and_then(|v| v["period_start_utc"].as_str())
-                        .and_then(contact::parse_utc);
+                    // his answer); attended only (unattended the stop at N is back). The period is
+                    // the publication's, so an empty publication counts as well.
+                    let period_ms =
+                        published
+                            .as_deref()
+                            .and_then(contact::parse_utc)
+                            .or_else(|| {
+                                records
+                                    .first()
+                                    .and_then(|v| v["period_start_utc"].as_str())
+                                    .and_then(contact::parse_utc)
+                            });
                     if let (Leave::UntilLogged { gone_minutes }, Some(at), Some(last), false) =
                         (leave, period_ms, run.target.last_heard_ms, run.unattended)
                         && !seen.decoded
