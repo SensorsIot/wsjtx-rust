@@ -121,8 +121,9 @@ Open work and review/execution evidence live in GitHub issues; history is `git l
 
 GitHub issues of `SensorsIot/wsjtx-rust` are the project's one to-do list.
 
-- **Labels say how:** `cr`, `harness`, `efficiency` or `operator-task`; `waiting`
-  is added to any of them.
+- **Labels say how:** `cr`, `efficiency` or `operator-task`; `waiting`
+  is added to any of them. Harness issues are not here: they live in
+  [SensorsIot/harness](https://github.com/SensorsIot/harness/issues) (SensorsIot/harness#46).
 - **Types say what:** `Bug`, `Feature`, `Task`.
 - **Ageing:** an open issue is overdue 30 days after it was created; a `waiting` issue
   never ages and names what it waits for.
