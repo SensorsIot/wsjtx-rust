@@ -8,6 +8,9 @@ This project uses the harness (https://github.com/SensorsIot/harness, branch `ma
 git submodule at `harness/`. That copy is the version this project pins and the place
 the harness is maintained; use it, not the user-level `harness` skill.
 
+- The main session is the coordinator: load the `harness-coordinator` skill first. It is
+  composed from the [coordinator role](harness/core/agents/roles.md#role-coordinator) and
+  this project's additions.
 - Read the [functional authority binding](docs/harness/Project-Specifics.md#exclusive-functional-authority) before contract edits. Canonical SysML is edited directly; archived functional Markdown is not maintained or an active oracle. Harness/process documentation stays Markdown.
 - Product changes follow [CR process](harness/core/docs/CR-Process.md); changes to how the
   project is built, tested or gated follow [Harness changes](harness/core/docs/Harness-Changes.md).

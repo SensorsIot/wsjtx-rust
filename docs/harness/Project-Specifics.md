@@ -303,7 +303,7 @@ see the [measurement limits](../sysml/Requirements.sysml).
 
 A reviewed CR reaches master through the harness
 [merge queue](https://github.com/SensorsIot/harness/blob/main/core/docs/Merge-Queue.md),
-whose worker runs on HB9BLA only: the supervisor hands in the reviewed tip
+whose worker runs on HB9BLA only: the coordinator hands in the reviewed tip
 (`python harness/core/tools/merge_queue.py submit <issue> <tip>`) and builds no merge
 itself. Andreas pushes its reviewed tip to the issue branch and hands it in on HB9BLA.
 The `queue:` section of `.harness/config.yaml` names the tools the gate needs (Node 24

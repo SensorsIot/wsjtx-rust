@@ -18,7 +18,7 @@
           "label": "Operator job"
         },
         "external": {
-          "label": "Supervisor job"
+          "label": "Coordinator job"
         },
         "backend": {
           "label": "Sub-agent job (CR agent, reviewer)"
@@ -41,8 +41,8 @@
       "label": "Operator"
     },
     {
-      "id": "supervisor",
-      "label": "Supervisor (your session)"
+      "id": "coordinator",
+      "label": "Coordinator (your session)"
     },
     {
       "id": "cragent",
@@ -79,7 +79,7 @@
   "nodes": [
     {
       "id": "dryrun",
-      "lane": "supervisor",
+      "lane": "coordinator",
       "col": 0,
       "type": "cloud",
       "label": "Dry run",
@@ -116,7 +116,7 @@
     },
     {
       "id": "install",
-      "lane": "supervisor",
+      "lane": "coordinator",
       "col": 1,
       "type": "cloud",
       "label": "Install",
@@ -132,7 +132,7 @@
     },
     {
       "id": "live",
-      "lane": "supervisor",
+      "lane": "coordinator",
       "col": 2,
       "type": "cloud",
       "label": "Live tests",
@@ -167,7 +167,7 @@
       "col": 2,
       "type": "security",
       "label": "G8 live tests green?",
-      "sublabel": "judgment - supervisor checks each item; record 'Accepted live'",
+      "sublabel": "judgment - coordinator checks each item; record 'Accepted live'",
       "sources": [
         {
           "path": "core/docs/CR-Process.md",
@@ -183,7 +183,7 @@
       "col": 3,
       "type": "backend",
       "label": "Implement again (part 1)",
-      "sublabel": "after the supervisor has reverted and deployed the revert",
+      "sublabel": "after the coordinator has reverted and deployed the revert",
       "sources": [
         {
           "path": "core/docs/CR-Process.md",
@@ -195,7 +195,7 @@
     },
     {
       "id": "reconcile",
-      "lane": "supervisor",
+      "lane": "coordinator",
       "col": 3,
       "type": "external",
       "label": "Reconcile the contract",
@@ -211,7 +211,7 @@
     },
     {
       "id": "close",
-      "lane": "supervisor",
+      "lane": "coordinator",
       "col": 4,
       "type": "external",
       "label": "Close by hand",
@@ -296,7 +296,7 @@
       "title": "Gates G7-G8",
       "items": [
         "G7 dry run OK? judgment of the operator on the dry run; this project: the standing permission for station-update.ps1 (Project-Specifics, deployment authority)",
-        "G8 live tests green? judgment of the supervisor on each acceptance item, recorded as Accepted live"
+        "G8 live tests green? judgment of the coordinator on each acceptance item, recorded as Accepted live"
       ]
     },
     {

@@ -18,7 +18,7 @@
           "label": "Operator job"
         },
         "external": {
-          "label": "Supervisor job"
+          "label": "Coordinator job"
         },
         "backend": {
           "label": "Sub-agent job (CR agent, reviewer)"
@@ -41,8 +41,8 @@
       "label": "Operator"
     },
     {
-      "id": "supervisor",
-      "label": "Supervisor (your session)"
+      "id": "coordinator",
+      "label": "Coordinator (your session)"
     },
     {
       "id": "cragent",
@@ -85,7 +85,7 @@
   "nodes": [
     {
       "id": "intake",
-      "lane": "supervisor",
+      "lane": "coordinator",
       "col": 0,
       "type": "external",
       "label": "Intake",
@@ -117,7 +117,7 @@
     },
     {
       "id": "prepare",
-      "lane": "supervisor",
+      "lane": "coordinator",
       "col": 1,
       "type": "external",
       "label": "Prepare",
@@ -266,11 +266,11 @@
     },
     {
       "id": "push",
-      "lane": "supervisor",
+      "lane": "coordinator",
       "col": 5,
       "type": "external",
       "label": "Push",
-      "sublabel": "supervisor, never the CR agent",
+      "sublabel": "coordinator, never the CR agent",
       "sources": [
         {
           "path": "core/docs/CR-Process.md",

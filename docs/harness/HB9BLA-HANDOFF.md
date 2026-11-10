@@ -35,7 +35,7 @@ verify their availability in the actual agent environment before starting work.
   assumed one. It stops an idle station gracefully, because the station holds COM3, reads the
   power, writes it only if different, reads it back, starts the station again and records the
   old value. It refuses to key only when the power cannot be read, written or confirmed by the
-  read-back: exit 2, do not key, and report it to the supervisor. **Afterwards
+  read-back: exit 2, do not key, and report it to the coordinator. **Afterwards
   `radio-preflight.ps1 -Restore -Holder <run>` puts the old value back and ends the lease**;
   when that fails the lease stays for another try. With no live lease (it expired, a renewal
   failed, or `-Release` gave up the old value, which it prints), run `-PowerBcd <old value from
@@ -118,7 +118,7 @@ queue gates back to back): they run beside the gate at BelowNormal with 2 build 
 rerun a timing-sensitive failure once. Gate builds go to
 `D:/harness-cargo-target/wsjtx-rust/<checkout>` and are pruned by the gate itself; agent
 build directories are pruned with `harness/core/tools/build_prune.py agent-dirs --root DIR
---apply` (harness/core/docs/Parallel-Work.md, "Build output").
+--apply` (harness/lang/rust/standard.md, "Build folders").
 
 Use this synchronization set, not stale `synchronization-inputs-final`/`-lf` caches.
 Evidence: `.git\migration-evidence\hardware-preparation\`; original design: sibling

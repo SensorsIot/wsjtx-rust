@@ -16,7 +16,7 @@ contract; the references below are the constraints a change must respect.
 | Security | [principles](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/security.md); [deployment authority](Project-Specifics.md#deployment-authority) |
 | Testing | [testing](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/testing.md); suites in `.harness/suites.yaml` |
 | Change and harness-improvement reports; restart checkpoints | [Reporting](https://github.com/SensorsIot/harness/blob/main/core/docs/CR-Reporting.md); shared harness overview: `python harness/core/tools/report_cr.py --harness --root harness` |
-| Parallel issue workspaces and supervised sub-agents | [Parallel work](../../harness/core/docs/Parallel-Work.md); `python harness/core/tools/parallel.py status` |
+| The coordinator (main session), parallel issue workspaces and sub-agents | [Agent roles](../../harness/core/agents/roles.md), [workspace tool](../../harness/core/docs/Workspaces.md); `python harness/core/tools/parallel.py status` |
 | Writing functional SysML models | [SysML v2 authoring](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/sysml-v2.md) |
 | How an agent session works with the operator | [Agent working rules](Agent-Working-Rules.md) |
 | Prohibitions (index) | [Do-Not-Do](Do-Not-Do.md) |

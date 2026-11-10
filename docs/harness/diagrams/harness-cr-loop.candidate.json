@@ -41,8 +41,8 @@
       "label": "Operator"
     },
     {
-      "id": "supervisor",
-      "label": "Supervisor (your session)"
+      "id": "coordinator",
+      "label": "Coordinator (your session)"
     },
     {
       "id": "cragent",
@@ -97,7 +97,7 @@
   "nodes": [
     {
       "id": "intake",
-      "lane": "supervisor",
+      "lane": "coordinator",
       "col": 0,
       "type": "external",
       "label": "0 Intake",
@@ -145,7 +145,7 @@
     },
     {
       "id": "prepare",
-      "lane": "supervisor",
+      "lane": "coordinator",
       "col": 1,
       "type": "external",
       "label": "1 Prepare",
@@ -409,7 +409,7 @@
     },
     {
       "id": "close",
-      "lane": "supervisor",
+      "lane": "coordinator",
       "col": 5,
       "type": "frontend",
       "label": "7 Close by hand",
@@ -425,7 +425,7 @@
           "path": "core/docs/Parallel-Work.md",
           "line": 88,
           "end_line": 92,
-          "label": "supervisor confirms closure"
+          "label": "coordinator confirms closure"
         }
       ]
     }
@@ -501,7 +501,7 @@
       "id": "e-review-push",
       "from": "review",
       "to": "prepush",
-      "label": "supervisor pushes",
+      "label": "coordinator pushes",
       "variant": "emphasis"
     },
     {
@@ -590,7 +590,7 @@
       "dot": "violet",
       "title": "Who tests",
       "items": [
-        "Supervisor: designs the tests first, pushes, runs the live tests",
+        "Coordinator: designs the tests first, pushes, runs the live tests",
         "CR agent (sub-agent): writes and runs them, proves each new one red on the parent",
         "Reviewer (sub-agent): reads them; a test that passes without the change is a finding",
         "Push gate: automatic, independent of any agent"
