@@ -1,7 +1,7 @@
 # Harness reference index
 
-The build procedure is the [CR process](https://github.com/SensorsIot/harness/blob/main/core/docs/CR-Process.md); method changes
-follow [Harness changes](https://github.com/SensorsIot/harness/blob/main/core/docs/Harness-Changes.md). The declared canonical functional artifact is the product
+The build procedure is the [CR process](../../harness/core/docs/CR-Process.md); method changes
+follow [Harness changes](../../harness/core/docs/Harness-Changes.md). The declared canonical functional artifact is the product
 contract; the references below are the constraints a change must respect.
 
 | Subject | Reference |
@@ -12,12 +12,12 @@ contract; the references below are the constraints a change must respect.
 | Behavior baseline and provenance | [Functional model](../sysml/Requirements.sysml) and its referenced scope/provenance packages; distribution notices in [README](../../README.md#license-and-attribution) |
 | Which machine does what (HB9BLA station, PC Andreas) | [Machines and roles](Project-Specifics.md#machines-and-roles) |
 | Project-specific environment, build and model validation | [Project specifics](Project-Specifics.md), `.github/workflows/windows-rust.yml` |
-| Language rules | [Rust standard](https://github.com/SensorsIot/harness/blob/main/lang/rust/standard.md) |
-| Security | [principles](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/security.md); [deployment authority](Project-Specifics.md#deployment-authority) |
-| Testing | [testing](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/testing.md); suites in `.harness/suites.yaml` |
-| Change and harness-improvement reports; restart checkpoints | [Reporting](https://github.com/SensorsIot/harness/blob/main/core/docs/CR-Reporting.md); shared harness overview: `python harness/core/tools/report_cr.py --harness --root harness` |
+| Language rules | [Rust standard](../../harness/lang/rust/standard.md) |
+| Security | [principles](../../harness/core/docs/standards/security.md); [deployment authority](Project-Specifics.md#deployment-authority) |
+| Testing | [testing](../../harness/core/docs/standards/testing.md); suites in `.harness/suites.yaml` |
+| Change and harness-improvement reports; restart checkpoints | [Reporting](../../harness/core/docs/CR-Reporting.md); shared harness overview: `python harness/core/tools/report_cr.py --harness --root harness` |
 | The coordinator (main session), parallel issue workspaces and sub-agents | [Agent roles](../../harness/core/agents/roles.md), [workspace tool](../../harness/core/docs/Workspaces.md); `python harness/core/tools/parallel.py status` |
-| Writing functional SysML models | [SysML v2 authoring](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/sysml-v2.md) |
+| Writing functional SysML models | [SysML v2 authoring](../../harness/core/docs/standards/sysml-v2.md) |
 | How an agent session works with the operator | [Agent working rules](Agent-Working-Rules.md) |
 | Prohibitions (index) | [Do-Not-Do](Do-Not-Do.md) |
 | Escapes | [Escapes ledger](Escapes-Ledger.md) |
@@ -114,7 +114,7 @@ behavioural equivalence or implementation readiness; the ready check, independen
 and relevant application tests supply that evidence.
 
 The active canonical contract and these bindings state the rule that holds now, never
-its history ([documentation](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/documentation.md)).
+its history ([documentation](../../harness/core/docs/standards/documentation.md)).
 Open work and review/execution evidence live in GitHub issues; history is `git log`.
 
 ## Backlog

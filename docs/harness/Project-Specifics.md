@@ -302,7 +302,7 @@ see the [measurement limits](../sysml/Requirements.sysml).
 ## Merge queue
 
 A reviewed CR reaches master through the harness
-[merge queue](https://github.com/SensorsIot/harness/blob/main/core/docs/Merge-Queue.md),
+[merge queue](../../harness/core/docs/Merge-Queue.md),
 whose worker runs on HB9BLA only: the coordinator hands in the reviewed tip
 (`python harness/core/tools/merge_queue.py submit <issue> <tip>`) and builds no merge
 itself. Andreas pushes its reviewed tip to the issue branch and hands it in on HB9BLA.
@@ -325,7 +325,7 @@ Both applications can be developed on one Windows computer: the station-server p
 ## Deployment authority
 
 This is the project's binding of the harness
-[deployment authority](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/security.md#deployment-authority)
+[deployment authority](../../harness/core/docs/standards/security.md#deployment-authority)
 rules (#26).
 
 **Mechanism.** There is one deploy mechanism: the Windows release executable built on
@@ -516,7 +516,7 @@ enforced by the platform.
 
 ## Product model maintenance
 
-The reusable [SysML authoring instruction](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/sysml-v2.md)
+The reusable [SysML authoring instruction](../../harness/core/docs/standards/sysml-v2.md)
 explains how to write models without project-specific assumptions. This binding selects the exclusive authority policy below and the local toolchain. The
 functional entry point is [Requirements.sysml](../sysml/Requirements.sysml), with the
 [architecture](../sysml/Architecture.sysml) and the model packages it references.

@@ -4,7 +4,7 @@
 **Status:** present-state. **Layer:** HOW. **Scope:** WSTX Rust bindings.
 
 How an AI agent session works with the operator on this project. The build procedure is
-the [CR process](https://github.com/SensorsIot/harness/blob/main/core/docs/CR-Process.md); this page holds the standing
+the [CR process](../../harness/core/docs/CR-Process.md); this page holds the standing
 rules around it. Agent memory only points here.
 
 ## Who changes what
@@ -16,18 +16,10 @@ rules around it. Agent memory only points here.
 - **Heavy runs yield to the gate by priority.** A long build or test run outside the gate
   runs at BelowNormal with 2 build jobs beside the gate, without waiting for `busy`, and
   reruns a timing-sensitive failure once before treating it as real.
-- **CR agents never push.** A CR agent never runs `git push`, not even of its own branch;
-  only the merge queue pushes CRs, and harness and pin bumps are pushed by the coordinator
-  or a dedicated harness agent from the main checkout or another clone (the agent guard
-  refuses any push from a `.git/harness-parallel/worktrees/cr*` or `issue-*` worktree).
-- **Hand in at once, do not duplicate the gate.** A CR agent ends its work with red on the
-  parent and the fast checks (build, clippy and fmt, the new and changed tests, the cheap
-  contract check `python tools/sysml.py traces`); the full suite selection runs once, in
-  the queue's gate. A reviewed CR, and each reviewed slice of a multi-slice CR, is handed
-  in to the queue at once; the next slice starts from master, never stacked on a
-  long-lived branch. Master is merged into a CR only on a `bounced:conflict`, resolving
-  only the listed files, and that merge is re-reviewed on its resolution only
-  (`harness/core/tools/resolution_diff.py <merge>`).
+- **Pushing and hand-in** follow the core: only the merge queue pushes CRs, and a CR agent
+  hands in at once after red on the parent and the fast checks
+  ([CR process](../../harness/core/docs/CR-Process.md#steps), steps 2-4). This project's
+  cheap contract check among them is `python tools/sysml.py traces`.
 - **Per approved issue.** A session changes the main branch or the running installation
   only for an issue the operator has approved for it, each issue on its own; the approval
   is recorded on that issue. Without it the session writes the change text (outcome,
