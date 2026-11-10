@@ -121,9 +121,6 @@ guard:
     - 'python (\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/)?fixtures/transmit/generate\.py( --(bin|compare-bin|ft4sim) C:/WSJT/[A-Za-z0-9._/-]+)+'
   deny:
     - '^(?!(python3?|py)(\.exe)? \S*red_on_parent\.py )(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test'
-  model:
-    facts:
-      - '\s*attribute (coverage|automation|executable) : .*;\s*'
 ```
 
 - **Builds and tests** use the build and temp folders of the
