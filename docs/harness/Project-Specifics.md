@@ -15,8 +15,13 @@ says "this PC" without naming one, read it as the machine named below for that t
 
 | Machine | Role |
 |---|---|
-| **HB9BLA** (`192.168.0.37`, checkout `D:\Github\wsjtx-rust`) | The station. The product runs here and the transceiver (IC-7300, COM3) is connected here. Release packaging, installs and deploy dry runs; all live and hardware tests (cost 3–5) and radio acceptance. Runtime details: [HB9BLA handover](HB9BLA-HANDOFF.md). |
-| **Andreas** (hostname `Andreas`) | Everything that needs no radio: SysML model work, documentation, programming, builds, offline tests, reviews, the gate and harness work (operator 2026-11-10). It has no radio, so it runs no live or hardware tests and installs nothing on the station. |
+| **HB9BLA** (`192.168.0.37`, checkout `D:\Github\wsjtx-rust`) | The station: the product runs here and the one transceiver (IC-7300, COM3) is connected here. Installs, deploy dry runs, all live and hardware tests (cost 3–5) and radio acceptance run here. Runtime details: [HB9BLA handover](HB9BLA-HANDOFF.md). |
+| **Andreas** (hostname `Andreas`, checkout `D:\Github\wsjtx-rust`) | No transceiver, so no live or hardware tests and no install on the station. |
+
+The two PCs are used interchangeably for everything else (model, documentation,
+programming, builds, offline tests, reviews, the gate, the merge queue and harness work)
+and are set up the same way: the same toolchains, build and cache folders, fixture folders
+and hooks, as the [HB9BLA handover](HB9BLA-HANDOFF.md) lists them (operator 2026-11-10).
 
 - The `windows-rust.yml` artifact (`wstx-rust-windows-x64`) is build evidence only. It
   shows that the build and tests pass on a clean Windows runner and is never installed
