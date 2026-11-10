@@ -15,13 +15,13 @@ says "this PC" without naming one, read it as the machine named below for that t
 
 | Machine | Role |
 |---|---|
-| **HB9BLA** (`192.168.0.37`, checkout `D:\Github\wsjtx-rust`) | The station: the product runs here and the one transceiver (IC-7300, COM3) is connected here. Installs, deploy dry runs, all live and hardware tests (cost 3–5) and radio acceptance run here. Runtime details: [HB9BLA handover](HB9BLA-HANDOFF.md). |
-| **Andreas** (hostname `Andreas`, checkout `D:\Github\wsjtx-rust`) | No transceiver, so no live or hardware tests and no install on the station. |
+| **HB9BLA** (`192.168.0.37`, checkout `D:\Github\wsjtx-rust`) | The station: the product runs here and the one transceiver (IC-7300, COM3) is connected here. All work that runs the project's tests: coding, builds, every project test, the gate and the merge queue; installs, deploy dry runs, all live and hardware tests (cost 3–5) and radio acceptance. It alone holds the test inputs and is the timing baseline of the suites. Runtime details: [HB9BLA handover](HB9BLA-HANDOFF.md). |
+| **Andreas** (hostname `Andreas`, checkout `D:\Github\wsjtx-rust`) | Work that runs no project test: harness work (its own tests only), SysML model, documentation, issue definition and ready checks, read-only reviews. No test inputs, no gate, no install. |
 
-The two PCs are used interchangeably for everything else (model, documentation,
-programming, builds, offline tests, reviews, the gate, the merge queue and harness work)
-and are set up the same way: the same toolchains, build and cache folders, fixture folders
-and hooks, as the [HB9BLA handover](HB9BLA-HANDOFF.md) lists them (operator 2026-11-10).
+One machine runs the tests, so there is one set of test inputs and one timing baseline
+(operator 2026-11-10). An issue whose definition is done on Andreas moves to HB9BLA for
+implementation by swapping its owner label. Heavy builds and gates share HB9BLA with the
+live station: do not operate the radio during a heavy gate (#49, harness#35).
 
 - The `windows-rust.yml` artifact (`wstx-rust-windows-x64`) is build evidence only. It
   shows that the build and tests pass on a clean Windows runner and is never installed
