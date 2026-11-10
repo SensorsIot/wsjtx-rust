@@ -7,11 +7,11 @@ labels: cr
 <!-- Apply CR-Process.md, Intake and authorization, before creating an issue.
      It may start with the problem only; the rest is completed before the ready check. -->
 
-**Reuse check**
-<open issues considered, and why none fits this goal>
+**Duplicate check**
+<open issues considered, and why none asks for exactly this change>
 
 **Problem**
-<what is wrong or missing, and the goal, in one or two sentences>
+<what is wrong or missing, and the goal; the value: who gains what they will notice, instead of what happens today>
 
 **Functionality**
 <what it must do, for each case>
@@ -23,9 +23,9 @@ labels: cr
 <each question, and any experiment that answers it; empty when ready>
 
 **Sequence**
-<what must land first; filled by the ready check>
+<what must land first, and the related issues; filled by the ready check>
 
-**Acceptance** (checked live after the deploy; each item names what is observed and how)
+**Acceptance** (checked live after the deploy; each item names what is observed and how; at least one observes the value)
 - [ ] 1. <observation, and how it is made>
 
 **Approval**
