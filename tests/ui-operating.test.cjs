@@ -5055,3 +5055,76 @@ test('TC-096-001 a refused full-screen request changes nothing and reports no er
   await page.evaluate(()=>window.wstxChipsShow?.());assert.deepEqual(await entries(),before,'no error-field entry');
   assert.deepEqual(errors,[],'no page error');
 });
+
+// ---------------------------------------------------------------- #110 saved Auto Seq and Call 1st
+// Proves: CL-110-01; TC-110-005 (a)-(d). The candidate server on a disposable profile directory
+// configured for transmission (CAT PTT and an output device, neither opened: nothing is armed), so
+// that Call 1st is an enabled setting. Oracle: CL-110-01 points 1 and 2, not the candidate's file.
+test('TC-110-005 Call 1st unticked in the browser stays unticked after a station restart',{timeout:120000},async t=>{
+  const port=await browserPort(),dir=await fs.mkdtemp(path.join(root,'station-'));
+  const doc={schema_version:1,profile_id:crypto.randomUUID(),revision:0,display_name:'HB9BLA saved settings',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin:null},connection_type:'standard',
+    audio:{input_device:null,output_device:'test-only-unopened-output'},control:{mode:'cat',endpoint:'icom7300://COM250?baud=19200&radio=94&controller=e0',ptt:'cat'}};
+  await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify(doc));
+  const errors=[];
+  const open=async before=>{const context=await browser.newContext({viewport:{width:1366,height:768}}),page=await context.newPage();t.after(()=>context.close());
+    page.on('pageerror',e=>errors.push(e.message));await before?.(page);await page.goto(first.origin);return page;};
+  const boxes=page=>page.evaluate(()=>Object.fromEntries(['contact-auto','contact-call-first'].map(id=>{const b=document.getElementById(id);return [id,{checked:b.checked,disabled:b.disabled}];})));
+  const shown=page=>page.waitForFunction(()=>!!window.wstxContact?.snapshot(),null,{timeout:30000});
+  const first=await server({},['--profile',dir]);t.after(()=>first.close());
+  const page=await open();await shown(page);
+  // A profile's first start: both ticked, Call 1st an enabled setting.
+  assert.deepEqual([(await boxes(page))['contact-auto'].checked,(await boxes(page))['contact-call-first']],[true,{checked:true,disabled:false}]);
+  // (d) A refused save: the result line shows the refusal and the box shows the station's value again.
+  await page.route('**/contact/command',refuseStorage);
+  await page.locator('#contact-call-first').click();
+  await page.waitForFunction(()=>document.querySelector('#contact-result').textContent==='Call 1st: refused · storage_unavailable',null,{timeout:10000});
+  assert.deepEqual([(await boxes(page))['contact-call-first'].checked,await page.evaluate(()=>window.wstxContact.snapshot().settings.call_first)],[true,true],'(d) Call 1st ticked again');
+  await page.unroute('**/contact/command',refuseStorage);
+  // (a) Untick Call 1st; the station process ends and starts again on the same directory.
+  await page.locator('#contact-call-first').uncheck();
+  await page.waitForFunction(()=>window.wstxContact.snapshot().settings.call_first===false,null,{timeout:10000});
+  const boot=await page.evaluate(()=>window.wstxContact.snapshot().boot_id);
+  await first.close();
+  const second=await server({},['--profile',dir]);t.after(()=>second.close());
+  assert.equal(second.origin,first.origin,'the same profile and port');
+  await page.reload();await shown(page);
+  assert.notEqual(await page.evaluate(()=>window.wstxContact.snapshot().boot_id),boot,'a new station start');
+  const after=await boxes(page);
+  assert.deepEqual([after['contact-call-first'].checked,after['contact-auto'].checked],[false,true],'(a) Call 1st unticked, Auto Seq ticked');
+  // (c) Guard of existing behaviour: until the snapshot arrives a second browser shows neither value.
+  // The snapshot reaches a page by GET /contact or by the first contact.state push: both are held.
+  const asked=deferred(),release=deferred();
+  const other=await open(async p=>{
+    await p.route('**/contact',async route=>{asked.resolve();await release.promise;await route.continue();});
+    await p.routeWebSocket(/\/ws(\?|$)/,ws=>{const station=ws.connectToServer(),waiting=[];let open=false;
+      const contactState=m=>{try{return JSON.parse(m).type==='contact.state';}catch{return false;}};
+      station.onMessage(m=>{if(open||!contactState(m))ws.send(m);else waiting.push(m);});ws.onMessage(m=>station.send(m));
+      release.promise.then(()=>{open=true;for(const m of waiting)ws.send(m);});});
+  });
+  await asked.promise;await other.locator('#connection[data-state=connected]').waitFor();
+  await other.waitForFunction(()=>typeof window.wstxContact?.snapshot==='function');
+  assert.equal(await other.evaluate(()=>window.wstxContact.snapshot()??null),null,'no snapshot has arrived');
+  assert.deepEqual(await boxes(other),{'contact-auto':{checked:false,disabled:true},'contact-call-first':{checked:false,disabled:true}},'(c) nothing shown before the snapshot');
+  // (b) With the snapshot it shows the same as the first browser.
+  release.resolve();await shown(other);
+  const second_view=await boxes(other);
+  assert.deepEqual([second_view['contact-call-first'].checked,second_view['contact-auto'].checked],[false,true],'(b) the second browser');
+  assert.deepEqual(errors,[]);
+});
+// The answer of a station whose save failed (CL-110-01 point 4), as the issue states it.
+const refuseStorage=route=>route.fulfill({status:503,json:{error:{code:'storage_unavailable',field:null}}});
+// Proves: CL-110-01; TC-110-005 (d) for Auto Seq. Its box is enabled only with an available transmit
+// capability, which no disposable station has: the snapshot is the fixture's, the refusal as in (d).
+test('TC-110-005 (d) a refused Auto Seq change leaves the box showing the station value',{timeout:60000},async t=>{
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{})}));
+    await p.route('**/contact/command',refuseStorage);
+  }});
+  await page.waitForFunction(()=>window.wstxContact?.snapshot()&&!document.querySelector('#contact-auto').disabled,null,{timeout:45000});
+  assert.equal(await page.locator('#contact-auto').isChecked(),true,'Auto Seq on in the snapshot');
+  await page.locator('#contact-auto').click();
+  await page.waitForFunction(()=>document.querySelector('#contact-result').textContent==='Auto sequence: refused · storage_unavailable',null,{timeout:10000});
+  assert.deepEqual([await page.locator('#contact-auto').isChecked(),await page.evaluate(()=>window.wstxContact.snapshot().settings.auto_seq)],[true,true],'(d) Auto Seq ticked again');
+  assert.deepEqual(errors,[]);
+});

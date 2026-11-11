@@ -399,8 +399,10 @@ let shownExchange;
 const sendActivity=()=>{const activity=$('contact-activity').value,contest=activity==='field_day'||activity==='rtty';send('set_activity',contest?{activity,exchange:$('contact-exchange').value}:{activity},'Activity').then(r=>{if(r?.refused)$('contact-activity').value=snap?.settings?.activity??'none';});};
 $('contact-activity').addEventListener('change',sendActivity);
 $('contact-exchange').addEventListener('change',()=>{if(['field_day','rtty'].includes($('contact-activity').value))sendActivity();});
-$('contact-auto').addEventListener('change',event=>send('set_auto_seq',{enabled:event.target.checked},'Auto sequence'));
-$('contact-call-first').addEventListener('change',event=>send('set_call_first',{enabled:event.target.checked},'Call 1st'));
+// CL-110-01 point 4: a refusal changed nothing, so the box shows the station's value again, not the clicked one.
+const sendSetting=(action,label)=>event=>send(action,{enabled:event.target.checked},label).then(result=>{if(result?.refused)render();});
+$('contact-auto').addEventListener('change',sendSetting('set_auto_seq','Auto sequence'));
+$('contact-call-first').addEventListener('change',sendSetting('set_call_first','Call 1st'));
 $('contact-tune').addEventListener('click',()=>send('tune',{enabled:!snap?.transmit.tune},'Tune'));
 $('contact-cancel').addEventListener('click',()=>send('cancel',{},'Cancel contact'));
 for(const id of ['watchdog-tx','watchdog-tune'])$(id).addEventListener('change',async()=>{

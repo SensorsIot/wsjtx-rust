@@ -345,7 +345,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             recording.start_hashes(&store.document.callsign);
             recording.sync_transmit_mode();
             // WstxContact: one contact engine per station, consuming the transmit owner.
-            let _ = recording.contact.set(contact_http::Station::start());
+            let _ = recording.contact.set(contact_http::Station::start(&store));
             // FR-023: a native profile starts its own direct radio session; a standard
             // profile never opens a native socket.
             if let Some(native) = &store.document.native {

@@ -5279,3 +5279,108 @@ fn tc_007_010_i_a_halted_73_keeps_signoff_and_enable_tx_sends_it_once() {
     );
     assert_completed_once(&mut s, "SV2CLJ", (Some("-04"), Some("+02")));
 }
+
+/// #110: `station()` whose engine is the one a station start creates on a disposable
+/// profile directory (HB9BLA JN47) that holds a hand-written qso-settings.json with these
+/// values.
+fn station_started_with_saved(auto_seq: bool, call_first: bool) -> Station {
+    let (dir, id) =
+        crate::contact_http_tests::profile_directory("http://127.0.0.1:18114", true, "JN47AA");
+    let saved = format!(
+        r#"{{"schema_version":1,"profile_id":"{id}","auto_seq":{auto_seq},"call_first":{call_first}}}"#
+    );
+    std::fs::write(dir.join("qso-settings.json"), saved).unwrap();
+    let (store, _) = crate::profile::Store::open(&dir).unwrap();
+    let mut s = station();
+    s.engine = crate::contact_http::start_engine(&store);
+    drop(store);
+    let _ = std::fs::remove_dir_all(&dir);
+    s
+}
+
+// Proves: CL-110-01, CL-010-17; TC-110-004 (a), (b). The restored Call 1st governs the own
+// CQ: off keeps calling (WstxContact::CallFirst), on answers the first caller as TC-010-010 (a).
+#[test]
+fn tc_110_004_the_restored_call_first_governs_the_own_cq() {
+    for (call_first, state, sent) in [
+        (false, (State::Calling, Slot::Tx6), "CQ HB9BLA JN47"),
+        (true, (State::Report, Slot::Tx2), "EA4HTI HB9BLA -08"),
+    ] {
+        let mut s = station_started_with_saved(true, call_first);
+        s.command(Command::EnableTx(true, Some(7))).unwrap();
+        assert_eq!(s.state(), (State::Calling, Slot::Tx6));
+        s.run(period(2) + 14 * SECOND);
+        assert_eq!(s.sent_in(period(1)).as_deref(), Some("CQ HB9BLA JN47"));
+        let caller = s.row(period(2), "HB9BLA EA4HTI IM69", 2090.0, Some(-8.0));
+        s.deliver(&[caller]);
+        assert_eq!(s.state(), state, "Call 1st saved {call_first}");
+        let dx = s.engine.contact.as_ref().unwrap().dx_call.clone();
+        assert_eq!(dx.as_deref(), call_first.then_some("EA4HTI"));
+        s.run(period(4));
+        assert_eq!(
+            s.sent_in(period(3)).as_deref(),
+            Some(sent),
+            "Call 1st saved {call_first}"
+        );
+    }
+}
+
+// Proves: CL-110-01, CL-010-02; TC-110-004 (c). The restored Auto Seq off: the partner's
+// report changes neither state nor next slot and offers Tx3 (WstxContact::AutoSequence).
+#[test]
+fn tc_110_004_the_restored_auto_seq_off_only_offers_the_next_message() {
+    let mut s = station_started_with_saved(false, true);
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, Some(-12.0));
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert!(s.armed());
+    assert_eq!(s.state(), (State::Replying, Slot::Tx1));
+    s.run(period(2) + 14 * SECOND);
+    let report = s.row(period(2), "HB9BLA K1ABC -05", 1500.0, Some(-12.0));
+    s.deliver(&[report]);
+    assert_eq!(s.state(), (State::Replying, Slot::Tx1), "unchanged");
+    assert_eq!(
+        s.engine.contact.as_ref().unwrap().suggested,
+        Some(Slot::Tx3)
+    );
+}
+
+// Proves: CL-110-01, CL-009-04; TC-110-004 (d). Guard of CL-009-04: whatever is saved, the
+// start leaves the transmit state off with cause startup, no contact, and nothing is
+// requested or keyed in 3 own periods without a start action.
+#[test]
+fn tc_110_004_a_start_with_saved_values_transmits_nothing() {
+    for saved in [true, false] {
+        let mut s = station_started_with_saved(saved, saved);
+        assert_eq!(
+            (s.engine.settings.auto_seq, s.engine.settings.call_first),
+            (saved, saved)
+        );
+        let off = |s: &Station| {
+            let v = s.core.view();
+            assert_eq!(
+                (v.arm_state, v.last_disarm_cause, v.pending_sequence),
+                (ArmState::Disarmed, DisarmCause::Startup, None),
+                "saved {saved}"
+            );
+            assert!(s.engine.contact.is_none(), "saved {saved}");
+        };
+        off(&s);
+        // Own periods 1, 3 and 5 (parity odd), with a caller in each partner period.
+        for n in [2, 4, 6] {
+            s.run(period(n) + 14 * SECOND);
+            let caller = s.row(period(n), "HB9BLA EA4HTI IM69", 2090.0, Some(-8.0));
+            s.deliver(&[caller]);
+            off(&s);
+        }
+        s.run(period(7));
+        off(&s);
+        assert!(s.sent.is_empty(), "saved {saved}: {:?}", s.sent);
+        assert!(s.fake.0.keys.lock().unwrap().is_empty(), "saved {saved}");
+        assert!(s.fake.0.plays.lock().unwrap().is_empty(), "saved {saved}");
+    }
+}

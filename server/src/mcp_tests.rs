@@ -38,9 +38,18 @@ static PORT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(18
 /// A selected HTTPS profile (HB9BLA, JN47AA) whose transmit owner runs on the bench, with
 /// one enrolled auth-v1 grant; `token` is that grant's current transport.
 pub(crate) async fn station(transmit: bool) -> Mcp {
+    station_prepared(transmit, |_, _| {}).await
+}
+/// `station` on a profile directory that `prepare` (directory, profile id) first puts
+/// further files into, as a station start would find them.
+pub(crate) async fn station_prepared(
+    transmit: bool,
+    prepare: impl FnOnce(&std::path::Path, &str),
+) -> Mcp {
     let dir = std::env::temp_dir().join(format!("wstx-mcp-{}", profile::new_uuid().unwrap()));
     std::fs::create_dir(&dir).unwrap();
     let id = profile::new_uuid().unwrap();
+    prepare(&dir, &id);
     let boot = profile::new_uuid().unwrap();
     let port = PORT.fetch_add(1, Ordering::SeqCst);
     let origin = format!("https://127.0.0.1:{port}");
@@ -62,7 +71,7 @@ pub(crate) async fn station(transmit: bool) -> Mcp {
     let _ = recording
         .transmit
         .set(transmit_http::Station::start_with(Box::new(bench.clone())).unwrap());
-    let _ = recording.contact.set(contact_http::Station::start());
+    let _ = recording.contact.set(contact_http::Station::start(&store));
     let state = Arc::new(ProfileState {
         store: Mutex::new(store),
         authorization: Mutex::new(authority),
@@ -1463,4 +1472,42 @@ async fn tc_020_004_mcp_never_resets_the_tx_watchdog_on_any_route() {
         .await;
     assert_eq!(v["result"]["error"]["code"], "tx_watchdog", "{v}");
     assert_eq!(f.keys(), 2, "only the one CQ was keyed (key and release)");
+}
+
+// Proves: CL-110-01; TC-110-001 (h). A change through the MCP tool is saved like a change in
+// the browser (CL-110-01 point 2): the file holds it and a new station owner on the same
+// profile directory starts with it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_110_001_h_a_change_through_the_mcp_tool_is_saved() {
+    let f = station(true).await;
+    let c = f.read("contact").await;
+    assert_eq!(
+        (&c["settings"]["auto_seq"], &c["settings"]["call_first"]),
+        (&json!(true), &json!(true)),
+        "nothing saved"
+    );
+    let command = f.command(
+        c["contact_revision"].as_u64().unwrap(),
+        "set_call_first",
+        json!({"enabled":false}),
+    );
+    let v = f
+        .tool("wstx_contact_command", json!({"command":command}))
+        .await;
+    assert_eq!(v["status"], 202, "{v}");
+    let saved: Value =
+        serde_json::from_slice(&std::fs::read(f.dir.join("qso-settings.json")).unwrap()).unwrap();
+    assert_eq!(
+        saved,
+        json!({"schema_version":1,"profile_id":f.id,"auto_seq":true,"call_first":false})
+    );
+    let restarted = contact_http::Station::start(&f.state.store.lock().unwrap());
+    let snapshot: Value = serde_json::from_slice(&restarted.snapshot(&f.state).unwrap()).unwrap();
+    assert_eq!(
+        (
+            &snapshot["settings"]["auto_seq"],
+            &snapshot["settings"]["call_first"]
+        ),
+        (&json!(true), &json!(false))
+    );
 }
