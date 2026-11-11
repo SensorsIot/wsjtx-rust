@@ -5057,7 +5057,7 @@ test('TC-096-001 a refused full-screen request changes nothing and reports no er
 });
 
 // ---------------------------------------------------------------- #110 saved Auto Seq and Call 1st
-// Proves: CL-110-01; TC-110-005 (a)-(c). The candidate server on a disposable profile directory
+// Proves: CL-110-01; TC-110-005 (a)-(d). The candidate server on a disposable profile directory
 // configured for transmission (CAT PTT and an output device, neither opened: nothing is armed), so
 // that Call 1st is an enabled setting. Oracle: CL-110-01 points 1 and 2, not the candidate's file.
 test('TC-110-005 Call 1st unticked in the browser stays unticked after a station restart',{timeout:120000},async t=>{
@@ -5074,6 +5074,12 @@ test('TC-110-005 Call 1st unticked in the browser stays unticked after a station
   const page=await open();await shown(page);
   // A profile's first start: both ticked, Call 1st an enabled setting.
   assert.deepEqual([(await boxes(page))['contact-auto'].checked,(await boxes(page))['contact-call-first']],[true,{checked:true,disabled:false}]);
+  // (d) A refused save: the result line shows the refusal and the box shows the station's value again.
+  await page.route('**/contact/command',refuseStorage);
+  await page.locator('#contact-call-first').click();
+  await page.waitForFunction(()=>document.querySelector('#contact-result').textContent==='Call 1st: refused · storage_unavailable',null,{timeout:10000});
+  assert.deepEqual([(await boxes(page))['contact-call-first'].checked,await page.evaluate(()=>window.wstxContact.snapshot().settings.call_first)],[true,true],'(d) Call 1st ticked again');
+  await page.unroute('**/contact/command',refuseStorage);
   // (a) Untick Call 1st; the station process ends and starts again on the same directory.
   await page.locator('#contact-call-first').uncheck();
   await page.waitForFunction(()=>window.wstxContact.snapshot().settings.call_first===false,null,{timeout:10000});
@@ -5103,5 +5109,22 @@ test('TC-110-005 Call 1st unticked in the browser stays unticked after a station
   release.resolve();await shown(other);
   const second_view=await boxes(other);
   assert.deepEqual([second_view['contact-call-first'].checked,second_view['contact-auto'].checked],[false,true],'(b) the second browser');
+  assert.deepEqual(errors,[]);
+});
+// The answer of a station whose save failed (CL-110-01 point 4), as the issue states it.
+const refuseStorage=route=>route.fulfill({status:503,json:{error:{code:'storage_unavailable',field:null}}});
+// Proves: CL-110-01; TC-110-005 (d) for Auto Seq. Its box is enabled only with an available transmit
+// capability, which no disposable station has: the snapshot is the fixture's, the refusal as in (d).
+test('TC-110-005 (d) a refused Auto Seq change leaves the box showing the station value',{timeout:60000},async t=>{
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{})}));
+    await p.route('**/contact/command',refuseStorage);
+  }});
+  await page.waitForFunction(()=>window.wstxContact?.snapshot()&&!document.querySelector('#contact-auto').disabled,null,{timeout:45000});
+  assert.equal(await page.locator('#contact-auto').isChecked(),true,'Auto Seq on in the snapshot');
+  await page.locator('#contact-auto').click();
+  await page.waitForFunction(()=>document.querySelector('#contact-result').textContent==='Auto sequence: refused · storage_unavailable',null,{timeout:10000});
+  assert.deepEqual([await page.locator('#contact-auto').isChecked(),await page.evaluate(()=>window.wstxContact.snapshot().settings.auto_seq)],[true,true],'(d) Auto Seq ticked again');
   assert.deepEqual(errors,[]);
 });
