@@ -891,6 +891,48 @@ fn tc_111_011_a_start_the_transmit_owner_cannot_arm_is_refused() {
     );
     assert!(s.core.view().tx_expired, "the limit's stop stays");
 }
+
+/// A kept QSO with the state on and Tune on (the transmit owner switched on under Tune, as the
+/// Set level assistant does).
+fn on_under_tune() -> Station {
+    let mut s = qso_halted();
+    s.command(Command::Tune(true, REV)).unwrap();
+    s.core.arm(7).unwrap();
+    assert!(s.armed() && s.core.view().tune);
+    s
+}
+
+// Proves: CL-111-07, CL-111-08; TC-111-011 (Reset while the state is on). While transmission is
+// not possible reset_repetitions is refused with the reason and the count stays: Tune on is
+// busy, a PTT switch left indeterminate is transmit_unavailable.
+#[test]
+fn tc_111_011_reset_while_on_but_unable_to_transmit_is_refused() {
+    let mut tune = on_under_tune();
+    let mut stuck = on_under_tune();
+    stuck.fake.0.release_fails.store(true, Ordering::SeqCst);
+    let hz = stuck.engine.settings.tx_hz;
+    stuck.core.set_tune(false, hz).unwrap();
+    assert_eq!(stuck.core.view().ptt, PttState::Indeterminate);
+    for (label, s, code) in [
+        ("Tune on", &mut tune, "busy"),
+        ("PTT indeterminate", &mut stuck, "transmit_unavailable"),
+    ] {
+        assert!(s.armed(), "{label}: the state is on");
+        let before = (facts(s), s.engine.repetitions_due());
+        let ctx = s.ctx();
+        assert_eq!(
+            s.engine
+                .command(Command::ResetRepetitions(REV), Some(&mut s.core), &ctx),
+            Err(code),
+            "{label}"
+        );
+        assert_eq!(
+            (facts(s), s.engine.repetitions_due()),
+            before,
+            "{label}: the count stays"
+        );
+    }
+}
 // Proves: CL-111-07; TC-111-011 (the engine and the transmit view; the operating view shows the
 // reason in the browser slice). A start that cannot transmit.
 #[test]

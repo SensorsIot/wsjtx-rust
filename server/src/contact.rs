@@ -2132,17 +2132,24 @@ impl Engine {
                 }
                 self.admit_start(core.as_deref(), ctx, safety_revision)?;
                 let view = core.as_ref().ok_or("transmit_unavailable")?.view();
-                if view.arm_state == ArmState::Armed {
+                let (on, limit) = (
+                    view.arm_state == ArmState::Armed,
+                    view.last_disarm_cause == DisarmCause::TxWatchdog,
+                );
+                if !on && !limit {
+                    return Err("state_conflict");
+                }
+                // CL-111-07: while transmission is not possible Reset is refused with the
+                // reason and changes nothing, also while the state is on.
+                if let Some(refusal) = Self::obstacle(core.as_deref(), ctx) {
+                    return Err(obstacle_code(refusal));
+                }
+                if on {
                     self.new_count();
-                } else if view.last_disarm_cause == DisarmCause::TxWatchdog {
-                    if let Some(refusal) = Self::obstacle(core.as_deref(), ctx) {
-                        return Err(obstacle_code(refusal));
-                    }
+                } else {
                     // The message due next, the one that got no answer, is sent again; the
                     // Hound's 300 s are not restarted (CL-111-10).
                     self.switch_on(core.as_deref_mut(), ctx, safety_revision, false);
-                } else {
-                    return Err("state_conflict");
                 }
             }
             Command::Tune(false, _) => {
