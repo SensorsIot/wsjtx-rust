@@ -14,7 +14,7 @@ use std::{
 
 const RADIO_INPUT: &str = "{0.0.1.00000000}.{fe449f9f-e759-4d7f-87e7-e6845d1bddfe}";
 
-// TC-002-001/003 receive-only acceptance. Uses the actual selected WASAPI backend and converter.
+// TC-009-002 receive-only acceptance. Uses the actual selected WASAPI backend and converter.
 #[test]
 #[ignore = "Explicit selected-endpoint hardware capture; coordinator runs on HB9BLA only"]
 fn selected_radio_audio_capture_evidence() {

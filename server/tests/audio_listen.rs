@@ -237,7 +237,7 @@ fn listening_segments_keep_gaps_and_epochs_separate_without_padding() {
     assert_eq!(queue.diagnostics().clock_step, 1);
 }
 
-// TC-002-001/003: opt-in listening artifact from the actual selected canonical input.
+// TC-009-002: opt-in listening artifact from the actual selected canonical input.
 #[test]
 #[ignore = "Coordinator selects HB9BLA and retrieves a 120-second receive-only listening capture"]
 fn selected_radio_audio_to_listening_wav() {

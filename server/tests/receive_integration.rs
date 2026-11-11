@@ -68,7 +68,7 @@ fn windows(mode: Mode, frames: u64, partitions: &[usize]) -> Vec<(u64, Vec<f32>)
     output
 }
 
-// Proves: FR-002, FR-003, CL-008-02; TC-002-001/003. Integer sample clock fixes window edges.
+// Proves: FR-002, FR-003, CL-008-02; TC-002-001.Integer sample clock fixes window edges.
 #[test]
 fn receive_windows_follow_mode_boundaries_independent_of_packet_partition() {
     for (mode, step, span) in [(Mode::Ft8, 180000, 360000), (Mode::Ft4, 90000, 180000)] {
@@ -87,7 +87,7 @@ fn receive_windows_follow_mode_boundaries_independent_of_packet_partition() {
     }
 }
 
-// Proves: FR-002, FR-003, CL-008-02; TC-002-001/003. A known gap never becomes decoder padding.
+// Proves: FR-002, FR-003, CL-008-02; TC-002-001.A known gap never becomes decoder padding.
 #[test]
 fn receive_known_gap_resets_support_preserving_global_positions() {
     let mut buffer = WindowBuffer::new(Mode::Ft4, descriptor()).unwrap();
@@ -115,7 +115,7 @@ fn receive_known_gap_resets_support_preserving_global_positions() {
     assert_eq!(output[0].samples[0], (170000 % 97) as f32 / 128.);
 }
 
-// Proves: FR-002, FR-003, CL-008-02; TC-002-001/003. Invalid blocks cannot mutate accepted history.
+// Proves: FR-002, FR-003, CL-008-02; TC-002-001.Invalid blocks cannot mutate accepted history.
 #[test]
 fn receive_rejects_overlap_unmarked_gap_changed_context_and_bad_samples() {
     let mut buffer = WindowBuffer::new(Mode::Ft8, descriptor()).unwrap();
@@ -157,7 +157,7 @@ fn receive_rejects_overlap_unmarked_gap_changed_context_and_bad_samples() {
     );
 }
 
-// Proves: FR-002, FR-003, CL-008-02; TC-002-001/003. Counter and block limits fail before wrapping.
+// Proves: FR-002, FR-003, CL-008-02; TC-002-001.Counter and block limits fail before wrapping.
 #[test]
 fn receive_input_limits_and_initial_discontinuity_are_explicit() {
     let mut buffer = WindowBuffer::new(Mode::Ft8, descriptor()).unwrap();

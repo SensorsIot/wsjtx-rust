@@ -771,6 +771,7 @@ These are HOW bindings, not product requirements and not SysML model elements.
 | CL-014-10 | Model file tree | The model is every `*.sysml` file at any depth below `docs/sysml`, named by its path relative to that folder. Each required package is the package of exactly one model file, whatever the file's name and folder; the entry file stays at the root. Identities, links and the ProductScope reference hold across folders and packages. | TC-DOC-008 |
 | CL-014-11 | Stated once | Status and bindings are read as attributes or as `ModelBindings` metadata, once per declaration. A delivered clause without a binding takes the function binding of its model file; a case takes automation from the verification definition of its file that it is typed by. A declaration with an identity in a form the catalog does not read is refused. | TC-DOC-009 |
 | CL-014-12 | Marker listing | `markers` lists every `ModelNotes` marker of the model by file key and line, with counts by kind; it checks nothing and writes nothing. | TC-DOC-010 |
+| CL-014-13 | Tag and binding agree | Every test that names a verification case, by an attached `Proves:` tag or a JavaScript test name, is in that case's binding, as its file or as `path::symbol`. A `path::symbol` binding of a manual case names an existing test. The gate's model bindings report a revision and do not apply this rule. | TC-DOC-011 |
 
 ## Documentation-tool test definitions
 
@@ -790,6 +791,7 @@ portable Pilot. No radio, live service, Jupyter server or global Java is needed.
 | TC-DOC-008 | CL-014-10 | Place a clause and its case in a subfolder file, move, rename and split the file of a required package, remove the package, declare it in two files, move the entry file, verify and link a clause through a package-qualified name, refer to an additional package by import, by alias and not at all, and add a library package without a reference. The tree is accepted, each fault is refused by package or key, fingerprints and the gate's model list name every file by key, and the real model with one file of a required package moved into a folder under another name passes the full validation with the same identities. | Automated isolated Python fixtures and one full Pilot validation on this PC. |
 | TC-DOC-009 | CL-014-11 | Write status, bindings and method as metadata, state one twice, leave a clause's binding to none, one and two function bindings, type a case by a definition with and without automation in its file and in another, bind a test on a definition, and declare an identity in an unread form. The new forms give the catalog and gate bindings of the attribute forms, each fault is refused by identity or key, and the real model rewritten to metadata passes the full validation with the same identities. | Automated isolated Python fixtures and full Pilot validations on this PC. |
 | TC-DOC-010 | CL-014-12 | List markers in each form across folders, in comments, with joined strings, by kind, with an added kind, an unknown kind, no ModelNotes file, a broken catalog and no authority. | Automated isolated Python fixtures on this PC. |
+| TC-DOC-011 | CL-014-13 | Tag a test in a file its case does not bind, and as another symbol of a file bound by symbols; name a case by shorthand, in a tag for two cases, in a JavaScript test name, above a helper, on an ignored test, on a planned and on a manual case, and outside the source roots; bind a manual case to a missing symbol. Each fault is refused naming case, path and test; adding the binding or removing the identity is accepted; the gate's bindings still report such a revision. | Automated isolated Python fixtures on this PC. |
 
 Executable companions are `tools/sysml.py`, `tools/sysml/tests/` and the pinned
 `tools/sysml/Validate.java` adapter. Results and independent review
@@ -995,6 +997,29 @@ are not product declarations. A tag's presence still does not establish test exe
 A manual physical case uses `attribute method : String = "manual";` and names its
 existing probe/source, without claiming an automated or executed result. A planned case
 may lack an executable. Source tags and existing files prove presence, not conformance.
+
+A test *names* a case when an attached `Proves:` tag above it holds the case identity after
+shorthand expansion, or when it is a JavaScript test whose name holds the case identity. A
+test is *in the binding* of a case when its file is bound as a file, or when
+`path::<its name>` is bound; the binding is the effective `attribute executable` or
+`@TestedBy` value.
+
+- **Tag and binding agree.** For every case, each test that names it, in a `.rs`, `.js` or
+  `.cjs` file below `client/`, `server/` or `tests/`, is in the case's binding. Otherwise
+  `traces` and `check` refuse with one message naming every such pair, sorted by case, path
+  and test name: `Proves tag outside the verification binding: <TC>: <path>::<test name>;
+  <TC>: <path>::<test name>`. It holds for every case: automated, manual or planned, with or
+  without a binding, and in either form of the binding. A tag that is not attached to a test
+  names no test and is not judged. A test that is ignored or left out by a build
+  configuration still names its case: a tag states presence, not execution. Files outside
+  the three source roots are not judged. The refusal comes after the existing catalog and
+  binding refusals, whose messages are unchanged.
+- **A manual case's symbol exists.** A `path::symbol` binding of a case with method
+  `manual` must name a test of that file. Otherwise:
+  `Missing executable test symbol: <TC>: <binding>`.
+- **The gate's bindings report, they do not judge.** `.harness/model_bindings.py --rev REV`
+  gives its JSON for a revision whose tags stand outside a binding. Such a test is not
+  listed for the case.
 
 Canonical documents link to active model elements or existing repository paths with
 correct model-file-relative Markdown links. Retired FSD section dependencies, source-hash

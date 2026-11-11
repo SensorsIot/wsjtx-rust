@@ -5,7 +5,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-// Proves: CL-007-04; TC-004-003. The first hardword/syndrome comes from H alone.
+// Proves: CL-007-04.The first hardword/syndrome comes from H alone.
 #[test]
 fn resource_phase_fec_stops_at_next_real_check_after_first_iteration() {
     let channel = Channel::new();
@@ -54,7 +54,7 @@ fn resource_phase_fec_stops_at_next_real_check_after_first_iteration() {
     assert_eq!(witness.report().first_fec_word, Some(expected));
 }
 
-// Proves: CL-007-04; TC-004-003. Direct OSD composition, not a claim of BP failure.
+// Proves: CL-007-04.Direct OSD composition, not a claim of BP failure.
 #[test]
 fn resource_phase_recovery_observes_rank_and_cost_before_cancel() {
     let channel = Channel::new();

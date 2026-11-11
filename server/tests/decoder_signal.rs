@@ -1967,7 +1967,7 @@ fn resource_official_comparison(records: &[Decode], oracle: &Value, context: &st
     );
 }
 
-// Proves: CL-007-04; TC-004-003. Explicit diagnostic selection is required; no total busy-window SLA is added.
+// Proves: CL-007-04. Explicit diagnostic selection is required; no total busy-window SLA is added.
 #[test]
 #[ignore = "explicit resource diagnostic: genuine30s public async windows; selected root CPU budget, no new total deadline"]
 fn resource_busy_live_overlap_and_pending_cancel() {

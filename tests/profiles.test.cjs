@@ -303,7 +303,7 @@ test('TC-022-006: token login retries a slow or failed setup step without anothe
 });
 
 // Proves CL-022-01/02/05 ordinary cross-tab transport rotation; response-order faults remain separate.
-// Proves: CL-022-01; TC-022-006, #10 TC-007-005 first status: the renewal of a retained credential waits for the page's load event.
+// Proves: CL-022-01; TC-022-006. #10 first status: the renewal of a retained credential waits for the page's load event.
 test('TC-022-006: reopening a page renews its retained credential only after the load event', {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true), p = profiles[0];
   const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
