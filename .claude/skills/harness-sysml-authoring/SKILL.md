@@ -15,5 +15,5 @@ Filesystem path relative to this entrypoint: `../../../harness/core/skills/sysml
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=2d558aae1b23bb408329208466820c8d2da5a5245b31031b8ab9c49dd32585e2 -->
-<!-- harness-forwarder-v1 sha256=3b79b7072f0b2fce4ae47205e679493188598ad8baa098801c5974f2028080f3 -->
+<!-- canonical-source-sha256=edec48db5f00b695549ae52504ecbc2b595d90f3ebec1e926b86fdd6a0ed58f2 -->
+<!-- harness-forwarder-v1 sha256=f531e1252d717d34bca45cb82fe0dbd5e26d5d59aa1480e7ab6e83bf22df6b3e -->
