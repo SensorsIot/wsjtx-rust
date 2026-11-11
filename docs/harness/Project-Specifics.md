@@ -36,8 +36,15 @@ What holds whichever machine is used:
   on the station (operator decision, [#26](https://github.com/SensorsIot/wsjtx-rust/issues/26)).
 - The machine that currently builds an issue is named by the issue's single
   `owner: HB9BLA` or `owner: Andreas` label. A machine does not start an issue owned
-  by the other one; a handoff swaps the label first
-  ([harness #23](https://github.com/SensorsIot/harness/issues/23)).
+  by the other one ([harness #23](https://github.com/SensorsIot/harness/issues/23)).
+- One PC holds development at a time. `python harness/core/tools/handover.py to <machine>`,
+  run on the PC that is left, moves it: the checks, the owner labels, the checkpoints, the
+  holder and the arriving PC's setup are the tool's
+  ([several machines](../../harness/core/agents/roles.md#several-machines)). The binding
+  is `machines:` and `handover:` in `.harness/config.yaml`: HB9BLA is reached from Andreas
+  over SSH; on Andreas the arriving half is run by hand (`handover.py arrive`). The test
+  inputs it verifies are those of `.git/migration-data/MANIFEST.json`. Everything local is
+  pushed before a transfer: the tool pushes nothing (operator 2026-11-11).
 
 ## Windows build and packaging
 

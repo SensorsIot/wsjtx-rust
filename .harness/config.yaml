@@ -16,6 +16,22 @@ harness_paths:
   - .github/ISSUE_TEMPLATE/
   - .github/workflows/rust-advisories.yml
   - .gitmodules
+# The two PCs (docs/harness/Project-Specifics.md, "Machines and roles"). One holds
+# development; `python harness/core/tools/handover.py to <machine>` moves it, and the gate
+# and the queue worker start only on the holder (harness#69). HB9BLA is reached from
+# Andreas over SSH; Andreas is not reached from HB9BLA, so `handover.py arrive` is run
+# there by hand.
+machines:
+  HB9BLA:
+    arrive: 'ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 HB9BLA@192.168.0.37 "cd /d D:\Github\wsjtx-rust && python harness/core/tools/handover.py arrive"'
+  Andreas: {}
+handover:
+  repositories: [SensorsIot/harness]
+  install_check: python harness/core/tools/install_skills.py --project . --host claude --skill harness --skill documentation --skill domain-modeling --skill coordinator --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --skill improvement --skill fsd-from-model --skill restructuring --agent definer --agent checker --agent coder --agent reviewer --agent harness-improver --agent tester --agent prober --agent explainer --check
+  # The decoder test inputs outside the repository, verified on arrival against their manifest.
+  inputs: ["{common}/migration-data/MANIFEST.json"]
+  # Listed at a handover, never moved.
+  outside: [D:/wstx-build, D:/Github/wsjtx-rust-recordings]
 # Select the authoritative execution location; the workflow has no automatic trigger.
 execution_mode: local
 # Three issue workspaces; the coordinator occupies this runtime's fourth agent slot.
