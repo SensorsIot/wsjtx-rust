@@ -10,18 +10,26 @@ Run the commands below from the repository root.
 
 ## Machines and roles
 
-Two Windows PCs work on this repository with the same GitHub account. Where a document
-says "this PC" without naming one, read it as the machine named below for that task.
+Two Windows PCs work on this repository with the same GitHub account: **HB9BLA**
+(`192.168.0.37`) and **Andreas** (hostname `Andreas`), both with the checkout
+`D:\Github\wsjtx-rust`. Neither has a role: which one is used is a matter of convenience,
+and both are set up alike (operator 2026-11-11). Two things decide the machine:
 
-| Machine | Role |
+| Work | Machine |
 |---|---|
-| **HB9BLA** (`192.168.0.37`, checkout `D:\Github\wsjtx-rust`) | The station: the product runs here and the one transceiver (IC-7300, COM3) is connected here. All work that runs the project's tests: coding, builds, every project test, the gate and the merge queue; installs, deploy dry runs, all live and hardware tests (cost 3–5) and radio acceptance. It alone holds the test inputs and is the timing baseline of the suites. Runtime details: [HB9BLA handover](HB9BLA-HANDOFF.md). |
-| **Andreas** (hostname `Andreas`, checkout `D:\Github\wsjtx-rust`) | Work that runs no project test: harness work (its own tests only), SysML model, documentation, issue definition and ready checks, read-only reviews. No test inputs, no gate, no install. |
+| Anything that needs the transceiver (IC-7300, COM3): live and hardware tests (cost 3 to 5), radio acceptance, installs on the station | HB9BLA, where the transceiver and the station are |
+| A test of client and server across the network | Both, one as server and one as client |
+| Everything else: definition, model, harness, coding, builds, tests, the gate | Either |
 
-One machine runs the tests, so there is one set of test inputs and one timing baseline
-(operator 2026-11-10). An issue whose definition is done on Andreas moves to HB9BLA for
-implementation by swapping its owner label. Heavy builds and gates share HB9BLA with the
-live station: do not operate the radio during a heavy gate (#49, harness#35).
+What holds whichever machine is used:
+
+- The main branch moves by one gate at a time. Before a hand-in or a push to the main
+  branch, the machine checks that no gate runs on the other one.
+- Test inputs that are not in the repository, and the timing baseline, exist only where
+  they were set up. A suite that needs them runs on a machine that has them; today that
+  is HB9BLA.
+- Heavy builds and gates on HB9BLA share it with the live station: do not operate the
+  radio during a heavy gate (#49, harness#35).
 
 - The `windows-rust.yml` artifact (`wstx-rust-windows-x64`) is build evidence only. It
   shows that the build and tests pass on a clean Windows runner and is never installed

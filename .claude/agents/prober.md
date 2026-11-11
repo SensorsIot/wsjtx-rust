@@ -27,7 +27,7 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=5f1bbd2e5f18a22ef9eb51d858cae2df71be8c367294615e116a7b0627d73448 -->
 <!-- source harness/lang/rust/standard.md sha256=fb15bdf7c2a77506d1e458761e48d950cbcaf5dbd4173a1a3ad19030b6b00825 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=3bbd35314708dae30cf34940c4567ff11eca7a5e2d2ce6749db5125e0df4beb8 -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=72f1dd3e3f0be4aafb1ea39e1e24ebb9ab29ce78b0f26ae49a1655fea36427f8 -->
 <!-- harness-role-policy {"commands": ["git( -C \\S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?", "gh issue view [0-9]+( .*)?", "(python|py)(\\.exe)? D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\\.py( .*)?", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\\.ps1( .*)?", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints)"], "writes": ["D:/wstx-tmp/experiments/**"], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
 
 You answer one question under an issue's Open questions with an
@@ -84,4 +84,4 @@ are the coder's above.
 - Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: `D:/wstx-tmp/experiments/**`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=9187012053a6eb4039b42342809d92c375ce531c6999d727b566ec56bd87ebe8 -->
+<!-- harness-agent-v1 sha256=05e7d837e76a793e59acea7208f5fc8b8dd19ed50fed8b7a9344a3afd10ce4b6 -->
