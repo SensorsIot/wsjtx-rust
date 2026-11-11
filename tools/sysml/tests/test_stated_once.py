@@ -261,6 +261,9 @@ class StatedOnceTests(unittest.TestCase):
             "attribute of two literals": (coverage("implemented"), '        attribute implementation : String = "client/" + "app.js";\n'),
             "redefinition in the metadata": (status("implemented"), '        @ImplementedIn { :>> module = "client/app.js"; }\n'),
             "another feature in the metadata": (status("implemented"), '        @ImplementedIn { modul = "client/app.js"; }\n'),
+            "the metadata keyword": (status("implemented"), '        metadata ImplementedIn { module = "client/app.js"; }\n'),
+            "the metadata keyword with a name": (status("implemented"), '        metadata own : ModelBindings::ImplementedIn { module = "client/app.js"; }\n'),
+            "redefinition in the attribute": (coverage("implemented"), '        attribute :>> implementation = "client/app.js";\n'),
         }
         for label, (state, own) in unread.items():
             with self.subTest("the clause's own unread binding beside one", spelling=label), self.refused(
@@ -325,12 +328,20 @@ class StatedOnceTests(unittest.TestCase):
         unread_states = {
             "attribute with a qualified state": "        attribute automation : AutomationState = PTop::AutomationState::planned;\n",
             "redefinition in the metadata": "        @Automation { :>> run = AutomationState::planned; }\n",
+            "the metadata keyword": "        metadata Automation { run = AutomationState::planned; }\n",
+            "the metadata keyword with a name": "        metadata own : ModelBindings::Automation { run = AutomationState::planned; }\n",
+            "redefinition in the attribute": "        attribute :>> automation = AutomationState::planned;\n",
         }
         for label, own in unread_states.items():
             with self.subTest("the case's own unread state", spelling=label), self.refused(missing):
                 self.flat(target, own + tested_by("tests/case.cjs"), typed, definition(run("implemented")))
-        with self.subTest("the case's own unread method"), self.refused("Invalid verification/implementation metadata: TC-001-001$"):
-            self.flat(target, '        attribute method : String = "auto" + "mated";\n' + tested_by("tests/untagged.cjs"), typed,
+        for label, own in (("attribute of two literals", '        attribute method : String = "auto" + "mated";\n'),
+                           ("redefinition in the attribute", '        attribute :>> method = "automated";\n')):
+            with self.subTest("the case's own unread method", spelling=label), self.refused(
+                    "Invalid verification/implementation metadata: TC-001-001$"):
+                self.flat(target, own + tested_by("tests/untagged.cjs"), typed, definition(manual_definitions["metadata"]))
+        with self.subTest("the case's own unread method in the metadata keyword"), self.refused(missing):
+            self.flat(target, '        metadata Automation { method = "automated"; }\n' + tested_by("tests/untagged.cjs"), typed,
                       definition(manual_definitions["metadata"]))
         for label, own in (("empty", "        @Automation {}\n"), ("method only", '        @Automation { method = "automated"; }\n')):
             with self.subTest("the state is still taken beside the case's own metadata", own=label):

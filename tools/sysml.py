@@ -153,8 +153,20 @@ def stated(body: str, code: str, kind: str) -> tuple[list, list, list, set]:
     states = re.findall(r"\battribute\s+" + state_name + r"\s*:\s*" + enum + r"\s*=\s*" + enum + r"::(\w+)\s*;", body)
     bindings = re.findall(r'\battribute\s+' + binding_name + r'\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
     methods = re.findall(r'\battribute\s+method\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
+    # The feature word outside the read annotations, more often than the attribute form was
+    # read: another spelling of the attribute, such as `attribute :>> automation = ...`.
+    plain = code
+    for name in (status, bound):
+        for match in re.finditer(r"@\s*(?:\w+::)*" + name + r"\b(?!::)\s*\{", code):
+            inside = len(declaration_body(body, match.end() - 1))
+            plain = plain[:match.end()] + " " * inside + plain[match.end() + inside:]
     unread = {fact for fact, name, read in (("state", state_name, states), ("binding", binding_name, bindings), ("method", "method", methods))
-              if len(re.findall(r"\battribute\s+" + name + r"\b", code)) > len(read)}
+              if len(re.findall(r"\b" + name + r"\b", plain)) > len(read)}
+    # The same metadata written with the `metadata` keyword is not read either.
+    if re.search(r"\bmetadata\b[^;{}]*\b" + status + r"\b", code):
+        unread.update(("state", "method"))
+    if re.search(r"\bmetadata\b[^;{}]*\b" + bound + r"\b", code):
+        unread.add("binding")
     for _offset, pairs in annotations(body, code, status):
         for feature, value in pairs:
             if feature == state_feature:
@@ -331,7 +343,7 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
                 if not states and "state" not in unread:
                     states = definition[0][0]
                 if not methods and definition[0][1]:
-                    if "method" in unread:
+                    if "method" in unread and states:
                         raise ValueError("Invalid verification/implementation metadata: " + identifier)
                     methods = definition[0][1]
             allowed = {"planned", "partial", "implemented"} if kind == "verification" else {"target", "partial", "implemented"}
