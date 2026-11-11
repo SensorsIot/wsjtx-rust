@@ -2,6 +2,7 @@
 package WstxRequirements {
     private import ScalarValues::*;
     private import WstxStandardContact::*;
+    private import WstxUdp::*;
     doc /* Canonical functional requirements and durable verification definitions.
          The other Wstx packages own detailed typed contracts; validation does not execute tests.
          Coverage flags describe implemented source slices, not acceptance or whole-project parity. */
@@ -73,7 +74,7 @@ package WstxRequirements {
     }
     requirement 'FR-012' {
         doc /* Integrations
-             Preserve required external protocols and message formats, including baseline UDP integrations and reception-reporting workflows. The WSJT-X UDP interface is specified by issue #40, CL-040-01..04 (send-only, operator 2026-11-06), contract WstxUdp; reception reporting remains target. */
+             Preserve required external protocols and message formats, including baseline UDP integrations and reception-reporting workflows. The WSJT-X UDP interface is WstxUdp; reception reporting remains target. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/network_message.rs; server/src/udp.rs; server/src/pskr.rs";
     }
@@ -995,7 +996,7 @@ package WstxRequirements {
     // (StationTickEvent), a target judged from the link byte log since #80 (CL-003-05,
     // TC-080-001); MCP traffic is outside that budget.
     requirement 'CL-010-04' {
-        doc /* Log every completed contact directly, without a review step (#41, as WSJT-X): at completion and on a manual Log QSO the server stores the contact's record in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity and sends it to the WSJT-X UDP targets as QSO Logged and Logged ADIF; exactly one record per contact identity (an identical re-log adds nothing, completion after an early Log QSO replaces it; each contact is sent to the UDP targets once), a later contact with the same station a new record, Saved only after durable acknowledgement, a failed write visibly unsaved and retried; ADI export and history with the stated limits; and (#10, operator 2026-11-03) Update logbook from ADIF, the one ADI import: an export of another logger (for example Log4OM) is consolidated into the contact log, repeatable and incremental, a record already present (same contact identity, or same call, band and mode/submode with a start within 2 minutes) adding nothing and the stored record winning, only the log's own fields kept, added records marked with their source, QSO confirmation status (LoTW, QSL and eQSL received with their dates and via) kept and, on a rerun, upgraded on records already present (a confirmation is only added, never removed; #10, operator 2026-11-04), so worked-before and award queries tell worked from confirmed per entity, band and mode, invalid records skipped and invalid optional fields dropped with their reasons in the summary, nothing sent to the UDP targets or elsewhere, and the added records feeding worked-before, DXCC and grid status. The former log review queue (OfferLogReview, discard_review, the review form) is retired. Details: WstxContact::LogRecord, DirectLog, SaveContact, UpdateLogbook, ExportAdi, ContactHistory, AdiLimits, WorkedBeforeQuery; WstxUdp::OutboundRules. */
+        doc /* Log every completed contact directly, without a review step (#41, as WSJT-X): at completion and on a manual Log QSO the server stores the contact's record in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity and sends it to the WSJT-X UDP targets as QSO Logged and Logged ADIF; exactly one record per contact identity (an identical re-log adds nothing, completion after an early Log QSO replaces it; each contact is sent to the UDP targets once), a later contact with the same station a new record, Saved only after durable acknowledgement, a failed write visibly unsaved and retried; ADI export and history with the stated limits; and (#10, operator 2026-11-03) Update logbook from ADIF, the one ADI import: an export of another logger (for example Log4OM) is consolidated into the contact log, repeatable and incremental, a record already present (same contact identity, or same call, band and mode/submode with a start within 2 minutes) adding nothing and the stored record winning, only the log's own fields kept, added records marked with their source, QSO confirmation status (LoTW, QSL and eQSL received with their dates and via) kept and, on a rerun, upgraded on records already present (a confirmation is only added, never removed; #10, operator 2026-11-04), so worked-before and award queries tell worked from confirmed per entity, band and mode, invalid records skipped and invalid optional fields dropped with their reasons in the summary, nothing sent to the UDP targets or elsewhere, and the added records feeding worked-before, DXCC and grid status. The former log review queue (OfferLogReview, discard_review, the review form) is retired. Details: WstxContact::LogRecord, DirectLog, SaveContact, UpdateLogbook, ExportAdi, ContactHistory, AdiLimits, WorkedBeforeQuery; WstxUdp::SendLoggedContact. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/main.rs; client/logbook.js; client/contact.js";
     }
@@ -3157,143 +3158,6 @@ package WstxRequirements {
     dependency CL_012_03_verified_by_TC_020_004 from 'CL-012-03' to 'TC-020-004';
     dependency CL_039_06_verified_by_TC_020_004 from 'CL-039-06' to 'TC-020-004';
 
-    // #40 WSJT-X-compatible UDP interface with multiple targets (decisions recorded in
-    // WstxUdp and on issue #40, 2026-11-01); detailed contract in WstxUdp.
-    requirement 'CL-040-01' {
-        doc /* Speak the WSJT-X NetworkMessage protocol (magic 0xADBCCBDA, schema 2 negotiated up to 3, Qt QDataStream big-endian) with id = the configured instance name, and send to each enabled target its selected outbound messages: Heartbeat every 15 s, Status on change, on each live decoder window and with each Heartbeat pulse (CL-040-07), Decode for each new live FT8/FT4 decode, Clear when the live job's decodes are discarded, QSO Logged and Logged ADIF when a contact is saved, Close when a target is disabled or removed. Details: WstxUdp::UdpWire, OutboundRules. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/network_message.rs; server/src/udp.rs; server/src/logbook_http.rs";
-    }
-    dependency CL_040_01_to_FR_012 from 'CL-040-01' to 'FR-012';
-    requirement 'CL-040-02' {
-        doc /* Any number of targets up to 16, each address:port (unicast, IPv4 multicast with TTL and interface, or IPv6 multicast per CL-040-06), enabled, a per-type outbound message selection (default all), with per-target status (last send, error). The configuration is persisted in the selected profile directory and served by GET /udp and PUT /udp; the default is one target 127.0.0.1:2237, enabled, instance name WSTX-Rust. Details: WstxUdp::UdpTarget, UdpConfiguration, TargetStatus, UdpHttp. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/udp.rs; server/src/profile.rs; server/src/main.rs";
-    }
-    dependency CL_040_02_to_FR_012 from 'CL-040-02' to 'FR-012';
-    dependency CL_040_02_to_FR_001 from 'CL-040-02' to 'FR-001';
-    requirement 'CL-040-03' {
-        doc /* Send-only (operator decision 2026-11-06: "GridTracker just listens. We only react to the front end or to the MCP."; "The UI has to be able to halt the station in emergency halt."). No inbound UDP message acts on the station: Clear, Reply, Close, Replay, Halt Tx, Free Text, Location, Highlight Callsign, Switch Configuration, Configure and unknown types from any source have no effect, change no state and are not answered. All control comes from the browser and MCP; the emergency off is the browser's HALT and MCP's halt. Only a Heartbeat from a target's own address with the configured id raises that target's header schema (2 to 3, never lowered), as the WSJT-X protocol negotiates it. A datagram too large for the receive buffer never holds back the datagrams behind it. Details: WstxUdp::InboundRules. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/udp.rs; server/src/network_message.rs";
-    }
-    dependency CL_040_03_to_FR_012 from 'CL-040-03' to 'FR-012';
-    dependency CL_040_03_to_FR_008 from 'CL-040-03' to 'FR-008';
-    requirement 'CL-040-04' {
-        doc /* Decode texts use the WSJT-X form: a standard message with R before a signal report is "R-09" / "R+03", never the decoder's separated "R -09". Details: WstxUdp::OutboundRules. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/udp.rs";
-    }
-    dependency CL_040_04_to_FR_012 from 'CL-040-04' to 'FR-012';
-    // CL-040-05 and TC-012-005 (Location session grid) retired by the operator decision
-    // 2026-11-06 recorded in CL-040-03 and WstxUdp; the identities are not reused.
-    requirement 'CL-040-06' {
-        doc /* Issue #46: an IPv6 multicast group target (ff00::/8) with a hop limit 1..255 (multicast_ttl) and an interface index (multicast_interface as decimal text, required for interface-local and link-local scope, optional above) is admitted by PUT /udp, saved, and receives its selected outbound messages through a socket with IPV6_MULTICAST_HOPS and IPV6_MULTICAST_IF set. Reserved scopes 0 and 15 and interface names are refused. Details: WstxUdp D6, UdpTarget, OutboundRules. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/udp.rs";
-    }
-    dependency CL_040_06_to_FR_012 from 'CL-040-06' to 'FR-012';
-    verification 'TC-012-006' {
-        doc /* TC-012-006 — IPv6 multicast targets
-             CL-040-06
-             Setup: actual candidate router and UDP owner on a disposable profile; a peer socket joined to the transient link-local group ff12::5754:5358 on the Windows loopback pseudo-interface (index 1);
-             Steps: PUT, each alone: scope 0 ff00::1, scope 15 ff0f::1 and ff1f::1, the group without an interface, ff01::1 without an interface, hop limit 0 and 256, an IPv4 group with interface "1", interfaces "0", "01", "-1", "+1", " 1", "4294967296", "Ethernet", "127.0.0.1", "::1", "" and the number 1; then one PUT of the group at the peer's port with hop limit 2 and interface "1", [ff05::5754:5358]:2237 hop limit 255 interface "1", [ff15::5754:5358]:2238 interface "4000000000", and a disabled [ff08::5754:5358]:2239 without an interface; open a new owner; PUT the list plus a disabled [::1]:2240 with interface "127.0.0.1", then with "1"; read the socket options; one station step.
-             Expected: each refusal 400 invalid_request with its field (address for the scopes, otherwise the named field) and nothing saved; the PUT admitted with the targets saved as given and unchanged after the reopen; the IPv6 unicast target with "127.0.0.1" admitted and with "1" refused targets[4].multicast_interface; the group socket has hop limit 2, interface 1 and loopback on, the site-local one hop limit 255; the unknown index shows active false, socket_unavailable; the joined peer receives Heartbeat then Status (schema 2, id WSTX-Rust).
-             2 — Isolated automated functional tests; Windows development PC, loopback IPv6 multicast only, nothing leaves the machine. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-040-06';
-        }
-        attribute executable : String = "server/src/udp_tests.rs";
-    }
-    dependency CL_040_06_verified_by_TC_012_006 from 'CL-040-06' to 'TC-012-006';
-    requirement 'CL-040-07' {
-        doc /* Issue #40 live acceptance (GridTracker, 2026-11-02): Status is sent as WSJT-X sends it, so a tool that waits for a Status sees the station within one T/R period. Its decoding field is true while the live decoder processes an analysis window and false once that decode returns (completed, abandoned, failed or cancelled); every toggle sends a Status, and a window that begins and ends between two station steps still sends one, so at least one Status goes out per decoded window and therefore per T/R period (WSJT-X v3.3.0-beta5 widgets/mainwindow.cpp MainWindow::beginDecode and endDecode call updateDecodeControls, which calls statusUpdate; MessageClient::status_update sends unconditionally). In addition, the Status is resent unchanged at each pulse, together with the Heartbeat every 15 s (MessageClient heartbeat_timer_, NetworkMessage::pulse), also to a target that selects status without heartbeat, so a tool started later learns the state within 15 s; the resend is this station's choice, WSJT-X has none. A target that does not select status receives none of these. Details: WstxUdp::OutboundRules. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/udp.rs; server/src/recording.rs";
-    }
-    dependency CL_040_07_to_FR_012 from 'CL-040-07' to 'FR-012';
-    verification 'TC-012-007' {
-        doc /* TC-012-007 — Status cadence with decoder windows and the pulse
-             CL-040-07
-             Setup: (a) actual candidate UDP owner, contact engine and #9 transmit owner on the recording hardware double (profile HB9BLA, JN47AA); loopback peers A (all messages), B (status only) and C (heartbeat and decode); (b) the actual live worker on the recording fixture with zero-sample FT8 windows and a capture poll that records the decoder activity while the decode in progress drives it.
-             Steps: (a) step; step; twice: begin a window decode through the recording's decoder signal, step, step, end it, step; begin and end one window, step, step; back-date the stored pulse instant by 14 s, step; by 15 s, step; step. (b) analyze one window with a waiting late window, and with a replacing window (overrun).
-             Expected (hand table): (a) activation A Heartbeat then Status decoding 0, B Status, C Heartbeat only; then nothing; each window begin one Status decoding 1 to A and B, no repeat while it decodes, its end one Status decoding 0; the window begun and ended between steps one Status decoding 0 to A and B; nothing at 14 s; at 15 s A Heartbeat then a Status byte-identical to the last one sent, B the Status, C the Heartbeat only; then nothing; C never receives a Status. (b) before: (false, 0); polled values all decoding true, first (true, 1), then (true, 2); after: (false, 2), in both cases.
-             2 — Isolated automated functional tests; Windows development PC, loopback UDP on ephemeral ports only, deterministic time (no sleep for the pulse), no radio, audio or RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-040-07';
-        }
-        attribute executable : String = "server/src/udp_tests.rs; server/src/recording_tests.rs";
-    }
-    dependency CL_040_07_verified_by_TC_012_007 from 'CL-040-07' to 'TC-012-007';
-    // CL-040-08 and TC-012-008 (udp.display: Highlight Callsign and Clear in the browser)
-    // retired by the operator decision 2026-11-06 recorded in CL-040-03 and WstxUdp; the
-    // identities are not reused.
-    verification 'TC-012-001' {
-        doc /* TC-012-001 — NetworkMessage wire vectors
-             CL-040-01, CL-040-03, CL-040-04
-             Setup: hand-constructed byte vectors in server/tests/vectors/udp/, each written field by field from WSJT-X v3.3.0-beta5 NetworkMessage.hpp (SHA-256 b640a632...) with the construction steps recorded in the file, independent of the encoder.
-             Steps: encode Heartbeat, Status, Decode, Clear, QSO Logged, Close and Logged ADIF from the vector inputs; read the Heartbeat vectors (schema 3 with its fields, schema 2 without them, trailing bytes); read every refused vector (each former command and an unknown type: Clear, Reply, Close, Replay, Halt Tx, Free Text, Location, Highlight Callsign, Switch Configuration, Configure, type 18; a Heartbeat with wrong magic, schema 1 and 4, truncated utf8, invalid utf8, null id, 4097 bytes).
-             Expected: encoded bytes equal each vector exactly; the read header equals the vector's schema and id; refused vectors give nothing; arbitrary bytes and every truncation never panic; the decoder text "K1ABC W9XYZ R -09" renders "K1ABC W9XYZ R-09" and "R +03" renders "R+03", other texts unchanged.
-             2 — Isolated automated tests; Windows development PC, no network. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-040-01';
-            verify 'CL-040-03';
-            verify 'CL-040-04';
-        }
-        attribute executable : String = "server/tests/udp_vectors.rs; server/src/udp_tests.rs";
-    }
-    dependency CL_040_01_verified_by_TC_012_001 from 'CL-040-01' to 'TC-012-001';
-    dependency CL_040_03_verified_by_TC_012_001 from 'CL-040-03' to 'TC-012-001';
-    dependency CL_040_04_verified_by_TC_012_001 from 'CL-040-04' to 'TC-012-001';
-    verification 'TC-012-002' {
-        doc /* TC-012-002 — Outbound messages to several targets
-             CL-040-01, CL-040-02, CL-040-04
-             Setup: actual candidate router, UDP owner, contact engine and #9 transmit owner on the recording hardware double (profile HB9BLA, JN47AA), an injected FT8 live job, hand-authored codec-packed rows "CQ K1ABC FN42" 1234.6 Hz -12.4 dB and "HB9BLA W9XYZ R-09" (decoder text "HB9BLA W9XYZ R -09") 900.0 Hz -3.0 dB; two loopback UDP peers on ephemeral ports configured as targets by PUT /udp (A all messages, B only decode).
-             Steps: one station step; publish the rows; step; change the operating report; step; start a second live job; step; save a contact through POST /contacts, repeat it with the same and with a new command_id; disable target A by PUT /udp; step.
-             Expected (hand table): A receives Heartbeat (id WSTX-Rust, max schema 3) and Status (mode FT8, DE HB9BLA JN47AA, Tx enabled false), then Decode New true Time = period ms since midnight, snr -12, df 1235, Mode "~", "CQ K1ABC FN42", and snr -3, df 900, "HB9BLA W9XYZ R-09"; a changed Status; Clear after the new job; QSO Logged (DX call, mode FT8, times) then Logged ADIF beginning with the ADIF header and containing <call:5>K1ABC and ending " <EOR>", nothing for the retained receipt or already_saved; Close after disable while B keeps its socket. B receives exactly the two Decode datagrams. GET /udp shows last_send_utc_ms for both and error null.
-             2 — Isolated automated functional tests; Windows development PC, loopback UDP on ephemeral ports only, no radio, audio or RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-040-01';
-            verify 'CL-040-02';
-            verify 'CL-040-04';
-        }
-        attribute executable : String = "server/src/udp_tests.rs";
-    }
-    dependency CL_040_01_verified_by_TC_012_002 from 'CL-040-01' to 'TC-012-002';
-    dependency CL_040_02_verified_by_TC_012_002 from 'CL-040-02' to 'TC-012-002';
-    dependency CL_040_04_verified_by_TC_012_002 from 'CL-040-04' to 'TC-012-002';
-    verification 'TC-012-003' {
-        doc /* TC-012-003 — No inbound message acts; Heartbeat negotiates the schema
-             CL-040-03
-             Setup: as TC-012-002 with one target A and another socket X; a published CQ row; the browser's enable_tx has armed the station; the PTT log of the hardware double.
-             Steps: from A and from X to A's socket: Halt Tx, Clear, a Reply matching the row, Close, Replay, Free Text, Location "JN36AB", Highlight Callsign, Switch Configuration, Configure; one step; read arm state, last disarm cause, contact, profile grid, the datagrams at A, and GET-shape of the snapshot. Then, one step each: a schema-3 Heartbeat from X; from A a schema-3 Heartbeat with another id, a schema-4 Heartbeat, a schema-3 Replay and a schema-3 Halt Tx. Then from A a 5000-byte datagram followed by a schema-3 Heartbeat, one step; a schema-2 Heartbeat, one step; publish a further decode, one step.
-             Expected: still armed with the disarm cause unchanged, no contact prepared, the grid and the Status DE grid the profile's, at A no Decode with New false (only Status); the snapshot keys exactly v, profile_id, boot_id, revision, configuration, configuration_error, status and a status entry exactly active, address, error, last_send_utc_ms, schema; the schema stays 2 through each of the single steps, becomes 3 in the step of the oversize datagram and its Heartbeat, stays 3 after the schema-2 Heartbeat, and the next datagrams at A carry header schema 3.
-             2 — Isolated automated functional tests; Windows development PC, loopback UDP only, transmit and radio doubles; no RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-040-03';
-        }
-        attribute executable : String = "server/src/udp_tests.rs";
-    }
-    dependency CL_040_03_verified_by_TC_012_003 from 'CL-040-03' to 'TC-012-003';
-    verification 'TC-012-004' {
-        doc /* TC-012-004 — Target configuration and persistence
-             CL-040-02
-             Setup: actual candidate router on a disposable profile directory without udp.json; a second profile with an invalid udp.json.
-             Steps: GET /udp; PUT a list of A (unicast, decode only), B (239.255.0.1:2237 multicast, ttl 2, interface 127.0.0.1); open a new owner on the same profile; PUT with a stale revision, another profile, another boot, an unknown key, 17 targets, a duplicate address, port 0, 0.0.0.0, ff02::1 without an interface, ttl 0 and 256, an interface that is not IPv4, a duplicated or unknown message name, accept_commands on a target (a retired key), an empty and a 65-byte instance name, v 2, text/plain, 8193 bytes, a query; GET on the invalid profile; open an owner on a udp.json whose target also names accept_commands true, then PUT.
-             Expected: the default {instance_name WSTX-Rust, one target 127.0.0.1:2237 enabled, all seven messages, multicast_ttl 1, interface null} at revision 0; the PUT returns revision 1 with the messages in enum order and survives the reopen unchanged; each refusal with its status, code and field and nothing saved; the invalid profile shows configuration null and configuration_error invalid_configuration with no socket; a row published then is not sent after a valid PUT (only Heartbeat and Status); the file with accept_commands loads without configuration error, its target unchanged but for that key and active, and the PUT writes a file without the key.
-             2 — Isolated automated functional tests; Windows development PC, loopback only. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-040-02';
-        }
-        attribute executable : String = "server/src/udp_tests.rs";
-    }
-    dependency CL_040_02_verified_by_TC_012_004 from 'CL-040-02' to 'TC-012-004';
 
     // #45 Resume receive (Monitor) after a station restart (defaults recorded on issue #45).
     requirement 'CL-045-01' {

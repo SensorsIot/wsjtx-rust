@@ -1139,13 +1139,11 @@ attribute def ActivityOrdering {
              Logging & Reporting: the existing log (Logbook page, ADIF), #10 "Update
              logbook from ADIF" (WstxContact::UpdateLogbook: an ADIF file input, the Update
              logbook button and the summary line), the WSJT-X UDP
-             interface (WstxUdp, CL-040-02): instance name and up to 16 targets, each
-             address:port, enabled, multicast TTL (the hop limit of an IPv6 group) and
-             interface (an interface index for an IPv6 group, with a hint that an
-             interface- or link-local group needs one; WstxUdp D6), the outbound message
-             selection, with each target's status (active, schema, last send, error) and a
-             note that the interface is send-only: programs listen and the station takes no
-             command over UDP (operator 2026-11-06). GET /udp is read when the drawer opens (at
+             interface (CL-040-02): the instance name and the targets of
+             WstxUdp::UdpConfiguration with every feature of WstxUdp::UdpTarget, a hint
+             that an interface- or link-local IPv6 group needs an interface index, each
+             target's WstxUdp::TargetStatus, and a note that programs listen and the
+             station takes no command over UDP. GET /udp is read when the drawer opens (at
              most every 30 s, so routine drawer use stays inside the Thin budget), on the
              Logging tab and on Reload; Save sends one PUT /udp with expected_revision; it
              is a setting that restarts nothing (no restart mark). PSK Reporter: the read-only

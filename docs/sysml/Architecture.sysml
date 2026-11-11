@@ -1698,12 +1698,9 @@ package WstxArchitecture {
              profile fields. Preferred entries reference the canonical twelve-band table;
              they do not confer transmit permission or confirm actual radio state. */
         doc /* Own authoritative station state, operations/jobs/transitions and authorization; not HTTP/MCP parsing or device protocol syntax. One owner validates profile/source/generation and rejects obsolete results. */
-        doc /* The WSJT-X UDP interface (#40, WstxUdp) is a station-owned adapter of this
-             service: it observes station state and results and sends to its configured
-             targets; send-only, it enters no command into the station (operator 2026-11-06)
-             and owns no station state, modem or transmit authority. */
         doc /* Station-owned validation, state, jobs and operation authority. This owner
              validates uploads before handing them to its selected profile's storage. */
+        action reportToPrograms : WstxUdp::ReportToPrograms;
         port webOperations : ~StationOperations;
         port mcpOperations : ~StationOperations;
         port profile : ProfileAccess;

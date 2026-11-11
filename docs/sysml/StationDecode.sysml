@@ -310,7 +310,7 @@ package WstxOfflineDecode {
              the list. A slot not found stays<...> with text null. Records published before
              a call was learned keep their text (no rewriting of history). The filled-in text
              reaches Band Activity, the QSO pane, MCP reads and the UDP Decode message
-             (WstxUdp::OutboundRules) unchanged. A hashed slot stays kind hash. Contact
+             (WstxUdp::Decode) unchanged. A hashed slot stays kind hash. Contact
              selection and sequencing read a filled-in hash as its call (WstxContact::
              SelectDecodedRow, #24 S1b); the strategy, Call 1st, DXCC/worked-before and
              Pounce, which need a plain concrete call, keep treating it as no call. */
@@ -710,8 +710,8 @@ package WstxOfflineDecode {
              DOESNOTstoplaterfamilies. Firstacceptedwordwins. Only when all five fail, two
              the APrioriHypotheses passes of the window's APrioriContext run (#56 slices 2 and 5);
              no further fallback decode. An a-priori word's record carries a_priori (1..6);
-             UDP Low confidence stays false because a low-confidence a-priori word is never
-             published.
+             a low-confidence a-priori word is never published (hence WstxUdp::Decode
+             lowConfidence).
              Unsupported/invalidsourceinterpretationremainstypedobservation,notdropfilter.
              Sameworker,cancel/servicecheckpoints<=50ms,terminalrelease<=250ms. */
     }

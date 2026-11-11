@@ -137,9 +137,7 @@ package WstxContact {
              contact as usual, which logs it (log on RRR/RR73/73, make-qso.adoc NIL
              guidance); report_sent and report_rcvd stay null and the received grid is the
              DX grid. Contest dupes are the existing worked-before indication of the
-             call on this band and mode (WorkedBeforeQuery). The UDP Status special
-             operation carries the WSJT-X SpecialOperatingActivity value: none 0, na_vhf 1,
-             ww_digi 5, arrl_digi 8, field_day 3, rtty 4, hound 7 (HoundOperation), eu_vhf 2. Field Day and FT Roundup:
+             call on this band and mode (WorkedBeforeQuery). Field Day and FT Roundup:
              ContestExchange (#24 S2b); EU VHF: EuVhfExchange (#99). In every contest activity
              (not none, not hound) except eu_vhf Tx1 is disabled
              as in WSJT-X (MW ~8190: "start QSO with Tx2"): a selection or entry that would
@@ -168,9 +166,8 @@ package WstxContact {
              (MW ~10542), never reset by set_activity. set_activity also sets the activity of the
              current contact (its messages are regenerated and its log fields follow it).
              DIFFERENT from WSJT-X: a contest contact without exchange_sent or
-             exchange_rcvd is still logged (logqso.cpp ~415 refuses it), the RTTY RST of
-             each side is replaced independently, and UDP QSO Logged keeps the exchange
-             fields empty (Logged ADIF carries them).
+             exchange_rcvd is still logged (logqso.cpp ~415 refuses it), and the RTTY RST
+             of each side is replaced independently.
              Messages (both calls must be standard calls; otherwise generation fails
              invalid_call, since WSJT-X would hash and alter the call): Tx6 "CQ FD MYCALL
              GRID4" / "CQ RU MYCALL GRID4"; the sent exchange is the Field Day exchange,
@@ -283,8 +280,8 @@ package WstxContact {
              exchange_sent ("0001"), SRX those of exchange_rcvd (AdifQso mid(2)); RST_SENT and
              RST_RCVD are the two-digit RS 52..59 of those words, the RS actually exchanged
              ("55", "59"; operator 2026-11-09 on #99: "Log the exchanged 55/59"); GRIDSQUARE is the
-             partner's 6-character locator; no STX_STRING or SRX_STRING. UDP Status special
-             operation 2. DIFFERENT from WSJT-X: (1) set_activity is refused without a
+             partner's 6-character locator; no STX_STRING or SRX_STRING.
+             DIFFERENT from WSJT-X: (1) set_activity is refused without a
              6-character locator (WSJT-X warns and then sends a message type 5 cannot
              carry); (2) a partner message counts by the two hashes against my call and the
              DX call, never by whatever call the table fills in, as HoundOperation (2);
@@ -311,7 +308,7 @@ package WstxContact {
              While hound is set: set_parity even is refused state_conflict; choose_next
              accepts only tx1 and tx3 (others state_conflict); Tx1 is never skipped (MW
              elide_tx1_not_allowed), and every request carries Tx1 or Tx3 only (MW ~7783).
-             UDP Status special operation 7. Station automation does not start
+             Station automation does not start
              (not_ready activity) and Call 1st never applies (a Hound never calls CQ):
              Enable Tx without a contact that has a DX call is refused no_contact.
              Selection (SelectDecodedRow) of a row decoded in a period starting at second
@@ -734,10 +731,8 @@ package WstxContact {
              its completion (stored or pending) changes nothing: the record keeps the
              dial, Tx offset and location of completion. A second contact with the same
              station is a new contactId and a new record (WSJT-X LogBook::add appends
-             without a dupe check). Only the first store of a contactId (saved) is sent
-             to the WstxUdp targets as QSO Logged then Logged ADIF, so each contact
-             reaches the external programs once; a replacement stays internal. They are
-             sent by the station step, never from inside a command. Idempotence: a retried command_id has no second
+             without a dupe check). What a first store sends to external programs is
+             WstxUdp::SendLoggedContact. Idempotence: a retried command_id has no second
              effect, a repeated completion logs once, and a restart starts no contact,
              so it logs nothing again; stored records survive in contacts.adi.
              Storage failure: the record stays pending in the station process, at most 64
