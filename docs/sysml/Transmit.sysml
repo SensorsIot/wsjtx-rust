@@ -517,8 +517,11 @@ package WstxTransmit {
              is refused transmitUnsupported, unavailable radioUnavailable, a missing
              grant or a different safety revision notAuthorized, and a PTT switch left
              indeterminate, a failed StartupSafetyRelease or an owner fault
-             radioUnavailable. These arm conditions are one query of the owner, which the
-             start actions ask before they change anything. Disarm sends no new
+             radioUnavailable. These arm conditions are one query of the owner: call_cq,
+             send_next and reset_repetitions ask it before they change anything; reply
+             and call_dx prepare the QSO and are accepted when it refuses, and the
+             state and its cause stay (CL-111-07); Tune checks the same conditions at its own start
+             (SetTune). Disarm sends no new
              request and cancels requests that are not keyed; a transmission already
              keyed or playing finishes unless halted. */
     }
