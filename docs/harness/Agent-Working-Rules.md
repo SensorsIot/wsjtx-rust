@@ -224,7 +224,7 @@ key the radio: that is a live test for the tester.
 ```yaml
 guard:
   commands:
-    - 'python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints)'
+    - 'python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints|markers( [A-Za-z]+)*)'
 ```
 
 The [agent working rules](Agent-Working-Rules.md) hold for every role. Gate build folders

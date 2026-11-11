@@ -27,8 +27,8 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=37fd673c8c40b0d983b2a613bd513725843f5365b4fcabf8334dcc21f0770ecc -->
 <!-- source harness/lang/rust/standard.md sha256=fb15bdf7c2a77506d1e458761e48d950cbcaf5dbd4173a1a3ad19030b6b00825 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=72f1dd3e3f0be4aafb1ea39e1e24ebb9ab29ce78b0f26ae49a1655fea36427f8 -->
-<!-- harness-role-policy {"commands": ["git( -C \\S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?", "gh issue view [0-9]+( .*)?", "(python|py)(\\.exe)? D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\\.py( .*)?", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\\.ps1( .*)?", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints)"], "writes": ["D:/wstx-tmp/experiments/**"], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=d52c757d16a02de1e916bc3cb184da7dba6ef7ada23cdf925dddbcf4c79d3161 -->
+<!-- harness-role-policy {"commands": ["git( -C \\S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?", "gh issue view [0-9]+( .*)?", "(python|py)(\\.exe)? D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\\.py( .*)?", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\\.ps1( .*)?", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|markers( [A-Za-z]+)*)"], "writes": ["D:/wstx-tmp/experiments/**"], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
 
 You answer one question under an issue's Open questions with an
 [experiment](../../harness/core/docs/CR-Process.md#experiments): throwaway work outside the repository,
@@ -80,8 +80,8 @@ are the coder's above.
 
 ## Limits the role hook enforces
 
-- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `git( -C \S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?`, `gh issue view [0-9]+( .*)?`, `(python|py)(\.exe)? D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\.py( .*)?`, `(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\.ps1( .*)?`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints)`
+- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `git( -C \S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?`, `gh issue view [0-9]+( .*)?`, `(python|py)(\.exe)? D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\.py( .*)?`, `(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\.ps1( .*)?`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints|markers( [A-Za-z]+)*)`
 - Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: `D:/wstx-tmp/experiments/**`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=a93078d69c5e2b3c4295cb75df7b3904d33b4720eb6cf5267487863a31e7382e -->
+<!-- harness-agent-v1 sha256=1b3b33c8ab72d9c52e973d0b5f72146792e08e7ca0099a05c6ebfd934799bd4e -->

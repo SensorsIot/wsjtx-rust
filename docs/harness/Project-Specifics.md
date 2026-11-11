@@ -323,9 +323,10 @@ see the [measurement limits](../sysml/Requirements.sysml).
 
 A reviewed CR reaches master through the harness
 [merge queue](../../harness/core/docs/Merge-Queue.md),
-whose worker runs on HB9BLA only: the coordinator hands in the reviewed tip
-(`python harness/core/tools/merge_queue.py submit <issue> <tip>`) and builds no merge
-itself. Andreas pushes its reviewed tip to the issue branch and hands it in on HB9BLA.
+whose worker runs on the PC that holds development, either one
+([machines and roles](#machines-and-roles), operator 2026-11-11): the coordinator hands in
+the reviewed tip (`python harness/core/tools/merge_queue.py submit <issue> <tip>`) and
+builds no merge itself. The queue's records are local to that PC.
 The `queue:` section of `.harness/config.yaml` names the tools the gate needs (Node 24
 or later, npm, Cargo, rustc, `gh`, the MSVC linker), 20 GB free on every drive the gate uses, the
 input environment of the [HB9BLA handover](HB9BLA-HANDOFF.md) and the `npm ci` setup of

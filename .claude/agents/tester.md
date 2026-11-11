@@ -25,8 +25,8 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=37fd673c8c40b0d983b2a613bd513725843f5365b4fcabf8334dcc21f0770ecc -->
 <!-- source harness/lang/rust/standard.md sha256=fb15bdf7c2a77506d1e458761e48d950cbcaf5dbd4173a1a3ad19030b6b00825 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=72f1dd3e3f0be4aafb1ea39e1e24ebb9ab29ce78b0f26ae49a1655fea36427f8 -->
-<!-- harness-role-policy {"commands": ["gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*gate\\.py --live( --plan)?( --base [0-9a-f]{7,40})?( --consent)?", "gh issue comment [0-9]+ --body 'Live test: (PASS|RED|NOT RUN)[^'\\n]*(\\n[^']*)?'", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|\\.harness/deploy/(radio-preflight|live-page-check))\\.ps1( .*)?", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints)"], "writes": ["D:/wstx-tmp/live/**"], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=d52c757d16a02de1e916bc3cb184da7dba6ef7ada23cdf925dddbcf4c79d3161 -->
+<!-- harness-role-policy {"commands": ["gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*gate\\.py --live( --plan)?( --base [0-9a-f]{7,40})?( --consent)?", "gh issue comment [0-9]+ --body 'Live test: (PASS|RED|NOT RUN)[^'\\n]*(\\n[^']*)?'", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|\\.harness/deploy/(radio-preflight|live-page-check))\\.ps1( .*)?", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|markers( [A-Za-z]+)*)"], "writes": ["D:/wstx-tmp/live/**"], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
 
 You run the live tests the coordinator names for one issue: a function test of step 2 on a
 development build, or the live acceptance of [CR process](../../harness/core/docs/CR-Process.md#steps)
@@ -89,8 +89,8 @@ are the coder's above.
 
 ## Limits the role hook enforces
 
-- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `gh issue view [0-9]+( .*)?`, `(python3?|py)(\.exe)? \S*gate\.py --live( --plan)?( --base [0-9a-f]{7,40})?( --consent)?`, `gh issue comment [0-9]+ --body 'Live test: (PASS|RED|NOT RUN)[^'\n]*(\n[^']*)?'`, `(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|\.harness/deploy/(radio-preflight|live-page-check))\.ps1( .*)?`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints)`
+- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `gh issue view [0-9]+( .*)?`, `(python3?|py)(\.exe)? \S*gate\.py --live( --plan)?( --base [0-9a-f]{7,40})?( --consent)?`, `gh issue comment [0-9]+ --body 'Live test: (PASS|RED|NOT RUN)[^'\n]*(\n[^']*)?'`, `(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|\.harness/deploy/(radio-preflight|live-page-check))\.ps1( .*)?`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints|markers( [A-Za-z]+)*)`
 - Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: `D:/wstx-tmp/live/**`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=f869a929f129da140e14f4b61a15b8955d96647988088c66e85fa154a0703ed1 -->
+<!-- harness-agent-v1 sha256=10e841cfc000ff7c75b770a51ad19b1d0d52987f2411c81447fcf52bd6e16958 -->
