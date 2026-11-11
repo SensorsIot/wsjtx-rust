@@ -106,11 +106,14 @@ def blanked(text: str, strings: bool = True) -> str:
 
 def assignments(text: str, code: str) -> list[tuple[str, str]]:
     """The `feature = value;` statements of an annotation body, as written. `code` is
-    `text` with its strings blanked, so a semicolon inside a string ends nothing."""
+    `text` with its strings blanked, so a semicolon inside a string ends nothing. A
+    non-blank statement in another spelling is reported with the feature name ""."""
     found, start = [], 0
     for end in [index for index, character in enumerate(code) if character == ";"] + [len(code)]:
         if statement := re.fullmatch(r"\s*(\w+)\s*=\s*([\s\S]*?)\s*", text[start:end]):
             found.append((statement[1], statement[2]))
+        elif text[start:end].strip():
+            found.append(("", text[start:end].strip()))
         start = end + 1
     return found
 
@@ -135,10 +138,12 @@ def string_literal(value: str):
     return literal[1] if literal else None
 
 
-def stated(body: str, code: str, kind: str) -> tuple[list, list, list]:
+def stated(body: str, code: str, kind: str) -> tuple[list, list, list, set]:
     """What one body states, in the attribute form and the metadata form together:
-    (states, bindings, methods). An invalid state is "", a binding or method that is
-    not one string literal is None."""
+    (states, bindings, methods, unread). An invalid state is "", a binding or method that
+    is not one string literal is None. `unread` holds each of "state", "binding" and
+    "method" that the body names in a spelling that is not read: such a fact is the
+    declaration's own, so nothing is taken over for it."""
     if kind == "verification":
         state_name, enum, status, state_feature = "automation", "AutomationState", "Automation", "run"
         binding_name, bound, bound_feature = "executable", "TestedBy", "test"
@@ -148,6 +153,8 @@ def stated(body: str, code: str, kind: str) -> tuple[list, list, list]:
     states = re.findall(r"\battribute\s+" + state_name + r"\s*:\s*" + enum + r"\s*=\s*" + enum + r"::(\w+)\s*;", body)
     bindings = re.findall(r'\battribute\s+' + binding_name + r'\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
     methods = re.findall(r'\battribute\s+method\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
+    unread = {fact for fact, name, read in (("state", state_name, states), ("binding", binding_name, bindings), ("method", "method", methods))
+              if len(re.findall(r"\battribute\s+" + name + r"\b", code)) > len(read)}
     for _offset, pairs in annotations(body, code, status):
         for feature, value in pairs:
             if feature == state_feature:
@@ -155,9 +162,13 @@ def stated(body: str, code: str, kind: str) -> tuple[list, list, list]:
                 states.append(state[1] if state else "")
             elif feature == "method" and kind == "verification":
                 methods.append(string_literal(value))
+            else:
+                unread.update(("state", "method"))
     for _offset, pairs in annotations(body, code, bound):
         bindings.extend(string_literal(value) for feature, value in pairs if feature == bound_feature)
-    return states, bindings, methods
+        if any(feature != bound_feature for feature, _value in pairs):
+            unread.add("binding")
+    return states, bindings, methods, unread
 
 
 def file_bindings(key: str, value, root: Path) -> None:
@@ -300,7 +311,7 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
             if re.fullmatch(IDENTITY, name):
                 continue
             body = declaration_body(clean, match.end() - 1)
-            states, bindings, methods = stated(body, code[match.end():match.end() + len(body)], "verification")
+            states, bindings, methods, _unread = stated(body, code[match.end():match.end() + len(body)], "verification")
             if bindings:
                 raise ValueError(f"Verification definition carries a test binding: {name}: {key}")
             definitions.setdefault(name, []).append((states, methods))
@@ -311,13 +322,18 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
             if kind != ("verification" if identifier.startswith("TC-") else "requirement"):
                 raise ValueError("Wrong canonical identity kind: " + identifier)
             body = clean[start:end]
-            states, bindings, methods = stated(body, code[start:end], kind)
+            states, bindings, methods, unread = stated(body, code[start:end], kind)
             # Only a definition of the same file, named without package names and found
-            # once, gives its state and method; the case's own statement wins.
+            # once, gives its state and method; the case's own statement wins, and a fact
+            # the case names in a spelling that is not read is refused, never taken over.
             definition = definitions.get(match[4] or "", [])
             if len(definition) == 1:
-                states = states or definition[0][0]
-                methods = methods or definition[0][1]
+                if not states and "state" not in unread:
+                    states = definition[0][0]
+                if not methods and definition[0][1]:
+                    if "method" in unread:
+                        raise ValueError("Invalid verification/implementation metadata: " + identifier)
+                    methods = definition[0][1]
             allowed = {"planned", "partial", "implemented"} if kind == "verification" else {"target", "partial", "implemented"}
             if len(states) != 1 or states[0] not in allowed:
                 raise ValueError("Missing or invalid declared model state: " + identifier)
@@ -327,6 +343,8 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
             delivered = states[0] in {"partial", "implemented"}
             if kind == "requirement" and delivered and not bindings:
                 # A clause takes its module from the function of its own model file.
+                if functions and "binding" in unread:
+                    raise ValueError("Invalid verification/implementation metadata: " + identifier)
                 if len(functions) > 1:
                     raise ValueError(f"Ambiguous function binding: {identifier}: {key}")
                 bindings = list(functions)

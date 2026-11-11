@@ -881,6 +881,14 @@ verification 'TC-007-010' : EngineCase {
   definition: `Missing or invalid declared model state: <ID>`. Binding or method stated
   twice, a value that is not one string literal, or a method other than the two:
   `Invalid verification/implementation metadata: <ID>`.
+  Nothing is taken over where the declaration names the fact itself. A declaration whose
+  own body names status, binding or method in a spelling the tool does not read
+  (`attribute implementation`, `attribute automation` or `attribute method` with a value
+  that is not the read form, such as a `+` expression or a qualified state; or an own
+  `@ImplementedIn`, `@Status` or `@Automation` body with a non-blank statement the tool
+  did not read, such as `:>> module = ...`) is refused with the message above for that
+  fact. It never gets the value of its function binding or of its definition.
+  `@Automation {}` and `@Automation { method = "automated"; }` keep taking the state over.
 - **Shared case definition.** `verification '<TC>' : <Definition> {` is read as a case, as
   `verification '<TC>' {` is. A case that states no automation state takes the state of its
   definition, and a case that states no method takes its method, when the definition is a

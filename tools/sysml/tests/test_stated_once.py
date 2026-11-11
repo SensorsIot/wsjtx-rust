@@ -255,6 +255,19 @@ class StatedOnceTests(unittest.TestCase):
                 self.assertEqual(self.tree(status("implemented") + own, planned, extra=two)["CL-003-01"]["bindings"], ["client/app.js"])
             with self.subTest("the clause's own binding beside one", form=label):
                 self.assertEqual(self.tree(status("implemented") + own, planned, extra=one)["CL-003-01"]["bindings"], ["client/app.js"])
+        # A binding the clause names itself in a spelling that is not read is never replaced
+        # by the function's.
+        unread = {
+            "attribute of two literals": (coverage("implemented"), '        attribute implementation : String = "client/" + "app.js";\n'),
+            "redefinition in the metadata": (status("implemented"), '        @ImplementedIn { :>> module = "client/app.js"; }\n'),
+            "another feature in the metadata": (status("implemented"), '        @ImplementedIn { modul = "client/app.js"; }\n'),
+        }
+        for label, (state, own) in unread.items():
+            with self.subTest("the clause's own unread binding beside one", spelling=label), self.refused(
+                    "Invalid verification/implementation metadata: CL-003-01$"):
+                self.tree(state + own, planned, extra=one)
+            with self.subTest("the clause's own unread binding beside none", spelling=label), self.refused(lacks):
+                self.tree(state + own, planned)
         with self.subTest("only in another file"), self.refused(lacks):
             self.tree(status("implemented"), planned, top=one)
         for label, hidden in (("line comment", "    // " + implemented_in("server/contact.rs").strip() + "\n"),
@@ -307,6 +320,22 @@ class StatedOnceTests(unittest.TestCase):
                     r"No Proves tag or named-test identity for TC-001-001: tests/untagged\.cjs$"):
                 self.flat(target, '        @Automation { method = "automated"; }\n' + tested_by("tests/untagged.cjs"), typed, definition(stated))
         missing = "Missing or invalid declared model state: TC-001-001$"
+        # A state or method the case names itself in a spelling that is not read is never
+        # replaced by the definition's.
+        unread_states = {
+            "attribute with a qualified state": "        attribute automation : AutomationState = PTop::AutomationState::planned;\n",
+            "redefinition in the metadata": "        @Automation { :>> run = AutomationState::planned; }\n",
+        }
+        for label, own in unread_states.items():
+            with self.subTest("the case's own unread state", spelling=label), self.refused(missing):
+                self.flat(target, own + tested_by("tests/case.cjs"), typed, definition(run("implemented")))
+        with self.subTest("the case's own unread method"), self.refused("Invalid verification/implementation metadata: TC-001-001$"):
+            self.flat(target, '        attribute method : String = "auto" + "mated";\n' + tested_by("tests/untagged.cjs"), typed,
+                      definition(manual_definitions["metadata"]))
+        for label, own in (("empty", "        @Automation {}\n"), ("method only", '        @Automation { method = "automated"; }\n')):
+            with self.subTest("the state is still taken beside the case's own metadata", own=label):
+                self.assertEqual(self.flat(target, own + tested_by("tests/case.cjs"), typed, definition(run("implemented")))["TC-001-001"]["state"],
+                                 "implemented")
         with self.subTest("definition in another file"), self.refused(missing):
             self.tree(target, "", typed, top=definition(run("implemented")))
         with self.subTest("definition in another file, named through its package"), self.refused(missing):
