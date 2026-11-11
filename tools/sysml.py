@@ -669,15 +669,15 @@ def population(bounds: str) -> str:
     return lower + ".." + ("*" if upper == "-1" else upper)
 
 
-def architecture_integrity(output: str, oracle_path: Path | None = None) -> dict[str, int]:
+def architecture_integrity(output: str) -> dict[str, int]:
     """TC-DOC-005 (CL-014-03, CL-014-06): the deployment against the independent oracle.
 
     Input is the pinned Pilot's resolved semantic inventory, not SysML source or a
-    viewer graph. The oracle is the hand-written file `ORACLE` (or `oracle_path`); the
-    inventory and the file must agree exactly. The fixed rules below hold whatever the
-    file lists. Only the first difference is reported.
+    viewer graph. The oracle is the hand-written file `ORACLE`; the inventory and the
+    file must agree exactly. The fixed rules below hold whatever the file lists. Only
+    the first difference is reported.
     """
-    oracle = architecture_oracle(ORACLE if oracle_path is None else oracle_path)
+    oracle = architecture_oracle(ORACLE)
     rows = [line.split("\t")[1:] for line in output.splitlines() if line.startswith("AST\t")]
     if not rows:
         raise ValueError("Architecture integrity: missing resolved Pilot inventory")
