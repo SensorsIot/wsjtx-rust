@@ -140,13 +140,22 @@ pub(crate) struct Fixture {
     pub(crate) bench: Bench,
 }
 pub(crate) fn fixture(origin: &str, transmit: bool) -> Fixture {
+    let (dir, _) = profile_directory(origin, transmit, "JN47AA");
+    start_station(dir, origin, transmit)
+}
+/// A newly created disposable profile directory of HB9BLA at `locator` (profile.json
+/// only), with its profile id; nothing is started on it.
+pub(crate) fn profile_directory(
+    origin: &str,
+    transmit: bool,
+    locator: &str,
+) -> (std::path::PathBuf, String) {
     let dir = std::env::temp_dir().join(format!("wstx-contact-{}", profile::new_uuid().unwrap()));
     std::fs::create_dir(&dir).unwrap();
     let id = profile::new_uuid().unwrap();
-    let boot = profile::new_uuid().unwrap();
     let bind = origin.trim_start_matches("http://");
     let doc = json!({"schema_version":1,"profile_id":id,"revision":0,"display_name":"Contact fixture",
-        "callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":bind,"origin":null},"connection_type":"standard",
+        "callsign":"HB9BLA","locator":locator,"endpoint":{"bind":bind,"origin":null},"connection_type":"standard",
         "audio":{"input_device":null,"output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
     // A transmit-capable fixture is configured for CAT PTT, as a real one would be (the
     // CAT lifecycle does not run in these tests; the transmit owner uses the double).
@@ -156,14 +165,21 @@ pub(crate) fn fixture(origin: &str, transmit: bool) -> Fixture {
         doc["control"] = json!({"mode":"cat","endpoint":"icom7300://COM250","ptt":"cat"});
     }
     std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
+    (dir, id)
+}
+/// A station start on the profile directory `dir`: a new station owner with a new boot id
+/// (the store, the recording, the transmit owner on a new bench, the contact station).
+pub(crate) fn start_station(dir: std::path::PathBuf, origin: &str, transmit: bool) -> Fixture {
+    let boot = profile::new_uuid().unwrap();
     let (store, _) = profile::Store::open(&dir).unwrap();
+    let id = store.document.profile_id.clone();
     let recording = recording::Recording::open(&dir, id.clone(), boot.clone());
     let bench = Bench::default();
     bench.unsupported.store(!transmit, Ordering::SeqCst);
     let _ = recording
         .transmit
         .set(transmit_http::Station::start_with(Box::new(bench.clone())).unwrap());
-    let _ = recording.contact.set(contact_http::Station::start());
+    let _ = recording.contact.set(contact_http::Station::start(&store));
     let state = Arc::new(ProfileState {
         store: Mutex::new(store),
         authorization: Mutex::new(None),
@@ -190,6 +206,15 @@ pub(crate) fn fixture(origin: &str, transmit: bool) -> Fixture {
     }
 }
 impl Fixture {
+    /// Ends this station (its store and locks are released) and starts a new one on the
+    /// same profile directory.
+    pub(crate) fn restart(mut self) -> Fixture {
+        let dir = std::mem::take(&mut self.dir);
+        let origin = self.origin.clone();
+        let transmit = !self.bench.unsupported.load(Ordering::SeqCst);
+        drop(self);
+        start_station(dir, &origin, transmit)
+    }
     pub(crate) fn contact(&self) -> Arc<contact_http::Station> {
         self.state.recording.contact.get().unwrap().clone()
     }
@@ -279,6 +304,10 @@ impl Fixture {
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
+        // A restarted station handed its directory to its successor.
+        if self.dir.as_os_str().is_empty() {
+            return;
+        }
         let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
@@ -2158,4 +2187,245 @@ async fn a_priori_context_follows_profile_and_contact() {
         f.contact().a_priori().cq_only,
         "301 s after Enable Tx went off"
     );
+}
+
+// ---------------------------------------------------------------- #110 QsoSettingsFile
+const QSO_FILE: &str = "qso-settings.json";
+/// (auto_seq, call_first) as GET /contact `settings` shows them.
+async fn seq_and_first(f: &Fixture) -> (Value, Value) {
+    let s = f.snapshot().await["settings"].clone();
+    (s["auto_seq"].clone(), s["call_first"].clone())
+}
+async fn set_ok(f: &Fixture, action: &str, enabled: bool) {
+    let (s, v) = f.send(action, json!({"enabled":enabled})).await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{action} {enabled}: {v}");
+}
+/// The file as it lies in the profile directory: at most 256 bytes of one JSON value.
+fn qso_file(f: &Fixture) -> Value {
+    let bytes = std::fs::read(f.dir.join(QSO_FILE)).unwrap();
+    assert!(bytes.len() <= 256, "{} bytes", bytes.len());
+    serde_json::from_slice(&bytes).unwrap()
+}
+async fn profile_revision(f: &Fixture) -> Value {
+    let (s, v, _, _) = f.call("GET", "/profile", None).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert!(v["revision"].is_u64(), "{v}");
+    v["revision"].clone()
+}
+
+// Proves: CL-110-01; TC-110-001 (a)-(g). Expected values are CL-110-01 points 1, 2, 3, 5
+// and 6 as the issue states them; a station start is a new station owner (new boot id) on
+// the same disposable profile directory.
+#[tokio::test]
+async fn tc_110_001_auto_seq_and_call_first_are_saved_across_a_station_start() {
+    let origin = "http://127.0.0.1:18110";
+    let (dir, id) = profile_directory(origin, true, "JN37");
+    let f = start_station(dir, origin, true);
+    // (a) A newly created profile, nothing saved: both on.
+    assert!(!f.dir.join(QSO_FILE).exists());
+    assert_eq!(seq_and_first(&f).await, (json!(true), json!(true)));
+    let revision = profile_revision(&f).await;
+    // (b) Call 1st off is accepted and holds after a station start; Auto Seq stays on.
+    let at = f.snapshot().await["contact_revision"].as_u64().unwrap();
+    let body = f.body(at, "set_call_first", json!({"enabled":false}));
+    let (s, receipt, _, _) = f.call("POST", "/contact/command", Some(body.clone())).await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{receipt}");
+    // Guard of existing behaviour: the same body again is 200 with the same receipt.
+    let (s, again, _, _) = f.call("POST", "/contact/command", Some(body)).await;
+    assert_eq!((s, &again), (StatusCode::OK, &receipt));
+    let first_boot = f.boot.clone();
+    let f = f.restart();
+    assert_ne!(f.boot, first_boot, "a new station owner");
+    assert_eq!(seq_and_first(&f).await, (json!(true), json!(false)), "(b)");
+    // (c) Then Auto Seq off: both off after the next start.
+    set_ok(&f, "set_auto_seq", false).await;
+    let f = f.restart();
+    assert_eq!(seq_and_first(&f).await, (json!(false), json!(false)), "(c)");
+    // (g) Another, newly created profile has none of it.
+    let other = fixture("http://127.0.0.1:18111", true);
+    assert_ne!(other.id, id);
+    assert_eq!(
+        seq_and_first(&other).await,
+        (json!(true), json!(true)),
+        "(g)"
+    );
+    assert!(!other.dir.join(QSO_FILE).exists());
+    drop(other);
+    // (d) Both on again: on because on was saved, not because nothing is there.
+    set_ok(&f, "set_auto_seq", true).await;
+    set_ok(&f, "set_call_first", true).await;
+    let f = f.restart();
+    assert_eq!(seq_and_first(&f).await, (json!(true), json!(true)), "(d)");
+    assert_eq!(
+        qso_file(&f),
+        json!({"schema_version":1,"profile_id":id,"auto_seq":true,"call_first":true})
+    );
+    // (f) Saving never advanced the profile revision.
+    assert_eq!(profile_revision(&f).await, revision, "(f)");
+    // (e) Two changes without a start between them: the second save keeps the first.
+    set_ok(&f, "set_call_first", false).await;
+    set_ok(&f, "set_auto_seq", false).await;
+    let f = f.restart();
+    assert_eq!(seq_and_first(&f).await, (json!(false), json!(false)), "(e)");
+    assert_eq!(f.id, id);
+}
+
+// Proves: CL-110-01; TC-110-002 (a)-(j). Every file is written by hand into the profile
+// directory before the station start; the expected values are the QsoSettingsFile format
+// of the issue (exactly {schema_version: 1, profile_id, auto_seq, call_first}, at most
+// 256 bytes; anything else: both on, and the next accepted change replaces the file).
+#[tokio::test]
+async fn tc_110_002_missing_hand_written_and_unusable_files() {
+    let origin = "http://127.0.0.1:18112";
+    fn padded(text: String, bytes: usize) -> String {
+        let spaces = " ".repeat(bytes - text.len());
+        format!("{text}{spaces}")
+    }
+    fn object(id: &str, rest: &str) -> String {
+        format!(r#"{{"schema_version":1,"profile_id":"{id}",{rest}}}"#)
+    }
+    fn positive(id: &str) -> String {
+        object(id, r#""auto_seq":false,"call_first":true"#)
+    }
+    let other_id = profile::new_uuid().unwrap();
+    type Case = (&'static str, Box<dyn Fn(&str) -> String>, (bool, bool));
+    let on = (true, true);
+    let cases: Vec<Case> = vec![
+        ("(a) hand-written", Box::new(positive), (false, true)),
+        (
+            "(b) 256 bytes",
+            Box::new(|id| padded(positive(id), 256)),
+            (false, true),
+        ),
+        (
+            "(c) 257 bytes",
+            Box::new(|id| padded(positive(id), 257)),
+            on,
+        ),
+        ("(d) empty", Box::new(|_| String::new()), on),
+        (
+            "(e) truncated",
+            Box::new(|id| format!(r#"{{"schema_version":1,"profile_id":"{id}","auto_seq":fal"#)),
+            on,
+        ),
+        (
+            "(f) schema_version 2",
+            Box::new(|id| {
+                format!(
+                    r#"{{"schema_version":2,"profile_id":"{id}","auto_seq":false,"call_first":false}}"#
+                )
+            }),
+            on,
+        ),
+        (
+            "(g) another profile's id",
+            Box::new(move |_| object(&other_id, r#""auto_seq":false,"call_first":false"#)),
+            on,
+        ),
+        (
+            "(h) extra key",
+            Box::new(|id| object(id, r#""auto_seq":false,"call_first":false,"tx1_skip":true"#)),
+            on,
+        ),
+        (
+            "(h) missing key",
+            Box::new(|id| object(id, r#""auto_seq":false"#)),
+            on,
+        ),
+        (
+            "(i) a string",
+            Box::new(|id| object(id, r#""auto_seq":"false","call_first":false"#)),
+            on,
+        ),
+        (
+            "(i) a number",
+            Box::new(|id| object(id, r#""auto_seq":false,"call_first":0"#)),
+            on,
+        ),
+    ];
+    assert_eq!(cases.len(), 11);
+    for (name, content, expected) in cases {
+        let (dir, id) = profile_directory(origin, true, "JN37");
+        let text = content(&id);
+        match name {
+            "(b) 256 bytes" => assert_eq!(text.len(), 256),
+            "(c) 257 bytes" => assert_eq!(text.len(), 257),
+            _ => {}
+        }
+        std::fs::write(dir.join(QSO_FILE), &text).unwrap();
+        // The station start succeeds and GET /contact answers 200 (asserted in snapshot).
+        let f = start_station(dir, origin, true);
+        assert_eq!(
+            seq_and_first(&f).await,
+            (json!(expected.0), json!(expected.1)),
+            "{name}"
+        );
+        if matches!(name, "(a) hand-written" | "(b) 256 bytes") {
+            continue;
+        }
+        // (j) The next accepted change replaces the unusable file with a valid one.
+        set_ok(&f, "set_call_first", false).await;
+        let valid = json!({"schema_version":1,"profile_id":id,"auto_seq":true,"call_first":false});
+        assert_eq!(qso_file(&f), valid, "{name}");
+        let f = f.restart();
+        assert_eq!(
+            seq_and_first(&f).await,
+            (json!(true), json!(false)),
+            "{name}"
+        );
+    }
+}
+
+/// Every entry of the profile directory with its bytes (a directory by name only).
+fn directory_content(dir: &std::path::Path) -> Vec<(String, Option<Vec<u8>>)> {
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| {
+            let e = e.unwrap();
+            let name = e.file_name().to_string_lossy().into_owned();
+            (name, std::fs::read(e.path()).ok())
+        })
+        .collect();
+    entries.sort();
+    entries
+}
+
+// Proves: CL-110-01; TC-110-003 (a)-(c). The fault is the profile store's test seam at the
+// replace of the file (profile::tests::with_fault "replace"); the command runs through
+// Station::operate, the browser's validation and execution, on the test's own thread, which
+// is where the seam acts. Expected values are CL-110-01 point 4.
+#[tokio::test]
+async fn tc_110_003_a_failed_save_refuses_the_change_and_changes_nothing() {
+    let f = fixture("http://127.0.0.1:18113", true);
+    // Saved state: Call 1st on.
+    set_ok(&f, "set_call_first", true).await;
+    assert_eq!(qso_file(&f)["call_first"], true);
+    let before = f.snapshot().await;
+    let revision = before["contact_revision"].as_u64().unwrap();
+    let on_disk = directory_content(&f.dir);
+    // (a) The replace fails: refused storage_unavailable, field null, nothing changed.
+    let body = f.body(revision, "set_call_first", json!({"enabled":false}));
+    let refused =
+        profile::tests::with_fault("replace", || f.contact().operate(&f.state, body, false));
+    assert_eq!(refused, Err(("storage_unavailable", None)));
+    let after = f.snapshot().await;
+    assert_eq!(after["settings"], before["settings"]);
+    assert_eq!(after["settings"]["call_first"], true);
+    assert_eq!(after["contact_revision"], before["contact_revision"]);
+    assert_eq!(
+        directory_content(&f.dir),
+        on_disk,
+        "the directory is as it was"
+    );
+    // (c) Guard of existing behaviour: a setting that is not saved does not need storage.
+    let body = f.body(revision, "set_hold_tx", json!({"enabled":false}));
+    let accepted =
+        profile::tests::with_fault("replace", || f.contact().operate(&f.state, body, false));
+    assert_eq!(accepted.map(|(status, _)| status), Ok(StatusCode::ACCEPTED));
+    assert_eq!(directory_content(&f.dir), on_disk);
+    // (b) Storage is back: the same action with a new command_id is saved.
+    set_ok(&f, "set_call_first", false).await;
+    assert_eq!(seq_and_first(&f).await, (json!(true), json!(false)));
+    let f = f.restart();
+    assert_eq!(seq_and_first(&f).await, (json!(true), json!(false)));
 }

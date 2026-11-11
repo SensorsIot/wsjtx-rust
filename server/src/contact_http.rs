@@ -24,6 +24,12 @@ const MAX_SAFE: u64 = 9_007_199_254_740_991;
 pub const LOG_PENDING_MAX: usize = 64;
 const LOG_RETRY: Duration = Duration::from_secs(5);
 
+/// The contact engine of a station start on the profile of `store`: every setting at its
+/// start value.
+pub(crate) fn start_engine(_store: &profile::Store) -> Engine {
+    Engine::new(Box::new(|| profile::new_uuid().ok()))
+}
+
 /// The latest DirectLog attempt as ContactSnapshot log shows it.
 #[derive(Clone, Debug, PartialEq)]
 struct LogView {
@@ -303,10 +309,10 @@ pub(crate) fn confirmed_dial(r: &recording::Recording) -> Option<u64> {
 }
 
 impl Station {
-    pub(crate) fn start() -> Arc<Self> {
+    pub(crate) fn start(store: &profile::Store) -> Arc<Self> {
         Arc::new(Self {
             inner: Mutex::new(Inner {
-                engine: Engine::new(Box::new(|| profile::new_uuid().ok())),
+                engine: start_engine(store),
                 rows: None,
                 receipts: VecDeque::new(),
                 snapshot: (0, Value::Null),

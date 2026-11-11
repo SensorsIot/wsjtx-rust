@@ -1725,6 +1725,27 @@ async fn tc_039_004_halt_turns_auto_off_keeps_the_selection_and_esc_and_a_cancel
     );
 }
 
+// Proves: CL-110-01; TC-110-004 (guard of existing behaviour). A strategy switched to Auto
+// after a station start with Auto Seq saved off waits with reason auto_seq, as it does when
+// Auto Seq is switched off in the running station.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_110_004_a_strategy_waits_for_auto_seq_after_a_start_with_it_saved_off() {
+    let f = crate::mcp_tests::station_prepared(true, |dir, id| {
+        let saved = format!(
+            r#"{{"schema_version":1,"profile_id":"{id}","auto_seq":false,"call_first":true}}"#
+        );
+        std::fs::write(dir.join("qso-settings.json"), saved).unwrap();
+    })
+    .await;
+    let _e = at_even(&f);
+    f.state.recording.fixture_live_job("ft8");
+    f.tick();
+    select(&f, config(Some("Test calls"))).await;
+    f.tick();
+    assert_eq!(run_state(&f).await, ("waiting".into(), json!("auto_seq")));
+    assert_eq!(contact(&f).await.2, json!("disarmed"), "nothing armed");
+}
+
 // Proves: TC-039-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_004_a_strategy_stays_selected_across_receive_and_without_a_grant() {
