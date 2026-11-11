@@ -208,7 +208,7 @@ class ModelTreeTests(unittest.TestCase):
                 with self.refused("lacks a ProductScope reference: " + re.escape(key) + "$"):
                     self.check()
                 self.remove(key)
-        self.assertEqual(tool.LIBRARY_PACKAGES, {"ModelNotes"})
+        self.assertEqual(tool.LIBRARY_PACKAGES, {"ModelNotes", "ModelBindings"})
 
     # T8
     # Proves: CL-014-10; TC-DOC-008

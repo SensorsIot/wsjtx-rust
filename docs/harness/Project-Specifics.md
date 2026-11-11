@@ -605,6 +605,23 @@ it never renews model approval. No command writes a model.
 bindings. It never invokes Java, the mutation suite or application behavior. Source-only
 edits select this fast check; model/tool changes retain the full checks as well.
 
+`python tools/sysml.py markers [<Kind> ...]` lists what the model leaves open:
+
+- It needs the canonical authority, as `traces` does. It runs neither the catalog checks
+  nor Java, and writes nothing.
+- The kinds are the `metadata def` names in the model file whose package is `ModelNotes`.
+  A kind added there is listed without a tool change.
+- It lists every use outside comments: `@Kind { ... }`, `@Kind;` and
+  `metadata <name> : Kind [about <targets>] { ... }`, with or without `ModelNotes::`.
+- One line per marker: `<key>:<line>: <Kind>: <text>`, or
+  `<key>:<line>: <Kind> about <targets>: <text>`. The line is that of `@` or `metadata`,
+  counted from 1. The text is the string values of the body, each with its `+` parts
+  joined, several values separated by `; `.
+- Lines are sorted by key, then line. The last line is `<n> markers: <count> <Kind>, ...`
+  over all kinds in name order; without a `ModelNotes` file it is `0 markers`. Exit code 0.
+- Named kinds restrict lines and counts to those kinds. An unknown kind: exit 2,
+  `Unknown marker kind: <name>`.
+
 The `sysml-documentation` level-2 suite owns these checks. Application outcomes remain
 in their existing functional suites and issue evidence; no duplicate application build
 is required merely to inspect model syntax. A selected compiler or behavioural gate
@@ -702,6 +719,8 @@ These are HOW bindings, not product requirements and not SysML model elements.
 | CL-014-08 | Functional sequence and closure | Use the declared canonical artifact first, pass the ready check, implement against it and verify with independent expected results. Reconcile delivered behaviour and durable cases before closing the issue. SysML-only authority requires no maintained/generated Markdown specification. | TC-DOC-006; TC-DOC-007; independent closure review |
 | CL-014-09 | Modeling feedback | Correct differences against the declared authority; do not bless code defects by rewriting requirements. Record causes/review on the issue and improve demonstrated reusable/project-specific gaps, with a focused regression where useful. | TC-DOC-006; independent review |
 | CL-014-10 | Model file tree | The model is every `*.sysml` file at any depth below `docs/sysml`, named by its path relative to that folder. Required files are found by name at any depth, exactly once; the entry file stays at the root. Identities, links and the ProductScope reference hold across folders and packages. | TC-DOC-008 |
+| CL-014-11 | Stated once | Status and bindings are read as attributes or as `ModelBindings` metadata, once per declaration. A delivered clause without a binding takes the function binding of its model file; a case takes automation from the verification definition of its file that it is typed by. A declaration with an identity in a form the catalog does not read is refused. | TC-DOC-009 |
+| CL-014-12 | Marker listing | `markers` lists every `ModelNotes` marker of the model by file key and line, with counts by kind; it checks nothing and writes nothing. | TC-DOC-010 |
 
 ## Documentation-tool test definitions
 
@@ -719,6 +738,8 @@ portable Pilot. No radio, live service, Jupyter server or global Java is needed.
 | TC-DOC-006 | CL-014-07, CL-014-08, CL-014-09 | An agent that did not write the issue reads it and the canonical contract it names; missing required decisions, missing test cases or a shared-only generated oracle give `Ready: not yet`, and `cr_state.py` refuses `implementing` without a `Ready: PASS`. The independent review of the candidate rechecks exact changes and closure reconciliation. On request, a model-readiness review traces the contract to code boundaries. No syntax/fingerprint result establishes implementation sufficiency. | Manual source/model/meaning reading on this PC; automation cannot establish complete intended meaning. |
 | TC-DOC-007 | CL-014-01, CL-014-05, CL-014-08 | Refuse dual/missing authority and an active FSD without the marker, missing/duplicate stable IDs, missing required packages, invalid state, nonreciprocal verification links, missing/escaping source paths and unsupported executable claims. Refuse dangling active references to retired FSD content. Edited/missing archived Markdown does not change canonical checks; no command rewrites the model. New packages must be referenced by ProductScope and validated in full. Source edits/deletions invalidate both model suites' evidence; source-only changes select fast traces without the full model suite. Fast traces refuses a deleted binding and never invokes Java. | Automated isolated Python fixtures on this PC; full integrated Pilot validation remains separate. |
 | TC-DOC-008 | CL-014-10 | Place a clause and its case in a subfolder file, move a required file into a folder, duplicate it, move the entry file, verify and link a clause through a package-qualified name, refer to an additional package by import, by alias and not at all, and add a library package without a reference. The tree is accepted, each fault is refused by key, fingerprints and the gate's model list name every file by key, and the real model with one file moved into a folder passes the full validation with the same identities as the flat one. | Automated isolated Python fixtures and one full Pilot validation on this PC. |
+| TC-DOC-009 | CL-014-11 | Write status, bindings and method as metadata, state one twice, leave a clause's binding to none, one and two function bindings, type a case by a definition with and without automation in its file and in another, bind a test on a definition, and declare an identity in an unread form. The new forms give the catalog and gate bindings of the attribute forms, each fault is refused by identity or key, and the real model rewritten to metadata passes the full validation with the same identities. | Automated isolated Python fixtures and full Pilot validations on this PC. |
+| TC-DOC-010 | CL-014-12 | List markers in each form across folders, in comments, with joined strings, by kind, with an added kind, an unknown kind, no ModelNotes file, a broken catalog and no authority. | Automated isolated Python fixtures on this PC. |
 
 Executable companions are `tools/sysml.py`, `tools/sysml/tests/` and the pinned
 `tools/sysml/Validate.java` adapter. Results and independent review
@@ -789,7 +810,7 @@ other than `.sysml`.
   Otherwise: `Additional canonical package lacks a ProductScope reference: <key>`.
 - **Library packages.** A package named in the tool's list of library packages
   (`LIBRARY_PACKAGES` in `tools/sysml.py`) needs no ProductScope reference. The list
-  holds `ModelNotes`. It goes by package name, not file name.
+  holds `ModelNotes` and `ModelBindings`. It goes by package name, not file name.
 
 Each requirement/clause declares `coverage : ImplementationState` as target, partial
 or implemented. Each verification declares `automation : AutomationState` as planned,
@@ -818,6 +839,90 @@ which both model suites fingerprint. These are validation-input coverage bounds,
 product limitation. A new source root requires a reviewed HOW update to the admission
 constant, both suites' complete inputs, fast selection and their regression together;
 an unregistered binding is refused rather than silently borrowing stale evidence.
+
+A *declaration* is a requirement or verification with a stable identity that the catalog
+reads. The forms above are the *attribute form*. The *metadata form* uses the names of the
+harness template `harness/core/templates/sysml/model-bindings.sysml` with this project's
+status names; a metadata name may carry package names (`@ModelBindings::Status`), and so
+may an enumeration value. Both forms are read:
+
+```sysml
+action def StandardContact {
+    @ImplementedIn { module = "server/src/contact.rs"; }
+    @DetailTests { tests = "server/src/contact_tests.rs"; covers = "the engine on a virtual clock"; }
+}
+requirement 'CL-010-18' {                      // takes server/src/contact.rs
+    subject qso : WstxArchitecture::QsoAndLogging;
+    @Status { build = ImplementationState::implemented; }
+}
+verification def EngineCase {
+    subject qso : WstxArchitecture::QsoAndLogging;
+    attribute level : Integer = 2;
+    attribute location : String = "Windows development PC, isolated, no RF";
+    @Automation { run = AutomationState::implemented; }
+}
+verification 'TC-007-010' : EngineCase {
+    objective { verify 'CL-010-02'; }
+    @TestedBy { test = "server/src/contact_tests.rs"; }
+}
+```
+
+- **Status as metadata.** In a requirement body `@Status { build = ImplementationState::<state>; }`
+  is read as `attribute coverage`. In a verification body
+  `@Automation { run = AutomationState::<state>; }` is read as `attribute automation`, and it
+  may also hold `method = "manual";` or `method = "automated";`, read as `attribute method`.
+  States and their meaning are unchanged.
+- **Bindings as metadata.** In a requirement body `@ImplementedIn { module = "<bindings>"; }`
+  is read as `attribute implementation`. In a verification body
+  `@TestedBy { test = "<bindings>"; }` is read as `attribute executable`. The value is one
+  string literal with the grammar, checks and messages of the attribute form.
+- **Once per declaration.** Status, binding and method are each stated at most once per
+  declaration, in either form. Status stated twice, or not at all and not taken from a
+  definition: `Missing or invalid declared model state: <ID>`. Binding or method stated
+  twice, a value that is not one string literal, or a method other than the two:
+  `Invalid verification/implementation metadata: <ID>`.
+  Nothing is taken over where the declaration names the fact itself. A declaration whose
+  own body names status, binding or method in a spelling the tool does not read
+  (`attribute implementation`, `attribute automation` or `attribute method` with a value
+  that is not the read form, such as a `+` expression or a qualified state; the feature
+  redefined in the attribute form, such as `attribute :>> automation = ...`; an own
+  `@ImplementedIn`, `@Status` or `@Automation` body with a non-blank statement the tool
+  did not read, such as `:>> module = ...`; or the same metadata written with the
+  `metadata` keyword, such as `metadata ImplementedIn { ... }`) is refused with the message
+  above for that fact wherever a value would otherwise be taken over (a delivered clause
+  beside a function binding; the state of a case; the method of a case beside a
+  definition that states one); elsewhere the result is that of the attribute form. It
+  never gets the value of its function binding or of its definition.
+  `@Automation {}` and `@Automation { method = "automated"; }` keep taking the state over.
+- **Shared case definition.** `verification '<TC>' : <Definition> {` is read as a case, as
+  `verification '<TC>' {` is. A case that states no automation state takes the state of its
+  definition, and a case that states no method takes its method, when the definition is a
+  `verification def` in the same model file, named without package names, and states them
+  in either form. A state or method the case states itself wins. Nothing is taken from a
+  definition in another file or from the definition's own supertypes; such a case states
+  its own. A `@TestedBy` or `attribute executable` on a verification definition without
+  identity is refused: `Verification definition carries a test binding: <name>: <key>`.
+- **Function binding.** An `@ImplementedIn` outside the body of every declaration is a
+  function binding of its model file. It is checked as a clause binding is, and its
+  messages name the file key in place of an identity.
+- **A clause takes its module from its function.** A requirement that is `partial` or
+  `implemented` and states no binding takes the function binding of its own model file.
+  None in the file: `Delivered declaration lacks implementation/test binding: <ID>`. Two or
+  more: `Ambiguous function binding: <ID>: <key>`. A requirement that states its own
+  binding is not affected by either.
+- **Detail tests.** `@DetailTests { tests = "<paths>"; covers = "<text>"; }` anywhere in a
+  model file: each path of `tests`, separated by semicolons, must be an existing file
+  under the source roots, else the binding messages with the file key. No `Proves:` tag is
+  asked, and the gate's bindings do not list it.
+- **No unread declaration.** A `requirement` or `verification` declaration whose name or
+  short name is a stable identity, in a form the catalog does not read (`:>`,
+  `<'ID'> name`, a typed `requirement`), is refused:
+  `Unreadable canonical declaration: <ID>: <key>`.
+
+The gate's model bindings (`.harness/model_bindings.py --rev REV`) report the effective
+values, so a model in the metadata form gives the JSON of the same model in the attribute
+form.
+
 Recognized numeric product identities in source `Proves:` comments must exist in the
 canonical catalog; same-prefix shorthand is expanded. HOW and fixture-specific names
 are not product declarations. A tag's presence still does not establish test execution.

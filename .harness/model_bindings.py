@@ -8,7 +8,10 @@ selection (harness#40).
 It reuses tools/sysml.py: canonical_catalog reads the canonical models at REV (every
 `*.sysml` at any depth below docs/sysml, listed as `docs/sysml/<key>`), and every
 binding it resolves is recorded instead of checked (checking them is the
-source-model-traces suite's job). A verification case binds a test by `path::name`, or
+source-model-traces suite's job). The values are the effective ones, in the attribute
+form or the metadata form alike: a promise's own paths or those of its file's function
+binding, a case's own state and method or those of its verification definition. Detail
+tests are not listed. A verification case binds a test by `path::name`, or
 by its file: the tests there whose `Proves:` tag names the case, or a JavaScript test
 whose name does. Prints the JSON that candidate.py describes.
 """
@@ -88,6 +91,8 @@ def bindings(rev):
             else:
                 promises[identifier] = {"implementation": []}
         for identifier, binding, manual in seen:
+            if identifier not in entries:
+                continue   # a binding of a model file (function binding, detail tests), named by key
             if identifier in promises:
                 promises[identifier]["implementation"].append(binding.partition("::")[0])
                 continue

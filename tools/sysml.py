@@ -1,7 +1,8 @@
 """Canonical-authority SysML checks and real OMG Pilot validation.
 
 traces checks catalog and source/model bindings only. check additionally calls the
-pinned Java parser/name resolver/semantic validator. Neither executes modeled behavior.
+pinned Java parser/name resolver/semantic validator. markers lists the ModelNotes markers
+and checks nothing. None executes modeled behavior.
 """
 from __future__ import annotations
 
@@ -31,7 +32,18 @@ CANONICAL_MODELS = {
     "OperatingLayout.sysml", "OperatingReceive.sysml", "StationProtocol.sysml", "ProductScope.sysml",
 }
 # Packages that need no ProductScope reference, by package name (not file name).
-LIBRARY_PACKAGES = {"ModelNotes"}
+LIBRARY_PACKAGES = {"ModelNotes", "ModelBindings"}
+# The package whose `metadata def` names are the marker kinds that `markers` lists.
+MARKER_PACKAGE = "ModelNotes"
+IDENTITY = r"(?:FR-\d{3}|CL-\d{3}-\d{2}|TC-\d{3}-\d{3})"
+# A declaration the catalog reads: `requirement '<ID>' {`, the same with `def`, and a
+# verification case typed by a definition, `verification '<TC>' : <Definition> {`.
+DECLARATION = re.compile(r"\b(requirement|verification)(\s+def)?\s+'(" + IDENTITY + r")'\s*(?::\s*((?:\w+::)*\w+)\s*)?\{")
+# A requirement or verification whose name or short name is a stable identity, in any form.
+IDENTITY_DECLARATION = re.compile(r"\b(?:requirement|verification)(?:\s+def)?\s+(?:<\s*'(" + IDENTITY + r")'\s*>|(?:<[^<>{};]*>\s*)?'(" + IDENTITY + r")')")
+# A verification definition without identity: a shared definition for test cases.
+CASE_DEFINITION = re.compile(r"\bverification\s+def\s+(?:<[^<>{};]*>\s*)?(\w+|'[^']*')[^{};]*\{")
+STRING = r'"(?:\\.|[^"\\])*"'
 # Stable identities are an independent migration admission baseline, not generated
 # from the candidate under review. New identities may be added without renumbering.
 BASELINE_IDENTITIES = {f"FR-{i:03}" for i in range(1, 24)}
@@ -72,6 +84,112 @@ def without_comments(text: str) -> str:
     """
     tokens = re.finditer(r'/\*[\s\S]*?\*/|//[^\r\n]*|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|[^/"\']+|.', text)
     return "".join(" " if token.group().startswith(("/*", "//")) else token.group() for token in tokens)
+
+
+def blanked(text: str, strings: bool = True) -> str:
+    """`text` with every comment, and with `strings` the inside of every string literal,
+    replaced by spaces. Line breaks and every offset are kept, so a position found here
+    is the same position in `text`."""
+    def spaces(value: str) -> str:
+        return re.sub(r"[^\r\n]", " ", value)
+
+    parts = []
+    for token in re.finditer(r'/\*[\s\S]*?\*/|//[^\r\n]*|' + STRING + r'|\'(?:\\.|[^\'\\])*\'|[^/"\']+|.', text):
+        value = token.group()
+        if value.startswith(("/*", "//")):
+            value = spaces(value)
+        elif strings and len(value) > 1 and value.startswith('"'):
+            value = '"' + spaces(value[1:-1]) + '"'
+        parts.append(value)
+    return "".join(parts)
+
+
+def assignments(text: str, code: str) -> list[tuple[str, str]]:
+    """The `feature = value;` statements of an annotation body, as written. `code` is
+    `text` with its strings blanked, so a semicolon inside a string ends nothing. A
+    non-blank statement in another spelling is reported with the feature name ""."""
+    found, start = [], 0
+    for end in [index for index, character in enumerate(code) if character == ";"] + [len(code)]:
+        if statement := re.fullmatch(r"\s*(\w+)\s*=\s*([\s\S]*?)\s*", text[start:end]):
+            found.append((statement[1], statement[2]))
+        elif text[start:end].strip():
+            found.append(("", text[start:end].strip()))
+        start = end + 1
+    return found
+
+
+def annotations(text: str, code: str, name: str) -> list[tuple[int, list[tuple[str, str]]]]:
+    """Every `@Name { ... }` and `@Name;` of comment-free `text`, with or without package
+    names, as (offset of `@`, assignments). `code` is `blanked(text)`."""
+    found = []
+    for match in re.finditer(r"@\s*(?:\w+::)*" + name + r"\b(?!::)\s*(\{)?", code):
+        if match[1]:
+            opening = match.end() - 1
+            body = declaration_body(text, opening)
+            found.append((match.start(), assignments(body, code[opening + 1:opening + 1 + len(body)])))
+        else:
+            found.append((match.start(), []))
+    return found
+
+
+def string_literal(value: str):
+    """The text of a value that is one string literal; None for anything else."""
+    literal = re.fullmatch(r'"([^"\r\n]*)"', value)
+    return literal[1] if literal else None
+
+
+def stated(body: str, code: str, kind: str) -> tuple[list, list, list, set]:
+    """What one body states, in the attribute form and the metadata form together:
+    (states, bindings, methods, unread). An invalid state is "", a binding or method that
+    is not one string literal is None. `unread` holds each of "state", "binding" and
+    "method" that the body names in a spelling that is not read: such a fact is the
+    declaration's own, so nothing is taken over for it."""
+    if kind == "verification":
+        state_name, enum, status, state_feature = "automation", "AutomationState", "Automation", "run"
+        binding_name, bound, bound_feature = "executable", "TestedBy", "test"
+    else:
+        state_name, enum, status, state_feature = "coverage", "ImplementationState", "Status", "build"
+        binding_name, bound, bound_feature = "implementation", "ImplementedIn", "module"
+    states = re.findall(r"\battribute\s+" + state_name + r"\s*:\s*" + enum + r"\s*=\s*" + enum + r"::(\w+)\s*;", body)
+    bindings = re.findall(r'\battribute\s+' + binding_name + r'\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
+    methods = re.findall(r'\battribute\s+method\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
+    # The feature word outside the read annotations, more often than the attribute form was
+    # read: another spelling of the attribute, such as `attribute :>> automation = ...`.
+    plain = code
+    for name in (status, bound):
+        for match in re.finditer(r"@\s*(?:\w+::)*" + name + r"\b(?!::)\s*\{", code):
+            inside = len(declaration_body(body, match.end() - 1))
+            plain = plain[:match.end()] + " " * inside + plain[match.end() + inside:]
+    unread = {fact for fact, name, read in (("state", state_name, states), ("binding", binding_name, bindings), ("method", "method", methods))
+              if len(re.findall(r"\b" + name + r"\b", plain)) > len(read)}
+    # The same metadata written with the `metadata` keyword is not read either.
+    if re.search(r"\bmetadata\b[^;{}]*\b" + status + r"\b", code):
+        unread.update(("state", "method"))
+    if re.search(r"\bmetadata\b[^;{}]*\b" + bound + r"\b", code):
+        unread.add("binding")
+    for _offset, pairs in annotations(body, code, status):
+        for feature, value in pairs:
+            if feature == state_feature:
+                state = re.fullmatch(r"(?:\w+::)*" + enum + r"::(\w+)", value)
+                states.append(state[1] if state else "")
+            elif feature == "method" and kind == "verification":
+                methods.append(string_literal(value))
+            else:
+                unread.update(("state", "method"))
+    for _offset, pairs in annotations(body, code, bound):
+        bindings.extend(string_literal(value) for feature, value in pairs if feature == bound_feature)
+        if any(feature != bound_feature for feature, _value in pairs):
+            unread.add("binding")
+    return states, bindings, methods, unread
+
+
+def file_bindings(key: str, value, root: Path) -> None:
+    """Check a binding that belongs to a model file (a function binding, detail tests):
+    existing files under the source roots, no `Proves:` tag; messages name the key."""
+    if value is None:
+        raise ValueError("Invalid verification/implementation metadata: " + key)
+    for binding in value.split(";"):
+        source_binding(key, binding.strip(), root, manual=True)
 
 
 def declaration_body(text: str, opening: int) -> str:
@@ -178,32 +296,81 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
                 raise ValueError("Dangling model documentation link: " + key + ": " + target)
         clean = without_comments(source)
         clean_models[key] = clean
-        for match in re.finditer(r"\b(requirement|verification)(?:\s+def)?\s+'((?:FR-\d{3}|CL-\d{3}-\d{2}|TC-\d{3}-\d{3}))'\s*\{", clean):
-            kind, identifier = match[1], match[2]
+        code = blanked(clean)
+        # A typed declaration is read only as a verification case typed by a definition.
+        declarations = [match for match in DECLARATION.finditer(clean)
+                        if not match[4] or (match[1] == "verification" and not match[2])]
+        read = {match.start() for match in declarations}
+        for match in IDENTITY_DECLARATION.finditer(code):
+            if match.start() not in read:
+                raise ValueError(f"Unreadable canonical declaration: {match[1] or match[2]}: {key}")
+        bodies = [(match.end(), match.end() + len(declaration_body(clean, match.end() - 1))) for match in declarations]
+        # A function binding: an @ImplementedIn outside the body of every declaration.
+        functions = [value for offset, pairs in annotations(clean, code, "ImplementedIn")
+                     if not any(start <= offset < end for start, end in bodies)
+                     for feature, value in pairs if feature == "module"]
+        functions = [string_literal(value) for value in functions]
+        for value in functions:
+            file_bindings(key, value, root)
+        for _offset, pairs in annotations(clean, code, "DetailTests"):
+            for feature, value in pairs:
+                if feature == "tests":
+                    file_bindings(key, string_literal(value), root)
+        # The verification definitions of this file by name: what a case typed by one takes.
+        definitions = {}
+        for match in CASE_DEFINITION.finditer(code):
+            name = match[1].strip("'")
+            if re.fullmatch(IDENTITY, name):
+                continue
+            body = declaration_body(clean, match.end() - 1)
+            states, bindings, methods, _unread = stated(body, code[match.end():match.end() + len(body)], "verification")
+            if bindings:
+                raise ValueError(f"Verification definition carries a test binding: {name}: {key}")
+            definitions.setdefault(name, []).append((states, methods))
+        for match, (start, end) in zip(declarations, bodies):
+            kind, identifier = match[1], match[3]
             if identifier in entries:
                 raise ValueError("Duplicate canonical identity: " + identifier)
             if kind != ("verification" if identifier.startswith("TC-") else "requirement"):
                 raise ValueError("Wrong canonical identity kind: " + identifier)
-            body = declaration_body(clean, match.end() - 1)
-            state_name, enum = ("automation", "AutomationState") if kind == "verification" else ("coverage", "ImplementationState")
-            states = re.findall(r"\battribute\s+" + state_name + r"\s*:\s*" + enum + r"\s*=\s*" + enum + r"::(\w+)\s*;", body)
+            body = clean[start:end]
+            states, bindings, methods, unread = stated(body, code[start:end], kind)
+            # Only a definition of the same file, named without package names and found
+            # once, gives its state and method; the case's own statement wins, and a fact
+            # the case names in a spelling that is not read is refused, never taken over.
+            definition = definitions.get(match[4] or "", [])
+            if len(definition) == 1:
+                if not states and "state" not in unread:
+                    states = definition[0][0]
+                if not methods and definition[0][1]:
+                    if "method" in unread and states:
+                        raise ValueError("Invalid verification/implementation metadata: " + identifier)
+                    methods = definition[0][1]
             allowed = {"planned", "partial", "implemented"} if kind == "verification" else {"target", "partial", "implemented"}
             if len(states) != 1 or states[0] not in allowed:
                 raise ValueError("Missing or invalid declared model state: " + identifier)
             refs = re.findall(r"\bverify\s+(?:\w+::)*'([^']+)'\s*;", body)
-            binding_name = "executable" if kind == "verification" else "implementation"
-            bindings = re.findall(r'\battribute\s+' + binding_name + r'\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
-            methods = re.findall(r'\battribute\s+method\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
-            if len(bindings) > 1 or len(methods) > 1 or (methods and methods[0] not in {"manual", "automated"}):
+            if len(bindings) > 1 or len(methods) > 1 or None in bindings or (methods and methods[0] not in {"manual", "automated"}):
                 raise ValueError("Invalid verification/implementation metadata: " + identifier)
-            if states[0] in {"partial", "implemented"} and (not bindings or not bindings[0].strip()):
+            delivered = states[0] in {"partial", "implemented"}
+            if kind == "requirement" and delivered and not bindings:
+                # A clause takes its module from the function of its own model file.
+                if functions and "binding" in unread:
+                    raise ValueError("Invalid verification/implementation metadata: " + identifier)
+                if len(functions) > 1:
+                    raise ValueError(f"Ambiguous function binding: {identifier}: {key}")
+                bindings = list(functions)
+            if delivered and (not bindings or not bindings[0].strip()):
                 raise ValueError("Delivered declaration lacks implementation/test binding: " + identifier)
             matched = [source_binding(identifier, binding.strip(), root, manual=methods == ["manual"])
                        for binding in (bindings[0].split(";") if bindings else [])]
             unbound = [binding.strip() for binding, bound in zip(bindings[0].split(";"), matched) if not bound] if bindings else []
             if kind == "verification" and unbound:
                 raise ValueError(f"No Proves tag or named-test identity for {identifier}: {'; '.join(unbound)}")
-            entries[identifier] = {"kind": kind, "state": states[0], "refs": refs}
+            # The effective values, stated or taken over, whatever form states them.
+            entries[identifier] = {"kind": kind, "state": states[0], "refs": refs,
+                                   "bindings": [binding.strip() for binding in bindings[0].split(";")] if bindings else [],
+                                   "manual": methods == ["manual"]}
     if missing := set(required) - entries.keys():
         raise ValueError("Missing stable canonical identities: " + ", ".join(sorted(missing)))
     scope = clean_models[keys_of["ProductScope.sysml"][0]]
@@ -246,6 +413,48 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
                 if unknown := source_proves(tag) - entries.keys():
                     raise ValueError("Source Proves tag names undefined model identities: " + path.relative_to(root).as_posix() + ": " + ", ".join(sorted(unknown)))
     return entries
+
+
+def markers(directory: Path, kinds=()) -> list[str]:
+    """The lines of the marker listing: one per marker, then the summary.
+
+    The kinds are the `metadata def` names of the model file whose package is
+    `ModelNotes`. Reads the model files only; checks nothing else and writes nothing.
+    """
+    texts = {key: path.read_text(encoding="utf-8") for key, path in model_files(directory).items()}
+    codes = {key: blanked(text) for key, text in texts.items()}
+    known = set()
+    for code in codes.values():
+        package = re.search(r"\bpackage\s+(\w+)\s*\{", code)
+        if package and package[1] == MARKER_PACKAGE:
+            known.update(re.findall(r"\bmetadata\s+def\s+(\w+)", code))
+    for name in kinds:
+        if name not in known:
+            raise ValueError("Unknown marker kind: " + name)
+    selected = sorted(set(kinds) or known)
+    use = re.compile(r"(?:@\s*|\bmetadata\s+(?!def\b)\w+\s*:\s*)(?:" + MARKER_PACKAGE + r"::)?(\w+)\b(?!::)"
+                     r"\s*(?:about\s+([^{};]+?)\s*)?(\{|;)")
+    lines, counts = [], dict.fromkeys(selected, 0)
+    for key in sorted(texts):
+        text, code = blanked(texts[key], strings=False), codes[key]
+        for match in use.finditer(code):
+            kind = match[1]
+            if kind not in counts:
+                continue
+            values = []
+            if match[3] == "{":
+                body = declaration_body(text, match.end() - 1)
+                for _feature, value in assignments(body, code[match.end():match.end() + len(body)]):
+                    if re.fullmatch(STRING + r"(?:\s*\+\s*" + STRING + r")*", value):
+                        values.append("".join(re.sub(r'\\(["\'\\])', r"\1", part[1:-1]) for part in re.findall(STRING, value)))
+            about = " about " + ", ".join(target.strip() for target in match[2].split(",")) if match[2] else ""
+            line = code.count("\n", 0, match.start()) + 1
+            lines.append(f"{key}:{line}: {kind}{about}: {'; '.join(values)}".rstrip())
+            counts[kind] += 1
+    summary = f"{len(lines)} markers"
+    if selected:
+        summary += ": " + ", ".join(f"{counts[kind]} {kind}" for kind in selected)
+    return lines + [summary]
 
 
 def digest(text: str) -> str:
@@ -516,6 +725,8 @@ def main(argv=None):
     commands.add_parser("fingerprints", help="Print canonical model fingerprints for review; never updates models")
     commands.add_parser("check", help="Check canonical SysML authority and run full semantic validation")
     commands.add_parser("traces", help="Check canonical source/model bindings only; no Pilot or behavior execution")
+    listing = commands.add_parser("markers", help="List the ModelNotes markers of the model by file key and line; checks and writes nothing")
+    listing.add_argument("kinds", nargs="*", metavar="Kind")
     semantic = commands.add_parser("validate", help="Run real semantic validation on ordered files")
     semantic.add_argument("files", nargs="+", type=Path)
     args = parser.parse_args(argv)
@@ -527,6 +738,10 @@ def main(argv=None):
             authority(MODELS, FSD)
             entries = canonical_catalog(MODELS, ROOT)
             print(f"Canonical source/model trace checks passed: {len(entries)} identities; no semantic validation or behavior execution.")
+            return 0
+        if args.command == "markers":
+            authority(MODELS, FSD)
+            print("\n".join(markers(MODELS, args.kinds)))
             return 0
         if args.command == "fingerprints":
             authority(MODELS, FSD)
