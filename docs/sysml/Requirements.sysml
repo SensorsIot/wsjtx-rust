@@ -864,7 +864,7 @@ package WstxRequirements {
             verify 'CL-008-02';
             verify 'CL-008-03';
         }
-        attribute executable : String = "server/tests/audio_contract.rs; server/tests/audio_receive.rs; server/tests/receive_integration.rs; server/tests/source_contract.rs";
+        attribute executable : String = "server/tests/audio_contract.rs; server/tests/audio_receive.rs; server/tests/receive_integration.rs; server/tests/source_contract.rs; server/src/audio.rs";
     }
     verification 'TC-009-001' {
         doc /* TC-009-001 — Typed radio control
@@ -895,7 +895,7 @@ package WstxRequirements {
             verify 'CL-008-05';
             verify 'CL-008-07';
         }
-        attribute executable : String = "server/tests/radio_hardware.rs";
+        attribute executable : String = "server/tests/radio_native.rs::read_only_selected_endpoint_discovery; server/tests/radio_hardware.rs::authorized_ic7300_frequency_query_evidence; server/tests/radio_hardware.rs::authorized_ic7300_readonly_inventory_evidence; server/tests/radio_hardware.rs::authorized_ic7300_prepare_usb_data; server/tests/radio_hardware.rs::authorized_ic7300_restore_lsb_data_off; server/tests/audio_hardware.rs::selected_radio_audio_capture_evidence; server/tests/audio_listen.rs::selected_radio_audio_to_listening_wav";
         attribute method : String = "manual";
     }
     verification 'TC-002-003' {
@@ -909,7 +909,7 @@ package WstxRequirements {
             verify 'CL-008-02';
             verify 'CL-008-05';
         }
-        attribute executable : String = "server/tests/audio_contract.rs; server/tests/audio_receive.rs";
+        attribute executable : String = "server/tests/audio_contract.rs; server/tests/audio_receive.rs; server/src/recording_tests.rs";
     }
     verification 'TC-009-003' {
         doc /* TC-009-003 — Control without audio
@@ -938,7 +938,7 @@ package WstxRequirements {
             verify 'CL-010-07';
             verify 'CL-010-08';
         }
-        attribute executable : String = "tests/receive-integration.test.cjs; tests/ui-operating.test.cjs; server/tests/audio_receive.rs; server/tests/radio_control.rs; server/tests/source_contract.rs; server/src/receive_http_tests.rs; server/src/recording_tests.rs";
+        attribute executable : String = "tests/receive-integration.test.cjs; tests/ui-operating.test.cjs; server/tests/audio_receive.rs; server/tests/radio_control.rs; server/tests/source_contract.rs; server/src/receive_http_tests.rs; server/src/recording_tests.rs; server/tests/audio_contract.rs";
     }
     requirement 'CL-010-05' {
         doc /* Present one operating-first profile page with the fixed-band signal display above the message/contact workspace, an accessible adjustable split and secondary in-page settings. */
@@ -1128,7 +1128,7 @@ package WstxRequirements {
             verify 'CL-010-08';
             verify 'CL-010-15';
         }
-        attribute executable : String = "server/src/contact_http_tests.rs; tests/contact.test.cjs; tests/ui-operating.test.cjs";
+        attribute executable : String = "server/src/contact_http_tests.rs; tests/contact.test.cjs; tests/ui-operating.test.cjs; server/src/contact_tests.rs; server/src/logbook_http_tests.rs";
     }
     verification 'TC-007-005' {
         doc /* TC-007-005 — Pushed contact, transmit and receive state without polling
@@ -1172,7 +1172,7 @@ package WstxRequirements {
         objective {
             verify 'CL-010-10';
         }
-        attribute executable : String = "server/src/contact_tests.rs";
+        attribute executable : String = "server/src/contact_tests.rs; server/tests/transmit_service.rs";
     }
     verification 'TC-010-008' {
         doc /* TC-010-008 — Waterfall pointer actions and frequency inputs
@@ -1211,7 +1211,7 @@ package WstxRequirements {
         objective {
             verify 'CL-010-04';
         }
-        attribute executable : String = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/contact.test.cjs; tests/ui-operating.test.cjs";
+        attribute executable : String = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/contact.test.cjs; tests/ui-operating.test.cjs; server/src/udp_tests.rs";
     }
     verification 'TC-011-002' {
         doc /* TC-011-002 — ADI interchange, Update logbook from ADIF and boundaries
@@ -1224,7 +1224,7 @@ package WstxRequirements {
         objective {
             verify 'CL-010-04';
         }
-        attribute executable : String = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; tests/ui-operating.test.cjs";
+        attribute executable : String = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; tests/ui-operating.test.cjs; server/src/udp_tests.rs";
     }
     verification 'TC-011-003' {
         doc /* TC-011-003 — Worked-before indication
@@ -2008,7 +2008,7 @@ package WstxRequirements {
             verify 'FR-004';
             verify 'FR-018';
         }
-        attribute executable : String = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/recording_tests.rs::live_ft8_snr_measures_from_the_utc_period_start; server/tests/decoder_signal.rs::recorded_corpus_reaches_jt9_deep_decodes; server/src/decoder/bitmetrics_test.rs::cq_a_priori_bits_recover_a_buried_cq_word; server/src/decoder/search_test.rs::partial_frame_interferer_is_subtracted_not_published; server/src/decoder/search_test.rs::frame_past_the_window_end_is_subtracted_not_published; server/src/decoder/search_test.rs::half_symbol_publication_boundary; server/src/decoder/search_test.rs::duplicate_on_a_distant_carrier_is_subtracted_and_published_once; server/src/decoder/search_test.rs::weak_word_guard_boundaries; server/src/decoder/search_test.rs::failed_fine_point_retries_at_the_data_point; server/src/decoder/apriori_test.rs::a_priori_types_follow_the_wsjtx_state_table; server/src/decoder/apriori_test.rs::a_priori_bits_are_the_packed_message_bits; server/src/decoder/bitmetrics_test.rs::a_priori_words_need_a_decoded_payload_and_confidence; server/src/decoder/search_test.rs::weak_qso_words_decode_only_with_the_right_calls; server/src/decoder/search_test.rs::wrong_dx_call_never_yields_a_false_word";
+        attribute executable : String = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/recording_tests.rs::live_ft8_snr_measures_from_the_utc_period_start; server/tests/decoder_signal.rs::recorded_corpus_reaches_jt9_deep_decodes; server/src/decoder/bitmetrics_test.rs::cq_a_priori_bits_recover_a_buried_cq_word; server/src/decoder/search_test.rs::partial_frame_interferer_is_subtracted_not_published; server/src/decoder/search_test.rs::frame_past_the_window_end_is_subtracted_not_published; server/src/decoder/search_test.rs::half_symbol_publication_boundary; server/src/decoder/search_test.rs::duplicate_on_a_distant_carrier_is_subtracted_and_published_once; server/src/decoder/search_test.rs::weak_word_guard_boundaries; server/src/decoder/search_test.rs::failed_fine_point_retries_at_the_data_point; server/src/decoder/apriori_test.rs::a_priori_types_follow_the_wsjtx_state_table; server/src/decoder/apriori_test.rs::a_priori_bits_are_the_packed_message_bits; server/src/decoder/bitmetrics_test.rs::a_priori_words_need_a_decoded_payload_and_confidence; server/src/decoder/search_test.rs::weak_qso_words_decode_only_with_the_right_calls; server/src/decoder/search_test.rs::wrong_dx_call_never_yields_a_false_word; server/tests/audio_receive.rs::live_native_provider_decodes_independent_ft8_callsign";
     }
     verification 'TC-004-003' {
         doc /* TC-004-003 — Invalid and nonmatching input
@@ -2033,7 +2033,7 @@ package WstxRequirements {
     verification 'TC-004-004' {
         doc /* TC-004-004 — Live decode latency on a recorded busy period (#47)
              FR-003, FR-004, FR-021; CL-007-04, CL-007-05
-             Cost 2 (release, decoder-quality suite, Windows PC, no radio): the hash-pinned busy recording websdr_test7.wav (27 decodes) is presented as the UTC-aligned FT8 prompt window, 15 s of audio completing at period start + 13.8 s, to the live modem history. The time from window completion to the last published decode is at most 1.0 s (best of three runs, leaving 0.2 s of the 1.2 s budget for capture and publication) and at least 25 distinct decodes are published, so no per-period cap applies. Cost 1: the UTC schedule places FT8 prompt/late windows at +13.8 s/+15.7 s and FT4 at +6.5 s/+7.9 s of the period from a correlated anchor, and none without one; the window buffer emits each scheduled window at its source-counter residue with its own length and wait flag; a late window arriving during the prompt decode waits for it, with no overrun and a complete prompt result. Cost 1 (drift, #47 re-review): through the live worker's clock tracking and the real window buffer, a capture clock 2000 ppm slow over 600 s plus a +0.4 s system clock step (1.6 s in all) keeps every prompt window within 0.1 s of +13.8 s UTC and holding a DT 0 frame, while the same capture without re-anchoring completes more than 1.2 s late; GET /receive/clock reports the offset and rate while the /receive clock object keeps its exact keys; the on-demand read has the operating-read authorization and refuses a query. Cost 1: a re-anchored schedule moves completions for a forward shift and a backward step without dropping or repeating a window, and UTC steps of +2 s, -2 s and +8 s taken just before a prompt completion still complete every period's prompt and late window exactly once, in order (coinciding completions one after the other, no shift by a period). Cost 1: the FT8 late window at its real geometry (UTC +0.7..+15.7 s), analysed by the live worker, leaves latest_decode and the whole snapshot unchanged when it adds nothing, and with a DT +1.2 s late starter keeps the view id and only grows next_sequence. Cost 2 (browser): a correlated period view extended in place (same id, period and first_sequence; next_sequence grown, complete false to true) adds the late row from the existing cursor, without clearing rows, moving the period to history or an error state, while any other same-id change stays a descriptor error. Cost 1: band-ranked known-word refinement agrees with the exhaustive full-rate grid search on a crowded synthetic frame within 32 frames and 0.02 Hz and returns a full-rate score.
+             Cost 2 (release, Windows PC, no radio): the hash-pinned busy recording websdr_test7.wav (27 decodes) is presented as the UTC-aligned FT8 prompt window, 15 s of audio completing at period start + 13.8 s, to the live modem history. The time from window completion to the last published decode is at most 1.0 s (best of three runs, leaving 0.2 s of the 1.2 s budget for capture and publication) and at least 25 distinct decodes are published, so no per-period cap applies. Cost 1: the UTC schedule places FT8 prompt/late windows at +13.8 s/+15.7 s and FT4 at +6.5 s/+7.9 s of the period from a correlated anchor, and none without one; the window buffer emits each scheduled window at its source-counter residue with its own length and wait flag; a late window arriving during the prompt decode waits for it, with no overrun and a complete prompt result. Cost 1 (drift, #47 re-review): through the live worker's clock tracking and the real window buffer, a capture clock 2000 ppm slow over 600 s plus a +0.4 s system clock step (1.6 s in all) keeps every prompt window within 0.1 s of +13.8 s UTC and holding a DT 0 frame, while the same capture without re-anchoring completes more than 1.2 s late; GET /receive/clock reports the offset and rate while the /receive clock object keeps its exact keys; the on-demand read has the operating-read authorization and refuses a query. Cost 1: a re-anchored schedule moves completions for a forward shift and a backward step without dropping or repeating a window, and UTC steps of +2 s, -2 s and +8 s taken just before a prompt completion still complete every period's prompt and late window exactly once, in order (coinciding completions one after the other, no shift by a period). Cost 1: the FT8 late window at its real geometry (UTC +0.7..+15.7 s), analysed by the live worker, leaves latest_decode and the whole snapshot unchanged when it adds nothing, and with a DT +1.2 s late starter keeps the view id and only grows next_sequence. Cost 2 (browser): a correlated period view extended in place (same id, period and first_sequence; next_sequence grown, complete false to true) adds the late row from the existing cursor, without clearing rows, moving the period to history or an error state, while any other same-id change stays a descriptor error. Cost 1: band-ranked known-word refinement agrees with the exhaustive full-rate grid search on a crowded synthetic frame within 32 frames and 0.02 Hz and returns a full-rate score.
              Cost 5 acceptance: live on HB9BLA, 10 consecutive FT8 periods publish their last decode by +15.0 s and FT4 by +7.5 s, with decode parity against jt9 on the same captured periods unchanged or better; the run records the receive session age and GET /receive/clock. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -2203,7 +2203,7 @@ package WstxRequirements {
             verify 'CL-010-07';
             verify 'CL-010-08';
         }
-        attribute executable : String = "tests/receive-integration.test.cjs; tests/ui-operating.test.cjs";
+        attribute executable : String = "tests/receive-integration.test.cjs; tests/ui-operating.test.cjs; tests/contact.test.cjs; tests/receive-page.test.cjs; server/src/receive_http_tests.rs";
     }
     verification 'TC-007-009' {
         doc /* #### TC-007-009 — Laptop operating screen (#37)
@@ -2271,7 +2271,7 @@ package WstxRequirements {
             verify 'CL-040-02';
             verify 'CL-037-03';
         }
-        attribute executable : String = "tests/ui-operating.test.cjs";
+        attribute executable : String = "tests/ui-operating.test.cjs; server/src/contact_tests.rs";
     }
     verification 'TC-009-005' {
         doc /* #### TC-009-005 — Coherent receive operating controls
@@ -2383,7 +2383,7 @@ package WstxRequirements {
             verify 'CL-010-07';
             verify 'CL-010-08';
         }
-        attribute executable : String = "tests/radio-selection.test.cjs; server/src/selection_http_tests.rs; server/src/http_compression_tests.rs; server/src/recording_tests.rs";
+        attribute executable : String = "tests/radio-selection.test.cjs; server/src/selection_http_tests.rs; server/src/http_compression_tests.rs; server/src/recording_tests.rs; server/tests/radio_control.rs; tests/contact.test.cjs; tests/recording.test.cjs; tests/ui-operating.test.cjs";
     }
     verification 'TC-007-006' {
         doc /* #### TC-007-006 — Latest decode and signed relative timing
@@ -4552,7 +4552,7 @@ package WstxRequirements {
              Setup: actual isolated station Router, Recording owner, native live source, converter, UTC window schedule and modem, fed in real time with the hash-pinned busy recording websdr_test7.wav as 48 kHz native capture whose QPC clock is the system clock, filling an FT8 UTC period and again the periods 30 s and 60 s later, with silence around them; one Chromium page on the Detailed default.
              Steps: start FT8 receive from the Receive stopped chip; record the server's published counters and latest_decode (1 ms sampling), the browser's receive.state frames, /receive and /receive/results requests and every Band Activity change at the next animation frame, all on the system clock; read the first two period views' records through the actual results API; while the third busy period is published, every /receive/results read answers 503 for 9 s, then normally.
              Expected (independent oracle: the published records themselves and the issue's 0.3 s decode-to-row target): for each of the two periods: at least 25 records in the view; the painted rows are exactly the view's records (same message texts); every row is painted at most 300 ms after the view's publication. During the outage the failing reads start at least 3950 ms apart (no faster retry with records pending), and the third period's rows are painted within 5 s after reads recover. The parent client (2 s receive tick, one 16-record page per 4 s) painted them about 5 s after publication.
-             2 — Isolated automated functional test; Windows PC, release build, WSTX_SAMPLE_DIR, no radio or audio device (live-station-browser suite). */
+             2 — Isolated automated functional test; Windows PC, release build, WSTX_SAMPLE_DIR, no radio or audio device. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-057-01';
@@ -4573,7 +4573,7 @@ package WstxRequirements {
              Setup: release build; the hash-pinned busy recording websdr_test7.wav as the UTC-aligned FT8 prompt window (as TC-004-004); for the end-to-end case the TC-057-001 live path and Detailed browser.
              Steps: decode the window three times each on 1, 4 and 12 threads; order-preserving map of 200 items on 1, 2, 4 and 8 threads with one slow item, and with cancellation from inside the work; the TC-057-001 run with the default thread count.
              Expected (independent oracle: the single-threaded decode of the same window and the input order): the records on 4 and 12 threads equal those on 1 thread bit for bit and in order, at least 25 records; best wall times are reported per thread count (busy corpus period); the map returns every item once in input order and a cancelled caller ends with Cancelled; the cooperative-quanta and quality cases of TC-004-001 stay green; end to end (TC-057-001 setup, two busy periods), each period's view is published by its period start + 15.0 s on the server timeline (CL-007-05) and its rows are painted at most 300 ms after that publication (CL-057-01), so every row is painted by period start + 15.3 s; the time from window completion (+13.8 s) to the painted rows is reported, not asserted (#72: no contract states that bound).
-             2 — Isolated automated functional tests; Windows PC, no radio (decoder-quality, wstx-rust and live-station-browser suites). */
+             2 — Isolated automated functional tests; Windows PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-057-02';
@@ -4615,7 +4615,7 @@ package WstxRequirements {
              Setup: actual station Router and browser client with a scripted correlated FT8 receive snapshot and results route (explicit presentation fixtures, never modem truth).
              Steps: publish three consecutive periods 12:00:00, 12:00:15 and 12:00:30 UTC (3, 2 and 2 records), then 12:01:00 (one record, a skipped period); record every results read with the view current at that moment.
              Expected (independent: the scripted periods): after the second period, its rows on top and the 12:00:00 rows below one divider; after the third, only the 12:00:30 rows on top and the 12:00:15 rows below one divider (never more than two periods, the older same-parity period gone); after 12:01:00 only its row, no divider; no results read below the current view's first sequence; no page error.
-             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). Live acceptance: #37 items 1-2 on HB9BLA (FT8 and FT4). */
+             2 — Isolated automated browser test; Windows PC, no radio. Live acceptance: #37 items 1-2 on HB9BLA (FT8 and FT4). */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-057-03';
@@ -4642,7 +4642,7 @@ package WstxRequirements {
         objective {
             verify 'CL-052-01';
         }
-        attribute executable : String = "server/src/receive_diagnostics_tests.rs; server/tests/audio_contract.rs::audio_zero_filled_and_glitch_frames_are_marked_per_window; tests/ui-operating.test.cjs";
+        attribute executable : String = "server/src/receive_diagnostics_tests.rs; server/tests/audio_contract.rs::audio_zero_filled_and_glitch_frames_are_marked_per_window; tests/ui-operating.test.cjs; server/tests/audio_contract.rs::audio_sustained_silence_is_counted_in_full";
     }
     dependency CL_052_01_verified_by_TC_052_001 from 'CL-052-01' to 'TC-052-001';
 
@@ -4789,7 +4789,7 @@ package WstxRequirements {
              Setup: actual contact engine and actual station Router with a fresh profile (no explicit choice), hand-authored decode rows.
              Steps: read the first contact snapshot; select a CQ at another frequency; answer through a strategy pick; switch Hold Tx off and select again.
              Expected (oracle: the operator's decision on #39): settings.hold_tx true in a fresh snapshot and #contact-hold checked; after the selection Rx follows the row and Tx stays 1500; after the strategy pick Tx stays; with Hold Tx explicitly off a selection moves Tx to the row (the WSJT-X rule of FirstSlotOnSelection). On the parent the fresh snapshot says false and the selection moves Tx.
-             2 — Isolated automated tests; Windows PC, no radio (wstx-rust, contact-browser suites). */
+             2 — Isolated automated tests; Windows PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-08';
@@ -4811,12 +4811,12 @@ package WstxRequirements {
              Steps: choose on tables: one lowest slot; the current Tx tying the lowest; two lowest without the current Tx, at different distances from it and at equal distances; levels 40.4 and 40.0 (one whole dB, a tie) against 40.6 and 40.0 (no tie); the range edges for FT8 (300..2650) and FT4 (300..2610, width 90); the called station on the quietest slot; his decoded frequencies of my Tx parity and of the other parity near the quietest; his frequencies excluding every candidate; listening only, with one parity quiet and the other loud; no power yet, with the called station on and away from the current Tx. Router: periods of both parities with a quiet band at 1800 Hz only in my Rx parity; the 5th oldest period of the parity quiet at 600 Hz; a period I transmitted in; then a candidate CQ on 1500 Hz; a QSO to its end; a station band change within the job; Hold Tx off; a caller on my slot; a pounce; a plain MCP run.
              Expected (oracle: the operator's rule, hand-computed in the test): that slot; the current Tx kept; the nearer one, then the lower; 40.4 and 40.0 tie and keep the current Tx, 40.6 does not; never outside the range; never within 50 Hz of the called station; his frequency of my Tx parity excludes the slot within 50 Hz and the other parity does not; all excluded: his end ignored, his_end no; listening only (#66): judged on my Rx parity alone, the parity loud only in my Tx periods not avoided; no power: the current Tx kept, or the nearest away from the called station, power_db null. Router: Tx and Rx 1800 before the first call (the 5th period and the transmitted period ignored), tx_slot {hz 1800, power_db 20, his_end unknown}; Tx stays 1800 through the whole QSO; after the band change only the new band's periods count; with Hold Tx off Tx back on its slot; the caller answered from the quietest slot away from it; the pounce calls from the quietest slot; the plain run has tx_slot null and keeps its Tx.
              #39 holdtx: the Router steps run with Hold Tx explicitly off (the Rx = Tx rule); with Hold Tx on they are TC-039-049. The tables give the compared value instead of the absolute power, and power_db is that value. #66: the compared value is the largest rise above the passband floor clamped at 0 (TC-039-050), so the Router's tx_slot reads power_db 0 on the flat floor of 20 (floor 20.65, rise -0.65 clamped); the decoded-station rule is TC-066-002.
-             2 — Isolated automated tests; Windows PC, no radio (wstx-rust, ui-operating suites). */
+             2 — Isolated automated tests; Windows PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-09';
         }
-        attribute executable : String = "server/src/freeslot_tests.rs; server/src/strategy_tests.rs";
+        attribute executable : String = "server/src/freeslot_tests.rs; server/src/strategy_tests.rs; server/src/automation_tests.rs";
     }
     dependency CL_039_09_verified_by_TC_039_010 from 'CL-039-09' to 'TC-039-010';
     requirement 'CL-039-10' {
@@ -4838,7 +4838,7 @@ package WstxRequirements {
             verify 'CL-039-02';
             verify 'CL-039-05';
         }
-        attribute executable : String = "server/src/strategy_tests.rs; server/src/dxcc_tests.rs";
+        attribute executable : String = "server/src/strategy_tests.rs; server/src/dxcc_tests.rs; server/src/logbook_tests.rs";
     }
     dependency CL_039_01_verified_by_TC_039_030 from 'CL-039-01' to 'TC-039-030';
     dependency CL_039_02_verified_by_TC_039_030 from 'CL-039-02' to 'TC-039-030';
@@ -5054,7 +5054,7 @@ package WstxRequirements {
              Setup: as TC-039-022 (the actual station router, contact engine, automation and #9 transmit owner on the recording hardware double, virtual UTC, a feed without a connection fed hand-authored spots, a dial of 14074000 Hz, hand-authored waterfall rows), Hold Tx on (the default), Tx 1500, FT8 and FT4; a strategy run with Auto on (repetitions 4), a contest S&P run, a pounce, a plain MCP run; "Casual 20 m" for the CQ.
              Steps: (a) select K1ABC (CQ at 1800 Hz). (b) 2 repetitions with no spot, the quietest slot 1400, then 1300. (c) A repetition whose quietest slot lies within 50 Hz of Rx (1800 signal). (d) A spot of my call at K1ABC 60 s old. (e) His report after the 1st repetition, then silent periods. (f) Select a station at 1520 Hz (within 50 Hz of the held Tx), and a caller at 1530 Hz. (g) The held Tx at 2700 (FT4), a station at 1000; then an unanswered repetition with no spot. (h) The CQ when no target from the held Tx 900, one parity loud; callers at 1200 and at 920. (i) Hold Tx switched off during the contact, then the next repetition. (j) Contest S&P: (a) and (b); contest Run: (h) (its CQ from the held Tx 900, callers at 1200 and at 920). (k) Pounce on K1ABC. (l) Plain MCP run.
              Expected (hand-worked from the operator's rule, #39 holdtx round 1): (a) Tx 1500, Rx 1800, no set_frequency of Tx, tx_slot.hz 1500; (b) Tx 1400 then 1300, Rx 1800 both times, slot_check {repetitions, hears_us false, hz}; (c) that slot excluded, the next quietest chosen; (d) Tx stays, hears_us true; (e) Tx never moves after the report; (f) Tx to the nearest slot 50 Hz clear of the station's signal (the lower on a tie), Rx on the station; (g) Tx 2700 kept at the selection, Rx 1000; at the repetition Tx moves to the quietest slot inside 300..2610 (2700 is no candidate, round 3 Q6), Rx stays 1000; (h) the CQ keyed on 900 with no slot decision; the caller at 1200 answered from 900, Rx 1200; the caller at 920 moves Tx to the nearest slot 50 Hz clear of it, Rx 920; (i) Tx and Rx together on the slot (Hold Tx off rule); (j) S&P as (a) and (b), Run as (h); (k) Tx stays 1500, Rx on K1ABC, never moved; (l) tx_slot null, Tx kept. Red on the parent: (a), (b), the selection of (g), (h), the Run of (j) and (k) set Rx = Tx on the slot (the repetition of (g) is green on the parent, which also moves Tx into the range).
-             2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF (wstx-rust). */
+             2 — Isolated automated functional tests; Windows development PC, transmit and radio doubles; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-08';
@@ -5075,7 +5075,7 @@ package WstxRequirements {
              Steps: (a) the FT4 roll-off table: a floor of 30 dB flat to 2400 Hz and falling linearly to 15 dB at 2700 Hz (5 dB per 100 Hz, a sharp knee the fourth-order floor cannot follow: the roll-off slots read about 2 dB below it) in all 4 counted Rx periods, and AA3B 12 dB above the floor at 2621 Hz (width 90), not decoded, the reproduction of 2026-11-07 (tx_slot 2610 power_db 29); twice: the current Tx 1500 on the flat floor, and the current Tx 1500 on an undecoded station 18 dB above the floor at 1500.5..1590.5 Hz (an FT4 signal; level and position chosen so that the parent's rule makes the same choice). The fixture is authored so that every candidate deciding the choice (those no farther from the current Tx than the chosen slot) has its compared value, its largest rise clamped at 0, at least 0.1 dB from a half dB (the vector's margin_db), so the whole-dB rounding of the choice is unambiguous. (b) FT8 flat floor 30, the current Tx 1500 on a slot 5 dB above the floor in all 4 periods, every other slot on the floor. (c) Busiest period: slot A on the floor in 3 periods and 6 dB above it in one, slot B 3 dB above it in all 4, every other candidate covered 10 dB above the floor. (d) The floor 30 in the two older periods and 32 in the two later, everywhere. (e) One counted period only, the current Tx on a slot 4 dB above the floor. (f) A period I transmitted in; a 5th older Rx period quiet at another slot; after the Tx parity changed, my last counted Rx periods 3 minutes old. (g) A station band change. (h) Values 0.4 against 0.0 (a tie) and 0.6 against 0.0. (i) Coverage: one period whose levels end at bin 921 (2698.2 Hz) and one whose levels end at bin 920 (2695.3 Hz), the other periods unchanged; a flat-floor period with one segment where only its 8 lowest bins sit at the floor (the minimum of 8 points from that segment). (j) No counted period. (k) The status of each.
              Expected (hand computation recorded in the test, the floor from the reference vector): (a) the roll-off slots below the floor read 0 (clamped), the same as the free mid-band slots, never lower; the slots on AA3B stay positive; with Tx 1500 on the flat floor Tx stays 1500 (value 0, the current Tx kept); with Tx 1500 on the station Tx goes to 1410 (value 0), the free slot nearest 1500, the lower on equal distance; never a slot in 2400..2610 and never 2530 (raw level alone would choose 2530 at 21 dB on the roll-off; the unclamped floor rule chose 2530 at about -2); (b) Tx leaves 1500 for the nearest floor slot, value 0 (rise -0.65 clamped), the slot at 1500 value 4; (c) B wins, values 2 against 5 (the mean would choose A); (d) a floor slot reads 0 in every period (rise -0.65), not raised by the floor change; (e) one period compares: Tx leaves for the nearest floor slot; (f) the transmitted period, the 5th older period and the 3-minute-old periods never count: no power, Tx kept, power_db null; (g) after the band change only later periods count; (h) 0.4 ties and keeps the current Tx, 0.6 does not; (i) the period ending at bin 921 counts and the one ending at bin 920 does not (its slot values and decodes absent from the result, periods now one less); the 8-point segment fits the floor of the hand computation (the cutoff is its 8th lowest level); (j) the current Tx kept, power_db null; (k) tx_slot.power_db is the whole-dB value of the chosen slot, never negative; free_tx_slots rise_db the same value while level_db and floor_db are the busiest period's as measured (level_db 30 and floor_db 31 on the flat floor of 30). Red on the parent: (b) and (e) keep the current Tx (every rise 0 over its own usual level); (a) is a regression guard, green on the parent and red on the unclamped floor rule.
              #82: (k) free_tx_slots carries no per-slot numbers; only tx_slot.power_db is checked, and the chosen floor slot lies in an open range of the same build when it overlaps no decode.
-             2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
+             2 — Isolated automated tests; Windows development PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-09';
@@ -5255,7 +5255,7 @@ package WstxRequirements {
             verify 'CL-039-02';
             verify 'CL-039-03';
         }
-        attribute executable : String = "server/src/strategy_tests.rs";
+        attribute executable : String = "server/src/strategy_tests.rs; tests/contact.test.cjs";
     }
     dependency CL_039_02_verified_by_TC_039_002 from 'CL-039-02' to 'TC-039-002';
     dependency CL_039_03_verified_by_TC_039_002 from 'CL-039-03' to 'TC-039-002';
@@ -5759,7 +5759,7 @@ package WstxRequirements {
         objective {
             verify 'CL-050-08';
         }
-        attribute executable : String = "tests/ui-operating.test.cjs";
+        attribute executable : String = "tests/ui-operating.test.cjs; tests/receive-page.test.cjs; server/src/receive_http_tests.rs";
     }
     dependency CL_050_08_verified_by_TC_050_008 from 'CL-050-08' to 'TC-050-008';
     verification 'TC-010-010' {
@@ -6557,7 +6557,7 @@ package WstxRequirements {
              Setup: actual station Router and browser client with a scripted correlated FT8 receive snapshot, results route and live Detailed waterfall frames (explicit presentation fixtures, never modem truth).
              Steps: publish the periods 12:00:00 and 12:00:15 (2 and 1 records) and four waterfall rows; then announce a loss epoch: new source, job and generation, loss_epochs 1, results from sequence 0; send two waterfall rows of the new epoch from sequence 0; publish 12:00:30 under the new identity; then a Stop/Start (new identity, loss_epochs 0) with one row.
              Expected (independent: the scripted periods and rows): after the epoch the 12:00:15 and 12:00:00 rows stay below their dividers and the six waterfall rows are the four old ones, one gap row and the two new ones in that order; the error field shows no entry for the epoch; after 12:00:30 its row is on top and the 12:00:15 rows below one divider, read with the new source, job and generation from cursor 0; after the Stop/Start Band Activity and the waterfall hold only the new receive's content. On the parent client the epoch clears both.
-             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). */
+             2 — Isolated automated browser test; Windows PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-061-01';
@@ -6652,7 +6652,7 @@ package WstxRequirements {
              Expected (hand computation recorded in the test): 5 of seven in rank order; 3; empty; 0.4 ties and the current Tx is first, 0.6 does not; the nearer first, at equal distance the lower; 40 Hz skipped and 50 Hz listed, 80 Hz skipped and 90 Hz listed; the called station's neighbour never listed; my Rx's neighbour not listed with Hold Tx on, listed with it off; candidates near his frequencies excluded, his frequencies everywhere leave all; -1.4 listed as -1; level_db the larger parity's; the first listed equals quietest_clear's chosen hz for every table. Red on the parent: no list.
              #66: the tables give the largest rise above the passband floor, and the compared value is that rise clamped at 0: the rise of -1.4 is listed with rise_db 0 (not -1), tying with a rise of 0.0 by the tie rule, and its level_db and floor_db stay as measured; "listening with one parity higher" becomes my Tx parity higher, which changes nothing (only my Rx parity is judged), and level_db and floor_db are those of the busiest Rx period; a candidate overlapping a decoded station is not listed while a free one exists (TC-066-002).
              #82: the five-best list is gone (WstxStrategy D18); this case is replaced by TC-082-001 (the open ranges), and its test is rewritten to it. The choice parts ("the first listed equals quietest_clear's chosen hz") go with the list; the choice stays covered by TC-039-050 and TC-066-002.
-             2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
+             2 — Isolated automated tests; Windows development PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-01';
@@ -6668,7 +6668,7 @@ package WstxRequirements {
              Expected: null before any run; the value with exactly {run_id, at_utc_ms, mode, rx_parity, listening, periods, slots}, the run's id, at_utc_ms the station clock of the decision, the hand-computed slots and period counts; one free_tx_slots.state each to the Detailed and Thin peer, data.free_tx_slots equal to the GET value, none to Off, at most 1024 bytes also with 5 slots at their longest numbers; tx_slot exactly as on the parent; the MCP view carries the same value; with only Rx-parity periods the Tx-parity usual count is 0; the CQ listening true with both now counts; Hold Tx on the list filled and Tx unchanged; a new event with a later at_utc_ms; after the end null and no free_tx_slots.state; the fourth peer gets the value once; without a run zero free_tx_slots.state and zero automation.state. Red on the parent: no key, no event.
              #66: periods carries {now} only, the count for my Rx parity and null for my Tx parity, in every decision (also the CQ, listening true); slots carry {hz, rise_db, level_db, floor_db} with no usual_db; "with only Rx-parity periods the Tx-parity usual count is 0" becomes "the Tx parity null"; at most 1024 bytes with 5 slots at their longest numbers (floor_db -999 and the like); rise_db is never negative (clamped at 0), while level_db and floor_db stay as measured.
              #82: replaced by TC-082-003. The value has no run_id, listening or slots ({at_utc_ms, mode, rx_parity, qso, periods, open}); it exists without a run, and free_tx_slots.state is sent every period also without a run (zero automation.state stays). "Null before any run", "after the end null and no free_tx_slots.state" and "without a run zero free_tx_slots.state" go; its test is rewritten to TC-082-003.
-             2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
+             2 — Isolated automated tests; Windows development PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-01';
@@ -6714,7 +6714,7 @@ package WstxRequirements {
              Steps: the decision with Hold Tx on (no choice, the list only); the same with Hold Tx off (the choice).
              Expected (hand computation recorded in the test): the even decodes leave the candidates 300..400, 720..800, 1010..1050, 1250..1310, 1450..1680, 1890..1960, 2120..2130 and 2240..2650 (810..1000 within 50 Hz of Rx 906 with Hold Tx on); each reads 0 (floor 30.65 or 32.65, rise -0.65 clamped at 0, #66 "At or under floor = free"); the list is 1930, 2120, 1680, 1630, 2240 (the current Tx kept as free, then the free slots by distance), each {rise_db 0, level_db 32, floor_db 33} (level and floor of the latest, busiest period as measured); no listed slot overlaps a station decoded in my even periods and none lies in 800-1330 Hz; the odd stations (DL5XU at 1976, A61DD at 765) do not count; periods {even {now 3}, odd {now null}}; Hold Tx off: the CQ's slot is 1930, tx_slot power_db 0, the first listed. Red on the parent: its list holds slots on RK3AW (rise 0 there against 1 on the free slots, the live failure's ranks 2 and 3).
              #82: the list parts become the open ranges of the same tables (TC-082-001's rule: value 0 and no even decode overlapped, no clearance of Rx or the called station), hand-computed in the test; no open range overlaps a station decoded in my even periods, and the odd stations close nothing. The choice parts (Hold Tx off: the CQ's slot 1930, tx_slot power_db 0) stand.
-             2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
+             2 — Isolated automated tests; Windows development PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-09';
@@ -6732,7 +6732,7 @@ package WstxRequirements {
              Expected (hand computation recorded in the test): (a) Tx stays 1550 (value 0, every free slot 0 with rise -0.65 clamped, the current Tx kept); 610..700 never chosen or listed; (b) FT8 960 and 1040 left out, 950 and 1050 kept; FT4 920 and 1080 left out, 910 and 1090 kept; 1050 left out at 1000.4; (c) all candidates back, ranked by value; (d) that slot chosen, neither left out nor raised; (e) the slot quietest in my Rx parity chosen in both; (f) those decodes leave nothing out; (g) Tx to the next nearest candidate clear of the station and of the decoded station; with all overlapped the nearest 50 Hz clear; (h) Tx and Rx to the nearest candidate 50 Hz clear of 920 that does not overlap 800 (not 820); (i) his end applies among the candidates left by the decoded stations, his_end no when it leaves none; (j) the first listed equals the choice, no listed slot overlaps a counted decode while a free one exists. Red on the parent: (a) moves Tx to 680 (rise 0 on the station, 1 on the free slots), as live; (b), (g) and (h) choose the overlapped candidates.
              Added after the live run of 2026-11-08 (#66): a strategy run with Hold Tx on calls in my Tx periods through the actual router and the actual live worker; the last 2 rows of each received Rx period complete while keyed. Expected: each received Rx period counts (periods.<rx>.now 1, 2, 3 at the selection and the two slot checks); only periods I transmitted in are not counted, by the period, not by the on-air state of single rows.
              #82: (j) becomes: the open ranges at each step contain no signal overlapping a counted decode, also in (c), where every candidate is overlapped and open is [] (no fallback for the marks, while the choice still uses all candidates). The choice parts stand.
-             2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
+             2 — Isolated automated tests; Windows development PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-09';
@@ -6768,7 +6768,7 @@ package WstxRequirements {
              Setup: the open-slot function and the range join with hand-authored per-period bin levels and decodes (audio frequency, period), FT8 and FT4, 4 counted periods of the judged parity unless a step names fewer; the join also fed open frequency sets directly.
              Steps: (a) FT8 a flat floor of 30 dB everywhere (floor 30.65, every rise -0.65) and an undecoded station band 12 dB above it over 1000..1050 Hz in all 4 periods. (b) FT8 the flat floor and a decode at 1000.0 Hz; FT4 the same. (c) The join: FT8 open sets {2110, 2160}, {2100, 2110, 2130}, {2650}, every 5th grid point {300, 350, ..., 2650}; FT4 {300}, {300, 390}. (d) Values: a slot window whose largest rise is 0.4 dB and one whose is 0.6 dB. (e) A station decoded and 20 dB above the floor only in periods of the other parity. (f) Decodes in periods that do not count: the 5th older period, one before a band change, one older than the last 4 of the parity on the clock. (g) Decodes overlapping every grid point. (h) No counted period. (i) A slot on the floor in 3 periods and 3 dB above it in one.
              Expected (hand computation recorded in the test; oracle: the open rule of CL-065-01 and FreeTxSlot's floor and value, the flat-floor floor F + 0.65 of TC-039-050): (a) 950 and 1050 open, 960..1040 closed: open [[300, 1000], [1050, 2700]]; (b) FT8 the same; FT4 920..1080 closed, 910 and 1090 open: [[300, 1000], [1090, 2700]]; (c) [[2110, 2160], [2160, 2210]] (touching, not joined); [[2100, 2180]]; [[2650, 2700]]; 48 ranges [[300, 350], ..., [2650, 2700]]; FT4 [[300, 390]]; [[300, 390], [390, 480]]; (d) 0.4 open (value 0), 0.6 closed (value 1); (e) nothing closed by it; (f) those decodes close nothing; (g) open [] (no fallback); (h) open [], periods 0; (i) closed (its busiest period counts). Red on the parent: no open-slot function (the five-best list).
-             2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
+             2 — Isolated automated tests; Windows development PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-01';
@@ -6782,7 +6782,7 @@ package WstxRequirements {
              Setup: the actual station router with hand-authored detailed waterfall rows of both parities (as TC-039-050), the contact engine on the hardware double, virtual UTC, FT8 and FT4; no automation run unless a step names one.
              Steps: (a) Listening without a run: read GET /automation free_tx_slots right after 4 consecutive period starts (FT8 at :00, :15, :30, :45; FT4 7.5 s apart), with one slot loud only in the even periods and one loud only in the period in progress. (b) Enable Tx on for my own CQ with Tx even in the middle of a period, then 4 period starts, then Enable Tx off with no contact. (c) A manual contact with a caller decoded in the odd periods (Tx even) through two periods. (d) A strategy run waiting, then its CQ decision and its contact; the same tables as for the run's choice on the parent. (e) A station band change; the live job stopped; restarted. (f) In a QSO with Tx even, a station decoded at 1200 Hz only in the odd period just ended, below the level that closes a slot by its waterfall rise; the build at the next even period start, then the publication of that period's decodes.
              Expected (hand computation recorded in the test; oracle: CL-065-01's parity rule and the operator's round 1 Q3 and round 2 Q1 answers): (a) rx_parity even, odd, even, odd at :00, :15, :30, :45 (the parity of the period in progress), qso false, at_utc_ms the period start; the even-loud slot closed in the even builds, open in the odd ones; the slot loud only in the period in progress not closed at that period's start; periods the counted periods of that parity before the period in progress (at most 4). (b) At Enable Tx at once a build with qso true and rx_parity odd; rx_parity odd at every following start, open changing only at builds at even period starts (when an odd period has ended); at Enable Tx off at once a build with qso false and the parity of the period in progress. (c) qso true, rx_parity odd, the caller's slot closed. (d) The waiting run as (a); in its CQ and contact as (b); the run's choice and tx_slot equal the parent's for the same tables, and the value has no run_id. (e) After the band change only later periods count (the first build periods 0, open []); a stopped live job: null; restarted: a value from its first period. (f) The period-start build has the 1200 Hz slot open (its decodes not yet published); at the publication at once a build with the same qso and rx_parity, a later at_utc_ms, and the slot overlapping 1200 Hz closed. Red on the parent: no value without a run, no alternation.
-             2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
+             2 — Isolated automated tests; Windows development PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-01';
@@ -6796,7 +6796,7 @@ package WstxRequirements {
              Setup: the actual station router with hand-authored detailed rows, virtual UTC; socket peers subscribed Detailed, Thin and Off; the MCP automation view; automation never used (no configuration, no run).
              Steps: 60 s of FT8 listening; 30 s of FT4 listening; Enable Tx on and off in the middle of a period; a fourth peer subscribes Thin; the live receive stops; a value with 48 ranges at 4-digit numbers.
              Expected (oracle: CL-065-01 and WstxStationProtocol::PushedStationState): GET /automation free_tx_slots with exactly {at_utc_ms, mode, rx_parity, qso, periods, open}, equal to the MCP view's; each Detailed and Thin peer one free_tx_slots.state per build (FT8 4 in 60 s, FT4 4 in 30 s, plus one at each QSO start and end), data.free_tx_slots equal to the GET value of that build; none to Off; zero automation.state throughout; the fourth peer exactly one with the current value; after the receive stops one event with free_tx_slots null, GET null, no further event; at most 1024 bytes also for the 48-range value with two UUIDs and a 13-digit at_utc_ms; no run_id, slots, rise_db, level_db or floor_db anywhere in it. Red on the parent: no event and null without a run.
-             2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
+             2 — Isolated automated tests; Windows development PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-01';
@@ -6855,7 +6855,7 @@ package WstxRequirements {
              Setup: the slot decision and open-slot functions with hand-authored per-period bin levels (flat floor 30 dB) and decodes (audio frequency, period), FT8 my Rx parity odd, P the newest odd period; FT4 for (f).
              Steps: (a) a decision at P + 14.1 s with P's complete publication; (b) the same instant without it; (c) only a partial publication of P; (d) undecoded, in every period a flat 30 dB in every bin (floor 30.65, TC-039-050), except in P the 18 bins k = 512..529 of [1500, 1550) Hz at 42 dB in P's rows 3..64 (62 rows of 0.2 s, 0.6..12.8 s) and 30 dB in its other rows; the test feeds P's rows 0..69 (the 70 rows complete at P + 14.1 s) for the decision at (a), then rows 70..74 and a decision at P + 15.2 s; (e) a decision at P + 15.2 s, P ended without its publication, then after it; (f) FT4 a decision at P + 6.9 s with P's complete publication; (g) a complete publication naming the next odd period P + 2, published while P + 1 is in progress (a period not yet begun).
              Expected (hand computation recorded in the test; oracle: WstxStrategy::FreeTxSlot Due): (a) counted P and the 3 odd periods before it, the 4th older not; a decode at 2340 Hz in P closes the candidates 2300..2380 (|f - d| below 50); (b) P not counted, the 4 before it counted, 2340 closes nothing; (c) as (b); (d) at P + 14.1 s slot 1500 level (62 x 42 + 8 x 30) / 70 = 40.63, floor 30.65 (the band's 18 bins lie above each segment's 8th lowest level, so the flat-floor fit stands), rise 9.98, value 10 (every other period and every slot outside the band 0); at P + 15.2 s with all 75 rows level (62 x 42 + 13 x 30) / 75 = 39.92, rise 9.27, value 9; (e) P counted by its levels, 2340 closes nothing until the publication, then closes; (f) P counted; (g) P + 2 not due and not counted, its decodes close nothing. Red on the parent: (a) P not counted and 2340 open; (d) value 0.
-             2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
+             2 — Isolated automated tests; Windows development PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-09';
@@ -6871,7 +6871,7 @@ package WstxRequirements {
              Setup: the actual station router with the contact engine on the hardware double, virtual UTC; detailed rows and decodes modelled on HB9BLA 2026-11-09 12:24:15-12:24:29 (#66 comment 6740465378): Tx 2340 free in the 4 older odd periods, in the odd period P M7HNI decoded at 2340 Hz.
              Steps: a strategy run with Hold Tx off selects HA7NB (1001 Hz) on P's complete publication at P + 14.1 s; Hold Tx on, a slot check of a target that does not hear us with a station decoded on Tx only in P; the same selection by a pounce; a station decoded only in the 5th older odd period.
              Expected (hand computation recorded in the test; oracle: FreeTxSlot Due and Choice): Tx and Rx to the hand-computed nearest free slot clear of 2340 and 1001, tx_slot.hz not 2340; at the slot check Tx alone moves off the station; the pounce as the selection; the 5th older station closes nothing. Red on the parent: Tx stays on 2340.
-             2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
+             2 — Isolated automated tests; Windows development PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-09';
@@ -6885,7 +6885,7 @@ package WstxRequirements {
              Setup: the actual station router with hand-authored detailed rows of both parities and decodes, the contact engine on the hardware double, virtual UTC (as TC-082-002).
              Steps: (a) in a QSO with Tx even, the complete publication of the odd period P at P + 14.1 s with a station decoded at 1200 Hz in P; (b) listening without a run, P's complete publication, then the next period start; (c) only a partial publication of P; (d) a publication of the other parity.
              Expected (hand computation recorded in the test; oracle: CL-065-01): (a) one build at once with periods counting P, the slot overlapping 1200 Hz closed, at_utc_ms the publication time; (b) a build with P's parity counting P, at the next period start the parity flips as before; (c) no build counting P; (d) the judged periods unchanged. Red on the parent: no build at P's publication, the 1200 Hz slot open until the next period start.
-             2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
+             2 — Isolated automated tests; Windows development PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-01';
@@ -6899,7 +6899,7 @@ package WstxRequirements {
              Setup: the actual station router, a contest Run (Operation Run), CQ Tx odd (Rx parity even), the contact engine on the hardware double, virtual UTC; a station decoded in the even period P on the otherwise quietest slot.
              Steps: (a) Auto on at P + 5 s, P's complete publication at P + 14.1 s; (b) the same with no publication of P; (c) Hold Tx on; (d) Auto off, and separately Halt, during the wait; (e) Auto on while the odd period is in progress and the newest even period is published; (f) Auto on sent twice during the wait; (g) Hold Tx off, the run manual for the operator's contact (a double-click), that contact ended by Esc at P + 5 s (the run back to waiting, as TC-063-010), P's complete publication at P + 14.1 s; the same with the manual contact completed (logged at the end of my own transmission, about P + 28 s, with P unpublished; a completion at P + 5 s cannot occur, coder #89): still waiting at P + 29.9 s, the decision at P + 30.0 s, the end of the period in progress when the wait began.
              Expected (oracle: WstxStrategy::FreeTxSlot Waiting for the newest period and StrategyRun Decision timing, #89 round 1 Q1 "decision always fastest when needed info is available"): (a) no set_frequency and no enable_tx before P + 14.1 s, then at that publication, in the same station step, the slot chosen with P counted (not the station's slot), enable_tx, the CQ keyed at the next period start; (b) the decision at P + 15.0 s with P counted by its levels; (c) enable_tx at once, no wait; (d) no decision and no enable_tx; (e) decision and CQ at once; (f) one decision; (g) ended by Esc at P + 5 s: no set_frequency and no enable_tx of the run between the contact's end and P + 14.1 s, then as (a); completed (about P + 28 s, P unpublished): nothing from the run until P + 29.9 s, then the decision at P + 30.0 s with P counted by its levels, Tx 1500 kept. Red on the parent: (a) and (g) Esc the CQ at P + 5 s with P not counted; (g) completed the CQ at the contact's end.
-             2 — Isolated automated tests; Windows development PC, no radio (wstx-rust). */
+             2 — Isolated automated tests; Windows development PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-039-09';
@@ -6980,7 +6980,7 @@ package WstxRequirements {
              Setup: actual station Router and browser client with scripted contact snapshots, contact command replies and contact.state events pushed through the station-message handler of the client, each carrying the moved revision, a snapshot_sequence one above the shown snapshot and its transmit, settings, contact, log and watchdog in changed (explicit presentation fixtures); Playwright page clock, paused once CQ is enabled.
              Steps: click CQ while the station refuses one command with stale_revision, moves its revision and sends no contact.state; once the refusal is shown, move the page clock by 2499 ms, then by 1 ms. Click CQ while it refuses three, sending a contact.state with the moved revision after each; after the third refusal, wait for revision 7 in the snapshot, then click Tune.
              Expected (independent: the scripted revisions, the contract wait of 2.5 s and limit of two retries): after 2499 ms no GET /contact and no second command; after 2500 ms one GET /contact and CQ sends enable_tx with revision 4 after revision 3 (accepted); then 4, 5, 6 and the refusal is shown; the next command is tune, with no fourth enable_tx. Every wait is on an event, with a 10 s hang guard (#83). On the parent client CQ sends once (#61).
-             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). */
+             2 — Isolated automated browser test; Windows PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-061-02';
@@ -7004,7 +7004,7 @@ package WstxRequirements {
              Setup: actual station Router and browser client with a scripted correlated FT8 receive snapshot and results route (explicit presentation fixtures, never modem truth).
              Steps: publish 12:00:00 UTC with 3 records; publish 12:00:15 as a Tx period (latest_decode transmitted true, no records); publish 12:00:30 with 2 records; publish 12:00:45 (a receive period) with no records. No station.tick says transmitting.
              Expected (independent: the scripted periods and the marker): after 12:00:15 Band Activity shows the marker row "Tx 12:00:15 · this station transmitted · no decode" on top, then the divider "FT8 period 12:00:00 UTC" and the three 12:00:00 rows; no "No stations decoded" and no "No verified stations" text; header "Tx · FT8 period 12:00:15 UTC · this station transmitted, no decode"; count "3 messages"; after 12:00:30 its 2 rows on top and the 12:00:00 rows below the divider "FT8 period 12:00:00 UTC", no marker; after 12:00:45 the note "No stations decoded" with the 12:00:30 rows below their divider; no page error. On the parent client the 12:00:15 view is refused (unknown key) and no marker shows.
-             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). Live acceptance: TC-061-007. */
+             2 — Isolated automated browser test; Windows PC, no radio. Live acceptance: TC-061-007. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-061-03';
@@ -7026,7 +7026,7 @@ package WstxRequirements {
              Setup: actual Recording manager and live worker with a correlated FT8 live ring anchored at 2026-10-27T12:00:00 UTC; the Tx periods noted directly on the station's Tx period record (an explicit fixture of the transmit owner's observation).
              Steps: note 12:00:15 as a Tx period; analyze the window of 12:00:15 (prompt) and its late window; analyze the window of 12:00:30; push live blocks inside 12:00:15 with full-scale samples while not on the air, then blocks in 12:00:30; push a block while on the air; then attach the actual transmit owner with a frozen-clock hardware double (no radio) at 12:00:23 in FT8 and in FT4, arm it and turn Tune on, push a block of a receive period, turn Tune off.
              Expected (independent: the noted period and the scripted windows): the 12:00:15 view has transmitted true, complete false, first_sequence = next_sequence and the late window keeps that view; the decoder busy count did not move for it; the 12:00:30 view has no transmitted key and complete true; no level is measured (rx_level null) during the 12:00:15 blocks; the 12:00:30 blocks give a level again after 1 s; while on the air rx_level is null and the waterfall rows carry tx true, receive rows carry no tx key; with the transmit owner on the air rx_level is null at once and the block adds no level, and after the release the recorded Tx period is exactly 12:00:15 (FT8) or 12:00:22.5 (FT4). On the parent code the 12:00:15 window is decoded and published complete.
-             2 — Isolated Rust tests; Windows PC, no radio (wstx-rust suite). */
+             2 — Isolated Rust tests; Windows PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-061-04';
@@ -7040,7 +7040,7 @@ package WstxRequirements {
              Setup: actual station Router and browser client with a scripted correlated live receive, Detailed waterfall frames and station.tick events (explicit presentation fixtures).
              Steps: deliver a station.tick with rx_level_db 5 (low) while receiving; then a tick with transmitting true and rx_level_db null; then a tick after the transmission with rx_level_db null; then a tick of the next receive period with rx_level_db 5; send two Detailed rows with tx true and one without.
              Expected (independent: the scripted ticks and rows): the error field shows "Audio level low" for the first tick; while transmitting the meter reads "Tx · not measured" and neither "Audio level low" nor "Audio overdriven" is listed, nor after the transmission while rx_level_db is null; the receive tick shows "Audio level low" again; the waterfall paints the tx rows RGB(90,20,30) and the receive row with its levels. On the parent client the meter reads "Unavailable" while transmitting and the tx frames are refused (unknown key); on the parent station the level is still measured in the Tx period (TC-061-005).
-             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). */
+             2 — Isolated automated browser test; Windows PC, no radio. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-061-04';
@@ -7074,7 +7074,7 @@ package WstxRequirements {
              Setup: actual station Router and browser client at 1366x1200 (device scale 1; a plot holding 20 s at 10 px/s, which the #37 default split at 1366x768 does not) with a scripted correlated live receive and Detailed frames, Speed 1 (10 CSS px/s) (explicit presentation fixtures).
              Steps: deliver 12 s of receive rows; one Tx row; the rest of a 15 s Tx period with two missing rows; 12 s of receive rows; read the canvas column and the time ruler; hover the band; set the Day theme and read the rendered page pixels; deliver Tx rows after a 7.4 s hole and after a 7.6 s hole.
              Expected (independent: computed from the 0.2 s rows and 10 px/s with y(s)=floor(s*10*H/C)): after the first Tx row the band covers rows 0-3 and the receive rows start at 4; the remaining Tx rows leave that picture unchanged; after the 12 s of receive the band covers rows y(12) to y(12)+3, receive rows above and below it and no grey row; labels 39.0 s at 0, 35.0 s at y(4), 30.0 s at y(9), then 10.0 s at y(14)+4, none of 25, 20, 15 s; the band's readout names the source range 12.0-27.000 s; the Day page pixels of the band are dark red; the 7.4 s hole is part of the band and the 7.6 s hole stays grey. On the parent client the Tx rows take 150 px, the labels ignore the band and the Day pixels are pale.
-             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). Live acceptance: TC-061-009. */
+             2 — Isolated automated browser test; Windows PC, no radio. Live acceptance: TC-061-009. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-061-05';
@@ -7267,7 +7267,7 @@ package WstxRequirements {
         objective {
             verify 'CL-063-05';
         }
-        attribute executable : String = "server/src/contest_tests.rs::tc_063_009_a_selection_asks_nothing_and_refuses_colouring_and_the_confirmation; server/src/strategy_tests.rs::tc_063_009_search_and_pounce_calls_the_most_valuable_and_waits_for_what_it_needs; server/src/strategy_tests.rs::tc_063_009_a_manual_qso_of_the_period_is_a_dupe_for_the_next_evaluation";
+        attribute executable : String = "server/src/contest_tests.rs::tc_063_009_a_selection_asks_nothing_and_refuses_colouring_and_the_confirmation; server/src/strategy_tests.rs::tc_063_009_search_and_pounce_calls_the_most_valuable_and_waits_for_what_it_needs; server/src/strategy_tests.rs::tc_063_009_a_manual_qso_of_the_period_is_a_dupe_for_the_next_evaluation; server/src/strategy_tests.rs::tc_039_042_a_silent_contest_switches_auto_on_without_a_confirmation";
     }
     dependency CL_063_05_verified_by_TC_063_009 from 'CL-063-05' to 'TC-063-009';
     verification 'TC-063-010' {
