@@ -33,6 +33,38 @@ handover:
   inputs: ["{common}/migration-data/MANIFEST.json"]
   # Listed at a handover, never moved.
   outside: [D:/wstx-build, D:/Github/wsjtx-rust-recordings]
+# Timing classes (harness#53, wsjtx-rust#108; harness core/docs/standards/testing.md, "Timing
+# classes"). Operator 2026-11-10 (five classes) and 2026-11-11 (timer; radio alone, rerun).
+# warn: reported only. red follows as its own harness change when timing_class.py reports nothing.
+timing_classes:
+  mode: warn
+  clocks:
+    real:
+      - 'Instant::now'
+      - 'SystemTime::now'
+      - 'thread::sleep'
+      - 'time::sleep\('
+      - '\.elapsed\(\)'
+      - 'Date\.now\('
+      - 'performance\.now\('
+      - 'setTimeout\('
+      - 'waitForTimeout\('
+    cpu:
+      - 'GetProcessTimes'
+      - 'QueryProcessCycleTime'
+      - 'process_time\('
+      - 'cpu_time'
+    injected:
+      - 'start_paused'
+      - 'time::(pause|advance)\('
+      - 'page\.clock\.'
+  classes:
+    signal:  {clocks: [],                isolation: any,   red: never}
+    radio:   {clocks: [real],            isolation: alone, red: rerun}
+    display: {clocks: [injected, real],  isolation: any,   red: flake}
+    clock:   {clocks: [injected],        isolation: any,   red: never}
+    compute: {clocks: [real, cpu],       isolation: alone, red: inconclusive}
+    timer:   {clocks: [injected],        isolation: any,   red: never}
 # Select the authoritative execution location; the workflow has no automatic trigger.
 execution_mode: local
 # Three issue workspaces; the coordinator occupies this runtime's fourth agent slot.

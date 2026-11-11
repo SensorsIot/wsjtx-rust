@@ -216,7 +216,9 @@ gates of a compression-module edit ran the three concurrently with `wstx-rust`,
 alone runs (177-178 s, 321-324 s, 262-268 s against 177, 319-320 and 260 s) and 373-382 s
 wall instead of about 14 min. That evidence does not cover the CPU-heavy decoder groups as
 neighbours, so `decoder-correctness` (12-thread busy-period decode) and
-`wstx-rust-decoder` hold `exclusive: [link-measurement]`, which the three share. The CPU
+`wstx-rust-decoder` hold `exclusive: [link-measurement]`, which the three share
+(`radio-selection-thin` again since #102: its socket qualification failed in a gate where
+`decoder-quality` ran beside it, operator 2026-11-11). The CPU
 measurements run alone (`exclusive: ["*"]`): `decoder-quality` and
 `live-station-latency` (a browser row-latency budget on the busy decoder). The groups
 declare what they must not share:

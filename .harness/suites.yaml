@@ -135,6 +135,7 @@
   - package-lock.json
   build: cargo build --workspace --locked
   shared: [link-measurement]
+  timing_classes: [display]
   needs: "Node 24, npm ci, Playwright Chromium. Windows PC; timing suite (#28): TC-021-007 silence detection and recovery bounds through the controllable local proxy (support.cjs link). Runs only when the router with the status websocket (main.rs), compression, the status client (app.js, index.html, style.css), its test file, the proxy or the toolchain change, or on request (Harness-Timing: yes)."
 
 - suite: profiles
@@ -247,6 +248,7 @@
   - package-lock.json
   build: cargo build --workspace --locked
   shared: [link-measurement]
+  timing_classes: [display]
   needs: "Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR. Windows PC; timing suite (#28): the TC-010-002 recording.state push, failed-read reconnect and 120-row cap, the TC-010-005 Detailed peer cadence and the two TC-018 250 ms cancellation bounds (no 32 kbit/s link since #80). Runs only when the router with the status websocket and detail cadence (main.rs), the recording/spectrum producers that pace the display, compression, the status and receive clients (app.js, index.html, recording.js), its test file, the support and peer helpers, the toolchain or the dependency versions change, or on request (Harness-Timing: yes)."
 
 - suite: recording-fixtures
@@ -470,6 +472,7 @@
   - server/Cargo.toml
   build: cargo test --release --locked --test decoder_signal --no-run
   exclusive: ["*"]
+  timing_classes: [compute, signal]
   needs: Pinned Rust and Python, 64-bit Windows. Preserve all original13 quality cases plus cleanup/concurrency controls; one release Cargo producer binds all17 ordinary named passes (including the #47 live-latency, #57 thread-parity and #56 jt9-parity cases) and the exact artifact, then the same original runtime case runs under the owned Job with16 configurations/40 workers/160 rounds/400 completions. API-free guardian/metrics tests precede execution. WSTX_SAMPLE_DIR and WSTX_DECODER_OFFICIAL_FT8 name verified recordings; explicitly prepared WSTX_DECODER_CACHE is required for the matrix, with verified WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION. In this ordinary gate a configuration whose 50 ms CPU quantum stays unmeasured after three attempts makes the matrix INCONCLUSIVE, printed as the last stderr line and exiting 77, the harness NOT RUN code; the gate lists it as NOT RUN, records not-run, never memoises it as passed and does not count it as red (#36); every measured budget stays red when exceeded. CL-007-04 runtime evidence comes only from the strict exclusive-window run, which refuses an inconclusive matrix. No radio, audio device, arbitrary command mode or network download.
 
 - suite: live-receive-integration
@@ -588,6 +591,7 @@
   - package-lock.json
   - tools/windows_process_metrics.py
   exclusive: ["*"]
+  timing_classes: [display, compute]
   build: cargo test --release --locked --bin wstx-rust --no-run
   run: "cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_busy_period_rows_promptly -- --exact --nocapture && cargo test --release --locked --bin wstx-rust receive_http_tests::resource_station_process_delta_and_owner_release -- --exact --ignored --nocapture"
   # Reachability (harness reachability.py): the busy-period case starts
@@ -801,7 +805,8 @@
   # and spectrum pushes, the clients that read them, its Rust and browser test files and their
   # helpers, the toolchain and the dependency versions. Not capture (source.rs, audio): it reaches
   # the browsers only through the owners above. Not recording.css or the Cargo.toml and package.json
-  # pins. No 32 kbit/s link since #80 (no link-measurement tag).
+  # pins. No 32 kbit/s link since #80; it shares link-measurement again so that the CPU-heavy
+  # decoder groups do not run beside it (#102, operator 2026-11-11).
   timing_inputs:
   - server/src/main.rs
   - server/src/http_compression.rs
@@ -825,6 +830,8 @@
   - cargo build --workspace --locked
   - cargo test --release --locked --bin wstx-rust --no-run
   exclusive: [radio-selection-evidence]
+  shared: [link-measurement]
+  timing_classes: [display]
   needs: "Windows PC, pinned Rust/Python/Node/Chromium and verified WSTX_DECODER_VECTORS. Timing suite (#28): actual isolated station/receive owner, independent real-time native FT4/FT8 packets, literal typed serial fixture and two authenticated browsers on an unshaped TLS connection (#80). Thin and Off windows as long as their gestures need, all five known-answer contexts and pending seen through an event or a read; no physical radio, device or production fault switch. Runs only when the router, compression, the selection, CAT, receive or spectrum code, the status and receive/selection clients (app.js, index.html, recording.js), its Rust and browser test files and helpers, the toolchain or the dependency versions change, or on request (Harness-Timing: yes)."
 
 - suite: mcp
