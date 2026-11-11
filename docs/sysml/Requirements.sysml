@@ -6087,8 +6087,8 @@ package WstxRequirements {
         doc /* TC-111-011 — A start that cannot transmit
              CL-111-07
              Setup: as TC-111-001; for the view Chromium against the candidate server.
-             Steps: reply and call_dx with no capability, radio unavailable and clock not synchronized; the reason removed, 3 periods; a new reply. call_cq and send_next in the same situations. With the transmit owner refusing to arm (a PTT release that failed, an owner fault): call_cq from idle and on an own CQ that is off, send_next on a kept QSO, reset_repetitions after a repetition-limit stop.
-             Expected (CL-111-07): accepted, QSO prepared, state off, cause unchanged, refusal names the reason, the view shows it. Nothing sent in the 3 periods; the new reply transmits. call_cq and send_next: refused, nothing changed. With the owner refusing: transmit_unavailable, nothing changed, no contact prepared, nothing sent.
+             Steps: reply and call_dx with no capability, radio unavailable and clock not synchronized; the reason removed, 3 periods; a new reply. call_cq and send_next in the same situations. With the transmit owner refusing to arm (a PTT release that failed, an owner fault): call_cq from idle and on an own CQ that is off, send_next on a kept QSO; with the failed PTT release, reset_repetitions after a repetition-limit stop.
+             Expected (CL-111-07): accepted, QSO prepared, state off, cause unchanged, refusal names the reason, the view shows it. Nothing sent in the 3 periods; the new reply transmits. call_cq and send_next: refused, nothing changed. With the owner refusing: transmit_unavailable, nothing changed, no contact prepared, nothing sent. An owner fault itself stops with cause failed, so after it Reset is state_conflict by the outcome table.
              Not automated yet: the view shows the reason.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::partial;
