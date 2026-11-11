@@ -56,6 +56,7 @@ public class Validate {
         if (result.getException() != null) result.getException().printStackTrace(System.err);
         if (result.hasErrors() || result.getException() != null) System.exit(1);
         if (inventory) {
+            modelResource = interactive.getResource();
             collectScope(interactive);
             var root = interactive.resolve("WstxArchitecture::physicalStation");
             if (!(root instanceof PartUsage)) throw new IllegalStateException("Missing physicalStation usage");
@@ -67,15 +68,19 @@ public class Validate {
     }
     static Set<String> rootParts = new TreeSet<>();
     static Set<String> viewSemantics = new TreeSet<>();
+    // The one resource that holds every model file of the submission. Everything the pinned
+    // model library declares lies in other resources; a `library package` written in a model
+    // file lies in this one and is inventoried like any other package.
+    static org.eclipse.emf.ecore.resource.Resource modelResource;
     static void collectScope(SysMLInteractive interactive) {
-        var contents = interactive.getResource().getAllContents();
+        var contents = modelResource.getAllContents();
         while (contents.hasNext()) {
             var object = contents.next();
-            if (object instanceof PartUsage part && !part.isLibraryElement() && !(part instanceof Connector) && !(part instanceof ViewUsage)
+            if (object instanceof PartUsage part && !(part instanceof Connector) && !(part instanceof ViewUsage)
                     && part.getOwningNamespace() instanceof org.omg.sysml.lang.sysml.Package) {
-                rootParts.add(part.getQualifiedName());
+                rootParts.add(String.valueOf(part.getQualifiedName()));
             }
-            if (object instanceof ViewUsage view && !view.isLibraryElement()) {
+            if (object instanceof ViewUsage view) {
                 for (var feature : view.getOwnedFeature()) {
                     if (feature instanceof Connector || feature instanceof PartUsage && !(feature instanceof ViewUsage)) {
                         viewSemantics.add(view.getQualifiedName() + "::" + name(feature));
@@ -98,9 +103,27 @@ public class Validate {
         if (target != null && target != feature && name(feature).isEmpty()) return chain(target);
         return name(feature);
     }
+    /** Whether a model file declares the feature, whatever its package or the package of
+     * its definition; a feature of the pinned model library is not. A connector's end is
+     * part of its connector, not a feature of the deployment. */
     static boolean project(Feature feature) {
-        var qualified = feature.getQualifiedName();
-        return qualified != null && qualified.startsWith("WstxArchitecture::");
+        return feature.eResource() == modelResource && !feature.isEnd();
+    }
+    /** A port definition by qualified name; a conjugate as `~` and its original's name. */
+    static String portDefinition(PortDefinition definition) {
+        return definition instanceof ConjugatedPortDefinition conjugate
+            ? "~" + conjugate.getOriginalPortDefinition().getQualifiedName() : definition.getQualifiedName();
+    }
+    /** The qualified names of the part's definitions and of every type they specialize,
+     * directly or through other types, in any package. */
+    static String kinds(PartUsage part) {
+        var found = new TreeSet<String>();
+        for (var definition : part.getDefinition()) supertypes(definition, found);
+        return String.join(",", found);
+    }
+    static void supertypes(Type type, Set<String> found) {
+        if (type == null || type.getQualifiedName() == null || !found.add(type.getQualifiedName())) return;
+        for (var specialization : type.getOwnedSpecialization()) supertypes(specialization.getGeneral(), found);
     }
     static void row(String... fields) {
         System.out.println("AST\t" + String.join("\t", fields));
@@ -117,7 +140,8 @@ public class Validate {
         if (depth > 16) throw new IllegalStateException("Recursive architecture decomposition");
         row(part instanceof ConnectionUsage ? "CONNECTION" : part.isReference() && !part.getOwnedSubsetting().isEmpty() ? "REF" : "PART", path, String.join(",", part.getDefinition().stream().map(Element::getQualifiedName).toList()),
             bounds(part), String.valueOf(part.isVariation()),
-            String.join(",", part.getOwnedSubsetting().stream().map(x -> chain(x.getSubsettedFeature())).toList()));
+            String.join(",", part.getOwnedSubsetting().stream().map(x -> chain(x.getSubsettedFeature())).toList()),
+            kinds(part));
         if (part.isReference() && !part.getOwnedSubsetting().isEmpty()) return;
         for (var feature : part.getFeature()) {
             if (!project(feature)) continue;
@@ -127,7 +151,7 @@ public class Validate {
                 if (connector instanceof ConnectionUsage connection) inspect(connection, path + "." + name(connection), depth + 1);
             } else if (feature instanceof PortUsage port) {
                 var portPath = path + "." + name(port);
-                row("PORT", portPath, String.join(",", port.getPortDefinition().stream().map(Element::getQualifiedName).toList()));
+                row("PORT", portPath, String.join(",", port.getPortDefinition().stream().map(Validate::portDefinition).toList()));
                 for (var definition : port.getPortDefinition()) {
                     boolean conjugated = definition instanceof ConjugatedPortDefinition;
                     var original = conjugated ? ((ConjugatedPortDefinition)definition).getOriginalPortDefinition() : definition;
