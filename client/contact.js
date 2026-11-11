@@ -403,7 +403,7 @@ $('contact-exchange').addEventListener('change',()=>{if(['field_day','rtty'].inc
 const sendSetting=(action,label)=>event=>send(action,{enabled:event.target.checked},label).then(result=>{if(result?.refused)render();});
 $('contact-auto').addEventListener('change',sendSetting('set_auto_seq','Auto sequence'));
 $('contact-call-first').addEventListener('change',sendSetting('set_call_first','Call 1st'));
-$('contact-tune').addEventListener('click',()=>send('tune',{enabled:!snap?.transmit.tune},'Tune'));
+$('contact-tune').addEventListener('click',()=>send('tune',{enabled:!snap?.transmit.tune,safety_revision:snap?.transmit.safety_revision??null},'Tune'));
 $('contact-cancel').addEventListener('click',()=>send('cancel',{},'Cancel contact'));
 for(const id of ['watchdog-tx','watchdog-tune'])$(id).addEventListener('change',async()=>{
   const tx=Number($('watchdog-tx').value),tune=Number($('watchdog-tune').value);

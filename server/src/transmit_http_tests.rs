@@ -238,6 +238,7 @@ async fn transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms
             "arm_state",
             "capability",
             "halt_state",
+            "last_arm_cause",
             "last_disarm_cause",
             "last_period_utc",
             "last_text",

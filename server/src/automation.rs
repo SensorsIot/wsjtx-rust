@@ -1456,6 +1456,12 @@ impl Owner {
         } else {
             "transmit_stopped"
         };
+        // #111 CL-111-03: the contact engine, which steps first, ended the contact for a band
+        // change (state off, cause bandChanged): the run goes on as after its own band stop.
+        let band_stop = arm != Some(wstx_rust::transmit::service::ArmState::Armed)
+            && view
+                .as_ref()
+                .is_some_and(|v| v.last_disarm_cause == DisarmCause::BandChanged);
         let my = contact_http::my_call(state).unwrap_or_default();
         let mode = contact_http::mode_of(run.mode);
         let partner_period = facts.as_ref().is_some_and(|c| {
@@ -1496,6 +1502,12 @@ impl Owner {
                 let Some(c) = facts.filter(|c| Some(&c.id) == run.contact_id.as_ref()) else {
                     return manual(&mut inner);
                 };
+                if band_stop && c.state == "idle" {
+                    run.wait();
+                    run.reason = waiting_reason;
+                    inner.run_revision += 1;
+                    return;
+                }
                 // Before the arm check: an operator's cancel also disarms.
                 if c.state != "calling" {
                     return manual(&mut inner);
@@ -1566,6 +1578,12 @@ impl Owner {
                         return stop(&mut inner, "completed", false);
                     }
                     run.wait();
+                    inner.run_revision += 1;
+                    return;
+                }
+                if band_stop && c.state == "cancelled" && run.config.strategy {
+                    run.wait();
+                    run.reason = waiting_reason;
                     inner.run_revision += 1;
                     return;
                 }

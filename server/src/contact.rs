@@ -10,7 +10,7 @@ use wstx_rust::decoder::Mode;
 use wstx_rust::transmit::service::{
     ArmState, Capability, Core, DisarmCause, Hardware, OutcomeKind, Request, TransmitRefusal,
 };
-use wstx_rust::transmit::{self, Family, Parity};
+use wstx_rust::transmit::{self, ClockState, Family, Parity};
 
 /// WstxContact::ReportRange.
 pub const REPORT_MIN: i32 = -50;
@@ -711,6 +711,9 @@ pub struct Contact {
     pub exchange_rcvd: Option<String>,
     /// The activity the contact was prepared in (its log fields follow it).
     pub activity: Activity,
+    /// #111 CL-111-03: the station band the contact was prepared on (None: unknown then; the
+    /// first band seen is taken).
+    pub band: Option<&'static str>,
     pub state: State,
     pub next: Slot,
     pub tx4: Tx4,
@@ -841,6 +844,9 @@ pub struct Ctx {
     /// #39: the command comes from station automation (WstxMcp::OperatingAutomation),
     /// not from an operator: it never resets the Tx watchdog.
     pub automatic: bool,
+    /// #111 CL-111-03: the station band (the radio's dial band, else the band of the
+    /// operating selection); None while unknown.
+    pub band: Option<&'static str>,
 }
 impl Ctx {
     /// The whole profile locator (at least 4 characters), upper case: the messages send its
@@ -895,7 +901,27 @@ pub enum Command {
     },
     /// Enable Tx on/off; Some(revision) is the CL-022 safety revision the operator saw.
     EnableTx(bool, Option<u64>),
-    Tune(bool),
+    /// #111 CL-111-02 Reply: SelectDecodedRow with replace true, and the start. Every start
+    /// carries the CL-022 safety revision shown to its sender.
+    Reply {
+        row: Row,
+        safety_revision: Option<u64>,
+    },
+    /// #111 CL-111-02 CQ: the only start that calls CQ (CL-111-05).
+    CallCq(Option<u64>),
+    /// #111 CL-111-02 Call: EnterDxStation and the start.
+    CallDx {
+        call: String,
+        grid: Option<String>,
+        replace: bool,
+        safety_revision: Option<u64>,
+    },
+    /// #111 CL-111-02 Send next: chooses the slot of the current QSO and starts.
+    SendNext(Slot, Option<u64>),
+    /// #111 CL-111-08 Reset: a new repetition count; after a repetition-limit stop it starts.
+    ResetRepetitions(Option<u64>),
+    /// #111 CL-111-06: Tune on carries the safety revision shown to its sender.
+    Tune(bool, Option<u64>),
     Redecode,
     OpenLog,
 }
@@ -1000,6 +1026,13 @@ fn refusal_code(r: TransmitRefusal) -> &'static str {
         TransmitRefusal::Busy => "busy",
         TransmitRefusal::FrequencyOutOfRange => "out_of_range",
         _ => "state_conflict",
+    }
+}
+/// #111 CL-111-07: the refusal of a start that cannot transmit and prepares nothing.
+fn obstacle_code(r: TransmitRefusal) -> &'static str {
+    match r {
+        TransmitRefusal::ClockNotSynchronized => "clock_not_synchronized",
+        other => refusal_code(other),
     }
 }
 
@@ -1111,7 +1144,13 @@ impl Engine {
         if c.mode == mode || !c.state.transmits() {
             return;
         }
-        Self::disarm(core, DisarmCause::ContactCancelled);
+        Self::disarm(core, DisarmCause::ModeChanged);
+        Self::cancel_fields(c);
+        self.pending = None;
+    }
+    /// What a mode or band change leaves of a calling or active contact: an own CQ becomes
+    /// idle, a QSO is cancelled; DX call and Tx1 to Tx5 are cleared, Tx6 is next.
+    fn cancel_fields(c: &mut Contact) {
         c.state = if c.state == State::Calling {
             State::Idle
         } else {
@@ -1124,7 +1163,136 @@ impl Engine {
             *message = None;
         }
         c.next = Slot::Tx6;
-        self.pending = None;
+    }
+    /// #111 CL-111-03 band change: the station band differs from the band the contact was
+    /// prepared on. A calling or active contact is cancelled as by a mode change and the
+    /// state goes off (cause bandChanged); a transmission on the air finishes. A contact
+    /// that does not transmit keeps its fields. An unknown station band is no band change.
+    fn follow_band<H: Hardware>(&mut self, core: Option<&mut Core<H>>, ctx: &Ctx) {
+        let Some(band) = ctx.band else {
+            return;
+        };
+        let Some(c) = self.contact.as_mut() else {
+            return;
+        };
+        if c.band.replace(band).is_none_or(|prepared| prepared == band) {
+            return;
+        }
+        // The shown cause of this step's stops follows the order of CL-111-03, also when
+        // another stop of the step (a completion) arrived first.
+        if let Some(core) = core
+            && (core.view().arm_state == ArmState::Armed || core.stopped_in_step())
+        {
+            core.disarm(DisarmCause::BandChanged);
+        }
+        if c.state.transmits() {
+            Self::cancel_fields(c);
+            self.pending = None;
+        }
+    }
+    /// #111 CL-111-02: what every start passes before anything is prepared. A stop applied
+    /// since the engine's last step wins (CL-111-03); the safety revision is the station's;
+    /// an automatic start needs an operator seen this boot and no repetition-limit stop.
+    fn admit_start<H: Hardware>(
+        &mut self,
+        core: Option<&Core<H>>,
+        ctx: &Ctx,
+        shown: Option<u64>,
+    ) -> Result<(), &'static str> {
+        let Some(core) = core else {
+            return Ok(());
+        };
+        if core.stopped_in_step() {
+            return Err("state_conflict");
+        }
+        if let Some(current) = core.hardware().context().safety_revision
+            && shown != Some(current)
+        {
+            return self.refuse(("stale_revision", Some("safety_revision")));
+        }
+        if ctx.automatic && core.watchdog_spent() {
+            return Err("tx_watchdog");
+        }
+        Ok(())
+    }
+    /// #111 CL-111-07: why transmission is not possible now (None: it is). The arm
+    /// conditions are the transmit owner's one query (`Core::arm_refusal`).
+    fn obstacle<H: Hardware>(core: Option<&Core<H>>, ctx: &Ctx) -> Option<TransmitRefusal> {
+        let Some(core) = core else {
+            return Some(TransmitRefusal::TransmitUnsupported);
+        };
+        let context = core.hardware().context();
+        if let Some(refusal) = context.safety_revision.and_then(|r| core.arm_refusal(r)) {
+            return Some(refusal);
+        }
+        match context.capability {
+            Capability::Unsupported => Some(TransmitRefusal::TransmitUnsupported),
+            Capability::Unavailable => Some(TransmitRefusal::RadioUnavailable),
+            Capability::Available if !ctx.granted || context.safety_revision.is_none() => {
+                Some(TransmitRefusal::NotAuthorized)
+            }
+            Capability::Available if core.hardware().clock() != ClockState::Synchronized => {
+                Some(TransmitRefusal::ClockNotSynchronized)
+            }
+            Capability::Available if core.view().tune => Some(TransmitRefusal::Busy),
+            Capability::Available => None,
+        }
+    }
+    /// The accepted start switches the transmit state on (cause operator or auto). While
+    /// transmission is not possible the state and its cause stay and the transmit view's
+    /// refusal names the reason (CL-111-07). An operator start that finds the state off
+    /// opens a new repetition count. `hound_limit`: the start restarts the Hound's 300 s
+    /// (CL-111-10: every start but Reset).
+    fn switch_on<H: Hardware>(
+        &mut self,
+        core: Option<&mut Core<H>>,
+        ctx: &Ctx,
+        revision: Option<u64>,
+        hound_limit: bool,
+    ) {
+        let obstacle = Self::obstacle(core.as_deref(), ctx);
+        let Some(core) = core else {
+            return;
+        };
+        let was_on = core.view().arm_state == ArmState::Armed;
+        if let Some(refusal) = obstacle {
+            if !was_on {
+                core.refuse_start(refusal);
+            }
+            return;
+        }
+        let Some(revision) = revision else {
+            return;
+        };
+        let armed = if ctx.automatic {
+            core.arm_automatic(revision)
+        } else {
+            core.arm(revision)
+        };
+        // A refusal of the transmit owner is in its view.
+        if armed.is_err() {
+            return;
+        }
+        self.last_arm = ArmState::Armed;
+        self.transmit_problem = None;
+        if hound_limit {
+            self.hound.armed_at = Some(ctx.now_utc_ms);
+        }
+        self.hound.reply_deadline = None;
+        if !ctx.automatic && !was_on {
+            self.new_count();
+        }
+    }
+    /// WstxContact::TxWatchdog: the next transmission of the last sent message opens a new
+    /// dialogue entry, so its repetition count starts anew.
+    fn new_count(&mut self) {
+        if let Some(last) = self
+            .contact
+            .as_mut()
+            .and_then(|c| c.dialogue.iter_mut().rev().find(|e| e.tx))
+        {
+            last.closed = true;
+        }
     }
     fn count(&mut self, key: RowKey, message: (i64, String)) -> bool {
         if self.counted_rows.contains(&key) || self.counted_messages.contains(&message) {
@@ -1265,6 +1433,7 @@ impl Engine {
             exchange_sent: None,
             exchange_rcvd: None,
             activity: self.settings.activity,
+            band: ctx.band,
             state,
             next: first,
             tx4,
@@ -1415,6 +1584,7 @@ impl Engine {
         ctx: &Ctx,
     ) -> Result<(), &'static str> {
         self.follow_mode(core.as_deref_mut(), ctx);
+        self.follow_band(core.as_deref_mut(), ctx);
         let capability = core
             .as_ref()
             .map_or(Capability::Unsupported, |c| c.view().capability);
@@ -1795,6 +1965,7 @@ impl Engine {
                         exchange_sent: None,
                         exchange_rcvd: None,
                         activity: self.settings.activity,
+                        band: ctx.band,
                         state: State::Calling,
                         next: Slot::Tx6,
                         tx4: tx4_default(ctx.mode()),
@@ -1811,24 +1982,203 @@ impl Engine {
                         dialogue: VecDeque::new(),
                     });
                 }
-                if !ctx.automatic
-                    && !was_armed
-                    && let Some(last) = self
-                        .contact
-                        .as_mut()
-                        .and_then(|c| c.dialogue.iter_mut().rev().find(|e| e.tx))
-                {
-                    last.closed = true;
+                if !ctx.automatic && !was_armed {
+                    self.new_count();
                 }
             }
-            Command::Tune(enabled) => {
-                if enabled && (capability == Capability::Unsupported || !ctx.granted) {
+            Command::Reply {
+                row,
+                safety_revision,
+            } => {
+                self.admit_start(core.as_deref(), ctx, safety_revision)?;
+                // A row or call refusal changes nothing: no QSO is prepared.
+                self.command(
+                    Command::SelectRow { row, replace: true },
+                    core.as_deref_mut(),
+                    ctx,
+                )?;
+                self.switch_on(core.as_deref_mut(), ctx, safety_revision, true);
+            }
+            Command::CallDx {
+                call,
+                grid,
+                replace,
+                safety_revision,
+            } => {
+                self.admit_start(core.as_deref(), ctx, safety_revision)?;
+                // Enter in the DX call field never continues a QSO: without replace a QSO
+                // refuses it, with replace the old one is cancelled, the same partner too.
+                let old = self.contact.clone().filter(|c| c.state.active());
+                if old.is_some() && !replace {
+                    return Err("contact_active");
+                }
+                if let Some(c) = self.contact.as_mut().filter(|_| old.is_some()) {
+                    c.state = State::Cancelled;
+                }
+                let entered = self.command(
+                    Command::EnterDx {
+                        call,
+                        grid,
+                        replace: true,
+                    },
+                    core.as_deref_mut(),
+                    ctx,
+                );
+                if let Err(code) = entered {
+                    if old.is_some() {
+                        self.contact = old;
+                    }
+                    return Err(code);
+                }
+                self.switch_on(core.as_deref_mut(), ctx, safety_revision, true);
+            }
+            Command::CallCq(safety_revision) => {
+                // HoundOperation: a Hound never calls CQ.
+                if self.is_hound() {
+                    return Err("no_contact");
+                }
+                let (Some(call), Some(grid)) = (ctx.call.clone(), ctx.grid()) else {
+                    return Err("profile_incomplete");
+                };
+                self.admit_start(core.as_deref(), ctx, safety_revision)?;
+                let on = core
+                    .as_ref()
+                    .is_some_and(|c| c.view().arm_state == ArmState::Armed);
+                let state = self.contact.as_ref().map(|c| c.state);
+                if state.is_some_and(State::active) {
+                    return Err("contact_active");
+                }
+                // An own CQ that is calling: accepted, nothing changes.
+                if !(on && state == Some(State::Calling)) {
+                    if let Some(refusal) = Self::obstacle(core.as_deref(), ctx) {
+                        return Err(obstacle_code(refusal));
+                    }
+                    if state != Some(State::Calling) {
+                        let messages = self
+                            .generate(&call, &grid, None, self.settings.report, Tx4::Rrr)
+                            .ok_or("profile_incomplete")?;
+                        let id = (self.new_id)().ok_or("storage_unavailable")?;
+                        self.automatic_cq = ctx.automatic.then(|| id.clone());
+                        self.contact = Some(Contact {
+                            id,
+                            origin: Origin::OwnCq,
+                            mode: ctx.mode(),
+                            dx_call: None,
+                            dx_grid: None,
+                            report: self.settings.report,
+                            report_rcvd: None,
+                            report_sent: None,
+                            exchange_sent: None,
+                            exchange_rcvd: None,
+                            activity: self.settings.activity,
+                            band: ctx.band,
+                            state: State::Calling,
+                            next: Slot::Tx6,
+                            tx4: tx4_default(ctx.mode()),
+                            messages,
+                            started_tx1_skipped: false,
+                            prepared_utc_ms: ctx.now_utc_ms,
+                            first_tx_period: None,
+                            first_tx2_period: None,
+                            first_tx3_period: None,
+                            last_counted_end: None,
+                            logged_on_completion: false,
+                            suggested: None,
+                            last_rcvd: None,
+                            dialogue: VecDeque::new(),
+                        });
+                    }
+                    self.switch_on(core.as_deref_mut(), ctx, safety_revision, true);
+                }
+            }
+            Command::SendNext(slot, safety_revision) => {
+                let disabled = self.tx1_disabled();
+                let hound = self.is_hound();
+                // It acts on the current QSO; an own CQ, an ended one or none is no_contact.
+                let c = self
+                    .contact
+                    .as_ref()
+                    .filter(|c| c.state.active())
+                    .ok_or("no_contact")?;
+                if hound && !matches!(slot, Slot::Tx1 | Slot::Tx3) {
+                    return Err("state_conflict");
+                }
+                let slot = if slot == Slot::Tx1 && disabled {
+                    Slot::Tx2
+                } else {
+                    slot
+                };
+                if c.messages[slot.index()].is_none() {
+                    return Err("invalid_message");
+                }
+                self.admit_start(core.as_deref(), ctx, safety_revision)?;
+                if let Some(refusal) = Self::obstacle(core.as_deref(), ctx) {
+                    return Err(obstacle_code(refusal));
+                }
+                if let Some(c) = self.contact.as_mut() {
+                    c.next = slot;
+                    c.suggested = None;
+                    c.state = State::of_slot(slot);
+                }
+                self.switch_on(core.as_deref_mut(), ctx, safety_revision, true);
+            }
+            Command::ResetRepetitions(safety_revision) => {
+                // CL-111-08: only the operator in the browser may reset the count.
+                if ctx.automatic {
+                    return Err("operator_required");
+                }
+                if !self.contact.as_ref().is_some_and(|c| c.state.active()) {
+                    return Err("no_contact");
+                }
+                self.admit_start(core.as_deref(), ctx, safety_revision)?;
+                let view = core.as_ref().ok_or("transmit_unavailable")?.view();
+                let (on, limit) = (
+                    view.arm_state == ArmState::Armed,
+                    view.last_disarm_cause == DisarmCause::TxWatchdog,
+                );
+                if !on && !limit {
+                    return Err("state_conflict");
+                }
+                // CL-111-07: while transmission is not possible Reset is refused with the
+                // reason and changes nothing, also while the state is on.
+                if let Some(refusal) = Self::obstacle(core.as_deref(), ctx) {
+                    return Err(obstacle_code(refusal));
+                }
+                if on {
+                    self.new_count();
+                } else {
+                    // The message due next, the one that got no answer, is sent again; the
+                    // Hound's 300 s are not restarted (CL-111-10).
+                    self.switch_on(core.as_deref_mut(), ctx, safety_revision, false);
+                }
+            }
+            Command::Tune(false, _) => {
+                let tx = self.settings.tx_hz;
+                let core = core.as_deref_mut().ok_or("transmit_unavailable")?;
+                core.set_tune(false, tx).map_err(refusal_code)?;
+            }
+            Command::Tune(true, shown) => {
+                // CL-111-06: whatever the transmit state, under the station's revision.
+                if capability == Capability::Unsupported || !ctx.granted {
                     return Err("transmit_unavailable");
                 }
                 let tx = self.settings.tx_hz;
                 let core = core.as_deref_mut().ok_or("transmit_unavailable")?;
-                core.set_tune(enabled, tx).map_err(|r| match r {
-                    TransmitRefusal::NotArmed => "state_conflict",
+                let current = core
+                    .hardware()
+                    .context()
+                    .safety_revision
+                    .ok_or("transmit_unavailable")?;
+                if shown != Some(current) {
+                    return self.refuse(("stale_revision", Some("safety_revision")));
+                }
+                // CL-039-06, CL-044-14: automation keys nothing before an operator action
+                // this boot, after a repetition-limit stop or after a clear fault.
+                if ctx.automatic && core.watchdog_spent() {
+                    return Err("tx_watchdog");
+                }
+                core.start_tune(tx, current).map_err(|r| match r {
+                    TransmitRefusal::NotAuthorized => "stale_revision",
                     other => refusal_code(other),
                 })?;
             }
@@ -1889,6 +2239,11 @@ impl Engine {
         rows: &[Row],
     ) -> bool {
         let now = ctx.now_utc_ms;
+        // CL-111-03: the stops applied before this step no longer refuse a start, and the
+        // shown cause of this step's stops is chosen among them only.
+        if let Some(core) = core.as_deref_mut() {
+            core.begin_step();
+        }
         self.follow_mode(core.as_deref_mut(), ctx);
         // Outcomes of my requests.
         if let Some(core) = core.as_deref_mut() {
@@ -2078,12 +2433,31 @@ impl Engine {
                         && let Some(core) = core.as_deref_mut()
                     {
                         let view = core.view();
+                        let on = view.arm_state == ArmState::Armed;
+                        // The repetition limit due in this same step (the condition of
+                        // `submit`) is the cause shown before this one (CL-111-03).
+                        let due = self.last_started_period.map_or(now, |p| {
+                            transmit::next_period(
+                                c.mode,
+                                p + period_ms(c.mode),
+                                self.settings.parity,
+                            )
+                        });
+                        let limit = on
+                            && c.messages[c.next.index()]
+                                .as_deref()
+                                .is_some_and(|text| c.repetitions(text) >= core.tx_limit())
+                            && self.repeat_exempt.as_ref().map(|e| &e.0) != Some(&c.id)
+                            && (self.pending.is_some() || now >= due + WATCHDOG_STOP_AFTER_DUE_MS);
                         // Normal flow never halts (WstxTransmit::TransmitHaltUse): the
                         // transmission on top of the partner's QSO stops by an abort.
                         if view.transmitting {
-                            core.abort(DisarmCause::Operator);
-                        } else if view.arm_state == ArmState::Armed {
-                            core.disarm(DisarmCause::Operator);
+                            core.abort(DisarmCause::PartnerWorksOther);
+                        } else if on {
+                            core.disarm(DisarmCause::PartnerWorksOther);
+                        }
+                        if limit {
+                            core.watchdog_stop();
                         }
                         self.pending = None;
                     }
@@ -2091,6 +2465,7 @@ impl Engine {
                 None => {}
             }
         }
+        self.follow_band(core.as_deref_mut(), ctx);
         self.call_first(core.as_deref_mut(), ctx, rows);
         self.hound_timeouts(core.as_deref_mut(), now);
         // Arm transitions: halt and watchdog expiry end a CQ; other states are kept.
@@ -2257,10 +2632,11 @@ impl Engine {
         let view = core.map(|c| {
             let v = c.view();
             format!(
-                "{:?}{:?}{:?}{:?}{:?}{:?}{:?}{}{}{}{}",
+                "{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{}{}{}{}",
                 v.capability,
                 v.arm_state,
                 v.last_disarm_cause,
+                v.last_arm_cause,
                 v.pending_sequence,
                 v.last_text,
                 v.halt_state,
