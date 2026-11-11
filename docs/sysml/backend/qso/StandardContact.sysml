@@ -1,24 +1,35 @@
 package WstxStandardContact {
     private import ScalarValues::*;
     private import WstxRequirements::*;
+    private import WstxContact::TxSlot;
+    private import WstxContact::SequenceStateName;
+    private import ModelNotes::NotStated;
+    private import ModelNotes::Conflict;
+    private import ModelNotes::LeftOpen;
+    private import ModelNotes::FollowsSource;
+    private import ModelNotes::DiffersFromSource;
+    private import ModelNotes::DetailTests;
     doc /* The standard contact of the contact engine WstxArchitecture::QsoAndLogging (usage
          qso): choosing a partner, the first message, the automatic sequence of the standard
          messages up to completion, and Enable Tx, cancel, abort and halt as far as they act
-         on the sequence. Message texts, contests, Hound, modes, watchdogs, logging and the
-         wire are WstxContact; keying and timing are WstxTransmit. Declared coverage is not
-         an execution result. */
+         on the sequence. The data the engine's functions share, message texts, contests,
+         Hound, modes, watchdogs, logging and the wire are WstxContact; keying and timing
+         are WstxTransmit. Declared coverage is not an execution result. */
 
     // ------------------------------------------------------------ the function
     action def StandardContact {
         doc /* The function of QsoAndLogging that this package describes; the part performs
              it as its action standardContact. The browser and MCP clients send requests and
-             show confirmed state; they run no sequence. detailTests names the engine's unit
-             tests on a virtual clock, which also hold the bound contract tests. */
+             show confirmed state; they run no sequence. */
+        @FollowsSource { reference = "WSJT-X 3.3.0-beta5: widgets/mainwindow.cpp, " +
+            "DecodedMessageReaction.cpp, AutoRespondPeriod.cpp"; }
+        @Conflict { what = "3.3.0-beta5 here; v3.3.0-beta4 in " +
+            "WstxProductScope::BehaviorBaseline; the WSJT-X checkout named as master for " +
+            "message sequencing is v3.3.0-beta6"; }
+        @DetailTests { tests = "server/src/contact_tests.rs";
+            covers = "the engine on a virtual clock; the bound contract tests are there too"; }
         attribute implementation : String = "server/src/contact.rs";
-        attribute detailTests : String = "server/src/contact_tests.rs";
-        attribute source : String = "WSJT-X 3.3.0-beta5: widgets/mainwindow.cpp, " +
-            "DecodedMessageReaction.cpp, AutoRespondPeriod.cpp";
-        attribute settings : SequenceSettings;
+        attribute settings : WstxContact::SequenceSettings;
         action selectDecodedRow : SelectDecodedRow;
         action enterDxStation : EnterDxStation;
         action changeContact : ChangeContact;
@@ -31,43 +42,7 @@ package WstxStandardContact {
         calc partnerWorksOther : PartnerWorksOther;
         state sequence : AutoSequence;
     }
-    comment sourceRelease about StandardContact::source
-        /* CONFLICT: 3.3.0-beta5 here; v3.3.0-beta4 in WstxProductScope::BehaviorBaseline;
-           the WSJT-X checkout named as master for message sequencing is v3.3.0-beta6. */
 
-    attribute def SequenceSettings {
-        attribute autoSequence : Boolean default true;
-        attribute callFirst : Boolean default true;
-        attribute differsFromSource : String = "both start on; WSJT-X starts both off";
-        doc /* Operator settings of the station (WstxContact::ContactCommand set_auto_seq,
-             set_call_first). */
-    }
-    comment settingsKept about SequenceSettings
-        /* CONFLICT: contact.rs starts both on at every station start and saves neither;
-           WSJT-X saves AutoSeq and RespondCQ in its settings; the model says only that both
-           start on. */
-
-    // ------------------------------------------------------------ vocabulary
-    enum def TxSlot {
-        enum tx1; enum tx2; enum tx3; enum tx4; enum tx5; enum tx6;
-        doc /* The six standard messages; their texts are WstxContact::StandardMessageSet. */
-    }
-    enum def ContactOrigin { enum decodedRow; enum manualEntry; enum ownCq; }
-    attribute def SequenceStateFacts { attribute nextSlot : TxSlot; }
-    enum def SequenceStateName :> SequenceStateFacts {
-        enum idle { :>> nextSlot = TxSlot::tx6; }
-        enum calling { :>> nextSlot = TxSlot::tx6; }
-        enum replying { :>> nextSlot = TxSlot::tx1; }
-        enum report { :>> nextSlot = TxSlot::tx2; }
-        enum rogerReport { :>> nextSlot = TxSlot::tx3; }
-        enum rogers { :>> nextSlot = TxSlot::tx4; }
-        enum signoff { :>> nextSlot = TxSlot::tx5; }
-        enum completed { :>> nextSlot = TxSlot::tx6; }
-        enum cancelled { :>> nextSlot = TxSlot::tx6; }
-        doc /* The states of AutoSequence as WstxContact::Contact shows them, each with the
-             message that is next when the sequence enters it. "With a partner" means
-             one of the five states inside AutoSequence::withPartner. */
-    }
     enum def ReceivedKind {
         enum grid; enum signalReport; enum rogerReport; enum rogers; enum seventyThree;
         enum other;
@@ -79,13 +54,20 @@ package WstxStandardContact {
 
     // ------------------------------------------------------------ choosing a partner
     action def SelectDecodedRow {
+        @DiffersFromSource { what = "never turns Enable Tx on; in WSJT-X a double-click " +
+            "does (Configuration quick_call)"; }
+        @NotStated { what = "what txOffsetHz does when Hold Tx is off and the row frequency " +
+            "lies outside the Tx offset domain (contact.rs then keeps the Tx offset)"; }
         in rowIdentity : String;
         in replace : Boolean;
         out prepared : WstxContact::Contact[0..1];
-        out refusal : WstxContact::ContactRefusal[0..1];
+        out refusal : WstxContact::ContactRefusal[0..1] {
+            @NotStated { what = "which WstxContact::ContactRefusal each refused selection " +
+                "or entry gets, apart from contact_active, invalid_call and invalid_grid " +
+                "(contact.rs: row_not_standard, row_unavailable, profile_incomplete, " +
+                "storage_unavailable)"; }
+        }
         calc firstSlot : FirstSlotOnSelection;
-        attribute differsFromSource : String = "never turns Enable Tx on; in WSJT-X a " +
-            "double-click does (Configuration quick_call)";
         doc /* Prepares a contact with the sender of a decoded row. rowIdentity names one row
              of the current live results (WstxContact::ContactCommand select_row). Exactly
              one of prepared and refusal results; a refusal changes nothing.
@@ -103,19 +85,12 @@ package WstxStandardContact {
                value only when Hold Tx is off and the row is not addressed to my call.
              - txParity is the parity opposite to the row's period; mode is the row's mode
                (WstxContact::ContactMode).
-             - The messages are generated and nextSlot is firstSlot (AutoSequence Prepared).
+             - The messages are generated and Prepared is raised with firstSlot.
              A partner other than that of a contact with a partner needs replace
              (ChangeContact); without it the selection is refused contact_active. Selecting
              that contact's partner again keeps the contact identity and what
              WstxContact::ContactSnapshot says about its dialogue. */
     }
-    comment txFollowOutsideDomain about SelectDecodedRow
-        /* NOT STATED: what txOffsetHz does when Hold Tx is off and the row frequency lies
-           outside the Tx offset domain (contact.rs then keeps the Tx offset). */
-    comment selectionRefusalCodes about SelectDecodedRow::refusal
-        /* NOT STATED: which WstxContact::ContactRefusal each refused selection or entry
-           gets, apart from contact_active, invalid_call and invalid_grid (contact.rs:
-           row_not_standard, row_unavailable, profile_incomplete, storage_unavailable). */
     calc def FirstSlotOnSelection {
         in addressedToMe : Boolean;
         in received : ReceivedKind;
@@ -143,8 +118,8 @@ package WstxStandardContact {
              4 or 6 Maidenhead characters, AA00..RR99 with an optional subsquare AA..XX, else
              invalid_grid. The contact has origin manualEntry, exactly the grid entered, the
              current report, unchanged Rx and Tx offsets and Tx parity, the station's
-             operating mode (WstxContact::StationOperatingMode) and nextSlot tx1, or tx2
-             while Tx1 is skipped. The partner rule of SelectDecodedRow applies. */
+             operating mode (WstxContact::StationOperatingMode), and Prepared is raised with tx1,
+             or tx2 while Tx1 is skipped. The partner rule of SelectDecodedRow applies. */
     }
     action def ChangeContact {
         doc /* A selection or entry with replace for another partner while the sequence is
@@ -157,7 +132,8 @@ package WstxStandardContact {
              WstxStrategy::ManualIntervention. */
     }
     action def CallFirst {
-        attribute source : String = "WSJT-X respond policy CQ: First (AutoRespondPeriod.cpp)";
+        @FollowsSource { reference = "WSJT-X respond policy CQ: First " +
+            "(AutoRespondPeriod.cpp)"; }
         doc /* While the sequence is calling for a CQ the operator started, with Enable Tx,
              Auto Seq and Call 1st on, the first eligible row of the rows decoded together,
              in decode order, is answered at once as SelectDecodedRow of that row without
@@ -177,37 +153,42 @@ package WstxStandardContact {
         doc /* On arms WstxTransmit::TransmitArming with the safety revision the operator was
              shown, and TransmitSubmission then sends. When the sequence is idle, completed
              or cancelled, on starts an own CQ: a new contact of origin ownCq in the
-             station's operating mode (AutoSequence CqStarted). Its refusals are
+             station's operating mode, and CqStarted is raised. Its refusals are
              WstxContact::ContactCommand and WstxContact::StandardMessageSet. Off disarms
              with cause operator: no further request is made and a transmission already
              started finishes. Off changes no sequence state. */
     }
     action def TransmitSubmission {
+        @LeftOpen { what = "how long before a period the request is first submitted, " +
+            "provided a partner message counted before the audio start still changes that " +
+            "period's message"; }
         doc /* While Enable Tx is on and the sequence is calling or with a partner, the
              engine keeps one WstxTransmit::TransmitRequest pending for the next period of
-             the contact's Tx parity, carrying the nextSlot text, the Tx offset and the
-             contact's mode. A change of any of them alters the pending request until its
+             the contact's Tx parity, carrying the text of the next message, the Tx offset
+             and the contact's mode. Every transmission of the engine is such a request to
+             the transmit service; the engine keys no PTT, opens no audio and addresses no
+             radio. A change of text, offset or mode alters the pending request until its
              audio starts and applies to the following period after that. The same message
              is sent again in each of my periods until the sequence changes; only
              WstxContact::TxWatchdog bounds the repetition. lastTransmittedText changes only
              on a started outcome. A refused or failed outcome leaves Enable Tx off with the
              refusal shown (WstxTransmit::TransmitOutcome), and the engine does not submit
-             the refused request again unchanged. Apart from SignoffSent, no outcome changes
-             the sequence state. */
+             the refused request again unchanged. A lost link, a reconnect and a retried or
+             duplicated command submit no request again and create no second contact. */
     }
-    comment submissionLead about TransmitSubmission
-        /* LEFT OPEN: how long before a period the request is first submitted, provided a
-           partner message counted before the audio start still changes that period's
-           message. */
     calc def PartnerWorksOther {
+        @DiffersFromSource { what = "the transmission is stopped by an abort; WSJT-X " +
+            "clicks Halt Tx"; }
         in sequenceState : SequenceStateName;
         in startedWithTx1Skipped : Boolean;
-        in autoSequence : Boolean;
+        in autoSequence : Boolean {
+            @Conflict { what = "here and in contact.rs the stop needs Auto Seq on; WSJT-X " +
+                "(DecodedMessageReaction.cpp planAutoSequence) needs Enable Tx on and does " +
+                "not read Auto Seq; adopting WSJT-X here is decided and not yet done"; }
+        }
         in rowFrequencyHz : Real;
         in txOffsetHz : Integer;
         attribute toleranceHz : Integer = 50;
-        attribute differsFromSource : String = "the transmission is stopped by an abort; " +
-            "WSJT-X clicks Halt Tx";
         return stop : Boolean = autoSequence and
             (sequenceState == SequenceStateName::replying or
              (sequenceState == SequenceStateName::report and startedWithTx1Skipped)) and
@@ -219,10 +200,6 @@ package WstxStandardContact {
              WstxTransmit::AbortTransmission; the sequence state is kept (WSJT-X
              auto_sequence stop tolerance). */
     }
-    comment stopCondition about PartnerWorksOther::autoSequence
-        /* CONFLICT: here and in contact.rs the stop needs Auto Seq on; WSJT-X
-           (DecodedMessageReaction.cpp planAutoSequence) needs Enable Tx on and does not
-           read Auto Seq. */
     action def CancelContact {
         doc /* Ends the contact without logging it: Enable Tx off (WstxTransmit::DisarmCause
              contactCancelled), DX call, DX grid, Tx1 to Tx5 and the dialogue cleared, tx6
@@ -237,163 +214,176 @@ package WstxStandardContact {
     }
     action def HaltTx {
         doc /* The operator's emergency stop, WstxTransmit::HaltTransmit. The sequence sees
-             it as TransmitStopped with cause halt. */
+             it as TransmitStopped with cause halt. The engine itself never sends
+             HaltTransmit: it stops a transmission only by a disarm or by
+             WstxTransmit::AbortTransmission (WstxTransmit::TransmitHaltUse). */
     }
 
     // ------------------------------------------------------------ the sequence
     item def Prepared {
         attribute firstSlot : TxSlot;
-        doc /* Raised when SelectDecodedRow, EnterDxStation or CallFirst prepared a contact. */
+        doc /* Raised by the engine when SelectDecodedRow, EnterDxStation or CallFirst
+             prepared a contact; firstSlot is one of tx1 to tx5. */
     }
     item def NextChosen {
+        @Conflict { what = "in completed and cancelled contact.rs keeps the state and " +
+            "changes only the next message; WSJT-X (mainwindow_slots.cpp on_txbN_clicked) " +
+            "sets the QSO progress of the chosen message in every state; the model does " +
+            "not say whether the next message changes there; adopting WSJT-X here is " +
+            "decided and not yet done"; }
         attribute slot : TxSlot;
-        doc /* Raised when the operator chooses the next message (WstxContact::ContactCommand
-             choose_next; WSJT-X Tx button of a message). */
+        doc /* Raised by the operator's choice of the next message
+             (WstxContact::ContactCommand choose_next; WSJT-X Tx button of a message). */
     }
-    comment nextChosenAfterEnd about NextChosen
-        /* CONFLICT: in completed and cancelled contact.rs keeps the state and changes only
-           the next message; WSJT-X (mainwindow_slots.cpp on_txbN_clicked) sets the QSO
-           progress of the chosen message in every state; the model does not say. */
     item def CqStarted {
-        doc /* Raised by SetEnableTx on while the sequence is idle, completed or cancelled. */
+        doc /* Raised by the operator's SetEnableTx on while the sequence is idle, completed
+             or cancelled. */
     }
     item def PartnerMessage {
+        @Conflict { what = "here and in contact.rs a counted message advances the sequence " +
+            "whether Enable Tx is on or off; WSJT-X (DecodedMessageReaction.cpp " +
+            "planAutoSequence) advances only while Enable Tx is on; adopting WSJT-X here " +
+            "is decided and not yet done"; }
+        @LeftOpen { what = "how many counted rows the engine remembers for the count-once " +
+            "rule, provided no row of the current and the previous period counts twice"; }
         attribute kind : ReceivedKind;
-        doc /* A counted partner message, raised while Auto Seq is on. A decoded row is
-             counted when the sequence is with a partner, the row has the contact's mode, it
-             reads as a message from the contact's DX call to my profile call (either may be
-             a hash the station filled in), and it was decoded in a period of the parity
-             opposite to my Tx parity, at any audio frequency. A row counts once however
-             often it is delivered, and a repeated decode of one period with the same text
-             counts once. With Auto Seq off a
-             counted message raises nothing; WstxContact::ContactSnapshot offers the step as
-             suggested_slot. */
+        doc /* Raised by the engine for each counted partner message while Auto Seq is on. A
+             decoded row is counted when the sequence is with a partner, the row has the
+             contact's mode, it reads as a message from the contact's DX call to my profile
+             call (either may be a hash the station filled in), and it was decoded in a
+             period of the parity opposite to my Tx parity, at any audio frequency. A row
+             counts once however often it is delivered, and a repeated decode of one period
+             with the same text counts once. With Auto Seq off a counted message raises
+             nothing; WstxContact::ContactSnapshot offers the step as suggested_slot. */
     }
-    comment advanceWhileDisarmed about PartnerMessage
-        /* CONFLICT: here and in contact.rs a counted message advances the sequence whether
-           Enable Tx is on or off; WSJT-X (DecodedMessageReaction.cpp planAutoSequence)
-           advances only while Enable Tx is on. */
-    comment countedMemory about PartnerMessage
-        /* LEFT OPEN: how many counted rows the engine remembers for the count-once rule,
-           provided no row of the current and the previous period counts twice. */
     item def SignoffSent {
-        doc /* Raised by a completed WstxTransmit::TransmitOutcome of this contact's Tx5, or
-             of its Tx4 when that is RR73. */
+        doc /* Raised by the engine on a completed WstxTransmit::TransmitOutcome of this
+             contact's Tx5, or of its Tx4 when that is RR73. */
     }
     item def Cancelled {
-        doc /* Raised by CancelContact, AbortQso and WstxContact::ModeChange. */
+        doc /* Raised by CancelContact and AbortQso on the operator's request and by
+             WstxContact::ModeChange. */
     }
     item def LoggedByOperator {
-        doc /* Raised by a manual Log QSO of a contact with a partner
+        doc /* Raised by the operator's manual Log QSO of a contact with a partner
              (WstxContact::DirectLog). */
     }
     item def TransmitStopped {
         attribute cause : WstxTransmit::DisarmCause;
-        doc /* Raised when WstxTransmit::TransmitArming goes from armed to disarmed; cause
-             is its lastDisarmCause. */
+        doc /* Raised by the engine when it sees WstxTransmit::TransmitArming go from armed
+             to disarmed; cause is its lastDisarmCause. */
     }
     action def CompleteContact {
-        attribute differsFromSource : String = "Enable Tx goes off; WSJT-X leaves it on " +
-            "with Tx6 selected after a 73 received in rogers";
+        @DiffersFromSource { what = "Enable Tx goes off; WSJT-X leaves it on with Tx6 " +
+            "selected after a 73 received in rogers"; }
         doc /* Enable Tx off (WstxTransmit::DisarmCause contactCompleted), tx6 selected, and a
              contact with a DX call handed once to WstxContact::DirectLog. The sequence
              starts no further contact by itself. */
     }
     state def AutoSequence {
-        attribute source : String = "WSJT-X processMessage and auto_sequence " +
-            "(DecodedMessageReaction.cpp planProcessMessage, planAutoSequence)";
-        attribute differsFromSource : String = "a 73 received in rogerReport is answered " +
-            "with one 73, as a partner RRR or RR73 is";
-        doc /* One sequence for each station profile; its states are SequenceStateName.
+        @FollowsSource { reference = "WSJT-X processMessage and auto_sequence " +
+            "(DecodedMessageReaction.cpp planProcessMessage, planAutoSequence)"; }
+        @DiffersFromSource { what = "a 73 received in rogerReport is answered with one 73, " +
+            "as a partner RRR or RR73 is"; }
+        @Conflict { what = "a grid in rogerReport, rogers or signoff, a report without R in " +
+            "signoff and a report with R in signoff change nothing here and in contact.rs; " +
+            "WSJT-X (DecodedMessageReaction.cpp planProcessMessage) goes back to Tx2, Tx3 " +
+            "and Tx4; adopting WSJT-X here is decided and not yet done"; }
+        @NotStated { what = "whether turning Tx1 skip on (WstxContact::ToggleTx1Skip) moves " +
+            "a replying sequence to report (contact.rs does, while tx1 is next)"; }
+        doc /* One sequence for each station profile. Its nine states without substates are
+             those of SequenceStateName; open and ended only group them, and "with a
+             partner" means a state inside withPartner. Entering a state makes its message
+             the next one: replying tx1, report tx2, rogerReport tx3, rogers tx4, signoff
+             tx5, every other state tx6.
              Default: an event in a state that has no transition for it changes nothing, so
              a repeated partner message makes the same message go out again and messages
-             after completed or cancelled are ignored. Two events are stated here instead of
-             one transition for each state: Prepared enters, from every state, the state
-             whose nextSlot is its firstSlot; NextChosen does the same for its slot, tx6
-             meaning calling, from every state but completed and cancelled. */
-        entry; then idle;
-        state idle;
-        state calling;
-        state withPartner {
-            state replying;
-            state report;
-            state rogerReport;
-            state rogers;
-            state signoff;
-            transition first replying accept m : PartnerMessage
-                if m.kind == ReceivedKind::grid then report;
-            transition first replying accept m : PartnerMessage
-                if m.kind == ReceivedKind::signalReport then rogerReport;
-            transition first replying accept m : PartnerMessage
-                if m.kind == ReceivedKind::rogerReport then rogers;
-            transition first replying accept m : PartnerMessage
-                if m.kind == ReceivedKind::rogers then signoff;
-            transition first report accept m : PartnerMessage
-                if m.kind == ReceivedKind::signalReport then rogerReport;
-            transition first report accept m : PartnerMessage
-                if m.kind == ReceivedKind::rogerReport then rogers;
-            transition first report accept m : PartnerMessage
-                if m.kind == ReceivedKind::rogers then signoff;
-            transition first rogerReport accept m : PartnerMessage
-                if m.kind == ReceivedKind::rogerReport then rogers;
-            transition first rogerReport accept m : PartnerMessage
-                if m.kind == ReceivedKind::rogers or m.kind == ReceivedKind::seventyThree
-                then signoff;
-            transition first rogers accept m : PartnerMessage
-                if m.kind == ReceivedKind::signalReport then rogerReport;
-            transition first rogers accept m : PartnerMessage
-                if m.kind == ReceivedKind::rogers then signoff;
+             after completed or cancelled are ignored. */
+        entry; then open;
+        state open {
+            entry; then idle;
+            state idle;
+            state calling;
+            state withPartner {
+                state replying;
+                state report;
+                state rogerReport;
+                state rogers;
+                state signoff;
+                transition first replying accept m : PartnerMessage
+                    if m.kind == ReceivedKind::grid then report;
+                transition first replying accept m : PartnerMessage
+                    if m.kind == ReceivedKind::signalReport then rogerReport;
+                transition first replying accept m : PartnerMessage
+                    if m.kind == ReceivedKind::rogerReport then rogers;
+                transition first replying accept m : PartnerMessage
+                    if m.kind == ReceivedKind::rogers then signoff;
+                transition first report accept m : PartnerMessage
+                    if m.kind == ReceivedKind::signalReport then rogerReport;
+                transition first report accept m : PartnerMessage
+                    if m.kind == ReceivedKind::rogerReport then rogers;
+                transition first report accept m : PartnerMessage
+                    if m.kind == ReceivedKind::rogers then signoff;
+                transition first rogerReport accept m : PartnerMessage
+                    if m.kind == ReceivedKind::rogerReport then rogers;
+                transition first rogerReport accept m : PartnerMessage
+                    if m.kind == ReceivedKind::rogers or m.kind == ReceivedKind::seventyThree
+                    then signoff;
+                transition first rogers accept m : PartnerMessage
+                    if m.kind == ReceivedKind::signalReport then rogerReport;
+                transition first rogers accept m : PartnerMessage
+                    if m.kind == ReceivedKind::rogers then signoff;
+            }
+            transition first calling accept Cancelled then idle;
+            transition first calling accept s : TransmitStopped
+                if s.cause == WstxTransmit::DisarmCause::halt or
+                    s.cause == WstxTransmit::DisarmCause::txWatchdog then idle;
         }
-        state completed { entry action complete : CompleteContact; }
-        state cancelled;
-        transition first withPartner.rogers accept m : PartnerMessage
-            if m.kind == ReceivedKind::seventyThree then completed;
-        transition first withPartner.rogers accept SignoffSent then completed;
-        transition first withPartner.signoff accept SignoffSent then completed;
-        transition first idle accept CqStarted then calling;
-        transition first completed accept CqStarted then calling;
-        transition first cancelled accept CqStarted then calling;
-        transition first calling accept Cancelled then idle;
-        transition first withPartner accept Cancelled then cancelled;
-        transition first withPartner accept LoggedByOperator then completed;
-        transition first calling accept s : TransmitStopped
-            if s.cause == WstxTransmit::DisarmCause::halt or
-                s.cause == WstxTransmit::DisarmCause::txWatchdog then idle;
+        state ended {
+            state completed { entry action complete : CompleteContact; }
+            state cancelled;
+        }
+        transition first open.idle accept CqStarted then open.calling;
+        transition first ended accept CqStarted then open.calling;
+        transition first open accept p : Prepared
+            if p.firstSlot == TxSlot::tx1 then open.withPartner.replying;
+        transition first open accept p : Prepared
+            if p.firstSlot == TxSlot::tx2 then open.withPartner.report;
+        transition first open accept p : Prepared
+            if p.firstSlot == TxSlot::tx3 then open.withPartner.rogerReport;
+        transition first open accept p : Prepared
+            if p.firstSlot == TxSlot::tx4 then open.withPartner.rogers;
+        transition first open accept p : Prepared
+            if p.firstSlot == TxSlot::tx5 then open.withPartner.signoff;
+        transition first ended accept p : Prepared
+            if p.firstSlot == TxSlot::tx1 then open.withPartner.replying;
+        transition first ended accept p : Prepared
+            if p.firstSlot == TxSlot::tx2 then open.withPartner.report;
+        transition first ended accept p : Prepared
+            if p.firstSlot == TxSlot::tx3 then open.withPartner.rogerReport;
+        transition first ended accept p : Prepared
+            if p.firstSlot == TxSlot::tx4 then open.withPartner.rogers;
+        transition first ended accept p : Prepared
+            if p.firstSlot == TxSlot::tx5 then open.withPartner.signoff;
+        transition first open accept c : NextChosen
+            if c.slot == TxSlot::tx1 then open.withPartner.replying;
+        transition first open accept c : NextChosen
+            if c.slot == TxSlot::tx2 then open.withPartner.report;
+        transition first open accept c : NextChosen
+            if c.slot == TxSlot::tx3 then open.withPartner.rogerReport;
+        transition first open accept c : NextChosen
+            if c.slot == TxSlot::tx4 then open.withPartner.rogers;
+        transition first open accept c : NextChosen
+            if c.slot == TxSlot::tx5 then open.withPartner.signoff;
+        transition first open accept c : NextChosen
+            if c.slot == TxSlot::tx6 then open.calling;
+        transition first open.withPartner.rogers accept m : PartnerMessage
+            if m.kind == ReceivedKind::seventyThree then ended.completed;
+        transition first open.withPartner.rogers accept SignoffSent then ended.completed;
+        transition first open.withPartner.signoff accept SignoffSent then ended.completed;
+        transition first open.withPartner accept LoggedByOperator then ended.completed;
+        transition first open.withPartner accept Cancelled then ended.cancelled;
     }
-    comment earlierMessageLate about AutoSequence
-        /* CONFLICT: a grid in rogerReport, rogers or signoff, a report without R in signoff
-           and a report with R in signoff change nothing here and in contact.rs; WSJT-X
-           (DecodedMessageReaction.cpp planProcessMessage) goes back to Tx2, Tx3 and Tx4. */
-
-    // ------------------------------------------------------------ elements the text names
-    dependency from StandardContact to WstxProductScope::BehaviorBaseline;
-    dependency from SequenceSettings, NextChosen to WstxContact::ContactCommand;
-    dependency from TxSlot to WstxContact::StandardMessageSet;
-    dependency from ReceivedKind to WstxContact::GridExchangeContest,
-        WstxContact::ContestExchange, WstxContact::EuVhfExchange;
-    dependency from SelectDecodedRow to WstxContact::ContactCommand,
-        WstxOfflineDecode::HashResolution, WstxContact::StandardMessageSet,
-        WstxContact::EuVhfExchange, WstxContact::HoundOperation,
-        WstxContact::FrequencyControls, WstxContact::ReportRange, WstxContact::ContactMode,
-        WstxContact::ContactSnapshot;
-    dependency from FirstSlotOnSelection to WstxContact::ToggleTx1Skip,
-        WstxContact::GridExchangeContest;
-    dependency from EnterDxStation to WstxContact::StandardMessageSet,
-        WstxContact::StationOperatingMode;
-    dependency from ChangeContact to WstxMcp::OperatingAutomation,
-        WstxStrategy::ManualIntervention, WstxTransmit::TransmitRequest;
-    dependency from CallFirst to WstxContact::TxWatchdog, WstxContest::ContestRun;
-    dependency from SetEnableTx to WstxTransmit::TransmitArming, WstxContact::ContactCommand,
-        WstxContact::StandardMessageSet;
-    dependency from TransmitSubmission to WstxContact::TxWatchdog,
-        WstxTransmit::TransmitOutcome;
-    dependency from PartnerWorksOther, AbortQso to WstxTransmit::AbortTransmission;
-    dependency from HaltTx to WstxTransmit::HaltTransmit;
-    dependency from PartnerMessage to WstxContact::ContactSnapshot;
-    dependency from SignoffSent to WstxTransmit::TransmitOutcome;
-    dependency from Cancelled to WstxContact::ModeChange;
-    dependency from LoggedByOperator, CompleteContact to WstxContact::DirectLog;
-    dependency from TransmitStopped to WstxTransmit::TransmitArming;
 
     // ------------------------------------------------------------ requirements
     requirement 'CL-010-01' {
@@ -426,54 +416,14 @@ package WstxStandardContact {
         attribute implementation : String =
             "server/src/contact.rs; server/src/contact_http.rs";
     }
-    requirement 'CL-010-20' {
-        doc /* The contact engine MUST report the sequence state, the next message, the last
-             transmitted message, the pending request and a transmit failure as separate
-             observations (WstxContact::ContactSnapshot). */
-        subject qso : WstxArchitecture::QsoAndLogging;
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String =
-            "server/src/contact.rs; server/src/contact_http.rs";
-    }
     requirement 'CL-010-03' {
         doc /* The contact engine MUST accept Enable Tx on and off, contact cancellation,
              Abort QSO and Halt Tx as explicit operator operations (SetEnableTx,
-             CancelContact, AbortQso, HaltTx). */
+             CancelContact, AbortQso, HaltTx) and transmit only by TransmitSubmission. */
         subject qso : WstxArchitecture::QsoAndLogging;
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String =
             "server/src/contact.rs; server/src/contact_http.rs; server/src/transmit/service.rs";
-    }
-    requirement 'CL-010-22' {
-        doc /* Abort QSO MUST stop the current transmission or Tune at once and cancel the
-             contact without a halt. */
-        subject qso : WstxArchitecture::QsoAndLogging;
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String =
-            "server/src/contact.rs; server/src/transmit/service.rs";
-    }
-    requirement 'CL-010-23' {
-        doc /* The contact engine MUST NOT send WstxTransmit::HaltTransmit; it stops a
-             transmission only by a disarm or by WstxTransmit::AbortTransmission. */
-        subject qso : WstxArchitecture::QsoAndLogging;
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/contact.rs";
-    }
-    requirement 'CL-010-24' {
-        doc /* Every transmission of the contact engine MUST be a
-             WstxTransmit::TransmitRequest to the transmit service; the engine keys no PTT,
-             opens no audio and addresses no radio. */
-        subject qso : WstxArchitecture::QsoAndLogging;
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/contact.rs";
-    }
-    requirement 'CL-010-25' {
-        doc /* A lost link, a reconnect, a retried or a duplicated command MUST NOT replay a
-             transmit request or create a second contact. */
-        subject qso : WstxArchitecture::QsoAndLogging;
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String =
-            "server/src/contact.rs; server/src/contact_http.rs";
     }
     requirement 'CL-010-17' {
         doc /* While an own CQ that the operator started runs with Enable Tx, Auto Seq and
@@ -487,12 +437,7 @@ package WstxStandardContact {
     satisfy 'CL-010-18' by WstxArchitecture::physicalStation.backend.stations.qso;
     satisfy 'CL-010-19' by WstxArchitecture::physicalStation.backend.stations.qso;
     satisfy 'CL-010-02' by WstxArchitecture::physicalStation.backend.stations.qso;
-    satisfy 'CL-010-20' by WstxArchitecture::physicalStation.backend.stations.qso;
     satisfy 'CL-010-03' by WstxArchitecture::physicalStation.backend.stations.qso;
-    satisfy 'CL-010-22' by WstxArchitecture::physicalStation.backend.stations.qso;
-    satisfy 'CL-010-23' by WstxArchitecture::physicalStation.backend.stations.qso;
-    satisfy 'CL-010-24' by WstxArchitecture::physicalStation.backend.stations.qso;
-    satisfy 'CL-010-25' by WstxArchitecture::physicalStation.backend.stations.qso;
     satisfy 'CL-010-17' by WstxArchitecture::physicalStation.backend.stations.qso;
 
     dependency CL_010_01_to_FR_007 from 'CL-010-01' to 'FR-007';
@@ -502,25 +447,49 @@ package WstxStandardContact {
     dependency CL_010_02_to_FR_007 from 'CL-010-02' to 'FR-007';
     dependency CL_010_02_to_FR_008 from 'CL-010-02' to 'FR-008';
     dependency CL_010_02_to_FR_019 from 'CL-010-02' to 'FR-019';
-    dependency CL_010_20_to_FR_007 from 'CL-010-20' to 'FR-007';
-    dependency CL_010_20_to_FR_019 from 'CL-010-20' to 'FR-019';
     dependency CL_010_03_to_FR_007 from 'CL-010-03' to 'FR-007';
     dependency CL_010_03_to_FR_008 from 'CL-010-03' to 'FR-008';
-    dependency CL_010_22_to_FR_008 from 'CL-010-22' to 'FR-008';
-    dependency CL_010_23_to_FR_008 from 'CL-010-23' to 'FR-008';
-    dependency CL_010_24_to_FR_008 from 'CL-010-24' to 'FR-008';
-    dependency CL_010_25_to_FR_007 from 'CL-010-25' to 'FR-007';
-    dependency CL_010_25_to_FR_008 from 'CL-010-25' to 'FR-008';
     dependency CL_010_17_to_FR_007 from 'CL-010-17' to 'FR-007';
     dependency contactPromise from AutoSequence to 'FR-007';
     dependency transmitBoundary from TransmitSubmission to WstxTransmit::TransmitRequest;
     dependency transmitOwner from TransmitSubmission to WstxArchitecture::TransmitService;
     dependency changeContactClause from ChangeContact to 'CL-050-04';
+    dependency reportFromRange from SelectDecodedRow to WstxContact::ReportRange;
 
     // ------------------------------------------------------------ verification cases
     verification 'TC-007-001' {
         doc /* Standard FT8 contact through server and browser. This defines a case, not an
-             execution result. */
+             execution result.
+             Setup: candidate server and Chromium on a virtual UTC clock, scripted decoded
+             rows and a transmit-service double that records requests and returns outcomes
+             (no audio, PTT or radio). The expected states, next messages and texts are a
+             hand-written table, independent of candidate output.
+             (a) Responder: select a CQ row, Enable Tx, the partner's report, then RR73. The
+                 selection sets partner, grid, report, both offsets, the opposite parity,
+                 Tx1 next and the six texts and submits nothing before Enable Tx; then
+                 replying, rogerReport, signoff, completed after the completed Tx5, Enable
+                 Tx off, logged once.
+             (b) Responder, the partner sends RRR: signoff, completed after the first
+                 completed Tx5.
+             (c) Caller: Enable Tx with no partner, select the caller's grid row, its R
+                 report, then 73 with Tx4 RRR and once with Tx4 RR73: calling, report only
+                 after the selection, rogers, completed on the 73 or on the completed RR73,
+                 no further CQ.
+             (d) The partner repeats each message and resends its report in rogers: the same
+                 text again, the report in rogers returns to Tx3, one completion.
+             (e) Another station's message to me, a row of the previous partner after
+                 ChangeContact, a reply after completion: nothing changes.
+             (f) Tx1 skip, report overrides at and beyond both ends of
+                 WstxContact::ReportRange, one valid and three invalid DX entries: report
+                 and Tx2 at once, the ends accepted, the others refused with no contact.
+             (g) The partner answers another call at and just beyond
+                 PartnerWorksOther::toleranceHz, in replying and in report after a
+                 Tx1-skipped start; the Tx watchdog expires while calling: Enable Tx off at
+                 the tolerance and on beyond it; the watchdog gives idle.
+             (h) Auto Seq off; Esc, Halt, disarm and cancel in every state; a browser action
+                 and a decoded row each delivered twice: the next message never changes;
+                 Halt sends the halt first, Esc one abort and no halt; the last transmitted
+                 text changes only on started outcomes; one request and one count. */
         subject qso : WstxArchitecture::QsoAndLogging;
         objective {
             verify 'CL-010-01';
@@ -528,38 +497,7 @@ package WstxStandardContact {
             verify 'CL-010-03';
             verify 'CL-010-12';
             verify 'CL-010-18';
-            verify 'CL-010-20';
-            verify 'CL-010-25';
         }
-        attribute setup : String = "candidate server and Chromium; profile HB9BLA/JN47; " +
-            "virtual UTC clock; scripted decoded rows; a transmit-service double that " +
-            "records TransmitRequests and returns outcomes (no audio, PTT or radio)";
-        attribute steps : String = "(a) responder: select CQ K1ABC FN42 (SNR -12.4, " +
-            "1234.6 Hz, even period), Enable Tx, feed the partner's report -05, then RR73; " +
-            "(b) responder: the partner sends RRR; (c) caller: Enable Tx with no partner, " +
-            "select the caller's grid row, feed R-07, then 73 with Tx4 RRR and once with " +
-            "Tx4 RR73; (d) the partner repeats each message one to three times and resends " +
-            "its report in rogers; (e) another station's message to me, a row of the " +
-            "previous partner after ChangeContact, a reply after completion; (f) Tx1 skip, " +
-            "report override -50, +49, -51, +50, entry DL1ABC JO62, invalid AB1, <...> and " +
-            "grid SS00; (g) the partner answers another call 50 Hz and 51 Hz from my Tx " +
-            "offset, in replying and in report after a Tx1-skipped start; the Tx watchdog " +
-            "expires while calling; (h) Auto Seq off; Esc, Halt, disarm and cancel in every " +
-            "state; a browser action and a decoded row each delivered twice";
-        attribute expected : String = "selection gives K1ABC, FN42, report -12, Rx and Tx " +
-            "1235 Hz, odd parity, Tx1 next, the six texts of StandardMessageSet and no " +
-            "TransmitRequest before Enable Tx; (a) replying, rogerReport, signoff, " +
-            "completed after the completed Tx5, Enable Tx off, logged once; (b) signoff, " +
-            "completed after the first completed Tx5; (c) calling, report only after the " +
-            "selection, rogers, completed on the 73 or on the completed RR73, no further " +
-            "CQ; (d) the same text again, the report in rogers returns to Tx3, one " +
-            "completion; (e) nothing changes; (f) report and Tx2 at once, -50 and +49 " +
-            "accepted, the others refused with no contact; (g) Enable Tx off at 50 Hz, on " +
-            "at 51 Hz; the watchdog while calling gives idle; (h) the next slot never " +
-            "changes; Halt sends the halt first, Esc one abort and no halt; the last " +
-            "transmitted text changes only on started outcomes; one request and one count";
-        attribute oracle : String = "hand-written table of states, next slots and texts, " +
-            "independent of candidate output";
         attribute level : Integer = 2;
         attribute location : String = "Windows development PC, isolated, no RF";
         attribute automation : AutomationState = AutomationState::implemented;
@@ -568,37 +506,37 @@ package WstxStandardContact {
     }
     verification 'TC-007-010' {
         doc /* A partner's RRR or RR73 before my 73. This defines a case, not an execution
-             result. */
+             result.
+             Setup: the contact engine on a virtual UTC clock with Auto Seq on and Call 1st
+             off, hand-authored rows in the partner's parity and a transmit-service double
+             (no audio, PTT or radio). The expected values are a hand-written table from the
+             WSJT-X source, independent of candidate output.
+             (a) Tx4 RRR; after my Tx4 the partner sends RR73, later a 73: signoff, the next
+                 own period carries one 73 and no RRR, then completed with tx6, Enable Tx
+                 off with cause contactCompleted, one log entry with the received report,
+                 nothing sent afterwards; the late 73 changes nothing.
+             (b) As (a), the partner answers my RRR with RRR: as (a).
+             (c) FT4, and FT8 with Tx4 RR73: my RR73 is halted, the partner's RR73 arrives,
+                 Enable Tx again: as (a).
+             (d) The partner signs off with RR73 in replying and with RRR in report:
+                 signoff, one 73, completed, one log entry without a received report.
+             (e) The RR73 is counted while my next Tx4 is pending, before and after its
+                 audio start: before, that period carries Tx5; after, Tx5 follows in my
+                 next period; one 73 and one log entry either way.
+             (f) Auto Seq off in rogers, replying and report: state and next message
+                 unchanged, suggested_slot tx5, nothing logged.
+             (g) In rogers an RR73 from another station, from the partner to another call,
+                 in my own parity, and one row delivered twice; a 73 in replying, report
+                 and rogers: the other rows change nothing, the twice-delivered row gives
+                 one 73, a 73 in replying or report changes nothing, a 73 in rogers
+                 completes with no 73 sent.
+             (h) WW Digi, the partner's RR73 after my RRR: as (a).
+             (i) As (a), my 73 is halted, then Enable Tx again: signoff kept and nothing
+                 logged, then one 73, completed and one log entry. */
         subject qso : WstxArchitecture::QsoAndLogging;
         objective {
             verify 'CL-010-02';
         }
-        attribute setup : String = "the contact engine on a virtual UTC clock; profile " +
-            "HB9BLA/JN37; Auto Seq on, Call 1st off, Tx watchdog 6; hand-authored rows in " +
-            "the partner's parity; a transmit-service double (no audio, PTT or radio)";
-        attribute steps : String = "(a) Tx4 RRR: own CQ, select HB9BLA SV2CLJ KN10, after " +
-            "Tx2 feed R+02, after Tx4 feed RR73, run four own periods, feed 73; (b) as (a), " +
-            "the partner answers my RRR with RRR; (c) FT4, and FT8 with Tx4 RR73: my RR73 " +
-            "is halted, the partner's RR73 arrives, Enable Tx again; (d) the partner signs " +
-            "off with RR73 in replying and with RRR in report; (e) the RR73 is counted " +
-            "while my next Tx4 is pending, before and after its audio start; (f) Auto Seq " +
-            "off in rogers, replying and report; (g) in rogers: RR73 from another station, " +
-            "from the partner to another call, in my own parity, one row delivered twice; " +
-            "73 in replying, report and rogers; (h) ww_digi: after my RRR the partner's " +
-            "RR73; (i) as (a), my 73 is halted, then Enable Tx again";
-        attribute expected : String = "(a) report, rogers, after the RR73 signoff; the " +
-            "next own period carries one 73 and no RRR; after its completed outcome " +
-            "completed with tx6, Enable Tx off with cause contactCompleted, one log entry " +
-            "with RST_RCVD +02, nothing sent afterwards, the late 73 changes nothing; (b), " +
-            "(c) and (h) the same; (d) signoff, one 73, completed, one log entry with " +
-            "RST_RCVD absent; (e) before the audio start that period carries Tx5, after it " +
-            "Tx5 follows in my next period; one 73 and one log entry either way; (f) state " +
-            "and next slot unchanged, suggested_slot tx5, nothing logged; (g) the other " +
-            "rows change nothing, the twice-delivered row gives one 73, 73 in replying or " +
-            "report changes nothing, 73 in rogers completes with no 73 sent; (i) signoff " +
-            "kept and nothing logged, then one 73, completed and one log entry";
-        attribute oracle : String = "hand-written table from WSJT-X " +
-            "DecodedMessageReaction.cpp and mainwindow.cpp, independent of candidate output";
         attribute level : Integer = 2;
         attribute location : String = "Windows development PC, isolated, no RF";
         attribute automation : AutomationState = AutomationState::implemented;
@@ -606,25 +544,22 @@ package WstxStandardContact {
     }
     verification 'TC-010-010' {
         doc /* Call 1st answers the first caller of my CQ. This defines a case, not an
-             execution result. */
+             execution result.
+             Setup: the contact engine against the transmit owner core on a virtual clock,
+             and the snapshot wire; an own CQ with Enable Tx and Hold Tx on; hand-authored
+             rows of a recorded CQ run in their decode order.
+             (a) Two callers in one period, delivered in reverse slice order: the contact is
+                 the first in decode order, in report with its Tx2 next at once, still
+                 armed, the Tx offset kept, sent in my next period.
+             (b) Later callers: nothing changes.
+             (c) Call 1st off, Auto Seq off, or callers sending only RR73, 73, RRR or an R
+                 report: the sequence stays calling and my next period sends the CQ.
+             (d) The same callers after Enable Tx off: calling, nothing sent.
+             (e) The snapshot settings of a started station: call_first true. */
         subject qso : WstxArchitecture::QsoAndLogging;
         objective {
             verify 'CL-010-17';
         }
-        attribute setup : String = "the contact engine against the transmit owner core on " +
-            "a virtual clock; the snapshot wire; Enable Tx with no partner (calling, odd " +
-            "parity), Hold Tx on";
-        attribute steps : String = "after my CQ deliver in one even period HB9BLA EA4HTI " +
-            "IM69 (1678 Hz, -8) then HB9BLA F1PBZ -13 (2144 Hz, -10), in reverse slice " +
-            "order; later two more callers; repeat with Call 1st off, with Auto Seq off, " +
-            "after Enable Tx off, and with callers sending only RR73, 73, RRR and R-10";
-        attribute expected : String = "Call 1st on: the contact is EA4HTI, grid IM69, in " +
-            "report with Tx2 EA4HTI HB9BLA -08 next at once, still armed, Tx offset 1500 Hz " +
-            "kept, sent in the next odd period; later callers change nothing. In every " +
-            "other run the sequence stays calling and the next odd period sends the CQ, or " +
-            "nothing with Enable Tx off. The snapshot settings carry call_first true";
-        attribute oracle : String = "hand-authored rows of a recorded CQ run and their " +
-            "decode order";
         attribute level : Integer = 2;
         attribute location : String = "Windows development PC, isolated, no radio or RF";
         attribute automation : AutomationState = AutomationState::implemented;
@@ -644,10 +579,4 @@ package WstxStandardContact {
     dependency CL_010_17_verified_by_TC_010_010 from 'CL-010-17' to 'TC-010-010';
     dependency CL_010_18_verified_by_TC_007_001 from 'CL-010-18' to 'TC-007-001';
     dependency CL_010_19_verified_by_TC_007_004 from 'CL-010-19' to 'TC-007-004';
-    dependency CL_010_20_verified_by_TC_007_001 from 'CL-010-20' to 'TC-007-001';
-    dependency CL_010_22_verified_by_TC_007_004 from 'CL-010-22' to 'TC-007-004';
-    dependency CL_010_23_verified_by_TC_007_004 from 'CL-010-23' to 'TC-007-004';
-    dependency CL_010_24_verified_by_TC_007_004 from 'CL-010-24' to 'TC-007-004';
-    dependency CL_010_25_verified_by_TC_007_001 from 'CL-010-25' to 'TC-007-001';
-    dependency CL_010_25_verified_by_TC_007_004 from 'CL-010-25' to 'TC-007-004';
 }

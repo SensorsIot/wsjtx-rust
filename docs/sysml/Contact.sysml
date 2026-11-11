@@ -1,6 +1,7 @@
 package WstxContact {
     private import ScalarValues::*;
-    private import WstxStandardContact::*;
+    private import ModelNotes::Conflict;
+    private import ModelNotes::DiffersFromSource;
     doc /* Contract of the contact engine apart from its standard contact sequence, which
          is WstxStandardContact (choosing a partner, the auto sequence, Enable Tx, cancel,
          abort and halt; its elements are named here without the package): standard
@@ -38,6 +39,10 @@ package WstxContact {
          and ModeChange below (#11 slice B). */
 
     // ---------------------------------------------------------------- messages
+    enum def TxSlot {
+        enum tx1; enum tx2; enum tx3; enum tx4; enum tx5; enum tx6;
+        doc /* The six standard messages of a contact; their texts are StandardMessageSet. */
+    }
     enum def Tx4Form { enum rrr; enum rr73; }
     attribute def ReportRange {
         attribute minimumDb : Integer = -50;
@@ -389,6 +394,31 @@ package WstxContact {
     }
 
     // ---------------------------------------------------------------- contact
+    enum def ContactOrigin {
+        enum decodedRow; enum manualEntry; enum ownCq;
+        doc /* How a contact began: a selected decoded row, an entered DX call, or an own CQ. */
+    }
+    enum def SequenceStateName {
+        enum idle; enum calling; enum replying; enum report; enum rogerReport;
+        enum rogers; enum signoff; enum completed; enum cancelled;
+        doc /* The states of WstxStandardContact::AutoSequence as Contact shows them. */
+    }
+    attribute def SequenceSettings {
+        @DiffersFromSource { what = "both start on; WSJT-X starts both off"; }
+        @Conflict { what = "contact.rs starts both on at every station start and saves " +
+            "neither; WSJT-X saves AutoSeq and RespondCQ in its settings; the model says " +
+            "only that both start on"; }
+        attribute autoSequence : Boolean default true {
+            doc /* Auto Seq: counted partner messages advance the sequence (ContactCommand
+                 set_auto_seq). */
+        }
+        attribute callFirst : Boolean default true {
+            doc /* Call 1st: the first caller of an own CQ is answered (ContactCommand
+                 set_call_first). */
+        }
+        doc /* Operator settings of the station that the sequence, the contest and Hound
+             operation and the snapshot read. */
+    }
     attribute def Contact {
         attribute contactId : String;
         attribute origin : ContactOrigin;

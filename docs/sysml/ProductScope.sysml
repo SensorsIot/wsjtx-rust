@@ -16,6 +16,7 @@ package WstxProductScope {
     private import WstxUdp::*;
     private import WstxStrategy::*;
     private import WstxContest::*;
+    private import ModelNotes::NotStated;
     doc /* Canonical product scope and navigation. WstxRequirements owns stable
          FR/CL/TC declarations. WstxArchitecture owns parts/ports/connections;
          WstxStationProtocol the shared status/auth/transport contract;
@@ -27,6 +28,7 @@ package WstxProductScope {
          WstxContact its messages, contests, watchdogs, log, wire and operator displays;
          WstxStrategy award strategies, their value order and strategy runs;
          WstxContest the contest strategies and their profiles from the official rules.
+         ModelNotes the markers for what the model leaves unsaid or takes from a source.
          Requirements and exact algorithm/interface/verification semantics in these
          packages are one functional authority. A view renders existing facts; it is
          not an extra architecture. Declared coverage is not an execution verdict.

@@ -1091,10 +1091,6 @@ package WstxRequirements {
             verify 'CL-010-15';
             verify 'CL-010-19';
             verify 'CL-010-21';
-            verify 'CL-010-22';
-            verify 'CL-010-23';
-            verify 'CL-010-24';
-            verify 'CL-010-25';
         }
         attribute executable : String = "server/src/contact_http_tests.rs; tests/contact.test.cjs; tests/ui-operating.test.cjs";
     }
