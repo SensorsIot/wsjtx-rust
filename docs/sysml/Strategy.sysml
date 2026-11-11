@@ -898,10 +898,10 @@ package WstxStrategy {
              (Auto off, None, stop) changes nothing.
              Not started at a finishing end: the contact is disarmed and cancelled at once as
              before; a transmission already on the air (the run's CQ, a Tx1, a reply)
-             finishes its period (WstxContact::SetEnableTx) and nothing after it is keyed.
+             finishes its period (WstxStandardContact::SetEnableTx) and nothing after it is keyed.
              Still at once (Enable Tx off and the contact cancelled, nothing logged): HALT from
              any source; Abort QSO; an operator's selection of another station (a double-click,
-             WstxContact::ChangeContact); the Tx watchdog's stop; the grant revoked or a safety
+             WstxStandardContact::ChangeContact); the Tx watchdog's stop; the grant revoked or a safety
              edit (authority_lost; a safety edit disarms in the transmit owner itself,
              authorityChanged); a band change or a mode change by the operator; a station
              restart (transmit is disarmed at every start); and the run's leaving while it runs

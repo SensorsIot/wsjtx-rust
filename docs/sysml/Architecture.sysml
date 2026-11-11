@@ -1804,6 +1804,7 @@ package WstxArchitecture {
         port transmit : StationOperations;
         doc /* transmit carries contact transmissions only to TransmitService (WstxContact);
              no PTT, audio or radio port exists here. */
+        action standardContact : WstxStandardContact::StandardContact;
     }
     part def AudioInterface {
         attribute configuredIntent : WstxRadioIO::DeviceIntent;

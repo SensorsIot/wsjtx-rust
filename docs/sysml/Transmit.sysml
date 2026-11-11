@@ -588,8 +588,8 @@ package WstxTransmit {
              disarm, the partner-works-other stop and Abort QSO use
              AbortTransmission. */
     }
-    dependency haltUseClause from TransmitHaltUse to WstxRequirements::'CL-010-03';
-    dependency abortClause from AbortTransmission to WstxRequirements::'CL-010-03';
+    dependency haltUseClause from TransmitHaltUse to WstxStandardContact::'CL-010-23';
+    dependency abortClause from AbortTransmission to WstxStandardContact::'CL-010-22';
     attribute def TransmitWatchdog {
         doc /* WstxContact::TxWatchdog (#39, 2026-11-06): the owner holds the limit, 1..99
              repetitions (default 6 at each start), and no count: the contact consumer

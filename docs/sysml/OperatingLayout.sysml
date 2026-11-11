@@ -326,7 +326,7 @@ attribute def ActivityOrdering {
              A secondary region closes with its labelled close control (keyboard
              reachable) or a pointer action outside it, returning to operation and
              restoring opener focus. Escape never closes a region: it is Abort QSO
-             (WstxContact::AbortQso, #39 2026-11-04; earlier Halt Tx plus contact
+             (WstxStandardContact::AbortQso, #39 2026-11-04; earlier Halt Tx plus contact
              cancellation, CL-010-03, #10 decision 5),
              replacing the earlier Escape-closes-region behaviour; existing TC-007-002
              tests asserting Escape-to-close must be updated with that implementation.
@@ -382,12 +382,12 @@ attribute def ActivityOrdering {
              the Current QSO card and the Rx Frequency pane by the QSO pane (QsoPane) with
              direct buttons, and moves the Rx/Tx inputs and Hold Tx to the Rx/Tx strip
              (RxTxStrip); where the text below names those controls, QsoPane, RxTxStrip and
-             WstxContact::SetEnableTx apply. Earlier text: Browser regions for WstxContact, inside the existing AgreedOperatingDesign
+             WstxStandardContact::SetEnableTx apply. Earlier text: Browser regions for WstxContact, inside the existing AgreedOperatingDesign
              order (station bar, toolbar, signal canvas, separator, band strip, cards);
              the signal area, its 0..3000 Hz span, palette, Speed/Sensitivity and split
              (CL-010-05, SplitGeometry) are unchanged.
              Station bar: Halt Tx (always visible, Alt+H; disabled with reason on a
-             receive-only station), beside it Abort QSO (Esc, WstxContact::AbortQso,
+             receive-only station), beside it Abort QSO (Esc, WstxStandardContact::AbortQso,
              enabled while a contact is in progress, armed or transmitting) and a compact
              transmit state with the last transmitted text, Tx watchdog remaining calls WD:n
              or "Tx watchdog: same message sent N times", visible in every region. Radio toolbar (its period
@@ -422,7 +422,7 @@ attribute def ActivityOrdering {
              Every control is a server request; state shows only server-confirmed
              values, pending and unknown outcomes explicitly. */
     }
-    dependency contactWorkspaceClauses from ContactWorkspace to WstxRequirements::'CL-010-03';
+    dependency contactWorkspaceClauses from ContactWorkspace to WstxStandardContact::'CL-010-03';
 
     // ---------------------------------------------------------------- #37 operating screen
     // Operator design interview 2026-11-01 (issue #37 comments). Laptop first (minimum
@@ -778,7 +778,7 @@ attribute def ActivityOrdering {
              replies (select, then SetEnableTx on; on a row of a QSO between others the command
              line reads "Call <sender>"), and on another station while a contact
              is active, or during an own CQ, it is itself the explicit
-             WstxContact::ChangeContact (replace true, no confirmation, as WSJT-X
+             WstxStandardContact::ChangeContact (replace true, no confirmation, as WSJT-X
              handleDecodeSelection widgets/mainwindow.cpp ~9122-9229 with quick_call on,
              DecodedMessageReaction.cpp ~411-413), so the next own period calls the new
              station and Auto Seq runs that QSO to its completion and log (#50, operator
@@ -1266,7 +1266,7 @@ attribute def ActivityOrdering {
     dependency fullScreenToggleClause from FullScreenToggle to WstxRequirements::'CL-096-01';
     action def KeyboardShortcuts {
         doc /* WSJT-X keys 1:1 where the function exists: Alt+H halts (the emergency
-             stop, WstxContact::HaltTx); Esc aborts the QSO (WstxContact::AbortQso, #39
+             stop, WstxStandardContact::HaltTx); Esc aborts the QSO (WstxStandardContact::AbortQso, #39
              2026-11-04: transmission stopped now, contact cancelled, no halt); F1/F3/F5 and "?" open the overview;
              F2 Settings; F4 clears the DX call (contact cancel); Alt+1..Alt+6 choose the
              next message Tx1-Tx6 (Now is a fold-out button only); Alt+M receive start/stop; Alt+T Tune;

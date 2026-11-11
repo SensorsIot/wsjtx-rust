@@ -1,6 +1,7 @@
 // Canonical authority: SysML
 package WstxRequirements {
     private import ScalarValues::*;
+    private import WstxStandardContact::*;
     doc /* Canonical functional requirements and durable verification definitions.
          The other Wstx packages own detailed typed contracts; validation does not execute tests.
          Coverage flags describe implemented source slices, not acceptance or whole-project parity. */
@@ -964,7 +965,7 @@ package WstxRequirements {
     dependency CL_010_09_to_FR_010 from 'CL-010-09' to 'FR-010';
     dependency CL_010_09_to_FR_019 from 'CL-010-09' to 'FR-019';
     requirement 'CL-010-16' {
-        doc /* Present the laptop operating screen of WstxOperatingLayout::OperatingScreen: a top bar with only band, mode, dial, UTC/period, Logbook, Settings, HALT and Abort QSO (Esc); the full-width waterfall with the Rx/Tx strip; Band Activity with the strategy element and the QSO pane with direct buttons and no Enable Tx control; setup and diagnostics in the four-section Settings drawer; themes; WSJT-X keyboard shortcuts; and only the token form for an unauthorized browser. Details: OperatingScreen, RxTxStrip, BandActivityView, QsoPane, SettingsDrawer, ThemeChoice, UnauthorizedView, KeyboardShortcuts, WstxContact::SetEnableTx. */
+        doc /* Present the laptop operating screen of WstxOperatingLayout::OperatingScreen: a top bar with only band, mode, dial, UTC/period, Logbook, Settings, HALT and Abort QSO (Esc); the full-width waterfall with the Rx/Tx strip; Band Activity with the strategy element and the QSO pane with direct buttons and no Enable Tx control; setup and diagnostics in the four-section Settings drawer; themes; WSJT-X keyboard shortcuts; and only the token form for an unauthorized browser. Details: OperatingScreen, RxTxStrip, BandActivityView, QsoPane, SettingsDrawer, ThemeChoice, UnauthorizedView, KeyboardShortcuts, WstxStandardContact::SetEnableTx. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/recording.js; client/recording.css; client/contact.js; client/logbook.js";
     }
@@ -980,27 +981,6 @@ package WstxRequirements {
     dependency CL_010_08_to_FR_021 from 'CL-010-08' to 'FR-021';
     // #10 standard FT8 contact (decisions: issue #10 comment 6539901776, 2026-10-31);
     // detailed contract in WstxContact. FT4 rules marked FT4-NOTE there belong to #11.
-    requirement 'CL-010-01' {
-        doc /* Prepare a contact only from an acknowledged decoded row identity or an operator-entered DX Call/Grid that packs as a standard message; preparation sets partner, grid, report, Rx/Tx offsets, period parity and the six standard messages, and never arms or starts transmission; a receive-only station can prepare contacts and log. Details: WstxContact::SelectDecodedRow, EnterDxStation, FirstSlotOnSelection, ChangeContact. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; server/src/main.rs; client/contact.js";
-    }
-    dependency CL_010_01_to_FR_007 from 'CL-010-01' to 'FR-007';
-    requirement 'CL-010-02' {
-        doc /* Progress the contact on the server by the WstxContact::AutoSequence table (messages from the partner addressed to my call; repeats resend, other stations ignored, a partner RRR/RR73 before my 73 answered with one 73 in every active state, completion after a transmitted RR73/73 or a received 73 after RRR) and show confirmed sequence, next message, last transmitted message, pending requests, stale observations and failures separately. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; server/src/main.rs; client/contact.js";
-    }
-    dependency CL_010_02_to_FR_007 from 'CL-010-02' to 'FR-007';
-    dependency CL_010_02_to_FR_008 from 'CL-010-02' to 'FR-008';
-    dependency CL_010_02_to_FR_019 from 'CL-010-02' to 'FR-019';
-    requirement 'CL-010-03' {
-        doc /* Offer explicit Enable Tx, disarm, contact cancellation, Abort QSO (Esc and a button beside HALT: the transmission stops now and the contact is cancelled without a halt, closing no panel; #39 2026-11-04) and the immediate Halt Tx emergency stop (buttons and Alt+H; the station and its automation never halt in normal flow); every transmission is a TransmitRequest through the #9 transmit service and its transmit authority, never direct PTT; loss, reconnect, retry or duplicates replay no transmit request and create no second contact. The live transmit path consumes the delivered #9 slice B owner (WstxTransmit::TransmitArming, TransmitRequest, TransmitOutcome, HaltTransmit) in-process. Details: WstxContact::SetEnableTx, HaltTx, AbortQso, CancelContact, TransmitSubmission, ContactCommand; WstxTransmit::AbortTransmission, TransmitHaltUse. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; server/src/main.rs; server/src/transmit/service.rs; client/contact.js";
-    }
-    dependency CL_010_03_to_FR_007 from 'CL-010-03' to 'FR-007';
-    dependency CL_010_03_to_FR_008 from 'CL-010-03' to 'FR-008';
     // CL-010-04: ExportAdi is streamed (#10, 2026-11-04). #41 retired the #10 log review queue: completion and
     // Log QSO log directly (WstxContact::DirectLog); TIME_ON/TIME_OFF come from the
     // contact engine (server/src/contact.rs).
@@ -1027,6 +1007,17 @@ package WstxRequirements {
     }
     dependency CL_010_15_to_FR_019 from 'CL-010-15' to 'FR-019';
     dependency CL_010_15_to_FR_021 from 'CL-010-15' to 'FR-021';
+    requirement 'CL-010-21' {
+        doc /* The browser MUST show the contact's confirmed sequence state, next message,
+             last transmitted message, pending request, stale observation and failure as
+             separate items (WstxContact::ContactSnapshot, WstxOperatingLayout::QsoPane). */
+        subject browser : WstxArchitecture::BrowserClient;
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "client/contact.js";
+    }
+    satisfy 'CL-010-21' by WstxArchitecture::physicalStation.frontend.browsers;
+    dependency CL_010_21_to_FR_019 from 'CL-010-21' to 'FR-019';
+    dependency CL_010_21_verified_by_TC_007_004 from 'CL-010-21' to 'TC-007-004';
     requirement 'CL-010-06' {
         doc /* Present bounded Band Activity and, since #37, the compact QSO pane (WstxOperatingLayout::QsoPane: the running QSO's last partner message, its QSO dialogue and, below it, at most eight stations calling my call with time and SNR: during a QSO those within +/-50 Hz of my Rx or Tx offset, otherwise every caller, #37) in place of the Rx Frequency pane; local filtering, sorting, highlighting and clearing change no server decoding, contact state or log. Details: WstxOperatingLayout::QsoPane, QsoPaneCrowding. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -1070,35 +1061,6 @@ package WstxRequirements {
     dependency CL_010_14_to_FR_006 from 'CL-010-14' to 'FR-006';
     dependency CL_010_14_to_FR_010 from 'CL-010-14' to 'FR-010';
 
-    verification 'TC-007-001' {
-        doc /* TC-007-001 — Standard FT8 contact
-             CL-010-01, CL-010-02, CL-010-03, CL-010-12
-             Setup: actual candidate server and Chromium; profile HB9BLA/JN47; virtual UTC clock; independently scripted decoded-result source and a #9 transmit-service double that records TransmitRequests and returns started/completed/halted/refused outcomes (no audio, PTT or radio).
-             Steps: (a) responder: select a hand-authored "CQ K1ABC FN42" row (SNR -12.4, 1234.6 Hz, even period); Enable Tx; feed "HB9BLA K1ABC -05", then "HB9BLA K1ABC RR73"; (b) responder with RRR: feed "HB9BLA K1ABC RRR", then nothing; (c) caller: Enable Tx with no partner (Tx6, state calling), feed "HB9BLA K1ABC FN42" and select that row (prepareReply with firstSlot tx2), feed "HB9BLA K1ABC R-07", once with Tx4 RRR then "HB9BLA K1ABC 73", once toggled to RR73; (d) repeats: partner repeats each message one to three times; partner misses my Tx3 and resends its report from rogers; (e) other stations and late rows: "HB9BLA W1XYZ -10" during the contact, a row of the previous partner after ChangeContact, a reply after completion; (f) Tx1 skip, report override -50/+49/-51/+50, manual entry "DL1ABC" grid JO62 and invalid "AB1", "<...>" and grid "SS00"; (g) partner answers another call at 50 Hz and at 51 Hz from my Tx offset, in replying and again in report after a Tx1-skipped start; the watchdog expires while calling CQ; (h) Auto Seq off; Esc, Halt, disarm and cancel in every state.
-             Expected (independent hand-written table, not candidate output): selection gives dxCall K1ABC, grid FN42, report -12 rendered "-12", Rx and Tx 1235 Hz, odd parity, next Tx1 "K1ABC HB9BLA JN47", Tx2 "K1ABC HB9BLA -12", Tx3 "K1ABC HB9BLA R-12", Tx4 "K1ABC HB9BLA RRR", Tx5 "K1ABC HB9BLA 73", Tx6 "CQ HB9BLA JN47" and no TransmitRequest before Enable Tx. States/next slots follow WstxContact::AutoSequence exactly: (a) replying/Tx1 -> rogerReport/Tx3 -> signoff/Tx5 -> completed after the completed Tx5 outcome, Enable Tx off, one log offer; (b) RRR from the partner gives signoff/Tx5; the contact completes after the first completed Tx5 transmission (AutoSequence sent73), Enable Tx off, one log offer; (c) calling/Tx6 -> report/Tx2 only after selection -> rogers/Tx4 -> completed on 73 (RRR) or on the completed RR73 transmission, Enable Tx off and no further CQ; (d) repeats resend the same text, report-from-rogers returns to Tx3, no second completion or log offer; (e) other/late rows change nothing; (f) with Tx1 skip, selecting the CQ row enters report directly with next Tx2, overrides -50/+49 accepted and rendered "-50"/"+49", -51/+50 and invalid entries refused with no contact; (g) 50 Hz disarms in replying and in the Tx1-skipped report, 51 Hz does not; watchdog expiry while calling returns to idle; (h) Auto Seq off never changes the next slot; Halt and Alt+H send the halt request first; Esc sends one abort and no halt; last transmitted text changes only on started outcomes and differs visibly from the next message. Each request carries a fresh requestSequence; a duplicated browser action (same command_id) yields one request; one decoded row delivered twice counts once.
-             2 — Isolated automated functional tests; Windows development PC, actual candidate server and browser, independent decoded-row and transmit-outcome fixtures; no RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-010-01';
-            verify 'CL-010-02';
-            verify 'CL-010-03';
-            verify 'CL-010-12';
-        }
-        attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/contact.test.cjs";
-    }
-    verification 'TC-007-010' {
-        doc /* TC-007-010 — A partner's RRR or RR73 before my 73 (#69)
-             CL-010-02
-             Setup: the actual contact engine (server, not the browser) with a virtual UTC clock, profile HB9BLA/JN37, Auto Seq on, Call 1st off, Tx watchdog 6, hand-authored standard decoded rows in the partner's parity and the #9 transmit-service double that records TransmitRequests and returns started/completed/halted outcomes (no audio, PTT or radio).
-             Steps: (a) reproduction of the SV2CLJ contact of 2026-11-08: Tx4 rrr; Enable Tx calling CQ; select "HB9BLA SV2CLJ KN10" (report/Tx2); after the sent Tx2 feed "HB9BLA SV2CLJ R+02"; after the sent Tx4 feed "HB9BLA SV2CLJ RR73"; run four more own periods; then feed "HB9BLA SV2CLJ 73"; (b) as (a), the partner answers my RRR with "HB9BLA SV2CLJ RRR"; (c) as (a) in FT4 (Tx4 rr73) and in FT8 with Tx4 rr73: my RR73 transmission is halted (state rogers kept), the partner's RR73 arrives, Enable Tx again; (d) replying: select "CQ K1ABC FN42", after the sent Tx1 feed "HB9BLA K1ABC RR73"; report: select a caller's "HB9BLA K1ABC FN42" after my CQ, after the sent Tx2 feed "HB9BLA K1ABC RRR"; (e) in rogers the partner's RR73 is counted once while my next Tx4 is pending before its audio starts, and once after that Tx4's audio has started; (f) Auto Seq off, the partner's RR73 in rogers, replying and report; (g) in rogers: "HB9BLA W1XYZ RR73" from another station, "W1XYZ SV2CLJ RR73" from the partner to another call, the partner's RR73 decoded in a period of my own parity, the same RR73 row delivered twice; "HB9BLA K1ABC 73" in replying and in report; "HB9BLA SV2CLJ 73" in rogers; (h) ww_digi: after my Tx4 RRR following the partner's R grid, the partner's RR73; (i) as (a), but my 73 transmission is halted, then Enable Tx again.
-             Expected (independent hand-written table from WSJT-X 3.3.0-beta5 DecodedMessageReaction.cpp ~585-616 and mainwindow.cpp ~8237-8255, not candidate output): (a) report/Tx2 -> rogers/Tx4 "SV2CLJ HB9BLA RRR" -> after the RR73 signoff/Tx5; the next own period carries "SV2CLJ HB9BLA 73", exactly one 73 and no RRR after the RR73 period; after the completed 73 outcome state completed/Tx6, Enable Tx off (disarm cause contactCompleted), exactly one log entry of kind completion with call SV2CLJ, RST_SENT the sent report, RST_RCVD +02; nothing transmitted in the following periods; the late 73 changes nothing and logs nothing; (b) the same as (a); (c) the same: one 73, one log, completed; (d) replying -> signoff/Tx5 "K1ABC HB9BLA 73", one 73, completed, one log with RST_SENT and RST_RCVD absent; report -> signoff/Tx5, one 73, completed, one log with RST_SENT the sent report and RST_RCVD absent; (e) before the audio start that period carries Tx5 instead of Tx4; after it the Tx4 of that period is sent and Tx5 follows in my next own period, one 73 and one log either way; (f) state and next slot unchanged, suggested_slot tx5 in each, nothing completed or logged; (g) the other station's and the other-call rows and the own-parity row change nothing; the twice-delivered row gives one 73 and one log; 73 in replying or report changes nothing; 73 in rogers completes at once with no 73 sent and one log; (h) signoff/Tx5, one 73, completed, one log; (i) state signoff kept with nothing logged; Enable Tx again sends one 73, then completed and one log.
-             2 — Isolated automated functional tests; Windows development PC, actual contact engine with independent decoded-row and transmit-outcome fixtures; no RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-010-02';
-        }
-        attribute executable : String = "server/src/contact_tests.rs";
-    }
     verification 'TC-007-003' {
         doc /* TC-007-003 — Received views, Rx Frequency pane and partner selection
              CL-010-01, CL-010-06
@@ -1127,6 +1089,12 @@ package WstxRequirements {
             verify 'CL-010-07';
             verify 'CL-010-08';
             verify 'CL-010-15';
+            verify 'CL-010-19';
+            verify 'CL-010-21';
+            verify 'CL-010-22';
+            verify 'CL-010-23';
+            verify 'CL-010-24';
+            verify 'CL-010-25';
         }
         attribute executable : String = "server/src/contact_http_tests.rs; tests/contact.test.cjs; tests/ui-operating.test.cjs";
     }
@@ -1240,16 +1208,6 @@ package WstxRequirements {
         }
         attribute executable : String = "server/src/logbook_tests.rs; server/src/dxcc_tests.rs; tests/ui-operating.test.cjs";
     }
-    dependency CL_010_01_verified_by_TC_007_001 from 'CL-010-01' to 'TC-007-001';
-    dependency CL_010_01_verified_by_TC_007_003 from 'CL-010-01' to 'TC-007-003';
-    dependency CL_010_01_verified_by_TC_007_007 from 'CL-010-01' to 'TC-007-007';
-    dependency CL_010_02_verified_by_TC_007_001 from 'CL-010-02' to 'TC-007-001';
-    dependency CL_010_02_verified_by_TC_007_004 from 'CL-010-02' to 'TC-007-004';
-    dependency CL_010_02_verified_by_TC_007_007 from 'CL-010-02' to 'TC-007-007';
-    dependency CL_010_02_verified_by_TC_007_010 from 'CL-010-02' to 'TC-007-010';
-    dependency CL_010_03_verified_by_TC_007_001 from 'CL-010-03' to 'TC-007-001';
-    dependency CL_010_03_verified_by_TC_007_004 from 'CL-010-03' to 'TC-007-004';
-    dependency CL_010_03_verified_by_TC_007_007 from 'CL-010-03' to 'TC-007-007';
     dependency CL_010_04_verified_by_TC_011_001 from 'CL-010-04' to 'TC-011-001';
     dependency CL_010_04_verified_by_TC_011_002 from 'CL-010-04' to 'TC-011-002';
     dependency CL_010_04_verified_by_TC_007_007 from 'CL-010-04' to 'TC-007-007';
@@ -5628,18 +5586,12 @@ package WstxRequirements {
     dependency CL_050_02_verified_by_TC_050_002 from 'CL-050-02' to 'TC-050-002';
     // #50/#10 operator feedback 2026-11-02 evening (US5WFL/YO3GNF, TC2TR, the 22:48 CQ run on 40 m).
     requirement 'CL-050-04' {
-        doc /* Replacing an active contact (ChangeContact, select_row or enter_dx with replace true) keeps Enable Tx as it is: with Enable Tx on, the next period of the new contact's parity carries the new contact's next message, and after a transmission already on the air nothing more goes to the old partner. A double-click (or Reply) on another station's Band Activity row, idle, after a completed contact, during a contact or during my CQ, also when the rows are redrawn between its two clicks or during its second press, is that selection without a confirmation, followed by Enable Tx on (WSJT-X double-click with "Double-click on call sets Tx enable"), each request retried at most twice after a stale_revision refusal; Auto Seq then runs the QSO to its completion and log. During a station automation run an operator replacement of the run's contact ends the run, which disarms (WstxMcp, TC-020-003). A single click only offers "Change contact to <call>" during a contact and never turns Enable Tx on. Details: WstxContact::ChangeContact, SelectDecodedRow, WstxOperatingLayout::BandActivity. */
+        doc /* Replacing an active contact (ChangeContact, select_row or enter_dx with replace true) keeps Enable Tx as it is: with Enable Tx on, the next period of the new contact's parity carries the new contact's next message, and after a transmission already on the air nothing more goes to the old partner. A double-click (or Reply) on another station's Band Activity row, idle, after a completed contact, during a contact or during my CQ, also when the rows are redrawn between its two clicks or during its second press, is that selection without a confirmation, followed by Enable Tx on (WSJT-X double-click with "Double-click on call sets Tx enable"), each request retried at most twice after a stale_revision refusal; Auto Seq then runs the QSO to its completion and log. During a station automation run an operator replacement of the run's contact ends the run, which disarms (WstxMcp, TC-020-003). A single click only offers "Change contact to <call>" during a contact and never turns Enable Tx on. Details: WstxStandardContact::ChangeContact, SelectDecodedRow, WstxOperatingLayout::BandActivity. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/contact.rs; client/contact.js";
     }
     dependency CL_050_04_to_FR_007 from 'CL-050-04' to 'FR-007';
     dependency CL_050_04_to_FR_008 from 'CL-050-04' to 'FR-008';
-    requirement 'CL-010-17' {
-        doc /* (#10) Call 1st (WSJT-X "CQ: First"), an operator setting next to Auto Seq, initially on: while my own CQ runs with Enable Tx and Auto Seq on, the first decoded message to my call of a step, in decode order, whose exchange is a grid or a report is answered at once as a selection of that row with Enable Tx kept, so the next own period answers that caller. Off, a CQ moves only on an operator selection. Details: WstxContact::CallFirst. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; client/contact.js";
-    }
-    dependency CL_010_17_to_FR_007 from 'CL-010-17' to 'FR-007';
     verification 'TC-050-004' {
         doc /* TC-050-004 — A double-click switches to another station with Enable Tx kept
              CL-050-04
@@ -5762,21 +5714,6 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_050_08_verified_by_TC_050_008 from 'CL-050-08' to 'TC-050-008';
-    verification 'TC-010-010' {
-        doc /* TC-010-010 — Call 1st answers the first caller of my CQ
-             CL-010-17
-             Setup: the contact engine against the actual #9 transmit owner core on a virtual clock (contact_tests); hand-authored rows of the 2026-11-02 22:48 CQ run; the snapshot wire (contact_http_tests).
-             Steps: Enable Tx with no partner (calling, odd parity), Hold Tx on; after my CQ deliver in one even period, decode order "HB9BLA EA4HTI IM69" (1678 Hz, -8) then "HB9BLA F1PBZ -13" (2144 Hz, -10), in reverse slice order; later "HB9BLA EA8BIA -11" and "HB9BLA SV1DZB KM18"; repeat with Call 1st off, with Auto Seq off, and with only "HB9BLA DL1ABC RR73", "HB9BLA DL2ABC 73", "HB9BLA DL3ABC RRR", "HB9BLA DL4ABC R-10".
-             Also: the same callers after Enable Tx off (disarmed, still calling).
-             Expected: Call 1st on: the contact is EA4HTI (grid IM69) in report with next Tx2 "EA4HTI HB9BLA -08" at once, still armed, Tx offset 1500 Hz kept, the next odd period sends it; the later callers change nothing; Call 1st off, Auto Seq off, Enable Tx off or only continuing exchanges: still calling (with Enable Tx off nothing is sent) and the next odd period sends "CQ HB9BLA JN47"; the snapshot settings carry call_first true by default.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-010-17';
-        }
-        attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs";
-    }
-    dependency CL_010_17_verified_by_TC_010_010 from 'CL-010-17' to 'TC-010-010';
     verification 'TC-054-001' {
         doc /* TC-054-001 — Detailed rows in order after a stall; gaps only for real gaps
              CL-054-01

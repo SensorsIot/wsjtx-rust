@@ -11,6 +11,7 @@ package WstxProductScope {
     private import WstxOperatingReceive::*;
     private import WstxTransmit::*;
     private import WstxContact::*;
+    private import WstxStandardContact::*;
     private import WstxMcp::*;
     private import WstxUdp::*;
     private import WstxStrategy::*;
@@ -22,7 +23,8 @@ package WstxProductScope {
          WstxOfflineDecode pure FT4/FT8 processing and payloads; WstxRadioIO live
          capture/conversion/CAT; WstxOperatingLayout presentation and WstxOperatingReceive receive selection/content coding;
          WstxTransmit FT8/FT4 message packing, waveform and transmit period scheduling;
-         WstxContact the standard FT8 contact, sequencing, log and operator displays;
+         WstxStandardContact the standard contact sequence of the contact engine;
+         WstxContact its messages, contests, watchdogs, log, wire and operator displays;
          WstxStrategy award strategies, their value order and strategy runs;
          WstxContest the contest strategies and their profiles from the official rules.
          Requirements and exact algorithm/interface/verification semantics in these
@@ -396,6 +398,7 @@ package WstxProductScope {
         alias Architecture for WstxArchitecture;
         alias Transmit for WstxTransmit;
         alias Contact for WstxContact;
+        alias StandardContact for WstxStandardContact;
         alias Mcp for WstxMcp;
         alias Udp for WstxUdp;
         alias Strategy for WstxStrategy;
