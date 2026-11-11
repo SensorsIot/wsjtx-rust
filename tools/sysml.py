@@ -30,6 +30,8 @@ CANONICAL_MODELS = {
     "RecordingReceive.sysml", "StationDecode.sysml", "RadioIO.sysml",
     "OperatingLayout.sysml", "OperatingReceive.sysml", "StationProtocol.sysml", "ProductScope.sysml",
 }
+# Packages that need no ProductScope reference, by package name (not file name).
+LIBRARY_PACKAGES = {"ModelNotes"}
 # Stable identities are an independent migration admission baseline, not generated
 # from the candidate under review. New identities may be added without renumbering.
 BASELINE_IDENTITIES = {f"FR-{i:03}" for i in range(1, 24)}
@@ -132,25 +134,50 @@ def source_proves(text: str) -> set[str]:
     return {ref for ref in references(text) if not ref.startswith(("CL-014-", "TC-DOC-"))}
 
 
+def model_files(directory: Path) -> dict[str, Path]:
+    """Every model file below `directory`, by key and sorted by key.
+
+    A model file is a `*.sysml` file at any depth; no folder is excluded. Its key is its
+    path relative to `directory` with forward slashes on every platform, so a file
+    directly in `directory` has its name as key.
+    """
+    found = {path.relative_to(directory).as_posix(): path
+             for path in directory.rglob("*.sysml") if path.is_file() and path.name.endswith(".sysml")}
+    return dict(sorted(found.items()))
+
+
+def scope_reference(package: str, scope: str) -> bool:
+    """Whether comment-free ProductScope text refers to `package`: a qualified name
+    `Package::...`, `import Package;` or `alias <name> for Package;`."""
+    name = re.escape(package)
+    return bool(re.search(r"\b" + name + r"::|\bimport\s+" + name + r"\s*;|\balias\s+\w+\s+for\s+" + name + r"\s*;", scope))
+
+
 def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES) -> dict[str, dict]:
-    actual = {path.name for path in directory.glob("*.sysml")}
-    if missing := CANONICAL_MODELS - actual:
+    files = model_files(directory)
+    keys_of = {}
+    for key, path in files.items():
+        keys_of.setdefault(path.name, []).append(key)
+    if missing := CANONICAL_MODELS - keys_of.keys():
         raise ValueError("Canonical model files missing: " + ", ".join(sorted(missing)))
+    for name in sorted(CANONICAL_MODELS):
+        if len(keys_of[name]) > 1:
+            raise ValueError("Duplicate canonical model file: " + name + ": " + ", ".join(keys_of[name]))
     entries = {}
     clean_models = {}
-    for path in sorted(directory.glob("*.sysml")):
+    for key, path in files.items():
         source = path.read_text(encoding="utf-8")
         if re.search(r"Canonical FSD|\bFSD(?:\s+(?:chapter|section))?\s*\d|WSTX(?:%20| )Rust(?:%20| )FSD", source):
-            raise ValueError("Canonical model retains a retired FSD dependency: " + path.name)
+            raise ValueError("Canonical model retains a retired FSD dependency: " + key)
         for target in re.findall(r"\]\(([^)]+)\)", source):
             target = target.strip("<>")
             if target.startswith(("https://", "http://", "#")):
                 continue
             target = urllib.parse.unquote(target.split("#", 1)[0])
             if target and not (path.parent / target).resolve().is_file():
-                raise ValueError("Dangling model documentation link: " + path.name + ": " + target)
+                raise ValueError("Dangling model documentation link: " + key + ": " + target)
         clean = without_comments(source)
-        clean_models[path.name] = clean
+        clean_models[key] = clean
         for match in re.finditer(r"\b(requirement|verification)(?:\s+def)?\s+'((?:FR-\d{3}|CL-\d{3}-\d{2}|TC-\d{3}-\d{3}))'\s*\{", clean):
             kind, identifier = match[1], match[2]
             if identifier in entries:
@@ -163,7 +190,7 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
             allowed = {"planned", "partial", "implemented"} if kind == "verification" else {"target", "partial", "implemented"}
             if len(states) != 1 or states[0] not in allowed:
                 raise ValueError("Missing or invalid declared model state: " + identifier)
-            refs = re.findall(r"\bverify\s+(?:WstxRequirements::)?'([^']+)'\s*;", body)
+            refs = re.findall(r"\bverify\s+(?:\w+::)*'([^']+)'\s*;", body)
             key = "executable" if kind == "verification" else "implementation"
             bindings = re.findall(r'\battribute\s+' + key + r'\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
             methods = re.findall(r'\battribute\s+method\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
@@ -179,13 +206,18 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
             entries[identifier] = {"kind": kind, "state": states[0], "refs": refs}
     if missing := set(required) - entries.keys():
         raise ValueError("Missing stable canonical identities: " + ", ".join(sorted(missing)))
-    for name in actual - CANONICAL_MODELS:
-        package = re.search(r"\bpackage\s+(\w+)\s*\{", clean_models[name])
-        if not package or not re.search(r"\b" + re.escape(package[1]) + r"::", clean_models["ProductScope.sysml"]):
-            raise ValueError("Additional canonical package lacks a ProductScope reference: " + name)
+    scope = clean_models[keys_of["ProductScope.sysml"][0]]
+    for key, path in files.items():
+        if path.name in CANONICAL_MODELS:
+            continue
+        package = re.search(r"\bpackage\s+(\w+)\s*\{", clean_models[key])
+        if package and package[1] in LIBRARY_PACKAGES:
+            continue
+        if not package or not scope_reference(package[1], scope):
+            raise ValueError("Additional canonical package lacks a ProductScope reference: " + key)
     dependencies, case_links = {}, {}
     for source in clean_models.values():
-        for owner, target in re.findall(r"\bdependency\s+\w+\s+from\s+'(CL-[^']+)'\s+to\s+'([^']+)'\s*;", source):
+        for owner, target in re.findall(r"\bdependency\s+\w+\s+from\s+(?:\w+::)*'(CL-[^']+)'\s+to\s+(?:\w+::)*'([^']+)'\s*;", source):
             if owner not in entries or target not in entries or not target.startswith(("FR-", "TC-")):
                 raise ValueError("Invalid canonical clause dependency: " + owner + " -> " + target)
             (dependencies if target.startswith("FR-") else case_links).setdefault(owner, set()).add(target)
@@ -499,14 +531,14 @@ def main(argv=None):
         if args.command == "fingerprints":
             authority(MODELS, FSD)
             canonical_catalog(MODELS, ROOT)
-            print(json.dumps({path.name: digest(path.read_text(encoding="utf-8")) for path in sorted(MODELS.glob("*.sysml"))}, indent=2))
+            print(json.dumps({key: digest(path.read_text(encoding="utf-8")) for key, path in model_files(MODELS).items()}, indent=2))
             return 0
         if args.command == "check":
             authority(MODELS, FSD)
             entries = canonical_catalog(MODELS, ROOT)
             print(f"Canonical SysML catalog/trace checks passed: {len(entries)} identities; behavioral correspondence remains independently reviewed.")
-            entry = MODELS / "Requirements.sysml"
-            paths = [entry, *sorted(path for path in MODELS.glob("*.sysml") if path != entry)]
+            entry = "Requirements.sysml"
+            paths = [MODELS / entry, *(path for key, path in model_files(MODELS).items() if key != entry)]
         else:
             paths = args.files
         result = validate(paths, args.cache_dir, inventory=args.command == "check")

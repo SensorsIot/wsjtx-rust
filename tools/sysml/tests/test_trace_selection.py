@@ -35,6 +35,13 @@ class TraceSelectionTests(unittest.TestCase):
                 self.assertIn("source-model-traces", selected)
                 self.assertIn("sysml-documentation", selected)
 
+    # A guard of existing behaviour.
+    # Proves: CL-014-10; TC-DOC-008
+    def test_model_file_in_a_subfolder_selects_the_model_suites(self):
+        selected = registry.selection(self.rows, ["docs/sysml/backend/qso/X.sysml"])
+        self.assertIn("sysml-documentation", selected)
+        self.assertIn("source-model-traces", selected)
+
     def test_source_change_or_deletion_invalidates_both_evidence_fingerprints(self):
         for source in ("client/app.js", "server/src/profile.rs", "tests/profiles.test.cjs"):
             self.assertFalse(registry.global_input(source, self.rows), "Regression needs a source owned by its runtime suite, not global fallback")

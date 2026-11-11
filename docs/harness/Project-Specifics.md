@@ -591,7 +591,8 @@ python -m unittest discover -s tools/sysml/tests -q
 
 `check` admits only canonical SysML, checks canonical identities/states and trace
 bindings, loads the complete model set in the pinned Pilot, then applies the independent
-architecture integrity oracle. `fingerprints` prints current input hashes for review;
+architecture integrity oracle. `fingerprints` prints one hash per model file by key (its
+path relative to `docs/sysml`, with forward slashes), sorted by key, for review;
 it never renews model approval. No command writes a model.
 `traces` requires canonical SysML and checks only authority, catalog and source/model
 bindings. It never invokes Java, the mutation suite or application behavior. Source-only
@@ -605,10 +606,10 @@ remains binding. Missing tools, files or evidence fail rather than becoming a sk
 ## Meaning and limits of semantic validation
 
 `tools/sysml/Validate.java` calls the pinned Pilot's `SysMLInteractive` API, including
-its actual parser, name resolution and Xtext semantic validator. `check` loads the
-requirements before architecture, then additional root model files in sorted order.
-Additional cross-file dependencies must respect that order. A focused invocation accepts
-an explicit ordered file list:
+its actual parser, name resolution and Xtext semantic validator. `check` passes to the
+Pilot `Requirements.sysml` first, then every other model file once, sorted by key. The
+order does not change the result (the adapter resolves all files as one graph).
+`validate <files>` with an explicit list is unchanged:
 
 ```powershell
 python tools/sysml.py validate docs/sysml/Requirements.sysml docs/sysml/Architecture.sysml
@@ -693,6 +694,7 @@ These are HOW bindings, not product requirements and not SysML model elements.
 | CL-014-07 | Implementation readiness | Before code, the issue's ready check passes: the selected model slice settles observable behaviour, interfaces/data, ownership, state/timing/error choices and independent oracles. Explicit implementation freedoms do not authorize unresolved functional decisions. | TC-DOC-006 |
 | CL-014-08 | Functional sequence and closure | Use the declared canonical artifact first, pass the ready check, implement against it and verify with independent expected results. Reconcile delivered behaviour and durable cases before closing the issue. SysML-only authority requires no maintained/generated Markdown specification. | TC-DOC-006; TC-DOC-007; independent closure review |
 | CL-014-09 | Modeling feedback | Correct differences against the declared authority; do not bless code defects by rewriting requirements. Record causes/review on the issue and improve demonstrated reusable/project-specific gaps, with a focused regression where useful. | TC-DOC-006; independent review |
+| CL-014-10 | Model file tree | The model is every `*.sysml` file at any depth below `docs/sysml`, named by its path relative to that folder. Required files are found by name at any depth, exactly once; the entry file stays at the root. Identities, links and the ProductScope reference hold across folders and packages. | TC-DOC-008 |
 
 ## Documentation-tool test definitions
 
@@ -709,6 +711,7 @@ portable Pilot. No radio, live service, Jupyter server or global Java is needed.
 | TC-DOC-005 | CL-014-03, CL-014-06 | Load the complete architecture with the actual Pilot, inspect resolved port/item/association/binding inventory and compare with independent endpoint expectations. Remove/delegate/bypass/split/duplicate/redirect a required path or authority, change item type/direction, weaken identity binding or add view-only runtime parts. Each negative fails semantics or integrity; a rendered view cannot repair it. | Automated full-validator mutation fixtures and independent architecture review on this PC. |
 | TC-DOC-006 | CL-014-07, CL-014-08, CL-014-09 | An agent that did not write the issue reads it and the canonical contract it names; missing required decisions, missing test cases or a shared-only generated oracle give `Ready: not yet`, and `cr_state.py` refuses `implementing` without a `Ready: PASS`. The independent review of the candidate rechecks exact changes and closure reconciliation. On request, a model-readiness review traces the contract to code boundaries. No syntax/fingerprint result establishes implementation sufficiency. | Manual source/model/meaning reading on this PC; automation cannot establish complete intended meaning. |
 | TC-DOC-007 | CL-014-01, CL-014-05, CL-014-08 | Refuse dual/missing authority and an active FSD without the marker, missing/duplicate stable IDs, missing required packages, invalid state, nonreciprocal verification links, missing/escaping source paths and unsupported executable claims. Refuse dangling active references to retired FSD content. Edited/missing archived Markdown does not change canonical checks; no command rewrites the model. New packages must be referenced by ProductScope and validated in full. Source edits/deletions invalidate both model suites' evidence; source-only changes select fast traces without the full model suite. Fast traces refuses a deleted binding and never invokes Java. | Automated isolated Python fixtures on this PC; full integrated Pilot validation remains separate. |
+| TC-DOC-008 | CL-014-10 | Place a clause and its case in a subfolder file, move a required file into a folder, duplicate it, move the entry file, verify and link a clause through a package-qualified name, refer to an additional package by import, by alias and not at all, and add a library package without a reference. The tree is accepted, each fault is refused by key, fingerprints and the gate's model list name every file by key, and the real model with one file moved into a folder passes the full validation with the same identities as the flat one. | Automated isolated Python fixtures and one full Pilot validation on this PC. |
 
 Executable companions are `tools/sysml.py`, `tools/sysml/tests/` and the pinned
 `tools/sysml/Validate.java` adapter. Results and independent review
@@ -760,6 +763,26 @@ Requirements, Architecture, Profiles, RecordingReceive, StationDecode, RadioIO,
 OperatingLayout, OperatingReceive, StationProtocol and ProductScope. Additional packages
 are discovered, scanned and fully validated; ProductScope references their package so
 that removal causes a name-resolution failure. A missing required baseline package fails.
+
+A model file is a file `*.sysml` at any depth below `docs/sysml`; its key is its path
+relative to `docs/sysml` with forward slashes, and every message that names a model file
+names it by its key. No folder is excluded; a file kept out of the model keeps a suffix
+other than `.sysml`.
+
+- **Required files.** Each of the ten required file names is satisfied by exactly one
+  model file of that name, at any depth. None: `Canonical model files missing: <names>`.
+  Two or more: refused, naming the file name and the keys.
+- **Entry file.** `Requirements.sysml` with the marker `// Canonical authority: SysML` is
+  required directly in `docs/sysml`. Elsewhere or absent, the commands refuse with
+  `No declared functional authority`.
+- **ProductScope reference.** Every model file that is not one of the ten required ones
+  is an additional package. Its package must be referred to in `ProductScope.sysml`,
+  outside comments, by a qualified name beginning `Package::` (this includes
+  `import Package::*;`), by `import Package;` or by `alias <name> for Package;`.
+  Otherwise: `Additional canonical package lacks a ProductScope reference: <key>`.
+- **Library packages.** A package named in the tool's list of library packages
+  (`LIBRARY_PACKAGES` in `tools/sysml.py`) needs no ProductScope reference. The list
+  holds `ModelNotes`. It goes by package name, not file name.
 
 Each requirement/clause declares `coverage : ImplementationState` as target, partial
 or implemented. Each verification declares `automation : AutomationState` as planned,

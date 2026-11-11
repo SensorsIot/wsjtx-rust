@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 TOOL = Path(__file__).resolve().parents[2] / "sysml.py"
 spec = importlib.util.spec_from_file_location("architecture_tool", TOOL)
@@ -50,10 +51,10 @@ class ArchitectureIntegrityTests(unittest.TestCase):
 
     @classmethod
     def model_paths(cls, architecture=None):
-        original = tool.MODELS / "Architecture.sysml"
-        companions = sorted(path for path in tool.MODELS.glob("*.sysml")
-                            if path not in (cls.requirements, original))
-        return [cls.requirements, architecture or original, *companions]
+        files = tool.model_files(tool.MODELS)
+        companions = [path for key, path in files.items()
+                      if key not in ("Requirements.sysml", "Architecture.sysml")]
+        return [files["Requirements.sysml"], architecture or files["Architecture.sysml"], *companions]
 
     @classmethod
     def validate_architecture(cls, source):
@@ -151,6 +152,30 @@ class ArchitectureIntegrityTests(unittest.TestCase):
     def test_missing_inventory_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "missing resolved Pilot inventory"):
             tool.architecture_integrity("semantic validation passed without inventory")
+
+
+class CompanionListTests(unittest.TestCase):
+    """The file list of the mutation tests on a fixture tree; no validation runs here."""
+
+    # Proves: CL-014-10; TC-DOC-008
+    def test_companions_are_every_model_file_of_the_tree_but_requirements_and_architecture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            models = Path(directory) / "docs/sysml"
+            keys = ("Requirements.sysml", "Architecture.sysml", "Profiles.sysml", "Udp.sysml",
+                    "backend/qso/Part.sysml", "interfaces/Udp.sysml")
+            for key in keys:
+                (models / key).parent.mkdir(parents=True, exist_ok=True)
+                (models / key).write_text("package P {}", encoding="utf-8")
+            (models / "reference").mkdir()
+            (models / "reference/Old.sysml.txt").write_text("package Old {}", encoding="utf-8")
+            mutated = Path(directory) / "mutated/Architecture.sysml"
+            with mock.patch.object(tool, "MODELS", models), \
+                    mock.patch.object(ArchitectureIntegrityTests, "requirements", models / "Requirements.sysml", create=True):
+                companions = [models / key for key in ("Profiles.sysml", "Udp.sysml", "backend/qso/Part.sysml", "interfaces/Udp.sysml")]
+                self.assertEqual(ArchitectureIntegrityTests.model_paths(),
+                                 [models / "Requirements.sysml", models / "Architecture.sysml", *companions])
+                self.assertEqual(ArchitectureIntegrityTests.model_paths(mutated),
+                                 [models / "Requirements.sysml", mutated, *companions])
 
 
 if __name__ == "__main__":
