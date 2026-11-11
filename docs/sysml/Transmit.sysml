@@ -515,7 +515,10 @@ package WstxTransmit {
              WstxContact::StartActions, and Enable Tx) through the qso-to-transmit
              connection, or TransmitWire. Arming requires TransmitAuthority: unsupported capability
              is refused transmitUnsupported, unavailable radioUnavailable, a missing
-             grant or a different safety revision notAuthorized. Disarm sends no new
+             grant or a different safety revision notAuthorized, and a PTT switch left
+             indeterminate, a failed StartupSafetyRelease or an owner fault
+             radioUnavailable. These arm conditions are one query of the owner, which the
+             start actions ask before they change anything. Disarm sends no new
              request and cancels requests that are not keyed; a transmission already
              keyed or playing finishes unless halted. */
     }
@@ -592,9 +595,12 @@ package WstxTransmit {
              is accepted whatever the transmit state, while the transmit capability is
              available, safetyRevision is the station's CL-022 safety revision
              (otherwise notAuthorized) and no request is pending and nothing is on the
-             air (otherwise busy). It never changes TransmitArming or its causes: when
-             the radio, the capability or that revision is lost Tune ends with PTT
-             release, and a transmit state that is on stops for the same loss by its own
+             air (otherwise busy). From a run or an MCP client Tune on is refused
+             tx_watchdog when no browser action was seen this boot, after a
+             repetition-limit stop or after a clear fault (CL-044-14), as an automatic
+             start (WstxContact::StartActions). It never changes TransmitArming or its
+             causes: when the radio, the capability or that revision is lost Tune ends
+             with PTT release, and a transmit state that is on stops for the same loss by its own
              rule. Stopped by SetTune(false), which needs no revision, HaltTransmit or
              the tune limit (WstxContact::TuneWatchdog, default 90 s, 1..300 s) with PTT
              release. On POST /transmit/command tune takes no revision and is accepted

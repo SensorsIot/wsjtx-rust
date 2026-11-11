@@ -5877,7 +5877,7 @@ package WstxRequirements {
     // The transmit state, its start actions and its stops (WstxTransmit::TransmitArming,
     // WstxContact::StartActions).
     requirement 'CL-111-01' {
-        doc /* Transmit state. The station has one transmit state, on or off, with the cause of its last change in both directions. It is off at every station start (cause startup). It is on only from an accepted start action (CL-111-02) until the next stop (CL-111-03). While it is off no TransmitRequest is planned or keyed. A selection, a setting, a chosen Next message, a reconnect, a reload, a repeated command and a partner message never switch it on. Not delivered yet: the command enable_tx still switches the state on directly, and the browser and the runs still start through it. Details: WstxTransmit::TransmitArming. */
+        doc /* Transmit state. The station has one transmit state, on or off, with the cause of its last change in both directions. It is off at every station start (cause startup). It is on only from an accepted start action (CL-111-02) until the next stop (CL-111-03). While it is off no TransmitRequest is planned or keyed. A selection, a setting, a chosen Next message, a reconnect, a reload, a repeated command and a partner message never switch it on. Not delivered yet: three commands still switch the state on directly, and each is to be retired: the contact command enable_tx, through which the browser and the runs still start; the Set level assistant, which switches the state on (cause operator, ending a repetition-limit stop) and off around its tone; and the arm command of the transmit route. Details: WstxTransmit::TransmitArming. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs";
     }
@@ -5909,7 +5909,7 @@ package WstxRequirements {
     }
     dependency CL_111_05_to_FR_007 from 'CL-111-05' to 'FR-007';
     requirement 'CL-111-06' {
-        doc /* Tune. tune {enabled, safety_revision}. Tune on is accepted whenever the transmit capability is available with a current grant and nothing is on the air or pending, whatever the transmit state. It is refused stale_revision with field safety_revision on another revision than the station's, busy while a transmission is keyed or a request is pending, transmit_unavailable without capability or grant. Tune never changes the transmit state or its cause. The Tune watchdog is unchanged (default 90 s, 1..300 s). Tune off needs no revision. Details: WstxTransmit::SetTune. */
+        doc /* Tune. tune {enabled, safety_revision}. Tune on is accepted whenever the transmit capability is available with a current grant and nothing is on the air or pending, whatever the transmit state. It is refused stale_revision with field safety_revision on another revision than the station's, busy while a transmission is keyed or a request is pending, transmit_unavailable without capability or grant. From an MCP client or a run it is refused tx_watchdog as an automatic start (CL-111-02): when no browser action was seen this boot, after a repetition-limit stop or after a clear fault (CL-044-14). Tune never changes the transmit state or its cause. The Tune watchdog is unchanged (default 90 s, 1..300 s). Tune off needs no revision. Details: WstxTransmit::SetTune. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; client/contact.js";
     }
@@ -5974,8 +5974,8 @@ package WstxRequirements {
         doc /* TC-111-003 — Each start in each state
              CL-111-02
              Setup: as TC-111-001, one station built anew for each cell; for the wire the actual station router (contact_http_tests fixture).
-             Steps: every cell of the outcome table of WstxContact::StartActions, one command each. Further negatives: a stale safety revision; enable_tx; a Hound's call_cq.
-             Expected (the outcome table): a cell that says "on" transmits in the next own period, a refusal sends nothing and changes nothing. A stale safety revision is stale_revision and nothing is prepared; enable_tx is invalid_request field action; a Hound's call_cq is no_contact.
+             Steps: every cell of the outcome table of WstxContact::StartActions, one command each; call_cq on an own CQ kept off after a lost radio, with the radio back and with the radio still away. Further negatives: a stale safety revision; enable_tx; a Hound's call_cq.
+             Expected (the outcome table): a cell that says "on" transmits in the next own period, a refusal sends nothing and changes nothing. The own CQ kept off: with the radio back the same CQ, on, cause operator, sent in the next own period; with the radio away transmit_unavailable, nothing changed. A stale safety revision is stale_revision and nothing is prepared; enable_tx is invalid_request field action; a Hound's call_cq is no_contact.
              Not automated yet: enable_tx refused.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::partial;
@@ -6073,8 +6073,8 @@ package WstxRequirements {
         doc /* TC-111-010 — Tune
              CL-111-06
              Setup: as TC-111-001.
-             Steps: (a) state off, no contact, ready: Tune on; Tune off. (b) a stale safety revision. (c) a request pending, and a transmission on the air. (d) no capability, and no grant. (e) reply while Tune is on; Tune ends; 3 periods. (f) the Tune watchdog at 1 s.
-             Expected (CL-111-06): (a) keyed, state and cause unchanged; released. (b) stale_revision, not keyed. (c) busy. (d) transmit_unavailable. (e) accepted, QSO prepared, refusal busy, state off, nothing sent. (f) Tune ends (guard, TC-008-001).
+             Steps: (a) state off, no contact, ready: Tune on; Tune off. (b) a stale safety revision. (c) a request pending, and a transmission on the air. (d) no capability, and no grant. (e) reply while Tune is on; Tune ends; 3 periods. (f) the Tune watchdog at 1 s. (g) Tune on from an MCP principal at boot before any browser action, after a browser action, after a clear fault (require_operator), and after a repetition-limit stop.
+             Expected (CL-111-06): (a) keyed, state and cause unchanged; released. (b) stale_revision, not keyed. (c) busy. (d) transmit_unavailable. (e) accepted, QSO prepared, refusal busy, state off, nothing sent. (f) Tune ends (guard, TC-008-001). (g) tx_watchdog and not keyed at boot, after the clear fault and after the limit; keyed after the browser action.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -6087,8 +6087,8 @@ package WstxRequirements {
         doc /* TC-111-011 — A start that cannot transmit
              CL-111-07
              Setup: as TC-111-001; for the view Chromium against the candidate server.
-             Steps: reply and call_dx with no capability, radio unavailable and clock not synchronized; the reason removed, 3 periods; a new reply. call_cq and send_next in the same situations.
-             Expected (CL-111-07): accepted, QSO prepared, state off, cause unchanged, refusal names the reason, the view shows it. Nothing sent in the 3 periods; the new reply transmits. call_cq and send_next: refused, nothing changed.
+             Steps: reply and call_dx with no capability, radio unavailable and clock not synchronized; the reason removed, 3 periods; a new reply. call_cq and send_next in the same situations. With the transmit owner refusing to arm (a PTT release that failed, an owner fault): call_cq from idle and on an own CQ that is off, send_next on a kept QSO, reset_repetitions after a repetition-limit stop.
+             Expected (CL-111-07): accepted, QSO prepared, state off, cause unchanged, refusal names the reason, the view shows it. Nothing sent in the 3 periods; the new reply transmits. call_cq and send_next: refused, nothing changed. With the owner refusing: transmit_unavailable, nothing changed, no contact prepared, nothing sent.
              Not automated yet: the view shows the reason.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::partial;

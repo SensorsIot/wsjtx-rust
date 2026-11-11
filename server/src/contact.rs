@@ -1215,12 +1215,16 @@ impl Engine {
         }
         Ok(())
     }
-    /// #111 CL-111-07: why transmission is not possible now (None: it is).
+    /// #111 CL-111-07: why transmission is not possible now (None: it is). The arm
+    /// conditions are the transmit owner's one query (`Core::arm_refusal`).
     fn obstacle<H: Hardware>(core: Option<&Core<H>>, ctx: &Ctx) -> Option<TransmitRefusal> {
         let Some(core) = core else {
             return Some(TransmitRefusal::TransmitUnsupported);
         };
         let context = core.hardware().context();
+        if let Some(refusal) = context.safety_revision.and_then(|r| core.arm_refusal(r)) {
+            return Some(refusal);
+        }
         match context.capability {
             Capability::Unsupported => Some(TransmitRefusal::TransmitUnsupported),
             Capability::Unavailable => Some(TransmitRefusal::RadioUnavailable),
@@ -2160,6 +2164,11 @@ impl Engine {
                     .ok_or("transmit_unavailable")?;
                 if shown != Some(current) {
                     return self.refuse(("stale_revision", Some("safety_revision")));
+                }
+                // CL-039-06, CL-044-14: automation keys nothing before an operator action
+                // this boot, after a repetition-limit stop or after a clear fault.
+                if ctx.automatic && core.watchdog_spent() {
+                    return Err("tx_watchdog");
                 }
                 core.start_tune(tx, current).map_err(|r| match r {
                     TransmitRefusal::NotAuthorized => "stale_revision",

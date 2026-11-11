@@ -600,28 +600,34 @@ impl<H: Hardware> Core<H> {
             );
         }
     }
-    /// Arm under the station's explicit transmit authority: the transmit capability is
-    /// available now and `safety_revision` is the current CL-022 revision.
-    pub fn arm(&mut self, safety_revision: u64) -> Result<(), TransmitRefusal> {
+    /// Why `arm(safety_revision)` would be refused now (None: it would switch on): the
+    /// transmit capability, the current CL-022 revision, and the owner's own conditions (PTT
+    /// indeterminate after a failed release, startup release failed, faulted). The one
+    /// query of the arm conditions; the contact engine asks it before a start (CL-111-07).
+    pub fn arm_refusal(&self, safety_revision: u64) -> Option<TransmitRefusal> {
         let context = self.hardware.context();
-        let refusal = match context.capability {
+        match context.capability {
             Capability::Unsupported => Some(TransmitRefusal::TransmitUnsupported),
             Capability::Unavailable => Some(TransmitRefusal::RadioUnavailable),
             Capability::Available if context.safety_revision != Some(safety_revision) => {
                 Some(TransmitRefusal::NotAuthorized)
             }
+            Capability::Available
+                if self.ptt == PttState::Indeterminate
+                    || self.startup_release == StartupRelease::Failed
+                    || self.faulted =>
+            {
+                Some(TransmitRefusal::RadioUnavailable)
+            }
             Capability::Available => None,
-        };
-        if let Some(refusal) = refusal {
+        }
+    }
+    /// Arm under the station's explicit transmit authority: the transmit capability is
+    /// available now and `safety_revision` is the current CL-022 revision.
+    pub fn arm(&mut self, safety_revision: u64) -> Result<(), TransmitRefusal> {
+        if let Some(refusal) = self.arm_refusal(safety_revision) {
             self.refusal = Some(refusal);
             return Err(refusal);
-        }
-        if self.ptt == PttState::Indeterminate
-            || self.startup_release == StartupRelease::Failed
-            || self.faulted
-        {
-            self.refusal = Some(TransmitRefusal::RadioUnavailable);
-            return Err(TransmitRefusal::RadioUnavailable);
         }
         self.arm = ArmState::Armed;
         self.armed_revision = Some(safety_revision);

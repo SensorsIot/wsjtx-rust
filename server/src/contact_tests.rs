@@ -39,6 +39,8 @@ struct Bench {
     /// The station clock (none: synchronized) and the CL-022 safety revision (none: 7).
     clock: Mutex<Option<ClockState>>,
     revision: Mutex<Option<u64>>,
+    /// A PTT release fails (the switch is then indeterminate); keying still works.
+    release_fails: std::sync::atomic::AtomicBool,
 }
 #[derive(Clone)]
 struct Fake(Arc<Bench>);
@@ -75,6 +77,9 @@ impl Hardware for Fake {
     fn ptt(&mut self, on: bool) -> Result<(), PttError> {
         let t = self.now_utc_ms();
         self.0.keys.lock().unwrap().push((t, on));
+        if !on && self.0.release_fails.load(Ordering::SeqCst) {
+            return Err(PttError::Indeterminate);
+        }
         Ok(())
     }
     fn open_audio(&mut self) -> Result<(), AudioError> {

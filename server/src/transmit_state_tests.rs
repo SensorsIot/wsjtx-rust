@@ -520,6 +520,39 @@ fn tc_111_003_reset_repetitions_in_each_state() {
     }
 }
 
+/// An own CQ kept off after the radio was lost (the radio still away).
+fn own_cq_radio_lost() -> Station {
+    let mut s = own_cq();
+    radio_lost(&mut s);
+    s.step(&[]);
+    assert_eq!((s.armed(), cause(&s)), (false, DisarmCause::DeviceLost));
+    assert_eq!(s.state(), (State::Calling, Slot::Tx6), "the own CQ is kept");
+    s
+}
+
+// Proves: CL-111-02; TC-111-003 (call_cq on an own CQ kept off). With the radio back the same CQ
+// goes on (cause operator) and is sent in the next own period; with the radio still away it is
+// refused with the reason and nothing changes.
+#[test]
+fn tc_111_003_call_cq_on_an_own_cq_kept_off() {
+    let mut s = own_cq_radio_lost();
+    capability(&mut s, Capability::Available);
+    let contact = id(&s);
+    s.command(Command::CallCq(REV)).unwrap();
+    assert_eq!(id(&s), contact, "the same CQ");
+    assert_eq!(s.state(), (State::Calling, Slot::Tx6));
+    assert_eq!(s.core.view().last_arm_cause, Some(ArmCause::Operator));
+    assert_eq!(transmits(&mut s, "the radio back"), "CQ HB9BLA JN47");
+    let mut s = own_cq_radio_lost();
+    refused(
+        &mut s,
+        Command::CallCq(REV),
+        "transmit_unavailable",
+        "the radio away",
+    );
+    assert_eq!(s.state(), (State::Calling, Slot::Tx6));
+}
+
 // Proves: CL-111-02; TC-111-003 (further negatives). A stale safety revision is stale_revision
 // and nothing is prepared; a Hound's call_cq is no_contact.
 #[test]
@@ -763,7 +796,101 @@ fn tc_111_010_tune_is_independent_of_the_transmit_state() {
     assert_eq!(cause(&s), DisarmCause::Startup);
 }
 
+/// Tune on from an automatic principal (an MCP client), then the station's next step.
+fn automatic_tune(s: &mut Station) -> Result<(), &'static str> {
+    let automatic = Ctx {
+        automatic: true,
+        ..s.ctx()
+    };
+    let result = s
+        .engine
+        .command(Command::Tune(true, REV), Some(&mut s.core), &automatic);
+    s.step(&[]);
+    result
+}
+fn automatic_tune_refused(s: &mut Station, label: &str) {
+    let (before, keys) = (facts(s), key_ons(s));
+    assert_eq!(automatic_tune(s), Err("tx_watchdog"), "{label}");
+    assert_eq!(key_ons(s), keys, "{label}: not keyed");
+    assert!(!s.core.view().tune, "{label}");
+    assert_eq!(facts(s), before, "{label}: nothing changes");
+}
+
+// Proves: CL-111-06, CL-044-14; TC-111-010 (g). Tune on from an MCP principal is refused
+// tx_watchdog at boot before any browser action, after a clear fault and after a repetition-limit
+// stop; after a browser action it keys.
+#[test]
+fn tc_111_010_g_tune_from_an_automatic_principal_needs_an_operator() {
+    let mut s = station();
+    automatic_tune_refused(&mut s, "at boot");
+    // A browser action: a human was seen this boot.
+    s.command(Command::SetHoldTx(false)).unwrap();
+    automatic_tune(&mut s).unwrap();
+    assert!(s.core.view().tune);
+    assert_eq!(last_key(&s), Some(true), "keyed");
+    s.command(Command::Tune(false, None)).unwrap();
+    // A clear fault (CL-044-14): automation waits for an operator action again.
+    s.core.require_operator();
+    automatic_tune_refused(&mut s, "after a clear fault");
+    let mut s = qso_limit();
+    automatic_tune_refused(&mut s, "after the repetition limit");
+}
+
 // ---------------------------------------------------------------- TC-111-011
+/// The transmit owner refuses to arm: a PTT release failed and left the switch indeterminate.
+fn release_failed(s: &mut Station) {
+    s.fake.0.release_fails.store(true, Ordering::SeqCst);
+    s.command(Command::Tune(true, REV)).unwrap();
+    s.command(Command::Tune(false, None)).unwrap();
+    assert_eq!(s.core.view().ptt, PttState::Indeterminate);
+}
+/// The transmit owner refuses to arm after an owner fault.
+fn owner_fault(s: &mut Station) {
+    s.core.fail_closed();
+    s.step(&[]);
+}
+
+// Proves: CL-111-07; TC-111-011 (the transmit owner refuses to arm). call_cq, send_next and
+// reset_repetitions are refused with the reason and change nothing.
+#[test]
+fn tc_111_011_a_start_the_transmit_owner_cannot_arm_is_refused() {
+    type Refuse = fn(&mut Station);
+    let owners: [(&str, Refuse); 2] = [
+        ("a failed PTT release", release_failed),
+        ("an owner fault", owner_fault),
+    ];
+    for (label, refuse) in owners {
+        let mut s = idle();
+        refuse(&mut s);
+        refused(&mut s, Command::CallCq(REV), "transmit_unavailable", label);
+        assert_eq!(s.engine.contact, None, "{label}: no CQ is prepared");
+        let mut s = own_cq_radio_lost();
+        capability(&mut s, Capability::Available);
+        refuse(&mut s);
+        refused(&mut s, Command::CallCq(REV), "transmit_unavailable", label);
+        let mut s = qso_halted();
+        refuse(&mut s);
+        refused(
+            &mut s,
+            Command::SendNext(Slot::Tx2, REV),
+            "transmit_unavailable",
+            label,
+        );
+        assert_eq!(s.state(), (State::Replying, Slot::Tx1), "{label}: no slot");
+    }
+    // reset_repetitions after the limit's stop (an owner fault itself stops with cause failed,
+    // after which Reset is state_conflict by the table).
+    let mut s = qso_limit();
+    release_failed(&mut s);
+    assert_eq!(cause(&s), DisarmCause::TxWatchdog);
+    refused(
+        &mut s,
+        Command::ResetRepetitions(REV),
+        "transmit_unavailable",
+        "a failed PTT release",
+    );
+    assert!(s.core.view().tx_expired, "the limit's stop stays");
+}
 // Proves: CL-111-07; TC-111-011 (the engine and the transmit view; the operating view shows the
 // reason in the browser slice). A start that cannot transmit.
 #[test]

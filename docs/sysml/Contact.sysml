@@ -828,8 +828,9 @@ package WstxContact {
              before (reply | call_cq | call_dx | send_next | reset_repetitions):
              no contact, idle: prepares the row's QSO, on | a new own CQ, on | prepares,
              on | no_contact | no_contact.
-             own CQ calling: the CQ is replaced by the row's QSO, on | accepted, nothing
-             changes | the CQ is replaced, on | no_contact | no_contact.
+             own CQ calling: the CQ is replaced by the row's QSO, on | state on: accepted,
+             nothing changes; state off (kept after a lost radio or a refusal): the same
+             CQ, on | the CQ is replaced, on | no_contact | no_contact.
              QSO, state on: another partner: the old QSO is cancelled, the new one
              prepared; the same partner: the QSO continues at the row's message with the
              same contact identity; on | contact_active | replace false: contact_active,
@@ -847,13 +848,12 @@ package WstxContact {
              choose_next. A safety revision other than the station's is stale_revision
              with field safety_revision. A start that arrives after a stop of the same
              station step is refused state_conflict (WstxTransmit::StopOrder). A refused
-             start changes nothing: no QSO is prepared. An own CQ that is prepared but off
-             (its state kept after a lost radio or a refusal) is switched on again by
-             call_cq.
+             start changes nothing: no QSO is prepared.
              When reply or call_dx is admitted but transmission is not possible (no
-             transmit capability: transmit_unsupported; radio or authorization not
-             ready: radio_unavailable or not_authorized; clock not synchronized:
-             clock_not_synchronized; Tune on: busy), the command is accepted, the QSO is
+             transmit capability: transmit_unsupported; radio, its PTT switch or
+             authorization not ready by the transmit owner's arm conditions
+             (WstxTransmit::TransmitArming): radio_unavailable or not_authorized; clock
+             not synchronized: clock_not_synchronized; Tune on: busy), the command is accepted, the QSO is
              prepared, the transmit state stays off with its causes unchanged and the
              transmit view's refusal is that reason; nothing starts by itself when the
              reason goes away. call_cq, send_next and reset_repetitions in the same
