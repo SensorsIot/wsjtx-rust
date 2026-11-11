@@ -401,11 +401,13 @@ class ArchitectureIntegrityTests(unittest.TestCase):
         for case in ("bypass part", "bypass library part"):
             with self.subTest(case=case):
                 self.refuses(self.inventory(case), oracle_with(part), "unexpected connection/bypass at " + re.escape(owner) + " ")
-        listed = {"connections": {owner: [BYPASS_ENDS]}}
-        self.assertEqual(self.judge(self.inventory("bypass part"), oracle_with(part, listed))["connections"],
-                         MASTER_COUNTS["connections"] + 1)
-        self.refuses(self.inventory("bypass inherited"), real_oracle(),
-                     "unexpected connection/bypass at physicalStation.backend.stations " + re.escape(" <-> ".join(sorted(BYPASS_ENDS))))
+        with self.subTest(case="bypass inherited"):
+            self.refuses(self.inventory("bypass inherited"), real_oracle(),
+                         "unexpected connection/bypass at physicalStation.backend.stations " + re.escape(" <-> ".join(sorted(BYPASS_ENDS))))
+        with self.subTest(case="bypass part, connection listed"):
+            listed = {"connections": {owner: [BYPASS_ENDS]}}
+            self.assertEqual(self.judge(self.inventory("bypass part"), oracle_with(part, listed))["connections"],
+                             MASTER_COUNTS["connections"] + 1)
 
     # Proves: CL-014-03, CL-014-06; TC-DOC-005
     def test_interface_of_another_package_passes_once_listed(self):
@@ -511,8 +513,9 @@ class ArchitectureIntegrityTests(unittest.TestCase):
     # Proves: CL-014-03, CL-014-06; TC-DOC-005
     def test_library_package_in_a_model_file_is_judged(self):
         """R10: a second deployment or a view-made part in a library package is refused."""
-        self.refuses(self.inventory("library deployment"), real_oracle(), "one physical deployment")
-        self.refuses(self.inventory("library view"), real_oracle(), "views may expose")
+        for case, diagnostic in (("library deployment", "one physical deployment"), ("library view", "views may expose")):
+            with self.subTest(case=case):
+                self.refuses(self.inventory(case), real_oracle(), diagnostic)
 
 
 class CompanionListTests(unittest.TestCase):
