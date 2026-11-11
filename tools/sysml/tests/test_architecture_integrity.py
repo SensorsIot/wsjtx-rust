@@ -37,7 +37,6 @@ class ArchitectureIntegrityTests(unittest.TestCase):
     def setUpClass(cls):
         cls.cache = Path.home() / ".cache/wsjtx-rust/sysml-tools"
         cls.source = (tool.MODELS / "Architecture.sysml").read_text(encoding="utf-8")
-        cls.requirements = tool.MODELS / "Requirements.sysml"
         mutated = [cls.source.replace(PACKAGE, COMPANION_PROBE, 1), cls.source.replace(PACKAGE, UNDEFINED_PROBE, 1)]
         for name in dir(cls):
             original, replacement = getattr(getattr(cls, name), "mutation", (None, None))
@@ -169,8 +168,7 @@ class CompanionListTests(unittest.TestCase):
             (models / "reference").mkdir()
             (models / "reference/Old.sysml.txt").write_text("package Old {}", encoding="utf-8")
             mutated = Path(directory) / "mutated/Architecture.sysml"
-            with mock.patch.object(tool, "MODELS", models), \
-                    mock.patch.object(ArchitectureIntegrityTests, "requirements", models / "Requirements.sysml", create=True):
+            with mock.patch.object(tool, "MODELS", models):
                 companions = [models / key for key in ("Profiles.sysml", "Udp.sysml", "backend/qso/Part.sysml", "interfaces/Udp.sysml")]
                 self.assertEqual(ArchitectureIntegrityTests.model_paths(),
                                  [models / "Requirements.sysml", models / "Architecture.sysml", *companions])

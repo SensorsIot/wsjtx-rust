@@ -191,8 +191,8 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
             if len(states) != 1 or states[0] not in allowed:
                 raise ValueError("Missing or invalid declared model state: " + identifier)
             refs = re.findall(r"\bverify\s+(?:\w+::)*'([^']+)'\s*;", body)
-            key = "executable" if kind == "verification" else "implementation"
-            bindings = re.findall(r'\battribute\s+' + key + r'\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
+            binding_name = "executable" if kind == "verification" else "implementation"
+            bindings = re.findall(r'\battribute\s+' + binding_name + r'\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
             methods = re.findall(r'\battribute\s+method\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
             if len(bindings) > 1 or len(methods) > 1 or (methods and methods[0] not in {"manual", "automated"}):
                 raise ValueError("Invalid verification/implementation metadata: " + identifier)

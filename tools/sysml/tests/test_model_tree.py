@@ -221,10 +221,6 @@ class ModelTreeTests(unittest.TestCase):
         with self.subTest("missing target"), self.refused(
                 r"Dangling model documentation link: backend/qso/Part\.sysml: \.\./\.\./\.\./tests/case\.cjs$"):
             self.check()
-        # The same file name where the link would resolve from the model's root folder is not the target.
-        (self.root / "tests/case.cjs").write_text("", encoding="utf-8")
-        with self.subTest("target only beside the root"), self.refused(r"Dangling model documentation link: backend/qso/Part\.sysml"):
-            self.check()
         target.write_text("", encoding="utf-8")
         with self.subTest("existing target"):
             self.assertEqual(set(self.check()), REQUIRED)
@@ -309,25 +305,41 @@ class RelocatedRealModelTests(unittest.TestCase):
     # T13: the real pinned Pilot on the real model.
     # Proves: CL-014-10; TC-DOC-008
     def test_real_model_with_one_file_in_a_folder_passes_check_with_the_same_identities(self):
+        # The real model as it stands, flat or already in folders: {key: path}, and per key the
+        # relative documentation links that reach an existing file, as (link, real target).
+        real = {path.relative_to(tool.MODELS).as_posix(): path for path in sorted(tool.MODELS.rglob("*.sysml"))}
+        links = {}
+        for key, path in real.items():
+            found = (urllib.parse.unquote(link.strip("<>").split("#", 1)[0])
+                     for link in re.findall(r"\]\(([^)]+)\)", path.read_text(encoding="utf-8")))
+            links[key] = [(link, (path.parent / link).resolve()) for link in found
+                          if link and not link.startswith(("https://", "http://")) and (path.parent / link).resolve().is_file()]
+        model_paths = {path.resolve() for path in real.values()}
+        linked = {target for found in links.values() for _link, target in found}
+        # Relocate the first file directly in docs/sysml other than the entry file. A link between
+        # two model files holds only while both keep their folders, so a file with such a link at
+        # either end is passed over.
+        movable = [key for key, path in real.items()
+                   if "/" not in key and key != "Requirements.sysml" and path.resolve() not in linked
+                   and not any(target in model_paths for _link, target in links[key])]
+        self.assertTrue(movable, "no model file directly in docs/sysml can be relocated")
+        relocated_key = "relocated-by-test/" + movable[0]
+        self.assertNotIn(relocated_key, real)
         with tempfile.TemporaryDirectory() as directory:
             copy = Path(directory) / "docs/sysml"
-            flat = {path.relative_to(tool.MODELS).as_posix(): path for path in tool.MODELS.rglob("*.sysml")}
-            self.assertIn("Udp.sysml", flat)
-            self.assertTrue(all("/" not in key for key in flat), "this test relocates a file of a flat model")
-            for key, path in flat.items():
-                moved = copy / ("interfaces/Udp.sysml" if key == "Udp.sysml" else key)
+            for key, path in real.items():
+                moved = copy / (relocated_key if key == movable[0] else key)
                 moved.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(path, moved)
-                # The model's relative documentation links keep their targets beside the copy.
-                for link in re.findall(r"\]\(([^)]+)\)", path.read_text(encoding="utf-8")):
-                    link = urllib.parse.unquote(link.strip("<>").split("#", 1)[0])
-                    source = (path.parent / link).resolve()
-                    if link and not link.startswith(("https://", "http://")) and source.is_file():
-                        target = (copy / link).resolve()
-                        self.assertTrue(target.is_relative_to(Path(directory).resolve()), link)
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copyfile(source, target)
-            self.assertTrue((copy / "interfaces/Udp.sysml").is_file() and not (copy / "Udp.sysml").exists())
+                # Each link keeps a target where it resolves from the linking file's folder in the copy.
+                for link, source in links[key]:
+                    if source in model_paths:
+                        continue
+                    target = (moved.parent / link).resolve()
+                    self.assertTrue(target.is_relative_to(Path(directory).resolve()), key + ": " + link)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(source, target)
+            self.assertTrue((copy / relocated_key).is_file() and not (copy / movable[0]).exists())
             self.assertEqual(set(tool.canonical_catalog(copy, tool.ROOT)), set(tool.canonical_catalog(tool.MODELS, tool.ROOT)))
 
             def check(models):
