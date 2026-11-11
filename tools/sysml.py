@@ -23,6 +23,9 @@ ROOT = Path(__file__).resolve().parents[1]
 FSD = ROOT / "docs/WSTX Rust FSD.md"
 MODELS = ROOT / "docs/sysml"
 TOOLCHAIN = Path(__file__).with_name("sysml") / "toolchain.json"
+# The hand-written TC-DOC-005 oracle of the deployment. Only `check` reads it; no command
+# writes, creates or completes it, and none prints the inventory in its form.
+ORACLE = Path(__file__).with_name("sysml") / "architecture-oracle.json"
 ID = re.compile(r"\b(?:FR-\d{3}|CL-\d{3}-\d{2}|TC-(?:\d{3}|DOC)-\d{3})\b")
 CANONICAL_MARKER = "// Canonical authority: SysML"
 SOURCE_BINDING_ROOTS = ("client", "server", "tests")
@@ -552,123 +555,174 @@ def tool_paths(cache: Path) -> tuple[Path, Path, Path]:
     return java, jar, library
 
 
+ORACLE_SECTIONS = ("root", "parts", "references", "contracts", "ports", "connections", "bindings")
+QUALIFIED = re.compile(r"(?:\w+::)+\w+")
+POPULATION = re.compile(r"(0|[1-9][0-9]*)\.\.(0|[1-9][0-9]*|\*)")
+# The fixed rules of CL-014-06 name these paths and types; the oracle file cannot change them.
+STATIONS = "physicalStation.backend.stations"
+AUTHORITY = "physicalStation.backend.radioAuthority"
+
+
+def architecture_oracle(path: Path) -> dict:
+    """The oracle file at `path`, refused whole when its form is wrong. Reads only."""
+    def invalid(what: str, key: str) -> ValueError:
+        return ValueError(f"Architecture integrity: Invalid architecture oracle: {what}: {key}")
+
+    def unique(pairs):
+        found = {}
+        for key, value in pairs:
+            if key in found:
+                raise invalid("key stated twice", key)
+            found[key] = value
+        return found
+
+    try:
+        oracle = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        raise ValueError(f"Architecture integrity: Architecture oracle unavailable: {path}") from None
+    if not isinstance(oracle, dict):
+        raise invalid("entry of another shape", "file")
+    for key in oracle:
+        if key not in ORACLE_SECTIONS and key != "about":
+            raise invalid("unknown key", key)
+    for key in ORACLE_SECTIONS:
+        if key not in oracle:
+            raise invalid("missing section", key)
+    if not isinstance(oracle.get("about", ""), str):
+        raise invalid("entry of another shape", "about")
+    if not isinstance(oracle["root"], str) or not QUALIFIED.fullmatch(oracle["root"]):
+        raise invalid("entry of another shape", "root")
+    root = oracle["root"].rsplit("::", 1)[1]
+
+    def dotted(key, owner=False) -> bool:
+        """A dot path below the root; an owner of edges may be the root itself."""
+        return isinstance(key, str) and (owner and key == root or key.startswith(root + ".")
+                                         and all(re.fullmatch(r"[^.\s]+", name) for name in key.split(".")))
+
+    def qualified(value) -> bool:
+        return isinstance(value, str) and bool(QUALIFIED.fullmatch(value))
+
+    def section(name: str) -> dict:
+        if not isinstance(oracle[name], dict):
+            raise invalid("entry of another shape", name)
+        return oracle[name]
+
+    def entry(key: str, value, required: tuple, optional: tuple = ()) -> None:
+        if not isinstance(value, dict):
+            raise invalid("entry of another shape", key)
+        for name in value:
+            if name not in required + optional:
+                raise invalid("unknown key", key + ": " + name)
+        if any(name not in value for name in required):
+            raise invalid("entry of another shape", key)
+
+    def pairs(key: str, connections, bindings) -> None:
+        seen = set()
+        for listed in (connections, bindings):
+            if not isinstance(listed, list):
+                raise invalid("entry of another shape", key)
+            for pair in listed:
+                if not (isinstance(pair, list) and len(pair) == 2 and all(isinstance(end, str) and end for end in pair)
+                        and pair[0] != pair[1]):
+                    raise invalid("entry of another shape", key)
+                if frozenset(pair) in seen:
+                    raise invalid("pair listed twice", key + ": " + " <-> ".join(pair))
+                seen.add(frozenset(pair))
+
+    for name, required, optional in (("parts", ("type", "population"), ("variation",)),
+                                     ("references", ("type", "population", "target"), ())):
+        for key, value in section(name).items():
+            entry(key, value, required, optional)
+            if not dotted(key) or not qualified(value["type"]) or value.get("variation", True) is not True \
+                    or "target" in value and not dotted(value["target"]):
+                raise invalid("entry of another shape", key)
+            bounds = POPULATION.fullmatch(value["population"]) if isinstance(value["population"], str) else None
+            if not bounds or bounds[2] != "*" and int(bounds[1]) > int(bounds[2]):
+                raise invalid("malformed population", key)
+    contracts = section("contracts")
+    for name, contract in contracts.items():
+        entry(name, contract, ("items",), ("bindings", "connections"))
+        if not qualified(name) or not isinstance(contract["items"], dict):
+            raise invalid("entry of another shape", name)
+        for item, signature in contract["items"].items():
+            if not isinstance(signature, list) or len(signature) != 2 or not qualified(signature[1]):
+                raise invalid("entry of another shape", name + ": " + item)
+            if signature[0] not in ("in", "out"):
+                raise invalid("direction other than in or out", name + ": " + item)
+        pairs(name, contract.get("connections", []), contract.get("bindings", []))
+    for key, typed in section("ports").items():
+        if not dotted(key) or not isinstance(typed, str) or not qualified(typed.removeprefix("~")):
+            raise invalid("entry of another shape", key)
+        if typed.removeprefix("~") not in contracts:
+            raise invalid("port names an absent contract", key)
+    connections, bindings = section("connections"), section("bindings")
+    for owner in sorted(set(connections) | set(bindings)):
+        if not dotted(owner, owner=True):
+            raise invalid("entry of another shape", owner)
+        pairs(owner, connections.get(owner, []), bindings.get(owner, []))
+    return oracle
+
+
+def population(bounds: str) -> str:
+    """An inventory multiplicity `lower:upper`, upper -1 for unbounded, in the oracle's form."""
+    lower, _, upper = bounds.partition(":")
+    return lower + ".." + ("*" if upper == "-1" else upper)
+
+
 def architecture_integrity(output: str) -> dict[str, int]:
-    """TC-DOC-005 (CL-014-03, CL-014-06): independent structural oracle for WstxArchitecture.
+    """TC-DOC-005 (CL-014-03, CL-014-06): the deployment against the independent oracle.
 
     Input is the pinned Pilot's resolved semantic inventory, not SysML source or a
-    viewer graph. Endpoint expectations bind the reviewed architecture responsibilities
-    to model names; they are deliberately not generated from the candidate model.
+    viewer graph. The oracle is the hand-written file `ORACLE`; the inventory and the
+    file must agree exactly. The fixed rules below hold whatever the file lists. Only
+    the first difference is reported.
     """
+    oracle = architecture_oracle(ORACLE)
     rows = [line.split("\t")[1:] for line in output.splitlines() if line.startswith("AST\t")]
     if not rows:
         raise ValueError("Architecture integrity: missing resolved Pilot inventory")
     records = {kind: [row[1:] for row in rows if row[0] == kind] for kind in {row[0] for row in rows}}
-    if records.get("ROOTPART") != [["WstxArchitecture::physicalStation"]]:
+    if records.get("ROOTPART") != [[oracle["root"]]]:
         raise ValueError("Architecture integrity: expected one physical deployment")
     if records.get("VIEWSEMANTIC"):
         raise ValueError("Architecture integrity: views may expose, not create runtime parts/connections")
     parts = {row[0]: row[1:] for row in records.get("PART", [])}
     refs = {row[0]: row[1:] for row in records.get("REF", [])}
     ports = {row[0]: row[1] for row in records.get("PORT", [])}
-    p = "physicalStation"
-    station = p + ".backend.stations"
-    if {path for path in parts if path.count(".") == 1} != {p + "." + role for role in ("user", "frontend", "backend", "radio",
-                                                                                   "browserAttachments", "radioAudioAttachments", "radioControlAttachments")}:
-        raise ValueError("Architecture integrity: expected four physical roles")
-    if parts.get(station, [None, None])[1] != "0:-1":
+
+    def of_type(values: list, type_name: str) -> bool:
+        """The part's definition is the type or specializes it, in any package."""
+        return len(values) > 4 and "WstxArchitecture::" + type_name in values[4].split(",")
+
+    if parts.get(STATIONS, [None, None])[1] != "0:-1":
         raise ValueError("Architecture integrity: station population must remain variable")
     for name, type_name in (("profile", "PersistedProfile"),
                             ("audioAdapter", "AudioDeviceAdapter"), ("catAdapter", "RustRadioDriver")):
-        path = station + "." + name
-        values = parts.get(path, [])
-        if len(values) < 3 or values[:2] != ["WstxArchitecture::" + type_name, "1:1"] or values[2] != "false":
+        values = parts.get(STATIONS + "." + name, [])
+        typed = values[:1] == ["WstxArchitecture::" + type_name] if name == "profile" else of_type(values, type_name)
+        if len(values) < 3 or not typed or values[1] != "1:1" or values[2] != "false":
             raise ValueError("Architecture integrity: exactly one direct " + name + " per station")
     for name, type_name in (("audioAdapter", "AudioDeviceAdapter"), ("catAdapter", "RustRadioDriver")):
-        adapter_parts = {path for path, values in parts.items() if values[0] == "WstxArchitecture::" + type_name}
-        if adapter_parts != {station + "." + name}:
+        adapter_parts = {path for path, values in parts.items() if of_type(values, type_name)}
+        if adapter_parts != {STATIONS + "." + name}:
             raise ValueError("Architecture integrity: duplicate or detached " + name)
-    authorities = [path for path, values in parts.items() if values[0] == "WstxArchitecture::RadioAuthority"]
-    if authorities != [p + ".backend.radioAuthority"]:
+    authorities = [path for path, values in parts.items() if of_type(values, "RadioAuthority")]
+    if authorities != [AUTHORITY]:
         raise ValueError("Architecture integrity: shared radio requires one effective authority")
 
-    expected_refs = {
-        station + ".authority": p + ".backend.radioAuthority",
-        station + ".radioBinding.radio": p + ".radio",
-        p + ".browserAttachments.browser": p + ".frontend.browsers",
-        p + ".browserAttachments.station": station,
-        p + ".backend.mcpAttachments.client": p + ".backend.mcpClients",
-        p + ".backend.mcpAttachments.station": station,
-        p + ".radioAudioAttachments.station": station,
-        p + ".radioControlAttachments.station": station,
-    }
-    for path, target in expected_refs.items():
-        if path not in refs or refs[path][1] != "1:1" or refs[path][3] != target:
+    for path, listed in oracle["references"].items():
+        actual = refs.get(path, [])
+        if len(actual) < 4 or [actual[0], population(actual[1]), actual[3]] != [listed["type"], listed["population"], listed["target"]]:
             raise ValueError("Architecture integrity: invalid endpoint/resource/authority association " + path)
 
-    # Required exchanges/delegations by independently specified responsibility.
-    expected = {
-        p + ".browserAttachments": [("physicalStation.user.interaction", "browser.operator"),
-                                    ("browser.station", "station.web.client")],
-        p + ".backend.mcpAttachments": [("client.station", "station.mcp.client")],
-        p + ".radioAudioAttachments": [("station.audioAdapter.radio", "station.radioBinding.radio.audio")],
-        p + ".radioControlAttachments": [("station.catAdapter.radio", "station.radioBinding.radio.control")],
-        p + ".backend.radioAuthority": [("authorized.request", "requests.request"), ("requests.outcome", "authorized.outcome")],
-        station: [("web.station", "station.webOperations"), ("mcp.station", "station.mcpOperations"),
-            ("station.profile", "profile.context"), ("station.receive", "receive.jobs"),
-            ("station.transmit", "transmit.operations"), ("station.qso", "qso.operations"),
-            ("station.control", "radioControl.station"), ("audio.receive", "receive.audio"),
-            ("audio.status", "station.audioStatus"), ("receive.processing", "modes.receive"),
-            ("transmit.encode", "modes.encode"), ("transmit.audio", "audio.transmit"),
-            ("transmit.control", "radioControl.transmit"), ("web.recording", "station.upload"),
-            ("station.acceptedRecording", "profile.upload"), ("profile.recordedSamples", "audio.recorded"),
-            ("qso.contacts", "profile.contacts"), ("qso.transmit", "transmit.contacts"),
-            ("audio.backend", "audioAdapter.host"),
-            ("radioControl.backend", "authorityRequest"), ("authorizedControl", "catAdapter.authorized"),
-            ("authorityRequest", "authority.requests"), ("authority.authorized", "authorizedControl"),
-            ("authorityRequest.request.resourceContext", "radioBinding"), ("catAdapter.authorized.request.resourceContext", "radioBinding")],
-        station + ".profile": [("upload", "recordings.upload"), ("recordings.samples", "recordedSamples")],
-    }
-    # Independent TC-DOC-005 role/contract bindings. A leading
-    # ~ marks the provider/conjugate role. Do not infer expected roles from the model.
-    role_contracts = {}
-
-    def roles(owner, **bindings):
-        role_contracts.update({owner + "." + name: contract for name, contract in bindings.items()})
-
-    roles(p + ".user", interaction="LocalInteraction")
-    roles(p + ".frontend.browsers", operator="~LocalInteraction", station="BrowserExchange")
-    roles(p + ".backend.mcpClients", station="StationOperations")
-    roles(p + ".radio", audio="~AudioExchange", control="~RadioControl")
-    roles(p + ".backend.radioAuthority", requests="~RadioControl", authorized="RadioControl")
-    roles(station, authorityRequest="RadioControl", authorizedControl="~RadioControl")
-    roles(station + ".profile", context="~ProfileAccess", contacts="~ProfileAccess", upload="~RecordingTransfer", recordedSamples="ReceiveSamples")
-    roles(station + ".profile.recordings", upload="~RecordingTransfer", samples="ReceiveSamples")
-    roles(station + ".station", webOperations="~StationOperations", mcpOperations="~StationOperations", profile="ProfileAccess",
-          receive="StationOperations", transmit="StationOperations", qso="StationOperations", control="RadioControl",
-          upload="~RecordingTransfer", acceptedRecording="RecordingTransfer", audioStatus="~AudioStatus")
-    roles(station + ".web", client="~BrowserExchange", station="StationOperations", recording="RecordingTransfer")
-    roles(station + ".mcp", client="~StationOperations", station="StationOperations")
-    roles(station + ".receive", jobs="~StationOperations", audio="~ReceiveSamples", processing="ReceiveProcessing")
-    roles(station + ".modes", receive="~ReceiveProcessing", encode="~EncodeProcessing")
-    roles(station + ".audio", status="AudioStatus", recorded="~ReceiveSamples", receive="ReceiveSamples", transmit="~AudioExchange", backend="AudioExchange")
-    roles(station + ".radioControl", station="~RadioControl", transmit="~RadioControl", backend="RadioControl")
-    roles(station + ".transmit", operations="~StationOperations", contacts="~StationOperations", encode="EncodeProcessing", audio="AudioExchange", control="RadioControl")
-    roles(station + ".qso", operations="~StationOperations", contacts="ProfileAccess", transmit="StationOperations")
-    roles(station + ".audioAdapter", host="~AudioExchange", radio="AudioExchange")
-    roles(station + ".catAdapter", authorized="~RadioControl", radio="RadioControl")
-    for path, contract in role_contracts.items():
-        if contract.lstrip("~") == "RadioControl":
-            expected[path] = [("outcome.request", "request")]
-    required_bindings = {
-        (p + ".backend.radioAuthority", frozenset(("authorized.request", "requests.request"))),
-        (p + ".backend.radioAuthority", frozenset(("requests.outcome", "authorized.outcome"))),
-        (station, frozenset(("authorityRequest.request.resourceContext", "radioBinding"))),
-        (station, frozenset(("catAdapter.authorized.request.resourceContext", "radioBinding"))),
-    }
-    required_bindings.update((path, frozenset(("outcome.request", "request")))
-                             for path, contract in role_contracts.items() if contract.lstrip("~") == "RadioControl")
-    expected_edges = {(owner, "binding" if (owner, frozenset(pair)) in required_bindings else "connection", frozenset(pair))
-                      for owner, pairs in expected.items() for pair in pairs}
+    # Each edge a contract declares counts at every port typed by the contract.
+    expected_edges = set()
+    for kind in ("connection", "binding"):
+        for owner, listed in oracle[kind + "s"].items():
+            expected_edges.update((owner, kind, frozenset(pair)) for pair in listed)
+        for path, typed in oracle["ports"].items():
+            listed = oracle["contracts"][typed.removeprefix("~")].get(kind + "s", [])
+            expected_edges.update((path, kind, frozenset(pair)) for pair in listed)
     actual_edges = {(owner, kind, frozenset(endpoints.split("|"))) for owner, _name, kind, endpoints in records.get("EDGE", [])}
     missing = expected_edges - actual_edges
     extra = actual_edges - expected_edges
@@ -681,26 +735,13 @@ def architecture_integrity(output: str) -> dict[str, int]:
     items = {}
     for path, name, direction, types in records.get("ITEM", []):
         items.setdefault(path, {})[name] = (direction, types)
-    # Full item signatures, independently declared rather than copied from the AST.
-    # Delegation may join equal directions; each role is checked against its own
-    # contract instead of imposing a blanket opposite-directions rule on edges.
-    contracts = {
-        "LocalInteraction": {"request": ("out", "OperatorRequest"), "presentation": ("in", "Presentation")},
-        "StationOperations": {"request": ("out", "StationRequest"), "outcome": ("in", "StationOutcome")},
-        "BrowserExchange": {"request": ("out", "StationRequest"), "outcome": ("in", "StationOutcome"), "upload": ("out", "Recording")},
-        "RecordingTransfer": {"recording": ("out", "Recording")},
-        "ProfileAccess": {"request": ("out", "ProfileRequest"), "outcome": ("in", "ProfileOutcome")},
-        "AudioExchange": {"playback": ("out", "SampleBlock"), "capture": ("in", "SampleBlock"), "outcome": ("in", "AudioOutcome")},
-        "AudioStatus": {"outcome": ("out", "AudioOutcome")},
-        "ReceiveSamples": {"samples": ("out", "SampleBlock"), "outcome": ("out", "AudioOutcome")},
-        "ReceiveProcessing": {"request": ("out", "ProcessingRequest"), "result": ("in", "ProcessingResult")},
-        "EncodeProcessing": {"request": ("out", "EncodeRequest"), "waveform": ("in", "Waveform")},
-        "RadioControl": {"request": ("out", "ControlRequest"), "outcome": ("in", "ControlOutcome")},
-    }
+    # Delegation may join equal directions; each port is checked against its own contract
+    # instead of imposing a blanket opposite-directions rule on edges.
+    role_contracts = oracle["ports"]
     if set(ports) != set(role_contracts):
         raise ValueError("Architecture integrity: missing or unexpected boundary port roles " + str(sorted(set(ports) ^ set(role_contracts))))
     for path, role in role_contracts.items():
-        signature = contracts[role.lstrip("~")]
+        signature = oracle["contracts"][role.removeprefix("~")]["items"]
         actual = items.get(path, {})
         if set(actual) != set(signature):
             raise ValueError("Architecture integrity: semantic exchange signature mismatch " + path)
@@ -710,8 +751,25 @@ def architecture_integrity(output: str) -> dict[str, int]:
             actual_direction, actual_type = actual[item]
             if actual_direction != direction:
                 raise ValueError("Architecture integrity: wrong exchange direction " + path + "." + item)
-            if actual_type != "WstxArchitecture::" + semantic_type:
+            if actual_type != semantic_type:
                 raise ValueError("Architecture integrity: wrong semantic item type " + path + "." + item)
+    for path, role in sorted(role_contracts.items()):
+        if ports[path] != role:
+            raise ValueError("Architecture integrity: wrong port definition " + path)
+    root = oracle["root"].rsplit("::", 1)[1]
+    deployed = {path: values for path, values in parts.items() if path != root}
+    listed_parts = oracle["parts"]
+    if absent := sorted(set(listed_parts) - set(deployed)):
+        raise ValueError("Architecture integrity: missing part " + absent[0])
+    if unlisted := sorted(set(deployed) - set(listed_parts)):
+        raise ValueError("Architecture integrity: unexpected part " + unlisted[0])
+    for path, listed in sorted(listed_parts.items()):
+        values = deployed[path]
+        if values[0] != listed["type"] or population(values[1]) != listed["population"] \
+                or values[2] != ("true" if listed.get("variation") else "false"):
+            raise ValueError("Architecture integrity: wrong part type or population " + path)
+    if unlisted := sorted(set(refs) - set(oracle["references"])):
+        raise ValueError("Architecture integrity: unexpected reference " + unlisted[0])
     return {"parts": len(parts), "references": len(refs), "ports": len(ports), "connections": len(actual_edges)}
 
 
