@@ -14,5 +14,5 @@ Filesystem path relative to this entrypoint: `../../../harness/core/skills/fsd-f
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=be2b3a7d9beaf1aa25629e67ccb6ea33cc51e29bb8be68948e93a30fcc9740ba -->
-<!-- harness-forwarder-v1 sha256=bcd7bf421ba82fe1d1ce518b8a6d26d45c5a4bbaad0b633dbf5ecf053ba17a1c -->
+<!-- canonical-source-sha256=da2168e15a33a8cb76af83dc85769604f7358779d183466ec5b12e3d9e5fce26 -->
+<!-- harness-forwarder-v1 sha256=cb6da35e2bc7477175b11220e42341d879672fefac3fa95bc8576ec54856b3ad -->

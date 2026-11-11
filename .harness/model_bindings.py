@@ -5,7 +5,8 @@ selection (harness#40).
 
     python .harness/model_bindings.py --rev REV
 
-It reuses tools/sysml.py: canonical_catalog reads the canonical models at REV, and every
+It reuses tools/sysml.py: canonical_catalog reads the canonical models at REV (every
+`*.sysml` at any depth below docs/sysml, listed as `docs/sysml/<key>`), and every
 binding it resolves is recorded instead of checked (checking them is the
 source-model-traces suite's job). A verification case binds a test by `path::name`, or
 by its file: the tests there whose `Proves:` tag names the case, or a JavaScript test
@@ -38,7 +39,7 @@ def extract(rev, into):
     """The models and the source roots at `rev`, written below `into`."""
     present = set(git("ls-tree", "--name-only", rev).decode().split())
     roots = [r for r in sysml.SOURCE_BINDING_ROOTS if r in present]
-    data = git("archive", "--format=tar", rev, "--", *roots, f":(glob){MODELS}/*.sysml")
+    data = git("archive", "--format=tar", rev, "--", *roots, f":(glob){MODELS}/**/*.sysml")
     with tarfile.open(fileobj=io.BytesIO(data)) as tar:
         tar.extractall(into, filter="data")
     for r in sysml.SOURCE_BINDING_ROOTS:
@@ -97,7 +98,7 @@ def bindings(rev):
             case["tests"].extend(t for t in tests if t not in case["tests"])
             if not tests:
                 case["unresolved"].append(binding)
-        models = sorted(f"{MODELS}/{p.name}" for p in (root / MODELS).glob("*.sysml"))
+        models = [f"{MODELS}/{key}" for key in sysml.model_files(root / MODELS)]
     return {"models": models, "cases": cases, "promises": promises}
 
 

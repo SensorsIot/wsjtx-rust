@@ -25,7 +25,7 @@ rules around it. Agent memory only points here.
   is recorded on that issue. Without it the session writes the change text (outcome,
   changes, acceptance, evidence) and the operator implements it.
 - **Another person's checkout** is never touched.
-- **Development placement.** Follow [machines and roles](Project-Specifics.md#machines-and-roles): application implementation, builds, installs, live tests and radio acceptance run on HB9BLA, where the product and the transceiver are; PC Andreas does SysML model work in isolated worktrees, and documentation work. The issue's `owner:` label names the machine building it. Shared model ownership, integration and publication remain serialized across both PCs.
+- **Development placement.** Follow [machines and roles](Project-Specifics.md#machines-and-roles): the two PCs have no roles and either does any work; HB9BLA is needed for what needs the transceiver, and both for a test of client and server across the network. The issue's `owner:` label names the machine building it. Shared model ownership, integration and publication remain serialized across both PCs.
 
 ## Deciding
 
