@@ -273,7 +273,9 @@ package WstxTransmit {
         enum operator; enum halt; enum contactCompleted; enum contactCancelled;
         enum txWatchdog; enum refused; enum failed; enum deviceLost; enum startup;
         enum authorityChanged;
+        enum partnerWorksOther; enum modeChanged; enum bandChanged; enum runEnded;
     }
+    enum def ArmCause { enum operator; enum auto; }
     enum def TransmitRefusal {
         enum transmitUnsupported; enum notArmed; enum audioStarted; enum duplicateSequence;
         enum staleRequest; enum clockNotSynchronized; enum misalignedPeriod; enum stalePeriod;
@@ -504,15 +506,33 @@ package WstxTransmit {
     attribute def TransmitArming {
         attribute armState : ArmState = ArmState::disarmed;
         attribute lastDisarmCause : DisarmCause = DisarmCause::startup;
-        doc /* One armed state per station, owned by WstxArchitecture::TransmitService;
-             disarmed at startup and after every DisarmCause. Arm/Disarm are requests
-             from QsoAndLogging (Enable Tx) through the qso-to-transmit connection, or
-             TransmitWire. Arming requires TransmitAuthority: unsupported capability
+        attribute lastArmCause : ArmCause[0..1];
+        doc /* The station's one transmit state (CL-111-01), on (armed) or off (disarmed),
+             owned by WstxArchitecture::TransmitService; off at startup and after every
+             DisarmCause. lastArmCause is who switched it on last (operator, or auto for
+             a run or an MCP client) and is absent until the first switch-on of a boot.
+             Arm/Disarm are requests from QsoAndLogging (the start actions
+             WstxContact::StartActions, and Enable Tx) through the qso-to-transmit
+             connection, or TransmitWire. Arming requires TransmitAuthority: unsupported capability
              is refused transmitUnsupported, unavailable radioUnavailable, a missing
              grant or a different safety revision notAuthorized. Disarm sends no new
              request and cancels requests that are not keyed; a transmission already
              keyed or playing finishes unless halted. */
     }
+    attribute def StopOrder {
+        doc /* CL-111-03. A station step is the time from the begin of one contact step
+             (WstxContact::AutoSequence, every 50 ms and directly after each accepted
+             ContactCommand) to the begin of the next. When several stops are applied in
+             one station step, lastDisarmCause is the first of this order, whichever
+             arrived first: halt; deviceLost; authorityChanged; failed; refused;
+             contactCancelled by Abort QSO; txWatchdog; partnerWorksOther; bandChanged;
+             modeChanged; runEnded; contactCancelled by Cancel contact;
+             contactCompleted; operator. A switch-on between two stops of a step begins
+             the choice anew. A start action that arrives after a stop of the same
+             station step is refused state_conflict (WstxContact::StartActions). */
+    }
+    dependency stopOrderClause from StopOrder to WstxRequirements::'CL-111-03';
+    dependency transmitStateClause from TransmitArming to WstxRequirements::'CL-111-01';
     attribute def TransmitRequest {
         attribute contactId : String[0..1];
         attribute requestSequence : Integer;
@@ -567,11 +587,20 @@ package WstxTransmit {
     }
     action def SetTune {
         in enable : Boolean;
-        doc /* Unmodulated tone at the given Tx offset (200..2950 Hz) under the same
-             authority, armed and with nothing pending; stopped by SetTune(false),
-             HaltTransmit or the tune limit (WstxContact::TuneWatchdog, default 90 s,
-             1..300 s) with PTT release. */
+        in safetyRevision : Integer[0..1];
+        doc /* CL-111-06. Unmodulated tone at the given Tx offset (200..2950 Hz). Tune on
+             is accepted whatever the transmit state, while the transmit capability is
+             available, safetyRevision is the station's CL-022 safety revision
+             (otherwise notAuthorized) and no request is pending and nothing is on the
+             air (otherwise busy). It never changes TransmitArming or its causes: when
+             the radio, the capability or that revision is lost Tune ends with PTT
+             release, and a transmit state that is on stops for the same loss by its own
+             rule. Stopped by SetTune(false), which needs no revision, HaltTransmit or
+             the tune limit (WstxContact::TuneWatchdog, default 90 s, 1..300 s) with PTT
+             release. On POST /transmit/command tune takes no revision and is accepted
+             only while armed, under the armed revision. */
     }
+    dependency tuneClause from SetTune to WstxRequirements::'CL-111-06';
     action def AbortTransmission {
         doc /* #39 (2026-11-04) Abort QSO: the contact consumer's immediate stop of the
              current transmission or Tune: stop audio, release PTT with readback (on
@@ -624,8 +653,9 @@ package WstxTransmit {
              follows station.tick (one extra tick at each transmit start/stop).
              GET /transmit: exactly {v:1,profile_id,boot_id,transmit,ptt,transmitting,
              clock,clock_measurement,clock_warning,watchdog,outcomes,startup_release} (no clock_source since #92) with transmit exactly the WstxContact read view
-             without its safety_revision: {capability,arm_state,last_disarm_cause,tune,pending_sequence,last_text,
-             last_period_utc,halt_state,refusal}, ptt released|keyed|indeterminate,
+             without its safety_revision: {capability,arm_state,last_disarm_cause,last_arm_cause,tune,
+             pending_sequence,last_text,last_period_utc,halt_state,refusal} (last_arm_cause
+             operator, auto or null: TransmitArming lastArmCause), ptt released|keyed|indeterminate,
              clock synchronized|unsynchronized (the station clock: TransmitClock
              and AirClock, never unknown, #92), clock_warning null, pc_clock_off,
              ntp_unreachable or stations_off (AirClock, CL-043-03),

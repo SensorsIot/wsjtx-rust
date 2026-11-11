@@ -70,6 +70,42 @@ pub enum DisarmCause {
     DeviceLost,
     Startup,
     AuthorityChanged,
+    /// #111 CL-111-03: the partner works another station on the own Tx frequency.
+    PartnerWorksOther,
+    ModeChanged,
+    BandChanged,
+    /// A run ended and left a contact it did not finish or cancel.
+    RunEnded,
+}
+impl DisarmCause {
+    /// #111 CL-111-03: the place of a stop in the order of shown causes (lowest first). Abort
+    /// QSO and Cancel contact share `ContactCancelled`: `abort` tells them apart. Causes of
+    /// one rank of the clause are ordered as the clause lists them.
+    fn rank(self, abort: bool) -> u8 {
+        match self {
+            Self::Halt => 0,
+            Self::DeviceLost => 1,
+            Self::AuthorityChanged => 2,
+            Self::Failed => 3,
+            Self::Refused => 4,
+            Self::ContactCancelled if abort => 5,
+            Self::TxWatchdog => 6,
+            Self::PartnerWorksOther => 7,
+            Self::BandChanged => 8,
+            Self::ModeChanged => 9,
+            Self::RunEnded => 10,
+            Self::ContactCancelled => 11,
+            Self::ContactCompleted => 12,
+            Self::Operator => 13,
+            Self::Startup => 14,
+        }
+    }
+}
+/// #111 CL-111-01, L3: who switched the transmit state on last.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArmCause {
+    Operator,
+    Auto,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransmitRefusal {
@@ -248,6 +284,8 @@ pub struct View {
     pub capability: Capability,
     pub arm_state: ArmState,
     pub last_disarm_cause: DisarmCause,
+    /// None until the first accepted start of this boot.
+    pub last_arm_cause: Option<ArmCause>,
     pub tune: bool,
     pub pending_sequence: Option<u64>,
     pub last_text: Option<String>,
@@ -285,6 +323,8 @@ struct Tune {
     hz: f64,
     until_utc_ms: i64,
     keyed: bool,
+    /// The safety revision Tune was started under (its own authority, #111 CL-111-06).
+    revision: u64,
 }
 
 /// The transmit owner's state machine. Single-threaded; `Service` adds the thread and
@@ -294,6 +334,11 @@ pub struct Core<H: Hardware> {
     arm: ArmState,
     armed_revision: Option<u64>,
     cause: DisarmCause,
+    arm_cause: Option<ArmCause>,
+    /// #111 CL-111-03: a stop was applied since the contact engine's last step began, and
+    /// the rank of the cause shown for the stops since then (or since the last switch-on).
+    stopped: bool,
+    stop_rank: Option<u8>,
     last_sequence: u64,
     current: Option<Job>,
     next: Option<Prepared>,
@@ -393,6 +438,9 @@ impl<H: Hardware> Core<H> {
             arm: ArmState::Disarmed,
             armed_revision: None,
             cause: DisarmCause::Startup,
+            arm_cause: None,
+            stopped: false,
+            stop_rank: None,
             last_sequence: 0,
             current: None,
             next: None,
@@ -506,9 +554,34 @@ impl<H: Hardware> Core<H> {
         outcome
     }
     fn disarm_with(&mut self, cause: DisarmCause) {
+        self.stop_with(cause, false);
+    }
+    /// Switches off. Of several stops in one station step the shown cause is the first in
+    /// the order of CL-111-03, whichever arrived first.
+    fn stop_with(&mut self, cause: DisarmCause, abort: bool) {
         self.arm = ArmState::Disarmed;
         self.armed_revision = None;
-        self.cause = cause;
+        let rank = cause.rank(abort);
+        if self.stop_rank.is_none_or(|shown| rank < shown) {
+            self.cause = cause;
+            self.stop_rank = Some(rank);
+        }
+        self.stopped = true;
+    }
+    /// The contact engine begins a step: the stops before it are no longer "this step's".
+    pub fn begin_step(&mut self) {
+        self.stopped = false;
+        self.stop_rank = None;
+    }
+    /// #111 CL-111-03: a stop was applied since the engine's last step began; a start that
+    /// arrives now loses against it.
+    pub fn stopped_in_step(&self) -> bool {
+        self.stopped
+    }
+    /// #111 CL-111-07: a start was admitted while transmission is not possible; the view
+    /// names the reason, the state and its cause stay.
+    pub fn refuse_start(&mut self, refusal: TransmitRefusal) {
+        self.refusal = Some(refusal);
     }
     /// Disarm and drop every request whose audio has not started and that is not keyed
     /// (before-key Disarm cancels; a keyed or started transmission finishes).
@@ -552,6 +625,8 @@ impl<H: Hardware> Core<H> {
         }
         self.arm = ArmState::Armed;
         self.armed_revision = Some(safety_revision);
+        self.arm_cause = Some(ArmCause::Operator);
+        self.stop_rank = None;
         self.refusal = None;
         self.tx_expired = false;
         self.tx_repetitions = 0;
@@ -563,6 +638,7 @@ impl<H: Hardware> Core<H> {
     pub fn arm_automatic(&mut self, safety_revision: u64) -> Result<(), TransmitRefusal> {
         let seen = self.operator_seen;
         self.arm(safety_revision)?;
+        self.arm_cause = Some(ArmCause::Auto);
         self.operator_seen = seen;
         Ok(())
     }
@@ -753,7 +829,7 @@ impl<H: Hardware> Core<H> {
         if let Some(next) = self.next.take() {
             self.emit(next.request.request_sequence, OutcomeKind::Aborted);
         }
-        self.disarm_with(cause);
+        self.stop_with(cause, true);
     }
     /// Releases PTT with readback; on failure the switch is indeterminate.
     fn release(&mut self) -> bool {
@@ -805,7 +881,8 @@ impl<H: Hardware> Core<H> {
         self.disarm_with(DisarmCause::Refused);
         self.cancel_unstarted(OutcomeKind::Refused, Some(TransmitRefusal::NotArmed));
     }
-    /// Starts an unmodulated Tune tone at `hz` (armed, nothing pending).
+    /// The transmit owner's own Tune switch: on under the armed authority (armed, nothing
+    /// pending), off always. The operating command uses `start_tune`.
     pub fn set_tune(&mut self, enable: bool, hz: u32) -> Result<(), TransmitRefusal> {
         if !enable {
             if self.tune.take().is_some() {
@@ -814,16 +891,33 @@ impl<H: Hardware> Core<H> {
             }
             return Ok(());
         }
+        let Some(revision) = self.armed_revision.filter(|_| self.arm == ArmState::Armed) else {
+            let refusal = if self.hardware.context().capability == Capability::Unsupported {
+                TransmitRefusal::TransmitUnsupported
+            } else {
+                TransmitRefusal::NotArmed
+            };
+            self.refusal = Some(refusal);
+            return Err(refusal);
+        };
+        self.start_tune(hz, revision)
+    }
+    /// #111 CL-111-06: starts an unmodulated Tune tone at `hz` under `safety_revision`,
+    /// whatever the transmit state: the capability is available, the revision is the
+    /// station's, and nothing is on the air or pending. It never changes the transmit state.
+    pub fn start_tune(&mut self, hz: u32, safety_revision: u64) -> Result<(), TransmitRefusal> {
         let context = self.hardware.context();
         let refusal = if context.capability == Capability::Unsupported {
             Some(TransmitRefusal::TransmitUnsupported)
-        } else if self.arm != ArmState::Armed {
-            Some(TransmitRefusal::NotArmed)
-        } else if context.capability != Capability::Available {
+        } else if context.capability != Capability::Available
+            || self.ptt == PttState::Indeterminate
+            || self.startup_release == StartupRelease::Failed
+            || self.faulted
+        {
             Some(TransmitRefusal::RadioUnavailable)
-        } else if context.safety_revision != self.armed_revision {
+        } else if context.safety_revision != Some(safety_revision) {
             Some(TransmitRefusal::NotAuthorized)
-        } else if self.current.is_some() || self.tune.is_some() {
+        } else if self.current.is_some() || self.next.is_some() || self.tune.is_some() {
             Some(TransmitRefusal::Busy)
         } else if !(200..=2950).contains(&hz) {
             Some(TransmitRefusal::FrequencyOutOfRange)
@@ -864,6 +958,7 @@ impl<H: Hardware> Core<H> {
             hz: f64::from(hz),
             until_utc_ms: now + i64::from(self.tune_seconds) * 1000,
             keyed: true,
+            revision: safety_revision,
         });
         self.refusal = None;
         Ok(())
@@ -892,13 +987,16 @@ impl<H: Hardware> Core<H> {
         if let Some(tune) = &self.tune {
             let _ = (tune.hz, tune.keyed);
             let lost = context.capability != Capability::Available
-                || context.safety_revision != self.armed_revision;
+                || context.safety_revision != Some(tune.revision);
             let audio = self.hardware.poll_audio();
             if now >= tune.until_utc_ms || lost || matches!(audio, AudioPoll::Failed(_)) {
+                let was_on = self.arm == ArmState::Armed;
                 self.tune = None;
                 self.hardware.stop_audio();
                 self.release();
-                if lost || matches!(audio, AudioPoll::Failed(_)) {
+                // Tune itself never changes the transmit state or its cause (CL-111-06); a
+                // state that is on stops for the loss it shares with Tune, as before.
+                if was_on && (lost || matches!(audio, AudioPoll::Failed(_))) {
                     self.disarm_with(DisarmCause::DeviceLost);
                 }
             }
@@ -1178,6 +1276,7 @@ impl<H: Hardware> Core<H> {
             capability: context.capability,
             arm_state: self.arm,
             last_disarm_cause: self.cause,
+            last_arm_cause: self.arm_cause,
             tune: self.tune.is_some(),
             pending_sequence,
             last_text: self.last_text.clone(),

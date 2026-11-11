@@ -341,7 +341,7 @@ pub(crate) fn view_json(r: &recording::Recording, v: &View) -> Value {
         .map(outcome)
         .collect::<Vec<_>>();
     json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,
-        "transmit":{"capability":name(v.capability),"arm_state":name(v.arm_state),"last_disarm_cause":name(v.last_disarm_cause),
+        "transmit":{"capability":name(v.capability),"arm_state":name(v.arm_state),"last_disarm_cause":name(v.last_disarm_cause),"last_arm_cause":v.last_arm_cause.map(name),
             "tune":v.tune,"pending_sequence":v.pending_sequence,"last_text":v.last_text,"last_period_utc":v.last_period_utc_ms,
             "halt_state":halt,"refusal":v.refusal.map(name)},
         "ptt":name(v.ptt),"transmitting":v.transmitting,"clock":name(v.clock),
