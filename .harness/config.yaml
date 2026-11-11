@@ -23,6 +23,7 @@ harness_paths:
 # there by hand.
 machines:
   HB9BLA:
+    hostname: DESKTOP-HB9BLA
     arrive: 'ssh -o BatchMode=yes -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 HB9BLA@192.168.0.37 "cd /d D:\Github\wsjtx-rust && python harness/core/tools/handover.py arrive"'
   Andreas: {}
 handover:
