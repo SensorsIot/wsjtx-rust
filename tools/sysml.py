@@ -26,11 +26,15 @@ TOOLCHAIN = Path(__file__).with_name("sysml") / "toolchain.json"
 ID = re.compile(r"\b(?:FR-\d{3}|CL-\d{3}-\d{2}|TC-(?:\d{3}|DOC)-\d{3})\b")
 CANONICAL_MARKER = "// Canonical authority: SysML"
 SOURCE_BINDING_ROOTS = ("client", "server", "tests")
-CANONICAL_MODELS = {
-    "Requirements.sysml", "Architecture.sysml", "Profiles.sysml",
-    "RecordingReceive.sysml", "StationDecode.sysml", "RadioIO.sysml",
-    "OperatingLayout.sysml", "OperatingReceive.sysml", "StationProtocol.sysml", "ProductScope.sysml",
+# Each required package is the package of exactly one model file, whatever the file's
+# name and folder. A change that renames or dissolves one changes this list with it.
+REQUIRED_PACKAGES = {
+    "WstxRequirements", "WstxArchitecture", "WstxProfiles",
+    "WstxRecordingReceive", "WstxOfflineDecode", "WstxRadioIO",
+    "WstxOperatingLayout", "WstxOperatingReceive", "WstxStationProtocol", "WstxProductScope",
 }
+# The required package whose model file is the text ProductScope references are looked up in.
+SCOPE_PACKAGE = "WstxProductScope"
 # Packages that need no ProductScope reference, by package name (not file name).
 LIBRARY_PACKAGES = {"ModelNotes", "ModelBindings"}
 # The package whose `metadata def` names are the marker kinds that `markers` lists.
@@ -264,6 +268,14 @@ def model_files(directory: Path) -> dict[str, Path]:
     return dict(sorted(found.items()))
 
 
+def file_package(code: str):
+    """The package of a model file: the name of the first package declaration of its
+    comment-free text `code`; None for a file without one. A package nested in it or
+    declared after it is not the file's package."""
+    package = re.search(r"\bpackage\s+(\w+)\s*\{", code)
+    return package[1] if package else None
+
+
 def scope_reference(package: str, scope: str) -> bool:
     """Whether comment-free ProductScope text refers to `package`: a qualified name
     `Package::...`, `import Package;` or `alias <name> for Package;`."""
@@ -273,18 +285,21 @@ def scope_reference(package: str, scope: str) -> bool:
 
 def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES) -> dict[str, dict]:
     files = model_files(directory)
+    sources = {key: path.read_text(encoding="utf-8") for key, path in files.items()}
+    clean_models = {key: without_comments(source) for key, source in sources.items()}
+    packages = {key: file_package(clean) for key, clean in clean_models.items()}
     keys_of = {}
-    for key, path in files.items():
-        keys_of.setdefault(path.name, []).append(key)
-    if missing := CANONICAL_MODELS - keys_of.keys():
-        raise ValueError("Canonical model files missing: " + ", ".join(sorted(missing)))
-    for name in sorted(CANONICAL_MODELS):
-        if len(keys_of[name]) > 1:
-            raise ValueError("Duplicate canonical model file: " + name + ": " + ", ".join(keys_of[name]))
+    for key, package in packages.items():
+        if package in REQUIRED_PACKAGES:
+            keys_of.setdefault(package, []).append(key)
+    if missing := REQUIRED_PACKAGES - keys_of.keys():
+        raise ValueError("Canonical model packages missing: " + ", ".join(sorted(missing)))
+    for package in sorted(REQUIRED_PACKAGES):
+        if len(keys_of[package]) > 1:
+            raise ValueError("Duplicate canonical model package: " + package + ": " + ", ".join(sorted(keys_of[package])))
     entries = {}
-    clean_models = {}
     for key, path in files.items():
-        source = path.read_text(encoding="utf-8")
+        source = sources[key]
         if re.search(r"Canonical FSD|\bFSD(?:\s+(?:chapter|section))?\s*\d|WSTX(?:%20| )Rust(?:%20| )FSD", source):
             raise ValueError("Canonical model retains a retired FSD dependency: " + key)
         for target in re.findall(r"\]\(([^)]+)\)", source):
@@ -294,8 +309,7 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
             target = urllib.parse.unquote(target.split("#", 1)[0])
             if target and not (path.parent / target).resolve().is_file():
                 raise ValueError("Dangling model documentation link: " + key + ": " + target)
-        clean = without_comments(source)
-        clean_models[key] = clean
+        clean = clean_models[key]
         code = blanked(clean)
         # A typed declaration is read only as a verification case typed by a definition.
         declarations = [match for match in DECLARATION.finditer(clean)
@@ -373,14 +387,11 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
                                    "manual": methods == ["manual"]}
     if missing := set(required) - entries.keys():
         raise ValueError("Missing stable canonical identities: " + ", ".join(sorted(missing)))
-    scope = clean_models[keys_of["ProductScope.sysml"][0]]
-    for key, path in files.items():
-        if path.name in CANONICAL_MODELS:
+    scope = clean_models[keys_of[SCOPE_PACKAGE][0]]
+    for key, package in packages.items():
+        if package in REQUIRED_PACKAGES or package in LIBRARY_PACKAGES:
             continue
-        package = re.search(r"\bpackage\s+(\w+)\s*\{", clean_models[key])
-        if package and package[1] in LIBRARY_PACKAGES:
-            continue
-        if not package or not scope_reference(package[1], scope):
+        if not package or not scope_reference(package, scope):
             raise ValueError("Additional canonical package lacks a ProductScope reference: " + key)
     dependencies, case_links = {}, {}
     for source in clean_models.values():
@@ -425,8 +436,7 @@ def markers(directory: Path, kinds=()) -> list[str]:
     codes = {key: blanked(text) for key, text in texts.items()}
     known = set()
     for code in codes.values():
-        package = re.search(r"\bpackage\s+(\w+)\s*\{", code)
-        if package and package[1] == MARKER_PACKAGE:
+        if file_package(code) == MARKER_PACKAGE:
             known.update(re.findall(r"\bmetadata\s+def\s+(\w+)", code))
     for name in kinds:
         if name not in known:

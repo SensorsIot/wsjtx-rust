@@ -1,7 +1,8 @@
 """TC-DOC-008: the model is a tree of files below docs/sysml, named by key.
 
-Isolated fixtures in a temporary folder; one test (the relocated real model) runs the
-real pinned Pilot, and one builds a throwaway git repository for the gate's model bindings.
+A required package is found by its package, in a file of any name and folder. Isolated
+fixtures in a temporary folder; one test (the relocated real model) runs the real pinned
+Pilot, and two build a throwaway git repository for the gate's model bindings.
 """
 import contextlib
 import hashlib
@@ -43,11 +44,21 @@ OWNS = "    dependency owns from 'CL-003-01' to 'FR-001';\n"
 CHECKS = "    dependency checks from 'CL-003-01' to 'TC-001-001';\n"
 MARKER = "// Canonical authority: SysML\n"
 # The whole catalog in the entry file, and the same catalog split over two folders.
-FLAT = MARKER + "package PTop {\n" + ENUMS + FR + CLAUSE + CASE + OWNS + CHECKS + "}\n"
-TOP = MARKER + "package PTop {\n" + ENUMS + FR + "}\n"
+FLAT = MARKER + "package WstxRequirements {\n" + ENUMS + FR + CLAUSE + CASE + OWNS + CHECKS + "}\n"
+TOP = MARKER + "package WstxRequirements {\n" + ENUMS + FR + "}\n"
 PART = "package PPart {\n" + CLAUSE + CASE + OWNS + CHECKS + "}\n"
 PART_KEY = "backend/qso/Part.sysml"
-SCOPE_WITH_PART = "package Scope { private import PPart::*; }"
+SCOPE_WITH_PART = "package WstxProductScope { private import PPart::*; }"
+# The fixture's model files and the required package each declares, written by hand from
+# the contract's list of required packages.
+REQUIRED_FILES = {
+    "Requirements.sysml": "WstxRequirements", "Architecture.sysml": "WstxArchitecture",
+    "Profiles.sysml": "WstxProfiles", "RecordingReceive.sysml": "WstxRecordingReceive",
+    "StationDecode.sysml": "WstxOfflineDecode", "RadioIO.sysml": "WstxRadioIO",
+    "OperatingLayout.sysml": "WstxOperatingLayout", "OperatingReceive.sysml": "WstxOperatingReceive",
+    "StationProtocol.sysml": "WstxStationProtocol", "ProductScope.sysml": "WstxProductScope",
+}
+RADIO_MISSING = r"Canonical model packages missing: WstxRadioIO$"
 
 
 class ModelTreeTests(unittest.TestCase):
@@ -60,8 +71,8 @@ class ModelTreeTests(unittest.TestCase):
         self.models = self.root / "docs/sysml"
         self.fsd = self.root / "docs/FSD.md"
         self.written = {}
-        for name in tool.CANONICAL_MODELS:
-            self.write(name, "package P" + name.split(".")[0] + " {}")
+        for name, package in REQUIRED_FILES.items():
+            self.write(name, "package " + package + " {}")
         self.write("Requirements.sysml", FLAT)
 
     def write(self, key, text):
@@ -109,19 +120,202 @@ class ModelTreeTests(unittest.TestCase):
         with self.refused("Duplicate canonical identity: CL-003-01"):
             self.check()
 
-    # T2
+    def elsewhere(self):
+        """The ten required packages in files of other names, half of them at the root and
+        half two folders down. The entry file keeps its name and the marker and holds an
+        additional package. Returns {package: key}."""
+        for key in list(self.written):
+            self.remove(key)
+        keys = {package: ("" if index % 2 else "area/part/") + "File" + str(index) + ".sysml"
+                for index, package in enumerate(sorted(REQUIRED_FILES.values()))}
+        for package, key in keys.items():
+            self.write(key, "package " + package + " {}")
+        self.write(keys["WstxRequirements"], FLAT[len(MARKER):])
+        self.write(keys["WstxProductScope"], "package WstxProductScope { private import Entry::*; }")
+        self.write("Requirements.sysml", MARKER + "package Entry {}")
+        return keys
+
+    def without_radio_package(self):
+        """The fixture with no file of package WstxRadioIO, and no other fault."""
+        self.write("RadioIO.sysml", "package Moved {}")
+        self.write("ProductScope.sysml", "package WstxProductScope { private import Moved::*; }")
+
+    def git(self, *args):
+        subprocess.run(["git", "-C", str(self.root), "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",
+                        "-c", "core.autocrlf=false", "-c", "commit.gpgsign=false", *args], check=True, capture_output=True)
+
+    def commit(self, message):
+        self.git("add", "-A")
+        self.git("commit", "-q", "--no-verify", "-m", message)
+
+    # Required packages T1: none and one
     # Proves: CL-014-10; TC-DOC-008
-    def test_required_file_is_found_exactly_once_at_any_depth(self):
-        radio = (self.models / "RadioIO.sysml").read_text(encoding="utf-8")
-        self.remove("RadioIO.sysml")
-        with self.subTest("none"), self.refused(r"Canonical model files missing: RadioIO\.sysml$"):
-            self.check()
-        self.write("radio/RadioIO.sysml", radio)
-        with self.subTest("one, in a folder"):
+    def test_required_package_is_found_by_package_in_a_file_of_any_name_and_folder(self):
+        keys = self.elsewhere()
+        with self.subTest("ten packages, no required file name but the entry file"):
+            self.assertEqual(len(keys), 10)
+            self.assertEqual(set(self.written) & set(REQUIRED_FILES), {"Requirements.sysml"})
+            self.assertEqual(sorted("/" in key for key in keys.values()), [False] * 5 + [True] * 5)
             self.assertEqual(set(self.check()), REQUIRED)
-        self.write("RadioIO.sysml", radio)
-        with self.subTest("two"), self.refused(r"RadioIO\.sysml: RadioIO\.sysml, radio/RadioIO\.sysml$"):
+            self.assertEqual(tool.authority(self.models, self.fsd), "sysml")
+        for package, key in keys.items():
+            with self.subTest(removed=package):
+                text = self.written[key]
+                self.remove(key)
+                try:
+                    with self.refused("Canonical model packages missing: " + package + "$"):
+                        self.check()
+                finally:
+                    self.write(key, text)
+        radio = keys["WstxRadioIO"]
+        self.remove(radio)
+        # A name that is not the package of its file does not count.
+        for label, text in (("in a line comment", "// package WstxRadioIO {}\n"),
+                            ("in a block comment", "/* package WstxRadioIO {\n} */\n"),
+                            ("a longer name", "package WstxRadioIOX {}"),
+                            ("nested in another package", "package Outer { package WstxRadioIO {} }"),
+                            ("the second package of the file", "package First {}\npackage WstxRadioIO {}")):
+            with self.subTest(label):
+                self.write(radio, text)
+                with self.refused(RADIO_MISSING):
+                    self.check()
+        self.remove(radio)
+        self.remove(keys["WstxProfiles"])
+        with self.subTest("two removed"), self.refused(r"Canonical model packages missing: WstxProfiles, WstxRadioIO$"):
             self.check()
+
+    # Required packages T2: two
+    # Proves: CL-014-10; TC-DOC-008
+    def test_required_package_in_two_files_is_refused_and_a_file_name_may_repeat(self):
+        self.write("radio/Other.sysml", "package WstxRadioIO {}")
+        with self.subTest("one package, two files"), self.refused(
+                r"Duplicate canonical model package: WstxRadioIO: RadioIO\.sysml, radio/Other\.sysml$"):
+            self.check()
+        self.remove("radio/Other.sysml")
+        self.write("radio/RadioIO.sysml", "package RadioCapture {}")
+        self.write("ProductScope.sysml", "package WstxProductScope { private import RadioCapture::*; }")
+        with self.subTest("one file name, two packages"):
+            self.assertEqual(set(self.check()), REQUIRED)
+
+    # Required packages T3: the file of a required package split into function files
+    # Proves: CL-014-10; TC-DOC-008
+    def test_required_file_split_into_function_files_keeps_the_identities(self):
+        content = CLAUSE + CASE + OWNS + CHECKS + "}\n"
+        self.write("Requirements.sysml", TOP)
+        self.write("RadioIO.sysml", "package WstxRadioIO {\n" + content)
+        before = set(self.check())
+        self.assertEqual(before, REQUIRED)
+        self.remove("RadioIO.sysml")
+        self.write("backend/radio/Cat.sysml", "package WstxRadioIO {}")
+        self.write("backend/radio/Capture.sysml", "package WstxRadioCapture {\n" + content)
+        with self.subTest("without the scope reference"), self.refused(
+                r"lacks a ProductScope reference: backend/radio/Capture\.sysml$"):
+            self.check()
+        self.write("ProductScope.sysml", "package WstxProductScope { private import WstxRadioCapture::*; }")
+        with self.subTest("with the scope reference"):
+            self.assertEqual(set(self.check()), before)
+        self.write("backend/radio/Cat.sysml", "package WstxRadioCat {}")
+        with self.subTest("the required package renamed too"), self.refused(RADIO_MISSING):
+            self.check()
+
+    # Required packages T4: the ProductScope text is the file of the scope package
+    # Proves: CL-014-10; TC-DOC-008
+    def test_productscope_text_is_the_file_whose_package_is_the_scope_package(self):
+        self.remove("ProductScope.sysml")
+        self.write("Future.sysml", "package FutureBackend {}")
+        self.write("nav/Scope.sysml", "package WstxProductScope { private import FutureBackend::*; }")
+        with self.subTest("the scope package under another file name, in a folder"):
+            self.assertEqual(set(self.check()), REQUIRED)
+        self.write("nav/Scope.sysml", "package WstxProductScope { private import Decoy::*; }")
+        self.write("ProductScope.sysml", "package Decoy { private import FutureBackend::*; }")
+        with self.subTest("the reference only in a file named ProductScope.sysml"), self.refused(
+                r"lacks a ProductScope reference: Future\.sysml$"):
+            self.check()
+
+    # Required packages T5: a file name gives no exemption
+    # Proves: CL-014-10; TC-DOC-008
+    def test_file_of_a_required_name_with_another_package_is_an_additional_package(self):
+        self.write("RadioIO.sysml", "package Other {}")
+        self.write("radio/Cat.sysml", "package WstxRadioIO {}")
+        with self.refused(r"lacks a ProductScope reference: RadioIO\.sysml$"):
+            self.check()
+
+    # Required packages T5, a guard of existing behaviour: no package, and the library packages
+    # Proves: CL-014-10; TC-DOC-008
+    def test_file_without_a_package_needs_the_reference_and_a_library_package_none(self):
+        self.write("shared/Notes.sysml", "package ModelNotes { metadata def NotStated; }")
+        self.write("shared/Bindings.sysml", "package ModelBindings { metadata def Status; }")
+        with self.subTest("library packages"):
+            self.assertEqual(set(self.check()), REQUIRED)
+        for key in ("Loose.sysml", "notes/Loose.sysml"):
+            with self.subTest(without_package=key):
+                self.write(key, "// package Hidden {}\nattribute def Loose;\n")
+                with self.refused("lacks a ProductScope reference: " + re.escape(key) + "$"):
+                    self.check()
+                self.remove(key)
+
+    # Required packages T6: the commands on a model without a required package
+    # Proves: CL-014-10; TC-DOC-008
+    def test_check_traces_and_fingerprints_refuse_a_model_without_a_required_package(self):
+        self.without_radio_package()
+        for name in ("check", "traces", "fingerprints"):
+            with self.subTest(command=name):
+                # The fixture's validator fails the test when it is invoked.
+                self.assertEqual(self.command(name),
+                                 (2, "", "SysML check failed: Canonical model packages missing: WstxRadioIO\n"))
+
+    # Required packages T6, a guard of existing behaviour: markers runs no catalog check
+    # Proves: CL-014-10; TC-DOC-008
+    def test_markers_lists_a_model_without_a_required_package(self):
+        self.without_radio_package()
+        self.write("shared/ModelNotes.sysml", "package ModelNotes { metadata def NotStated { attribute what : String; } }")
+        self.write("RadioIO.sysml", 'package Moved {\n    @NotStated { what = "the level"; }\n}\n')
+        self.assertEqual(self.command("markers"), (0, "RadioIO.sysml:2: NotStated: the level\n1 markers: 1 NotStated\n", ""))
+
+    # Required packages T6: the gate's model bindings on moved and renamed files
+    # Proves: CL-014-10; TC-DOC-008
+    def test_gate_model_bindings_follow_moved_and_renamed_required_files(self):
+        spec = importlib.util.spec_from_file_location("required_model_bindings", ROOT / ".harness/model_bindings.py")
+        bindings = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bindings)
+        bound = 'AutomationState::partial;\n        attribute executable : String = "tests/case.cjs";'
+        (self.root / "tests/case.cjs").write_text("// Proves: TC-001-001\ntest('identity',()=>{});\n", encoding="utf-8")
+        self.write("Requirements.sysml", FLAT.replace("AutomationState::planned;", bound))
+        self.git("init", "-q")
+        self.commit("flat")
+        flat_keys = sorted(self.written)
+        # Every file of a required package but the entry file, moved and renamed.
+        for index, key in enumerate(key for key in flat_keys if key != "Requirements.sysml"):
+            text = self.written[key]
+            self.remove(key)
+            self.write(("moved/deep/" if index % 2 else "moved/") + "M" + str(index) + ".sysml", text)
+        self.commit("moved and renamed")
+        moved_keys = sorted(self.written)
+        radio = next(key for key, text in self.written.items() if text == "package WstxRadioIO {}")
+        self.remove(radio)
+        self.commit("without the package")
+        case = {"automated": True, "verifies": ["FR-001", "CL-003-01"], "paths": ["tests/case.cjs"],
+                "tests": [{"path": "tests/case.cjs", "name": "identity"}], "unresolved": []}
+        real_catalog = bindings.sysml.canonical_catalog
+        with mock.patch.object(bindings, "ROOT", self.root), \
+                mock.patch.object(bindings.sysml, "canonical_catalog", side_effect=lambda d, r: real_catalog(d, r, required=REQUIRED)):
+            flat = bindings.bindings("HEAD~2")
+            with self.subTest("revision 1, flat"):
+                self.assertEqual(flat["models"], ["docs/sysml/" + key for key in flat_keys])
+                self.assertEqual(flat["cases"], {"TC-001-001": case})
+                self.assertEqual(set(flat["promises"]), {"FR-001", "CL-003-01"})
+            with self.subTest("revision 2, moved and renamed"):
+                moved = bindings.bindings("HEAD~1")
+                self.assertEqual(moved["models"], ["docs/sysml/" + key for key in moved_keys])
+                self.assertEqual((moved["cases"], moved["promises"]), (flat["cases"], flat["promises"]))
+            with self.subTest("revision 3, without the package"):
+                output, errors = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                    status = bindings.main(["--rev", "HEAD"])
+                self.assertEqual((status, output.getvalue(), errors.getvalue()),
+                                 (2, "", "model bindings: Canonical model packages missing: WstxRadioIO\n"))
+        self.assertEqual(set(moved_keys) & set(flat_keys), {"Requirements.sysml"})
+        self.assertEqual(len(moved_keys), 10)
 
     # T3, a guard of existing behaviour
     # Proves: CL-014-10; TC-DOC-008
@@ -162,7 +356,7 @@ class ModelTreeTests(unittest.TestCase):
     # T5
     # Proves: CL-014-10; TC-DOC-008
     def test_clause_dependency_ends_through_package_names_are_read_and_checked(self):
-        owns = "    dependency owns from PPart::'CL-003-01' to PTop::'FR-001';\n"
+        owns = "    dependency owns from PPart::'CL-003-01' to WstxRequirements::'FR-001';\n"
         checks = "    dependency checks from PPart::'CL-003-01' to A::B::'TC-001-001';\n"
         self.write("Requirements.sysml", FLAT.replace(OWNS, owns).replace(CHECKS, checks))
         self.assertEqual(set(self.check()), REQUIRED)
@@ -182,13 +376,13 @@ class ModelTreeTests(unittest.TestCase):
             for scope in ("private import FutureBackend::*;", "attribute a : FutureBackend::T;",
                           "import FutureBackend;", "private import FutureBackend ;", "alias F for FutureBackend;"):
                 with self.subTest(key=key, accepted=scope):
-                    self.write("ProductScope.sysml", "package Scope { " + scope + " }")
+                    self.write("ProductScope.sysml", "package WstxProductScope { " + scope + " }")
                     self.assertEqual(set(self.check()), REQUIRED)
             for scope in ("", "// import FutureBackend;", "/* alias F for FutureBackend; FutureBackend::T */",
                           "private import FutureBackendX::*;", "import FutureBackendX;", "alias FutureBackend for Other;",
                           "import XFutureBackend;"):
                 with self.subTest(key=key, refused=scope):
-                    self.write("ProductScope.sysml", "package Scope { " + scope + " }")
+                    self.write("ProductScope.sysml", "package WstxProductScope { " + scope + " }")
                     with self.refused("Additional canonical package lacks a ProductScope reference: " + re.escape(key) + "$"):
                         self.check()
             self.remove(key)
@@ -243,7 +437,7 @@ class ModelTreeTests(unittest.TestCase):
             self.assertEqual(fingerprints(), expected())
             self.assertTrue(all("/" not in key for key, _hash in fingerprints()))
         self.tree()
-        self.write("radio/RadioIO.sysml", "package PRadioIO { /* moved */ }")
+        self.write("radio/RadioIO.sysml", "package WstxRadioIO { /* moved */ }")
         self.remove("RadioIO.sysml")
         with self.subTest("tree"):
             self.assertEqual(len(self.written), 11)
@@ -254,7 +448,7 @@ class ModelTreeTests(unittest.TestCase):
     # Proves: CL-014-10; TC-DOC-008
     def test_check_validates_every_file_once_entry_first_then_sorted_by_key(self):
         self.tree()
-        self.write("radio/RadioIO.sysml", "package PRadioIO {}")
+        self.write("radio/RadioIO.sysml", "package WstxRadioIO {}")
         self.remove("RadioIO.sysml")
         validate = mock.Mock(return_value=subprocess.CompletedProcess([], 0, "semantic fixture", ""))
         status, _output, errors = self.command("check", validate=validate)
@@ -302,9 +496,9 @@ class ModelTreeTests(unittest.TestCase):
 
 
 class RelocatedRealModelTests(unittest.TestCase):
-    # T13: the real pinned Pilot on the real model.
+    # Required packages T7: the real pinned Pilot on the real model.
     # Proves: CL-014-10; TC-DOC-008
-    def test_real_model_with_one_file_in_a_folder_passes_check_with_the_same_identities(self):
+    def test_real_model_with_a_required_package_moved_and_renamed_passes_check_with_the_same_identities(self):
         # The real model as it stands, flat or already in folders: {key: path}, and per key the
         # relative documentation links that reach an existing file, as (link, real target).
         real = {path.relative_to(tool.MODELS).as_posix(): path for path in sorted(tool.MODELS.rglob("*.sysml"))}
@@ -316,14 +510,21 @@ class RelocatedRealModelTests(unittest.TestCase):
                           if link and not link.startswith(("https://", "http://")) and (path.parent / link).resolve().is_file()]
         model_paths = {path.resolve() for path in real.values()}
         linked = {target for found in links.values() for _link, target in found}
-        # Relocate the first file directly in docs/sysml other than the entry file. A link between
-        # two model files holds only while both keep their folders, so a file with such a link at
-        # either end is passed over.
+        # Relocate the first file other than the entry file, at any depth, whose package is a
+        # required one. A link between two model files holds only while both keep their folders,
+        # so a file with such a link at either end is passed over.
+        def package(path):
+            code = re.sub(r"/\*[\s\S]*?\*/|//[^\r\n]*", " ", path.read_text(encoding="utf-8"))
+            found = re.search(r"\bpackage\s+(\w+)\s*\{", code)
+            return found[1] if found else None
+
         movable = [key for key, path in real.items()
-                   if "/" not in key and key != "Requirements.sysml" and path.resolve() not in linked
+                   if key != "Requirements.sysml" and package(path) in REQUIRED_FILES.values() and path.resolve() not in linked
                    and not any(target in model_paths for _link, target in links[key])]
-        self.assertTrue(movable, "no model file directly in docs/sysml can be relocated")
-        relocated_key = "relocated-by-test/" + movable[0]
+        self.assertTrue(movable, "no model file of a required package, other than the entry file and without "
+                                 "a relative link to or from another model file, can be relocated")
+        relocated_key = "relocated-by-test/Renamed.sysml"
+        self.assertNotEqual(Path(relocated_key).name, Path(movable[0]).name)
         self.assertNotIn(relocated_key, real)
         with tempfile.TemporaryDirectory() as directory:
             copy = Path(directory) / "docs/sysml"
