@@ -19,7 +19,7 @@ and both are set up alike (operator 2026-11-11). Two things decide the machine:
 |---|---|
 | Anything that needs the transceiver (IC-7300, COM3): live and hardware tests (cost 3 to 5), radio acceptance, installs on the station | HB9BLA, where the transceiver and the station are |
 | A test of client and server across the network | Both, one as server and one as client |
-| Everything else: definition, model, harness, coding, builds, tests, the gate | Either |
+| Everything else: definition, model, harness, coding, builds, tests, the gate, FlexRadio work (the FlexRadio is reached over the network) | Either |
 
 What holds whichever machine is used:
 
