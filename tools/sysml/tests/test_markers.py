@@ -104,8 +104,13 @@ class MarkerListingTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.models = self.root / "docs/sysml"
-        for name in tool.CANONICAL_MODELS:
-            self.write(name, "package P" + name.split(".")[0] + " {}\n")
+        # The files of the required packages, written by hand; the entry file follows below.
+        for name, package in (("Architecture.sysml", "WstxArchitecture"), ("Profiles.sysml", "WstxProfiles"),
+                              ("RecordingReceive.sysml", "WstxRecordingReceive"), ("StationDecode.sysml", "WstxOfflineDecode"),
+                              ("RadioIO.sysml", "WstxRadioIO"), ("OperatingLayout.sysml", "WstxOperatingLayout"),
+                              ("OperatingReceive.sysml", "WstxOperatingReceive"), ("StationProtocol.sysml", "WstxStationProtocol"),
+                              ("ProductScope.sysml", "WstxProductScope")):
+            self.write(name, "package " + package + " {}\n")
         for key, text in (("Requirements.sysml", ENTRY), ("Zeta.sysml", ZETA), (PART_KEY, PART), (NOTES_KEY, NOTES)):
             self.write(key, text)
 

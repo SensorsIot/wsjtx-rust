@@ -12,7 +12,15 @@ spec = importlib.util.spec_from_file_location("canonical_tool", Path(__file__).r
 tool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tool)
 REQUIRED = {"FR-001", "CL-003-01", "TC-001-001"}
-MODEL = '''// Canonical authority: SysML
+# The fixture's model files and the required package each declares, written by hand.
+REQUIRED_FILES = {
+    "Requirements.sysml": "WstxRequirements", "Architecture.sysml": "WstxArchitecture",
+    "Profiles.sysml": "WstxProfiles", "RecordingReceive.sysml": "WstxRecordingReceive",
+    "StationDecode.sysml": "WstxOfflineDecode", "RadioIO.sysml": "WstxRadioIO",
+    "OperatingLayout.sysml": "WstxOperatingLayout", "OperatingReceive.sysml": "WstxOperatingReceive",
+    "StationProtocol.sysml": "WstxStationProtocol", "ProductScope.sysml": "WstxProductScope",
+}
+MODEL ='''// Canonical authority: SysML
 package WstxRequirements {
     enum def ImplementationState { enum target; enum partial; enum implemented; }
     enum def AutomationState { enum planned; enum partial; enum implemented; }
@@ -43,8 +51,8 @@ class CanonicalAuthorityTests(unittest.TestCase):
         self.models = self.root / "docs/sysml"
         self.models.mkdir(parents=True)
         self.fsd = self.root / "docs/FSD.md"
-        for name in tool.CANONICAL_MODELS:
-            (self.models / name).write_text("package P" + name.split(".")[0] + " {}", encoding="utf-8")
+        for name, package in REQUIRED_FILES.items():
+            (self.models / name).write_text("package " + package + " {}", encoding="utf-8")
         self.requirements = self.models / "Requirements.sysml"
         self.requirements.write_text(MODEL, encoding="utf-8")
 
@@ -89,7 +97,7 @@ class CanonicalAuthorityTests(unittest.TestCase):
                     self.check()
         self.requirements.write_text(MODEL, encoding="utf-8")
         (self.models / "RadioIO.sysml").unlink()
-        with self.assertRaisesRegex(ValueError, "Canonical model files missing"):
+        with self.assertRaisesRegex(ValueError, "Canonical model packages missing: WstxRadioIO$"):
             self.check()
 
     def test_undefined_nonreciprocal_and_absent_clause_verification_refused(self):
@@ -188,7 +196,7 @@ class CanonicalAuthorityTests(unittest.TestCase):
         extra.write_text("package FutureBackend {}", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "lacks a ProductScope reference"):
             self.check()
-        (self.models / "ProductScope.sysml").write_text("package Scope { private import FutureBackend::*; }", encoding="utf-8")
+        (self.models / "ProductScope.sysml").write_text("package WstxProductScope { private import FutureBackend::*; }", encoding="utf-8")
         self.check()
         extra.write_text("package FutureBackend { requirement 'FR-001' { attribute coverage : ImplementationState = ImplementationState::target; } }", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "Duplicate canonical"):

@@ -24,6 +24,14 @@ spec.loader.exec_module(tool)
 CACHE = Path.home() / ".cache/wsjtx-rust/sysml-tools"
 REQUIRED = {"FR-001", "CL-003-01", "TC-001-001"}
 MARKER = "// Canonical authority: SysML\n"
+# The fixture's model files and the required package each declares, written by hand.
+REQUIRED_FILES = {
+    "Requirements.sysml": "WstxRequirements", "Architecture.sysml": "WstxArchitecture",
+    "Profiles.sysml": "WstxProfiles", "RecordingReceive.sysml": "WstxRecordingReceive",
+    "StationDecode.sysml": "WstxOfflineDecode", "RadioIO.sysml": "WstxRadioIO",
+    "OperatingLayout.sysml": "WstxOperatingLayout", "OperatingReceive.sysml": "WstxOperatingReceive",
+    "StationProtocol.sysml": "WstxStationProtocol", "ProductScope.sysml": "WstxProductScope",
+}
 ENUMS = '''    enum def ImplementationState { enum target; enum partial; enum implemented; }
     enum def AutomationState { enum planned; enum partial; enum implemented; }
 '''
@@ -93,7 +101,7 @@ def case(body, typed=""):
 
 def flat(clause_body, case_body, typed="", extra=""):
     """The whole catalog in the entry file."""
-    return (MARKER + "package PTop {\n" + ENUMS + FR + extra + clause(clause_body)
+    return (MARKER + "package WstxRequirements {\n" + ENUMS + FR + extra + clause(clause_body)
             + case(case_body, typed) + OWNS + CHECKS + "}\n")
 
 
@@ -110,8 +118,8 @@ class StatedOnceTests(unittest.TestCase):
         for name in tool.SOURCE_BINDING_ROOTS:
             (self.root / name).mkdir()
         self.models = self.root / "docs/sysml"
-        for name in tool.CANONICAL_MODELS:
-            self.write(name, "package P" + name.split(".")[0] + " {}")
+        for name, package in REQUIRED_FILES.items():
+            self.write(name, "package " + package + " {}")
         self.source("server/contact.rs", "pub fn step() {}\n")
         self.source("client/app.js", "export {};\n")
         self.source("tests/case.cjs", TAGGED)
@@ -132,8 +140,8 @@ class StatedOnceTests(unittest.TestCase):
         return self.check()
 
     def tree(self, *args, top="", **kwargs):
-        self.write("Requirements.sysml", MARKER + "package PTop {\n" + ENUMS + FR + top + "}\n")
-        self.write("ProductScope.sysml", "package Scope { private import PPart::*; }")
+        self.write("Requirements.sysml", MARKER + "package WstxRequirements {\n" + ENUMS + FR + top + "}\n")
+        self.write("ProductScope.sysml", "package WstxProductScope { private import PPart::*; }")
         self.write(PART_KEY, part(*args, **kwargs))
         return self.check()
 
@@ -156,7 +164,7 @@ class StatedOnceTests(unittest.TestCase):
         with self.subTest("package names on the metadata and on the value"):
             qualified = "        @ModelBindings::Status { build = WstxRequirements::ImplementationState::partial; }\n"
             entries = self.flat(qualified + implementation("server/contact.rs"),
-                                "        @ModelBindings::Automation { run = PTop::AutomationState::planned; }\n")
+                                "        @ModelBindings::Automation { run = WstxRequirements::AutomationState::planned; }\n")
             self.assertEqual((entries["CL-003-01"]["state"], entries["TC-001-001"]["state"]), ("partial", "planned"))
         clause_faults = {
             "both forms": coverage("target") + status("target"),
@@ -326,7 +334,7 @@ class StatedOnceTests(unittest.TestCase):
         # A state or method the case names itself in a spelling that is not read is never
         # replaced by the definition's.
         unread_states = {
-            "attribute with a qualified state": "        attribute automation : AutomationState = PTop::AutomationState::planned;\n",
+            "attribute with a qualified state": "        attribute automation : AutomationState = WstxRequirements::AutomationState::planned;\n",
             "redefinition in the metadata": "        @Automation { :>> run = AutomationState::planned; }\n",
             "the metadata keyword": "        metadata Automation { run = AutomationState::planned; }\n",
             "the metadata keyword with a name": "        metadata own : ModelBindings::Automation { run = AutomationState::planned; }\n",
@@ -350,9 +358,9 @@ class StatedOnceTests(unittest.TestCase):
         with self.subTest("definition in another file"), self.refused(missing):
             self.tree(target, "", typed, top=definition(run("implemented")))
         with self.subTest("definition in another file, named through its package"), self.refused(missing):
-            self.tree(target, "", " : PTop::EngineCase", top=definition(run("implemented")))
+            self.tree(target, "", " : WstxRequirements::EngineCase", top=definition(run("implemented")))
         with self.subTest("definition of the file named through its package"), self.refused(missing):
-            self.flat(target, "", " : PTop::EngineCase", definition(run("implemented")))
+            self.flat(target, "", " : WstxRequirements::EngineCase", definition(run("implemented")))
         with self.subTest("automation only on the definition's supertype"), self.refused(missing):
             self.flat(target, "", typed, definition(run("implemented"), name="Base") + definition("", header=" :> Base"))
         with self.subTest("definition without automation"), self.refused(missing):
@@ -401,12 +409,12 @@ class StatedOnceTests(unittest.TestCase):
                 self.check()
             with self.subTest(form=form, key=PART_KEY), self.refused(
                     "Unreadable canonical declaration: " + identifier + ": " + PART_KEY_PATTERN):
-                self.write("Requirements.sysml", MARKER + "package PTop {\n" + ENUMS + FR + "}\n")
-                self.write("ProductScope.sysml", "package Scope { private import PPart::*; }")
+                self.write("Requirements.sysml", MARKER + "package WstxRequirements {\n" + ENUMS + FR + "}\n")
+                self.write("ProductScope.sysml", "package WstxProductScope { private import PPart::*; }")
                 self.write(PART_KEY, part(coverage("target"), automation("planned")).replace(header, "    " + form))
                 self.check()
             (self.models / PART_KEY).unlink()
-            self.write("ProductScope.sysml", "package PProductScope {}")
+            self.write("ProductScope.sysml", "package WstxProductScope {}")
             for label, comment in (("line", "    // " + form + " }\n"), ("block", "    /* " + form + "\n       } */\n")):
                 with self.subTest(form=form, comment=label):
                     self.write("Requirements.sysml", good.replace(OWNS, comment + OWNS))
@@ -425,12 +433,12 @@ class StatedOnceTests(unittest.TestCase):
 
         self.source("tests/second.cjs", "// Proves: TC-001-002\ntest('second',()=>{});\n")
         second_links = "    dependency checksToo from 'CL-003-01' to 'TC-001-002';\n"
-        attributes = (MARKER + "package PTop {\n" + ENUMS + FR
+        attributes = (MARKER + "package WstxRequirements {\n" + ENUMS + FR
                       + clause(coverage("implemented") + implementation("server/contact.rs"))
                       + case(automation("implemented") + '        attribute method : String = "manual";\n' + executable("tests/untagged.cjs"))
                       + "    verification 'TC-001-002' {\n" + automation("partial") + executable("tests/second.cjs")
                       + "        objective { verify 'CL-003-01'; }\n    }\n" + OWNS + CHECKS + second_links + "}\n")
-        metadata = (MARKER + "package PTop {\n" + ENUMS + FR
+        metadata = (MARKER + "package WstxRequirements {\n" + ENUMS + FR
                     + "    action def Engine {\n" + implemented_in("server/contact.rs")
                     + '        @DetailTests { tests = "tests/case.cjs"; covers = "the inside"; }\n    }\n'
                     + clause(status("implemented"))
@@ -547,7 +555,7 @@ class NewFormsOnThePilotTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.models = self.root / "docs/sysml"
-        texts = {name: "package P" + name.split(".")[0] + " {}\n" for name in tool.CANONICAL_MODELS}
+        texts = {name: "package " + package + " {}\n" for name, package in REQUIRED_FILES.items()}
         texts.update({"Requirements.sysml": PILOT_REQUIREMENTS, "ProductScope.sysml": PILOT_SCOPE,
                       "ModelBindings.sysml": MODEL_BINDINGS, "backend/qso/Engine.sysml": PILOT_ENGINE,
                       "interfaces/Wire.sysml": PILOT_WIRE})

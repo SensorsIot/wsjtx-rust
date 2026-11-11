@@ -719,7 +719,7 @@ These are HOW bindings, not product requirements and not SysML model elements.
 | CL-014-07 | Implementation readiness | Before code, the issue's ready check passes: the selected model slice settles observable behaviour, interfaces/data, ownership, state/timing/error choices and independent oracles. Explicit implementation freedoms do not authorize unresolved functional decisions. | TC-DOC-006 |
 | CL-014-08 | Functional sequence and closure | Use the declared canonical artifact first, pass the ready check, implement against it and verify with independent expected results. Reconcile delivered behaviour and durable cases before closing the issue. SysML-only authority requires no maintained/generated Markdown specification. | TC-DOC-006; TC-DOC-007; independent closure review |
 | CL-014-09 | Modeling feedback | Correct differences against the declared authority; do not bless code defects by rewriting requirements. Record causes/review on the issue and improve demonstrated reusable/project-specific gaps, with a focused regression where useful. | TC-DOC-006; independent review |
-| CL-014-10 | Model file tree | The model is every `*.sysml` file at any depth below `docs/sysml`, named by its path relative to that folder. Required files are found by name at any depth, exactly once; the entry file stays at the root. Identities, links and the ProductScope reference hold across folders and packages. | TC-DOC-008 |
+| CL-014-10 | Model file tree | The model is every `*.sysml` file at any depth below `docs/sysml`, named by its path relative to that folder. Each required package is the package of exactly one model file, whatever the file's name and folder; the entry file stays at the root. Identities, links and the ProductScope reference hold across folders and packages. | TC-DOC-008 |
 | CL-014-11 | Stated once | Status and bindings are read as attributes or as `ModelBindings` metadata, once per declaration. A delivered clause without a binding takes the function binding of its model file; a case takes automation from the verification definition of its file that it is typed by. A declaration with an identity in a form the catalog does not read is refused. | TC-DOC-009 |
 | CL-014-12 | Marker listing | `markers` lists every `ModelNotes` marker of the model by file key and line, with counts by kind; it checks nothing and writes nothing. | TC-DOC-010 |
 
@@ -738,7 +738,7 @@ portable Pilot. No radio, live service, Jupyter server or global Java is needed.
 | TC-DOC-005 | CL-014-03, CL-014-06 | Load the complete architecture with the actual Pilot, inspect resolved port/item/association/binding inventory and compare with independent endpoint expectations. Remove/delegate/bypass/split/duplicate/redirect a required path or authority, change item type/direction, weaken identity binding or add view-only runtime parts. Each negative fails semantics or integrity; a rendered view cannot repair it. | Automated full-validator mutation fixtures and independent architecture review on this PC. |
 | TC-DOC-006 | CL-014-07, CL-014-08, CL-014-09 | An agent that did not write the issue reads it and the canonical contract it names; missing required decisions, missing test cases or a shared-only generated oracle give `Ready: not yet`, and `cr_state.py` refuses `implementing` without a `Ready: PASS`. The independent review of the candidate rechecks exact changes and closure reconciliation. On request, a model-readiness review traces the contract to code boundaries. No syntax/fingerprint result establishes implementation sufficiency. | Manual source/model/meaning reading on this PC; automation cannot establish complete intended meaning. |
 | TC-DOC-007 | CL-014-01, CL-014-05, CL-014-08 | Refuse dual/missing authority and an active FSD without the marker, missing/duplicate stable IDs, missing required packages, invalid state, nonreciprocal verification links, missing/escaping source paths and unsupported executable claims. Refuse dangling active references to retired FSD content. Edited/missing archived Markdown does not change canonical checks; no command rewrites the model. New packages must be referenced by ProductScope and validated in full. Source edits/deletions invalidate both model suites' evidence; source-only changes select fast traces without the full model suite. Fast traces refuses a deleted binding and never invokes Java. | Automated isolated Python fixtures on this PC; full integrated Pilot validation remains separate. |
-| TC-DOC-008 | CL-014-10 | Place a clause and its case in a subfolder file, move a required file into a folder, duplicate it, move the entry file, verify and link a clause through a package-qualified name, refer to an additional package by import, by alias and not at all, and add a library package without a reference. The tree is accepted, each fault is refused by key, fingerprints and the gate's model list name every file by key, and the real model with one file moved into a folder passes the full validation with the same identities as the flat one. | Automated isolated Python fixtures and one full Pilot validation on this PC. |
+| TC-DOC-008 | CL-014-10 | Place a clause and its case in a subfolder file, move, rename and split the file of a required package, remove the package, declare it in two files, move the entry file, verify and link a clause through a package-qualified name, refer to an additional package by import, by alias and not at all, and add a library package without a reference. The tree is accepted, each fault is refused by package or key, fingerprints and the gate's model list name every file by key, and the real model with one file of a required package moved into a folder under another name passes the full validation with the same identities. | Automated isolated Python fixtures and one full Pilot validation on this PC. |
 | TC-DOC-009 | CL-014-11 | Write status, bindings and method as metadata, state one twice, leave a clause's binding to none, one and two function bindings, type a case by a definition with and without automation in its file and in another, bind a test on a definition, and declare an identity in an unread form. The new forms give the catalog and gate bindings of the attribute forms, each fault is refused by identity or key, and the real model rewritten to metadata passes the full validation with the same identities. | Automated isolated Python fixtures and full Pilot validations on this PC. |
 | TC-DOC-010 | CL-014-12 | List markers in each form across folders, in comments, with joined strings, by kind, with an added kind, an unknown kind, no ModelNotes file, a broken catalog and no authority. | Automated isolated Python fixtures on this PC. |
 
@@ -787,27 +787,43 @@ Candidate recordings and oracle limitations are specified in
 
 ### Canonical model catalog and source bindings
 
-The canonical entry point is `docs/sysml/Requirements.sysml`. The model set includes
-Requirements, Architecture, Profiles, RecordingReceive, StationDecode, RadioIO,
-OperatingLayout, OperatingReceive, StationProtocol and ProductScope. Additional packages
+The canonical entry point is `docs/sysml/Requirements.sysml`. The model set includes the
+ten required packages `WstxRequirements`, `WstxArchitecture`, `WstxProfiles`,
+`WstxRecordingReceive`, `WstxOfflineDecode`, `WstxRadioIO`, `WstxOperatingLayout`,
+`WstxOperatingReceive`, `WstxStationProtocol` and `WstxProductScope`. Additional packages
 are discovered, scanned and fully validated; ProductScope references their package so
 that removal causes a name-resolution failure. A missing required baseline package fails.
 
 A model file is a file `*.sysml` at any depth below `docs/sysml`; its key is its path
 relative to `docs/sysml` with forward slashes, and every message that names a model file
 names it by its key. No folder is excluded; a file kept out of the model keeps a suffix
-other than `.sysml`.
+other than `.sysml`. The package of a model file is its first package declaration outside
+comments; a file without one has no package. A package named only in a comment, nested in
+another package or declared after the first package of its file is not the file's package.
 
-- **Required files.** Each of the ten required file names is satisfied by exactly one
-  model file of that name, at any depth. None: `Canonical model files missing: <names>`.
-  Two or more: refused, naming the file name and the keys.
+- **Required packages.** Each package in the tool's list of required packages
+  (`REQUIRED_PACKAGES` in `tools/sysml.py`, the ten named above) is the package of exactly
+  one model file, whatever that file's name and folder. The name is compared whole. None:
+  `Canonical model packages missing: <names>`, the names sorted and joined by `, `. Two or
+  more files: `Duplicate canonical model package: <package>: <keys>`, the keys sorted and
+  joined by `, `. The catalog asks for no model file name: two model files of one name in
+  different folders are accepted, each judged by its package and named by its key. The
+  file of a required package may be moved, renamed or split while one file keeps the
+  package. A change that renames or removes a required package changes the name in the
+  list in the same change, with the ProductScope imports and aliases, this section and
+  the code comments that cite it; there is no alias from an old name to a new one.
 - **Entry file.** `Requirements.sysml` with the marker `// Canonical authority: SysML` is
   required directly in `docs/sysml`. Elsewhere or absent, the commands refuse with
   `No declared functional authority`.
-- **ProductScope reference.** Every model file that is not one of the ten required ones
-  is an additional package. Its package must be referred to in `ProductScope.sysml`,
-  outside comments, by a qualified name beginning `Package::` (this includes
-  `import Package::*;`), by `import Package;` or by `alias <name> for Package;`.
+- **ProductScope reference.** A model file is an additional package when its package is
+  neither a required nor a library package; a file without a package is one too. The file
+  name decides nothing: a file named `RadioIO.sysml` whose package is not required needs
+  the reference, and a file of any name whose package is required needs none. The package
+  must be referred to in the ProductScope text, which is the model file whose package is
+  `WstxProductScope`, whatever its name and folder; a reference in another file does not
+  count. The reference stands outside comments and is a qualified name beginning
+  `Package::` (this includes `import Package::*;`), `import Package;` or
+  `alias <name> for Package;`.
   Otherwise: `Additional canonical package lacks a ProductScope reference: <key>`.
 - **Library packages.** A package named in the tool's list of library packages
   (`LIBRARY_PACKAGES` in `tools/sysml.py`) needs no ProductScope reference. The list
