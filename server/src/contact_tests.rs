@@ -36,6 +36,11 @@ struct Bench {
     late_ms: AtomicI64,
     /// Every waveform play's audio: (UTC start, 48 kHz samples, first sample played).
     audio: Mutex<Plays>,
+    /// The station clock (none: synchronized) and the CL-022 safety revision (none: 7).
+    clock: Mutex<Option<ClockState>>,
+    revision: Mutex<Option<u64>>,
+    /// A PTT release fails (the switch is then indeterminate); keying still works.
+    release_fails: std::sync::atomic::AtomicBool,
 }
 #[derive(Clone)]
 struct Fake(Arc<Bench>);
@@ -44,7 +49,11 @@ impl Hardware for Fake {
         self.0.now.load(Ordering::SeqCst)
     }
     fn clock(&self) -> ClockState {
-        ClockState::Synchronized
+        self.0
+            .clock
+            .lock()
+            .unwrap()
+            .unwrap_or(ClockState::Synchronized)
     }
     fn context(&self) -> Context {
         let capability = self
@@ -55,13 +64,22 @@ impl Hardware for Fake {
             .unwrap_or(Capability::Available);
         Context {
             capability,
-            safety_revision: (capability == Capability::Available).then_some(7),
+            // A set revision stays while the radio is away (the profile's, not the radio's).
+            safety_revision: self
+                .0
+                .revision
+                .lock()
+                .unwrap()
+                .or((capability == Capability::Available).then_some(7)),
             radio_transmitting: Some(false),
         }
     }
     fn ptt(&mut self, on: bool) -> Result<(), PttError> {
         let t = self.now_utc_ms();
         self.0.keys.lock().unwrap().push((t, on));
+        if !on && self.0.release_fails.load(Ordering::SeqCst) {
+            return Err(PttError::Indeterminate);
+        }
         Ok(())
     }
     fn open_audio(&mut self) -> Result<(), AudioError> {
@@ -126,6 +144,8 @@ struct Station {
     call: String,
     /// The profile locator (Ctx.locator; empty is none).
     locator: String,
+    /// The station band (Ctx.band); none is unknown.
+    band: Option<&'static str>,
 }
 /// The one contact handed to the log since the last check (WstxContact::DirectLog).
 fn one_entry(s: &mut Station) -> (LogKind, Contact) {
@@ -153,6 +173,7 @@ fn station() -> Station {
         sent_hz: Vec::new(),
         call: "HB9BLA".into(),
         locator: "JN47AA".into(),
+        band: None,
     }
 }
 /// Hand-authored standard row "TO FROM EXCHANGE" decoded at `hz` in `period`.
@@ -197,6 +218,7 @@ impl Station {
             granted: true,
             mode: Some(self.mode),
             automatic: false,
+            band: self.band,
         }
     }
     fn row(&mut self, period: i64, text: &str, hz: f64, snr: Option<f64>) -> Row {
@@ -1262,7 +1284,10 @@ fn receive_only_station_prepares_and_logs_but_refuses_transmit() {
         s.command(Command::EnableTx(true, Some(7))),
         Err("transmit_unavailable")
     );
-    assert_eq!(s.command(Command::Tune(true)), Err("transmit_unavailable"));
+    assert_eq!(
+        s.command(Command::Tune(true, Some(7))),
+        Err("transmit_unavailable")
+    );
     s.command(Command::OpenLog).unwrap();
     assert_eq!(one_entry(&mut s).0, LogKind::LogQso, "Log QSO logs now");
     // Without a CL-022 grant (plaintext profile) nothing arms.
@@ -1310,6 +1335,8 @@ fn receive_only_station_prepares_and_logs_but_refuses_transmit() {
     );
 }
 
+// Proves: CL-010-10, CL-111-06; TC-008-001, TC-007-004, TC-111-010.
+// (TC-007-004: Tune with the transmit state off. TC-111-010 (f), guard: the Tune watchdog.)
 #[test]
 fn tc_008_001_tx_watchdog_counts_unanswered_calls_and_tune_ends_at_its_limit() {
     let mut s = station();
@@ -1445,18 +1472,27 @@ fn tc_008_001_tx_watchdog_counts_unanswered_calls_and_tune_ends_at_its_limit() {
         tune_seconds: 1,
     })
     .unwrap();
-    assert_eq!(
-        s.command(Command::Tune(true)),
-        Err("state_conflict"),
-        "Tune needs Enable Tx"
-    );
-    // Armed with no contact transmitting (nothing pending): Tune through #9.
+    // TC-007-004 (#111 CL-111-06): Tune needs no transmit state on; it runs through #9 with
+    // nothing pending and leaves the state and its cause as they are.
     s.command(Command::Cancel).unwrap();
     s.engine.contact = None;
-    s.core.arm(7).unwrap();
-    s.step(&[]);
-    s.command(Command::Tune(true)).unwrap();
+    let before = s.core.view();
+    assert_eq!(before.arm_state, ArmState::Disarmed);
+    s.command(Command::Tune(true, Some(7))).unwrap();
     assert!(s.core.view().tune);
+    assert_eq!(
+        (
+            s.core.view().arm_state,
+            s.core.view().last_disarm_cause,
+            s.core.view().last_arm_cause
+        ),
+        (
+            before.arm_state,
+            before.last_disarm_cause,
+            before.last_arm_cause
+        ),
+        "Tune changes neither the transmit state nor its cause"
+    );
     assert_eq!(
         s.fake.0.keys.lock().unwrap().last().map(|k| k.1),
         Some(true)
@@ -1469,7 +1505,7 @@ fn tc_008_001_tx_watchdog_counts_unanswered_calls_and_tune_ends_at_its_limit() {
         Some(false)
     );
     // Tune false is always admitted.
-    s.command(Command::Tune(false)).unwrap();
+    s.command(Command::Tune(false, None)).unwrap();
 }
 
 // #41: no review queue. Every Log QSO and every completion is handed to the log at
@@ -1831,6 +1867,7 @@ fn ft4_caller_keeps_rr73_completes_on_the_sent_rr73_and_bounds_tx_at_2916_hz() {
     assert_eq!(fields.mode, Mode::Ft4);
 }
 
+// Proves: CL-011-04, CL-111-03; TC-111-001 (b).
 #[test]
 fn rows_of_the_other_mode_never_count_and_a_mode_change_disarms_and_cancels() {
     // An armed FT8 responder with a pending request and a 2940 Hz Tx offset.
@@ -1868,10 +1905,8 @@ fn rows_of_the_other_mode_never_count_and_a_mode_change_disarms_and_cancels() {
     assert_eq!((c.state, c.next), (State::Cancelled, Slot::Tx6));
     assert_eq!(c.dx_call, None);
     assert!(!s.armed());
-    assert_eq!(
-        s.core.view().last_disarm_cause,
-        DisarmCause::ContactCancelled
-    );
+    // TC-111-001 (b) (#111 CL-111-03): the mode change is the cause shown.
+    assert_eq!(s.core.view().last_disarm_cause, DisarmCause::ModeChanged);
     assert_eq!(s.core.view().pending_sequence, None);
     assert_eq!(s.engine.settings.tx_hz, 2916, "clamped into the FT4 domain");
     s.run(period(6));
@@ -5384,3 +5419,7 @@ fn tc_110_004_a_start_with_saved_values_transmits_nothing() {
         assert!(s.fake.0.plays.lock().unwrap().is_empty(), "saved {saved}");
     }
 }
+
+// #111: the transmit state, its start actions and its stops, on this bench.
+#[path = "transmit_state_tests.rs"]
+mod transmit_state;

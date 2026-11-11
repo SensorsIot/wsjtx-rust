@@ -531,6 +531,7 @@ impl Station {
                 granted: false,
                 mode,
                 automatic: false,
+                band: strategy::station_band(r),
             };
             inner.engine.step(core.as_deref_mut(), &ctx, &rows);
             // HashResolution's DX-call rule reads the current contact's DX call (#24 S1b).
@@ -779,7 +780,7 @@ impl Station {
             Some(v) => transmit_view(v, e.transmit_problem.as_deref(), safety),
             None => {
                 json!({"capability":"unsupported","arm_state":"disarmed","last_disarm_cause":"startup",
-                "tune":false,"pending_sequence":null,"last_text":null,"last_period_utc":null,"halt_state":"idle","safety_revision":null,"refusal":null})
+                "last_arm_cause":null,"tune":false,"pending_sequence":null,"last_text":null,"last_period_utc":null,"halt_state":"idle","safety_revision":null,"refusal":null})
             }
         };
         let s = &e.settings;
@@ -845,7 +846,8 @@ fn transmit_view(v: &View, problem: Option<&str>, safety_revision: Option<u64>) 
         HaltState::Stopped => "stopped",
     };
     json!({"capability":name(format!("{:?}",v.capability)),"arm_state":name(format!("{:?}",v.arm_state)),
-        "last_disarm_cause":name(format!("{:?}",v.last_disarm_cause)),"tune":v.tune,"pending_sequence":v.pending_sequence,
+        "last_disarm_cause":name(format!("{:?}",v.last_disarm_cause)),
+        "last_arm_cause":v.last_arm_cause.map(|c|name(format!("{c:?}"))),"tune":v.tune,"pending_sequence":v.pending_sequence,
         "last_text":v.last_text,"last_period_utc":v.last_period_utc_ms,"halt_state":halt,"safety_revision":safety_revision,
         "refusal":v.refusal.map(|r|name(format!("{r:?}"))).or(problem.map(String::from))})
 }
@@ -958,9 +960,14 @@ fn params(action: &str) -> Option<&'static [&'static str]> {
         "choose_next" => &["slot"],
         "edit_message" => &["slot", "text"],
         "set_report" => &["report"],
-        "set_tx1_skip" | "set_hold_tx" | "set_auto_seq" | "set_call_first" | "tune" => &["enabled"],
+        "set_tx1_skip" | "set_hold_tx" | "set_auto_seq" | "set_call_first" => &["enabled"],
         "set_activity" => &["activity", "exchange"],
-        "enable_tx" => &["enabled", "safety_revision"],
+        "enable_tx" | "tune" => &["enabled", "safety_revision"],
+        // #111 CL-111-02: the start actions, each with the safety revision shown.
+        "reply" => &["row", "directive_confirmed", "safety_revision"],
+        "call_cq" | "reset_repetitions" => &["safety_revision"],
+        "call_dx" => &["dx_call", "dx_grid", "replace", "safety_revision"],
+        "send_next" => &["slot", "safety_revision"],
         "set_tx4" => &["form"],
         "set_frequency" => &["rx_hz", "tx_hz"],
         "set_parity" => &["parity"],
@@ -992,8 +999,15 @@ fn hz(b: &Value, k: &'static str) -> Result<Option<u32>, Refusal> {
 }
 /// The typed command of a syntactically valid body (row lookup is done later).
 fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
+    // The CL-022 safety revision a start or Tune on carries: null or a safe integer.
+    let shown = || {
+        if !b["safety_revision"].is_null() {
+            safe(b, "safety_revision")?;
+        }
+        Ok::<_, Refusal>(b["safety_revision"].as_u64())
+    };
     Ok(Some(match action {
-        "select_row" => {
+        "select_row" | "reply" => {
             let row = &b["row"];
             let keys = ["source_id", "job_id", "generation", "sequence"];
             if !row
@@ -1010,24 +1024,42 @@ fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
             if safe(row, "generation").is_err() || safe(row, "sequence").is_err() {
                 return Err(("invalid_request", Some("row")));
             }
-            boolean(b, "replace")?;
+            if action == "reply" {
+                shown()?;
+            } else {
+                boolean(b, "replace")?;
+            }
             if b.get("directive_confirmed").is_some() {
                 boolean(b, "directive_confirmed")?;
             }
             return Ok(None);
         }
-        "enter_dx" => {
+        "enter_dx" | "call_dx" => {
             let grid = match &b["dx_grid"] {
                 Value::Null => None,
                 Value::String(g) => Some(g.clone()),
                 _ => return Err(("invalid_request", Some("dx_grid"))),
             };
-            Command::EnterDx {
-                call: text(b, "dx_call")?.to_owned(),
-                grid,
-                replace: boolean(b, "replace")?,
+            let call = text(b, "dx_call")?.to_owned();
+            let replace = boolean(b, "replace")?;
+            if action == "call_dx" {
+                Command::CallDx {
+                    call,
+                    grid,
+                    replace,
+                    safety_revision: shown()?,
+                }
+            } else {
+                Command::EnterDx {
+                    call,
+                    grid,
+                    replace,
+                }
             }
         }
+        "call_cq" => Command::CallCq(shown()?),
+        "send_next" => Command::SendNext(slot(b)?, shown()?),
+        "reset_repetitions" => Command::ResetRepetitions(shown()?),
         "cancel" => Command::Cancel,
         "abort" => Command::Abort,
         "redecode" => Command::Redecode,
@@ -1065,7 +1097,7 @@ fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
             }
             Command::EnableTx(boolean(b, "enabled")?, b["safety_revision"].as_u64())
         }
-        "tune" => Command::Tune(boolean(b, "enabled")?),
+        "tune" => Command::Tune(boolean(b, "enabled")?, shown()?),
         "set_tx4" => Command::SetTx4(match text(b, "form")? {
             "rrr" => Tx4::Rrr,
             "rr73" => Tx4::Rr73,
@@ -1116,9 +1148,11 @@ fn envelope(b: &Value) -> Result<(String, u64, String), Refusal> {
     }
     // set_activity's exchange is optional (ContestExchange, #24 S2b), and so is
     // select_row's directive_confirmed (WstxStrategy::DirectedCqRule).
+    // Tune off needs no safety revision (CL-111-06).
     let optional = |k: &str| {
         (action == "set_activity" && k == "exchange")
-            || (action == "select_row" && k == "directive_confirmed")
+            || (matches!(action, "select_row" | "reply") && k == "directive_confirmed")
+            || (action == "tune" && k == "safety_revision")
     };
     if let Some(k) = base
         .iter()
@@ -1280,9 +1314,16 @@ impl Station {
                 let identity = (source.to_owned(), job.to_owned(), generation);
                 let row =
                     row_of(&record, &identity, mode).ok_or(("row_not_standard", Some("row")))?;
-                Command::SelectRow {
-                    row,
-                    replace: body["replace"] == true,
+                if action == "reply" {
+                    Command::Reply {
+                        row,
+                        safety_revision: body["safety_revision"].as_u64(),
+                    }
+                } else {
+                    Command::SelectRow {
+                        row,
+                        replace: body["replace"] == true,
+                    }
                 }
             }
         };
@@ -1303,6 +1344,7 @@ impl Station {
                 granted,
                 mode,
                 automatic,
+                band: strategy::station_band(r),
             };
             if let Err(code) = inner.engine.command(command, core.as_deref_mut(), &ctx) {
                 // A refusal that names its field (EuVhfExchange, #99) keeps it.

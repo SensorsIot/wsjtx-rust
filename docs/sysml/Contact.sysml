@@ -347,7 +347,9 @@ package WstxContact {
              Timeouts: when the reply timeout passes Enable Tx is turned off (cause
              txWatchdog, the slot stays tx3; MW stopWRTimeout); the operator turning Enable
              Tx on or off ends the reply timeout (MW on_autoButton_clicked stopWRTimer.stop); while Tx1 is next and
-             Enable Tx has been on for 300 s since the operator last turned it on it is
+             300 s have passed since the last accepted start (Enable Tx on, or a start action
+             of StartActions, a run's own included; reset_repetitions does not restart the
+             300 s: CL-111-10) the transmit state is
              turned off (cause txWatchdog; MW Hound watchdog HWD); after the station's Tx
              watchdog expires the next slot returns to tx1 (MW ~14664). A completed contact
              leaves the station ready to call the next Fox with Tx1.
@@ -513,7 +515,7 @@ package WstxContact {
              (at its next step or command: POST /receive/start, /receive/stop and an
              admitted /receive/select run one synchronous contact step before their
              202 reply, otherwise at most one 50 ms step later) turns Enable
-             Tx off through #9 (TransmitArming disarm, DisarmCause contactCancelled: no
+             Tx off through #9 (TransmitArming disarm, DisarmCause modeChanged: no
              unkeyed request of the old mode remains) and cancels the contact as
              CancelContact (calling -> idle; replying..signoff -> cancelled, DX call and
              Tx1-Tx5 cleared, Tx6 next). A completed contact keeps its fields and its
@@ -763,9 +765,8 @@ package WstxContact {
              decoded message to another call within 50 Hz inclusive of my txOffsetHz
              disarms and stops a transmission already started by an abort
              (WstxTransmit::AbortTransmission, never a halt: #39 2026-11-04, normal flow
-             never uses HALT); the state is kept. #9
-             has no dedicated DisarmCause for it: the disarm is recorded with cause
-             operator (supervisor decision on #10 review, 2026-10-31).
+             never uses HALT); the state is kept. The stop is recorded with DisarmCause
+             partnerWorksOther (CL-111-03).
              halt and watchdogExpired turn Enable Tx off and keep the state (the
              contact can resume after an explicit Enable Tx), except in calling where
              the CQ ends. cancel follows CancelContact. Esc is Abort QSO (AbortQso), not a halt. */
@@ -810,6 +811,73 @@ package WstxContact {
              calling CQ (state calling). Off (disarm): no new request; a transmission
              already started finishes (WSJT-X Enable Tx off lets the current Tx finish). */
     }
+    attribute def StartActions {
+        doc /* CL-111-02, CL-111-05, CL-111-07, CL-111-08. The start actions switch the
+             transmit state (WstxTransmit::TransmitArming) on. Each is one ContactCommand
+             that carries the CL-022 safety revision shown to its sender: reply (the row's
+             SelectDecodedRow with replace true, then on), call_cq (the only start that
+             calls CQ), call_dx (EnterDxStation, then on), send_next (chooses the slot of
+             the current QSO, then on) and reset_repetitions (a new repetition count of
+             the message due next, TxWatchdog). A start by the operator in the browser
+             switches on with cause operator; a start by a run or an MCP client is
+             automatic, switches on with cause auto and is refused tx_watchdog after a
+             repetition-limit stop or when no browser action was seen this boot;
+             reset_repetitions from a run or an MCP client is refused operator_required.
+             An operator start that finds the state off opens a new repetition count.
+             "QSO" is a contact with a partner in replying to signoff. Outcome per state
+             before (reply | call_cq | call_dx | send_next | reset_repetitions):
+             no contact, idle: prepares the row's QSO, on | a new own CQ, on | prepares,
+             on | no_contact | no_contact.
+             own CQ calling: the CQ is replaced by the row's QSO, on | state on: accepted,
+             nothing changes; state off (kept after a lost radio or a refusal): the same
+             CQ, on | the CQ is replaced, on | no_contact | no_contact.
+             QSO, state on: another partner: the old QSO is cancelled, the new one
+             prepared; the same partner: the QSO continues at the row's message with the
+             same contact identity; on | contact_active | replace false: contact_active,
+             also for the QSO's own partner; replace true: the old QSO is cancelled and a
+             new one prepared (a new contact identity for the same partner too), on |
+             chooses the slot, stays on | a new count, stays on.
+             QSO kept, off, cause txWatchdog: as the row above, on | contact_active | as
+             the row above | chooses the slot, on | a new count, on, the message due next
+             is sent.
+             QSO kept, off, any other cause: as the row above, on | contact_active | as
+             the row above | chooses the slot, on | state_conflict.
+             completed, cancelled: prepares the row's QSO, on | a new own CQ, on |
+             prepares, on | no_contact | no_contact.
+             A Hound's call_cq is no_contact. A slot without text is invalid_message, as
+             choose_next. A safety revision other than the station's is stale_revision
+             with field safety_revision. A start that arrives after a stop of the same
+             station step is refused state_conflict (WstxTransmit::StopOrder). A refused
+             start changes nothing: no QSO is prepared.
+             When reply or call_dx is admitted but transmission is not possible (no
+             transmit capability: transmit_unsupported; radio, its PTT switch or
+             authorization not ready by the transmit owner's arm conditions
+             (WstxTransmit::TransmitArming): radio_unavailable or not_authorized; clock
+             not synchronized: clock_not_synchronized; Tune on: busy), the command is accepted, the QSO is
+             prepared, the transmit state stays off with its causes unchanged and the
+             transmit view's refusal is that reason; nothing starts by itself when the
+             reason goes away. call_cq, send_next and reset_repetitions in the same
+             situation are refused with that reason as their ContactRefusal
+             (transmit_unavailable, clock_not_synchronized or busy) and change nothing.
+             select_row, enter_dx and choose_next never start. */
+    }
+    dependency startActionsClause from StartActions to WstxRequirements::'CL-111-02';
+    dependency startNeverCqClause from StartActions to WstxRequirements::'CL-111-05';
+    dependency startCannotTransmitClause from StartActions to WstxRequirements::'CL-111-07';
+    dependency resetClause from StartActions to WstxRequirements::'CL-111-08';
+    action def BandChange {
+        doc /* CL-111-03. A contact holds the station band it was prepared on. The station
+             band is the radio's dial band, else the band of the operating selection
+             (WstxStrategy station band). When it differs from the contact's band, the
+             engine at its next step or command switches the transmit state off
+             (DisarmCause bandChanged; a transmission on the air finishes) and cancels a
+             contact in calling, replying, report, rogerReport, rogers or signoff as
+             ModeChange does (calling -> idle; a QSO -> cancelled, DX call and Tx1-Tx5
+             cleared, Tx6 next). A completed, cancelled or idle contact keeps its fields
+             and takes the band. An unknown station band is no band change, and a
+             contact prepared while the band was unknown takes the first band seen. */
+    }
+    dependency bandChangeClause from BandChange to WstxRequirements::'CL-111-03';
     action def HaltTx {
         doc /* The operator's emergency stop (operator decision #39, 2026-11-04: HALT is
              emergency only and only manual): the Halt Tx buttons and Alt+H (HT). Sends
@@ -1416,7 +1484,7 @@ package WstxContact {
         enum out_of_range; enum profile_incomplete; enum transmit_unavailable;
         enum redecode_unavailable; enum log_invalid_field; enum log_conflict;
         enum import_failed; enum storage_unavailable; enum snapshot_limit;
-        enum tx_watchdog; enum operator_required;
+        enum tx_watchdog; enum operator_required; enum clock_not_synchronized;
     }
     enum def ContactAction {
         enum select_row; enum enter_dx; enum cancel; enum choose_next; enum edit_message;
@@ -1424,6 +1492,7 @@ package WstxContact {
         enum set_parity; enum set_auto_seq; enum set_call_first; enum set_watchdogs; enum abort;
         enum set_activity;
         enum enable_tx; enum tune; enum redecode; enum open_log;
+        enum reply; enum call_cq; enum call_dx; enum send_next; enum reset_repetitions;
         doc /* discard_review is retired (#41, no log review queue) and refused
              invalid_request with field action. */
     }
@@ -1453,7 +1522,15 @@ package WstxContact {
              safety_revision|null} (safety_revision: the CL-022 safety revision shown in
              the snapshot transmit view; for enabled true a value different from the
              station's current revision is stale_revision with field safety_revision);
-             tune {enabled}; redecode {} (last completed interval of the current live
+             tune {enabled, safety_revision|null, the key optional} (WstxTransmit::SetTune:
+             Tune on with another revision than the station's, or none, is stale_revision
+             with field safety_revision; Tune off needs none);
+             the start actions (StartActions), each with safety_revision|null as enable_tx:
+             reply {row, safety_revision} plus the optional directive_confirmed as
+             select_row; call_cq {safety_revision}; call_dx {dx_call,dx_grid|null,replace,
+             safety_revision}; send_next {slot,safety_revision};
+             reset_repetitions {safety_revision};
+             redecode {} (last completed interval of the current live
              job; no browser control sends it since #37); open_log {} (manual Log QSO:
              DirectLog of the current contact now).
              replace true is the explicit ChangeContact; false with an active contact is
@@ -1492,8 +1569,9 @@ package WstxContact {
              utc_ms,transmit,settings,contact,log,watchdog}, at most 4096 encoded
              bytes (503 snapshot_limit otherwise, never truncated). transmit is #9's read
              view exactly {capability:"unsupported"|"unavailable"|"available",
-             arm_state,last_disarm_cause,tune,pending_sequence,last_text,
-             last_period_utc,halt_state,safety_revision,refusal} (safety_revision the
+             arm_state,last_disarm_cause,last_arm_cause,tune,pending_sequence,last_text,
+             last_period_utc,halt_state,safety_revision,refusal} (last_arm_cause
+             "operator", "auto" or null, WstxTransmit::TransmitArming; safety_revision the
              current CL-022 safety revision of the selected radio scope or null);
              settings exactly {auto_seq,call_first,tx1_skip,
              tx_calls,tune_seconds,rx_hz,tx_hz,hold_tx,parity,report,activity,exchange,

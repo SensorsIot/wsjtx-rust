@@ -328,7 +328,8 @@ fn code(v: &Value) -> (&str, Option<&str>) {
     )
 }
 
-// Proves: TC-007-004, TC-010-010, TC-050-006.
+// Proves: TC-007-004, TC-010-010, TC-050-006, TC-111-007.
+// (TC-111-007: the snapshot's keys, the longest cause and its 4096 byte bound.)
 #[tokio::test]
 async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -370,6 +371,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
             "capability",
             "arm_state",
             "last_disarm_cause",
+            "last_arm_cause",
             "tune",
             "pending_sequence",
             "last_text",
@@ -409,6 +411,14 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     );
     assert_eq!(v["transmit"]["capability"], "available");
     assert_eq!(v["transmit"]["arm_state"], "disarmed");
+    // TC-111-007 (#111 L3): off with cause startup and no start yet at a station start.
+    assert_eq!(
+        (
+            &v["transmit"]["last_disarm_cause"],
+            &v["transmit"]["last_arm_cause"]
+        ),
+        (&json!("startup"), &Value::Null)
+    );
     let (status, _, _, _) = f.raw("GET", "/contact?x=1", None, None, &[]).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, v, _, _) = f
@@ -427,7 +437,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     let dialogue = vec![entry; crate::contact::DIALOGUE_MAX];
     let max = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"contact_revision":MAX_SAFE_TEST,"snapshot_sequence":MAX_SAFE_TEST,
         "monotonic_ms":MAX_SAFE_TEST,"utc_ms":MAX_SAFE_TEST,
-        "transmit":{"capability":"unavailable","arm_state":"disarmed","last_disarm_cause":"authority_changed","tune":false,
+        "transmit":{"capability":"unavailable","arm_state":"disarmed","last_disarm_cause":"partner_works_other","last_arm_cause":"operator","tune":false,
             "pending_sequence":MAX_SAFE_TEST,"last_text":long,"last_period_utc":MAX_SAFE_TEST,"halt_state":"pending","safety_revision":MAX_SAFE_TEST,"refusal":"clock_not_synchronized"},
         "settings":{"auto_seq":true,"call_first":false,"tx1_skip":false,"tx_calls":99,"tune_seconds":300,"rx_hz":3000,"tx_hz":2950,"hold_tx":false,"parity":"even","report":-50,"activity":"field_day","exchange":"32F WWA","serial":u32::MAX},
         "contact":{"id":f.id,"origin":"manual_entry","dx_call":"PJ4/PA3XYZABC","dx_grid":"JN47AA","report_sent":"-50","report_rcvd":"-50",
@@ -967,6 +977,7 @@ fn direct_log_record_fields_from_the_confirmed_dial() {
         exchange_sent: None,
         exchange_rcvd: None,
         activity: crate::contact::Activity::None,
+        band: None,
         state: crate::contact::State::Completed,
         next: crate::contact::Slot::Tx6,
         tx4: crate::contact::Tx4::Rr73,
@@ -1084,6 +1095,21 @@ async fn transmit_state_revision_follows_the_read_view_only() {
     assert!(first_view.get("outcomes").is_none() && first_view.get("profile_id").is_none());
     let whole = transmit_http::changed_fields(&Value::Null, &first_view);
     assert_eq!(Value::Object(whole.clone()), first_view);
+    // TC-111-007 (#111 L3): the event carries last_arm_cause and stays within 1024 bytes
+    // with the longest causes of each direction.
+    assert_eq!(
+        first_view["transmit"].get("last_arm_cause"),
+        Some(&Value::Null)
+    );
+    let mut longest = first_view.clone();
+    longest["transmit"]["last_disarm_cause"] = json!("partner_works_other");
+    longest["transmit"]["last_arm_cause"] = json!("operator");
+    let longest = transmit_http::state_event(
+        r,
+        MAX_SAFE_TEST,
+        transmit_http::changed_fields(&Value::Null, &longest),
+    );
+    assert!(longest.len() <= 1024, "{longest}");
     let event = transmit_http::state_event(r, MAX_SAFE_TEST, whole);
     assert!(event.len() <= 1024, "{event}");
     let event: Value = serde_json::from_str(&event).unwrap();
@@ -1498,6 +1524,7 @@ async fn ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_a_mo
 // slowly the test runs: the switch, not the #9 owner's period start, ends it. (On wall
 // time a slow run let that period start first; the owner then refused the request as
 // stale_request, last_disarm_cause "refused", before the contact step saw the switch.)
+// Proves: CL-111-03; TC-111-001 (b) (the cause mode_changed on the wire).
 #[tokio::test]
 async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cancels_only_its_own() {
     let f4 = fixture("http://127.0.0.1:18012", true);
@@ -1585,7 +1612,8 @@ async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cance
         (
             Some("cancelled"),
             Some("disarmed"),
-            Some("contact_cancelled")
+            // #111 CL-111-03, TC-111-001 (b): the wire names the mode change.
+            Some("mode_changed")
         )
     );
     assert_eq!(review(&logged4), (Some("MFSK".into()), Some("FT4".into())));
@@ -2428,4 +2456,200 @@ async fn tc_110_003_a_failed_save_refuses_the_change_and_changes_nothing() {
     assert_eq!(seq_and_first(&f).await, (json!(true), json!(false)));
     let f = f.restart();
     assert_eq!(seq_and_first(&f).await, (json!(true), json!(false)));
+}
+
+// Proves: CL-111-01, CL-111-02, CL-111-03, CL-111-06.
+// Proves: TC-111-002, TC-111-003, TC-111-007, TC-111-009, TC-111-010.
+// TC-111-002: snapshot reload and repeated command_id. TC-111-003: each start is one
+// ContactCommand with its safety revision. TC-111-007: the causes on the wire. TC-111-009: the
+// station's band reaches the engine. TC-111-010 (b) on the wire. The station: router, contact
+// engine and transmit owner on the recording double. Expected values are the tables of
+// CL-111-02 and CL-111-03.
+#[tokio::test]
+async fn tc_111_starts_are_single_commands_and_a_band_change_stops_the_station() {
+    let f = fixture("http://127.0.0.1:18001", true);
+    let r = &f.state.recording;
+    r.fixture_band("20m");
+    let (source, job, generation) = r.fixture_live_job("ft8");
+    let even = now_ms().div_euclid(30_000) * 30_000;
+    let seq = r.fixture_publish_period(
+        &period_text(even),
+        vec![record("CQ K1ABC FN42", 1234.6, Some(-12.4))],
+    );
+    f.tick();
+    f.contact().grant.store(true, Ordering::SeqCst);
+    let row = json!({"source_id":source,"job_id":job,"generation":generation,"sequence":seq[0]});
+    let shown = f.snapshot().await["transmit"]["safety_revision"].clone();
+    assert_eq!(shown, json!(3));
+    let state = |v: &Value| {
+        (
+            v["transmit"]["arm_state"].as_str().map(str::to_owned),
+            v["transmit"]["last_disarm_cause"]
+                .as_str()
+                .map(str::to_owned),
+            v["transmit"]["last_arm_cause"].as_str().map(str::to_owned),
+        )
+    };
+    let off_at_start = (Some("disarmed".into()), Some("startup".into()), None);
+    // Every start carries the safety revision shown to its sender: without it the request is
+    // invalid, with another one it is stale and nothing is prepared.
+    let starts = [
+        ("reply", json!({"row":row})),
+        ("call_cq", json!({})),
+        (
+            "call_dx",
+            json!({"dx_call":"K1ABC","dx_grid":null,"replace":false}),
+        ),
+        ("send_next", json!({"slot":"tx2"})),
+        ("reset_repetitions", json!({})),
+    ];
+    for (action, extra) in &starts {
+        let (s, v) = f.send(action, extra.clone()).await;
+        assert_eq!(
+            (s, code(&v)),
+            (
+                StatusCode::BAD_REQUEST,
+                ("invalid_request", Some("safety_revision"))
+            ),
+            "{action}"
+        );
+    }
+    for (action, extra) in &starts[..3] {
+        for stale in [json!(2), Value::Null] {
+            let mut extra = extra.clone();
+            extra["safety_revision"] = stale;
+            let (s, v) = f.send(action, extra).await;
+            assert_eq!(
+                (s, code(&v)),
+                (
+                    StatusCode::CONFLICT,
+                    ("stale_revision", Some("safety_revision"))
+                ),
+                "{action}"
+            );
+        }
+    }
+    let snap = f.snapshot().await;
+    assert_eq!(snap["contact"], Value::Null, "nothing is prepared");
+    assert_eq!(state(&snap), off_at_start);
+    // TC-111-002: a selection, its repeated command_id and a reloaded snapshot never start.
+    let revision = snap["contact_revision"].as_u64().unwrap();
+    let select = f.body(revision, "select_row", json!({"row":row,"replace":false}));
+    let (s, receipt, _, _) = f
+        .call("POST", "/contact/command", Some(select.clone()))
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{receipt}");
+    let (s, again, _, _) = f.call("POST", "/contact/command", Some(select)).await;
+    assert_eq!((s, &again), (StatusCode::OK, &receipt));
+    for _ in 0..5 {
+        f.tick();
+        let snap = f.snapshot().await;
+        assert_eq!(state(&snap), off_at_start, "a reload changes nothing");
+        assert_eq!(snap["transmit"]["pending_sequence"], Value::Null);
+    }
+    let (_, t, _, _) = f.call("GET", "/transmit", None).await;
+    assert_eq!(t["outcomes"], json!([]), "no TransmitRequest");
+    // Tune on needs the shown revision too (CL-111-06); Tune off needs none.
+    let (s, v) = f.send("tune", json!({"enabled":true})).await;
+    assert_eq!(
+        (s, code(&v)),
+        (
+            StatusCode::CONFLICT,
+            ("stale_revision", Some("safety_revision"))
+        )
+    );
+    let (s, v) = f.send("tune", json!({"enabled":false})).await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    // Reply: one command prepares the row's QSO and switches on, cause operator.
+    let revision = f.snapshot().await["contact_revision"].as_u64().unwrap();
+    let reply = f.body(
+        revision,
+        "reply",
+        json!({"row":row,"safety_revision":shown}),
+    );
+    let (s, receipt, _, _) = f
+        .call("POST", "/contact/command", Some(reply.clone()))
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{receipt}");
+    let snap = f.snapshot().await;
+    assert_eq!(
+        state(&snap),
+        (
+            Some("armed".into()),
+            Some("startup".into()),
+            Some("operator".into())
+        )
+    );
+    assert_eq!(
+        (
+            snap["contact"]["dx_call"].as_str(),
+            snap["contact"]["state"].as_str()
+        ),
+        (Some("K1ABC"), Some("replying"))
+    );
+    assert!(snap["transmit"]["pending_sequence"].is_u64(), "planned");
+    let contact = snap["contact"]["id"].clone();
+    // Its repeated command_id replays the receipt: still exactly one request.
+    let (s, again, _, _) = f.call("POST", "/contact/command", Some(reply)).await;
+    assert_eq!((s, &again), (StatusCode::OK, &receipt));
+    let (_, t, _, _) = f.call("GET", "/transmit", None).await;
+    let accepted = t["outcomes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|o| o["kind"] == "accepted")
+        .count();
+    assert_eq!(accepted, 1, "{t}");
+    // Send next and Reset act on the QSO and leave the state on.
+    let (s, v) = f
+        .send("send_next", json!({"slot":"tx2","safety_revision":shown}))
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let (s, v) = f
+        .send("reset_repetitions", json!({"safety_revision":shown}))
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let snap = f.snapshot().await;
+    assert_eq!(snap["contact"]["next_slot"], "tx2");
+    assert_eq!(snap["contact"]["id"], contact);
+    assert_eq!(snap["transmit"]["arm_state"], "armed");
+    // CQ and Call during the QSO: contact_active; Call with replace starts the other partner.
+    let (s, v) = f.send("call_cq", json!({"safety_revision":shown})).await;
+    assert_eq!((s, code(&v).0), (StatusCode::CONFLICT, "contact_active"));
+    let call = |replace: bool| json!({"dx_call":"DL1XYZ","dx_grid":"JO62","replace":replace,"safety_revision":shown});
+    let (s, v) = f.send("call_dx", call(false)).await;
+    assert_eq!((s, code(&v).0), (StatusCode::CONFLICT, "contact_active"));
+    let (s, v) = f.send("call_dx", call(true)).await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let snap = f.snapshot().await;
+    assert_eq!(snap["contact"]["dx_call"], "DL1XYZ");
+    assert_ne!(snap["contact"]["id"], contact);
+    assert_eq!(snap["transmit"]["arm_state"], "armed");
+    // TC-111-009: the station band changes (20 m to 40 m): off, band_changed, cancelled.
+    r.fixture_band("40m");
+    f.tick();
+    let snap = f.snapshot().await;
+    assert_eq!(
+        state(&snap),
+        (
+            Some("disarmed".into()),
+            Some("band_changed".into()),
+            Some("operator".into())
+        )
+    );
+    assert_eq!(
+        (
+            snap["contact"]["state"].as_str(),
+            &snap["contact"]["dx_call"]
+        ),
+        (Some("cancelled"), &Value::Null)
+    );
+    assert_eq!(snap["transmit"]["pending_sequence"], Value::Null);
+    // The CQ start calls CQ on the new band.
+    f.tick();
+    let (s, v) = f.send("call_cq", json!({"safety_revision":shown})).await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let snap = f.snapshot().await;
+    assert_eq!(snap["contact"]["state"], "calling");
+    assert_eq!(snap["transmit"]["arm_state"], "armed");
 }
