@@ -16,7 +16,7 @@ package WstxProductScope {
     private import WstxUdp::*;
     private import WstxStrategy::*;
     private import WstxContest::*;
-    private import ModelNotes::NotStated;
+    private import ModelNotes::*;
     doc /* Canonical product scope and navigation. WstxRequirements owns stable
          FR/CL/TC declarations. WstxArchitecture owns parts/ports/connections;
          WstxStationProtocol the shared status/auth/transport contract;

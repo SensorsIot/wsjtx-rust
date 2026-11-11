@@ -1,7 +1,6 @@
 package WstxContact {
     private import ScalarValues::*;
-    private import ModelNotes::Conflict;
-    private import ModelNotes::DiffersFromSource;
+    private import ModelNotes::*;
     doc /* Contract of the contact engine apart from its standard contact sequence, which
          is WstxStandardContact (choosing a partner, the auto sequence, Enable Tx, cancel,
          abort and halt; its elements are named here without the package): standard
