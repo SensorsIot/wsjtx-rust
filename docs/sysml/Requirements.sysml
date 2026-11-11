@@ -5635,7 +5635,7 @@ package WstxRequirements {
     dependency CL_050_04_to_FR_007 from 'CL-050-04' to 'FR-007';
     dependency CL_050_04_to_FR_008 from 'CL-050-04' to 'FR-008';
     requirement 'CL-010-17' {
-        doc /* (#10) Call 1st (WSJT-X "CQ: First"), an operator setting next to Auto Seq, initially on: while my own CQ runs with Enable Tx and Auto Seq on, the first decoded message to my call of a step, in decode order, whose exchange is a grid or a report is answered at once as a selection of that row with Enable Tx kept, so the next own period answers that caller. Off, a CQ moves only on an operator selection. Details: WstxContact::CallFirst. */
+        doc /* (#10) Call 1st (WSJT-X "CQ: First"), an operator setting next to Auto Seq, on at a profile's first start, then as saved (CL-110-01): while my own CQ runs with Enable Tx and Auto Seq on, the first decoded message to my call of a step, in decode order, whose exchange is a grid or a report is answered at once as a selection of that row with Enable Tx kept, so the next own period answers that caller. Off, a CQ moves only on an operator selection. Details: WstxContact::CallFirst. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; client/contact.js";
     }
@@ -5765,10 +5765,10 @@ package WstxRequirements {
     verification 'TC-010-010' {
         doc /* TC-010-010 — Call 1st answers the first caller of my CQ
              CL-010-17
-             Setup: the contact engine against the actual #9 transmit owner core on a virtual clock (contact_tests); hand-authored rows of the 2026-11-02 22:48 CQ run; the snapshot wire (contact_http_tests).
+             Setup: the contact engine against the actual #9 transmit owner core on a virtual clock (contact_tests); hand-authored rows of the 2026-11-02 22:48 CQ run; the snapshot wire (contact_http_tests) on a fresh profile directory.
              Steps: Enable Tx with no partner (calling, odd parity), Hold Tx on; after my CQ deliver in one even period, decode order "HB9BLA EA4HTI IM69" (1678 Hz, -8) then "HB9BLA F1PBZ -13" (2144 Hz, -10), in reverse slice order; later "HB9BLA EA8BIA -11" and "HB9BLA SV1DZB KM18"; repeat with Call 1st off, with Auto Seq off, and with only "HB9BLA DL1ABC RR73", "HB9BLA DL2ABC 73", "HB9BLA DL3ABC RRR", "HB9BLA DL4ABC R-10".
              Also: the same callers after Enable Tx off (disarmed, still calling).
-             Expected: Call 1st on: the contact is EA4HTI (grid IM69) in report with next Tx2 "EA4HTI HB9BLA -08" at once, still armed, Tx offset 1500 Hz kept, the next odd period sends it; the later callers change nothing; Call 1st off, Auto Seq off, Enable Tx off or only continuing exchanges: still calling (with Enable Tx off nothing is sent) and the next odd period sends "CQ HB9BLA JN47"; the snapshot settings carry call_first true by default.
+             Expected: Call 1st on: the contact is EA4HTI (grid IM69) in report with next Tx2 "EA4HTI HB9BLA -08" at once, still armed, Tx offset 1500 Hz kept, the next odd period sends it; the later callers change nothing; Call 1st off, Auto Seq off, Enable Tx off or only continuing exchanges: still calling (with Enable Tx off nothing is sent) and the next odd period sends "CQ HB9BLA JN47"; on a profile with nothing saved the snapshot settings carry call_first true.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -5777,6 +5777,102 @@ package WstxRequirements {
         attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs";
     }
     dependency CL_010_17_verified_by_TC_010_010 from 'CL-010-17' to 'TC-010-010';
+
+    // Saved Auto Seq and Call 1st (WstxContact::QsoSettingsFile).
+    requirement 'CL-110-01' {
+        doc /* Auto Seq and Call 1st are kept per profile across station starts (WstxContact::QsoSettingsFile). (1) At a station start the two settings have the values last saved for the selected profile. When nothing usable is saved, both are on. (2) An accepted set_auto_seq or set_call_first is saved before its receipt is returned, whichever client sent it (browser or MCP). After the receipt, a station start on the same profile directory has that value. (3) A value is saved whether it is on or off: after off and on again, the next start has on because on was saved, not because nothing is there. (4) When the save fails, the command is refused storage_unavailable with field null; the setting, the snapshot and contact_revision are unchanged, and the earlier saved values stay as they were. The same command sent again with a new command_id saves once storage is available. (5) Saving does not change the profile document: its revision does not advance. (6) Another profile never has these values: a profile directory holds only its own. (7) Starting with saved values changes nothing else: the transmit state (WstxTransmit::TransmitArming) is off with cause startup, no contact exists, and no TransmitRequest is planned until a start action (enable_tx). (8) Every other setting of ContactSnapshot settings (tx1_skip, tx_calls, tune_seconds, rx_hz, tx_hz, hold_tx, parity, report, activity, exchange, serial) is not saved and has its stated start value at every station start. Details: WstxContact::QsoSettingsFile, Contact. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact_http.rs; server/src/main.rs; server/src/profile.rs";
+    }
+    dependency CL_110_01_to_FR_007 from 'CL-110-01' to 'FR-007';
+    dependency CL_110_01_to_FR_016 from 'CL-110-01' to 'FR-016';
+    verification 'TC-110-001' {
+        doc /* TC-110-001 — Saved across a station start
+             CL-110-01
+             Setup: the actual station router on a disposable profile directory (contact_http_tests fixture), profile HB9BLA JN37; values read from GET /contact settings. A new station start is a new station owner (new boot_id) on the same profile directory. For (h) the station with an MCP client (mcp_tests).
+             Steps: (a) a newly created profile, no qso-settings.json. (b) set_call_first {enabled:false}; the same body again with the same command_id; a new station start. (c) then set_auto_seq {enabled:false}, a new station start. (d) then both set to true, a new station start. (e) set_call_first false, then set_auto_seq false without a start between them, a new station start. (f) GET /profile revision before (b) and after (d). (g) after (c) on profile A, a newly created profile B. (h) set_call_first {enabled:false} through the MCP tool wstx_contact_command, a new station start.
+             Expected (CL-110-01 points 1, 2, 3, 5, 6): (a) auto_seq true, call_first true. (b) 202; the repeated body 200 with the same receipt (guard of the receipt rule); after the start call_first false, auto_seq true. (c) both false. (d) both true, and the file holds auto_seq true and call_first true. (e) both false. (f) the same revision. (g) B has both true. (h) call_first false.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-110-01';
+        }
+        attribute executable : String = "server/src/contact_http_tests.rs; server/src/mcp_tests.rs";
+    }
+    dependency CL_110_01_verified_by_TC_110_001 from 'CL-110-01' to 'TC-110-001';
+    verification 'TC-110-002' {
+        doc /* TC-110-002 — Missing, hand-written and unusable files
+             CL-110-01
+             Setup: as TC-110-001; a hand-written qso-settings.json is put into the profile directory before the station start; <id> is that profile's UUID.
+             Steps: (a) {"schema_version":1,"profile_id":"<id>","auto_seq":false,"call_first":true}. (b) the same object padded with trailing spaces to exactly 256 bytes. (c) padded to 257 bytes. (d) an empty file. (e) truncated JSON ({"schema_version":1,"profile_id":"<id>","auto_seq":fal). (f) schema_version 2. (g) the profile_id of another profile. (h) an extra key ("tx1_skip":true), and a missing key (no call_first). (i) "auto_seq":"false" (a string) and "call_first":0. (j) in each of (c) to (i): GET /contact, then set_call_first {enabled:false}, then a new station start.
+             Expected (the WstxContact::QsoSettingsFile format): (a), (b) auto_seq false, call_first true. (c) to (i) both true in each. (j) the station start succeeds and GET /contact returns 200; the command returns 202, the file is the exact object with auto_seq true and call_first false, and the new station start has those values.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-110-01';
+        }
+        attribute executable : String = "server/src/contact_http_tests.rs";
+    }
+    dependency CL_110_01_verified_by_TC_110_002 from 'CL-110-01' to 'TC-110-002';
+    verification 'TC-110-003' {
+        doc /* TC-110-003 — A failed save
+             CL-110-01
+             Setup: as TC-110-001, saved state call_first true; fault injected: the replace of qso-settings.json fails (the profile store's test seam), nothing else in the profile directory is touched.
+             Steps: (a) with the fault, set_call_first {enabled:false}. (b) fault removed, the same action with a new command_id, then a new station start. (c) with the fault, set_hold_tx {enabled:false}.
+             Expected (CL-110-01 point 4): (a) refused storage_unavailable, field null; GET /contact shows call_first true and the same contact_revision as before; the profile directory is unchanged. (b) 202, call_first false, and the new station start has false. (c) 202: only the two saved settings depend on storage.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-110-01';
+        }
+        attribute executable : String = "server/src/contact_http_tests.rs";
+    }
+    dependency CL_110_01_verified_by_TC_110_003 from 'CL-110-01' to 'TC-110-003';
+    verification 'TC-110-004' {
+        doc /* TC-110-004 — The restored values govern the station
+             CL-110-01, CL-010-17, CL-010-02
+             Setup: the contact engine against the actual transmit owner core on a virtual UTC clock (contact_tests), profile HB9BLA JN47, the engine as a station start creates it on a profile directory holding a hand-written qso-settings.json; hand-authored rows. For the strategy step the station with a strategy run (strategy_tests).
+             Steps: (a) saved call_first false; Enable Tx with no partner (own CQ); "HB9BLA EA4HTI IM69" in the partner's period. (b) saved call_first true, the same row. (c) saved auto_seq false; a contact with K1ABC in replying, Enable Tx on; "HB9BLA K1ABC -05". (d) saved both true, and saved both false: 3 own periods without a start action. Also: saved auto_seq false; a strategy switched to Auto.
+             Expected (WstxContact::CallFirst, AutoSequence, CL-009-04): (a) still calling, the next own period sends "CQ HB9BLA JN47". (b) EA4HTI in report with Tx2 next, as TC-010-010. (c) state and next slot unchanged, suggested_slot tx3. (d) directly after the start the transmit state is off with cause startup, no contact exists, and no TransmitRequest appears in the 3 own periods (guard of CL-009-04). Also: the run is waiting with reason auto_seq (guard of the automation readiness).
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-110-01';
+            verify 'CL-010-17';
+            verify 'CL-010-02';
+        }
+        attribute executable : String = "server/src/contact_tests.rs; server/src/strategy_tests.rs";
+    }
+    dependency CL_110_01_verified_by_TC_110_004 from 'CL-110-01' to 'TC-110-004';
+    dependency CL_010_17_verified_by_TC_110_004 from 'CL-010-17' to 'TC-110-004';
+    dependency CL_010_02_verified_by_TC_110_004 from 'CL-010-02' to 'TC-110-004';
+    verification 'TC-110-005' {
+        doc /* TC-110-005 — The browser after a restart
+             CL-110-01
+             Setup: Chromium against the candidate server on a disposable profile directory, 1366x768.
+             Steps: (a) untick Call 1st; the server process is stopped and started on the same directory; reload. (b) a second browser opened after the restart. (c) in that browser the snapshot is held back (GET /contact and the contact.state push).
+             Expected (CL-110-01 points 1, 2): (a) Call 1st unticked and Auto Seq ticked. (b) the same. (c) while the snapshot is held back both checkboxes are disabled and unticked, so no value is shown before the saved one arrives.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-110-01';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
+    dependency CL_110_01_verified_by_TC_110_005 from 'CL-110-01' to 'TC-110-005';
+    verification 'TC-110-006' {
+        doc /* TC-110-006 — Live on the station
+             CL-110-01
+             Setup: HB9BLA, the deployed candidate, the operator's browser; no transmission, the transmit state stays off.
+             Steps: (a) the first start after the deploy. (b) untick Call 1st, restart the station task, reload. (c) tick Call 1st again, restart, reload.
+             Expected: (a) Auto Seq and Call 1st are both ticked. (b) Call 1st unticked, Auto Seq ticked, transmit state off. (c) both ticked.
+             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-110-01';
+        }
+    }
+    dependency CL_110_01_verified_by_TC_110_006 from 'CL-110-01' to 'TC-110-006';
     verification 'TC-054-001' {
         doc /* TC-054-001 — Detailed rows in order after a stall; gaps only for real gaps
              CL-054-01

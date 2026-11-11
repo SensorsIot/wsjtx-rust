@@ -24,10 +24,53 @@ const MAX_SAFE: u64 = 9_007_199_254_740_991;
 pub const LOG_PENDING_MAX: usize = 64;
 const LOG_RETRY: Duration = Duration::from_secs(5);
 
-/// The contact engine of a station start on the profile of `store`: every setting at its
-/// start value.
-pub(crate) fn start_engine(_store: &profile::Store) -> Engine {
-    Engine::new(Box::new(|| profile::new_uuid().ok()))
+/// WstxContact::QsoSettingsFile (CL-110-01): Auto Seq and Call 1st of this profile, in
+/// their own file so that saving them does not advance the profile revision.
+const QSO_SETTINGS_FILE: &str = "qso-settings.json";
+const QSO_SETTINGS_BYTES_MAX: u64 = 256;
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct QsoSettings {
+    schema_version: u8,
+    profile_id: String,
+    auto_seq: bool,
+    call_first: bool,
+}
+/// The saved (Auto Seq, Call 1st) of this profile; None when the file is missing or is
+/// not exactly a QsoSettingsFile of this profile (the start values then hold).
+fn saved_settings(store: &profile::Store) -> Option<(bool, bool)> {
+    let bytes = store
+        .read_document_file(QSO_SETTINGS_FILE, QSO_SETTINGS_BYTES_MAX)
+        .ok()??;
+    let saved = serde_json::from_slice::<QsoSettings>(&bytes).ok()?;
+    (saved.schema_version == 1 && saved.profile_id == store.document.profile_id)
+        .then_some((saved.auto_seq, saved.call_first))
+}
+/// The contact engine of a station start on the profile of `store`: Auto Seq and Call 1st
+/// as last saved (CL-110-01), every other setting at its start value.
+pub(crate) fn start_engine(store: &profile::Store) -> Engine {
+    let mut engine = Engine::new(Box::new(|| profile::new_uuid().ok()));
+    if let Some((auto_seq, call_first)) = saved_settings(store) {
+        engine.settings.auto_seq = auto_seq;
+        engine.settings.call_first = call_first;
+    }
+    engine
+}
+/// Replaces the file under the profile's own lock; a failure is storage_unavailable.
+fn save_settings(state: &ProfileState, auto_seq: bool, call_first: bool) -> Result<(), Refusal> {
+    let mut store = state
+        .store
+        .lock()
+        .map_err(|_| ("storage_unavailable", None))?;
+    let document = QsoSettings {
+        schema_version: 1,
+        profile_id: store.document.profile_id.clone(),
+        auto_seq,
+        call_first,
+    };
+    store
+        .write_document_file(QSO_SETTINGS_FILE, &document)
+        .map_err(|_| ("storage_unavailable", None))
 }
 
 /// The latest DirectLog attempt as ContactSnapshot log shows it.
@@ -1243,6 +1286,14 @@ impl Station {
                 }
             }
         };
+        // CL-110-01: Auto Seq and Call 1st are saved before the engine takes the value
+        // (the engine refuses neither command); a failed save changes nothing.
+        let settings = &inner.engine.settings;
+        match command {
+            Command::SetAutoSeq(on) => save_settings(state, on, settings.call_first)?,
+            Command::SetCallFirst(on) => save_settings(state, settings.auto_seq, on)?,
+            _ => {}
+        }
         let mode = Some(mode_of(r.operating_mode()));
         Self::run(r, |mut core, now| {
             let ctx = Ctx {

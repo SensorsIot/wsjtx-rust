@@ -117,7 +117,7 @@ package WstxContact {
              DecodedMessageReaction.cpp ~533-547; make-qso.adoc Contest Messages). The
              operator chooses the station's activity with set_activity {activity}: none
              (default), na_vhf (NA VHF), ww_digi (WW Digi) or arrl_digi (ARRL Digi). It is
-             a station setting of this boot like Call 1st (not saved; a restart starts with
+             a station setting of this boot (not saved; a restart starts with
              none) and applies to the next message generation; the current contact's
              Tx2-Tx4 and Tx6 are regenerated at once (a report or tx4 change still
              replaces only Tx2-Tx4). Station automation does not start while an activity
@@ -429,12 +429,44 @@ package WstxContact {
              characters or absent. nextSlot and lastTransmittedText are distinct and
              both shown. Reconnect loads this snapshot; it replays no arm, tune,
              next-message or transmit request. Another profile never inherits it.
-             autoSequence is initially on (own choice, operator can switch it off;
-             off means received messages never change nextSlot). callFirst (WSJT-X
-             Call 1st / "CQ: First") is initially on (#10, operator 2026-11-02, an
-             operator-changeable default), see CallFirst. armState is the
+             autoSequence is on at a profile's first start and afterwards as saved
+             (CL-110-01, QsoSettingsFile); the operator can switch it off, and off means
+             received messages never change nextSlot. callFirst (WSJT-X Call 1st /
+             "CQ: First") is on at a profile's first start and afterwards as saved
+             (CL-110-01, QsoSettingsFile), see CallFirst. Relation to WSJT-X 3.3.0-beta
+             (widgets/mainwindow_settings.cpp). Followed: both settings are kept across
+             starts, as WSJT-X keeps AutoSeq (group Common) and RespondCQ (group
+             MainWindow) with its configuration. Deliberate difference: both are on when
+             nothing is saved, where WSJT-X starts with AutoSeq false and RespondCQ None.
+             Own choice: the value is saved with each accepted change, where WSJT-X
+             writes its settings in writeSettings (at exit and at configuration changes),
+             so that a change can be lost there when the program ends abnormally.
+             armState is the
              read view of #9's TransmitArming, never armed by selection, entry, reconnect or startup (#10 CL-010-01,
              TransmitSafetyPolicy armedOnStartup=false). mode: ContactMode. */
+    }
+    attribute def QsoSettingsFile {
+        attribute schemaVersion : Integer = 1;
+        attribute profileId : String;
+        attribute autoSeq : Boolean;
+        attribute callFirst : Boolean;
+        attribute bytesMax : Integer = 256;
+        doc /* CL-110-01. The saved Auto Seq and Call 1st of one profile: qso-settings.json
+             in the selected profile directory, exactly {schema_version, profile_id,
+             auto_seq, call_first}: schema_version the integer 1, profile_id the profile's
+             UUID, auto_seq and call_first JSON booleans; at most bytesMax bytes; written
+             atomically like udp.json (WstxUdp::UdpConfiguration) under the profile's own
+             lock (WstxProfiles), so that saving it does not advance the profile revision.
+             A missing file leaves both at the start values of Contact. So does a file
+             that is unreadable, larger than bytesMax bytes, not this exact object, of
+             another schema_version or of another profile_id: the station starts as
+             usual, no error is displayed, and the next accepted set_auto_seq or
+             set_call_first replaces the file with a valid one. No other setting of
+             ContactSnapshot settings is in the file.
+             The contact station reads the file once, when it is created at the station
+             start, and the ContactCommand path writes both values before the engine
+             takes the changed one and before the receipt; a failed write refuses the
+             command storage_unavailable (ContactRefusal) and changes nothing. */
     }
     calc def StationOperatingMode {
         in liveDecodingMode : WstxOfflineDecode::Mode[0..1];
@@ -1586,6 +1618,8 @@ package WstxContact {
     }
 
     dependency contactOwner from Contact to WstxArchitecture::QsoAndLogging;
+    dependency qsoSettingsOwner from QsoSettingsFile to WstxArchitecture::QsoAndLogging;
+    dependency qsoSettingsClause from QsoSettingsFile to WstxRequirements::'CL-110-01';
     dependency transmitBoundary from TransmitSubmission to WstxTransmit::TransmitRequest;
     dependency transmitOwner from TransmitSubmission to WstxArchitecture::TransmitService;
     dependency contactPromise from AutoSequence to WstxRequirements::'FR-007';
