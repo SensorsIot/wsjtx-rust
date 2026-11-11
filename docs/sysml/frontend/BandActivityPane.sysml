@@ -442,7 +442,6 @@ package WstxBandActivityPane {
         }
     }
     // ------------------------------------------------------------ requirements
-    // CL-037-06 and TC-037-005 are provisional identities of this conversion.
     requirement 'CL-010-09' {
         doc /* The browser MUST show the latest published decode period of the current
              receive with each record's period time and signed timing relative to the
@@ -761,7 +760,7 @@ package WstxBandActivityPane {
              (c) A double-click on "W4WFC DL1FRH JO30" sends select_row with replace true,
                  then enable_tx, and the command line reads "Call DL1FRH: accepted". */
         subject browser : WstxArchitecture::BrowserClient;
-        objective { verify 'CL-037-05'; }
+        objective { verify 'CL-037-05'; verify 'CL-037-06'; }
         attribute level : Integer = 2;
         attribute location : String = "Windows development PC, isolated, no radio";
         attribute automation : AutomationState = AutomationState::implemented;
@@ -769,7 +768,7 @@ package WstxBandActivityPane {
     }
     verification 'TC-037-005' {
         doc /* The keyboard inputs on a row. The pointer inputs and the menu items are
-             shown by TC-007-009 and TC-037-004.
+             shown by TC-007-009, the double-click by TC-037-004.
              Setup: the candidate server and Chromium with scripted decoded rows; contact
              commands are recorded.
              (a) Enter on the focused row "CQ K1ABC FN42" sends one select_row with
@@ -796,5 +795,6 @@ package WstxBandActivityPane {
     dependency CL_055_02_verified_by_TC_055_006 from 'CL-055-02' to 'TC-055-006';
     dependency CL_055_05_verified_by_TC_055_007 from 'CL-055-05' to 'TC-055-007';
     dependency CL_037_05_verified_by_TC_037_004 from 'CL-037-05' to 'TC-037-004';
+    dependency CL_037_06_verified_by_TC_037_004 from 'CL-037-06' to 'TC-037-004';
     dependency CL_037_06_verified_by_TC_037_005 from 'CL-037-06' to 'TC-037-005';
 }
