@@ -243,11 +243,13 @@ class ArchitectureIntegrityTests(unittest.TestCase):
         return result.stdout
 
     def judge(self, output, oracle):
-        """The integrity check of `output` against `oracle`: a dict, or the text of the file."""
+        """The integrity check of `output` against `oracle` (a dict, or the text of the file)
+        as `check` runs it: the oracle file at the tool's path."""
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "architecture-oracle.json"
             path.write_text(oracle if isinstance(oracle, str) else json.dumps(oracle, indent=1), encoding="utf-8")
-            return tool.architecture_integrity(output, path)
+            with mock.patch.object(tool, "ORACLE", path, create=True):
+                return tool.architecture_integrity(output)
 
     def refuses(self, output, oracle, diagnostic):
         with self.assertRaisesRegex(ValueError, diagnostic):
@@ -261,7 +263,7 @@ class ArchitectureIntegrityTests(unittest.TestCase):
             if oracle_text is not None:
                 path.write_text(oracle_text, encoding="utf-8")
             out, err = io.StringIO(), io.StringIO()
-            with mock.patch.object(tool, "ORACLE", path), mock.patch.object(tool, "validate", return_value=self.accepted), \
+            with mock.patch.object(tool, "ORACLE", path, create=True), mock.patch.object(tool, "validate", return_value=self.accepted), \
                     contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                 code = tool.main(["check"])
             return code, out.getvalue(), err.getvalue()
