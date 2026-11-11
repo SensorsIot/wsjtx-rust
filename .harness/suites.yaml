@@ -314,6 +314,7 @@
   - docs/sysml/Architecture.sysml
   - tools/sysml.py
   - tools/sysml/Validate.java
+  - tools/sysml/architecture-oracle.json
   - tools/sysml/toolchain.json
   - tools/sysml/tests/test_a
   needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; TC-DOC-005 architecture integrity: each mutation of Architecture.sysml is one full Pilot validation in a bounded pool. Selected by the architecture model and the tool that judges it; the companion models are validated by sysml-documentation (check). No radio or live service."
