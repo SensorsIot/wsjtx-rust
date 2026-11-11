@@ -604,13 +604,13 @@ package WstxStrategy {
              /strategy/evaluate once for the shown sequences of the current live identity; rows
              arriving during an evaluation are asked for when it ends.
              A row with a rank has the existing strategy mark (colour stays per
-             WstxOperatingLayout::BandActivityColours: only interesting stations); greyed rows
+             WstxBandActivityPane::ColourSlot: only interesting stations); greyed rows
              are dimmed and struck through; other rows have no mark. With the sort on value (the
              default, the visible "Value" control in the strategy element) rows are ordered in
              their period block by ValueOrder: the partner rows stay on top (#50), rows to my
-             call next, then rows with a rank by rank, then the rest in ActivityOrdering.
+             call next, then rows with a rank by rank, then the rest in WstxBandActivityPane::RowOrdering.
              Clicking a column header sorts by that column until the operator returns to Value
-             (ActivityOrdering; the marks stay). No active strategy: no evaluation request and
+             (WstxBandActivityPane::RowOrdering; the marks stay). No active strategy: no evaluation request and
              no mark. After an Ignore or Stop ignoring the shown rows are evaluated again.
              Selecting a strategy never restarts receive. */
     }

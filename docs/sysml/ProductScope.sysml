@@ -14,6 +14,7 @@ package WstxProductScope {
     private import WstxStandardContact::*;
     private import WstxMcp::*;
     private import WstxUdp::*;
+    private import WstxBandActivityPane::*;
     private import WstxStrategy::*;
     private import WstxContest::*;
     private import ModelNotes::*;
@@ -27,7 +28,8 @@ package WstxProductScope {
          WstxStandardContact the standard contact sequence of the contact engine;
          WstxContact its messages, contests, watchdogs, log, wire and operator displays;
          WstxStrategy award strategies, their value order and strategy runs;
-         WstxContest the contest strategies and their profiles from the official rules.
+         WstxContest the contest strategies and their profiles from the official rules;
+         WstxBandActivityPane the Band Activity pane of the browser's operating screen.
          ModelNotes the markers for what the model leaves unsaid or takes from a source.
          Requirements and exact algorithm/interface/verification semantics in these
          packages are one functional authority. A view renders existing facts; it is
@@ -403,6 +405,7 @@ package WstxProductScope {
         alias StandardContact for WstxStandardContact;
         alias Mcp for WstxMcp;
         alias Udp for WstxUdp;
+        alias BandActivityPane for WstxBandActivityPane;
         alias Strategy for WstxStrategy;
         alias ContestStrategies for WstxContest;
         alias SharedRecord for WstxOfflineDecode::ResultRecord;

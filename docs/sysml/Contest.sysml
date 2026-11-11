@@ -213,7 +213,7 @@ package WstxContest {
              element, visible only with a contest, off at each page load, kept in the page only)
              shows them all again without a new request: a dupe and a greyed row dimmed, no colour; a
              row with a new multiplier has its own colour beside the strategy mark
-             (WstxOperatingLayout::BandActivityColours: only interesting stations). The colour slots of the
+             (WstxBandActivityPane::ColourSlot: only interesting stations). The colour slots of the
              all-time log (new call, DXCC, zone, grid and LotW) are off while a contest is in force,
              their reasons leave the hover too, and they come back with its end: QSOs outside the
              period do not count (the My call slot stays; the Settings choice is unchanged). The hover names "#n",

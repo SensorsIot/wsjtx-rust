@@ -1574,7 +1574,7 @@ package WstxArchitecture {
     part def BrowserClient {
         attribute localDisplayLevels : WstxRecordingReceive::DisplayLevels;
         attribute localDisplayPreference : WstxRecordingReceive::BrowserDisplayPreference;
-        attribute localActivityOrdering : WstxOperatingLayout::ActivityOrdering;
+        action showBandActivity : WstxBandActivityPane::ShowBandActivity;
         attribute observedPresentation : WstxOperatingLayout::OperatingPresentation;
         attribute receivePresentation : WstxOperatingReceive::ReceivePresentation;
         attribute browserWaterfallSpanHz : FrequencyRange;

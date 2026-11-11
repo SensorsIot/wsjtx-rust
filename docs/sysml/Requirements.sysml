@@ -3,6 +3,7 @@ package WstxRequirements {
     private import ScalarValues::*;
     private import WstxStandardContact::*;
     private import WstxUdp::*;
+    private import WstxBandActivityPane::*;
     doc /* Canonical functional requirements and durable verification definitions.
          The other Wstx packages own detailed typed contracts; validation does not execute tests.
          Coverage flags describe implemented source slices, not acceptance or whole-project parity. */
@@ -958,15 +959,8 @@ package WstxRequirements {
     dependency CL_010_07_to_FR_008 from 'CL-010-07' to 'FR-008';
     dependency CL_010_07_to_FR_009 from 'CL-010-07' to 'FR-009';
     dependency CL_010_07_to_FR_019 from 'CL-010-07' to 'FR-019';
-    requirement 'CL-010-09' {
-        doc /* Band Activity shows only the latest published decode period and signed station timing relative to our clock, selectable presentation sorting and explicit partial/unavailable states. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "client/index.html; client/recording.js; client/recording.css; server/src/recording.rs";
-    }
-    dependency CL_010_09_to_FR_010 from 'CL-010-09' to 'FR-010';
-    dependency CL_010_09_to_FR_019 from 'CL-010-09' to 'FR-019';
     requirement 'CL-010-16' {
-        doc /* Present the laptop operating screen of WstxOperatingLayout::OperatingScreen: a top bar with only band, mode, dial, UTC/period, Logbook, Settings, HALT and Abort QSO (Esc); the full-width waterfall with the Rx/Tx strip; Band Activity with the strategy element and the QSO pane with direct buttons and no Enable Tx control; setup and diagnostics in the four-section Settings drawer; themes; WSJT-X keyboard shortcuts; and only the token form for an unauthorized browser. Details: OperatingScreen, RxTxStrip, BandActivityView, QsoPane, SettingsDrawer, ThemeChoice, UnauthorizedView, KeyboardShortcuts, WstxStandardContact::SetEnableTx. */
+        doc /* Present the laptop operating screen of WstxOperatingLayout::OperatingScreen: a top bar with only band, mode, dial, UTC/period, Logbook, Settings, HALT and Abort QSO (Esc); the full-width waterfall with the Rx/Tx strip; Band Activity with the strategy element and the QSO pane with direct buttons and no Enable Tx control; setup and diagnostics in the four-section Settings drawer; themes; WSJT-X keyboard shortcuts; and only the token form for an unauthorized browser. Details: OperatingScreen, RxTxStrip, WstxBandActivityPane::ShowBandActivity, QsoPane, SettingsDrawer, ThemeChoice, UnauthorizedView, KeyboardShortcuts, WstxStandardContact::SetEnableTx. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/recording.js; client/recording.css; client/contact.js; client/logbook.js";
     }
@@ -1196,8 +1190,8 @@ package WstxRequirements {
              CL-010-13
              Setup: profile log fixture with K1ABC on 20m FT8, W1XYZ on 40m FT8, DL1ABC on 20m MFSK/FT4; dial 20m FT8; rows from K1ABC, W1XYZ, DL1ABC, k1abc case variant, N0NEW and a hashed call; 65 distinct calls in one period.
              Steps: publish periods, save a new contact with N0NEW, publish again.
-             Expected: K1ABC this band and mode; W1XYZ and DL1ABC other band or mode; N0NEW not worked then this band and mode after the save; hashed unknown; the status is text (hover text and aria-description, BandActivityHover) in Band Activity and the QSO pane's stations calling me, colour only from the enabled new_* slots of the record flags, so worked before on this band and mode has no colour; each record carries its status (worked_status, WstxContact::DecodedEntity) and the browser sends no query; no change to decoding, sequence or log.
-             QSO pane subset (#10 2026-11-04, WstxOperatingLayout::QsoPane item 3). Setup: selection 20m FT8; routed records of one period with callers to my call HB9BLA K1ABC FN42 (no flags, worked_this_band_and_mode), HB9BLA W1XYZ FN31 (new_call, new_call_band, not_worked) and HB9BLA DL1ABC -10 (new_call_band, worked_other_band_or_mode). Steps: wait for the worked-before status of the rows; read the callers; turn New call off in Settings; refresh status. Expected (#50 BandActivityHover compact rule, #37 2026-11-04): K1ABC no colour and no hover text; W1XYZ the New call colour and the one-line hover "New call"; DL1ABC the New call on band colour and "New on 20m (worked on another band or mode)"; no My call colour; with New call off W1XYZ takes New call on band and the hover "New on 20m"; no worked-before query.
+             Expected: K1ABC this band and mode; W1XYZ and DL1ABC other band or mode; N0NEW not worked then this band and mode after the save; hashed unknown; the status is text (hover text and aria-description, WstxBandActivityPane::ReasonTip) in Band Activity and the QSO pane's stations calling me, colour only from the enabled new_* slots of the record flags, so worked before on this band and mode has no colour; each record carries its status (worked_status, WstxContact::DecodedEntity) and the browser sends no query; no change to decoding, sequence or log.
+             QSO pane subset (#10 2026-11-04, WstxOperatingLayout::QsoPane item 3). Setup: selection 20m FT8; routed records of one period with callers to my call HB9BLA K1ABC FN42 (no flags, worked_this_band_and_mode), HB9BLA W1XYZ FN31 (new_call, new_call_band, not_worked) and HB9BLA DL1ABC -10 (new_call_band, worked_other_band_or_mode). Steps: wait for the worked-before status of the rows; read the callers; turn New call off in Settings; refresh status. Expected (#50 WstxBandActivityPane::ReasonTip compact rule, #37 2026-11-04): K1ABC no colour and no hover text; W1XYZ the New call colour and the one-line hover "New call"; DL1ABC the New call on band colour and "New on 20m (worked on another band or mode)"; no My call colour; with New call off W1XYZ takes New call on band and the hover "New on 20m"; no worked-before query.
              2 — Isolated automated functional tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -2225,6 +2219,7 @@ package WstxRequirements {
             verify 'CL-045-01';
             verify 'CL-040-02';
             verify 'CL-037-03';
+            verify 'CL-037-06';
         }
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
@@ -2340,48 +2335,6 @@ package WstxRequirements {
         }
         attribute executable : String = "tests/radio-selection.test.cjs; server/src/selection_http_tests.rs; server/src/http_compression_tests.rs; server/src/recording_tests.rs";
     }
-    verification 'TC-007-006' {
-        doc /* #### TC-007-006 — Latest decode and signed relative timing
-
-             Proves CL-010-09, CL-007-02. Cost2: offline automated Windows development-PC tests of the actual
-             Rust manager/API and real Chromium using independently scripted sample/clock/result
-             fixtures. Existing native FT4/FT8-through-real-decoder proofs remain separate; UI
-             fixtures are not RF truth. Cost4 live acceptance uses HB9BLA IC-7300 and this PC's
-             browser for operator-authorized receive-only FT4/FT8 observation.
-
-             - Publish two periods with multiple stations and more than16 latest-period records;
-               retrieve split/Thin pages, then a newly empty period. Expect every available latest
-               row, no earlier rows, no page-size truncation and an explicit empty explanation.
-             - Exercise complete/overrun attempts, known gaps, cancellation, failure, late results,
-               changed descriptor mid-page, old sockets/epochs, reconnect, expired cursors and safe
-               counters. Expect atomic monotonic view identity, truthful Partial/incomplete/stale
-               labels, no invented completion and no obsolete row/cursor movement. Existing ring,
-               page/record sizes and single pending/cadence remain (the 32 kbit/s link budget is
-               judged from the link byte log, #80).
-             - Hand oracle: anchor2026-10-27T12:00:00Z at frame0. FT8 starts3600/6000/8400 yield
-               DT-0.2/+0.0/+0.2 in12:00:00. FT4 starts3024/5424/7824 yield the same, and frame95424
-               yields+0.0 in12:00:07.5. Repeat with a nonzero canonical anchor, day rollover,
-               sub-millisecond UTC anchor, nearest-slot ties and signed rounded zero. Without
-               correlation both timing fields are null; with correlation and external_accuracy
-               unknown timing stays relative to our station, not falsely certified external UTC.
-             - At1440px/360px and normal/doubled text inspect the actual UTC Time, signed DT,
-               callsigns and all six fields: literal values, unbroken numeric text and no horizontal
-               page overflow. In live acceptance observe actual decoded calls in both modes and
-               record clock quality without claiming independently measured transmitter clock error.
-
-             Sorting checks: use independently scripted frequency200/1000/3499.9, SNR-20/+10/-5,
-             signed DT-0.2/+0.2/unknown and case-varied literal messages. Check all fields and both
-             directions, unknown-last, stable ties, arrivals spanning pages, empty/next periods,
-             mode/reconnect retention and profile reset (to the #55 value order, the default); verify no new server mutations or changed
-             result request cadence. Cost2 Windows actual Chromium/candidate server; cost4 actual
-             live calls, operator changes both controls and observes only latest-period rows. */
-        attribute automation : AutomationState = AutomationState::partial;
-        objective {
-            verify 'CL-007-02';
-            verify 'CL-010-09';
-        }
-        attribute executable : String = "tests/ui-operating.test.cjs; server/src/recording_tests.rs";
-    }
 
     // Reciprocal ownership is verification intent, not an execution verdict.
     dependency CL_003_01_verified_by_TC_021_006 from 'CL-003-01' to 'TC-021-006';
@@ -2466,6 +2419,7 @@ package WstxRequirements {
     dependency CL_010_05_verified_by_TC_007_002 from 'CL-010-05' to 'TC-007-002';
     dependency CL_010_16_verified_by_TC_007_009 from 'CL-010-16' to 'TC-007-009';
     dependency CL_037_03_verified_by_TC_007_009 from 'CL-037-03' to 'TC-007-009';
+    dependency CL_037_06_verified_by_TC_007_009 from 'CL-037-06' to 'TC-007-009';
     dependency CL_045_01_verified_by_TC_007_009 from 'CL-045-01' to 'TC-007-009';
     dependency CL_040_02_verified_by_TC_007_009 from 'CL-040-02' to 'TC-007-009';
     dependency CL_010_05_verified_by_TC_009_004 from 'CL-010-05' to 'TC-009-004';
@@ -2476,7 +2430,6 @@ package WstxRequirements {
     dependency CL_010_08_verified_by_TC_007_002 from 'CL-010-08' to 'TC-007-002';
     dependency CL_010_08_verified_by_TC_009_004 from 'CL-010-08' to 'TC-009-004';
     dependency CL_010_08_verified_by_TC_009_005 from 'CL-010-08' to 'TC-009-005';
-    dependency CL_010_09_verified_by_TC_007_006 from 'CL-010-09' to 'TC-007-006';
     dependency CL_013_01_verified_by_TC_023_001 from 'CL-013-01' to 'TC-023-001';
     dependency CL_013_02_verified_by_TC_023_003 from 'CL-013-02' to 'TC-023-003';
     dependency CL_013_03_verified_by_TC_023_002 from 'CL-013-03' to 'TC-023-002';
@@ -4420,27 +4373,6 @@ package WstxRequirements {
     dependency CL_057_02_verified_by_TC_057_003 from 'CL-057-02' to 'TC-057-003';
     dependency CL_057_01_verified_by_TC_057_003 from 'CL-057-01' to 'TC-057-003';
     dependency CL_007_05_verified_by_TC_057_003 from 'CL-007-05' to 'TC-057-003';
-    requirement 'CL-057-03' {
-        doc /* Band Activity shows only the latest even and the latest odd T/R period of the current receive identity (operator 2026-11-02, #37): the latest published period on top and, below a divider with its period UTC, the period it replaced when that one has the other parity; each period sorted by value or by the chosen column (ActivityOrdering, #55 CL-055-04); all decodes of a period; #39 highlight and #50 colours as before. When a new period arrives, the older period of the same parity disappears; a same-parity successor (a skipped period) or an uncorrelated period leaves only the latest. Older periods are neither kept, paged nor fetched: the browser reads only the latest view's records (the replaced period's rows are the ones it already has). The logbook and worked-before status are unaffected. After a page load or reload (for example the #51 reload after a station update) only the latest period is shown until the next period arrives, because the receive snapshot describes only the latest view; the previous period is not fetched back. A period in which this station transmitted is the exception of CL-061-03: it adds no block, and the period kept below it stays until a receive period replaces it. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "client/recording.js; client/contact.js";
-    }
-    dependency CL_057_03_to_FR_010 from 'CL-057-03' to 'FR-010';
-    dependency CL_057_03_to_FR_019 from 'CL-057-03' to 'FR-019';
-    verification 'TC-057-004' {
-        doc /* TC-057-004 — Only the latest even and odd periods in Band Activity
-             CL-057-03
-             Setup: actual station Router and browser client with a scripted correlated FT8 receive snapshot and results route (explicit presentation fixtures, never modem truth).
-             Steps: publish three consecutive periods 12:00:00, 12:00:15 and 12:00:30 UTC (3, 2 and 2 records), then 12:01:00 (one record, a skipped period); record every results read with the view current at that moment.
-             Expected (independent: the scripted periods): after the second period, its rows on top and the 12:00:00 rows below one divider; after the third, only the 12:00:30 rows on top and the 12:00:15 rows below one divider (never more than two periods, the older same-parity period gone); after 12:01:00 only its row, no divider; no results read below the current view's first sequence; no page error.
-             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). Live acceptance: #37 items 1-2 on HB9BLA (FT8 and FT4). */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-057-03';
-        }
-        attribute executable : String = "tests/ui-operating.test.cjs";
-    }
-    dependency CL_057_03_verified_by_TC_057_004 from 'CL-057-03' to 'TC-057-004';
 
     // #52 Decode window diagnostics (approved on #52, 2026-11-02): what the station decoded.
     requirement 'CL-052-01' {
@@ -5173,7 +5105,7 @@ package WstxRequirements {
     }
     dependency CL_055_01_to_FR_011 from 'CL-055-01' to 'FR-011';
     requirement 'CL-055-02' {
-        doc /* Each decoded record of a resolved sender carries its entity (shown name, continent, CQ and ITU zone, entity distance) and the WSJT-X new-* flags that hold against the internal log (new call, grid, DXCC, continent, CQ zone and ITU zone, each ever and on this band), only the true ones, for the #50 row colours. Band Activity's DXCC column shows the shown name; Distance uses the message grid and otherwise the entity distance marked approximate; the QSO pane header shows the partner's country and continent. The strategy's continent condition and the directed-CQ rule use the sender's entity (WstxStrategy::ContinentOfCall). Details: WstxContact::DecodedEntity; WstxOperatingLayout BandActivity. */
+        doc /* Each decoded record of a resolved sender carries its entity (shown name, continent, CQ and ITU zone, entity distance) and the WSJT-X new-* flags that hold against the internal log (new call, grid, DXCC, continent, CQ zone and ITU zone, each ever and on this band), only the true ones, for the #50 row colours. Band Activity's DXCC column shows the shown name; Distance uses the message grid and otherwise the entity distance marked approximate; the QSO pane header shows the partner's country and continent. The strategy's continent condition and the directed-CQ rule use the sender's entity (WstxStrategy::ContinentOfCall). Details: WstxContact::DecodedEntity; WstxBandActivityPane::Column. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/dxcc.rs; server/src/receive_http.rs; server/src/strategy.rs; server/src/decoder/payload.rs; client/recording.js; client/contact.js";
     }
@@ -5185,18 +5117,6 @@ package WstxRequirements {
         attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; server/src/main.rs; client/logbook.js";
     }
     dependency CL_055_03_to_FR_016 from 'CL-055-03' to 'FR-016';
-    requirement 'CL-055-04' {
-        doc /* Band Activity colours, hover text and order (operator 2026-11-03). Operator decision deviating from WSJT-X, which colours only CQ/QRZ and calling-me lines: the sender of every decoded message (CQ, replies to others, reports, R-reports, RR73, 73; the sender call of WstxContact::DecodedEntity) is coloured by the same new DXCC, continent, zone, grid and call flags (the whole row for a CQ or QRZ, only the sender's call otherwise, #50 CL-050-08); a message to my call keeps the calling-me colour on top; a row without a flag has no colour (there is no CQ slot, #50, and worked before never colours). Every row with a reason carries hover text (title and aria-description, on the row and its colour mark) naming each reason in value order (#50 CL-050-08 replaces this Band Activity hover by its one-line reason tip; the QSO pane callers keep it): calling me, the strategy verdict, each new flag with its entity, zone, grid or band, then the worked-before status, for example "New DXCC: Romania", "New DXCC on 40m", "New CQ zone 20", "New grid KN34", "New call", "Worked before on 40m FT8". Within each period the rows are sorted by value (1 calling me, 2 strategy hits by their rank, 3 new DXCC, 4 new DXCC on this band, 5 new CQ or ITU zone, 6 new grid, 7 new call, 8 no flag), then by SNR strongest first, ties in decode order; the column headers still choose another order and the DXCC header returns to it. Details: WstxOperatingLayout::BandActivityColours, BandActivityValue, BandActivityHover, ActivityOrdering. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "client/recording.js; client/contact.js; client/logbook.js";
-    }
-    dependency CL_055_04_to_FR_019 from 'CL-055-04' to 'FR-019';
-    requirement 'CL-055-05' {
-        doc /* Band Activity rows are tighter so more stations fit (operator 2026-11-03): less vertical padding and line height on decode rows and period dividers at the same font size, at most 24 px per row with a mouse; touch (coarse pointer) and the stacked narrow layout keep tappable rows. Details: WstxOperatingLayout::BandActivityView. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "client/recording.css";
-    }
-    dependency CL_055_05_to_FR_019 from 'CL-055-05' to 'FR-019';
     verification 'TC-055-001' {
         doc /* TC-055-001 — Entity resolution known answers
              CL-055-01
@@ -5253,36 +5173,6 @@ package WstxRequirements {
         attribute executable : String = "tests/contact.test.cjs; server/tests/decoder_vectors.rs";
     }
     dependency CL_055_02_verified_by_TC_055_004 from 'CL-055-02' to 'TC-055-004';
-    verification 'TC-055-006' {
-        doc /* TC-055-006 — Band Activity colours, hover text and value order for every sender
-             CL-055-04, CL-055-02
-             Setup: actual router with a selected profile whose log holds DL1ABC JO62 20m FT8 (TC-055-002); in the browser the operating fixture with routed result records carrying #55 flags and dxcc, selection band 20m and the worked_status of each sender.
-             Steps: read /receive/results for a report and an R-report to other stations from new senders (K9XX G4XYZ -10, K9XX YO3ABC R-07) and an RR73 from a sender worked on 20m FT8 (K9XX DL1ABC RR73); in the browser render one period with a report from a new-DXCC sender (YO3ABC K9XX -07), a row to my call, a new CQ zone, a new grid, a new call, two rows of equal value with different SNR and a worked-before CQ without flags; turn Highlight on with a strategy hit.
-             Expected: the server gives both non-CQ senders their dxcc and flags (England new call, DXCC and ITU zone; Romania new DXCC) and the worked sender Germany without flags; the YO3ABC report colours only its sender call new DXCC (#50 CL-050-08) and its reason tip is "New DXCC · New call"; the row to my call keeps the my-call colour over the whole row and its tip is "New call"; the new CQ zone CQ is coloured over the whole row; the worked-before CQ has no colour and no reason tip; rows are in value order calling me, strategy hit, new DXCC, new zone, new grid, new call, no flag, equal values strongest first; the DXCC header restores this order after a Freq sort.
-             2 — Isolated automated (functional) tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-055-04';
-            verify 'CL-055-02';
-        }
-        attribute executable : String = "server/src/dxcc_tests.rs; tests/ui-operating.test.cjs";
-    }
-    dependency CL_055_04_verified_by_TC_055_006 from 'CL-055-04' to 'TC-055-006';
-    dependency CL_055_02_verified_by_TC_055_006 from 'CL-055-02' to 'TC-055-006';
-    verification 'TC-055-007' {
-        doc /* TC-055-007 — Dense Band Activity rows
-             CL-055-05
-             Setup: operating fixture at 1366x768 with a period of 30 routed decodes; Chromium.
-             Steps: wait for the rows; measure a row, the font size and the rows fully visible in the table; read the coarse-pointer rule.
-             Expected: a row at most 24 px high (41 px before), the font size unchanged (the normal operating font), at least 8 rows visible (5 before), and a pointer:coarse rule keeping at least 8 px cell padding; screenshot band-activity-density-1366.png (before and after on the issue).
-             2 — Isolated automated (functional) tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-055-05';
-        }
-        attribute executable : String = "tests/ui-operating.test.cjs";
-    }
-    dependency CL_055_05_verified_by_TC_055_007 from 'CL-055-05' to 'TC-055-007';
     verification 'TC-055-005' {
         doc /* TC-055-005 — Live DXCC on HB9BLA
              CL-055-02, CL-055-03
@@ -5397,12 +5287,6 @@ package WstxRequirements {
     }
     dependency CL_050_01_to_FR_007 from 'CL-050-01' to 'FR-007';
     dependency CL_050_01_to_FR_019 from 'CL-050-01' to 'FR-019';
-    requirement 'CL-050-02' {
-        doc /* Band Activity rows use the WSJT-X 3.3 default highlight colours and priority with its default on/off except as stated here (WstxOperatingLayout::BandActivityColours), with no text marks other than the a-priori marker aN after an a-priori word's message (#56 slice 5): My call from the message, the New call, New call on band, grid, DXCC, continent and zone slots from the record flags the station supplies (#55; a never-worked call carries both New call flags), for every decoded sender (operator decision, CL-055-04, not only CQ/QRZ lines as in WSJT-X; what a slot colours, whole row or the sender's call only, and the QSO partner's marker: CL-050-08); New call and New call on band are on by default (WSJT-X: off). Only stations of interest are coloured (operator 2026-11-03, deliberately unlike WSJT-X): there is no CQ slot, so a CQ from a station worked before on this band and mode, and every other row that carries no enabled slot, has no colour, while My call still applies. The slots are chosen per browser in Settings > General > Display. The #39 strategy highlight stays an accent and never replaces these colours. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "client/recording.js; client/logbook.js; client/recording.css";
-    }
-    dependency CL_050_02_to_FR_019 from 'CL-050-02' to 'FR-019';
     requirement 'CL-054-01' {
         doc /* A Detailed waterfall subscriber receives every Detailed row of the current job in order after a processing stall: the station retains the last 25 rows and sends each peer the oldest row it has not sent, 200 ms apart, 170 ms apart while rows wait (WstxRecordingReceive::TransferDisplay). Live Thin sends keep a fixed 2 s grid from the previous deadline, restarted at a send more than 1 s late, so sends stay at least 1 s apart. The browser draws a gap row only for a real gap; one or two live Thin rows paced out between two sent rows are drawn with the next row. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -5430,23 +5314,9 @@ package WstxRequirements {
         attribute executable : String = "tests/contact.test.cjs; tests/ui-operating.test.cjs";
     }
     dependency CL_050_01_verified_by_TC_050_001 from 'CL-050-01' to 'TC-050-001';
-    verification 'TC-050-002' {
-        doc /* TC-050-002 — WSJT-X Band Activity colours
-             CL-050-02
-             Setup: (a) actual candidate server; routed live job with CQ K1ABC (worked_this_band_and_mode), CQ W1XYZ, a report K9XX W2AB R-05 (both not_worked) and a free-text row; (b) the same server with routed records carrying the station's #55 flags and worked_status: CQ K1AA (no flag, worked_this_band_and_mode), CQ K2BB (new_call_band, worked_other_band_or_mode), CQ K3CC (new_call and new_call_band, not_worked) and HB9BLA K1AA R-05 to my call; Chromium.
-             Steps: wait for the worked-before status of the rows; read row slots and backgrounds; turn New call off in Settings; append synthetic rows with slot sets for the #55 flags.
-             Expected: no text marks; no CQ slot in Settings and no row slot cq; (a) the CQ W1XYZ row and the sender call of the non-CQ row K9XX W2AB R-05 (flags new_call, new_call_band; CL-055-04; only the call, CL-050-08) rgba(0,255,255,0.24) by default and rgba(153,255,255,0.2) with New call off; K1ABC (worked on this band and mode, no flag) and the free-text row no slot, background rgba(0,0,0,0); the choice saved in browser storage; priority My call > New continent > New DXCC, New grid and ITU zone off by default; (b) K1AA no slot and rgba(0,0,0,0); K2BB new_call_band, rgba(153,255,255,0.2); K3CC new_call and new_call_band, rgba(0,255,255,0.24); the row to my call from K1AA mycall only, rgba(255,102,102,0.32).
-             2 — Isolated automated functional tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-050-02';
-        }
-        attribute executable : String = "tests/ui-operating.test.cjs";
-    }
-    dependency CL_050_02_verified_by_TC_050_002 from 'CL-050-02' to 'TC-050-002';
     // #50/#10 operator feedback 2026-11-02 evening (US5WFL/YO3GNF, TC2TR, the 22:48 CQ run on 40 m).
     requirement 'CL-050-04' {
-        doc /* Replacing an active contact (ChangeContact, select_row or enter_dx with replace true) keeps Enable Tx as it is: with Enable Tx on, the next period of the new contact's parity carries the new contact's next message, and after a transmission already on the air nothing more goes to the old partner. A double-click (or Reply) on another station's Band Activity row, idle, after a completed contact, during a contact or during my CQ, also when the rows are redrawn between its two clicks or during its second press, is that selection without a confirmation, followed by Enable Tx on (WSJT-X double-click with "Double-click on call sets Tx enable"), each request retried at most twice after a stale_revision refusal; Auto Seq then runs the QSO to its completion and log. During a station automation run an operator replacement of the run's contact ends the run, which disarms (WstxMcp, TC-020-003). A single click only offers "Change contact to <call>" during a contact and never turns Enable Tx on. Details: WstxStandardContact::ChangeContact, SelectDecodedRow, WstxOperatingLayout::BandActivity. */
+        doc /* Replacing an active contact (ChangeContact, select_row or enter_dx with replace true) keeps Enable Tx as it is: with Enable Tx on, the next period of the new contact's parity carries the new contact's next message, and after a transmission already on the air nothing more goes to the old partner. A double-click (or Reply) on another station's Band Activity row, idle, after a completed contact, during a contact or during my CQ, also when the rows are redrawn between its two clicks or during its second press, is that selection without a confirmation, followed by Enable Tx on (WSJT-X double-click with "Double-click on call sets Tx enable"), each request retried at most twice after a stale_revision refusal; Auto Seq then runs the QSO to its completion and log. During a station automation run an operator replacement of the run's contact ends the run, which disarms (WstxMcp, TC-020-003). A single click only offers "Change contact to <call>" during a contact and never turns Enable Tx on. Details: WstxStandardContact::ChangeContact, SelectDecodedRow, WstxBandActivityPane::RowInput. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/contact.rs; client/contact.js";
     }
@@ -5553,27 +5423,6 @@ package WstxRequirements {
     }
     dependency CL_050_07_verified_by_TC_050_007 from 'CL-050-07' to 'TC-050-007';
     // #50 operator design 2026-11-04 (refines the 2026-11-03 colour rule).
-    requirement 'CL-050-08' {
-        doc /* Band Activity marks each decoded row by what makes it interesting, highest first (WstxOperatingLayout::BandActivityScheme, BandActivityRowMark): (1) the current QSO partner, from the contact preparation until the contact is logged or cancelled, taken from the contact snapshot the page already holds (no further request): its rows are moved to the top of Band Activity with a red separator stripe below them and carry a red left bar, a "◆ QSO" badge after the message and a bold message, without a slot background; (2) a row to my call from another station (also <MYCALL> and a nonstandard i3=4 'to', #24): the whole row in the My call colour, also when the sender was worked before on this band and mode; (3) a CQ or QRZ from a station with an enabled new_* slot: the whole row in that slot's colour; (4) any other row from a station with an enabled new_* slot (in QSO with another station): only the sender's call is coloured, the rest of the row is plain; (5) everything else has no colour. The Settings slot choice applies to every mark. A row's reason tip is one compact line naming only the reasons of its colour that the row does not show, joined by " · ": per kind (continent, DXCC, zone, grid, call) the strongest enabled one, so an overall flag never also names its on-band form, the on-band call reason with the worked-before status in parentheses, then the strategy verdict, e.g. "New DXCC · New call", "New on 40m (worked on another band or mode)"; no country, continent, distance or "Calls you" (the row shows them); a row without such a reason has no tip. It uses only the #55 record data and the record's worked_status (WstxOperatingLayout::BandActivityHover). */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "client/recording.js; client/contact.js; client/recording.css";
-    }
-    dependency CL_050_08_to_FR_019 from 'CL-050-08' to 'FR-019';
-    verification 'TC-050-008' {
-        doc /* TC-050-008 — Band Activity row marks: partner first with the stripe, calls me, CQ of interest, sender-only colour, one-line reason tip
-             CL-050-08
-             Kept status (#50, live 2026-11-06): a row with the tip "New on 20m (worked on another band or mode)" keeps that tip when the next period of the other parity moves it below the divider, while that period is partial and after it is complete, with no worked-before query.
-             Setup: actual release candidate (fixture station) and Chromium at 1440x900; routed receive pages for a kept period 12:00:00 (CQ K1PT FN42 new_call_band; CQ K7OLD FN42; K9XX W1AA R-03) and a latest period 12:00:15 (HB9BLA K1PT FN42 new_call_band; HB9BLA K2CM -05; HB9BLA K3NB R-07 new_call_band; CQ OA4DX FH17 and K9XX YO3ABC -07 with new_dxcc, new_dxcc_band, new_call, new_call_band and dxcc Peru/Romania; CQ K1WB FN42; W9AA W2CD 73; CQ JA1ZZ PM95 new_cq_zone, new_cq_zone_band, CQ zone 25), selection band 40m, the records' worked_status (K2CM, K1WB and W2CD worked on 40m FT8, K3NB on another band or mode, the others not worked) and routed contact snapshots.
-             Steps: with no contact read each row's marks, message cell and sender-call backgrounds and reason tip; hover the YO3ABC message, its DXCC cell and an uncoloured row; focus the K3NB row; route a contact with K1PT in replying and reload the snapshot; read the order, stripe and marker; read the stripe at 360x800; sort by Freq and back; turn My call and New call off in Settings; route the contact completed and reload.
-             Expected: no contact: no stripe; the three rows to my call whole row rgba(255,102,102,0.32) with tips "New on 40m", none (worked on this band and mode, no flag) and "New on 40m (worked on another band or mode)"; CQ OA4DX whole row rgba(255,0,255,0.26) tip "New DXCC · New call"; K9XX YO3ABC -07 message cell transparent with only the YO3ABC span rgba(255,0,255,0.26) and the same tip; CQ JA1ZZ whole row rgba(255,191,0,0.26) tip "New CQ zone 25"; the rows without a flag uncoloured without a tip; no row has a native title and the aria-description equals the tip; the tip box is one line at the pointer, absent over the DXCC cell and over an uncoloured row, shown for the focused row and gone after focus moves. Prepared K1PT: HB9BLA K1PT FN42 then CQ K1PT FN42 first, then one stripe row (no text, rgb(255,64,64)), then the other rows in the earlier order with the kept divider; the partner rows have no slot background or tip, a 4 px rgb(255,64,64) inset left bar, a bold message and the badge " ◆ QSO"; at 360x800 the stripe is a 3 px full-width rgb(255,64,64) bar; the partner block stays first after the Freq sort. With My call and New call off: K2CM uncoloured, K3NB whole row rgba(153,255,255,0.2), the OA4DX and YO3ABC tips "New DXCC · New on 40m". Completed: no stripe and no partner row; HB9BLA K1PT FN42 is a calls-me row; no worked-before query, none added by the marks, the partner or the tip; no page error.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-050-08';
-        }
-        attribute executable : String = "tests/ui-operating.test.cjs";
-    }
-    dependency CL_050_08_verified_by_TC_050_008 from 'CL-050-08' to 'TC-050-008';
     verification 'TC-054-001' {
         doc /* TC-054-001 — Detailed rows in order after a stall; gaps only for real gaps
              CL-054-01
@@ -5838,7 +5687,7 @@ package WstxRequirements {
              Setup: the browser fixture of the operating screen with the actual isolated station, hand-written live records and a hand-written contact snapshot of an own CQ (no partner, only Tx6), the profile call HB9BLA; contact commands are recorded (the station's validation of the text is TC-024-003).
              Steps: publish rows "<HB9BLA> PJ4/K1ABC" (nonstandard, 'to' filled in), "HB9BLA <PJ4/K1ABC> -12" (standard, 'from' filled in), "<...> PJ4/K1ABC" and "<HB9BLA> K1ABC -12" (standard, 'to' filled in); open the message fold-out and type "tnx 73 gl" into Tx5.
              Then (QsoPane Calling me) the same rows during a QSO with PJ4/K1ABC, Rx 1000 Hz and Tx 1300 Hz.
-             Expected: the rows to <HB9BLA> or HB9BLA carry the mycall mark (ba-tome) and sort first as value 1 (calling me, #55 BandActivityValue), the unresolved one does not and follows them; the QSO pane Calling me lists one line per station calling my call, oldest first: PJ4/K1ABC by its newest row "HB9BLA <PJ4/K1ABC> -12" and "<HB9BLA> K1ABC -12", not the unresolved one; during the QSO only "<HB9BLA> K1ABC -12" (the partner PJ4/K1ABC's rows are not callers); Tx5 is enabled without a message while the other empty slots and the Tx5 Next choice are not; edit_message {slot tx5, text "tnx 73 gl"} is sent and nothing transmits; no page errors.
+             Expected: the rows to <HB9BLA> or HB9BLA carry the mycall mark (ba-tome) and sort first as value 1 (calling me, #55 WstxBandActivityPane::RowValue), the unresolved one does not and follows them; the QSO pane Calling me lists one line per station calling my call, oldest first: PJ4/K1ABC by its newest row "HB9BLA <PJ4/K1ABC> -12" and "<HB9BLA> K1ABC -12", not the unresolved one; during the QSO only "<HB9BLA> K1ABC -12" (the partner PJ4/K1ABC's rows are not callers); Tx5 is enabled without a message while the other empty slots and the Tx5 Next choice are not; edit_message {slot tx5, text "tnx 73 gl"} is sent and nothing transmits; no page errors.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -6325,7 +6174,7 @@ package WstxRequirements {
     dependency CL_065_01_verified_by_TC_089_005 from 'CL-065-01' to 'TC-089-005';
     // #37 fixed-height QSO pane with a QSO and a Calling me section (operator 2026-11-04).
     requirement 'CL-037-04' {
-        doc /* (#37, operator 2026-11-04: "The QSO panel should contain all needed information for the operator. And it should be fixed in size that the things below it do not move all the time up and down. We probably have a section for the QSO and a section for who is calling"; "you can make this section big enough to accommodate also longer QSOs. We have enough space") The QSO pane has a fixed height that depends on the screen only, never on its content, so the Control panel and the error field below it do not move when a QSO starts or ends, dialogue rows or callers are added or a message line appears. It has two sections of fixed height that scroll inside: QSO, below the header (partner call, grid, country, distance, reports) and the message lines (state, NEXT, last partner message), holds the #60 dialogue table with its header row and 12 rows without scrolling on a laptop screen (6 at most 48em wide), more rows scrolling inside with the newest row always visible, and the placeholder "No QSO" while no QSO runs; Calling me lists every station calling my call except the partner, one line per station with call, SNR, grid and country, at least 5 rows high, double-click (or Enter) to work it, with the #10 worked-before marks, and the placeholder "Nobody is calling". At 360 CSS px both sections stack with fixed heights, and Band Activity, with a fixed height, shows compact rows (numbers and distance, then message and country, wrapping only between whole fields, usually two lines) instead of labelled cards, at least six on screen at 360x800. The Calling me hover follows the compact #50 BandActivityHover rule (one line, only the enabled colour reasons, the strongest per kind). No new request or poll: the sections show the contact snapshot and the result rows the page already reads. Details: WstxOperatingLayout::QsoPane items 3, 7 and 8, BandActivityView. */
+        doc /* (#37, operator 2026-11-04: "The QSO panel should contain all needed information for the operator. And it should be fixed in size that the things below it do not move all the time up and down. We probably have a section for the QSO and a section for who is calling"; "you can make this section big enough to accommodate also longer QSOs. We have enough space") The QSO pane has a fixed height that depends on the screen only, never on its content, so the Control panel and the error field below it do not move when a QSO starts or ends, dialogue rows or callers are added or a message line appears. It has two sections of fixed height that scroll inside: QSO, below the header (partner call, grid, country, distance, reports) and the message lines (state, NEXT, last partner message), holds the #60 dialogue table with its header row and 12 rows without scrolling on a laptop screen (6 at most 48em wide), more rows scrolling inside with the newest row always visible, and the placeholder "No QSO" while no QSO runs; Calling me lists every station calling my call except the partner, one line per station with call, SNR, grid and country, at least 5 rows high, double-click (or Enter) to work it, with the #10 worked-before marks, and the placeholder "Nobody is calling". At 360 CSS px both sections stack with fixed heights, and Band Activity, with a fixed height, shows compact rows (numbers and distance, then message and country, wrapping only between whole fields, usually two lines) instead of labelled cards, at least six on screen at 360x800. The Calling me hover follows the compact #50 WstxBandActivityPane::ReasonTip rule (one line, only the enabled colour reasons, the strongest per kind). No new request or poll: the sections show the contact snapshot and the result rows the page already reads. Details: WstxOperatingLayout::QsoPane items 3, 7 and 8, WstxBandActivityPane::ShowBandActivity. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js; client/recording.css";
     }
@@ -6345,26 +6194,6 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_037_04_verified_by_TC_037_003 from 'CL-037-04' to 'TC-037-003';
-    requirement 'CL-037-05' {
-        doc /* (#37, operator 2026-11-04: the QSO area offered "Change contact to W4WFC DL1FRH JO30", "This makes no sense") While a contact is active, a click on a Band Activity row offers a contact change only for a row that can start a contact for me, a CQ/QRZ complying with the directed-CQ rule (WstxStrategy::DirectedCqRule, also without Highlight or an active strategy) or a row addressed to my call, and the offer names the sender ("Change contact to K1ABC"); a click on a row of a QSO between others or on a CQ directed elsewhere offers nothing and leaves no refusal text. A deliberate double-click on such a row calls its sender and its command line reads "Call <sender>", never the foreign message. Details: WstxOperatingLayout::BandActivityView. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "client/contact.js; client/recording.js; server/src/contact_http.rs";
-    }
-    dependency CL_037_05_to_FR_007 from 'CL-037-05' to 'FR-007';
-    verification 'TC-037-004' {
-        doc /* TC-037-004 — A contact change is offered only for a row that can start a contact for me
-             CL-037-05
-             Setup: actual candidate server and Chromium at 1366x768; my continent EU from HB9BLA; routed live rows "CQ K1ABC FN42", "QRZ W1XYZ FN31", "HB9BLA DL1ABC JO31", "W4WFC DL1FRH JO30", "CQ EU G4ABC IO91", "CQ DX K2DX FN42" (NA), "CQ NA K3NA FN42" and "CQ DX DL2DX JO31" (EU); a running contact with IW9FRA; a routed POST /contact/command that refuses select_row without replace as directive_not_answerable for "CQ NA K3NA FN42" and "CQ DX DL2DX JO31" and as contact_active for the other rows, and accepts everything else.
-             Steps: click each row and read the change button and the command line; double-click the foreign row and read the commands and the command line.
-             Expected (independent oracle: the operator's report of 2026-11-04 on #37): CQ, QRZ, addressed and complying directed rows offer "Change contact to K1ABC", "Change contact to W1XYZ", "Change contact to DL1ABC", "Change contact to G4ABC" and "Change contact to K2DX"; the foreign row and both CQs directed elsewhere each remove the offer, show none and leave the command line empty; its double-click sends select_row with replace true, then enable_tx, and the command line reads "Call DL1FRH: accepted".
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-037-05';
-        }
-        attribute executable : String = "tests/ui-operating.test.cjs";
-    }
-    dependency CL_037_05_verified_by_TC_037_004 from 'CL-037-05' to 'TC-037-004';
     // Found in the #61 gate (TC-050-004, CQ right after a completed contact refused stale_revision).
     requirement 'CL-061-02' {
         doc /* The QSO pane CQ button is an explicit operator choice like the double-click (CL-050-04): a stale_revision refusal of its enable_tx (the contact revision moves with every transmit step, also when the last period of a just completed contact ends) is retried at most twice with the reloaded snapshot; a third refusal stays shown. */
@@ -6389,27 +6218,6 @@ package WstxRequirements {
     // #61 operator report 2026-11-03: after each own transmission Band Activity looked as if reception had stopped.
     // Operator decision 2026-11-04 (#61): "distinguish exactly between TX and RX ... do not listen to audio when you do TX";
     // the station decides the Tx period (CL-061-04) and the browser renders its marker (CL-061-03).
-    requirement 'CL-061-03' {
-        doc /* Band Activity renders the station's Tx period marker (CL-061-04); the browser no longer infers it from station.tick or the contact snapshot. While the latest view is a Tx period (latest_decode.transmitted true) the header reads "Tx · <MODE> period <UTC> UTC · this station transmitted, no decode", the top row is one marker row (data-period "tx", text "Tx <UTC> · this station transmitted · no decode") and the receive period it replaced follows below its divider "<MODE> period <UTC> UTC" when it has the other parity (CL-057-03); there is no empty-period block ("No stations decoded") for it; the count is the number of rows shown below the marker. When the next period arrives the Tx marker disappears and the receive period kept below it stays below the new one with its divider (it replaces the Tx period, not the receive period before it). A receive period that decodes nothing keeps its note "No stations decoded" as before. The station's receive results and records are unchanged. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "client/recording.js; client/recording.css";
-    }
-    dependency CL_061_03_to_FR_010 from 'CL-061-03' to 'FR-010';
-    dependency CL_061_03_to_FR_019 from 'CL-061-03' to 'FR-019';
-    verification 'TC-061-004' {
-        doc /* TC-061-004 — A Tx period shows the station's Tx marker, no empty block
-             CL-061-03
-             Setup: actual station Router and browser client with a scripted correlated FT8 receive snapshot and results route (explicit presentation fixtures, never modem truth).
-             Steps: publish 12:00:00 UTC with 3 records; publish 12:00:15 as a Tx period (latest_decode transmitted true, no records); publish 12:00:30 with 2 records; publish 12:00:45 (a receive period) with no records. No station.tick says transmitting.
-             Expected (independent: the scripted periods and the marker): after 12:00:15 Band Activity shows the marker row "Tx 12:00:15 · this station transmitted · no decode" on top, then the divider "FT8 period 12:00:00 UTC" and the three 12:00:00 rows; no "No stations decoded" and no "No verified stations" text; header "Tx · FT8 period 12:00:15 UTC · this station transmitted, no decode"; count "3 messages"; after 12:00:30 its 2 rows on top and the 12:00:00 rows below the divider "FT8 period 12:00:00 UTC", no marker; after 12:00:45 the note "No stations decoded" with the 12:00:30 rows below their divider; no page error. On the parent client the 12:00:15 view is refused (unknown key) and no marker shows.
-             2 — Isolated automated browser test; Windows PC, no radio (operating-layout suite). Live acceptance: TC-061-007. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-061-03';
-        }
-        attribute executable : String = "tests/ui-operating.test.cjs";
-    }
-    dependency CL_061_03_verified_by_TC_061_004 from 'CL-061-03' to 'TC-061-004';
     requirement 'CL-061-04' {
         doc /* The station treats every T/R period in which it is on the air as a Tx period and decides it itself (WstxStationProtocol client-server rule, #10: the server decides and pushes, the browser renders). On the air means the transmit owner's PTT is keyed or not confirmed released, a transmission's audio runs, or Tune is on; the station records the period start (its UTC on the transmit owner's clock, the clock the transmitter keys on) of every such observation and the start of the last transmitted period (transmit.last_period_utc), the latest 16. The receive path reads this without waiting for the transmit owner. For a Tx period: (1) no decode attempt: the live worker skips its analysis windows (prompt and late), no record and no UDP decode is published for it and the decoder is not marked busy; the job's latest_decode for that period carries "transmitted": true with an empty range (first_sequence = next_sequence = the frozen publication end) and complete false (RadioIO LatestDecodePeriod); (2) no Rx level measurement while on the air and for the rest of that Tx period: station.tick rx_level_db is null then, and the measurement restarts with the next receive period, so a level and the "Audio level low/overdriven" error-field entries refer to receive periods only (the browser shows "Tx · not measured" while station.tick says transmitting); (3) the waterfall rows of a Tx period carry "tx": true (spectrum.frame and spectrum.detail.frame, the key present only then) and the browser paints them as Tx rows (RGB(90,20,30)) without a spectrum trace, never as received silence; (4) the period bar (red), the QSO pane line "TX now", the Band Activity marker (CL-061-03) and the meter state Tx while the error field shows no level entry. Audio capture keeps running throughout: no device stop or start and no loss epoch; only the use of the samples is suspended. HALT, the Tx watchdog and PTT release are unchanged. Without a correlated receive clock no period can be named: decoding continues and only the level stops while on the air. Deliberate differences from WSJT-X 3.3 (half duplex: MainWindow::transmitDisplay calls monitor(false), which suspends the audio input stream and cancels a pending FT8 decode, and stopTx resumes it with monitor(true); the signal meter is set to 0 and the waterfall receives no rows while transmitting): this station keeps capturing (one continuous source, no restart), marks the Tx rows instead of leaving them out, publishes the Tx period as a marked view, reports the level as unavailable (null) rather than 0 and suspends it to the end of the Tx period rather than to the end of the transmission. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
