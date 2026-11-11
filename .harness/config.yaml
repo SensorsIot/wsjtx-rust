@@ -84,8 +84,8 @@ gate:
   # without D: falls back to the default; old folders in the default root are pruned too.
   cargo_target_root: D:/harness-cargo-target
   # The agents' own build and temp folders, one per worktree (docs/harness/Agent-Working-Rules.md,
-  # "Role: coder"); landing a slice removes its folder there (harness Merge-Queue.md,
-  # "One slice, one worktree").
+  # "Role: coder"); landing a CR removes its folder there (harness Merge-Queue.md,
+  # "One CR, one worktree").
   agent_build_root: D:/wstx-build
   # The model bindings for the gate's binding check and its report-only candidate
   # selection (harness core/tools/candidate.py, harness#40); reuses tools/sysml.py.

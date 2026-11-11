@@ -95,7 +95,7 @@ guard:
 
 The model is under `docs/sysml/`; its checks are the `sysml.py` commands of
 [model authoring and validation](Project-Specifics.md#model-authoring-and-validation),
-run in a slice worktree by the worktree path rule under "Role: every" below.
+run in an issue worktree by the worktree path rule under "Role: every" below.
 A browser control that writes to the radio or keys it states what it does before its
 scripts have loaded over the 32 kbit/s link and after they fail to load.
 
@@ -104,13 +104,13 @@ scripts have loaded over the 32 kbit/s link and after they fail to load.
 ```yaml
 guard:
   commands:
-    - 'gh issue comment [0-9]+ --body ''Ready: (PASS|not yet)( [A-Za-z0-9_.-]+(, [A-Za-z0-9_.-]+)*)?(\n[^'']*)?'''
+    - 'gh issue comment [0-9]+ --body ''Ready: (PASS|not yet)(\n[^'']*)?'''
 ```
 
 The checker posts its verdict as its own issue comment, in the posting form under
-"Role: every" below. Its first line is exactly `Ready: PASS` or `Ready: not yet`, followed
-only by slice names as the [ready check](../../harness/core/docs/CR-Process.md#ready-check)
-says; the hook refuses any other first line.
+"Role: every" below. Its first line is exactly `Ready: PASS` or `Ready: not yet`, as the
+[ready check](../../harness/core/docs/CR-Process.md#ready-check) says; the hook refuses any
+other first line.
 
 ### Role: coder
 
@@ -232,7 +232,7 @@ are on D: (`gate.cargo_target_root` in `.harness/config.yaml`); a role's own bui
 are the coder's above.
 
 - **Worktree paths.** A role's session folder is the project folder, and a change of folder
-  is refused. In a slice worktree, run each command from the project folder with the
+  is refused. In an issue worktree, run each command from the project folder with the
   worktree's path in it: `python .git/harness-parallel/worktrees/cr39-holdtx/tools/sysml.py check`
   (the tool checks the repository it lives in), `git -C .git/harness-parallel/worktrees/cr39-holdtx status`,
   `cargo test --manifest-path .git/harness-parallel/worktrees/cr39-holdtx/Cargo.toml`, and
