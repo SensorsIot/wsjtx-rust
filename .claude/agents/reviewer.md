@@ -24,7 +24,7 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=5f1bbd2e5f18a22ef9eb51d858cae2df71be8c367294615e116a7b0627d73448 -->
 <!-- source harness/lang/rust/standard.md sha256=fb15bdf7c2a77506d1e458761e48d950cbcaf5dbd4173a1a3ad19030b6b00825 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=0f01dc61b33610da27f2ca6ca4948432304de4c9b4ec49938fec7adbd1eea3a9 -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=3bbd35314708dae30cf34940c4567ff11eca7a5e2d2ce6749db5125e0df4beb8 -->
 <!-- harness-role-policy {"commands": ["git( -C \\S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?", "gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*resolution_diff\\.py [0-9a-f]{7,40}", "gh issue comment [0-9]+ --body 'Review: (PASS|[0-9]+ findings?) \u2014 [0-9a-f]{7,40}(\\n[^']*)?'", "cargo test(?=.* --manifest-path \\S+).*", "node --test( --test-concurrency=1| --test-name-pattern=([\\[\\]A-Za-z0-9_.,:^+=/-]+|'[^']+')){0,2}( \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\\.\\.?(?=[/\\s]|$))[A-Za-z0-9_.@+-]+)+)+", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints)"], "writes": [], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py", "^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\\bnode\\s+--test"], "model": {"files": [], "facts": []}} -->
 
 You review product CR candidates only, never a harness change ([Harness
@@ -81,4 +81,4 @@ are the coder's above.
 - Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`, `^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test`
 - Files you may write, relative to the project unless absolute: none
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=3c88bc0856053a78ae355bbb95d0ea86e4b28acd21ba2abc9cdfd6f2cba41a9d -->
+<!-- harness-agent-v1 sha256=37b46b7b49009cc6f7d1560191662d058fad8e549ba8be6736fc1a148d13d17c -->

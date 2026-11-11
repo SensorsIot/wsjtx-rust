@@ -11,7 +11,7 @@ description: 'coordinator: the main session of a project with .harness/. Drives 
 <!-- source harness/core/agents/roles.md sha256=5f1bbd2e5f18a22ef9eb51d858cae2df71be8c367294615e116a7b0627d73448 -->
 <!-- source harness/lang/rust/standard.md sha256=fb15bdf7c2a77506d1e458761e48d950cbcaf5dbd4173a1a3ad19030b6b00825 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=0f01dc61b33610da27f2ca6ca4948432304de4c9b4ec49938fec7adbd1eea3a9 -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=3bbd35314708dae30cf34940c4567ff11eca7a5e2d2ce6749db5125e0df4beb8 -->
 
 # Coordinator
 
@@ -186,4 +186,4 @@ machine works on a repository, GitHub carries the coordination:
 - At a pause, a handoff or a context restart, write the
   [checkpoint](../../../harness/core/docs/CR-Reporting.md#restart-and-handoff-checkpoint), and release a file's
   ownership before another agent writes it.
-<!-- harness-forwarder-v1 sha256=c561303f4769296f9495f34f223d08f82408132a549239394c8c3c924227ff85 -->
+<!-- harness-forwarder-v1 sha256=dde1c9347b88e18b6998b45d067f283d5ce7d7cc3683fe011867d94aa457be70 -->

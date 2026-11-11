@@ -22,7 +22,7 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=5f1bbd2e5f18a22ef9eb51d858cae2df71be8c367294615e116a7b0627d73448 -->
 <!-- source harness/lang/rust/standard.md sha256=fb15bdf7c2a77506d1e458761e48d950cbcaf5dbd4173a1a3ad19030b6b00825 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=0f01dc61b33610da27f2ca6ca4948432304de4c9b4ec49938fec7adbd1eea3a9 -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=3bbd35314708dae30cf34940c4567ff11eca7a5e2d2ce6749db5125e0df4beb8 -->
 <!-- harness-role-policy {"commands": ["gh issue (view|list)( .*)?", "gh pr (view|list)( .*)?", "gh search issues( .*)?", "gh issue comment [0-9]+ --body 'Ready: (PASS|not yet)( [A-Za-z0-9_.-]+(, [A-Za-z0-9_.-]+)*)?(\\n[^']*)?'", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints)"], "writes": [], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
 
 You did not write this issue. Do the [ready check](../../harness/core/docs/CR-Process.md#ready-check)
@@ -73,4 +73,4 @@ are the coder's above.
 - Shell commands always refused, wherever they stand outside quotes: `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: none
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=003d171ad9cfdc30df45a1b80877829f0e534925f43d334c7d46e16b34a76827 -->
+<!-- harness-agent-v1 sha256=e7b638719c6c67bb7d31b6b582a81c5e1071b6adb2f00e1b13fd7623014e4d63 -->
