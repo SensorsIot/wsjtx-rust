@@ -1148,6 +1148,8 @@ async fn connection(
 ) {
     // Every time of this loop is the runtime's clock, so a test can drive it (TC-021-008).
     use tokio::time::Instant;
+    #[cfg(test)]
+    let mut record = SocketRecord::begin();
     let recording = profile.as_ref().map(|p| p.recording.clone());
     let mut heartbeat = interval(Duration::from_secs(5));
     heartbeat.tick().await;
@@ -1234,6 +1236,8 @@ async fn connection(
             _ = heartbeat.tick() => {
                 if last_pong.elapsed() > Duration::from_secs(15) { break "no pong for 15 s"; }
                 if !send_control(&mut socket, Message::Text(json!({"v":1,"type":"heartbeat"}).to_string().into()),optional_since).await { break "heartbeat write"; }
+                #[cfg(test)]
+                record.heartbeat();
                 optional_since=None;
                 if !send(&mut socket,Message::Ping(Vec::new().into())).await {break "ping write";}
             }
@@ -1483,12 +1487,59 @@ async fn connection(
         }
     };
     #[cfg(test)]
-    SOCKET_CLOSES
-        .lock()
-        .unwrap()
-        .push(json!({"utc_ms":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0,|d|d.as_millis() as u64),"reason":reason}));
+    record.end(reason);
     let _ = reason;
 }
-/// Why each socket of this test process ended (TC-021-008 reads the close reason).
+/// Why and when each socket of this test process ended (TC-021-008 reads the close reason; the
+/// two-browser selection workload prints the records as failure evidence, #102).
 #[cfg(test)]
 pub(crate) static SOCKET_CLOSES: Mutex<Vec<Value>> = Mutex::new(Vec::new());
+/// The test-only record of one `connection()`. All times are UTC ms on one clock: the system UTC
+/// at the begin, plus the runtime clock's elapsed time since the begin, so that a driven runtime
+/// gives exact values.
+#[cfg(test)]
+struct SocketRecord {
+    begin_utc_ms: u64,
+    begin: tokio::time::Instant,
+    /// The last heartbeat write, ms after the begin.
+    last_heartbeat: Option<u64>,
+    /// The longest interval between consecutive heartbeat writes (the first from the begin) and
+    /// the ms after the begin at which it ended; the earliest on a tie.
+    longest_heartbeat: Option<(u64, u64)>,
+}
+#[cfg(test)]
+impl SocketRecord {
+    fn begin() -> SocketRecord {
+        SocketRecord {
+            begin_utc_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis() as u64),
+            begin: tokio::time::Instant::now(),
+            last_heartbeat: None,
+            longest_heartbeat: None,
+        }
+    }
+    fn elapsed_ms(&self) -> u64 {
+        self.begin.elapsed().as_millis() as u64
+    }
+    fn heartbeat(&mut self) {
+        let at = self.elapsed_ms();
+        let interval = at - self.last_heartbeat.unwrap_or(0);
+        if self
+            .longest_heartbeat
+            .is_none_or(|(longest, _)| interval > longest)
+        {
+            self.longest_heartbeat = Some((interval, at));
+        }
+        self.last_heartbeat = Some(at);
+    }
+    fn end(self, reason: &str) {
+        let utc = |ms: u64| self.begin_utc_ms + ms;
+        let record = json!({"utc_ms":utc(self.elapsed_ms()),"reason":reason,
+            "begin_utc_ms":self.begin_utc_ms,
+            "last_heartbeat_utc_ms":self.last_heartbeat.map(utc),
+            "longest_heartbeat_ms":self.longest_heartbeat.map(|(ms, _)| ms),
+            "longest_heartbeat_end_utc_ms":self.longest_heartbeat.map(|(_, end)| utc(end))});
+        SOCKET_CLOSES.lock().unwrap().push(record);
+    }
+}

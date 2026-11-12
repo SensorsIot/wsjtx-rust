@@ -23,15 +23,16 @@ let automationAnnounced = null;
 // loads after it.
 let freeTxSlotsHeld = null;
 let retry = 1000, lastMessage = 0, nextId = 1;
-function stale() { connection.textContent = 'Disconnected · stale'; connection.dataset.state = 'stale'; refresh.disabled = true; window.dispatchEvent(new Event('station-stale')); }
+// #102: every call names the path that made the page stale (station-stale detail.path), as evidence.
+function stale(path) { connection.textContent = 'Disconnected · stale'; connection.dataset.state = 'stale'; refresh.disabled = true; window.dispatchEvent(Object.assign(new Event('station-stale'), {detail: {path}})); }
 function requestStatus() {
   if (socket?.readyState !== WebSocket.OPEN) return;
   pendingId = nextId++; refresh.disabled = true;
   socket.send(JSON.stringify({v: 1, type: 'station.get', id: pendingId}));
 }
-function disconnect(current) {
+function disconnect(current, path) {
   if (current !== socket) return;
-  stale(); current.onclose = null; current.onmessage = null;
+  stale(path); current.onclose = null; current.onmessage = null;
   current.close();
   const retained = selectedHttps && authorization && ['ready', 'recovering'].includes(authorization.snapshot().state);
   login.hidden = location.protocol !== 'https:' || retained;
@@ -39,9 +40,9 @@ function disconnect(current) {
 }
 let loginRetry = null;
 const loginRetryText = () => `Slow link · Retrying authorization (attempt ${loginRetry.attempt} of ${loginRetry.attempts})…`;
-function showAuthorizationUnavailable(error) {
+function showAuthorizationUnavailable(error, path) {
   const condition = error?.authorizationCondition;
-  if (condition === 'explicit-in-progress' && loginRetry) {stale(); connection.textContent = loginRetryText() + ' · station data stale'; login.hidden = true; return;}
+  if (condition === 'explicit-in-progress' && loginRetry) {stale(path); connection.textContent = loginRetryText() + ' · station data stale'; login.hidden = true; return;}
   const reasons = {'credential-missing': 'Browser credential missing \u00b7 authorize this station',
     'credential-invalid': 'Browser credential invalid \u00b7 station data stale',
     'credential-storage-unavailable': 'Browser credential storage unavailable \u00b7 station data stale',
@@ -50,7 +51,7 @@ function showAuthorizationUnavailable(error) {
     'retained-rejected': 'Retained authorization not accepted or identity changed \u00b7 station data stale',
     'enrollment-pending': 'Authorization enrollment outcome unknown \u00b7 station data stale',
     'explicit-in-progress': 'Authorization in progress \u00b7 station data stale'};
-  stale(); connection.textContent = Object.hasOwn(reasons, condition) ? reasons[condition] : 'Authorization unavailable \u00b7 station data stale'; login.hidden = condition !== 'credential-missing';
+  stale(path); connection.textContent = Object.hasOwn(reasons, condition) ? reasons[condition] : 'Authorization unavailable \u00b7 station data stale'; login.hidden = condition !== 'credential-missing';
 }
 let connecting = 0;
 async function connect() {
@@ -58,13 +59,13 @@ async function connect() {
   clearTimeout(timer);
   const attempt = ++connecting;
   if (selectedHttps && !authorization) {
-    stale(); connection.textContent = 'Authorization component unavailable · station data stale'; login.hidden = true; return;
+    stale('component-missing'); connection.textContent = 'Authorization component unavailable · station data stale'; login.hidden = true; return;
   }
   if (authorization) {
     try {await authorization.ensureReady();}
     catch (error) {
       if (attempt !== connecting) return;
-      showAuthorizationUnavailable(error);
+      showAuthorizationUnavailable(error, 'authorization-unavailable');
       clearTimeout(timer); timer = setTimeout(connect, 4000); return;
     }
     if (attempt !== connecting || !authorized()) return;
@@ -75,9 +76,9 @@ async function connect() {
   const current = socket, socketEpoch = authorization?.snapshot().epoch;
   let opened = false, lost = false;
   const profileRefresh = {initialized: false, running: null, again: false};
-  const loseSocket = () => {
+  const loseSocket = path => {
     if (current !== socket || lost) return;
-    lost = true; clearTimeout(openingTimer); disconnect(current);
+    lost = true; clearTimeout(openingTimer); disconnect(current, path);
     const auth = authorization?.snapshot();
     if (!selectedHttps || opened || !auth?.ready || auth.epoch !== socketEpoch) return;
     // A failed handshake cannot expose its HTTP status. Only the existing protected
@@ -88,7 +89,7 @@ async function connect() {
       .catch(() => {})
       .finally(() => {if (handshakeProbe === probe) handshakeProbe = null;});
   };
-  const openingTimer = setTimeout(() => {if (current.readyState === WebSocket.CONNECTING) loseSocket();}, 5000);
+  const openingTimer = setTimeout(() => {if (current.readyState === WebSocket.CONNECTING) loseSocket('opening-timeout');}, 5000);
   current.onopen = () => {
     opened = true; clearTimeout(openingTimer);
     if (lost || current !== socket || !authorized()) return;
@@ -104,7 +105,7 @@ async function connect() {
       if (message.type === 'free_tx_slots.state' && message.data) freeTxSlotsHeld = {current, value: message.data.free_tx_slots};
       window.dispatchEvent(new CustomEvent('station-message', {detail: {message, current}}));
       // WstxStationProtocol::PushedStationState: the first status of a socket reads the profile, then only a newer announced revision does.
-      if (message.type === 'profile.state' && profileRefresh.initialized && (message.data?.boot_id !== profileData?.boot_id || message.data?.revision > profileData?.revision)) refreshProfile(current, profileRefresh).catch(() => disconnect(current));
+      if (message.type === 'profile.state' && profileRefresh.initialized && (message.data?.boot_id !== profileData?.boot_id || message.data?.revision > profileData?.revision)) refreshProfile(current, profileRefresh).catch(() => disconnect(current, 'profile-refresh-failed'));
       if (message.type === 'station.status' && message.id === pendingId && typeof message.data?.version === 'string' && message.data.radio === 'unconfigured') {
         if (stationUpdated(message.data.build)) return;
         if (profileMode) {
@@ -122,9 +123,9 @@ async function connect() {
         retry = 1000; login.hidden = true;
         if (profileMode) window.dispatchEvent(new CustomEvent('station-ready', {detail: current}));
       }
-    } catch { disconnect(current); }
+    } catch { disconnect(current, 'message-rejected'); }
   };
-  current.onclose = loseSocket;
+  current.onclose = () => loseSocket('socket-closed');
 }
 // WstxStationProtocol::PageUpdate (#51): a page served with another client build than the
 // station's reloads itself once (local settings stay in browser storage). The operating
@@ -150,7 +151,7 @@ function deferredDownload(promise) {
   deferredDownloads++;
   return promise.finally(() => {deferredDownloads--; lastMessage = Date.now();});
 }
-setInterval(() => { if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessage > (deferredDownloads ? 30000 : 12000)) disconnect(socket); }, 1000);
+setInterval(() => { if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessage > (deferredDownloads ? 30000 : 12000)) disconnect(socket, 'watchdog'); }, 1000);
 refresh.addEventListener('click', requestStatus);
 login.addEventListener('submit', async event => {
   event.preventDefault(); const input = document.querySelector('#token');
@@ -171,7 +172,7 @@ login.addEventListener('submit', async event => {
   } catch (error) {
     if (authorization && (submittedEpoch === null || authorization.snapshot().epoch !== submittedEpoch || authorization.snapshot().ready)) return;
     if (error?.authorizationCondition) {
-      showAuthorizationUnavailable(error); document.querySelector('#login-error').textContent = '';
+      showAuthorizationUnavailable(error, 'login-failed'); document.querySelector('#login-error').textContent = '';
     } else document.querySelector('#login-error').textContent = 'Could not authenticate. Check your token and connection.';
   }
   finally {secret = null;}
@@ -181,7 +182,7 @@ const logoutButton = document.querySelector('#logout'), forgetButton = document.
 addEventListener('station-authorization-retry', event => {
   if (!authorization || event.detail.epoch !== authorization.snapshot().epoch) return;
   loginRetry = event.detail; document.querySelector('#login-error').textContent = loginRetryText();
-  if (authorization.snapshot().state === 'authorizing') {stale(); connection.textContent = loginRetryText() + ' · station data stale';}
+  if (authorization.snapshot().state === 'authorizing') {stale('authorization-retry'); connection.textContent = loginRetryText() + ' · station data stale';}
 });
 addEventListener('station-authorization', event => {
   if (!authorization || event.detail.epoch !== authorization.snapshot().epoch) return;
@@ -189,8 +190,8 @@ addEventListener('station-authorization', event => {
   logoutButton.hidden = !event.detail.ready;
   forgetButton.hidden = !['retained-rejected', 'credential-invalid'].includes(event.detail.authorizationCondition);
   if (event.detail.ready) return;
-  if (event.detail.authorizationCondition) showAuthorizationUnavailable(event.detail);
-  else {stale(); connection.textContent = 'Authorization unavailable · station data stale';}
+  if (event.detail.authorizationCondition) showAuthorizationUnavailable(event.detail, 'authorization-not-ready');
+  else {stale('authorization-not-ready'); connection.textContent = 'Authorization unavailable · station data stale';}
   if (socket && socket.readyState < WebSocket.CLOSING) {socket.onclose = null; socket.close();}
   clearTimeout(timer); timer = setTimeout(connect, 4000);
 });
@@ -228,7 +229,7 @@ function refreshProfile(current, state) {
   })().catch(error => {
     if (current === socket && current.readyState === WebSocket.OPEN) {
       settingsResult.textContent = 'Could not load saved settings.';
-      disconnect(current);
+      disconnect(current, 'profile-refresh-failed');
       connection.textContent = 'Disconnected ? could not load saved settings.';
     }
     return false;

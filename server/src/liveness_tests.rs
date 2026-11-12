@@ -321,3 +321,113 @@ async fn silent_peer_is_removed_at_the_next_heartbeat_after_15_s() {
     service.abort();
     let _ = std::fs::remove_dir_all(root);
 }
+
+fn utc_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+}
+
+// Evidence of #102 (no promise; the record of TC-009-005 case 7's failure output). Each socket the
+// station ends leaves its reason, begin and end, last heartbeat write and longest heartbeat
+// interval, in UTC ms: the begin's system UTC plus the driven runtime's elapsed time. Hand values
+// from connection(): the first heartbeat tick is consumed at the begin, writes follow every
+// 5000 ms, removal at the first tick more than 15000 ms after the last Pong.
+#[tokio::test(start_paused = true)]
+async fn station_records_each_ended_socket_on_the_one_utc_clock() {
+    let (app, root) = plaintext_station("socket-record");
+    let origin = app.origin.clone();
+    let (listener, accepted) = mpsc::unbounded_channel();
+    let service = tokio::spawn(axum::serve(Held(accepted), router(app)).into_future());
+    let closes_before = SOCKET_CLOSES.lock().unwrap().len();
+    let wall_before = utc_now_ms();
+    let start = Driven::now();
+
+    // (a) Peer A of TC-021-008: subscribes Thin and never answers Ping.
+    let mut a = Peer::open(&listener, &origin, false).await;
+    a.send(json!({"v":1,"type":"spectrum.thin","id":1})).await;
+    assert_eq!(
+        a.texts.recv().await.unwrap()["type"],
+        "spectrum.subscription"
+    );
+    // (b) A peer that answers every Ping and closes itself at driven +12000.
+    let b = Peer::open(&listener, &origin, true).await;
+    assert_eq!(Driven::now(), start, "the peers connect at driven time 0");
+    tokio::time::sleep_until(start + Duration::from_millis(12000)).await;
+    b.writer
+        .lock()
+        .await
+        .write_all(&client_frame(8, &[]))
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(25), &mut a.closed)
+        .await
+        .expect("the silent peer A is still open")
+        .unwrap();
+    // The station records the end after the transport closed: let its task finish.
+    tokio::time::sleep(Duration::from_millis(1)).await;
+    let wall_after = utc_now_ms();
+
+    // Records of this test: begun inside its wall-clock span. A concurrent test's socket begun in
+    // the same span differs in its driven offsets, so each case is found by its own reason.
+    let records: Vec<Value> = SOCKET_CLOSES.lock().unwrap()[closes_before..]
+        .iter()
+        .filter(|r| {
+            r["begin_utc_ms"]
+                .as_u64()
+                .is_some_and(|b| b >= wall_before && b <= wall_after)
+        })
+        .cloned()
+        .collect();
+    let offset = |record: &Value, field: &str| {
+        let begin = record["begin_utc_ms"].as_u64().unwrap();
+        record[field].as_u64().map(|t| t as i64 - begin as i64)
+    };
+    let found = |reason: &str, end: &dyn Fn(i64) -> bool| {
+        records
+            .iter()
+            .find(|r| r["reason"] == reason && offset(r, "utc_ms").is_some_and(end))
+            .unwrap_or_else(|| panic!("no record {reason:?} with its end; records {records:?}"))
+            .clone()
+    };
+
+    // (a) heartbeat writes at +5000, +10000 and +15000; removed at the +20000 tick.
+    let silent = found("no pong for 15 s", &|end| end == 20000);
+    assert_eq!(
+        offset(&silent, "last_heartbeat_utc_ms"),
+        Some(15000),
+        "{silent}"
+    );
+    assert_eq!(silent["longest_heartbeat_ms"], 5000, "{silent}");
+    assert_eq!(
+        offset(&silent, "longest_heartbeat_end_utc_ms"),
+        Some(5000),
+        "the earliest of the equal intervals: {silent}"
+    );
+    // (b) writes at +5000 and +10000; the peer's own close at +12000 ends it.
+    let closed = found("peer closed or receive error", &|end| {
+        (12000..15000).contains(&end)
+    });
+    assert_eq!(
+        offset(&closed, "last_heartbeat_utc_ms"),
+        Some(10000),
+        "{closed}"
+    );
+    assert_eq!(closed["longest_heartbeat_ms"], 5000, "{closed}");
+    assert_eq!(
+        offset(&closed, "longest_heartbeat_end_utc_ms"),
+        Some(5000),
+        "{closed}"
+    );
+    // (c) `reason` and `utc_ms` keep their names and meaning: why, and the end on the UTC clock.
+    for record in [&silent, &closed] {
+        assert!(record["reason"].is_string(), "{record}");
+        let begin = record["begin_utc_ms"].as_u64().unwrap();
+        assert!(begin >= wall_before && begin <= wall_after, "{record}");
+        assert!(record["utc_ms"].as_u64().unwrap() >= begin, "{record}");
+    }
+    drop((a, b));
+    service.abort();
+    let _ = std::fs::remove_dir_all(root);
+}
