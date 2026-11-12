@@ -1,6 +1,18 @@
 package WstxProductScope {
     private import ScalarValues::*;
     private import WstxRequirements::*;
+    private import WstxRequirementsModes::*;
+    private import WstxRequirementsReceive::*;
+    private import WstxRequirementsProfile::*;
+    private import WstxRequirementsMcp::*;
+    private import WstxRequirementsAudio::*;
+    private import WstxRequirementsRadioControl::*;
+    private import WstxRequirementsWeb::*;
+    private import WstxRequirementsStation::*;
+    private import WstxRequirementsTransmit::*;
+    private import WstxRequirementsQso::*;
+    private import WstxRequirementsUdp::*;
+    private import WstxRequirementsFrontend::*;
     private import WstxArchitecture::*;
     private import WstxStationProtocol::*;
     private import WstxProfiles::*;

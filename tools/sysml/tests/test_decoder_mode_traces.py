@@ -17,7 +17,8 @@ CASES = {"TC-004-001": ("ft4", "Mode::Ft4"), "TC-004-002": ("ft8", "Mode::Ft8")}
 
 
 def executable(identifier: str) -> list[str]:
-    text = REQUIREMENTS.read_text(encoding="utf-8")
+    texts = (path.read_text(encoding="utf-8") for path in sorted(REQUIREMENTS.parent.rglob("*.sysml")))
+    text = next(text for text in texts if f"verification '{identifier}' {{" in text)
     start = text.index(f"verification '{identifier}' {{")
     body = text[start:text.index("\n    }", start)]
     binding = re.search(r'attribute\s+executable\s*:\s*String\s*=\s*"([^"]*)"\s*;', body)
