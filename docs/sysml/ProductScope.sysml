@@ -23,7 +23,8 @@ package WstxProductScope {
          capture/conversion/CAT; WstxOperatingLayout presentation and WstxOperatingReceive receive selection/content coding;
          WstxTransmit FT8/FT4 message packing, waveform and transmit period scheduling;
          WstxContact the standard FT8 contact, sequencing, log and operator displays;
-         WstxStrategy award strategies, their value order and strategy runs;
+         WstxStrategy strategies of class strategy and contest, their settings and ranking,
+         and the run that applies them;
          WstxContest the contest strategies and their profiles from the official rules.
          Requirements and exact algorithm/interface/verification semantics in these
          packages are one functional authority. A view renders existing facts; it is

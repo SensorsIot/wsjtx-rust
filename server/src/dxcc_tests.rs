@@ -221,6 +221,7 @@ fn tc_055_002_new_dxcc_band_continent_and_zone_against_the_log() {
         mode: None,
         confirmed: false,
         date: None,
+        state: None,
     };
     let logged = vec![
         log("DL1ABC", Some("JO62"), Some("20m")),
@@ -712,6 +713,7 @@ fn tc_039_030_worked_set_keeps_call_grid_prefix_standing_and_gridless_calls() {
         mode: Some("FT8".into()),
         confirmed,
         date: None,
+        state: None,
     };
     let w = Worked::from_log(
         &t,

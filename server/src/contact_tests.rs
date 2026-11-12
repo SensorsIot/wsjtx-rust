@@ -700,11 +700,59 @@ fn tx1_skip_report_override_and_manual_entry_follow_the_domains() {
     .unwrap();
 }
 
+// Proves: TC-007-001 (g) as #97 changes it (CL-097-06). A manual contact pauses for a busy
+// partner, so his report to another call at 50 Hz and at 51 Hz from my Tx 1000 (FT8) no longer
+// disarms: Tx moves to the nearest candidate at least 100 Hz from his frequency, 950 (1050 - 100
+// = 950 at 50 Hz; at 51 Hz 1051 - 100 = 951, the grid's 950), Rx stays 1000, Enable Tx stays on
+// and the transmission on the air finishes; in replying and in the Tx1-skipped report.
+#[test]
+fn partner_working_another_call_moves_a_manual_contact_clear_of_him() {
+    for skipped in [false, true] {
+        for offset in [50.0, 51.0] {
+            let mut s = station();
+            s.command(Command::SetHoldTx(false)).unwrap();
+            s.command(Command::SetTx1Skip(skipped)).unwrap();
+            let cq = s.row(P0, "CQ K1ABC FN42", 1000.0, None);
+            s.command(Command::SelectRow {
+                row: cq,
+                replace: false,
+            })
+            .unwrap();
+            s.command(Command::EnableTx(true, Some(7))).unwrap();
+            s.run(period(1) + 3 * SECOND);
+            assert!(s.core.view().transmitting);
+            let elsewhere = s.row(period(0), "W9XYZ K1ABC -10", 1000.0 + offset, None);
+            s.deliver(&[elsewhere]);
+            assert!(s.armed(), "offset {offset} skipped {skipped}: no disarm");
+            assert!(s.core.view().transmitting, "the send on the air finishes");
+            assert_eq!(
+                (s.engine.settings.tx_hz, s.engine.settings.rx_hz),
+                (950, 1000),
+                "offset {offset}"
+            );
+            s.run(period(3) + 3 * SECOND);
+            assert_eq!(
+                s.engine.started_hz.last(),
+                Some(&(period(3), 950)),
+                "the call goes on from the split frequency"
+            );
+        }
+    }
+}
+
+// Proves: TC-007-001 (g). A contact that does not pause (a pounce, an MCP policy run, a run with
+// busy_pause off: the automation names it without the split) keeps partnerWorksOther's stop: his
+// message to another call within 50 Hz inclusive disarms and aborts, 51 Hz does not.
 #[test]
 fn partner_working_another_call_within_50_hz_stops_in_replying_and_skipped_report() {
     for skipped in [false, true] {
         for (offset, stops) in [(50.0, true), (51.0, false)] {
             let mut s = station();
+            s.engine.automated = Some(Automated {
+                contact_id: "00000000-0000-4000-8000-000000000001".into(),
+                split: false,
+                pause: false,
+            });
             // Tx on the partner's frequency, the situation this rule is about.
             s.command(Command::SetHoldTx(false)).unwrap();
             s.command(Command::SetTx1Skip(skipped)).unwrap();
@@ -739,6 +787,335 @@ fn partner_working_another_call_within_50_hz_stops_in_replying_and_skipped_repor
             assert_eq!(s.state(), expected, "the state is kept");
         }
     }
+}
+
+// ---------------------------------------------------------------- #97 busy partner
+/// A manual call to KE1J (CQ at 1800 Hz) from Tx 1500 with Hold Tx on, Tx watchdog `limit` set by
+/// the operator, Enable Tx on at P0 + 2 s: my sends in the odd periods, his in the even.
+fn calling_ke1j(mode: Mode, limit: u32) -> Station {
+    let mut s = station();
+    s.mode = mode;
+    s.command(Command::SetWatchdogs {
+        tx_calls: limit,
+        tune_seconds: 90,
+    })
+    .unwrap();
+    let cq = s.row(P0, "CQ KE1J FN42", 1800.0, None);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    assert_eq!(s.engine.settings.tx_hz, 1500, "Hold Tx keeps Tx");
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s
+}
+/// The period length of `mode`.
+fn len(mode: Mode) -> i64 {
+    period_ms(mode)
+}
+/// KE1J's message `text` at `hz`, decoded in his period `n` and published `at` ms into my
+/// following period n + 1.
+fn ke1j_says(s: &mut Station, n: i64, at: i64, text: &str, hz: f64) {
+    let t = len(s.mode);
+    s.run(P0 + (n + 1) * t + at);
+    let row = s.row(P0 + n * t, text, hz, None);
+    s.deliver(&[row]);
+}
+/// The texts sent, in order.
+fn sends(s: &Station) -> Vec<i64> {
+    s.sent.iter().map(|(p, _)| *p).collect()
+}
+
+// Proves: TC-097-012 (a), (c), (d), (e) (CL-097-06, #93 reproduction of 2026-11-09 14:39 UTC).
+// Oracle: operator #93 "Keep calling, don't count" and the bound of WstxContact::TxWatchdog
+// (at most N paused calls per message). 10m FT4, Tx watchdog 6. (a) KE1J works W9XYZ for 8 of his
+// periods: our Tx1 is keyed in each of the 8 following periods, the first 6 paused (WD stays 6),
+// the 7th and 8th counted (5, 4); his RR73 ends it, the 9th..12th count (3..0) and the 13th is
+// never keyed: stopped by the Tx watchdog. (c) busy for 10 periods: stopped after the 12th send.
+// (d) the operator's Enable Tx restarts the counts (6 again). (e) limit 2: 2 paused, stopped after
+// the 4th send. Red on the parent: stopped after the 6th send in (a).
+#[test]
+fn tc_097_012_a_manual_call_to_a_busy_station_keeps_calling_uncounted() {
+    let ft4 = Mode::Ft4;
+    let t = len(ft4);
+    let tx1 = "KE1J HB9BLA JN47";
+    // (a)
+    let mut s = calling_ke1j(ft4, 6);
+    let mut remaining = Vec::new();
+    for k in 0..8 {
+        ke1j_says(&mut s, 2 * k, 900, "W9XYZ KE1J -07", 1200.0);
+        s.run(P0 + (2 * k + 1) * t + 2_000);
+        remaining.push(s.core.view().tx_remaining_calls);
+    }
+    assert_eq!(
+        remaining,
+        [6, 6, 6, 6, 6, 6, 5, 4],
+        "6 paused, then counted"
+    );
+    ke1j_says(&mut s, 16, 900, "W9XYZ KE1J RR73", 1200.0);
+    s.run(P0 + 30 * t);
+    let expected: Vec<i64> = (0..12).map(|k| P0 + (2 * k + 1) * t).collect();
+    assert_eq!(sends(&s), expected, "12 sends, the 13th never keyed");
+    assert!(s.sent.iter().all(|(_, text)| text == tx1));
+    let v = s.core.view();
+    assert_eq!(
+        (v.arm_state, v.last_disarm_cause, v.tx_remaining_calls),
+        (ArmState::Disarmed, DisarmCause::TxWatchdog, 0)
+    );
+    // (d) the operator's Enable Tx restarts the counts.
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    assert_eq!(s.core.view().tx_remaining_calls, 6, "(d) restarted");
+    // (c) busy for 10 periods (and holding without a decode): stopped after the 12th send.
+    let mut s = calling_ke1j(ft4, 6);
+    for k in 0..10 {
+        ke1j_says(&mut s, 2 * k, 900, "W9XYZ KE1J -07", 1200.0);
+    }
+    s.run(P0 + 30 * t);
+    assert_eq!(sends(&s).len(), 12, "(c)");
+    assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
+    // (e) the limit 2: 2 paused, stopped after the 4th send.
+    let mut s = calling_ke1j(ft4, 2);
+    for k in 0..6 {
+        ke1j_says(&mut s, 2 * k, 900, "W9XYZ KE1J -07", 1200.0);
+    }
+    s.run(P0 + 16 * t);
+    assert_eq!(sends(&s).len(), 4, "(e)");
+    assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
+}
+
+// Proves: TC-097-012 (b) (CL-097-06). FT4: KE1J works a station at 1520 Hz while we call from
+// 1500: Tx moves to 1380, the nearest candidate at least 140 Hz from 1520 (1520 - 140 = 1380,
+// 1660 is farther), Rx stays 1800, Enable Tx stays on, Hold Tx still on, the next send from 1380.
+// Red on the parent: no move (the WSJT-X rule disarms within 50 Hz).
+#[test]
+fn tc_097_012_b_a_busy_station_near_my_tx_moves_tx_clear_of_him() {
+    let mut s = calling_ke1j(Mode::Ft4, 6);
+    ke1j_says(&mut s, 0, 900, "W9XYZ KE1J -07", 1520.0);
+    let st = &s.engine.settings;
+    assert_eq!((st.tx_hz, st.rx_hz, st.hold_tx), (1380, 1800, true));
+    assert!(s.armed());
+    s.run(P0 + 4 * len(Mode::Ft4));
+    assert_eq!(
+        s.engine.started_hz.last(),
+        Some(&(P0 + 3 * len(Mode::Ft4), 1380))
+    );
+}
+
+// Proves: TC-097-017 (a) (CL-097-06, WstxContact::BusyPartner). Start: KE1J's grid, report and
+// R-report to W9XYZ start busy_with W9XYZ; an unresolved hash "<...>" starts busy_with "<...>";
+// a hash filled with my call is a message to me (no busy). End: RR73, RRR and 73 to W9XYZ, his CQ
+// and his message to my call each clear it.
+#[test]
+fn tc_097_017_a_busy_starts_and_ends_by_his_own_messages() {
+    let busy = |s: &Station| s.engine.contact.as_ref().unwrap().busy_with.clone();
+    for start in ["W9XYZ KE1J FN42", "W9XYZ KE1J -07", "W9XYZ KE1J R-09"] {
+        for end in [
+            "W9XYZ KE1J RR73",
+            "W9XYZ KE1J RRR",
+            "W9XYZ KE1J 73",
+            "CQ KE1J FN42",
+            "HB9BLA KE1J -10",
+        ] {
+            let mut s = calling_ke1j(Mode::Ft8, 6);
+            ke1j_says(&mut s, 0, 900, start, 1200.0);
+            assert_eq!(busy(&s).as_deref(), Some("W9XYZ"), "{start}");
+            assert_eq!(s.engine.busy_with(), Some("W9XYZ"));
+            ke1j_says(&mut s, 2, 900, end, 1200.0);
+            assert_eq!(busy(&s), None, "{start} then {end}");
+        }
+    }
+    let mut s = calling_ke1j(Mode::Ft8, 6);
+    ke1j_says(&mut s, 0, 900, "<...> KE1J -07", 1200.0);
+    assert_eq!(busy(&s).as_deref(), Some("<...>"), "an unresolved hash");
+    let mut s = calling_ke1j(Mode::Ft8, 6);
+    s.run(P0 + 15 * SECOND + 900);
+    let mut mine = s.row(P0, "HB9BLA KE1J -07", 1800.0, None);
+    mine.standard.as_mut().unwrap().to = Call::Hashed("HB9BLA".into());
+    s.deliver(&[mine]);
+    let c = s.engine.contact.as_ref().unwrap();
+    assert_eq!(
+        (c.busy_with.clone(), c.state),
+        (None, State::RogerReport),
+        "the hash of my call is progress"
+    );
+}
+
+// Proves: TC-097-017 (a) (CL-097-06, WstxContact::BusyPartner, #97 coordinator default). A free
+// text has no sender: "TNX QSO" ends busy only when decoded in his period (the parity of his last
+// decode) within 10 Hz of his last decode. FT8, his report to W9XYZ at 1200 Hz in period 0: a free
+// text at 1211 Hz (11 Hz) and one at 1200 Hz in my period (period 1) keep busy; one at 1210 Hz
+// (10 Hz) in his period 2 ends it, as does one at 1190 Hz. Red on the parent: no free text ends it.
+#[test]
+fn tc_097_017_a_his_free_text_within_10_hz_in_his_period_ends_busy() {
+    let busy = |s: &Station| s.engine.contact.as_ref().unwrap().busy_with.clone();
+    let free = |s: &mut Station, n: i64, hz: f64| {
+        let t = len(s.mode);
+        s.run(P0 + (n + 1) * t + 900);
+        let mut row = s.row(P0 + n * t, "W9XYZ KE1J -07", hz, None);
+        row.text = "TNX QSO".into();
+        row.standard = None;
+        s.deliver(&[row]);
+    };
+    for (end_hz, n) in [(1210.0, 2), (1190.0, 2)] {
+        let mut s = calling_ke1j(Mode::Ft8, 6);
+        ke1j_says(&mut s, 0, 900, "W9XYZ KE1J -07", 1200.0);
+        assert_eq!(busy(&s).as_deref(), Some("W9XYZ"));
+        free(&mut s, 1, 1200.0);
+        assert_eq!(busy(&s).as_deref(), Some("W9XYZ"), "my period keeps busy");
+        free(&mut s, n, 1211.0);
+        assert_eq!(busy(&s).as_deref(), Some("W9XYZ"), "11 Hz keeps busy");
+        free(&mut s, n + 2, end_hz);
+        assert_eq!(busy(&s), None, "{end_hz} Hz in his period ends busy");
+    }
+}
+
+// Proves: TC-097-017 (b) (CL-097-06, WstxContact::TxWatchdog stop point). FT8, limit 6, six
+// counted Tx1 sends: the send due in period 13 is at the limit. KE1J's busy start published 1.1 s
+// into that period: the send is planned late, keyed and paused (counted stays 6). Published 1.3 s
+// into it: the Tx watchdog stopped it at 1.2 s (Enable Tx off, txWatchdog), nothing keyed.
+#[test]
+fn tc_097_017_b_the_stop_point_decides_which_send_a_busy_start_counts_for() {
+    for (at, keyed) in [(1_100, true), (1_300, false)] {
+        let mut s = calling_ke1j(Mode::Ft8, 6);
+        s.run(period(12) + 14 * SECOND);
+        assert_eq!(sends(&s).len(), 6);
+        assert_eq!(s.core.view().tx_remaining_calls, 0, "at the limit");
+        ke1j_says(&mut s, 12, at, "W9XYZ KE1J -07", 1200.0);
+        s.run(period(13) + 3 * SECOND);
+        assert_eq!(
+            s.sent_in(period(13)).is_some(),
+            keyed,
+            "published at {at} ms"
+        );
+        let v = s.core.view();
+        if keyed {
+            assert_eq!((v.arm_state, v.tx_remaining_calls), (ArmState::Armed, 0));
+            assert_eq!(s.engine.paused_due(), 1, "paused");
+            assert_eq!(s.engine.decided(), Some((period(13), true)));
+        } else {
+            assert_eq!(
+                (v.arm_state, v.last_disarm_cause),
+                (ArmState::Disarmed, DisarmCause::TxWatchdog)
+            );
+        }
+    }
+}
+
+// Proves: TC-097-017 (c) (CL-097-06, WstxContact::BusyPartner split table, hand-worked). Clear:
+// |Tx - his| at least FT8 100 Hz, FT4 140 Hz. From Tx 1500: FT8 his at 1500 (0 Hz) -> 1400 (1400
+// and 1600 tie, the lower), 1550 -> 1450, 1551 -> 1450 (951 is off the 10 Hz grid), 1599 -> 1490,
+// 1600 stays; FT4 1639 -> 1490 (1639 - 140 = 1499), 1640 stays. Never below 500: Tx 550 his 600 ->
+// 500; Tx 520 his 560 -> 660 (460 is below 500). A station decoded at 1440 in my Rx period
+// (overlapping 1400..1480) -> 1390; his PSK frequency 1470 of my Tx parity -> 1420 (50 Hz from it).
+// set_frequency refused: the state off with cause partnerWorksOther (CL-111-03), nothing keyed on
+// his signal. The
+// operator's Tx onto his signal stays until his next message to W9XYZ, which moves it again.
+#[test]
+fn tc_097_017_c_the_split_frequency_table() {
+    let table = [
+        (Mode::Ft8, 1500, 1500.0, Some(1400)),
+        (Mode::Ft8, 1500, 1550.0, Some(1450)),
+        (Mode::Ft8, 1500, 1551.0, Some(1450)),
+        (Mode::Ft8, 1500, 1599.0, Some(1490)),
+        (Mode::Ft8, 1500, 1600.0, None),
+        (Mode::Ft4, 1500, 1639.0, Some(1490)),
+        (Mode::Ft4, 1500, 1640.0, None),
+        (Mode::Ft8, 550, 600.0, Some(500)),
+        (Mode::Ft8, 520, 560.0, Some(660)),
+    ];
+    for (mode, tx, his, moved) in table {
+        let mut s = calling_ke1j(mode, 6);
+        s.command(Command::SetFrequency {
+            rx: None,
+            tx: Some(tx),
+        })
+        .unwrap();
+        ke1j_says(&mut s, 0, 900, "W9XYZ KE1J -07", his);
+        assert_eq!(
+            s.engine.settings.tx_hz,
+            moved.unwrap_or(tx),
+            "{mode:?} Tx {tx} his {his}"
+        );
+        assert!(s.armed());
+    }
+    // A decoded station on the nearest clear candidate (in my Rx period).
+    let mut s = calling_ke1j(Mode::Ft8, 6);
+    s.run(period(1) + 900);
+    let other = s.row(P0, "CQ DL1ABC JO62", 1440.0, None);
+    let his = s.row(P0, "W9XYZ KE1J -07", 1550.0, None);
+    s.deliver(&[other, his]);
+    assert_eq!(
+        s.engine.settings.tx_hz, 1390,
+        "the decoded station's slot skipped"
+    );
+    // His PSK frequency of my Tx parity.
+    let mut s = calling_ke1j(Mode::Ft8, 6);
+    s.engine.his_psk = vec![1470];
+    ke1j_says(&mut s, 0, 900, "W9XYZ KE1J -07", 1550.0);
+    assert_eq!(s.engine.settings.tx_hz, 1420);
+    // A refused move: the partnerWorksOther stop.
+    let mut s = calling_ke1j(Mode::Ft8, 6);
+    s.engine.refuse_split = true;
+    ke1j_says(&mut s, 0, -1_000, "W9XYZ KE1J -07", 1510.0);
+    let v = s.core.view();
+    assert_eq!(
+        (v.arm_state, v.last_disarm_cause),
+        (ArmState::Disarmed, DisarmCause::PartnerWorksOther)
+    );
+    s.run(period(4));
+    assert!(s.sent.is_empty(), "nothing keyed on his signal");
+    // The operator's Tx wins until his next message to another call.
+    let mut s = calling_ke1j(Mode::Ft8, 6);
+    ke1j_says(&mut s, 0, 900, "W9XYZ KE1J -07", 1510.0);
+    assert_eq!(s.engine.settings.tx_hz, 1410);
+    s.command(Command::SetFrequency {
+        rx: None,
+        tx: Some(1510),
+    })
+    .unwrap();
+    s.run(period(3) + 3 * SECOND);
+    assert_eq!(s.engine.settings.tx_hz, 1510, "the operator's Tx is kept");
+    ke1j_says(&mut s, 4, 900, "W9XYZ KE1J -07", 1510.0);
+    assert_eq!(s.engine.settings.tx_hz, 1410, "moved again");
+}
+
+// Proves: TC-097-017 (c) (CL-097-06). His decode before the audio start of my next send moves the
+// pending request (the send plays from the new offset); one after the audio start lets that send
+// finish at the old offset and the next goes from the new one. FT8 audio starts 0.5 s in.
+#[test]
+fn tc_097_017_c_a_move_before_or_after_the_audio_start() {
+    let mut s = calling_ke1j(Mode::Ft8, 6);
+    ke1j_says(&mut s, 0, 200, "W9XYZ KE1J -07", 1510.0);
+    s.run(period(1) + 3 * SECOND);
+    assert_eq!(s.engine.started_hz, [(period(1), 1410)], "before");
+    let mut s = calling_ke1j(Mode::Ft8, 6);
+    ke1j_says(&mut s, 0, 1_000, "W9XYZ KE1J -07", 1510.0);
+    s.run(period(3) + 3 * SECOND);
+    assert_eq!(
+        s.engine.started_hz,
+        [(period(1), 1500), (period(3), 1410)],
+        "after"
+    );
+}
+
+// Proves: TC-097-017 (b), CL-097-06 (a pounce, an MCP policy run and a run with busy_pause off
+// never pause): the same busy partner with a contact the automation names without the pause
+// counts every send and stops at N.
+#[test]
+fn tc_097_017_a_contact_that_does_not_pause_counts_every_send() {
+    let mut s = calling_ke1j(Mode::Ft8, 3);
+    s.engine.automated = Some(Automated {
+        contact_id: "00000000-0000-4000-8000-000000000001".into(),
+        split: false,
+        pause: false,
+    });
+    for k in 0..4 {
+        ke1j_says(&mut s, 2 * k, 900, "W9XYZ KE1J -07", 1200.0);
+    }
+    s.run(period(10));
+    assert_eq!(sends(&s).len(), 3);
+    assert_eq!(s.engine.busy_with(), None, "no busy marker");
 }
 
 // Proves: TC-007-004 (#39 Abort QSO, WstxContact::AbortQso). Abort stops the transmission
@@ -956,10 +1333,10 @@ fn tc_008_001_the_watchdog_stops_at_n_repetitions_whatever_the_partner_or_browse
     assert_eq!(reps(&s), vec![(true, 1), (false, 4), (true, 3), (true, 1)]);
 }
 
-// Proves: CL-039-21; TC-039-022. The strategy run's own contact sends past the limit and shows
-// WD:n as the run counts it down to its leaving (4, 3, 2, 1 with the limit at 2); without a count
-// (a contest stay) the limit's; the same contact without the exemption stops at N, and another
-// contact's exemption does not help it.
+// Proves: CL-039-21; TC-039-022, TC-097-013. The strategy run's own contact sends past the limit
+// and (#97, #91) has no Tx watchdog count: tx_remaining_calls is null while armed for it (never the
+// leave count, never the limit minus the Rep); the same contact without the exemption stops at N,
+// and another contact's exemption does not help it.
 #[test]
 fn tc_039_022_only_the_runs_own_contact_sends_past_the_limit() {
     let mut s = station();
@@ -976,22 +1353,17 @@ fn tc_039_022_only_the_runs_own_contact_sends_past_the_limit() {
     .unwrap();
     s.command(Command::EnableTx(true, Some(7))).unwrap();
     let id = s.engine.contact.as_ref().unwrap().id.clone();
-    for (own, left) in [(1, 4), (3, 3), (5, 2), (7, 1)] {
-        s.engine.repeat_exempt = Some((id.clone(), Some(left)));
+    for own in [1, 3, 5, 7, 9] {
+        s.engine.repeat_exempt = Some(id.clone());
         s.run(period(own) + 2 * SECOND);
         assert!(s.sent_in(period(own)).is_some(), "period {own}");
-        assert_eq!(s.core.view().tx_remaining_calls, left, "period {own}");
+        assert!(s.core.view().tx_remaining_null, "period {own}: null, no WD");
     }
-    assert_eq!(s.engine.repetitions_due(), 4);
+    assert_eq!(s.engine.repetitions_due(), 5);
     assert_eq!(s.core.view().arm_state, ArmState::Armed);
     assert!(!s.core.view().tx_expired);
-    // No count: still past the limit, the display falls back to the limit's.
-    s.engine.repeat_exempt = Some((id, None));
-    s.run(period(9) + 2 * SECOND);
-    assert!(s.sent_in(period(9)).is_some(), "period 9");
-    assert_eq!(s.core.view().tx_remaining_calls, 0);
     // Another contact's exemption, then none: the stop at N is back at once.
-    s.engine.repeat_exempt = Some(("another".into(), Some(4)));
+    s.engine.repeat_exempt = Some("another".into());
     s.run(period(11) + 2 * SECOND);
     assert!(s.sent_in(period(11)).is_none(), "beyond the limit");
     assert_eq!(s.core.view().arm_state, ArmState::Disarmed);

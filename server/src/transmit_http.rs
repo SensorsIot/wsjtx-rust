@@ -347,7 +347,8 @@ pub(crate) fn view_json(r: &recording::Recording, v: &View) -> Value {
         "ptt":name(v.ptt),"transmitting":v.transmitting,"clock":name(v.clock),
         "clock_measurement":v.clock_measurement.as_ref().map(measurement),
         "clock_warning":r.clock.get().and_then(|c|c.station.view().warning).map(wstx_rust::transmit::air::Warning::name),
-        "watchdog":{"tx_calls":v.tx_calls,"tx_remaining_calls":v.tx_remaining_calls,"tx_expired":v.tx_expired,
+        "watchdog":{"tx_calls":v.tx_calls,
+            "tx_remaining_calls":(!v.tx_remaining_null).then_some(v.tx_remaining_calls),"tx_expired":v.tx_expired,
             "tune_seconds":v.tune_seconds,"tune_remaining_seconds":v.tune_remaining_seconds},
         "outcomes":recent,"startup_release":name(v.startup_release)})
 }

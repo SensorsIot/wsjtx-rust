@@ -288,12 +288,7 @@ fn tc_063_003_the_list_names_each_profile_with_its_period() {
 }
 
 fn selection(id: &str, start: &str, end: &str) -> Selection {
-    parse_selection(
-        &json!({"profile":id,"start":start,"end":end,"operation":"sp",
-            "repetitions":2,"quiet_minutes":10}),
-        "contest",
-    )
-    .expect("a selection")
+    parse_selection(&json!({"profile":id,"start":start,"end":end}), "contest").expect("a selection")
 }
 fn qso(call: &str, grid: Option<&str>, band: &str, mode: &str, when: &str) -> Qso {
     Qso {
@@ -493,6 +488,46 @@ fn rows(list: &[(&str, f64)]) -> Vec<Value> {
         .collect()
 }
 
+// Proves: TC-097-008
+// CL-097-03 for a contest strategy (WW Digi built-in, ContestValueOrder): with Calling stations
+// are answered on the non-dupe caller VK2ABC comes first; off, it has rank null, why "calls my
+// call · not answered", and JA1XYZ is first. The dupe caller K1OLD has no rank either way.
+#[test]
+fn tc_097_008_a_contest_strategy_with_callers_off_ranks_no_caller() {
+    let s = ww();
+    let log = Log::of(
+        &s,
+        Some("JN37"),
+        &[qso("K1OLD", Some("FN20"), "20m", "FT8", IN)],
+    );
+    let records = rows(&[
+        ("CQ WW JA1XYZ PM95", -18.0),
+        ("HB9BLA VK2ABC QF56", -20.0),
+        ("HB9BLA K1OLD FN20", 9.0),
+    ]);
+    let on = crate::strategy::contest_builtins()
+        .iter()
+        .find(|b| b.contest == Some("ww_digi"))
+        .expect("the WW Digi built-in")
+        .clone();
+    let st = contest_station("20m");
+    let ranks = |list: &[Verdict]| -> Vec<(u64, Option<usize>)> {
+        let mut r: Vec<_> = list.iter().map(|v| (v.facts.sequence, v.rank)).collect();
+        r.sort_unstable();
+        r
+    };
+    let list = crate::strategy::evaluate_contest(&on, &s, &records, &st, Some(&log));
+    assert_eq!(ranks(&list), [(0, Some(1)), (1, Some(0)), (2, None)], "on");
+    let off = crate::strategy::Strategy {
+        callers_first: false,
+        ..on
+    };
+    let list = crate::strategy::evaluate_contest(&off, &s, &records, &st, Some(&log));
+    assert_eq!(ranks(&list), [(0, Some(0)), (1, None), (2, None)], "off");
+    let vk = list.iter().find(|v| v.facts.sequence == 1).unwrap();
+    assert_eq!(vk.why, "calls my call \u{b7} not answered");
+}
+
 // Proves: TC-063-006
 #[test]
 fn tc_063_006_verdicts_callable_by_value() {
@@ -633,8 +668,9 @@ fn tc_063_006_a_field_day_exchange_to_my_call_is_a_caller() {
 // Proves: TC-063-007
 #[test]
 fn tc_063_007_a_selection_is_parsed_exactly() {
-    let good = json!({"profile":"ww_digi","start":"2026-08-29T12:00Z","end":"2026-08-30T12:00Z",
-        "operation":"sp","repetitions":2,"quiet_minutes":10});
+    // #97 D11: {profile, start, end}; operation, repetitions and quiet_minutes are refused by
+    // their own path.
+    let good = json!({"profile":"ww_digi","start":"2026-08-29T12:00Z","end":"2026-08-30T12:00Z"});
     let s = parse_selection(&good, "contest").expect("a selection");
     assert_eq!(s.json(), good);
     for (key, value, field) in [
@@ -646,16 +682,10 @@ fn tc_063_007_a_selection_is_parsed_exactly() {
         ("end", json!("2026-08-29T12:00Z"), "contest.end"),
         ("end", json!("2026-08-28T12:00Z"), "contest.end"),
         ("end", json!("2026-09-30T12:01Z"), "contest.end"),
-        ("operation", json!("full"), "contest.operation"),
+        ("operation", json!("sp"), "contest.operation"),
         ("operation", Value::Null, "contest.operation"),
-        // strategydef: colouring only is Auto off, no operation.
-        ("operation", json!("colouring"), "contest.operation"),
-        ("repetitions", json!(0), "contest.repetitions"),
-        ("repetitions", json!(21), "contest.repetitions"),
-        ("repetitions", json!(2.5), "contest.repetitions"),
-        ("quiet_minutes", json!(0), "contest.quiet_minutes"),
-        ("quiet_minutes", json!(121), "contest.quiet_minutes"),
-        ("quiet_minutes", json!("10"), "contest.quiet_minutes"),
+        ("repetitions", json!(2), "contest.repetitions"),
+        ("quiet_minutes", json!(10), "contest.quiet_minutes"),
     ] {
         let mut bad = good.clone();
         bad[key] = value;
@@ -682,15 +712,15 @@ fn tc_063_007_a_selection_is_parsed_exactly() {
 // refused on PUT with their field.
 #[test]
 fn tc_063_009_a_selection_asks_nothing_and_refuses_colouring_and_the_confirmation() {
-    let form = |id: &str, operation: &str, confirmed: Option<Value>| {
-        let mut v = json!({"profile":id,"start":"2026-08-29T12:00Z","end":"2026-08-30T12:00Z",
-            "operation":operation,"repetitions":2,"quiet_minutes":10});
-        if let Some(c) = confirmed {
-            v["automation_confirmed"] = c;
+    // #97 D11: a selection is {profile, start, end}; operation, repetitions and quiet_minutes
+    // are refused by their own path (TC-097-015).
+    let form = |id: &str, extra: Option<(&str, Value)>| {
+        let mut v = json!({"profile":id,"start":"2026-08-29T12:00Z","end":"2026-08-30T12:00Z"});
+        if let Some((k, x)) = extra {
+            v[k] = x;
         }
         parse_selection(&v, "contest")
     };
-    let refused = Some("contest.automation_confirmed");
     for id in [
         "ww_digi",
         "arrl_digi",
@@ -699,29 +729,34 @@ fn tc_063_009_a_selection_asks_nothing_and_refuses_colouring_and_the_confirmatio
         "iaru_50_mgm",
         "ft8_activity",
     ] {
-        for op in ["sp", "run"] {
-            assert!(
-                form(id, op, None).is_ok(),
-                "{id} {op}: nothing to confirm here"
+        assert!(form(id, None).is_ok(), "{id}: nothing to confirm here");
+        for c in [json!(true), json!(false), json!("yes")] {
+            assert_eq!(
+                form(id, Some(("automation_confirmed", c.clone())))
+                    .err()
+                    .as_deref(),
+                Some("contest.automation_confirmed"),
+                "{id} {c}"
             );
-            for c in [json!(true), json!(false), json!("yes")] {
-                assert_eq!(
-                    form(id, op, Some(c.clone())).err().as_deref(),
-                    refused,
-                    "{id} {op} {c}"
-                );
-            }
         }
-        assert_eq!(
-            form(id, "colouring", None).err().as_deref(),
-            Some("contest.operation"),
-            "{id}: colouring is Auto off"
-        );
+        for (k, x) in [
+            ("operation", json!("colouring")),
+            ("operation", json!("run")),
+            ("repetitions", json!(2)),
+            ("quiet_minutes", json!(10)),
+        ] {
+            assert_eq!(
+                form(id, Some((k, x))).err().as_deref(),
+                Some(format!("contest.{k}").as_str()),
+                "{id} {k}"
+            );
+        }
     }
-    let s = form("ww_digi", "run", None).expect("a selection");
-    assert_eq!(s.json()["operation"], "run");
-    assert_eq!(s.json().get("automation_confirmed"), None);
-    assert_eq!((s.repetitions, s.quiet_minutes), (2, 10));
+    let s = form("ww_digi", None).expect("a selection");
+    assert_eq!(
+        s.json(),
+        json!({"profile":"ww_digi","start":"2026-08-29T12:00Z","end":"2026-08-30T12:00Z"})
+    );
     // The period holds its start and not its end.
     assert!(s.in_period(at("2026-08-29T12:00:00Z")));
     assert!(!s.in_period(at("2026-08-30T12:00:00Z")));

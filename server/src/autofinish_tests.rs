@@ -535,7 +535,7 @@ async fn watched() -> (Station81, Arc<crate::pskr::Feed>) {
     let (f, e) = (&t.f, t.e);
     let feed = attach_feed(f);
     let mut c = config(Some("Test calls"));
-    c["strategies"][0]["repetitions"] = json!(4);
+    set_repetitions(&mut c, 4);
     select(f, c).await;
     publish(f, e, &[K1ABC]);
     f.tick();

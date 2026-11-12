@@ -48,12 +48,139 @@ pub(crate) fn period_ms(mode: Mode) -> i64 {
         Mode::Ft4 => 7_500,
     }
 }
-/// The lowest and highest slot of `mode`: my whole signal inside the Tx range.
+/// The lowest and highest slot of `mode`: my whole signal inside the Tx range (the open-slot
+/// marks, FreeTxSlots, from 300 Hz).
 pub(crate) fn band(mode: Mode) -> (u32, u32) {
     (
         300.max(TX_MIN_HZ),
         (PASSBAND_TOP_HZ - width_hz(mode)).min(tx_max_hz(mode)),
     )
+}
+/// #97 (#90) Auto's candidates start at 500 Hz (WstxStrategy::FreeTxSlot candidateLowHz).
+pub(crate) const CANDIDATE_LOW_HZ: u32 = 500;
+/// #97 (#90, Q3) a slot whose signal reaches above 2400 Hz loses every tie.
+pub(crate) const UPPER_EDGE_HZ: u32 = 2400;
+/// Auto's candidate range of `mode`: FT8 500..2650, FT4 500..2610.
+pub(crate) fn auto_band(mode: Mode) -> (u32, u32) {
+    (CANDIDATE_LOW_HZ, band(mode).1)
+}
+/// #97 the slot's signal reaches above the upper edge.
+fn on_upper_edge(f: u32, width: u32) -> bool {
+    f + width > UPPER_EDGE_HZ
+}
+/// #97 BusyPartner split clearance: my signal at `f` is clear of his at `d` (FT8 100 Hz, FT4
+/// 140 Hz between the lower edges: width + 50).
+pub(crate) fn split_clear(mode: Mode, f: u32, d: u32) -> bool {
+    (i64::from(f) - i64::from(d)).abs() >= i64::from(width_hz(mode)) + CLEARANCE_HZ
+}
+/// #97 WstxContact::BusyPartner split frequency: FreeTxSlot's grid from 500 Hz inside the Tx range,
+/// clear of his signal at `his_signal` (`split_clear`); of them those overlapping no station
+/// `decoded` while one is free, and those at least 50 Hz from a frequency his PSK Reporter spots
+/// show him decoding in my Tx parity (`his`) while one is free; the nearest to `current`, the lower
+/// on a tie. No power is used. None only when no candidate is clear of him.
+pub(crate) fn split_target(
+    mode: Mode,
+    current: u32,
+    his_signal: u32,
+    decoded: &[f64],
+    his: &[u32],
+) -> Option<u32> {
+    let ((low, high), width) = (auto_band(mode), width_hz(mode));
+    let mut list: Vec<u32> = (low..=high)
+        .step_by(STEP_HZ as usize)
+        .filter(|f| split_clear(mode, *f, his_signal))
+        .collect();
+    let free: Vec<u32> = list
+        .iter()
+        .copied()
+        .filter(|f| !occupied(*f, decoded, width))
+        .collect();
+    if !free.is_empty() {
+        list = free;
+    }
+    let at_end: Vec<u32> = list
+        .iter()
+        .copied()
+        .filter(|f| at_his_end(*f, his))
+        .collect();
+    if !at_end.is_empty() {
+        list = at_end;
+    }
+    nearest(&list, current)
+}
+/// #97 WstxStrategy::TxMoveRule: another quiet slot. FreeTxSlot's choice (from 500 Hz, clear of
+/// every signal in `avoid`, of the decoded stations while one is free) with two exclusions of its
+/// own and no fallback: never overlapping the current Tx (|f - tx| below the width), never within
+/// 50 Hz of a frequency he decodes in my Tx parity (`his`). None: no candidate left (Tx stays).
+pub(crate) fn moved(
+    mode: Mode,
+    current: u32,
+    avoid: &[u32],
+    decoded: &[f64],
+    his: Option<&[u32]>,
+    power: &dyn Fn(u32) -> Option<f64>,
+) -> Option<Slot> {
+    let ((low, high), width) = (auto_band(mode), width_hz(mode));
+    let mut list: Vec<u32> = (low..=high)
+        .step_by(STEP_HZ as usize)
+        .filter(|f| clear_of_all(*f, avoid, width))
+        .filter(|f| (i64::from(*f) - i64::from(current)).abs() >= i64::from(width))
+        .collect();
+    let free: Vec<u32> = list
+        .iter()
+        .copied()
+        .filter(|f| !occupied(*f, decoded, width))
+        .collect();
+    if !free.is_empty() {
+        list = free;
+    }
+    let his = his.filter(|h| !h.is_empty());
+    if let Some(his) = his {
+        list.retain(|f| at_his_end(*f, his));
+    }
+    if list.is_empty() {
+        return None;
+    }
+    let powers: Option<Vec<(u32, i64)>> = list
+        .iter()
+        .map(|f| power(*f).map(|p| (*f, compared(p))))
+        .collect();
+    let (hz, power_db) = match powers {
+        Some(powers) => {
+            let least = powers.iter().map(|p| p.1).min().unwrap_or_default();
+            let quietest: Vec<u32> = powers
+                .iter()
+                .filter(|p| p.1 == least)
+                .map(|p| p.0)
+                .collect();
+            (pick_tied(&quietest, current, width), Some(least))
+        }
+        None => (pick_tied(&list, current, width), None),
+    };
+    Some(Slot {
+        hz,
+        power_db,
+        his_end: his_end_of(hz, his),
+    })
+}
+/// Among equally quiet slots: off the upper edge first, then the current Tx, then nearer it,
+/// then lower.
+fn pick_tied(quietest: &[u32], current: u32, width: u32) -> u32 {
+    let off_edge: Vec<u32> = quietest
+        .iter()
+        .copied()
+        .filter(|f| !on_upper_edge(*f, width))
+        .collect();
+    let pool = if off_edge.is_empty() {
+        quietest
+    } else {
+        &off_edge
+    };
+    if pool.contains(&current) {
+        current
+    } else {
+        nearest(pool, current).unwrap_or(current)
+    }
 }
 /// Whether the slot is free at his end (the status's "open at his end").
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -155,7 +282,7 @@ fn candidates(
     decoded: &[f64],
     his: Option<&[u32]>,
 ) -> (Vec<u32>, HisEnd) {
-    let ((low, high), width) = (band(mode), width_hz(mode));
+    let ((low, high), width) = (auto_band(mode), width_hz(mode));
     let mut candidates: Vec<u32> = (low..=high).step_by(STEP_HZ as usize).collect();
     if (low..=high).contains(&current) && !candidates.contains(&current) {
         candidates.push(current);
@@ -196,7 +323,7 @@ pub(crate) fn quietest_clear(
     his: Option<&[u32]>,
     power: &dyn Fn(u32) -> Option<f64>,
 ) -> Slot {
-    let ((low, high), width) = (band(mode), width_hz(mode));
+    let ((low, high), width) = (auto_band(mode), width_hz(mode));
     let his = his.filter(|h| !h.is_empty());
     let (candidates, his_end) = candidates(mode, current, avoid, decoded, his);
     let powers: Option<Vec<(u32, i64)>> = candidates
@@ -211,13 +338,8 @@ pub(crate) fn quietest_clear(
                 .filter(|p| p.1 == least)
                 .map(|p| p.0)
                 .collect();
-            let hz = if quietest.contains(&current) {
-                current
-            } else {
-                nearest(&quietest, current).unwrap_or(current)
-            };
             Slot {
-                hz,
+                hz: pick_tied(&quietest, current, width),
                 power_db: Some(least),
                 his_end,
             }
