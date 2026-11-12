@@ -386,7 +386,7 @@ package WstxProductScope {
              live recordings to measure sensitivity, false decodes and numeric error.
              Evaluate interoperability/quality/latency rather than adopting embedded
              resource limits. Sample use does not require importing its decoder.
-             WstxModemDecode owns concrete protocol/physical fixture expectations and
+             fixtures/decoder holds the concrete protocol/physical fixture expectations and
              simulator admission; README retains attribution and sample licensing.
              Investigation dates or discovery history are not functional obligations. */
     }
@@ -395,8 +395,8 @@ package WstxProductScope {
              SharedProtocol. 4.2/6.2/12.5: Profiles. 4.3/6.3: NativeFlex plus FR-023
              and its six TC-023 cases. 4.4/6.4: RecordingAndDisplay and Modem;
              4.5/12.8: LiveRadio. 4.7/6.6: Operating. 11: Architecture.
-             12.1.1/4.7.3/4.7.5/12.8.1: OperatingReceive. 12.6: RecordingAndDisplay. 12.7: SharedRecord. 13.6: Modem's simulator
-             verifications. Other scope/quality/provenance clauses are in this package.
+             12.1.1/4.7.3/4.7.5/12.8.1: OperatingReceive. 12.6: RecordingAndDisplay. 12.7: SharedRecord. 13.6: ModemDecode's cases
+             TC-004-001 and TC-004-002. Other scope/quality/provenance clauses are in this package.
              These aliases are resolved model elements, not external file references. */
         alias SharedProtocol for WstxStationProtocol;
         alias Profiles for WstxProfiles;

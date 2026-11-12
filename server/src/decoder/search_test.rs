@@ -1218,7 +1218,7 @@ fn ranked_refinement_matches_exhaustive_grid_search() {
     }
 }
 
-/// The #56 Ft8PaddedResidual case: a strong FT8 frame that began 1.5 s before the window
+/// The #56 padded residual case: a strong FT8 frame that began 1.5 s before the window
 /// (its first 1.5 s, including the first Costas block, missing) masks a weak complete frame
 /// on almost the same carrier.
 fn partial_interferer_window() -> (Vec<f32>, Vec<u8>, Vec<u8>) {
@@ -1249,7 +1249,7 @@ fn partial_interferer_window() -> (Vec<f32>, Vec<u8>, Vec<u8>) {
     (samples, strong, weak)
 }
 
-// Proves: FR-003, FR-004, CL-007-03 (#56 Ft8PaddedResidual). A frame that runs past the
+// Proves: FR-003, FR-004, CL-007-03 (#56 padded residual). A frame that runs past the
 // window start is found and subtracted but never published; the weak frame under it decodes.
 #[test]
 fn partial_frame_interferer_is_subtracted_not_published() {
@@ -1314,7 +1314,7 @@ fn decoded_tones(d: &Decode) -> Vec<u8> {
     channel.tones(&channel.encode(&bits, Mode::Ft8), Mode::Ft8)
 }
 
-// Proves: FR-003, FR-004, CL-007-03 (#56 Ft8PaddedResidual, end edge). A strong frame that
+// Proves: FR-003, FR-004, CL-007-03 (#56 padded residual, end edge). A strong frame that
 // runs 0.64 s past the window end is subtracted, not published; the weak frame under it decodes.
 #[test]
 fn frame_past_the_window_end_is_subtracted_not_published() {
@@ -1339,7 +1339,7 @@ fn frame_past_the_window_end_is_subtracted_not_published() {
     );
 }
 
-// Proves: FR-003, CL-007-03 (#56 Ft8PaddedResidual publication boundary). A frame starting up
+// Proves: FR-003, CL-007-03 (#56 padded residual publication boundary). A frame starting up
 // to half a symbol (960 frames) before the window is published at start 0; one starting
 // further before is not.
 #[test]
@@ -1406,7 +1406,7 @@ fn weak_word_guard_boundaries() {
     assert!(!weak_word(Mode::Ft4, 0, Some(-40.)));
 }
 
-// Proves: FR-003, CL-007-03 (#56 Ft8DataPoint). A weak word that fails at its fine point
+// Proves: FR-003, CL-007-03 (#56 data point retry). A weak word that fails at its fine point
 // decodes at the nearby point holding the most frame energy.
 #[test]
 fn failed_fine_point_retries_at_the_data_point() {

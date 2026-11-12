@@ -2,227 +2,73 @@ package WstxOfflineDecode {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::AutomationState;
+    private import WstxRequirements::'FR-003';
+    private import WstxRequirements::'FR-004';
     private import WstxRequirements::'FR-005';
     private import WstxRequirements::'CL-011-01';
-    doc /* Canonical pure-modem contract used by live receive and internal numerical fixtures.
-         Partial Rust FT4/FT8 implementation exists; declared coverage is not test results.
-         Package name preserves established identities, not a public offline-decode API.
-         Contract: WstxProductScope::ContractIndex 4.4 CR7, 6.4 TC-004-001/002/003, 12.7, 13.6.
-         Protocol: https://wsjt.sourceforge.io/FT4_FT8_QEX.pdf sections2-5/AppendixA;
-         current source boundaries and fixed vectors use the pinned beta4 reference manifest.
-         Pinned GPL-compatible physical routines may be adapted with source provenance/attribution. Independent meaning/readiness
-         review is required before production code; semantic parsing is not that review.
-         Existing physical station/receive/modem/web/browser usages remain owners. */
+    private import WstxModemDecode::'CL-007-03';
+    private import WstxModemDecode::'TC-004-002';
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::TestedBy;
+    private import ModelNotes::FollowsSource;
+    private import ModelNotes::DiffersFromSource;
+    doc /* The data the modes part shares with the other parts, and its payload function: how
+         a 77-bit payload becomes a record. The payload is the one of the published
+         protocol; this package states the product's choices over it. The decode function
+         is in WstxModemDecode. */
 
     enum def Mode { enum ft4; enum ft8; }
-    enum def FrameStatus { enum decoded; enum unsupported; enum invalid_payload; }
+    enum def FrameStatus {
+        doc /* decoded: a payload of a supported family with valid content. unsupported: a
+             CRC-valid payload of a family the product does not unpack. invalid_payload: a
+             CRC-valid payload of a supported family whose content is outside its domain. */
+        enum decoded;
+        enum unsupported;
+        enum invalid_payload;
+    }
     enum def CallKind { enum call; enum token; enum hash; }
     enum def ExchangeKind { enum blank; enum grid; enum report; enum roger; }
     attribute def Settings { attribute mode : Mode; }
-    attribute def PayloadCodebook {
-        attribute payloadBits : Integer = 77;
-        attribute crcInputBits : Integer = 82;
-        attribute informationBits : Integer = 91;
-        attribute codewordBits : Integer = 174;
-        attribute crcPolynomial : Integer = 26455;
-        attribute crcInitialState : Integer = 0;
-        attribute freeTextRadix : Integer = 42;
-        attribute nonstandardCallRadix : Integer = 38;
-        attribute cqNumericFirst : Integer = 3;
-        attribute cqNumericLast : Integer = 1002;
-        attribute cqAlphabeticBase : Integer = 1003;
-        attribute callHash22Base : Integer = 2063592;
-        attribute standardCallBase : Integer = 6257896;
-        attribute gridMaximum : Integer = 32399;
-        attribute reservedGridCode : Integer = 32400;
-        attribute blankExchange : Integer = 32401;
-        attribute rrrExchange : Integer = 32402;
-        attribute rr73Exchange : Integer = 32403;
-        attribute goodbyeExchange : Integer = 32404;
-        attribute maximumExchangeCode : Integer = 32505;
-        attribute ft4XorMask : String = "01001010010111101000100110110100101100001000101001111001010101011011111000101";
-        attribute generatorTable : String = "fixtures/decoder/protocol-data/generator.dat";
-        attribute parityTable : String = "fixtures/decoder/protocol-data/parity.dat";
-        attribute sectionTable : String = "fixtures/decoder/protocol-data/arrl_rac_sections.json";
-        attribute stateProvinceTable : String = "fixtures/decoder/protocol-data/states_provinces.json";
-        attribute protocolReference : String = "https://wsjt.sourceforge.io/FT4_FT8_QEX.pdf";
-        doc /* QEX sections2..5/AppendixA plus published data-only tables define normal
-             77-bit FT4/FT8. Current source-field boundaries are pinned independently by
-             WstxProductScope::BehaviorBaseline's portable codec manifest and fixed official
-             vectors. This does not adopt permissive malformed-payload aliases, context guessing
-             beyond the a-priori passes of APrioriHypotheses (#56), SuperFox, FT8var, legacy2019FT4 or automatic QSO/TX behaviour.
-             Both modes share source families:0.0 free text,0.1 DXpedition,0.3/.4 FieldDay,
-             0.5 telemetry,1/2 standard /R or /P,3 RTTY,4 nonstandard,5 extended VHF.
-             0.2/.6/.7 and6/7 are unsupported; WSPR packaging0.6 is not an ordinary message.
-             Preserve exact77bits even for unsupported/invalid_payload; CRC-invalid never
-             publishes. n3 precedes i3 for type0; all fields MSB-first in published order.
-             Type1/2 widths28,1,28,1,1,15,3; type3=1,28,28,1,3,13,3;
-             type4=12,58,1,2,1,3; currenttype5=12,22,1,3,11,25,3.
-             Free-text alphabet is blank,0..9,A..Z,+-./?; trim trailing padding only,
-             allblank invalid. Telemetry is71bits,18uppercasehex,firstdigit0..7,zero valid.
-             FieldDay0.3 uses1..16 transmitters,0.4 uses17..32,classA..F; one-based86
-             sections includeDX (sectionTable: the WSJT-X 3.3.0-beta5 PACK77_ARRL_SECTIONS,
-             #24 S2b, which jt9 and ft8code use; it replaces the QEX 2020 84-entry table,
-             whose entries 16/25/44 GTA/MAR/NT are GH/NS/TER there and which lacks PE and NB);
-             0/>86 invalid. RTTY report529..599 step10, serial0..7999;
-            8001..8171 map the stateProvinceTable (WSJT-X 3.3.0-beta5
-             PACK77_RTTY_MULTIPLIERS: the QEX 65 states/provinces/DC plus the Dutch provinces
-             DR FR GD GR OV ZH ZL and X01..X99); 8000/>8171 invalid. The transmit packer
-             reads the same two tables (WstxTransmit::PackMessage).
-             DXpedition report is even-30..32; nonstandard fullcall<=11base38characters;
-             VHF report52..59,serial0..2047,gridAA00AA..RR99XX.
-             Standard c28:DE0/QRZ1/CQ2; numericCQ3..1002=>CQ000..999;
-             alphabeticCQ1003+four-positionbase27 blank/A..Z modifier with leading
-             blanks removed and no embedded/trailing blank. Reserved holes invalid.
-             hash22=2063592+hash; standard mixed-radix call=6257896+call.
-             Calls normalize digit into position3; radix37,36,10,27,27,27 alphabets are
-             blank/digits/letters; digits/letters; digits; blank/letters three times.
-             At least one of first two characters is a letter; nonempty suffix has no
-             embedded blank. K1ABC=10214965,W9XYZ=12751800. Grid4 radices18,18,10,10
-             with A..R,A..R,0..9,0..9 giveFN42=10342; grid6 adds24,24 lettersA..X.
-             Grid/report0..32399 aregrids,32400reserved,32401blank,32402RRR,
-            32403RR73,32404'73'. ReportCode below is exact,>32505invalid. Invalid
-             structured content never falls back to free text. Hashes keep10/12/22-bit
-             numeric identity. The pure unpack has no hash table and displays<...>; only a
-             station's live publication fills a hash in, from its HashResolution table of
-             calls heard and sent (CL-024-01, #24), never by inverse guessing. A concrete
-             type4full call stays concrete; no cross-profile cache.
-             CRC14 polynomial0x6757,zero state, operates on payload zero-extended82bits;
-             append14CRCbits to77payload bits then published GF(2) parity=>174bits.
-             FT4 XORs the exact77-bit mask beforeCRC/FEC and reverses onlyafter validation.
-             Gray maps by bit-group value:FT8[0,1,3,2,5,6,4,7],FT4[0,1,3,2].
-             FT8=79symbols*1920frames;FT4=105incl2ramps*576frames. Published Costas,
-             continuous phase, GaussianBT2/1 and raised-cosine ramps are normative.
-             Independent fixtures use separate polynomial division/streaming recurrence,
-             published syndrome and fixed tones before audio synthesis; never production
-             decoder/reconstruction as sole oracle. Vectors record provenance, fields,
-             bits/CRC/codeword/tones,start/frequency/amplitude/noise/seed/parameters/hash.
-             Cross-math audio permits1PCM-LSB; retained WAV bytes use exact SHA256. */
+
+    attribute def DecodeBand {
+        doc /* The audio band of the lowest tone of a decoded frame, both ends inclusive. */
+        attribute decodeBandLowHz : Integer = 200;
+        attribute decodeBandHighHz : Integer = 3500;
     }
-    calc def ReportCode {
-        in report : Integer;
-        return code : Integer = if report < -30 ? 32400 + report + 35 + 101 else 32400 + report + 35;
-        assert constraint domain { report >= -50 and report <= 50 }
-    }
-    calc def StandardCallCode {
-        in firstIndex : Integer;
-        in secondIndex : Integer;
-        in digitIndex : Integer;
-        in suffixOne : Integer;
-        in suffixTwo : Integer;
-        in suffixThree : Integer;
-        return code : Integer = 6257896 + (((((firstIndex * 36 + secondIndex) * 10 + digitIndex) * 27 + suffixOne) * 27 + suffixTwo) * 27 + suffixThree);
-        assert constraint radixDomains { firstIndex >= 0 and firstIndex < 37 and secondIndex >= 0 and secondIndex < 36 and
-            digitIndex >= 0 and digitIndex < 10 and suffixOne >= 0 and suffixOne < 27 and
-            suffixTwo >= 0 and suffixTwo < 27 and suffixThree >= 0 and suffixThree < 27 }
-        doc /* Indices are from PayloadCodebook's normalized alphabets; caller enforces
-             letter-prefix/nonblank-suffix/no-embedded-blank constraints before use. */
-    }
-    requirement SharedWireMapping {
-        doc /* ResultRecord has exact keys sequence,status,payload77,i3,n3,text,fields,
-             start_frame,frequency_hz,snr_db, plus a_priori (Integer 1..6, the WSJT-X aN
-             type of APrioriHypotheses) present only for an a-priori word, whose status is
-             always decoded (#56 slice 5).
-             LiveTimedResultRecord adds exactly
-             period_start_utc anddt_seconds. Fields null unless decoded; text null unless
-             decoded then<=80canonicalASCII; payload77exact77ASCIIbits; i3=0..7,
-             n3nullunlessi3=0then0..7. Sequence/start are nonnegative safe integers below
-             actual lifetime next_sequence/captured next_frame; finitefrequency200..3500,
-             SNRnullorfinite[-60,60]. Record<=2048UTF8bytes, numericalcharge<=1024;
-             oversizedpublication=>decode_limit with acceptedpartials. CallValue exactly
-             {kind,text,hash_bits,hash_value}; concretecall uppercase1..13(nonstandard<=11),
-             tokenCQ/DE/QRZ/modifier bothnullhashfields; hash exactwidth/value with text null,
-             or the call without brackets when HashResolution filled it in (the message text
-             then shows<CALL>).
-             Every supported PayloadFields variant has all its defined keys, no extras:
-             free_text/telemetry{type,value};standard{type,to,from,ack,exchange};
-             rtty{type,tu,to,from,ack,report,exchange};dxpedition{type,first,second,hashed,report};
-             field_day{type,to,from,ack,transmitters,class,section};
-             nonstandard{type,full_call,hashed_call,hash_second,cq,roger};
-             vhf{type,to,from,ack,report,serial,grid}. Semantic StandardExchange
-             serial/state union members map to exact wire{kind,value}, not extra keys.
-             A standard exchange packed as the grid square RR73 (32373, as some programs
-             send RR73) is the roger {kind roger, value RR73}, never a grid (#55; WSJT-X
-             grid_regexp excludes RR73); the text is unchanged. Nonstandard CQ ignores hash for presentation while preserving raw bits/hash.
-             i3/n3 disambiguates source family. WstxRadioIO owns live lifecycle/page/error/
-             cancellation/retention. No production file-decode route, test-source/raw-path
-             command or browser offline-decode action is implied by numerical fixtures. */
-    }
+
     attribute def CallValue {
         attribute kind : CallKind;
         attribute text : String[0..1];
         attribute hash_bits : Integer[0..1];
         attribute hash_value : Integer[0..1];
-        doc /* Exact wire keys. call/token have text and null hash fields; hash has
-             width10/12/22 and unsigned value below2^width, and text null (displayed<...>)
-             or, in a station's live publication, the call HashResolution filled in, without
-             brackets (displayed<CALL>; kind stays hash). No inverse guessing; no cache across
-             profiles. */
-    }
-    requirement def HashResolution {
-        doc /* CL-024-01 (#24 S1, reversing the earlier "display<...>, no station inverse"
-             rule at the operator's approval of 2026-11-03): WSJT-X shows a hashed call as
-             <CALL> once the full call is known (packjt77.f90 save_hash_call, hash10/12/22,
-             hashmy10/12/22; one session-persistent table shared by receive and transmit),
-             and so does the station. One table per station instance (profile process), kept
-             for the process lifetime across jobs, bands and modes, never shared between
-             profiles, never saved.
-             Hash: ihashcall, the top m bits (10/12/22) of the low 64 bits of
-             47055833459 * the base-38 value of the call's first 11 characters, blank
-             padded (WstxTransmit::PackMessage uses the same function).
-             Learning (save_hash_call): a call of at least 3 characters, brackets removed,
-             sets calls10[h10] and calls12[h12] unless it is my call, and in the 22-bit list
-             of at most 1000 entries replaces the call of an existing h22 entry, else is put
-             first (the oldest entry falls out). Calls learned: my profile callsign at
-             startup and whenever it changes; from each decoded record as it is published
-             (after its own fill-in), the concrete 'from' call of a standard i3=1/2 message
-             (with its /R or /P) and the full call of a nonstandard i3=4 message whose hash
-             is the 'to' call (including CQ); a 'to' call or other families teach nothing
-             (unpack77 nrx=1, not configured); from each transmit request the transmit owner
-             accepts, every concrete call of a standard (its base call without /R or /P, as
-             pack77_parse_type12_call stages it)/Field Day/RTTY message, the full call of a
-             nonstandard CQ and every bracketed <CALL> (pack28/pack77_hash_index).
-             Deliberate deviations: WSJT-X packs transmitted texts in its GUI process and
-             feeds the decoder's table the DX call instead (ft8apset/dxcall13); the station
-             learns from accepted requests. unpack77's DX-call rules (a 0.1 h10 equal to the
-             DX call's hash shows the DX call; a nonstandard 'to' h12 equal to my h12 is my
-             call when the full call is the DX call, even if calls12 holds another call)
-             need the contact's DX call: the station sets the current contact's DX call
-             on the table at each contact step (#24 S1b) and applies the nonstandard rule
-             and the 0.1 rule (#24 S4a): a received 0.1 h10 equal to the 10-bit hash of that
-             DX call (at least 3 characters) shows <DXCALL>, before and instead of the calls10
-             entry of that hash (unpack77 n3=1, nrx=1, hashdx10).
-             Fill-in (unpack77 nrx=1), per hashed slot: standard/Field Day/RTTY h22 from the
-             22-bit list, and a standard 'to' h22 equal to my h22 is my call; nonstandard h12
-             from calls12, and when that is empty and the hash is the 'to' call equal to my
-             h12, my call (a nonstandard CQ shows no hash); DXpedition h10 from calls10;
-             EU VHF 'to' h12 is my call when equal to my h12, else calls12, 'from' h22 from
-             the list. A slot not found stays<...> with text null. Records published before
-             a call was learned keep their text (no rewriting of history). The filled-in text
-             reaches Band Activity, the QSO pane, MCP reads and the UDP Decode message
-             (WstxUdp::OutboundRules) unchanged. A hashed slot stays kind hash. Contact
-             selection and sequencing read a filled-in hash as its call (WstxContact::
-             SelectDecodedRow, #24 S1b); the strategy, Call 1st, DXCC/worked-before and
-             Pounce, which need a plain concrete call, keep treating it as no call. */
+        doc /* A call or a token (CQ, DE, QRZ, a CQ modifier) has its text and null hash
+             fields; a concrete call is 1 to 13 upper-case characters, 11 at most in a
+             nonstandard message. A hash has its width (10, 12 or 22 bits) and its value,
+             and null text, or, in a station's live publication, the call HashResolution
+             filled in, without brackets; its kind stays hash. */
     }
     attribute def StandardExchange {
         attribute kind : ExchangeKind;
         attribute textValue : String[0..1];
         attribute numericValue : Integer[0..1];
-        doc /* Semantic union, wire exactly{kind,value}: blank=>null, grid=>grid4,
-             report=>integer-50..50, roger=>RRR/RR73/73. Internal semantic arm names
-             are not extra wire fields; SharedWireMapping is the exact canonical JSON mapping. */
+        doc /* On the wire exactly {kind, value}: blank null, grid a 4-character grid, report
+             an integer -50..50, roger RRR, RR73 or 73. */
     }
-    attribute def PayloadFields;
+    attribute def PayloadFields {
+        doc /* The fields of a decoded payload: one variant per message family, each with all
+             its keys and no others. */
+    }
     attribute def FreeTextFields :> PayloadFields {
         attribute 'type' : String = "free_text";
         attribute value : String;
-        doc /* type=free_text; 1..13 base42 chars, nonblank, trim trailing padding only. */
+        doc /* Family 0.0: 1 to 13 characters, trailing padding trimmed; all blank is invalid. */
     }
     attribute def TelemetryFields :> PayloadFields {
         attribute 'type' : String = "telemetry";
         attribute value : String;
-        doc /* type=telemetry; exact18uppercasehex, leading0..7, zero allowed. */
+        doc /* Family 0.5: 18 upper-case hex digits, the first 0 to 7. */
     }
     attribute def StandardFields :> PayloadFields {
         attribute 'type' : String = "standard";
@@ -230,8 +76,7 @@ package WstxOfflineDecode {
         attribute 'from' : CallValue;
         attribute ack : Boolean;
         attribute exchange : StandardExchange;
-        doc /* type=standard; i3=1/R or2/P. Exact c28/grid/report canonical maps are PayloadCodebook and ReportCode;
-             codes32400 and>32505 invalid, not fallback text. */
+        doc /* Families 1 (/R) and 2 (/P). */
     }
     attribute def RttyFields :> PayloadFields {
         attribute 'type' : String = "rtty";
@@ -243,9 +88,8 @@ package WstxOfflineDecode {
         attribute exchangeKind : String;
         attribute serial : Integer[0..1];
         attribute stateToken : String[0..1];
-        doc /* type=rtty; exact wire exchange{kind,value} chooses serial0..7999 or
-             exchanges8001..8171 (stateProvinceTable), reserved8000 invalid. report529..599 step10. Semantic
-             union arm names are not extra JSON fields. */
+        doc /* Family 3: on the wire the exchange is {kind, value}, a serial 0..7999 or a
+             state or province 8001..8171. */
     }
     attribute def DxpeditionFields :> PayloadFields {
         attribute 'type' : String = "dxpedition";
@@ -253,7 +97,7 @@ package WstxOfflineDecode {
         attribute 'second' : CallValue;
         attribute hashed : CallValue;
         attribute report : Integer;
-        doc /* type=dxpedition,0.1; h10 exact, even report-30..32; firstRR73;secondhashreport. */
+        doc /* Family 0.1. */
     }
     attribute def FieldDayFields :> PayloadFields {
         attribute 'type' : String = "field_day";
@@ -263,8 +107,7 @@ package WstxOfflineDecode {
         attribute transmitters : Integer;
         attribute 'class' : String;
         attribute section : String;
-        doc /* type=field_day,0.3=>1..16,0.4=>17..32; classA..F, section1..86 inclusiveDX
-             (sectionTable). S7=75WCF,76WI,84DX,85PE,86NB; 0/>86 invalid. */
+        doc /* Families 0.3 (1 to 16 transmitters) and 0.4 (17 to 32). */
     }
     attribute def NonstandardFields :> PayloadFields {
         attribute 'type' : String = "nonstandard";
@@ -273,8 +116,7 @@ package WstxOfflineDecode {
         attribute hash_second : Boolean;
         attribute cq : Boolean;
         attribute roger : String[0..1];
-        doc /* type=nonstandard,i3=4; full call<=11base38 chars, h12 exact; r2blank/RRR/RR73/73.
-             CQ ignores hash for display, preserves typed bits; empty/out-of-domain call invalid. */
+        doc /* Family 4. A nonstandard CQ shows no hash and keeps its bits. */
     }
     attribute def VhfFields :> PayloadFields {
         attribute 'type' : String = "vhf";
@@ -284,9 +126,9 @@ package WstxOfflineDecode {
         attribute report : Integer;
         attribute serial : Integer;
         attribute grid : String;
-        doc /* type=vhf,currenti3=5; hash12to/hash22from, report52..59, serial0..2047,
-             mixed18,18,10,10,24,24 grid0..18662399=>AA00AA..RR99XX. */
+        doc /* Family 5, the EU VHF contest message. */
     }
+
     item def ResultRecord :> WstxArchitecture::ProcessingResult {
         attribute sequence : Integer;
         attribute status : FrameStatus;
@@ -300,17 +142,112 @@ package WstxOfflineDecode {
         attribute snr_db : Real[0..1];
         attribute a_priori : Integer[0..1];
         assert constraint boundedRecord {
-            sequence >= 0 and sequence <= (900719925 * 10000000 + 4740991) and i3 >= 0 and i3 <= 7 and
-            start_frame >= 0 and start_frame <= (900719925 * 10000000 + 4740991) and
-            frequency_hz >= 200.0 and frequency_hz <= 3500.0
+            sequence >= 0 and sequence <= (900719925 * 10000000 + 4740991) and
+            i3 >= 0 and i3 <= 7 and
+            start_frame >= 0 and start_frame <= (900719925 * 10000000 + 4740991)
         }
-        doc /* Exact shared live wire keys,<=2048UTF8bytes. payload77 exactly77binarychars; n3 only
-             ifi3=0; text<=80ASCII and matching fields only when decoded, otherwise null.
-             Supported0.0/.1/.3/.4/.5,1/2/3/4/5;0.2/.6/.7,6/7 unsupported. BadCRC never
-             published. start indexes canonical12k first ramp/sync, never native orUTC.
-             SNR null orfinite[-60,60], bounds labeled; full identity is page envelope. */
+        doc /* One decoded frame, with exactly these keys; a_priori is present only for an
+             a-priori word. payload77 is the exact 77 payload bits as 0 and 1 characters,
+             also for an unsupported or invalid payload. n3 is null unless i3 is 0. text
+             (at most 80 ASCII characters) and fields are present only when the status is
+             decoded, otherwise null. frequency_hz lies within DecodeBand; snr_db is null or
+             as WstxModemDecode::MeasureFrame states it; start_frame indexes the canonical
+             12 kHz stream. */
     }
-    // #9 transmit preparation; detailed contract in WstxTransmit.
+
+    requirement def HashResolution {
+        doc /* The station shows a hashed call as <CALL> once it knows the full call, from one
+             table per station instance (profile process), kept for the process lifetime
+             across jobs, bands and modes, never shared between profiles and never saved.
+             The pure unpack has no table and shows <...>. A call is never guessed from its
+             hash. */
+        doc /* The table learns my profile callsign at startup and whenever it changes; from
+             each published record, the concrete 'from' call of a standard message and the
+             full call of a nonstandard message whose hash is the 'to' call; and from each
+             transmit request the transmit owner accepts, every concrete call of a
+             standard, Field Day or RTTY message, the full call of a nonstandard CQ and
+             every bracketed <CALL>. */
+        doc /* A slot that is not found stays <...> with null text, and a hashed slot stays
+             kind hash. Records published before a call was learned keep their text. The
+             filled-in text reaches Band Activity, the QSO pane, MCP reads and the UDP
+             Decode message (WstxUdp::OutboundRules) unchanged. Contact selection and
+             sequencing read a filled-in hash as its call (WstxContact::SelectDecodedRow);
+             the strategy, Call 1st, DXCC and worked-before and Pounce treat it as no call. */
+        @FollowsSource {
+            reference = "WSJT-X 3.3.0-beta5 packjt77 save_hash_call, ihashcall, unpack77 with "
+                + "nrx=1";
+        }
+        @DiffersFromSource {
+            what = "The table learns from the transmit requests the station accepts; WSJT-X "
+                + "feeds it the DX call (ft8apset, dxcall13).";
+        }
+        @DiffersFromSource {
+            what = "The DX-call rules of unpack77 use the DX call the station sets from the "
+                + "current contact at each contact step.";
+        }
+    }
+
+    action def UnpackPayload {
+        in payload77 : String;
+        out record : ResultRecord;
+        @ImplementedIn { module = "server/src/decoder/payload.rs; server/src/decoder/hashes.rs"; }
+        @FollowsSource {
+            reference = "QEX FT4/FT8 sections 2 to 5 and appendix A; WSJT-X 3.3.0-beta5 packjt77";
+        }
+        doc /* The supported families are 0.0 free text, 0.1 DXpedition, 0.3 and 0.4 Field
+             Day, 0.5 telemetry, 1 and 2 standard, 3 RTTY, 4 nonstandard and 5 EU VHF;
+             0.2, 0.6, 0.7, 6 and 7 are unsupported. */
+        doc /* Structured content outside its domain is invalid_payload and never falls back
+             to free text. */
+        doc /* A standard exchange packed as the grid square RR73 is the roger RR73; the text
+             is unchanged. */
+        @FollowsSource { reference = "WSJT-X 3.3.0-beta5 grid_regexp, which excludes RR73"; }
+        doc /* Field Day sections are the 86 of
+             fixtures/decoder/protocol-data/arrl_rac_sections.json and RTTY exchanges
+             8001..8171 those of states_provinces.json there; a section 0 or above 86 and an
+             exchange 8000 or above 8171 are invalid. */
+        @FollowsSource {
+            reference = "WSJT-X 3.3.0-beta5 PACK77_ARRL_SECTIONS and PACK77_RTTY_MULTIPLIERS, "
+                + "not the 84 sections of QEX";
+        }
+    }
+    action unpackPayload : UnpackPayload;
+    satisfy 'CL-007-09' by unpackPayload;
+    dependency payloadOwner from unpackPayload
+        to WstxArchitecture::physicalStation::backend::stations::modes;
+
+    requirement 'CL-007-09' {
+        doc /* Each record the modem produces MUST carry exactly the fields of ResultRecord,
+             with the payload fields of its message family as PayloadFields defines them. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    dependency CL_007_09_to_FR_003 from 'CL-007-09' to 'FR-003';
+    dependency CL_007_09_to_FR_004 from 'CL-007-09' to 'FR-004';
+    verification 'TC-004-005' {
+        doc /* TC-004-005 — Payload vectors
+             Setup: the frozen payload, channel and tone vectors in fixtures/decoder/, and
+             the payload-boundary cases.
+             (a) Every vector unpacks to its text and fields.
+             (b) Sections 84 to 86 and exchanges 8065, 8066 and 8171 decode; 87 and 8172
+                 are invalid_payload.
+             (c) The CRC and parity of every vector match.
+             Oracle: the frozen independent vectors.
+             2 — Isolated automated tests; Windows PC, offline fixtures. */
+        @Automation { run = AutomationState::implemented; }
+        objective {
+            verify 'CL-007-03';
+            verify 'CL-007-09';
+            verify 'FR-003';
+            verify 'FR-004';
+        }
+        @TestedBy {
+            test = "server/tests/decoder_vectors.rs::frozen_payload_channel_tone_vectors; server/tests/decoder_vectors.rs::canonical_payload_boundaries";
+        }
+    }
+    dependency CL_007_03_verified_by_TC_004_005 from 'CL-007-03' to 'TC-004-005';
+    dependency CL_007_09_verified_by_TC_004_002 from 'CL-007-09' to 'TC-004-002';
+    dependency CL_007_09_verified_by_TC_004_005 from 'CL-007-09' to 'TC-004-005';
+
     requirement 'CL-009-01' {
         doc /* Pack every supported FT8 message family (standard i3=1/2 with CQ forms,
              reports, R/RRR/RR73/73 and /R /P, i3=4 nonstandard calls with WSJT-X

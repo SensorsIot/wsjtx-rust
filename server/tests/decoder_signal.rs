@@ -17,6 +17,33 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use wstx_rust::decoder::{Decode, DecodeError, DecodeState, Decoder, Mode, quadratures};
+// The test-only model-value reader (Project-Specifics, "Model values read by tests").
+#[allow(dead_code)]
+#[path = "../src/model_values.rs"]
+mod model_values;
+
+/// A value of WstxModemDecode or WstxOfflineDecode, read from the model: with its unit
+/// when its name ends in a unit suffix, as a count otherwise.
+fn model_value(name: &str) -> f64 {
+    static MODEL: std::sync::OnceLock<model_values::Model> = std::sync::OnceLock::new();
+    let model = MODEL.get_or_init(model_values::Model::load);
+    let read = model
+        .number_with_unit(name)
+        .or_else(|_| model.number(name))
+        .unwrap_or_else(|e| panic!("model value {e}"));
+    match read.unwrap_or_else(|| panic!("model value {name}: null")) {
+        model_values::Number::Integer(n) => n as f64,
+        model_values::Number::Real(x) => x,
+    }
+}
+/// A value of WstxModemDecode::DecodeQuality.
+fn quality(feature: &str) -> f64 {
+    model_value(&format!("WstxModemDecode::DecodeQuality::{feature}"))
+}
+/// A value of WstxModemDecode::DecodeBudgets.
+fn budget(feature: &str) -> f64 {
+    model_value(&format!("WstxModemDecode::DecodeBudgets::{feature}"))
+}
 fn prepared(kind: &str) -> PathBuf {
     static QUALITY: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     static FROZEN: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
@@ -219,10 +246,15 @@ fn quality_corpus() {
                 panic!("FALSE PUBLICATION {id}: {d:?}");
             }
             // #52: whole dB on the WSJT-X scale, never below its floor.
-            let floor = if mode == Mode::Ft8 { -25. } else { -21. };
+            let floor = if mode == Mode::Ft8 {
+                quality("ft8SnrFloorDb")
+            } else {
+                quality("ft4SnrFloorDb")
+            };
+            let ceiling = quality("snrCeilingDb");
             assert!(
                 d.snr_db
-                    .is_none_or(|snr| snr.fract() == 0. && (floor..=60.).contains(&snr)),
+                    .is_none_or(|snr| snr.fract() == 0. && (floor..=ceiling).contains(&snr)),
                 "SNR scale {id}: {d:?}"
             );
         }
@@ -247,18 +279,29 @@ fn quality_corpus() {
                     x["text"],
                     "text {id}"
                 );
+                let (start_tolerance, frequency_tolerance) = if mode == Mode::Ft8 {
+                    (
+                        quality("ft8StartToleranceFrames"),
+                        quality("ft8FrequencyToleranceHz"),
+                    )
+                } else {
+                    (
+                        quality("ft4StartToleranceFrames"),
+                        quality("ft4FrequencyToleranceHz"),
+                    )
+                };
                 assert!(
                     d.start_frame.abs_diff(x["start_frame"].as_u64().unwrap())
                         <= x["time_tolerance_frames"]
                             .as_u64()
-                            .unwrap_or(if mode == Mode::Ft8 { 240 } else { 144 }),
+                            .unwrap_or(start_tolerance as u64),
                     "time {id}: {d:?}"
                 );
                 assert!(
                     (d.frequency_hz - x["frequency_hz"].as_f64().unwrap()).abs()
                         <= x["frequency_tolerance_hz"]
                             .as_f64()
-                            .unwrap_or(if mode == Mode::Ft8 { 1. } else { 3. }),
+                            .unwrap_or(frequency_tolerance),
                     "frequency {id}: {d:?}"
                 );
                 if let (Some(snr), Some(tolerance)) =
@@ -285,18 +328,38 @@ fn quality_corpus() {
         assert_eq!(count, 2286);
         assert_eq!(totals.len(), 18);
     }
+    // WstxModemDecode::DecodeQuality: the counts per level and per overlap group.
+    let level = quality("signalsPerLevel") as usize;
+    let pairs = quality("overlapPairs") as usize;
     for (key, (n, success, individual)) in totals {
-        if key.ends_with("/strong") && n == 40 {
-            assert!(success >= 36, "{key}: {success}/40");
-        } else if key.ends_with("/weak") && n == 40 {
-            assert!(success >= 20, "{key}: {success}/40");
+        if key.ends_with("/strong") && n == level {
+            assert!(
+                success >= quality("strongDecodedMin") as usize,
+                "{key}: {success}/{n}"
+            );
+        } else if key.ends_with("/weak") && n == level {
+            assert!(
+                success >= quality("weakDecodedMin") as usize,
+                "{key}: {success}/{n}"
+            );
         } else if key.ends_with("/offset") {
             assert_eq!(success, n, "{key}");
-        } else if key.ends_with("/two-spacing") && n == 20 {
-            assert!(success >= 18, "{key}: {success}/20");
-        } else if key.ends_with("/one-spacing-6db") && n == 20 {
-            assert!(individual[0] >= 18, "{key} stronger: {:?}", individual);
-            assert!(individual[1] >= 10, "{key} weaker: {:?}", individual);
+        } else if key.ends_with("/two-spacing") && n == pairs {
+            assert!(
+                success >= quality("overlapDecodedMin") as usize,
+                "{key}: {success}/{n}"
+            );
+        } else if key.ends_with("/one-spacing-6db") && n == pairs {
+            assert!(
+                individual[0] >= quality("oneSpacingStrongDecodedMin") as usize,
+                "{key} stronger: {:?}",
+                individual
+            );
+            assert!(
+                individual[1] >= quality("oneSpacingWeakDecodedMin") as usize,
+                "{key} weaker: {:?}",
+                individual
+            );
         } else if key.ends_with("/noise-only")
             || key.ends_with("/silence")
             || key.ends_with("/wrong-mode")
@@ -350,7 +413,10 @@ fn cooperative_quanta_and_partial_cancellation() {
         drop(future);
         assert_eq!(published.len(), 1);
         assert!(polls > 1, "future never yielded");
-        assert!(maximum.as_millis() <= 50, "largest quantum {maximum:?}");
+        assert!(
+            maximum.as_millis() <= budget("checkpointMaxMs") as u128,
+            "largest quantum {maximum:?}"
+        );
         eprintln!("{mode:?}: {polls} cooperative polls, maximum {maximum:?}");
     }
 }
@@ -468,6 +534,15 @@ fn crc_valid_unsupported_and_invalid_payloads_are_retained() {
             assert_eq!(
                 serde_json::to_value(d.payload.status).unwrap(),
                 expected["expected_status"]
+            );
+            // The status names of WstxOfflineDecode::FrameStatus, read from the model.
+            let statuses = model_values::Model::load()
+                .enum_members("WstxOfflineDecode::FrameStatus")
+                .unwrap_or_else(|e| panic!("model value {e}"));
+            let status = serde_json::to_value(d.payload.status).unwrap();
+            assert!(
+                statuses.iter().any(|s| status == s.as_str()),
+                "{mode:?} {name}: status {status} is not a FrameStatus of the model {statuses:?}"
             );
             assert!(d.payload.text.is_none() && d.payload.fields.is_none());
         }
@@ -675,8 +750,9 @@ fn official_modern_recording_baselines() {
                 continue;
             };
             let expected = r["snr_db"].as_f64().unwrap();
+            let tolerance = quality("jt9SnrToleranceDb");
             if d.snr_db
-                .is_none_or(|snr| snr.fract() != 0. || (snr - expected).abs() > 1.)
+                .is_none_or(|snr| snr.fract() != 0. || (snr - expected).abs() > tolerance)
             {
                 snr_failures.push((id, r["text"].clone(), expected, d.snr_db));
             }
@@ -696,7 +772,24 @@ fn official_modern_recording_baselines() {
             "BASELINE {id}: {matches}/{}; missing {missing:?}",
             observations.len()
         );
-        if matches < case["minimum_matches"].as_u64().unwrap() as usize {
+        // WstxModemDecode::DecodeQuality: at least the official minimum of the messages.
+        let (messages, minimum) = if mode == Mode::Ft8 {
+            (
+                quality("ft8OfficialMessages"),
+                quality("ft8OfficialDecodedMin"),
+            )
+        } else {
+            (
+                quality("ft4OfficialMessages"),
+                quality("ft4OfficialDecodedMin"),
+            )
+        };
+        assert_eq!(
+            observations.len(),
+            messages as usize,
+            "{id}: official messages"
+        );
+        if matches < minimum as usize {
             failures.push((id, matches));
         }
     }
@@ -706,7 +799,7 @@ fn official_modern_recording_baselines() {
     );
     assert!(
         snr_failures.is_empty(),
-        "SNR not within 1 dB of the reference: {snr_failures:?}"
+        "SNR not within the jt9 tolerance of the reference: {snr_failures:?}"
     );
 }
 
@@ -1335,8 +1428,11 @@ fn resource_concurrency_qualification_rejects_serial_work_and_clock_faults() {
     );
     assert!(std::panic::catch_unwind(|| resource_qualify_round(&[0, 1, 2], &valid[..3])).is_err());
 }
-/// Wall-time sufficient criterion for the 50 ms cooperative CPU quantum (#36).
-const RESOURCE_CPU_QUANTUM_WALL_SECONDS: f64 = 0.050;
+/// Wall-time sufficient criterion for the cooperative CPU quantum (#36):
+/// DecodeBudgets::checkpointMaxMs, in seconds.
+fn resource_cpu_quantum_wall_seconds() -> f64 {
+    budget("checkpointMaxMs") / 1000.
+}
 /// Bounded re-qualification of one matrix configuration (#36); mirrored by the guardian.
 const RESOURCE_QUALIFICATION_ATTEMPTS: u64 = 3;
 fn resource_runtime_parent() {
@@ -1383,14 +1479,21 @@ fn resource_runtime_parent() {
                         .join(case["id"].as_str().unwrap())
                         .join("000000_000000.wav");
                     assert_eq!(resource_hash(&input), case["sha256"].as_str().unwrap());
+                    // WstxModemDecode::DecodeBudgets, read from the model.
                     let ceiling = if long {
-                        40.
+                        budget("recordingMaxSeconds")
                     } else if mode == "ft8" {
-                        5.
+                        budget("ft8WindowMaxSeconds")
                     } else {
-                        3.
+                        budget("ft4WindowMaxSeconds")
                     };
-                    let runtime_ceiling = ceiling * if concurrency == 4 { 2. } else { 1. };
+                    let runtime_ceiling = ceiling
+                        * if concurrency == 4 {
+                            budget("fourProfileRuntimeFactor")
+                        } else {
+                            1.
+                        };
+                    let cold_start = budget("coldStartMaxSeconds");
                     // #36: a poll over the 50 ms wall criterion leaves the CPU quantum
                     // unmeasured (no CPU claim, not a violation). The configuration is
                     // re-measured up to RESOURCE_QUALIFICATION_ATTEMPTS times; every budget
@@ -1414,7 +1517,7 @@ fn resource_runtime_parent() {
                             );
                             let config = serde_json::json!({"mode":mode,"scalar":scalar,"long":long,"input":input,
                             "input_sha256":case["sha256"],"payload77":cases["payload77"],"worker_id":identity,
-                            "source_sha":source,"executable_sha256":executable_hash,"cold_ceiling":ceiling+2.});
+                            "source_sha":source,"executable_sha256":executable_hash,"cold_ceiling":ceiling+cold_start});
                             let mut command = Command::new(&executable);
                             command
                                 .args([
@@ -1446,7 +1549,7 @@ fn resource_runtime_parent() {
                             );
                             assert_eq!(prepared["state"], "prepared");
                             let cold_seconds = prepared["cold_seconds"].as_f64().unwrap();
-                            assert!(cold_seconds <= ceiling + 2.);
+                            assert!(cold_seconds <= ceiling + cold_start);
                             let cold_poll =
                                 prepared["cold_max_poll_wall_seconds"].as_f64().unwrap();
                             let warmup_poll =
@@ -1455,8 +1558,8 @@ fn resource_runtime_parent() {
                             "cold_max_poll_wall_seconds":cold_poll,"warmup_max_poll_wall_seconds":warmup_poll}));
                             // Cold/warmup CPU quantum not established by the conservative 50 ms
                             // wall criterion: measure CPU before alleging a CPU violation.
-                            if cold_poll > RESOURCE_CPU_QUANTUM_WALL_SECONDS
-                                || warmup_poll > RESOURCE_CPU_QUANTUM_WALL_SECONDS
+                            if cold_poll > resource_cpu_quantum_wall_seconds()
+                                || warmup_poll > resource_cpu_quantum_wall_seconds()
                             {
                                 unqualified_polls.push(serde_json::json!({"worker":index,"phase":"prepare",
                                 "cold_max_poll_wall_seconds":cold_poll,"warmup_max_poll_wall_seconds":warmup_poll}));
@@ -1509,7 +1612,7 @@ fn resource_runtime_parent() {
                                 // 50 ms CPU quantum not established by the sufficient wall-time
                                 // criterion: actual CPU measurement or re-qualification required.
                                 let poll = result["max_poll_wall_seconds"].as_f64().unwrap();
-                                if poll > RESOURCE_CPU_QUANTUM_WALL_SECONDS {
+                                if poll > resource_cpu_quantum_wall_seconds() {
                                     unqualified_polls
                                         .push(serde_json::json!({"worker":index,"phase":"round",
                                     "round":round,"max_poll_wall_seconds":poll}));
@@ -1537,7 +1640,7 @@ fn resource_runtime_parent() {
                             );
                             let peak = final_sample["lifetime_peak_commit"].as_u64().unwrap();
                             metrics.push(serde_json::json!({"idle":idle[index],"final_after_teardown":final_sample,
-                            "teardown":teardown,"absolute_private_peak_within64MiB":peak<=64*1024*1024,
+                            "teardown":teardown,"absolute_private_peak_within64MiB":peak<=budget("workerMemoryMaxMiB") as u64*1024*1024,
                             "over64MiB_disposition":"inconclusive sufficient criterion; complete owner accounting required, not automatic workspace failure",
                             "worst_capacity_workspace_audit_complete":false,"whole_workspace_proved":false,
                             "full_station_96MiB_proved":false}));
@@ -2149,7 +2252,7 @@ fn resource_busy_live_overlap_and_pending_cancel() {
         "real Pending boundary must be observed before cancellation"
     );
     assert!(
-        cancellation.cancel_return.unwrap() <= Duration::from_millis(250),
+        cancellation.cancel_return.unwrap() <= Duration::from_millis(budget("releaseMaxMs") as u64),
         "pure kernel cancellation-return necessary sub-bound; manager ACK/release remains separately unproved"
     );
 }

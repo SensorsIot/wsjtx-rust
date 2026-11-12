@@ -82,7 +82,7 @@ const SUBTRACTIONS: usize = 200;
 const PASSES: usize = 3;
 /// Verifications run at once (#57 CL-057-02); each holds one 1.2 MB known-word waveform.
 const VERIFICATIONS: usize = 16;
-/// Ft8PaddedResidual: 2.0 s of zeros before and 0.64 s after an FT8 window (jt9 sync8
+/// The padded FT8 residual: 2.0 s of zeros before and 0.64 s after an FT8 window (jt9 sync8
 /// lags -62..+62, DT -2.5..+2.5 s).
 const PAD_BEFORE: usize = 24000;
 const PAD_AFTER: usize = 7680;
@@ -92,7 +92,7 @@ const DUPLICATE_SEPARATION_HZ: f64 = 50.;
 /// ft8b's weak-word guard: at most this many hard Costas hits and an SNR below -25 dB.
 const WEAK_MAX_COSTAS_HITS: usize = 10;
 const WEAK_SNR_DB: f64 = -25.;
-/// Ft8RetryOverlapped: a failed FT8 candidate is verified again in the next pass when a frame
+/// The overlapped retry: a failed FT8 candidate is verified again in the next pass when a frame
 /// subtracted in this pass lies within this carrier distance (one FT8 signal spans 43.75 Hz)
 /// and overlaps it in time.
 const RETRY_SEPARATION_HZ: f64 = 50.;
@@ -225,7 +225,7 @@ impl Decoder {
         if samples.len() < frame {
             return Ok(());
         }
-        // FT8 runs on the zero-padded residual (#56 Ft8PaddedResidual): frames that run past
+        // FT8 runs on the zero-padded residual (#56 padded residual): frames that run past
         // either window edge are found and subtracted like jt9's, and published only when
         // they lie inside the window to within half a symbol.
         let length = samples.len();
@@ -256,7 +256,7 @@ impl Decoder {
             })
         };
         // FT8 candidates of the last pass whose verification found no word and which a frame
-        // subtracted in that pass overlaps (Ft8RetryOverlapped).
+        // subtracted in that pass overlaps (the overlapped retry).
         let mut retry = Vec::<Candidate>::new();
         // The window's a-priori context is fixed for all its candidates (CL-057-02).
         let a_priori = state.a_priori().clone();
@@ -527,7 +527,7 @@ impl Decoder {
         let (c, (word, kind)) =
             match bitmetrics::observe(physical, c, &self.channel, a_priori, budget).await? {
                 Some(word) => (c, word),
-                // Ft8DataPoint: an FT8 word that fails at the fine point is tried once more at
+                // The data point retry: an FT8 word that fails at the fine point is tried once more at
                 // the nearby point holding the most frame energy, when that point differs.
                 None if mode == Mode::Ft8 => {
                     let Some(alternative) = physical_sync::data_point(physical, c, budget).await?

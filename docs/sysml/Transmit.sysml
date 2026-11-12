@@ -16,9 +16,9 @@ package WstxTransmit {
          Modulator/Modulator.cpp, TxStartPolicy.hpp and widgets/mainwindow.cpp. Its
          ft8code output was checked identical to the pinned beta4 baseline for every
          fixture message (fixtures/transmit/ft8code-vectors.json).
-         Encoding reuses the existing receive payload codebook, CRC-14, LDPC(174,91)
-         generator, Gray map and Costas arrays of WstxOfflineDecode; it adds no
-         second codebook. */
+         Encoding reuses the receive payload codebook, CRC-14, LDPC(174,91) generator,
+         Gray map and Costas arrays of the published protocol (QEX FT4/FT8, sections 2
+         to 5 and appendix A); it adds no second codebook. */
 
     enum def MessageFamily { enum standardCalls; enum portableCalls; enum nonstandard; enum freeText; enum telemetry; enum fieldDay; enum rttyRoundup; enum euVhf; }
     enum def PackRefusal {
@@ -181,7 +181,7 @@ package WstxTransmit {
         assert constraint length { samples12k == waveformSymbols * samplesPerSymbol12k and samples48k == waveformSymbols * samplesPerSymbol48k }
         doc /* Native transmitter convention of gen_ft4wave.f90 as called by
              mainwindow.cpp for FT4 (nsym=103, nsps=4*576, fsample=48000, icmplx=0),
-             not the receive decoder's reconstruction (WstxOfflineDecode quadratures).
+             not the receive decoder's reconstruction (the QEX FT4 waveform).
              Real waveform of (103+2) symbols, unit peak, no lead or tail silence; 48 kHz
              is the native playback rate. Frequency pulse
              p(t)=(erf(k(t+0.5))-erf(k(t-0.5)))/2 with BT 1.0, a three-symbol grid sampled

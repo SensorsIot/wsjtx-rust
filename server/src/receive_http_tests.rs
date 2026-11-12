@@ -5,6 +5,24 @@ use super::*;
 mod native_fixture;
 #[cfg(not(debug_assertions))]
 use native_fixture::{NATIVE_FRAMES, NativeFt8Fixture, TRAILING_SILENT_FRAMES};
+// The test-only model-value reader (Project-Specifics, "Model values read by tests").
+#[cfg(all(windows, not(debug_assertions)))]
+#[allow(dead_code, clippy::duplicate_mod)]
+#[path = "model_values.rs"]
+mod model_values;
+
+/// A value of WstxModemDecode::DecodeBudgets, read from the model.
+#[cfg(all(windows, not(debug_assertions)))]
+fn decode_budget(feature: &str) -> u64 {
+    let name = format!("WstxModemDecode::DecodeBudgets::{feature}");
+    match model_values::Model::load()
+        .number_with_unit(&name)
+        .unwrap_or_else(|e| panic!("model value {e}"))
+    {
+        Some(model_values::Number::Integer(value)) if value >= 0 => value as u64,
+        other => panic!("model value {name}: not a nonnegative integer: {other:?}"),
+    }
+}
 use source::{SampleSource, SourceDescriptor, SourceError, SourcePoll, SourceTiming};
 
 /// Injects only independently verified native packets. Conversion, epoch ACK,
@@ -989,15 +1007,17 @@ fn resource_station_process_delta_and_owner_release() {
             "published_at_stop":published,"release_seconds":release.as_secs_f64(),
             "private_usage_before_stop":during["private_usage"]}));
         assert!(phase != "after-decode" || decoded);
+        let release_max = decode_budget("releaseMaxMs");
         assert!(
-            release <= Duration::from_millis(250),
-            "{phase} {mode}: receive owner release {release:?} > 250ms"
+            release <= Duration::from_millis(release_max),
+            "{phase} {mode}: receive owner release {release:?} > {release_max}ms"
         );
     }
     let final_sample = metrics.sample();
     let idle_private = idle["private_usage"].as_u64().unwrap();
     let peak = final_sample["lifetime_peak_commit"].as_u64().unwrap();
     let delta = peak.saturating_sub(idle_private);
+    let delta_max_mib = decode_budget("processDeltaMaxMiB");
     let power = std::process::Command::new("powercfg")
         .arg("/getactivescheme")
         .output()
@@ -1009,7 +1029,7 @@ fn resource_station_process_delta_and_owner_release() {
     println!(
         "RESOURCE_STATION {}",
         json!({"idle":idle,"final":final_sample,"lifetime_peak_minus_idle_private_bytes":delta,
-            "limit_bytes":96u64*1024*1024,"phases":phases,
+            "limit_bytes":delta_max_mib*1024*1024,"phases":phases,
             "delta_basis":"lifetime peak commit of the whole test process (manager, provider, decoder, harness) minus idle private usage; conservative upper bound",
             "os_version":String::from_utf8_lossy(&os.stdout),"power_scheme":String::from_utf8_lossy(&power.stdout),
             "processor_identifier":std::env::var("PROCESSOR_IDENTIFIER").unwrap_or_default(),
@@ -1021,8 +1041,8 @@ fn resource_station_process_delta_and_owner_release() {
     drop(recording);
     let _ = std::fs::remove_dir_all(dir);
     assert!(
-        delta <= 96 * 1024 * 1024,
-        "station process delta {delta} bytes > 96MiB"
+        delta <= delta_max_mib * 1024 * 1024,
+        "station process delta {delta} bytes > {delta_max_mib}MiB"
     );
 }
 

@@ -71,6 +71,11 @@ package WstxRecordingReceive {
         attribute thinBytesPerSecond : Integer = 3000;
         attribute offBytesPerSecond : Integer = 1000;
         attribute statusDisplayMs : Integer = 2000;
+        attribute pageBytes : Integer = 1536;
+        attribute pageRecords : Integer = 1;
+        attribute pollMs : Integer = 2000;
+        attribute windowFrames : Integer = 360000;
+        attribute advanceFrames : Integer = 180000;
     }
     attribute def DisplayLevels {
         attribute blackDbfs : Integer = -85;

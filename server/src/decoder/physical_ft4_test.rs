@@ -32,7 +32,15 @@ fn qualified_support_geometry_order_and_reset() {
 // Proves: FR-004, CL-007-03.
 #[test]
 fn qualified_support_count_keeps_the_256_257_barrier() {
-    let prior = (0..256)
+    // WstxModemDecode::DecodeBudgets::candidateCap, read from the model.
+    let cap = match crate::model_values::Model::load()
+        .number("WstxModemDecode::DecodeBudgets::candidateCap")
+        .unwrap_or_else(|e| panic!("model value {e}"))
+    {
+        Some(crate::model_values::Number::Integer(cap)) => cap as usize,
+        other => panic!("model value candidateCap: not an integer: {other:?}"),
+    };
+    let prior = (0..cap)
         .map(|i| point(i / 128 * 60480, 200. + 20. * (i % 128) as f64))
         .collect::<Vec<_>>();
     let mut out = vec![];
