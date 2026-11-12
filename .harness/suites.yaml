@@ -333,7 +333,7 @@
 
 - suite: sysml-tools
   cost: 2
-  run: "python -m unittest discover -s tools/sysml/tests -p \"test_[!adr]*.py\" -q"
+  run: "python -m unittest discover -s tools/sysml/tests -p \"test_[!adre]*.py\" -q"
   paths:
   - docs/sysml/
   - tools/sysml.py
@@ -342,7 +342,7 @@
   select:
   - tools/sysml.py
   - tools/sysml/
-  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the SysML tool's own unit tests (test_canonical_authority, test_sysml, test_trace_selection and any new test file not named for the other two suites), which judge the tool on isolated models: selected only when the tool changes (harness#38). No radio or live service."
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the SysML tool's own unit tests (test_canonical_authority, test_sysml, test_trace_selection and any new test file not named for the other three suites), which judge the tool on isolated models: selected only when the tool changes (harness#38). No radio or live service."
 
 - suite: sysml-architecture
   cost: 2
@@ -363,6 +363,42 @@
   - tools/sysml/toolchain.json
   - tools/sysml/tests/test_a
   needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; TC-DOC-005 architecture integrity: each mutation of Architecture.sysml is one full Pilot validation in a bounded pool. Selected by the architecture model and the tool that judges it; the companion models are validated by sysml-documentation (check). No radio or live service."
+
+# TC-DOC-015: the tests of `equivalence` and `identities`, apart from sysml-tools so that a
+# model edit does not run them; about 9 minutes (some 30 Pilot exports, 2 at a time).
+- suite: sysml-equivalence-tests
+  cost: 2
+  run: "python -m unittest discover -s tools/sysml/tests -p \"test_e*.py\" -q"
+  paths:
+  - tools/sysml.py
+  - tools/sysml/
+  select:
+  - tools/sysml.py
+  - tools/sysml/Validate.java
+  - tools/sysml/tests/test_equivalence.py
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the full git history of the checkout (E1 reads 5da7aab02 and its parent, E10 8245ec5f0 and 0e4b4c73a) and git to build temporary repositories. No radio or live service."
+
+# CL-014-17: a commit marked `Model-Move: pure` must not change the meaning of the model.
+# A gate check the operator accepted as project-only (#179 Q6); registration is additive.
+- suite: sysml-equivalence
+  cost: 2
+  run: python tools/sysml.py equivalence --marked
+  paths:
+  - docs/sysml/
+  - tools/sysml.py
+  - tools/sysml/
+  - server/
+  - client/
+  - tests/
+  - fixtures/
+  - docs/harness/
+  - .harness/
+  - README.md
+  select:
+  - docs/sysml/
+  - tools/sysml.py
+  - tools/sysml/
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the full git history of the checkout: a local master ref, every commit of master..HEAD with its first parent, and git archive of each. Each marked commit and its first parent are extracted to a temporary folder and exported once per distinct tree by the Pilot; an unmarked change prints no marked commit. No radio or live service."
 
 - suite: source-model-traces
   cost: 2

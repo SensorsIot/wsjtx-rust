@@ -4,19 +4,26 @@ traces checks catalog and source/model bindings only, and that every test naming
 case is in that case's binding (binding_agreement). check additionally calls the
 pinned Java parser/name resolver/semantic validator. markers lists the ModelNotes markers
 and checks nothing. retired checks the catalog and lists the `@RetiredCase` retirements.
+equivalence compares two revisions of the model by meaning and identities lists the
+identity diff of two revisions (CL-014-17); both only read the repository.
 None executes modeled behavior.
 """
 from __future__ import annotations
 
 import argparse
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
 from pathlib import Path
+import posixpath
 import re
 import stat
 import subprocess
 import sys
+import tarfile
+import tempfile
 import urllib.request
 import urllib.parse
 import zipfile
@@ -920,6 +927,497 @@ def validate(paths: list[Path], cache: Path, inventory: bool = False) -> subproc
     return result
 
 
+# ---- equivalence and identities (CL-014-17, TC-DOC-015) ----
+
+# A qualified name as written in text: two or more segments, each a word or a quoted name.
+QNAME = re.compile(r"(?<![\w':])(?:[A-Za-z_]\w*|'[^'\r\n]+')(?:::(?:[A-Za-z_]\w*|'[^'\r\n]+'))+")
+QNAME_SEGMENT = re.compile(r"(?:[A-Za-z_]\w*|'[^'\r\n]+')(?:::|$)")
+MODEL_PATH = re.compile(r"docs/sysml/[\w./-]*[\w/]")
+LINK = re.compile(r"\]\(\s*<?([^)\s>]+)>?\s*\)")
+# The tracked files at <head> whose model citations `equivalence` checks.
+CITATION_ROOTS = ("server", "client", "tests", "tools", "fixtures", "docs/harness", ".harness", "README.md")
+MOVE_TRAILER = re.compile(r"(?m)^Model-Move:\s*pure\s*$")
+EXPORT_WORKERS = 2
+
+
+class Unreadable(ValueError):
+    """A revision that cannot be compared: exit 2 with the reason."""
+
+
+def git(*args: str) -> str:
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    result = subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, encoding="utf-8",
+                            errors="replace", env=env)
+    if result.returncode:
+        raise Unreadable(f"git {' '.join(args)}: {result.stderr.strip()}")
+    return result.stdout
+
+
+def commit_of(revision: str) -> str:
+    try:
+        return git("rev-parse", "--verify", "--quiet", revision + "^{commit}").strip()
+    except Unreadable:
+        raise Unreadable("unknown revision: " + revision) from None
+
+
+def extract(commit: str, destination: Path, paths=()) -> None:
+    """The tree of `commit` (or only `paths` of it) written below `destination` with `git
+    archive`; links are left out. Nothing in the repository is written."""
+    destination.mkdir(parents=True, exist_ok=True)
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    process = subprocess.Popen(["git", "-C", str(ROOT), "archive", "--format=tar", commit, *paths],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    try:
+        with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
+            for member in archive:
+                if member.isfile() or member.isdir():
+                    archive.extract(member, destination, filter="data")
+    except tarfile.TarError:
+        pass
+    error = process.stderr.read().decode("utf-8", "replace").strip()
+    if process.wait():
+        raise Unreadable(f"git archive {commit} {' '.join(paths)}: {error}")
+
+
+def top_packages(code: str) -> set[str]:
+    """The packages declared at the top level of blanked model text."""
+    matches = list(re.finditer(r"\b(?:(?:standard\s+)?library\s+)?package\s+(\w+|'[^']*')\s*[{;]", code))
+    owners = owning_bodies(code, [match.start() for match in matches])
+    return {match[1] for match in matches if owners[match.start()] == -1}
+
+
+def line_notes(source: str) -> list[str]:
+    """The texts of the line notes (`// ...`) of a model file, in order."""
+    tokens = re.finditer(r'/\*[\s\S]*?\*/|//[^\r\n]*|' + STRING + r'|\'(?:\\.|[^\'\\])*\'|[^/"\']+|.', source)
+    return [token.group()[2:].strip() for token in tokens if token.group().startswith("//")]
+
+
+class Side:
+    """One revision of the model: a commit extracted below a temporary folder, or the
+    working tree (`commit` None), read in place."""
+
+    def __init__(self, label: str, root: Path, commit):
+        self.label, self.root, self.commit = label, root, commit
+        self.models = root / "docs/sysml"
+        files = model_files(self.models) if self.models.is_dir() else {}
+        entry = "Requirements.sysml"
+        self.keys = ([entry] if entry in files else []) + [key for key in files if key != entry]
+        self.paths = [files[key] for key in self.keys]
+        self.sources = {key: files[key].read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+                        for key in self.keys}
+        codes = {key: blanked(source) for key, source in self.sources.items()}
+        self.package_of = {key: file_package(code) for key, code in codes.items()}
+        self.tops = set().union(*(top_packages(code) for code in codes.values())) if codes else set()
+        self.export = None
+
+    def tracked(self) -> list[str]:
+        """The tracked files below the citation roots, as repository paths."""
+        if self.commit:
+            listing = git("ls-tree", "-r", "--name-only", "-z", self.commit, "--", *CITATION_ROOTS)
+        else:
+            listing = git("ls-files", "-z", "--", *CITATION_ROOTS)
+        return sorted(path for path in listing.split("\0") if path)
+
+    def citations(self, tops: set[str]) -> list[tuple[str, int, str, str]]:
+        """(file, line, kind, citation) of each model citation in the tracked files: a
+        qualified name starting with one of `tops`, or a `docs/sysml/...` path."""
+        found = set()
+        for path in self.tracked():
+            file = self.root / path
+            try:
+                if not file.is_file() or file.stat().st_size > 2_000_000:
+                    continue
+                data = file.read_bytes()
+            except OSError:
+                continue
+            if b"\0" in data[:8192]:
+                continue
+            for number, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
+                for match in QNAME.finditer(line):
+                    if match[0].split("::", 1)[0] in tops:
+                        found.add((path, number, "name", match[0]))
+                for match in MODEL_PATH.finditer(line):
+                    found.add((path, number, "path", match[0].rstrip(".")))
+        return sorted(found)
+
+
+def run_export(side: Side, names: list[str], cache: Path, folder: Path) -> dict:
+    """The Pilot export of one side: packages, entries, package-level items and the
+    resolution of `names`. A side that fails the Pilot validation is Unreadable."""
+    java, jar, library = tool_paths(cache)
+    if not side.paths:
+        raise Unreadable(f"{side.label}: no model files below docs/sysml")
+    listing = folder / f"names-{id(side)}.txt"
+    listing.write_text("\n".join(names) + "\n", encoding="utf-8")
+    result = subprocess.run([str(java), "-Xmx1g", "-XX:+UseSerialGC", "-classpath", str(jar),
+                             str(Path(__file__).with_name("sysml") / "Validate.java"), str(library), "--export", str(listing),
+                             *map(str, side.paths)],
+                            capture_output=True, encoding="utf-8", errors="replace", timeout=900)
+    if result.returncode or "OMG Pilot 0.62.0 syntax/name/semantic validation passed" not in result.stdout:
+        messages = [line for line in result.stdout.splitlines() if not line.startswith(("Reading ", "EXPORT\t"))]
+        messages += result.stderr.strip().splitlines()[:5]
+        raise Unreadable(f"{side.label} fails the Pilot validation: " + "; ".join(messages[:5]))
+    export = {"packages": {}, "entries": {}, "items": [], "resolved": {}}
+
+    def facts(rows) -> tuple:
+        return tuple((path, kind, feature, tuple(value) if isinstance(value, list) else value)
+                     for path, kind, feature, value in rows)
+
+    def file_key(index: int) -> str:
+        return side.keys[index] if 0 <= index < len(side.keys) else "?"
+
+    for line in result.stdout.splitlines():
+        if not line.startswith("EXPORT\t"):
+            continue
+        _, kind, body = line.split("\t", 2)
+        data = json.loads(body)
+        if kind == "PACKAGE":
+            export["packages"][data["name"]] = file_key(data["file"])
+        elif kind == "ITEM":
+            export["items"].append({"file": file_key(data["file"]), "facts": facts(data["facts"])})
+        elif kind == "ENTRY":
+            segments = data["key"]
+            key = "::".join(segments)
+            while key in export["entries"]:
+                key += "~"
+            owner = "::".join(segments[:-1]) if len(segments) > 2 else None
+            export["entries"][key] = {"key": key, "rel": "::".join(segments[1:]), "package": segments[0], "owner": owner,
+                                      "file": file_key(data["file"]), "facts": facts(data["facts"])}
+        elif kind == "RESOLVE":
+            export["resolved"][data["name"]] = data["id"]
+    return export
+
+
+class Normal:
+    """Normalises the facts of one side for comparison. `token` maps an entry key to the
+    token its references compare by."""
+
+    def __init__(self, side: Side, token):
+        self.side, self.token = side, token
+
+    def ref(self, value: str) -> str:
+        if value.startswith("M:"):
+            key, separator, path = value[2:].partition("#")
+            return self.token(key) + separator + path
+        return value
+
+    def text(self, body: str, file_key: str) -> str:
+        lines = [line.rstrip() for line in body.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+        rest = [line for line in lines[1:] if line.strip()]
+        indent = min((len(line) - len(line.lstrip()) for line in rest), default=0)
+        body = "\n".join(lines[:1] + [line[indent:] for line in lines[1:]]).strip()
+
+        def link(match) -> str:
+            target = match[1]
+            if re.match(r"[A-Za-z][\w+.-]*:|#", target):
+                return match[0]
+            path, _, anchor = target.partition("#")
+            full = posixpath.normpath(posixpath.join("docs/sysml", posixpath.dirname(file_key),
+                                                     urllib.parse.unquote(path)))
+            model = full[len("docs/sysml/"):] if full.startswith("docs/sysml/") else None
+            resolved = f"package:{self.side.package_of[model]}" if model in self.side.sources else "file:" + full
+            return "](<" + resolved + ">" + ("#" + anchor if anchor else "") + ")"
+
+        def name(match) -> str:
+            target = self.side.export["resolved"].get(match[0])
+            return "<" + self.ref(target) + ">" if target else match[0]
+
+        return QNAME.sub(name, LINK.sub(link, body))
+
+    def facts(self, facts: tuple, file_key: str) -> tuple:
+        return tuple((path, kind, feature,
+                      tuple(self.ref(value) for value in values) if kind == "ref" else
+                      self.text(values, file_key) if kind == "text" else values)
+                     for path, kind, feature, values in facts)
+
+
+def label(fact, facts: tuple = ()) -> str:
+    """The property or relationship kind a differing fact names; a fact of the element
+    itself is named with the element's class, taken from `facts`."""
+    path, kind, feature, _value = fact
+    if path == "" and kind == "kind":
+        return "kind"
+    classes = [step.split("[", 1)[0] for step in path.split("/") if step]
+    if kind == "text":
+        return "doc" if classes and classes[-1] == "Documentation" else "comment"
+    if not classes:
+        own = next((value for step, sort, _feature, value in facts if step == "" and sort == "kind"), None)
+        classes = [own] if own else []
+    return "/".join(classes) + "." + (feature or "kind") if classes else feature or "kind"
+
+
+def summary(facts: tuple) -> str:
+    """A package-level item in one phrase: the class it owns and the start of its text."""
+    owned = next((value for path, kind, _feature, value in facts if kind == "kind" and path.count("/") == 0 and path), None)
+    text = next((value for _path, kind, _feature, value in facts if kind == "text"), "")
+    words = " ".join(text.split())
+    return (owned or facts[0][3]) + (" " + json.dumps(words[:60]) if words else "")
+
+
+def compare(base: Side, head: Side, citations: list) -> tuple[int, list[str]]:
+    """P2 to P6 of CL-014-17 for two exported sides: (exit code, lines)."""
+    entries_b, entries_h = base.export["entries"], head.export["entries"]
+
+    def by_rel(entries):
+        grouped = {}
+        for key, entry in entries.items():
+            grouped.setdefault(entry["rel"], []).append(key)
+        return grouped
+
+    def rel(entries, key: str) -> str:
+        return entries[key]["rel"] if key in entries else key.partition("::")[2]
+
+    def children(entries) -> dict:
+        found = {}
+        for key, entry in entries.items():
+            if entry["owner"]:
+                found.setdefault(entry["owner"], []).append(key)
+        return found
+
+    def deep(entries, members, normal, memo, key):
+        """An element's own facts and those of its named members, by member name: the
+        content same-named elements are paired by (D2)."""
+        if key not in memo:
+            entry = entries[key]
+            nested = sorted((entries[member]["rel"].rsplit("::", 1)[-1], repr(deep(entries, members, normal, memo, member)))
+                            for member in members.get(key, []))
+            memo[key] = (normal.facts(entry["facts"], entry["file"]), tuple(nested))
+        return memo[key]
+
+    loose_b = Normal(base, lambda key: "R:" + rel(entries_b, key))
+    loose_h = Normal(head, lambda key: "R:" + rel(entries_h, key))
+    members_b, members_h, memo_b, memo_h = children(entries_b), children(entries_h), {}, {}
+    rel_b, rel_h = by_rel(entries_b), by_rel(entries_h)
+    pair, missing, added = {}, [], []
+    # Owners first, so that a member prefers the counterpart under its owner's counterpart.
+    for name in sorted(set(rel_b) | set(rel_h), key=lambda name: (len(QNAME_SEGMENT.findall(name)), name)):
+        bases, heads = rel_b.get(name, []), list(rel_h.get(name, []))
+        if len(bases) == 1 and len(heads) == 1:
+            pair[bases[0]] = heads[0]
+            continue
+        for key in bases:
+            content = deep(entries_b, members_b, loose_b, memo_b, key)
+            matches = [other for other in heads if deep(entries_h, members_h, loose_h, memo_h, other) == content]
+            owner = entries_b[key]["owner"]
+            preferred = [other for other in matches if owner is None or entries_h[other]["owner"] == pair.get(owner)]
+            match = (preferred or matches or [None])[0]
+            if match is None:
+                missing.append(key)
+            else:
+                pair[key] = match
+                heads.remove(match)
+        added.extend(heads)
+    paired = set(pair.values())
+    strict_b = Normal(base, lambda key: "M:" + pair[key] if key in pair else "U:" + rel(entries_b, key))
+    strict_h = Normal(head, lambda key: "M:" + key if key in paired else "U:" + rel(entries_h, key))
+    differences, moves, info = [], [], []
+    # A pair whose owner is a named element has paired owners.
+    for key_b, key_h in sorted(pair.items()):
+        owner_b, owner_h = entries_b[key_b]["owner"], entries_h[key_h]["owner"]
+        if owner_b is not None and pair.get(owner_b) != owner_h:
+            b, h = entries_b[key_b], entries_h[key_h]
+            differences.append(f"changed {b['rel']} owner {b['file']} -> {h['file']}")
+    for key in missing:
+        entry = entries_b[key]
+        differences.append(f"missing {entry['rel']} {entry['package']} {entry['file']}")
+    for key in added:
+        entry = entries_h[key]
+        differences.append(f"added {entry['rel']} {entry['package']} {entry['file']}")
+    pairs = Counter()
+    for key_b, key_h in sorted(pair.items()):
+        b, h = entries_b[key_b], entries_h[key_h]
+        facts_b, facts_h = strict_b.facts(b["facts"], b["file"]), strict_h.facts(h["facts"], h["file"])
+        if facts_b != facts_h:
+            index = next((i for i, (x, y) in enumerate(zip(facts_b, facts_h)) if x != y), min(len(facts_b), len(facts_h)))
+            fact = facts_b[index] if index < len(facts_b) else facts_h[index]
+            differences.append(f"changed {b['rel']} {label(fact, facts_b)} {b['file']} -> {h['file']}")
+        if (b["package"], b["file"]) != (h["package"], h["file"]):
+            moves.append(f"moved {b['rel']} {b['package']} {b['file']} -> {h['package']} {h['file']}")
+            pairs[(b["file"], h["file"])] += 1
+    # P3: package-level items as a multiset, whatever package holds them.
+    items = []
+    for side, normal in ((base, strict_b), (head, strict_h)):
+        found = {}
+        for item in side.export["items"]:
+            found.setdefault(normal.facts(item["facts"], item["file"]), []).append(item["file"])
+        items.append(found)
+    count_b = Counter({facts: len(files) for facts, files in items[0].items()})
+    count_h = Counter({facts: len(files) for facts, files in items[1].items()})
+    for word, extra, files in (("missing", count_b - count_h, items[0]), ("added", count_h - count_b, items[1])):
+        for facts, number in sorted(extra.items(), key=lambda pair_: summary(pair_[0])):
+            for file in files[facts][:number]:
+                differences.append(f"{word} package-level {summary(facts)} {file}")
+    # P4: line notes as a multiset over the whole model.
+    notes = []
+    for side in (base, head):
+        found = {}
+        for key, source in side.sources.items():
+            for note in line_notes(source):
+                found.setdefault(note, []).append(key)
+        notes.append(found)
+    count_b = Counter({note: len(files) for note, files in notes[0].items()})
+    count_h = Counter({note: len(files) for note, files in notes[1].items()})
+    for word, extra, files in (("missing", count_b - count_h, notes[0]), ("added", count_h - count_b, notes[1])):
+        for note, number in sorted(extra.items()):
+            for file in files[note][:number]:
+                differences.append(f"{word} note {json.dumps(note)} {file}")
+    # P6: citations outside the model, read at <head>.
+    for path, line, kind, citation in citations:
+        if kind == "name":
+            on_b = base.export["resolved"].get(citation) is not None
+            on_h = head.export["resolved"].get(citation) is not None
+        else:
+            on_b, on_h = (base.root / citation).exists(), (head.root / citation).exists()
+        if on_b and not on_h:
+            differences.append(f"stale-by-change {path}:{line} {citation}")
+        elif not on_b and not on_h:
+            info.append(f"unresolved {path}:{line} {citation}")
+    lines = differences + moves + [f"pair {files[0]} -> {files[1]}: {count}" for files, count in sorted(pairs.items())] + info
+    lines.append(f"{len(differences)} differences; {len(pair)} entries paired, {len(moves)} moved"
+                 if differences else f"equivalent: {len(pair)} entries paired, {len(moves)} moved")
+    return (1 if differences else 0), lines
+
+
+def compare_revisions(pairs: list[tuple[str, object]], cache: Path) -> tuple[list[tuple[int, list[str]]], int]:
+    """P1 for each (base, head) pair, head None for the working tree, with one Pilot export
+    per distinct tree: ([(exit code, lines)], number of exports)."""
+    with tempfile.TemporaryDirectory(prefix="sysml-equivalence-") as folder:
+        folder = Path(folder)
+        sides = {}
+
+        def side_of(revision):
+            if revision is None:
+                if None not in sides:
+                    sides[None] = Side("working tree", ROOT, None)
+                return sides[None]
+            commit = commit_of(revision)
+            tree = git("rev-parse", commit + "^{tree}").strip()
+            if tree not in sides:
+                extract(commit, folder / tree[:16])
+                sides[tree] = Side(revision, folder / tree[:16], commit)
+            return sides[tree]
+
+        resolved = [(side_of(base), side_of(head)) for base, head in pairs]
+        citations = [head.citations(base.tops | head.tops) for base, head in resolved]
+        names = set()
+        for side in sides.values():
+            for source in side.sources.values():
+                names.update(QNAME.findall(source))
+        for found in citations:
+            names.update(citation for _path, _line, kind, citation in found if kind == "name")
+        names = sorted(names)
+        with ThreadPoolExecutor(max_workers=EXPORT_WORKERS) as pool:
+            exports = {id(side): pool.submit(run_export, side, names, cache, folder) for side in sides.values()}
+            for side in sides.values():
+                side.export = exports[id(side)].result()
+        return [compare(base, head, found) for (base, head), found in zip(resolved, citations)], len(sides)
+
+
+def marked(cache: Path) -> tuple[int, list[str]]:
+    """P8: each commit of master..HEAD with the trailer `Model-Move: pure` against its first parent."""
+    log = git("log", "--reverse", "--format=%H %P%x1f%B%x1e", "master..HEAD")
+    commits, lines = [], []
+    for record in log.split("\x1e"):
+        if not record.strip():
+            continue
+        head, _, message = record.strip().partition("\x1f")
+        sha, *parents = head.split()
+        if MOVE_TRAILER.search(message) and parents:
+            commits.append((parents[0], sha))
+            lines.append(f"checked {sha}")
+        else:
+            lines.append(f"skipped {sha} (no Model-Move: pure)")
+    if not commits:
+        return 0, lines + ["no marked commit"]
+    results, exports = compare_revisions(commits, cache)
+    lines.append(f"{exports} exports")
+    failed = []
+    for (_parent, sha), (code, found) in zip(commits, results):
+        lines.append(f"commit {sha}: " + ("equivalent" if code == 0 else "differences"))
+        lines.extend("  " + line for line in found)
+        if code:
+            failed.append(sha)
+    lines.append(f"{len(commits)} marked commits checked; " + (f"differences in {', '.join(failed)}" if failed else "all equivalent"))
+    return (1 if failed else 0), lines
+
+
+def identity_side(directory: Path) -> tuple[dict, dict]:
+    """P7: (identity -> (text, file, package), retired identity -> test) of one side, read
+    from the declarations without validating the tree."""
+    files = model_files(directory) if directory.is_dir() else {}
+    sources = {key: path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n") for key, path in files.items()}
+    codes = {key: blanked(source, strings=False) for key, source in sources.items()}
+    tops = set().union(*(top_packages(blanked(source)) for source in sources.values())) if sources else set()
+
+    def normal(text: str, key: str) -> str:
+        def link(match) -> str:
+            target = match[1].strip("<>")
+            if re.match(r"[A-Za-z][\w+.-]*:|#", target):
+                return match[0]
+            path, separator, anchor = target.partition("#")
+            return "](" + posixpath.normpath(posixpath.join(posixpath.dirname(key), urllib.parse.unquote(path))) + separator + anchor + ")"
+
+        text = re.sub(r"\]\(([^)]+)\)", link, text)
+        return re.sub(r"(?<![\w:'])(\w+)::", lambda match: "" if match[1] in tops else match[0], text)
+
+    entries, dependencies, retired = {}, {}, {}
+    for key in files:
+        source, code = sources[key], codes[key]
+        spans = []
+        for match in DECLARATION.finditer(code):
+            opening = match.end() - 1
+            end = opening + len(declaration_body(code, opening)) + 2
+            spans.append((match.start(), end))
+            entries.setdefault(match[3], (normal(source[match.start():end], key), key, file_package(blanked(source))))
+        for match in re.finditer(r"\bdependency\b[^;{}]*;", code):
+            if any(start <= match.start() < end for start, end in spans):
+                continue
+            origin = re.search(r"\bfrom\s+(?:(?:\w+|'[^']*')::)*'(" + IDENTITY + r")'", match[0])
+            if origin:
+                dependencies.setdefault(origin[1], []).append(" ".join(normal(source[match.start():match.end()], key).split()))
+        for identity, test, _line in file_retirements(key, sources[key]):
+            retired[identity] = test
+    texts = {identity: (text + "\n" + "\n".join(sorted(dependencies.get(identity, []))), key, package)
+             for identity, (text, key, package) in entries.items()}
+    return texts, retired
+
+
+STATUSES = ("unchanged", "moved", "changed", "added", "retired", "removed")
+
+
+def identities(base: str, head) -> tuple[int, list[str]]:
+    """P7: one line per identity of either side, then a count per status."""
+    with tempfile.TemporaryDirectory(prefix="sysml-identities-") as folder:
+        sides = []
+        for name, revision in (("base", base), ("head", head)):
+            if revision is None:
+                sides.append(identity_side(MODELS))
+                continue
+            extract(commit_of(revision), Path(folder) / name, ["docs/sysml"])
+            sides.append(identity_side(Path(folder) / name / "docs/sysml"))
+    (old, _retired_old), (new, retired) = sides
+    lines, counts = [], Counter()
+
+    def order(identity: str):
+        return ("FR", "CL", "TC").index(identity[:2]), identity
+
+    for identity in sorted(set(old) | set(new), key=order):
+        before, after = old.get(identity), new.get(identity)
+        suffix = ""
+        if before and after:
+            status = "changed" if before[0] != after[0] else "unchanged" if before[1:] == after[1:] else "moved"
+        elif after:
+            status = "added"
+        elif identity in retired:
+            status, suffix = "retired", " test " + retired[identity]
+        else:
+            status = "removed"
+        counts[status] += 1
+        lines.append(f"{identity} {status} {before[1] if before else '-'} -> {after[1] if after else '-'}{suffix}")
+    lines.append(f"{len(lines)} identities: " + ", ".join(f"{counts[status]} {status}" for status in STATUSES))
+    return 0, lines
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache-dir", type=Path, default=Path.home() / ".cache/wsjtx-rust/sysml-tools")
@@ -933,11 +1431,32 @@ def main(argv=None):
     commands.add_parser("retired", help="Check the catalog as fingerprints does, then list the retired cases by identity; writes nothing")
     semantic = commands.add_parser("validate", help="Run real semantic validation on ordered files")
     semantic.add_argument("files", nargs="+", type=Path)
+    same = commands.add_parser("equivalence", help="Compare the model of two revisions by meaning (head omitted: the working tree); writes nothing")
+    same.add_argument("--marked", action="store_true", help="each commit of master..HEAD marked Model-Move: pure against its first parent")
+    same.add_argument("base", nargs="?")
+    same.add_argument("head", nargs="?")
+    listed = commands.add_parser("identities", help="List the FR/CL/TC identities of two revisions with their status; writes nothing")
+    listed.add_argument("base")
+    listed.add_argument("head", nargs="?")
     args = parser.parse_args(argv)
     try:
         if args.command == "setup":
             setup(args.cache_dir)
             return 0
+        if args.command in ("equivalence", "identities"):
+            if args.command == "identities":
+                code, lines = identities(args.base, args.head)
+            elif args.marked:
+                if args.base or args.head:
+                    raise Unreadable("--marked takes no revision")
+                code, lines = marked(args.cache_dir)
+            elif not args.base:
+                raise Unreadable("equivalence needs <base> or --marked")
+            else:
+                results, _exports = compare_revisions([(args.base, args.head)], args.cache_dir)
+                code, lines = results[0]
+            print("\n".join(lines))
+            return code
         if args.command == "traces":
             authority(MODELS, FSD)
             entries = canonical_catalog(MODELS, ROOT)
