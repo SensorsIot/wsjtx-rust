@@ -131,11 +131,11 @@ async fn ft8(
     }
     Ok(best)
 }
-/// Ft8DataPoint (#56 slice 4): baseband steps (5 ms) either side of the fine start and
+/// The data point retry (#56 slice 4): baseband steps (5 ms) either side of the fine start and
 /// carrier tweaks around the fine carrier.
 const DATA_POINT_STEPS: isize = 2;
 const DATA_POINT_TWEAKS_HZ: [f64; 3] = [-0.5, 0., 0.5];
-/// Ft8DataPoint: near a fine point whose word failed, the point whose 79 symbols carry the
+/// The data point retry: near a fine point whose word failed, the point whose 79 symbols carry the
 /// most energy, each data symbol in its strongest tone and each Costas symbol in its known
 /// tone. The Costas-only sync power of [`ft8`] sees 21 symbols; this sees all 79, so a weak
 /// frame next to an interferer gets a second, data-weighted estimate. Ties keep the first

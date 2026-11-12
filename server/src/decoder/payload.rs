@@ -210,7 +210,7 @@ fn grid(mut n: u32, six: bool) -> Option<String> {
     }
 }
 /// The WSJT-X 3.3.0-beta5 PACK77_ARRL_SECTIONS (86) and PACK77_RTTY_MULTIPLIERS (171)
-/// in order; unpack and the transmit packer share them (WstxOfflineDecode codebook).
+/// in order; unpack and the transmit packer share them (WstxOfflineDecode::UnpackPayload).
 pub fn arrl_sections() -> &'static [String] {
     static T: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     T.get_or_init(|| {

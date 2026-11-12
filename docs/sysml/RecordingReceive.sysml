@@ -1,5 +1,8 @@
 package WstxRecordingReceive {
     private import ScalarValues::*;
+    private import WstxOfflineDecode::Mode;
+    private import WstxOfflineDecode::Settings;
+    private import WstxOfflineDecode::ResultRecord;
     doc /* Implementation contract from authoritative contract 4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable
          verification companions exist;
          actual run/review/acceptance evidence belongs to issue #6. Existing
@@ -68,6 +71,11 @@ package WstxRecordingReceive {
         attribute thinBytesPerSecond : Integer = 3000;
         attribute offBytesPerSecond : Integer = 1000;
         attribute statusDisplayMs : Integer = 2000;
+        attribute pageBytes : Integer = 1536;
+        attribute pageRecords : Integer = 1;
+        attribute pollMs : Integer = 2000;
+        attribute windowFrames : Integer = 360000;
+        attribute advanceFrames : Integer = 180000;
     }
     attribute def DisplayLevels {
         attribute blackDbfs : Integer = -85;
@@ -192,7 +200,7 @@ package WstxRecordingReceive {
         attribute cancelRequested : Boolean;
         assert constraint progress { processed_frames >= 0 and ((kind == ReceiveKind::spectrum and processed_frames <= 1440000) or (kind == ReceiveKind::live and processed_frames <= (900719925 * 10000000 + 4740991))) }
         doc /* Shared receive lifecycle: recorded spectrum below and continuous live mode
-             through RadioIO/StationDecode. One import OR recorded spectrum OR live receive,
+             through WstxRadioIO/WstxModemDecode. One import OR recorded spectrum OR live receive,
              one worker/no pendingjobs; no CPU/file work holding state/profile lock. New
              generation on import/replay,refuse ceiling not wrap. Cancellation invalidates
              publication before ack;terminal progress remains until nextjob. No TX scope. */
@@ -1095,6 +1103,102 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
     dependency transferOwner from transfer to WstxArchitecture::physicalStation::backend::stations::web;
     dependency browserOwner from present to WstxArchitecture::physicalStation::frontend::browsers;
     dependency sharedInput from SampleBlock to WstxArchitecture::physicalStation::backend::stations::audio;
+    item def DecodeJob :> WstxRecordingReceive::ReceiveJob {
+        attribute :>> kind = WstxRecordingReceive::ReceiveKind::live;
+        attribute settings : Settings;
+        attribute available_count : Integer;
+        attribute search_limited : Boolean;
+        assert constraint boundedProgress {
+            processed_frames >= 0 and processed_frames <= (900719925 * 10000000 + 4740991) and
+            available_count >= 0 and available_count <= 2048
+        }
+        doc /* Existing station receive-job authority, kind=live with immutable mode.
+             One import OR recorded spectrum OR continuous receive; no queue.
+             Source-relative FT8/FT4 windows, reliable live ring and epoch rules12.8.
+             Numerical recorded fixtures have no production receive operation. */
+    }
+    item def LiveTimedResultRecord :> ResultRecord {
+        attribute period_start_utc : String[0..1];
+        attribute dt_seconds : Real[0..1];
+        doc /* Live-only manager extension4.7.4/12.8, native Decode unchanged.
+             Both null without correlated source timing; otherwise nearest nominal
+             period and signed relative seconds via WstxRadioIO::RelativeDecodeTiming.
+             Existing2048-byte live record cap and stricter1024-byte modem cap remain. */
+    }
+    item def ResultPage {
+        attribute v : Integer = 1;
+        attribute correlation : WstxRecordingReceive::Correlation;
+        attribute mode : Mode;
+        attribute 'state' : WstxRecordingReceive::ReceiveState;
+        attribute error : WstxRecordingReceive::ErrorCode[0..1];
+        attribute search_limited : Boolean;
+        attribute first_sequence : Integer;
+        attribute next_sequence : Integer;
+        attribute available_count : Integer;
+        attribute 'next' : Integer;
+        attribute more : Boolean;
+        item records : LiveTimedResultRecord[0..16];
+        attribute latest_decode : WstxRadioIO::LatestDecodePeriod[0..1];
+        assert constraint pageCursor { first_sequence >= 0 and next_sequence >= first_sequence and next_sequence <= (900719925 * 10000000 + 4740991) and available_count == next_sequence - first_sequence and available_count <= 2048 and 'next' >= first_sequence and 'next' <= next_sequence }
+        doc /* Exact12.8 live envelope<=16384bytes,record<=2048bytes; Thinlimit1/page3072.
+             Each record sequence<next_sequence,start_frame<actually captured next_frame.
+             cursor<first=>410cursor_expired,cursor>next=>400,cursor==next=>empty.
+             No file decode operation/snapshot/page endpoint. */
+    }
+    action def AdmitDecode {
+        in source : WstxRecordingReceive::SourceDescriptor[0..1];
+        in settings : Settings;
+        out job : DecodeJob;
+        doc /* Production12.8 live start only; selected-profile auth/Origin/schema,
+             boot/generation/profile-revision and shared receive admission precede capture.
+             Mode immutable. Source absent during opening before first provider ACK;
+             no publication until acknowledged full tuple. Initialstart freshjob/gen,
+             firstsourceACK samejob/gen;
+             subsequent unknownepoch freshsource/job/gen beforeproviderACK and ring reset.
+             Recorded waveforms are internal numerical/integration fixtures, no file API. */
+    }
+    action def LiveWindowSchedule {
+        doc /* Live window schedule (#47, CL-007-05): with a correlated source UTC anchor the
+             shared receive owner completes two windows per period at fixed source-counter
+             residues of the advance: FT8 prompt +13.8 s/15 s of audio (DT -1.7..+0.66 s)
+             and late +15.7 s/15 s (DT +0.2..+2.56 s); FT4 prompt +6.5 s/7.5 s (DT
+             -1.5..+0.96 s) and late +7.9 s/7.5 s (DT -0.1..+2.36 s). Overlapping frames are
+             deduplicated by the modem history. The late window arriving during the prompt
+             decode waits in one slot until that decode completes; any other window arriving
+             during a decode abandons it as an overrun (last_overrun names the newest skipped
+             support). The residues come from the epoch's UTC anchor plus the measured
+             capture-clock offset (CL-007-05): when it moved by more than 50 ms the residues
+             are recomputed and each scheduled window's next completion moves by the signed
+             correction of any size, staying the completion of the same UTC period (no
+             wrap by a period). One moved into the past completes now; coinciding ones
+             complete one after the other in schedule order (prompt, then late); each then
+             returns to its grid, so none is dropped or repeated. A scheduled late window
+             extends its period's view under the same id.
+             Without a correlated anchor the counter grid (30 s/15 s, 15 s/7.5 s) applies. */
+    }
+    action def PublishResults {
+        in job : DecodeJob;
+        in records : ResultRecord[0..2048];
+        out page : ResultPage;
+        doc /* Stationauthority rechecks fullidentity/generation beforeappend. Cancelinvalid
+             beforeack; terminalonlyafterrelease<=250ms; retain marked partials onstop/failure.
+             Newjob/source/restart invalidates oldpages/callbacks. Reliable2048/2MiB live ring;
+             evictionadvancesfirst_sequence, lifetime safecountersneverreset within an epoch.
+             SearchLimited=>failed/decode_limit+search_limited=true,acceptedpartialsretained;
+             accepted cancellation has priority. No invented calls/exception strings.
+             Browser onependingpage,Thinlimit1/starts>=4sbehindexplicitstatus; optional
+             spectrum<=1/2s; two32kbitclients<=3000accountedB/s/direction,status<=2s.
+             No automaticmutationreplay or browsermodem/clockauthority. */
+    }
+    action admitDecode : AdmitDecode;
+    action liveWindowSchedule : LiveWindowSchedule;
+    action publishResults : PublishResults;
+    satisfy WstxRequirements::'CL-007-01' by admitDecode;
+    satisfy WstxRequirements::'CL-007-02' by publishResults;
+    satisfy WstxRequirements::'CL-007-05' by liveWindowSchedule;
+    dependency admissionOwner from admitDecode to WstxArchitecture::physicalStation::backend::stations::receive;
+    dependency publicationOwner from publishResults to WstxArchitecture::physicalStation::backend::stations::web;
+    dependency viewerOwner from publishResults to WstxArchitecture::physicalStation::frontend::browsers;
 
     package IndependentVerification {
         doc /* All cases cost 2 - isolated automated tests on Windows development PC.

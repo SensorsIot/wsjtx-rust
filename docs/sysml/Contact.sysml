@@ -300,7 +300,7 @@ package WstxContact {
              clearDX ~9951, special-op setup ~11352, processMessage ~9143, guiUpdate HWD
              ~8317, Tx watchdog ~14664, on_actionFT4_triggered; DecodedMessageReaction.cpp
              ~250 and ~304; controls-functions-left.adoc). SuperFox stays excluded
-             (WstxOfflineDecode SuperFox exclusion; #24 S5 moved to #77 (phase two)); the station is never
+             (the SuperFox exclusion of WstxModemDecode::AdvanceDecode; #24 S5 moved to #77 (phase two)); the station is never
              the Fox (S6 dropped).
              Choosing. set_activity {activity:"hound"} (no exchange) is a boot setting like
              the other activities, FT8 only: it is refused state_conflict while the station

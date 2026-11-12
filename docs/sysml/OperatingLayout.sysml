@@ -753,7 +753,7 @@ attribute def ActivityOrdering {
              entity distance marked approximate when the contact has no grid. Colours (#50, BandActivityColours) are the WSJT-X
              row backgrounds; the only text mark is WSJT-X's a-priori marker: a record with
              a_priori N shows a small "aN" after its message, outside the message text
-             (#56 slice 5, WstxStationDecode::APrioriHypotheses); worked before (WstxContact::
+             (#56 slice 5, WstxModemDecode::APrioriHypotheses); worked before (WstxContact::
              WorkedBeforeQuery) feeds only the hover text (BandActivityHover); what a slot
              colours (whole row, sender call only, none) and the QSO partner's rows on top
              with their marker and the red stripe follow BandActivityScheme (#50, CL-050-08);
