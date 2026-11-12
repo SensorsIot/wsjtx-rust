@@ -1960,11 +1960,12 @@ impl Owner {
                 inner.run_revision += 1;
                 let run = inner.run.as_mut().expect("checked");
                 let Some(pick) = list.into_iter().next() else {
-                    // WstxStrategy::CqWhenNoTarget: after two fresh publications with nothing
-                    // listed the run calls CQ (#97: a contest strategy too, D11).
-                    if chosen.as_ref().is_some_and(|(_, s)| s.cq_when_idle) {
+                    // WstxStrategy::CqWhenNoTarget: after cq_wait_periods fresh publications
+                    // with nothing listed (either parity) the run calls CQ (CL-097-08); the
+                    // count starts at 0 at Auto on and whenever the run waits again.
+                    if let Some((_, s)) = chosen.as_ref().filter(|(_, s)| s.cq_when_idle) {
                         run.empty_publications += 1;
-                        if run.empty_publications >= 2 {
+                        if u64::from(run.empty_publications) >= s.cq_wait_periods {
                             return self.calling(&mut inner, contact, state);
                         }
                     }

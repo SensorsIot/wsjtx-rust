@@ -275,7 +275,7 @@ pub(crate) struct Strategy {
     pub order: Vec<Criterion>,
     /// The contest id of a contest strategy (WstxContest::ProfileTable).
     pub contest: Option<&'static str>,
-    /// 4 Callers first.
+    /// 4 Calling stations are answered (off: a caller of my call has no rank, CL-097-03).
     pub callers_first: bool,
     /// 5 Leaving a station.
     pub leave: Leave,
@@ -285,6 +285,8 @@ pub(crate) struct Strategy {
     pub busy_pause: bool,
     /// 8 CQ when idle (CqWhenNoTarget).
     pub cq_when_idle: bool,
+    /// 8 The CQ wait (CL-097-08): fresh complete publications with nothing callable, 1..20.
+    pub cq_wait_periods: u64,
     /// 9 Retry pause (QuietTime) in minutes, 1..120.
     pub retry_minutes: u64,
 }
@@ -317,6 +319,7 @@ impl Strategy {
             },
             busy_pause: true,
             cq_when_idle: false,
+            cq_wait_periods: CQ_WAIT_DEFAULT,
             retry_minutes: 10,
         }
     }
@@ -463,8 +466,10 @@ fn date(v: &Value, field: &str) -> Result<u32, Field> {
 fn date_text(d: u32) -> String {
     format!("{:04}-{:02}-{:02}", d / 10000, d / 100 % 100, d % 100)
 }
+/// CL-097-08: the CQ wait of every built-in, and of a schema 4 file written without the key.
+pub(crate) const CQ_WAIT_DEFAULT: u64 = 2;
 /// The exact keys of WstxStrategy::Strategy (schema 4), in the order of the decisions.
-const STRATEGY_KEYS: [&str; 12] = [
+const STRATEGY_KEYS: [&str; 13] = [
     "name",
     "class",
     "bands",
@@ -476,6 +481,7 @@ const STRATEGY_KEYS: [&str; 12] = [
     "tx_move_every",
     "busy_pause",
     "cq_when_idle",
+    "cq_wait_periods",
     "retry_minutes",
 ];
 /// The exact filter keys of class strategy; class contest has only the three lists.
@@ -580,6 +586,10 @@ fn countries_of(
 }
 fn strategy(v: &Value, field: &str, table: Option<&crate::dxcc::Table>) -> Result<Strategy, Field> {
     let f = |k: &str| format!("{field}.{k}");
+    // CL-097-08: a strategy without its CQ wait is refused at that key.
+    if v.is_object() && v.get("cq_wait_periods").is_none() {
+        return Err(f("cq_wait_periods"));
+    }
     exact(v, &STRATEGY_KEYS, field)?;
     let name = v["name"]
         .as_str()
@@ -701,6 +711,7 @@ fn strategy(v: &Value, field: &str, table: Option<&crate::dxcc::Table>) -> Resul
         tx_move_every,
         busy_pause: flag("busy_pause")?,
         cq_when_idle: flag("cq_when_idle")?,
+        cq_wait_periods: bounded(&v["cq_wait_periods"], &f("cq_wait_periods"), 1, 20)?,
         retry_minutes: bounded(&v["retry_minutes"], &f("retry_minutes"), 1, 120)?,
         ..Strategy::base("")
     };
@@ -1032,7 +1043,21 @@ pub(crate) fn upgrade_3_strategy(s: &Value) -> Option<Value> {
         "order":order,"contest":null,"callers_first":s["callers_first"],
         "leave":{"mode":"calls","calls":repetitions,"calls_heard":repetitions.saturating_mul(2)},
         "tx_move_every":{"heard":0,"not_heard":1,"no_reports":2},"busy_pause":true,
-        "cq_when_idle":s["cq_when_no_target"],"retry_minutes":s["quiet_minutes"]}))
+        "cq_when_idle":s["cq_when_no_target"],"cq_wait_periods":CQ_WAIT_DEFAULT,
+        "retry_minutes":s["quiet_minutes"]}))
+}
+/// A schema 4 file: a strategy written without cq_wait_periods reads with the default
+/// (StrategyConfiguration); a PUT always carries the key.
+fn with_cq_wait(configuration: &Value) -> Value {
+    let mut v = configuration.clone();
+    if let Some(list) = v.get_mut("strategies").and_then(Value::as_array_mut) {
+        for s in list {
+            if let Some(o) = s.as_object_mut() {
+                o.entry("cq_wait_periods").or_insert(json!(CQ_WAIT_DEFAULT));
+            }
+        }
+    }
+    v
 }
 /// A schema 3 configuration with every strategy mapped to schema 4.
 fn upgrade_3(configuration: &Value) -> Option<Value> {
@@ -1122,7 +1147,7 @@ impl Strategy {
             "contest":self.contest,"callers_first":self.callers_first,"leave":self.leave.json(),
             "tx_move_every":{"heard":t.heard,"not_heard":t.not_heard,"no_reports":t.no_reports},
             "busy_pause":self.busy_pause,"cq_when_idle":self.cq_when_idle,
-            "retry_minutes":self.retry_minutes})
+            "cq_wait_periods":self.cq_wait_periods,"retry_minutes":self.retry_minutes})
     }
 }
 impl Config {
@@ -1663,6 +1688,8 @@ fn message_states(records: &[Value]) -> HashMap<String, String> {
         })
         .collect()
 }
+/// CL-097-03: why a caller of my call has no rank while Calling stations are answered is off.
+const NOT_ANSWERED: &str = "not answered";
 /// One record's classification before the ranks: the kind or the reason there is none.
 fn classify(
     s: &Strategy,
@@ -1730,6 +1757,10 @@ fn classify(
         return fail(why);
     }
     if caller {
+        // CL-097-03: with Calling stations are answered off a caller gets no rank.
+        if !s.callers_first {
+            return fail(NOT_ANSWERED);
+        }
         return (Some(Kind::Caller), false, "calls my call".to_owned());
     }
     let on = match (s.new_per, st.band.as_deref()) {
@@ -1817,7 +1848,10 @@ pub(crate) fn evaluate_contest(
             .map(|mut v| {
                 if v.kind.is_some() {
                     let caller = v.kind == Some(Kind::Caller);
-                    let fail = off_band.or_else(|| st.lists_fail(s, &v.facts, &states, caller));
+                    // CL-097-03: with Calling stations are answered off a caller gets no rank.
+                    let fail = off_band
+                        .or_else(|| st.lists_fail(s, &v.facts, &states, caller))
+                        .or((caller && !s.callers_first).then_some(NOT_ANSWERED));
                     if let Some(why) = fail {
                         v.kind = None;
                         v.why = if caller && off_band.is_none() {
@@ -2073,7 +2107,7 @@ impl Owner {
                             Some(1) => upgrade_3(&upgrade(&v["configuration"]))?,
                             Some(2) => upgrade_3(&upgrade_2(&v["configuration"])?)?,
                             Some(3) => upgrade_3(&v["configuration"])?,
-                            Some(4) => v["configuration"].clone(),
+                            Some(4) => with_cq_wait(&v["configuration"]),
                             _ => return None,
                         };
                         // #97: a saved name colliding with a built-in reads renamed, never

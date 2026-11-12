@@ -488,6 +488,46 @@ fn rows(list: &[(&str, f64)]) -> Vec<Value> {
         .collect()
 }
 
+// Proves: TC-097-008
+// CL-097-03 for a contest strategy (WW Digi built-in, ContestValueOrder): with Calling stations
+// are answered on the non-dupe caller VK2ABC comes first; off, it has rank null, why "calls my
+// call · not answered", and JA1XYZ is first. The dupe caller K1OLD has no rank either way.
+#[test]
+fn tc_097_008_a_contest_strategy_with_callers_off_ranks_no_caller() {
+    let s = ww();
+    let log = Log::of(
+        &s,
+        Some("JN37"),
+        &[qso("K1OLD", Some("FN20"), "20m", "FT8", IN)],
+    );
+    let records = rows(&[
+        ("CQ WW JA1XYZ PM95", -18.0),
+        ("HB9BLA VK2ABC QF56", -20.0),
+        ("HB9BLA K1OLD FN20", 9.0),
+    ]);
+    let on = crate::strategy::contest_builtins()
+        .iter()
+        .find(|b| b.contest == Some("ww_digi"))
+        .expect("the WW Digi built-in")
+        .clone();
+    let st = contest_station("20m");
+    let ranks = |list: &[Verdict]| -> Vec<(u64, Option<usize>)> {
+        let mut r: Vec<_> = list.iter().map(|v| (v.facts.sequence, v.rank)).collect();
+        r.sort_unstable();
+        r
+    };
+    let list = crate::strategy::evaluate_contest(&on, &s, &records, &st, Some(&log));
+    assert_eq!(ranks(&list), [(0, Some(1)), (1, Some(0)), (2, None)], "on");
+    let off = crate::strategy::Strategy {
+        callers_first: false,
+        ..on
+    };
+    let list = crate::strategy::evaluate_contest(&off, &s, &records, &st, Some(&log));
+    assert_eq!(ranks(&list), [(0, Some(0)), (1, None), (2, None)], "off");
+    let vk = list.iter().find(|v| v.facts.sequence == 1).unwrap();
+    assert_eq!(vk.why, "calls my call \u{b7} not answered");
+}
+
 // Proves: TC-063-006
 #[test]
 fn tc_063_006_verdicts_callable_by_value() {

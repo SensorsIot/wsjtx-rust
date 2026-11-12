@@ -2893,7 +2893,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   const records=[record(0,'CQ K1ABC FN42','K1ABC',1000,'CQ','FN42'),record(1,'CQ NA W1AW FN31','W1AW',1200,'CQ NA','FN31'),record(2,'CQ DL1XYZ JO62','DL1XYZ',1400,'CQ','JO62')];
   // #97 schema 4 (WstxStrategy::Strategy).
   const lists={countries:{include:[],exclude:[]},states:{include:[],exclude:[]},cq_targets:{include:[],exclude:[]}};
-  const strategy={name:'DX first',class:'strategy',bands:null,filters:{new:['dxcc','call'],new_per:'ever',new_means:'not_worked',region:{kind:'dx'},min_snr_db:null,worked_since:{kind:'all'},treat_73_as_cq:false,...lists},order:['most_wanted'],contest:null,callers_first:true,leave:{mode:'calls',calls:4,calls_heard:8},tx_move_every:{heard:0,not_heard:1,no_reports:2},busy_pause:true,cq_when_idle:false,retry_minutes:10};
+  const strategy={name:'DX first',class:'strategy',bands:null,filters:{new:['dxcc','call'],new_per:'ever',new_means:'not_worked',region:{kind:'dx'},min_snr_db:null,worked_since:{kind:'all'},treat_73_as_cq:false,...lists},order:['most_wanted'],contest:null,callers_first:true,leave:{mode:'calls',calls:4,calls_heard:8},tx_move_every:{heard:0,not_heard:1,no_reports:2},busy_pause:true,cq_when_idle:false,cq_wait_periods:2,retry_minutes:10};
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
     view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:4,configuration:{continent:null,active:null,strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[],most_wanted:null,most_wanted_unreadable:false,most_wanted_attribution:'Club Log',builtin_strategies:[],auto:false,strategy_refusal:null};
@@ -2969,7 +2969,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   await page.locator('#se-preview tr').nth(2).waitFor();
   assert.deepEqual(await page.locator('#se-preview tr').evaluateAll(rows=>rows.map(r=>[...r.children].map(c=>c.textContent))),[['#1','CQ DL1XYZ JO62','needed: dxcc · Most Wanted #3'],['#2','CQ K1ABC FN42','needed: new_call'],['—','CQ NA W1AW FN31','CQ NA — not for EU']]);
   // #97 StrategyEditor: the nine decisions in order.
-  assert.deepEqual(await page.locator('#se-body h3').allTextContents(),['1 Band','2 Filters','3 Order','4 Callers first','5 Leaving a station','6 Tx frequency','7 Busy pause','8 CQ when idle','9 Retry pause']);
+  assert.deepEqual(await page.locator('#se-body h3').allTextContents(),['1 Band','2 Filters','3 Order','4 Calling stations are answered','5 Leaving a station','6 Tx frequency','7 Busy pause','8 CQ when idle','9 Retry pause']);
   for(const gone of ['.se-condition','#se-sort','#se-role','#se-switch','#se-skip','#se-callers','[data-alert]','#se-new','[data-goal]','#se-repetitions','#se-quiet'])assert.equal(await page.locator(gone).count(),0,`${gone} is gone`);
   await page.screenshot({path:'test-results/ui-operating/strategy-editor-1366.png'});
   // Phone width: the popup fits without horizontal scrolling (text reflows inside it).
@@ -3130,10 +3130,10 @@ test('TC-063-008 The contest prompt, Auto off marks only, the callable list and 
 // (hand-written here): the five of class strategy, then one contest built-in per contest.
 const noLists=()=>({countries:{include:[],exclude:[]},states:{include:[],exclude:[]},cq_targets:{include:[],exclude:[]}});
 const strategyFilters=(extra={})=>({new:['dxcc'],new_per:'band_mode',new_means:'not_confirmed',region:{kind:'all'},min_snr_db:null,worked_since:{kind:'all'},treat_73_as_cq:true,...noLists(),...extra});
-const strategyOf=(name,{filters={},...extra}={})=>({name,class:'strategy',bands:null,filters:strategyFilters(filters),order:[],contest:null,callers_first:true,leave:{mode:'calls',calls:4,calls_heard:8},tx_move_every:{heard:0,not_heard:1,no_reports:2},busy_pause:true,cq_when_idle:false,retry_minutes:10,...extra});
+const strategyOf=(name,{filters={},...extra}={})=>({name,class:'strategy',bands:null,filters:strategyFilters(filters),order:[],contest:null,callers_first:true,leave:{mode:'calls',calls:4,calls_heard:8},tx_move_every:{heard:0,not_heard:1,no_reports:2},busy_pause:true,cq_when_idle:false,cq_wait_periods:2,retry_minutes:10,...extra});
 const dxccBuiltin=(name,per)=>strategyOf(name,{filters:{new_per:per},order:['most_wanted','snr'],leave:{mode:'until_logged',gone_minutes:10},builtin:true});
 const casualBuiltin=(name,extra={},filters={})=>strategyOf(name,{filters:{new:['call'],new_per:'band',new_means:'not_worked',...filters},order:['snr_bucket','distance'],cq_when_idle:true,builtin:true,...extra});
-const contestBuiltin=(name,contest)=>({name,class:'contest',bands:null,filters:noLists(),order:[],contest,callers_first:true,leave:{mode:'contest',tx_changes:2},tx_move_every:{heard:0,not_heard:2,no_reports:2},busy_pause:false,cq_when_idle:true,retry_minutes:10,builtin:true});
+const contestBuiltin=(name,contest)=>({name,class:'contest',bands:null,filters:noLists(),order:[],contest,callers_first:true,leave:{mode:'contest',tx_changes:2},tx_move_every:{heard:0,not_heard:2,no_reports:2},busy_pause:false,cq_when_idle:true,cq_wait_periods:2,retry_minutes:10,builtin:true});
 const STRATEGY_BUILTINS=[dxccBuiltin('DXCC all','band_mode'),dxccBuiltin('New DXCC on band','band'),dxccBuiltin('New DXCC','ever'),casualBuiltin('Casual'),
   casualBuiltin('POTA/SOTA',{cq_when_idle:false},{worked_since:{kind:'today'},cq_targets:{include:['POTA','SOTA'],exclude:[]}})];
 const BUILTIN_STRATEGIES=[...STRATEGY_BUILTINS,contestBuiltin('WW Digi','ww_digi'),contestBuiltin('FT8 Activity','ft8_activity')];
@@ -3369,7 +3369,12 @@ test('TC-097-014 the editor with the nine decisions and the selector with the sa
   await page.locator('#se-copy').click();
   assert.deepEqual([await page.inputValue('#se-name'),await page.locator('#se-class').textContent()],['DXCC all copy','Strategy']);
   assert.equal(await page.locator('#se-body [id*=class]:is(select,input)').count(),0,'the class is shown, never switchable');
-  assert.deepEqual(await page.locator('#se-body h3').allTextContents(),['1 Band','2 Filters','3 Order','4 Callers first','5 Leaving a station','6 Tx frequency','7 Busy pause','8 CQ when idle','9 Retry pause']);
+  assert.deepEqual(await page.locator('#se-body h3').allTextContents(),['1 Band','2 Filters','3 Order','4 Calling stations are answered','5 Leaving a station','6 Tx frequency','7 Busy pause','8 CQ when idle','9 Retry pause']);
+  // CL-097-01: decision 4's label, decision 8 with the CQ wait, no "default" label anywhere.
+  assert.equal(await page.locator('#se-callers-first').evaluate(e=>e.closest('label').textContent),'Calling stations are answered');
+  assert.equal(await page.locator('#se-cq-wait').evaluate(e=>[...e.closest('.se-options').querySelectorAll('label')].map(l=>l.textContent.trim()).join(' ')),'CQ when idle, after periods with nothing callable');
+  assert.equal(await page.inputValue('#se-cq-wait'),'2','the built-in CQ wait');
+  assert.doesNotMatch(await page.locator('#strategy-editor').evaluate(e=>[e.textContent,...[...e.querySelectorAll('option')].map(o=>o.textContent)].join(' ')),/default/i);
   assert.deepEqual(await page.locator('[data-new]').evaluateAll(l=>l.map(x=>x.closest('label').textContent)),['DXCC entity','Call','Grid','CQ zone (WAZ)','ITU zone','Continent (WAC)','Prefix (WPX)']);
   assert.deepEqual(await page.locator('#se-order select').first().locator('option').allTextContents(),['Most wanted (Club Log rank)','New DXCC','New DXCC on band','New DXCC on band and mode','New call','New call on band','New grid','New grid on band','New CQ zone','New ITU zone','New continent','New prefix','SNR bucket (above 0, -10..0, below -10)','Distance (farthest first)','Hears us first (PSK Reporter)'],'the criteria not yet listed, with their labels');
   assert.equal(await page.locator('#se-then').textContent(),'then SNR');
@@ -3387,7 +3392,7 @@ test('TC-097-014 the editor with the nine decisions and the selector with the sa
   await page.locator('#se-callers-first').uncheck();
   await page.check('input[name=se-leave][value=calls]');await page.locator('#se-leave-calls').fill('3');await page.locator('#se-leave-heard').fill('6');
   await page.selectOption('#se-move-heard','every');await page.selectOption('#se-move-not_heard','nth');await page.locator('#se-move-not_heard-n').fill('3');await page.selectOption('#se-move-no_reports','stay');
-  await page.locator('#se-busy').uncheck();await page.locator('#se-cq').check();await page.locator('#se-retry').fill('15');
+  await page.locator('#se-busy').uncheck();await page.locator('#se-cq').check();await page.locator('#se-cq-wait').fill('5');await page.locator('#se-retry').fill('15');
   await page.screenshot({path:'test-results/ui-operating/strategy97-editor-1366.png'});
   // Save: exactly one PUT, the copy as the schema 4 object written here, key for key.
   let mark=s.requests.filter(r=>r!=='POST /strategy/evaluate').length;
@@ -3395,7 +3400,7 @@ test('TC-097-014 the editor with the nine decisions and the selector with the sa
   assert.deepEqual(s.requests.filter(r=>r!=='POST /strategy/evaluate').slice(mark),['PUT /strategy']);
   const copy={name:'DXCC all copy',class:'strategy',bands:['40m','20m'],filters:{new:['dxcc','call'],new_per:'band',new_means:'not_worked',region:{kind:'selected',continents:['NA','SA']},min_snr_db:-12,worked_since:{kind:'today'},treat_73_as_cq:false,
     countries:{include:[{kind:'country',value:'Japan',bands:['20m']}],exclude:[{kind:'prefix',value:'K',bands:null}]},states:{include:['CA','NY'],exclude:[]},cq_targets:{include:[],exclude:['DX']}},
-    order:['new_dxcc','distance'],contest:null,callers_first:false,leave:{mode:'calls',calls:3,calls_heard:6},tx_move_every:{heard:1,not_heard:3,no_reports:0},busy_pause:false,cq_when_idle:true,retry_minutes:15};
+    order:['new_dxcc','distance'],contest:null,callers_first:false,leave:{mode:'calls',calls:3,calls_heard:6},tx_move_every:{heard:1,not_heard:3,no_reports:0},busy_pause:false,cq_when_idle:true,cq_wait_periods:5,retry_minutes:15};
   assert.deepEqual(s.puts[0].configuration,{continent:null,active:null,strategies:[award,casual,fast,copy],ignore_calls:[],session_ignore_minutes:30},'Save never selects');
   // The contest strategy: its contest read-only, only the three lists, ranked by the contest.
   await page.selectOption('#se-which',{label:'WW Digi fast'});
@@ -3806,13 +3811,13 @@ test('TC-039-006 Settings > General Most Wanted: one button beside the date, a f
   await page.screenshot({path:'test-results/ui-operating/most-wanted-1366.png'});
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-042-01; TC-042-001 the editor offers the goals and the actual isolated station
+// Proves: CL-042-01; TC-042-001 the editor offers what must be new and the actual isolated station
 // accepts and keeps the saved draft; Save does not start anything. Expected values written here.
-test('TC-042-001 Editor offers the goals and the station saves them unselected',{timeout:40000},async t=>{
+test('TC-042-001 Editor offers what must be new and the station saves it unselected',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
   await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
-  // #97: a new strategy is a duplicate (here of "DXCC all", the first built-in); "What must be new?".
+  // A new strategy is a duplicate (here of "DXCC all", the first built-in); "What must be new?".
   assert.equal(await page.inputValue('#se-name'),'DXCC all');
   await page.locator('#se-copy').click();
   assert.deepEqual(await page.locator('.se-goals label').evaluateAll(l=>l.map(x=>x.textContent)),['DXCC entity','Call','Grid','CQ zone (WAZ)','ITU zone','Continent (WAC)','Prefix (WPX)']);
@@ -5268,4 +5273,81 @@ test('TC-110-005 (d) a refused Auto Seq change leaves the box showing the statio
   await page.waitForFunction(()=>document.querySelector('#contact-result').textContent==='Auto sequence: refused · storage_unavailable',null,{timeout:10000});
   assert.deepEqual([await page.locator('#contact-auto').isChecked(),await page.evaluate(()=>window.wstxContact.snapshot().settings.auto_seq)],[true,true],'(d) Auto Seq ticked again');
   assert.deepEqual(errors,[]);
+});
+// Proves: TC-097-019 (oracle: lists A and B of the issue, the three searches as the case words
+// them; no browser). It reads docs/sysml/*.sysml: (1) the doc bodies list A rewrites into settings or
+// ranking text carry no match of P1, P2 or P3 (P3 ignoring case); (2) no file has the old setting
+// vocabulary outside the kept texts named below; (3) no file has a "#97" note or label. Each hit is
+// reported as file:line and the matched text.
+test('TC-097-019 the model carries no superseded wording',async()=>{
+  const dir=path.join(__dirname,'..','docs','sysml');
+  const files={};
+  for(const f of (await fs.readdir(dir)).filter(f=>f.endsWith('.sysml')))files[f]=await fs.readFile(path.join(dir,f),'utf8');
+  const quote=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  // An element's own doc: the first doc comment after its declaration.
+  const doc=(file,name)=>{
+    const text=files[file],m=new RegExp(`\\bdef\\s+${quote(name)}\\b|\\b(?:requirement|verification)\\s+'${quote(name)}'`).exec(text);
+    assert.ok(m,`${file}: ${name} not found`);
+    const s=text.indexOf('doc /*',m.index),e=text.indexOf('*/',s);
+    assert.ok(s>=0&&e>s,`${file}: ${name} has no doc`);
+    return {file,s,e:e+2};
+  };
+  // The package doc: its text before D1 (head) and its decision lines D<n>.
+  const packageDoc=file=>{const text=files[file],s=text.indexOf('doc /*');return {s,e:text.indexOf('*/',s)+2};};
+  const decisions=file=>{
+    const text=files[file],p=packageDoc(file),re=/^[ \t]*D(\d+) /gm,list=[];let m;
+    re.lastIndex=p.s;
+    while((m=re.exec(text))&&m.index<p.e)list.push([Number(m[1]),m.index]);
+    return {p,list};
+  };
+  const decision=(file,n)=>{
+    const {p,list}=decisions(file),i=list.findIndex(([k])=>k===n);
+    assert.ok(i>=0,`${file}: D${n} not found`);
+    return {file,s:list[i][1],e:i+1<list.length?list[i+1][1]:p.e};
+  };
+  const head=file=>{const {p,list}=decisions(file);return {file,s:p.s,e:list.length?list[0][1]:p.e};};
+  // Every match of re inside the span, as file:line: text; keep(index) filters by offset.
+  const hits=(span,re,keep=()=>true)=>{
+    const text=files[span.file],out=[],g=new RegExp(re.source,re.flags+'g');
+    for(const m of text.slice(span.s,span.e).matchAll(g)){
+      const at=span.s+m.index;
+      if(keep(at))out.push(`${span.file}:${text.slice(0,at).split('\n').length}: ${m[0]}`);
+    }
+    return out;
+  };
+  // (1) The rewritten elements carry no run vocabulary.
+  const P1=/\b(run|runs|run's)\b|StrategyRun|ManualIntervention|S&P|[Pp]ounce|policy run|select_row|enable_tx/;
+  const P2=/(strategy|contest)( strategy)? (selects|calls|answers|leaves|arms|transmits|starts)/;
+  const P3=/#97 replaces|it replaces|which replaces|formerly|\(target\)|until delivered|#97( \([^)]*\))?:/i;
+  const S='Strategy.sysml',C='Contest.sysml',R='Requirements.sysml';
+  const scope=[
+    ...[1,2,3,15,19].map(n=>decision(S,n)),
+    ...['StrategyClass','NewWhat','NewPer','ValueCriterion','Needed','LeaveMode','PskCase','Strategy','StrategyBands','CountryList','UsStateFilter','UsStateOf','CqTargetList','BuiltinStrategies','StrategyConfiguration','NewNeeded','CallerOfMyCall','Candidate','ValueOrder','Verdict','StrategyEditor'].map(n=>doc(S,n)),
+    head(C),decision(C,1),decision(C,11),
+    ...['ContestSelection','ContestPrompt','ContestValueOrder','ContestView'].map(n=>doc(C,n)),
+    ...['CL-039-01','CL-039-02','CL-039-04','CL-039-11','CL-042-01','CL-063-03'].map(n=>doc(R,n)),
+  ];
+  assert.deepEqual(scope.flatMap(span=>[P1,P2,P3].flatMap(re=>hits(span,re))),[],'(1) run vocabulary in a rewritten element');
+  // (2) No old setting vocabulary anywhere, except the kept texts: the refused-keys sentences of
+  // WstxStrategy::Strategy and WstxContest::ContestSelection, StrategyConfiguration's upgrade text,
+  // TC-097-001 and TC-097-002.
+  const OLD=/S&P|operation "sp"|\bsp:|[Rr]epetitions before leaving|cq_when_no_target|CQ when no target|quiet_minutes|GoalNeeded|enum def Goal|always answered|Callers of my call first|award strateg|class award/;
+  const sentence=(span,lead,end)=>{
+    const text=files[span.file],s=text.indexOf(lead,span.s);
+    assert.ok(s>=0&&s<span.e,`${span.file}: the kept text "${lead}" not found`);
+    const e=end?text.indexOf(end,s):span.e;
+    assert.ok(e>s&&e<=span.e,`${span.file}: the end of the kept text "${lead}" not found`);
+    return {file:span.file,s,e};
+  };
+  const kept=[
+    sentence(doc(S,'Strategy'),'Nothing else exists:'),
+    sentence(doc(S,'StrategyConfiguration'),'Upgrade: a file of schema_version 1','Names: in every schema'),
+    sentence(doc(C,'ContestSelection'),'The keys operation,','null or absent'),
+    doc(R,'TC-097-001'),doc(R,'TC-097-002'),
+  ];
+  const outside=(file,i)=>!kept.some(k=>k.file===file&&i>=k.s&&i<k.e);
+  const old=Object.keys(files).flatMap(file=>hits({file,s:0,e:files[file].length},OLD,at=>outside(file,at)));
+  assert.deepEqual(old,[],'(2) old setting vocabulary');
+  // (3) No "#97" note or label anywhere.
+  assert.deepEqual(Object.keys(files).flatMap(file=>hits({file,s:0,e:files[file].length},/#97( \([^)]*\))?:/)),[],'(3) a #97 note or label');
 });

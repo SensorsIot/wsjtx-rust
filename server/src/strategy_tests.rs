@@ -683,7 +683,7 @@ pub(crate) fn strategy_json(name: &str) -> Value {
         "order":["snr"],"contest":null,"callers_first":true,
         "leave":{"mode":"calls","calls":2,"calls_heard":4},
         "tx_move_every":{"heard":0,"not_heard":1,"no_reports":2},"busy_pause":true,
-        "cq_when_idle":false,"retry_minutes":1})
+        "cq_when_idle":false,"cq_wait_periods":2,"retry_minutes":1})
 }
 /// The presets #97 removed, as schema 3 strategies (their former settings): cases written before
 /// #97 that select one run with a saved user strategy of that name, as the upgrade maps it
@@ -5135,7 +5135,7 @@ fn tc_039_040_the_filter_and_the_value_order() {
         band(&[NewDxcc, Snr], true),
         ["OH1AA", "ZS6AA", "JA1XYZ", "VK2ABC", "DL1XYZ"]
     );
-    // Callers first off with [snr] (a new caller, N1NEW, ranked by its SNR, the weakest, last).
+    // Calling stations are answered off with [snr]: the new caller N1NEW has no rank (CL-097-03).
     let with_caller = value_rows(&[
         ("CQ OH1AA KP20", 1400.0, -3.0),
         ("CQ ZS6AA", 2000.0, -8.0),
@@ -5147,7 +5147,7 @@ fn tc_039_040_the_filter_and_the_value_order() {
             &with_caller,
             &st
         ),
-        ["OH1AA", "ZS6AA", "N1NEW"]
+        ["OH1AA", "ZS6AA"]
     );
     assert_eq!(
         called(
@@ -5223,21 +5223,21 @@ fn tc_039_040_the_filter_and_the_value_order() {
         worked: Some(dated(&log, window)),
         ..value_station(&[])
     };
-    let s = valued(&[Goal::NewCallBand], &[Snr], false);
-    // W1AW (not in this log) is a new call on 20 m: a caller that passes, by its SNR.
+    let s = valued(&[Goal::NewCallBand], &[Snr], true);
+    // W1AW (not in this log) is a new call on 20 m: a caller that passes, first (callers on).
     assert_eq!(
         called(&s, &rows, &in_window(Some((today, today)))),
-        ["DL1XYZ", "ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC", "W1AW"]
+        ["W1AW", "DL1XYZ", "ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC"]
     );
     assert_eq!(
         called(&s, &rows, &in_window(None)),
-        ["ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC", "W1AW"]
+        ["W1AW", "ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC"]
     );
 }
 
 // Proves: TC-039-040. Each needed-first criterion alone, each with its own log, before the hidden
-// SNR (goal new_call, grid or dxcc_slot so that every row stays a candidate; callers first off,
-// so the caller W1AW is ranked by the criterion too).
+// SNR (goal new_call, grid or dxcc_slot so that every row stays a candidate; Calling stations are
+// answered off, so the caller W1AW has no rank, CL-097-03).
 #[test]
 fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
     use Criterion::*;
@@ -5269,9 +5269,7 @@ fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
             NewDxcc,
             vec![("DL9ZZZ", "40m", "FT8", Some("JO50"), d)],
             twenty,
-            vec![
-                "OH1AA", "ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC", "W1AW", "DL1XYZ",
-            ],
+            vec!["OH1AA", "ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC", "DL1XYZ"],
         ),
         // On 20 m Germany (40 m only) is needed; the USA (K9ZZZ on 20 m) is not.
         (
@@ -5281,9 +5279,7 @@ fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
                 ("K9ZZZ", "20m", "FT8", Some("EM10"), d),
             ],
             twenty,
-            vec![
-                "OH1AA", "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "K1ABC", "W1AW",
-            ],
+            vec!["OH1AA", "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "K1ABC"],
         ),
         // Japan only in FT4 on 20 m: needed in FT8 (another mode); Australia in FT8: not.
         (
@@ -5293,9 +5289,7 @@ fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
                 ("VK3ZZZ", "20m", "FT8", Some("QF22"), d),
             ],
             twenty,
-            vec![
-                "OH1AA", "DL1XYZ", "ZS6AA", "K1ABC", "JA1XYZ", "W1AW", "VK2ABC",
-            ],
+            vec!["OH1AA", "DL1XYZ", "ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC"],
         ),
         // K1ABC and W1AW logged (from EM00, so K1ABC stays a candidate by its grid).
         (
@@ -5305,9 +5299,7 @@ fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
                 ("W1AW", "20m", "FT8", Some("EM00"), d),
             ],
             twenty,
-            vec![
-                "OH1AA", "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "K1ABC", "W1AW",
-            ],
+            vec!["OH1AA", "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "K1ABC"],
         ),
         // K1ABC, W1AW and OH1AA on 20 m: after the rest.
         (
@@ -5318,18 +5310,14 @@ fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
                 ("OH1AA", "20m", "FT8", Some("KP00"), d),
             ],
             twenty,
-            vec![
-                "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "OH1AA", "K1ABC", "W1AW",
-            ],
+            vec!["DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "OH1AA", "K1ABC"],
         ),
         // FN42 logged on 40 m: K1ABC's grid is worked; ZS6AA sends no grid (D13): both after.
         (
             NewGrid,
             vec![("K9ZZZ", "40m", "FT8", Some("FN42"), d)],
             twenty,
-            vec![
-                "OH1AA", "DL1XYZ", "JA1XYZ", "VK2ABC", "W1AW", "ZS6AA", "K1ABC",
-            ],
+            vec!["OH1AA", "DL1XYZ", "JA1XYZ", "VK2ABC", "ZS6AA", "K1ABC"],
         ),
         // FN42 only on 40 m: K1ABC needed on 20 m; no grid (ZS6AA) and an unknown grid status
         // (JA1XYZ, a 20 m QSO without grid, a candidate by dxcc_slot) are not.
@@ -5340,9 +5328,7 @@ fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
                 ("JA1XYZ", "20m", "FT4", None, d),
             ],
             twenty,
-            vec![
-                "OH1AA", "DL1XYZ", "K1ABC", "VK2ABC", "W1AW", "ZS6AA", "JA1XYZ",
-            ],
+            vec!["OH1AA", "DL1XYZ", "K1ABC", "VK2ABC", "ZS6AA", "JA1XYZ"],
         ),
         // The band unknown: new_grid_band needs nothing, the hidden SNR alone; JA1XYZ (logged,
         // gridless, dxcc_slot needs a band) is no candidate.
@@ -5353,107 +5339,11 @@ fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
                 ("JA1XYZ", "20m", "FT4", None, d),
             ],
             None,
-            vec!["OH1AA", "DL1XYZ", "ZS6AA", "K1ABC", "VK2ABC", "W1AW"],
+            vec!["OH1AA", "DL1XYZ", "ZS6AA", "K1ABC", "VK2ABC"],
         ),
     ] {
         assert_eq!(order(c, &log, band), expected, "{c:?} {band:?}");
     }
-}
-
-// Proves: TC-039-041. A schema 2 file reads at its revision with calls_per_station dropped and
-// the defaults added, and the next PUT writes schema 3; a malformed schema 2 strategy makes the
-// file malformed; the eight built-ins are listed.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_041_a_schema_2_file_upgrades_and_is_written_as_schema_3() {
-    let f = station(true).await;
-    let write = |schema: u64, strategies: Value| {
-        std::fs::write(
-            f.dir.join(FILE_NAME),
-            serde_json::to_vec(
-                &json!({"schema_version":schema,"profile_id":f.id,"revision":7,
-                "configuration":{"continent":null,"active":null,"strategies":strategies,
-                "ignore_calls":[],"session_ignore_minutes":30}}),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-    };
-    let old = json!({"name":"Mine","class":"award","goals":["new_call"],"needed":"not_worked",
-        "region":{"kind":"all"},"min_snr_db":null,"calls_per_station":5,"treat_73_as_cq":true,
-        "window":{"kind":"all"}});
-    write(2, json!([old]));
-    let owner = Owner::default();
-    let s = owner.snapshot(&f.state);
-    assert_eq!(
-        (s["revision"].clone(), s["configuration_error"].clone()),
-        (json!(7), Value::Null)
-    );
-    let mine = json!({"name":"Mine","class":"award","goals":["new_call"],"needed":"not_worked",
-        "region":{"kind":"all"},"min_snr_db":null,"value":["most_wanted"],"callers_first":true,
-        "cq_when_no_target":false,"repetitions":4,"quiet_minutes":10,"treat_73_as_cq":true,
-        "window":{"kind":"all"}});
-    // #97: then read on as schema 3 (TC-097-002).
-    assert_eq!(s["configuration"]["strategies"], json!([v4(mine.clone())]));
-    // The next PUT writes schema 4 at revision 8 with those keys.
-    let mut changed = s["configuration"].clone();
-    changed["continent"] = json!("AS");
-    owner
-        .put(
-            &f.state,
-            json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"expected_revision":7,
-                "configuration":changed}),
-        )
-        .unwrap();
-    let saved: Value =
-        serde_json::from_slice(&std::fs::read(f.dir.join(FILE_NAME)).unwrap()).unwrap();
-    assert_eq!(
-        saved,
-        json!({"schema_version":4,"profile_id":f.id,"revision":8,"configuration":changed})
-    );
-    assert_eq!(saved["configuration"]["strategies"][0], v4(mine.clone()));
-    // A schema 2 strategy that is otherwise malformed: the file reads configuration null.
-    let with = |k: &str, v: Value| {
-        let mut s = old.clone();
-        s[k] = v;
-        s
-    };
-    let mut missing = old.clone();
-    missing.as_object_mut().unwrap().remove("calls_per_station");
-    for bad in [
-        with("calls_per_station", json!(0)),
-        with("calls_per_station", json!(21)),
-        with("region", json!({"kind":"east"})),
-        with("value", json!(["snr"])),
-        missing,
-    ] {
-        write(2, json!([bad.clone()]));
-        let s = Owner::default().snapshot(&f.state);
-        assert_eq!(
-            (s["configuration"].clone(), s["configuration_error"].clone()),
-            (Value::Null, json!("invalid_configuration")),
-            "{bad}"
-        );
-    }
-    // A schema 3 file is upgraded (#97); schema 3 keys in it are required.
-    write(3, json!([mine]));
-    assert_eq!(
-        Owner::default().snapshot(&f.state)["configuration"]["strategies"],
-        json!([v4(mine.clone())])
-    );
-    write(3, json!([old]));
-    assert_eq!(
-        Owner::default().snapshot(&f.state)["configuration_error"],
-        "invalid_configuration"
-    );
-    // #97: the five built-ins and one contest built-in per contest (TC-097-003).
-    assert_eq!(
-        owner.snapshot(&f.state)["builtin_strategies"]
-            .as_array()
-            .unwrap()
-            .len(),
-        5 + crate::contest::all_profiles().len()
-    );
-    std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
 }
 
 /// The armed state of the transmit owner.

@@ -18,7 +18,7 @@ fn contest_json(name: &str) -> Value {
         "order":[],"contest":"ww_digi","callers_first":true,
         "leave":{"mode":"contest","tx_changes":2},
         "tx_move_every":{"heard":0,"not_heard":2,"no_reports":2},"busy_pause":false,
-        "cq_when_idle":true,"retry_minutes":10})
+        "cq_when_idle":true,"cq_wait_periods":2,"retry_minutes":10})
 }
 fn configuration(strategies: Value) -> Value {
     json!({"continent":null,"active":null,"strategies":strategies,"ignore_calls":[],
@@ -75,7 +75,7 @@ fn tc_097_001_schema_4_every_key_at_its_bounds_and_one_refusal_per_field() {
         "order":order,"contest":null,"callers_first":false,
         "leave":{"mode":"calls","calls":20,"calls_heard":40},
         "tx_move_every":{"heard":20,"not_heard":0,"no_reports":20},"busy_pause":false,
-        "cq_when_idle":true,"retry_minutes":120});
+        "cq_when_idle":true,"cq_wait_periods":20,"retry_minutes":120});
     let full = configuration(json!([s0, contest_json("WW fast")]));
     let body = json!({"v":1,"profile_id":profile::new_uuid().unwrap(),
         "boot_id":profile::new_uuid().unwrap(),"expected_revision":0,"configuration":full});
@@ -96,6 +96,8 @@ fn tc_097_001_schema_4_every_key_at_its_bounds_and_one_refusal_per_field() {
         let mut s = strategy_json("A");
         s["leave"] = leave.clone();
         s["retry_minutes"] = json!(retry);
+        // CL-097-08: the CQ wait at its lower bound (20, the upper, is strategy 0 above).
+        s["cq_wait_periods"] = json!(1);
         s["tx_move_every"] = json!({"heard":0,"not_heard":0,"no_reports":0});
         let c = configuration(json!([s]));
         assert_eq!(parse_config(&c, None).map(|c| c.json()), Ok(c), "{leave}");
@@ -265,6 +267,19 @@ fn tc_097_001_schema_4_every_key_at_its_bounds_and_one_refusal_per_field() {
     );
     refuse(&set0(&["retry_minutes"], json!(0)), &f0("retry_minutes"));
     refuse(&set0(&["retry_minutes"], json!(121)), &f0("retry_minutes"));
+    // CL-097-08: the CQ wait is an integer 1..20, and a strategy always carries it.
+    for bad in [json!(0), json!(21), json!("2"), Value::Null] {
+        refuse(&set0(&["cq_wait_periods"], bad), &f0("cq_wait_periods"));
+    }
+    refuse(
+        &|c: &mut Value| {
+            c["strategies"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("cq_wait_periods");
+        },
+        &f0("cq_wait_periods"),
+    );
     // The contest strategy (strategies[1]).
     let set1 = |path: &[&str], v: Value| {
         let path: Vec<String> = path.iter().map(|s| (*s).to_owned()).collect();
@@ -357,7 +372,7 @@ fn mine_v4() -> Value {
         "order":["new_dxcc_band_mode","snr"],"contest":null,"callers_first":true,
         "leave":{"mode":"calls","calls":5,"calls_heard":10},
         "tx_move_every":{"heard":0,"not_heard":1,"no_reports":2},"busy_pause":true,
-        "cq_when_idle":true,"retry_minutes":15})
+        "cq_when_idle":true,"cq_wait_periods":2,"retry_minutes":15})
 }
 fn schema_3(name: &str, goals: Value) -> Value {
     json!({"name":name,"class":"award","goals":goals,"needed":"not_worked",
@@ -470,6 +485,95 @@ async fn tc_097_002_a_schema_3_file_upgrades_key_by_key_and_renames_built_in_nam
     }
 }
 
+// Proves: TC-097-002
+// The schema 2 and schema 3 store cases, and a schema 4 file written without cq_wait_periods.
+// "Mine" in schema 4 is written by hand from the upgrade table of StrategyConfiguration (schema 2:
+// calls_per_station dropped, the schema 3 defaults added; schema 3: key by key, with the CQ wait 2
+// of CL-097-08); the next PUT writes schema 4 at the next revision.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_002_schema_2_and_4_files_and_the_cq_wait_default() {
+    let f = station(true).await;
+    let write = |schema: u64, strategies: Value| {
+        std::fs::write(
+            f.dir.join(FILE_NAME),
+            serde_json::to_vec(
+                &json!({"schema_version":schema,"profile_id":f.id,"revision":7,
+                "configuration":configuration(strategies)}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    };
+    let read = || Owner::default().snapshot(&f.state);
+    let old = json!({"name":"Mine","class":"award","goals":["new_call"],"needed":"not_worked",
+        "region":{"kind":"all"},"min_snr_db":null,"calls_per_station":5,"treat_73_as_cq":true,
+        "window":{"kind":"all"}});
+    let mine = json!({"name":"Mine","class":"strategy","bands":null,
+        "filters":{"new":["call"],"new_per":"ever","new_means":"not_worked",
+            "region":{"kind":"all"},"min_snr_db":null,"worked_since":{"kind":"all"},
+            "treat_73_as_cq":true,"countries":empty(),"states":empty(),"cq_targets":empty()},
+        "order":["most_wanted"],"contest":null,"callers_first":true,
+        "leave":{"mode":"calls","calls":4,"calls_heard":8},
+        "tx_move_every":{"heard":0,"not_heard":1,"no_reports":2},"busy_pause":true,
+        "cq_when_idle":false,"cq_wait_periods":2,"retry_minutes":10});
+    // Schema 2: read at its revision, key by key.
+    write(2, json!([old]));
+    let s = read();
+    assert_eq!(
+        (s["revision"].clone(), s["configuration_error"].clone()),
+        (json!(7), Value::Null)
+    );
+    assert_eq!(s["configuration"]["strategies"], json!([mine]));
+    // The next PUT writes schema 4 at revision 8.
+    let mut changed = s["configuration"].clone();
+    changed["continent"] = json!("AS");
+    let p = put(&f, json!(7), changed.clone()).await;
+    assert_eq!(p.status, StatusCode::OK, "{}", p.json);
+    let saved: Value =
+        serde_json::from_slice(&std::fs::read(f.dir.join(FILE_NAME)).unwrap()).unwrap();
+    assert_eq!(
+        saved,
+        json!({"schema_version":4,"profile_id":f.id,"revision":8,"configuration":changed})
+    );
+    // A schema 2 strategy otherwise malformed: the file reads configuration null.
+    let with = |k: &str, v: Value| {
+        let mut s = old.clone();
+        s[k] = v;
+        s
+    };
+    let mut missing = old.clone();
+    missing.as_object_mut().unwrap().remove("calls_per_station");
+    for bad in [
+        with("calls_per_station", json!(0)),
+        with("calls_per_station", json!(21)),
+        with("region", json!({"kind":"east"})),
+        with("value", json!(["snr"])),
+        missing,
+    ] {
+        write(2, json!([bad.clone()]));
+        let s = read();
+        assert_eq!(
+            (s["configuration"].clone(), s["configuration_error"].clone()),
+            (Value::Null, json!("invalid_configuration")),
+            "{bad}"
+        );
+    }
+    // A schema 3 file needs its schema 3 keys.
+    write(3, json!([old]));
+    assert_eq!(read()["configuration_error"], "invalid_configuration");
+    // Schema 4 without cq_wait_periods (a test build's file) reads 2; with it, its value.
+    let mut without = mine.clone();
+    without.as_object_mut().unwrap().remove("cq_wait_periods");
+    let mut five = mine.clone();
+    five["name"] = json!("Five");
+    five["cq_wait_periods"] = json!(5);
+    write(4, json!([without, five.clone()]));
+    let s = read();
+    assert_eq!(s["configuration_error"], Value::Null);
+    assert_eq!(s["configuration"]["strategies"], json!([mine, five]));
+    std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
+}
+
 /// The operator's table on #97 (BuiltinStrategies), written here.
 fn builtin_table() -> Vec<Value> {
     let base =
@@ -480,7 +584,7 @@ fn builtin_table() -> Vec<Value> {
                 "countries":empty(),"states":empty(),"cq_targets":empty()},
             "order":order,"contest":null,"callers_first":true,"leave":leave,
             "tx_move_every":{"heard":0,"not_heard":1,"no_reports":2},"busy_pause":true,
-            "cq_when_idle":cq,"retry_minutes":10})
+            "cq_when_idle":cq,"cq_wait_periods":2,"retry_minutes":10})
         };
     let gone = json!({"mode":"until_logged","gone_minutes":10});
     let calls = json!({"mode":"calls","calls":4,"calls_heard":8});
@@ -538,6 +642,13 @@ async fn tc_097_003_the_five_built_ins_the_contest_built_ins_and_active() {
         e["builtin"] = json!(true);
     }
     assert_eq!(listed, expected, "five built-ins, then one per contest");
+    // CL-097-01: DXCC all first, every built-in with CQ wait 2, none called the default.
+    assert_eq!(listed[0]["name"], "DXCC all");
+    for b in &listed {
+        assert_eq!(b["cq_wait_periods"], 2, "{}", b["name"]);
+        let name = b["name"].as_str().unwrap().to_ascii_lowercase();
+        assert!(!name.contains("default"), "{name}");
+    }
     assert_eq!(g["configuration"]["strategies"], json!([]));
     let with = |active: &str| {
         let mut c = configuration(json!([]));
@@ -615,7 +726,8 @@ fn tc_097_004_off_the_strategy_bands_nothing_is_ranked() {
     );
 }
 
-// Proves: TC-097-004 (CL-097-02, the run steps). "Test calls" with bands ["20m", "40m"], Auto on:
+// Proves: TC-097-018 (CL-097-04, the run waits with reason band). "Test calls" with bands ["20m",
+// "40m"], Auto on:
 // on 15m with CQ K1ABC published the run waits with reason band and arms nothing; after the retune
 // to 20m it selects K1ABC from the next publication; the retune to 17m in that contact disarms and
 // cancels it at the next step with no retry entry, and the run waits band.
@@ -952,7 +1064,8 @@ fn tc_097_006_country_state_and_cq_target_lists() {
     assert_eq!(w7.why, "not new");
 }
 
-// Proves: TC-097-006
+// Proves: TC-097-018 (CL-097-04: the run's own select_row of CQ POTA under POTA/SOTA passes the
+// directed-CQ check; selected, armed and its Tx1 keyed).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_006_the_pota_sota_run_selects_and_arms_cq_pota() {
     let f = station(true).await;
@@ -976,8 +1089,8 @@ async fn tc_097_006_the_pota_sota_run_selects_and_arms_cq_pota() {
     );
 }
 
-// Proves: TC-097-006 (CL-097-02, CqTargetList and DirectedCqRule: the include list admits only the
-// run's own select_row). With POTA/SOTA active (Auto off) the operator's double-click of CQ POTA
+// Proves: TC-097-018 (CL-097-04, DirectedCqRule: the include list admits only the run's own
+// select_row). With POTA/SOTA active (Auto off) the operator's double-click of CQ POTA
 // K1ABC still gets the directive warning (409 directive_not_answerable) and an MCP select_row of it
 // is refused directive_not_answerable; a run of "Test calls" (no POTA on its include list) never
 // selects CQ POTA K1ABC.
@@ -1021,7 +1134,8 @@ async fn tc_097_006_only_the_runs_own_select_row_passes_the_directive() {
     assert_eq!(contact(&f).await.0, Value::Null, "never selected (grey)");
 }
 
-// Proves: TC-097-007 (CL-097-02, the run steps; oracle: the operator's decision 2 on #97). A
+// Proves: TC-097-018 (CL-097-04, the run answers only callers that pass the filters; oracle: the
+// operator's decision 2 on #97). A
 // duplicate of Casual (call per band, not worked, callers_first on, min SNR -10 dB): W1AW, worked
 // on 20m, calling my call is never answered by the run; N1NEW calling my call is; in a QSO with
 // K1ABC his answer -05 decoded at -15 dB (below the minimum) is progress (roger report due, not
@@ -1122,10 +1236,14 @@ fn tc_097_007_callers_of_my_call_pass_the_filters() {
         order: vec![Criterion::Snr],
         ..casual.clone()
     };
+    // CL-097-03: with Calling stations are answered off a caller has no rank (as WSJT-X with the
+    // CQ response None, mainwindow.cpp 7481-7496).
+    assert_eq!(called(&off, &records, &st), ["K1ABC"], "callers off");
+    let v = evaluate(&off, &records, &st);
+    let n1 = v.iter().find(|v| v.facts.from == "N1NEW").unwrap();
     assert_eq!(
-        called(&off, &records, &st),
-        ["K1ABC", "N1NEW"],
-        "ranked by SNR"
+        (n1.rank, n1.kind, n1.why.as_str()),
+        (None, None, "calls my call · not answered")
     );
     // A caller failing region dx, min SNR, a country exclude, a state include names its line.
     for (edit, why) in [
@@ -1872,7 +1990,8 @@ async fn tc_097_011_g_unattended_the_busy_calls_count_and_tx_still_moves() {
     assert_eq!(quiet_run(f), ("stopped".into(), json!("no_client")));
 }
 
-// Proves: TC-097-015 (CL-097-07, hand-worked from WstxContest D11, WstxStrategy::BuiltinStrategies
+// Proves: TC-097-015, TC-097-018 (CL-097-07 refusals; CL-097-04 the contest strategy's run;
+// hand-worked from WstxContest D11, WstxStrategy::BuiltinStrategies
 // and LeaveRule). WW Digi on 20m, the period in force, W1DUP a dupe in the log, Auto on. The
 // built-in "WW Digi" (cq_when_idle on): no CQ after one empty publication, the CQ after the second;
 // CQ JA1XYZ (new multiplier, farthest), CQ K1ABC and the dupe W1DUP calling my call: JA1XYZ
@@ -2002,4 +2121,122 @@ async fn tc_097_011_i_busy_holds_across_a_further_station_and_ends_with_his_free
         json!(1500),
         "the counted call moves"
     );
+}
+
+/// TC-097-018: "Casual 20 m" (the TC-039-045 setup, W1AW worked on 20 m today) with Auto on,
+/// cq_when_idle `cq` and cq_wait_periods `wait`.
+async fn idle_casual(cq: bool, wait: u64) -> Leaving {
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let client = f.state.recording.clients.session();
+    import_adi(&f, &logged_before("W1AW", "FN31", e));
+    f.state.logbook.worked_set().unwrap();
+    let feed = attach_feed(&f);
+    let mut c = config(Some("Casual 20 m"));
+    c["strategies"][1]["cq_when_idle"] = json!(cq);
+    c["strategies"][1]["cq_wait_periods"] = json!(wait);
+    select(&f, c).await;
+    f.tick();
+    Leaving {
+        f,
+        e,
+        feed,
+        client: Some(client),
+    }
+}
+/// The FT8 period k after e, either parity (15 s each).
+fn half(e: i64, k: i64) -> i64 {
+    e + 15_000 * k
+}
+/// Publishes `n` empty periods from period `from` (both parities) and asserts the run still waits
+/// after each.
+async fn empties(f: &Mcp, e: i64, from: i64, n: i64, label: &str) {
+    for k in from..from + n {
+        publish(f, half(e, k), &[]);
+        assert_eq!(run_of(f).await["state"], "waiting", "{label}: empty {k}");
+    }
+}
+
+// Proves: TC-097-018
+// CL-097-08 (hand-worked from WstxStrategy::CqWhenNoTarget with cq_wait_periods): with
+// cq_when_idle on and the CQ wait 1, 2 and 5 the run waits after one fewer empty publication and
+// calls CQ (calling, Tx6 "CQ HB9BLA JN47", armed) at exactly that many; the publications alternate
+// parity, so both count. With cq_when_idle off and the CQ wait 1, eight empty publications call no
+// CQ. Red on the parent: the CQ after 2 for 1 and for 5.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_018_cq_after_exactly_the_cq_wait() {
+    for wait in [1_i64, 2, 5] {
+        let t = idle_casual(true, wait as u64).await;
+        let (f, e) = (&t.f, t.e);
+        let label = format!("wait {wait}");
+        empties(f, e, 0, wait - 1, &label).await;
+        publish(f, half(e, wait - 1), &[]);
+        assert_eq!(run_of(f).await["state"], "calling_cq", "{label}");
+        let c = f.read("contact").await;
+        assert_eq!(c["contact"]["state"], "calling", "{label}");
+        assert_eq!(c["contact"]["messages"][5], "CQ HB9BLA JN47", "{label}");
+        assert_eq!(c["transmit"]["arm_state"], "armed", "{label}");
+    }
+    let t = idle_casual(false, 1).await;
+    let (f, e) = (&t.f, t.e);
+    empties(f, e, 0, 8, "cq_when_idle off").await;
+    assert_eq!(contact(f).await.2, json!("disarmed"));
+}
+
+// Proves: TC-097-018
+// CL-097-08: the count starts at 0 at Auto on, after a QSO and after a leaving (hand-worked, CQ
+// wait 3). Auto on: one empty, Auto off and on, then 2 empties wait and the 3rd calls CQ. A QSO:
+// one empty, then N1NEW calls my call (a callable station before the CQ is due) and is answered;
+// his R-05 and 73 complete the QSO; then 2 empties wait and the 3rd calls CQ. A leaving: "Test
+// calls" with leave {calls 1, calls_heard 2} selects CQ K1ABC and leaves him at the next
+// publication; then 2 empties wait and the 3rd calls CQ. Red on the parent: the CQ at the 2nd.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_018_the_cq_wait_starts_again() {
+    // Auto on.
+    let t = idle_casual(true, 3).await;
+    let (f, e) = (&t.f, t.e);
+    empties(f, e, 0, 1, "before Auto off").await;
+    assert_eq!(auto(f, false, None).await.status, StatusCode::OK);
+    assert_eq!(auto(f, true, None).await.status, StatusCode::OK);
+    empties(f, e, 1, 2, "after Auto on").await;
+    publish(f, half(e, 3), &[]);
+    assert_eq!(run_of(f).await["state"], "calling_cq", "Auto on");
+    // A QSO.
+    let t = idle_casual(true, 3).await;
+    let (f, e) = (&t.f, t.e);
+    empties(f, e, 0, 1, "before the QSO").await;
+    publish(f, rep(e, 1), &[("HB9BLA N1NEW FN31", 1200.0, Some(-10.0))]);
+    assert_eq!(
+        contact(f).await,
+        (json!("N1NEW"), json!("report"), json!("armed"))
+    );
+    publish(f, rep(e, 2), &[("HB9BLA N1NEW R-05", 1200.0, Some(-10.0))]);
+    publish(f, rep(e, 3), &[("HB9BLA N1NEW 73", 1200.0, Some(-10.0))]);
+    assert_eq!(contact(f).await.1, json!("completed"));
+    f.tick();
+    empties(f, e, 8, 2, "after the QSO").await;
+    publish(f, half(e, 10), &[]);
+    assert_eq!(run_of(f).await["state"], "calling_cq", "after the QSO");
+    // A leaving.
+    let t = leaving(
+        |c| {
+            c["strategies"][0]["leave"] = json!({"mode":"calls","calls":1,"calls_heard":2});
+            c["strategies"][0]["cq_when_idle"] = json!(true);
+            c["strategies"][0]["cq_wait_periods"] = json!(3);
+        },
+        &[K1ABC_CQ],
+    )
+    .await;
+    let (f, e) = (&t.f, t.e);
+    assert_eq!(contact(f).await.0, json!("K1ABC"));
+    publish(f, rep(e, 1), &[]);
+    assert_eq!(
+        run_of(f).await["left"],
+        json!({"call":"K1ABC","reason":"repetitions"})
+    );
+    empties(f, e, 3, 2, "after the leaving").await;
+    publish(f, half(e, 5), &[]);
+    assert_eq!(run_of(f).await["state"], "calling_cq", "after the leaving");
 }

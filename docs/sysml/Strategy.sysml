@@ -5,54 +5,31 @@ package WstxStrategy {
          the strategydef cases TC-039-040..048, the holdtx cases TC-039-049..051, the quiet
          slots of issue #66 TC-066-001..003; the ignore
          lists of issue #42, CL-042-02 and TC-042-002..003; Pounce, CL-042-03 and
-         TC-042-004..005; Alert, CL-042-04 and TC-042-006..007; the strategy redesign of issue
-         #97, CL-097-01..07 and TC-097-001..017, D19): the strategies of the classes strategy (award
-         and casual strategies) and contest, the directed-CQ rule, the value order in Band Activity, the strategy editor
-         popup and the strategy runs of WstxMcp::OperatingAutomation. Nothing here is an execution
-         result. Where D19 and an older decision differ, D19 wins.
+         TC-042-004..005; Alert, CL-042-04 and TC-042-006..007; the strategy settings and ranking
+         of issue #97, CL-097-01..08 and TC-097-001..019, D19): the two classes of strategy
+         (strategy and contest) and their settings, the directed-CQ rule, the ranking of Band
+         Activity, the strategy editor popup, and the run elements that apply the settings
+         (StrategyRun with LeaveRule, TxMoveRule, BusyPause, CqWhenNoTarget and QuietTime).
+         Nothing here is an execution result.
 
          Decisions (operator decisions on #39, 2026-11-04 to 2026-11-06, comments
          6626205191, 6626483800, 6626497059, 6626745310, 6626929588, 6626981068,
          6627875105, and the implementing CR's defaults, listed on #39):
          D1 One evaluator: the station evaluates every strategy (Verdict). The browser
             renders the verdicts (POST /strategy/evaluate) and never evaluates anything
-            itself; a run uses the same verdicts.
+            itself; automatic operation uses the same verdicts.
          D2 What a strategy is: exactly one strategy is active, or none (manual operation).
-            A strategy has three chapters, the same for strategies and contests (slice
-            strategydef, operator grill 2026-11-07 Q1, #39 comment 6705641422): value
-            (Candidate, ValueOrder), mode (AutoToggle, PskrUse) and exit (LeaveRule,
-            QuietTime). Selecting a strategy marks its candidates in Band Activity; it
-            transmits only while Auto is on (AutoToggle, which replaces "selecting it starts
-            it"). The browser sends only the selection and the toggles. A saved strategy is of the class award;
-            contest strategies are #63 (WstxContest), a selection and no saved class (StrategyClass).
-         D3 Treat 73 as CQ: an RR73 or 73 that ends another station's QSO counts as calling;
-            the run answers from its free Tx slot (FreeTxSlot) so the answer never lands on the
-            final 73.
-         D4 An award strategy calls CQ only with its option CQ when no target (Q35, Q40; off
-            by default; CqWhenNoTarget). It waits for the next opportunity and goes on
-            after each QSO without a limit (no QSO limit; the WstxMcp run bounds and the
-            transport's 8 h do not apply to it; its own limit is 8 hours from the selection,
-            operator decision 2026-11-06, StrategyRun, which replaces the former "no time limit").
-            The grant and every safety check still apply.
-         D5 Stations calling my callsign are always answered, independent of goal, region,
-            SNR and every other filter line (operator 2026-11-07: "Always answer callers",
-            confirming this rule for strategydef; CallerOfMyCall). The strategy option
-            Callers of my call first (Q4, on by default) places them: first, and answered at
-            once (LeaveRule); off, ranked by the value list among the candidates. A contest
-            dupe caller has no rank and is not answered (WstxContest::ContestVerdict).
-         D6 No skip: a station is never given up by the run. It is left by LeaveRule after
-            its repetitions ("repetitions before leaving", x, which replaces calls per
-            station) and may be called again after its QuietTime. Only the operator gives a
-            station up for a run (ManualIntervention).
+            A strategy is of one of two classes (StrategyClass) and holds the nine settings of
+            D19 (Strategy). Selecting a strategy only ranks Band Activity by it (Verdict);
+            transmitting is Auto's (AutoToggle). The browser sends only the selection and the
+            toggles.
+         D3 Treat 73 as CQ: an RR73 or 73 that ends another station's QSO counts as calling.
          D15 Strategydef (operator grill 2026-11-07, Q1-Q42, #39 comment 6705641422, the
             operator's "yes, go ahead", and the answers of 2026-11-07 relayed on #39): filter
-            and value apart (Candidate, ValueOrder), SNR and distance as value
-            criteria, the Auto and Use PSK Reporter toggles, one exit rule (LeaveRule,
-            QuietTime) and the quietest Tx slot (FreeTxSlot). It replaces the held #63 slice
-            targetrule and keeps its two fixes: a contest dupe caller never ends a stay, and
-            a repeated message of the target to my call is progress. Out of scope: a combined
-            weighted score, the station changing band or mode, calling several targets at
-            once.
+            and order apart (Candidate, ValueOrder), SNR and distance as order criteria, the
+            Auto and Use PSK Reporter toggles and the quietest Tx slot (FreeTxSlot). Out of
+            scope: a combined weighted score, the station changing band or mode, calling several
+            targets at once.
          D16 Hold Tx in Auto (slice holdtx, operator report 2026-11-07 "the hold TX does not
             work and TX is shifted to RX"; decisions "Hold Tx on: the automation never moves
             Tx", corrected to "if the other station does not hear us we are allowed to change
@@ -122,41 +99,31 @@ package WstxStrategy {
             key is no longer required". Permission to redistribute or fetch automatically
             is not established, and the operator ruled (#39 comment 6685317139): no automatic
             refresh and nothing bundled. Everything works without a list.
-         D14 Built-in strategies (operator 6626205191 (5)): BuiltinStrategies.
          D13 Grids are a known-unknown: only 6,729 of the operator's 26,902 Log4OM QSOs carry
             a grid, so a missing grid is unknown, never new (NewNeeded grid).
-         D19 Strategy redesign (#97, operator grill 2026-11-09, mockups "DXCC all" and "ARRL Digi
-            fast"; it takes over #84, #90, #91, #93 and #94). The operator chooses a strategy;
-            every strategy answers the same strategic decisions with its own values, in this
-            order: 1 Band (StrategyBands), 2 Filters (Candidate, CountryList, UsStateFilter,
-            CqTargetList), 3 Order (ValueOrder), 4 Callers first (CallerOfMyCall), 5 Leaving a
-            station (LeaveRule), 6 Tx frequency (TxMoveRule, FreeTxSlot), 7 Busy pause
-            (BusyPause, WstxContact::BusyPartner), 8 CQ when idle (CqWhenNoTarget), 9 Retry pause
-            (QuietTime). Filters and Order come from one of two sources: the filter questions
-            (class strategy: award and casual strategies alike, which differ only in their
-            answers; operator grill Q12 2026-11-09 "Keep two classes, Strategy (award and casual)
-            and Contest") or a contest (class contest: the contest's rules,
-            WstxContest, with the operator's country, US state and CQ target lists on top; the
-            contest data are #98's). Every value is editable per strategy; a new strategy is made
-            only by duplicating one (StrategyEditor). The built-ins are BuiltinStrategies. It
-            replaces: D5's "always answered" (callers of my call must pass the filters too; a
-            started QSO is still always finished, StartedQso); D6's one exit rule (three leave
-            modes); D14's eight presets; D15's goals list (what must be new x new per x new
-            means); the slot check at every repetition of StrategyWatchdog (the Tx move rule per
-            PSK case); WD:n for the leave count (#91: WD:n is the Tx watchdog only,
-            LeaveCountLabel); and #63's S&P/Run operation and per-contest repetitions and quiet
-            time (WstxContest D11). It delivers CL-039-07's auto-QRM stop as the busy pause (#84). */
+         D19 Strategy settings and ranking (operator grill 2026-11-09, mockups "DXCC all" and
+            "ARRL Digi fast"; operator 2026-11-12). The operator chooses a strategy; every
+            strategy holds the same settings with its own values, each editable per strategy,
+            in this order: 1 Band (StrategyBands), 2 Filters (Candidate, CountryList,
+            UsStateFilter, CqTargetList), 3 Order (ValueOrder), 4 Calling stations are answered
+            (CallerOfMyCall), 5 Leaving a station (LeaveRule), 6 Tx frequency (TxMoveRule,
+            FreeTxSlot), 7 Busy pause (BusyPause, WstxContact::BusyPartner), 8 CQ when idle with
+            the CQ wait (CqWhenNoTarget), 9 Retry pause (QuietTime). Filters and Order come from
+            one of two sources: the filter questions (class strategy) or a contest (class
+            contest: the contest's rules, WstxContest, with the operator's country, US state and
+            CQ target lists on top). A new strategy is made only by duplicating one
+            (StrategyEditor); the built-ins are BuiltinStrategies. A strategy defines values and
+            ranks Band Activity; it never selects, calls, answers, arms or transmits. The
+            settings of decisions 5 to 9 take effect only through Auto (AutoToggle), the part
+            that starts QSOs. */
 
     enum def StrategyClass {
-        doc /* #97 D19, two classes (operator grill Q12 2026-11-09: "Keep two classes, Strategy
-             (award and casual) and Contest"; wire "strategy" and "contest"). strategy: Filters and
-             Order from the filter questions; an award strategy (DXCC all) and a casual one (Casual)
-             are both of this class and differ only in their answers. contest: Filters and Order from a
-             contest (WstxContest; the contest data are #98's), with the operator's country, US
-             state and CQ target lists on top; a contest strategy is a duplicate of a contest
-             built-in (BuiltinStrategies) and keeps its class and contest. It replaces "a saved
-             strategy of class contest is refused" and the schema 3 class award (read as strategy
-             by the upgrade; "award" on a PUT is refused like any other value). The class is never
+        doc /* D19, two classes (operator grill Q12 2026-11-09; wire "strategy" and "contest").
+             strategy: Filters and Order from the filter questions; DXCC all and Casual are both of
+             this class and differ only in their answers. contest: Filters and Order from a contest
+             (WstxContest), with the operator's country, US state and CQ target lists on top; a
+             contest strategy is a duplicate of a contest built-in (BuiltinStrategies) and keeps
+             its class and contest. Any other class on a PUT is refused. The class is never
              switched in the editor. */
         enum strategy;
         enum contest;
@@ -174,9 +141,7 @@ package WstxStrategy {
         enum ever; enum band; enum band_mode;
     }
     enum def ValueCriterion {
-        doc /* The criteria of ValueOrder (Q2, Q3, Q8; #97 decision 3), wire names exactly. #97 adds
-             new_cq_zone, new_itu_zone, new_continent, new_prefix, snr_bucket and hears_us and
-             renames new_dxcc_slot to new_dxcc_band_mode. */
+        doc /* The criteria of ValueOrder (Q2, Q3, Q8; decision 3), wire names exactly. */
         enum most_wanted; enum new_dxcc; enum new_dxcc_band; enum new_dxcc_band_mode;
         enum new_call; enum new_call_band; enum new_grid; enum new_grid_band;
         enum new_cq_zone; enum new_itu_zone; enum new_continent; enum new_prefix;
@@ -222,6 +187,7 @@ package WstxStrategy {
         attribute moveEveryNoReports : Integer = 2;
         attribute busyPause : Boolean = true;
         attribute cqWhenIdle : Boolean = false;
+        attribute cqWaitPeriods : Integer = 2;
         attribute retryMinutes : Integer = 10;
         attribute orderCriteriaMax : Integer = 16;
         attribute listEntriesMax : Integer = 64;
@@ -231,7 +197,8 @@ package WstxStrategy {
         assert constraint txChangesRange { txChanges >= 1 and txChanges <= 20 }
         assert constraint moveRange { moveEveryHeard >= 0 and moveEveryHeard <= 20 and moveEveryNotHeard >= 0 and moveEveryNotHeard <= 20 and moveEveryNoReports >= 0 and moveEveryNoReports <= 20 }
         assert constraint retryRange { retryMinutes >= 1 and retryMinutes <= 120 }
-        doc /* #97 D19 (schema 4 of strategy.json, StrategyConfiguration). The same keys for every
+        assert constraint cqWaitRange { cqWaitPeriods >= 1 and cqWaitPeriods <= 20 }
+        doc /* D19 (schema 4 of strategy.json, StrategyConfiguration). The same keys for every
              class, in the order of the decisions; wire keys exactly:
              name (1..32 printable ASCII, no leading/trailing space, unique ignoring case, never a
              built-in's name, BuiltinStrategies); class (StrategyClass);
@@ -247,14 +214,16 @@ package WstxStrategy {
              order (decision 3, ValueOrder): 0..16 unique ValueCriterion in the operator's order
              for class strategy, [] for contest (a contest ranks by its own rules);
              contest: null for class strategy, a contest id of the contest table for contest
-             (today WstxContest::ProfileTable; #98 replaces the table by its data file);
-             callers_first (decision 4, boolean, CallerOfMyCall);
+             (the contest table, WstxContest::ProfileTable);
+             callers_first (decision 4 "Calling stations are answered", boolean, CallerOfMyCall);
              leave (decision 5, LeaveRule): {mode "calls", calls 1..20, calls_heard calls..40} |
              {mode "until_logged", gone_minutes 1..60} | {mode "contest", tx_changes 1..20};
              tx_move_every (decision 6, TxMoveRule): exactly {heard, not_heard, no_reports}, each
              an integer 0..20: 0 stay, 1 move every call, n move every n-th call;
              busy_pause (decision 7, boolean, BusyPause);
              cq_when_idle (decision 8, boolean, CqWhenNoTarget);
+             cq_wait_periods (decision 8, the CQ wait, an integer 1..20, CqWhenNoTarget; refused
+             also when missing, at strategies[i].cq_wait_periods);
              retry_minutes (decision 9, 1..120, QuietTime).
              Each refusal is 400 invalid_request naming its field path
              (strategies[0].filters.worked_since.to, strategies[0].order[1],
@@ -270,9 +239,8 @@ package WstxStrategy {
              only while the station band (CAT dial band, else the operating selection band) is one
              of them, and an unknown station band is none of them. It never switches bands (D8).
              Off its bands: every verdict has rank null with why "band not in the strategy" ("band
-             unknown" when unknown), so nothing is marked, alerted or called, and a run waits with
-             reason band (StrategyRun), selecting again from the first publication on one of its
-             bands. A contest strategy works only on the bands both of its list and of the contest
+             unknown" when unknown), so nothing is marked, alerted or called. A contest strategy
+             works only on the bands both of its list and of the contest
              (WstxContest::ContestVerdict "band not in the contest"). */
     }
     attribute def CountryList {
@@ -301,7 +269,7 @@ package WstxStrategy {
     calc def UsStateOf {
         in sender : String;
         return stateCode : String[0..1];
-        doc /* #97: the state of a sender of the entities 291, 6 or 110 (WstxContact::EntityOfCall),
+        doc /* The state of a sender of the entities 291, 6 or 110 (WstxContact::EntityOfCall),
              the first source that knows it: (1) the decoded message, when its exchange carries a
              US state (the RTTY Roundup family; an ARRL or RAC section once #98's section table maps
              it to a state); (2) the log: the ADIF STATE of the newest record of that call that has
@@ -321,23 +289,15 @@ package WstxStrategy {
              CQ and an RR73/73 counted as calling fail. A caller of my call is no CQ and is not
              judged by this line. A word on the
              include list that DirectedCqRule does not answer (POTA, SOTA, a number) is answerable
-             for this strategy (its verdicts and its run), never for the operator's own selection,
-             whose warning stays. Verdict: such a CQ is not grey for that strategy (grey false,
-             ranked by its filters and order), so Band Activity marks it and does not strike it
-             through, and Alert records it like any candidate. Run: the run's own select_row of such
-             a row passes the selection check of DirectedCqRule (the station's check of an
-             automatic select_row, contact_http, reads the active strategy of the run that sends it
-             and admits a CQ whose directive word is on that strategy's include list); every other
-             automatic select_row of a non-answerable directive stays refused
-             directive_not_answerable (an MCP or UDP command, a pounce, a run of a strategy whose
-             include list does not hold the word, a continent directive or DX not for me); a continent directive and DX keep DirectedCqRule (operator
-             2026-11-09, #97 Q2: "we could define a pota/sota strategy"; the built-in POTA/SOTA,
-             BuiltinStrategies). */
+             for this strategy, never for the operator's own selection, whose warning stays.
+             Verdict: such a CQ is not grey for that strategy (grey false, ranked by its filters
+             and order), so Band Activity marks it and does not strike it through, and Alert
+             records it like any candidate. A continent directive and DX keep DirectedCqRule
+             (operator 2026-11-09, #97 Q2: "we could define a pota/sota strategy"; the built-in
+             POTA/SOTA, BuiltinStrategies). */
     }
     attribute def BuiltinStrategies {
-        doc /* #97 D19 (operator grill 2026-11-09; it replaces the eight presets of D14: New calls,
-             DX hunting, Strongest new on band, Farthest new on band, DXCC slots and Casual 20 m go,
-             New DXCC and New DXCC on band change). The read-only presets, one table in the
+        doc /* D19 (operator grill 2026-11-09). The read-only presets, one table in the
              station in this order, listed in the GET /strategy snapshot as builtin_strategies,
              each a Strategy with builtin true:
              | name | class | filters new, new_per, new_means | order | leave | cq_when_idle |
@@ -352,41 +312,36 @@ package WstxStrategy {
              POTA/SOTA | strategy | [call], band, not_worked, with worked_since today and
              cq_targets {include [POTA, SOTA], exclude []} | [snr_bucket, distance] | calls, calls 4,
              calls_heard 8 | false.
-             (The first three are award strategies, Casual and POTA/SOTA casual ones: a difference
-             of answers, not of class.) POTA/SOTA (operator 2026-11-09, #97 Q2 "we could define a
-             pota/sota strategy"; its values are the definer's defaults, listed on #97): it calls
-             only CQ POTA and CQ SOTA (CqTargetList makes them answerable for it), each activator
-             not yet worked on this band today (a new park or summit is usually a new day), the
-             strongest bucket first and then the farthest, and does not call CQ itself.
+             The five differ only in their answers, not in their class. POTA/SOTA (operator
+             2026-11-09, #97 Q2 "we could define a pota/sota strategy"; its values are the
+             definer's defaults, listed on #97): it ranks only CQ POTA and CQ SOTA (CqTargetList
+             makes them answerable for it), each activator not yet worked on this band today (a
+             new park or summit is usually a new day), the strongest bucket first and then the
+             farthest; its cq_when_idle is false.
              All five, unless stated in the table: bands null (all), region all, min_snr_db null,
              worked_since all, treat_73_as_cq true, countries, states and cq_targets empty, contest
              null, callers_first true, tx_move_every {heard 0, not_heard 1, no_reports 2} (stay,
-             every call, every 2nd call), busy_pause true, retry_minutes 10. "DXCC all" is the
-             default: first in the selector and in the editor; it is not selected at a station
-             start (active stays None, StrategyConfiguration; operator 2026-11-09, #97 Q8 "first in
-             the list, not selected at start").
-             Contest built-ins (operator 2026-11-09, #97 Q1 "One per contest, no S&P/Run"): one per contest of the contest table
-             (today WstxContest::ProfileTable, after #98 its data file), class contest, named by the
+             every call, every 2nd call), busy_pause true, cq_wait_periods 2, retry_minutes 10.
+             "DXCC all" is first in the selector and in the editor; active stays None at a station
+             start (StrategyConfiguration; operator 2026-11-09, Q8 "first in the list, not
+             selected at start"). No built-in is named or marked as a default.
+             Contest built-ins (operator 2026-11-09, Q1 "One per contest"): one per contest of the
+             contest table (WstxContest::ProfileTable), class contest, named by the
              contest's name and holding its id, with the contest defaults: bands null, the three
              lists empty, order [], callers_first true, leave {mode contest, tx_changes 2},
              tx_move_every {heard 0, not_heard 2, no_reports 2}, busy_pause false, cq_when_idle
-             true, retry_minutes 10. They are offered by the contest prompt
+             true, cq_wait_periods 2, retry_minutes 10. They are offered by the contest prompt
              (WstxContest::ContestPrompt) and in the editor's contest group, not as rows of the
              strategy selector.
              The built-ins are not part of the configuration and never written to strategy.json.
              active may name one (exactly as listed; a contest built-in only with its contest
-             selection, WstxContest::ContestSelection): selecting it starts it like any strategy
-             (StrategyRun). A PUT cannot edit one: a configuration strategy with a built-in's name,
-             also differing in case, is refused 400 invalid_request strategies[i].name, and the key
+             selection, WstxContest::ContestSelection). A PUT cannot edit one: a configuration
+             strategy with a built-in's name, also differing in case, is refused 400 invalid_request strategies[i].name, and the key
              builtin is refused like any extra key. In the editor a built-in is shown read-only
              and Duplicate copies it to a user strategy named "<name> copy" (StrategyEditor). A
              saved strategy whose name collides with a built-in's, ignoring case (saved before the
              built-in existed, also a contest added to the table later), reads renamed
-             (StrategyConfiguration); it is never dropped.
-             Verification cases written before #97 that select a removed preset by name (New calls,
-             DX hunting, Strongest new on band, Farthest new on band, DXCC slots, Casual 20 m) run
-             with a saved user strategy of that name holding the preset's former settings as the
-             schema 3 upgrade maps them, unless a #97 note in the case says otherwise. */
+             (StrategyConfiguration); it is never dropped. */
     }
     attribute def StrategyConfiguration {
         attribute continent : String[0..1];
@@ -431,8 +386,10 @@ package WstxStrategy {
              null; callers_first kept; leave {mode calls, calls = repetitions, calls_heard = 2 x
              repetitions} (the doubling of the old LeaveRule); tx_move_every {heard 0, not_heard 1,
              no_reports 2} (#94, the built-ins' values); busy_pause true; cq_when_idle =
-             cq_when_no_target; retry_minutes = quiet_minutes. A schema 3 strategy that is
-             otherwise malformed makes the file malformed.
+             cq_when_no_target; cq_wait_periods 2; retry_minutes = quiet_minutes. A schema 3
+             strategy that is otherwise malformed makes the file malformed.
+             A schema 4 file whose strategy has no cq_wait_periods (written before the key
+             existed) reads it as 2; a PUT must carry it, as every key.
              Names: in every schema, a saved strategy whose name equals a built-in's ignoring case
              reads renamed "<name> copy", else "<name> copy 2", "<name> copy 3" and so on, the
              first name that is free and at most 32 characters (the name cut so that the suffix
@@ -455,7 +412,7 @@ package WstxStrategy {
         in needed : Needed;
         in sender : String;
         return isNew : Boolean;
-        doc /* #97 (it replaces GoalNeeded and its eight goals). Whether one NewWhat is new for a
+        doc /* Whether one NewWhat is new for a
              decoded sender, per NewPer, against WorkedWindow of the strategy (worked_since):
              not_worked: no logged QSO with the same key; not_confirmed: none, or none confirmed
              (dxcc::Standing). The key: dxcc the sender's entity (WstxContact::EntityOfCall, WAE
@@ -501,18 +458,20 @@ package WstxStrategy {
     }
     attribute def CallerOfMyCall {
         doc /* A decoded standard message with a resolved sender, addressed to my call, other
-             than the sender's RR73/73, whose sender is not ignored (IgnoreLists). #97 decision 2
-             (it replaces D5's "always answered", operator 2026-11-07): a caller of my call is
-             answered only when it passes the filters too: every line of Candidate except "a CQ"
-             (and the CQ target line, which judges only CQs); for a contest strategy the contest's
-             verdict (a dupe is never answered, WstxContest::ContestVerdict) and the country and US
-             state lists. A caller that fails gets rank null with the failing line as why ("calls
-             my call · not new", "calls my call · region"), so a run never answers it; the operator
-             still can (a double-click, ManualIntervention). A started QSO is always finished
-             (StartedQso, #81): a target that answers our call is progress, never a caller judged
-             again. In a run it is also excluded when completed in this run on this band and mode,
-             given up by the operator (ManualIntervention) or in its QuietTime. Callers first
-             (decision 4) places the callers that pass (ValueOrder). */
+             than the sender's RR73/73, whose sender is not ignored (IgnoreLists). Decision 2
+             (operator 2026-11-09): a caller of my call has a rank only when it passes the filters
+             too: every line of Candidate except "a CQ" (and the CQ target line, which judges only
+             CQs); for a contest strategy the contest's verdict (a dupe never has a rank,
+             WstxContest::ContestVerdict) and the country and US state lists. A caller that fails
+             gets rank null with the failing line as why ("calls my call · not new", "calls my
+             call · region"). Decision 4, Calling stations are answered (callers_first): on, the
+             callers that pass come first (ValueOrder); off, a caller that passes has rank null
+             too, why "calls my call · not answered" (CL-097-03). Off follows WSJT-X, where the
+             CQ response None (widgets/mainwindow.cpp 1564-1568, default None in
+             mainwindow_settings.cpp 313) answers no caller of my CQ automatically (mainwindow.cpp
+             7481-7496) and "Calling CQ forces Call 1st" is off by default (Configuration.cpp
+             3884). A started QSO is always finished (StartedQso, #81): a target that answers our
+             call is progress, never a caller judged again. */
     }
     attribute def Candidate {
         doc /* The filter, yes or no (Q2, Q10; #97 decision 2, the filter questions): every line
@@ -528,9 +487,7 @@ package WstxStrategy {
              "region", "below min SNR", "not new", "country list", "state list", "CQ target").
              A contest strategy: ContestVerdict decides its callable records (the contest's rules
              first) and CountryList, UsStateFilter and CqTargetList apply on top; none of the
-             other lines. A run adds: not completed in this run on this band and mode, not given
-             up, not in its QuietTime (StrategyRun). The filter and the order may use the same
-             field. */
+             other lines. The filter and the order may use the same field. */
     }
     attribute def ValueOrder {
         doc /* The ranking (Q2, Q3, Q8, Q9; #97 decision 3). The strategy's order is a list of
@@ -555,13 +512,13 @@ package WstxStrategy {
              Then always, hidden (Q3, Q9): SNR stronger first (unknown last); then, for an
              exact tie only, the lower audio frequency, then the call in character order.
              Decode order is never a ranking.
-             Order of a strategy's list: with callers_first (Q4, decision 4) the callers of my call
-             that pass the filters (CallerOfMyCall) come first, ranked among themselves by the same
-             criteria, then the candidates; without it callers and candidates are ranked together
-             by the criteria. Band Activity: the partner (#50, on top by the browser's partner rows),
-             then that list, then the rest. A contest strategy has no order (order []): it ranks by
-             the contest's own rules (WstxContest::ContestValueOrder), its callers first or not by
-             its callers_first. */
+             Order of a strategy's list: with Calling stations are answered on (callers_first,
+             decision 4) the callers of my call that pass the filters (CallerOfMyCall) come first,
+             ranked among themselves by the same criteria, then the candidates; with it off a
+             caller has no rank (CallerOfMyCall) and the list holds the candidates only. Band
+             Activity: the partner (#50, on top by the browser's partner rows), then that list,
+             then the rest. A contest strategy has no order (order []): it ranks by the contest's
+             own rules (WstxContest::ContestValueOrder), under the same rule for callers. */
     }
     calc def StationDistance {
         in sender : String;
@@ -792,10 +749,12 @@ package WstxStrategy {
         attribute grey : Boolean;
         doc /* One per decoded standard record with a resolved sender (others have none):
              an ignored sender (IgnoreLists) has rank null, grey false; else grey per
-             DirectedCqRule (#97: not grey when its directive word is on the strategy's CQ target
-             include list, CqTargetList); a caller (CallerOfMyCall) and a Candidate have rank = the position
-             (0-based) in ValueOrder among the evaluated records; every other record rank null.
-             why (explain only): "calls my call", "new: dxcc, grid" (#97: the new whats, with
+             DirectedCqRule (not grey when its directive word is on the strategy's CQ target
+             include list, CqTargetList); a Candidate, and a caller (CallerOfMyCall) while Calling
+             stations are answered is on, have rank = the position (0-based) in ValueOrder among
+             the evaluated records; with it off a caller has rank null, why "calls my call · not
+             answered" (CL-097-03); every other record rank null.
+             why (explain only): "calls my call", "new: dxcc, grid" (the new whats, with
              " on <band>" or " on <band> <MODE>" per new_per), with " · Most Wanted
              #n" when ranked by the list, "not new", "not a CQ", "region", "below min SNR",
              "band not in the strategy", "band unknown", "country list", "state list", "CQ
@@ -813,7 +772,7 @@ package WstxStrategy {
              session_ignore (#42: the session list in the order added without ended
              entries, each {call, band, remaining_s: whole seconds to its expiry, rounded
              up}), the MostWantedList status, builtin_strategies (BuiltinStrategies) and
-             configuration_note (#97: [] or the renames of the upgrade, [{from, to}], until the next
+             configuration_note ([] or the renames of the upgrade, [{from, to}], until the next
              PUT; the editor shows each once as "Renamed <from> to <to>")}. The body limit stays
              32768 bytes: a configuration whose PUT is larger is refused like any oversized body,
              and the editor says so.
@@ -867,10 +826,10 @@ package WstxStrategy {
     attribute def StrategyEditor {
         doc /* The edit (pencil) popup (a modal dialog carrying its own HALT with the top-bar HALT's
              action and enabled state; receive keeps running): choose, duplicate and delete
-             strategies (#97: a new strategy is only a duplicate, "<name> copy", of a built-in or
+             strategies (a new strategy is only a duplicate, "<name> copy", of a built-in or
              user strategy, keeping its class and contest; there is no blank "Add"); the list
              grouped Strategy, Contest (the two classes). Exactly the settings of Strategy, as the nine
-             numbered decisions in order (#97 D19, mockups of 2026-11-09):
+             numbered decisions in order (D19, mockups of 2026-11-09):
              name and class (strategy or contest, shown, never switchable: a duplicate keeps it);
              1 Band: "All bands" or band checkboxes;
              2 Filters, as questions with answers: "What must be new?" (DXCC entity, Call, Grid,
@@ -888,7 +847,7 @@ package WstxStrategy {
              not yet listed, remove one, move one up or down; "the first decides, the next breaks
              a tie"; the line "then SNR" under the rows, not removable); a contest strategy shows
              "Ranked by the contest's rules" instead.
-             4 "Callers of my call first".
+             4 "Calling stations are answered" (a checkbox, callers_first).
              5 "Leaving a station": After <n> calls without answer, <m> if he hears us | Until
              logged, leave when not decoded for <n> min | Contest style: while he hears us stay as
              long as he is the most valuable, else leave after <n> Tx changes.
@@ -898,7 +857,8 @@ package WstxStrategy {
              Hz".
              7 "Busy pause: while he is in a QSO with another station keep calling on a split
              frequency and do not count".
-             8 "CQ when idle".
+             8 "CQ when idle, after <n> periods with nothing callable" (a checkbox, cq_when_idle,
+             and a number 1..20, cq_wait_periods).
              9 "Retry pause (minutes)" before a left station is called again.
              Labels of the criteria: Most wanted (Club Log rank), New DXCC, New DXCC on band, New
              DXCC on band and mode, New call, New call on band, New grid, New grid on band, New CQ
@@ -908,8 +868,8 @@ package WstxStrategy {
              live preview evaluates the
              unsaved draft against the latest period (POST /strategy/evaluate with explain,
              400 ms after an edit, one request per edit, no timer otherwise) and shows each
-             decode's rank and why. Save sends one PUT /strategy, applies at once (also to a
-             running strategy) and never selects a strategy. A built-in strategy is listed read-only with
+             decode's rank and why. Save sends one PUT /strategy, applies at once (also to the
+             active strategy) and never selects a strategy. A built-in strategy is listed read-only with
              its settings shown and its preview; only Duplicate acts on it. With no user strategy the
              popup opens on the first built-in and Save stores none. My continent is set in
              Settings > General (StrategyConfiguration continent, saved by PUT /strategy). */
@@ -993,8 +953,7 @@ package WstxStrategy {
              it instead. A CQ of the run is no such contact (CqWhenNoTarget,
              WstxContest::ContestRun): the Tx watchdog stops it like any message.
              Tx moves: at each repetition (LeaveRule) of a target that has not answered in this
-             contact, Tx follows TxMoveRule (#97 decision 6, it replaces the slot check at every
-             repetition of 2026-11-07). A target that has answered (a message to my call in this
+             contact, Tx follows TxMoveRule (decision 6). A target that has answered (a message to my call in this
              contact) has proved the slot: Tx never leaves it in that exchange. The Rep goes on
              over a move: the message is the same.
              Unattended (no client for 60 s, or past the run limit, StrategyRun): the stop at
@@ -1003,11 +962,11 @@ package WstxStrategy {
              The run shows the last repetition's decision as slot_check {repetitions, case
              (PskCase), hears_us (case heard), moved (boolean), hz} and the slot as tx_slot
              (FreeTxSlot).
-             Display (#97, #91, LeaveCountLabel): WD:n is the Tx watchdog only. While the Tx
+             Display (LeaveCountLabel): WD:n is the Tx watchdog only. While the Tx
              watchdog does not bound the run's own contact (attended), the contact snapshot's
              watchdog tx_remaining_calls is null and no WD is shown; the leave count is the run's
-             leave (LeaveCountLabel) with its own label. "WD:∞" and the leave countdown in
-             tx_remaining_calls go. Unattended the stop at N is back and WD:n shows it. */
+             leave (LeaveCountLabel) with its own label. Unattended the stop at N is back and
+             WD:n shows it. */
     }
     attribute def TxMoveRule {
         doc /* #97 decision 6 (operator #94, 2026-11-09: "when we call a station and it reports its
@@ -1040,8 +999,7 @@ package WstxStrategy {
              station is in contact with another station, we pause counting (while still
              transmitting on a split frequency) till the called station finishes its other qso.
              reason: he cannot call us, but he sees us on his dashboard and knows that we want a
-             contact"; "check if we are not on his transmit frequency"). It takes over #84's
-             auto-QRM stop (CL-039-07).
+             contact"; "check if we are not on his transmit frequency").
              Busy: WstxContact::BusyPartner (from his message to another call until he ends that
              QSO, however long he is not decoded). A repetition (LeaveRule) while the target is busy
              is a paused call, when the strategy's busy_pause is on, the run is attended and the
@@ -1062,8 +1020,7 @@ package WstxStrategy {
              The run snapshot's leave carries busy (LeaveCountLabel). */
     }
     attribute def LeaveCountLabel {
-        doc /* #97 (#91: the run's leave count was shown as "WD", read as a broken watchdog). The run
-             snapshot (WstxMcp::AutomationWire) carries leave: null, or while the run's own contact
+        doc /* The run snapshot (WstxMcp::AutomationWire) carries leave: null, or while the run's own contact
              has a target, {mode (LeaveMode), remaining, busy (boolean, BusyPause), paused (paused
              calls of the message due next), staying (boolean, contest stay)}: mode calls,
              remaining = calls left before leaving (n, or m while he hears us, minus the counted
@@ -1079,7 +1036,7 @@ package WstxStrategy {
     }
     attribute def StrategySelector {
         doc /* The strategy element in the operating view: a selector with None and the
-             names of the built-in and user strategies (#97: grouped Strategy, Contest, "DXCC
+             names of the built-in and user strategies (grouped Strategy, Contest, "DXCC
              all" first; the contest group lists the user's contest strategies and the contest in
              force, "<name> (contest)"; the contest built-ins are chosen in the contest prompt,
              WstxContest::ContestPrompt). Choosing a saved contest strategy: with a contest of its
@@ -1167,7 +1124,7 @@ package WstxStrategy {
              Waiting reasons (run.reason while state waiting): no_receive, auto_seq (Auto Seq
              off), call (a nonstandard own call, #24 S1b), activity (a contest activity or Hound,
              #24 S2a; a contest strategy: any other than its own, WstxContest::ContestRun), band
-             (#97: the station band is not one of the strategy's, StrategyBands; a contact the run
+             (the station band is not one of the strategy's, StrategyBands; a contact the run
              armed on a band it then left ends at once as a band change does); it
              selects nothing until the reason is gone.
              Waiting: on each fresh complete publication the list is the verdicts with a rank,
@@ -1292,7 +1249,7 @@ package WstxStrategy {
              open at his end: yes" (no frequency he decodes from my Tx parity lies within 50 Hz
              of the slot), "· no" (the slot was chosen although one does, FreeTxSlot), or
              "· unknown" (he has no such spot). The run snapshot (GET /automation, read on
-             automation.state) carries hearing {state heard|no|unknown, reports (#97: he reports,
+             automation.state) carries hearing {state heard|no|unknown, reports (he reports,
              HearingFeed; false also when unknown), spot_utc_s, snr_db} and
              tx_slot {hz, power_db, his_end yes|no|unknown}; a change of either increments the
              run revision. The QSO pane's PSK line itself is #95's. */
@@ -1314,8 +1271,7 @@ package WstxStrategy {
              is no repetition for leaving.
              Hears us: PskrUse on and HearingFeed hears (a spot of my call at the target at most
              600 s old on this band and mode).
-             The strategy's leave (#97 decision 5; it replaces x, its doubling and the contest's
-             repetitions):
+             The strategy's leave (decision 5):
              calls {calls n, calls_heard m}: the run leaves at the repetition that brings the count
              to n, or to m while the target hears us, in both situations (reason repetitions).
              until_logged {gone_minutes g}: no count; the run stays until the QSO is completed (and
@@ -1354,7 +1310,7 @@ package WstxStrategy {
              StrategyRun "Ends at once" are no leaving. */
     }
     attribute def QuietTime {
-        doc /* The retry pause (#97 decision 9; formerly quiet time, Q6). After every leaving
+        doc /* The retry pause (decision 9, Q6). After every leaving
              (LeaveRule) the left station gets the strategy's retry_minutes (default 10) from the
              leaving, on that band and mode. During it the run does not select it, also not
              when it calls my call, nor answer it from a CQ. It is run memory: a new run starts
@@ -1362,12 +1318,16 @@ package WstxStrategy {
              (whole seconds, rounded up); an entry ends at its time. */
     }
     attribute def CqWhenNoTarget {
-        doc /* CQ when idle (#97 decision 8): the strategy option cq_when_idle (formerly
-             cq_when_no_target, Q35, Q40; off in DXCC all, New DXCC on band and New DXCC, on in Casual and in the
-             contest built-ins, where it replaces #63's Run operation, WstxContest D11). It is not a
-             special class. With it on, a waiting run with no waiting reason
-             that has seen two consecutive fresh complete publications with nothing listed
-             (StrategyRun Waiting) calls CQ as a contest Run does (WstxContest::ContestRun):
+        doc /* CQ when idle (decision 8, CL-097-08): the strategy option cq_when_idle (Q35, Q40;
+             off in DXCC all, New DXCC on band, New DXCC and POTA/SOTA, on in Casual and in the
+             contest built-ins, WstxContest D11) with its CQ wait cq_wait_periods (1..20, 2 in every
+             built-in). It is not a special class. With it on, a waiting run with no waiting reason
+             that has seen cq_wait_periods consecutive fresh complete publications with nothing
+             listed (StrategyRun Waiting; every period counts, both parities: 2 is 30 s in FT8 and
+             15 s in FT4) calls CQ (WstxContest::ContestRun). The count starts at 0 at Auto on
+             (a new run), after a QSO ends and after a leaving, and a publication with a listed
+             station ends the wait (it is selected). With cq_when_idle off the CQ wait has no
+             effect and is kept. The CQ:
              it decides the slot (FreeTxSlot, quiet in my Rx parity; with Hold Tx on the held Tx,
              no decision, D16) and sends enable_tx with
              no partner, which calls the activity's Tx6 (a plain CQ outside a contest
@@ -1375,8 +1335,8 @@ package WstxStrategy {
              StrategyRun Waiting is read again: the first listed station is selected (a caller
              with select_row {replace false}, which keeps Enable Tx and answers it from the CQ's
              slot; a candidate the same way), the CQ ends; nothing listed: the CQ goes on. After
-             a completion or a leaving the run waits, and calls CQ again after two more
-             publications with nothing listed. The Tx watchdog stops the CQ at its limit, and the
+             a completion or a leaving the run waits, and calls CQ again after cq_wait_periods
+             more publications with nothing listed. The Tx watchdog stops the CQ at its limit, and the
              run stops tx_watchdog (StrategyWatchdog). Unattended or past the run limit the CQ
              ends at once (StrategyRun). */
     }

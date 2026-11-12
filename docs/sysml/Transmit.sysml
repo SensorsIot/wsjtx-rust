@@ -632,7 +632,7 @@ package WstxTransmit {
         doc /* WstxContact::TxWatchdog (#39, 2026-11-06): the owner holds the limit, 1..99
              repetitions (default 6 at each start), and no count: the contact consumer
              compares its dialogue Rep with the limit and reports that Rep for
-             tx_remaining_calls (#97: the Tx watchdog's only; a strategy run's own contact, which has
+             tx_remaining_calls (the Tx watchdog's only; a strategy run's own contact, which has
              no stop while attended, reports none: WstxStrategy::StrategyWatchdog, LeaveCountLabel;
              a busy partner's paused calls are not counted: WstxContact::BusyPartner). GET /transmit
              watchdog.tx_remaining_calls is therefore an integer or null: null exactly while armed for

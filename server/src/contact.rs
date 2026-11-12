@@ -2612,11 +2612,7 @@ impl Engine {
                         // The repetition limit due in this same step (the condition of
                         // `submit`) is the cause shown before this one (CL-111-03).
                         let due = self.last_started_period.map_or(now, |p| {
-                            transmit::next_period(
-                                mode,
-                                p + period_ms(mode),
-                                self.settings.parity,
-                            )
+                            transmit::next_period(mode, p + period_ms(mode), self.settings.parity)
                         });
                         // BusyPartner: the counted repetitions; a paused send is no repetition.
                         let n = core.tx_limit();

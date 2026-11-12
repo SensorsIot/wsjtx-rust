@@ -1713,8 +1713,8 @@ ${f.worked_since.kind==='from_to'?`<label>From<input id="se-from" data-field="fi
 ${filters}
 <h3 class="se-part">3 Order</h3>
 ${orderRows}
-<h3 class="se-part">4 Callers first</h3>
-<label class="op-check"><input type="checkbox" id="se-callers-first" data-field="callers_first"${s.callers_first?' checked':''}>Callers of my call first</label>
+<h3 class="se-part">4 Calling stations are answered</h3>
+<label class="op-check"><input type="checkbox" id="se-callers-first" data-field="callers_first"${s.callers_first?' checked':''}>Calling stations are answered</label>
 <h3 class="se-part">5 Leaving a station</h3>
 <div class="se-leave" role="radiogroup" aria-label="Leaving a station" data-field="leave">
 <label class="op-check"><input type="radio" name="se-leave" value="calls"${L.mode==='calls'?' checked':''}>After ${number('se-leave-calls','leave.calls',1,20,leaveValue('calls','calls',4))} calls without answer, ${number('se-leave-heard','leave.calls_heard',1,40,leaveValue('calls','calls_heard',8))} if he hears us</label>
@@ -1726,7 +1726,7 @@ ${PSK_CASES.map(move).join('')}
 <h3 class="se-part">7 Busy pause</h3>
 <label class="op-check"><input type="checkbox" id="se-busy" data-field="busy_pause"${s.busy_pause?' checked':''}>Busy pause: while he is in a QSO with another station keep calling on a split frequency and do not count</label>
 <h3 class="se-part">8 CQ when idle</h3>
-<label class="op-check"><input type="checkbox" id="se-cq" data-field="cq_when_idle"${s.cq_when_idle?' checked':''}>CQ when idle</label>
+<div class="se-options"><label class="op-check"><input type="checkbox" id="se-cq" data-field="cq_when_idle"${s.cq_when_idle?' checked':''}>CQ when idle,</label><label>after ${number('se-cq-wait','cq_wait_periods',1,20,s.cq_wait_periods)} periods with nothing callable</label></div>
 <h3 class="se-part">9 Retry pause</h3>
 <label>Retry pause (minutes)${number('se-retry','retry_minutes',1,120,s.retry_minutes)}</label>
 ${s.builtin?'<p class="op-muted">Built-in: read-only; Duplicate makes your own copy.</p>':''}`;
@@ -1781,6 +1781,7 @@ editor.addEventListener('input',event=>{
   else if(t.dataset.moveN)s.tx_move_every[t.dataset.moveN]=Number(t.value);
   else if(t.id==='se-busy')s.busy_pause=t.checked;
   else if(t.id==='se-cq')s.cq_when_idle=t.checked;
+  else if(t.id==='se-cq-wait')s.cq_wait_periods=Number(t.value);
   else if(t.id==='se-retry')s.retry_minutes=Number(t.value);
   else return;
   schedulePreview();

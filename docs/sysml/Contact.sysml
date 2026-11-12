@@ -625,7 +625,7 @@ package WstxContact {
              auto_tx_mode(true); AutoRespondPeriod.cpp ~11-32
              isDirectAutoRespondCandidate: addressed to my call, a callsign sender other
              than me, an exchange that is not R+report, RRR, RR73 or 73): while the
-             contact is calling (an own CQ started by the operator; an MCP run keeps its own rules, WstxMcp; an award strategy never calls CQ, and a contest Run answers its callers itself, WstxContest::ContestRun) with Enable Tx,
+             contact is calling (an own CQ started by the operator; an MCP run keeps its own rules, WstxMcp; a CQ called by automation: the automation answers its callers only with Calling stations are answered on, WstxStrategy::CallerOfMyCall, WstxContest::ContestRun) with Enable Tx,
              Auto Seq and Call 1st on (WSJT-X AutoRespondPeriod.cpp observePeriod opens
              the respond period only while Enable Tx is on), the first decoded row of the step, in decode order (row
              sequence), that is a standard message to my call from a concrete call in the
@@ -925,7 +925,7 @@ package WstxContact {
              2026-11-04): the Tx watchdog limits how often one message is repeated, in
              manual operation and under automation alike, whatever the message (CQ,
              Tx1..Tx5, free text), except a strategy run's own contact while the run is attended,
-             which has no stop (WstxStrategy::StrategyWatchdog; #97: WD:n shows only this watchdog,
+             which has no stop (WstxStrategy::StrategyWatchdog; WD:n shows only this watchdog,
              never the run's leave count). Server-owned station-session setting: limit 1..99
              repetitions, default 6 at each station start. DIFFERENT: WSJT-X 0 = disabled
              is not offered; a safety bound always applies.
@@ -1132,7 +1132,7 @@ package WstxContact {
              this order after COMMENT: STX, STX_STRING, SRX, CONTEST_ID, SRX_STRING, CLASS,
              ARRL_SECT, STATE; each at most 32 printable ASCII characters without '<' and
              '>' (STX/SRX 1-4 digits). Confirmation fields (#10, operator 2026-11-04, for
-             the #39 award strategies), in this order after the contest fields:
+             the strategies of class strategy), in this order after the contest fields:
              LOTW_QSL_RCVD, LOTW_QSLRDATE, QSL_RCVD, QSLRDATE, QSL_RCVD_VIA, EQSL_QSL_RCVD,
              EQSL_QSLRDATE; the statuses the ADIF 3.1 QSL Rcvd enumeration Y, N, R, I, V,
              the dates YYYYMMDD, QSL_RCVD_VIA the QSL Via enumeration B, D, E, M (values
