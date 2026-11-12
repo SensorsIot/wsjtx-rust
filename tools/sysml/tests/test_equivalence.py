@@ -22,7 +22,8 @@ tool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tool)
 CACHE = Path.home() / ".cache/wsjtx-rust/sysml-tools"
 
-META = """package Meta {
+META = """/* Shared metadata header. */
+package Meta {
     private import ScalarValues::*;
     enum def State { enum planned; enum partial; }
     metadata def Status { attribute build : State; }
@@ -92,6 +93,9 @@ package Core {
         part c : Station;
         connect a to b;
         satisfy goal1 by a;
+    }
+    view overview {
+        expose system::*;
     }
     action def Run {
         doc /* Runs, see [spec](Spec.md). */
@@ -210,6 +214,16 @@ CASES = {
     "E12 m": (BASE, edit(BASE, CORE_PATH, "[spec](Spec.md)", "[spec](Other.md)")),
     "E12 n": (BASE, limits_moved(BASE, "101")),
     "E12 n unchanged": (BASE, limits_moved(BASE)),
+    # Review repair of a3e4ddd7: owners of same-named elements, expose, members of no package.
+    "E12 o": (BASE, edit(edit(BASE, CORE_PATH, "bufferBytes : Integer = 8192;", "bufferBytes : Integer = 100;"),
+                         "docs/sysml/Extra.sysml", "bufferBytes : Integer = 100;", "bufferBytes : Integer = 8192;")),
+    "E12 p": (BASE, edit(edit(BASE, CORE_PATH, "        attribute peers : Integer [0..4];\n", ""),
+                         "docs/sysml/Extra.sysml", "        attribute bufferBytes : Integer = 100;\n",
+                         "        attribute bufferBytes : Integer = 100;\n        attribute peers : Integer [0..4];\n")),
+    "E12 q": (BASE, edit(BASE, CORE_PATH, "expose system::*;", "expose system;")),
+    "E12 q dropped": (BASE, edit(BASE, CORE_PATH, "        expose system::*;\n", "")),
+    "E12 r": (BASE, edit(BASE, "docs/sysml/Meta.sysml", "Shared metadata header.", "Shared metadata header!")),
+    "E12 r dropped": (BASE, edit(BASE, "docs/sysml/Meta.sysml", "/* Shared metadata header. */\n", "")),
 }
 # The #170 assignment table (issue #170, Technical details): part file -> moved identities.
 TABLE = {
@@ -312,6 +326,12 @@ class SyntheticEquivalenceTests(unittest.TestCase):
             self.assertTrue(any(line.startswith(prefix) for line in lines), f"{name}: no line {prefix!r}:\n" + "\n".join(lines))
         return lines
 
+    def kind(self, name: str, prefix: str, word: str):
+        """The case exits 1 with a line starting with `prefix` that names the kind `word`."""
+        lines = self.outcome(name, 1, prefix)
+        self.assertTrue(any(line.startswith(prefix) and word in line for line in lines),
+                        f"{name}: no {prefix!r} line naming {word}:\n" + "\n".join(lines))
+
     # Proves: CL-014-17; TC-DOC-015
     def test_e2_doc_character(self):
         self.outcome("E2", 1, "changed Station doc Core.sysml -> Core.sysml")
@@ -323,8 +343,8 @@ class SyntheticEquivalenceTests(unittest.TestCase):
 
     # Proves: CL-014-17; TC-DOC-015
     def test_e4_changed_target(self):
-        self.outcome("E4 dependency", 1, "changed d1 ")
-        self.outcome("E4 verify", 1, "changed check1 ")
+        self.kind("E4 dependency", "changed d1 ", "Dependency")
+        self.kind("E4 verify", "changed check1 ", "RequirementVerificationMembership")
         lines = self.outcome("E4 type", 1, "changed Engine::size ")
         self.assertTrue(any("FeatureTyping" in line for line in lines if line.startswith("changed Engine::size ")), lines)
 
@@ -391,11 +411,42 @@ class SyntheticEquivalenceTests(unittest.TestCase):
         for name, prefixes in expected.items():
             with self.subTest(name):
                 self.outcome(name, 1, *prefixes)
-        lines = self.outcome("E12 b", 1)
-        self.assertTrue(any("declaredShortName" in line for line in lines), lines)
-        lines = self.outcome("E12 c", 1)
-        self.assertTrue(any("direction" in line for line in lines), lines)
+        kinds = {
+            "E12 b": ("changed Engine ", "declaredShortName"),
+            "E12 c": ("changed CommandPort::command ", "direction"),
+            "E12 d": ("changed Station ", "Subclassification"),
+            "E12 e": ("changed Station::target ", "Subsetting"),
+            "E12 f": ("changed Variant::bigEngine ", "Redefinition"),
+            "E12 g": ("changed system ", "SatisfyRequirementUsage"),
+            "E12 h": ("changed goal1::s ", "FeatureTyping"),
+            "E12 i": ("changed system ", "ConnectionUsage"),
+            "E12 j status": ("changed Engine ", "MetadataUsage"),
+            "E12 j module": ("changed Engine ", "MetadataUsage"),
+        }
+        for name, (prefix, word) in kinds.items():
+            with self.subTest(name):
+                self.kind(name, prefix, word)
         self.outcome("E12 n unchanged", 0)
+
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e12o_values_swapped_between_same_named_owners(self):
+        lines = self.outcome("E12 o", 1)
+        self.assertTrue(any("Limits" in line for line in lines if not line.startswith(("moved", "pair", "equivalent"))), lines)
+
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e12p_member_moved_between_same_named_owners(self):
+        self.outcome("E12 p", 1, "changed Limits::peers owner Core.sysml -> Extra.sysml")
+
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e12q_expose_is_compared(self):
+        self.kind("E12 q", "changed overview ", "Expose")
+        self.kind("E12 q dropped", "changed overview ", "Expose")
+
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e12r_comment_outside_any_package(self):
+        self.outcome("E12 r", 1, 'missing package-level Comment "Shared metadata header." Meta.sysml',
+                     'added package-level Comment "Shared metadata header!" Meta.sysml')
+        self.outcome("E12 r dropped", 1, 'missing package-level Comment "Shared metadata header." Meta.sysml')
 
 
 class IdentityTests(unittest.TestCase):

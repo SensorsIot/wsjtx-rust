@@ -931,6 +931,7 @@ def validate(paths: list[Path], cache: Path, inventory: bool = False) -> subproc
 
 # A qualified name as written in text: two or more segments, each a word or a quoted name.
 QNAME = re.compile(r"(?<![\w':])(?:[A-Za-z_]\w*|'[^'\r\n]+')(?:::(?:[A-Za-z_]\w*|'[^'\r\n]+'))+")
+QNAME_SEGMENT = re.compile(r"(?:[A-Za-z_]\w*|'[^'\r\n]+')(?:::|$)")
 MODEL_PATH = re.compile(r"docs/sysml/[\w./-]*[\w/]")
 LINK = re.compile(r"\]\(\s*<?([^)\s>]+)>?\s*\)")
 # The tracked files at <head> whose model citations `equivalence` checks.
@@ -1079,7 +1080,8 @@ def run_export(side: Side, names: list[str], cache: Path, folder: Path) -> dict:
             key = "::".join(segments)
             while key in export["entries"]:
                 key += "~"
-            export["entries"][key] = {"key": key, "rel": "::".join(segments[1:]), "package": segments[0],
+            owner = "::".join(segments[:-1]) if len(segments) > 2 else None
+            export["entries"][key] = {"key": key, "rel": "::".join(segments[1:]), "package": segments[0], "owner": owner,
                                       "file": file_key(data["file"]), "facts": facts(data["facts"])}
         elif kind == "RESOLVE":
             export["resolved"][data["name"]] = data["id"]
@@ -1129,14 +1131,18 @@ class Normal:
                      for path, kind, feature, values in facts)
 
 
-def label(fact) -> str:
-    """The property or relationship kind a differing fact names."""
+def label(fact, facts: tuple = ()) -> str:
+    """The property or relationship kind a differing fact names; a fact of the element
+    itself is named with the element's class, taken from `facts`."""
     path, kind, feature, _value = fact
     if path == "" and kind == "kind":
         return "kind"
     classes = [step.split("[", 1)[0] for step in path.split("/") if step]
     if kind == "text":
         return "doc" if classes and classes[-1] == "Documentation" else "comment"
+    if not classes:
+        own = next((value for step, sort, _feature, value in facts if step == "" and sort == "kind"), None)
+        classes = [own] if own else []
     return "/".join(classes) + "." + (feature or "kind") if classes else feature or "kind"
 
 
@@ -1161,19 +1167,40 @@ def compare(base: Side, head: Side, citations: list) -> tuple[int, list[str]]:
     def rel(entries, key: str) -> str:
         return entries[key]["rel"] if key in entries else key.partition("::")[2]
 
+    def children(entries) -> dict:
+        found = {}
+        for key, entry in entries.items():
+            if entry["owner"]:
+                found.setdefault(entry["owner"], []).append(key)
+        return found
+
+    def deep(entries, members, normal, memo, key):
+        """An element's own facts and those of its named members, by member name: the
+        content same-named elements are paired by (D2)."""
+        if key not in memo:
+            entry = entries[key]
+            nested = sorted((entries[member]["rel"].rsplit("::", 1)[-1], repr(deep(entries, members, normal, memo, member)))
+                            for member in members.get(key, []))
+            memo[key] = (normal.facts(entry["facts"], entry["file"]), tuple(nested))
+        return memo[key]
+
     loose_b = Normal(base, lambda key: "R:" + rel(entries_b, key))
     loose_h = Normal(head, lambda key: "R:" + rel(entries_h, key))
+    members_b, members_h, memo_b, memo_h = children(entries_b), children(entries_h), {}, {}
     rel_b, rel_h = by_rel(entries_b), by_rel(entries_h)
     pair, missing, added = {}, [], []
-    for name in sorted(set(rel_b) | set(rel_h)):
+    # Owners first, so that a member prefers the counterpart under its owner's counterpart.
+    for name in sorted(set(rel_b) | set(rel_h), key=lambda name: (len(QNAME_SEGMENT.findall(name)), name)):
         bases, heads = rel_b.get(name, []), list(rel_h.get(name, []))
         if len(bases) == 1 and len(heads) == 1:
             pair[bases[0]] = heads[0]
             continue
         for key in bases:
-            content = loose_b.facts(entries_b[key]["facts"], entries_b[key]["file"])
-            match = next((other for other in heads
-                          if loose_h.facts(entries_h[other]["facts"], entries_h[other]["file"]) == content), None)
+            content = deep(entries_b, members_b, loose_b, memo_b, key)
+            matches = [other for other in heads if deep(entries_h, members_h, loose_h, memo_h, other) == content]
+            owner = entries_b[key]["owner"]
+            preferred = [other for other in matches if owner is None or entries_h[other]["owner"] == pair.get(owner)]
+            match = (preferred or matches or [None])[0]
             if match is None:
                 missing.append(key)
             else:
@@ -1184,6 +1211,12 @@ def compare(base: Side, head: Side, citations: list) -> tuple[int, list[str]]:
     strict_b = Normal(base, lambda key: "M:" + pair[key] if key in pair else "U:" + rel(entries_b, key))
     strict_h = Normal(head, lambda key: "M:" + key if key in paired else "U:" + rel(entries_h, key))
     differences, moves, info = [], [], []
+    # A pair whose owner is a named element has paired owners.
+    for key_b, key_h in sorted(pair.items()):
+        owner_b, owner_h = entries_b[key_b]["owner"], entries_h[key_h]["owner"]
+        if owner_b is not None and pair.get(owner_b) != owner_h:
+            b, h = entries_b[key_b], entries_h[key_h]
+            differences.append(f"changed {b['rel']} owner {b['file']} -> {h['file']}")
     for key in missing:
         entry = entries_b[key]
         differences.append(f"missing {entry['rel']} {entry['package']} {entry['file']}")
@@ -1197,7 +1230,7 @@ def compare(base: Side, head: Side, citations: list) -> tuple[int, list[str]]:
         if facts_b != facts_h:
             index = next((i for i, (x, y) in enumerate(zip(facts_b, facts_h)) if x != y), min(len(facts_b), len(facts_h)))
             fact = facts_b[index] if index < len(facts_b) else facts_h[index]
-            differences.append(f"changed {b['rel']} {label(fact)} {b['file']} -> {h['file']}")
+            differences.append(f"changed {b['rel']} {label(fact, facts_b)} {b['file']} -> {h['file']}")
         if (b["package"], b["file"]) != (h["package"], h["file"]):
             moves.append(f"moved {b['rel']} {b['package']} {b['file']} -> {h['package']} {h['file']}")
             pairs[(b["file"], h["file"])] += 1

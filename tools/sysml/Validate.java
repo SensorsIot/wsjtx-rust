@@ -200,6 +200,13 @@ public class Validate {
             if (!(root instanceof Namespace namespace)) continue;
             if (global == null) global = namespace;
             for (var relationship : namespace.getOwnedRelationship()) {
+                // A member of no package (a file's header comment): an item, as a package's.
+                if (kept(relationship) && relationship.getOwnedRelatedElement().stream().noneMatch(owned -> owned.getDeclaredName() != null)) {
+                    var facts = new ArrayList<String>();
+                    facts(relationship, "", relationship, facts, true);
+                    exportRow("ITEM", "{\"file\":" + fileOf(relationship) + ",\"facts\":[" + String.join(",", facts) + "]}");
+                    continue;
+                }
                 for (var element : relationship.getOwnedRelatedElement()) {
                     if (element.getDeclaredName() != null) {
                         exportRow("PACKAGE", "{\"name\":" + json(element.getDeclaredName()) + ",\"file\":" + fileOf(element) + "}");
@@ -306,9 +313,10 @@ public class Validate {
         return element.eResource() == modelResource && element.getOwner() != null && element.getOwner().getOwner() == null;
     }
 
-    /** An import or an alias: a membership, compared through the targets it lets resolve. */
+    /** An import or an alias: a membership, compared through the targets it lets resolve.
+     * An expose is no such membership: what a view exposes is compared. */
     static boolean free(org.eclipse.emf.ecore.EObject object) {
-        return object instanceof Import
+        return object instanceof Import && !(object instanceof Expose)
             || object instanceof Membership membership && !(membership instanceof OwningMembership) && membership.getMemberName() != null;
     }
 
