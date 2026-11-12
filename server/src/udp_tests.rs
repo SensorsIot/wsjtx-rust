@@ -1515,10 +1515,33 @@ fn flex_ready(session: &wstx_rust::flex::Session, letter: &str) {
     });
 }
 
+/// The lock file a `lock_holder_child` process holds, and the line it prints once it holds it.
+const LOCK_HOLDER: &str = "WSTX_TEST_LOCK_HOLDER";
+const LOCKED: &str = "lock-holder: locked";
+/// Not a test of its own: the child process of TC-112-001 (c). It holds an exclusive lock on
+/// the file LOCK_HOLDER names until it is killed (as a live server holds its name).
+#[test]
+#[ignore = "child process of tc_112_001_instance_name"]
+fn lock_holder_child() {
+    let Some(path) = std::env::var_os(LOCK_HOLDER) else {
+        return;
+    };
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path)
+        .unwrap();
+    file.lock().unwrap();
+    println!("{LOCKED}");
+    // Held until killed; a parent that ends without killing it closes this pipe.
+    let _ = std::io::Read::read_to_end(&mut std::io::stdin(), &mut Vec::new());
+}
+
 // Proves: CL-112-01, TC-112-001. The instance name: base forms, numbering on a clash, a
-// released name taken again, an unusable lock folder, the name on every datagram and in
-// GET /udp, no change by a radio change while running, WSTX_UDP=off claims nothing. A dropped
-// owner releases its lock as a killed process does (the OS closes the handle, TC-022-003).
+// released name taken again (dropped, and a killed process), an unusable lock folder, the name
+// on every datagram and in GET /udp, no change by a radio change while running, WSTX_UDP=off
+// claims nothing.
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_112_001_instance_name() {
     let f = fixture("http://127.0.0.1:18411", false);
@@ -1558,6 +1581,48 @@ async fn tc_112_001_instance_name() {
     again.step(&f.state);
     assert_eq!(name_of(&again, &f), "WSTX-Rust - IC-7300");
     drop((plain, second, third, again));
+
+    // (c) a killed process: a child process holds the base form's lock; while it lives a new
+    // owner numbers, once it is killed the next owner takes the base form.
+    let p = fixture("http://127.0.0.1:18424", false);
+    control(&p, "cat", Some("COM3"));
+    let root = locks(&p);
+    std::fs::create_dir_all(&root).unwrap();
+    let held = root.join("WSTX-Rust_-_IC-7300.lock");
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "udp::tests::lock_holder_child",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(LOCK_HOLDER, &held)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        use std::io::BufRead;
+        let out = std::io::BufReader::new(child.stdout.take().unwrap());
+        assert!(
+            out.lines()
+                .map_while(Result::ok)
+                .any(|l| l.contains(LOCKED)),
+            "the child holds the lock"
+        );
+    }
+    let while_alive = quiet_owner(&p, &root);
+    assert_eq!(name_of(&while_alive, &p), "WSTX-Rust - IC-7300 2");
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let after_kill = quiet_owner(&p, &root);
+    assert_eq!(
+        name_of(&after_kill, &p),
+        "WSTX-Rust - IC-7300",
+        "a killed process frees its name"
+    );
+    drop((while_alive, after_kill));
 
     // (d) an unusable lock folder (a file): the base form, the start proceeds and sends.
     let g = fixture("http://127.0.0.1:18412", false);
