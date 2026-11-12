@@ -24,7 +24,7 @@ let automationAnnounced = null;
 let freeTxSlotsHeld = null;
 let retry = 1000, lastMessage = 0, nextId = 1;
 // #102: every call names the path that made the page stale (station-stale detail.path), as evidence.
-function stale(path) { connection.textContent = 'Disconnected · stale'; connection.dataset.state = 'stale'; refresh.disabled = true; window.dispatchEvent(new CustomEvent('station-stale', {detail: {path}})); }
+function stale(path) { connection.textContent = 'Disconnected · stale'; connection.dataset.state = 'stale'; refresh.disabled = true; window.dispatchEvent(Object.assign(new Event('station-stale'), {detail: {path}})); }
 function requestStatus() {
   if (socket?.readyState !== WebSocket.OPEN) return;
   pendingId = nextId++; refresh.disabled = true;
