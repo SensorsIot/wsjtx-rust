@@ -47,7 +47,7 @@ test('TC-009-005 network lifetime and correlated Off oracle reject true violatio
 
 // Evidence of #102 items 3 to 6 (no promise): the failure output of a Thin or Off window, from fixed
 // sockets, stale records and frames. Each item appears exactly once, on the one UTC-ms clock.
-test('Failure evidence of a Thin or Off window lists each socket, stale and close once in UTC ms',()=>{
+test('Failure evidence of a Thin or Off window lists each socket, stale and close once in UTC ms',async()=>{
   const parse=lines=>{assert.match(lines[0],/judged on issue #102/);assert.equal(lines.filter(l=>l.includes('#102')).length,1,'one #102 line');return lines.slice(1).map(l=>{assert.match(l,/^WSTX_EVIDENCE \{/);return JSON.parse(l.slice('WSTX_EVIDENCE '.length));});};
   // Hand calculation: origin 1800000000000.5 ms; Node 1000 -> 1800000001000.5, 61000.25 -> 1800000061000.75.
   const timeOrigin=1800000000000.5,windows=[{profile:'thin',start:1000,end:61000.25}];
@@ -60,7 +60,14 @@ test('Failure evidence of a Thin or Off window lists each socket, stale and clos
   assert.deepEqual(quiet.filter(e=>e.kind==='stale'||e.kind==='frames-before-close'),[]);
   // A window still running when the phase failed ends at the failure time.
   assert.equal(parse(failureEvidence({timeOrigin,now:70000,windows:[{profile:'off',start:1000,end:null}],browsers:[]}))[0].endUtc,1800000070000.5);
-  // (b) browser 0: a watchdog close at C = 30000 (UTC 1800000030000.5); (c) browser 1: a socket the
+  // The fixture's after hooks, in their order: the failed window ends at the failure (Node 40000),
+  // not at the teardown (90000) whose browser close ends the socket at 89000, outside the window.
+  const hooks=[],failed={profile:'thin',start:1000,end:null};let clock=40000,printed=null;
+  failureHooks(hook=>hooks.push(hook),{now:()=>clock,underWay:()=>failed,close:()=>{clock=90000;},
+    evidence:()=>{printed=parse(failureEvidence({timeOrigin,now:clock,windows:[failed],browsers:[{sockets:[{index:0,opened:500,closed:89000,lastFrameAt:null}],staleRecords:[],frames:[]}]}));}});
+  for(const hook of hooks)await hook();
+  assert.equal(printed[0].endUtc,1800000040000.5,'the failure time, not the teardown time');
+  assert.equal(printed.find(e=>e.kind==='in-window').socketCloses,'none','the teardown close lies after the failed window');  // (b) browser 0: a watchdog close at C = 30000 (UTC 1800000030000.5); (c) browser 1: a socket the
   // station ended at 30400; (d) both within the same second.
   // (e) Frames around C: C-12000 included, C-12001 excluded, C included; another socket's never.
   const stale0={at:1800000030000,path:'watchdog',silenceMs:12500,deferredPending:false,socketState:1,authorization:'ready'};
@@ -610,6 +617,13 @@ function failureEvidence({timeOrigin,now,windows,browsers}){
   }
   return lines;
 }
+// #102: after hooks run in registration order. The first ends a failed window at the failure time,
+// before the browser close ends both browsers' sockets; the evidence is printed after the close.
+function failureHooks(after,{now,underWay,close,evidence}){
+  after(()=>{const w=underWay();if(w&&w.end===null)w.end=now();});
+  after(close);
+  after(evidence);
+}
 function cadenceJoin(seen,origin,mapping){
   const network=seen.transfers.filter(r=>r.route==='/receive/selection'&&r.method==='GET');
   assert.equal(network.length,seen.reads.length,'complete ordered page/CDP selection join');
@@ -668,7 +682,7 @@ function liveSelectionFixture(){
     const port=await browserPort();
     process.stdout.write(`WSTX_SELECTION_PORT ${port}\n`);
     await new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(new Error('real TLS fixture READY deadline')),15000);process.stdin.once('data',data=>{clearTimeout(timeout);if(data.toString().trim()==='READY')resolve();else reject(new Error('invalid real TLS fixture handshake'));});});
-    const origin=`https://localhost:${port}`,browser=await chromium.launch();t.after(()=>browser.close());
+    const origin=`https://localhost:${port}`,browser=await chromium.launch();
     const pages=[],contexts=[],observations=[],errors=[],identities=[],report={startedUtc:new Date().toISOString(),clients:2,model:'actual TLS streams, unshaped',phases:{}};
     const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
     const waitUntil=async deadline=>{while(performance.now()<deadline)await sleep(Math.max(1,Math.ceil(deadline-performance.now())));};
@@ -677,13 +691,14 @@ function liveSelectionFixture(){
     // #102: the Thin and Off windows, and the one under way (from its profile switch to its end).
     const windows=[];let underWay=null;
     // A failed run keeps its own copy: the next run (a gate rerun) overwrites live-link.json (#8).
-    // A Thin or Off phase that failed at any point prints its evidence (#102), from what Node holds.
-    t.after(async()=>{
+    // A Thin or Off phase that failed at any point prints its evidence (#102), from what Node holds;
+    // its window ends at the failure, read before the browser close ends the sockets.
+    failureHooks(hook=>t.after(hook),{now:()=>performance.now(),underWay:()=>underWay,close:()=>browser.close(),evidence:async()=>{
       if(!activePhase&&!underWay)return;
       if(underWay){const now=performance.now();report.failureEvidence=failureEvidence({timeOrigin:performance.timeOrigin,now,windows,browsers:observations.map(seen=>({sockets:seen.sockets,staleRecords:seen.staleRecords,frames:seen.wireFrames}))});console.log(report.failureEvidence.join('\n'));}
       if(activePhase){report.phases[activePhase].state='failed';report.phases[activePhase].endedUtc=new Date().toISOString();}
       await save();await fs.copyFile('test-results/radio-selection/live-link.json',`test-results/radio-selection/live-link-failed-${Date.now()}.json`);
-    });
+    }});
     for(let i=0;i<2;i++){
       const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}});contexts.push(context);
       const page=await context.newPage();pages.push(page);
