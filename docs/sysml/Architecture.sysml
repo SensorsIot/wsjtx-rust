@@ -1,8 +1,10 @@
 package WstxArchitecture {
     private import ScalarValues::*;
-    doc /* Product structure: one selected-radio deployment context, its four deployment
-         participants, software owners and typed exchanges. The frontend may run locally
-         on the backend computer or remotely over the station link; the logical
+    private import ModelNotes::FollowsSource;
+    doc /* Product structure: one selected-radio deployment context, its frontend and backend
+         containers of the product's functions, software owners and typed exchanges.
+         The frontend may run locally on the backend computer or remotely over the
+         station link; the logical
          roles and profile-scoped protocol remain the same. Windows x64/MSVC is the
          first desktop target; portability and later platforms follow
          WstxProductScope::ReleasePolicy, not an assertion of platform acceptance.
@@ -23,20 +25,123 @@ package WstxArchitecture {
          WstxOperatingLayout and WstxOperatingReceive. */
 
     part physicalStation {
-        doc /* One selected-radio reference context with user, frontend, backend and radio
-             roles. Frontend/backend roles may share a computer. This is not universal
-             radio cardinality or a radio count derived from station count. */
-        part user : User;
+        doc /* The deployment of the product's functions: the browser client functions
+             (frontend) and the server process functions (backend), with their populations
+             and connections. Outside things are not parts; OutsideThing lists them. */
         part frontend : Frontend;
         part backend : Backend;
-        part radio : Radio;
         part browserAttachments[*] : BrowserAttachment;
-        part radioAudioAttachments[*] : RadioAudioAttachment;
-        part radioControlAttachments[*] : RadioControlAttachment;
     }
     view physicalInterconnection : StandardViewDefinitions::InterconnectionView {
         expose physicalStation::*;
     }
+
+    enum def OutsideThing {
+        doc /* The outside things the server opens a socket, device or file to. None is a
+             part or has a port. The function that owns each carries its information and
+             state on the ports it offers to other functions; the wire protocol is that
+             function's inside. */
+        enum catRadio {
+            doc /* The transceiver's CAT serial link, a COM port found by device enumeration. */
+            @FollowsSource {
+                reference = "Icom IC-7300 Full Manual A7292-4EX-12a, CI-V command table";
+            }
+        }
+        enum flexRadio {
+            doc /* A FlexRadio through its native API: a TCP command channel and UDP VITA-49
+                 streams. */
+            @FollowsSource {
+                reference = "SmartSDR TCP/IP API and FlexLib, as "
+                    + "WstxProductScope::NativeFlexWireSubset pins them";
+            }
+        }
+        enum soundDevice {
+            doc /* The sound-card capture and playback endpoints. */
+            @FollowsSource { reference = "Windows Core Audio WASAPI, shared event-driven mode"; }
+        }
+        enum browser {
+            doc /* The operator's browser, over HTTPS and WebSocket on the station listener.
+                 WstxStationProtocol is the product's own protocol over them. */
+            @FollowsSource {
+                reference = "RFC 9110 HTTP, RFC 6455 WebSocket, TLS 1.2 and 1.3 "
+                    + "(RFC 5246, RFC 8446)";
+            }
+        }
+        enum mcpClient {
+            doc /* MCP clients, POST /mcp on the same listener. A client reaches one station's
+                 McpAdapter over that station's own HTTPS listener with its own auth-v1 grant
+                 (WstxMcp::McpEndpoint, McpCredential); it may run on any authorized
+                 computer. */
+            @FollowsSource {
+                reference = "Model Context Protocol, Streamable HTTP, "
+                    + "the eras WstxMcp::McpEndpoint names";
+            }
+        }
+        enum udpPeer {
+            doc /* The configured WSJT-X UDP targets, send-only. */
+            @FollowsSource {
+                reference = "WSJT-X Network/NetworkMessage.hpp, the version WstxUdp names";
+            }
+        }
+        enum pskReporter {
+            doc /* The PSK Reporter MQTT broker, subscribe-only over TLS. */
+            @FollowsSource { reference = "MQTT 3.1.1 (OASIS), PSK Reporter MQTT feed"; }
+        }
+        enum clubLog {
+            doc /* The Club Log Most Wanted download, on request. */
+            @FollowsSource { reference = "Club Log mostwanted.php API, JSON"; }
+        }
+        enum timeServer {
+            doc /* The SNTP servers. */
+            @FollowsSource { reference = "RFC 4330 SNTP client, RFC 5905 packet"; }
+        }
+        enum windowsTime {
+            doc /* The Windows Time service, its state read only. */
+            @FollowsSource { reference = "Win32 Service Control Manager API"; }
+        }
+        enum profileFiles {
+            doc /* The profile directory and its files. */
+            @FollowsSource {
+                reference = "ADIF 3.1.8 ADI (contacts.adi); RIFF WAVE PCM (recordings); "
+                    + "AD1C cty.dat; the other files are the product's own formats "
+                    + "of their owning packages";
+            }
+        }
+        enum tlsFiles {
+            doc /* The TLS certificate and key files named at launch. */
+            @FollowsSource { reference = "RFC 7468 PEM, X.509 certificate, PKCS#8 key"; }
+        }
+        enum resourceLocks {
+            doc /* The radio identity lock files under %LOCALAPPDATA%. */
+            @FollowsSource { reference = "Windows file locking through std::fs::File::try_lock"; }
+        }
+    }
+    dependency catRadioOwner from OutsideThing::catRadio
+        to physicalStation::backend::stations::radioControl;
+    dependency flexRadioOwner from OutsideThing::flexRadio
+        to physicalStation::backend::stations::receive;
+    dependency soundDeviceOwner from OutsideThing::soundDevice
+        to physicalStation::backend::stations::audio;
+    dependency browserOwner from OutsideThing::browser
+        to physicalStation::backend::stations::web;
+    dependency mcpClientOwner from OutsideThing::mcpClient
+        to physicalStation::backend::stations::mcp;
+    dependency udpPeerOwner from OutsideThing::udpPeer
+        to physicalStation::backend::stations::station;
+    dependency pskReporterOwner from OutsideThing::pskReporter
+        to physicalStation::backend::stations::qso;
+    dependency clubLogOwner from OutsideThing::clubLog
+        to physicalStation::backend::stations::qso;
+    dependency timeServerOwner from OutsideThing::timeServer
+        to physicalStation::backend::stations::transmit;
+    dependency windowsTimeOwner from OutsideThing::windowsTime
+        to physicalStation::backend::stations::transmit;
+    dependency profileFilesOwner from OutsideThing::profileFiles
+        to physicalStation::backend::stations::profile;
+    dependency tlsFilesOwner from OutsideThing::tlsFiles
+        to physicalStation::backend::stations::web;
+    dependency resourceLocksOwner from OutsideThing::resourceLocks
+        to physicalStation::backend::radioAuthority;
 
     doc /* Physical radio values are structured data attributes (OMG SysML 2.0 section7.7),
          not new components. Each property/context has ONE current observable value below.
@@ -1300,14 +1405,15 @@ package WstxArchitecture {
          Future actions/workflows need implementation/acceptance; this model is no verdict. */
 
     requirement PhysicalDeploymentStructure {
-        doc /* Architectural refinement of the existing deployment scope: the model MUST
-             contain the user/frontend/backend/radio context. Frontend and Backend are
-             pure deployment containers without forwarding ports or functional policy.
-             Operator and station exchanges MUST connect selected functional endpoints
-             directly, retaining profile-scoped browser/station selection. Separate audio
-             and control paths MUST connect the selected radio adapter and radio.
-             Variable browser and station populations MUST NOT become a fixed station
-             count, all-to-all routing, or an additional detached deployment. */
+        doc /* The model MUST contain the frontend and backend containers of the product's
+             functions. Frontend and Backend are pure deployment containers without
+             forwarding ports or functional policy. Browser and station exchanges MUST
+             connect selected functional endpoints directly, retaining profile-scoped
+             browser and station selection. Audio and radio control MUST stay separate
+             functions. No outside thing is a part or has a port; each is an entry of
+             OutsideThing with one owning function. Variable browser and station
+             populations MUST NOT become a fixed station count, all-to-all routing, or an
+             additional detached deployment. */
     }
     requirement StationResourceIdentity {
         doc /* Architectural refinement of WstxProfiles and
@@ -1317,7 +1423,8 @@ package WstxArchitecture {
              and outcomes MUST retain request/resource identity through that authority
              to the selected CAT driver. Audio and CAT MUST be separate direct station parts,
              with no combined radio-backend wrapper or variation. Both adapters MUST
-             attach to the same selected radio and MUST NOT bypass the common authority.
+             serve the radio the station's radio binding selects, and control MUST NOT
+             bypass the common authority.
              A native FlexRadio profile instead reaches its radio through the one native
              session of its station (WstxProductScope::NativeFlexWireSubset), owned by the
              station's receive owner, with no CAT driver in the path. */
@@ -1345,23 +1452,22 @@ package WstxArchitecture {
              population/reference subsets, separate audio/CAT adapter ownership and identity
              bindings
              in the existing architecture integrity oracle, not candidate-derived counts.
-             Expect user-to-selected-browser and selected-browser-to-web/station direct
+             Expect selected-browser-to-web/station direct
              connections through portless associations; frontend/backend containers MUST
              have no forwarding ports. Expect exactly one AudioDeviceAdapter and one
              RustRadioDriver directly
              composed by each station, without combined backend or native-Flex topology;
              audio.backend connects to audioAdapter.host and authorizedControl connects
-             to catAdapter.authorized. Their radio ports connect respectively to the
-             same selected radio audio/control ports; upload-to-profile-to-receive,
+             to catAdapter.authorized; upload-to-profile-to-receive,
              receive-to-mode and encode-to-mode paths; exactly one effective authority
              whose bound request/outcome and resource context reach that CAT driver.
              Missing direct browser/encode connections, added container forwarding ports,
              reversed provider/waveform direction, wrong item kind, redirected association
              or context, weakened identity binding, split or bypassed authority, missing,
              duplicate or detached audio/CAT adapters, mixed audio/CAT paths, detached
-             stations and view-created
-             structure MUST be rejected even if legal SysML. Four deployment participants
-             and three portless association populations retain selected endpoint identity;
+             stations, view-created structure and a port joined to no function
+             MUST be rejected even if legal SysML. Two deployment containers and the
+             portless browser association population retain selected endpoint identity;
              counts alone are insufficient. This case checks structure, not runtime
              timing, persistence, failure handling, platform operation or RF safety. */
         objective {
@@ -1419,7 +1525,8 @@ package WstxArchitecture {
     }
     dependency browserPropertyOwnership from physicalStation::frontend::browsers to ComponentPropertyOwnership;
     dependency stationPropertyOwnership from physicalStation::backend::stations to ComponentPropertyOwnership;
-    dependency radioPropertyOwnership from physicalStation::radio to RadioModelReferenceSeparation;
+    dependency radioPropertyOwnership from physicalStation::backend::stations::radioControl
+        to RadioModelReferenceSeparation;
 
     verification ComponentPropertyInventoryReview {
         subject deployment :> physicalStation;
@@ -1458,8 +1565,6 @@ package WstxArchitecture {
         attribute executionStatus : String = "planned; semantic resolution does not establish review or runtime acceptance";
     }
 
-    item def OperatorRequest;
-    item def Presentation;
     item def StationRequest;
     item def StationOutcome;
     item def Recording;
@@ -1499,8 +1604,8 @@ package WstxArchitecture {
         attribute meters : RadioMeters[0..1];
         attribute explanation : String[0..1];
     }
-    doc /* Radio-adapter-to-radio public signatures carried by the existing RadioControl
-         request/outcome items, through the selected binding and common authority:
+    doc /* The operations the CAT driver makes the radio perform, carried by the control
+         request and outcome items through the selected binding and the common authority:
          readCapabilities(ReadRadioCapabilities) -> RadioCapabilitiesOutcome;
          readState(ReadRadioState) -> RadioStateOutcome;
          applySettings(ApplyRadioSettings { requested : RadioSettings }) -> RadioSettingsOutcome;
@@ -1531,10 +1636,6 @@ package WstxArchitecture {
     item def ProfileRequest;
     item def ProfileOutcome;
 
-    port def LocalInteraction {
-        out item request : OperatorRequest;
-        in item presentation : Presentation;
-    }
     port def StationOperations {
         out item request : StationRequest;
         in item outcome : StationOutcome;
@@ -1570,7 +1671,6 @@ package WstxArchitecture {
         in item outcome : ControlOutcome;
         binding replyContext bind outcome.request = request;
     }
-    part def User { port interaction : LocalInteraction; }
     part def BrowserClient {
         attribute localDisplayLevels : WstxRecordingReceive::DisplayLevels;
         attribute localDisplayPreference : WstxRecordingReceive::BrowserDisplayPreference;
@@ -1582,12 +1682,10 @@ package WstxArchitecture {
              is independent of physical receiver filter width and the radio's own scope. */
         doc /* Own presentation/local filtering/color, pending/stale state and requests; not authoritative radio state, timing-critical modulation or transmit authority. */
         doc /* Holds station state from one snapshot plus the station's pushed events and does not poll it (WstxStationProtocol::PushedStationState, the governing rule of this exchange). */
-        port operator : ~LocalInteraction;
         port station : BrowserExchange;
     }
-    part def McpClient { port station : StationOperations; }
     part def Frontend {
-        doc /* Deployment container only; interaction and station exchanges terminate
+        doc /* Deployment container only; station exchanges terminate
              directly on selected contained BrowserClient instances. */
         part browsers[*] : BrowserClient;
     }
@@ -1611,8 +1709,6 @@ package WstxArchitecture {
         doc /* Physical model identity and sparse exposed facts are navigable from the
              selected radio. No catalogue/driver-management service is implied. Observed
              controls, meters and scope remain distinct from requested settings. */
-        port audio : ~AudioExchange;
-        port control : ~RadioControl;
     }
     part def Backend {
         doc /* The variable station population has no architecture-imposed numeric limit. */
@@ -1624,45 +1720,23 @@ package WstxArchitecture {
         doc /* Deployment container only; no host forwarding interfaces. Release and
              acceleration policy remain owned by WstxProductScope. */
         part stations[*] : StationProcess;
-        ref part mcpClients[*] : McpClient;
-        doc /* MCP clients are referenced, not deployed onto this computer by composition.
-             Backend attachments own routing associations only. A client reaches one
-             station's McpAdapter over that station's own HTTPS listener (POST /mcp) with
-             its own auth-v1 grant (WstxMcp::McpEndpoint, McpCredential); it may run on
-             any authorized computer. */
         part radioAuthority : RadioAuthority;
-
-        part mcpAttachments[*] : McpAttachment;
-
     }
     part def BrowserAttachment {
         doc /* One profile-scoped browser/station association carried by the physical IP
              link. This portless association selects one browser and one station, never
-             the whole population. User interaction terminates on that same browser;
-             the station exchange terminates directly on the selected WebAdapter. */
+             the whole population. The station exchange terminates directly on the
+             selected WebAdapter. */
         ref part browser : BrowserClient :> physicalStation.frontend.browsers;
         ref part station : StationProcess :> physicalStation.backend.stations;
-        connection localInteraction connect physicalStation.user.interaction to browser.operator;
         connection browserStation connect browser.station to station.web.client;
     }
-    part def McpAttachment {
-        ref part client : McpClient :> physicalStation.backend.mcpClients;
-        ref part station : StationProcess :> physicalStation.backend.stations;
-        connection mcpClientOperations connect client.station to station.mcp.client;
-    }
     part def RadioBinding {
-        doc /* Persisted intent resolves the selected physical radio/resource at connection.
-             WstxProductScope::NativeFlexWireSubset settles native slice/handle reconciliation;
-             actual radio capacity is reported at runtime. */
-        ref part radio : Radio :> physicalStation.radio;
-    }
-    part def RadioAudioAttachment {
-        ref part station : StationProcess :> physicalStation.backend.stations;
-        connection audioDelegation connect station.audioAdapter.radio to station.radioBinding.radio.audio;
-    }
-    part def RadioControlAttachment {
-        ref part station : StationProcess :> physicalStation.backend.stations;
-        connection controlDelegation connect station.catAdapter.radio to station.radioBinding.radio.control;
+        doc /* The station's selected radio resource. Persisted intent resolves it at
+             connection, and every control request carries it as resource context. The
+             radio itself is an outside thing (OutsideThing catRadio, flexRadio).
+             WstxProductScope::NativeFlexWireSubset settles native slice and handle
+             reconciliation; actual radio capacity is reported at runtime. */
     }
     part def RadioAuthority {
         doc /* One effective authority for constrained resources and transmit access across
@@ -1731,7 +1805,6 @@ package WstxArchitecture {
     }
     part def McpAdapter {
         doc /* Own protocol validation/caller context and configured station-selection/automation requests. No independent station state, backend access or separate transmit permission; same station operations and safety policy as browser. Delivered (#12) as the station's Streamable HTTP endpoint mapping each tool onto one existing station route in-process (WstxMcp::ToolCatalog); the configured automation run is owned with the contact engine (WstxMcp::OperatingAutomation) and reaches it only through ContactCommand. */
-        port client : ~StationOperations;
         port station : StationOperations;
     }
     part def PersistedProfile {
@@ -1837,13 +1910,11 @@ package WstxArchitecture {
     }
     part def AudioDeviceAdapter {
         port host : ~AudioExchange;
-        port radio : AudioExchange;
     }
     part def RustRadioDriver {
         attribute connectionSettings : WstxProfiles::ControlSelection;
         attribute observed : WstxRadioIO::RadioObservation[0..1];
         port authorized : ~RadioControl;
-        port radio : RadioControl;
     }
     part def StationProcess {
         part profile : PersistedProfile;

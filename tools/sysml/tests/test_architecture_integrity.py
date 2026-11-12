@@ -20,11 +20,22 @@ spec.loader.exec_module(tool)
 # The oracle file by its contract path, not by the tool's constant.
 ORACLE_FILE = TOOL.parent / "sysml/architecture-oracle.json"
 SECTIONS = ("parts", "references", "contracts", "ports", "connections", "bindings")
-# Counted by hand from the parent's lists in tools/sysml.py architecture_integrity
-# (expected_refs 8; role_contracts 56; contracts 11; expected 34 pairs, of which the 4 of
-# required_bindings are bindings) and from the issue's table of 26 parts below the root.
-HAND_COUNTS = {"parts": 26, "references": 8, "ports": 56, "contracts": 11, "pairs": 34}
-MASTER_COUNTS = {"parts": 27, "references": 8, "ports": 56, "connections": 46}
+# The oracle file's sizes are the parent's, counted by hand before the outside things left
+# (26 parts below the root, 8 references, 56 ports, 11 contracts, 34 pairs of which 4 are
+# bindings), less the entries the outside things took with them: 6 parts (user, radio,
+# radioAudioAttachments, radioControlAttachments, mcpClients, mcpAttachments), 5 references
+# (radioBinding.radio, mcpAttachments.client and .station, the two radio attachments'
+# station), 8 ports (user.interaction, browsers.operator, mcpClients.station, radio.audio,
+# radio.control, mcp.client, audioAdapter.radio, catAdapter.radio), 1 contract
+# (LocalInteraction) and 4 pairs (the local interaction and the three attachments' pairs).
+PARENT_HAND_COUNTS = {"parts": 26, "references": 8, "ports": 56, "contracts": 11, "pairs": 34}
+REMOVED_ENTRIES = {"parts": 6, "references": 5, "ports": 8, "contracts": 1, "pairs": 4}
+HAND_COUNTS = {kind: PARENT_HAND_COUNTS[kind] - REMOVED_ENTRIES[kind] for kind in PARENT_HAND_COUNTS}
+# The parent's passed line, less the removed parts, references and ports, and 6 connections:
+# the 4 pairs and the reply binding RadioControl declares at the 2 removed ports it typed.
+PARENT_COUNTS = {"parts": 27, "references": 8, "ports": 56, "connections": 46}
+REMOVED_COUNTS = {"parts": 6, "references": 5, "ports": 8, "connections": 6}
+MASTER_COUNTS = {kind: PARENT_COUNTS[kind] - REMOVED_COUNTS[kind] for kind in PARENT_COUNTS}
 # Every refusal of the contract (promises 4 and 6); nothing else may refuse.
 REFUSALS = re.compile(r"Architecture integrity: (?:Architecture oracle unavailable: |Invalid architecture oracle: "
                       r"|missing resolved Pilot inventory|expected one physical deployment|views may expose"
@@ -32,13 +43,13 @@ REFUSALS = re.compile(r"Architecture integrity: (?:Architecture oracle unavailab
                       r"|invalid endpoint/resource/authority association |missing required |unexpected (?:connection|binding)/bypass "
                       r"|missing or unexpected boundary port roles|semantic exchange signature mismatch |wrong exchange direction "
                       r"|wrong semantic item type |wrong port definition |missing part |unexpected part "
-                      r"|wrong part type or population |unexpected reference )")
+                      r"|wrong part type or population |unexpected reference |port joined to no function )")
 
 # Fixture models (R3 to R6, R10): one added model file each, with its edits of the architecture.
 STATION_PART = "part catAdapter : RustRadioDriver;"
 STATION_DEFINITION = "part def StationProcess {"
 SERVICE_PORT = "port audioStatus : ~AudioStatus;"
-TOP_PART = "part radioControlAttachments[*] : RadioControlAttachment;"
+TOP_PART = "part browserAttachments[*] : BrowserAttachment;"
 BYPASS_ENDS = ["physicalStation.backend.stations.radioControl.backend",
                "physicalStation.backend.stations.catAdapter.authorized"]
 
@@ -60,9 +71,9 @@ UDP_PACKAGE = """package WstxProbeUdp {
         out item datagram : Datagram;
         in item reply : Reply;
     }
-    part def ListeningProgram { port messages : ~ProbeMessages; }
+    part def ListeningFunction { port messages : ~ProbeMessages; }
     part def ProbeAttachment {
-        ref part listener : ListeningProgram :> WstxArchitecture::physicalStation.listeners;
+        ref part listener : ListeningFunction :> WstxArchitecture::physicalStation.listeners;
         ref part station : WstxArchitecture::StationProcess :> WstxArchitecture::physicalStation.backend.stations;
         connection probeMessages connect station.station.probe to listener.messages;
     }
@@ -71,14 +82,14 @@ UDP_PACKAGE = """package WstxProbeUdp {
 }
 """
 UDP_EDITS = ((SERVICE_PORT, SERVICE_PORT + "\n        port probe : WstxProbeUdp::ProbeMessages;"),
-             (TOP_PART, TOP_PART + "\n        part listeners[*] : WstxProbeUdp::ListeningProgram;"
+             (TOP_PART, TOP_PART + "\n        part listeners[*] : WstxProbeUdp::ListeningFunction;"
                                    "\n        part probeAttachments[*] : WstxProbeUdp::ProbeAttachment;"))
 # The entries of the R4 model, written by hand.
 UDP_ORACLE = {
-    "parts": {"physicalStation.listeners": {"type": "WstxProbeUdp::ListeningProgram", "population": "0..*"},
+    "parts": {"physicalStation.listeners": {"type": "WstxProbeUdp::ListeningFunction", "population": "0..*"},
               "physicalStation.probeAttachments": {"type": "WstxProbeUdp::ProbeAttachment", "population": "0..*"}},
     "references": {
-        "physicalStation.probeAttachments.listener": {"type": "WstxProbeUdp::ListeningProgram", "population": "1..1",
+        "physicalStation.probeAttachments.listener": {"type": "WstxProbeUdp::ListeningFunction", "population": "1..1",
                                                       "target": "physicalStation.listeners"},
         "physicalStation.probeAttachments.station": {"type": "WstxArchitecture::StationProcess", "population": "1..1",
                                                      "target": "physicalStation.backend.stations"}},
@@ -88,7 +99,10 @@ UDP_ORACLE = {
               "physicalStation.listeners.messages": "~WstxProbeUdp::ProbeMessages"},
     "connections": {"physicalStation.probeAttachments": [["station.station.probe", "listener.messages"]]},
 }
-UDP_COUNTS = {"parts": 29, "references": 10, "ports": 58, "connections": 47}
+# Counted by hand: the tip's counts plus the two parts, two references, two ports and one
+# connection of UDP_ORACLE.
+UDP_COUNTS = {kind: MASTER_COUNTS[kind] + added for kind, added in
+              {"parts": 2, "references": 2, "ports": 2, "connections": 1}.items()}
 
 
 def authority_entries(path, type_name):
@@ -101,9 +115,74 @@ def authority_entries(path, type_name):
 
 DRIVER_ENTRIES = {"parts": {"physicalStation.backend.stations.proxyDriver": {"type": "WstxProbeUdp::ProxyDriver",
                                                                              "population": "1..1"}},
-                  "ports": {"physicalStation.backend.stations.proxyDriver.authorized": "~WstxArchitecture::RadioControl",
-                            "physicalStation.backend.stations.proxyDriver.radio": "WstxArchitecture::RadioControl"}}
+                  "ports": {"physicalStation.backend.stations.proxyDriver.authorized": "~WstxArchitecture::RadioControl"}}
 HOLDER_PACKAGE = "package WstxPartProbe {\n    part def Hidden;\n    part def Holder { part hidden : Hidden; }\n}\n"
+
+# The parent's outside things, put back into the tip model as the parent wrote them (R3).
+RADIO_DOC_END = "controls, meters and scope remain distinct from requested settings. */"
+RADIO_PORTS = "\n        port audio : ~AudioExchange;\n        port control : ~RadioControl;"
+BINDING_DOC_END = "reconciliation; actual radio capacity is reported at runtime. */"
+AUTHORITY_DEFINITION = "    part def RadioAuthority {"
+AUDIO_HOST = "port host : ~AudioExchange;"
+DRIVER_AUTHORIZED = "port authorized : ~RadioControl;"
+BROWSER_STATION_PORT = "port station : BrowserExchange;"
+BROWSER_STATION = "connection browserStation connect browser.station to station.web.client;"
+BROWSER_DEFINITION = "    part def BrowserClient {"
+BACKEND_AUTHORITY = "part radioAuthority : RadioAuthority;"
+MCP_STATION_PORT = "port station : StationOperations;\n    }\n    part def PersistedProfile {"
+RADIO_RESTORED = (
+    (TOP_PART, TOP_PART + "\n        part radio : Radio;"
+               "\n        part radioAudioAttachments[*] : RadioAudioAttachment;"
+               "\n        part radioControlAttachments[*] : RadioControlAttachment;"),
+    (RADIO_DOC_END, RADIO_DOC_END + RADIO_PORTS),
+    (BINDING_DOC_END, BINDING_DOC_END + "\n        ref part radio : Radio :> physicalStation.radio;"),
+    (AUDIO_HOST, AUDIO_HOST + "\n        port radio : AudioExchange;"),
+    (DRIVER_AUTHORIZED, DRIVER_AUTHORIZED + "\n        port radio : RadioControl;"),
+    (AUTHORITY_DEFINITION, """    part def RadioAudioAttachment {
+        ref part station : StationProcess :> physicalStation.backend.stations;
+        connection audioDelegation connect station.audioAdapter.radio to station.radioBinding.radio.audio;
+    }
+    part def RadioControlAttachment {
+        ref part station : StationProcess :> physicalStation.backend.stations;
+        connection controlDelegation connect station.catAdapter.radio to station.radioBinding.radio.control;
+    }
+""" + AUTHORITY_DEFINITION),
+)
+USER_RESTORED = (
+    (TOP_PART, TOP_PART + "\n        part user : User;"),
+    (BROWSER_DEFINITION, """    item def OperatorRequest;
+    item def Presentation;
+    port def LocalInteraction {
+        out item request : OperatorRequest;
+        in item presentation : Presentation;
+    }
+    part def User { port interaction : LocalInteraction; }
+""" + BROWSER_DEFINITION),
+    (BROWSER_STATION_PORT, "port operator : ~LocalInteraction;\n        " + BROWSER_STATION_PORT),
+    (BROWSER_STATION, "connection localInteraction connect physicalStation.user.interaction to browser.operator;"
+                      "\n        " + BROWSER_STATION),
+)
+MCP_PORT_RESTORED = (MCP_STATION_PORT, "port client : ~StationOperations;\n        " + MCP_STATION_PORT)
+MCP_RESTORED = (
+    (BACKEND_AUTHORITY, BACKEND_AUTHORITY + "\n        ref part mcpClients[*] : McpClient;"
+                                            "\n        part mcpAttachments[*] : McpAttachment;"),
+    (AUTHORITY_DEFINITION, """    part def McpClient { port station : StationOperations; }
+    part def McpAttachment {
+        ref part client : McpClient :> physicalStation.backend.mcpClients;
+        ref part station : StationProcess :> physicalStation.backend.stations;
+        connection mcpClientOperations connect client.station to station.mcp.client;
+    }
+""" + AUTHORITY_DEFINITION),
+    MCP_PORT_RESTORED,
+)
+# Ports joined to no function (R4), each with its oracle entries written by hand.
+SPARE_PORT = (SERVICE_PORT, SERVICE_PORT + "\n        port spare : StationOperations;")
+SPARE_ENTRIES = {"ports": {"physicalStation.backend.stations.station.spare": "WstxArchitecture::StationOperations"}}
+LONE_RADIO = ((TOP_PART, TOP_PART + "\n        part radio : Radio;"), (RADIO_DOC_END, RADIO_DOC_END + RADIO_PORTS))
+LONE_RADIO_ENTRIES = {"parts": {"physicalStation.radio": {"type": "WstxArchitecture::Radio", "population": "1..1"}},
+                      "ports": {"physicalStation.radio.audio": "~WstxArchitecture::AudioExchange",
+                                "physicalStation.radio.control": "~WstxArchitecture::RadioControl"}}
+MCP_PORT_ENTRIES = {"ports": {"physicalStation.backend.stations.mcp.client": "~WstxArchitecture::StationOperations"}}
 
 
 def edited(text, *changes):
@@ -133,7 +212,7 @@ def fixtures(source):
                                  (("Udp.sysml", UDP_PACKAGE),)),
         "udp population": (edited(udp, ("listeners[*]", "listeners[0..1]")), (("Udp.sysml", UDP_PACKAGE),)),
         "udp extra reference": (udp, (("Udp.sysml", edited(UDP_PACKAGE, (
-            "connection probeMessages", "ref part spare : ListeningProgram :> WstxArchitecture::physicalStation.listeners;"
+            "connection probeMessages", "ref part spare : ListeningFunction :> WstxArchitecture::physicalStation.listeners;"
                                         "\n        connection probeMessages"))),)),
         "udp second authority": (edited(udp, (TOP_PART, TOP_PART + "\n        part secondAuthority : RadioAuthority;")),
                                  (("Udp.sysml", UDP_PACKAGE),)),
@@ -147,6 +226,12 @@ def fixtures(source):
                                          "    part hiddenStations[*] : WstxArchitecture::StationProcess;\n}\n"),)),
         "library view": (source, (("LibraryProbe.sysml", "library package WstxLibraryProbe {\n    view inventedView {\n"
                                    "        part inventedStation : WstxArchitecture::StationProcess;\n    }\n}\n"),)),
+        "radio restored": (edited(source, *RADIO_RESTORED), ()),
+        "user restored": (edited(source, *USER_RESTORED), ()),
+        "mcp clients restored": (edited(source, *MCP_RESTORED), ()),
+        "spare port": (edited(source, SPARE_PORT), ()),
+        "lone radio": (edited(source, *LONE_RADIO), ()),
+        "mcp port": (edited(source, MCP_PORT_RESTORED), ()),
     }
 
 
@@ -271,7 +356,7 @@ class ArchitectureIntegrityTests(unittest.TestCase):
     def test_complete_resolved_deployment(self):
         self.assertEqual(self.accepted.returncode, 0, self.accepted.stdout + self.accepted.stderr)
         counts = tool.architecture_integrity(self.accepted.stdout)
-        self.assertEqual(counts, {"parts": 27, "references": 8, "ports": 56, "connections": 46})
+        self.assertEqual(counts, MASTER_COUNTS)
 
     def reject(self, original, replacement, diagnostic):
         self.assertIn(original, self.source, "mutation no longer targets the accepted architecture")
@@ -296,11 +381,9 @@ class ArchitectureIntegrityTests(unittest.TestCase):
 
     test_missing_selected_browser_direct_link = rejects("connection browserStation connect browser.station to station.web.client;", "", "missing required connection")
 
-    test_frontend_container_cannot_forward_ports = rejects("part def Frontend {", "part def Frontend { port operator : ~LocalInteraction;", "missing or unexpected boundary port roles")
+    test_frontend_container_cannot_forward_ports = rejects("part def Frontend {", "part def Frontend { port station : BrowserExchange;", "missing or unexpected boundary port roles")
 
     test_backend_container_cannot_forward_ports = rejects("part def Backend {", "part def Backend { port radioAudio : AudioExchange;", "missing or unexpected boundary port roles")
-
-    test_selected_radio_identity_cannot_be_redirected = rejects("ref part radio : Radio :> physicalStation.radio;", "part otherRadio : Radio; ref part radio : Radio :> otherRadio;", "invalid endpoint/resource/authority association")
 
     test_missing_encoding_path = rejects("connection encodeModem connect transmit.encode to modes.encode;", "", "missing required connection")
 
@@ -316,19 +399,11 @@ class ArchitectureIntegrityTests(unittest.TestCase):
 
     test_cat_adapter_must_be_single = rejects("part catAdapter : RustRadioDriver;", "part catAdapter[0..1] : RustRadioDriver;", "exactly one direct catAdapter")
 
-    test_audio_adapter_wrong_port = rejects("connect audio.backend to audioAdapter.host;", "connect audio.backend to audioAdapter.radio;", "missing required connection")
-
-    test_cat_adapter_wrong_port = rejects("connect authorizedControl to catAdapter.authorized;", "connect authorizedControl to catAdapter.radio;", "missing required connection")
-
     test_audio_cat_paths_cannot_be_mixed = rejects("connect audio.backend to audioAdapter.host;", "connect audio.backend to catAdapter.authorized;", "missing required connection")
-
-    test_audio_attachment_selects_bound_radio = rejects("connect station.audioAdapter.radio to station.radioBinding.radio.audio;", "connect station.audioAdapter.radio to physicalStation.radio.audio;", "missing required connection")
-
-    test_cat_attachment_selects_bound_radio = rejects("connect station.catAdapter.radio to station.radioBinding.radio.control;", "connect station.catAdapter.radio to physicalStation.radio.control;", "missing required connection")
 
     test_split_shared_authority = rejects("ref part authority : RadioAuthority :> physicalStation.backend.radioAuthority;", "part authority : RadioAuthority;", "one effective authority")
 
-    test_swapped_browser_station_association = rejects("ref part station : StationProcess :> physicalStation.backend.stations;", "ref part station : StationProcess :> physicalStation.backend.mcpAttachments.station;", "invalid endpoint/resource/authority association")
+    test_swapped_browser_station_association = rejects("ref part station : StationProcess :> physicalStation.backend.stations;", "ref part otherStation : StationProcess :> physicalStation.backend.stations; ref part station : StationProcess :> otherStation;", "invalid endpoint/resource/authority association physicalStation.browserAttachments.station$")
 
     test_wrong_requesting_resource_context = rejects("binding catContext bind catAdapter.authorized.request.resourceContext = radioBinding;", "part otherContext : RadioBinding; binding catContext bind catAdapter.authorized.request.resourceContext = otherContext;", "missing required binding")
 
@@ -339,10 +414,6 @@ class ArchitectureIntegrityTests(unittest.TestCase):
     test_authority_identity_binding_cannot_be_weakened_to_connection = rejects("binding authorizedContext bind authorized.request = requests.request;", "connection authorizedContext connect authorized.request to requests.request;", "missing required binding")
 
     test_request_context_binding_cannot_be_weakened_to_connection = rejects("binding requestContext bind authorityRequest.request.resourceContext = radioBinding;", "connection requestContext connect authorityRequest.request.resourceContext to radioBinding;", "missing required binding")
-
-    test_radio_audio_provider_conjugation = rejects("port audio : ~AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def Backend", "port audio : AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def Backend", "wrong exchange direction physicalStation.radio.audio")
-
-    test_radio_control_provider_conjugation = rejects("port audio : ~AudioExchange;\n        port control : ~RadioControl;\n    }\n    part def Backend", "port audio : ~AudioExchange;\n        port control : RadioControl;\n    }\n    part def Backend", "wrong exchange direction physicalStation.radio.control")
 
     test_audio_playback_semantic_item_type = rejects("out item playback : SampleBlock;", "out item playback : Recording;", "wrong semantic item type")
 
@@ -411,7 +482,7 @@ class ArchitectureIntegrityTests(unittest.TestCase):
 
     # Proves: CL-014-03, CL-014-06; TC-DOC-005
     def test_interface_of_another_package_passes_once_listed(self):
-        """R4: a port, an outside part and a connection of another package pass when listed."""
+        """R4: a function of another package with its port and connection passes when listed."""
         output = self.inventory("udp")
         self.assertEqual(self.judge(output, oracle_with(UDP_ORACLE)), UDP_COUNTS)
         with self.assertRaises(ValueError):
@@ -433,7 +504,7 @@ class ArchitectureIntegrityTests(unittest.TestCase):
             ("udp population", udp, "wrong part type or population physicalStation.listeners$"),
             ("udp extra reference", udp, "unexpected reference physicalStation.probeAttachments.spare$"),
             ("udp", oracle_with(UDP_ORACLE, {"parts": {"physicalStation.ghost": {
-                "type": "WstxProbeUdp::ListeningProgram", "population": "1..1"}}}), "missing part physicalStation.ghost$"),
+                "type": "WstxProbeUdp::ListeningFunction", "population": "1..1"}}}), "missing part physicalStation.ghost$"),
             ("udp second authority",
              oracle_with(UDP_ORACLE, authority_entries("physicalStation.secondAuthority", "WstxArchitecture::RadioAuthority")),
              "one effective authority"),
@@ -471,15 +542,15 @@ class ArchitectureIntegrityTests(unittest.TestCase):
             ("not JSON", text[:len(text) // 2], "Architecture oracle unavailable: "),
             ("without ports", changed(lambda oracle: oracle.pop("ports")), "Invalid architecture oracle: missing section: ports"),
             ("unknown key", changed(lambda oracle: oracle.update(colour="blue")), "Invalid architecture oracle: unknown key: colour"),
-            ("port path twice", text.replace(anchor, anchor + '    "physicalStation.radio.audio": "~WstxArchitecture::AudioExchange",\n', 1),
-             "Invalid architecture oracle: key stated twice: physicalStation.radio.audio"),
+            ("port path twice", text.replace(anchor, anchor + '    "physicalStation.frontend.browsers.station": "WstxArchitecture::BrowserExchange",\n', 1),
+             "Invalid architecture oracle: key stated twice: physicalStation.frontend.browsers.station"),
             ("direction inout", changed(lambda oracle: oracle["contracts"]["WstxArchitecture::RadioControl"]["items"]["request"]
                                         .__setitem__(0, "inout")),
              "Invalid architecture oracle: direction other than in or out: WstxArchitecture::RadioControl: request"),
-            ("population many", changed(lambda oracle: oracle["parts"]["physicalStation.user"].update(population="many")),
-             "Invalid architecture oracle: malformed population: physicalStation.user"),
-            ("absent contract", changed(lambda oracle: oracle["ports"].update({"physicalStation.user.interaction": "WstxArchitecture::Absent"})),
-             "Invalid architecture oracle: port names an absent contract: physicalStation.user.interaction"),
+            ("population many", changed(lambda oracle: oracle["parts"]["physicalStation.frontend"].update(population="many")),
+             "Invalid architecture oracle: malformed population: physicalStation.frontend"),
+            ("absent contract", changed(lambda oracle: oracle["ports"].update({"physicalStation.frontend.browsers.station": "WstxArchitecture::Absent"})),
+             "Invalid architecture oracle: port names an absent contract: physicalStation.frontend.browsers.station"),
             ("pair under both kinds", changed(lambda oracle: oracle["bindings"].update(
                 {"physicalStation.browserAttachments": [["browser.station", "station.web.client"]]})),
              "Invalid architecture oracle: pair listed twice: physicalStation.browserAttachments"),
@@ -492,7 +563,8 @@ class ArchitectureIntegrityTests(unittest.TestCase):
                 self.assertNotIn("Architecture integrity passed", out)
         code, out, err = self.check_with(changed(lambda oracle: oracle.update(about="another free text")))
         self.assertEqual(code, 0, out + err)
-        self.assertIn("Architecture integrity passed: 27 parts, 8 references, 56 ports, 46 connections; runtime behavior not proved.", out)
+        self.assertIn("Architecture integrity passed: " + ", ".join(f"{MASTER_COUNTS[kind]} {kind}" for kind in
+                      ("parts", "references", "ports", "connections")) + "; runtime behavior not proved.", out)
 
     # Proves: CL-014-03, CL-014-06; TC-DOC-005
     def test_other_commands_neither_need_nor_write_the_oracle(self):
@@ -516,6 +588,44 @@ class ArchitectureIntegrityTests(unittest.TestCase):
         for case, diagnostic in (("library deployment", "one physical deployment"), ("library view", "views may expose")):
             with self.subTest(case=case):
                 self.refuses(self.inventory(case), real_oracle(), diagnostic)
+
+    # Proves: CL-014-03, CL-014-06; TC-DOC-005
+    def test_removed_outside_things_put_back_are_refused(self):
+        """R3: the parent's outside things with their ports and connections, put back into the
+        model, are refused while the oracle file does not list them; the first unlisted edge
+        (a binding RadioControl declares at a put-back port sorts before the connections)."""
+        cases = [
+            ("radio restored", "unexpected binding/bypass at physicalStation.backend.stations.catAdapter.radio "
+                               "outcome.request <-> request$"),
+            ("user restored", "unexpected connection/bypass at physicalStation.browserAttachments "
+                              "browser.operator <-> physicalStation.user.interaction$"),
+            ("mcp clients restored", "unexpected connection/bypass at physicalStation.backend.mcpAttachments "
+                                     "client.station <-> station.mcp.client$"),
+        ]
+        for case, diagnostic in cases:
+            with self.subTest(case=case):
+                self.refuses(self.inventory(case), real_oracle(), diagnostic)
+
+    # Proves: CL-014-03, CL-014-06; TC-DOC-005
+    def test_port_joined_to_no_function_is_refused(self):
+        """R4: a listed port that no connection joins is refused, naming the first in sorted
+        path order; a port joined only through a reference is joined."""
+        cases = [
+            ("spare port", oracle_with(SPARE_ENTRIES),
+             "port joined to no function physicalStation.backend.stations.station.spare$"),
+            ("lone radio", oracle_with(LONE_RADIO_ENTRIES), "port joined to no function physicalStation.radio.audio$"),
+            ("mcp port", oracle_with(MCP_PORT_ENTRIES),
+             "port joined to no function physicalStation.backend.stations.mcp.client$"),
+        ]
+        for case, oracle, diagnostic in cases:
+            with self.subTest(case=case):
+                self.refuses(self.inventory(case), oracle, diagnostic)
+        with self.subTest(case="authority joined through stations.authority"):
+            rows = [line.split("\t") for line in self.accepted.stdout.splitlines() if line.startswith("AST\tEDGE\t")]
+            ends = {end for row in rows if row[4] == "connection" for end in row[5].split("|")}
+            self.assertIn("authority.requests", ends)
+            self.assertFalse([end for end in ends if "radioAuthority" in end], ends)
+            self.assertEqual(self.judge(self.accepted.stdout, real_oracle()), MASTER_COUNTS)
 
 
 class CompanionListTests(unittest.TestCase):
