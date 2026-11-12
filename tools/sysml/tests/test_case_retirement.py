@@ -141,6 +141,14 @@ class RetirementFormTests(Fixture):
             with self.subTest(label):
                 self.write(FUNCTION_KEY, text)
                 self.assertEqual(set(self.check(required)), REQUIRED)
+        # The def itself is no retirement, however `metadata` and `def` are spaced.
+        for label, spacing in (("two spaces", "  "), ("a tab", "\t"), ("a new line and indent", "\n        ")):
+            with self.subTest("the def beside a retirement", spacing=label):
+                self.write("ModelBindings.sysml", "package ModelBindings {\n    private import ScalarValues::*;\n    "
+                           + RETIRED_CASE_DEF.replace("metadata def", "metadata" + spacing + "def") + "\n}\n")
+                self.write(FUNCTION_KEY, function(retire("TC-001-002")))
+                self.assertEqual(set(self.check()), REQUIRED)
+        (self.models / "ModelBindings.sysml").unlink()
         with self.subTest("in a file of a subfolder"):
             self.write(FUNCTION_KEY, "package WstxOfflineDecode {}\n")
             self.write(PART_KEY, part(retire("TC-001-002", "tests/part.cjs")))

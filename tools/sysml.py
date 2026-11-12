@@ -227,7 +227,7 @@ def file_retirements(key: str, source: str) -> list[tuple[str, str, int]]:
     text, code = blanked(source, strings=False), blanked(source)
     found = list(annotations(text, code, "RetiredCase"))
     found += [(match.start(), None) for match in
-              re.finditer(r"\bmetadata\s+(?!def\b)[^;{}]*\bRetiredCase\b(?!::)", code)]
+              re.finditer(r"\bmetadata(?!\s+def\b)\s+[^;{}]*\bRetiredCase\b(?!::)", code)]
     details = []
     for offset, pairs in annotations(text, code, "DetailTests"):
         for feature, value in pairs:
