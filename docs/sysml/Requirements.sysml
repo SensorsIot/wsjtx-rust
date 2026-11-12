@@ -2347,6 +2347,17 @@ package WstxRequirements {
                 two transitions/window; each window is as long as its gestures need; no product
                 delay or padding.
 
+                A Thin or Off window that fails prints in the test output, for each browser:
+                - every socket with its open and close times;
+                - each stale event with its path label, the page's silence, pending deferred
+                  download, socket state and authorization state;
+                - the frames received in the 12000 ms up to and including each close.
+                For every socket the station ended, it prints the station's reason, begin and end
+                times, last heartbeat write and longest heartbeat interval (from the begin; earliest
+                on a tie). All times are UTC milliseconds of the one machine; station times are the
+                begin's UTC plus the runtime clock's elapsed time. This is failure evidence, not a
+                pass condition.
+
              8. Bounded HTTP content coding12.1.1 (same cost2 boundary):
                 A. Real application/router + normal TLS/session: authenticate once through existing /session; for each allowlisted successful GET gzip decode must equal identity logical JSON exactly on immutable state, exact shape/caps preserved. Use independent standard decoder (Node zlib) and assert actual raw gzip magic/header/trailer + body rather than fetch auto-decoded size. Check Content-Type/Vary/Content-Length correctness; existing Vary/cache/security headers retained. Mutable facts compare frozen fixture context, never pretend two temporally distinct snapshots must match timestamps.
                 B. Table: absent/empty, identity, gzip, GZip case-insensitivity, gzip;q=0, gzip;q=0.5 vs identity;q=1, identity;q=0 with gzip acceptable, br-only, wildcard and explicit exclusions, invalid q/token/multiple header instances. Expected outcomes are frozen in the ordered12.1.1 negotiation table from the pinned source; malformed headers must follow the frozen ordered12.1.1 negotiation table without panic/leak; duplicate/wildcard selection follows the exact table, not a blanket last-q or any-q0 rule. Both gzip+identity explicitly forbidden=>406 only eligible successful GET. Preserve original401/403/404/400/409/500 on excluded error paths even with forbidden encodings. Every row of the frozen ordered table runs through the product's own response encoder (http_compression::encode_response) on an eligible successful JSON GET, never through a bare library layer (#71).

@@ -45,6 +45,43 @@ test('TC-009-005 network lifetime and correlated Off oracle reject true violatio
   const frames=[{socket:2,type:'spectrum.frame',at:13},{socket:2,type:'heartbeat',at:15}];assert.deepEqual(optionalAfterOff(frames,ack),[]);frames.push({socket:2,type:'spectrum.detail.frame',at:15});assert.equal(optionalAfterOff(frames,ack).length,1);
 });
 
+// Evidence of #102 items 3 to 6 (no promise): the failure output of a Thin or Off window, from fixed
+// sockets, stale records and frames. Each item appears exactly once, on the one UTC-ms clock.
+test('Failure evidence of a Thin or Off window lists each socket, stale and close once in UTC ms',()=>{
+  const parse=lines=>{assert.match(lines[0],/judged on issue #102/);assert.equal(lines.filter(l=>l.includes('#102')).length,1,'one #102 line');return lines.slice(1).map(l=>{assert.match(l,/^WSTX_EVIDENCE \{/);return JSON.parse(l.slice('WSTX_EVIDENCE '.length));});};
+  // Hand calculation: origin 1800000000000.5 ms; Node 1000 -> 1800000001000.5, 61000.25 -> 1800000061000.75.
+  const timeOrigin=1800000000000.5,windows=[{profile:'thin',start:1000,end:61000.25}];
+  // (a) No socket ended in the window: the output states none.
+  const quiet=parse(failureEvidence({timeOrigin,now:70000,windows,browsers:[{sockets:[{index:0,opened:500.25,closed:null,lastFrameAt:60000}],staleRecords:[],frames:[]}]}));
+  // (f) Node times converted by the stated origin.
+  assert.deepEqual(quiet.filter(e=>e.kind==='window'),[{kind:'window',profile:'thin',startUtc:1800000001000.5,endUtc:1800000061000.75}]);
+  assert.deepEqual(quiet.filter(e=>e.kind==='socket'),[{kind:'socket',browser:0,index:0,openedUtc:1800000000500.75,closedUtc:null,error:null,lastFrameUtc:1800000060000.5}]);
+  assert.deepEqual(quiet.filter(e=>e.kind==='in-window'),[{kind:'in-window',browser:0,socketCloses:'none',staleRecords:'none'}]);
+  assert.deepEqual(quiet.filter(e=>e.kind==='stale'||e.kind==='frames-before-close'),[]);
+  // A window still running when the phase failed ends at the failure time.
+  assert.equal(parse(failureEvidence({timeOrigin,now:70000,windows:[{profile:'off',start:1000,end:null}],browsers:[]}))[0].endUtc,1800000070000.5);
+  // (b) browser 0: a watchdog close at C = 30000 (UTC 1800000030000.5); (c) browser 1: a socket the
+  // station ended at 30400; (d) both within the same second.
+  // (e) Frames around C: C-12000 included, C-12001 excluded, C included; another socket's never.
+  const stale0={at:1800000030000,path:'watchdog',silenceMs:12500,deferredPending:false,socketState:1,authorization:'ready'};
+  const stale1={at:1800000030401,path:'socket-closed',silenceMs:3000,deferredPending:false,socketState:3,authorization:'ready'};
+  const lines=failureEvidence({timeOrigin,now:70000,windows,browsers:[
+    {sockets:[{index:0,opened:500,closed:30000,lastFrameAt:30000},{index:1,opened:31000,closed:null,lastFrameAt:null}],staleRecords:[stale0],
+      frames:[{socket:0,at:17999,type:'heartbeat',bytes:26},{socket:0,at:18000,type:'heartbeat',bytes:26},{socket:0,at:30000,type:'station.status',bytes:90},{socket:1,at:29000,type:'heartbeat',bytes:26}]},
+    {sockets:[{index:0,opened:600,closed:30400,lastFrameAt:29000,error:'Error: reset'}],staleRecords:[stale1],frames:[{socket:0,at:29000,type:'heartbeat',bytes:26}]}]});
+  const shown=parse(lines),of=(kind,browser)=>shown.filter(e=>e.kind===kind&&e.browser===browser);
+  assert.equal(shown.filter(e=>e.kind==='window').length,1,'the window once');
+  assert.deepEqual(of('socket',0).map(s=>[s.index,s.openedUtc,s.closedUtc]),[[0,1800000000500.5,1800000030000.5],[1,1800000031000.5,null]]);
+  assert.deepEqual(of('socket',1),[{kind:'socket',browser:1,index:0,openedUtc:1800000000600.5,closedUtc:1800000030400.5,error:'Error: reset',lastFrameUtc:1800000029000.5}]);
+  assert.deepEqual(of('stale',0),[{kind:'stale',browser:0,...stale0}]);assert.deepEqual(of('stale',1),[{kind:'stale',browser:1,...stale1}]);
+  assert.deepEqual(of('in-window',0),[{kind:'in-window',browser:0,socketCloses:[0],staleRecords:[1800000030000]}]);
+  assert.deepEqual(of('in-window',1),[{kind:'in-window',browser:1,socketCloses:[0],staleRecords:[1800000030401]}]);
+  assert.deepEqual(of('frames-before-close',0),[{kind:'frames-before-close',browser:0,socket:0,closedUtc:1800000030000.5,
+    frames:[{atUtc:1800000018000.5,type:'heartbeat',bytes:26},{atUtc:1800000030000.5,type:'station.status',bytes:90}]}]);
+  assert.deepEqual(of('frames-before-close',1),[{kind:'frames-before-close',browser:1,socket:0,closedUtc:1800000030400.5,frames:[{atUtc:1800000029000.5,type:'heartbeat',bytes:26}]}]);
+  assert.equal(shown.length,1+3+2+2+2,'nothing more: window, sockets, stale records, in-window and close lines');
+});
+
 test('TC-009-005 no timer reads the selection: source and caller fault controls',async t=>{
   await t.test('actual source: every selection read has an explicit caller, an unknown stack is refused',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
@@ -550,6 +587,29 @@ function cadenceSocketSegment(sockets,baseline){
   assert.ok(sockets.every(s=>s.opened<=baseline.at),'all socket creations precede baseline');
   assert.ok(accepted.closed===null||accepted.closed>baseline.end,'accepted socket remains live throughout segment');
 }
+// #102: the evidence a failed Thin or Off window prints (stdout, so the gate log keeps it) and the
+// report keeps. One clock, UTC ms: Node times are performance.now() values converted by the stated
+// origin (performance.timeOrigin), page times are Date.now(); the station's own socket records are
+// printed by the Rust test. Frames count before a close C when C-12000 <= t <= C (clientSilenceMs).
+const clientSilenceMs=12000;
+function evidenceUtc(timeOrigin,t){return t===null||t===undefined?null:Math.round((timeOrigin+t)*1000)/1000;}
+function evidenceWindow(timeOrigin,w,now){return {kind:'window',profile:w.profile,startUtc:evidenceUtc(timeOrigin,w.start),endUtc:evidenceUtc(timeOrigin,w.end??now)};}
+function failureEvidence({timeOrigin,now,windows,browsers}){
+  const lines=['WSTX_EVIDENCE a Thin or Off window failed: judged on issue #102 by its table, from the lines below and the WSTX_STATION_SOCKET lines'];
+  const out=value=>lines.push('WSTX_EVIDENCE '+JSON.stringify(value)),utc=t=>evidenceUtc(timeOrigin,t);
+  const bounds=windows.map(w=>evidenceWindow(timeOrigin,w,now));for(const w of bounds)out(w);
+  const inWindow=t=>t!==null&&bounds.some(w=>w.startUtc!==null&&t>=w.startUtc&&t<=w.endUtc);
+  for(const [browser,{sockets,staleRecords,frames}]of browsers.entries()){
+    const shown=sockets.map(s=>({kind:'socket',browser,index:s.index,openedUtc:utc(s.opened),closedUtc:utc(s.closed),error:s.error??null,lastFrameUtc:utc(s.lastFrameAt)}));
+    for(const s of shown)out(s);
+    for(const record of staleRecords)out({kind:'stale',browser,...record});
+    const closes=shown.filter(s=>inWindow(s.closedUtc)).map(s=>s.index),stale=staleRecords.filter(r=>inWindow(r.at)).map(r=>r.at);
+    out({kind:'in-window',browser,socketCloses:closes.length?closes:'none',staleRecords:stale.length?stale:'none'});
+    for(const s of shown.filter(s=>s.closedUtc!==null))out({kind:'frames-before-close',browser,socket:s.index,closedUtc:s.closedUtc,
+      frames:frames.filter(f=>f.socket===s.index).map(f=>({atUtc:utc(f.at),type:f.type,bytes:f.bytes})).filter(f=>f.atUtc>=s.closedUtc-clientSilenceMs&&f.atUtc<=s.closedUtc)});
+  }
+  return lines;
+}
 function cadenceJoin(seen,origin,mapping){
   const network=seen.transfers.filter(r=>r.route==='/receive/selection'&&r.method==='GET');
   assert.equal(network.length,seen.reads.length,'complete ordered page/CDP selection join');
@@ -614,12 +674,22 @@ function liveSelectionFixture(){
     const waitUntil=async deadline=>{while(performance.now()<deadline)await sleep(Math.max(1,Math.ceil(deadline-performance.now())));};
     const save=async()=>{await fs.mkdir('test-results/radio-selection',{recursive:true});await fs.writeFile('test-results/radio-selection/live-link.json',JSON.stringify(report,null,2));};
     let activePhase=null;
+    // #102: the Thin and Off windows, and the one under way (from its profile switch to its end).
+    const windows=[];let underWay=null;
     // A failed run keeps its own copy: the next run (a gate rerun) overwrites live-link.json (#8).
-    t.after(async()=>{if(activePhase){report.phases[activePhase].state='failed';report.phases[activePhase].endedUtc=new Date().toISOString();await save();await fs.copyFile('test-results/radio-selection/live-link.json',`test-results/radio-selection/live-link-failed-${Date.now()}.json`);}});
+    // A Thin or Off phase that failed at any point prints its evidence (#102), from what Node holds.
+    t.after(async()=>{
+      if(!activePhase&&!underWay)return;
+      if(underWay){const now=performance.now();report.failureEvidence=failureEvidence({timeOrigin:performance.timeOrigin,now,windows,browsers:observations.map(seen=>({sockets:seen.sockets,staleRecords:seen.staleRecords,frames:seen.wireFrames}))});console.log(report.failureEvidence.join('\n'));}
+      if(activePhase){report.phases[activePhase].state='failed';report.phases[activePhase].endedUtc=new Date().toISOString();}
+      await save();await fs.copyFile('test-results/radio-selection/live-link.json',`test-results/radio-selection/live-link-failed-${Date.now()}.json`);
+    });
     for(let i=0;i<2;i++){
       const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}});contexts.push(context);
       const page=await context.newPage();pages.push(page);
-      const seen={selectionEvents:[],reads:[],profileBodies:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[],subscriptionRequests:[],subscriptionAcks:[],navigations:[],abandonedBodies:[]};observations.push(seen);
+      const seen={selectionEvents:[],reads:[],profileBodies:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[],subscriptionRequests:[],subscriptionAcks:[],navigations:[],abandonedBodies:[],staleRecords:[]};observations.push(seen);
+      // #102: each station-stale reaches Node as it happens, so it survives a failure before the cadence check.
+      await page.exposeFunction('__wstxStaleRecord',record=>{seen.staleRecords.push(record);});
       page.on('framenavigated',frame=>{if(frame===page.mainFrame())seen.navigations.push({url:frame.url(),at:performance.now()});});
       const cdp=await context.newCDPSession(page),transfers=new Map();await cdp.send('Network.enable');
       cdp.on('Network.requestWillBeSent',event=>{const transfer={id:event.requestId,route:new URL(event.request.url).pathname,method:event.request.method,started:performance.now(),browserStarted:event.timestamp,wallStarted:event.wallTime*1000,wallEnded:null,ended:null,encodedBytes:null,initiator:event.initiator};transfers.set(event.requestId,transfer);seen.transfers.push(transfer);});
@@ -644,7 +714,7 @@ function liveSelectionFixture(){
         if(!['/receive/selection','/receive','/receive/results'].includes(route)){if((response.headers()['content-type']||'').includes('application/json')){try{entry.bodyBytes=(await response.body()).length;}catch(error){entry.bodyError=error.message;}}return;}
         await observeReceiveResponse(response,entry,seen,reads,errors);
       });
-      page.on('websocket',socket=>{const session={index:seen.sockets.length,opened:performance.now(),closed:null,messages:[],receivedBytes:0};seen.sockets.push(session);socket.on('close',()=>session.closed=performance.now());socket.on('socketerror',error=>session.error=String(error));socket.on('framesent',event=>{try{const m=JSON.parse(event.payload);if(['spectrum.off','spectrum.thin','spectrum.detail'].includes(m.type)&&Number.isSafeInteger(m.id))seen.subscriptionRequests.push({socket:session.index,at:performance.now(),id:m.id,profile:m.type.slice(9)});}catch{}});socket.on('framereceived',event=>{session.receivedBytes+=Buffer.byteLength(event.payload);try{const m=JSON.parse(event.payload),at=performance.now();seen.wireFrames.push({socket:session.index,at,type:m.type,bytes:Buffer.byteLength(event.payload)});if(m.type==='selection.state')seen.selectionEvents.push({at,socket:session.index,bytes:Buffer.byteLength(event.payload),data:m.data});if(m.type==='spectrum.subscription')seen.subscriptionAcks.push({socket:session.index,at,id:m.id,profile:m.data?.profile});if(m.type==='spectrum.frame')seen.frames.push({socket:session.index,at,data:m.data});else session.messages.push({at,type:m.type,id:m.id,radio:m.data?.radio});}catch{}});});
+      page.on('websocket',socket=>{const session={index:seen.sockets.length,opened:performance.now(),closed:null,lastFrameAt:null,messages:[],receivedBytes:0};seen.sockets.push(session);socket.on('close',()=>session.closed=performance.now());socket.on('socketerror',error=>session.error=String(error));socket.on('framesent',event=>{try{const m=JSON.parse(event.payload);if(['spectrum.off','spectrum.thin','spectrum.detail'].includes(m.type)&&Number.isSafeInteger(m.id))seen.subscriptionRequests.push({socket:session.index,at:performance.now(),id:m.id,profile:m.type.slice(9)});}catch{}});socket.on('framereceived',event=>{session.lastFrameAt=performance.now();session.receivedBytes+=Buffer.byteLength(event.payload);try{const m=JSON.parse(event.payload),at=performance.now();seen.wireFrames.push({socket:session.index,at,type:m.type,bytes:Buffer.byteLength(event.payload)});if(m.type==='selection.state')seen.selectionEvents.push({at,socket:session.index,bytes:Buffer.byteLength(event.payload),data:m.data});if(m.type==='spectrum.subscription')seen.subscriptionAcks.push({socket:session.index,at,id:m.id,profile:m.data?.profile});if(m.type==='spectrum.frame')seen.frames.push({socket:session.index,at,data:m.data});else session.messages.push({at,type:m.type,id:m.id,radio:m.data?.radio});}catch{}});});
     }
     const coldStarted=performance.now(),coldDeadline=coldStarted+230000;
     const coldRemaining=()=>{const remaining=Math.floor(coldDeadline-performance.now());assert.ok(remaining>0,'shared 230s Cold phase deadline');return remaining;};
@@ -698,6 +768,8 @@ function liveSelectionFixture(){
         const snapshot=action=>{events.push({at:performance.timeOrigin+performance.now(),action,epoch:operatingEpoch,connected:connection.dataset.state==='connected',sameSocket:socket===initialSocket&&socket.readyState===WebSocket.OPEN,profile_id:profileData.profile_id,boot_id:profileData.boot_id,profile_revision:profileData.revision,acceptedSequence:operatingState?.snapshot_sequence??null});};
         snapshot(false);
         addEventListener('station-ready',()=>snapshot(false));addEventListener('station-stale',()=>snapshot(false));
+        // #102: the stale's path, the page's silence, a pending deferred download, the ended socket's state and the authorization state.
+        addEventListener('station-stale',event=>{const at=Date.now();window.__wstxStaleRecord({at,path:event.detail?.path??null,silenceMs:at-lastMessage,deferredPending:deferredDownloads>0,socketState:socket?.readyState??null,authorization:authorization?.snapshot().state??null});});
         // Bubble after the source handler's synchronous epoch increment. This
         // observes only the two existing selections; it does not wrap fetch.
         document.addEventListener('change',event=>{if(['operating-mode','operating-band'].includes(event.target.id))snapshot(true);});
@@ -754,9 +826,9 @@ function liveSelectionFixture(){
     }
     await command('band','40m','ft8',7074000);
     async function measure(profile,steps){
-      const offProofs=[];
+      const offProofs=[],phaseWindow={profile,start:null,end:null};windows.push(phaseWindow);underWay=phaseWindow;
       for(const [index,page]of pages.entries()){const after=performance.now();if(!await page.locator('#settings-drawer').isVisible())await page.locator('#open-server-settings').click();await page.selectOption('#display-profile',profile);await page.locator('#tab-expert').click();if(profile==='off'){const deadline=performance.now()+10000;let ack;while(!(ack=correlatedOffAck(observations[index].subscriptionRequests,observations[index].subscriptionAcks,after))){assert.ok(performance.now()<deadline,'actual correlated Off acknowledgement');await sleep(10);}offProofs.push(ack);report.offAcknowledgements=[...offProofs];await save();assertOffAckDeadline(ack);}}
-      await sleep(500);const start=performance.now(),readStarts=observations.map(o=>o.reads.length),frameStarts=observations.map(o=>o.frames.length),latencies=[];
+      await sleep(500);const start=performance.now();phaseWindow.start=start;const readStarts=observations.map(o=>o.reads.length),frameStarts=observations.map(o=>o.frames.length),latencies=[];
       activePhase=profile;report.phases[profile]={state:'running',startedUtc:new Date().toISOString()};await save();console.log(`Actual ${profile} workload started`);
       // #80: the window is as long as its gestures need: the two commands, a status refresh of each
       // browser every 5.5 s while they run (at least one), no padding.
@@ -810,6 +882,8 @@ function liveSelectionFixture(){
       if(profile==='thin')assert.ok(polling.every(p=>p.frames>0),'real optional live spectrum was present, not an idle body-size exercise');
       if(profile==='off'){assert.equal(offProofs.length,2);for(const [index,ack]of offProofs.entries()){assert.ok(ack.ackAt<=start);assert.deepEqual(optionalAfterOff(observations[index].wireFrames,ack),[],'no optional frame after its correlated Off ACK');assert.equal(polling[index].frames,0,'no optional spectrum during actual Off window');}}
       report.phases[profile]={...report.phases[profile],state:'passed',seconds,statusMs:latencies,polling,commands,endedUtc:new Date().toISOString()};activePhase=null;await save();console.log(`Actual ${profile} workload completed ${seconds.toFixed(3)}s`);
+      // #102: the window's bounds on the UTC clock of the station's socket records, in every run.
+      phaseWindow.end=performance.now();underWay=null;console.log('WSTX_SELECTION_WINDOW '+JSON.stringify(evidenceWindow(performance.timeOrigin,phaseWindow)));
     }
     await measure('thin',[['mode','ft4','ft4',7047500],['band','20m','ft4',14080000]]);
     await measure('off',[['mode','ft8','ft8',14074000],['band','40m','ft8',7074000]]);

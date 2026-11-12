@@ -247,3 +247,137 @@ test('TC-021-009: TLS login, unauthorized/origin denial, plaintext refusal', asy
     assert.equal(status, i < 8 ? 401 : 429);
   }
 });
+
+// #102 evidence (no promise): each path that makes the page stale names itself as the
+// station-stale event's detail.path. The labels, from the path list of issue #102.
+const stalePaths = ['watchdog', 'message-rejected', 'profile-refresh-failed', 'recording-sync-failed', 'socket-closed', 'opening-timeout',
+  'authorization-unavailable', 'authorization-not-ready', 'authorization-retry', 'component-missing', 'login-failed'];
+// The argument that carries the label, by the called function.
+const labelArgument = {stale: 0, disconnect: 1, loseSocket: 0, showAuthorizationUnavailable: 1};
+// The arguments of the call whose '(' is at `open`, split at top-level commas (strings skipped).
+function callArguments(text, open) {
+  const args = []; let depth = 0, from = open + 1;
+  for (let i = open; i < text.length; i++) {
+    const c = text[i];
+    if (c === '\'' || c === '"' || c === '`') {for (i++; i < text.length && text[i] !== c; i++) if (text[i] === '\\') i++; continue;}
+    if ('([{'.includes(c)) depth++;
+    else if (')]}'.includes(c) && --depth === 0) {const last = text.slice(from, i).trim(); if (last || args.length) args.push(last); return args;}
+    else if (c === ',' && depth === 1) {args.push(text.slice(from, i).trim()); from = i + 1;}
+  }
+  throw new Error(`unterminated call at ${open}`);
+}
+function blockEnd(text, open) {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {if (text[i] === '{') depth++; else if (text[i] === '}' && --depth === 0) return i;}
+  return text.length;
+}
+// Every call of stale, disconnect, loseSocket and showAuthorizationUnavailable in the served
+// client passes a label from the list. The one exception: inside disconnect, loseSocket and
+// showAuthorizationUnavailable the inner call passes that function's own path parameter on.
+function assertStalePaths(sources) {
+  const sites = [], problems = [];
+  for (const [file, raw] of Object.entries(sources)) {
+    const text = raw.replace(/\r\n/g, '\n'), lineOf = at => `${file}:${text.slice(0, at).split('\n').length}`;
+    const forwarding = [];
+    for (const [name, pattern] of [['disconnect', /function disconnect\(([^)]*)\)\s*\{/g], ['showAuthorizationUnavailable', /function showAuthorizationUnavailable\(([^)]*)\)\s*\{/g],
+      ['loseSocket', /const loseSocket = \(?([^)=]*?)\)? =>\s*\{/g]]) {
+      for (const match of text.matchAll(pattern)) {
+        const open = match.index + match[0].length - 1;
+        forwarding.push({name, start: open, end: blockEnd(text, open), parameter: match[1].split(',').map(p => p.trim())[labelArgument[name]]});
+      }
+    }
+    for (const match of text.matchAll(/(?<![\w.]|function )(stale|disconnect|loseSocket|showAuthorizationUnavailable)\(/g)) {
+      const label = callArguments(text, match.index + match[0].length - 1)[labelArgument[match[1]]], where = lineOf(match.index);
+      const literal = /^'([^']*)'$/.exec(label ?? '');
+      if (literal) {
+        if (stalePaths.includes(literal[1])) sites.push({where, label: literal[1]});
+        else problems.push(`${where}: ${match[1]} passes an unknown label ${label}`);
+        continue;
+      }
+      const inside = forwarding.find(f => match.index > f.start && match.index < f.end);
+      if (inside && /^[A-Za-z_$][\w$]*$/.test(label ?? '') && label === inside.parameter) sites.push({where, forwards: inside.name});
+      else problems.push(`${where}: ${match[1]} passes no label from the list (${label ?? 'none'})`);
+    }
+    // A bare reference (onclose = loseSocket) would hand its event on as the label.
+    for (const match of text.matchAll(/(?<![\w.])loseSocket\b(?!\s*\()/g)) if (!text.slice(Math.max(0, match.index - 6), match.index).endsWith('const ')) problems.push(`${lineOf(match.index)}: loseSocket referenced without its label`);
+  }
+  assert.deepEqual(problems, [], 'every stale call names its path');
+  assert.ok(sites.length > 0, 'no call site of the stale paths found');
+  const labelled = new Set(sites.map(s => s.label));
+  assert.deepEqual(stalePaths.filter(label => !labelled.has(label)), [], 'each stale path label appears at its call site');
+  return sites;
+}
+
+// Evidence of #102 item 2, source scan of the served client.
+test('Stale path labels: every stale call of the served client names its path', async t => {
+  const app = await server(); t.after(() => app.close());
+  const served = {};
+  for (const file of ['app.js', 'recording.js']) {const response = await fetch(`${app.origin}/${file}`); assert.equal(response.status, 200, file); served[file] = await response.text();}
+  const sites = assertStalePaths(served);
+  assert.deepEqual(sites.filter(s => s.forwards).map(s => s.forwards).sort(), ['disconnect', 'loseSocket', 'showAuthorizationUnavailable', 'showAuthorizationUnavailable'], 'the four forwarding calls');
+  // Fault controls: a call without a label, an unknown label, another variable forwarded, the
+  // bare onclose binding, a label lost and no call site at all are each refused.
+  const source = served['app.js'].replace(/\r\n/g, '\n');
+  const variant = (from, to) => {assert.ok(source.includes(from), from); return {...served, 'app.js': source.replace(from, to)};};
+  assert.throws(() => assertStalePaths({...served, 'extra.js': 'stale();'}), /passes no label from the list \(none\)/);
+  assert.throws(() => assertStalePaths({...served, 'extra.js': 'disconnect(socket, \'gone\');'}), /unknown label 'gone'/);
+  assert.throws(() => assertStalePaths(variant('stale(path); current.onclose', 'stale(current); current.onclose')), /stale passes no label from the list \(current\)/);
+  const unlabelled = variant('stale(path); current.onclose', 'stale(); current.onclose');
+  unlabelled['app.js'] = unlabelled['app.js'].replace('function disconnect(current, path)', 'function disconnect(current)');
+  assert.throws(() => assertStalePaths(unlabelled), /stale passes no label from the list \(none\)/, 'a forwarding function without a path parameter');
+  assert.throws(() => assertStalePaths(variant('current.onclose = () => loseSocket(\'socket-closed\');', 'current.onclose = loseSocket;')), /loseSocket referenced without its label|socket-closed/);
+  assert.throws(() => assertStalePaths(variant('showAuthorizationUnavailable(error, \'login-failed\')', 'showAuthorizationUnavailable(error, \'authorization-unavailable\')')), /each stale path label/);
+  assert.throws(() => assertStalePaths({'empty.js': 'const x = 1;'}), /no call site/);
+});
+
+// Evidence of #102 item 2, real Chromium against the station: the station side closes the page's
+// socket, every station message is held while the page clock runs 13000 ms, and a message of
+// another version arrives. Each makes the page stale once, naming its path.
+test('Stale path labels: socket closed, silence watchdog and rejected message in real Chromium', {timeout: 60000}, async t => {
+  const app = await server(); t.after(() => app.close());
+  async function stalePage(clock) {
+    const context = await contextFor(); t.after(() => context.close());
+    const page = await context.newPage(), route = {ws: null, held: false};
+    await page.addInitScript(() => {
+      window.__stale = [];
+      addEventListener('station-stale', event => window.__stale.push({at: Date.now(), path: event.detail?.path ?? null, silence: Date.now() - lastMessage, readyState: socket?.readyState ?? null}));
+    });
+    await page.routeWebSocket(/\/ws$/, ws => {
+      if (route.ws) {ws.connectToServer(); return;}
+      route.ws = ws;
+      ws.connectToServer().onMessage(message => {if (!route.held) ws.send(message);});
+    });
+    if (clock) await page.clock.install();
+    await connected(page, app.origin);
+    return {page, route, stale: () => page.evaluate(() => window.__stale)};
+  }
+  const reconnected = page => page.locator('#connection[data-state="connected"]').waitFor({timeout: 10000});
+
+  // (a) The station side closes the page's socket.
+  const closed = await stalePage(false);
+  await closed.route.ws.close();
+  await closed.page.waitForFunction(() => window.__stale.length > 0, null, {timeout: 10000});
+  await reconnected(closed.page);
+  const [onClose, ...moreClose] = await closed.stale();
+  assert.equal(onClose.path, 'socket-closed'); assert.equal(onClose.readyState, 3, 'the ended socket is CLOSED');
+  assert.deepEqual(moreClose, [], 'one stale');
+
+  // (b) Every station message held while the page clock runs: the watchdog's 1000 ms check fires
+  // at the first tick more than 12000 ms (clientSilenceMs) after the last counted message.
+  const silent = await stalePage(true);
+  silent.route.held = true;
+  for (let ms = 0; ms < 13000 && (await silent.stale()).length === 0; ms += 1000) await silent.page.clock.runFor(1000);
+  const [watchdog, ...moreWatchdog] = await silent.stale();
+  assert.equal(watchdog?.path, 'watchdog');
+  assert.ok(watchdog.silence > 12000 && watchdog.silence <= 13000, `silence ${watchdog.silence} ms`);
+  assert.deepEqual(moreWatchdog, [], 'one stale');
+
+  // (c) A message the page refuses (v 2).
+  const rejected = await stalePage(false);
+  rejected.route.ws.send('{"v":2,"type":"heartbeat"}');
+  await rejected.page.waitForFunction(() => window.__stale.length > 0, null, {timeout: 10000});
+  await reconnected(rejected.page);
+  const [onRejected, ...moreRejected] = await rejected.stale();
+  assert.equal(onRejected.path, 'message-rejected');
+  assert.deepEqual(moreRejected, [], 'one stale');
+});

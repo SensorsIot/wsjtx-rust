@@ -165,6 +165,8 @@ async fn live_native_selection_tls_thin_and_off() {
     rustls::crypto::ring::default_provider()
         .install_default()
         .ok();
+    // #102: the station's records of the sockets it ends during this run, printed in every run.
+    let closes_before = crate::SOCKET_CLOSES.lock().unwrap().len();
     let counts = Arc::new(CaptureCounts::default());
     let mut inputs: Vec<Box<dyn recording::LiveInput>> = Vec::new();
     let mut expected = json!({});
@@ -336,11 +338,17 @@ async fn live_native_selection_tls_thin_and_off() {
         serde_json::to_vec_pretty(&receipt).unwrap(),
     )
     .unwrap();
+    let station_sockets: Vec<String> = crate::SOCKET_CLOSES.lock().unwrap()[closes_before..]
+        .iter()
+        .map(|record| format!("WSTX_STATION_SOCKET {record}"))
+        .collect();
     println!(
-        "{}\n{}\nNative receipt: {}",
+        "{}\n{}\nNative receipt: {}\nStation socket records (UTC ms; judged by #102), {} ended:\n{}",
         outcome.1,
         String::from_utf8_lossy(&outcome.0.stderr),
-        receipt
+        receipt,
+        station_sockets.len(),
+        station_sockets.join("\n")
     );
     drop(actor);
     drop(recording);

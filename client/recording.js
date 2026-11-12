@@ -427,7 +427,7 @@ async function sync(current=socket) {
     }
     show();
     if(subscribedSocket!==current && current.readyState===WebSocket.OPEN) {subscribedSocket=current;subscribe(current);}
-  } catch(error){if(current===socket){statusText.textContent=`Recording state unavailable · ${error.message}`;if(subscribedSocket===current)disconnect(current);}} finally{syncPending=false;if(syncAgain){syncAgain=false;sync(socket);}}
+  } catch(error){if(current===socket){statusText.textContent=`Recording state unavailable · ${error.message}`;if(subscribedSocket===current)disconnect(current,'recording-sync-failed');}} finally{syncPending=false;if(syncAgain){syncAgain=false;sync(socket);}}
 }
 addEventListener('station-ready',event => {if(subscribedSocket!==event.detail || snapshot?.boot_id!==profileData.boot_id)sync(event.detail);});
 // WstxStationProtocol::PushedStationState (#74): a new boot drops the recording and live receive
