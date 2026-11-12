@@ -171,6 +171,7 @@ def limits_moved(files: dict, value="100") -> dict:
 CORE_PATH = "docs/sysml/Core.sysml"
 CITED = {**BASE, **CITING}
 RUN_ONLY = moved(CITED, ticket=False)
+NODOC = edit(BASE, CORE_PATH, "        doc /* Bounds of the core. */\n", "")
 # Each synthetic case: (base files, head files). The base of E8 carries the citations.
 CASES = {
     "E2": (BASE, edit(BASE, CORE_PATH, "The station.", "The station!")),
@@ -224,6 +225,10 @@ CASES = {
     "E12 q dropped": (BASE, edit(BASE, CORE_PATH, "        expose system::*;\n", "")),
     "E12 r": (BASE, edit(BASE, "docs/sysml/Meta.sysml", "Shared metadata header.", "Shared metadata header!")),
     "E12 r dropped": (BASE, edit(BASE, "docs/sysml/Meta.sysml", "/* Shared metadata header. */\n", "")),
+    # Two Limits with equal own facts (no doc, as in the real model), the file of one moved
+    # so that it is read first: equivalent, paired by their named members.
+    "E12 s": (NODOC, {**{k: v for k, v in NODOC.items() if k != "docs/sysml/Extra.sysml"},
+                      "docs/sysml/A/Extra.sysml": EXTRA}),
 }
 # The #170 assignment table (issue #170, Technical details): part file -> moved identities.
 TABLE = {
@@ -432,6 +437,10 @@ class SyntheticEquivalenceTests(unittest.TestCase):
     def test_e12o_values_swapped_between_same_named_owners(self):
         lines = self.outcome("E12 o", 1)
         self.assertTrue(any("Limits" in line for line in lines if not line.startswith(("moved", "pair", "equivalent"))), lines)
+
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e12s_same_named_owners_pair_by_their_members(self):
+        self.outcome("E12 s", 0, "moved Limits Extra Extra.sysml -> Extra A/Extra.sysml")
 
     # Proves: CL-014-17; TC-DOC-015
     def test_e12p_member_moved_between_same_named_owners(self):
