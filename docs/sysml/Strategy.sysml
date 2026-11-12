@@ -1540,7 +1540,7 @@ package WstxStrategy {
              bounds a run per message, not in total (max_run_minutes bounds a policy run; a
              strategy run is bounded by its 8 hour run limit and its grant). A
              human action in the browser is an accepted ContactCommand, a strategy selection
-             or an Auto on (AutoToggle) sent by the browser (principal browser, WstxProfiles::RequestPrincipalRule:
+             or an Auto on (AutoToggle) sent by the browser (principal browser, WstxStationProtocol::RequestPrincipalRule:
              read from the credential at the auth boundary, so an MCP client is never one
              on any route, #58). Only an Enable Tx, a strategy selection or an Auto on from the
              browser ends a watchdog stop. Never operator actions: commands of a run (select_row,

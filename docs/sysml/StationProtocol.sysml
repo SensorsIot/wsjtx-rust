@@ -424,4 +424,437 @@ package WstxStationProtocol {
     dependency pageUpdatePromise from PageUpdate to WstxRequirements::'CL-051-02';
     dependency rejectedSnapshotPromise from PageUpdate to WstxRequirements::'CL-051-03';
     dependency buildPresentationOwner from PageUpdate to WstxArchitecture::physicalStation::frontend::browsers;
+
+    attribute loginBodyMaxBytes : Integer = 1024;
+    attribute cookieMaxAgeSeconds : Integer = 28800;
+    attribute def RuntimeInputs {
+        doc /* WSTX_TLS_CERT/KEY/TOKEN only; relative TLS paths resolve process CWD
+             in BOTH modes. They are never serialized into settings/profile responses.
+             Profile mode rejects present WSTX_BIND/WSTX_ORIGIN, including empty values.
+             TLS pair complete, token 32..128 ASCII letters/digits with TLS only;
+             non-loopback requires TLS/token plus saved explicit HTTPS origin.
+             Independent random tokens per profile are an operator prerequisite:
+             deliberately sharing the same login secret authorizes both logins. */
+        attribute tlsCertificatePath : String[0..1];
+        attribute tlsKeyPath : String[0..1];
+        attribute token : String[0..1];
+        attribute forbiddenBindPresent : Boolean;
+        attribute forbiddenOriginPresent : Boolean;
+    }
+    action def AuthenticateProfile {
+        doc /* Issue22 authentication for selected persisted HTTPS profiles. CL-022-01/02
+             supersede the old UUID.runtime-token transport cookie, restart revocation
+             and HttpOnly-only persistence rule; delivered (the radio identity
+             Add/Replace/Remove slice was dropped, operator 2026-11-06, CL-022-02). A selected profile on a plaintext
+             loopback origin has no grant authority: its configuration GET/PUT,
+             operating HTTP routes and WS upgrade keep the runtime-token cookie
+             wstx_session_<UUID>=<UUID>.<token> (no configured token = trusted
+             loopback), with exact Origin checks, and its WS carries no grant
+             revocation fence. Every HTTPS operating HTTP route and WS upgrade instead
+             requires the current grant transport, re-validated for dispatch
+             (scope/grant/revocation generation) under the one authority lock. Preserve POST /session raw-token body<=1024,
+             exact Origin403 before authentication, invalid token401, oversized413,
+             rate10attempts/60seconds per process429, TLS only and successful204.
+             Successful bootstrap creates only a random256-bit ephemeral bootstrap
+             context (60seconds), never a runtime-token cookie or ordinary-control grant.
+             Host-only wstx_bootstrap_<UUID>, Path=/, Secure, HttpOnly, SameSite=Strict;
+             its only uses are strict enrollment and the explicit bootstrap scope/identity
+             setup operations below; it never authorizes ordinary control.
+             Normal wstx_session_<UUID> contains a random256-bit opaque transport handle
+             bound to one unrevoked scoped grant, Max-Age=28800. Verify exactly one
+             expected cookie; malformed/duplicate/missing/cross-profile cookies401.
+             Wrong/legacy token-valued cookies are not migrated into grants. Other
+             names ignored. Expiry only removes transport readiness; retained key proof
+             restores it automatically without another bootstrap submission.
+             Transport handles follow RotateScopedTransport below; at most one current
+             handle per grant and64 overall, elapsed monotonic lifetime28800seconds.
+             Grant persistence is independent of transport rotation or expiry.
+             One narrow new credential exception permits only a nonextractable P256
+             signing CryptoKey in origin-scoped IndexedDB; no bootstrap token, private
+             key export or token persistence in localStorage/sessionStorage/public
+             profileJSON/URLs/logs/reports/retained submitted form state. Same-origin
+             injected script/browser/OS compromise remains outside nonextractability.
+             Environment-only legacy launch without a persisted selected profile retains
+             its transient legacy auth contract and does not claim this durable grant.
+             Existing WS exact Origin/wstx.v1/frame/rate/liveness protections remain;
+             grant revocation closes affected WS and rejects later protected effects.
+             Same-host processes remain trusted; distinct ports are not hostile-service
+             isolation. No transmit role or permission is created. */
+        in selectedUuid : String;
+        in runtime : RuntimeInputs;
+        out cookieName : String;
+    }
+    action authenticate : AuthenticateProfile;
+    dependency authenticationOwner from authenticate to WstxArchitecture::physicalStation::backend::stations::web;
+    satisfy WstxRequirements::'CL-005-03' by authenticate;
+
+    doc /* Issue22 target data/actions below implement CL-022-01/02 only after exact
+         independent meaning review, supported-browser primitive qualification and
+         source-scope admission. They reuse selected profile/station authority; no new
+         physical component or public-profile schema field is introduced. */
+    enum def GrantCondition { enum unauthorized; enum authorized; enum revoked; enum unknown; }
+    enum def AuthOperationKind { enum enroll; enum challenge; enum prove; enum logout; enum revokeAll; enum receipt; enum commission; enum bootstrapScope; enum status; }
+    enum def AuthOperationOutcome { enum committed; enum proofRequired; enum unauthorized; enum wrongOrigin; enum invalid; enum saturated; enum persistenceFailed; enum unknown; }
+    attribute maxActiveBrowserGrants : Integer = 64;
+    attribute maxPendingProofChallenges : Integer = 64;
+    attribute proofChallengeLifetimeSeconds : Integer = 60;
+    attribute maxActiveTransportHandles : Integer = 64;
+    attribute maxTransportHandlesPerGrant : Integer = 1;
+    attribute transportLifetimeSeconds : Integer = 28800;
+    action def RotateScopedTransport {
+        doc /* Issue22 target behavior, not an implementation declaration. The volatile
+             transport table is owned by the same selected-station authorization
+             authority, not another credential store or lifecycle owner. It contains
+             at most one current handle per existing unrevoked verifier grant and at
+             most64 entries overall; no disk transport persistence or verifier eviction.
+             Successful ordinary grant proof serializes current scope/grant/revocation
+             validation, one-use challenge consumption and installation of a new
+             CSPRNG256bit opaque handle. Installation atomically replaces the previous
+             current handle for that SAME grant only. It does not replace a verifier,
+             advance revocation generation, revoke another grant, change commissioning
+             or disconnect CAT/audio. Other grants/profile processes remain unchanged.
+             Replay or invalid/expired/wrong-Origin/wrong-scope proof never replaces a
+             current handle. Random-generation or response-preparation failure fails
+             closed without installing a handle or invalidating the prior current one;
+             an already consumed nonce requires a new challenge, never proof replay.
+             Installed handles expire after28800 elapsed monotonic seconds, never
+             extended by use; cookie Max-Age remains28800. Expired/replaced/revoked/
+             wrong-scope handles return401 for new protected HTTP requests/WS upgrades.
+             Purge, rotation, expiry and ordinary restart do not delete or age-evict a
+             verifier, operation receipt or commissioning. Restart drops only volatile
+             transport; retained-key proof recovers without another bootstrap token.
+             Receipt-purpose proof NEVER installs or replaces transport. Revocation or
+             radio removal still invalidates dependent handles and existing effects/WS
+             according to the existing authority/cancellation rules.
+             Rotation is distinct from revocation: an already authenticated WS retains
+             only its existing grant/scope/revocation authority and existing dispatch
+             checks; rotation alone neither grants a new effect nor revokes its grant.
+             An open socket never establishes current browser authorization readiness.
+             Concurrent same-key proofs serialize; last committed proof determines the
+             sole current handle. HTTP delivery can be reordered or lost, so204 alone
+             does not prove the last-delivered cookie is current. The client shares its
+             existing readiness promise within a document and checks protected read-only
+             status after renewal. A401 or lost renewal response leaves readiness
+             unavailable/unknown and recovers through fresh challenge/proof/status using
+             the retained key, without bootstrap resubmission or user-mutation replay.
+             Same-origin tabs share cookie storage; once overlapping responses quiesce,
+             any tab can recover through fresh proof/status. Rotation by another tab
+             never deletes the retained key or claims revocation. No cross-tab framework
+             or additional credential store is introduced. Existing<=2s truthfulness,
+             rate10/60, TLS/Origin/profile checks and1024byte auth bounds all remain. */
+    }
+    attribute def SelectedRadioAuthorizationScope {
+        doc /* ProfileId is the persisted logical station identity in this phase;
+             HTTPS origin is exact effective Endpoint.origin including port. UUIDs are
+             lowercase RFC9562v4; safetyRevision is positive safe integer<=maxRevision.
+             RadioId is authority-assigned, not COM endpoint/boot/browser identity.
+             Migration assigns identity only, no grant or commissioning. An
+             endpoint/model/PTT change increments revision and
+             invalidates commissioning. Unchanged USB return preserves both. */
+        attribute profileId : String;
+        attribute radioId : String;
+        attribute safetyRevision : Integer;
+        attribute httpsOrigin : String;
+    }
+    attribute def AuthWireScope {
+        doc /* Every auth-v1 JSON scope/current_scope/expected_scope, including
+             bootstrap/status/challenge/receipt/identity projections, is EXACTLY
+             {profile_id,radio_id,safety_revision}; no https_origin/origin/extra keys.
+             This is an ephemeral wire projection of SelectedRadioAuthorizationScope,
+             not another selected-radio identity/current-value owner. Copy UUID/revision
+             unchanged. In a request, first validate TLS and exact HTTP Origin against
+             the selected Endpoint; reconstruct httpsOrigin only from that validated
+             effective origin, never a body field. In responses browser already knows
+             its exact location.origin. Reconstruction is lossless within this required
+             endpoint context; the projection alone is not globally authoritative.
+             Internal scope, persistence and both signed proof-purpose payloads KEEP
+             the full exact origin and its length-prefixed signed bytes unchanged.
+             For a new operation compare reconstructed profile/radio/revision with the
+             current authority snapshot; stale tuple409/no effect. Explicit receipt
+             reconciliation instead compares its stored operation tuple and never
+             grants current control. Wrong transport Origin remains403 before auth;
+             public profile origin domains/ResponseBudgetAdmission remain unchanged.
+             Fixed UUID36/revision<=9007199254740991 give scope138UTF8bytes including
+             all JSON punctuation/quotes. Compact-output independent width bounds:
+             enrollment374, ordinary proof225, receipt proof426,
+             commissioning244, revoke236, challenge response396, receipt response<=302
+             (conservative18ASCII outcome/43grantId). Delivered bootstrap response
+             {version,current_scope} is<=170bytes. All below unchanged1024 logical-byte cap.
+             These bounds are for compact server JSON; input whitespace may consume
+             the remaining request allowance but total>1024 still413. All bounded
+             strings here are canonical ASCII, so no hidden UTF8/escape growth.
+             Status scope is likewise138, not an origin echo; its existing complete
+             response<=1024 admission still includes condition/error/receive summary.
+             No unbounded native text or copied numerical/result state is permitted. */
+        attribute profileId : String;
+        attribute radioId : String;
+        attribute safetyRevision : Integer;
+    }
+    attribute def BrowserPublicVerifier {
+        doc /* Public, not a secret. GrantId is fresh CSPRNG256bits encoded unpadded
+             base64url43characters; never recycled. P256 SEC1 uncompressed public key
+             is65bytes beginning04, canonical base64url87characters, on-curve validated.
+             Enrollment operationId persists with this verifier for restart reconciliation.
+             Exactly ECDSA_P256_SHA256_FIXED-compatible r||s; no algorithm negotiation.
+             Grant lifetime keys only origin/profileId/radioId; recorded safetyRevision
+             is not grant lifetime. A same-radio safety edit preserves the verifier,
+             but proof binds the new current revision and CAT remains uncommissioned.
+             This permits re-confirmation without bootstrap token re-entry. */
+        attribute grantId : String;
+        attribute enrollmentOperationId : String;
+        attribute uncompressedPublicKeyBase64url : String;
+        attribute scope : SelectedRadioAuthorizationScope;
+    }
+    attribute def RadioCommissioningRecord {
+        doc /* Single current observable acknowledgement for exact scope and effective
+             endpoint/model/PTT configuration. Owner persists it only after explicit
+             Confirm receive-only setup. Never a CAT open/query or transmit action.
+             Changed safety configuration invalidates it and exposes explicit recovery. */
+        attribute scope : SelectedRadioAuthorizationScope;
+        attribute receiveOnlyConfirmed : Boolean;
+    }
+    enum def RequestPrincipal { enum browser; enum mcp; enum automation; }
+    attribute def RequestPrincipalRule {
+        doc /* (#58) The station attaches a RequestPrincipal to every request at the auth
+             boundary from its credential, never from the route: a browser grant transport
+             (or the plaintext runtime token) is browser; an MCP client's internal transport
+             is mcp; commands of the station's own automation
+             run are automation. Only browser is an operator action (Tx watchdog,
+             set_watchdogs, WstxStrategy::WatchdogFromOperator); an unreadable credential is
+             never browser. The auth-v1 status/revoke/commission operations and MCP client
+             management accept only the browser principal. */
+    }
+    attribute maxMcpClients : Integer = 8;
+    attribute def McpClientCredential {
+        doc /* (#58) A durable MCP client credential in the private authorization record:
+             id (UUID), name (1..32 printable ASCII, no leading or trailing space),
+             created_utc_ms, last_used_utc_ms (null until used; written at most every
+             10 minutes, exact in memory) and token_sha256 (unpadded base64url SHA-256 of the
+             complete token); never the token. At most maxMcpClients, ids and digests unique;
+             the record field mcp_clients is omitted while empty (records before #58 read
+             unchanged). Browser-only routes, Origin exact, JSON body <= 1024 bytes:
+             GET /authorization/v1/mcp-clients (read-only, Cache-Control no-store; a
+             present Origin must be exact) lists {version, max_clients,
+             clients [{client_id, name, created_utc_ms, last_used_utc_ms}], recent (newest
+             first audit entries, WstxMcp::McpCredential)}; .../create {version:1, name}
+             returns 200 {version, client_id, name, created_utc_ms, token} with Cache-Control
+             no-store, the only time the token is shown (cap reached 429, invalid name 400);
+             .../revoke {version:1, client_id} removes it and every transport of it at once
+             and returns the listing (unknown 409). An auth-v1 revoke with all_for_radio
+             also removes every MCP client. An MCP token is never accepted as a browser
+             cookie, by /session or by these routes. Settings > General > Access & grants
+             shows the list with Revoke (after confirmation), the create field and the new
+             token once with Copy and Done, and the recent use; it reads them only when
+             Settings opens. */
+        attribute id : String;
+        attribute name : String;
+        attribute createdUtcMs : Integer;
+        attribute lastUsedUtcMs : Integer[0..1];
+        attribute tokenSha256 : String;
+    }
+    attribute def PrivateAuthorizationRecord {
+        doc /* Version1 private per-profile atomic record under existing OS-protected
+             service data, one selected-profile writer. Contains public verifiers and
+             authority metadata, never browser private key/bootstrap token. Reuse
+             acknowledged atomic replacement, not another database/storage writer.
+             Corrupt/missing expected record or failed commit fails closed. Only a new
+             never-enrolled profile may create an empty record; no reset-on-read-error.
+             Unrevoked verifiers have no timed deletion. Removing a radio removes its
+             grants; grant-cap failure never evicts active grants. Existing trusted-OS
+             persistence boundary remains; no universal power-loss durability claim. */
+        attribute schemaVersion : Integer = 1;
+        attribute currentScope : SelectedRadioAuthorizationScope[0..1];
+        attribute commissioning : RadioCommissioningRecord[0..1];
+        attribute grants : BrowserPublicVerifier[0..64];
+        attribute revocationGeneration : Integer;
+        attribute operationReceipts : AuthOperationReceipt[0..64];
+        attribute mcpClients : McpClientCredential[0..8];
+    }
+    attribute def BootstrapScopeRequest {
+        doc /* Delivered: exact POST /authorization/v1/bootstrap-scope request is
+             {version:1}; no optional/unknown/duplicate fields. */
+        attribute version : Integer = 1;
+    }
+    attribute def BootstrapScopeResponse {
+        doc /* Delivered strict200 {version,current_scope}. Scope is the station-
+             authority snapshot, never a browser-supplied tuple. No grant/verifier
+             enumeration, cookies, keys or credentials in response. */
+        attribute version : Integer = 1;
+        attribute currentScope : AuthWireScope[0..1];
+    }
+    action def ReadBootstrapScope {
+        doc /* Valid unexpired ephemeral bootstrap cookie for this selected profile
+             required (missing/duplicate/wrong-profile401), exact Origin/TLS and all
+             strict auth-v1 request/response/rate bounds apply. Cache-Control:no-store.
+             POST is read-only: no identity/grant/receipt/challenge mutation, transport
+             issuance, CAT/native I/O or implicit enrollment. After POST/session204,
+             a fresh browser reads this response, then enrolls its exact non-null scope.
+             Every HTTPS profile receives a scope when its record is first created, whether
+             or not a radio is configured. A persisted record whose current scope is null,
+             which no delivered operation writes, yields null and cannot enroll.
+             Scope may race configuration: enrollment still compares authoritative
+             scope and bootstrap binding at dispatch; stale tuple409, no effect.
+             A read never rebinds a bootstrap context or broadens its enrollment scope. */
+        in request : BootstrapScopeRequest;
+        out response : BootstrapScopeResponse;
+    }
+    attribute def AuthChallenge {
+        doc /* Server CSPRNG32byte nonce, canonical unpadded base64url43characters,
+             one-use and60second monotonic validity; no wall-clock-expiry extension.
+             Challenge binds currentScope,grantId,protocol1 and intended prove operation;
+             currentScope is authority-selected current safety revision, not copied
+             from an old verifier enrollment. Radio/profile/origin must still match.
+             Signature payload is UTF8("WSTX-AUTH-PROOF") then byte01 then six fields:
+             exact origin,profileId,radioId,decimal safetyRevision,grantId,nonce raw32.
+             Each field is preceded by unsigned32-bit big-endian byte length; UUID and
+             decimal fields ASCII, no padding/leadingzero, no Unicode normalization.
+             Exactly this payload is signed with ECDSA SHA256; signature is64byte r||s
+             (32byte unsigned big-endian coordinates), canonical base64url86characters.
+             Reject noncanonical encoding, DER/ASN1, other length/curve/version/tuple,
+             wrong origin, consumed/expired nonce. Valid proof atomically consumes nonce
+             before transport issuance. Replays never mint another session. */
+        attribute verifier : BrowserPublicVerifier;
+        attribute currentScope : SelectedRadioAuthorizationScope;
+        attribute nonceBase64url : String;
+        attribute lifetimeSeconds : Integer = 60;
+    }
+    attribute def AuthEnrollmentRequest {
+        doc /* Strict JSON version1,operation_id,scope,grant_id,public_key only. GrantId
+             is browser-CSPRNG256bits generated and retained BEFORE submission;
+             collision with a different verifier/operation is409, never replacement.
+             This permits restart proof even when the enrollment response is lost.
+             OperationId is
+             fresh UUIDv4 retained by browser through unknown outcome. Bootstrap context
+             authorizes this one exact scope; never grants another radio implicitly. */
+        attribute version : Integer = 1;
+        attribute operationId : String;
+        attribute scope : AuthWireScope;
+        attribute grantId : String;
+        attribute publicKeyBase64url : String;
+    }
+    attribute def AuthProofRequest {
+        doc /* Strict JSON version1,grant_id,nonce,signature only. Fields carry exact
+             encodings above; server obtains scope from its challenge, never trusts a
+             client-selected replacement. Request cap remains1024 logical UTF8bytes. */
+        attribute version : Integer = 1;
+        attribute grantId : String;
+        attribute nonceBase64url : String;
+        attribute signatureBase64url : String;
+    }
+    attribute def AuthOperationReceipt {
+        doc /* Public strict response version1,operation_id,scope,outcome,grant_id;
+             grant_id nullable; scope uses AuthWireScope on the wire, while journal
+             scope below retains full internal context. No token,cookie,signature,nonce
+             or private material.
+             Receipt reconciliation identifies a committed operation, not authorization
+             itself. Lost enrollment ACK retains a committed verifier; browser remains
+             unknown/unauthorized until same operation receipt and scoped proof recover.
+             Uncommitted enrollment is unusable after restart. Revocation commit fences
+             queued effects; already-dispatched I/O follows acknowledged cancellation.
+             Delivered entries are verifier-owned (enroll/logout/revokeAll/commission)
+             and require ownerVerifier; any other persisted entry is corrupt and fails
+             closed.
+             A failed revocation write quarantines current-process access but discloses
+             NOT durably revoked; restart may restore last committed grant. */
+        attribute version : Integer = 1;
+        attribute operationId : String;
+        attribute scope : SelectedRadioAuthorizationScope;
+        attribute outcome : AuthOperationOutcome;
+        attribute grantId : String[0..1];
+        // Internal journal discriminator/owner; not additional public response keys.
+        attribute operationKind : AuthOperationKind;
+        attribute ownerVerifier : BrowserPublicVerifier[0..1];
+    }
+    action def HandleScopedAuthorization {
+        doc /* Delivered strict auth API v1. Exact paths POST /authorization/v1/bootstrap-scope,
+             /status,/enroll,/challenge,/proof,/revoke,/commission,/receipt; no credentialed CORS.
+             Existing POST /session stays raw-token, never accepts JSON extension keys.
+             Every new request exactly version1 plus its listed fields; unknown,
+             missing,duplicate keys/wrongtype/noncanonicalencoding400, contenttype
+             application/json else415, body>1024bytes413, wrongOrigin403 first, TLS
+             required before accepting credentials. At most10setup attempts(session/bootstrap-scope/enroll)/60s/process;
+             grant/challenge caps64, saturation429. All responses<=1024UTF8bytes,
+             uncompressed, no auth material in errors/logs. No endpoint opens CAT.
+             bootstrap-scope: BootstrapScopeRequest/Response via ReadBootstrapScope;
+             status: WstxOperatingReceive::AuthStatusRequest, read-only active-grant
+             snapshot per AutomaticCatStatus, no effects and no GET fallback;
+             enroll: AuthEnrollmentRequest, ephemeral bootstrap cookie required;
+             non-null current scope and exact bootstrap-scope binding required, stale
+             tuple409, no grant. A null scope cannot enroll or prove readiness;
+             challenge: {version,grant_id}, exact Origin and known verifier required;
+             proof: AuthProofRequest; successful204 issues only new opaque transport;
+             revoke: {version,operation_id,scope,all_for_radio}, matching active grant
+             required; false logs out that grant, true revokes matching radio grants;
+             a committed revoke also clears the caller's session cookie (Max-Age=0);
+             commission: {version,operation_id,scope,receive_only_confirmed:true}, active
+             matching grant required, commits exact displayed safety configuration;
+             receipt: {version,operation_id,scope,grant_id,nonce,signature}; one-use
+             receipt-purpose proof validates the operation owner, not ordinary-control
+             authorization. Retain a bounded64-entry FIFO public receipt journal with
+             original verifier for verifier-owned entries and committed outcome; it
+             cannot authorize control or revive a revoked grant. Evicted/absent receipt returns409 unknown and
+             browser remains unknown, never fabricates durable success. Journal entries
+             persist atomically with their mutation and carry only bounded public
+             verifier/scope/operation/outcome metadata;
+             no bootstrap secret or unbounded tombstones. A separate challenge request
+             {version,operation_id,scope} addresses a known receipt. Its payload uses
+             UTF8 WSTX-AUTH-RECEIPT then byte01, followed by the same six length-prefixed
+             proof fields plus operationId before nonce. Only receipt consumes this
+             nonce; it never issues transport/control readiness. Ordinary grant proof
+             uses WSTX-AUTH-PROOF and cannot substitute for receipt-purpose proof.
+             Lost enrollment browser knows its pre-generated grantId, can prove its
+             retained committed key then reconcile receipt while local readiness stays
+             unknown; it dispatches no queued browser CAT effect before both succeed.
+             Committed mutations return200 AuthOperationReceipt; unknown/failed commit
+             never reports success (503persistence failure,409identity/unknown conflict).
+             Missing/unknown/revoked/mismatched grant or cookie401. New challenge returns
+             200 strict {version,grant_id,scope,public_key,nonce,lifetime_seconds},
+             projecting AuthChallenge.currentScope through AuthWireScope and public
+             verifier metadata; no origin is echoed or removed from signed bytes.
+             Receipt uses same operationId only and is read-only even though POST.
+             Bootstraprotation is explicit revoke-allprofile; process restart is not.
+             Before protected HTTP/WS/native dispatch, station authority serializes
+             current grant/scope/revocation generation with selection. No blanket
+             session readiness from an open WS. Disconnect/401 is truthful<=2s and
+             automatic retained-key proof does not replay a user mutation. */
+        in kind : AuthOperationKind;
+        in selected : SelectedRadioAuthorizationScope[0..1];
+        out receipt : AuthOperationReceipt;
+    }
+    verification sharedBrowserSessions {
+        subject operation : AuthenticateProfile;
+        objective { verify WstxRequirements::'CL-005-03'; verify WstxProfiles::'CL-005-04'; }
+        doc /* TC-022-004: four TLS localhost ports/tokens, ONE Chromium cookie
+             context. Before authorization GET/PUT/WS401. Fresh selected authorization
+             is session204, bootstrap-scope200 with non-null migrated scope, completed
+             persistence of the key/grant/operation IDs before enroll200, then
+             challenge/proof204/status200. Session204 alone grants no ordinary access.
+             Reverse-order retained authorization proves the existing key/grant and
+             verifies status without token reentry or enrollment replay.
+             Ordinary same-origin browser GET without manual Origin200; cookie
+             names/attributes only reported. All four Refresh/reconnect independently.
+             Station1 token to station2 login401; copied name/value or value under
+             station2's expected name401; legacy cookie or duplicate expected name401.
+             Missing/wrong Origin login/PUT/WS403, including other station port and
+             unrelated origin. Transport-cookie expiry/proof recovery does not clear other cookies; ordinary restart retains grants.
+             Operator bootstrap rotation is explicit profile revoke-all, unlike
+             transport rotation/expiry or ordinary restart with unchanged bootstrap.
+             Require actual durable revoke-all commit/receipt, then rotation/restart:
+             old grants/token401, fresh explicitly authorized enrollment succeeds,
+             other three usable. Environment-variable change alone is not commit proof.
+             Exact UUID in PUT matches selected profile; wrong
+             UUID403, WS numeric correlation IDs retain existing local meaning.
+             Check 12.1 login body/rate independently per process, cookie attributes,
+             and the shared auth-v1 budget: count setup admissions and independently
+             prove10 admitted/11th429 per process without clock/rate changes or polling.
+             Preserve existing request/count/deadline bounds;
+             only HttpOnly handles and the CL-022-01 nonextractable IndexedDB key persist; no
+             local/sessionStorage/profileJSON/retained form/URL/log/report leakage. Failed
+             network login also clears DOM token immediately on submission.
+             Repeated Cookie headers are checked in the
+             separate auth_tests.rs vector, not only a single cookie string.
+             Oracle: original cookie/error/identity table and independent inputs;
+             trusted same-host processes only, not hostile-host isolation proof. */
+    }
+    dependency identity004 from sharedBrowserSessions to WstxRequirements::'TC-022-004';
 }

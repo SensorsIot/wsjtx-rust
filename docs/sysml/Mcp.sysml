@@ -20,12 +20,12 @@ package WstxMcp {
             JSON-RPC batches, which this endpoint refuses (review finding 6).
          D3 Authorization (operator decision on #58, 2026-11-02, replacing the #12 choice
             of an auth-v1 grant per MCP client): an MCP client holds an MCP client token of
-            its own (McpCredential, WstxProfiles::McpClientCredential), created and revoked
+            its own (McpCredential, WstxStationProtocol::McpClientCredential), created and revoked
             by the browser in Settings > General > Access & grants; it is separate from the
             station access token (WSTX_TOKEN) and from every browser grant. POST /mcp
             accepts only such a token; browser routes refuse it; it is never exchanged for
             a browser cookie or grant. The station attaches the principal of every request
-            at the auth boundary from its credential (WstxProfiles::RequestPrincipal), so
+            at the auth boundary from its credential (WstxStationProtocol::RequestPrincipal), so
             whichever route a request takes, MCP is never counted as the browser operator.
             No OAuth server or MCP-only permission; the safety-revision and transmit grant
             rules apply to its in-process requests as they do to browsers.
@@ -109,7 +109,7 @@ package WstxMcp {
         attribute auditFile : String = "mcp-audit.log";
         attribute auditRecentShown : Integer = 32;
         doc /* (#58) Exactly one Authorization field "Bearer " plus an MCP client token of
-             this station (WstxProfiles::McpClientCredential): "wstx_mcp_" and 43 base64url
+             this station (WstxStationProtocol::McpClientCredential): "wstx_mcp_" and 43 base64url
              characters (256 random bits), validated per request by the station's authority
              owner under the profile store -> authorization lock order by a constant-time
              comparison of its SHA-256 with the stored digests. Cookies on /mcp are never

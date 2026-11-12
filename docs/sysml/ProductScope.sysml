@@ -2,7 +2,6 @@ package WstxProductScope {
     private import ScalarValues::*;
     private import WstxRequirements::*;
     private import WstxRequirementsReceive::*;
-    private import WstxRequirementsProfile::*;
     private import WstxRequirementsMcp::*;
     private import WstxRequirementsAudio::*;
     private import WstxRequirementsRadioControl::*;
@@ -400,6 +399,7 @@ package WstxProductScope {
              These aliases are resolved model elements, not external file references. */
         alias SharedProtocol for WstxStationProtocol;
         alias Profiles for WstxProfiles;
+        alias ProfileRecordings for WstxProfileRecordings;
         alias NativeFlex for WstxProductScope::NativeFlexBoundary;
         alias RecordingAndDisplay for WstxRecordingReceive;
         alias Modem for WstxOfflineDecode;

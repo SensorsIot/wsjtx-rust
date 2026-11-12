@@ -6,7 +6,7 @@ The project has a Rust station server, a browser status/settings interface and a
 
 Create a profile with `wstx-rust --create-profile <directory>`, then start it with
 `wstx-rust --profile <directory>` and open the reported URL. Each simultaneous server
-uses its own profile directory and port. The [profile contract](docs/sysml/Profiles.sysml)
+uses its own profile directory and port. The [profile contract](docs/sysml/backend/profile/Profile.sysml)
 defines configuration, locking, recovery and access; device selections are saved intent
 and do not activate hardware. No-argument startup retains the original status mode.
 
