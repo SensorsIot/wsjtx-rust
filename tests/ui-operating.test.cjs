@@ -3372,7 +3372,7 @@ test('TC-097-014 the editor with the nine decisions and the selector with the sa
   assert.deepEqual(await page.locator('#se-body h3').allTextContents(),['1 Band','2 Filters','3 Order','4 Calling stations are answered','5 Leaving a station','6 Tx frequency','7 Busy pause','8 CQ when idle','9 Retry pause']);
   // CL-097-01: decision 4's label, decision 8 with the CQ wait, no "default" label anywhere.
   assert.equal(await page.locator('#se-callers-first').evaluate(e=>e.closest('label').textContent),'Calling stations are answered');
-  assert.equal(await page.locator('#se-cq-wait').evaluate(e=>[...e.closest('.se-options').querySelectorAll('label')].map(l=>l.textContent.trim()).join(' ')),'CQ when idle, after periods with nothing callable');
+  assert.equal(await page.locator('#se-cq-wait').evaluate(e=>[...e.closest('.se-options').querySelectorAll('label')].map(l=>l.textContent.trim()).join(' ').replace(/\s+/g,' ')),'CQ when idle, after periods with nothing callable');
   assert.equal(await page.inputValue('#se-cq-wait'),'2','the built-in CQ wait');
   assert.doesNotMatch(await page.locator('#strategy-editor').evaluate(e=>[e.textContent,...[...e.querySelectorAll('option')].map(o=>o.textContent)].join(' ')),/default/i);
   assert.deepEqual(await page.locator('[data-new]').evaluateAll(l=>l.map(x=>x.closest('label').textContent)),['DXCC entity','Call','Grid','CQ zone (WAZ)','ITU zone','Continent (WAC)','Prefix (WPX)']);
@@ -3461,12 +3461,12 @@ test('TC-097-014 the editor with the nine decisions and the selector with the sa
 // Proves: CL-097-07; TC-097-015 (the prompt in Chromium; oracle WstxContest D11 and
 // WstxStrategy::BuiltinStrategies): with the contest built-in "WW Digi" and a saved copy "WW Digi
 // fast" the prompt offers "WW Digi" first (chosen) and then "WW Digi fast"; its controls are the
-// contest, the period and the strategy only (no S&P/Run, repetitions or quiet time); Start sends
-// one PUT {active "WW Digi", contest {ww_digi, start, end}}; the status reads "Contest WW Digi ·
-// <period> UTC · WW Digi · Auto on" after Auto on; Start with "WW Digi fast" sends that active
-// with the same contest. Station replies are routed fixtures; the expected requests are written
-// here. Red on the branch base: the prompt's S&P/Run.
-test('TC-097-015 the contest prompt offers the contest strategies, no S&P/Run',{timeout:60000},async t=>{
+// contest, the period and the strategy only (no operation choice, repetitions or retry pause);
+// Start sends one PUT {active "WW Digi", contest {ww_digi, start, end}}; the status reads "Contest
+// WW Digi · <period> UTC · WW Digi · Auto on" after Auto on; Start with "WW Digi fast" sends that
+// active with the same contest. Station replies are routed fixtures; the expected requests are
+// written here. Red on the branch base: the prompt offers an operation choice.
+test('TC-097-015 the contest prompt offers the contest strategies, no operation choice',{timeout:60000},async t=>{
   const {builtin:_,...fastBase}=contestBuiltin('WW Digi fast','ww_digi');
   const fast={...fastBase,filters:{...noLists(),countries:{include:[],exclude:[{kind:'country',value:'Japan',bands:null}]}},leave:{mode:'contest',tx_changes:1},cq_when_idle:false};
   const {page,errors,s,push,settle,status}=await strategydefStation(t,{width:1366,height:768},{strategies:[fast]});
