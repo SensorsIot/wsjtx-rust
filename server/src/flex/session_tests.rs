@@ -253,6 +253,42 @@ fn a_refused_tune_confirms_nothing_and_keeps_the_reported_slice() {
     assert_eq!(slice.and_then(|s| s.frequency_hz), Some(7_000_000));
 }
 
+// Proves: TC-023-001. GET /native-flex reports the packets, the peak, the VITA time and the
+// arrival jitter of the current session: when the next session becomes ready they start over,
+// and the session number changes.
+#[test]
+fn a_ready_session_starts_its_packet_counters_and_measurements_over() {
+    let mut s = Snapshot {
+        state: State::Connecting,
+        error: Some(Error::TransportLost),
+        radio_code: None,
+        session: 1,
+        radio: None,
+        slice: None,
+        counters: Counters {
+            accepted: 211,
+            foreign: 26,
+            invalid: 3,
+            lost: 4,
+            late: 2,
+        },
+        last_peak: Some(0.8),
+        vita_tsi: Some(1),
+        vita_offset_ms: Some(12),
+        jitter_mean_ms: Some(1.5),
+        jitter_max_ms: Some(9.0),
+        retry_after_ms: None,
+    };
+    become_ready(&mut s, None);
+    assert_eq!(s.state, State::Ready);
+    assert_eq!(s.error, None);
+    assert_eq!(s.session, 2);
+    assert_eq!(s.counters, Counters::default());
+    assert_eq!(s.last_peak, None);
+    assert_eq!((s.vita_tsi, s.vita_offset_ms), (None, None));
+    assert_eq!((s.jitter_mean_ms, s.jitter_max_ms), (None, None));
+}
+
 #[test]
 fn intent_domains() {
     let valid = Intent {

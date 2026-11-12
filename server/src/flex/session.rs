@@ -320,6 +320,21 @@ impl Shared {
     }
 }
 
+/// A session became ready: a new session number, and the packet counters, the peak, the VITA
+/// time and the jitter start over, since GET /native-flex reports them per session.
+fn become_ready(s: &mut Snapshot, slice: Option<SliceFacts>) {
+    s.state = State::Ready;
+    s.error = None;
+    s.session += 1;
+    s.slice = slice;
+    s.counters = Counters::default();
+    s.last_peak = None;
+    s.vita_tsi = None;
+    s.vita_offset_ms = None;
+    s.jitter_mean_ms = None;
+    s.jitter_max_ms = None;
+}
+
 struct TuneRequest {
     frequency_hz: u64,
     deadline: Instant,
@@ -781,17 +796,8 @@ fn attempt(
         conn.apply_frequency(index, tuned, Instant::now() + STEP)?;
     }
     *reached = true;
-    shared.update(|s| {
-        s.state = State::Ready;
-        s.error = None;
-        s.session += 1;
-        s.slice = conn.slice_facts();
-        s.last_peak = None;
-        s.vita_tsi = None;
-        s.vita_offset_ms = None;
-        s.jitter_mean_ms = None;
-        s.jitter_max_ms = None;
-    });
+    let facts = conn.slice_facts();
+    shared.update(|s| become_ready(s, facts));
     loop {
         if shared.stopping() {
             return Ok(());
