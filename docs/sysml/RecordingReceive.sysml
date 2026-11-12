@@ -27,10 +27,6 @@ package WstxRecordingReceive {
         enum invalid_samples; enum decode_limit; enum decode_failed;
     }
     attribute def Limits {
-        attribute rateHz : Integer = 12000;
-        attribute fileBytes : Integer = 3145728;
-        attribute frames : Integer = 1440000;
-        attribute riffChunks : Integer = 64;
         attribute blockSamples : Integer = 4096;
         attribute spectrumBlocks : Integer = 2;
         attribute workersPerStation : Integer = 1;
@@ -58,16 +54,8 @@ package WstxRecordingReceive {
         attribute displayIntervalMs : Integer = 1000;
         attribute checkpointMs : Integer = 50;
         attribute replayCancelReleaseMs : Integer = 250;
-        attribute importCancelAckMs : Integer = 250;
-        attribute normalCleanupMs : Integer = 1000;
-        attribute faultCleanupOutcomeMs : Integer = 5000;
-        attribute reservationMs : Integer = 30000;
-        attribute uploadIdleMs : Integer = 15000;
-        attribute uploadTotalMs : Integer = 1800000;
         attribute finalProcessingMs : Integer = 1000;
-        attribute rawChunkBytes : Integer = 2048;
         attribute controlBytes : Integer = 1024;
-        attribute snapshotBytes : Integer = 8192;
         attribute eventBytes : Integer = 1024;
         attribute thinBytesPerSecond : Integer = 3000;
         attribute offBytesPerSecond : Integer = 1000;
@@ -982,20 +970,6 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              independent direct DFT and pinned actual recordings with chapter13 provenance.
              No radio/audio device/live station. Definitions and candidate source presence are not acceptance results.
              Independent case expectations are retained in WstxRequirements and this package; production/library output is not their oracle. */
-        verification validRecording {
-            subject operation : WstxProfileRecordings::ImportRecording;
-            objective { verify WstxProfileRecordings::'CL-006-01'; verify WstxRequirements::'CL-006-02'; }
-            doc /* TC-018-001: setup/input/action: Construct byte-level PCM WAVs with 1, 2048, 4096, 4097 and 1,440,000 frames, endpoint samples -32768,-1,0,1,32767 and legal ancillary/padding chunks. Import, inspect blocks/metadata, replay twice and restart. Use the pinned actual recordings from chapter13 after retaining their license/provenance manifest; the verified22 inputs all fit the selected PCM capability.
-                 Independent expected oracle: Hand-authored RIFF byte offsets/counts and exact signed-value/32768 mapping match; concatenated blocks equal input samples, <=4096 per block, contiguous offsets and one EOS; original bytes unchanged. Source UUID survives restart and repeats; job IDs differ, generations advance within a boot and reset to0 on restart, recording UTC remains null and no device opens. Analytical spectra repeat within 0.5 dB quantization plus 0.05 dB numerical tolerance. The actual recording proves non-synthetic input; it is not the calibration oracle. */
-        }
-        dependency tracevalidRecording from validRecording to WstxProfileRecordings::'TC-018-001';
-        verification invalidRecording {
-            subject operation : WstxProfileRecordings::ImportRecording;
-            objective { verify WstxProfileRecordings::'CL-006-01'; verify WstxRequirements::'CL-006-02'; verify WstxRequirements::'CL-006-04'; }
-            doc /* TC-018-002: setup/input/action: Table-mutate each required WAV field/chunk, zero data, odd data, duplicate fmt/data, RIFF mismatch/overflow, truncation at each header/data boundary, rate/channel/format changes, 65 chunks, frame count max+1 and file cap+1; create legal exactly-at-cap ancillary data. Exercise slow/aborted/timed-out upload, cancel before/after validation commit and storage write/flush/manifest/cleanup failures, including restart at commit boundaries.
-                 Independent expected oracle: Hand-specified errors follow 12.6; unsupported capability differs from malformed structure, exact limits accepted. Before manifest commit old bytes/ID remain; after it new bytes/ID remain even with lost response. No partial source becomes replayable, no unbounded pending file remains; startup cleanup keeps committed data and reports failure explicitly. Other station/profile/status remains available. */
-        }
-        dependency traceinvalidRecording from invalidRecording to WstxProfileRecordings::'TC-018-002';
         verification receiveIsolation {
             subject operation : CancelReceive;
             objective { verify WstxRequirements::'CL-006-02'; verify WstxRequirements::'CL-006-04'; }

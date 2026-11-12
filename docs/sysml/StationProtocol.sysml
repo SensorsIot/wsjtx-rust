@@ -2,7 +2,7 @@ package WstxStationProtocol {
     private import ScalarValues::*;
     doc /* Canonical status, authentication and transport contract. Profile, recording,
          live receive and display extensions refine this shared boundary in WstxProfiles,
-         WstxRecordingReceive WstxRadioIO and WstxOperatingReceive. They do not create separate authentication
+         WstxProfileRecordings, WstxRecordingReceive WstxRadioIO and WstxOperatingReceive. They do not create separate authentication
          or transport authorities. Implemented status is not a complete operating API. */
 
     enum def DeploymentMode { enum trustedLoopback; enum authenticatedTls; }
@@ -80,7 +80,7 @@ package WstxStationProtocol {
              server-enforced session expiry. Rotate the configured token and restart
              to invalidate credentials, disconnecting existing station processes.
              Static assets contain no station data and may load before login.
-             WstxProfiles supplies profile-specific cookie naming/session routing.
+             AuthenticateProfile supplies profile-specific cookie naming/session routing.
              Distinct ports do not isolate cookies or make mutually hostile services
              trusted; same-host station processes assume one operator trust domain. */
     }
@@ -480,6 +480,7 @@ package WstxStationProtocol {
              grant revocation closes affected WS and rejects later protected effects.
              Same-host processes remain trusted; distinct ports are not hostile-service
              isolation. No transmit role or permission is created. */
+        @ModelNotes::FollowsSource { reference = "RFC 6265 section 8.5 (cookies)"; }
         in selectedUuid : String;
         in runtime : RuntimeInputs;
         out cookieName : String;

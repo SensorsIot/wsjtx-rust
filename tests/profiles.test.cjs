@@ -1,5 +1,6 @@
 'use strict';
-// Independent oracle: approved FSD 4.2/6.2/12.5, NOT the product/model serializers.
+// Independent oracle: the profile model (WstxProfiles, its values read through
+// tests/model-values.cjs) and hand-authored tables, NOT the product serializers.
 const {test, before, after} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -16,7 +17,33 @@ const {chromium} = require('playwright');
 const selfsigned = require('selfsigned');
 const WebSocket = require('ws');
 const {receive} = require('./peer.cjs');
+const {openModel} = require('./model-values.cjs');
 let root, browser, tls, retainFixtureRoot = false;
+// Values the model holds for the profile part (WstxProfiles), read where a test uses them.
+const profileValue = name => openModel().numberWithUnit(`WstxProfiles::${name}`);
+const readinessMs = () => profileValue('readinessDeadlineSeconds') * 1000;
+// The members of an outcome enumeration of WstxProfiles: naming one the model does not list
+// throws, so the test fails when the model no longer has it.
+function outcomes(definition) {
+  const members = openModel().enumMembers(`WstxProfiles::${definition}`);
+  return new Proxy({}, {get: (_, name) => {
+    if (typeof name !== 'string' || !members.includes(name)) throw new Error(`${String(name)} is not a member of WstxProfiles::${definition}: ${members.join(', ')}`);
+    return name;
+  }});
+}
+// The document --create-profile writes: the defaults of ProfileDocument, Settings, Endpoint,
+// AudioSelection and ControlSelection, read from the model (an enumeration value by its member,
+// a quoted member without its quotes). The JSON keys and their nesting stay the test's.
+function defaultDocument() {
+  const model = openModel();
+  const value = name => {
+    const literal = model.literal(`WstxProfiles::${name}`);
+    if (literal.kind === 'null') return null;
+    if (literal.kind === 'enum') return literal.member.replace(/^'(.*)'$/, '$1');
+    return literal.value;
+  };
+  return {schema_version: value('ProfileDocument::schema_version'), revision: value('ProfileDocument::revision'), display_name: value('Settings::display_name'), callsign: value('Settings::callsign'), locator: value('Settings::locator'), endpoint: {bind: value("Endpoint::'bind'"), origin: value('Endpoint::origin')}, connection_type: value('ProfileDocument::connection_type'), audio: {input_device: value('AudioSelection::input_device'), output_device: value('AudioSelection::output_device')}, control: {mode: value('ControlSelection::mode'), endpoint: value('ControlSelection::endpoint'), ptt: value('ControlSelection::ptt')}};
+}
 const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', 'wstx-rust.exe');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const uuid = i => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
@@ -52,15 +79,17 @@ function launch(args, env = {}, cwd) {
 }
 async function start(profile, env = {}, cwd) {
   const app = launch(['--profile', profile.dir], env, cwd);
-  const deadline = Date.now() + 10000;
+  const deadline = Date.now() + readinessMs();
   while (!app.output.includes(`WSTX listening ${profile.origin}`)) {
     if (app.child.exitCode !== null || app.child.signalCode !== null || Date.now() > deadline) {await app.close(); assert.fail('Profile readiness failed: ' + app.output);}
     await new Promise(r => setTimeout(r, 20));
   }
   return app;
 }
-async function refusal(args, category, env = {}, cwd) {
-  const app = launch(args, env, cwd); const timer = setTimeout(() => app.child.kill(), 10000);
+// A refused launch or creation: category is a member of WstxProfiles::StartupOutcome.
+async function refusal(args, member, env = {}, cwd) {
+  const category = outcomes('StartupOutcome')[member];
+  const app = launch(args, env, cwd); const timer = setTimeout(() => app.child.kill(), readinessMs());
   try {const [code, signal] = await app.done; assert.equal(signal, null, 'must fail explicitly, not time out'); assert.notEqual(code, 0); assert.match(app.output, new RegExp(`\\b${category}\\b`)); assert.doesNotMatch(app.output, /WSTX listening/);}
   finally {clearTimeout(timer); await app.close();}
 }
@@ -1930,7 +1959,8 @@ test('TC-022-001: four real windows, independent edits and HTTP input boundaries
   assert.equal(await page.locator('#native-option').isDisabled(), true); assert.equal(await page.locator('#native-reserved').isVisible(), true);
   assert.equal(await page.locator('#radio').textContent(), 'Radio not configured');
   let revision = 1;
-  async function invalid(body, status = 400, code = 'invalid_settings', headers) {const before = await savedBytes(profiles); const r = await request(profiles[0].origin, 'PUT', body, headers); assert.equal(r.status, status); assert.equal(r.body.error.code, code); assert.deepEqual(await savedBytes(profiles), before);}
+  const outcome = outcomes('HttpOutcome'), httpMax = profileValue('profileHttpMaxBytes');
+  async function invalid(body, status = 400, code = outcome.invalid_settings, headers) {const before = await savedBytes(profiles); const r = await request(profiles[0].origin, 'PUT', body, headers); assert.equal(r.status, status); assert.equal(r.body.error.code, code); assert.deepEqual(await savedBytes(profiles), before);}
   for (const [field, badValues] of Object.entries({display_name: ['', 'X'.repeat(65), ' leading', 'trailing ', 'bad\nname', 1], callsign: ['AB', 'A'.repeat(13), 'abc1', 'ABC', '123', '<BAD>'], locator: ['JN4', 'SN47', 'JN47YY', 'JN47AA9', 1]})) {
     for (const value of badValues) {const values = settings(1); values[field] = value; await invalid(edit(1, revision, values));}
   }
@@ -1942,11 +1972,11 @@ test('TC-022-001: four real windows, independent edits and HTTP input boundaries
   const missingOutput = edit(1, revision); delete missingOutput.settings.audio.output_device;
   const missingControl = edit(1, revision); delete missingControl.settings.control.endpoint;
   for (const value of [missingAudio, missingOutput, missingControl, {...edit(1, revision), profile_id: 'bad'}, {...edit(1, revision), revision: -1}, {...edit(1, revision), revision: 1.5}, {...edit(1, revision), revision: Number.MAX_SAFE_INTEGER + 1}, {...edit(1, revision), connection_type: 'native_flex'}, {...edit(1, revision), settings: {...settings(1), native: true}}, Buffer.from([0xff])]) await invalid(value);
-  await invalid(edit(1, revision, settings(1), uuid(2)), 403, 'wrong_profile');
-  await invalid(edit(1, 0), 409, 'revision_conflict'); await invalid(edit(1, revision), 415, 'unsupported_media_type', {'Content-Type': 'text/plain'});
-  await invalid(JSON.stringify(edit(1, revision)).padEnd(8193, ' '), 413, 'request_too_large');
+  await invalid(edit(1, revision, settings(1), uuid(2)), 403, outcome.wrong_profile);
+  await invalid(edit(1, 0), 409, outcome.revision_conflict); await invalid(edit(1, revision), 415, outcome.unsupported_media_type, {'Content-Type': 'text/plain'});
+  await invalid(JSON.stringify(edit(1, revision)).padEnd(httpMax + 1, ' '), 413, outcome.request_too_large);
   const maximum = settings(1); maximum.display_name = 'X'.repeat(64); maximum.callsign = 'A12345678901'; maximum.locator = 'RR99XX99'; maximum.audio = {input_device: captureId(99), output_device: null};
-  assert.equal((await request(profiles[0].origin, 'PUT', JSON.stringify(edit(1, revision, maximum)).padEnd(8192, ' '))).status, 200); revision++;
+  assert.equal((await request(profiles[0].origin, 'PUT', JSON.stringify(edit(1, revision, maximum)).padEnd(httpMax, ' '))).status, 200); revision++;
   for (const patch of [{display_name: 'X', callsign: '', locator: '', audio: {input_device: null, output_device: null}}, {callsign: 'A1B', locator: 'JN47'}, {locator: 'JN47AA', audio: {input_device: null, output_device: renderId(98)}}, {control: {mode: 'cat', endpoint: 'X'.repeat(256), ptt: 'cat'}}]) {
     assert.equal((await request(profiles[0].origin, 'PUT', edit(1, revision, {...settings(1), ...patch}))).status, 200); revision++;
   }
@@ -1986,10 +2016,12 @@ test('TC-022-001: four real windows, independent edits and HTTP input boundaries
 // Proves: FR-001, FR-016, FR-022; CL-005-02/04/05; TC-022-002.
 test('TC-022-002: acknowledged persistence, defaults, strict files and recovery', {timeout: 60000}, async t => {
   const {profiles, apps, base} = await fixture(t);
+  const httpOutcome = outcomes('HttpOutcome');
+  const fileMax = profileValue('profileFileMaxBytes');
   const created = path.join(base, 'created'), creating = launch(['--create-profile', created]); assert.equal((await creating.done)[0], 0); assert.doesNotMatch(creating.output, /WSTX listening/);
   const defaults = JSON.parse(await fs.readFile(path.join(created, 'profile.json'), 'utf8')); assert.match(defaults.profile_id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-  assert.deepEqual({...defaults, profile_id: 'identity'}, {schema_version: 1, profile_id: 'identity', revision: 0, display_name: 'New station', callsign: '', locator: '', endpoint: {bind: '127.0.0.1:8080', origin: null}, connection_type: 'standard', audio: {input_device: null, output_device: null}, control: {mode: 'disabled', endpoint: null, ptt: 'disabled'}});
-  const originalBoots = [];
+  const {endpoint, audio, control, ...flat} = defaultDocument();
+  assert.deepEqual({...defaults, profile_id: 'identity'}, {schema_version: flat.schema_version, profile_id: 'identity', revision: flat.revision, display_name: flat.display_name, callsign: flat.callsign, locator: flat.locator, endpoint, connection_type: flat.connection_type, audio, control});  const originalBoots = [];
   for (let i = 0; i < 4; i++) {originalBoots.push((await request(profiles[i].origin)).body.boot_id); assert.equal((await request(profiles[i].origin, 'PUT', edit(i + 1, 0, {...settings(i + 1), display_name: `Persisted ${i + 1}`}))).status, 200);}
   const {pages} = await browserWindows(t, profiles); await Promise.all(pages.map(connected));
   let putCount = 0, releasePut, observedPut;
@@ -2014,13 +2046,13 @@ test('TC-022-002: acknowledged persistence, defaults, strict files and recovery'
     ['{', 'invalid_profile'], [Buffer.from([0xff]), 'invalid_profile'], [{...profiles[0].document, schema_version: -1}, 'unsupported_schema'], [{...profiles[0].document, schema_version: 0}, 'unsupported_schema'], [{...profiles[0].document, schema_version: 2}, 'unsupported_schema'],
     [{...profiles[0].document, profile_id: 'bad'}, 'invalid_profile'], [{...profiles[0].document, extra: 1}, 'invalid_profile'], [{...profiles[0].document, connection_type: 'native_flex'}, 'unsupported_connection_type'],
     [{...profiles[0].document, endpoint: {bind: '127.0.0.1:0', origin: null}}, 'invalid_profile'], [{...profiles[0].document, endpoint: {bind: '127.0.0.1:65536', origin: null}}, 'invalid_profile'],
-    [JSON.stringify(profiles[0].document).replace('"revision":0', '"revision":0,"revision":0'), 'invalid_profile'], [JSON.stringify(profiles[0].document).padEnd(16385, ' '), 'invalid_profile']
+    [JSON.stringify(profiles[0].document).replace('"revision":0', '"revision":0,"revision":0'), 'invalid_profile'], [JSON.stringify(profiles[0].document).padEnd(fileMax + 1, ' '), 'invalid_profile']
   ];
   for (const [value, category] of invalid) {const raw = Buffer.isBuffer(value) || typeof value === 'string' ? value : JSON.stringify(value); await fs.writeFile(file, raw); const before = await fs.readFile(file); await refusal(['--profile', profiles[0].dir], category); assert.deepEqual(await fs.readFile(file), before);}
   await fs.unlink(file); await refusal(['--profile', profiles[0].dir], 'resource_unavailable');
-  await fs.writeFile(file, persisted[0].padEnd(16384, ' ')); const recovered = await start(profiles[0]); apps.push(recovered); assert.equal((await request(profiles[0].origin)).body.revision, 2); await recovered.close();
+  await fs.writeFile(file, persisted[0].padEnd(fileMax, ' ')); const recovered = await start(profiles[0]); apps.push(recovered); assert.equal((await request(profiles[0].origin)).body.revision, 2); await recovered.close();
   await fs.writeFile(file, persisted[0]); const fromOtherCwd = await start({...profiles[0], dir: path.relative(base, profiles[0].dir)}, {}, base); apps.push(fromOtherCwd); await fromOtherCwd.close();
-  const exhausted = {...JSON.parse(persisted[0]), revision: Number.MAX_SAFE_INTEGER}; await fs.writeFile(file, JSON.stringify(exhausted)); const last = await start(profiles[0]); apps.push(last); assert.equal((await request(profiles[0].origin, 'PUT', edit(1, Number.MAX_SAFE_INTEGER))).body.error.code, 'revision_exhausted'); await last.close();
+  const exhausted = {...JSON.parse(persisted[0]), revision: Number.MAX_SAFE_INTEGER}; await fs.writeFile(file, JSON.stringify(exhausted)); const last = await start(profiles[0]); apps.push(last); assert.equal((await request(profiles[0].origin, 'PUT', edit(1, Number.MAX_SAFE_INTEGER))).body.error.code, httpOutcome.revision_exhausted); await last.close();
   await fs.writeFile(file, persisted[0]);
   await refusal(['--create-profile', created], 'resource_unavailable'); const empty = path.join(base, 'empty'); await fs.mkdir(empty); await refusal(['--create-profile', empty], 'resource_unavailable'); await refusal(['--create-profile', path.join(base, 'absent', 'nested')], 'resource_unavailable');
   for (const args of [['--unknown'], ['--profile', profiles[0].dir, '--profile', profiles[0].dir], ['--create-profile', created, '--profile', profiles[0].dir]]) await refusal(args, 'invalid_runtime_configuration');
@@ -2062,7 +2094,7 @@ test('TC-022-003: lifecycle, ownership aliases/copies, ports and unavailable res
   await fs.writeFile(file, JSON.stringify({...profiles[0].document, endpoint: {bind: `127.0.0.1:${port}`, origin: `https://localhost:${port}`}})); await refusal(['--profile', profiles[0].dir], 'invalid_runtime_configuration');
   await fs.writeFile(file, JSON.stringify({...profiles[0].document, endpoint: {bind: '0.0.0.0:' + new URL(profiles[0].origin).port, origin: null}})); await refusal(['--profile', profiles[0].dir], 'invalid_runtime_configuration'); await fs.writeFile(file, before[0]);
   profiles[0].app = await start(profiles[0]); apps.push(profiles[0].app);
-  await fs.chmod(file, 0o444); const failed = await request(profiles[0].origin, 'PUT', edit(1, 0)); await fs.chmod(file, 0o666); assert.equal(failed.status, 503); assert.equal(failed.body.error.code, 'storage_unavailable'); assert.equal((await request(profiles[0].origin)).body.revision, 0);
+  await fs.chmod(file, 0o444); const failed = await request(profiles[0].origin, 'PUT', edit(1, 0)); await fs.chmod(file, 0o666); assert.equal(failed.status, 503); assert.equal(failed.body.error.code, outcomes('HttpOutcome').storage_unavailable); assert.equal((await request(profiles[0].origin)).body.revision, 0);
   assert.deepEqual(await savedBytes(profiles), before);
   await profiles[0].app.close();
   await fs.copyFile(tls.WSTX_TLS_CERT, path.join(base, 'cert.pem')); await fs.copyFile(tls.WSTX_TLS_KEY, path.join(base, 'key.pem'));
@@ -2217,31 +2249,33 @@ test('TC-022-002 review regression: admit the complete worst-case response budge
   // Independently authored from FSD12.5; never read from the candidate admission helper.
   const maximum = {display_name: '\\'.repeat(64), callsign: 'A12345678901', locator: 'RR99XX99', audio: {input_device: '\\'.repeat(256), output_device: '\\'.repeat(256)}, control: {mode: 'cat', endpoint: '\\'.repeat(256), ptt: 'disabled'}};
   const oracle = {profile_id: uuid(1), boot_id: uuid(2), revision: Number.MAX_SAFE_INTEGER, endpoint: '', connection_type: 'standard', settings: maximum};
-  assert.equal(Buffer.byteLength(JSON.stringify(oracle), 'utf8'), 2018);
-  const originFor = extra => 'http://' + 'a'.repeat(6174 - Buffer.byteLength(`http://:${port}`) + extra) + `:${port}`;
+  const emptyOriginBytes = 2018, httpMax = profileValue('profileHttpMaxBytes');
+  assert.equal(Buffer.byteLength(JSON.stringify(oracle), 'utf8'), emptyOriginBytes);
+  // The origin takes the rest of the budget: profileHttpMaxBytes less the empty-origin worst case.
+  const originFor = extra => 'http://' + 'a'.repeat(httpMax - emptyOriginBytes - Buffer.byteLength(`http://:${port}`) + extra) + `:${port}`;
   const atBoundary = originFor(0), document = {...selected.document, ...maximum, revision: Number.MAX_SAFE_INTEGER - 1, endpoint: {bind: selected.document.endpoint.bind, origin: atBoundary}};
-  assert.equal(Buffer.byteLength(JSON.stringify({...oracle, endpoint: atBoundary})), 8192);
+  assert.equal(Buffer.byteLength(JSON.stringify({...oracle, endpoint: atBoundary})), httpMax);
   await fs.writeFile(file, JSON.stringify(document));
   const admitted = await start({...selected, origin: atBoundary}); apps.push(admitted);
-  let result = await request(selected.origin, 'GET', undefined, {Origin: atBoundary}); assert.equal(result.status, 200); assert.equal(result.bodyBytes, 8192);
+  let result = await request(selected.origin, 'GET', undefined, {Origin: atBoundary}); assert.equal(result.status, 200); assert.equal(result.bodyBytes, httpMax);
   // CL-044-05: PUT admits only endpoint IDs, so the longest saved device is an ID; the loaded maximum above still fits.
   result = await request(selected.origin, 'PUT', edit(1, Number.MAX_SAFE_INTEGER - 1, maximum), {Origin: atBoundary}); assert.equal(result.status, 400); assert.equal(result.body.error.code, 'audio_device_not_endpoint');
   const saved = {...maximum, audio: {input_device: captureId(1), output_device: renderId(1)}}, shorter = 2 * (Buffer.byteLength(JSON.stringify('\\'.repeat(256))) - Buffer.byteLength(JSON.stringify(captureId(1))));
-  result = await request(selected.origin, 'PUT', edit(1, Number.MAX_SAFE_INTEGER - 1, saved), {Origin: atBoundary}); assert.equal(result.status, 200); assert.equal(result.bodyBytes, 8192 - shorter);
+  result = await request(selected.origin, 'PUT', edit(1, Number.MAX_SAFE_INTEGER - 1, saved), {Origin: atBoundary}); assert.equal(result.status, 200); assert.equal(result.bodyBytes, httpMax - shorter);
   await admitted.close();
   for (const origin of [originFor(1), `http://${'a'.repeat(9000)}:${port}`]) {
     // The initial settings are small; admission must reserve future valid maximums.
     const bad = {...selected.document, revision: Number.MAX_SAFE_INTEGER - 1, endpoint: {bind: selected.document.endpoint.bind, origin}};
     await fs.writeFile(file, JSON.stringify(bad)); const before = await fs.readFile(file);
     const rejected = launch(['--profile', selected.dir]); apps.push(rejected);
-    const deadline = Date.now() + 10000;
+    const deadline = Date.now() + readinessMs();
     while (rejected.child.exitCode === null && rejected.child.signalCode === null && !rejected.output.includes('WSTX listening ') && Date.now() < deadline) await new Promise(r => setTimeout(r, 10));
     if (rejected.output.includes('WSTX listening ')) {
       const reproduced = await request(selected.origin, 'PUT', edit(1, Number.MAX_SAFE_INTEGER - 1, maximum), {Origin: origin});
-      assert.ok(reproduced.bodyBytes > 8192, 'old-code reproduction must observe the oversized response');
+      assert.ok(reproduced.bodyBytes > httpMax, 'old-code reproduction must observe the oversized response');
       await rejected.close(); assert.fail('Over-budget profile reached readiness and returned an oversized save response');
     }
-    const [code, signal] = await rejected.done; assert.equal(signal, null); assert.notEqual(code, 0); assert.match(rejected.output, /invalid_profile/); assert.deepEqual(await fs.readFile(file), before);
+    const [code, signal] = await rejected.done; assert.equal(signal, null); assert.notEqual(code, 0); assert.match(rejected.output, new RegExp(`\\b${outcomes('StartupOutcome').invalid_profile}\\b`)); assert.deepEqual(await fs.readFile(file), before);
   }
   for (const other of profiles.slice(1)) assert.equal((await request(other.origin)).status, 200);
 });

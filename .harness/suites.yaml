@@ -162,6 +162,11 @@
   - tests/profiles.test.cjs
   - tests/support.cjs
   - tests/peer.cjs
+  # The profile values and outcome names its tests read (Profile.sysml), the unit suffixes
+  # (Units.sysml) and the JavaScript model-value reader.
+  - docs/sysml/backend/profile/Profile.sysml
+  - docs/sysml/shared/Units.sysml
+  - tests/model-values.cjs
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -187,6 +192,11 @@
   - fixtures/decoder/ft4-manifest.json
   - tests/support.cjs
   - tests/peer.cjs
+  # The recording limits its tests read (Recordings.sysml), the unit suffixes (Units.sysml)
+  # and the JavaScript model-value reader.
+  - docs/sysml/backend/profile/Recordings.sysml
+  - docs/sysml/shared/Units.sysml
+  - tests/model-values.cjs
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -267,12 +277,20 @@
   - package.json
   - package-lock.json
   - .github/workflows/windows-rust.yml
+  # The recording limits the provenance sweep reads (Recordings.sysml), the unit suffixes
+  # (Units.sysml) and the JavaScript model-value reader.
+  - docs/sysml/backend/profile/Recordings.sysml
+  - docs/sysml/shared/Units.sysml
+  - tests/model-values.cjs
   select:
   - tests/recording-fixtures.test.cjs
   - tools/recording-fixtures.cjs
   - fixtures/decoder/
   - package.json
   - package-lock.json
+  - docs/sysml/backend/profile/Recordings.sysml
+  - docs/sysml/shared/Units.sysml
+  - tests/model-values.cjs
   needs: Node 24 and WSTX_SAMPLE_DIR with verified original recordings (TC-018-001 provenance sweep). Windows PC; offline pinned fixture setup/refusal tests. No download in the gate.
 
 - suite: model-values

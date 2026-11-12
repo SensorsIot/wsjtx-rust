@@ -13,6 +13,9 @@ const selfsigned=require('selfsigned');
 const WebSocket=require('ws');
 const {receive}=require('./peer.cjs');
 const {server,loginPage,browserPort}=require('./support.cjs');
+const {openModel}=require('./model-values.cjs');
+// A bound of the profile's recordings, WstxProfileRecordings::RecordingLimits, read from the model.
+const recordingLimit=feature=>openModel().numberWithUnit(`WstxProfileRecordings::RecordingLimits::${feature}`);
 // Selected HTTPS profile: each browser context enrolls its own CL-022-01 key through the
 // real token form, then the cache is cleared so later cold measurements stay uncached.
 async function enroll(context,origin,token){const p=await context.newPage();await loginPage(p,origin,token,120000);const cdp=await context.newCDPSession(p);await cdp.send('Network.clearBrowserCache');await p.close();}
@@ -137,10 +140,10 @@ test('TC-018-002/003 HTTP admission, malformed chunks, busy and partial cancella
   for(const [edit,code,status] of [[{...body,x:1},'invalid_request',400],[{...body,v:2},'unsupported_version',400],[{...body,profile_id:unknown},'wrong_profile',403],[{...body,boot_id:unknown},'state_conflict',409],[{...body,generation:1},'state_conflict',409]]){const r=await f.req('/recording/imports','POST',edit);assert.equal(r.status,status);assert.equal(r.value.error.code,code);}
   const duplicate=JSON.stringify(body).replace('"v":1','"v":1,"v":1');assert.equal((await f.req('/recording/imports','POST',duplicate,{'Content-Type':'application/json'})).value.error.code,'invalid_request');
   const raced=await Promise.all([f.req('/recording/imports','POST',body),f.req('/recording/imports','POST',body)]);assert.deepEqual(raced.map(r=>r.status).sort(),[201,409]);await f.req('/recording/imports/'+raced.find(r=>r.status===201).value.id,'DELETE');
-  const op=await f.reserve(),route='/recording/imports/'+op.id;
+  const op=await f.reserve(),route='/recording/imports/'+op.id,fileCap=recordingLimit('fileBytes'),chunkCap=recordingLimit('rawChunkBytes');
   assert.equal((await f.req('/recording/imports','POST',{...body,generation:op.generation})).value.error.code,'busy');
-  for(const [range,code,status] of [['bad','invalid_request',400],['bytes 1-2/100','state_conflict',409],['bytes 0-1/3145729','request_too_large',413]]){const r=await f.req(route,'PUT',Buffer.from([1,2]),{'Content-Type':'audio/wav','Content-Range':range});assert.equal(r.status,status);assert.equal(r.value.error.code,code);}
-  assert.equal((await f.req(route,'PUT',Buffer.alloc(2049),{'Content-Type':'audio/wav','Content-Range':'bytes 0-2048/3000'})).status,413);
+  for(const [range,code,status] of [['bad','invalid_request',400],['bytes 1-2/100','state_conflict',409],[`bytes 0-1/${fileCap+1}`,'request_too_large',413]]){const r=await f.req(route,'PUT',Buffer.from([1,2]),{'Content-Type':'audio/wav','Content-Range':range});assert.equal(r.status,status);assert.equal(r.value.error.code,code);}
+  assert.equal((await f.req(route,'PUT',Buffer.alloc(chunkCap+1),{'Content-Type':'audio/wav','Content-Range':`bytes 0-${chunkCap}/3000`})).status,413);
   assert.equal((await f.req(route,'PUT',Buffer.from([1,2]),{'Content-Type':'audio/wav','Content-Range':'bytes 0-1/100'})).status,202);
   const began=performance.now();assert.equal((await f.req(route,'DELETE')).status,200);assert.ok(performance.now()-began<250);
   for(let n=0;n<30;n++){const r=await f.req(route);if(r.value.state==='cancelled')break;await sleep(20);}assert.equal((await f.req(route)).value.state,'cancelled');
@@ -254,8 +257,8 @@ test('TC-018-001 one real FT8 and one real FT4 original import unchanged',{timeo
   const ft4=JSON.parse(await fs.readFile(path.join(__dirname,'..','fixtures/decoder/ft4-manifest.json'),'utf8'));
   const first8=ft8.files.find(f=>f.path.endsWith('.wav')),first4=ft4.files.find(f=>f.relative_download_path.endsWith('.wav'));
   const inputs=[{...first8,file:path.join(samples,path.basename(first8.path))},{...first4,file:path.join(samples,'ft4',first4.relative_download_path)}];
-  const f=await fixture(t);
-  for(const input of inputs){const bytes=await fs.readFile(input.file).catch(error=>{if(error.code==='ENOENT')throw Error('Missing recording fixtures. Run node tools/recording-fixtures.cjs --directory <absolute-cache-directory> and set WSTX_SAMPLE_DIR to that directory.');throw error;});assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),input.sha256);const s=await f.upload(bytes);assert.equal(s.recording.rate_hz,12000);assert.equal(s.recording.file_bytes,bytes.length);assert.deepEqual(await fs.readFile(path.join(f.dir,'recordings',s.recording.id+'.wav')),bytes);}
+  const f=await fixture(t),rate=recordingLimit('rateHz');
+  for(const input of inputs){const bytes=await fs.readFile(input.file).catch(error=>{if(error.code==='ENOENT')throw Error('Missing recording fixtures. Run node tools/recording-fixtures.cjs --directory <absolute-cache-directory> and set WSTX_SAMPLE_DIR to that directory.');throw error;});assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),input.sha256);const s=await f.upload(bytes);assert.equal(s.recording.rate_hz,rate);assert.equal(s.recording.file_bytes,bytes.length);assert.deepEqual(await fs.readFile(path.join(f.dir,'recordings',s.recording.id+'.wav')),bytes);}
   const p=await page(f);await p.locator('#recording-replay').click();await p.waitForFunction(()=>Number(document.querySelector('#waterfall').dataset.rows)>0,{timeout:8000});
   await f.req('/recording/jobs/'+(await f.snapshot()).job.id,'DELETE');await terminal(f);
 });
