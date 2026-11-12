@@ -1002,8 +1002,8 @@ package WstxContact {
              next send moves the pending request (WstxContact::TransmitSubmission replaces it); one
              arriving after the audio start lets that send finish where it is and moves the next. A
              refused move (set_frequency refused) falls back to the stop of partnerWorksOther (the
-             transmit state off, cause partnerWorksOther), so Tx never stays on his signal. In manual operation this is
-             the one automatic Tx move besides Hold Tx's rules, also with Hold Tx on (operator
+             transmit state off, cause partnerWorksOther), so Tx never stays on his signal. In
+             manual operation this is the one automatic Tx move besides Hold Tx's rules, also with Hold Tx on (operator
              2026-11-09, #97 Q7 "yes, both"; an exception to CL-039-08); an explicit Tx action of the
              operator (also a click onto his signal) wins until his next message to another call,
              which moves it again. A contact that does not pause (a pounce, an MCP policy run, a run

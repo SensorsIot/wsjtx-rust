@@ -2190,8 +2190,8 @@ async fn tc_097_018_cq_after_exactly_the_cq_wait() {
 // wait 3). Auto on: one empty, Auto off and on, then 2 empties wait and the 3rd calls CQ. A QSO:
 // one empty, then N1NEW calls my call (a callable station before the CQ is due) and is answered;
 // his R-05 and 73 complete the QSO; then 2 empties wait and the 3rd calls CQ. A leaving: "Test
-// calls" with leave {calls 1, calls_heard 2} selects CQ K1ABC and leaves him at the next
-// publication; then 2 empties wait and the 3rd calls CQ. Red on the parent: the CQ at the 2nd.
+// calls" with leave {calls 1, calls_heard 2}: one empty publication, then it selects CQ K1ABC and
+// leaves him at the next publication; then 2 empties wait and the 3rd calls CQ. Red on the parent: the CQ at the 2nd.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_018_the_cq_wait_starts_again() {
     // Auto on.
@@ -2226,17 +2226,20 @@ async fn tc_097_018_the_cq_wait_starts_again() {
             c["strategies"][0]["cq_when_idle"] = json!(true);
             c["strategies"][0]["cq_wait_periods"] = json!(3);
         },
-        &[K1ABC_CQ],
+        &[],
     )
     .await;
     let (f, e) = (&t.f, t.e);
+    // One empty publication (at e) before K1ABC's CQ, so the count is 1 when the run selects.
+    assert_eq!(run_of(f).await["state"], "waiting");
+    publish(f, rep(e, 1), &[K1ABC_CQ]);
     assert_eq!(contact(f).await.0, json!("K1ABC"));
-    publish(f, rep(e, 1), &[]);
+    publish(f, rep(e, 2), &[]);
     assert_eq!(
         run_of(f).await["left"],
         json!({"call":"K1ABC","reason":"repetitions"})
     );
-    empties(f, e, 3, 2, "after the leaving").await;
-    publish(f, half(e, 5), &[]);
+    empties(f, e, 5, 2, "after the leaving").await;
+    publish(f, half(e, 7), &[]);
     assert_eq!(run_of(f).await["state"], "calling_cq", "after the leaving");
 }
