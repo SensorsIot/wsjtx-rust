@@ -2308,8 +2308,10 @@ fn same_frequency_preserves_two_temporal_frames() {
         .unwrap();
     for (v, start) in vectors.iter().zip([6000u64, 96000]) {
         assert!(
-            result.iter().any(|r| r.start_frame.abs_diff(start) <= start_tolerance(Mode::Ft4)
-                && r.payload.text == v["expected_receive"]["text"].as_str().map(str::to_owned)),
+            result.iter().any(
+                |r| r.start_frame.abs_diff(start) <= start_tolerance(Mode::Ft4)
+                    && r.payload.text == v["expected_receive"]["text"].as_str().map(str::to_owned)
+            ),
             "missing temporal frame {start}: {result:?}"
         );
     }
