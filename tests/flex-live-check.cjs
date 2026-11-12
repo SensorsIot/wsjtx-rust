@@ -78,7 +78,7 @@ async function run({address, seconds = 180, band = '20m', out, registerPort, ant
     for (let i = 0; i < 80; i++) { selected = (await request('/receive/selection')).body; if (selected.operation?.result !== 'pending') break; await sleep(250); }
     report.selection = {result: selected.operation?.result, error: selected.operation?.error, frequency_hz: selected.radio.observations.frequency.value, origin: selected.selection.origin};
     if (selected.operation?.result !== 'success') { report.status = 'selection_failed'; return await finish(); }
-    const started = Date.now(), before = (await request('/native-flex')).body.packets, end = started + seconds * 1000;
+    const started = Date.now(), first = (await request('/native-flex')).body, end = started + seconds * 1000;
     const dts = [], texts = []; let rows = 0, key = '', cursor = 0, last;
     while (Date.now() < end) {
       await sleep(1000);
@@ -98,8 +98,12 @@ async function run({address, seconds = 180, band = '20m', out, registerPort, ant
       }
     }
     const elapsed = (Date.now() - started) / 1000, f = (await request('/native-flex')).body;
+    // The station counts packets per session: after a reconnect the end counts are those of
+    // the last session alone, and the two session numbers show it.
+    const sessions = {start: first.session, end: f.session};
+    const before = sessions.start === sessions.end ? first.packets : {accepted: 0, lost: 0, late: 0, foreign: 0, invalid: 0};
     const accepted = f.packets.accepted - before.accepted, lost = f.packets.lost - before.lost;
-    Object.assign(report, {elapsed_s: elapsed, packets: {accepted, lost, late: f.packets.late - before.late, foreign: f.packets.foreign - before.foreign, invalid: f.packets.invalid - before.invalid},
+    Object.assign(report, {elapsed_s: elapsed, sessions, packets: {accepted, lost, late: f.packets.late - before.late, foreign: f.packets.foreign - before.foreign, invalid: f.packets.invalid - before.invalid},
       loss_percent: accepted + lost ? 100 * lost / (accepted + lost) : null, received_ratio: accepted / (elapsed * PACKETS_PER_SECOND),
       arrival: f.arrival, vita: f.vita, audio: last?.audio, clock: last?.clock, rows, texts, dt_seconds: stats(dts), session_end: {state: f.state, error: f.error}});
     report.status = 'measured';

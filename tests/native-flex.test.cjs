@@ -116,8 +116,10 @@ test('TC-023-001 four direct native stations route control, status and samples o
   assert.equal(new Set(owned.map(o => o[0].dax)).size, 4, 'each station its own DAX channel');
   // Samples: each station's accepted channel-0 peak is its own slice's tone amplitude;
   // the loud 0.95 interference carrying other clients' stream IDs is never accepted.
+  // The packet counters are those of the current session; a new session cannot fill the wait.
   for (const [i, s] of stations.entries()) {
-    const v = await waitFor(async () => { const v = await s.flex(); return v.packets.accepted > 100 && v.packets.foreign > 5 && v; }, `${s.name} packets`);
+    const {session} = await s.flex();
+    const v = await waitFor(async () => { const v = await s.flex(); return v.session === session && v.packets.accepted > 100 && v.packets.foreign > 5 && v; }, async () => `${s.name} packets of session ${session}: ${JSON.stringify(await s.flex())}`);
     assert.ok(Math.abs(v.last_peak - owned[i][0].amplitude) < 1e-4, `${s.name} peak ${v.last_peak} expected ${owned[i][0].amplitude}`);
     assert.equal(v.packets.invalid, 0);
   }
@@ -188,15 +190,23 @@ test('TC-023-002 persisted intent reconciles restarted radios, changed handles a
   };
   // Radio restart: new handles, reversed slice indices, new stream IDs, old IDs replayed.
   await restart({handleBase: 0x7a000000, sliceOrder: [7, 6, 5, 4, 3, 2, 1, 0], streamBase: 0x08000000, staleStreams: oldStreams});
+  // The new sessions' first packets are held until both stations have been read in their new
+  // session, so a station's own packets can only be counted in that session.
+  const held = emulator;
+  held.pausedUntil = Infinity;
   await failure(a, 'transport_lost'); await failure(b, 'transport_lost');
   await waitFor(async () => (await a.request('/receive')).body.audio.state === 'unavailable', 'the running job shows its input unavailable');
   await separated();
+  // Released, the streams start then, as a radio's late stream would: no backlog in a burst,
+  // which would fill the running job's queue.
+  const release = setTimeout(() => { held.sentFrames = Math.floor((performance.now() - held.started) * 24); held.pausedUntil = 0; }, 1000);
+  t.after(() => clearTimeout(release));
   for (const s of [a, b]) {
     const v = await s.flex(), own = emulator.slicesOf(s.clientId);
     assert.equal(own.length, 1); assert.equal(v.slice.index, own[0].index);
     assert.ok(v.session > before[s === a ? 'a' : 'b'].session, 'a new session number');
     assert.ok(!oldStreams.includes(v.slice.stream_id), 'a stale stream ID is never authority');
-    const later = await waitFor(async () => { const x = await s.flex(); return x.packets.accepted > before[s === a ? 'a' : 'b'].packets.accepted + 100 && x; }, 'new packets');
+    const later = await waitFor(async () => { const x = await s.flex(); return x.session === v.session && x.packets.accepted > 100 && x; }, async () => `${s.name} packets of session ${v.session}: ${JSON.stringify(await s.flex())}`);
     assert.ok(Math.abs(later.last_peak - own[0].amplitude) < 1e-4, `${s.name} reconciled to its own new slice`);
   }
   assert.notEqual((await a.flex()).slice.index, before.a.slice.index);
