@@ -150,6 +150,109 @@ fn vita_offset_measures_host_clock_minus_packet_time() {
     assert_eq!(vita_offset_ms(&packet(2, None, None), 100_500), None);
 }
 
+// A scripted radio on localhost for one tune: `slice tune` gets the reply code `tune_code`, and
+// `sub slice all` gets a success reply and the slice's status at 14.074 MHz. The session's
+// connection starts with its slice 0 at 7.000 MHz, published as after the ready step.
+fn tune_against_scripted_radio(tune_code: u32) -> (Result<u64, Error>, Option<SliceFacts>) {
+    use std::io::{BufRead, BufReader};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let radio = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut out = stream.try_clone().unwrap();
+        for line in BufReader::new(stream).lines() {
+            let Ok(line) = line else { return };
+            let (sequence, text) = line[1..].split_once('|').unwrap();
+            let answer = if text.starts_with("slice tune 0 ") {
+                format!("R{sequence}|{tune_code:X}|\n")
+            } else if text == "sub slice all" {
+                format!(
+                    "R{sequence}|0|\nS10|slice 0 in_use=1 client_handle=0x10 RF_frequency=14.074000 mode=DIGU rxant=ANT1 dax=1 index_letter=A\n"
+                )
+            } else {
+                format!("R{sequence}|50000001|\n")
+            };
+            if out.write_all(answer.as_bytes()).is_err() {
+                return;
+            }
+        }
+    });
+    let shared = Shared {
+        snapshot: Mutex::new(Snapshot {
+            state: State::Ready,
+            error: None,
+            radio_code: None,
+            session: 1,
+            radio: None,
+            slice: None,
+            counters: Counters::default(),
+            last_peak: None,
+            vita_tsi: None,
+            vita_offset_ms: None,
+            jitter_mean_ms: None,
+            jitter_max_ms: None,
+            retry_after_ms: None,
+        }),
+        sink: Mutex::new(None),
+        attachments: Mutex::new(0),
+        shutdown: AtomicBool::new(false),
+        allowed: AtomicBool::new(true),
+        tuned_hz: AtomicU64::new(0),
+        revision: AtomicU64::new(1),
+    };
+    let tcp = TcpStream::connect(address).unwrap();
+    tcp.set_read_timeout(Some(Duration::from_millis(10)))
+        .unwrap();
+    let mut conn = Conn::new(&shared, tcp, address.ip());
+    conn.own = Some(0x10);
+    conn.slice = Some(0);
+    conn.view.apply(&wire::parse_status("slice 0 in_use=1 client_handle=0x10 RF_frequency=7.000000 mode=DIGU rxant=ANT1 dax=1 index_letter=A").unwrap());
+    let before = conn.slice_facts();
+    assert_eq!(
+        before.as_ref().and_then(|s| s.frequency_hz),
+        Some(7_000_000)
+    );
+    shared.update(|s| s.slice = before);
+
+    let (reply, _answer) = sync_channel(1);
+    let request = TuneRequest {
+        frequency_hz: 14_074_000,
+        deadline: Instant::now() + STEP,
+        cancelled: Arc::new(AtomicBool::new(false)),
+        reply,
+    };
+    let mut at_reply = None;
+    let result = serve_tune(&mut conn, &request, |result| {
+        // The caller reads the shared snapshot the moment it hears the result.
+        let slice = shared.snapshot.lock().unwrap().slice.clone();
+        at_reply = Some((result, slice));
+    });
+    drop(conn);
+    radio.join().unwrap();
+    let (replied, slice) = at_reply.expect("the caller is answered");
+    assert_eq!(replied, result);
+    (replied, slice)
+}
+
+// Proves: TC-023-001. A confirmed selection is never reported beside the slice's earlier
+// frequency: when the caller hears that the tune succeeded, the shared snapshot already
+// carries the frequency the radio read back.
+#[test]
+fn a_confirmed_tune_is_published_before_the_caller_hears_of_it() {
+    let (result, slice) = tune_against_scripted_radio(0);
+    assert_eq!(result, Ok(14_074_000));
+    assert_eq!(slice.and_then(|s| s.frequency_hz), Some(14_074_000));
+}
+
+// Proves: TC-023-001. A refused tune confirms nothing, and the snapshot at the reply shows the
+// slice as the radio reports it.
+#[test]
+fn a_refused_tune_confirms_nothing_and_keeps_the_reported_slice() {
+    let (result, slice) = tune_against_scripted_radio(0x5000_002C);
+    assert_eq!(result, Err(Error::RadioRefused));
+    assert_eq!(slice.and_then(|s| s.frequency_hz), Some(7_000_000));
+}
+
 #[test]
 fn intent_domains() {
     let valid = Intent {
