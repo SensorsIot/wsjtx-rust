@@ -887,6 +887,24 @@ def architecture_integrity(output: str) -> dict[str, int]:
             raise ValueError("Architecture integrity: wrong part type or population " + path)
     if unlisted := sorted(set(refs) - set(oracle["references"])):
         raise ValueError("Architecture integrity: unexpected reference " + unlisted[0])
+    # Every port joins a function: it is an end of a connection, an end reached through a
+    # reference resolving to the referenced part's port. A binding joins no port.
+    targets = {path: values[3] for path, values in refs.items() if len(values) > 3 and values[3]}
+
+    def resolved(owner: str, end: str) -> str:
+        path = end if end.startswith(root + ".") else owner + "." + end
+        for _ in range(len(targets) + 1):
+            prefix = next((ref for ref in sorted(targets, key=len, reverse=True)
+                           if path == ref or path.startswith(ref + ".")), None)
+            if prefix is None:
+                break
+            path = targets[prefix] + path[len(prefix):]
+        return path
+
+    joined = {resolved(owner, end) for owner, kind, endpoints in actual_edges if kind == "connection"
+              for end in endpoints}
+    if unjoined := sorted(set(ports) - joined):
+        raise ValueError("Architecture integrity: port joined to no function " + unjoined[0])
     return {"parts": len(parts), "references": len(refs), "ports": len(ports), "connections": len(actual_edges)}
 
 

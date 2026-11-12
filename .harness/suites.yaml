@@ -30,7 +30,9 @@
   - Cargo.lock
   - rust-toolchain.toml
   - .github/workflows/windows-rust.yml
+  - docs/sysml/
   select:
+  - docs/sysml/
   - server/
   - fixtures/transmit/
   - fixtures/decoder/
@@ -60,7 +62,9 @@
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
+  - docs/sysml/
   select:
+  - docs/sysml/
   - server/src/decoder/
   - server/src/transmit/pack.rs
   - server/src/transmit/mod.rs
@@ -763,6 +767,7 @@
   run: "cargo test --release --locked --bin wstx-rust selection_http_tests::live_native_selection_commission_ -- --nocapture && cargo test --release --locked --bin wstx-rust selection_http_tests::selection_state_ -- --nocapture && cargo build --workspace --locked && node --test --test-concurrency=1 tests/radio-selection.test.cjs"
   paths: *browser-inputs
   select:
+  - docs/sysml/
   - server/src/main.rs
   - server/src/http_compression.rs
   - server/src/selection.rs
