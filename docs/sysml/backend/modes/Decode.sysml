@@ -29,9 +29,9 @@ package WstxModemDecode {
 
     attribute def DecodeQuality {
         doc /* The share of frames the modem decodes, per mode, and the accuracy of what it
-             reports. A level is 40 independent signals of one mode at one SNR on the
-             WSJT-X 2500 Hz scale; strongDecodedMin and weakDecodedMin of them decode at
-             the strong and the weak level. Of overlapPairs pairs of frames at each of two
+             reports. A level is signalsPerLevel independent signals of one mode at one SNR
+             on the WSJT-X 2500 Hz scale; strongDecodedMin and weakDecodedMin of them decode
+             at the strong and the weak level. Of overlapPairs pairs of frames at each of two
              frequency spacings, overlapDecodedMin decode both; at one spacing with
              oneSpacingDifferenceDb between them, the stronger decodes in
              oneSpacingStrongDecodedMin pairs and the weaker in oneSpacingWeakDecodedMin.
@@ -40,8 +40,10 @@ package WstxModemDecode {
              injected start, a decoded lowest-tone frequency within the frequency
              tolerance. A reported SNR is a whole dB, within jt9SnrToleranceDb of the
              pinned jt9 report where one exists, at least the floor of its mode and at most
-             snrCeilingDb. Carriers decode at any lowest-tone offset within DecodeBand,
-             not only at multiples of 6.25 Hz. */
+             snrCeilingDb. For an isolated signal of the strong level in white Gaussian
+             noise, it lies within strongAwgnSnrToleranceDb of the injected SNR. Carriers
+             decode at any lowest-tone offset within DecodeBand, not only at multiples of
+             6.25 Hz. */
         attribute signalsPerLevel : Integer = 40;
         attribute strongDecodedMin : Integer = 36;
         attribute weakDecodedMin : Integer = 20;
@@ -63,6 +65,7 @@ package WstxModemDecode {
         attribute ft8FrequencyToleranceHz : Integer = 1;
         attribute ft4FrequencyToleranceHz : Integer = 3;
         attribute jt9SnrToleranceDb : Integer = 1;
+        attribute strongAwgnSnrToleranceDb : Integer = 3;
         attribute ft8SnrFloorDb : Integer = -25;
         attribute ft4SnrFloorDb : Integer = -21;
         attribute snrCeilingDb : Integer = 60;
@@ -143,11 +146,22 @@ package WstxModemDecode {
         doc /* The shared receive owner assembles the window from canonical sample blocks: up
              to 30 s for FT8 and 15 s for FT4. The modem reads no device, file, network or
              clock. */
-        doc /* The modem decodes no SuperFox, FT8var or legacy 2019 FT4 frame. */
+        doc /* The modem decodes no SuperFox or legacy 2019 FT4 frame. It decodes FT8 with its
+             own decoder only and does not run WSJT-X's optional FT8var decoder. */
         @DiffersFromSource {
             what = "SuperFox: WSJT-X 3.3.0-beta5 decodes SuperFox frames in Hound mode; the modem "
                 + "does not.";
         }
+        @DiffersFromSource {
+            what = "FT8var: WSJT-X 3.3.0-beta5 runs lib/ft8var (my_ft8var%decodevar in "
+                + "ft8_engine_kernel.f90) when the option Use multithreaded FT8 decoder is on "
+                + "(lmultift8, MultithreadedFT8decoder, default off, mainwindow_settings.cpp); "
+                + "the modem runs neither that decoder nor its hint passes.";
+        }
+        doc /* A record larger than the modem record cap that
+             WstxRecordingReceive::LiveTimedResultRecord states is not published; the window
+             ends with decode_limit (WstxRecordingReceive::ErrorCode), keeping the records
+             already published. */
         doc /* A frame that starts before the window or runs past its end is subtracted and
              never published, so that a weaker frame under it decodes; a frame that starts
              at most half a symbol before the window is published at start 0. */
@@ -202,6 +216,12 @@ package WstxModemDecode {
         @DiffersFromSource {
             what = "A low-confidence a-priori word, which WSJT-X publishes marked '?', is not "
                 + "published.";
+        }
+        @DiffersFromSource {
+            what = "The a7 and a8 passes: WSJT-X 3.3.0-beta5 ft8_decode.f90 runs, after the last "
+                + "FT8 pass of a period with AP on, ft8_a7d over the messages decoded in the "
+                + "previous period (iaptype 7) and ft8_a8d at the Rx frequency with the DX "
+                + "call and grid (iaptype 8); the modem tries only the a-priori types 1 to 6.";
         }
     }
 
@@ -258,7 +278,8 @@ package WstxModemDecode {
     dependency CL_007_07_to_FR_004 from 'CL-007-07' to 'FR-004';
     requirement 'CL-007-08' {
         doc /* The modem MUST publish the same records in the same order for the same window,
-             mode and a-priori context. */
+             mode and a-priori context: the same payloads, each start within 1 frame and each
+             frequency within 0.2 Hz (FT8) or 0.5 Hz (FT4) of the other run. */
         @Status { build = ImplementationState::implemented; }
     }
     dependency CL_007_08_to_FR_003 from 'CL-007-08' to 'FR-003';
@@ -283,14 +304,16 @@ package WstxModemDecode {
              (a) Every supported family and field boundary decodes to the injected text;
                  start within DecodeQuality::ft4StartToleranceFrames, frequency within
                  ft4FrequencyToleranceHz.
-             (b) The quality counts of DecodeQuality for FT4.
+             (b) The quality counts of DecodeQuality for FT4; on each strong isolated signal
+                 an SNR within strongAwgnSnrToleranceDb of the injected one.
              (c) At least ft4OfficialDecodedMin of the ft4OfficialMessages official
                  messages; every SNR a whole dB, within jt9SnrToleranceDb of jt9 and at
                  least ft4SnrFloorDb.
              (d) A weak CQ decodes through type 1 without context; a weak
                  "HB9BLA K1ABC RR73" decodes through type 6 only with MyCall HB9BLA and
                  DxCall K1ABC.
-             (e) SIM18-FT4-CLEAN decodes exactly "CQ K1ABC FN42".
+             (e) SIM18-FT4-CLEAN decodes exactly "CQ K1ABC FN42". Open: no bound test
+                 shows (e).
              Oracle: the injected payloads; jt9 is a lower bound, not exhaustive truth.
              2 — Isolated automated tests; Windows PC, offline fixtures. */
         @Automation { run = AutomationState::partial; }
@@ -322,8 +345,9 @@ package WstxModemDecode {
                  decode; start within
                  DecodeQuality::ft8StartToleranceFrames, frequency within
                  ft8FrequencyToleranceHz.
-             (b) The quality counts of DecodeQuality for FT8; a second station 80 dB below
-                 a stronger one keeps both messages.
+             (b) The quality counts of DecodeQuality for FT8; on each strong isolated signal
+                 an SNR within strongAwgnSnrToleranceDb of the injected one; a second station
+                 80 dB below a stronger one keeps both messages.
              (c) At least ft8OfficialDecodedMin of the ft8OfficialMessages official
                  messages; SNR within jt9SnrToleranceDb of jt9 and at least ft8SnrFloorDb.
              (d) At least the pinned count of jt9-deep's 409 decodes.
@@ -340,7 +364,11 @@ package WstxModemDecode {
                  DxCall in every state and mode never yields another word, and noise none.
              (i) Through the live worker, the SNR of a UTC-aligned period equals the file
                  decode of the same audio.
-             (j) SIM18-FT8-CLEAN decodes exactly.
+             (j) SIM18-FT8-CLEAN decodes exactly. Open: no bound test shows (j).
+             (k) The weak-word guard rejects an FT8 word with at most 10 Costas hits and a
+                 measured SNR below -25 dB; it rejects no word with 11 hits or with an SNR of
+                 -25 dB or none, and no FT4 word.
+             (l) A weak word that fails at its fine point decodes at the nearby data point.
              Oracle: the injected payloads; jt9 is a lower bound, not exhaustive truth.
              2 — Isolated automated tests; Windows PC, offline fixtures. */
         @Automation { run = AutomationState::partial; }
@@ -372,7 +400,9 @@ package WstxModemDecode {
                  one more gives search_limited.
              (e) The runtime and memory of DecodeBudgets, with release at most
                  DecodeBudgets::releaseMaxMs after Stop.
-             (f) A second run of the same window gives the same records in the same order.
+             (f) A second run of the same window gives the same payloads in the same order,
+                 each start within 1 frame and each frequency within 0.2 Hz (FT8) or 0.5 Hz
+                 (FT4) of the first run.
              2 — Isolated automated tests; Windows PC with disposable recordings, no radio
              or live service. */
         @Automation { run = AutomationState::partial; }
