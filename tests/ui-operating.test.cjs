@@ -5286,10 +5286,11 @@ test('TC-110-005 (d) a refused Auto Seq change leaves the box showing the statio
 test('TC-097-019 the model carries no superseded wording',async()=>{
   const dir=path.join(__dirname,'..','docs','sysml');
   const files={};
-  for(const f of (await fs.readdir(dir)).filter(f=>f.endsWith('.sysml')))files[f]=await fs.readFile(path.join(dir,f),'utf8');
+  for(const f of (await fs.readdir(dir,{recursive:true})).filter(f=>f.endsWith('.sysml')))files[f.replaceAll('\\','/')]=await fs.readFile(path.join(dir,f),'utf8');
   const quote=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   // An element's own doc: the first doc comment after its declaration.
   const doc=(file,name)=>{
+    if(file===R)file=Object.keys(files).find(f=>new RegExp(`\\b(?:requirement|verification)\\s+'${quote(name)}'`).test(files[f]))??R;
     const text=files[file],m=new RegExp(`\\bdef\\s+${quote(name)}\\b|\\b(?:requirement|verification)\\s+'${quote(name)}'`).exec(text);
     assert.ok(m,`${file}: ${name} not found`);
     const s=text.indexOf('doc /*',m.index),e=text.indexOf('*/',s);
