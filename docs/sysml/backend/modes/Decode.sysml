@@ -171,7 +171,8 @@ package WstxModemDecode {
              of greatest energy. */
         @DiffersFromSource { what = "The retry at the data point: ft8b has no such step."; }
         doc /* An FT8 candidate that yields no word and that a frame subtracted in the same
-             pass overlaps is qualified again on the next pass. */
+             pass overlaps (carriers within 50 Hz, starts less than one frame apart) is
+             qualified again on the next pass. */
         doc /* The weak-word guard rejects an FT8 word whose final point has at most 10 of 21
              Costas hits and whose measured SNR is below -25 dB; the rejected word is
              neither published nor subtracted. */
