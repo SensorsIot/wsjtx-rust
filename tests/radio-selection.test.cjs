@@ -199,6 +199,7 @@ function canonicalNegotiations(model){
     assert.ok(match,at('malformed canonical negotiation declaration'));const id=Number(match[1]);
     assert.equal(id,vectors.length+1,at('all cases occur once in canonical order'));
     assert.deepEqual(usage.fieldNames(),['caseId','orderedRawHeaderFieldsJson','expected'],at('no extra or missing oracle fields'));
+    assert.ok(usage.literal('caseId').integer===true,at('integer case ID'));
     assert.equal(usage.number('caseId'),id,at('declaration and case ID agree'));
     const encoded=usage.string('orderedRawHeaderFieldsJson');assert.equal(typeof encoded,'string');
     const fields=JSON.parse(encoded);assert.ok(Array.isArray(fields)&&fields.every(field=>typeof field==='string'),at('ordered raw-header string array'));
@@ -214,6 +215,7 @@ test('TC-009-005 SysML negotiation reader refuses missing malformed and duplicat
   for(const damaged of [
     source.replace('attribute negotiation01 :','attribute omitted01 :'),
     source.replace('attribute :>> caseId = 2;','attribute :>> caseId = 1;'),
+    source.replace('attribute :>> caseId = 2;','attribute :>> caseId = 2.0;'),
     source.replace('attribute :>> orderedRawHeaderFieldsJson = "[]";','attribute :>> orderedRawHeaderFieldsJson = "{bad}";'),
     source.replace('HttpCodingSelection::noAcceptable;','HttpCodingSelection::unknown;'),
     source.replace('329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56','changed'),
