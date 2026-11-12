@@ -232,7 +232,9 @@ package WstxProfiles {
              judges the whole Settings object against every domain above; there is no partial
              edit. A transport body limit may answer 413 before this order. Every outcome
              but ok keeps the saved bytes, the revision and the settings. */
-        @FollowsSource { reference = "RFC 9110 (status codes and Origin handling)"; }
+        @FollowsSource {
+            reference = "RFC 6454 section 7 (Origin), RFC 9110 section 8.3 (Content-Type)";
+        }
         in originValid : Boolean;
         in authValid : Boolean;
         in mediaTypeValid : Boolean;
@@ -519,10 +521,10 @@ package WstxProfiles {
                  proves.
              (f) The response budget, over numeric loopback with the saved origin as the
                  Origin header and no external DNS: the empty-origin worst case is 2,018
-                 bytes; an origin sized to exactly profileHttpMaxBytes launches and the bodies
-                 fit, including a save from maxRevision - 1 to maxRevision; one more origin
-                 byte, or a 9,000-character hostname, gives invalid_profile before readiness
-                 without a file rewrite.
+                 bytes; an origin sized so that the complete representation is exactly
+                 profileHttpMaxBytes launches and the bodies fit, including a save from
+                 maxRevision - 1 to maxRevision; one more origin byte, or a 9,000-character
+                 hostname, gives invalid_profile before readiness without a file rewrite.
              (g) A relative path from another working directory, aliases, invalid arguments,
                  and WSTX_BIND or WSTX_ORIGIN each give their mapped outcome.
              Oracle: independent expected fields and hashes, never the candidate's helpers.

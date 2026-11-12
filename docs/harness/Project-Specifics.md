@@ -124,7 +124,7 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `profiles` | Saved settings, independent stations, authorization and pending-status behavior | Router, profile and authorization owners, page and recording client (shared controls container), profile tests, the model file whose values its tests read (`docs/sysml/backend/profile/Profile.sysml`), `docs/sysml/shared/Units.sysml` and the JavaScript model-value reader |
 | `recording-storage` | Import, validation, storage, jobs, cancellation and source provenance | Router, recording owners, recording client, recording test file, fixture tool and recording manifests, the model file whose values its tests read (`docs/sysml/backend/profile/Recordings.sysml`), `docs/sysml/shared/Units.sysml` and the JavaScript model-value reader |
 | `recording-display` | Spectrum, waterfall, calibrated bins, palette, sliders, readouts and geometry | Router, recording and spectrum owners, recording client, recording test file and manifests |
-| `recording-thin` | Timing: display pacing, bounded subscribers, the full 32 kbit/s display/status regression and the TC-010-005 Detailed peer cadence | Timing inputs: router, recording/spectrum owners, HTTP compression, status and recording clients (loaded cold over the link), recording test file and link helpers |
+| `recording-thin` | Timing: display pacing, bounded subscribers, the full 32 kbit/s display/status regression and the TC-010-005 Detailed peer cadence | Timing inputs: router, recording/spectrum owners, HTTP compression, status and recording clients (loaded cold over the link), recording test file and link helpers, the model-value reader and the Recordings and Units model files |
 | `operating-layout` | Operating screen, settings drawer, receive races, logbook, strategy, UDP editor, transmit status | Router and the HTTP owners the operating page calls; page, recording, contact and logbook clients; its test file |
 | `contact-browser` | Contact engine, QSO sequencing, logging and halt through the browser | Router, contact/logbook/transmit owners, contact/logbook/recording clients, contact test |
 | `radio-selection` | H1 compression negotiation, commissioning, browser selection cases | Router, compression, selection/radio/CAT/receive/source owners, status and recording clients, selection test, the model (`docs/sysml/`), whose values its tests read, the JavaScript model-value reader |
@@ -201,9 +201,11 @@ and the link simulator (`tests/support.cjs`, `tests/peer.cjs`) are timing inputs
 are the Rust toolchain and dependency pins (and the Node pins for the browser suites);
 for `recording-thin` and `radio-selection-thin` (harness#38) only `tests/support.cjs`,
 `rust-toolchain.toml`, `Cargo.lock` and `package-lock.json` of these, their own test files, and
-`tests/peer.cjs` for `recording-thin`.
-The contact, logbook, authorization, MCP, strategy, profile and UDP code, the SysML
-model and the other groups' tests are not: their changes run functional groups only.
+`tests/peer.cjs` for `recording-thin`. `recording-thin` also names the model-value reader
+`tests/model-values.cjs` and the model files whose values its TC-018 tests read
+(`backend/profile/Recordings.sysml`, `shared/Units.sysml`), because nothing else selects it.
+The contact, logbook, authorization, MCP, strategy, profile and UDP code, the rest of the
+SysML model and the other groups' tests are not: their changes run functional groups only.
 
 A CR that changes the measured behaviour through another path (a client timer or poll
 cadence outside those files, a heavier asset, a new background task) asks for the

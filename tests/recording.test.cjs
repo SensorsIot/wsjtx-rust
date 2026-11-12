@@ -145,7 +145,7 @@ test('TC-018-002/003 HTTP admission, malformed chunks, busy and partial cancella
   for(const [range,code,status] of [['bad','invalid_request',400],['bytes 1-2/100','state_conflict',409],[`bytes 0-1/${fileCap+1}`,'request_too_large',413]]){const r=await f.req(route,'PUT',Buffer.from([1,2]),{'Content-Type':'audio/wav','Content-Range':range});assert.equal(r.status,status);assert.equal(r.value.error.code,code);}
   assert.equal((await f.req(route,'PUT',Buffer.alloc(chunkCap+1),{'Content-Type':'audio/wav','Content-Range':`bytes 0-${chunkCap}/3000`})).status,413);
   assert.equal((await f.req(route,'PUT',Buffer.from([1,2]),{'Content-Type':'audio/wav','Content-Range':'bytes 0-1/100'})).status,202);
-  const began=performance.now();assert.equal((await f.req(route,'DELETE')).status,200);assert.ok(performance.now()-began<250);
+  const ackMs=recordingLimit('importCancelAckMs'),began=performance.now();assert.equal((await f.req(route,'DELETE')).status,200);const acked=performance.now()-began;assert.ok(acked<ackMs,`import DELETE answered in ${acked} ms, bound ${ackMs} ms`);
   for(let n=0;n<30;n++){const r=await f.req(route);if(r.value.state==='cancelled')break;await sleep(20);}assert.equal((await f.req(route)).value.state,'cancelled');
   assert.equal((await f.req(route,'PUT',Buffer.from([1,2]),{'Content-Type':'audio/wav','Content-Range':'bytes 2-3/100'})).value.error.code,'cancelled');
   const valid=await f.upload(wav(.1));assert.ok(valid.recording);const malformed=wav(.1);malformed.writeUInt32LE(1,4);const replacement=await f.reserve();const error=await f.req('/recording/imports/'+replacement.id,'PUT',malformed.subarray(0,2048),{'Content-Type':'audio/wav','Content-Range':`bytes 0-2047/${malformed.length}`});assert.equal(error.status,202);
@@ -265,10 +265,10 @@ test('TC-018-001 one real FT8 and one real FT4 original import unchanged',{timeo
 
 // Proves: CL-006-02/04; TC-018-003, four Windows processes with actual maximum-source work.
 test('TC-018-003 four stations retain isolated identities and release cancellation within 250 ms',{timeout:30000},async t=>{
-  const stations=await Promise.all(Array.from({length:4},()=>fixture(t)));
+  const stations=await Promise.all(Array.from({length:4},()=>fixture(t))),maxFrames=recordingLimit('importMaxFrames');
   await Promise.all(stations.map(f=>f.upload(wav(120))));const jobs=await Promise.all(stations.map(f=>f.replay()));
   for(let n=0;n<4;n++){const f=stations[n],foreign=jobs[(n+1)%4];assert.equal((await f.req('/recording/jobs/'+foreign.id,'DELETE')).status,404);}
-  const times=await Promise.all(stations.map(async(f,n)=>{const start=performance.now();await f.req('/recording/jobs/'+jobs[n].id,'DELETE');const s=await terminal(f);assert.equal(s.job.state,'cancelled');assert.ok(s.job.processed_frames<=1440000);return performance.now()-start;}));
+  const times=await Promise.all(stations.map(async(f,n)=>{const start=performance.now();await f.req('/recording/jobs/'+jobs[n].id,'DELETE');const s=await terminal(f);assert.equal(s.job.state,'cancelled');assert.ok(s.job.processed_frames<=maxFrames,`processed ${s.job.processed_frames} frames, bound ${maxFrames}`);return performance.now()-start;}));
   times.forEach(ms=>assert.ok(ms<=250,`cancel + release ${ms} ms`));
 });
 

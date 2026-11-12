@@ -246,7 +246,8 @@
   # Code that sets the pushed-state and display cadence: router and status websocket, compression,
   # the recording/spectrum producers, the clients that read them, its own test file and the receive
   # peer, the toolchain and the dependency versions. Not recording.css or the Cargo.toml and
-  # package.json pins (Harness-Timing: yes reruns it). No 32 kbit/s link since #80.
+  # package.json pins (Harness-Timing: yes reruns it). No 32 kbit/s link since #80. The model files
+  # and the reader of the RecordingLimits values its TC-018 tests read are inputs too.
   timing_inputs:
   - server/src/main.rs
   - server/src/recording.rs
@@ -259,13 +260,16 @@
   - tests/recording.test.cjs
   - tests/support.cjs
   - tests/peer.cjs
+  - tests/model-values.cjs
+  - docs/sysml/backend/profile/Recordings.sysml
+  - docs/sysml/shared/Units.sysml
   - Cargo.lock
   - rust-toolchain.toml
   - package-lock.json
   build: cargo build --workspace --locked
   shared: [link-measurement]
   timing_classes: [display]
-  needs: "Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR. Windows PC; timing suite (#28): the TC-010-002 recording.state push, failed-read reconnect and 120-row cap, the TC-010-005 Detailed peer cadence and the two TC-018 250 ms cancellation bounds (no 32 kbit/s link since #80). Runs only when the router with the status websocket and detail cadence (main.rs), the recording/spectrum producers that pace the display, compression, the status and receive clients (app.js, index.html, recording.js), its test file, the support and peer helpers, the toolchain or the dependency versions change, or on request (Harness-Timing: yes)."
+  needs: "Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR. Windows PC; timing suite (#28): the TC-010-002 recording.state push, failed-read reconnect and 120-row cap, the TC-010-005 Detailed peer cadence and the two TC-018 250 ms cancellation bounds (no 32 kbit/s link since #80). Runs only when the router with the status websocket and detail cadence (main.rs), the recording/spectrum producers that pace the display, compression, the status and receive clients (app.js, index.html, recording.js), its test file, the support and peer helpers, the model-value reader with the Recordings and Units model files it reads, the toolchain or the dependency versions change, or on request (Harness-Timing: yes)."
 
 - suite: recording-fixtures
   cost: 2
