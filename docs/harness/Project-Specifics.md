@@ -763,7 +763,7 @@ These are HOW bindings, not product requirements and not SysML model elements.
 | CL-014-02 | Functional scope | Model product requirements, behaviour, architecture/interfaces and verification. Keep harness, skills, process and build documentation Markdown-only. | TC-DOC-001; manual scope review |
 | CL-014-03 | Architecture | Preserve physical roles, population/identity/ownership, actual ports and directed semantic exchanges. Views select existing model facts and cannot supply missing architecture. | TC-DOC-005 |
 | CL-014-04 | Real validation | Required checks use the pinned full validator/library. Missing tools/files, syntax/name/semantic errors or missing completion evidence fail with no lint fallback. | TC-DOC-003; TC-DOC-004 |
-| CL-014-05 | Stable identities and traces | Preserve stable FR/CL/TC identities and declared states. Clause ownership and verification links are reciprocal. Delivered declarations name existing implementation/executable or explicit manual bindings; no declared status means a test passed. | TC-DOC-001; TC-DOC-002; TC-DOC-007 |
+| CL-014-05 | Stable identities and traces | Preserve stable FR/CL/TC identities and declared states; a verification case may instead retire under CL-014-15. Clause ownership and verification links are reciprocal. Delivered declarations name existing implementation/executable or explicit manual bindings; no declared status means a test passed. | TC-DOC-001; TC-DOC-002; TC-DOC-007 |
 | CL-014-06 | Structural integrity | Validate the resolved architecture against the independent physical/end-to-end oracle, including identity bindings, exclusive backend and shared authority. A legal but miswired model fails the oracle. The oracle is the hand-written data file `tools/sysml/architecture-oracle.json`. It lists every part, reference, port with its items, connection and binding of the deployment, whatever package declares them; an unlisted or a missing one is refused, and so is a missing or invalid file. The rules on the one deployment, views, the one authority, the adapters, the profile and the station population are fixed in the tool, hold in every model file and count subtypes. | TC-DOC-005 |
 | CL-014-07 | Implementation readiness | Before code, the issue's ready check passes: the selected model slice settles observable behaviour, interfaces/data, ownership, state/timing/error choices and independent oracles. Explicit implementation freedoms do not authorize unresolved functional decisions. | TC-DOC-006 |
 | CL-014-08 | Functional sequence and closure | Use the declared canonical artifact first, pass the ready check, implement against it and verify with independent expected results. Reconcile delivered behaviour and durable cases before closing the issue. SysML-only authority requires no maintained/generated Markdown specification. | TC-DOC-006; TC-DOC-007; independent closure review |
@@ -772,6 +772,7 @@ These are HOW bindings, not product requirements and not SysML model elements.
 | CL-014-11 | Stated once | Status and bindings are read as attributes or as `ModelBindings` metadata, once per declaration. A delivered clause without a binding takes the function binding of its model file; a case takes automation from the verification definition of its file that it is typed by. A declaration with an identity in a form the catalog does not read is refused. | TC-DOC-009 |
 | CL-014-12 | Marker listing | `markers` lists every `ModelNotes` marker of the model by file key and line, with counts by kind; it checks nothing and writes nothing. | TC-DOC-010 |
 | CL-014-13 | Tag and binding agree | Every test that names a verification case, by an attached `Proves:` tag or a JavaScript test name, is in that case's binding, as its file or as `path::symbol`. A `path::symbol` binding of a manual case names an existing test. The gate's model bindings report a revision and do not apply this rule. | TC-DOC-011 |
+| CL-014-15 | Retired case | A verification case retires by `@RetiredCase { identity = "<TC>"; test = "<path>"; }` directly in the body whose `@DetailTests` names that path as written; an FR, a clause, another spelling, a path that body's detail tests do not name, an identity retired twice and a retired identity declared again are refused. A retired identity counts as present for the stable baseline, is not a catalog entry and is never declared again; tags, test names and clause dependencies naming it are refused as for any undeclared identity. `retired` checks the catalog and lists the retirements; the gate's model bindings list neither the retired identity nor its test file. | TC-DOC-013 |
 
 ## Documentation-tool test definitions
 
@@ -792,6 +793,7 @@ portable Pilot. No radio, live service, Jupyter server or global Java is needed.
 | TC-DOC-009 | CL-014-11 | Write status, bindings and method as metadata, state one twice, leave a clause's binding to none, one and two function bindings, type a case by a definition with and without automation in its file and in another, bind a test on a definition, and declare an identity in an unread form. The new forms give the catalog and gate bindings of the attribute forms, each fault is refused by identity or key, and the real model rewritten to metadata passes the full validation with the same identities. | Automated isolated Python fixtures and full Pilot validations on this PC. |
 | TC-DOC-010 | CL-014-12 | List markers in each form across folders, in comments, with joined strings, by kind, with an added kind, an unknown kind, no ModelNotes file, a broken catalog and no authority. | Automated isolated Python fixtures on this PC. |
 | TC-DOC-011 | CL-014-13 | Tag a test in a file its case does not bind, and as another symbol of a file bound by symbols; name a case by shorthand, in a tag for two cases, in a JavaScript test name, above a helper, on an ignored test, on a planned and on a manual case, and outside the source roots; bind a manual case to a missing symbol. Each fault is refused naming case, path and test; adding the binding or removing the identity is accepted; the gate's bindings still report such a revision. | Automated isolated Python fixtures on this PC. |
+| TC-DOC-013 | CL-014-15 | Remove a baseline case and retire it beside the `@DetailTests` that names its file, with and without package names, two in one body, in a subfolder file and in a comment; retire an FR and a clause, a malformed identity, a missing, repeated or other feature, a value that is not one literal, a test with `;` or `::`, the `metadata` keyword form, a file named only by another body or by no `@DetailTests`, one identity twice in one file and in two, and a retired identity declared again; name the retired identity in a tag, a JavaScript test name and a clause dependency. Each accepted model passes with the declared identities only, each fault is refused with its message, key and line, and the existing messages are unchanged. List three retirements in two files and none with `retired`, on a broken catalog and with no authority. The gate's bindings of a retiring revision equal those of the revision without the case. The pinned Pilot resolves the def text and refuses a misspelt feature. | Automated isolated Python fixtures and one full Pilot validation on this PC. |
 
 Executable companions are `tools/sysml.py`, `tools/sysml/tests/` and the pinned
 `tools/sysml/Validate.java` adapter. Results and independent review
@@ -982,6 +984,49 @@ verification 'TC-007-010' : EngineCase {
   model file: each path of `tests`, separated by semicolons, must be an existing file
   under the source roots, else the binding messages with the file key. No `Proves:` tag is
   asked, and the gate's bindings do not list it.
+- **Retired case.** A verification case whose test shows nothing at a part boundary
+  retires into the detail tests of its part: its test stays and loses the case tag, and
+  the body that names the test file in `@DetailTests` lists the identity as retired:
+
+  ```sysml
+  action def StandardContact {
+      @DetailTests { tests = "server/src/contact_tests.rs"; covers = "the engine on a virtual clock"; }
+      @RetiredCase { identity = "TC-007-020"; test = "server/src/contact_tests.rs"; }
+  }
+  ```
+
+  The form is typed by
+  `metadata def RetiredCase { attribute identity : String; attribute test : String; }` in
+  the `ModelBindings` package, beside `DetailTests`. It is this project's own form, not one
+  of the harness template `model-bindings.sysml`. It is read outside comments, with or
+  without package names (`@ModelBindings::RetiredCase`); one annotation retires one
+  identity and names one file, and a body may hold several. Only verification cases
+  retire. `traces`, `check`, `fingerprints` and `retired` refuse, in this order:
+  - per model file, after its `@DetailTests` path check and its declaration checks, each
+    `@RetiredCase` in the order of the file: an FR or clause identity,
+    `Only a verification case retires: <ID>: <key>`; any other spelling (a missing,
+    repeated or other feature, a value that is not one string literal, an identity not of
+    the form `TC-ddd-ddd`, a `test` holding `;` or `::`, or the `metadata` keyword form
+    `metadata r : RetiredCase { ... }`), `Invalid retired case: <key>:<line>`, the line of
+    the `@` or of the word `metadata`; a `test` that no `@DetailTests` directly in the same
+    body names as written, `Retired case outside the detail tests: <TC>: <path>: <key>`.
+    The retirement has no file check of its own: its file is a `@DetailTests` path of the
+    same body, which the binding messages with the key have already judged;
+  - after all model files, before the baseline: an identity retired more than once,
+    `Duplicate retired case: <TC>: <keys>`, each key once, sorted and joined by `, `; a
+    retired identity that is also declared,
+    `Retired case declared again: <TC>: <key>`, with the key of the declaration.
+
+  A retired identity counts as present for the stable baseline. It is not a catalog
+  entry: the identity count of `traces` and `check` leaves it out, and a `Proves:` tag, a
+  JavaScript test name or a clause dependency naming it is refused by the rules for an
+  undeclared identity. A clause whose only case retires loses that dependency and is
+  refused (`Canonical clause lacks a declared verification case: <CL>`) until another
+  case verifies it. `python tools/sysml.py retired` checks the authority and the catalog
+  as `fingerprints` does, then prints one line per retirement sorted by identity,
+  `<TC>: <test path>: <key>:<line>`, and the summary `<n> retired cases`; it writes
+  nothing, and a broken catalog or a missing authority gives the existing refusal and exit
+  2. The gate's bindings list no retired identity and no retirement test file.
 - **No unread declaration.** A `requirement` or `verification` declaration whose name or
   short name is a stable identity, in a form the catalog does not read (`:>`,
   `<'ID'> name`, a typed `requirement`), is refused:
@@ -1025,5 +1070,8 @@ Canonical documents link to active model elements or existing repository paths w
 correct model-file-relative Markdown links. Retired FSD section dependencies, source-hash
 markers and broken file references fail. The minimum stable identity baseline includes
 all 23 FRs, 38 clauses and 38 verification identities present in the reviewed application
-baseline; additions retain unique identities. An intended retirement or authority change
-requires explicit review rather than deleting a definition to obtain a green check.
+baseline; a verification identity counts as present when it is declared or retired under
+**Retired case**. Additions retain unique identities, and a retired identity is never
+declared again. A verification case retires only in that form, in a change of its own;
+any other retirement or an authority change requires explicit review rather than deleting
+a definition to obtain a green check.

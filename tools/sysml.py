@@ -3,7 +3,8 @@
 traces checks catalog and source/model bindings only, and that every test naming a
 case is in that case's binding (binding_agreement). check additionally calls the
 pinned Java parser/name resolver/semantic validator. markers lists the ModelNotes markers
-and checks nothing. None executes modeled behavior.
+and checks nothing. retired checks the catalog and lists the `@RetiredCase` retirements.
+None executes modeled behavior.
 """
 from __future__ import annotations
 
@@ -200,6 +201,59 @@ def file_bindings(key: str, value, root: Path) -> None:
         source_binding(key, binding.strip(), root, manual=True)
 
 
+def owning_bodies(code: str, offsets: list[int]) -> dict[int, int]:
+    """For each offset, the offset of the `{` of the innermost body that holds it; -1 for
+    the top level of the file. `code` is blanked, so a brace in a comment or string counts
+    for nothing."""
+    owners, stack, wanted = {}, [], sorted(set(offsets))
+    position = 0
+    for offset in wanted:
+        for index in range(position, offset):
+            if code[index] == "{":
+                stack.append(index)
+            elif code[index] == "}" and stack:
+                stack.pop()
+        position = offset
+        owners[offset] = stack[-1] if stack else -1
+    return owners
+
+
+def file_retirements(key: str, source: str) -> list[tuple[str, str, int]]:
+    """The `@RetiredCase { identity = "<TC>"; test = "<path>"; }` of one model file, in the
+    order of the file, as (identity, test, line). Each is checked in that order: an FR or
+    CL identity, any other spelling (the line of the `@`, or of the word `metadata` in the
+    keyword form), and a test that no `@DetailTests` directly in the same body names as
+    written. The file itself is the `@DetailTests` check's; this reads nothing else."""
+    text, code = blanked(source, strings=False), blanked(source)
+    found = list(annotations(text, code, "RetiredCase"))
+    found += [(match.start(), None) for match in
+              re.finditer(r"\bmetadata\s+(?!def\b)[^;{}]*\bRetiredCase\b(?!::)", code)]
+    details = []
+    for offset, pairs in annotations(text, code, "DetailTests"):
+        for feature, value in pairs:
+            if feature == "tests" and (literal := string_literal(value)) is not None:
+                details.append((offset, [path.strip() for path in literal.split(";")]))
+    owners = owning_bodies(code, [offset for offset, _pairs in found] + [offset for offset, _paths in details])
+    named = {}
+    for offset, paths in details:
+        named.setdefault(owners[offset], set()).update(paths)
+    retired = []
+    for offset, pairs in sorted(found, key=lambda item: item[0]):
+        line = code.count("\n", 0, offset) + 1
+        features = [feature for feature, _value in pairs or []]
+        values = {feature: string_literal(value) for feature, value in pairs or []}
+        identity, test = values.get("identity"), values.get("test")
+        if features.count("identity") == 1 and identity and re.fullmatch(r"FR-\d{3}|CL-\d{3}-\d{2}", identity):
+            raise ValueError(f"Only a verification case retires: {identity}: {key}")
+        if pairs is None or sorted(features) != ["identity", "test"] or identity is None or test is None \
+                or not re.fullmatch(r"TC-\d{3}-\d{3}", identity) or ";" in test or "::" in test:
+            raise ValueError(f"Invalid retired case: {key}:{line}")
+        if test not in named.get(owners[offset], set()):
+            raise ValueError(f"Retired case outside the detail tests: {identity}: {test}: {key}")
+        retired.append((identity, test, line))
+    return retired
+
+
 def declaration_body(text: str, opening: int) -> str:
     depth = 0
     for token in re.finditer(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|[{}]', text[opening:]):
@@ -352,7 +406,7 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
     for package in sorted(REQUIRED_PACKAGES):
         if len(keys_of[package]) > 1:
             raise ValueError("Duplicate canonical model package: " + package + ": " + ", ".join(sorted(keys_of[package])))
-    entries = {}
+    entries, declared_in, retired = {}, {}, {}
     for key, path in files.items():
         source = sources[key]
         if re.search(r"Canonical FSD|\bFSD(?:\s+(?:chapter|section))?\s*\d|WSTX(?:%20| )Rust(?:%20| )FSD", source):
@@ -440,7 +494,18 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
             entries[identifier] = {"kind": kind, "state": states[0], "refs": refs,
                                    "bindings": [binding.strip() for binding in bindings[0].split(";")] if bindings else [],
                                    "manual": methods == ["manual"]}
-    if missing := set(required) - entries.keys():
+            declared_in[identifier] = key
+        # Retired cases: after the file's detail tests and declarations are checked.
+        for identity, _test, _line in file_retirements(key, source):
+            retired.setdefault(identity, []).append(key)
+    for identity in sorted(retired):
+        if len(retired[identity]) > 1:
+            raise ValueError(f"Duplicate retired case: {identity}: " + ", ".join(sorted(set(retired[identity]))))
+    for identity in sorted(retired):
+        if identity in entries:
+            raise ValueError(f"Retired case declared again: {identity}: {declared_in[identity]}")
+    # A retired identity counts as present for the baseline; it is not a catalog entry.
+    if missing := set(required) - entries.keys() - retired.keys():
         raise ValueError("Missing stable canonical identities: " + ", ".join(sorted(missing)))
     scope = clean_models[keys_of[SCOPE_PACKAGE][0]]
     for key, package in packages.items():
@@ -847,6 +912,7 @@ def main(argv=None):
     commands.add_parser("traces", help="Check canonical source/model bindings only; no Pilot or behavior execution")
     listing = commands.add_parser("markers", help="List the ModelNotes markers of the model by file key and line; checks and writes nothing")
     listing.add_argument("kinds", nargs="*", metavar="Kind")
+    commands.add_parser("retired", help="Check the catalog as fingerprints does, then list the retired cases by identity; writes nothing")
     semantic = commands.add_parser("validate", help="Run real semantic validation on ordered files")
     semantic.add_argument("files", nargs="+", type=Path)
     args = parser.parse_args(argv)
@@ -863,6 +929,13 @@ def main(argv=None):
         if args.command == "markers":
             authority(MODELS, FSD)
             print("\n".join(markers(MODELS, args.kinds)))
+            return 0
+        if args.command == "retired":
+            authority(MODELS, FSD)
+            canonical_catalog(MODELS, ROOT)
+            lines = sorted(f"{identity}: {test}: {key}:{line}" for key, path in model_files(MODELS).items()
+                           for identity, test, line in file_retirements(key, path.read_text(encoding="utf-8")))
+            print("\n".join(lines + [f"{len(lines)} retired cases"]))
             return 0
         if args.command == "fingerprints":
             authority(MODELS, FSD)

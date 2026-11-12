@@ -44,7 +44,7 @@ CHECKS = "    dependency checks from 'CL-003-01' to 'TC-001-001';\n"
 PART_KEY = "backend/qso/Part.sysml"
 PART_KEY_PATTERN = re.escape(PART_KEY) + "$"
 TAGGED = "// Proves: TC-001-001\ntest('identity',()=>{});\n"
-# The definitions the first conversion slice adds to the model (issue #115).
+# The definitions the first conversion slice adds to the model (issues #115 and #131).
 MODEL_BINDINGS = '''package ModelBindings {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
@@ -54,6 +54,7 @@ MODEL_BINDINGS = '''package ModelBindings {
     metadata def ImplementedIn { attribute module : String; }
     metadata def TestedBy { attribute test : String; }
     metadata def DetailTests { attribute tests : String; attribute covers : String; }
+    metadata def RetiredCase { attribute identity : String; attribute test : String; }
 }
 '''
 
