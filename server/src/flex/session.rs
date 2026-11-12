@@ -810,8 +810,9 @@ fn attempt(
         });
         match tunes.try_recv() {
             Ok(request) => {
-                let result = conn.tune(&request);
-                let _ = request.reply.try_send(result);
+                let result = serve_tune(&mut conn, &request, |result| {
+                    let _ = request.reply.try_send(result);
+                });
                 if matches!(
                     result,
                     Err(Error::TransportLost | Error::ProtocolError | Error::ResourceLost)
@@ -823,6 +824,25 @@ fn attempt(
             Err(TryRecvError::Disconnected) => return Ok(()),
         }
     }
+}
+
+/// One tune of the ready loop. The slice as the radio now reports it is published before the
+/// caller hears the result, so no reader sees a confirmed selection beside the slice's earlier
+/// frequency; after a failed tune the snapshot likewise shows what the radio reports.
+fn serve_tune(
+    conn: &mut Conn<'_>,
+    request: &TuneRequest,
+    reply: impl FnOnce(Result<u64, Error>),
+) -> Result<u64, Error> {
+    let result = conn.tune(request);
+    let facts = conn.slice_facts();
+    conn.shared.update(|s| {
+        if s.slice != facts {
+            s.slice = facts;
+        }
+    });
+    reply(result);
+    result
 }
 
 /// Puts packets back in the order of their 4-bit count. One ahead of its turn waits; a turn is
