@@ -93,12 +93,13 @@ vector("qso-logged", "outbound",
        header(5) + qdatetime(2026, 11, 1, 12, 36, 15) + utf8("K1ABC") + utf8("FN42")
        + u64(14_075_500) + utf8("FT8") + utf8("-12") + utf8("-09") + utf8("") + utf8("")
        + utf8("") + qdatetime(2026, 11, 1, 12, 34, 30) + utf8("") + utf8("HB9BLA")
-       + utf8("JN47AA") + utf8("") + utf8("") + utf8("") + utf8("") + utf8("") + utf8(""),
+       + utf8("JN47AA") + utf8("1A EMA") + utf8("2B CT") + utf8("") + utf8("") + utf8("")
+       + utf8(""),
        {"kind": "qso_logged", "schema": 2, "time_off_ms": 1_793_536_575_000,
         "dx_call": "K1ABC", "dx_grid": "FN42", "tx_frequency_hz": 14_075_500, "mode": "FT8",
         "report_sent": "-12", "report_received": "-09", "tx_power": "", "comments": "",
         "name": "", "time_on_ms": 1_793_536_470_000, "operator_call": "", "my_call": "HB9BLA",
-        "my_grid": "JN47AA"})
+        "my_grid": "JN47AA", "exchange_sent": "1A EMA", "exchange_received": "2B CT"})
 vector("logged-adif", "outbound",
        header(12) + utf8("\n<adif_ver:5>3.1.8\n<programid:9>WSTX-Rust\n<EOH>\n<call:5>K1ABC <EOR>"),
        {"kind": "logged_adif", "schema": 2,

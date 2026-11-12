@@ -199,6 +199,9 @@ struct WireRecord {
     /// Contest exchange field (#24 S2b), optional.
     #[serde(default)]
     state: Option<String>,
+    /// CL-112-05 APP_WSTXRUST_ACTIVITY, optional (absent: activity none).
+    #[serde(default)]
+    app_wstxrust_activity: Option<String>,
 }
 fn nullable<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
     Option::<String>::deserialize(d)
@@ -241,6 +244,7 @@ impl WireRecord {
                 None,
             ],
             source: None,
+            activity: self.app_wstxrust_activity,
             unknown: Vec::new(),
         }
     }

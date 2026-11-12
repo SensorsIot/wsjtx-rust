@@ -143,6 +143,8 @@ pub struct Logged {
     pub operator_call: String,
     pub my_call: String,
     pub my_grid: String,
+    pub exchange_sent: String,
+    pub exchange_received: String,
 }
 
 pub fn heartbeat(schema: u32, id: &str, version: &str, revision: &str) -> Vec<u8> {
@@ -196,8 +198,8 @@ pub fn clear(schema: u32, id: &str) -> Vec<u8> {
 pub fn close(schema: u32, id: &str) -> Vec<u8> {
     Writer::new(schema, kind::CLOSE, id).finish()
 }
-/// QSO Logged with the three MessageClient fields after the documented ones (satellite,
-/// satellite mode, Rx frequency) empty.
+/// QSO Logged: propagation mode and the three MessageClient fields after the documented
+/// ones (satellite, satellite mode, Rx frequency) empty.
 pub fn qso_logged(schema: u32, id: &str, l: &Logged) -> Vec<u8> {
     Writer::new(schema, kind::QSO_LOGGED, id)
         .date_time(l.time_off)
@@ -214,8 +216,8 @@ pub fn qso_logged(schema: u32, id: &str, l: &Logged) -> Vec<u8> {
         .utf8(&l.operator_call)
         .utf8(&l.my_call)
         .utf8(&l.my_grid)
-        .utf8("")
-        .utf8("")
+        .utf8(&l.exchange_sent)
+        .utf8(&l.exchange_received)
         .utf8("")
         .utf8("")
         .utf8("")

@@ -621,7 +621,8 @@ package WstxTransmit {
     attribute def TransmitHaltUse {
         doc /* HALT is the operator's emergency stop only (operator decision #39,
              2026-11-04): the browser HALT buttons and Alt+H, and the remote emergency
-             stops MCP wstx_transmit_halt and UDP Halt Tx. The station and its automation
+             stop MCP wstx_transmit_halt (UDP is send-only and has no Halt Tx, CL-040-03).
+             The station and its automation
              never send HaltTransmit in normal flow: a completed contact and ending a run
              disarm, the partner-works-other stop and Abort QSO use
              AbortTransmission. */

@@ -685,6 +685,10 @@ impl Recording {
     pub(crate) fn operating_band(&self) -> Option<&'static str> {
         self.state.lock().unwrap().operating.nominal.band
     }
+    /// The nominal dial frequency of the operating selection (Hz), if any.
+    pub(crate) fn operating_nominal_hz(&self) -> Option<u64> {
+        self.state.lock().unwrap().operating.nominal.nominal_hz
+    }
     /// Gives the #9 owner the station's operating mode (WstxTransmit::StationModeGate).
     /// Called after every change, never under the station mutex.
     pub(crate) fn sync_transmit_mode(&self) {
@@ -868,6 +872,47 @@ impl Recording {
         drop(s);
         self.sync_transmit_mode();
         (source_id, id, generation)
+    }
+    /// Test seam: the operating selection's band and nominal dial as an origin sets them (no
+    /// radio command); a band None clears the selection.
+    #[cfg(test)]
+    pub(crate) fn fixture_operating(
+        &self,
+        band: Option<&'static str>,
+        nominal_hz: Option<u64>,
+        origin: &'static str,
+    ) {
+        let mut s = self.state.lock().unwrap();
+        s.operating.nominal.band = band;
+        s.operating.nominal.nominal_hz = nominal_hz;
+        s.operating.nominal.origin = origin;
+    }
+    /// Test seam: the current job's kind (a played recording is "recording").
+    #[cfg(test)]
+    pub(crate) fn fixture_job_kind(&self, kind: &'static str) {
+        if let Some(j) = self.state.lock().unwrap().job.as_mut() {
+            j.kind = kind;
+        }
+    }
+    /// Test seam: a published live record without a period start (uncorrelated).
+    #[cfg(test)]
+    pub(crate) fn fixture_uncorrelated(&self, sequence: u64) {
+        let mut s = self.state.lock().unwrap();
+        if let Some(l) = s.live.as_mut()
+            && let Some((record, _)) = l
+                .records
+                .iter_mut()
+                .find(|(r, _)| r["sequence"] == sequence)
+        {
+            record["period_start_utc"] = Value::Null;
+        }
+    }
+    /// Test seam: one loss-only source epoch of the live receive (same job and source).
+    #[cfg(test)]
+    pub(crate) fn fixture_loss_epoch(&self) {
+        if let Some(l) = self.state.lock().unwrap().live.as_mut() {
+            l.loss_epochs += 1;
+        }
     }
     /// Test seam: the live receive stops (no job, no live state), as after a receive stop.
     #[cfg(test)]

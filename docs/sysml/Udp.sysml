@@ -1,15 +1,26 @@
 package WstxUdp {
     private import ScalarValues::*;
     doc /* Canonical contract of the WSJT-X-compatible UDP interface with multiple targets
-         (issue #40, CL-040-01..04 in WstxRequirements; IPv6 multicast issue #46,
-         CL-040-06; Status cadence CL-040-07; verification TC-012-001..004, 006, 007).
+         (CL-040-01..04, CL-040-06, CL-040-07 and CL-112-01..06 in WstxRequirements;
+         verification TC-012-001..004, 006, 007 and TC-112-001..006).
          Nothing here is an execution result.
 
-         Normative reference: WSJT-X v3.3.0-beta5 source Network/NetworkMessage.hpp
-         (SHA-256 b640a632f38b218f97b9c9cf5b5a09b183e1629c613c33d90f39635f9b3fdb3d) and
-         Network/MessageClient.cpp (SHA-256
-         8cfa89debc2b916b39151975437619e7f9b28aefa698f05231fbdf2247cb9f35) on HB9BLA; the
-         message types used here are unchanged from the v3.3.0-beta4 behaviour baseline.
+         Normative reference: WSJT-X 3.3.0-beta6 source Network/NetworkMessage.hpp,
+         Network/MessageClient.cpp, widgets/mainwindow.cpp (statusUpdate, postDecode,
+         band_activity_cleared), widgets/mainwindow_qso.cpp (captureLogQso),
+         widgets/logqso.cpp and main.cpp (instance name and lock). The wire vectors were
+         constructed from v3.3.0-beta5 NetworkMessage.hpp (SHA-256
+         b640a632f38b218f97b9c9cf5b5a09b183e1629c613c33d90f39635f9b3fdb3d) and
+         MessageClient.cpp (SHA-256
+         8cfa89debc2b916b39151975437619e7f9b28aefa698f05231fbdf2247cb9f35); the message
+         types used here are the same in beta6.
+
+         DIFFERENT from WSJT-X, deliberately: Status is resent at each pulse (CL-040-07);
+         the program id of Logged ADIF is this product's; the header schema is raised only
+         by a target's own Heartbeat with the station's id (InboundRules); the interface is
+         send-only (CL-040-03); a played recording sends no Decode (Off air is never true);
+         Logged ADIF carries the app fields APP_WSTXRUST_CONTACT_ID, APP_WSTXRUST_SOURCE and
+         APP_WSTXRUST_ACTIVITY of the stored record.
 
          Operator decision 2026-11-06 (issue #40): "GridTracker just listens. We only react
          to the front end or to the MCP." and "The UI has to be able to halt the station in
@@ -45,8 +56,8 @@ package WstxUdp {
             on one interface only and need the index; wider scopes may leave it null (the
             system's default interface). An index no interface has is admitted and shows the target
             socket_unavailable.
-         D7 The Settings UI is #37's; Close is sent when a target is disabled or removed
-            (the station has no graceful-shutdown path). */
+         D7 The Settings UI is #37's; Close is sent when a target is disabled or removed,
+            and at shutdown (CL-112-06). */
 
     attribute def UdpWire {
         attribute magic : String = "0xADBCCBDA";
@@ -60,7 +71,23 @@ package WstxUdp {
              float fields (Delta time) are written as an IEEE double of the single-precision
              value; utf8 is quint32 byte length then the bytes; QTime quint32 ms since
              midnight; QDateTime qint64 Julian day, quint32 ms since midnight, quint8
-             timespec 1 (UTC). id is the configured instance_name. Inbound: InboundRules. */
+             timespec 1 (UTC). id is the server's InstanceName. Inbound: InboundRules. */
+    }
+    attribute def InstanceName {
+        attribute base : String = "WSTX-Rust";
+        attribute lockFolder : String = "%LOCALAPPDATA%/WstxRust/udp-instance";
+        doc /* The id of every datagram (CL-112-01), fixed once per process and no setting.
+             Base form: "WSTX-Rust - <model>" for a CAT control (every CAT endpoint is an
+             IC-7300: icom7300:// or a plain COMn), "WSTX-Rust - <model> <slice letter>" for
+             a native Flex profile (model and slice letter as the session reports them at
+             its first ready), base otherwise (control disabled, or an endpoint the CAT
+             cannot parse). A server takes the first of base, "base 2", "base 3", ... whose
+             lock file in lockFolder no live process holds, and holds that lock until its
+             process ends (WSJT-X main.cpp QLockFile named after the application name); a
+             killed process frees it. Up to 99 numbers are tried; beyond, and when the lock
+             folder cannot be created or opened, the base form is taken unchecked. With
+             WSTX_UDP=off no lock is taken and the name is the base form. GET /udp shows it
+             as instance_name (null while a Flex profile's session was never ready). */
     }
     enum def OutboundMessage {
         enum heartbeat; enum status; enum decode; enum clear; enum qso_logged; enum close;
@@ -88,24 +115,22 @@ package WstxUdp {
              OutboundMessage, any order, stored in the enum order; empty sends nothing. */
     }
     attribute def UdpConfiguration {
-        attribute instanceName : String = "WSTX-Rust";
         attribute targets : UdpTarget[0..16];
         attribute targetsMax : Integer = 16;
         attribute revision : Integer;
-        doc /* Persisted in the selected profile directory as udp.json {schema_version 1,
-             profile_id, revision, instance_name, targets}, written atomically (temporary
+        doc /* The target list. Persisted in the selected profile directory as udp.json
+             {schema_version 1, profile_id, revision, targets}, written atomically (temporary
              file, flush, replace) under the profile's own lock (WstxProfiles). A missing
              file is the default configuration at revision 0 (D2). An unreadable, invalid
              or other-profile file leaves the configuration null with configuration_error
              invalid_configuration; then no socket is opened until a valid PUT replaces it.
-             A file saved before send-only names accept_commands on its targets: the key is
-             dropped when the file loads (the target otherwise unchanged) and is gone after
-             the next save.
+             A file that names accept_commands on its targets or a top-level instance_name
+             keeps loading: the key is dropped when the file loads (otherwise unchanged) and
+             is gone after the next save.
              WSTX_UDP=off in the station's environment opens no socket (every target
              inactive; configuration and HTTP unchanged): isolated tests of the executable
              set it so they never reach port 2237 of the machine.
-             instance_name: 1..64 UTF-8 bytes, no control character, no leading or trailing
-             space. Each saved change advances revision by one (at most 9007199254740991). */
+             Each saved change advances revision by one (at most 9007199254740991). */
     }
     attribute def TargetStatus {
         doc /* Per configured target, volatile, in configuration order: {address, active
@@ -135,9 +160,11 @@ package WstxUdp {
              endDecode reach through updateDecodeControls, so its decoding field toggles at
              least once per T/R period; the resend at each pulse is this station's choice
              (issue #40 live acceptance, 2026-11-02) so a tool started later learns the
-             state within heartbeatSeconds. Fields: dial frequency (confirmed CAT dial Hz, else 0), mode and Tx mode FT8 or
-             FT4 (station operating mode), DX call, report (the contact's report, else the
-             station's, as "-09"), Tx enabled (armed), transmitting, decoding (the live
+             state within heartbeatSeconds. Fields: dial frequency (CL-112-02: the confirmed
+             CAT dial Hz, else the operating selection's nominal_hz, else 0), mode and Tx mode
+             FT8 or FT4 (station operating mode), DX call, report (the contact's report, else
+             the station's, as QString::number writes it: "-9", "3", "0"), Tx enabled
+             (armed), transmitting, decoding (the live
              decoder is processing an analysis window: true from the start of a window's
              decode until it returns, completed, abandoned, failed or cancelled), Rx DF and Tx DF (Hz), DE call and DE grid
              (profile), DX grid, Tx watchdog (expired), sub-mode "", fast mode false,
@@ -148,26 +175,31 @@ package WstxUdp {
              Decode (2), New true, once per decoded record (decoded status with text and a
              period start) of the current live FT8/FT4 job, in sequence order: Time = ms
              since UTC midnight of period_start_utc, snr = snr_db rounded half away from
-             zero (unknown: 0), Delta time = dt_seconds (unknown: 0) as single precision,
+             zero (unknown: 0), Delta time = dt_seconds rounded to one decimal as CL-112-03
+             (unknown: 0) as single precision,
              Delta frequency = frequency_hz rounded, Mode "~" (FT8) or "+" (FT4), Message =
              the WSJT-X text form (D4: a standard message with R and a signal report
              renders "R-09"; a hashed call as the record gives it, <CALL> once
              WstxOfflineDecode::HashResolution filled it in, else <...>), Low confidence
-             false, Off air false.
-             Clear (3): when the current live job changes or ends after at least one of its
-             records produced a Decode.
+             false, Off air false. A record without a period start gives no Decode and is
+             passed, so it is never sent later.
+             Clear (3): CL-112-04.
              QSO Logged (5) then Logged ADIF (12): when SaveContact stores a new record
              (outcome saved, not already_saved) and when WstxContact::DirectLog first stores
-             a contact's record (not for a replacement or an unchanged record). QSO Logged: Date & Time Off and On from
-             qso_date_off/time_off and qso_date/time_on (UTC), DX call, DX grid, Tx
-             frequency = freq in Hz (else 0), mode FT8 or FT4, report sent/received, Tx
-             power, comments, name "", operator call "", my call, my grid, exchange sent
-             and received "", propagation mode "", then satellite, satellite mode and Rx
-             frequency "" (MessageClient fields after the documented ones; protocol rule 2).
+             a contact's record (not for a replacement or an unchanged record). QSO Logged:
+             Date & Time Off and On from qso_date_off/time_off and qso_date/time_on (UTC), DX
+             call, DX grid, Tx frequency = freq in Hz (else 0), mode FT8 or FT4, report
+             sent/received, Tx power, comments, name "", operator call "", my call, my grid,
+             exchange sent and received (CL-112-05, built from the stored record), propagation
+             mode "", then satellite, satellite mode and Rx frequency "" (MessageClient
+             fields after the documented ones; protocol rule 2).
              Logged ADIF text: "\n<adif_ver:5>3.1.8\n<programid:9>WSTX-Rust\n<EOH>\n" plus
              the stored record's ADI fields plus " <EOR>".
              Close (6): to a target that is disabled or removed by a configuration change,
-             and before its socket is reopened when its address, TTL or interface changes.
+             before its socket is reopened when its address, TTL or interface changes, and
+             at shutdown (CL-112-06).
+             No datagram is sent while the server has no instance name (a native Flex
+             profile before its first ready session).
              WSPRDecode (10) is not applicable. */
     }
     attribute def InboundRules {
@@ -176,7 +208,7 @@ package WstxUdp {
              the WSJT-X protocol negotiates the header schema through it: each station step
              reads at most 64 datagrams per active target socket; a Heartbeat (0) whose source
              equals the target address, with magic, schema 2 or 3, a non-empty valid utf8 id equal to
-             instance_name and at most inboundDatagramBytesMax bytes, raises that target's
+             the InstanceName and at most inboundDatagramBytesMax bytes, raises that target's
              schema to the datagram's schema (never lowers it; a new socket starts at 2). Fields
              after the Heartbeat's header are not read (protocol rule 2). Every other datagram is
              read and dropped with no effect, no state and no count: Clear (3), Reply (4), Close
@@ -189,20 +221,24 @@ package WstxUdp {
     attribute def UdpHttp {
         attribute bodyBytesMax : Integer = 8192;
         doc /* GET /udp (UdpSnapshot), existing auth and Origin rules of GET routes; no
-             query or body: exactly {v:1, profile_id, boot_id, revision, configuration (null
-             or {instance_name, targets}), configuration_error (null or
-             invalid_configuration), status [TargetStatus]}.
+             query or body: exactly {v:1, profile_id, boot_id, instance_name (InstanceName,
+             read-only; null while not fixed), revision, configuration (null or {targets}),
+             configuration_error (null or invalid_configuration), status [TargetStatus]}.
              PUT /udp: Origin, session, no query, application/json, at most bodyBytesMax
              (413), JSON; exactly {v, profile_id, boot_id, expected_revision,
-             configuration {instance_name, targets}}; refusals in this order 400
-             invalid_request (field), 400 unsupported_version (v), 403 wrong_profile, 409
-             state_conflict boot_id, 409 stale_revision expected_revision, 409
-             counter_exhausted, 503 storage_unavailable (nothing changes). Field names:
-             instance_name, targets, targets[i].<key>. Accepted: 200 with the new
-             UdpSnapshot; the running sockets follow the saved configuration at once
-             (Close to a removed, disabled or socket-changed target, activation of a new or
-             changed one;
-             an unchanged target keeps its socket, schema and status). */
+             configuration {targets}}; refusals in this order: 1. 400 invalid_request for
+             the envelope (not an object; a missing key, named as its field; an extra key,
+             without a field); 2. 400 invalid_request field v when v is not a non-negative
+             integer; 3. 400 unsupported_version (v) for any other integer than 1; 4. 400
+             invalid_request for profile_id, boot_id, expected_revision, then the
+             configuration's field (configuration for a configuration without exactly the key
+             targets, instance_name among them; targets; targets[i].<key>); 5. 403
+             wrong_profile, 409 state_conflict boot_id, 409 stale_revision
+             expected_revision, 409 counter_exhausted, 503 storage_unavailable (nothing
+             changes: revision, file, sockets and target status). Accepted: 200 with the new
+             UdpSnapshot; the running sockets follow the saved configuration at once (Close
+             to a removed, disabled or socket-changed target, activation of a new or changed
+             one; an unchanged target always keeps its socket, schema and status). */
     }
 
     dependency servicePlacement from OutboundRules to WstxArchitecture::StationService;
@@ -216,4 +252,10 @@ package WstxUdp {
     dependency inboundClause from InboundRules to WstxRequirements::'CL-040-03';
     dependency textClause from OutboundRules to WstxRequirements::'CL-040-04';
     dependency statusCadenceClause from OutboundRules to WstxRequirements::'CL-040-07';
+    dependency instanceClause from InstanceName to WstxRequirements::'CL-112-01';
+    dependency statusClause from OutboundRules to WstxRequirements::'CL-112-02';
+    dependency decodeClause from OutboundRules to WstxRequirements::'CL-112-03';
+    dependency clearClause from OutboundRules to WstxRequirements::'CL-112-04';
+    dependency exchangeClause from OutboundRules to WstxRequirements::'CL-112-05';
+    dependency closeClause from OutboundRules to WstxRequirements::'CL-112-06';
 }

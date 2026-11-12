@@ -1,9 +1,10 @@
 #![forbid(unsafe_code)]
-//! WstxUdp: the WSJT-X-compatible UDP interface with multiple targets (#40). The station
-//! step sends Heartbeat, Status, Decode and Clear to each enabled target; SaveContact sends
-//! QSO Logged and Logged ADIF. Send-only (operator 2026-11-06): the station reacts to the
-//! browser and MCP, never to a UDP command; a target's Heartbeat only negotiates the header
-//! schema. Routes: GET /udp (UdpSnapshot), PUT /udp (configuration).
+//! WstxUdp: the WSJT-X-compatible UDP interface with multiple targets. The station step
+//! sends Heartbeat, Status, Decode and Clear to each enabled target; DirectLog and
+//! SaveContact send QSO Logged and Logged ADIF; the exit guard sends Close. Send-only: the
+//! station reacts to the browser and MCP, never to a UDP command; a target's Heartbeat only
+//! negotiates the header schema. Every datagram carries the server's instance name
+//! (CL-112-01). Routes: GET /udp (UdpSnapshot), PUT /udp (configuration).
 use crate::*;
 use axum::extract::RawQuery;
 use recording_http::authorize;
@@ -19,7 +20,14 @@ mod tests;
 pub const TARGETS_MAX: usize = 16;
 pub const BODY_MAX: usize = 8192;
 pub const FILE_NAME: &str = "udp.json";
-pub const INSTANCE_DEFAULT: &str = "WSTX-Rust";
+/// CL-112-01 the base form of the instance name without a radio.
+pub const INSTANCE_BASE: &str = "WSTX-Rust";
+/// The model of a CAT control: every CAT endpoint is icom7300:// or a plain COMn of one
+/// (WstxRadioIO), the IC-7300 of the radio model table.
+const CAT_MODEL: &str = "IC-7300";
+/// A clash beyond this many live servers takes the base form (bounded by the processes
+/// that run).
+const INSTANCE_NUMBER_MAX: u32 = 99;
 const HEARTBEAT: Duration = Duration::from_secs(15);
 const DATAGRAMS_PER_STEP: usize = 64;
 /// Winsock WSAEMSGSIZE: a received datagram was larger than the buffer.
@@ -94,16 +102,14 @@ impl Target {
         (self.address, self.enabled, self.ttl, self.interface)
     }
 }
-/// WstxUdp::UdpConfiguration (without its revision).
-#[derive(Clone, Debug, PartialEq)]
+/// WstxUdp::UdpConfiguration (without its revision): the target list.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Config {
-    pub instance: String,
     pub targets: Vec<Target>,
 }
 impl Config {
     pub(crate) fn default_list() -> Self {
         Self {
-            instance: INSTANCE_DEFAULT.into(),
             targets: vec![Target {
                 address: SocketAddr::from((Ipv4Addr::LOCALHOST, 2237)),
                 enabled: true,
@@ -114,7 +120,7 @@ impl Config {
         }
     }
     fn json(&self) -> Value {
-        json!({"instance_name":self.instance,"targets":self.targets.iter().map(Target::json).collect::<Vec<_>>()})
+        json!({"targets":self.targets.iter().map(Target::json).collect::<Vec<_>>()})
     }
 }
 
@@ -203,14 +209,7 @@ fn target(v: &Value, i: usize) -> Result<Target, String> {
 }
 /// Exact UdpConfiguration parsing; the error is the refused field.
 pub(crate) fn parse_config(v: &Value) -> Result<Config, String> {
-    exact(v, &["instance_name", "targets"], "configuration")?;
-    let instance = v["instance_name"]
-        .as_str()
-        .filter(|s| {
-            !s.is_empty() && s.len() <= 64 && !s.chars().any(char::is_control) && s.trim() == *s
-        })
-        .ok_or("instance_name")?
-        .to_owned();
+    exact(v, &["targets"], "configuration")?;
     let list = v["targets"].as_array().ok_or("targets")?;
     if list.len() > TARGETS_MAX {
         return Err("targets".into());
@@ -223,7 +222,134 @@ pub(crate) fn parse_config(v: &Value) -> Result<Config, String> {
         }
         targets.push(t);
     }
-    Ok(Config { instance, targets })
+    Ok(Config { targets })
+}
+
+/// CL-112-01 the base form of the instance name of a CAT or no-radio profile.
+pub(crate) fn base_name(document: &profile::Document) -> String {
+    let c = &document.control;
+    let cat = c.mode == "cat"
+        && c.endpoint
+            .as_deref()
+            .is_some_and(|e| wstx_rust::radio_control::Configuration::parse(e).is_ok());
+    if cat {
+        format!("{INSTANCE_BASE} - {CAT_MODEL}")
+    } else {
+        INSTANCE_BASE.into()
+    }
+}
+/// CL-112-01 the base form of a native Flex profile once its session is ready with the
+/// radio's model and the slice letter.
+fn flex_name(session: &wstx_rust::flex::Session) -> Option<String> {
+    let s = session.snapshot();
+    if s.state != wstx_rust::flex::State::Ready {
+        return None;
+    }
+    let model = s.radio.and_then(|r| r.model)?;
+    let letter = s.slice.and_then(|l| l.letter)?;
+    Some(format!("{INSTANCE_BASE} - {model} {letter}"))
+}
+/// The lock file of an instance name: its letters, digits and '-', others as '_'.
+fn lock_file(name: &str) -> String {
+    let stem: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("{stem}.lock")
+}
+/// CL-112-01: the first of the base form, then "base 2", "base 3", ... whose lock no live
+/// server holds; the lock stays in `held` for the life of the process. Without a usable
+/// lock folder the base form, unchecked.
+fn claim(root: &std::path::Path, base: &str, held: &Mutex<Option<std::fs::File>>) -> String {
+    if std::fs::create_dir_all(root).is_err() {
+        return base.into();
+    }
+    for n in 1..=INSTANCE_NUMBER_MAX {
+        let name = if n == 1 {
+            base.to_owned()
+        } else {
+            format!("{base} {n}")
+        };
+        let Ok(file) = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(root.join(lock_file(&name)))
+        else {
+            return base.into();
+        };
+        match file.try_lock() {
+            Ok(()) => {
+                *held.lock().unwrap_or_else(|p| p.into_inner()) = Some(file);
+                return name;
+            }
+            Err(std::fs::TryLockError::WouldBlock) => {}
+            Err(_) => return base.into(),
+        }
+    }
+    base.into()
+}
+/// CL-112-03 the delta time of a Decode: dt rounded to one decimal as Band Activity shows it
+/// (decimal rounding of the exact value, a tie away from zero), as single precision.
+pub(crate) fn delta_time(dt: Option<f64>) -> f32 {
+    let Some(dt) = dt.filter(|d| d.is_finite()) else {
+        return 0.0;
+    };
+    let t = dt.abs();
+    let q = t * 4.0;
+    // An exact tie at x.x5 is t = m / 4 with m odd: exactly representable, rounded away.
+    let text = if q.fract() == 0.0 && q < 1e15 && (q as u64) % 2 == 1 {
+        let tenths = (t * 10.0).ceil() as u64;
+        format!("{}.{}", tenths / 10, tenths % 10)
+    } else {
+        format!("{t:.1}")
+    };
+    let value: f32 = text.parse().unwrap_or(0.0);
+    if dt < 0.0 && value != 0.0 {
+        -value
+    } else {
+        value
+    }
+}
+/// CL-112-05 Exchange sent and received of QSO Logged, rebuilt from the stored record by its
+/// activity (WSJT-X mainwindow_qso.cpp captureLogQso, logqso.cpp xsent/xrcvd).
+pub(crate) fn exchanges_of(record: &logbook::Record) -> (String, String) {
+    let g = |k: &str| record.get(k);
+    let left = |v: Option<&str>| v.map_or(String::new(), |s| s.chars().take(4).collect());
+    let join = |a: Option<&str>, b: Option<&str>| match (a, b) {
+        (Some(a), Some(b)) => format!("{a} {b}"),
+        _ => String::new(),
+    };
+    // EuVhfExchange "5nSSSS GRID6" from RST (RS), STX/SRX and the 6-character grid.
+    let eu = |rs: Option<&str>, serial: Option<&str>, grid: Option<&str>| match (rs, serial, grid) {
+        (Some(rs), Some(serial), Some(grid)) if grid.len() >= 6 => {
+            format!("{rs}{serial} {}", &grid[..6])
+        }
+        _ => String::new(),
+    };
+    match record.activity.as_deref() {
+        Some("na_vhf" | "ww_digi" | "arrl_digi") => {
+            (left(g("my_gridsquare")), left(g("gridsquare")))
+        }
+        Some("field_day" | "rtty") => (
+            g("stx_string").map_or_else(|| join(g("rst_sent"), g("stx")), str::to_owned),
+            g("srx_string").map_or_else(
+                || join(g("rst_rcvd"), g("srx").or(g("state"))),
+                str::to_owned,
+            ),
+        ),
+        Some("eu_vhf") => (
+            eu(g("rst_sent"), g("stx"), g("my_gridsquare")),
+            eu(g("rst_rcvd"), g("srx"), g("gridsquare")),
+        ),
+        _ => (String::new(), String::new()),
+    }
 }
 
 /// Volatile per-target state (WstxUdp::TargetStatus) and its socket.
@@ -250,14 +376,23 @@ struct Inner {
     runtimes: Vec<Runtime>,
     /// The live job whose decodes were sent and its next unsent sequence.
     cursor: Option<(Identity, u64)>,
-    /// A Decode of the cursor's job was produced (a later change sends Clear).
-    decoded: bool,
+    /// CL-112-01 the instance name; None until a native Flex session is first ready.
+    name: Option<String>,
+    /// The last operating selection band seen (CL-112-04: a change sends Clear).
+    band: Option<&'static str>,
 }
 /// The UDP interface of one station.
 pub(crate) struct Owner {
     inner: Mutex<Inner>,
-    /// WSTX_UDP=off: no socket is opened (isolated tests of the executable).
+    /// WSTX_UDP=off: no socket is opened and no name is claimed (isolated tests).
     disabled: bool,
+    /// The folder of the instance-name locks.
+    lock_root: std::path::PathBuf,
+    /// The lock of the claimed instance name, held while the owner (the process) lives.
+    held: Mutex<Option<std::fs::File>>,
+    /// Test seam: the next udp.json writes fail.
+    #[cfg(test)]
+    pub(crate) fail_write: std::sync::atomic::AtomicBool,
 }
 
 fn wall_ms() -> i64 {
@@ -363,7 +498,7 @@ pub(crate) fn decode_of(record: &Value, mode: &str) -> Option<nm::Decode> {
     Some(nm::Decode {
         time_ms: nm::ms_of_day(period),
         snr,
-        delta_time: record["dt_seconds"].as_f64().unwrap_or(0.0) as f32,
+        delta_time: delta_time(record["dt_seconds"].as_f64()),
         delta_frequency: frequency.round().clamp(0.0, 1.0e6) as u32,
         mode: if mode == "ft4" { "+" } else { "~" }.into(),
         message: wsjtx_text(record)?,
@@ -421,6 +556,7 @@ pub(crate) fn logged_of(record: &logbook::Record) -> nm::Logged {
         (Some("MFSK"), Some(sub)) => sub.to_owned(),
         (mode, _) => mode.unwrap_or("").to_owned(),
     };
+    let (exchange_sent, exchange_received) = exchanges_of(record);
     nm::Logged {
         time_off: nm::DateTime::from_unix_ms(adif_ms(
             record.get("qso_date_off"),
@@ -439,6 +575,8 @@ pub(crate) fn logged_of(record: &logbook::Record) -> nm::Logged {
         operator_call: String::new(),
         my_call: g("station_callsign"),
         my_grid: g("my_gridsquare"),
+        exchange_sent,
+        exchange_received,
     }
 }
 pub(crate) fn adif_text(record: &logbook::Record) -> String {
@@ -465,15 +603,19 @@ pub(crate) fn status_of(state: &ProfileState, r: &recording::Recording) -> nm::S
         "FT8"
     };
     nm::Status {
-        dial_hz: contact_http::confirmed_dial(r).unwrap_or(0),
+        // CL-112-02 WSJT-X m_operatingFrequency: the radio's dial, else the chosen band's.
+        dial_hz: contact_http::confirmed_dial(r)
+            .or_else(|| r.operating_nominal_hz())
+            .unwrap_or(0),
         mode: mode.into(),
         dx_call: facts
             .as_ref()
             .and_then(|f| f.dx_call.clone())
             .unwrap_or_default(),
+        // CL-112-02 WSJT-X QString::number: "-9", "3", "0".
         report: facts
             .as_ref()
-            .map_or(String::new(), |f| contact::render_report(f.report)),
+            .map_or(String::new(), |f| f.report.to_string()),
         tx_mode: mode.into(),
         tx_enabled: view
             .as_ref()
@@ -502,35 +644,62 @@ impl Owner {
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|p| p.into_inner())
     }
-    /// Loads udp.json of the selected profile (missing: the default list) and opens the
-    /// sockets of its enabled targets.
-    pub(crate) fn open(state: &ProfileState, disabled: bool) -> Arc<Self> {
+    /// Loads udp.json of the selected profile (missing: the default list), fixes the
+    /// instance name of a CAT or no-radio profile in `lock_root` (CL-112-01; a native Flex
+    /// profile fixes it at its first ready session) and opens the sockets of the enabled
+    /// targets. Called after radio discovery (CL-044-15), before the server serves.
+    pub(crate) fn open(
+        state: &ProfileState,
+        disabled: bool,
+        lock_root: &std::path::Path,
+    ) -> Arc<Self> {
         let mut inner = Inner::default();
-        let read = {
+        let (read, base) = {
             let store = state.store.lock().unwrap_or_else(|p| p.into_inner());
-            store.read_document_file(FILE_NAME, FILE_BYTES_MAX)
+            (
+                store.read_document_file(FILE_NAME, FILE_BYTES_MAX),
+                base_name(&store.document),
+            )
         };
+        let owner = Self {
+            inner: Mutex::new(Inner::default()),
+            disabled,
+            lock_root: lock_root.to_owned(),
+            held: Mutex::new(None),
+            #[cfg(test)]
+            fail_write: std::sync::atomic::AtomicBool::new(false),
+        };
+        if state.recording.flex.get().is_none() {
+            inner.name = Some(owner.claim(&base));
+        }
         match read {
             Ok(None) => inner.config = Some(Config::default_list()),
             Ok(Some(bytes)) => {
-                let loaded = serde_json::from_slice::<Value>(&bytes).ok().and_then(|v| {
-                    let ok = v.as_object().is_some_and(|o| o.len() == 5)
-                        && v["schema_version"] == 1
-                        && v["profile_id"] == state.recording.profile.as_str()
-                        && v["revision"].as_u64().is_some_and(|n| n <= MAX_SAFE);
-                    // A file saved before send-only names accept_commands on each target: it
-                    // keeps loading, and the next save drops the key.
-                    let mut targets = v["targets"].clone();
-                    for t in targets.as_array_mut().into_iter().flatten() {
-                        if let Some(t) = t.as_object_mut() {
-                            t.remove("accept_commands");
+                let loaded = serde_json::from_slice::<Value>(&bytes)
+                    .ok()
+                    .and_then(|mut v| {
+                        // A file saved while the name was a setting names instance_name: it
+                        // keeps loading, and the next save drops the key.
+                        if let Some(o) = v.as_object_mut() {
+                            o.remove("instance_name");
                         }
-                    }
-                    let config = json!({"instance_name":v["instance_name"],"targets":targets});
-                    ok.then(|| parse_config(&config).ok())
-                        .flatten()
-                        .map(|c| (v["revision"].as_u64().unwrap_or(0), c))
-                });
+                        let ok = v.as_object().is_some_and(|o| o.len() == 4)
+                            && v["schema_version"] == 1
+                            && v["profile_id"] == state.recording.profile.as_str()
+                            && v["revision"].as_u64().is_some_and(|n| n <= MAX_SAFE);
+                        // A file saved before send-only names accept_commands on each target: it
+                        // keeps loading, and the next save drops the key.
+                        let mut targets = v["targets"].clone();
+                        for t in targets.as_array_mut().into_iter().flatten() {
+                            if let Some(t) = t.as_object_mut() {
+                                t.remove("accept_commands");
+                            }
+                        }
+                        let config = json!({"targets":targets});
+                        ok.then(|| parse_config(&config).ok())
+                            .flatten()
+                            .map(|c| (v["revision"].as_u64().unwrap_or(0), c))
+                    });
                 match loaded {
                     Some((revision, config)) => {
                         inner.revision = revision;
@@ -544,10 +713,24 @@ impl Owner {
         if let Some(c) = &inner.config {
             inner.runtimes = c.targets.iter().map(|t| activate(t, disabled)).collect();
         }
-        Arc::new(Self {
-            inner: Mutex::new(inner),
-            disabled,
-        })
+        *owner.lock() = inner;
+        Arc::new(owner)
+    }
+    /// The instance name of `base` (WSTX_UDP=off: the base form, nothing claimed).
+    fn claim(&self, base: &str) -> String {
+        if self.disabled {
+            base.into()
+        } else {
+            claim(&self.lock_root, base, &self.held)
+        }
+    }
+    /// A native Flex profile fixes its name when its session is first ready (CL-112-01).
+    fn name_flex(&self, inner: &mut Inner, r: &recording::Recording) {
+        if inner.name.is_none()
+            && let Some(base) = r.flex.get().and_then(|s| flex_name(s))
+        {
+            inner.name = Some(self.claim(&base));
+        }
     }
     /// UdpSnapshot.
     pub(crate) fn snapshot(&self, r: &recording::Recording) -> Value {
@@ -561,9 +744,9 @@ impl Owner {
                     "last_send_utc_ms":rt.last_send,"error":rt.error})
             })
             .collect();
-        json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"revision":inner.revision,
-            "configuration":inner.config.as_ref().map(Config::json),"configuration_error":inner.error,
-            "status":status})
+        json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"instance_name":inner.name,
+            "revision":inner.revision,"configuration":inner.config.as_ref().map(Config::json),
+            "configuration_error":inner.error,"status":status})
     }
     /// PUT /udp after the route checks: validation, revision, atomic save, then the
     /// running sockets follow the saved configuration.
@@ -616,12 +799,16 @@ impl Owner {
         }
         let revision = inner.revision + 1;
         let document = json!({"schema_version":1,"profile_id":r.profile,"revision":revision,
-            "instance_name":config.instance,"targets":config.json()["targets"]});
+            "targets":config.json()["targets"]});
         {
             let mut store = state
                 .store
                 .lock()
                 .map_err(|_| ("storage_unavailable", None))?;
+            #[cfg(test)]
+            if self.fail_write.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(("storage_unavailable", None));
+            }
             store
                 .write_document_file(FILE_NAME, &document)
                 .map_err(|_| ("storage_unavailable", None))?;
@@ -643,25 +830,21 @@ impl Owner {
         let mut runtimes = Vec::new();
         for t in &next.targets {
             let kept = old.as_ref().and_then(|o| {
-                (o.instance == next.instance)
-                    .then(|| {
-                        o.targets
-                            .iter()
-                            .position(|ot| ot.socket_key() == t.socket_key())
-                    })
-                    .flatten()
+                o.targets
+                    .iter()
+                    .position(|ot| ot.socket_key() == t.socket_key())
             });
             match kept.and_then(|i| old_runtimes[i].take()) {
                 Some(rt) => runtimes.push(rt),
                 None => runtimes.push(activate(t, self.disabled)),
             }
         }
-        if let Some(o) = &old {
+        if let (Some(o), Some(id)) = (&old, &inner.name) {
             for (t, rt) in o.targets.iter().zip(old_runtimes.iter_mut()) {
                 if let Some(rt) = rt.as_mut().filter(|rt| rt.socket.is_some())
                     && t.messages & CLOSE_BIT != 0
                 {
-                    let bytes = nm::close(rt.schema, &o.instance);
+                    let bytes = nm::close(rt.schema, id);
                     send(rt, t.address, &bytes, now);
                 }
             }
@@ -670,13 +853,16 @@ impl Owner {
         inner.config = Some(next);
     }
     /// One station step (main.rs timer, every 50 ms): schema negotiation, Heartbeat,
-    /// Decode/Clear and Status.
+    /// Decode, Clear and Status.
     pub(crate) fn step(&self, state: &ProfileState) {
         let r = &state.recording;
         let mut inner = self.lock();
-        // The decode cursor advances even without an open socket, so a target enabled
-        // later never receives earlier decodes as new ones.
-        let active = inner.runtimes.iter().any(|rt| rt.socket.is_some());
+        self.name_flex(&mut inner, r);
+        // Without a name (a Flex session never ready) nothing is sent. The decode cursor
+        // advances even without an open socket, so a target enabled later never receives
+        // earlier decodes as new ones.
+        let named = inner.name.clone();
+        let active = named.is_some() && inner.runtimes.iter().any(|rt| rt.socket.is_some());
         let now = now_ms(r);
         if active {
             negotiate(&mut inner);
@@ -684,11 +870,11 @@ impl Owner {
         let inner = &mut *inner;
         // An invalid configuration has no targets; its cursor still advances, so a later
         // valid PUT never sends the retained decodes as new ones.
-        let config = inner.config.clone().unwrap_or(Config {
-            instance: String::new(),
-            targets: Vec::new(),
-        });
-        let id = config.instance.as_str();
+        let config = match (&named, &inner.config) {
+            (Some(_), Some(c)) => c.clone(),
+            _ => Config::default(),
+        };
+        let id = named.as_deref().unwrap_or("");
         let version = env!("CARGO_PKG_VERSION");
         // The pulse (MessageClient heartbeat_timer_, NetworkMessage::pulse 15 s): Heartbeat,
         // and the Status resent unchanged so a tool started later learns the state (#40).
@@ -702,19 +888,10 @@ impl Owner {
                 }
             }
         }
-        // Decode and Clear of the current live job.
-        let cursor = inner.cursor.clone();
-        let live = r.live_records_after(
-            cursor.as_ref().map(|c| &c.0),
-            cursor.as_ref().map_or(0, |c| c.1),
-        );
-        let changed = match (&live, &cursor) {
-            (Some((identity, _, _)), Some((previous, _))) => identity != previous,
-            (None, Some(_)) => true,
-            _ => false,
-        };
-        if changed {
-            if inner.decoded {
+        // CL-112-04 Clear when the operating selection's band changes to another band (as
+        // WSJT-X band_activity_cleared, whether or not a Decode was sent since).
+        if let Some(band) = r.operating_band() {
+            if inner.band.is_some_and(|previous| previous != band) {
                 for (t, rt) in config.targets.iter().zip(inner.runtimes.iter_mut()) {
                     if t.messages & CLEAR_BIT != 0 {
                         let bytes = nm::clear(rt.schema, id);
@@ -722,7 +899,15 @@ impl Owner {
                     }
                 }
             }
-            inner.decoded = false;
+            inner.band = Some(band);
+        }
+        // Decode of the current live job (a played recording is no live job).
+        let cursor = inner.cursor.clone();
+        let live = r.live_records_after(
+            cursor.as_ref().map(|c| &c.0),
+            cursor.as_ref().map_or(0, |c| c.1),
+        );
+        if live.is_none() {
             inner.cursor = None;
         }
         if let Some((identity, mode, records)) = live {
@@ -739,10 +924,10 @@ impl Owner {
                     continue;
                 }
                 next = sequence + 1;
+                // A record without a period start gives no Decode, and the cursor passes it.
                 let Some(decode) = decode_of(record, mode) else {
                     continue;
                 };
-                inner.decoded = true;
                 for (t, rt) in config.targets.iter().zip(inner.runtimes.iter_mut()) {
                     if t.messages & DECODE_BIT != 0 {
                         let bytes = nm::decode(rt.schema, id, true, &decode);
@@ -777,10 +962,11 @@ impl Owner {
             rt.status_due = false;
         }
     }
-    /// QSO Logged then Logged ADIF of a newly saved contact (SaveContact outcome saved).
+    /// QSO Logged then Logged ADIF of a newly stored contact (DirectLog or SaveContact
+    /// outcome saved).
     pub(crate) fn logged(&self, state: &ProfileState, record: &logbook::Record) {
         let mut inner = self.lock();
-        let Some(config) = inner.config.clone() else {
+        let (Some(config), Some(id)) = (inner.config.clone(), inner.name.clone()) else {
             return;
         };
         let now = now_ms(&state.recording);
@@ -788,21 +974,44 @@ impl Owner {
         let adif = adif_text(record);
         for (t, rt) in config.targets.iter().zip(inner.runtimes.iter_mut()) {
             if t.messages & QSO_LOGGED_BIT != 0 {
-                let bytes = nm::qso_logged(rt.schema, &config.instance, &logged);
+                let bytes = nm::qso_logged(rt.schema, &id, &logged);
                 send(rt, t.address, &bytes, now);
             }
             if t.messages & LOGGED_ADIF_BIT != 0 {
-                let bytes = nm::logged_adif(rt.schema, &config.instance, &adif);
+                let bytes = nm::logged_adif(rt.schema, &id, &adif);
                 send(rt, t.address, &bytes, now);
             }
         }
+    }
+    /// CL-112-06 one Close under the instance name to each active target that selects
+    /// close: one non-blocking send each, no wait.
+    pub(crate) fn close_all(&self) {
+        let mut inner = self.lock();
+        let (Some(config), Some(id)) = (inner.config.clone(), inner.name.clone()) else {
+            return;
+        };
+        let now = wall_ms();
+        for (t, rt) in config.targets.iter().zip(inner.runtimes.iter_mut()) {
+            if rt.socket.is_some() && t.messages & CLOSE_BIT != 0 {
+                let bytes = nm::close(rt.schema, &id);
+                send(rt, t.address, &bytes, now);
+            }
+        }
+    }
+}
+/// CL-112-06 the exit guard (Ctrl+C, Ctrl+Break, console close, logoff, shutdown): the
+/// transmit release (WstxTransmit::ExitRelease) first, then Close to the UDP targets.
+pub(crate) fn exit(recording: &recording::Recording, release: impl FnOnce()) {
+    release();
+    if let Some(owner) = recording.udp.get() {
+        owner.close_all();
     }
 }
 /// The one thing read from a target: its Heartbeat raises that target's header schema
 /// (MessageClient negotiation, never lowered). Everything else is read and dropped, so a tool's
 /// command has no effect and a pending ICMP error of an earlier send does not stay behind.
 fn negotiate(inner: &mut Inner) {
-    let Some(config) = &inner.config else {
+    let (Some(config), Some(name)) = (&inner.config, &inner.name) else {
         return;
     };
     for (t, rt) in config.targets.iter().zip(inner.runtimes.iter_mut()) {
@@ -815,7 +1024,7 @@ fn negotiate(inner: &mut Inner) {
                 Ok((n, from)) => {
                     if from == t.address
                         && let Some(h) = nm::heartbeat_of(&buffer[..n])
-                        && h.id == config.instance
+                        && h.id == *name
                     {
                         rt.schema = rt.schema.max(h.schema);
                     }
