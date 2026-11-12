@@ -136,10 +136,10 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `sysml-documentation` | Canonical catalog/trace checks, one full semantic validation (`sysml.py check`), the tests that read the model `test_[dr]*.py` | Model and tooling changes; bound source remains a complete fingerprint/dirty-guard input |
 | `sysml-tools` | The SysML tool's own unit tests `test_[!adr]*.py` on isolated models | The SysML tool and its tests |
 | `sysml-architecture` | TC-DOC-005 architecture integrity: the mutation tests `test_a*.py`, one Pilot validation per mutation | `Architecture.sysml`, the SysML tool, `Validate.java`, the oracle file `architecture-oracle.json`, the toolchain pin and the test file |
-| `decoder-correctness` | The release `decoder_signal` correctness, #57 thread-parity and #56 jt9-parity passes (all ordinary passes but the 50 ms quantum and busy-period latency) | Decoder fixtures, the library root and the two modes model files whose values its passes read (`docs/sysml/backend/modes/Decode.sysml`, `MessagePayload.sysml`) (a production decoder source selects `decoder-quality`, which runs the same passes) |
-| `decoder-quality` | Timing: all seventeen release decoder passes bound to the artifact, and the owned-Job resource matrix (runs alone) | Timing inputs: the production decoder sources (not its `*_test.rs` or the test-only resource observer), `decoder_signal.rs`, the fixtures and vector tool the timed passes decode, its resource-job tools, the model file holding the budgets the matrix reads (`docs/sysml/backend/modes/Decode.sysml`) and the Rust toolchain/dependency pins |
+| `decoder-correctness` | The release `decoder_signal` correctness, #57 thread-parity and #56 jt9-parity passes (all ordinary passes but the 50 ms quantum and busy-period latency) | Decoder fixtures, the library root and the model files whose values its passes read (`docs/sysml/backend/modes/Decode.sysml`, `MessagePayload.sysml`, `docs/sysml/shared/Units.sysml`) (a production decoder source selects `decoder-quality`, which runs the same passes) |
+| `decoder-quality` | Timing: all seventeen release decoder passes bound to the artifact, and the owned-Job resource matrix (runs alone) | Timing inputs: the production decoder sources (not its `*_test.rs` or the test-only resource observer), `decoder_signal.rs`, the fixtures and vector tool the timed passes decode, its resource-job tools, the model files holding the budgets the matrix reads and their unit suffixes (`docs/sysml/backend/modes/Decode.sysml`, `docs/sysml/shared/Units.sysml`) and the Rust toolchain/dependency pins |
 | `live-station-browser` | Native fixture through the actual Router, receive owner and browser (callsign rows) | Router, profile/recording/receive/source/audio/decoder owners, client, its test files |
-| `live-station-latency` | Timing: the #57 busy-period browser latency case | Timing inputs: router, receive/source/audio/decoder pipeline, recording client, its test files, the model file holding the budgets the station process case reads (`docs/sysml/backend/modes/Decode.sysml`) and toolchain |
+| `live-station-latency` | Timing: the #57 busy-period browser latency case | Timing inputs: router, receive/source/audio/decoder pipeline, recording client, its test files, the model files holding the budgets the station process case reads and their unit suffixes (`docs/sysml/backend/modes/Decode.sysml`, `docs/sysml/shared/Units.sysml`) and toolchain |
 | `source-model-traces` | Fast canonical source/model identity and binding checks; no Java or model mutation suite | Client, server and test source, plus model/tool changes |
 
 All existing test files remain registered. The recording test file is partitioned by
@@ -152,11 +152,13 @@ runs in `radio-selection-thin`, the other selection tests in `radio-selection`. 
 complement includes future names instead of silently omitting them. No test assertion,
 budget or test case is removed by selection.
 
-A group that holds a test reading a model value (`### Model values read by tests`) names
-`docs/sysml/` in `paths` and `select`; the change that adds the first such test to another
-functional group adds it there, as additive wiring of its new coverage (#148). A timing test
-that reads its bound from the model has the model file holding the bound in its suite's
-`timing_inputs` (SensorsIot/harness#74).
+A group that holds a test reading a model value (`### Model values read by tests`) names, in
+`paths` and `select`, every model file those readers read: each file holding a value they
+read, and `docs/sysml/shared/Units.sysml` when they read a value by its unit. `docs/sysml/`
+covers them all. The change that adds the first such test to another functional group adds
+these files there, as additive wiring of its new coverage (#148). A timing test that reads
+its bound from the model has the same files in its suite's `timing_inputs` and `paths`
+(SensorsIot/harness#74).
 
 The resource matrix of `decoder-quality` re-measures a configuration whose 50 ms CPU quantum
 stayed unmeasured, at most three attempts, and the runtime (including the four-worker 2x

@@ -415,17 +415,20 @@
   - rust-toolchain.toml
   - docs/sysml/backend/modes/Decode.sysml
   - docs/sysml/backend/modes/MessagePayload.sysml
+  - docs/sysml/shared/Units.sysml
   # Selected by what decoder-quality does not time but these passes read: the decoder
   # fixtures (the jt9 parity corpus, baselines, vectors) and the library root. A production
   # decoder source, decoder_signal.rs or a Cargo pin selects decoder-quality, which runs
   # these passes too (bound to its artifact). The decoder's *_test.rs files are not in this
-  # binary (wstx-rust-decoder runs them). The two modes model files hold the values these
-  # passes read (DecodeQuality, DecodeBudgets, FrameStatus).
+  # binary (wstx-rust-decoder runs them). The model files are those whose values these
+  # passes read: DecodeQuality and DecodeBudgets (Decode.sysml), FrameStatus
+  # (MessagePayload.sysml) and the unit suffixes of the values with a unit (Units.sysml).
   select:
   - fixtures/decoder/
   - server/src/lib.rs
   - docs/sysml/backend/modes/Decode.sysml
   - docs/sysml/backend/modes/MessagePayload.sysml
+  - docs/sysml/shared/Units.sysml
   build: cargo test --release --locked --test decoder_signal --no-run
   # CPU-heavy (12-thread busy-period decode): kept apart from the timing suites that run
   # beside other groups (gate.timing_alone: false).
@@ -462,14 +465,17 @@
   - tools/test_windows_process_metrics.py
   - docs/sysml/backend/modes/Decode.sysml
   - docs/sysml/backend/modes/MessagePayload.sysml
+  - docs/sysml/shared/Units.sysml
   timing: true
   # Every production decoder source sets the measured time (checkpoint spacing, per-item
   # work, passes and budgets); the decoder's *_test.rs files and resource_observer.rs
   # (cfg(test)) are not in the measured binary, so unit-test-only and parity-fixture-only
   # changes run decoder-correctness alone. A new decoder module is declared in mod.rs,
-  # which is listed. Decode.sysml holds the DecodeBudgets the matrix case reads.
+  # which is listed. Decode.sysml holds the DecodeBudgets the matrix case reads, Units.sysml
+  # the unit suffixes it reads them by.
   timing_inputs:
   - docs/sysml/backend/modes/Decode.sysml
+  - docs/sysml/shared/Units.sysml
   - server/src/decoder/apriori.rs
   - server/src/decoder/baseband.rs
   - server/src/decoder/bitmetrics.rs
@@ -623,6 +629,7 @@
   - package-lock.json
   - tools/windows_process_metrics.py
   - docs/sysml/backend/modes/Decode.sysml
+  - docs/sysml/shared/Units.sysml
   exclusive: ["*"]
   timing_classes: [display, compute]
   build: cargo test --release --locked --bin wstx-rust --no-run
@@ -658,6 +665,7 @@
   - package-lock.json
   - tools/windows_process_metrics.py
   - docs/sysml/backend/modes/Decode.sysml
+  - docs/sysml/shared/Units.sysml
   needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; timing suite (#28, #57): the busy-period browser latency case through the actual isolated Router, receive owner and browser, and the station process case (#71, CL-007-04 regression detector only, never its evidence: at most 96 MiB private-commit delta, at most 250 ms owner release) through tools/windows_process_metrics.py. WSTX_DECODER_VECTORS and WSTX_SAMPLE_DIR must name the verified fixtures; missing inputs fail closed. Runs only when the router, the receive/source/audio/decoder pipeline, the recording client that polls and paints the rows, its test files or the toolchain change, or on request (Harness-Timing: yes)."
 
 - suite: native-flex
