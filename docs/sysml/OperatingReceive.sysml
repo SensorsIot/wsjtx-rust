@@ -1225,7 +1225,7 @@ logical uncompressed JSON.
              receive_state is existing authoritative audio/decoder summary, no copied
              numerical/result state. Logical response<=1024bytes, reuse existing status
              publication/heartbeat and accounting; no parallel timer/poll stream. */
-        attribute scope : WstxProfiles::SelectedRadioAuthorizationScope;
+        attribute scope : WstxStationProtocol::SelectedRadioAuthorizationScope;
         attribute condition : AutomaticCatCondition;
         attribute retryAfterMilliseconds : Integer[0..1];
         attribute errorCode : String[0..1];
@@ -1251,8 +1251,8 @@ logical uncompressed JSON.
              zero native open/query/set/PTT. Confirmation itself has no native effect.
              Delivered in server/src/cat_lifecycle.rs driven by Recording::cat_maintain;
              failed-close quarantine lasts until station restart. */
-        in scope : WstxProfiles::SelectedRadioAuthorizationScope;
-        in commissioning : WstxProfiles::RadioCommissioningRecord;
+        in scope : WstxStationProtocol::SelectedRadioAuthorizationScope;
+        in commissioning : WstxStationProtocol::RadioCommissioningRecord;
         out current : AutomaticCatStatus;
     }
 

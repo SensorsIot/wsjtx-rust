@@ -1154,12 +1154,28 @@ fn import(r: &Arc<Recording>, bytes: &[u8]) -> Result<String> {
     }
     Ok(id.to_owned())
 }
+/// A bound of `WstxProfileRecordings::RecordingLimits`, read from the model: with its unit
+/// (`fileBytes`, `importMaxFrames`, `rateHz`) or as a plain count (`importMaxRiffChunks`).
+fn recording_limit(feature: &str) -> usize {
+    let name = format!("WstxProfileRecordings::RecordingLimits::{feature}");
+    let model = Model::load();
+    let value = if feature == "importMaxRiffChunks" {
+        model.number(&name)
+    } else {
+        model.number_with_unit(&name)
+    };
+    match value.unwrap_or_else(|e| panic!("model value {e}")) {
+        Some(Number::Integer(v)) if v > 0 => v as usize,
+        other => panic!("model value {name}: not a positive integer: {other:?}"),
+    }
+}
 // Proves: CL-006-01, CL-006-02; TC-018-001, cost 2 on Windows.
 #[test]
 fn original_bytes_samples_blocks_and_restart_identity() {
     let f = Fixture::new();
     let r = f.recording();
-    for count in [1, 2048, 4096, 4097, 1_440_000] {
+    let rate = recording_limit("rateHz");
+    for count in [1, 2048, 4096, 4097, recording_limit("importMaxFrames")] {
         let endpoint = [-32768, -1, 0, 1, 32767];
         let samples: Vec<_> = (0..count).map(|n| endpoint[n % 5]).collect();
         let bytes = wav(&samples);
@@ -1170,7 +1186,7 @@ fn original_bytes_samples_blocks_and_restart_identity() {
             profile_id: r.profile.clone(),
             boot_id: r.boot.clone(),
             source_id: id.clone(),
-            rate_hz: 12000,
+            rate_hz: rate.try_into().unwrap(),
             channel: "mono_real",
             total_frames: Some(count as u64),
             utc_anchor: None,
@@ -1199,6 +1215,8 @@ fn original_bytes_samples_blocks_and_restart_identity() {
         assert_eq!(restarted.snapshot()["recording"]["id"], id);
         assert_eq!(restarted.snapshot()["generation"], 0);
         assert_eq!(restarted.snapshot()["recording"]["utc_anchor"], Value::Null);
+        assert_eq!(restarted.snapshot()["recording"]["rate_hz"], rate);
+        assert_eq!(restarted.snapshot()["recording"]["frames"], count);
     }
 }
 // Proves: CL-006-01, CL-006-04; TC-018-002, cost 2 on Windows.
@@ -1226,7 +1244,12 @@ fn byte_level_riff_limits_and_rejection_table() {
         cases.push((valid[..n].to_vec(), "invalid_recording"));
     }
     cases.push((wav(&[]), "invalid_recording"));
-    cases.push((wav(&vec![0; 1_440_001]), "recording_limit"));
+    let file_limit = recording_limit("fileBytes");
+    let chunk_limit = recording_limit("importMaxRiffChunks");
+    cases.push((
+        wav(&vec![0; recording_limit("importMaxFrames") + 1]),
+        "recording_limit",
+    ));
     for (b, expected) in cases {
         assert_eq!(
             validate(&mut f.wave(&b)).unwrap_err(),
@@ -1240,20 +1263,39 @@ fn byte_level_riff_limits_and_rejection_table() {
     let size = (ancillary.len() - 8) as u32;
     ancillary[4..8].copy_from_slice(&size.to_le_bytes());
     assert_eq!(validate(&mut f.wave(&ancillary)).unwrap().frames, 3);
+    // A file of exactly the file cap is accepted; one byte more is refused.
     let mut cap = valid.clone();
-    let padding = FILE_LIMIT as usize - cap.len() - 8;
+    let padding = file_limit - cap.len() - 8;
     cap.extend(b"JUNK");
     cap.extend((padding as u32).to_le_bytes());
-    cap.resize(FILE_LIMIT as usize, 0);
-    cap[4..8].copy_from_slice(&((FILE_LIMIT - 8) as u32).to_le_bytes());
-    assert_eq!(validate(&mut f.wave(&cap)).unwrap().bytes, FILE_LIMIT);
-    let mut many = valid;
-    for _ in 0..63 {
-        many.extend(b"JUNK\0\0\0\0");
-    }
-    let size = (many.len() - 8) as u32;
-    many[4..8].copy_from_slice(&size.to_le_bytes());
-    assert_eq!(validate(&mut f.wave(&many)).unwrap_err(), "recording_limit");
+    cap.resize(file_limit, 0);
+    cap[4..8].copy_from_slice(&((file_limit - 8) as u32).to_le_bytes());
+    assert_eq!(
+        validate(&mut f.wave(&cap)).unwrap().bytes,
+        file_limit as u64
+    );
+    let mut over = cap;
+    over.push(0);
+    over[4..8].copy_from_slice(&((file_limit - 7) as u32).to_le_bytes());
+    assert_eq!(validate(&mut f.wave(&over)).unwrap_err(), "recording_limit");
+    // fmt and data plus ancillary chunks: exactly the chunk cap is accepted, one more is not.
+    let chunks = |total: usize| {
+        let mut many = valid.clone();
+        for _ in 0..total - 2 {
+            many.extend(b"JUNK\0\0\0\0");
+        }
+        let size = (many.len() - 8) as u32;
+        many[4..8].copy_from_slice(&size.to_le_bytes());
+        many
+    };
+    assert_eq!(
+        validate(&mut f.wave(&chunks(chunk_limit))).unwrap().frames,
+        3
+    );
+    assert_eq!(
+        validate(&mut f.wave(&chunks(chunk_limit + 1))).unwrap_err(),
+        "recording_limit"
+    );
 }
 // Proves: CL-006-02, CL-006-04; TC-018-002/003, cost 2 on Windows.
 #[test]

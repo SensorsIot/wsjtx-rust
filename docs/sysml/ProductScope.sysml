@@ -2,7 +2,6 @@ package WstxProductScope {
     private import ScalarValues::*;
     private import WstxRequirements::*;
     private import WstxRequirementsReceive::*;
-    private import WstxRequirementsProfile::*;
     private import WstxRequirementsMcp::*;
     private import WstxRequirementsAudio::*;
     private import WstxRequirementsRadioControl::*;
@@ -393,13 +392,14 @@ package WstxProductScope {
     package ContractIndex {
         doc /* Numeric references inside model prose are local contract aliases. 4.1/6.1/12.1..12.4:
              SharedProtocol. 4.2/6.2/12.5: Profiles. 4.3/6.3: NativeFlex plus FR-023
-             and its six TC-023 cases. 4.4/6.4: RecordingAndDisplay and Modem;
+             and its six TC-023 cases. 4.4/6.4: RecordingAndDisplay, ProfileRecordings and Modem;
              4.5/12.8: LiveRadio. 4.7/6.6: Operating. 11: Architecture.
              12.1.1/4.7.3/4.7.5/12.8.1: OperatingReceive. 12.6: RecordingAndDisplay. 12.7: SharedRecord. 13.6: ModemDecode's cases
              TC-004-001 and TC-004-002. Other scope/quality/provenance clauses are in this package.
              These aliases are resolved model elements, not external file references. */
         alias SharedProtocol for WstxStationProtocol;
         alias Profiles for WstxProfiles;
+        alias ProfileRecordings for WstxProfileRecordings;
         alias NativeFlex for WstxProductScope::NativeFlexBoundary;
         alias RecordingAndDisplay for WstxRecordingReceive;
         alias Modem for WstxOfflineDecode;

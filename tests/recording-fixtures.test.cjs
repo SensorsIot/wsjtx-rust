@@ -16,8 +16,9 @@ test('TC-018-001 fixture setup validates full pinned plan and atomic promotion w
   await fs.writeFile(path.join(dir,e.name),Buffer.alloc(bytes.length));await assert.rejects(provision(dir,{entries:[e],fetchFile:async()=>{downloads++;return bytes;}}),/hash mismatch/);assert.equal(downloads,1);
   assert.deepEqual(await fs.readdir(dir),['audio.wav']);const pinned=await plan();assert.equal(pinned.filter(e=>e.frames).length,25);assert.ok(pinned.some(e=>e.name==='ft8_lib-LICENSE.txt'&&e.url==='https://raw.githubusercontent.com/kgoba/ft8_lib/9fec6ca39886edbf96f4f5e71edc76da5074e871/LICENSE'));assert.ok(pinned.some(e=>e.name==='ft4/official-project-COPYING.txt'));
 });
-// Import file cap of the recording contract (RecordingReceive fileBytes, CL-006-02).
-const importCap=3145728;
+const {openModel}=require('./model-values.cjs');
+// A bound of the profile's recordings, WstxProfileRecordings::RecordingLimits, read from the model.
+const recordingLimit=feature=>openModel().numberWithUnit(`WstxProfileRecordings::RecordingLimits::${feature}`);
 // Hand-parsed RIFF header: walks the chunks, independent of the server's and the setup tool's parsers.
 function riff(bytes){
   assert.equal(bytes.toString('latin1',0,4),'RIFF');assert.equal(bytes.toString('latin1',8,12),'WAVE');
@@ -36,11 +37,12 @@ test('TC-018-001 all 22 FT8 and 3 FT4 originals match provenance and fit the PCM
   const ft4=JSON.parse(await fs.readFile(path.join(__dirname,'..','fixtures/decoder/ft4-manifest.json'),'utf8'));
   const inputs=[...ft8.files.filter(f=>f.path.endsWith('.wav')).map(f=>({...f,file:path.join(samples,path.basename(f.path))})),...ft4.files.map(f=>({...f,file:path.join(samples,'ft4',f.relative_download_path)}))];
   assert.equal(inputs.length,25,'22 FT8 and 3 FT4 originals');
+  const importCap=recordingLimit('fileBytes'),rate=recordingLimit('rateHz');
   for(const input of inputs){
     const bytes=await fs.readFile(input.file).catch(error=>{if(error.code==='ENOENT')throw Error('Missing recording fixtures. Run node tools/recording-fixtures.cjs --directory <absolute-cache-directory> and set WSTX_SAMPLE_DIR to that directory.');throw error;});
     assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),input.sha256,input.file);
     const header=riff(bytes);
-    assert.deepEqual({format:header.format,channels:header.channels,rate:header.rate,bits:header.bits},{format:1,channels:1,rate:12000,bits:16},input.file);
+    assert.deepEqual({format:header.format,channels:header.channels,rate:header.rate,bits:header.bits},{format:1,channels:1,rate,bits:16},input.file);
     assert.ok(header.data>0&&header.data<=importCap&&bytes.length<=importCap,`${input.file}: data ${header.data} bytes within the import cap`);
   }
 });

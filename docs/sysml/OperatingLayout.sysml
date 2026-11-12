@@ -1,5 +1,7 @@
 package WstxOperatingLayout {
     private import ScalarValues::*;
+    private import WstxProfiles::HttpProfileRepresentation;
+    private import WstxProfiles::HttpProfilePut;
 
     doc /* Implementation contract for the profile-mode read-only operating layout.
          Contract: WstxProductScope::ContractIndex4.7.1 and6.6 TC007002. Existing signal and
@@ -1296,4 +1298,219 @@ attribute def ActivityOrdering {
          receive/radio/result shapes and owner/cancellation/source contracts.
          New selection uses the same authority, explicit actual release before
          setters/new capture and a fresh context, not a second pipeline or actor. */
+
+    attribute loopbackRefreshDeadlineSeconds : Integer = 2;
+    attribute reconnectAfterDetectionDeadlineSeconds : Integer = 10;
+    attribute silentLossDetectionSeconds : Integer = 13;
+    calc def SaveSubmissionAllowed {
+        in saving : Boolean;
+        in conflict : Boolean;
+        in unknownOutcome : Boolean;
+        return allowed : Boolean = not saving and not conflict and not unknownOutcome;
+        doc /* contract 12.5: background Refresh/profile snapshots cannot clear a pending,
+             conflict or unknown-outcome save guard; explicit validated reload is required
+             for conflict/unknown outcome. This guard covers programmatic submission too. */
+    }
+    calc def SnapshotApplicable {
+        in sameBoot : Boolean;
+        in candidateRevision : Integer;
+        in displayedRevision : Integer;
+        return applicable : Boolean = not sameBoot or candidateRevision >= displayedRevision;
+    }
+    calc def StatusReady {
+        in currentOpen : Boolean;
+        in correlatedValidStatus : Boolean;
+        in initializedOnThisSocket : Boolean;
+        in validatedProfile : Boolean;
+        return ready : Boolean = currentOpen and correlatedValidStatus and
+            (initializedOnThisSocket or validatedProfile);
+    }
+    attribute statusProfileGetsInFlightMax : Integer = 1;
+    attribute statusProfileFollowupsMax : Integer = 1;
+    action def PresentAndEditProfile {
+        doc /* Existing browser on embedded profile-mode flag, never error-based mode
+             guessing. One real window per endpoint; operator opens readiness origin.
+             For a selected persisted profile this operational browser flow uses the
+             effective HTTPS origin and a current scoped grant/transport established by
+             AuthenticateProfile/HandleScopedAuthorization. Trusted plaintext loopback
+             GET/PUT compatibility remains the HttpProfileGet/PutDecision API contract;
+             a plaintext selected profile reaches Connected only through the
+             runtime-token operating contract of AuthenticateProfile, never a grant.
+             Display full UUID/name/effective endpoint/boot UUID/revision with legacy
+             radio/link/version; title contains display name and port. Before Connected
+             require correlated status snapshot AND successful validated authenticated GET
+             /profile on EACH new socket, before station-ready or optional display.
+             After every await captured socket must remain current and OPEN before
+             applying HTTP results; the one exception is the save reply below (CL-073-01).
+             Established same-socket correlated status updates
+             version/radio/Connected/updated and enables Refresh immediately, independent
+             of settings HTTP. A status on an established socket reads no settings; a newer
+             announced revision (WstxStationProtocol profile.state) reads them asynchronously:
+             at most one GET in flight and one pending follow-up per socket; no mutation replay.
+             Failed background GET visibly fails and marks socket stale. Old/disconnected
+             results cannot restore Connected or mutate newer snapshots/forms.
+             GET body exactly ProfileRepresentation, no-store JSON <=8192 bytes.
+             GET absent Origin is valid; supplied wrong Origin 403, no CORS permission.
+             Form edits whole Settings only, expected revision and selected profile_id.
+             UUID/schema/endpoint/connection type/revision read-only. Standard selected;
+             Native FlexRadio is shown as the saved read-only type of a native profile
+             (NativeProfileDocument). All selections Saved; not activated;
+             radio stays unconfigured; audio/control selection availability independent.
+             PUT validates exact body shape/JSON/UTF8, media type/size before applying.
+             Disable form controls while saving, preserving their read-only state;
+             SaveSubmissionAllowed is the per-form submission guard. Refresh/profile
+             GET completion must retain saving, conflict OR unknown outcome in Save's disabled state;
+             a second submission during saving sends no second PUT. Restore editable
+             controls after completion, while permanent read-only controls stay disabled.
+             SnapshotApplicable rejects a lower revision from the same boot so a held
+             GET cannot overwrite an acknowledged newer save/form. A changed boot
+             permits authoritative restart/recovery resynchronization, including an
+             independently restored lower revision.
+             Invalid field preserves typed input with error, never Saved. Successful save
+             updates revision only on durable 200. The PUT reply is the save's outcome
+             (CL-073-01): a 200 whose body is a valid ProfileRepresentation shows Saved
+             revision N and is applied as the authoritative snapshot exactly as a GET
+             (SnapshotApplicable; a reload of the form and edited revision), with no
+             follow-up GET and no socket, authorization or form-context check after
+             the reply; a received 400/409/503 shows its refusal. The outcome is unknown
+             only when no readable reply arrives (network failure, timeout, abort,
+             unreadable or invalid body, or a reply the authorization component discards).
+             On 409 prompt reload before another
+             save. An unknown outcome also requires explicit reload before another save,
+             without automatic PUT replay or an assumed rollback. A newer announced revision or a reconnect reloads authoritative settings; preserve in-progress
+             edits until explicit reload or successful save. No settings polling/replay.
+             Refresh fixture <=2 seconds unshaped loopback. Existing watchdog 12-second
+             silence checked each second =>13-second detection (31 seconds while a deferred
+             client download is pending, WstxStationProtocol::BrowserLinkLifecycle); reconnect 1/2/4 seconds,
+             snapshot+profile within 10 seconds after loss detection/restored link.
+             Keep 12.3/12.4 existing bounds; no N-station thin-link guarantee is invented.
+             Literal-text output, keyboard access/readability at desktop and 360px.
+             HTTP error mappings are PutDecision/GetDecision/HttpStatus; unsupported
+             methods 405 no mutation; environment-only GET/PUT return 404. */
+        in authoritative : HttpProfileRepresentation;
+        out edited : HttpProfilePut;
+    }
+    enum def SaveBrowserEvent {
+        enum submit; enum success; enum rejected; enum conflict;
+        enum outcome_unknown; enum explicit_reload_validated;
+    }
+    state def BrowserSaveLifecycle {
+        attribute acceptedEvent : SaveBrowserEvent;
+        entry; then editable;
+        state editable; state saving; state conflict; state unknownOutcome;
+        transition submit first editable if acceptedEvent == SaveBrowserEvent::submit then saving;
+        transition saved first saving if acceptedEvent == SaveBrowserEvent::success then editable;
+        transition rejected first saving if acceptedEvent == SaveBrowserEvent::rejected then editable;
+        transition conflicted first saving if acceptedEvent == SaveBrowserEvent::conflict then conflict;
+        transition responseUnknown first saving if acceptedEvent == SaveBrowserEvent::outcome_unknown then unknownOutcome;
+        transition reloadConflict first conflict if acceptedEvent == SaveBrowserEvent::explicit_reload_validated then editable;
+        transition reloadUnknown first unknownOutcome if acceptedEvent == SaveBrowserEvent::explicit_reload_validated then editable;
+        doc /* contract 12.5: browser form state, separate from the server process lifecycle.
+             While saving, disable editable controls and allow no second PUT; completion
+             restores editable fields without changing permanently read-only fields.
+             Conflict and unknownOutcome keep Save disabled until explicit reload returns
+             a validated authoritative profile on the current OPEN socket. Background GET,
+             Refresh or reconnect alone cannot clear the reload requirement; failed reload
+             leaves it set. No mutation replay. Known rejection shows error, not Saved.
+             CL-073-01: success is a received 200 with a valid ProfileRepresentation body,
+             also when the socket, the authorization or the displayed snapshot changed
+             while it was in flight (a control save renews the authorization itself);
+             a received 400 is rejected and a received 409 is conflict likewise.
+             outcome_unknown is only a save without a readable reply. */
+    }
+    action presentAndEdit : PresentAndEditProfile;
+    attribute browserSource : String = "client/index.html; client/app.js; client/style.css";
+    dependency presentationOwner from presentAndEdit to WstxArchitecture::physicalStation::frontend::browsers;
+    satisfy WstxProfiles::'CL-005-05' by presentAndEdit;
+    satisfy WstxRequirements::'CL-073-01' by presentAndEdit;
+
+    package IndependentVerification {
+        doc /* Case identities remain WstxRequirements::TC-022-001..005, projected
+             from WstxRequirements and this package. No cases/verdicts are regenerated from
+             action calculations. These declarations refine their subjects/oracles.
+             Source/test companions retain delivered scoped profile/API/legacy-socket
+             subsets, level 2 isolated automated Windows PC tests. The operational HTTPS/
+             grant fixture conversion and complete dual-transport companions below remain
+             pending; existing source is not complete automation of the expanded cases.
+             The independently sized plaintext8192 response-budget companion remains
+             implemented and mandatory; no existing companion or scoped evidence is discarded.
+             FOUR real candidate processes, distinct saved ports/profiles, four real
+             Chromium windows sharing ONE context/cookie store; no radio/device/live
+             account/external-service/duplicate hosted run. Rust profile tests in
+             server/src/profile_tests.rs and server/src/auth_tests.rs; communication browser/
+             process cases in tests/profiles.test.cjs, registered beside the legacy suite.
+             Case names are TC-022-001..005; run node --test --test-concurrency=1
+             tests/profiles.test.cjs after cargo build --locked. Rust companions run with
+             cargo test --workspace --locked --all-targets. Execution evidence remains
+             on issue #5; model declarations are not run results.
+             Fixture expects UUID 00000000-0000-4000-8000-00000000000i for i=1..4,
+             Station i, TESTi, JN47AA, revision0, standard, fixture-input-i/output-i,
+             disabled/null/disabled control. Ports reserved+recorded independently.
+             Operational browser windows in TC-022-001/002/003/005 and their save/readiness
+             regressions bind127.0.0.1 with saved HTTPS origins https://localhost:<port>
+             and legitimate selected grants in the shared browser context. Initial
+             selected-configuration identity migration creates no grant or commissioning;
+             fresh setup follows AuthenticateProfile/HandleScopedAuthorization, and
+             retained setup proves its existing grant without token/enrollment replay.
+             Plaintext origin null =>http://127.0.0.1:<port> remains a separate HTTP/launch
+             compatibility variant, never a claim of Connected or protected WS readiness.
+             Preserve every API field/size/error/storage/startup variant: the full trusted
+             numeric-loopback no-cookie GET/PUT matrix and current-grant HTTPS protected
+             ordered checks are independently mandatory. The exact8192 response-budget
+             fixture remains plaintext. Tokens independently generated, never logged.
+             Auth setup cannot commission/open/query/set/close CAT/audio or key PTT.
+             Hand-authored expected edit table and independently parsed JSON/file
+             hashes are the oracle, NOT new code/model-produced golden outputs.
+             Readiness <=10s, Refresh <=2s, recovery <=10s after detection/restored link.
+             No fewer-than-four/zero-check pass; missing prerequisites fail. Variable-N
+             implementation is reviewed to reject fixed four-entry arrays/assumptions;
+             additional mandatory 1/6-server runtime repeats are not required. */
+        verification variableServers {
+            subject operation : PresentAndEditProfile;
+            objective { verify WstxProfiles::'CL-005-01'; verify WstxRequirements::'CL-005-02'; verify WstxRequirements::'CL-005-03'; verify WstxProfiles::'CL-005-05'; }
+            doc /* TC-022-001: operational HTTPS/grant setup and separate plaintext API
+                 compatibility use the common partition above. Four PID/listener/boot-ID/
+                 visible-UUID endpoints, Refresh all. Edit only profile1: Edited station 1,
+                 changed-input-1, CAT endpoint
+                 fixture-cat-1, CAT/disabled; retain output. Second window on same
+                 station reloads acknowledged revision; other three settings/bytes stable.
+                 Repeat audio-only/control-only/null-audio/CAT-disabled edits. Radio
+                 stays unconfigured; no device opens; native disabled. Validate every
+                 4.2 domain empty/max/one-beyond, types/duplicates/extra/missing keys,
+                 malformed JSON/UTF8/enum/CAT/PTT, wrong UUID, stale/exhausted revision,
+                 exact8192/8193 HTTP-byte bodies padded with whitespace and media type.
+                 Valid boundaries persist; invalid leaves memory/disk/revision intact.
+                 Two stale competing windows: one winner/one409, no merge.
+                 Hold an announced revision's GET, start/hold PUT, then release GET: Save stays disabled,
+                 repeated submit sends no second PUT. Release PUT, require one revision
+                 increment and usable editable controls/Save, preserving read-only controls.
+                 Inverse order on revision0 station: hold an old announced GET, complete PUT,
+                 whose 200 reply is the revision1 snapshot (CL-073-01), then release old GET. Visible revision/form/name and
+                 Saved1 feedback remain1; same-boot ordering does not reject changed boots.
+                 Render <img src=x onerror=alert(1)> display name and
+                 <script>alert(1)</script> audio ID literally, no element/dialog/script.
+                 Desktop/360px identity/errors/Save readable and keyboard reachable.
+                 Oracle: independent canonical domain table and independent fixture edits. */
+        }
+        verification statusReadiness {
+            subject operation : PresentAndEditProfile;
+            objective { verify WstxRequirements::'CL-005-02'; verify WstxRequirements::'CL-005-03'; verify WstxRequirements::'CL-006-04'; }
+            doc /* TC-022-005, tests/profiles.test.cjs, level2 Windows real Chromium/server.
+                 Use the common operational HTTPS/grant partition before each relevant
+                 protected socket; count profile GETs separately from auth setup, never
+                 substitute auth status for the correlated WS observation.
+                 Established socket: Refresh reads no profile; an independent save announces the
+                 revision and the browser reads once. Hold that GET; actual correlated WS response and
+                 changed updated/enabled Refresh <=2s BEFORE HTTP release. Repeated
+                 Refresh adds no GET; a second save while held starts no parallel read, and
+                 one follow-up gets that newer revision and retains dirty input. Fresh socket: held initial GET
+                 withholds Connected/station-ready/optional display until validated.
+                 Close old socket with GET held, establish replacement, release old:
+                 no reconnection or newer snapshot/form overwrite. Initial/background
+                 GET failure visibly fails/stales, never successful configuration.
+                 Oracle: WstxRequirements and this package, real WS and prepared revisions. */
+        }
+        dependency identity005 from statusReadiness to WstxRequirements::'TC-022-005';
+        dependency identity001 from variableServers to WstxRequirements::'TC-022-001';
+    }
 }

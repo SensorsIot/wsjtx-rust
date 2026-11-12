@@ -1,5 +1,22 @@
 use super::*;
 use std::cell::Cell;
+// Each test module of the station executable includes the test-only reader itself.
+#[allow(dead_code, clippy::duplicate_mod)]
+#[path = "model_values.rs"]
+mod model_values;
+
+/// A launch refusal the model lists: the name is checked against the members of
+/// `WstxProfiles::StartupOutcome`, so a test fails when the model no longer lists it.
+fn outcome(name: &'static str) -> &'static str {
+    let members = model_values::Model::load()
+        .enum_members("WstxProfiles::StartupOutcome")
+        .unwrap_or_else(|e| panic!("model value {e}"));
+    assert!(
+        members.iter().any(|m| m == name),
+        "{name} is not a StartupOutcome of the model {members:?}"
+    );
+    name
+}
 
 thread_local! { static FAULT: Cell<Option<&'static str>> = const { Cell::new(None) }; }
 
@@ -49,7 +66,7 @@ fn expected_authorization_corruption_blocks_profile_startup_without_rewriting_fi
             fs::write(directory.join("authorization.json"), bytes).unwrap();
         }
         let attempted = Store::open(&directory);
-        let rejected = matches!(attempted, Err("resource_unavailable"));
+        let rejected = matches!(attempted, Err(e) if e == outcome("resource_unavailable"));
         drop(attempted);
         assert_eq!(fs::read(directory.join("profile.json")).unwrap(), original);
         assert_eq!(
@@ -133,7 +150,7 @@ fn storage_commit_point_and_os_ownership_survive_reopen() {
     let directory = std::env::temp_dir().join(format!("wstx-profile-unit-{}", new_uuid().unwrap()));
     Store::create(&directory).unwrap();
     let (mut store, _) = Store::open(&directory).unwrap();
-    assert!(matches!(Store::open(&directory), Err("profile_in_use")));
+    assert!(matches!(Store::open(&directory), Err(e) if e == outcome("profile_in_use")));
     let old = fs::read(directory.join("profile.json")).unwrap();
     // Stop at the actual production write/flush boundary, before replacement.
     // A complete, synced candidate temp MUST NOT be promoted on restart.
@@ -223,7 +240,7 @@ fn native_document() -> serde_json::Value {
 fn native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged() {
     let accept = |value: &serde_json::Value| {
         serde_json::from_value::<Document>(value.clone())
-            .map_err(|_| "invalid_profile")
+            .map_err(|_| outcome("invalid_profile"))
             .and_then(|d| d.validate().map(|_| d))
     };
     let native = accept(&native_document()).unwrap();
@@ -298,14 +315,17 @@ fn native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged() {
         "unsupported_schema",
     );
     for (value, expected) in cases {
-        assert_eq!(accept(&value).err(), Some(expected), "{value}");
+        assert_eq!(accept(&value).err(), Some(outcome(expected)), "{value}");
     }
     let mut legacy = standard.clone();
     legacy["connection_type"] = "native_flex".into();
-    assert_eq!(accept(&legacy).err(), Some("unsupported_connection_type"));
+    assert_eq!(
+        accept(&legacy).err(),
+        Some(outcome("unsupported_connection_type"))
+    );
     let mut extra = standard;
     extra["native"] = native_document()["native"].clone();
-    assert_eq!(accept(&extra).err(), Some("invalid_profile"));
+    assert_eq!(accept(&extra).err(), Some(outcome("invalid_profile")));
     let settings = native.settings();
     assert_eq!(settings.validate_native(), Ok(()));
     let mut device = settings.clone();
@@ -323,12 +343,12 @@ fn native_profile_creation_persists_intent_without_runtime_handles() {
     let directory = std::env::temp_dir().join(format!("wstx-native-{}", new_uuid().unwrap()));
     assert_eq!(
         Store::create_native(&directory, "ant 1", None),
-        Err("invalid_runtime_configuration")
+        Err(outcome("invalid_runtime_configuration"))
     );
     assert!(!directory.exists());
     assert_eq!(
         Store::create_native(&directory, "ANT1", Some("radio.local:4992")),
-        Err("invalid_runtime_configuration")
+        Err(outcome("invalid_runtime_configuration"))
     );
     Store::create_native(&directory, "ANT1", None).unwrap();
     let text = fs::read_to_string(directory.join("profile.json")).unwrap();

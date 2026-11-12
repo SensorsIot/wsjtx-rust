@@ -1791,7 +1791,7 @@ package WstxArchitecture {
         port audioStatus : ~AudioStatus;
     }
     part def WebAdapter {
-        attribute privateRuntimeInputs : WstxProfiles::RuntimeInputs;
+        attribute privateRuntimeInputs : WstxStationProtocol::RuntimeInputs;
         attribute effectiveEndpoint : WstxStationProtocol::EndpointPolicy;
         doc /* Runtime inputs and effective transport/authentication settings are distinct
              from saved endpoint intent. No credential values are instantiated here. */
@@ -1825,8 +1825,8 @@ package WstxArchitecture {
         connection storedSamples connect recordings.samples to recordedSamples;
     }
     part def RecordedSource {
-        attribute storedMetadata : WstxRecordingReceive::RecordingMetadata[*];
-        attribute storedManifests : WstxRecordingReceive::RecordingManifest[*];
+        attribute storedMetadata : WstxProfileRecordings::RecordingMetadata[*];
+        attribute storedManifests : WstxProfileRecordings::RecordingManifest[*];
         doc /* Validated profile-owned recording, selected by identity rather than arbitrary
              client paths. No live audio device is required for this input. */
         port upload : ~RecordingTransfer;

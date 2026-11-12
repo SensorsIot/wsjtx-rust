@@ -5,8 +5,14 @@ package WstxRequirements {
     private import WstxModemDecode::'TC-004-002';
     private import WstxModemDecode::'TC-004-003';
     private import WstxOfflineDecode::'TC-005-002';
+    private import WstxProfiles::'CL-005-01';
+    private import WstxProfiles::'CL-005-04';
+    private import WstxProfiles::'CL-005-05';
+    private import WstxProfiles::'TC-022-002';
+    private import WstxProfiles::'TC-022-003';
+    private import WstxProfileRecordings::'TC-018-001';
+    private import WstxProfileRecordings::'TC-018-002';
     public import WstxRequirementsReceive::*;
-    public import WstxRequirementsProfile::*;
     public import WstxRequirementsMcp::*;
     public import WstxRequirementsAudio::*;
     public import WstxRequirementsRadioControl::*;
@@ -964,7 +970,7 @@ package WstxRequirements {
 
              **Setup partition:** Operational browser windows and save/readiness regressions
              use four saved HTTPS localhost endpoints and legitimate selected grants in one
-             browser context, per WstxProfiles::IndependentVerification. Plaintext trusted
+             browser context, per WstxOperatingLayout::IndependentVerification. Plaintext trusted
              numeric-loopback HTTP/launch compatibility is a separate mandatory companion,
              not an operational configuration GUI or Connected/protected-WS prerequisite.
 
