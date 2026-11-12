@@ -11,6 +11,7 @@ use axum::extract::RawQuery;
 use recording_http::authorize;
 use selection_http::empty;
 use std::collections::VecDeque;
+use strategy::Leave;
 use wstx_rust::transmit::service::DisarmCause;
 
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
@@ -391,10 +392,20 @@ struct Target {
     band: Option<&'static str>,
     /// Its WstxContest::ContestValueOrder value at the selection (a contest run).
     value: Option<crate::contest::ContestValue>,
-    /// A contest stay (situation 1 at x or more, heard, nothing more valuable): WD:∞.
+    /// A contest stay (#97 LeaveRule contest: heard, decoded, nothing more valuable).
     staying: bool,
     /// The called station's frequency (FreeTxSlot keeps clear of it), from its last decode.
     hz: Option<u32>,
+    /// #97 TxMoveRule: repetitions since the selection or the last move.
+    move_count: u64,
+    /// #97 LeaveRule contest: the Tx changes made.
+    changes: u64,
+    /// #97 LeaveRule until_logged: the period start (UTC ms) of his newest decoded message, and
+    /// whether he is decoded in the latest publication of his parity (LeaveCountLabel).
+    last_heard_ms: Option<i64>,
+    decoded_last: bool,
+    /// #97 BusyPause: the paused calls of the message due (at most N, the Tx watchdog limit).
+    paused: u64,
 }
 struct Run {
     id: String,
@@ -435,7 +446,8 @@ struct Run {
     unattended: bool,
     /// WstxStrategy::StrategyWatchdog: the last slot check, and WD:n (None: no count, a stay).
     slot_check: Option<Value>,
-    remaining: Option<u32>,
+    /// #97 WstxStrategy::LeaveCountLabel: the run snapshot's leave.
+    leave_view: Option<Value>,
     /// WstxStrategy::FreeTxSlot: the last slot decision {hz, power_db, his_end}, and the station
     /// time from which periods count (Inner's).
     tx_slot: Option<Value>,
@@ -444,10 +456,8 @@ struct Run {
     hearing: Option<Value>,
     /// WstxStrategy::CqWhenNoTarget: consecutive fresh publications with nothing listed.
     empty_publications: u32,
-    /// #89 FreeTxSlot "Waiting for the newest period": a contest Run's CQ decided in waiting
-    /// without a fresh publication waits for the newest Rx period's complete publication, at the
-    /// latest until this station time (the end of the period in progress when the wait began).
-    cq_wait: Option<i64>,
+    /// #97 WstxStrategy::BusyPause: the active strategy's busy_pause (a strategy run).
+    busy_pause: bool,
 }
 impl Run {
     #[allow(
@@ -494,12 +504,12 @@ impl Run {
             pounce,
             unattended: false,
             slot_check: None,
-            remaining: None,
+            leave_view: None,
             tx_slot: None,
             slot_since_ms: i64::MIN,
             hearing: None,
             empty_publications: 0,
-            cq_wait: None,
+            busy_pause: false,
         }
     }
     /// WstxStrategy::LeaveRule leaving: run.left, the left station's QuietTime on this band and
@@ -533,10 +543,9 @@ impl Run {
         self.progress = None;
         self.unanswered = 0;
         self.target = Target::default();
-        self.remaining = None;
+        self.leave_view = None;
         self.hearing = None;
         self.empty_publications = 0;
-        self.cq_wait = None;
     }
 }
 /// #81 WstxStrategy::StartedQso finishing guard: a run's started QSO that a run end let finish, the
@@ -665,16 +674,30 @@ impl Owner {
         (inner.policy_revision, inner.run_revision)
     }
     /// WstxStrategy::StrategyWatchdog: the strategy run's own contact, which sends past the
-    /// Tx watchdog limit while the run is attended, and its WD:n (the repetitions left before
-    /// LeaveRule leaves it; None during a contest stay).
-    pub(crate) fn repeat_exempt(&self) -> Option<(String, Option<u32>)> {
+    /// Tx watchdog limit while the run is attended (#97: no WD for it; the leave count is the
+    /// run's own label, LeaveCountLabel).
+    pub(crate) fn repeat_exempt(&self) -> Option<String> {
         self.lock()
             .run
             .as_ref()
             .filter(|run| {
                 run.config.strategy && run.state == RunState::ContactActive && !run.unattended
             })
-            .and_then(|run| Some((run.contact_id.clone()?, run.remaining)))
+            .and_then(|run| run.contact_id.clone())
+    }
+    /// #97 WstxContact::BusyPartner: the contact a run owns and how it treats a busy partner. A
+    /// strategy or contest run whose strategy has busy_pause on takes the split move, and its sends
+    /// pause while it is attended; a pounce, an MCP policy run and busy_pause off neither.
+    pub(crate) fn busy_policy(&self) -> Option<crate::contact::Automated> {
+        let inner = self.lock();
+        let run = inner.run.as_ref()?;
+        let contact_id = run.contact_id.clone()?;
+        let split = run.config.strategy && run.pounce.is_none() && run.busy_pause;
+        Some(crate::contact::Automated {
+            contact_id,
+            split,
+            pause: split && !run.unattended,
+        })
     }
     /// The strategy or contest run's own contact (attended or not): its target is the one
     /// the PSK Reporter feed subscribes to (WstxStrategy::HearingFeed).
@@ -703,7 +726,7 @@ impl Owner {
                 "completed_contacts":run.completed,"unanswered_periods":run.unanswered,
                 "contact_id":run.contact_id,"selected":run.selected,"last_decision":run.last_decision,
                 "given_up":run.given_up,"left":run.left,"quiet":quiet,"hearing":run.hearing,
-                "tx_slot":run.tx_slot,"slot_check":run.slot_check,
+                "tx_slot":run.tx_slot,"slot_check":run.slot_check,"leave":run.leave_view,
                 "pounce":run.pounce.as_ref().map(|(call, band)| json!({"call":call,"band":band}))})
         });
         let free_tx_slots = inner.free_tx_slots.as_ref().map(|(_, value)| value);
@@ -1275,6 +1298,7 @@ impl Owner {
         contact: &contact_http::Station,
         state: &ProfileState,
         contest: Option<&crate::contest::Selection>,
+        bands: Option<&[String]>,
     ) -> Option<&'static str> {
         let r = &state.recording;
         let live = r
@@ -1331,6 +1355,12 @@ impl Owner {
             if !c.in_period(now) {
                 return Some("outside_period");
             }
+        }
+        // #97 StrategyBands: off the strategy's bands (an unknown band is none of them).
+        if let Some(bands) = bands
+            && !strategy::station_band(r).is_some_and(|b| bands.iter().any(|x| x == b))
+        {
+            return Some("band");
         }
         None
     }
@@ -1389,8 +1419,18 @@ impl Owner {
         let contest = saved_config
             .as_ref()
             .and_then(strategy::Config::automatic_contest);
+        let bands = saved_config
+            .as_ref()
+            .and_then(strategy::Config::active_strategy)
+            .and_then(|s| s.bands.clone());
         let waiting_reason = if is_strategy {
-            Self::strategy_context(&mut inner, contact, state, contest.as_ref())
+            Self::strategy_context(
+                &mut inner,
+                contact,
+                state,
+                contest.as_ref(),
+                bands.as_deref(),
+            )
         } else {
             let run = inner.run.as_ref().expect("checked");
             let live = r.live_identity();
@@ -1476,6 +1516,7 @@ impl Owner {
         if let Some((id, _, _, _)) = &fresh {
             run.last_decode = *id;
         }
+        run.busy_pause = chosen.as_ref().is_some_and(|(_, s)| s.busy_pause);
         run.quiet.retain(|q| q.until > now);
         if r.clients.present() {
             run.client_seen = now;
@@ -1641,15 +1682,23 @@ impl Owner {
                 // WstxStrategy::PskrUse: whether the target hears us (unknown with Use off).
                 let hearing = pskr::target_hearing(r, target.as_deref(), mode);
                 let heard = hearing.hears_us();
-                // LeaveRule: unattended x applies, never doubled, no stay and no caller exception.
+                // #97 TxMoveRule: the PSK case (he reports: HearingFeed "He reports").
+                let reports = heard || pskr::target_reports(r, target.as_deref(), mode);
+                // LeaveRule: unattended no m, no stay and no caller exception.
                 let hears = heard && !run.unattended;
-                if run.hearing.as_ref() != Some(&hearing.json()) {
-                    run.hearing = Some(hearing.json());
+                let mut hearing_json = hearing.json();
+                hearing_json["reports"] = json!(reports);
+                if run.hearing.as_ref() != Some(&hearing_json) {
+                    run.hearing = Some(hearing_json);
                     inner.run_revision += 1;
                 }
                 let run = inner.run.as_mut().expect("checked");
-                let x = u32::try_from(chosen.1.repetitions).unwrap_or(u32::MAX);
-                if let Some((_, first, next, _)) = fresh.filter(|_| partner_period) {
+                let leave = chosen.1.leave;
+                // #97 BusyPause: paused calls in an attended run whose strategy has it on.
+                let busy_pause = chosen.1.busy_pause && !run.unattended;
+                let busy_now = contact.busy_facts().0;
+                let tx_limit = u64::from(view.as_ref().map_or(6, |v| v.tx_calls));
+                if let Some((_, first, next, published)) = fresh.filter(|_| partner_period) {
                     let records = fresh_records(r, &run.identity, first, next);
                     let seen = assess(
                         run,
@@ -1664,12 +1713,47 @@ impl Owner {
                     if let Some(hz) = seen.hz {
                         run.target.hz = Some(hz);
                     }
+                    if let Some(ms) = seen.heard_ms {
+                        run.target.last_heard_ms =
+                            Some(run.target.last_heard_ms.map_or(ms, |m| m.max(ms)));
+                    }
+                    run.target.decoded_last = seen.decoded;
                     inner.run_revision += 1;
                     let run = inner.run.as_mut().expect("checked");
+                    let retry = chosen.1.retry_minutes;
+                    // #97 LeaveRule until_logged: gone at the first publication of his parity
+                    // whose period start is g minutes or more after his newest decode (also after
+                    // his answer); attended only (unattended the stop at N is back). The period is
+                    // the publication's, so an empty publication counts as well.
+                    let period_ms =
+                        published
+                            .as_deref()
+                            .and_then(contact::parse_utc)
+                            .or_else(|| {
+                                records
+                                    .first()
+                                    .and_then(|v| v["period_start_utc"].as_str())
+                                    .and_then(contact::parse_utc)
+                            });
+                    if let (Leave::UntilLogged { gone_minutes }, Some(at), Some(last), false) =
+                        (leave, period_ms, run.target.last_heard_ms, run.unattended)
+                        && !seen.decoded
+                        && at - last >= i64::try_from(gone_minutes * 60_000).unwrap_or(i64::MAX)
+                    {
+                        run.leave(target, "gone", band, retry, now);
+                        inner.run_revision += 1;
+                        drop(inner);
+                        cancel(contact, state);
+                        disarm(contact, state);
+                        return;
+                    }
                     if seen.answered {
-                        // Progress, also a repeated message (the #63 fix): the count restarts.
+                        // Progress, also a repeated message (the #63 fix): every count restarts.
                         run.target.answered = true;
                         run.target.staying = false;
+                        run.target.move_count = 0;
+                        run.target.changes = 0;
+                        run.target.paused = 0;
                         run.unanswered = 0;
                     } else if seen.caller
                         && !run.target.answered
@@ -1678,74 +1762,136 @@ impl Owner {
                     {
                         // The one exception before an exit criterion: a caller of my call is
                         // answered at once, selected from this publication.
-                        run.leave(target, "caller", band, chosen.1.quiet_minutes, now);
+                        run.leave(target, "caller", band, retry, now);
                         run.last_decode = run.last_decode.saturating_sub(1);
                         inner.run_revision += 1;
                         drop(inner);
                         cancel(contact, state);
                         disarm(contact, state);
                         return self.tick(contact, state, publication);
+                    } else if busy_pause && busy_now && run.target.paused < tx_limit {
+                        // #97 BusyPause: this repetition is a paused call (his publication comes
+                        // before the stop point of the send it counts); it counts for nothing of
+                        // the run: no leave count, no TxMoveRule count, no move.
+                        run.target.paused += 1;
                     } else {
-                        run.unanswered += 1;
-                        let n = u32::try_from(run.unanswered).unwrap_or(u32::MAX);
-                        let leave_at = if hears { x.saturating_mul(2) } else { x };
-                        // A contest stays in situation 1 (he repeats) at x or more while he
-                        // hears us and nothing more valuable is listed.
-                        let stays =
-                            contest.is_some() && seen.decoded && n >= x && hears && !seen.better;
-                        run.target.staying = stays;
-                        let leaves = if contest.is_some() && seen.decoded && n >= x {
-                            !stays
+                        // #97 TxMoveRule: the PSK case and its k.
+                        let (case, k) = if heard {
+                            ("heard", chosen.1.tx_move_every.heard)
+                        } else if reports {
+                            ("not_heard", chosen.1.tx_move_every.not_heard)
                         } else {
-                            n >= leave_at
+                            ("no_reports", chosen.1.tx_move_every.no_reports)
                         };
-                        if leaves {
-                            run.leave(target, "repetitions", band, chosen.1.quiet_minutes, now);
+                        let mut try_move = false;
+                        let mut leaves = None;
+                        match leave {
+                            Leave::Calls { calls, heard: m } => {
+                                run.unanswered += 1;
+                                let leave_at = if hears { m } else { calls };
+                                if run.unanswered >= leave_at {
+                                    leaves = Some("repetitions");
+                                }
+                                run.target.move_count += 1;
+                                try_move = k >= 1 && run.target.move_count >= k;
+                            }
+                            Leave::UntilLogged { .. } => {
+                                run.unanswered += 1;
+                                run.target.move_count += 1;
+                                try_move = k >= 1 && run.target.move_count >= k;
+                            }
+                            Leave::Contest { tx_changes } => {
+                                // Situation 1 while he hears us and nothing more valuable is
+                                // listed: stay, with no count.
+                                let stays = seen.decoded && hears && !seen.better;
+                                run.target.staying = stays;
+                                // unanswered_periods counts every repetition (the snapshot).
+                                run.unanswered += 1;
+                                if !stays {
+                                    run.target.move_count += 1;
+                                    let change_point = k == 0 || run.target.move_count >= k;
+                                    // Unattended the stop at N ends it: Tx moves only.
+                                    if run.unattended {
+                                        try_move = k >= 1 && run.target.move_count >= k;
+                                    } else if change_point {
+                                        if run.target.changes >= tx_changes {
+                                            leaves = Some("tx_changes");
+                                        } else {
+                                            run.target.changes += 1;
+                                            run.target.move_count = 0;
+                                            try_move = k >= 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(reason) = leaves {
+                            run.leave(target, reason, band, retry, now);
                             inner.run_revision += 1;
                             drop(inner);
                             cancel(contact, state);
                             disarm(contact, state);
                             return;
                         }
-                        // StrategyWatchdog slot check: at each repetition of a target that has
-                        // not answered and is not known to hear us, Tx takes the quietest slot
-                        // (with Hold Tx on Tx alone, #39 holdtx).
-                        let hz = if !run.target.answered && !heard {
+                        let before = contact.status_facts().tx_hz;
+                        // A target that has answered has proved the slot: no move. #97 BusyPause:
+                        // no move while he is busy (the split move keeps Tx clear of him).
+                        if try_move && !run.target.answered && !(chosen.1.busy_pause && busy_now) {
                             let (revision, _, _) = contact.facts();
-                            let current = contact.status_facts().tx_hz;
                             let called = run.target.hz;
-                            // A refused move changes nothing: checked again at the next one.
+                            // A refused move or no candidate changes nothing: tried again at
+                            // the next repetition (the count is kept).
                             let _ = take_slot(
                                 run,
                                 contact,
                                 state,
-                                current,
+                                before,
                                 called,
                                 revision,
-                                SlotRule::Check,
+                                SlotRule::Move,
                             );
-                            contact.status_facts().tx_hz
-                        } else {
-                            contact.status_facts().tx_hz
-                        };
-                        run.slot_check = Some(json!({"repetitions":n,"hears_us":heard,"hz":hz}));
+                        }
+                        let hz = contact.status_facts().tx_hz;
+                        let moved = hz != before;
+                        if moved && !matches!(leave, Leave::Contest { .. }) {
+                            run.target.move_count = 0;
+                        }
+                        run.slot_check = Some(json!({"repetitions":run.unanswered,"case":case,
+                            "hears_us":heard,"moved":moved,"hz":hz}));
                     }
                 }
-                // WD:n counts down to the repetition at which the run leaves (x, or 2x while he
-                // hears us); none during a contest stay.
+                // WstxStrategy::LeaveCountLabel: the run's leave {mode, remaining, busy, paused,
+                // staying}; the Tx watchdog's WD:n is never used for it.
                 let run = inner.run.as_mut().expect("checked");
-                let n = u32::try_from(run.unanswered).unwrap_or(u32::MAX);
-                let leave_at = if hears { x.saturating_mul(2) } else { x };
                 if !hears {
                     run.target.staying = false;
                 }
-                let remaining = if run.target.staying {
-                    None
-                } else {
-                    Some(leave_at.saturating_sub(n).max(1))
+                let utc = utc_now(r);
+                let remaining: Option<u64> = match leave {
+                    Leave::Calls { calls, heard: m } => {
+                        let at = if hears { m } else { calls };
+                        Some(at.saturating_sub(run.unanswered).max(1))
+                    }
+                    Leave::UntilLogged { gone_minutes } => run
+                        .target
+                        .last_heard_ms
+                        .filter(|_| !run.target.decoded_last)
+                        .map(|m| {
+                            let gone = i64::try_from(gone_minutes * 60_000).unwrap_or(i64::MAX);
+                            u64::try_from((m.saturating_add(gone) - utc).max(0))
+                                .unwrap_or(0)
+                                .div_ceil(60_000)
+                        }),
+                    Leave::Contest { tx_changes } => {
+                        (!run.target.staying).then(|| tx_changes.saturating_sub(run.target.changes))
+                    }
                 };
-                if run.remaining != remaining {
-                    run.remaining = remaining;
+                // #97 BusyPause: busy while the target is busy and the calls pause.
+                let busy = busy_pause && busy_now;
+                let view = json!({"mode":leave.mode(),"remaining":remaining,"busy":busy,
+                    "paused":run.target.paused,"staying":run.target.staying});
+                if run.leave_view.as_ref() != Some(&view) {
+                    run.leave_view = Some(view);
                     inner.run_revision += 1;
                 }
             }
@@ -1766,17 +1912,9 @@ impl Owner {
                     return stop(&mut inner, "no_client", false);
                 }
                 if waiting_reason.is_some() {
-                    // #89 a waiting reason during the wait: no decision; a new wait when it ends.
-                    run.cq_wait = None;
                     return;
                 }
-                // #63 WstxContest::ContestRun: Run calls CQ, from a slot quiet in my Rx parity
-                // (#66).
-                let run_cq = contest.is_some_and(|s| s.operation == crate::contest::Operation::Run);
                 let Some((_, first, next, _)) = fresh else {
-                    if run_cq && cq_decision_due(run, contact, r) {
-                        return self.calling(&mut inner, contact, state);
-                    }
                     return;
                 };
                 let records = fresh_records(r, &run.identity, first, next);
@@ -1822,16 +1960,12 @@ impl Owner {
                 inner.run_revision += 1;
                 let run = inner.run.as_mut().expect("checked");
                 let Some(pick) = list.into_iter().next() else {
-                    if run_cq {
-                        return self.calling(&mut inner, contact, state);
-                    }
-                    // WstxStrategy::CqWhenNoTarget: after two fresh publications with nothing
-                    // listed the run calls CQ.
-                    if chosen.as_ref().is_some_and(|(_, s)| s.cq_when_no_target)
-                        && contest.is_none()
-                    {
+                    // WstxStrategy::CqWhenNoTarget: after cq_wait_periods fresh publications
+                    // with nothing listed (either parity) the run calls CQ (CL-097-08); the
+                    // count starts at 0 at Auto on and whenever the run waits again.
+                    if let Some((_, s)) = chosen.as_ref().filter(|(_, s)| s.cq_when_idle) {
                         run.empty_publications += 1;
-                        if run.empty_publications >= 2 {
+                        if u64::from(run.empty_publications) >= s.cq_wait_periods {
                             return self.calling(&mut inner, contact, state);
                         }
                     }
@@ -1881,7 +2015,6 @@ impl Owner {
     /// in my Rx parity (FreeTxSlot, #66; no called station), then enable_tx with no partner.
     fn calling(&self, inner: &mut Inner, contact: &contact_http::Station, state: &ProfileState) {
         let run = inner.run.as_mut().expect("checked");
-        run.cq_wait = None;
         let (revision, _, _) = contact.facts();
         let tx = contact.status_facts().tx_hz;
         let Some(revision) = take_slot(run, contact, state, tx, None, revision, SlotRule::Listen)
@@ -1907,6 +2040,11 @@ impl Owner {
             "generation":run.identity.2,"sequence":pick.sequence});
         let (revision, _, _) = contact.facts();
         let held_tx = contact.status_facts().tx_hz;
+        // #97 CqTargetList: a strategy run's own select_row (never a pounce's).
+        let own = run.config.strategy && run.pounce.is_none();
+        contact
+            .strategy_select
+            .store(own, std::sync::atomic::Ordering::Release);
         let selected = contact.operate_as(
             state,
             contact_body(
@@ -1918,6 +2056,9 @@ impl Owner {
             true,
             AUTOMATION,
         );
+        contact
+            .strategy_select
+            .store(false, std::sync::atomic::Ordering::Release);
         let Ok((_, receipt)) = selected else {
             if from_cq {
                 // The operator's double-click won the race: the contact is theirs.
@@ -2012,6 +2153,11 @@ impl Owner {
             value: pick.value,
             staying: false,
             hz: Some(called),
+            move_count: 0,
+            changes: 0,
+            last_heard_ms: pick.period_ms,
+            decoded_last: true,
+            paused: 0,
         };
         inner.run_revision += 1;
     }
@@ -2078,7 +2224,6 @@ fn manual(inner: &mut Inner) {
         run.contact_id = None;
         run.progress = None;
         run.unanswered = 0;
-        run.cq_wait = None;
         inner.run_revision += 1;
     }
 }
@@ -2098,6 +2243,8 @@ struct Pick {
     caller: bool,
     value: Option<crate::contest::ContestValue>,
     text: Option<String>,
+    /// #97 LeaveRule until_logged: the period start (UTC ms) of the message it was selected on.
+    period_ms: Option<i64>,
 }
 impl Pick {
     fn plain(call: String, sequence: u64) -> Self {
@@ -2107,8 +2254,17 @@ impl Pick {
             caller: false,
             value: None,
             text: None,
+            period_ms: None,
         }
     }
+}
+/// The period start (UTC ms) of the record with this sequence.
+fn period_of(records: &[Value], sequence: u64) -> Option<i64> {
+    records
+        .iter()
+        .find(|r| r["sequence"].as_u64() == Some(sequence))
+        .and_then(|r| r["period_start_utc"].as_str())
+        .and_then(contact::parse_utc)
 }
 /// The verdicts of `records` as the run's own evaluation reads them: WstxContest::ContestVerdict
 /// in a contest (a dupe has no rank), WstxStrategy::Verdict otherwise. The step never builds the
@@ -2126,14 +2282,13 @@ fn verdicts(
             let log = contact
                 .strategy
                 .contest_log_latest(state, c, st.my_locator.as_deref());
-            crate::contest::evaluate(c, records, &st, log.as_deref())
+            strategy::evaluate_contest(s, c, records, &st, log.as_deref())
         }
         None => strategy::evaluate(s, records, &st),
     }
 }
 /// WstxStrategy::StrategyRun Waiting: the verdicts with a rank, eligible (not completed in this
-/// run on this band and mode, not given up, not in QuietTime), one per call, in value order; a
-/// contest Run lists only its callers.
+/// run on this band and mode, not given up, not in QuietTime), one per call, in value order.
 fn picks(
     run: &Run,
     contact: &contact_http::Station,
@@ -2144,12 +2299,10 @@ fn picks(
     now: Instant,
 ) -> Vec<Pick> {
     let band = strategy::station_band(&state.recording);
-    let callers_only = contest.is_some_and(|c| c.operation == crate::contest::Operation::Run);
     let mut seen: Vec<String> = Vec::new();
     verdicts(contact, state, chosen, contest, records)
         .into_iter()
         .filter(|v| v.rank.is_some() && eligible(run, &v.facts.from, band, now))
-        .filter(|v| !callers_only || v.kind == Some(strategy::Kind::Caller))
         .filter(|v| {
             let first = !seen.contains(&v.facts.from);
             seen.push(v.facts.from.clone());
@@ -2157,6 +2310,7 @@ fn picks(
         })
         .map(|v| Pick {
             text: text_of(records, v.facts.sequence),
+            period_ms: period_of(records, v.facts.sequence),
             caller: v.kind == Some(strategy::Kind::Caller),
             value: v.contest,
             sequence: v.facts.sequence,
@@ -2168,6 +2322,8 @@ fn picks(
 struct Seen {
     /// The target is decoded (situation 1 without progress; else situation 2).
     decoded: bool,
+    /// #97 the period start (UTC ms) of the target's decode in this publication.
+    heard_ms: Option<i64>,
     /// Progress: a message of the target to my call, also a repeated one, except the message a
     /// caller was selected on.
     answered: bool,
@@ -2210,7 +2366,6 @@ fn assess(
             && !is_target(v)
             && eligible(run, &v.facts.from, band, now)
     });
-    let callers_only = contest.is_some_and(|c| c.operation == crate::contest::Operation::Run);
     // The target in this publication: its own verdict when it has a rank, else its decode with
     // the value it was selected on.
     let reference = list
@@ -2224,18 +2379,25 @@ fn assess(
                 v
             })
         });
-    let better = contest.is_some()
-        && reference.as_ref().is_some_and(|t| {
-            list.iter().any(|v| {
-                v.rank.is_some()
-                    && !is_target(v)
-                    && (!callers_only || v.kind == Some(strategy::Kind::Caller))
-                    && eligible(run, &v.facts.from, band, now)
-                    && crate::contest::order(v, t) == std::cmp::Ordering::Less
-            })
-        });
+    // #97 LeaveRule contest: a more valuable callable station strictly before the target by the
+    // strategy's order (a contest strategy: ContestValueOrder; else the ranks of ValueOrder).
+    let better = reference.as_ref().is_some_and(|t| {
+        list.iter().any(|v| {
+            v.rank.is_some()
+                && !is_target(v)
+                && eligible(run, &v.facts.from, band, now)
+                && match contest {
+                    Some(_) => {
+                        crate::contest::order_by(v, t, chosen.1.callers_first)
+                            == std::cmp::Ordering::Less
+                    }
+                    None => t.rank.is_none_or(|r| v.rank.is_some_and(|x| x < r)),
+                }
+        })
+    });
     Seen {
         decoded: decoded.is_some(),
+        heard_ms: decoded.and_then(|v| period_of(records, v.facts.sequence)),
         answered,
         caller,
         better,
@@ -2257,41 +2419,6 @@ fn utc_now(r: &recording::Recording) -> i64 {
     r.transmit.get().map_or_else(contact_http::wall_ms, |t| {
         t.service.with(|h| h.hardware().now_utc_ms())
     })
-}
-/// #89 WstxStrategy::FreeTxSlot "Waiting for the newest period" (StrategyRun Decision timing): a
-/// contest Run's CQ decided in waiting without a fresh publication is decided now when Hold Tx is on
-/// (no decision, D16, no wait), when the newest period of its Rx parity (in progress or ended) has
-/// its complete publication (or a later period has one: publications never go back, so its own no
-/// longer comes), or when the period in progress at the start of the wait has ended; else it waits.
-fn cq_decision_due(
-    run: &mut Run,
-    contact: &contact_http::Station,
-    r: &recording::Recording,
-) -> bool {
-    let facts = contact.status_facts();
-    if facts.hold_tx {
-        run.cq_wait = None;
-        return true;
-    }
-    let mode = contact_http::mode_of(run.mode);
-    let t = freeslot::period_ms(mode);
-    let now = utc_now(r);
-    let current = now.div_euclid(t) * t;
-    let newest = if wstx_rust::transmit::parity(mode, current) == facts.parity {
-        current - t
-    } else {
-        current
-    };
-    let published = r
-        .latest_publication()
-        .and_then(|p| Some((p.3, crate::contact::parse_utc(p.4.as_deref()?)?)))
-        .is_some_and(|(complete, start)| start > newest || (start == newest && complete));
-    let deadline = *run.cq_wait.get_or_insert(current + t);
-    if published || now >= deadline {
-        run.cq_wait = None;
-        return true;
-    }
-    false
 }
 /// The period start of the latest complete receive publication (WstxStrategy::FreeTxSlot Due,
 /// #89): a partial publication names none.
@@ -2322,9 +2449,10 @@ enum SlotRule {
     /// Selecting a station to call: the quietest slot of my Rx parity, free at his end where
     /// known; with Hold Tx on the held Tx, moved only when within 50 Hz of the station.
     Call,
-    /// The slot check at a repetition (StrategyWatchdog): the quietest slot of my Rx parity; with
-    /// Hold Tx on Tx alone moves, clear of my Rx as well.
-    Check,
+    /// #97 a move of TxMoveRule: another quiet slot of my Rx parity, never overlapping the current
+    /// Tx nor within 50 Hz of his frequencies (no fallback; none left: Tx stays); with Hold Tx on
+    /// Tx alone moves, clear of my Rx as well.
+    Move,
     /// Its own CQ: the quietest slot of my Rx parity, the other of the CQ's (#66), no his end;
     /// with Hold Tx on the held Tx.
     Listen,
@@ -2406,6 +2534,13 @@ fn take_slot(
         // Hold Tx on, a selection: Tx stays unless within 50 Hz of the station (Q1, Q2, D7).
         (SlotRule::Call | SlotRule::KeepCq, true) => {
             freeslot::held(mode, current, &avoid, decoded, his.as_deref(), &power)
+        }
+        (SlotRule::Move, _) => {
+            match freeslot::moved(mode, current, &avoid, decoded, his.as_deref(), &power) {
+                Some(slot) => slot,
+                // No candidate left: Tx stays, tried again at the next repetition.
+                None => return Some(revision),
+            }
         }
         (SlotRule::KeepCq, false) => {
             // The rule without power keeps the current slot or moves it nearest away from him

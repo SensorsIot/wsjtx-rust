@@ -14,5 +14,5 @@ Filesystem path relative to this entrypoint: `../../../harness/core/skills/restr
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=c4c4ba77a5f326c7ad59549a32b284b5f1f870b030480d3729feaf9766348591 -->
-<!-- harness-forwarder-v1 sha256=872520e6bd08b7af70c14d096c4a383b68317246910068be190b173ff05d8c49 -->
+<!-- canonical-source-sha256=ebe28fd2361b68a51a1a64d36e6ba5ed5dfe91c094369f86f9e25b05a77103f0 -->
+<!-- harness-forwarder-v1 sha256=fa1f4bc42132c357e5317aa3c65778aa0bc6ce8f3bff523bac482bbf0354918e -->

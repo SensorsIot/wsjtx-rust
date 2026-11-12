@@ -94,7 +94,7 @@ async fn tc_089_002_a_held_slot_check_counts_the_newest_period() {
     assert_eq!(rx_tx(f).await, (json!(1800), json!(1450)));
     assert_eq!(
         run_of(f).await["slot_check"],
-        json!({"repetitions":1,"hears_us":false,"hz":1450})
+        json!({"repetitions":1,"case":"no_reports","hears_us":false,"moved":true,"hz":1450})
     );
 }
 
@@ -189,19 +189,19 @@ async fn tc_089_003_listening_counts_the_period_in_progress_once_completely_publ
     );
 }
 
-/// TC-089-004: a contest Run (WW Digi on 20 m, the period in force, W1DUP a dupe), Hold Tx `hold`,
-/// Tx 1500, CQ Tx odd (my Rx parity even); my even periods e - 90 .. e - 30 s flat 30 and P = e
-/// flat 30 (or with 1500..1550 at 42: `loud`), one row each; `before` runs before Auto on (it sets
-/// the clock); Auto on, then one station step.
-async fn run_cq(hold: bool, loud: bool, before: impl FnOnce(&Mcp, i64)) -> Leaving {
+/// TC-089-004 (#97: no contest Run; a contest strategy calls CQ only after two empty fresh
+/// publications, CqWhenNoTarget D11): the WW Digi contest strategy on 20 m (the period in force,
+/// W1DUP a dupe), Hold Tx `hold`, Tx 1500, my Rx parity even; my even periods e - 90 .. e - 30 s
+/// and P = e flat 30, one row each; `before` runs before Auto on (it sets the clock); Auto on, then
+/// one station step.
+async fn run_cq(hold: bool, before: impl FnOnce(&Mcp, i64)) -> Leaving {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
     for back in [90_000, 60_000, 30_000] {
         wf_row(&f, e - back, 30, &[], false);
     }
-    let band: &[(u32, u32, u8)] = if loud { &[(1500, 1550, 42)] } else { &[] };
-    wf_row(&f, e, 30, band, false);
+    wf_row(&f, e, 30, &[], false);
     let client = f.state.recording.clients.session();
     if !hold {
         hold_off(&f).await;
@@ -248,17 +248,17 @@ async fn calls_from(f: &Mcp, hz: u64, name: &str) {
 
 // Proves: CL-039-09, CL-039-05; TC-089-004 (a), (b), (e). (a) Auto on at P + 5 s, P = e my newest
 // Rx period, in progress and unpublished: no decision and no enable_tx at P + 8 and P + 14 s; P's
-// complete publication at P + 14.1 s with a station decoded at 1500 (the current Tx) in P: in that
-// station step the CQ's slot with P counted, 1460..1540 closed, the nearest free 1450 (the lower of
-// 1450 and 1550), enable_tx, the CQ keyed at the next period start P + 15 s. (b) No publication of
-// P, its row loud at 1500..1550 (42 over 30: slot 1500 rise 11.35, value 11; 1460 and 1540 hold 4
-// of the 18 band bins, (4 x 42 + 13 x 30) / 17 - 30.65 = 2.17, 2; 1450 and 1550 none, 0): waiting at
-// P + 14.9 s, decided at P + 15.0 s with P counted by its levels: 1450. (e) Auto on at P + 20 s
-// (the odd period in progress) with P's complete publication already there: decided and armed at
-// once, 1450. Red on the parent: (a) and (b) the CQ at P + 5 s from 1500 (P not counted).
+// complete publication at P + 14.1 s with a station decoded at 1500 (the current Tx) to another
+// call, nothing callable: the first empty publication, still waiting. (b) No decision without a
+// publication: still waiting at P + 15.0 s and P + 29 s. The odd e + 15 s published empty at
+// e + 29.1 s, the second empty publication: in that station step the CQ's slot with P counted,
+// 1460..1540 closed, the nearest free 1450 (the lower of 1450 and 1550), enable_tx. (e) P published
+// before Auto on (not fresh) and Auto on at P + 20 s: waiting after the fresh empty e + 15 s, the
+// CQ from 1450 after the fresh empty e + 30 s. Red on the parent (the #89 contest Run): the CQ
+// before the second empty publication.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_089_004_a_run_cq_waits_for_the_newest_rx_period() {
-    let t = run_cq(false, false, |f, e| ended(f, e + 5_000)).await;
+async fn tc_089_004_a_contest_strategy_cq_counts_the_newest_rx_period() {
+    let t = run_cq(false, |f, e| ended(f, e + 5_000)).await;
     let (f, e) = (&t.f, t.e);
     waits(f, 1500, "(a) at P + 5 s").await;
     for at in [8_000, 14_000] {
@@ -268,47 +268,71 @@ async fn tc_089_004_a_run_cq_waits_for_the_newest_rx_period() {
     }
     ended(f, e + 14_100);
     publish(f, e, &[other_at(1500.0)]);
-    calls_from(f, 1450, "(a) on P's publication").await;
-    // Keyed at P + 15 s: the transmission bound to that period runs to its end.
-    transmit_own_period(f, e + 15_000).await;
+    waits(f, 1500, "(a) one empty publication").await;
+    for at in [15_000, 29_000] {
+        ended(f, e + at);
+        f.tick();
+        waits(f, 1500, "(b) no publication").await;
+    }
+    ended(f, e + 29_100);
+    publish(f, e + 15_000, &[]);
+    calls_from(f, 1450, "(a) on the second empty publication").await;
 
-    let t = run_cq(false, true, |f, e| ended(f, e + 5_000)).await;
-    let (f, e) = (&t.f, t.e);
-    waits(f, 1500, "(b) at P + 5 s").await;
-    ended(f, e + 14_900);
-    f.tick();
-    waits(f, 1500, "(b) at P + 14.9 s").await;
-    ended(f, e + 15_000);
-    f.tick();
-    calls_from(f, 1450, "(b) at P + 15.0 s").await;
-
-    let t = run_cq(false, false, |f, e| {
+    let t = run_cq(false, |f, e| {
         ended(f, e + 14_100);
         publish(f, e, &[other_at(1500.0)]);
         ended(f, e + 20_000);
     })
     .await;
-    calls_from(&t.f, 1450, "(e) already published").await;
+    let (f, e) = (&t.f, t.e);
+    waits(f, 1500, "(e) P published before Auto on").await;
+    ended(f, e + 29_100);
+    publish(f, e + 15_000, &[]);
+    waits(f, 1500, "(e) one fresh empty publication").await;
+    wf_row(f, e + 30_000, 30, &[], false);
+    ended(f, e + 44_100);
+    publish(f, e + 30_000, &[]);
+    calls_from(f, 1450, "(e) on the second fresh empty publication").await;
 }
 
-// Proves: CL-039-05; TC-089-004 (c), (d), (f). (c) Hold Tx on: the CQ takes no decision (on the held
-// Tx 1500, D16) and does not wait: armed at P + 5 s. (d) Auto off, and separately Halt, at P + 8 s
-// during the wait: stopped, and at P's publication no decision and no enable_tx. (f) Auto on again
-// at P + 8 s during the wait: still waiting, and on P's publication one decision, 1450 as (a). Red on
-// the parent: (d) and (f) the CQ at P + 5 s.
+// Proves: CL-039-05; TC-089-004 (c), (d), (f). (c) Hold Tx on: no CQ at Auto on (P + 5 s) nor at
+// the first empty publication; at the second the CQ on the held Tx 1500 with no slot decision
+// (D16), armed. (d) Auto off, and separately Halt, at P + 20 s between the two publications:
+// stopped, and at the second no decision and no enable_tx. (f) Auto on again at P + 20 s: still
+// waiting, and on the second empty publication one decision, 1450 as (a). Red on the parent (the
+// #89 contest Run): (c) armed at P + 5 s, (f) the CQ on P's publication.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_004_hold_tx_stop_and_a_second_auto_on() {
-    let t = run_cq(true, false, |f, e| ended(f, e + 5_000)).await;
-    let f = &t.f;
+    let t = run_cq(true, |f, e| ended(f, e + 5_000)).await;
+    let (f, e) = (&t.f, t.e);
+    assert_eq!(run_of(f).await["state"], "waiting", "(c) at Auto on");
+    assert_eq!(contact(f).await.2, json!("disarmed"), "(c) at Auto on");
+    ended(f, e + 14_100);
+    publish(f, e, &[other_at(1500.0)]);
+    assert_eq!(
+        run_of(f).await["state"],
+        "waiting",
+        "(c) one empty publication"
+    );
+    assert_eq!(
+        contact(f).await.2,
+        json!("disarmed"),
+        "(c) one empty publication"
+    );
+    ended(f, e + 29_100);
+    publish(f, e + 15_000, &[]);
     assert_eq!(run_of(f).await["state"], "calling_cq", "(c)");
     assert_eq!(contact(f).await.2, json!("armed"), "(c)");
     assert_eq!(rx_tx(f).await.1, json!(1500), "(c) the held Tx");
 
     for halted in [false, true] {
-        let t = run_cq(false, false, |f, e| ended(f, e + 5_000)).await;
+        let t = run_cq(false, |f, e| ended(f, e + 5_000)).await;
         let (f, e) = (&t.f, t.e);
         waits(f, 1500, "(d)").await;
-        ended(f, e + 8_000);
+        ended(f, e + 14_100);
+        publish(f, e, &[other_at(1500.0)]);
+        waits(f, 1500, "(d) one empty publication").await;
+        ended(f, e + 20_000);
         let reason = if halted {
             halt(f).await;
             "halted"
@@ -317,8 +341,8 @@ async fn tc_089_004_hold_tx_stop_and_a_second_auto_on() {
             f.tick();
             "stopped"
         };
-        ended(f, e + 14_100);
-        publish(f, e, &[other_at(1500.0)]);
+        ended(f, e + 29_100);
+        publish(f, e + 15_000, &[]);
         f.tick();
         assert_eq!(run_state(f).await, ("stopped".into(), json!(reason)), "(d)");
         let run = run_of(f).await;
@@ -327,28 +351,33 @@ async fn tc_089_004_hold_tx_stop_and_a_second_auto_on() {
         assert_eq!(rx_tx(f).await.1, json!(1500), "(d) {reason}");
     }
 
-    let t = run_cq(false, false, |f, e| ended(f, e + 5_000)).await;
+    let t = run_cq(false, |f, e| ended(f, e + 5_000)).await;
     let (f, e) = (&t.f, t.e);
     waits(f, 1500, "(f)").await;
-    ended(f, e + 8_000);
+    ended(f, e + 14_100);
+    publish(f, e, &[other_at(1500.0)]);
+    waits(f, 1500, "(f) one empty publication").await;
+    ended(f, e + 20_000);
     assert_eq!(auto(f, true, Some(true)).await.status, StatusCode::OK);
     f.tick();
     waits(f, 1500, "(f) Auto on again").await;
-    ended(f, e + 14_100);
-    publish(f, e, &[other_at(1500.0)]);
-    calls_from(f, 1450, "(f) one decision on P's publication").await;
+    ended(f, e + 29_100);
+    publish(f, e + 15_000, &[]);
+    calls_from(f, 1450, "(f) one decision on the second empty publication").await;
 }
 
 // Proves: CL-039-09, CL-039-05; TC-089-004 (g). Hold Tx off; K1ABC's CQ decoded at 1800 Hz in the
 // even e - 30 s (published before Auto on). Auto on at P + 1 s (P = e): waiting. The operator
 // double-clicks K1ABC at P + 2 s: the run is manual (Rx = Tx = 1800 for his contact). Esc at P + 5 s
-// gives him up: the run back to waiting, and no set_frequency and no enable_tx of the run until P's
-// complete publication at P + 14.1 s with a station decoded on the current Tx 1800 in P; then the
-// CQ's slot with P counted: 1760..1840 closed (also by K1ABC in e - 30 s), the nearest free 1750
-// (the lower of 1750 and 1850). Red on the parent: the CQ at P + 5 s.
+// gives him up: the run back to waiting, and no set_frequency and no enable_tx of the run at P + 14
+// s nor at P's complete publication at P + 14.1 s (a station decoded on the current Tx 1800 in P,
+// to another call: the first empty publication after Esc); the odd e + 15 s published empty at
+// e + 29.1 s, the second: the CQ's slot with P counted, 1760..1840 closed (also by K1ABC in
+// e - 30 s), the nearest free 1750 (the lower of 1750 and 1850). Red on the parent (the #89 contest
+// Run): the CQ on P's publication.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_004_after_esc_on_a_manual_contact_the_cq_waits() {
-    let t = run_cq(false, false, |f, e| {
+    let t = run_cq(false, |f, e| {
         publish(f, e - 30_000, &[("CQ K1ABC FN42", 1800.0, Some(-5.0))]);
     })
     .await;
@@ -383,7 +412,10 @@ async fn tc_089_004_after_esc_on_a_manual_contact_the_cq_waits() {
     assert_eq!(rx_tx(f).await.1, json!(tx), "no set_frequency");
     ended(f, e + 14_100);
     publish(f, e, &[other_at(1800.0)]);
-    calls_from(f, 1750, "on P's publication").await;
+    waits(f, tx, "one empty publication after Esc").await;
+    ended(f, e + 29_100);
+    publish(f, e + 15_000, &[]);
+    calls_from(f, 1750, "on the second empty publication").await;
 }
 
 // Proves: CL-039-05; TC-089-004 (g), the completed manual contact. Hold Tx off; K1ABC's RR73 to my
@@ -392,15 +424,16 @@ async fn tc_089_004_after_esc_on_a_manual_contact_the_cq_waits() {
 // enables Tx: the run is manual; my 73 goes
 // out in my odd period e + 15 s and completes the contact at its end (about e + 28 s; a manual
 // contact completes at the end of my own transmission, just before my next Rx period, so not at
-// P + 5 s). The run is back to waiting with the newest period of its Rx parity, e, unpublished: no
-// decision and no enable_tx of the run at e + 29.9 s; at e + 30 s, the end of the period in
-// progress, it decides with what is due (e, e - 30, e - 60 and e - 90 s, all flat; K1ABC at 1800 in
-// e - 30 s closes 1760..1840): the current Tx 1500 is free and kept, Rx = Tx = 1500, tx_slot {1500,
-// 0}. Red on the parent: the CQ at the contact's end.
+// P + 5 s). The run is back to waiting: no decision and no enable_tx of the run at e + 29.9 s nor
+// at e + 30 s (no publication), nor at the first empty publication after the contact (the even
+// e + 30 s, flat, at e + 44.1 s); at the second (the odd e + 45 s at e + 59.1 s) it decides with
+// what is due (flat rows; K1ABC at 1800 in e - 30 s closes at most 1760..1840): the current Tx 1500
+// is free and kept, Rx = Tx = 1500, tx_slot {1500, 0}. Red on the parent (the #89 contest Run): the
+// CQ at e + 30 s.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_004_after_a_completed_manual_contact_the_cq_waits() {
     const RR73: (&str, f64, Option<f64>) = ("HB9BLA K1ABC RR73", 1800.0, Some(-5.0));
-    let t = run_cq(false, false, |f, e| publish(f, e - 30_000, &[RR73])).await;
+    let t = run_cq(false, |f, e| publish(f, e - 30_000, &[RR73])).await;
     let (f, e) = (&t.f, t.e);
     waits(f, 1500, "Auto on at e + 1 s").await;
     ended(f, e + 2_000);
@@ -438,5 +471,12 @@ async fn tc_089_004_after_a_completed_manual_contact_the_cq_waits() {
     assert_eq!(contact(f).await.1, json!("completed"), "no CQ yet");
     ended(f, e + 30_000);
     f.tick();
-    calls_from(f, 1500, "at e + 30 s").await;
+    waits(f, 1500, "at e + 30 s, no publication").await;
+    wf_row(f, e + 30_000, 30, &[], false);
+    ended(f, e + 44_100);
+    publish(f, e + 30_000, &[]);
+    waits(f, 1500, "one empty publication after the contact").await;
+    ended(f, e + 59_100);
+    publish(f, e + 45_000, &[]);
+    calls_from(f, 1500, "on the second empty publication").await;
 }

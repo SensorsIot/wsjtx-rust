@@ -44,20 +44,55 @@ fn me() -> Station {
         ..Station::default()
     }
 }
-fn award(goals: &[Goal]) -> Strategy {
+/// The schema 3 goals of the cases written before #97, run as their mapped schema 4 whats
+/// (#97 notes on TC-039-030, TC-039-040: the upgrade table of WstxStrategy::StrategyConfiguration,
+/// written out here).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Goal {
+    Dxcc,
+    DxccBand,
+    DxccSlot,
+    Waz,
+    Wpx,
+    Grid,
+    NewCall,
+    NewCallBand,
+}
+impl Goal {
+    fn mapped(self) -> (NewWhat, NewPer) {
+        match self {
+            Goal::Dxcc => (NewWhat::Dxcc, NewPer::Ever),
+            Goal::DxccBand => (NewWhat::Dxcc, NewPer::Band),
+            Goal::DxccSlot => (NewWhat::Dxcc, NewPer::BandMode),
+            Goal::Waz => (NewWhat::CqZone, NewPer::Ever),
+            Goal::Wpx => (NewWhat::Prefix, NewPer::Ever),
+            Goal::Grid => (NewWhat::Grid, NewPer::Ever),
+            Goal::NewCall => (NewWhat::Call, NewPer::Ever),
+            Goal::NewCallBand => (NewWhat::Call, NewPer::Band),
+        }
+    }
+}
+/// A strategy of class strategy on these goals (the most specific per when they differ), not
+/// worked, order [most_wanted], leave {calls 3, calls_heard 6}, treat_73_as_cq off.
+pub(crate) fn award(goals: &[Goal]) -> Strategy {
+    let mut new = Vec::new();
+    let mut per = NewPer::Ever;
+    for g in goals {
+        let (what, p) = g.mapped();
+        if !new.contains(&what) {
+            new.push(what);
+        }
+        per = per.max(p);
+    }
     Strategy {
         name: "T".into(),
-        goals: goals.to_vec(),
+        new,
+        new_per: per,
         needed: Needed::NotWorked,
-        region: Region::All,
-        min_snr_db: None,
-        value: vec![Criterion::MostWanted],
-        callers_first: true,
-        cq_when_no_target: false,
-        repetitions: 3,
-        quiet_minutes: 10,
+        order: vec![Criterion::MostWanted],
+        leave: Leave::Calls { calls: 3, heard: 6 },
         treat_73_as_cq: false,
-        window: Window::All,
+        ..Strategy::base("T")
     }
 }
 /// (call, band, mode, grid, confirmed).
@@ -78,6 +113,7 @@ fn worked(log: &[LogRow]) -> Arc<Worked> {
             mode: mode.map(Into::into),
             confirmed: *confirmed,
             date: Some(20_260_101),
+            state: None,
         })
         .collect();
     Arc::new(Worked::from_log(&crate::dxcc::Table::default(), &logged))
@@ -187,7 +223,7 @@ fn tc_039_002_verdicts_grey_reasons_and_treat_73() {
         .map(|v| (v.facts.sequence, v.why.clone()))
         .collect();
     assert_eq!(why[&7], "calls my call");
-    assert_eq!(why[&0], "needed: new_call");
+    assert_eq!(why[&0], "new: call");
     assert_eq!(why[&2], "CQ NA — not for EU");
     assert_eq!(why[&6], "not a CQ");
     let json = list[0].json(true);
@@ -358,15 +394,15 @@ fn tc_039_030_a_missing_grid_is_unknown_never_new() {
     };
     for (text, expected, why) in [
         // No grid in the decoded message: not a candidate on this goal.
-        ("W1AW DL9ZZ RR73", None, "not needed"),
+        ("W1AW DL9ZZ RR73", None, "not new"),
         // A sender in the log with a QSO without a grid: its grid status is unknown.
-        ("CQ K2ABC FN55", None, "not needed"),
-        ("CQ K3ABC FN55", None, "not needed"),
+        ("CQ K2ABC FN55", None, "not new"),
+        ("CQ K3ABC FN55", None, "not new"),
         // A sender logged with a grid and a new grid; a new sender.
-        ("CQ K4ABC FN55", Some(0), "needed: grid"),
-        ("CQ K5ABC FN66", Some(0), "needed: grid"),
+        ("CQ K4ABC FN55", Some(0), "new: grid"),
+        ("CQ K5ABC FN66", Some(0), "new: grid"),
         // The grid is worked.
-        ("CQ K6ABC FN42", None, "not needed"),
+        ("CQ K6ABC FN42", None, "not new"),
     ] {
         let v = evaluate(&s, &rows(&[(text, Some(0.0))]), &st);
         assert_eq!((v[0].rank, v[0].why.as_str()), (expected, why), "{text}");
@@ -446,7 +482,6 @@ fn tc_039_030_a_caller_beats_a_most_wanted_station_and_ignores_goal_region_and_s
         ..me()
     };
     let s = Strategy {
-        goals: vec![Goal::NewCall],
         region: Region::Selected(vec!["OC".into()]),
         min_snr_db: Some(20),
         ..award(&[Goal::NewCall])
@@ -455,20 +490,23 @@ fn tc_039_030_a_caller_beats_a_most_wanted_station_and_ignores_goal_region_and_s
         ("CQ VK2ABC QF56", Some(25.0)),
         ("HB9BLA DL1ABC -15", Some(-20.0)),
     ]);
+    // #97 (TC-097-007): the caller fails the filters (worked, region) and has no rank.
     assert_eq!(
         ranks(&s, &records, &st),
-        vec![(0, Some(1), false), (1, Some(0), false)]
+        vec![(0, Some(0), false), (1, None, false)]
     );
     let v = evaluate(&s, &records, &st);
-    assert_eq!(v[1].why, "needed: new_call · Most Wanted #1");
+    assert_eq!(v[0].why, "new: call · Most Wanted #1");
+    assert_eq!(v[1].why, "calls my call · region");
     // An ignored caller is neither: it has no rank.
     let mut ignored = st.clone();
     ignored.ignored.insert("DL1ABC".into(), Tier::Session);
     assert_eq!(ranks(&s, &records, &ignored)[1], (1, None, false));
-    // Two callers: strongest first.
+    // Two callers that pass the filters: strongest first.
+    let open = award(&[Goal::NewCall]);
     assert_eq!(
         called(
-            &s,
+            &open,
             &rows(&[
                 ("HB9BLA K1ABC -10", Some(-9.0)),
                 ("HB9BLA K2ABC -10", Some(-2.0))
@@ -542,6 +580,7 @@ fn tc_039_030_worked_window_from_dated_records() {
         mode: Some("FT8".into()),
         confirmed: false,
         date,
+        state: None,
     };
     let logged = vec![
         log("DL1ABC", Some(20_261_101)),
@@ -621,310 +660,86 @@ fn tc_039_002_my_continent_from_config_call_and_locator() {
     assert_eq!(my_continent(&open, None, None, &table), None);
 }
 
+/// A schema 3 strategy fixture of a case written before #97, run as the upgrade maps it (the
+/// BuiltinStrategies note on such cases; TC-097-002 checks the mapping itself by hand).
+pub(crate) fn v4(old: Value) -> Value {
+    upgrade_3_strategy(&old).expect("a schema 3 strategy")
+}
+/// The cases written before #97 set "repetitions before leaving" x: leave {calls x,
+/// calls_heard 2x}, as the upgrade maps it, with tx_move_every {0, 1, 1}, which keeps their
+/// slot check at every repetition of a target that does not hear us (#97 note on TC-039-043).
+pub(crate) fn set_repetitions(c: &mut Value, x: u64) {
+    c["strategies"][0]["leave"] = json!({"mode":"calls","calls":x,"calls_heard":2 * x});
+    c["strategies"][0]["tx_move_every"] = json!({"heard":0,"not_heard":1,"no_reports":1});
+}
+/// A schema 4 strategy of class strategy: new [call] ever, not worked, order [snr], leave
+/// {calls 2, calls_heard 4}, retry 1 min (the former "Test calls" fixture as #97 maps it).
 pub(crate) fn strategy_json(name: &str) -> Value {
-    json!({"name":name,"class":"award","goals":["new_call"],"needed":"not_worked","region":{"kind":"all"},
-        "min_snr_db":null,"value":["snr"],"callers_first":true,"cq_when_no_target":false,
-        "repetitions":2,"quiet_minutes":1,"treat_73_as_cq":true,"window":{"kind":"all"}})
+    let empty = json!({"include":[],"exclude":[]});
+    json!({"name":name,"class":"strategy","bands":null,
+        "filters":{"new":["call"],"new_per":"ever","new_means":"not_worked","region":{"kind":"all"},
+            "min_snr_db":null,"worked_since":{"kind":"all"},"treat_73_as_cq":true,
+            "countries":empty,"states":empty,"cq_targets":empty},
+        "order":["snr"],"contest":null,"callers_first":true,
+        "leave":{"mode":"calls","calls":2,"calls_heard":4},
+        "tx_move_every":{"heard":0,"not_heard":1,"no_reports":2},"busy_pause":true,
+        "cq_when_idle":false,"cq_wait_periods":2,"retry_minutes":1})
+}
+/// The presets #97 removed, as schema 3 strategies (their former settings): cases written before
+/// #97 that select one run with a saved user strategy of that name, as the upgrade maps it
+/// (WstxStrategy::BuiltinStrategies).
+fn removed_preset(name: &str) -> Option<Value> {
+    let (goal, region, value, today, cq) = match name {
+        "New calls" => ("new_call", "all", "most_wanted", false, false),
+        "DX hunting" => ("new_call", "dx", "most_wanted", false, false),
+        "DXCC slots" => ("dxcc_slot", "all", "most_wanted", false, false),
+        "Strongest new on band" => ("new_call_band", "all", "snr", false, false),
+        "Farthest new on band" => ("new_call_band", "all", "distance", false, false),
+        "Casual 20 m" => ("new_call_band", "all", "snr", true, true),
+        _ => return None,
+    };
+    Some(v4(
+        json!({"name":name,"class":"award","goals":[goal],"needed":"not_worked",
+        "region":{"kind":region},"min_snr_db":null,"value":[value],"callers_first":true,
+        "cq_when_no_target":cq,"repetitions":4,"quiet_minutes":10,"treat_73_as_cq":true,
+        "window":{"kind":if today {"today"} else {"all"}}}),
+    ))
 }
 fn config(active: Option<&str>) -> Value {
-    json!({"continent":null,"active":active,"strategies":[strategy_json("Test calls")],
+    let mut strategies = vec![strategy_json("Test calls")];
+    strategies.extend(active.and_then(removed_preset));
+    json!({"continent":null,"active":active,"strategies":strategies,
         "ignore_calls":[],"session_ignore_minutes":30})
 }
 
-// Proves: TC-039-001, TC-039-030
+// Proves: TC-039-001. The configuration is exact: the valid one round-trips; an extra key, two
+// names equal ignoring case and 17 strategies are refused at their path. (The strategy's own keys
+// and paths are schema 4 since #97: TC-097-001.)
 #[test]
 fn tc_039_001_configuration_is_exact() {
-    let mut full = config(Some("Test calls"));
-    full["strategies"] = json!([{"name":"Test calls","class":"award",
-        "goals":["dxcc","dxcc_band","dxcc_slot","waz","wpx","grid","new_call","new_call_band"],
-        "needed":"not_confirmed","region":{"kind":"selected","continents":["AF","AS"]},
-        "min_snr_db":-15,"value":["most_wanted","distance"],"callers_first":false,
-        "cq_when_no_target":true,"repetitions":5,"quiet_minutes":15,"treat_73_as_cq":false,
-        "window":{"kind":"from_to","from":"2024-02-29","to":"2026-11-06"}},
-        {"name":"B","class":"award","goals":["grid"],"needed":"not_worked","region":{"kind":"dx"},
-        "min_snr_db":null,"value":["new_dxcc","new_dxcc_band","new_dxcc_slot","new_grid",
-        "new_grid_band","new_call","new_call_band","most_wanted","distance","snr"],
-        "callers_first":true,"cq_when_no_target":false,"repetitions":20,"quiet_minutes":120,
-        "treat_73_as_cq":true,"window":{"kind":"today"}},
-        {"name":"C","class":"award","goals":["new_call"],"needed":"not_worked","region":{"kind":"all"},
-        "min_snr_db":null,"value":[],"callers_first":true,"cq_when_no_target":false,
-        "repetitions":1,"quiet_minutes":1,"treat_73_as_cq":true,"window":{"kind":"all"}}]);
-    let ok = parse_config(&full).unwrap();
-    assert_eq!(ok.json(), full, "round trip, the empty value list too");
-    let parsed = ok.active_strategy().unwrap();
-    assert_eq!(parsed.window, Window::FromTo(20_240_229, 20_261_106));
-    assert_eq!(parsed.needed, Needed::NotConfirmed);
+    let c = config(Some("Test calls"));
+    assert_eq!(parse_config(&c, None).unwrap().json(), c, "round trip");
+    let mut extra = config(None);
+    extra["highlight"] = json!(true);
+    assert_eq!(parse_config(&extra, None), Err("configuration".into()));
+    let mut twice = config(None);
+    twice["strategies"] = json!([strategy_json("A"), strategy_json("a")]);
     assert_eq!(
-        (
-            parsed.value.clone(),
-            parsed.callers_first,
-            parsed.cq_when_no_target,
-            parsed.repetitions,
-            parsed.quiet_minutes
-        ),
-        (
-            vec![Criterion::MostWanted, Criterion::Distance],
-            false,
-            true,
-            5,
-            15
-        )
-    );
-    let set = |path: &[&str], v: Value| {
-        let mut c = config(Some("Test calls"));
-        let mut node = &mut c;
-        for k in &path[..path.len() - 1] {
-            node = match k.parse::<usize>() {
-                Ok(i) => &mut node[i],
-                Err(_) => &mut node[*k],
-            };
-        }
-        node[*path.last().unwrap()] = v;
-        parse_config(&c)
-    };
-    let s0 = |k: &str| format!("strategies[0].{k}");
-    for (path, value, field) in [
-        (&["continent"][..], json!("XX"), "continent".to_owned()),
-        (&["active"][..], json!("missing"), "active".to_owned()),
-        (
-            &["strategies", "0", "name"][..],
-            json!(" padded"),
-            s0("name"),
-        ),
-        (&["strategies", "0", "name"][..], json!(""), s0("name")),
-        // Contest is #63: refused on the wire until then.
-        (
-            &["strategies", "0", "class"][..],
-            json!("contest"),
-            s0("class"),
-        ),
-        (&["strategies", "0", "goals"][..], json!([]), s0("goals")),
-        (
-            &["strategies", "0", "goals"][..],
-            json!("dxcc"),
-            s0("goals"),
-        ),
-        (
-            &["strategies", "0", "goals"][..],
-            json!(["dxcc", "dxcc"]),
-            s0("goals[1]"),
-        ),
-        (
-            &["strategies", "0", "goals"][..],
-            json!(["rarest"]),
-            s0("goals[0]"),
-        ),
-        (
-            &["strategies", "0", "needed"][..],
-            json!("any"),
-            s0("needed"),
-        ),
-        (
-            &["strategies", "0", "region"][..],
-            json!({"kind":"east"}),
-            s0("region.kind"),
-        ),
-        (
-            &["strategies", "0", "region"][..],
-            json!("all"),
-            s0("region.kind"),
-        ),
-        (
-            &["strategies", "0", "region"][..],
-            json!({"kind":"all","continents":[]}),
-            s0("region"),
-        ),
-        (
-            &["strategies", "0", "region"][..],
-            json!({"kind":"dx","continents":["EU"]}),
-            s0("region"),
-        ),
-        (
-            &["strategies", "0", "region"][..],
-            json!({"kind":"selected"}),
-            s0("region"),
-        ),
-        (
-            &["strategies", "0", "region"][..],
-            json!({"kind":"selected","continents":[]}),
-            s0("region.continents"),
-        ),
-        (
-            &["strategies", "0", "region"][..],
-            json!({"kind":"selected","continents":["EU","EU"]}),
-            s0("region.continents[1]"),
-        ),
-        (
-            &["strategies", "0", "region"][..],
-            json!({"kind":"selected","continents":["XX"]}),
-            s0("region.continents[0]"),
-        ),
-        (
-            &["strategies", "0", "min_snr_db"][..],
-            json!(50),
-            s0("min_snr_db"),
-        ),
-        (
-            &["strategies", "0", "min_snr_db"][..],
-            json!(-51),
-            s0("min_snr_db"),
-        ),
-        (
-            &["strategies", "0", "min_snr_db"][..],
-            json!(1.5),
-            s0("min_snr_db"),
-        ),
-        (
-            &["strategies", "0", "repetitions"][..],
-            json!(0),
-            s0("repetitions"),
-        ),
-        (
-            &["strategies", "0", "repetitions"][..],
-            json!(21),
-            s0("repetitions"),
-        ),
-        (
-            &["strategies", "0", "quiet_minutes"][..],
-            json!(0),
-            s0("quiet_minutes"),
-        ),
-        (
-            &["strategies", "0", "quiet_minutes"][..],
-            json!(121),
-            s0("quiet_minutes"),
-        ),
-        (
-            &["strategies", "0", "value"][..],
-            json!(["snr", "rarest"]),
-            s0("value[1]"),
-        ),
-        (
-            &["strategies", "0", "value"][..],
-            json!(["snr", "distance", "snr"]),
-            s0("value[2]"),
-        ),
-        (
-            &["strategies", "0", "value"][..],
-            json!([
-                "new_dxcc",
-                "new_dxcc_band",
-                "new_dxcc_slot",
-                "new_grid",
-                "new_grid_band",
-                "new_call",
-                "new_call_band",
-                "most_wanted",
-                "distance",
-                "snr",
-                "snr"
-            ]),
-            s0("value"),
-        ),
-        (&["strategies", "0", "value"][..], json!("snr"), s0("value")),
-        (
-            &["strategies", "0", "callers_first"][..],
-            json!(1),
-            s0("callers_first"),
-        ),
-        (
-            &["strategies", "0", "cq_when_no_target"][..],
-            json!("no"),
-            s0("cq_when_no_target"),
-        ),
-        // calls_per_station is gone: refused by its own path (strategydef).
-        (
-            &["strategies", "0", "calls_per_station"][..],
-            json!(3),
-            s0("calls_per_station"),
-        ),
-        (
-            &["strategies", "0", "treat_73_as_cq"][..],
-            json!("yes"),
-            s0("treat_73_as_cq"),
-        ),
-        (
-            &["strategies", "0", "window"][..],
-            json!({"kind":"week"}),
-            s0("window.kind"),
-        ),
-        (
-            &["strategies", "0", "window"][..],
-            json!({"kind":"all","from":"2026-01-01"}),
-            s0("window"),
-        ),
-        (
-            &["strategies", "0", "window"][..],
-            json!({"kind":"from_to","from":"2026-01-01"}),
-            s0("window"),
-        ),
-        (
-            &["strategies", "0", "window"][..],
-            json!({"kind":"from_to","from":"20260101","to":"2026-01-01"}),
-            s0("window.from"),
-        ),
-        (
-            &["strategies", "0", "window"][..],
-            json!({"kind":"from_to","from":"2026-02-30","to":"2026-03-01"}),
-            s0("window.from"),
-        ),
-        (
-            &["strategies", "0", "window"][..],
-            json!({"kind":"from_to","from":"1929-12-31","to":"2026-03-01"}),
-            s0("window.from"),
-        ),
-        (
-            &["strategies", "0", "window"][..],
-            json!({"kind":"from_to","from":"2026-03-01","to":"2100-01-01"}),
-            s0("window.to"),
-        ),
-        (
-            &["strategies", "0", "window"][..],
-            json!({"kind":"from_to","from":"2026-03-02","to":"2026-03-01"}),
-            s0("window.to"),
-        ),
-    ] {
-        assert_eq!(set(path, value.clone()), Err(field), "{path:?}={value}");
-    }
-    // Removed names are refused, not ignored.
-    for extra in [
-        "rules",
-        "sort",
-        "auto_role",
-        "switch_after",
-        "skip_after",
-        "apply_to_callers",
-    ] {
-        let mut c = config(None);
-        c["strategies"][0][extra] = json!(1);
-        assert_eq!(
-            parse_config(&c),
-            Err(s0("").trim_end_matches('.').to_owned()),
-            "{extra}"
-        );
-    }
-    let mut c = config(None);
-    c["highlight"] = json!(true);
-    assert_eq!(
-        parse_config(&c),
-        Err("configuration".into()),
-        "highlight is gone"
-    );
-    let mut c = config(None);
-    c["strategies"] = json!([strategy_json("A"), strategy_json("a")]);
-    assert_eq!(
-        parse_config(&c),
+        parse_config(&twice, None),
         Err("strategies[1].name".into()),
         "names unique ignoring case"
     );
-    let mut c = config(None);
-    c["strategies"] = json!(
+    let mut many = config(None);
+    many["strategies"] = json!(
         (0..17)
             .map(|i| strategy_json(&format!("S{i}")))
             .collect::<Vec<_>>()
     );
-    assert_eq!(parse_config(&c), Err("strategies".into()));
+    assert_eq!(parse_config(&many, None), Err("strategies".into()));
 }
+
+#[path = "strategy97_tests.rs"]
+mod redesign;
 
 // Proves: TC-039-030 (WstxStrategy::StrategyConfiguration upgrade and restart).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -991,10 +806,11 @@ async fn tc_039_030_an_old_file_upgrades_and_active_never_survives_a_restart() {
         json!({"continent":"XX","active":null,"highlight":false,"strategies":[]}),
     );
     assert_eq!(read().2, json!("invalid_configuration"));
-    write(4, 3, config(None));
+    write(5, 3, config(None));
     assert_eq!(read().2, json!("invalid_configuration"));
-    // A current file, even with an active name, reads active None after a restart.
-    write(3, 9, config(Some("Test calls")));
+    // A current file (#97: schema 4), even with an active name, reads active None after a
+    // restart.
+    write(4, 9, config(Some("Test calls")));
     assert_eq!(read().1, config(None));
     assert_eq!(read().0, json!(9));
     std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
@@ -1037,7 +853,7 @@ async fn tc_039_003_store_routes_and_evaluate() {
         serde_json::from_slice(&std::fs::read(f.dir.join(FILE_NAME)).unwrap()).unwrap();
     assert_eq!(
         saved,
-        json!({"schema_version":3,"profile_id":f.id,"revision":1,"configuration":config(None)})
+        json!({"schema_version":4,"profile_id":f.id,"revision":1,"configuration":config(None)})
     );
     // A fresh owner (next boot) reads the same file.
     let reopened = Owner::default();
@@ -1086,10 +902,10 @@ async fn tc_039_003_store_routes_and_evaluate() {
             (status, json!(code), field)
         );
     }
-    // Contest is #63: refused on the wire.
-    let mut contest = config(None);
-    contest["strategies"][0]["class"] = json!("contest");
-    let r = put(&f, json!(1), contest).await;
+    // #97: a class "award" (schema 3) is refused on the wire.
+    let mut award = config(None);
+    award["strategies"][0]["class"] = json!("award");
+    let r = put(&f, json!(1), award).await;
     assert_eq!(
         (r.status.as_u16(), r.json["error"]["field"].clone()),
         (400, json!("strategies[0].class"))
@@ -1160,8 +976,8 @@ async fn tc_039_003_store_routes_and_evaluate() {
         v.json["verdicts"],
         json!([
             {"sequence":2,"rank":0,"grey":false,"why":"calls my call"},
-            {"sequence":3,"rank":1,"grey":false,"why":"needed: new_call"},
-            {"sequence":0,"rank":2,"grey":false,"why":"needed: new_call"},
+            {"sequence":3,"rank":1,"grey":false,"why":"new: call"},
+            {"sequence":0,"rank":2,"grey":false,"why":"new: call"},
             {"sequence":1,"rank":null,"grey":true,"why":"CQ NA — not for EU"},
         ]),
         "explain lists every decoded row in display order"
@@ -1198,56 +1014,18 @@ async fn tc_039_003_store_routes_and_evaluate() {
 // Proves: TC-039-032 (the expected table is written here from the contract).
 #[test]
 fn tc_039_032_the_builtin_table_and_what_a_configuration_may_say() {
-    // BuiltinStrategies: needed not_worked, min SNR none, callers first, 4 repetitions, 10
-    // minutes quiet, Treat 73 as CQ, window all, region all, value [most_wanted] and no CQ
-    // unless stated.
-    let common = |name: &str, goal: &str| {
-        json!({"name":name,"class":"award","goals":[goal],"needed":"not_worked",
-            "region":{"kind":"all"},"min_snr_db":null,"value":["most_wanted"],
-            "callers_first":true,"cq_when_no_target":false,"repetitions":4,"quiet_minutes":10,
-            "treat_73_as_cq":true,"window":{"kind":"all"}})
-    };
-    let with_fields = |mut v: Value, fields: Value| {
-        for (k, x) in fields.as_object().unwrap() {
-            v[k] = x.clone();
-        }
-        v
-    };
-    assert_eq!(
-        builtins().iter().map(Strategy::json).collect::<Vec<_>>(),
-        vec![
-            common("New DXCC", "dxcc"),
-            common("New DXCC on band", "dxcc_band"),
-            common("DXCC slots", "dxcc_slot"),
-            common("New calls", "new_call"),
-            with_fields(
-                common("DX hunting", "new_call"),
-                json!({"region":{"kind":"dx"}})
-            ),
-            with_fields(
-                common("Strongest new on band", "new_call_band"),
-                json!({"value":["snr"]})
-            ),
-            with_fields(
-                common("Farthest new on band", "new_call_band"),
-                json!({"value":["distance"]})
-            ),
-            with_fields(
-                common("Casual 20 m", "new_call_band"),
-                json!({"value":["snr"],"window":{"kind":"today"},"cq_when_no_target":true})
-            ),
-        ]
-    );
+    // #97: the table itself is TC-097-003; the refusal, read-only and copy steps stay.
     let with = |active: Value, strategies: Value| {
         parse_config(
             &json!({"continent":null,"active":active,"strategies":strategies,
             "ignore_calls":[],"session_ignore_minutes":30}),
+            None,
         )
     };
-    let ok = with(json!("DX hunting"), json!([])).unwrap();
-    assert_eq!(ok.active_strategy().unwrap().region, Region::Dx);
+    let ok = with(json!("Casual"), json!([])).unwrap();
+    assert_eq!(ok.active_strategy().unwrap().new, vec![NewWhat::Call]);
     assert_eq!(
-        with(json!("dx hunting"), json!([])),
+        with(json!("casual"), json!([])),
         Err("active".to_owned()),
         "exactly as listed"
     );
@@ -1273,29 +1051,18 @@ async fn tc_039_032_a_builtin_is_selected_like_any_strategy_and_never_stored() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
+    f.state.recording.fixture_band("20m");
     let g = f.browser("GET", "/strategy", None).await.json;
     assert_eq!(g["configuration"]["strategies"], json!([]));
-    let listed = g["builtin_strategies"].as_array().unwrap();
-    assert_eq!(
-        listed
+    assert!(
+        g["builtin_strategies"]
+            .as_array()
+            .unwrap()
             .iter()
-            .map(|b| (b["name"].as_str().unwrap(), b["builtin"].clone()))
-            .collect::<Vec<_>>(),
-        [
-            "New DXCC",
-            "New DXCC on band",
-            "DXCC slots",
-            "New calls",
-            "DX hunting",
-            "Strongest new on band",
-            "Farthest new on band",
-            "Casual 20 m"
-        ]
-        .into_iter()
-        .map(|n| (n, json!(true)))
-        .collect::<Vec<_>>()
+            .all(|b| b["builtin"] == true)
     );
-    let chosen = json!({"continent":null,"active":"DX hunting","strategies":[],
+    // #97 note: "DX hunting" becomes "Casual" (SNR bucket first: DL1XYZ +9 before K1ABC -15).
+    let chosen = json!({"continent":null,"active":"Casual","strategies":[],
         "ignore_calls":[],"session_ignore_minutes":30});
     select(&f, chosen).await;
     publish(
@@ -1308,8 +1075,8 @@ async fn tc_039_032_a_builtin_is_selected_like_any_strategy_and_never_stored() {
     );
     assert_eq!(
         contact(&f).await,
-        (json!("K1ABC"), json!("replying"), json!("armed")),
-        "region DX: my own continent is no candidate, although stronger"
+        (json!("DL1XYZ"), json!("replying"), json!("armed")),
+        "SNR bucket above 0 dB first"
     );
     let saved: Value =
         serde_json::from_slice(&std::fs::read(f.dir.join(FILE_NAME)).unwrap()).unwrap();
@@ -1329,7 +1096,7 @@ async fn tc_039_032_a_builtin_is_selected_like_any_strategy_and_never_stored() {
     let r = put(
         &f,
         revision,
-        json!({"continent":null,"active":"DX hunting","strategies":[strategy_json("DX hunting")],
+        json!({"continent":null,"active":"Casual","strategies":[strategy_json("Casual")],
             "ignore_calls":[],"session_ignore_minutes":30}),
     )
     .await;
@@ -1343,17 +1110,18 @@ async fn tc_039_032_a_builtin_is_selected_like_any_strategy_and_never_stored() {
     );
     // HALT turns Auto off and keeps the selection, as for any strategy (strategydef).
     halt(&f).await;
-    assert_eq!(active_of(&f).await, json!("DX hunting"));
+    assert_eq!(active_of(&f).await, json!("Casual"));
     assert_eq!(
         f.browser("GET", "/strategy", None).await.json["auto"],
         false
     );
-    // A file from before the presets: the strategy with a built-in's name is dropped.
+    // #97: a saved strategy with a built-in's name reads renamed, never dropped (TC-097-002);
+    // "New calls" is no built-in any more and reads as it is.
     std::fs::write(
         f.dir.join(FILE_NAME),
-        serde_json::to_vec(&json!({"schema_version":3,"profile_id":f.id,"revision":5,
+        serde_json::to_vec(&json!({"schema_version":4,"profile_id":f.id,"revision":5,
             "configuration":{"continent":null,"active":null,
-                "strategies":[strategy_json("New calls"),strategy_json("Kept")],
+                "strategies":[strategy_json("New calls"),strategy_json("Casual")],
                 "ignore_calls":[],"session_ignore_minutes":30}}))
         .unwrap(),
     )
@@ -1362,7 +1130,7 @@ async fn tc_039_032_a_builtin_is_selected_like_any_strategy_and_never_stored() {
     assert_eq!(read["configuration_error"], Value::Null);
     assert_eq!(
         read["configuration"]["strategies"],
-        json!([strategy_json("Kept")])
+        json!([strategy_json("New calls"), strategy_json("Casual copy")])
     );
     std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
 }
@@ -1852,11 +1620,8 @@ async fn tc_039_004_callers_come_first_and_a_cancelled_station_never_again() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    // A goal nobody below meets, a region that excludes the caller, a high min SNR.
-    let mut c = config(Some("Test calls"));
-    c["strategies"][0]["region"] = json!({"kind":"selected","continents":["OC"]});
-    c["strategies"][0]["min_snr_db"] = json!(10);
-    select(&f, c).await;
+    // #97 (TC-097-007): the caller passes the filters too; it comes first although weaker.
+    select(&f, config(Some("Test calls"))).await;
     publish(
         &f,
         e,
@@ -2160,7 +1925,9 @@ async fn worked_on_40m_now_on_20m() -> (Mcp, i64, crate::automation::ClientSessi
     let e = at_even(&f);
     let client = f.state.recording.clients.session();
     let mut c = config(Some("Test calls"));
-    c["strategies"][0]["goals"] = json!(["dxcc_band"]);
+    // Goal dxcc_band as #97 maps it.
+    c["strategies"][0]["filters"]["new"] = json!(["dxcc"]);
+    c["strategies"][0]["filters"]["new_per"] = json!("band");
     select(&f, c).await;
     publish(&f, e, &[("CQ K1ABC FN42", 1500.0, Some(-1.0))]);
     publish(&f, e + 30_000, &[("HB9BLA K1ABC -05", 1505.0, Some(-6.0))]);
@@ -2465,7 +2232,7 @@ async fn tc_039_030_today_and_from_to_read_the_log_of_the_window() {
         - 1;
     let rank = async |window: Value| {
         let mut s = strategy_json("W");
-        s["window"] = window;
+        s["filters"]["worked_since"] = window;
         let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"source_id":source,"job_id":job,
             "generation":generation,"first_sequence":first,"next_sequence":first + 1,"strategy":s,"explain":true});
         let v = f.browser("POST", "/strategy/evaluate", Some(body)).await;
@@ -3091,7 +2858,7 @@ async fn tc_039_005_automation_never_resets_the_tx_watchdog() {
     let e = at_even(&f);
     browser_watchdog(&f, 2).await;
     let mut c = config(Some("Test calls"));
-    c["strategies"][0]["repetitions"] = json!(20);
+    set_repetitions(&mut c, 20);
     // A pounce keeps the stop at N; a strategy run has none (TC-039-022).
     let started = pounce(&f, "K1ABC", 20).await;
     assert_eq!(started.status, StatusCode::ACCEPTED, "{}", started.json);
@@ -3143,7 +2910,7 @@ async fn run_at_limit(limit: u64, calls: u64, set: impl FnOnce(&crate::pskr::Fee
     let feed = crate::pskr::Feed::start(&dir, &f.id, &f.boot, None, crate::pskr::Timing::BROKER);
     f.state.recording.pskr.set(feed.clone()).ok().unwrap();
     let mut c = config(Some("Test calls"));
-    c["strategies"][0]["repetitions"] = json!(calls);
+    set_repetitions(&mut c, calls);
     select(&f, c).await;
     publish(&f, e, &[("CQ K1ABC FN42", 1800.0, Some(-10.0))]);
     assert_eq!(contact(&f).await.0, json!("K1ABC"));
@@ -3396,7 +3163,7 @@ fn tc_042_002_ignore_configuration_is_exact() {
     let mut c = config(Some("Test calls"));
     c["ignore_calls"] = json!(["K1ABC", "VK2ABC/P"]);
     c["session_ignore_minutes"] = json!(720);
-    let ok = parse_config(&c).unwrap();
+    let ok = parse_config(&c, None).unwrap();
     assert_eq!(
         (ok.ignore_calls.clone(), ok.session_ignore_minutes),
         (vec!["K1ABC".to_owned(), "VK2ABC/P".to_owned()], 720)
@@ -3424,19 +3191,26 @@ fn tc_042_002_ignore_configuration_is_exact() {
     ] {
         let mut bad = c.clone();
         bad[key] = value.clone();
-        assert_eq!(parse_config(&bad), Err(field.to_owned()), "{key}={value}");
+        assert_eq!(
+            parse_config(&bad, None),
+            Err(field.to_owned()),
+            "{key}={value}"
+        );
     }
     let mut missing = c.clone();
     missing.as_object_mut().unwrap().remove("ignore_calls");
     assert_eq!(
-        parse_config(&missing),
+        parse_config(&missing, None),
         Err("configuration".to_owned()),
         "a PUT names both keys"
     );
     let mut empty = c.clone();
     empty["ignore_calls"] = json!([]);
     empty["session_ignore_minutes"] = json!(1);
-    assert!(parse_config(&empty).is_ok(), "an empty list, one minute");
+    assert!(
+        parse_config(&empty, None).is_ok(),
+        "an empty list, one minute"
+    );
 }
 
 // Proves: TC-042-002
@@ -3723,7 +3497,7 @@ async fn tc_042_002_ignore_route_store_and_band_change() {
         .await;
     assert_eq!(
         v.json["verdicts"],
-        json!([{"sequence":0,"rank":0,"grey":false,"why":"needed: new_call"},
+        json!([{"sequence":0,"rank":0,"grey":false,"why":"new: call"},
             {"sequence":1,"rank":null,"grey":false,"why":"W1AW is ignored (session list)"},
             {"sequence":2,"rank":null,"grey":false,"why":"DL1XYZ is ignored (permanent list)"}])
     );
@@ -3741,8 +3515,8 @@ async fn tc_042_002_ignore_route_store_and_band_change() {
             .map(|v| (v["sequence"].clone(), v["why"].clone()))
             .collect::<Vec<_>>(),
         vec![
-            (json!(1), json!("needed: new_call")),
-            (json!(0), json!("needed: new_call")),
+            (json!(1), json!("new: call")),
+            (json!(0), json!("new: call")),
             (json!(2), json!("DL1XYZ is ignored (permanent list)"))
         ],
         "W1AW is no longer ignored on 20m; the permanent list stays"
@@ -4196,9 +3970,11 @@ async fn automation_does_not_start_as_a_hound() {
 // ------------------------------------------------------------------ #42 Alert
 /// The strategy "Alerts": rule 1 (call prefix K, no alert), rule 2 (any CQ, alert).
 fn alerts_strategy() -> Value {
-    json!({"name":"Alerts","class":"award","goals":["new_call"],"needed":"not_worked","region":{"kind":"all"},
+    v4(
+        json!({"name":"Alerts","class":"award","goals":["new_call"],"needed":"not_worked","region":{"kind":"all"},
         "min_snr_db":null,"value":["most_wanted"],"callers_first":true,"cq_when_no_target":false,
-        "repetitions":2,"quiet_minutes":10,"treat_73_as_cq":false,"window":{"kind":"all"}})
+        "repetitions":2,"quiet_minutes":10,"treat_73_as_cq":false,"window":{"kind":"all"}}),
+    )
 }
 
 async fn alerts(f: &Mcp) -> Value {
@@ -4549,8 +4325,8 @@ async fn tc_063_007_a_contest_selection_store_and_evaluation() {
     );
     browser_ok(&f, "set_activity", json!({"activity":"ww_digi"})).await;
     let contest = json!({"profile":"ww_digi","start":"2026-08-29T12:00Z",
-        "end":"2026-08-30T12:00Z","operation":"sp","repetitions":2,"quiet_minutes":10});
-    let mut selected = config(None);
+        "end":"2026-08-30T12:00Z"});
+    let mut selected = config(Some("WW Digi"));
     selected["contest"] = contest.clone();
     let p = put(&f, json!(0), selected.clone()).await;
     assert_eq!(p.status, StatusCode::OK, "{}", p.json);
@@ -4567,8 +4343,8 @@ async fn tc_063_007_a_contest_selection_store_and_evaluation() {
     );
     // Auto off: no run starts (strategydef: a selection alone only marks).
     assert_eq!(f.read("automation").await["run"], Value::Null);
-    // Refusals: a strategy and a contest at once; a bad period; a stale revision.
-    let mut both = config(Some("New calls"));
+    // Refusals: a strategy of class strategy and a contest at once; a bad period.
+    let mut both = config(Some("Test calls"));
     both["contest"] = contest.clone();
     let r = put(&f, json!(1), both).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
@@ -4601,6 +4377,7 @@ async fn tc_063_007_a_contest_selection_store_and_evaluation() {
     // None ends the contest; a later evaluation has nothing to evaluate.
     let mut none = selected.clone();
     none.as_object_mut().unwrap().remove("contest");
+    none["active"] = Value::Null;
     let r = put(&f, json!(1), none).await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.json);
     assert!(r.json["configuration"].get("contest").is_none());
@@ -4609,13 +4386,58 @@ async fn tc_063_007_a_contest_selection_store_and_evaluation() {
 }
 
 /// A contest selection around the bench's period e; `start_h` hours from e.
+/// #97 (CqWhenNoTarget, note on TC-063-010): a contest strategy calls CQ only after two fresh
+/// publications with nothing listed; two empty ones of periods before the bench's.
+fn two_empty(f: &Mcp) {
+    let p = f.bench.now_utc_ms().div_euclid(15_000) * 15_000;
+    publish(f, p - 120_000, &[]);
+    publish(f, p - 105_000, &[]);
+}
+/// The active contest strategy of `c` as a saved copy ("WW Digi run" for the built-in), changed
+/// by `edit` (the per-contest settings of a case written before #97 are the strategy's own).
+fn contest_edit(c: &mut Value, edit: impl FnOnce(&mut Value)) {
+    let active = c["active"].as_str().unwrap().to_owned();
+    let list = c["strategies"].as_array_mut().unwrap();
+    let i = match list.iter().position(|s| s["name"] == active.as_str()) {
+        Some(i) => i,
+        None => {
+            let mut s = contest_builtins()
+                .iter()
+                .find(|s| s.name == active)
+                .unwrap()
+                .json();
+            s["name"] = json!("WW Digi run");
+            list.push(s);
+            list.len() - 1
+        }
+    };
+    edit(&mut list[i]);
+    let name = list[i]["name"].clone();
+    c["active"] = name;
+}
+/// #97 note on TC-063: "Run" is the contest built-in "WW Digi", "S&P" a saved copy with
+/// cq_when_idle false.
 fn contest_config(e: i64, operation: &str, start_h: i64) -> Value {
     let hour = 3_600_000;
     let mut c = config(None);
+    let mut sp = contest_builtins()
+        .iter()
+        .find(|s| s.contest == Some("ww_digi"))
+        .unwrap()
+        .json();
+    sp["name"] = json!("WW Digi S&P");
+    sp["cq_when_idle"] = json!(false);
+    // #97 note on TC-039-044 (a), (b): the former x = 2.
+    sp["leave"] = json!({"mode":"calls","calls":2,"calls_heard":4});
+    c["strategies"] = json!([strategy_json("Test calls"), sp]);
+    c["active"] = json!(if operation == "run" {
+        "WW Digi"
+    } else {
+        "WW Digi S&P"
+    });
     c["contest"] = json!({"profile":"ww_digi",
         "start":crate::contest::utc_text(e + start_h * hour),
-        "end":crate::contest::utc_text(e + (start_h + 2) * hour),
-        "operation":operation,"repetitions":2,"quiet_minutes":10});
+        "end":crate::contest::utc_text(e + (start_h + 2) * hour)});
     c
 }
 fn import_adi(f: &Mcp, adi: &str) {
@@ -4708,7 +4530,10 @@ async fn tc_063_009_search_and_pounce_calls_the_most_valuable_and_waits_for_what
     let r = put(&f, json!(0), confirmed).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
     assert_eq!(r.json["error"]["field"], "contest.automation_confirmed");
-    let r = put(&f, json!(0), contest_config(e, "colouring", -1)).await;
+    // #97 D11: an operation is refused by its own path.
+    let mut colouring = contest_config(e, "sp", -1);
+    colouring["contest"]["operation"] = json!("colouring");
+    let r = put(&f, json!(0), colouring).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
     assert_eq!(r.json["error"]["field"], "contest.operation");
     assert_eq!(f.read("automation").await["run"], Value::Null);
@@ -4885,6 +4710,7 @@ async fn tc_063_011_the_tx_watchdog_stops_a_run_on_a_silent_band() {
     browser_ok(&f, "set_activity", json!({"activity":"ww_digi"})).await;
     browser_watchdog(&f, 2).await;
     select(&f, contest_config(e, "run", -1)).await;
+    two_empty(&f);
     f.tick();
     assert_eq!(run_state(&f).await.0, "calling_cq");
     transmit_own_period(&f, e + 15_000).await;
@@ -4907,15 +4733,13 @@ async fn tc_063_011_the_tx_watchdog_stops_a_run_on_a_silent_band() {
     // The stop turned Auto off (strategydef); the contest keeps its operation.
     let s = f.browser("GET", "/strategy", None).await.json;
     assert_eq!(
-        (
-            s["configuration"]["contest"]["operation"].clone(),
-            s["auto"].clone()
-        ),
-        (json!("run"), json!(false))
+        (s["configuration"]["active"].clone(), s["auto"].clone()),
+        (json!("WW Digi"), json!(false))
     );
     // Only Auto on restarts it, also after Enable Tx off left its CQ.
     browser_watchdog(&f, 20).await;
     assert_eq!(auto(&f, true, Some(true)).await.status, StatusCode::OK);
+    two_empty(&f);
     f.tick();
     assert_eq!(run_state(&f).await.0, "calling_cq");
     browser_ok(
@@ -4934,6 +4758,7 @@ async fn tc_063_011_the_tx_watchdog_stops_a_run_on_a_silent_band() {
         false
     );
     assert_eq!(auto(&f, true, Some(true)).await.status, StatusCode::OK);
+    two_empty(&f);
     f.tick();
     assert_eq!(run_state(&f).await.0, "calling_cq", "no CQ left behind");
 }
@@ -4950,6 +4775,7 @@ async fn tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller() {
     import_adi(&f, &logged_before("W1DUP", "EM12", e));
     browser_ok(&f, "set_activity", json!({"activity":"ww_digi"})).await;
     select(&f, contest_config(e, "run", -1)).await;
+    two_empty(&f);
     f.tick();
     let run = f.read("automation").await["run"].clone();
     assert_eq!(run["state"], "calling_cq");
@@ -4989,6 +4815,7 @@ async fn tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller() {
     transmit_own_period(&f, e + 15_000).await;
     assert_eq!(contact(&f).await.1, json!("completed"));
     f.tick();
+    two_empty(&f);
     f.tick();
     let run = f.read("automation").await["run"].clone();
     assert_eq!(
@@ -5020,6 +4847,7 @@ async fn tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller() {
     browser_ok(&f, "abort", json!({})).await;
     f.tick();
     f.tick();
+    two_empty(&f);
     f.tick();
     assert_eq!(
         run_state(&f).await.0,
@@ -5034,13 +4862,14 @@ async fn tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller() {
     browser_ok(&f, "abort", json!({})).await;
     f.tick();
     f.tick();
+    two_empty(&f);
     f.tick();
     assert_eq!(run_state(&f).await.0, "calling_cq");
     assert_eq!(contact(&f).await.2, json!("armed"));
     assert_ne!(f.read("contact").await["contact"]["id"], id);
     assert_eq!(
-        f.browser("GET", "/strategy", None).await.json["configuration"]["contest"]["operation"],
-        "run"
+        f.browser("GET", "/strategy", None).await.json["configuration"]["active"],
+        "WW Digi"
     );
     // A reason appearing ends the CQ: a band outside the contest, disarmed; back, it calls again.
     // The station band is the radio's: the dial moves to 30 m and back.
@@ -5052,6 +4881,7 @@ async fn tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller() {
     f.state.recording.fixture_band("20m");
     retune(&f, &dial, 14_074_000);
     f.tick();
+    two_empty(&f);
     f.tick();
     assert_eq!(run_state(&f).await.0, "calling_cq");
     assert_eq!(contact(&f).await.2, json!("armed"));
@@ -5075,6 +4905,7 @@ async fn tc_063_011_the_safety_of_a_contest_run_stays_on_the_server() {
     browser_ok(&f, "set_activity", json!({"activity":"ww_digi"})).await;
     let start = async |f: &Mcp| {
         select(f, contest_config(e, "run", -1)).await;
+        two_empty(f);
         f.tick();
         assert_eq!(quiet_run(f).0, "calling_cq");
     };
@@ -5091,9 +4922,10 @@ async fn tc_063_011_the_safety_of_a_contest_run_stays_on_the_server() {
         )
         .await;
     assert_eq!(m["result"]["error"]["code"], "operator_required", "{m}");
-    // A double-click on a CQ during the run's CQ: a manual QSO, the run stands aside, resumes.
-    publish(&f, e, &[("CQ WW K1ABC FN42", 1200.0, Some(5.0))]);
-    let row = live_row(&f, "CQ WW K1ABC FN42");
+    // A double-click during the run's CQ: a manual QSO, the run stands aside, resumes. #97 D11:
+    // the run itself selects a callable CQ, so the operator's row is a message to another station.
+    publish(&f, e, &[("W9XYZ K1ABC FN42", 1200.0, Some(5.0))]);
+    let row = live_row(&f, "W9XYZ K1ABC FN42");
     let d = f
         .browser(
             "POST",
@@ -5105,21 +4937,16 @@ async fn tc_063_011_the_safety_of_a_contest_run_stays_on_the_server() {
     f.tick();
     assert_eq!(quiet_run(&f).0, "manual");
     assert_eq!(quiet_contact(&f).await.0, json!("K1ABC"));
-    // Abort QSO (Esc) ends the QSO, not the run: it calls CQ again.
+    // Abort QSO (Esc) ends the QSO, not the run: it calls CQ again after two empty publications.
     browser_ok(&f, "abort", json!({})).await;
     f.tick();
-    f.tick();
+    two_empty(&f);
     f.tick();
     assert_eq!(quiet_run(&f).0, "calling_cq");
-    let active = |c: Value| {
-        (
-            c["configuration"]["contest"]["operation"].clone(),
-            c["auto"].clone(),
-        )
-    };
+    let active = |c: Value| (c["configuration"]["active"].clone(), c["auto"].clone());
     assert_eq!(
         active(f.browser("GET", "/strategy", None).await.json),
-        (json!("run"), json!(true))
+        (json!("WW Digi"), json!(true))
     );
     // HALT from any source ends the run and turns Auto off; the contest keeps its operation.
     let h = f
@@ -5135,7 +4962,7 @@ async fn tc_063_011_the_safety_of_a_contest_run_stays_on_the_server() {
     assert_eq!(quiet_run(&f), ("stopped".into(), json!("halted")));
     assert_eq!(
         active(f.browser("GET", "/strategy", None).await.json),
-        (json!("run"), json!(false))
+        (json!("WW Digi"), json!(false))
     );
     assert_eq!(quiet_contact(&f).await.2, json!("disarmed"));
     // The 8 h limit ends the CQ at once and leaves the contest selected with the reason.
@@ -5145,7 +4972,7 @@ async fn tc_063_011_the_safety_of_a_contest_run_stays_on_the_server() {
     assert_eq!(quiet_contact(&f).await.2, json!("disarmed"));
     assert_eq!(
         active(f.browser("GET", "/strategy", None).await.json),
-        (json!("run"), json!(false))
+        (json!("WW Digi"), json!(false))
     );
     at_skew(&f, 0);
     // With every browser gone for 60 s likewise; only Auto on restarts it.
@@ -5199,6 +5026,7 @@ fn dated(log: &[DatedRow], window: Option<(u32, u32)>) -> Arc<Worked> {
             mode: Some((*mode).into()),
             confirmed: false,
             date: Some(*date),
+            state: None,
         })
         .collect();
     Arc::new(Worked::from_log_window(
@@ -5229,7 +5057,7 @@ const VALUE_LOG: [DatedRow; 3] = [
 ];
 fn valued(goals: &[Goal], value: &[Criterion], callers_first: bool) -> Strategy {
     Strategy {
-        value: value.to_vec(),
+        order: value.to_vec(),
         callers_first,
         ..award(goals)
     }
@@ -5260,11 +5088,12 @@ fn tc_039_040_the_filter_and_the_value_order() {
             &st,
         )
     };
-    // new_call_band: K1ABC (on 20 m) is no candidate, DL1XYZ (40 m only) is; W1AW calls me.
+    // new_call_band: K1ABC (on 20 m) is no candidate, DL1XYZ (40 m only) is; W1AW calls me but
+    // is worked on 20 m: #97 (TC-097-007) it fails the filters and has no rank.
     // [snr]: DL1XYZ and OH1AA tie at -3 dB, the lower audio frequency first (1400 < 1500).
     assert_eq!(
         band(&[Snr], true),
-        ["W1AW", "OH1AA", "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC"]
+        ["OH1AA", "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC"]
     );
     // [distance], farther first, from the centre of JN47AA (47.0208 N, 8.0417 E): QF56
     // (-33.5, 151), PM95 (35.5, 139), ZS6AA without grid at the South Africa centre of cty.dat
@@ -5289,27 +5118,44 @@ fn tc_039_040_the_filter_and_the_value_order() {
     }
     assert_eq!(
         band(&[Distance], true),
-        ["W1AW", "VK2ABC", "JA1XYZ", "ZS6AA", "OH1AA", "DL1XYZ"]
+        ["VK2ABC", "JA1XYZ", "ZS6AA", "OH1AA", "DL1XYZ"]
     );
     // [most_wanted]: JA #40, VK #90, then the rest by the hidden SNR.
     assert_eq!(
         band(&[MostWanted], true),
-        ["W1AW", "JA1XYZ", "VK2ABC", "OH1AA", "DL1XYZ", "ZS6AA"]
+        ["JA1XYZ", "VK2ABC", "OH1AA", "DL1XYZ", "ZS6AA"]
     );
     // [most_wanted, distance]: the listed by rank, the rest by distance.
     assert_eq!(
         band(&[MostWanted, Distance], true),
-        ["W1AW", "JA1XYZ", "VK2ABC", "ZS6AA", "OH1AA", "DL1XYZ"]
+        ["JA1XYZ", "VK2ABC", "ZS6AA", "OH1AA", "DL1XYZ"]
     );
     // [new_dxcc, snr]: Germany is worked (on 40 m): DL1XYZ after the needed ones.
     assert_eq!(
         band(&[NewDxcc, Snr], true),
-        ["W1AW", "OH1AA", "ZS6AA", "JA1XYZ", "VK2ABC", "DL1XYZ"]
+        ["OH1AA", "ZS6AA", "JA1XYZ", "VK2ABC", "DL1XYZ"]
     );
-    // Callers first off with [snr]: W1AW ranked by its SNR, the weakest, last.
+    // Calling stations are answered off with [snr]: the new caller N1NEW has no rank (CL-097-03).
+    let with_caller = value_rows(&[
+        ("CQ OH1AA KP20", 1400.0, -3.0),
+        ("CQ ZS6AA", 2000.0, -8.0),
+        ("HB9BLA N1NEW FN31", 1000.0, -25.0),
+    ]);
     assert_eq!(
-        band(&[Snr], false),
-        ["OH1AA", "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "W1AW"]
+        called(
+            &valued(&[Goal::NewCallBand], &[Snr], false),
+            &with_caller,
+            &st
+        ),
+        ["OH1AA", "ZS6AA"]
+    );
+    assert_eq!(
+        called(
+            &valued(&[Goal::NewCallBand], &[Snr], true),
+            &with_caller,
+            &st
+        ),
+        ["N1NEW", "OH1AA", "ZS6AA"]
     );
     // The empty list: the hidden SNR alone.
     assert_eq!(band(&[], true), band(&[Snr], true));
@@ -5322,28 +5168,30 @@ fn tc_039_040_the_filter_and_the_value_order() {
             .why
     };
     let snr = valued(&[Goal::NewCallBand], &[Snr], true);
-    assert_eq!(why(&snr, "OH1AA"), "needed: new_call_band");
-    assert_eq!(why(&snr, "W1AW"), "calls my call");
-    assert_eq!(why(&snr, "K1ABC"), "not needed");
+    assert_eq!(why(&snr, "OH1AA"), "new: call on 20m");
+    assert_eq!(why(&snr, "W1AW"), "calls my call · not new");
+    assert_eq!(why(&snr, "K1ABC"), "not new");
     assert_eq!(
         why(&valued(&[Goal::NewCallBand], &[MostWanted], true), "JA1XYZ"),
-        "needed: new_call_band · Most Wanted #40"
+        "new: call on 20m · Most Wanted #40"
     );
-    // The caller fails every filter line (worked on 20 m, region AS only, min SNR -10): ranked.
+    // The caller fails every filter line (worked on 20 m, region AS only, min SNR -10): #97 not
+    // ranked (TC-097-007), named by its first failing line.
     let strict = Strategy {
         region: Region::Selected(vec!["AS".into()]),
         min_snr_db: Some(-10),
         ..valued(&[Goal::NewCallBand], &[Snr], true)
     };
-    assert_eq!(called(&strict, &rows, &st), ["W1AW"]);
-    // The band unknown: new_call_band needs none; the caller is still answered.
+    assert_eq!(called(&strict, &rows, &st), Vec::<String>::new());
+    assert_eq!(why(&strict, "W1AW"), "calls my call · region");
+    // The band unknown: new_call_band needs none; nothing is new per band.
     let unknown = Station {
         band: None,
         ..value_station(&VALUE_LOG)
     };
     assert_eq!(
         called(&valued(&[Goal::NewCallBand], &[Snr], true), &rows, &unknown),
-        ["W1AW"]
+        Vec::<String>::new()
     );
     // Decode order is no ranking: the same rows in the reverse sequence rank the same.
     let mut reversed = rows.clone();
@@ -5375,32 +5223,43 @@ fn tc_039_040_the_filter_and_the_value_order() {
         worked: Some(dated(&log, window)),
         ..value_station(&[])
     };
-    let s = valued(&[Goal::NewCallBand], &[Snr], false);
+    let s = valued(&[Goal::NewCallBand], &[Snr], true);
+    // W1AW (not in this log) is a new call on 20 m: a caller that passes, first (callers on).
     assert_eq!(
         called(&s, &rows, &in_window(Some((today, today)))),
-        ["DL1XYZ", "ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC", "W1AW"]
+        ["W1AW", "DL1XYZ", "ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC"]
     );
     assert_eq!(
         called(&s, &rows, &in_window(None)),
-        ["ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC", "W1AW"]
+        ["W1AW", "ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC"]
     );
 }
 
 // Proves: TC-039-040. Each needed-first criterion alone, each with its own log, before the hidden
-// SNR (goal new_call, grid or dxcc_slot so that every row stays a candidate; callers first off,
-// so the caller W1AW is ranked by the criterion too).
+// SNR (goal new_call, grid or dxcc_slot so that every row stays a candidate; Calling stations are
+// answered off, so the caller W1AW has no rank, CL-097-03).
 #[test]
 fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
     use Criterion::*;
     let rows = value_rows(&VALUE_ROWS);
-    let goals = [Goal::NewCall, Goal::Grid, Goal::DxccSlot];
+    // #97: one per for every what: new [call, grid, dxcc] per band and mode (per ever when the
+    // band is unknown), so that every row stays a candidate as with the former goals.
     let order = |c: Criterion, log: &[DatedRow], band: Option<&str>| {
         let st = Station {
             band: band.map(Into::into),
             most_wanted: None,
             ..value_station(log)
         };
-        called(&valued(&goals, &[c], false), &rows, &st)
+        let s = Strategy {
+            new: vec![NewWhat::Call, NewWhat::Grid, NewWhat::Dxcc],
+            new_per: if band.is_some() {
+                NewPer::BandMode
+            } else {
+                NewPer::Ever
+            },
+            ..valued(&[Goal::NewCall], &[c], false)
+        };
+        called(&s, &rows, &st)
     };
     let d = 20_260_101;
     let twenty = Some("20m");
@@ -5410,9 +5269,7 @@ fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
             NewDxcc,
             vec![("DL9ZZZ", "40m", "FT8", Some("JO50"), d)],
             twenty,
-            vec![
-                "OH1AA", "ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC", "W1AW", "DL1XYZ",
-            ],
+            vec!["OH1AA", "ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC", "DL1XYZ"],
         ),
         // On 20 m Germany (40 m only) is needed; the USA (K9ZZZ on 20 m) is not.
         (
@@ -5422,21 +5279,17 @@ fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
                 ("K9ZZZ", "20m", "FT8", Some("EM10"), d),
             ],
             twenty,
-            vec![
-                "OH1AA", "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "K1ABC", "W1AW",
-            ],
+            vec!["OH1AA", "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "K1ABC"],
         ),
         // Japan only in FT4 on 20 m: needed in FT8 (another mode); Australia in FT8: not.
         (
-            NewDxccSlot,
+            NewDxccBandMode,
             vec![
                 ("JA9ZZZ", "20m", "FT4", Some("PM85"), d),
                 ("VK3ZZZ", "20m", "FT8", Some("QF22"), d),
             ],
             twenty,
-            vec![
-                "OH1AA", "DL1XYZ", "ZS6AA", "K1ABC", "JA1XYZ", "W1AW", "VK2ABC",
-            ],
+            vec!["OH1AA", "DL1XYZ", "ZS6AA", "K1ABC", "JA1XYZ", "VK2ABC"],
         ),
         // K1ABC and W1AW logged (from EM00, so K1ABC stays a candidate by its grid).
         (
@@ -5446,9 +5299,7 @@ fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
                 ("W1AW", "20m", "FT8", Some("EM00"), d),
             ],
             twenty,
-            vec![
-                "OH1AA", "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "K1ABC", "W1AW",
-            ],
+            vec!["OH1AA", "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "K1ABC"],
         ),
         // K1ABC, W1AW and OH1AA on 20 m: after the rest.
         (
@@ -5459,18 +5310,14 @@ fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
                 ("OH1AA", "20m", "FT8", Some("KP00"), d),
             ],
             twenty,
-            vec![
-                "DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "OH1AA", "K1ABC", "W1AW",
-            ],
+            vec!["DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "OH1AA", "K1ABC"],
         ),
         // FN42 logged on 40 m: K1ABC's grid is worked; ZS6AA sends no grid (D13): both after.
         (
             NewGrid,
             vec![("K9ZZZ", "40m", "FT8", Some("FN42"), d)],
             twenty,
-            vec![
-                "OH1AA", "DL1XYZ", "JA1XYZ", "VK2ABC", "W1AW", "ZS6AA", "K1ABC",
-            ],
+            vec!["OH1AA", "DL1XYZ", "JA1XYZ", "VK2ABC", "ZS6AA", "K1ABC"],
         ),
         // FN42 only on 40 m: K1ABC needed on 20 m; no grid (ZS6AA) and an unknown grid status
         // (JA1XYZ, a 20 m QSO without grid, a candidate by dxcc_slot) are not.
@@ -5481,9 +5328,7 @@ fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
                 ("JA1XYZ", "20m", "FT4", None, d),
             ],
             twenty,
-            vec![
-                "OH1AA", "DL1XYZ", "K1ABC", "VK2ABC", "W1AW", "ZS6AA", "JA1XYZ",
-            ],
+            vec!["OH1AA", "DL1XYZ", "K1ABC", "VK2ABC", "ZS6AA", "JA1XYZ"],
         ),
         // The band unknown: new_grid_band needs nothing, the hidden SNR alone; JA1XYZ (logged,
         // gridless, dxcc_slot needs a band) is no candidate.
@@ -5494,106 +5339,11 @@ fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
                 ("JA1XYZ", "20m", "FT4", None, d),
             ],
             None,
-            vec!["OH1AA", "DL1XYZ", "ZS6AA", "K1ABC", "VK2ABC", "W1AW"],
+            vec!["OH1AA", "DL1XYZ", "ZS6AA", "K1ABC", "VK2ABC"],
         ),
     ] {
         assert_eq!(order(c, &log, band), expected, "{c:?} {band:?}");
     }
-}
-
-// Proves: TC-039-041. A schema 2 file reads at its revision with calls_per_station dropped and
-// the defaults added, and the next PUT writes schema 3; a malformed schema 2 strategy makes the
-// file malformed; the eight built-ins are listed.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_041_a_schema_2_file_upgrades_and_is_written_as_schema_3() {
-    let f = station(true).await;
-    let write = |schema: u64, strategies: Value| {
-        std::fs::write(
-            f.dir.join(FILE_NAME),
-            serde_json::to_vec(
-                &json!({"schema_version":schema,"profile_id":f.id,"revision":7,
-                "configuration":{"continent":null,"active":null,"strategies":strategies,
-                "ignore_calls":[],"session_ignore_minutes":30}}),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-    };
-    let old = json!({"name":"Mine","class":"award","goals":["new_call"],"needed":"not_worked",
-        "region":{"kind":"all"},"min_snr_db":null,"calls_per_station":5,"treat_73_as_cq":true,
-        "window":{"kind":"all"}});
-    write(2, json!([old]));
-    let owner = Owner::default();
-    let s = owner.snapshot(&f.state);
-    assert_eq!(
-        (s["revision"].clone(), s["configuration_error"].clone()),
-        (json!(7), Value::Null)
-    );
-    let mine = json!({"name":"Mine","class":"award","goals":["new_call"],"needed":"not_worked",
-        "region":{"kind":"all"},"min_snr_db":null,"value":["most_wanted"],"callers_first":true,
-        "cq_when_no_target":false,"repetitions":4,"quiet_minutes":10,"treat_73_as_cq":true,
-        "window":{"kind":"all"}});
-    assert_eq!(s["configuration"]["strategies"], json!([mine]));
-    // The next PUT writes schema 3 at revision 8 with those keys.
-    let mut changed = s["configuration"].clone();
-    changed["continent"] = json!("AS");
-    owner
-        .put(
-            &f.state,
-            json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"expected_revision":7,
-                "configuration":changed}),
-        )
-        .unwrap();
-    let saved: Value =
-        serde_json::from_slice(&std::fs::read(f.dir.join(FILE_NAME)).unwrap()).unwrap();
-    assert_eq!(
-        saved,
-        json!({"schema_version":3,"profile_id":f.id,"revision":8,"configuration":changed})
-    );
-    assert_eq!(saved["configuration"]["strategies"][0], mine);
-    // A schema 2 strategy that is otherwise malformed: the file reads configuration null.
-    let with = |k: &str, v: Value| {
-        let mut s = old.clone();
-        s[k] = v;
-        s
-    };
-    let mut missing = old.clone();
-    missing.as_object_mut().unwrap().remove("calls_per_station");
-    for bad in [
-        with("calls_per_station", json!(0)),
-        with("calls_per_station", json!(21)),
-        with("region", json!({"kind":"east"})),
-        with("value", json!(["snr"])),
-        missing,
-    ] {
-        write(2, json!([bad.clone()]));
-        let s = Owner::default().snapshot(&f.state);
-        assert_eq!(
-            (s["configuration"].clone(), s["configuration_error"].clone()),
-            (Value::Null, json!("invalid_configuration")),
-            "{bad}"
-        );
-    }
-    // A schema 3 file is read as it is; schema 3 keys in it are required.
-    write(3, json!([mine]));
-    assert_eq!(
-        Owner::default().snapshot(&f.state)["configuration"]["strategies"],
-        json!([mine])
-    );
-    write(3, json!([old]));
-    assert_eq!(
-        Owner::default().snapshot(&f.state)["configuration_error"],
-        "invalid_configuration"
-    );
-    // The eight built-ins (their fields: TC-039-032).
-    assert_eq!(
-        owner.snapshot(&f.state)["builtin_strategies"]
-            .as_array()
-            .unwrap()
-            .len(),
-        8
-    );
-    std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
 }
 
 /// The armed state of the transmit owner.
@@ -5851,6 +5601,7 @@ async fn tc_039_042_a_silent_contest_switches_auto_on_without_a_confirmation() {
     let e = at_even(&f);
     let mut c = contest_config(e, "sp", -1);
     c["contest"]["profile"] = json!("ft8_activity");
+    c["strategies"][1]["contest"] = json!("ft8_activity");
     save(&f, c).await;
     let r = auto(&f, true, None).await;
     assert_eq!(
@@ -5950,6 +5701,12 @@ async fn wd(f: &Mcp) -> Value {
     f.tick();
     f.read("contact").await["watchdog"]["tx_remaining_calls"].clone()
 }
+/// #97 note on TC-039-043: the former WD:n of a run's own contact is the leave label's remaining
+/// (WstxStrategy::LeaveCountLabel); WD itself is null there.
+async fn leave_left(f: &Mcp) -> Value {
+    assert_eq!(wd(f).await, Value::Null, "no WD in the run's own contact");
+    run_of(f).await["leave"]["remaining"].clone()
+}
 /// An attended strategy run with Auto on, on 20 m: "Test calls" (goal new_call, value [snr],
 /// repetitions 4, quiet_minutes 10, callers first) changed by `edit`, the feed attached; `first`
 /// published in the even period e selects the target.
@@ -5979,8 +5736,8 @@ async fn leaving_from(
     }
     let feed = attach_feed(&f);
     let mut c = config(Some("Test calls"));
-    c["strategies"][0]["repetitions"] = json!(4);
-    c["strategies"][0]["quiet_minutes"] = json!(10);
+    set_repetitions(&mut c, 4);
+    c["strategies"][0]["retry_minutes"] = json!(10);
     edit(&mut c);
     select(&f, c).await;
     publish(&f, e, first);
@@ -6019,14 +5776,18 @@ async fn tc_039_043_a_silent_or_repeating_target_is_left_at_the_4th() {
         let t = leaving(|_| {}, &[K1ABC_CQ]).await;
         let (f, e) = (&t.f, t.e);
         let rows: &[(&str, f64, Option<f64>)] = if again { &[K1ABC_CQ] } else { &[] };
-        assert_eq!(wd(f).await, json!(4), "again {again}");
+        assert_eq!(leave_left(f).await, json!(4), "again {again}");
         for k in 1..=3 {
             publish(f, rep(e, k), rows);
             assert_eq!(
                 contact(f).await,
                 (json!("K1ABC"), json!("replying"), json!("armed"))
             );
-            assert_eq!(wd(f).await, json!(4 - k), "again {again}, repetition {k}");
+            assert_eq!(
+                leave_left(f).await,
+                json!(4 - k),
+                "again {again}, repetition {k}"
+            );
         }
         publish(f, rep(e, 4), rows);
         assert_eq!(
@@ -6045,18 +5806,19 @@ async fn tc_039_043_a_silent_or_repeating_target_is_left_at_the_4th() {
     }
 }
 
-// Proves: TC-039-043 (c). A spot of my call at K1ABC 60 s old doubles x: armed after 7, left at
+// Proves: TC-039-043 (c), TC-097-009 (a) (leave {calls 4, calls_heard 8}: 4 without and 8 with the
+// spot). A spot of my call at K1ABC 60 s old doubles x: armed after 7, left at
 // the 8th, WD:8 down to 1; with Use PSK Reporter off the spot is not used: left at the 4th.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_043_a_target_that_hears_us_is_left_at_2x_and_use_off_at_x() {
     let t = leaving(|_| {}, &[K1ABC_CQ]).await;
     let (f, e) = (&t.f, t.e);
     t.feed.inject(&heard_spot(60));
-    assert_eq!(wd(f).await, json!(8));
+    assert_eq!(leave_left(f).await, json!(8));
     for k in 1..=7 {
         publish(f, rep(e, k), &[]);
         assert_eq!(contact(f).await.2, json!("armed"), "repetition {k}");
-        assert_eq!(wd(f).await, json!(8 - k));
+        assert_eq!(leave_left(f).await, json!(8 - k));
     }
     assert_eq!(run_of(f).await["hearing"]["state"], "heard");
     publish(f, rep(e, 8), &[]);
@@ -6232,13 +5994,9 @@ async fn tc_039_043_the_quiet_time_excludes_selection_and_answering() {
 // Proves: TC-039-043 (i). Repetitions 1: left at the 1st.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_043_one_repetition_leaves_at_the_first() {
-    let t = leaving(
-        |c| c["strategies"][0]["repetitions"] = json!(1),
-        &[K1ABC_CQ],
-    )
-    .await;
+    let t = leaving(|c| set_repetitions(c, 1), &[K1ABC_CQ]).await;
     let (f, e) = (&t.f, t.e);
-    assert_eq!(wd(f).await, json!(1));
+    assert_eq!(leave_left(f).await, json!(1));
     publish(f, rep(e, 1), &[]);
     assert_eq!(contact(f).await.2, json!("disarmed"));
     assert_eq!(
@@ -6341,6 +6099,9 @@ async fn contest_leaving_from(
     let mut c = contest_config(e, operation, -1);
     edit(&mut c);
     select(&f, c).await;
+    if operation == "run" {
+        two_empty(&f);
+    }
     f.tick();
     Leaving {
         f,
@@ -6393,7 +6154,14 @@ async fn tc_039_044_a_contest_leaves_at_2_and_at_4_with_a_spot() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_044_a_heard_target_stays_until_a_more_valuable_station() {
     let dupe = ("HB9BLA W1DUP EM12", 900.0, Some(9.0));
-    let t = contest_calling(|_| {}).await;
+    // #97 note: leave {contest, tx_changes 1} with tx_move_every {0, 1, 1}.
+    let style = |c: &mut Value| {
+        contest_edit(c, |s| {
+            s["leave"] = json!({"mode":"contest","tx_changes":1});
+            s["tx_move_every"] = json!({"heard":0,"not_heard":1,"no_reports":1});
+        })
+    };
+    let t = contest_calling(style).await;
     let (f, e) = (&t.f, t.e);
     t.feed.inject(&heard_spot(60));
     for k in 1..=10 {
@@ -6407,26 +6175,30 @@ async fn tc_039_044_a_heard_target_stays_until_a_more_valuable_station() {
     assert_eq!(run_of(f).await["left"], Value::Null);
     assert_eq!(run_of(f).await["unanswered_periods"], 10);
 
-    let t = contest_calling(|_| {}).await;
+    let t = contest_calling(style).await;
     let (f, e) = (&t.f, t.e);
     t.feed.inject(&heard_spot(60));
     for k in 1..=5 {
         publish(f, rep(e, k), &[K1ABC_WW]);
     }
     assert_eq!(contact(f).await.2, json!("armed"));
+    // #97 LeaveRule contest: the stays had no count; JA1XYZ listed makes the 6th a change point
+    // (heard: k 0, Tx stays) and the 7th the leaving (tx_changes 1).
     publish(f, rep(e, 6), &[K1ABC_WW, JA1XYZ_WW]);
-    assert_eq!(contact(f).await.2, json!("disarmed"), "left at once");
+    assert_eq!(contact(f).await.2, json!("armed"), "the change at the 6th");
+    publish(f, rep(e, 7), &[K1ABC_WW, JA1XYZ_WW]);
+    assert_eq!(contact(f).await.2, json!("disarmed"), "left at the 7th");
     assert_eq!(
         run_of(f).await["left"],
-        json!({"call":"K1ABC","reason":"repetitions"})
+        json!({"call":"K1ABC","reason":"tx_changes"})
     );
-    publish(f, rep(e, 7), &[K1ABC_WW, JA1XYZ_WW]);
+    publish(f, rep(e, 8), &[K1ABC_WW, JA1XYZ_WW]);
     assert_eq!(
         contact(f).await,
         (json!("JA1XYZ"), json!("report"), json!("armed"))
     );
 
-    let t = contest_calling(|_| {}).await;
+    let t = contest_calling(style).await;
     let (f, e) = (&t.f, t.e);
     t.feed.inject(&heard_spot(60));
     publish(f, rep(e, 1), &[K1ABC_WW, JA1XYZ_WW]);
@@ -6466,13 +6238,19 @@ async fn tc_039_044_a_contest_caller_is_answered_at_once() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_044_run_leaves_a_silent_caller_and_keeps_it_quiet() {
     let k2 = ("HB9BLA K2NEW FN31", 1200.0, Some(-8.0));
-    let t = contest_leaving_from(false, "run", |_| {}, cq_quiet_rows).await;
+    // #97: the built-in's copy with the former x = 2.
+    let t = contest_leaving_from(
+        false,
+        "run",
+        |c| {
+            contest_edit(c, |s| {
+                s["leave"] = json!({"mode":"calls","calls":2,"calls_heard":4})
+            })
+        },
+        cq_quiet_rows,
+    )
+    .await;
     let (f, e) = (&t.f, t.e);
-    // #89 FreeTxSlot "Waiting for the newest period": Auto on 1 s into my Rx period e, its CQ
-    // waits for e's complete publication, at the latest until e ends (none comes here).
-    assert_eq!(run_of(f).await["state"], "waiting");
-    ended(f, e + 15_000);
-    f.tick();
     assert_eq!(run_of(f).await["state"], "calling_cq");
     assert_eq!(frequencies(f).await.1, json!(900), "the CQ's slot");
     publish(f, e, &[k2]);
@@ -6488,6 +6266,7 @@ async fn tc_039_044_run_leaves_a_silent_caller_and_keeps_it_quiet() {
     assert_eq!(contact(f).await.2, json!("armed"));
     publish(f, rep(e, 2), &[]);
     f.tick();
+    two_empty(f);
     assert_eq!(run_of(f).await["state"], "calling_cq");
     assert_eq!(
         run_of(f).await["left"],
@@ -6505,8 +6284,10 @@ async fn tc_039_044_run_leaves_a_silent_caller_and_keeps_it_quiet() {
         false,
         "run",
         |c| {
-            c["contest"]["repetitions"] = json!(3);
-            c["contest"]["quiet_minutes"] = json!(1);
+            contest_edit(c, |s| {
+                s["leave"] = json!({"mode":"calls","calls":3,"calls_heard":6});
+                s["retry_minutes"] = json!(1);
+            });
         },
         |_, _| {},
     )
@@ -6571,15 +6352,10 @@ async fn casual(cq: bool) -> Leaving {
     import_adi(&f, &logged_before("W1AW", "FN31", e));
     f.state.logbook.worked_set().unwrap();
     let feed = attach_feed(&f);
+    // #97 note on TC-039-045: "Casual 20 m" is a saved strategy (new [call] per band, worked
+    // since today, order [snr], cq_when_idle as `cq`).
     let mut c = config(Some("Casual 20 m"));
-    if !cq {
-        let mut s = strategy_json("Casual copy");
-        s["goals"] = json!(["new_call_band"]);
-        s["window"] = json!({"kind":"today"});
-        s["cq_when_no_target"] = json!(false);
-        c["strategies"] = json!([s]);
-        c["active"] = json!("Casual copy");
-    }
+    c["strategies"][1]["cq_when_idle"] = json!(cq);
     select(&f, c).await;
     f.tick();
     Leaving {
@@ -6608,15 +6384,20 @@ async fn tc_039_045_cq_when_no_target_calls_answers_and_calls_a_candidate() {
     assert_eq!(c["transmit"]["arm_state"], "armed");
     publish(f, rep(e, 2), &[]);
     assert_eq!(run_of(f).await["state"], "calling_cq");
-    // The caller is answered from the CQ, whatever the filter.
+    // #97 (TC-097-007): W1AW, worked today, fails the filters and is not answered; the new
+    // caller N1NEW is answered from the CQ.
     publish(f, rep(e, 3), &[("HB9BLA W1AW FN31", 1200.0, Some(-10.0))]);
+    assert_eq!(run_of(f).await["state"], "calling_cq", "W1AW not answered");
+    // The rest one period later.
+    let e = e + 30_000;
+    publish(f, rep(e, 3), &[("HB9BLA N1NEW FN31", 1200.0, Some(-10.0))]);
     assert_eq!(
         contact(f).await,
-        (json!("W1AW"), json!("report"), json!("armed"))
+        (json!("N1NEW"), json!("report"), json!("armed"))
     );
     assert_eq!(run_of(f).await["state"], "contact_active");
-    publish(f, rep(e, 4), &[("HB9BLA W1AW R-05", 1200.0, Some(-10.0))]);
-    publish(f, rep(e, 5), &[("HB9BLA W1AW 73", 1200.0, Some(-10.0))]);
+    publish(f, rep(e, 4), &[("HB9BLA N1NEW R-05", 1200.0, Some(-10.0))]);
+    publish(f, rep(e, 5), &[("HB9BLA N1NEW 73", 1200.0, Some(-10.0))]);
     assert_eq!(contact(f).await.1, json!("completed"));
     f.tick();
     assert_eq!(run_of(f).await["state"], "waiting");
@@ -7017,8 +6798,12 @@ async fn tc_039_022_the_slot_check_at_every_repetition() {
         let t = slot_check(set).await;
         let (f, e) = (&t.f, t.e);
         let x = if heard { 8 } else { 4 };
-        assert_eq!(wd(f).await, json!(x), "{name}");
-        let moves = [1400, 1300, 1300];
+        // #97 note: the WD expectations are the leave label (no WD in the run's own contact).
+        let left = async |f: &Mcp| run_of(f).await["leave"]["remaining"].clone();
+        assert_eq!(wd(f).await, Value::Null, "{name}");
+        // #97 (TC-097-010): a move never keeps the current slot: at the 3rd (flat) the nearest
+        // other quiet slot, 1250 before 1350.
+        let moves = [1400, 1300, 1250];
         for k in 1..=3 {
             transmit_own_period(f, rep(e, k - 1) + 15_000).await;
             slot_rows(f, e, k);
@@ -7035,10 +6820,11 @@ async fn tc_039_022_the_slot_check_at_every_repetition() {
             );
             assert_eq!(s["transmit"]["arm_state"], "armed", "{name}");
             assert_eq!(s["watchdog"]["tx_expired"], false, "{name}");
-            assert_eq!(wd(f).await, json!(x - k), "{name}, repetition {k}");
+            assert_eq!(left(f).await, json!(x - k), "{name}, repetition {k}");
+            let case = if heard { "heard" } else { "no_reports" };
             assert_eq!(
                 run_of(f).await["slot_check"],
-                json!({"repetitions":k,"hears_us":heard,"hz":hz}),
+                json!({"repetitions":k,"case":case,"hears_us":heard,"moved":!heard,"hz":hz}),
                 "{name}"
             );
         }
@@ -7136,7 +6922,7 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     let (f, e) = (&t.f, t.e);
     assert_eq!(
         run_of(f).await["hearing"],
-        json!({"state":"unknown","spot_utc_s":null,"snr_db":null})
+        json!({"state":"unknown","reports":false,"spot_utc_s":null,"snr_db":null})
     );
     let now = crate::contact_http_tests::now_ms() / 1000;
     t.feed
@@ -7144,7 +6930,7 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     f.tick();
     assert_eq!(
         run_of(f).await["hearing"],
-        json!({"state":"heard","spot_utc_s":now - 60,"snr_db":-12})
+        json!({"state":"heard","reports":true,"spot_utc_s":now - 60,"snr_db":-12})
     );
     t.feed.switch_use(false);
     f.tick();
@@ -7201,29 +6987,45 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
             odd(now) - 60,
         ));
     }
+    // #97 TxMoveRule: a move never uses the fallback of FreeTxSlot (his end ignored, "· no"):
+    // with no candidate left Tx stays (1650) and slot_check says moved false.
     publish(f, rep(e, 2), &[]);
     assert_eq!(
         run_of(f).await["tx_slot"],
-        json!({"hz":1300,"power_db":0,"his_end":"no"})
+        json!({"hz":1650,"power_db":1,"his_end":"yes"})
     );
+    assert_eq!(run_of(f).await["slot_check"]["moved"], false);
+    assert_eq!(frequencies(f).await.1, json!(1650));
 }
 
-// Proves: TC-039-022, TC-039-044 (c). WD in a contest stay: 3 at the 1st repetition with the spot
-// (2x = 4), null (WD:∞) once K1ABC in situation 1 stays at the 2nd, and a number again (1, the
-// next repetition leaves) once the spot is older than 600 s.
+// Proves: TC-097-013 (b). #97 (#91): no WD in the run's own contact: tx_remaining_calls is null on
+// GET /contact and GET /transmit while armed, and the run's leave {calls 2, calls_heard 4} counts:
+// 3 calls left at the 1st repetition with the spot (m 4), 2 at the 2nd, 1 once the spot is older
+// than 600 s (n 2, at least 1 shown), left at the 3rd.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_022_wd_is_infinite_in_a_contest_stay_and_a_number_after_the_spot() {
+async fn tc_097_013_no_wd_in_the_runs_own_contact_and_the_leave_count() {
     let t = contest_calling(|_| {}).await;
     let (f, e) = (&t.f, t.e);
     t.feed.inject(&heard_spot(596));
     publish(f, rep(e, 1), &[K1ABC_WW]);
-    assert_eq!(wd(f).await, json!(3));
+    assert_eq!(wd(f).await, Value::Null, "no WD in the run's own contact");
+    assert_eq!(
+        f.browser("GET", "/transmit", None).await.json["watchdog"]["tx_remaining_calls"],
+        Value::Null,
+        "GET /transmit: null, never the leave count"
+    );
+    assert_eq!(
+        run_of(f).await["leave"],
+        json!({"mode":"calls","remaining":3,"busy":false,"paused":0,"staying":false})
+    );
     publish(f, rep(e, 2), &[K1ABC_WW]);
-    assert_eq!(contact(f).await.2, json!("armed"), "it stays");
-    assert_eq!(wd(f).await, Value::Null, "WD:∞");
+    assert_eq!(contact(f).await.2, json!("armed"));
+    assert_eq!(run_of(f).await["leave"]["remaining"], 2);
     tokio::time::sleep(Duration::from_secs(6)).await;
-    assert_eq!(wd(f).await, json!(1));
+    f.tick();
     assert_eq!(run_of(f).await["hearing"]["state"], "unknown");
+    assert_eq!(run_of(f).await["leave"]["remaining"], 1);
+    assert_eq!(wd(f).await, Value::Null);
     publish(f, rep(e, 3), &[K1ABC_WW]);
     assert_eq!(contact(f).await.2, json!("disarmed"));
 }
@@ -7339,8 +7141,8 @@ async fn held_run_with(
     rows(&f, e);
     let feed = attach_feed(&f);
     let mut c = config(Some("Test calls"));
-    c["strategies"][0]["repetitions"] = json!(4);
-    c["strategies"][0]["quiet_minutes"] = json!(10);
+    set_repetitions(&mut c, 4);
+    c["strategies"][0]["retry_minutes"] = json!(10);
     select(&f, c).await;
     publish(&f, e, first);
     f.tick();
@@ -7391,7 +7193,7 @@ async fn tc_039_049_hold_tx_on_keeps_tx_and_moves_it_alone_when_he_does_not_hear
         );
         assert_eq!(
             run_of(f).await["slot_check"],
-            json!({"repetitions":k,"hears_us":false,"hz":hz})
+            json!({"repetitions":k,"case":"no_reports","hears_us":false,"moved":true,"hz":hz})
         );
         assert_eq!(contact(f).await.2, json!("armed"));
     }
@@ -7439,7 +7241,7 @@ async fn tc_039_049_a_target_that_hears_us_or_has_answered_keeps_tx() {
     assert_eq!(rx_tx(f).await, (json!(1800), json!(1500)), "(d)");
     assert_eq!(
         run_of(f).await["slot_check"],
-        json!({"repetitions":1,"hears_us":true,"hz":1500})
+        json!({"repetitions":1,"case":"heard","hears_us":true,"moved":false,"hz":1500})
     );
 
     let t = held_run("ft8", None, &[K1ABC_CQ]).await;
@@ -7525,10 +7327,12 @@ async fn tc_039_049_a_held_tx_outside_the_range_is_kept_and_moves_in_at_the_slot
     wf_row(f, e, 40, &[], false);
     ended(f, e + 7_500);
     publish(f, e + 15_000, &[]);
-    assert_eq!(rx_tx(f).await, (json!(1000), json!(2610)));
+    // #97 (TC-097-010): the upper edge loses every tie, so of the tied candidates the nearest one
+    // whose signal ends at or below 2400 Hz, 2310 (2310 + 90).
+    assert_eq!(rx_tx(f).await, (json!(1000), json!(2310)));
     assert_eq!(
         run_of(f).await["slot_check"],
-        json!({"repetitions":1,"hears_us":false,"hz":2610})
+        json!({"repetitions":1,"case":"no_reports","hears_us":false,"moved":true,"hz":2310})
     );
 }
 
@@ -7604,7 +7408,13 @@ async fn tc_039_049_hold_tx_switched_off_mid_contact_moves_rx_with_tx() {
 // held 1500; repetitions 1 and 2 move Tx alone to 1400 and 1300, Rx stays 1800.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_049_contest_sp_holds_tx_as_a_strategy_run() {
-    let t = contest_calling(|c| c["contest"]["repetitions"] = json!(4)).await;
+    let t = contest_calling(|c| {
+        contest_edit(c, |s| {
+            s["leave"] = json!({"mode":"calls","calls":4,"calls_heard":8});
+            s["tx_move_every"] = json!({"heard":0,"not_heard":1,"no_reports":1});
+        });
+    })
+    .await;
     let (f, e) = (&t.f, t.e);
     assert_eq!(rx_tx(f).await, (json!(1800), json!(1500)), "(a)");
     wf_row(f, e - 15_000, 0, &[], false);
@@ -7631,6 +7441,7 @@ async fn contest_run_held() -> Leaving {
     set_tx(&f, 900).await;
     let feed = attach_feed(&f);
     select(&f, contest_config(e, "run", -1)).await;
+    two_empty(&f);
     f.tick();
     Leaving {
         f,
@@ -9104,7 +8915,7 @@ async fn tc_066_002_received_periods_count_after_my_transmissions() {
     let mut capture = f.state.recording.fixture_capture(e - 30_000);
     capture.until(e);
     let mut c = config(Some("Test calls"));
-    c["strategies"][0]["repetitions"] = json!(4);
+    set_repetitions(&mut c, 4);
     select(&f, c).await;
     publish(&f, e, &[K1ABC_CQ]);
     assert_eq!(contact(&f).await.0, json!("K1ABC"));

@@ -301,13 +301,15 @@ package WstxMcp {
              run (null or {id, state, reason, mode, completed_contacts, unanswered_periods,
              contact_id, selected (null or {source_id, job_id, generation, sequence, call}),
              last_decision, given_up (calls the operator gave up in a strategy run), left (null
-             or {call, reason repetitions|caller}, the last station a strategy or contest run
-             left, WstxStrategy::LeaveRule), quiet ([{call, band, mode, remaining_s}],
-             WstxStrategy::QuietTime), hearing (null or {state heard|no|unknown, spot_utc_s,
-             snr_db}, WstxStrategy::PskrUse), tx_slot (null or {hz, power_db, his_end
+             or {call, reason repetitions|gone|tx_changes|caller}, the last station a strategy or
+             contest run left, WstxStrategy::LeaveRule, #97), quiet ([{call, band, mode, remaining_s}],
+             WstxStrategy::QuietTime, the retry pause), hearing (null or {state heard|no|unknown,
+             reports, spot_utc_s, snr_db}, WstxStrategy::PskrUse), tx_slot (null or {hz, power_db, his_end
              yes|no|unknown}, power_db the slot's whole-dB rise above the passband floor clamped at 0 (#66),
-             WstxStrategy::FreeTxSlot), slot_check (null or {repetitions,
-             hears_us, hz}, WstxStrategy::StrategyWatchdog), pounce (null or
+             WstxStrategy::FreeTxSlot), slot_check (null or {repetitions, case
+             heard|not_heard|no_reports, hears_us, moved, hz}, WstxStrategy::StrategyWatchdog,
+             TxMoveRule), leave (null or {mode, remaining, busy, paused, staying},
+             WstxStrategy::LeaveCountLabel, #97), pounce (null or
              {call, band}, #42)), strategy_refusal (null or why the last selection started no run,
              WstxStrategy::StrategyRun), free_tx_slots (the station's open slots, with
              or without a run: null without a live receive, else the latest built value,

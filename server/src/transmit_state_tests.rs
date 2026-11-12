@@ -159,9 +159,20 @@ fn qso_refused() -> Station {
     *s.fake.0.clock.lock().unwrap() = None;
     s
 }
+/// The current QSO is a contact that never pauses for a busy partner (an MCP policy run's
+/// contact, CL-097-06): his message to another call on my Tx frequency stops it. A manual
+/// contact pauses and moves Tx clear instead (WstxContact::BusyPartner, TC-097-017).
+fn not_pausing(s: &mut Station) {
+    s.engine.automated = Some(Automated {
+        contact_id: id(s),
+        split: false,
+        pause: false,
+    });
+}
 /// The QSO kept, the state off because the partner works another station on my Tx frequency.
 fn qso_partner_works_other() -> Station {
     let mut s = qso_on();
+    not_pausing(&mut s);
     let hz = f64::from(s.engine.settings.tx_hz);
     let mut other = partner(&mut s, "W1AW K1ABC -05");
     other.frequency_hz = hz + 50.0;
@@ -1240,6 +1251,7 @@ fn tc_111_013_of_two_stops_in_one_step_the_first_of_the_order_is_shown() {
     assert_eq!(s.state().0, State::Cancelled, "the cancel still cancels");
     // The limit and partner works another, both in the step the limit is due: txWatchdog.
     let mut s = qso_on_with(1);
+    not_pausing(&mut s);
     let due = period(3) + 1200;
     s.run(due - 50);
     assert!(s.armed(), "the limit's stop is not due yet");
@@ -1252,6 +1264,7 @@ fn tc_111_013_of_two_stops_in_one_step_the_first_of_the_order_is_shown() {
     assert!(s.core.view().tx_expired);
     // Partner works another and a band change: partnerWorksOther.
     let mut s = qso_on();
+    not_pausing(&mut s);
     let mut other = partner(&mut s, "W1AW K1ABC -05");
     other.frequency_hz = hz;
     s.band = Some("40m");

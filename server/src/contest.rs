@@ -504,51 +504,23 @@ pub(crate) fn profile(id: &str) -> Option<&'static Profile> {
     PROFILES.iter().find(|p| p.id == id)
 }
 
+/// #97 the contest table (WstxStrategy::BuiltinStrategies: one contest built-in per profile).
+pub(crate) fn all_profiles() -> &'static [Profile] {
+    PROFILES
+}
+
 // ------------------------------------------------------------------ the selection
-/// WstxContest::ContestSelection operation (with Auto on; Auto off only marks, strategydef).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Operation {
-    /// Search and pounce.
-    Sp,
-    /// Call CQ, answer the most valuable caller.
-    Run,
-}
-impl Operation {
-    fn name(self) -> &'static str {
-        match self {
-            Operation::Sp => "sp",
-            Operation::Run => "run",
-        }
-    }
-}
-/// WstxContest::ContestSelection: the contest in force, in memory only.
+/// WstxContest::ContestSelection: the contest in force, in memory only (#97 D11: the period
+/// only; the operation, repetitions and quiet time are the contest strategy's own decisions).
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Selection {
     pub profile: &'static Profile,
     pub start_ms: i64,
     pub end_ms: i64,
-    pub operation: Operation,
-    /// x of WstxStrategy::LeaveRule, 1..20.
-    pub repetitions: u64,
-    /// WstxStrategy::QuietTime minutes, 1..120.
-    pub quiet_minutes: u64,
 }
 impl PartialEq for Selection {
     fn eq(&self, o: &Self) -> bool {
-        self.profile.id == o.profile.id
-            && (
-                self.start_ms,
-                self.end_ms,
-                self.operation,
-                self.repetitions,
-                self.quiet_minutes,
-            ) == (
-                o.start_ms,
-                o.end_ms,
-                o.operation,
-                o.repetitions,
-                o.quiet_minutes,
-            )
+        self.profile.id == o.profile.id && (self.start_ms, self.end_ms) == (o.start_ms, o.end_ms)
     }
 }
 /// The longest period a selection accepts.
@@ -562,19 +534,20 @@ fn minute(v: &Value) -> Option<i64> {
 /// Exact ContestSelection parsing (the error names the refused field).
 pub(crate) fn parse_selection(v: &Value, field: &str) -> Result<Selection, String> {
     let o = v.as_object().ok_or(field)?;
-    let keys = [
-        "profile",
-        "start",
-        "end",
+    let keys = ["profile", "start", "end"];
+    let f = |k: &str| format!("{field}.{k}");
+    // Gone keys are refused by their own path (automation_confirmed: strategydef; operation,
+    // repetitions and quiet_minutes: #97 D11); any other extra key by the selection's.
+    if let Some(k) = [
+        "automation_confirmed",
         "operation",
         "repetitions",
         "quiet_minutes",
-    ];
-    let f = |k: &str| format!("{field}.{k}");
-    // automation_confirmed is gone (the confirmation goes with Auto on, strategydef): refused
-    // by its own path; any other extra key by the selection's.
-    if o.contains_key("automation_confirmed") {
-        return Err(f("automation_confirmed"));
+    ]
+    .into_iter()
+    .find(|k| o.contains_key(*k))
+    {
+        return Err(f(k));
     }
     if o.len() != keys.len() || !keys.iter().all(|k| o.contains_key(*k)) {
         return Err(field.to_owned());
@@ -587,26 +560,16 @@ pub(crate) fn parse_selection(v: &Value, field: &str) -> Result<Selection, Strin
     let end_ms = minute(&v["end"])
         .filter(|e| *e > start_ms && *e - start_ms <= PERIOD_MAX_MS)
         .ok_or(f("end"))?;
-    let operation = match v["operation"].as_str() {
-        Some("sp") => Operation::Sp,
-        Some("run") => Operation::Run,
-        _ => return Err(f("operation")),
-    };
-    let bounded = |k: &str, hi: u64| v[k].as_u64().filter(|n| (1..=hi).contains(n)).ok_or(f(k));
     Ok(Selection {
         profile,
         start_ms,
         end_ms,
-        operation,
-        repetitions: bounded("repetitions", 20)?,
-        quiet_minutes: bounded("quiet_minutes", 120)?,
     })
 }
 impl Selection {
     pub(crate) fn json(&self) -> Value {
         json!({"profile":self.profile.id,"start":utc_text(self.start_ms),
-            "end":utc_text(self.end_ms),"operation":self.operation.name(),
-            "repetitions":self.repetitions,"quiet_minutes":self.quiet_minutes})
+            "end":utc_text(self.end_ms)})
     }
     pub(crate) fn in_period(&self, now_ms: i64) -> bool {
         now_ms >= self.start_ms && now_ms < self.end_ms
@@ -908,10 +871,14 @@ fn record_facts(record: &Value) -> Option<Facts> {
 /// WstxContest::ContestValueOrder, smaller first: callers of my call, a new multiplier, more
 /// points, the stronger SNR, then for an exact tie only the lower audio frequency and the call.
 pub(crate) fn order(a: &Verdict, b: &Verdict) -> std::cmp::Ordering {
+    order_by(a, b, true)
+}
+/// #97 ContestValueOrder with the contest strategy's callers_first: off, callers rank by value.
+pub(crate) fn order_by(a: &Verdict, b: &Verdict, callers_first: bool) -> std::cmp::Ordering {
     let key = |v: &Verdict| {
         let c = v.contest.unwrap_or_default();
         (
-            v.kind != Some(Kind::Caller),
+            callers_first && v.kind != Some(Kind::Caller),
             !c.new_multiplier,
             std::cmp::Reverse(c.points.unwrap_or(0)),
         )
