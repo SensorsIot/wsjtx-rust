@@ -28,7 +28,7 @@ def executable(identifier: str) -> list[str]:
 
 def function_body(path: Path, symbol: str) -> str:
     source = path.read_text(encoding="utf-8")
-    match = re.search(r"(?m)^fn\s+" + re.escape(symbol) + r"\s*\(", source)
+    match = re.search(r"(?m)^(?:async\s+)?fn\s+" + re.escape(symbol) + r"\s*\(", source)
     if not match:
         raise AssertionError(f"missing test function {path.name}::{symbol}")
     end = re.search(r"(?m)^}", source[match.end():])

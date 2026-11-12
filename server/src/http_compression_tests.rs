@@ -568,7 +568,7 @@ async fn h1_six_production_handlers_have_exact_bounded_json_bodies() {
     drop(fixture);
 }
 
-// Proves: CL-022-05; TC-021-008. Public script/style assets are gzip only when the client
+// Proves: CL-022-05. Public script/style assets are gzip only when the client
 // selects it; every other negotiation keeps the exact identity bytes, never 406.
 #[tokio::test]
 async fn static_assets_gzip_when_selected_and_keep_exact_identity_bytes_otherwise() {

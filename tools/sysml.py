@@ -1,6 +1,7 @@
 """Canonical-authority SysML checks and real OMG Pilot validation.
 
-traces checks catalog and source/model bindings only. check additionally calls the
+traces checks catalog and source/model bindings only, and that every test naming a
+case is in that case's binding (binding_agreement). check additionally calls the
 pinned Java parser/name resolver/semantic validator. markers lists the ModelNotes markers
 and checks nothing. None executes modeled behavior.
 """
@@ -220,9 +221,10 @@ def source_binding(identifier: str, binding: str, root: Path, manual: bool = Fal
         raise ValueError(f"Missing or out-of-scope implementation/test binding: {identifier}: {binding}")
     if path.parts[0] not in SOURCE_BINDING_ROOTS:
         raise ValueError(f"Binding outside declared source inputs: {identifier}: {binding}; update HOW input coverage before admitting a new root")
-    if not identifier.startswith("TC-") or manual:
+    if not identifier.startswith("TC-") or (manual and not separator):
         return True
     source = resolved.read_text(encoding="utf-8")
+    # The symbol of a `path::symbol` binding must exist, for a manual case too.
     if separator:
         if not symbol or not re.search(r"\bfn\s+" + re.escape(symbol) + r"\s*\(|\btest\s*\(\s*['\"]" + re.escape(symbol) + r"['\"]", source):
             raise ValueError(f"Missing executable test symbol: {identifier}: {binding}")
@@ -250,6 +252,56 @@ def attached_proves(source: str) -> list[str]:
         if ATTACHED_TEST.match(next(following, "")):
             tags.append(tag[1])
     return tags
+
+
+RUST_TEST_FN = re.compile(r"\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+(\w+)")
+JS_TEST_NAME = re.compile(r"\s*test\s*\(\s*(['\"])((?:\\.|(?!\1)[^\r\n])*)\1")
+
+
+def naming_tests(source: str) -> list[tuple[str, set[str]]]:
+    """(test name, case identities) of every test of `source` that names a case: by the
+    `Proves:` tag attached to it (as `attached_proves` reads it, shorthand expanded) or, for
+    a JavaScript test, by its name. A Rust test is named by its function."""
+    lines = source.splitlines()
+    named = {}
+    for index, line in enumerate(lines):
+        if tag := PROVES_TAG.match(line):
+            following = ((number, code) for number, code in enumerate(lines[index + 1:], index + 1)
+                         if not SKIPPED_LINE.match(code))
+            test, code = next(following, (None, ""))
+            if ATTACHED_TEST.match(code):
+                named.setdefault(test, set()).update(ref for ref in source_proves(tag[1]) if ref.startswith("TC-"))
+        elif script := JS_TEST_NAME.match(line):
+            named.setdefault(index, set()).update(re.findall(r"\bTC-\d{3}-\d{3}\b", script[2]))
+    found = []
+    for test, cases in sorted(named.items()):
+        if script := JS_TEST_NAME.match(lines[test]):
+            name = re.sub(r"\\(.)", r"\1", script[2])
+        else:
+            name = next((function[1] for code in lines[test:test + 12] if (function := RUST_TEST_FN.match(code))), None)
+        if name is not None and cases:
+            found.append((name, cases))
+    return found
+
+
+def binding_agreement(entries: dict[str, dict], root: Path) -> None:
+    """Refuse every test below the source roots that names a case outside that case's
+    binding: neither its file nor `path::<its name>` is bound. One message names every
+    such pair, sorted by case, path and test name."""
+    outside = set()
+    for directory_name in SOURCE_BINDING_ROOTS:
+        for path in sorted((root / directory_name).rglob("*")):
+            if not path.is_file() or path.suffix not in {".rs", ".js", ".cjs"}:
+                continue
+            key = path.relative_to(root).as_posix()
+            for name, cases in naming_tests(path.read_text(encoding="utf-8")):
+                for case in cases:
+                    bound = entries.get(case, {}).get("bindings", [])
+                    if key not in bound and f"{key}::{name}" not in bound:
+                        outside.add((case, key, name))
+    if outside:
+        raise ValueError("Proves tag outside the verification binding: "
+                         + "; ".join(f"{case}: {key}::{name}" for case, key, name in sorted(outside)))
 
 
 def source_proves(text: str) -> set[str]:
@@ -805,6 +857,7 @@ def main(argv=None):
         if args.command == "traces":
             authority(MODELS, FSD)
             entries = canonical_catalog(MODELS, ROOT)
+            binding_agreement(entries, ROOT)
             print(f"Canonical source/model trace checks passed: {len(entries)} identities; no semantic validation or behavior execution.")
             return 0
         if args.command == "markers":
@@ -819,6 +872,7 @@ def main(argv=None):
         if args.command == "check":
             authority(MODELS, FSD)
             entries = canonical_catalog(MODELS, ROOT)
+            binding_agreement(entries, ROOT)
             print(f"Canonical SysML catalog/trace checks passed: {len(entries)} identities; behavioral correspondence remains independently reviewed.")
             entry = "Requirements.sysml"
             paths = [MODELS / entry, *(path for key, path in model_files(MODELS).items() if key != entry)]

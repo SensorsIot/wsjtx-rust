@@ -85,7 +85,7 @@ fn envelope_cancellation_matches_scalar_convolution_and_edges() {
         }
     }
 }
-// Proves: CL-007-04; TC-004-003. The existing direct-convolution positive stays intact.
+// Proves: CL-007-04. The existing direct-convolution positive stays intact.
 #[test]
 #[cfg(not(debug_assertions))]
 fn resource_phase_subtraction_cancels_after_actual_transform_before_mutation() {

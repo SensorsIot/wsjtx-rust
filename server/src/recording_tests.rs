@@ -2791,7 +2791,7 @@ fn air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate()
     );
 }
 
-// Proves: CL-057-01; TC-057-001 (#57). Both a new period view and the late window's growth
+// Proves: CL-057-01 (#57). Both a new period view and the late window's growth
 // of that view signal the Detailed WebSocket peers' publication watch.
 #[test]
 fn new_and_grown_views_signal_the_publication_watch() {

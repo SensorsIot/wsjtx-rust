@@ -855,7 +855,7 @@ fn resource_capacity_owned_child() {
     );
     handshake("FINISHED", "RELEASE");
 }
-// Proves: CL-007-04; TC-004-003. Capacity setup is not a decoded-success fixture.
+// Proves: CL-007-04. Capacity setup is not a decoded-success fixture.
 #[test]
 fn resource_candidate_and_sic_reserved_storage_ledger() {
     for mode in [Mode::Ft8, Mode::Ft4] {
@@ -903,7 +903,7 @@ fn resource_candidate_and_sic_reserved_storage_ledger() {
         std::hint::black_box((&candidates, &pending, &window_seen));
     }
 }
-// Proves: CL-007-04; TC-004-003. Cancels only after a real completed spectrum row.
+// Proves: CL-007-04. Cancels only after a real completed spectrum row.
 #[test]
 #[cfg(not(debug_assertions))]
 fn resource_phase_detection_observes_work_without_publishing() {

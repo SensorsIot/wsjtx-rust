@@ -9076,8 +9076,9 @@ async fn tc_066_002_the_cqs_caller_move_skips_a_decoded_station() {
     );
 }
 
-// Proves: CL-039-09; TC-066-002. The TC-066-003 defect (HB9BLA 2026-11-08 18:02-18:13 UTC): after
-// the run's first transmission every decision counted 0 Rx periods. A strategy run with Hold Tx on
+// Proves: CL-039-09; TC-066-002.
+// The TC-066-003 defect (HB9BLA 2026-11-08 18:02-18:13 UTC): after the run's first transmission
+// every decision counted 0 Rx periods. A strategy run with Hold Tx on
 // (as live) selects K1ABC (CQ in the even period e at 1800 Hz) and calls him in my odd periods
 // e + 15 s and e + 45 s; the hardware double keys PTT at each period start. The detailed waterfall
 // comes from the actual live worker, fed with silent blocks from e - 30 s, observing the transmit

@@ -284,7 +284,7 @@ async fn plaintext_profile_log_routes_require_runtime_token() {
     assert_eq!(get(&f, "/contacts", Some(&good)).await.json()["total"], 1);
 }
 
-// Proves: CL-010-15; TC-007-004 environment-only mode has no log routes.
+// Proves: CL-010-15. Environment-only mode has no log routes.
 #[tokio::test]
 async fn environment_only_mode_answers_not_found() {
     let app = App {
