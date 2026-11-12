@@ -37,7 +37,20 @@ package WstxContest {
             contest keeps its own value (ContestValueOrder); x and the quiet time are set per
             contest, defaults 2 and 10 minutes, more aggressive than strategies; in situation 1
             the run stays while the target hears us and is still the most valuable
-            (WstxStrategy::LeaveRule). HALT turns Auto off and leaves the contest selected. */
+            (WstxStrategy::LeaveRule). HALT turns Auto off and leaves the contest selected.
+         D11 Strategy redesign (#97, WstxStrategy D19; operator 2026-11-09, #97 Q1 "One per contest, no S&P/Run"): a
+            contest strategy is a strategy of class contest whose Filters and Order come from its
+            contest (this package's rules; #98 replaces the profiles by contest data) and whose
+            behaviour is the strategy's own nine decisions. Each contest of the table has one
+            read-only contest built-in (WstxStrategy::BuiltinStrategies, the contest defaults:
+            leave contest style after 2 Tx changes, Tx every 2nd call when he does not hear us or
+            does not report, busy pause off, CQ when idle on); the operator duplicates it to a
+            saved contest strategy ("ARRL Digi fast"). It replaces: D6's "not saved strategies"
+            (contest strategies may be saved; the profiles stay data and the period stays the
+            selection, ContestSelection); D9 and D10's S&P and Run operation (CQ when idle decides
+            whether a contest strategy calls CQ when nothing callable is listed; it always selects
+            a callable station); D10's x and quiet time per contest (the strategy's leave and retry
+            pause). */
 
     enum def DupeRule {
         doc /* band: once per band. band_mode_class: once per band and per Phone, CW or Digital.
@@ -131,14 +144,18 @@ package WstxContest {
         doc /* The optional key contest of WstxStrategy::StrategyConfiguration on PUT /strategy and in
              the GET /strategy snapshot, present only while one is selected: {profile (a profile
              id), start, end (real instants "YYYY-MM-DDTHH:MMZ", end exclusive, start < end, at most
-             31 days apart), operation "sp" or "run", repetitions (x of WstxStrategy::LeaveRule,
-             1..20, default 2) and quiet_minutes (WstxStrategy::QuietTime, 1..120, default 10)}.
+             31 days apart)} (#97 D11: operation, repetitions and quiet_minutes go to the contest
+             strategy's own decisions; #98 may derive the period from its contest data).
              Exact keys; each refusal names its field (contest, contest.profile, contest.start,
-             contest.end, contest.operation, contest.repetitions, contest.quiet_minutes), 400
-             invalid_request like any other field; "colouring" and automation_confirmed are
+             contest.end), 400
+             invalid_request like any other field; operation, repetitions, quiet_minutes,
+             "colouring" and automation_confirmed are
              refused like any other value or extra key (colouring only is Auto off, and the
-             confirmation goes with Auto on, WstxStrategy::AutoToggle). null or absent: no contest. Exactly one strategy
-             is active or none: active and contest together are refused with field contest. It
+             confirmation goes with Auto on, WstxStrategy::AutoToggle). null or absent: no contest.
+             Exactly one strategy is active or none (#97): a contest goes with active naming a
+             contest strategy (a contest built-in or a saved strategy of class contest) whose
+             contest is profile; active of class contest without it, a contest without such an
+             active, or the two naming different contests are refused with field contest. It
              lives in station memory only: the file never holds it and a station restart starts
              without one (as active, WstxStrategy D2). A changed contest is a changed selection
              (WstxStrategy::StrategyRun: any run ends; with Auto on the new one starts, ContestRun).
@@ -183,8 +200,9 @@ package WstxContest {
              multiplier", "<n> points" joined by " \· ", or the reason above. */
     }
     attribute def ContestValueOrder {
-        doc /* Smaller first: callers of my call before the others (WstxStrategy D5; only callers
-             with a rank, never a dupe); then a new multiplier; then more QSO points (unknown 0);
+        doc /* Smaller first: callers of my call before the others when the contest strategy's
+             callers_first is on (#97; only callers with a rank, never a dupe, and passing the
+             strategy's country and US state lists); then a new multiplier; then more QSO points (unknown 0);
              then the strongest SNR (unknown last); then, for an exact tie only, the lower audio
              frequency, then the call (strategydef Q3, Q9: decode order is never a ranking).
              Replaces WSJT-X's first decoded (operator #63). */
@@ -194,13 +212,16 @@ package WstxContest {
              top-bar HALT's action, as WstxStrategy::StrategyEditor); receive keeps running. It reads
              GET /strategy/contests once at opening, so the pre-fill is current. It offers the
              profiles; Start and End (UTC, to the minute): the selection in force when it matches, else
-             the profile's period, empty when asked; the schedule in words; the operation S&P or
-             Run (S&P the default); "Repetitions before leaving" (default 2) and "Quiet time
-             (minutes)" (default 10); the automation text and the notes. Whether it transmits is
+             the profile's period, empty when asked; the schedule in words; the strategy (#97 D11:
+             the profile's contest built-in, first and the default, and every saved contest strategy
+             of that profile, by name; it replaces the operation S&P or Run, "Repetitions before
+             leaving" and "Quiet time", which are the strategy's own, WstxStrategy::StrategyEditor);
+             the automation text and the notes. Whether it transmits is
              the Auto toggle's (WstxStrategy::AutoToggle): a forbidden clause asks its
              confirmation when Auto is switched on, not at Start. When the profile's
              activity differs from the station's, one line says so. Start with an empty period
-             asks for it and sends nothing; else one PUT /strategy with active null and contest. Cancel
+             asks for it and sends nothing; else one PUT /strategy with active the chosen contest
+             strategy and contest. Cancel
              changes nothing. In the selector the contest in force is one more option "<name>
              (contest)"; None or an award strategy sends a PUT without contest (the selector's other
              rule, WstxStrategy::StrategySelector, is unchanged). */
@@ -218,18 +239,28 @@ package WstxContest {
              their reasons leave the hover too, and they come back with its end: QSOs outside the
              period do not count (the My call slot stays; the Settings choice is unchanged). The hover names "#n",
              new multiplier and points, or the dupe. The status beside it: "Contest <name> \· <MM-DD
-             HH:MM> to <MM-DD HH:MM> UTC \· <S&P or Run> \· Auto <on or off>" (Auto off is colouring only) and, once evaluated, " \· <n> QSOs \· <m>
+             HH:MM> to <MM-DD HH:MM> UTC \· <strategy name> \· Auto <on or off>" (#97: the strategy name
+             replaces S&P or Run; Auto off is colouring only) and, once evaluated, " \· <n> QSOs \· <m>
              mult \· score <s>". Manual operation stays as it is: every row selects as ever, the
              double-click and the directive warning unchanged. */
     }
     attribute def ContestRun {
-        attribute repetitionsDefault : Integer = 2;
-        attribute quietMinutesDefault : Integer = 10;
-        doc /* A contest with Auto on is a WstxStrategy::StrategyRun: one run at a time, through
+        doc /* #97 D11 (operator 2026-11-09, #97 Q1): sp and run below are no longer an
+             operation chosen at the prompt. A contest strategy's run always selects as sp
+             describes (the callable stations by ContestVerdict and ContestValueOrder, with the
+             strategy's lists on top) and, with its cq_when_idle on (the contest built-ins' default),
+             calls CQ as run describes after two publications with nothing callable listed
+             (WstxStrategy::CqWhenNoTarget), answering callers and selecting a callable station that
+             appears, which ends the CQ. Leaving and the retry pause are the strategy's
+             (WstxStrategy::LeaveRule, QuietTime; contest built-in: contest style after 2 Tx
+             changes, 10 minutes); Tx moves are the strategy's (WstxStrategy::TxMoveRule); the busy
+             pause is the strategy's (off in the contest built-ins). The text below holds with
+             these replacements.
+             A contest with Auto on is a WstxStrategy::StrategyRun: one run at a time, through
              the same internal path and the same contact engine, started only by a browser's
              selection with Auto on or Auto on (WstxStrategy::AutoToggle). Unchanged: HALT stops
              every run from any source and turns Auto off (revision + 1, pushed by
-             strategy.state; the contest, its operation and period stay); Esc
+             strategy.state; the contest, its strategy and period stay); Esc
              changes neither; ManualIntervention (a double-click always, the run resumes after the
              QSO); WatchdogFromOperator; the 8 hour run limit (run_limit) and 60 s without a client
              (no_client), finishing the QSO first, with the contest staying selected, Auto off
@@ -245,7 +276,7 @@ package WstxContest {
              sp: on each fresh complete publication the list is ContestVerdict with a rank, one per
              call, not completed in this run on this band and mode nor given up; the first is selected
              as a strategy run selects, not in its QuietTime. Leaving: WstxStrategy::LeaveRule with
-             the contest's repetitions and quiet_minutes; no skip (WstxStrategy D6).
+             the strategy's leave and retry_minutes (#97); no skip (WstxStrategy D6).
              run: while waiting and no reason it decides the slot (FreeTxSlot, no called station;
              decided in waiting without a fresh publication, at Auto on, when a reason ends, when a
              manual contact ends or Esc gives a caller up, after a completion or a leaving, it
@@ -279,7 +310,7 @@ package WstxContest {
              publication; until it is done a QSO is held off by this run's own completed list. Band Activity follows ContestView; the status
              names "calling CQ", "<call>", "your QSO", "waiting · <reason>", "stopped · <reason>"
              or "not started · <reason>" from GET /automation on automation.state only, never a
-             timer. The prompt offers S&P and Run; AutomationClause forbidden asks
+             timer. The prompt offers the contest strategies (#97 D11; no S&P or Run); AutomationClause forbidden asks
              WstxOperatingLayout's confirmation with the clause's text when Auto is switched on
              and sends automation_confirmed true with POST /strategy/auto, nothing when
              declined; silent asks nothing, the clause is on the prompt. After a stop only Auto
@@ -308,4 +339,7 @@ package WstxContest {
     dependency runClause from ContestRun to WstxRequirements::'CL-063-05';
     dependency runSafety from ContestRun to WstxRequirements::'CL-063-06';
     dependency runPath from ContestRun to WstxStrategy::StrategyRun;
+    dependency contestStrategySelection from ContestSelection to WstxRequirements::'CL-097-07';
+    dependency contestStrategyPrompt from ContestPrompt to WstxRequirements::'CL-097-07';
+    dependency contestStrategyRun from ContestRun to WstxRequirements::'CL-097-07';
 }

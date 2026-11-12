@@ -245,8 +245,7 @@ impl Cty {
     pub fn entity_count(&self) -> usize {
         self.entities.len()
     }
-    /// The entity full names, for the Most Wanted mapping's test.
-    #[cfg(test)]
+    /// The entity full names (the Most Wanted mapping's test; #97 CountryList names).
     pub fn entity_names(&self) -> impl Iterator<Item = &str> {
         self.entities.iter().map(|e| e.name.as_str())
     }
@@ -405,6 +404,8 @@ pub struct Logged {
     pub confirmed: bool,
     /// #39 QSO_DATE as YYYYMMDD (None: counts only for the all-time window).
     pub date: Option<u32>,
+    /// #97 the ADIF STATE (WstxStrategy::UsStateOf), upper case.
+    pub state: Option<String>,
 }
 /// #10 award standing of a key (for example a DXCC entity) in a scope: worked by any
 /// logged contact, and confirmed by at least one of them.
@@ -419,20 +420,30 @@ impl Standing {
         !self.worked || !self.confirmed
     }
 }
-/// The entity categories a WstxStrategy::GoalNeeded reads (their index follows `keys`).
+/// The entity categories a WstxStrategy::NewNeeded reads (their index follows `keys`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Category {
     Dxcc,
+    Continent,
     CqZone,
+    ItuZone,
 }
 impl Category {
     fn index(self) -> usize {
         match self {
             Category::Dxcc => 2,
+            Category::Continent => 3,
             Category::CqZone => 4,
+            Category::ItuZone => 5,
         }
     }
 }
+/// The index of the CQ WPX prefix in the per-band and per-band-and-mode maps (#97 NewNeeded
+/// prefix per band and band_mode).
+const WPX: u8 = 6;
+/// #97 WstxStrategy::UsStateOf: the entities whose ADIF STATE is a US state (291 United States,
+/// 6 Alaska, 110 Hawaii), by their cty.dat names.
+pub const US_ENTITIES: [&str; 3] = ["United States", "Alaska", "Hawaii"];
 /// WstxStrategy::WpxPrefix: the CQ WPX prefix of a call.
 pub fn wpx_prefix(call: &str) -> String {
     /// Letters and digits up to the last digit; without a digit two letters and a zero.
@@ -487,6 +498,10 @@ pub struct Worked {
     wpx: HashMap<String, bool>,
     /// #39 calls with a logged contact that has no grid: their grid status is unknown.
     gridless: HashSet<String>,
+    /// #97 WstxStrategy::UsStateOf: per call the STATE of its newest record that has one, a
+    /// confirmed record before an unconfirmed one: (confirmed, date, state). Every record
+    /// counts, whatever the window.
+    states: HashMap<String, (bool, u32, String)>,
 }
 impl std::fmt::Debug for Worked {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -522,6 +537,20 @@ impl Worked {
     pub fn from_log_window(table: &Table, logged: &[Logged], window: Option<(u32, u32)>) -> Self {
         let mut w = Self::default();
         for l in logged {
+            if let Some(state) = l.state.as_deref().filter(|s| !s.trim().is_empty()) {
+                let held = (l.confirmed, l.date.unwrap_or(0));
+                let entry = w.states.entry(l.call.to_ascii_uppercase());
+                match entry {
+                    std::collections::hash_map::Entry::Occupied(mut o) => {
+                        if held >= (o.get().0, o.get().1) {
+                            o.insert((held.0, held.1, state.trim().to_ascii_uppercase()));
+                        }
+                    }
+                    std::collections::hash_map::Entry::Vacant(v) => {
+                        v.insert((held.0, held.1, state.trim().to_ascii_uppercase()));
+                    }
+                }
+            }
             if let Some((first, last)) = window
                 && !l.date.is_some_and(|d| (first..=last).contains(&d))
             {
@@ -535,7 +564,7 @@ impl Worked {
                 let Some(key) = key else { continue };
                 if let Some(b) = &l.band {
                     *w.band.entry((i as u8, key.clone(), b.clone())).or_default() |= l.confirmed;
-                    if let Some(m) = l.mode.as_deref().filter(|_| i >= 2) {
+                    if let Some(m) = l.mode.as_deref() {
                         *w.band_mode
                             .entry((i as u8, key.clone(), b.clone(), m.to_ascii_uppercase()))
                             .or_default() |= l.confirmed;
@@ -543,7 +572,16 @@ impl Worked {
                 }
                 *w.ever.entry((i as u8, key)).or_default() |= l.confirmed;
             }
-            *w.wpx.entry(wpx_prefix(&l.call)).or_default() |= l.confirmed;
+            let wpx = wpx_prefix(&l.call);
+            if let Some(b) = &l.band {
+                *w.band.entry((WPX, wpx.clone(), b.clone())).or_default() |= l.confirmed;
+                if let Some(m) = l.mode.as_deref() {
+                    *w.band_mode
+                        .entry((WPX, wpx.clone(), b.clone(), m.to_ascii_uppercase()))
+                        .or_default() |= l.confirmed;
+                }
+            }
+            *w.wpx.entry(wpx).or_default() |= l.confirmed;
             if l.grid.as_deref().and_then(square).is_none() {
                 w.gridless.insert(l.call.to_ascii_uppercase());
             }
@@ -551,27 +589,51 @@ impl Worked {
         w
     }
     /// #39 the standing of a call, ever.
+    #[cfg(test)]
     pub fn call_standing(&self, call: &str) -> Standing {
         standing(self.ever.get(&(0, call.to_ascii_uppercase())))
     }
     /// #39 the standing of a grid's 4-character square, ever.
+    #[cfg(test)]
     pub fn grid_standing(&self, grid: &str) -> Standing {
         standing(square(grid).and_then(|g| self.ever.get(&(1, g))))
     }
-    /// #39 strategydef: the standing of a call on a band, in any mode (new_call_band).
-    pub fn call_band_standing(&self, call: &str, band: &str) -> Standing {
-        standing(
-            self.band
-                .get(&(0, call.to_ascii_uppercase(), band.to_ascii_lowercase())),
-        )
-    }
-    /// #39 strategydef: the standing of a grid's 4-character square on a band (new_grid_band).
-    pub fn grid_band_standing(&self, grid: &str, band: &str) -> Standing {
-        standing(square(grid).and_then(|g| self.band.get(&(1, g, band.to_ascii_lowercase()))))
-    }
     /// #39 the standing of a call's CQ WPX prefix, ever.
+    #[cfg(test)]
     pub fn wpx_standing(&self, call: &str) -> Standing {
         standing(self.wpx.get(&wpx_prefix(call)))
+    }
+    /// #97 the standing of a key of index `i` (0 call, 1 grid square, 6 WPX prefix) ever, on a
+    /// band in any mode, or on a band and mode.
+    fn scoped(&self, i: u8, key: String, band: Option<&str>, mode: Option<&str>) -> Standing {
+        standing(match (band, mode) {
+            (None, _) if i == WPX => self.wpx.get(&key),
+            (None, _) => self.ever.get(&(i, key)),
+            (Some(b), None) => self.band.get(&(i, key, b.to_ascii_lowercase())),
+            (Some(b), Some(m)) => {
+                self.band_mode
+                    .get(&(i, key, b.to_ascii_lowercase(), m.to_ascii_uppercase()))
+            }
+        })
+    }
+    /// #97 NewNeeded call per ever, band or band and mode.
+    pub fn call_scoped(&self, call: &str, band: Option<&str>, mode: Option<&str>) -> Standing {
+        self.scoped(0, call.to_ascii_uppercase(), band, mode)
+    }
+    /// #97 NewNeeded grid (its 4-character square) per ever, band or band and mode.
+    pub fn grid_scoped(&self, grid: &str, band: Option<&str>, mode: Option<&str>) -> Standing {
+        square(grid).map_or(Standing::default(), |g| self.scoped(1, g, band, mode))
+    }
+    /// #97 NewNeeded prefix (WstxStrategy::WpxPrefix) per ever, band or band and mode.
+    pub fn wpx_scoped(&self, call: &str, band: Option<&str>, mode: Option<&str>) -> Standing {
+        self.scoped(WPX, wpx_prefix(call), band, mode)
+    }
+    /// #97 WstxStrategy::UsStateOf from the log: the STATE of the call's newest record that has
+    /// one, a confirmed record first.
+    pub fn state_of(&self, call: &str) -> Option<&str> {
+        self.states
+            .get(&call.to_ascii_uppercase())
+            .map(|s| s.2.as_str())
     }
     /// #39 the call has a logged contact without a grid (WstxStrategy D13).
     pub fn gridless(&self, call: &str) -> bool {

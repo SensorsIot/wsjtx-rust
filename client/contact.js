@@ -232,7 +232,7 @@ function render(){
   // The partner's latest message to me, with SNR and the repeat count (ContactSnapshot last_rcvd).
   const h=qso?c.last_rcvd:null,heard=$('qso-heard');heard.hidden=!h;
   heard.textContent=h?`\u25C2 ${h.text}  ${snrText(h.snr)}${h.count>1?` \u00D7${h.count}`:''}`.trimEnd():'';
-  const wd=snap?.watchdog;$('contact-watchdog').textContent=!wd?'':wd.tx_expired?`Tx watchdog: same message sent ${snap.settings.tx_calls} times`:armed?`WD:${wd.tx_remaining_calls??'∞'}`:'';
+  const wd=snap?.watchdog;$('contact-watchdog').textContent=!wd?'':wd.tx_expired?`Tx watchdog: same message sent ${snap.settings.tx_calls} times`:armed?watchdogText(wd):'';
   // The status line is for exceptions only: unknown state, a refusal, a pending halt.
   const problems=!snap?['Contact state unavailable']:[t?.refusal?`Refused ${t.refusal}`:'',t?.halt_state==='pending'?'Halt pending (RF stop not confirmed)':''].filter(Boolean);
   $('contact-state').textContent=problems.join(' · ');$('contact-state').hidden=!problems.length;
@@ -338,14 +338,41 @@ function loadAutomation(){
   const loading=automationLoading=stationFetch('/automation',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(a=>{
     // WstxStationProtocol::PushedStationState: a reply of another boot is discarded.
     if(loading!==automationLoading||a?.v!==1||a.boot_id!==profileData?.boot_id)return;
-    automationView=a;freeTxSlotsRead(a);pskrLinesShow();dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));
+    automationView=a;freeTxSlotsRead(a);pskrLinesShow();leaveShow();dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));
   }).catch(()=>{}).finally(()=>{if(loading===automationLoading)automationLoading=null;});
   return loading;
+}
+// #97 WstxStrategy::LeaveCountLabel (#91): WD:n is the Tx watchdog only; in a strategy run's own
+// contact (tx_remaining_calls null) the run's leave label stands where WD:n stood.
+function leaveLabel(){
+  const run=automationView?.run,l=run?.leave;
+  if(!l||run.contact_id!==snap?.contact?.id)return '';
+  const n=l.remaining;
+  return l.mode==='calls'?`Leave in ${n} calls`:l.mode==='until_logged'?(n==null?'Until logged':`Until logged · leave if gone ${n} min`):l.staying?'Stay · most valuable':`Leave in ${n} Tx changes`;
+}
+// #97 WstxContact::BusyPartner: while the partner is busy " · <call> busy with <other>, not
+// counted (<k>/<N>)" follows WD:n (k the paused calls of the message due) or, in a run's own
+// contact, the leave label (k the run's paused calls).
+function busySuffix(wd,k){
+  const other=wd?.busy_with,call=snap?.contact?.dx_call;
+  return other&&call?` · ${call} busy with ${other}, not counted (${k}/${snap.settings.tx_calls})`:'';
+}
+function watchdogText(wd){
+  if(typeof wd.tx_remaining_calls==='number')return `WD:${wd.tx_remaining_calls}${busySuffix(wd,wd.paused_calls??0)}`;
+  const label=leaveLabel(),l=automationView?.run?.leave;
+  return label&&l?.busy?label+busySuffix(wd,l.paused):label;
+}
+/// A new run snapshot redraws the leave label (the QSO pane's watchdog line and the station bar).
+function leaveShow(){
+  const wd=snap?.watchdog;
+  if(wd&&!wd.tx_expired&&snap.transmit?.arm_state==='armed')$('contact-watchdog').textContent=watchdogText(wd);
+  stationTx();
 }
 function stationTx(){
   const t=snap?.transmit,capable=transmitCapable(),wd=snap?.watchdog,armed=t?.arm_state==='armed';
   stationTxNode.hidden=!capable||!(armed||tick?.transmitting||wd?.tx_expired);if(stationTxNode.hidden)return;
-  stationTxNode.textContent=`${tick?.transmitting?'TRANSMITTING':armed?'Tx on':'Tx off'}${armed?` · WD:${wd.tx_remaining_calls??'∞'}`:wd.tx_expired?` · Tx watchdog: same message sent ${snap.settings.tx_calls} times`:''}${t.last_text?` · last ${t.last_text}`:''}`;
+  const count=armed?watchdogText(wd):'';
+  stationTxNode.textContent=`${tick?.transmitting?'TRANSMITTING':armed?'Tx on':'Tx off'}${count?` · ${count}`:!armed&&wd.tx_expired?` · Tx watchdog: same message sent ${snap.settings.tx_calls} times`:''}${t.last_text?` · last ${t.last_text}`:''}`;
 }
 document.addEventListener('pointerdown',event=>{
   if(typeof currentRegion==='undefined'||currentRegion==='operate')return;
@@ -1170,12 +1197,14 @@ addEventListener('station-boot',()=>{
   view=null;viewLoading=null;viewAgain=false;strategyMissing=false;automation=null;run=null;refusal=null;
   verdicts=new Map();evaluatedKey='';contests=[];contestsAsked=false;contestSummary=null;show();
 });
+// The station's refusal of the last PUT /strategy (null after a save), for the editor's controls.
+let lastRefusal=null;
 async function saveConfiguration(configuration,label){
-  if(!view)return false;
+  if(!view)return false;lastRefusal=null;
   try{
     const response=await stationFetch('/strategy',{method:'PUT',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,expected_revision:view.revision,configuration}),signal:AbortSignal.timeout(10000)});
     const data=await response.json().catch(()=>null);
-    if(!response.ok||data?.v!==1){const e=data?.error;statusNode.textContent=`${label} not saved · ${e?.code??response.status}${e?.field?` (${e.field})`:''}${e?.code==='stale_revision'?' · changed elsewhere, reloaded':''}`;if(e?.code==='stale_revision')await loadStrategy();return false;}
+    if(!response.ok||data?.v!==1){const e=data?.error;lastRefusal=e??{code:String(response.status)};statusNode.textContent=`${label} not saved · ${e?.code??response.status}${e?.field?` (${e.field})`:''}${e?.code==='stale_revision'?' · changed elsewhere, reloaded':''}`;if(e?.code==='stale_revision')await loadStrategy();return false;}
     // A saved configuration is evaluated at once, not at the next publication.
     if(data.boot_id!==profileData?.boot_id)return false;
     view=data;verdicts=new Map();evaluatedKey='';show();evaluateShown();return true;
@@ -1204,7 +1233,7 @@ function showRun(){
     // WstxContest::ContestView, ContestRun: the operation, Auto (off is colouring only) and the run
     // state from GET /automation, read on automation.state only.
     const state=refusal?` · not started · ${words_(refusal)}`:on?` · ${doing()??`waiting${run.reason?` · ${words_(run.reason)}`:''}`}`:stopped;
-    statusNode.dataset.active=String(!!on);statusNode.textContent=`Contest ${selectedProfile()?.name??contest.profile} · ${when(contest.start)} to ${when(contest.end)} UTC · ${{sp:'S&P',run:'Run'}[contest.operation]??contest.operation} · Auto ${auto()?'on':'off'}${state}${tally}`;
+    statusNode.dataset.active=String(!!on);statusNode.textContent=`Contest ${selectedProfile()?.name??contest.profile} · ${when(contest.start)} to ${when(contest.end)} UTC · ${config()?.active??''} · Auto ${auto()?'on':'off'}${state}${tally}`;
     return;
   }
   // None (or no strategy snapshot yet): a strategy run the HALT or a selection ended; without a
@@ -1219,9 +1248,15 @@ function showRun(){
 function show(){
   const c=config();
   const contest=selection(),contestValue=contest?`contest:${contest.profile}`:null;
-  const options=[['','None'],...builtins().map(s=>[s.name,s.name]),...(c?.strategies??[]).map(s=>[s.name,s.name]),...(contest?[[contestValue,`${selectedProfile()?.name??contest.profile} (contest)`]]:[])];
-  const key=options.map(o=>o.join('|')).join('\n');
-  if(nameSelect.dataset.key!==key){nameSelect.dataset.key=key;nameSelect.replaceChildren(...options.map(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;return o;}));}
+  // #97 WstxStrategy::StrategySelector: None, then the groups Strategy (the built-ins, "DXCC all"
+  // first, then the user's) and Contest (the user's contest strategies and the contest in force);
+  // the contest built-ins are chosen in the contest prompt.
+  const mine=c?.strategies??[],named=s=>[s.name,s.name];
+  const groups=[['Strategy',[...builtins().filter(s=>s.class!=='contest'),...mine.filter(s=>s.class!=='contest')].map(named)],
+    ['Contest',[...mine.filter(s=>s.class==='contest').map(named),...(contest?[[contestValue,`${selectedProfile()?.name??contest.profile} (contest)`]]:[])]]].filter(g=>g[1].length);
+  const key=groups.map(([g,o])=>`${g}:${o.map(x=>x.join('|')).join('\n')}`).join('\n');
+  const optionOf=([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;return o;};
+  if(nameSelect.dataset.key!==key){nameSelect.dataset.key=key;nameSelect.replaceChildren(optionOf(['','None']),...groups.map(([label,list])=>{const g=document.createElement('optgroup');g.label=label;g.append(...list.map(optionOf));return g;}));}
   // Always the station's: a HALT's None must show also while the selector has the focus.
   nameSelect.value=contestValue??c?.active??'';
   if(contest&&!contestsAsked)loadContests();
@@ -1329,7 +1364,17 @@ async function evaluateShown(){
 }
 const observer=new MutationObserver(()=>{if(reordering)return;decorate();evaluateShown();});
 if(tbody)observer.observe(tbody,{childList:true});
-nameSelect.addEventListener('change',()=>{const c=config();if(!c||nameSelect.value.startsWith('contest:'))return;const {contest:_,...rest}=c;contestSummary=null;saveConfiguration({...rest,active:nameSelect.value||null},'Strategy').then(ok=>{if(!ok)show();});});
+nameSelect.addEventListener('change',()=>{
+  const c=config();if(!c||nameSelect.value.startsWith('contest:'))return;
+  // #97 StrategySelector: a saved contest strategy with its contest in force keeps the contest key;
+  // with no contest or another one in force it sends nothing and opens the contest prompt.
+  const chosen=(c.strategies??[]).find(s=>s.name===nameSelect.value);
+  if(chosen?.class==='contest'){
+    if(selection()?.profile===chosen.contest){saveConfiguration({...c,active:chosen.name},'Strategy').then(ok=>{if(!ok)show();});return;}
+    openContestPrompt(chosen.contest,chosen.name,null);return;
+  }
+  const {contest:_,...rest}=c;contestSummary=null;saveConfiguration({...rest,active:nameSelect.value||null},'Strategy').then(ok=>{if(!ok)show();});
+});
 showAllButton.addEventListener('click',()=>{showAll=!showAll;show();});
 valueButton.addEventListener('click',()=>{if(typeof sortBy==='function')sortBy({dataset:{sort:'value'}});show();});
 document.querySelector('#band-activity thead')?.addEventListener('click',()=>valueButton.setAttribute('aria-pressed',String(valueSort())));
@@ -1535,27 +1580,34 @@ $('mw-update')?.addEventListener('click',async()=>{
 });
 // ---------------------------------------------------------------- editor popup
 const CONTINENTS=[['AF','Africa'],['AN','Antarctica'],['AS','Asia'],['EU','Europe'],['NA','North America'],['OC','Oceania'],['SA','South America']];
-const GOALS=[['dxcc','DXCC'],['dxcc_band','DXCC per band'],['dxcc_slot','DXCC slot (band and mode)'],['waz','WAZ (CQ zones)'],['wpx','WPX (prefixes)'],['grid','Grids'],['new_call','New call'],['new_call_band','New call on band']];
+// #97 WstxStrategy::StrategyEditor: the answers of the nine decisions, with the model's labels.
+const NEW_WHAT=[['dxcc','DXCC entity'],['call','Call'],['grid','Grid'],['cq_zone','CQ zone (WAZ)'],['itu_zone','ITU zone'],['continent','Continent (WAC)'],['prefix','Prefix (WPX)']];
+const NEW_PER=[['ever','Ever'],['band','Band'],['band_mode','Band and mode']];
+const NEW_MEANS=[['not_worked','Not worked'],['not_confirmed','Not confirmed (QSL/LoTW)']];
+const REGIONS=[['all','All'],['dx','Other continents than mine'],['selected','Selected continents']];
+const SINCE=[['all','Any time'],['today','Today UTC'],['from_to','From/to UTC dates']];
+const BANDS=['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','4m','2m','70cm'];
 // WstxStrategy::ValueCriterion in the model's order, with the editor's labels (StrategyEditor).
-const CRITERIA=[['new_dxcc','New DXCC'],['new_dxcc_band','New DXCC on band'],['new_dxcc_slot','New DXCC on band and mode'],['new_grid','New grid'],['new_grid_band','New grid on band'],['new_call','New call'],['new_call_band','New call on band'],['most_wanted','Most Wanted rank'],['distance','Distance (farther first)'],['snr','SNR (stronger first)']];
-const criterionLabel=v=>CRITERIA.find(c=>c[0]===v)?.[1]??v;
+const CRITERIA=[['most_wanted','Most wanted (Club Log rank)'],['new_dxcc','New DXCC'],['new_dxcc_band','New DXCC on band'],['new_dxcc_band_mode','New DXCC on band and mode'],['new_call','New call'],['new_call_band','New call on band'],['new_grid','New grid'],['new_grid_band','New grid on band'],['new_cq_zone','New CQ zone'],['new_itu_zone','New ITU zone'],['new_continent','New continent'],['new_prefix','New prefix'],['snr_bucket','SNR bucket (above 0, -10..0, below -10)'],['snr','SNR (stronger first)'],['distance','Distance (farthest first)'],['hears_us','Hears us first (PSK Reporter)']];
+const PSK_CASES=[['heard','He reports and hears us'],['not_heard','He reports, does not hear us'],['no_reports','He does not report']];
 // WstxContest::ContestPrompt: choose the contest, its period (pre-filled from the schedule rule)
 // and the operation; the station keeps receiving and HALT stays reachable.
 const contestPrompt=document.createElement('dialog');contestPrompt.id='contest-prompt';contestPrompt.className='op-dialog op-strategy-editor';contestPrompt.setAttribute('aria-labelledby','contest-prompt-title');
 contestPrompt.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="contest-prompt-title">Contest strategy</h2><button type="button" class="op-halt-small" id="contest-prompt-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button></header>
 <div class="se-options"><label>Contest<select id="cp-profile"></select></label><label>Start (UTC)<input id="cp-start" type="datetime-local" step="60"></label><label>End (UTC)<input id="cp-end" type="datetime-local" step="60"></label></div>
 <p id="cp-schedule" class="op-muted"></p><p id="cp-activity" class="op-muted"></p>
-<fieldset class="se-options"><legend>Operation</legend><label class="op-check"><input type="radio" name="cp-operation" value="sp" checked>S&amp;P: search and pounce</label><label class="op-check"><input type="radio" name="cp-operation" value="run">Run: calls CQ</label></fieldset>
-<fieldset class="se-options"><legend>Exit</legend><label>Repetitions before leaving<input id="cp-repetitions" type="number" min="1" max="20" step="1" value="2"></label><label>Quiet time (minutes)<input id="cp-quiet" type="number" min="1" max="120" step="1" value="10"></label></fieldset>
+<div class="se-options"><label>Strategy<select id="cp-strategy"></select></label></div>
 <p class="op-muted">Band Activity follows the contest rules. It transmits only while Auto (beside CQ) is on; with Auto off you operate.</p>
 <ul id="cp-notes" class="op-muted"></ul><p id="cp-result" class="op-muted" role="status"></p><menu><button value="cancel" type="submit">Cancel</button><button type="button" class="op-primary" id="cp-go">Start</button></menu></form>`;
 document.querySelector('main').append(contestPrompt);
 function contestFill(keep){
   const p=contests.find(x=>x.id===$('cp-profile').value)??contests[0];if(!p)return;
   const minute=t=>t?t.slice(0,16):'';
-  // WstxContest::ContestPrompt: S&P, 2 repetitions and 10 minutes unless a selection in force says otherwise.
-  const wanted=keep?.operation??'sp';for(const r of contestPrompt.querySelectorAll('input[name=cp-operation]'))r.checked=r.value===wanted;
-  $('cp-repetitions').value=String(keep?.repetitions??2);$('cp-quiet').value=String(keep?.quiet_minutes??10);
+  // #97 WstxContest::ContestPrompt: the profile's contest built-in first (the default), then every
+  // saved contest strategy of that profile; the active one when a selection of it is in force.
+  const ofProfile=[...builtins(),...(config()?.strategies??[])].filter(s=>s.class==='contest'&&s.contest===p.id);
+  $('cp-strategy').replaceChildren(...ofProfile.map(s=>{const o=document.createElement('option');o.value=s.name;o.textContent=s.name;return o;}));
+  const active=config()?.active;if(keep&&ofProfile.some(s=>s.name===active))$('cp-strategy').value=active;
   $('cp-start').value=minute(keep?.start??p.period?.start);$('cp-end').value=minute(keep?.end??p.period?.end);
   $('cp-schedule').textContent=`${p.schedule}${p.period?.band?` · this round ${p.period.band}`:''}${p.period?'':' · enter the date'}`;
   const on=window.wstxContact?.snapshot()?.settings?.activity??'none';
@@ -1563,12 +1615,18 @@ function contestFill(keep){
   $('cp-notes').replaceChildren(...[p.automation_text,...p.notes].map(n=>{const li=document.createElement('li');li.textContent=n;return li;}));
   $('cp-result').textContent='';
 }
-contestButton.addEventListener('click',async()=>{
-  await loadContests();if(!contests.length){statusNode.textContent='Contest strategies unavailable';return;}
-  const now=selection();
+// Opens the prompt on a profile (the selection in force by default), with a strategy chosen (#97
+// StrategySelector: a saved contest strategy whose contest is not in force).
+async function openContestPrompt(profile,strategy,keep){
+  await loadContests();if(!contests.length){statusNode.textContent='Contest strategies unavailable';show();return;}
   $('cp-profile').replaceChildren(...contests.map(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name;return o;}));
-  $('cp-profile').value=now?.profile??contests[0].id;contestFill(now);contestPrompt.showModal();
-});
+  $('cp-profile').value=contests.some(p=>p.id===profile)?profile:contests[0].id;contestFill(keep);
+  if(strategy&&[...$('cp-strategy').options].some(o=>o.value===strategy))$('cp-strategy').value=strategy;
+  contestPrompt.showModal();
+}
+contestButton.addEventListener('click',()=>{const now=selection();openContestPrompt(now?.profile,null,now);});
+// Cancel (or Start) shows the station's selection again in the selector.
+contestPrompt.addEventListener('close',()=>show());
 $('cp-profile').addEventListener('change',()=>contestFill(null));
 $('contest-prompt-halt').addEventListener('click',()=>{contestPrompt.close('cancel');document.querySelector('#halt-tx')?.click();});
 $('cp-go').addEventListener('click',async()=>{
@@ -1577,99 +1635,178 @@ $('cp-go').addEventListener('click',async()=>{
   const utc=t=>`${t.slice(0,16)}Z`;contestSummary=null;
   // Start only selects: whether it transmits is the Auto toggle's, which asks a forbidden clause's
   // warning (WstxStrategy::AutoToggle); the clause is on screen here.
-  const profile=$('cp-profile').value,operation=contestPrompt.querySelector('input[name=cp-operation]:checked').value;
-  const contest={profile,start:utc(start),end:utc(end),operation,repetitions:Number($('cp-repetitions').value),quiet_minutes:Number($('cp-quiet').value)};
-  const ok=await saveConfiguration({...c,active:null,contest},'Contest');
+  const profile=$('cp-profile').value,active=$('cp-strategy').value;
+  const contest={profile,start:utc(start),end:utc(end)};
+  const ok=await saveConfiguration({...c,active,contest},'Contest');
   if(ok)contestPrompt.close('ok');else $('cp-result').textContent=statusNode.textContent;
 });
-// WstxStrategy::Strategy: the browser's new strategy.
-const newStrategy=name=>({name,class:'award',goals:['new_call'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,value:['most_wanted'],callers_first:true,cq_when_no_target:false,repetitions:4,quiet_minutes:10,treat_73_as_cq:true,window:{kind:'all'}});
+// #97 WstxStrategy::StrategyEditor: a strategy is new only as a duplicate ("<name> copy", then
+// "<name> copy 2" ..., at most 32 characters), keeping its class and contest; there is no Add.
+function copyName(name){
+  const taken=n=>drafts.some(d=>d.name.toLowerCase()===n.toLowerCase());
+  for(let k=1;;k++){const suffix=k===1?' copy':` copy ${k}`,n=name.slice(0,32-suffix.length)+suffix;if(!taken(n))return n;}
+}
 const editor=document.createElement('dialog');editor.id='strategy-editor';editor.className='op-dialog op-strategy-editor';editor.setAttribute('aria-labelledby','strategy-editor-title');
 editor.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="strategy-editor-title">Strategies</h2><button type="button" class="op-halt-small" id="strategy-editor-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button></header>
-<div class="se-pick"><label>Edit<select id="se-which"></select></label><button type="button" id="se-new">New</button><button type="button" id="se-copy">Duplicate</button><button type="button" id="se-delete">Delete</button></div>
+<div class="se-pick"><label>Edit<select id="se-which"></select></label><button type="button" id="se-copy">Duplicate</button><button type="button" id="se-delete">Delete</button></div>
+<p id="se-note" class="op-muted" role="status" hidden></p>
 <div id="se-body"></div>
 <section class="se-preview" aria-labelledby="se-preview-title"><h3 id="se-preview-title">Live preview · latest period</h3><p id="se-preview-status" class="op-muted" role="status"></p><div class="se-preview-wrap"><table><tbody id="se-preview"></tbody></table></div></section>
 <p id="se-result" class="op-muted" role="status"></p><menu><button value="cancel" type="submit">Close</button><button type="button" class="op-primary" id="se-save">Save</button></menu></form>`;
 document.querySelector('main').append(editor);
-let drafts=[],current=0,previewTimer=null,previewSeq=0;
+let drafts=[],current=0,previewTimer=null,previewSeq=0,editorRefusal=null;const notesShown=new Set();
 function editorOpen(){
   const c=config();drafts=structuredClone(c?.strategies??[]);
   // WstxStrategy::BuiltinStrategies: after the user's, read-only; Save never sends them.
-  drafts.push(...structuredClone(builtins()));current=Math.max(0,drafts.findIndex(s=>s.name===c?.active));
+  drafts.push(...structuredClone(builtins()));current=Math.max(0,drafts.findIndex(s=>s.name===c?.active));editorRefusal=null;
   editor.querySelector('#strategy-editor-halt').disabled=document.querySelector('#halt-tx')?.disabled??true;
   $('se-result').textContent=c?`My continent ${view.my_continent??'unknown'} (Settings > General) · Save applies at once; selecting marks, Auto transmits`:'Saved strategies unreadable: Save replaces them';
+  // StrategyHttp configuration_note: each rename of the upgrade shown once.
+  const notes=(view?.configuration_note??[]).map(n=>`Renamed ${n.from} to ${n.to}`).filter(n=>!notesShown.has(n));
+  for(const n of notes)notesShown.add(n);
+  $('se-note').hidden=!notes.length;$('se-note').textContent=notes.join(' · ');
   renderEditor();editor.showModal();
 }
+// A contest's name: its contest built-in is named by it (BuiltinStrategies), no profile read.
+const contestName=id=>builtins().find(b=>b.class==='contest'&&b.contest===id)?.name??contests.find(p=>p.id===id)?.name??id;
 editButton.addEventListener('click',editorOpen);
 // The modal popup makes the page inert, so it carries HALT itself (same action and state).
 editor.querySelector('#strategy-editor-halt').addEventListener('click',()=>{editor.close('cancel');document.querySelector('#halt-tx')?.click();});
 function option(value,label,selected){return `<option value="${value}"${selected?' selected':''}>${label}</option>`;}
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function renderEditor(){
-  $('se-which').innerHTML=drafts.map((s,i)=>option(i,esc(s.name)+(s.builtin?' (built-in)':''),i===current)).join('');
-  $('se-delete').disabled=!drafts[current]||!!drafts[current].builtin;
-  const s=drafts[current];if(!s){$('se-body').innerHTML='<p class="op-muted">No strategy. Choose New.</p>';preview();return;}
-  const w=s.window,continents=s.region.continents??[],value=Array.isArray(s.value)?s.value:[],left=CRITERIA.filter(([v])=>!value.includes(v));
-  $('se-body').innerHTML=`<label>Name<input id="se-name" maxlength="32" value="${esc(s.name)}" autocomplete="off"></label>
-<h3 class="se-part">Filter</h3>
-<fieldset class="se-goals"><legend>Goals (a station is called when at least one is needed)</legend>${GOALS.map(([v,l])=>`<label class="op-check"><input type="checkbox" data-goal="${v}"${s.goals.includes(v)?' checked':''}>${l}</label>`).join('')}</fieldset>
-<div class="se-options"><label>Needed<select id="se-needed">${[['not_worked','Not worked'],['not_confirmed','Not worked or not confirmed']].map(([v,l])=>option(v,l,s.needed===v)).join('')}</select></label>
-<label>Region<select id="se-region">${[['all','All'],['dx','DX only (other continents)'],['selected','Selected continents']].map(([v,l])=>option(v,l,s.region.kind===v)).join('')}</select></label>
-${s.region.kind==='selected'?`<span class="se-continents" role="group" aria-label="Continents">${CONTINENTS.map(([v,l])=>`<label class="op-check" title="${l}"><input type="checkbox" data-continent="${v}"${continents.includes(v)?' checked':''}>${v}</label>`).join('')}</span>`:''}
-<label>Minimum SNR (dB)<input id="se-snr" type="number" min="-50" max="49" step="1" value="${s.min_snr_db??''}" placeholder="none"></label>
-<label class="op-check"><input type="checkbox" id="se-73"${s.treat_73_as_cq?' checked':''}>Treat 73 as CQ (answer a station that just ended a QSO; my Tx frequency is held)</label>
-<label>Worked window<select id="se-window">${[['all','All time'],['today','Today (UTC)'],['from_to','From - to (UTC dates)']].map(([v,l])=>option(v,l,w.kind===v)).join('')}</select></label>
-${w.kind==='from_to'?`<label>From<input id="se-from" type="date" min="1930-01-01" max="2099-12-31" value="${esc(w.from)}"></label><label>To<input id="se-to" type="date" min="1930-01-01" max="2099-12-31" value="${esc(w.to)}"></label>`:''}</div>
-<h3 class="se-part">Value</h3>
-<ol id="se-value" class="se-value" aria-label="Value order: the first decides, the next breaks a tie">${value.map((v,i)=>`<li data-criterion="${esc(v)}"><span>${esc(criterionLabel(v))}</span><button type="button" class="se-up" data-index="${i}" aria-label="Move ${esc(criterionLabel(v))} up"${i===0?' disabled':''}>&uarr;</button><button type="button" class="se-down" data-index="${i}" aria-label="Move ${esc(criterionLabel(v))} down"${i===value.length-1?' disabled':''}>&darr;</button><button type="button" class="se-remove" data-index="${i}" aria-label="Remove ${esc(criterionLabel(v))}">&times;</button></li>`).join('')}<li id="se-then" class="se-then op-muted">then SNR</li></ol>
-<div class="se-options"><label>Add a criterion<select id="se-value-new">${left.map(([v,l])=>option(v,l,false)).join('')}</select></label><button type="button" id="se-value-add"${left.length?'':' disabled'}>Add</button>
-<label class="op-check"><input type="checkbox" id="se-callers-first"${s.callers_first?' checked':''}>Callers of my call first</label></div>
-<h3 class="se-part">Exit</h3>
-<div class="se-options"><label>Repetitions before leaving<input id="se-repetitions" type="number" min="1" max="20" step="1" value="${s.repetitions}"></label>
-<label>Quiet time (minutes)<input id="se-quiet" type="number" min="1" max="120" step="1" value="${s.quiet_minutes}"></label></div>
-<label class="op-check" title="Call CQ after two periods with nothing to call; callers are answered"><input type="checkbox" id="se-cq"${s.cq_when_no_target?' checked':''}>CQ when no target</label>
-<p class="op-muted">${s.builtin?'Built-in: read-only; Duplicate makes your own copy. ':''}Stations calling me are always answered, whatever these settings say. CQs directed elsewhere (another continent, CQ DX from my own, any other word) are never called.</p>`;
+  // The list grouped Strategy, Contest (the two classes).
+  $('se-which').innerHTML=[['Strategy',d=>d.class!=='contest'],['Contest',d=>d.class==='contest']].map(([label,of])=>{
+    const items=drafts.map((s,i)=>[s,i]).filter(([s])=>of(s));
+    return items.length?`<optgroup label="${label}">${items.map(([s,i])=>option(i,esc(s.name)+(s.builtin?' (built-in)':''),i===current)).join('')}</optgroup>`:'';}).join('');
+  $('se-delete').disabled=!drafts[current]||!!drafts[current].builtin;$('se-copy').disabled=!drafts[current];
+  const s=drafts[current];if(!s){$('se-body').innerHTML='<p class="op-muted">No strategy.</p>';preview();return;}
+  const contest=s.class==='contest',f=s.filters,order=s.order,left=CRITERIA.filter(([v])=>!order.includes(v));
+  const checks=(list,attr,on)=>list.map(([v,l])=>`<label class="op-check"><input type="checkbox" data-${attr}="${v}"${on(v)?' checked':''}>${l}</label>`).join('');
+  const bands=[...BANDS,...(s.bands??[]).filter(b=>!BANDS.includes(b))];
+  // Prefix/country entries (CountryList): kind, value (a country picker of the table's names), bands.
+  const entries=side=>`<fieldset class="se-list" data-field="filters.countries.${side}"><legend>Prefix/country ${side}</legend>${f.countries[side].map((e,j)=>`<div class="se-entry"><select data-entry="${side}" data-index="${j}" data-key="kind" aria-label="Prefix or country">${option('prefix','Prefix',e.kind==='prefix')}${option('country','Country',e.kind==='country')}</select><input data-entry="${side}" data-index="${j}" data-key="value" data-field="filters.countries.${side}[${j}].value" aria-label="${e.kind==='country'?'Country name':'Prefix'}" value="${esc(e.value)}" autocomplete="off"${e.kind==='country'?' list="se-countries"':''}><input data-entry="${side}" data-index="${j}" data-key="bands" data-field="filters.countries.${side}[${j}].bands" aria-label="Bands (empty: every band)" placeholder="every band" value="${esc((e.bands??[]).join(' '))}" autocomplete="off"><button type="button" class="se-entry-remove" data-side="${side}" data-index="${j}" aria-label="Remove entry ${j+1}">&times;</button></div>`).join('')}<button type="button" class="se-entry-add" data-side="${side}">Add entry</button></fieldset>`;
+  const wordList=(list,side,label,hint)=>`<label>${label} ${side}<input data-words="${list}.${side}" data-field="filters.${list}.${side}" value="${esc(f[list][side].join(' '))}" placeholder="${hint}" autocomplete="off"></label>`;
+  const lists=`${entries('include')}${entries('exclude')}<datalist id="se-countries"></datalist>
+<div class="se-options">${wordList('states','include','US state','state codes')}${wordList('states','exclude','US state','state codes')}${wordList('cq_targets','include','CQ target','words, e.g. POTA')}${wordList('cq_targets','exclude','CQ target','words, e.g. DX')}</div>`;
+  const filters=contest?`<p class="op-muted">Contest rules first, then:</p>${lists}`:`<fieldset class="se-goals" data-field="filters.new"><legend>What must be new?</legend>${checks(NEW_WHAT,'new',v=>f.new.includes(v))}</fieldset>
+<div class="se-options"><label>New per<select id="se-new-per" data-field="filters.new_per">${NEW_PER.map(([v,l])=>option(v,l,f.new_per===v)).join('')}</select></label>
+<label>New means<select id="se-new-means" data-field="filters.new_means">${NEW_MEANS.map(([v,l])=>option(v,l,f.new_means===v)).join('')}</select></label>
+<label>Region<select id="se-region" data-field="filters.region">${REGIONS.map(([v,l])=>option(v,l,f.region.kind===v)).join('')}</select></label>
+${f.region.kind==='selected'?`<span class="se-continents" role="group" aria-label="Continents" data-field="filters.region.continents">${CONTINENTS.map(([v,l])=>`<label class="op-check" title="${l}"><input type="checkbox" data-continent="${v}"${f.region.continents.includes(v)?' checked':''}>${v}</label>`).join('')}</span>`:''}
+<label>Minimum SNR (dB)<input id="se-snr" data-field="filters.min_snr_db" type="number" min="-50" max="49" step="1" value="${f.min_snr_db??''}" placeholder="none"></label>
+<label>Worked since<select id="se-since" data-field="filters.worked_since">${SINCE.map(([v,l])=>option(v,l,f.worked_since.kind===v)).join('')}</select></label>
+${f.worked_since.kind==='from_to'?`<label>From<input id="se-from" data-field="filters.worked_since.from" type="date" min="1930-01-01" max="2099-12-31" value="${esc(f.worked_since.from)}"></label><label>To<input id="se-to" data-field="filters.worked_since.to" type="date" min="1930-01-01" max="2099-12-31" value="${esc(f.worked_since.to)}"></label>`:''}
+<label class="op-check"><input type="checkbox" id="se-73" data-field="filters.treat_73_as_cq"${f.treat_73_as_cq?' checked':''}>Treat 73 as CQ</label></div>${lists}
+<p class="op-muted">Callers of my call must pass these filters too.</p>`;
+  const orderRows=contest?`<p id="se-ranked">Ranked by the contest's rules</p>`:`<ol id="se-order" class="se-value" aria-label="Order: the first decides, the next breaks a tie">${order.map((v,i)=>`<li data-criterion="${esc(v)}"><select data-order="${i}" data-field="order[${i}]" aria-label="Criterion ${i+1}">${CRITERIA.filter(([c])=>c===v||!order.includes(c)).map(([c,l])=>option(c,l,c===v)).join('')}</select><button type="button" class="se-up" data-index="${i}" aria-label="Move criterion ${i+1} up"${i===0?' disabled':''}>&uarr;</button><button type="button" class="se-down" data-index="${i}" aria-label="Move criterion ${i+1} down"${i===order.length-1?' disabled':''}>&darr;</button><button type="button" class="se-remove" data-index="${i}" aria-label="Remove criterion ${i+1}">&times;</button></li>`).join('')}<li id="se-then" class="se-then op-muted">then SNR</li></ol>
+<p class="se-options"><button type="button" id="se-order-add"${left.length?'':' disabled'}>Add a criterion</button><span class="op-muted">The first decides, the next breaks a tie.</span></p>`;
+  const L=s.leave,leaveValue=(mode,key,fallback)=>L.mode===mode?L[key]:fallback;
+  const number=(id,field,min,max,value)=>`<input id="${id}" data-field="${field}" type="number" min="${min}" max="${max}" step="1" value="${value}">`;
+  const move=([k,l])=>{const n=s.tx_move_every[k],kind=n===0?'stay':n===1?'every':'nth';
+    return `<div class="se-options se-move"><label>${l}<select id="se-move-${k}" data-move="${k}" data-field="tx_move_every.${k}">${[['stay','Stay'],['every','Move every call'],['nth','Move every n-th call']].map(([v,t])=>option(v,t,kind===v)).join('')}</select></label>${kind==='nth'?`<label>n<input id="se-move-${k}-n" data-move-n="${k}" type="number" min="2" max="20" step="1" value="${n}"></label>`:''}</div>`;};
+  $('se-body').innerHTML=`<label>Name<input id="se-name" data-field="name" maxlength="32" value="${esc(s.name)}" autocomplete="off"></label>
+<p class="se-class">Class <strong id="se-class">${contest?'Contest':'Strategy'}</strong>${contest?` · Contest <strong id="se-contest">${esc(contestName(s.contest))}</strong>`:''}</p>
+<h3 class="se-part">1 Band</h3>
+<div class="se-continents" role="group" aria-label="Bands" data-field="bands"><label class="op-check"><input type="checkbox" id="se-bands-all"${s.bands===null?' checked':''}>All bands</label>${bands.map(b=>`<label class="op-check"><input type="checkbox" data-band="${b}"${s.bands?.includes(b)?' checked':''}${s.bands===null?' disabled':''}>${b}</label>`).join('')}</div>
+<h3 class="se-part">2 Filters</h3>
+${filters}
+<h3 class="se-part">3 Order</h3>
+${orderRows}
+<h3 class="se-part">4 Callers first</h3>
+<label class="op-check"><input type="checkbox" id="se-callers-first" data-field="callers_first"${s.callers_first?' checked':''}>Callers of my call first</label>
+<h3 class="se-part">5 Leaving a station</h3>
+<div class="se-leave" role="radiogroup" aria-label="Leaving a station" data-field="leave">
+<label class="op-check"><input type="radio" name="se-leave" value="calls"${L.mode==='calls'?' checked':''}>After ${number('se-leave-calls','leave.calls',1,20,leaveValue('calls','calls',4))} calls without answer, ${number('se-leave-heard','leave.calls_heard',1,40,leaveValue('calls','calls_heard',8))} if he hears us</label>
+<label class="op-check"><input type="radio" name="se-leave" value="until_logged"${L.mode==='until_logged'?' checked':''}>Until logged, leave when not decoded for ${number('se-gone','leave.gone_minutes',1,60,leaveValue('until_logged','gone_minutes',10))} min</label>
+<label class="op-check"><input type="radio" name="se-leave" value="contest"${L.mode==='contest'?' checked':''}>Contest style: while he hears us stay as long as he is the most valuable, else leave after ${number('se-tx-changes','leave.tx_changes',1,20,leaveValue('contest','tx_changes',2))} Tx changes</label></div>
+<h3 class="se-part">6 Tx frequency</h3>
+${PSK_CASES.map(move).join('')}
+<p class="op-muted">A move goes to a quiet slot, never onto a frequency he reports busy, never below 500 Hz.</p>
+<h3 class="se-part">7 Busy pause</h3>
+<label class="op-check"><input type="checkbox" id="se-busy" data-field="busy_pause"${s.busy_pause?' checked':''}>Busy pause: while he is in a QSO with another station keep calling on a split frequency and do not count</label>
+<h3 class="se-part">8 CQ when idle</h3>
+<label class="op-check"><input type="checkbox" id="se-cq" data-field="cq_when_idle"${s.cq_when_idle?' checked':''}>CQ when idle</label>
+<h3 class="se-part">9 Retry pause</h3>
+<label>Retry pause (minutes)${number('se-retry','retry_minutes',1,120,s.retry_minutes)}</label>
+${s.builtin?'<p class="op-muted">Built-in: read-only; Duplicate makes your own copy.</p>':''}`;
   if(s.builtin)for(const e of $('se-body').querySelectorAll('input,select,button'))e.disabled=true;
+  showRefusal();
   preview();
+}
+// A refused field is shown at its control with the station's reason (StrategyEditor): the control
+// whose data-field is the refused path, else the nearest enclosing one.
+function showRefusal(){
+  const r=editorRefusal;if(!r||r.draft!==drafts[current])return;
+  const fields=[...$('se-body').querySelectorAll('[data-field]')];let path=r.path,at=null;
+  while(path&&!(at=fields.find(e=>e.dataset.field===path)))path=path.replace(/(\[\d+\]|\.[^.[]+)$/,'');
+  if(!at)at=$('se-name');
+  const note=document.createElement('span');note.className='se-refused';note.setAttribute('role','alert');note.textContent=r.text;
+  at.setAttribute('aria-invalid','true');const host=at.matches('fieldset,div,span')?at:at.closest('label');
+  if(host)host.append(note);else at.after(note);
 }
 function words(text,lower){return text.split(/[\s,]+/).map(w=>lower?w.toLowerCase():w.toUpperCase()).filter(Boolean);}
 const todayUtc=()=>new Date().toISOString().slice(0,10);
 editor.addEventListener('input',event=>{
   const s=drafts[current];if(!s)return;const t=event.target;
-  if(t.id==='se-which'){current=Number(t.value);renderEditor();return;}
+  if(t.id==='se-which'){current=Number(t.value);editorRefusal=null;renderEditor();return;}
   if(s.builtin)return;
-  if(t.dataset.goal){s.goals=GOALS.map(g=>g[0]).filter(g=>editor.querySelector(`[data-goal="${g}"]`).checked);}
-  else if(t.dataset.continent){s.region={kind:'selected',continents:[...editor.querySelectorAll('[data-continent]')].filter(b=>b.checked).map(b=>b.dataset.continent)};}
-  else if(t.id==='se-name')s.name=t.value;
-  else if(t.id==='se-needed')s.needed=t.value;
-  else if(t.id==='se-region'){s.region=t.value==='selected'?{kind:'selected',continents:[view?.my_continent==='EU'?'NA':'EU']}:{kind:t.value};renderEditor();return;}
-  else if(t.id==='se-snr')s.min_snr_db=t.value===''?null:Number(t.value);
-  else if(t.id==='se-value-new')return;
+  const f=s.filters,n=id=>Number($(id).value);
+  if(t.id==='se-name')s.name=t.value;
+  else if(t.id==='se-bands-all'){s.bands=t.checked?null:[];renderEditor();}
+  else if(t.dataset.band){s.bands=[...$('se-body').querySelectorAll('[data-band]')].filter(b=>b.checked).map(b=>b.dataset.band);}
+  else if(t.dataset.new){f.new=NEW_WHAT.map(w=>w[0]).filter(w=>$('se-body').querySelector(`[data-new="${w}"]`).checked);}
+  else if(t.id==='se-new-per')f.new_per=t.value;
+  else if(t.id==='se-new-means')f.new_means=t.value;
+  else if(t.id==='se-region'){f.region=t.value==='selected'?{kind:'selected',continents:[view?.my_continent==='EU'?'NA':'EU']}:{kind:t.value};renderEditor();}
+  else if(t.dataset.continent){f.region={kind:'selected',continents:[...$('se-body').querySelectorAll('[data-continent]')].filter(b=>b.checked).map(b=>b.dataset.continent)};}
+  else if(t.id==='se-snr')f.min_snr_db=t.value===''?null:Number(t.value);
+  else if(t.id==='se-since'){f.worked_since=t.value==='from_to'?{kind:'from_to',from:todayUtc(),to:todayUtc()}:{kind:t.value};renderEditor();}
+  else if(t.id==='se-from')f.worked_since.from=t.value;
+  else if(t.id==='se-to')f.worked_since.to=t.value;
+  else if(t.id==='se-73')f.treat_73_as_cq=t.checked;
+  else if(t.dataset.entry){
+    const e=f.countries[t.dataset.entry][Number(t.dataset.index)];
+    if(t.dataset.key==='kind'){e.kind=t.value;renderEditor();}else if(t.dataset.key==='value')e.value=t.value;else e.bands=t.value.trim()?words(t.value,true):null;
+  }
+  else if(t.dataset.words){const [list,side]=t.dataset.words.split('.');f[list][side]=words(t.value,false);}
+  else if(t.dataset.order!==undefined){s.order[Number(t.dataset.order)]=t.value;renderEditor();}
   else if(t.id==='se-callers-first')s.callers_first=t.checked;
-  else if(t.id==='se-repetitions')s.repetitions=Number(t.value);
-  else if(t.id==='se-quiet')s.quiet_minutes=Number(t.value);
-  else if(t.id==='se-cq')s.cq_when_no_target=t.checked;
-  else if(t.id==='se-73')s.treat_73_as_cq=t.checked;
-  else if(t.id==='se-window'){s.window=t.value==='from_to'?{kind:'from_to',from:todayUtc(),to:todayUtc()}:{kind:t.value};renderEditor();return;}
-  else if(t.id==='se-from')s.window.from=t.value;
-  else if(t.id==='se-to')s.window.to=t.value;
+  else if(t.name==='se-leave'||['se-leave-calls','se-leave-heard','se-gone','se-tx-changes'].includes(t.id)){
+    // WstxStrategy::LeaveRule: the chosen mode with its own numbers.
+    const mode=$('se-body').querySelector('input[name=se-leave]:checked')?.value??s.leave.mode;
+    s.leave=mode==='calls'?{mode,calls:n('se-leave-calls'),calls_heard:n('se-leave-heard')}:mode==='until_logged'?{mode,gone_minutes:n('se-gone')}:{mode,tx_changes:n('se-tx-changes')};
+  }
+  else if(t.dataset.move){const k=t.dataset.move,old=s.tx_move_every[k];s.tx_move_every[k]=t.value==='stay'?0:t.value==='every'?1:Math.max(2,old);renderEditor();}
+  else if(t.dataset.moveN)s.tx_move_every[t.dataset.moveN]=Number(t.value);
+  else if(t.id==='se-busy')s.busy_pause=t.checked;
+  else if(t.id==='se-cq')s.cq_when_idle=t.checked;
+  else if(t.id==='se-retry')s.retry_minutes=Number(t.value);
+  else return;
   schedulePreview();
 });
 editor.addEventListener('click',event=>{
-  // WstxStrategy::ValueOrder in the editor: add, remove, up and down; SNR stays the hidden last.
-  const v=event.target.closest('#se-value-add,.se-up,.se-down,.se-remove'),d=drafts[current];
+  const d=drafts[current];
+  // WstxStrategy::ValueOrder in the editor: add a row, remove, up and down; SNR stays the fixed last.
+  const v=event.target.closest('#se-order-add,.se-up,.se-down,.se-remove');
   if(v&&d&&!d.builtin&&!v.disabled){
-    const list=[...(d.value??[])],i=Number(v.dataset.index);
-    if(v.id==='se-value-add'){const add=$('se-value-new').value;if(add&&!list.includes(add)&&list.length<10)list.push(add);}
+    const list=d.order,i=Number(v.dataset.index);
+    if(v.id==='se-order-add'){const add=CRITERIA.find(([c])=>!list.includes(c));if(add)list.push(add[0]);}
     else if(v.classList.contains('se-remove'))list.splice(i,1);
     else{const j=v.classList.contains('se-up')?i-1:i+1;if(j>=0&&j<list.length)[list[i],list[j]]=[list[j],list[i]];}
-    d.value=list;renderEditor();schedulePreview();return;
+    renderEditor();schedulePreview();return;
   }
-  const b=event.target.closest('#se-new,#se-copy,#se-delete');if(!b)return;const s=drafts[current];
-  if(b.id==='se-new'){let n=1;while(drafts.some(d=>d.name.toLowerCase()===`strategy ${n}`))n++;addDraft(newStrategy(`Strategy ${n}`));}
-  else if(b.id==='se-copy'&&s){const {builtin,...copy}=structuredClone(s);copy.name=`${s.name} copy`.slice(0,32);addDraft(copy);}
-  else if(b.id==='se-delete'&&s&&!s.builtin){drafts.splice(current,1);current=Math.max(0,current-1);}
-  renderEditor();
+  // CountryList entries: add (a prefix line) and remove.
+  const e=event.target.closest('.se-entry-add,.se-entry-remove');
+  if(e&&d&&!d.builtin&&!e.disabled){
+    const list=d.filters.countries[e.dataset.side];
+    if(e.classList.contains('se-entry-add'))list.push({kind:'prefix',value:'',bands:null});else list.splice(Number(e.dataset.index),1);
+    renderEditor();schedulePreview();return;
+  }
+  const b=event.target.closest('#se-copy,#se-delete');if(!b)return;
+  if(b.id==='se-copy'&&d){const {builtin,...copy}=structuredClone(d);copy.name=copyName(d.name);addDraft(copy);}
+  else if(b.id==='se-delete'&&d&&!d.builtin){drafts.splice(current,1);current=Math.max(0,current-1);}
+  editorRefusal=null;renderEditor();
 });
 // The user's strategies come first, the built-ins after them.
 function addDraft(draft){const at=drafts.filter(d=>!d.builtin).length;drafts.splice(at,0,draft);current=at;}
@@ -1695,7 +1832,13 @@ $('se-save').addEventListener('click',async()=>{
   const mine=drafts.filter(d=>!d.builtin),names=[...mine,...builtins()].map(d=>d.name);
   const ok=await saveConfiguration({...c,continent:c.continent??null,active:names.includes(c.active)?c.active:null,strategies:mine},'Strategies');
   $('se-result').textContent=ok?`Saved · revision ${view.revision} · applies now`:statusNode.textContent;
-  if(ok){const name=drafts[current]?.name;drafts=[...structuredClone(config().strategies),...structuredClone(builtins())];current=Math.max(0,drafts.findIndex(d=>d.name===name));renderEditor();}
+  if(ok){editorRefusal=null;const name=drafts[current]?.name;drafts=[...structuredClone(config().strategies),...structuredClone(builtins())];current=Math.max(0,drafts.findIndex(d=>d.name===name));renderEditor();return;}
+  // The refused field at its control: strategies[i] is the i-th of the user's strategies sent.
+  const m=/^strategies\[(\d+)\]\.?(.*)$/.exec(lastRefusal?.field??'');
+  if(m&&mine[Number(m[1])]){
+    const draft=mine[Number(m[1])];current=drafts.indexOf(draft);
+    editorRefusal={draft,path:m[2]||'name',text:`Refused: ${lastRefusal.code}${lastRefusal.reason?` · ${lastRefusal.reason}`:''}`};renderEditor();
+  }
 });
 // Read once per socket (a status refresh on the same socket reads nothing: Thin link).
 let strategySocket=null;

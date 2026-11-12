@@ -440,6 +440,11 @@ main.op-app{--hl-lotw:rgba(153,0,0,.35);--hl-new_call_band:rgba(153,255,255,.2);
 body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #halt-tx,body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #abort-qso{display:none}
 #contact-messages .ct-now{padding:1px 8px;min-height:0}
 .se-goals{display:flex;flex-wrap:wrap;gap:4px 12px;margin:8px 0;border:1px solid #223848;border-radius:4px;padding:6px 10px}.se-goals legend{font-size:var(--op-font-secondary);color:#8ba4b6}
+/* #97 StrategyEditor: list entries, the leave modes and Tx moves wrap inside the popup at 360 px. */
+.se-list{display:flex;flex-direction:column;gap:4px;margin:6px 0;border:1px solid #223848;border-radius:4px;padding:6px 10px;min-width:0}.se-list legend{font-size:var(--op-font-secondary);color:#8ba4b6}
+.se-entry{display:flex;flex-wrap:wrap;gap:4px;align-items:center}.se-entry input{min-width:0;width:9rem;max-width:100%}
+.se-leave{display:flex;flex-direction:column;gap:4px}.op-strategy-editor .se-leave label.op-check{flex-wrap:wrap;gap:4px}.se-leave input[type=number],.se-move input[type=number],#se-retry{width:4.5rem}
+.se-refused{color:#ff8a80;font-size:var(--op-font-secondary)}.op-strategy-editor [role=status]{overflow-wrap:anywhere}.se-class{margin:0}.op-strategy-editor .se-value select{max-width:100%}
 /* #96 FullScreenToggle: icon only, the size and style of "?"; the SVG follows the text colour. */
 .op-app .op-header-actions button.op-fullscreen{display:inline-flex;align-items:center;justify-content:center;line-height:1}
 .op-app .op-header-actions button.op-fullscreen svg{width:16px;height:16px;display:block}

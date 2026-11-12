@@ -119,31 +119,41 @@ fn tc_039_010_whole_db_decides_the_tie() {
     );
 }
 
-// Proves: TC-039-010. The range edges: FT8 300..2650 and FT4 300..2610 (90 Hz wide), my whole
-// signal below 2700 Hz; a quiet slot outside is never taken.
+// Proves: TC-039-010, TC-097-010. The range edges (#97: Auto's candidates FT8 500..2650 and FT4
+// 500..2610, 90 Hz wide, my whole signal below 2700 Hz; the open-slot marks keep 300); a quiet slot
+// outside is never taken; a slot reaching above 2400 Hz loses every tie.
 #[test]
 fn tc_039_010_never_outside_the_tx_range() {
-    let edges = table(40.0, &[(290, 0.0), (300, 20.0), (2650, 20.0), (2660, 0.0)]);
+    let edges = table(40.0, &[(490, 0.0), (500, 20.0), (2650, 20.0), (2660, 0.0)]);
     assert_eq!(
         ft8(2600, None, None, &edges).hz,
-        2650,
-        "the upper edge, nearer"
+        500,
+        "the upper edge loses the tie, although nearer"
     );
     assert_eq!(
-        ft8(400, None, None, &edges).hz,
-        300,
-        "the lower edge, nearer"
+        ft8(600, None, None, &edges).hz,
+        500,
+        "the lower edge, never 490"
+    );
+    let upper = table(40.0, &[(2650, 20.0), (2660, 0.0)]);
+    assert_eq!(
+        ft8(1500, None, None, &upper).hz,
+        2650,
+        "the upper edge when strictly quieter"
     );
     let ft4 = table(40.0, &[(2610, 20.0), (2620, 0.0), (2650, 0.0)]);
     assert_eq!(
         quietest(Mode::Ft4, 1500, None, &[], None, &ft4),
         slot(2610, Some(20), HisEnd::Unknown)
     );
-    // A current Tx outside the range is no candidate.
+    // A current Tx outside the range is no candidate: of the tied candidates the nearest whose
+    // signal ends at or below 2400 Hz.
     let outside = table(40.0, &[(2700, 0.0)]);
-    assert_eq!(ft8(2700, None, None, &outside).hz, 2650);
+    assert_eq!(ft8(2700, None, None, &outside).hz, 2350);
     assert_eq!(band(Mode::Ft8), (300, 2650));
     assert_eq!(band(Mode::Ft4), (300, 2610));
+    assert_eq!(crate::freeslot::auto_band(Mode::Ft8), (500, 2650));
+    assert_eq!(crate::freeslot::auto_band(Mode::Ft4), (500, 2610));
 }
 
 // Proves: TC-039-010. Never within 50 Hz of the called station's signal: an FT8 station at 1800

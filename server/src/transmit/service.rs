@@ -298,6 +298,9 @@ pub struct View {
     pub clock_measurement: Option<super::clock::Measurement>,
     pub tx_calls: u32,
     pub tx_remaining_calls: u32,
+    /// #97 (WstxTransmit::TransmitWatchdog): armed for a strategy run's own contact, which the
+    /// Tx watchdog does not bound while attended: tx_remaining_calls is null on the wire.
+    pub tx_remaining_null: bool,
     pub tx_expired: bool,
     pub tune_seconds: u32,
     pub tune_remaining_seconds: u32,
@@ -357,9 +360,9 @@ pub struct Core<H: Hardware> {
     /// The contact dialogue's Rep of the message due next, as its consumer reports it
     /// (no count of its own): only tx_remaining_calls reads it.
     tx_repetitions: u32,
-    /// WstxStrategy::StrategyWatchdog: what a strategy run's own contact counts down to instead
-    /// (the repetitions left before LeaveRule leaves), as its consumer reports it.
-    tx_remaining: Option<u32>,
+    /// #97 WstxStrategy::StrategyWatchdog: the consumer's message is for a strategy run's own
+    /// contact that the Tx watchdog does not bound (no count is reported for it).
+    tx_unbounded: bool,
     /// #39: an operator action (operator arm or accepted browser activity) was seen this
     /// boot; automation never sets it.
     operator_seen: bool,
@@ -455,7 +458,7 @@ impl<H: Hardware> Core<H> {
             tx_calls: 6,
             tune_seconds: 90,
             tx_repetitions: 0,
-            tx_remaining: None,
+            tx_unbounded: false,
             operator_seen: false,
             tx_expired: false,
             ever_keyed: false,
@@ -676,10 +679,10 @@ impl<H: Hardware> Core<H> {
     pub fn report_tx_repetitions(&mut self, repetitions: u32) {
         self.tx_repetitions = repetitions;
     }
-    /// WstxStrategy::StrategyWatchdog: a strategy run's own contact shows the repetitions left
-    /// before it is left instead of the limit's (None: the limit's).
-    pub fn report_tx_remaining(&mut self, remaining: Option<u32>) {
-        self.tx_remaining = remaining;
+    /// #97 WstxStrategy::StrategyWatchdog, LeaveCountLabel: a strategy run's own contact (attended)
+    /// has no Tx watchdog count: tx_remaining_calls is null for it, never the leave count.
+    pub fn report_tx_unbounded(&mut self, unbounded: bool) {
+        self.tx_unbounded = unbounded;
     }
     /// The next send would exceed the limit: Enable Tx goes off without a halt; a keyed
     /// or started transmission finishes.
@@ -1273,11 +1276,10 @@ impl<H: Hardware> Core<H> {
                     .map(|j| j.prepared.request.request_sequence)
             });
         let tx_remaining_calls = match self.arm {
-            ArmState::Armed => self
-                .tx_remaining
-                .unwrap_or_else(|| self.tx_calls.saturating_sub(self.tx_repetitions)),
+            ArmState::Armed => self.tx_calls.saturating_sub(self.tx_repetitions),
             _ => 0,
         };
+        let tx_remaining_null = self.arm == ArmState::Armed && self.tx_unbounded;
         View {
             capability: context.capability,
             arm_state: self.arm,
@@ -1299,6 +1301,7 @@ impl<H: Hardware> Core<H> {
             clock_measurement: self.hardware.clock_measurement(),
             tx_calls: self.tx_calls,
             tx_remaining_calls,
+            tx_remaining_null,
             tx_expired: self.tx_expired,
             tune_seconds: self.tune_seconds,
             tune_remaining_seconds: self.tune.as_ref().map_or(0, |t| {
