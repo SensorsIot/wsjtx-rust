@@ -1188,6 +1188,11 @@ impl Engine {
     pub fn take_logs(&mut self) -> Vec<(LogKind, Contact)> {
         std::mem::take(&mut self.to_log)
     }
+    /// Test seam: a completed contact due for the log, as its completion queues it.
+    #[cfg(test)]
+    pub fn fixture_log(&mut self, c: Contact) {
+        self.to_log.push((LogKind::Completion, c));
+    }
     /// The Tx offset domain: the transmitting contact's mode, else the station's.
     fn tx_max(&self, ctx: &Ctx) -> u32 {
         tx_max_hz(

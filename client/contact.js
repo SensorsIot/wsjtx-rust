@@ -14,7 +14,7 @@ block('settings-transmit','Transmit',document.querySelector('#settings-radio'),'
 block('settings-log','Log',document.querySelector('#settings-logging'),'<p>Each completed QSO is logged at once, as in WSJT-X: saved in this station profile’s contacts.adi (ADIF) and sent to the UDP targets that select QSO Logged / Logged ADIF. There is no review step; Log QSO logs the current contact now.</p><button type="button" data-region="logbook">&#9776; Open Logbook</button>');
 // #10 logbook.js (loaded first) made Update logbook from ADIF; it belongs below the Log block.
 {const update=document.querySelector('#settings-update-log');if(update)document.querySelector('#settings-log')?.after(update);}
-block('settings-udp','WSJT-X UDP interface',document.querySelector('#settings-logging'),'<p id="udp-note" class="op-muted">Send-only: programs listen; the station takes no command over UDP.</p><label>Instance name<input id="udp-instance" maxlength="64" autocomplete="off" disabled></label><h4 id="udp-targets-title">UDP targets</h4><div id="udp-targets" role="list" aria-labelledby="udp-targets-title"></div><p class="op-actions"><button type="button" id="udp-add" disabled>Add target</button><button type="button" id="udp-reload">Reload</button><button type="button" id="udp-save" class="op-primary" disabled>Save UDP settings</button></p><p id="udp-result" class="op-muted" role="status">Read when Settings opens</p><p class="op-muted">Applies on Save; it does not restart receive.</p>');
+block('settings-udp','WSJT-X UDP interface',document.querySelector('#settings-logging'),'<p id="udp-note" class="op-muted">Send-only: programs listen; the station takes no command over UDP.</p><p>Instance name <output id="udp-instance"></output></p><h4 id="udp-targets-title">UDP targets</h4><div id="udp-targets" role="list" aria-labelledby="udp-targets-title"></div><p class="op-actions"><button type="button" id="udp-add" disabled>Add target</button><button type="button" id="udp-reload">Reload</button><button type="button" id="udp-save" class="op-primary" disabled>Save UDP settings</button></p><p id="udp-result" class="op-muted" role="status">Read when Settings opens</p><p class="op-muted">Applies on Save; it does not restart receive.</p>');
 block('settings-pskreporter','PSK Reporter',document.querySelector('#settings-logging'),'<label class="op-check"><input type="checkbox" id="pskr-enabled" disabled>Listen to PSK Reporter spots</label><p id="pskr-status" class="op-muted" role="status">PSK Reporter status unknown</p><p id="pskr-result" class="op-muted" role="status"></p><p class="op-muted">Read-only, from mqtt.pskreporter.info: spots of my call and of the current strategy target. The station sends only its call in the client id and these two subscriptions. A strategy run uses them to choose between keeping and changing its Tx slot; everything works without them.</p>');
 const stepper=(key,label,min,max)=>`<label class="op-strip-field">${label}<input id="contact-${key}" type="number" min="${min}" max="${max}" step="1" disabled inputmode="numeric" aria-label="${label} audio frequency, Hz"><span>Hz</span></label><button type="button" data-strip-step="${key}:-1" aria-label="${label} down 1 Hz (Shift: 10 Hz)" disabled>&minus;</button><button type="button" data-strip-step="${key}:1" aria-label="${label} up 1 Hz (Shift: 10 Hz)" disabled>+</button>`;
 document.querySelector('#rxtx-strip').innerHTML=stepper('rx','Rx',0,3000)+stepper('tx','Tx',200,2950)+'<button type="button" id="strip-tx-from-rx" disabled>Tx=Rx</button><button type="button" id="strip-rx-from-tx" disabled>Rx=Tx</button><span id="strip-swr" hidden></span>';
@@ -440,7 +440,7 @@ for(const id of ['watchdog-tx','watchdog-tune'])$(id).addEventListener('change',
 // #40 WstxUdp settings (CL-040-02): read when the drawer opens (at most every 30 s), on the
 // Logging tab or Reload; Save sends one PUT /udp. A setting: it restarts nothing.
 const UDP_MESSAGES=[['heartbeat','Heartbeat'],['status','Status'],['decode','Decode'],['clear','Clear'],['qso_logged','QSO Logged'],['close','Close'],['logged_adif','Logged ADIF']];
-const UDP_DEFAULT={instance_name:'WSTX-Rust',targets:[{address:'127.0.0.1:2237',enabled:true,multicast_ttl:1,multicast_interface:null,messages:UDP_MESSAGES.map(m=>m[0])}]};
+const UDP_DEFAULT={targets:[{address:'127.0.0.1:2237',enabled:true,multicast_ttl:1,multicast_interface:null,messages:UDP_MESSAGES.map(m=>m[0])}]};
 let udpView=null,udpDirty=false,udpRead=-Infinity,udpLoading=null;
 // An IPv6 group [ffXY::...]: Y is its scope (WstxUdp D6); scope 1 and 2 need an interface index.
 const udpIpv6Group=address=>{const m=/^\[\s*ff[0-9a-f]([0-9a-f])(:|\])/i.exec(address.trim());return m?{scope:parseInt(m[1],16)}:null;};
@@ -467,9 +467,10 @@ function udpRow(t,status){
 }
 function udpButtons(){const n=$('udp-targets').children.length;$('udp-add').disabled=!udpView||n>=16;$('udp-save').disabled=!udpView;}
 function udpShow(){
-  const v=udpView;$('udp-instance').disabled=!v;if(!v)return udpButtons();
+  const v=udpView;if(!v)return udpButtons();
   const config=v.configuration??UDP_DEFAULT,status=new Map((v.status??[]).map(s=>[s.address,s]));
-  $('udp-instance').value=config.instance_name;
+  // CL-112-01: the server's instance name, read-only (null until a Flex session is ready).
+  $('udp-instance').textContent=v.instance_name??'not fixed yet';
   $('udp-targets').replaceChildren(...config.targets.map(t=>udpRow(t,v.configuration?status.get(t.address):null)));
   $('udp-result').textContent=v.configuration_error?`Saved UDP settings unreadable (${v.configuration_error}); Save replaces them`:`Revision ${v.revision}`;
   udpDirty=false;udpButtons();
@@ -481,11 +482,11 @@ function loadUdp(force=false){
   return udpLoading;
 }
 function udpConfiguration(){
-  return {instance_name:$('udp-instance').value,targets:[...$('udp-targets').children].map(row=>{const f=k=>row.querySelector(`[data-f=${k}]`);
+  return {targets:[...$('udp-targets').children].map(row=>{const f=k=>row.querySelector(`[data-f=${k}]`);
     return {address:f('address').value.trim(),enabled:f('enabled').checked,multicast_ttl:Number(f('ttl').value),multicast_interface:f('iface').value.trim()||null,
       messages:[...row.querySelectorAll('[data-m]')].filter(b=>b.checked).map(b=>b.dataset.m)};})};
 }
-$('settings-udp').addEventListener('input',event=>{if(event.target.closest('#udp-instance,.udp-target'))udpDirty=true;});
+$('settings-udp').addEventListener('input',event=>{if(event.target.closest('.udp-target'))udpDirty=true;});
 $('udp-add').addEventListener('click',()=>{const n=$('udp-targets').children.length;if(n>=16)return;$('udp-targets').append(udpRow({...UDP_DEFAULT.targets[0],address:''},null));udpDirty=true;udpButtons();$('udp-targets').lastElementChild.querySelector('[data-f=address]').focus();});
 $('udp-reload').addEventListener('click',()=>{udpDirty=false;loadUdp(true);});
 $('udp-save').addEventListener('click',async()=>{

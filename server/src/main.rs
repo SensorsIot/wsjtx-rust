@@ -329,12 +329,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = recording.clock.set(clock.clone());
             let transmit = transmit_http::Station::start(clock.station.clone())
                 .map_err(|_| error("resource_unavailable", ""))?;
-            // Process exit and panics stop output and release a keyed CI-V switch once.
+            // Process exit and panics stop output and release a keyed CI-V switch once; the
+            // exit then sends Close to the UDP targets (CL-112-06).
             let guard = transmit.clone();
+            let exiting = recording.clone();
             #[cfg(windows)]
-            wstx_rust::playback::install_exit_guard(Box::new(move || guard.emergency_release()));
+            wstx_rust::playback::install_exit_guard(Box::new(move || {
+                udp::exit(&exiting, || guard.emergency_release())
+            }));
             #[cfg(not(windows))]
-            let _ = guard;
+            let _ = (guard, exiting);
             let hooked = transmit.clone();
             let previous = std::panic::take_hook();
             std::panic::set_hook(Box::new(move |info| {
@@ -412,11 +416,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             });
             // WstxUdp: the station's UDP interface and its step. WSTX_UDP=off opens no
-            // socket (isolated tests of the executable never reach port 2237).
+            // socket and claims no instance name (isolated tests of the executable never
+            // reach port 2237). The name is fixed here, after radio discovery (CL-112-01).
             let disabled = env::var("WSTX_UDP").is_ok_and(|v| v == "off");
             let opened = state.clone();
-            let owner =
-                tokio::task::spawn_blocking(move || udp::Owner::open(&opened, disabled)).await?;
+            let instance_locks = env::var_os("LOCALAPPDATA")
+                .map(PathBuf::from)
+                .unwrap_or_else(env::temp_dir)
+                .join("WstxRust")
+                .join("udp-instance");
+            let owner = tokio::task::spawn_blocking(move || {
+                udp::Owner::open(&opened, disabled, &instance_locks)
+            })
+            .await?;
             let _ = state.recording.udp.set(owner);
             // WstxStrategy::HearingFeed: read-only; its thread waits on the network, nothing
             // else does. WSTX_PSKR=off opens no connection (isolated tests of the executable).

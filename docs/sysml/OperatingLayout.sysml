@@ -1142,7 +1142,9 @@ attribute def ActivityOrdering {
              Logging & Reporting: the existing log (Logbook page, ADIF), #10 "Update
              logbook from ADIF" (WstxContact::UpdateLogbook: an ADIF file input, the Update
              logbook button and the summary line), the WSJT-X UDP
-             interface (WstxUdp, CL-040-02): instance name and up to 16 targets, each
+             interface (WstxUdp, CL-040-02): the instance name as read-only text with no
+             input (CL-112-01; "not fixed yet" while GET /udp shows null) and up to 16
+             targets, each
              address:port, enabled, multicast TTL (the hop limit of an IPv6 group) and
              interface (an interface index for an IPv6 group, with a hint that an
              interface- or link-local group needs one; WstxUdp D6), the outbound message

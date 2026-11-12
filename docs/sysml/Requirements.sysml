@@ -2237,9 +2237,10 @@ package WstxRequirements {
              {v 1, profile_id, boot_id, monitor_off_at_startup} and no receive start, stop or
              selection, a refusal restores the previous value, and Expert shows the resume state;
              Logging & Reporting shows the UDP configuration read from GET /udp (no /udp request
-             before the drawer opens); editing a target, adding one and Save send exactly one PUT
+             before the drawer opens) and the instance name as text with no input (CL-112-01);
+             editing a target, adding one and Save send exactly one PUT
              /udp {v 1, profile_id, boot_id, expected_revision, configuration} whose configuration
-             is the edited list, and no receive start, stop or selection; no Accept commands control exists; a refusal
+             is the edited list, {targets} only, and no receive start, stop or selection; no Accept commands control exists; a refusal
              shows its code and field and keeps the edits; the send-only note and each target's
              status are shown. An IPv6
              group target [ff12::5754:5358]:2237 (#46, CL-040-06) shows the hop-limit/interface-index hint naming the link-local
@@ -2269,6 +2270,7 @@ package WstxRequirements {
             verify 'CL-045-01';
             verify 'CL-040-02';
             verify 'CL-037-03';
+            verify 'CL-112-01';
         }
         attribute executable : String = "tests/ui-operating.test.cjs; server/src/contact_tests.rs";
     }
@@ -2523,6 +2525,7 @@ package WstxRequirements {
     dependency CL_037_03_verified_by_TC_007_009 from 'CL-037-03' to 'TC-007-009';
     dependency CL_045_01_verified_by_TC_007_009 from 'CL-045-01' to 'TC-007-009';
     dependency CL_040_02_verified_by_TC_007_009 from 'CL-040-02' to 'TC-007-009';
+    dependency CL_112_01_verified_by_TC_007_009 from 'CL-112-01' to 'TC-007-009';
     dependency CL_010_05_verified_by_TC_009_004 from 'CL-010-05' to 'TC-009-004';
     dependency CL_010_05_verified_by_TC_009_005 from 'CL-010-05' to 'TC-009-005';
     dependency CL_010_07_verified_by_TC_007_002 from 'CL-010-07' to 'TC-007-002';
@@ -3216,13 +3219,13 @@ package WstxRequirements {
     // #40 WSJT-X-compatible UDP interface with multiple targets (decisions recorded in
     // WstxUdp and on issue #40, 2026-11-01); detailed contract in WstxUdp.
     requirement 'CL-040-01' {
-        doc /* Speak the WSJT-X NetworkMessage protocol (magic 0xADBCCBDA, schema 2 negotiated up to 3, Qt QDataStream big-endian) with id = the configured instance name, and send to each enabled target its selected outbound messages: Heartbeat every 15 s, Status on change, on each live decoder window and with each Heartbeat pulse (CL-040-07), Decode for each new live FT8/FT4 decode, Clear when the live job's decodes are discarded, QSO Logged and Logged ADIF when a contact is saved, Close when a target is disabled or removed. Details: WstxUdp::UdpWire, OutboundRules. */
+        doc /* Speak the WSJT-X NetworkMessage protocol (magic 0xADBCCBDA, schema 2 negotiated up to 3, Qt QDataStream big-endian) with id = the server's instance name (CL-112-01), and send to each enabled target its selected outbound messages: Heartbeat every 15 s, Status on change, on each live decoder window and with each Heartbeat pulse (CL-040-07), Decode for each new live FT8/FT4 decode, Clear when the operating band changes (CL-112-04), QSO Logged and Logged ADIF when a contact is saved, Close when a target is disabled or removed and at shutdown (CL-112-06). Details: WstxUdp::UdpWire, OutboundRules. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/network_message.rs; server/src/udp.rs; server/src/logbook_http.rs";
     }
     dependency CL_040_01_to_FR_012 from 'CL-040-01' to 'FR-012';
     requirement 'CL-040-02' {
-        doc /* Any number of targets up to 16, each address:port (unicast, IPv4 multicast with TTL and interface, or IPv6 multicast per CL-040-06), enabled, a per-type outbound message selection (default all), with per-target status (last send, error). The configuration is persisted in the selected profile directory and served by GET /udp and PUT /udp; the default is one target 127.0.0.1:2237, enabled, instance name WSTX-Rust. Details: WstxUdp::UdpTarget, UdpConfiguration, TargetStatus, UdpHttp. */
+        doc /* Any number of targets up to 16, each address:port (unicast, IPv4 multicast with TTL and interface, or IPv6 multicast per CL-040-06), enabled, a per-type outbound message selection (default all), with per-target status (last send, error). The configuration is the target list only, persisted in the selected profile directory and served by GET /udp and PUT /udp; the default is one target 127.0.0.1:2237, enabled, all messages. Details: WstxUdp::UdpTarget, UdpConfiguration, TargetStatus, UdpHttp. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/udp.rs; server/src/profile.rs; server/src/main.rs";
     }
@@ -3290,7 +3293,7 @@ package WstxRequirements {
         doc /* TC-012-001 — NetworkMessage wire vectors
              CL-040-01, CL-040-03, CL-040-04
              Setup: hand-constructed byte vectors in server/tests/vectors/udp/, each written field by field from WSJT-X v3.3.0-beta5 NetworkMessage.hpp (SHA-256 b640a632...) with the construction steps recorded in the file, independent of the encoder.
-             Steps: encode Heartbeat, Status, Decode, Clear, QSO Logged, Close and Logged ADIF from the vector inputs; read the Heartbeat vectors (schema 3 with its fields, schema 2 without them, trailing bytes); read every refused vector (each former command and an unknown type: Clear, Reply, Close, Replay, Halt Tx, Free Text, Location, Highlight Callsign, Switch Configuration, Configure, type 18; a Heartbeat with wrong magic, schema 1 and 4, truncated utf8, invalid utf8, null id, 4097 bytes).
+             Steps: encode Heartbeat, Status, Decode, Clear, QSO Logged (with exchange sent "1A EMA" and received "2B CT"), Close and Logged ADIF from the vector inputs; read the Heartbeat vectors (schema 3 with its fields, schema 2 without them, trailing bytes); read every refused vector (each former command and an unknown type: Clear, Reply, Close, Replay, Halt Tx, Free Text, Location, Highlight Callsign, Switch Configuration, Configure, type 18; a Heartbeat with wrong magic, schema 1 and 4, truncated utf8, invalid utf8, null id, 4097 bytes).
              Expected: encoded bytes equal each vector exactly; the read header equals the vector's schema and id; refused vectors give nothing; arbitrary bytes and every truncation never panic; the decoder text "K1ABC W9XYZ R -09" renders "K1ABC W9XYZ R-09" and "R +03" renders "R+03", other texts unchanged.
              2 — Isolated automated tests; Windows development PC, no network. */
         attribute automation : AutomationState = AutomationState::implemented;
@@ -3308,8 +3311,8 @@ package WstxRequirements {
         doc /* TC-012-002 — Outbound messages to several targets
              CL-040-01, CL-040-02, CL-040-04
              Setup: actual candidate router, UDP owner, contact engine and #9 transmit owner on the recording hardware double (profile HB9BLA, JN47AA), an injected FT8 live job, hand-authored codec-packed rows "CQ K1ABC FN42" 1234.6 Hz -12.4 dB and "HB9BLA W9XYZ R-09" (decoder text "HB9BLA W9XYZ R -09") 900.0 Hz -3.0 dB; two loopback UDP peers on ephemeral ports configured as targets by PUT /udp (A all messages, B only decode).
-             Steps: one station step; publish the rows; step; change the operating report; step; start a second live job; step; save a contact through POST /contacts, repeat it with the same and with a new command_id; disable target A by PUT /udp; step.
-             Expected (hand table): A receives Heartbeat (id WSTX-Rust, max schema 3) and Status (mode FT8, DE HB9BLA JN47AA, Tx enabled false), then Decode New true Time = period ms since midnight, snr -12, df 1235, Mode "~", "CQ K1ABC FN42", and snr -3, df 900, "HB9BLA W9XYZ R-09"; a changed Status; Clear after the new job; QSO Logged (DX call, mode FT8, times) then Logged ADIF beginning with the ADIF header and containing <call:5>K1ABC and ending " <EOR>", nothing for the retained receipt or already_saved; Close after disable while B keeps its socket. B receives exactly the two Decode datagrams. GET /udp shows last_send_utc_ms for both and error null.
+             Steps: one station step; publish the rows; step; change the operating report to -7; step; start a second live job on the same band; step; save a contact through POST /contacts, repeat it with the same and with a new command_id; disable target A by PUT /udp; step. Guard: an FT8 played-recording job with a decoded record, step, the job ends, step.
+             Expected (hand table): A receives Heartbeat (id WSTX-Rust, max schema 3) and Status (mode FT8, DE HB9BLA JN47AA, Tx enabled false), then Decode New true Time = period ms since midnight, snr -12, df 1235, Mode "~", "CQ K1ABC FN42", and snr -3, df 900, "HB9BLA W9XYZ R-09"; a changed Status with report "-7"; no Clear after the second live job on the same band; QSO Logged (DX call, mode FT8, times) then Logged ADIF beginning with the ADIF header and containing <call:5>K1ABC and ending " <EOR>", nothing for the retained receipt or already_saved; Close after disable while B keeps its socket. B receives exactly the two Decode datagrams. GET /udp shows last_send_utc_ms for both and error null. Guard (green before and after): the played recording sends no Decode and no Clear to any target.
              2 — Isolated automated functional tests; Windows development PC, loopback UDP on ephemeral ports only, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -3327,7 +3330,7 @@ package WstxRequirements {
              CL-040-03
              Setup: as TC-012-002 with one target A and another socket X; a published CQ row; the browser's enable_tx has armed the station; the PTT log of the hardware double.
              Steps: from A and from X to A's socket: Halt Tx, Clear, a Reply matching the row, Close, Replay, Free Text, Location "JN36AB", Highlight Callsign, Switch Configuration, Configure; one step; read arm state, last disarm cause, contact, profile grid, the datagrams at A, and GET-shape of the snapshot. Then, one step each: a schema-3 Heartbeat from X; from A a schema-3 Heartbeat with another id, a schema-4 Heartbeat, a schema-3 Replay and a schema-3 Halt Tx. Then from A a 5000-byte datagram followed by a schema-3 Heartbeat, one step; a schema-2 Heartbeat, one step; publish a further decode, one step.
-             Expected: still armed with the disarm cause unchanged, no contact prepared, the grid and the Status DE grid the profile's, at A no Decode with New false (only Status); the snapshot keys exactly v, profile_id, boot_id, revision, configuration, configuration_error, status and a status entry exactly active, address, error, last_send_utc_ms, schema; the schema stays 2 through each of the single steps, becomes 3 in the step of the oversize datagram and its Heartbeat, stays 3 after the schema-2 Heartbeat, and the next datagrams at A carry header schema 3.
+             Expected: still armed with the disarm cause unchanged, no contact prepared, the grid and the Status DE grid the profile's, at A no Decode with New false (only Status); the snapshot keys exactly v, profile_id, boot_id, instance_name, revision, configuration, configuration_error, status and a status entry exactly active, address, error, last_send_utc_ms, schema; the schema stays 2 through each of the single steps, becomes 3 in the step of the oversize datagram and its Heartbeat, stays 3 after the schema-2 Heartbeat, and the next datagrams at A carry header schema 3.
              2 — Isolated automated functional tests; Windows development PC, loopback UDP only, transmit and radio doubles; no RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -3339,17 +3342,141 @@ package WstxRequirements {
     verification 'TC-012-004' {
         doc /* TC-012-004 — Target configuration and persistence
              CL-040-02
-             Setup: actual candidate router on a disposable profile directory without udp.json; a second profile with an invalid udp.json.
-             Steps: GET /udp; PUT a list of A (unicast, decode only), B (239.255.0.1:2237 multicast, ttl 2, interface 127.0.0.1); open a new owner on the same profile; PUT with a stale revision, another profile, another boot, an unknown key, 17 targets, a duplicate address, port 0, 0.0.0.0, ff02::1 without an interface, ttl 0 and 256, an interface that is not IPv4, a duplicated or unknown message name, accept_commands on a target (a retired key), an empty and a 65-byte instance name, v 2, text/plain, 8193 bytes, a query; GET on the invalid profile; open an owner on a udp.json whose target also names accept_commands true, then PUT.
-             Expected: the default {instance_name WSTX-Rust, one target 127.0.0.1:2237 enabled, all seven messages, multicast_ttl 1, interface null} at revision 0; the PUT returns revision 1 with the messages in enum order and survives the reopen unchanged; each refusal with its status, code and field and nothing saved; the invalid profile shows configuration null and configuration_error invalid_configuration with no socket; a row published then is not sent after a valid PUT (only Heartbeat and Status); the file with accept_commands loads without configuration error, its target unchanged but for that key and active, and the PUT writes a file without the key.
+             Setup: actual candidate router on a disposable profile directory without udp.json; a second profile with an invalid udp.json; a third with one active loopback target A.
+             Steps: GET /udp; PUT a list of A (unicast, decode only), B (239.255.0.1:2237 multicast, ttl 2, interface 127.0.0.1); open a new owner on the same profile; PUT with a stale revision, another profile, another boot, an unknown key, 17 targets, a duplicate address, port 0, 0.0.0.0, ff02::1 without an interface, ttl 0 and 256, an interface that is not IPv4, a duplicated or unknown message name, accept_commands on a target (a retired key), a configuration with instance_name, v 2, text/plain, 8193 bytes, a query; GET on the invalid profile; open an owner on a udp.json that names instance_name and whose target also names accept_commands true, then PUT. Refusal order: v 2 with an invalid target; v 2 with boot_id missing; v "1". A failed write of udp.json injected, PUT; the injection removed, the same PUT.
+             Expected: the default {targets: one target 127.0.0.1:2237 enabled, all seven messages, multicast_ttl 1, interface null} at revision 0; the PUT returns revision 1 with the messages in enum order and survives the reopen unchanged; each refusal with its status, code and field (the configuration with instance_name: invalid_request field configuration) and nothing saved; the invalid profile shows configuration null and configuration_error invalid_configuration with no socket; a row published then is not sent after a valid PUT (only Heartbeat and Status); the file with instance_name and accept_commands loads without configuration error, its target unchanged but for that key and active, and the PUT writes a file without either key. Refusal order: unsupported_version field v; invalid_request field boot_id; invalid_request field v. The failed write: 503 storage_unavailable; revision, file bytes, socket and target status unchanged and nothing sent; the next PUT with the same expected_revision succeeds with revision 1.
              2 — Isolated automated functional tests; Windows development PC, loopback only. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-040-02';
+            verify 'CL-112-01';
         }
         attribute executable : String = "server/src/udp_tests.rs";
     }
     dependency CL_040_02_verified_by_TC_012_004 from 'CL-040-02' to 'TC-012-004';
+    dependency CL_112_01_verified_by_TC_012_004 from 'CL-112-01' to 'TC-012-004';
+
+    // The UDP interface as WSJT-X 3.3.0-beta6 sends it (WstxUdp).
+    requirement 'CL-112-01' {
+        doc /* Instance name. Each server has one instance name, fixed for the life of the process and used as the id of every datagram (Heartbeat, Status, Decode, Clear, QSO Logged, Close, Logged ADIF). Base form: CAT radio "WSTX-Rust - <model>", the model of the saved CAT control ("WSTX-Rust - IC-7300"; a plain COMn endpoint is an IC-7300); no radio (control disabled, or manual operation without CAT) plain "WSTX-Rust"; native Flex profile "WSTX-Rust - <model> <slice letter>" ("WSTX-Rust - FLEX-6600 A"). A number is added only on a clash: the server takes the first form that no live server holds, the base form, then the base form followed by " 2", " 3" and so on ("WSTX-Rust - IC-7300 2", "WSTX-Rust 2"). When the name is fixed: CAT and no-radio profiles at start, after radio discovery (CL-044-15) and before the server serves; if discovery moves the profile to another radio, the name takes that radio's model. Native Flex profile: the first time its radio session is ready; before that the server sends no UDP datagram at all and GET /udp shows instance_name null; the name is kept for the process, also after a reconnect with another slice letter. A server holds its name until its process ends; a killed or crashed process frees it; two servers fixing their name at the same moment never get the same one. The name is not a setting: the UDP configuration and PUT /udp have no instance_name; GET /udp shows it read-only as top-level instance_name; Logging & Reporting shows it as text. A radio change in Settings while running does not change the name; it takes effect at the next start. Listed defaults: when the server cannot check (the lock folder cannot be created or opened) it takes the base form without a number and runs normally (as CL-044-15 without a usable lock file); with WSTX_UDP=off no name is claimed, because nothing is sent; the check sees only servers of the same Windows user (lock under %LOCALAPPDATA%), as WSJT-X's instance lock in the user's temp folder; a saved udp.json that still names instance_name keeps loading, the key is dropped, and the next save writes the file without it. Details: WstxUdp::InstanceName. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/udp.rs; server/src/main.rs; client/contact.js";
+    }
+    dependency CL_112_01_to_FR_012 from 'CL-112-01' to 'FR-012';
+    requirement 'CL-112-02' {
+        doc /* Status as WSJT-X sends it. Dial frequency: the confirmed CAT dial, else the operating selection's nominal frequency (selection.nominal_hz), else 0 (WSJT-X m_operatingFrequency, which follows the radio and, without CAT, the chosen band). Report: the contact's report, else the station's, written as WSJT-X's QString::number: "-9", "3", "0", "-24", never a "+" or a leading zero. Details: WstxUdp::OutboundRules. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/udp.rs";
+    }
+    dependency CL_112_02_to_FR_012 from 'CL-112-02' to 'FR-012';
+    requirement 'CL-112-03' {
+        doc /* Decode delta time as WSJT-X sends it. Delta time is the record's dt_seconds rounded to one decimal: the value Band Activity shows (decimal rounding of the exact value, a tie away from zero; a magnitude below 0.05 is 0.0), sent as single precision. Unknown gives 0. This matches WSJT-X, which parses the time offset from its one-decimal decode line. A live record without a period start (uncorrelated) gives no Decode, and the cursor passes it, so it is never sent later. Details: WstxUdp::OutboundRules. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/udp.rs";
+    }
+    dependency CL_112_03_to_FR_012 from 'CL-112-03' to 'FR-012';
+    requirement 'CL-112-04' {
+        doc /* Clear only on a band change, as WSJT-X. Clear is sent to each target that selects clear when the operating selection's band changes to another band. No Clear on: a mode change, a receive restart, a loss-only source epoch, a receive stop, a new live job on the same band, or any Erase of a browser list. Listed default (WSJT-X band_activity_cleared sends unconditionally): Clear is sent whether or not a Decode was sent since the last one. Listed default: a band change counts however it comes about: a band selection, or adoption of a CAT dial on another band (ReadbackSelectionAdoption); a frequency change within the same band is none. Details: WstxUdp::OutboundRules. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/udp.rs";
+    }
+    dependency CL_112_04_to_FR_012 from 'CL-112-04' to 'FR-012';
+    requirement 'CL-112-05' {
+        doc /* QSO Logged exchanges as WSJT-X. 1. The logged record carries its activity: when DirectLog stores a contact, the record gets the app field APP_WSTXRUST_ACTIVITY with the contact's activity at logging time, one of field_day, rtty, eu_vhf, na_vhf, ww_digi, arrl_digi, hound; it is absent for activity none, and a record without the field is activity none. In contacts.adi, the ADI export and the Logged ADIF datagram it is written after APP_WSTXRUST_CONTACT_ID and, when present, APP_WSTXRUST_SOURCE, and before any preserved unknown fields (WstxContact::LogRecord order). It is read back when the log loads. SaveContact accepts it; any other value is refused 400 log_invalid_field with field record.app_wstxrust_activity, as every other record field (WstxContact::ContactWire), and nothing is stored. UpdateLogbook keeps a valid value and drops an invalid one, as it does for other contest values. Listed default (as for APP_WSTXRUST_SOURCE: the resave comparison covers the main field list only): a SaveContact resave of a stored contact id that differs only in the activity is 200 already_saved, with the stored record unchanged and no datagram; likewise a DirectLog store that differs only in the activity is already_saved and keeps the stored activity. Field name, values and these rules are listed defaults; the operator decided only that the activity is stored in the record. 2. Exchange sent and Exchange received are the exchange WSJT-X passes from its log dialog (widgets/mainwindow_qso.cpp captureLogQso, widgets/logqso.cpp xsent/xrcvd), chosen by the record's activity: na_vhf, ww_digi, arrl_digi: sent is the first 4 characters of MY_GRIDSQUARE, received the first 4 of GRIDSQUARE ("JN47" / "FN42"); a missing partner grid gives "", as WSJT-X with its default ZZ00 off. field_day, rtty, eu_vhf: the contact's exchange_sent / exchange_rcvd as ContestExchange / EuVhfExchange define them ("1A EMA" / "2B CT", "559 0003" / "579 MA", "550001 JN37VL" / "590003 IO91NP"), rebuilt from the stored record's contest fields, RST, grid and activity: the reverse of ContestExchange's and EuVhfExchange's log mapping. hound, none, or no field: "" / "". 3. DirectLog and SaveContact build them the same way, from the stored record, so the same record always gives the same exchanges; the explicit save exists to resend what a logging program missed. Details: WstxUdp::OutboundRules, WstxContact::LogRecord. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/udp.rs; server/src/logbook.rs; server/src/logbook_http.rs; server/src/contact_http.rs";
+    }
+    dependency CL_112_05_to_FR_012 from 'CL-112-05' to 'FR-012';
+    requirement 'CL-112-06' {
+        doc /* Close at shutdown. On Ctrl+C, Ctrl+Break, console close, logoff and shutdown, the server sends one Close under its instance name to each active target that selects close. This runs after the ExitRelease transmit release and does not delay it: one non-blocking send per target, no wait. A killed process sends nothing, as WSJT-X when killed. A Flex server whose session was never ready has no name and sends nothing. Details: WstxUdp::OutboundRules, WstxTransmit::ExitRelease. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/udp.rs; server/src/main.rs";
+    }
+    dependency CL_112_06_to_FR_012 from 'CL-112-06' to 'FR-012';
+    verification 'TC-112-001' {
+        doc /* TC-112-001 — Instance name
+             CL-112-01
+             Setup: actual candidate UDP owner on the contact fixture (profile HB9BLA, JN47AA) with a fixture lock folder in the disposable profile directory, never the operator's; loopback peers on ephemeral ports; for (g) the native Flex session double.
+             Steps: (a) owners on a profile without a radio, with icom7300://COM3?baud=9600&radio=94&controller=E0 saved, with a plain COM3. (b) second and third owners with the same radio while the first holds; two no-radio owners. (c) the first released: dropped, and a killed process (a child process holding the base form's lock, then killed); a new start each time. (d) an unusable lock folder (a file). (e) one owner with a target for all messages: steps, a decode, a band change, POST /contacts, the exit Close; GET /udp. (f) the radio changed while running. (g) native Flex: before the first ready, at ready with slice A, after a reconnect with letter B; a second Flex owner whose first ready also gives A. (h) WSTX_UDP=off.
+             Expected (this table, from CL-112-01): (a) WSTX-Rust; WSTX-Rust - IC-7300; WSTX-Rust - IC-7300. (b) " 2", " 3"; WSTX-Rust, WSTX-Rust 2. (c) while the child lives a new owner gets WSTX-Rust - IC-7300 2; after either release the base form. (d) the base form, the start proceeds and Heartbeat and Status are sent with it. (e) Heartbeat, Status, Decode, Clear, QSO Logged, Close and Logged ADIF carry the name, and GET /udp instance_name equals it. (f) unchanged. (g) no datagram and instance_name null before; WSTX-Rust - FLEX-6600 A after; kept after the reconnect; the second WSTX-Rust - FLEX-6600 A 2. (h) no lock file created.
+             2 — Isolated automated functional tests; Windows development PC, loopback UDP on ephemeral ports only, no radio. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-112-01';
+        }
+        attribute executable : String = "server/src/udp_tests.rs";
+    }
+    dependency CL_112_01_verified_by_TC_112_001 from 'CL-112-01' to 'TC-112-001';
+    verification 'TC-112-002' {
+        doc /* TC-112-002 — Status dial and report
+             CL-112-02
+             Setup: actual candidate UDP owner and contact engine on the contact fixture; the CI-V radio double whose confirmed dial is 7074000.
+             Steps: Status with neither a CAT dial nor a selection; with the selection 40m 7074000 and no CAT; with the selection 20m 14074000 and the radio double confirmed; the operating report set to -9, 3, 0, -24, 49, -50. The Status wire vector of TC-012-001 carries the report "-12", which is the same in this form.
+             Expected (WSJT-X statusUpdate, QString::number, m_operatingFrequency.rx(); hand table): dial 0; 7074000; 7074000 (the CAT dial wins); report "-9", "3", "0", "-24", "49", "-50".
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-112-02';
+        }
+        attribute executable : String = "server/src/udp_tests.rs";
+    }
+    dependency CL_112_02_verified_by_TC_112_002 from 'CL-112-02' to 'TC-112-002';
+    verification 'TC-112-003' {
+        doc /* TC-112-003 — Decode delta time
+             CL-112-03
+             Setup: actual candidate UDP owner on the contact fixture; an injected FT8 live job; a loopback peer selecting decode.
+             Steps: the delta time of dt 0.04, -0.06, 0.25, -0.25, 1.349 and null; a record with dt 0.25 published and made uncorrelated (period_start_utc null), step; the same record correlated in the next period, step; step.
+             Expected (Band Activity DT rule of client/recording.js; WSJT-X postDecode; hand table): 0.0, -0.1, 0.3, -0.3, 1.3, 0; no Decode for the uncorrelated record; one Decode for the correlated one, its float the single-precision value of the decimal text "0.3"; nothing after.
+             2 — Isolated automated functional tests; Windows development PC, loopback UDP only. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-112-03';
+        }
+        attribute executable : String = "server/src/udp_tests.rs";
+    }
+    dependency CL_112_03_verified_by_TC_112_003 from 'CL-112-03' to 'TC-112-003';
+    verification 'TC-112-004' {
+        doc /* TC-112-004 — Clear on a band change only
+             CL-112-04
+             Setup: actual candidate UDP owner on the contact fixture; peers A (all messages) and B (no clear); an injected FT8 live job; each step after a Decode was sent.
+             Steps: band selection 20m -> 40m; the selection cleared and a CAT readback adoption onto 20m; a second band change to 40m with no Decode in between; then each alone: a mode change FT8 -> FT4 on the same band, a receive restart on the same band, a loss-only source epoch, a receive stop, a new live job on the same band, a frequency change within the band.
+             Expected (CL-112-04; WSJT-X band_activity_cleared): exactly one Clear to A and none to B for each band change; no Clear for each of the others.
+             2 — Isolated automated functional tests; Windows development PC, loopback UDP only. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-112-04';
+        }
+        attribute executable : String = "server/src/udp_tests.rs";
+    }
+    dependency CL_112_04_verified_by_TC_112_004 from 'CL-112-04' to 'TC-112-004';
+    verification 'TC-112-005' {
+        doc /* TC-112-005 — QSO Logged exchanges
+             CL-112-05
+             Setup: actual candidate router, contact engine, logbook and UDP owner on the contact fixture (profile HB9BLA JN47AA); a loopback peer selecting qso_logged and logged_adif.
+             Steps: each completed contact through DirectLog, then the same stored record through POST /contacts under a new contact id: field_day "1A EMA" / "2B CT"; rtty "559 MA" / "579 MA" and "559 0003" / "559 0013"; eu_vhf (profile JN37VL) "550001 JN37VL" / "590003 IO91NP"; na_vhf with partner FN42; ww_digi with partner FN42ab; arrl_digi without partner grid; hound; none. A record without app_wstxrust_activity (an older log); POST /contacts with app_wstxrust_activity "contest"; a resave of a stored contact id differing only in the activity; contacts.adi, the ADI export, a record with APP_WSTXRUST_SOURCE, and the export after a station restart.
+             Expected (WSJT-X mainwindow_qso.cpp captureLogQso grids left 4, logqso.cpp; ContestExchange / EuVhfExchange; ContactWire refusal; CL-112-05 listed default), sent / received for both paths: "1A EMA" / "2B CT"; "559 MA" / "579 MA"; "559 0003" / "559 0013"; "550001 JN37VL" / "590003 IO91NP"; "JN47" / "FN42"; "JN47" / "FN42"; "JN47" / ""; "" / ""; "" / "". The older record "" / "". The Logged ADIF ends with the contact id then app_wstxrust_activity (absent for none); "contest" is refused 400 log_invalid_field field record.app_wstxrust_activity and nothing is stored; the resave is 200 already_saved, contacts.adi unchanged and no datagram; contacts.adi and the export carry <app_wstxrust_activity:6>na_vhf right after the contact id, after app_wstxrust_source on a record that has one, and it survives the restart.
+             2 — Isolated automated functional tests; Windows development PC, loopback UDP only. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-112-05';
+        }
+        attribute executable : String = "server/src/udp_tests.rs";
+    }
+    dependency CL_112_05_verified_by_TC_112_005 from 'CL-112-05' to 'TC-112-005';
+    verification 'TC-112-006' {
+        doc /* TC-112-006 — Close at shutdown
+             CL-112-06
+             Setup: actual candidate UDP owner and #9 transmit owner on the recording hardware double; targets A (all messages), B (no close), C disabled, D an IPv6 group on an index no interface has (socket_unavailable); a native Flex fixture whose session double is never ready, with a peer.
+             Steps: call the exit guard (the transmit release, then Close); the same on the Flex fixture.
+             Expected (ExitRelease and CL-112-06): the release returns within 500 ms with nothing sent before it; A receives exactly one Close with id WSTX-Rust; B, C and D none; the Flex fixture sends nothing.
+             2 — Isolated automated functional tests; Windows development PC, loopback UDP only, transmit double. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-112-06';
+        }
+        attribute executable : String = "server/src/udp_tests.rs";
+    }
+    dependency CL_112_06_verified_by_TC_112_006 from 'CL-112-06' to 'TC-112-006';
 
     // #45 Resume receive (Monitor) after a station restart (defaults recorded on issue #45).
     requirement 'CL-045-01' {

@@ -168,9 +168,9 @@ package WstxContact {
              (MW ~10542), never reset by set_activity. set_activity also sets the activity of the
              current contact (its messages are regenerated and its log fields follow it).
              DIFFERENT from WSJT-X: a contest contact without exchange_sent or
-             exchange_rcvd is still logged (logqso.cpp ~415 refuses it), the RTTY RST of
-             each side is replaced independently, and UDP QSO Logged keeps the exchange
-             fields empty (Logged ADIF carries them).
+             exchange_rcvd is still logged (logqso.cpp ~415 refuses it), and the RTTY RST of
+             each side is replaced independently. UDP QSO Logged carries the exchanges as
+             WstxRequirements::'CL-112-05' rebuilds them from the stored record.
              Messages (both calls must be standard calls; otherwise generation fails
              invalid_call, since WSJT-X would hash and alter the call): Tx6 "CQ FD MYCALL
              GRID4" / "CQ RU MYCALL GRID4"; the sent exchange is the Field Day exchange,
@@ -891,8 +891,8 @@ package WstxContact {
              halt (AbortQso). Shown as halted only after #9 confirms; until then
              pending/unknown. The keyboard halt is sent by the always-loaded page script
              (never waiting for the contact client), skipped only when the station is
-             known receive-only. The remote emergency stops (MCP wstx_transmit_halt, UDP
-             Halt Tx) stay. The station and its automation never send it in normal flow
+             known receive-only. The remote emergency stop is MCP wstx_transmit_halt only;
+             UDP has no Halt Tx. The station and its automation never send it in normal flow
              (WstxTransmit::TransmitHaltUse). */
     }
     action def AbortQso {
@@ -1113,6 +1113,7 @@ package WstxContact {
         attribute commentText : String[0..1];
         attribute contestFields : String[0..8];
         attribute confirmationFields : String[0..7];
+        attribute activity : String[0..1];
         doc /* ADIF 3.1.8 ADI fields (field set follows ADQ to_adif ~50-75 and LQ, D10):
              CALL, GRIDSQUARE (only when known; DIFFERENT from WSJT-X writing it empty),
              MODE FT8 (FT4-NOTE MODE MFSK, SUBMODE FT4), RST_SENT = report of the last
@@ -1145,6 +1146,12 @@ package WstxContact {
              5n9 RST (n 2-9) or a 5n RS 52..59 (EuVhfExchange, #99, operator 2026-11-09). APP_WSTXRUST_CONTACT_ID = contactId; APP_WSTXRUST_SOURCE (a
              token of 1..32 letters, digits or '-') marks a record added by UpdateLogbook
              with the program it came from and is absent on the station's own records.
+             APP_WSTXRUST_ACTIVITY (activity) is the contact's activity at logging time,
+             one of field_day, rtty, eu_vhf, na_vhf, ww_digi, arrl_digi, hound, absent for
+             none (WstxRequirements::'CL-112-05'). App fields follow the fields above in this
+             order: APP_WSTXRUST_CONTACT_ID, APP_WSTXRUST_SOURCE, APP_WSTXRUST_ACTIVITY, then
+             the preserved unknown fields; they are read back on load and are outside the
+             one-record-per-contactId comparison.
              Name, operator, propagation and satellite fields are not adopted (D10; WSJT-X
              writes OPERATOR
              only with a configured operator call, which this product does not have).
@@ -1435,7 +1442,8 @@ package WstxContact {
                contest fields STX, STX_STRING, SRX, CONTEST_ID, SRX_STRING, CLASS,
                ARRL_SECT, STATE), the confirmation fields (LOTW_QSL_RCVD, LOTW_QSLRDATE,
                QSL_RCVD, QSLRDATE, QSL_RCVD_VIA, EQSL_QSL_RCVD, EQSL_QSLRDATE; #10,
-               2026-11-04), a valid APP_WSTXRUST_CONTACT_ID and APP_WSTXRUST_SOURCE. Every other field
+               2026-11-04), a valid APP_WSTXRUST_CONTACT_ID, APP_WSTXRUST_SOURCE and
+               APP_WSTXRUST_ACTIVITY (an invalid one is dropped). Every other field
                (names, addresses, e-mail, QSL sent and upload states, other APP_ fields) is
                not stored, so the update does not widen the personal data the station
                keeps.
@@ -1484,7 +1492,8 @@ package WstxContact {
              adds only the records not yet present; export then update of the station
              log adds none.
              Nothing leaves the station: no WstxUdp QSO Logged or Logged ADIF, no other
-             forwarding or upload; only DirectLog sends logged contacts.
+             forwarding or upload; only DirectLog and SaveContact send logged contacts
+             (SaveContact resends a contact a logging program missed).
              Summary: added, present, confirmed (the present records whose confirmation
              this update upgraded), skipped, reasons (the skipped records grouped by
              {code,field} with count and first record index) and dropped (the dropped
@@ -1512,8 +1521,8 @@ package WstxContact {
         doc /* GET /contacts/export.adi streams the whole profile log as ADIF 3.1.8 ADI:
              header with ADIF_VER 3.1.8, PROGRAMID WSTXRUST and CREATED_TIMESTAMP, then
              every stored record in storage order with its supported fields (LogRecord
-             set, including the confirmation fields), APP_WSTXRUST_CONTACT_ID and
-             preserved unknown fields verbatim. Content
+             set, including the confirmation fields), its app fields in the LogRecord order
+             and preserved unknown fields verbatim. Content
              type application/octet-stream with attachment filename contacts.adi; no
              content coding; streamed with backpressure behind status/control: the log
              as it is at the request (a snapshot that holds no lock, so a save or update
@@ -1750,7 +1759,8 @@ package WstxContact {
              that a 1024-character comment fits with worst-case JSON escaping;
              201 {v:1,contact_id,outcome:"saved"}, 200 alreadySaved, 409 log_conflict,
              400 log_invalid_field with field, 503 storage_unavailable leaving the record
-             unsaved); GET /contacts (ContactHistory); GET /contacts/export.adi
+             unsaved; the record may carry app_wstxrust_activity, refused 400
+             log_invalid_field field record.app_wstxrust_activity outside its values); GET /contacts (ContactHistory); GET /contacts/export.adi
              (ExportAdi); POST /contacts/imports {v,profile_id,boot_id,import_id,
              total_bytes,sha256} 201/200 reserve; PUT /contacts/imports/{id} chunks;
              GET /contacts/imports/{id} exactly {v:1,id,state,received_bytes,total_bytes,

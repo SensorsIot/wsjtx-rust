@@ -98,6 +98,8 @@ fn encode(i: &Value) -> Vec<u8> {
                 operator_call: s(i, "operator_call"),
                 my_call: s(i, "my_call"),
                 my_grid: s(i, "my_grid"),
+                exchange_sent: s(i, "exchange_sent"),
+                exchange_received: s(i, "exchange_received"),
             },
         ),
         "logged_adif" => nm::logged_adif(schema, id, &s(i, "adif")),

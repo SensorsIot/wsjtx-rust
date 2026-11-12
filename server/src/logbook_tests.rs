@@ -77,6 +77,7 @@ fn reviewed(id: &str, call: &str) -> Record {
             None,
         ],
         source: None,
+        activity: None,
         unknown: Vec::new(),
     }
 }

@@ -1286,7 +1286,7 @@ test('TC-052-001 Save FT8 decode windows reads and saves the station setting in 
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-040-02, CL-010-16; TC-007-009 the UDP interface is a Logging & Reporting setting.
+// Proves: CL-040-02, CL-112-01, CL-010-16; TC-007-009 the UDP interface is a Logging & Reporting setting.
 test('TC-007-009 the UDP editor reads GET /udp when Settings opens and saves the edited targets with one PUT',{timeout:60000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
   const requests=[],puts=[];
@@ -1297,7 +1297,11 @@ test('TC-007-009 the UDP editor reads GET /udp when Settings opens and saves the
   await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();
   const rows=page.locator('#udp-targets .udp-target');await rows.first().waitFor();
   assert.ok(requests.filter(r=>r==='GET /udp').length>=1,'read when the drawer opens');
-  assert.equal(await page.locator('#udp-instance').inputValue(),'WSTX-Rust');
+  // CL-112-01: the instance name is shown as text, with no input.
+  assert.equal(await page.locator('#udp-instance').textContent(),initial.instance_name);
+  assert.equal(initial.instance_name,'WSTX-Rust');
+  assert.equal(await page.locator('#udp-instance').evaluate(e=>e.tagName),'OUTPUT');
+  assert.equal(await page.locator('#settings-udp input').evaluateAll(list=>list.filter(i=>!i.closest('.udp-target')).length),0,'no input outside the targets');
   const first=rows.nth(0);assert.equal(await first.locator('[data-f=address]').inputValue(),'127.0.0.1:2237');
   assert.equal(await first.locator('[data-f=enabled]').isChecked(),true);
   assert.deepEqual(await first.locator('[data-m]').evaluateAll(b=>b.filter(x=>x.checked).map(x=>x.dataset.m)),['heartbeat','status','decode','clear','qso_logged','close','logged_adif']);
@@ -1312,7 +1316,7 @@ test('TC-007-009 the UDP editor reads GET /udp when Settings opens and saves the
   await added.locator('[data-f=ttl]').fill('3');
   await page.locator('#udp-save').click();await page.locator('#udp-result').filter({hasText:'Saved'}).waitFor();
   const all=['heartbeat','status','decode','clear','qso_logged','close','logged_adif'];
-  const expected={instance_name:'WSTX-Rust',targets:[
+  const expected={targets:[
     {address:'127.0.0.1:2237',enabled:true,multicast_ttl:1,multicast_interface:null,messages:all.filter(m=>m!=='decode')},
     {address:'239.255.0.1:2237',enabled:true,multicast_ttl:3,multicast_interface:null,messages:all}]};
   assert.deepEqual(puts,[{v:1,profile_id:initial.profile_id,boot_id:initial.boot_id,expected_revision:initial.revision,configuration:expected}],'exactly one exact PUT');
@@ -1348,7 +1352,7 @@ test('TC-007-009 the UDP editor saves an IPv6 multicast target with hop limit an
   const target={address:'[ff12::5754:5358]:2237',enabled:true,multicast_ttl:2,multicast_interface:'1',
     messages:['heartbeat','status','decode','clear','qso_logged','close','logged_adif']};
   assert.equal(puts.length,2);
-  assert.deepEqual(puts[1].configuration,{instance_name:'WSTX-Rust',targets:[target]},'the TTL field is the hop limit, the interface its index');
+  assert.deepEqual(puts[1].configuration,{targets:[target]},'the TTL field is the hop limit, the interface its index');
   const saved=await (await fetch(app.origin+'/udp')).json();
   assert.deepEqual(saved.configuration.targets,[target]);assert.equal(saved.revision,initial.revision+1);
   // A wider-scope group drops the link-local hint.

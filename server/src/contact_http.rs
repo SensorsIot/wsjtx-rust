@@ -619,6 +619,11 @@ impl Station {
             crate::udp::logged(state, record);
         }
     }
+    /// Test seam: a completed contact due for DirectLog at the next station step.
+    #[cfg(test)]
+    pub(crate) fn fixture_log(&self, c: contact::Contact) {
+        self.lock().engine.fixture_log(c);
+    }
     /// Test seam: ends the retry backoff of failed log writes.
     #[cfg(test)]
     pub(crate) fn retry_logs_now(&self) {
@@ -680,6 +685,8 @@ impl Station {
                 None,
             ],
             source: None,
+            // CL-112-05: the contact's activity at logging time (absent for none).
+            activity: (c.activity != contact::Activity::None).then(|| c.activity.name().to_owned()),
             unknown: Vec::new(),
         };
         for (name, value) in contest {

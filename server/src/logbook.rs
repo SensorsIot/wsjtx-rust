@@ -29,6 +29,25 @@ pub const FILE_NAME: &str = "contacts.adi";
 const ID_FIELD: &str = "app_wstxrust_contact_id";
 /// #10 UpdateLogbook source marker of a record added from another logger's export.
 const SOURCE_FIELD: &str = "app_wstxrust_source";
+/// CL-112-05 the contact's activity at logging time (absent for activity none).
+const ACTIVITY_FIELD: &str = "app_wstxrust_activity";
+/// The values of APP_WSTXRUST_ACTIVITY (WstxContact::LogRecord).
+pub const ACTIVITIES: [&str; 7] = [
+    "field_day",
+    "rtty",
+    "eu_vhf",
+    "na_vhf",
+    "ww_digi",
+    "arrl_digi",
+    "hound",
+];
+fn activity_value(v: &str) -> bool {
+    ACTIVITIES.contains(&v)
+}
+/// An app field of the record outside FIELDS (contact id, source, activity).
+fn app_field(lname: &str) -> bool {
+    [ID_FIELD, SOURCE_FIELD, ACTIVITY_FIELD].contains(&lname)
+}
 /// #10 consolidation window: a record this close to a stored one is already present.
 const CONSOLIDATION_SECONDS: i64 = 120;
 /// #10 at most this many skip/drop reason groups are listed in the update summary.
@@ -147,6 +166,8 @@ pub struct Record {
     pub values: [Option<String>; 31],
     /// APP_WSTXRUST_SOURCE: the program a record added by UpdateLogbook came from.
     pub source: Option<String>,
+    /// APP_WSTXRUST_ACTIVITY: the contact's activity at logging time (None: activity none).
+    pub activity: Option<String>,
     pub unknown: Vec<Unknown>,
 }
 impl Record {
@@ -295,6 +316,9 @@ impl Record {
         field(ID_FIELD, None, &self.contact_id);
         if let Some(source) = &self.source {
             field(SOURCE_FIELD, None, source);
+        }
+        if let Some(activity) = &self.activity {
+            field(ACTIVITY_FIELD, None, activity);
         }
         for unknown in &self.unknown {
             field(&unknown.name, unknown.kind.as_deref(), &unknown.value);
@@ -623,7 +647,7 @@ fn interpret(index: usize, raw: Vec<RawField>) -> Result<Record, Fault> {
         let lname = name.to_ascii_lowercase();
         let value = value.map_err(|code| Fault::new(code, Some(index), Some(&lname)))?;
         let supported = FIELDS.iter().position(|f| *f == lname);
-        if supported.is_none() && lname != ID_FIELD && lname != SOURCE_FIELD {
+        if supported.is_none() && !app_field(&lname) {
             record.unknown.push(Unknown { name, kind, value });
             continue;
         }
@@ -662,6 +686,14 @@ fn interpret(index: usize, raw: Vec<RawField>) -> Result<Record, Fault> {
                 return Err(Fault::new("invalid_value", Some(index), Some(&lname)));
             }
             record.source = Some(value);
+        } else if lname == ACTIVITY_FIELD {
+            if record.activity.is_some() {
+                return Err(Fault::new("malformed", Some(index), Some(&lname)));
+            }
+            if !activity_value(&value) {
+                return Err(Fault::new("invalid_value", Some(index), Some(&lname)));
+            }
+            record.activity = Some(value);
         } else {
             if seen_id {
                 return Err(Fault::new("malformed", Some(index), Some(&lname)));
@@ -707,7 +739,7 @@ fn interpret_update(raw: Vec<RawField>) -> Result<(Record, Vec<FieldFault>), Fie
     for (name, _, value) in raw {
         let lname = name.to_ascii_lowercase();
         let supported = FIELDS.iter().position(|f| *f == lname);
-        if supported.is_none() && lname != ID_FIELD && lname != SOURCE_FIELD {
+        if supported.is_none() && !app_field(&lname) {
             continue;
         }
         if seen.contains(&lname) {
@@ -729,6 +761,7 @@ fn interpret_update(raw: Vec<RawField>) -> Result<(Record, Vec<FieldFault>), Fie
                             || valid_contest_value(FIELDS[i], &v))
                 }
                 None if lname == SOURCE_FIELD => token(&v),
+                None if lname == ACTIVITY_FIELD => activity_value(&v),
                 None => crate::profile::valid_uuid(&v.to_ascii_lowercase()),
             } {
                 Ok(Some(v))
@@ -740,6 +773,7 @@ fn interpret_update(raw: Vec<RawField>) -> Result<(Record, Vec<FieldFault>), Fie
             (Ok(None), _) => {}
             (Ok(Some(v)), Some(i)) => record.values[i] = Some(v),
             (Ok(Some(v)), None) if lname == SOURCE_FIELD => record.source = Some(v),
+            (Ok(Some(v)), None) if lname == ACTIVITY_FIELD => record.activity = Some(v),
             (Ok(Some(v)), None) => record.contact_id = v.to_ascii_lowercase(),
             (Err(code), _) if required => return Err((code, lname)),
             (Err(code), _) => dropped.push((code, lname)),
@@ -1862,6 +1896,13 @@ pub fn validate_record(record: &Record, callsign: &str, locator: &str) -> Result
                 _ => "record.state",
             });
         }
+    }
+    if record
+        .activity
+        .as_deref()
+        .is_some_and(|a| !activity_value(a))
+    {
+        return Err("record.app_wstxrust_activity");
     }
     Ok(())
 }

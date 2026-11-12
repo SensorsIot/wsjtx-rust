@@ -103,11 +103,18 @@ fn target_json(address: SocketAddr, messages: &[&str]) -> Value {
     json!({"address":address.to_string(),"enabled":true,"multicast_ttl":1,"multicast_interface":null,
         "messages":messages})
 }
+/// The fixture's own folder of instance-name locks, never the operator's.
+fn locks(f: &Fixture) -> std::path::PathBuf {
+    f.dir.join("udp-instance")
+}
+fn open(f: &Fixture, disabled: bool) -> Arc<Owner> {
+    Owner::open(&f.state, disabled, &locks(f))
+}
 /// Writes udp.json before the owner opens, so no default target is ever activated.
 fn install(f: &Fixture, targets: Vec<Value>) -> Arc<Owner> {
-    let doc = json!({"schema_version":1,"profile_id":f.id,"revision":0,"instance_name":"WSTX-Rust","targets":targets});
+    let doc = json!({"schema_version":1,"profile_id":f.id,"revision":0,"targets":targets});
     std::fs::write(f.dir.join(FILE_NAME), serde_json::to_vec(&doc).unwrap()).unwrap();
-    let owner = Owner::open(&f.state, false);
+    let owner = open(f, false);
     assert!(f.state.recording.udp.set(owner.clone()).is_ok());
     owner
 }
@@ -347,12 +354,16 @@ async fn tc_012_002_outbound_messages_to_several_targets() {
     owner.step(&f.state);
     let changed = drain(&a);
     assert_eq!(kinds(&changed), [1]);
-    assert_eq!(status_fields(&changed[0])["report"], "-07");
+    assert_eq!(status_fields(&changed[0])["report"], "-7");
 
+    // CL-112-04: a second live job on the same band sends no Clear.
     f.state.recording.fixture_live_job("ft8");
     owner.step(&f.state);
-    assert_eq!(kinds(&drain(&a)), [3], "Clear after the live job changed");
-    assert!(drain(&b).is_empty(), "B does not select clear");
+    assert!(
+        kinds(&drain(&a)).iter().all(|k| *k != 3),
+        "no Clear after a second live job on the same band"
+    );
+    assert!(drain(&b).is_empty());
 
     let contact = profile::new_uuid().unwrap();
     let saved = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
@@ -427,7 +438,7 @@ async fn tc_012_002_outbound_messages_to_several_targets() {
     let mut targets = snap["configuration"]["targets"].clone();
     targets[0]["enabled"] = json!(false);
     let put = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"expected_revision":0,
-        "configuration":{"instance_name":"WSTX-Rust","targets":targets}});
+        "configuration":{"targets":targets}});
     let (s, v) = call(&f, "PUT", "/udp", Some(serde_json::to_vec(&put).unwrap())).await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(kinds(&drain(&a)), [6], "Close to the disabled target");
@@ -544,6 +555,7 @@ async fn tc_012_003_no_inbound_message_acts_on_the_station() {
             "boot_id",
             "configuration",
             "configuration_error",
+            "instance_name",
             "profile_id",
             "revision",
             "status",
@@ -601,8 +613,9 @@ async fn tc_012_003_no_inbound_message_acts_on_the_station() {
     assert_eq!(arm_state(&f), ArmState::Armed);
 }
 
-// Proves: CL-040-02, TC-012-004. A udp.json saved before send-only keeps working after the
-// update: the retired accept_commands key is dropped on load and gone after the next save.
+// Proves: CL-040-02, CL-112-01, TC-012-004. A udp.json saved before send-only and while the
+// instance name was a setting keeps working: the retired accept_commands and instance_name
+// keys are dropped on load and gone after the next save.
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_012_004_a_file_saved_with_accept_commands_keeps_loading() {
     let f = fixture("http://127.0.0.1:18409", true);
@@ -610,7 +623,11 @@ async fn tc_012_004_a_file_saved_with_accept_commands_keeps_loading() {
     let clean = target_json(a.local_addr().unwrap(), &["heartbeat"]);
     let mut saved = clean.clone();
     saved["accept_commands"] = json!(true);
-    let owner = install(&f, vec![saved]);
+    let doc = json!({"schema_version":1,"profile_id":f.id,"revision":0,
+        "instance_name":"My station","targets":[saved]});
+    std::fs::write(f.dir.join(FILE_NAME), serde_json::to_vec(&doc).unwrap()).unwrap();
+    let owner = open(&f, false);
+    assert!(f.state.recording.udp.set(owner.clone()).is_ok());
     let snap = owner.snapshot(&f.state.recording);
     assert_eq!(snap["configuration_error"], Value::Null, "{snap}");
     assert_eq!(snap["configuration"]["targets"], json!([clean]));
@@ -621,11 +638,88 @@ async fn tc_012_004_a_file_saved_with_accept_commands_keeps_loading() {
     assert_eq!(s, StatusCode::OK, "{v}");
     let file = std::fs::read_to_string(f.dir.join(FILE_NAME)).unwrap();
     assert!(!file.contains("accept_commands"), "{file}");
+    assert!(!file.contains("instance_name"), "{file}");
+    assert_eq!(
+        v["instance_name"], "WSTX-Rust",
+        "the saved name is no setting"
+    );
+}
+
+// Proves: CL-040-02, TC-012-004. WstxUdp::UdpHttp: the order of PUT /udp refusals: envelope keys, then
+// v (unsupported_version before any field), then the fields; an injected failed write of
+// udp.json is 503 storage_unavailable and changes nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_012_004_refusal_order_and_a_failed_write() {
+    let f = fixture("http://127.0.0.1:18410", true);
+    let a = peer();
+    let owner = install(&f, vec![target_json(a.local_addr().unwrap(), &MESSAGES)]);
+    owner.step(&f.state);
+    drain(&a);
+    let good = json!([target_json(a.local_addr().unwrap(), &MESSAGES)]);
+    let put = |body: Value| call(&f, "PUT", "/udp", Some(serde_json::to_vec(&body).unwrap()));
+    let mut invalid_target = config_body(&f, 0, json!([{"address":"0.0.0.0:1"}]));
+    invalid_target["v"] = json!(2);
+    let mut missing = config_body(&f, 0, good.clone());
+    missing["v"] = json!(2);
+    missing.as_object_mut().unwrap().remove("boot_id");
+    let mut text_v = config_body(&f, 0, good.clone());
+    text_v["v"] = json!("1");
+    for (body, code, field) in [
+        (invalid_target, "unsupported_version", json!("v")),
+        (missing, "invalid_request", json!("boot_id")),
+        (text_v, "invalid_request", json!("v")),
+    ] {
+        let (s, v) = put(body.clone()).await;
+        assert_eq!(
+            (s, v["error"]["code"].as_str(), v["error"]["field"].clone()),
+            (StatusCode::BAD_REQUEST, Some(code), field),
+            "{body}"
+        );
+    }
+    // Test gap 2: the write of udp.json fails.
+    let before = std::fs::read(f.dir.join(FILE_NAME)).unwrap();
+    let snapshot = owner.snapshot(&f.state.recording);
+    let socket = station_socket(&owner, 0);
+    let mut changed = good.clone();
+    changed[0]["messages"] = json!(["heartbeat"]);
+    owner
+        .fail_write
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let (s, v) = put(config_body(&f, 0, changed.clone())).await;
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (StatusCode::SERVICE_UNAVAILABLE, Some("storage_unavailable"))
+    );
+    assert_eq!(std::fs::read(f.dir.join(FILE_NAME)).unwrap(), before);
+    let after = owner.snapshot(&f.state.recording);
+    assert_eq!(
+        (
+            &after["revision"],
+            &after["configuration"],
+            &after["status"]
+        ),
+        (
+            &snapshot["revision"],
+            &snapshot["configuration"],
+            &snapshot["status"]
+        )
+    );
+    assert_eq!(station_socket(&owner, 0), socket, "the socket is kept");
+    assert!(drain(&a).is_empty(), "no Close, nothing sent");
+    owner
+        .fail_write
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    let (s, v) = put(config_body(&f, 0, changed)).await;
+    assert_eq!(
+        (s, v["revision"].clone()),
+        (StatusCode::OK, json!(1)),
+        "{v}"
+    );
 }
 
 fn config_body(f: &Fixture, revision: u64, targets: Value) -> Value {
     json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"expected_revision":revision,
-        "configuration":{"instance_name":"WSTX-Rust","targets":targets}})
+        "configuration":{"targets":targets}})
 }
 
 // Proves: CL-040-02, TC-012-004
@@ -633,7 +727,7 @@ fn config_body(f: &Fixture, revision: u64, targets: Value) -> Value {
 async fn tc_012_004_target_configuration_and_persistence() {
     let f = fixture("http://127.0.0.1:18403", false);
     // WSTX_UDP=off semantics: the default list is shown, no socket is opened.
-    let owner = Owner::open(&f.state, true);
+    let owner = open(&f, true);
     assert!(f.state.recording.udp.set(owner.clone()).is_ok());
     let (s, v) = call(&f, "GET", "/udp", None).await;
     assert_eq!(s, StatusCode::OK);
@@ -645,7 +739,7 @@ async fn tc_012_004_target_configuration_and_persistence() {
         ),
         (
             json!(0),
-            json!({"instance_name":"WSTX-Rust","targets":[{"address":"127.0.0.1:2237","enabled":true,
+            json!({"targets":[{"address":"127.0.0.1:2237","enabled":true,
                 "multicast_ttl":1,"multicast_interface":null,"messages":MESSAGES}]}),
             Value::Null
         )
@@ -670,7 +764,7 @@ async fn tc_012_004_target_configuration_and_persistence() {
         json!(["heartbeat", "status", "logged_adif"])
     );
     let saved = v["configuration"].clone();
-    let reopened = Owner::open(&f.state, true).snapshot(&f.state.recording);
+    let reopened = open(&f, true).snapshot(&f.state.recording);
     assert_eq!(
         (
             reopened["revision"].clone(),
@@ -771,21 +865,15 @@ async fn tc_012_004_target_configuration_and_persistence() {
             json!(field),
         ));
     }
-    for name in [
-        json!(""),
-        json!("x".repeat(65)),
-        json!(" WSTX"),
-        json!("a\u{7}b"),
-    ] {
-        let mut b = config_body(&f, 1, targets.clone());
-        b["configuration"]["instance_name"] = name;
-        cases.push((
-            b,
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            json!("instance_name"),
-        ));
-    }
+    // CL-112-01: the instance name is no setting.
+    let mut named = config_body(&f, 1, targets.clone());
+    named["configuration"]["instance_name"] = json!("WSTX-Rust");
+    cases.push((
+        named,
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+        json!("configuration"),
+    ));
     for (body, status, code, field) in cases {
         let (s, v) = call(&f, "PUT", "/udp", Some(serde_json::to_vec(&body).unwrap())).await;
         assert_eq!(
@@ -832,7 +920,7 @@ async fn tc_012_004_target_configuration_and_persistence() {
     // An invalid udp.json: configuration null, no socket, until a valid PUT.
     let g = fixture("http://127.0.0.1:18404", false);
     std::fs::write(g.dir.join(FILE_NAME), b"{\"schema_version\":1}").unwrap();
-    let broken = Owner::open(&g.state, false);
+    let broken = open(&g, false);
     let v = broken.snapshot(&g.state.recording);
     assert_eq!(
         (
@@ -1181,7 +1269,7 @@ async fn tc_012_006_ipv6_multicast_targets() {
     let (s, v) = call(&f, "PUT", "/udp", Some(serde_json::to_vec(&body).unwrap())).await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["configuration"]["targets"], targets, "saved as given");
-    let reopened = Owner::open(&f.state, true).snapshot(&f.state.recording);
+    let reopened = open(&f, true).snapshot(&f.state.recording);
     assert_eq!(reopened["configuration"]["targets"], targets);
 
     // An IPv6 unicast target keeps the #40 IPv4 interface form (a saved file loads).
@@ -1387,4 +1475,749 @@ async fn tc_011_002_update_logbook_adds_records_without_any_udp_datagram() {
         drain(&a).is_empty(),
         "no QSO Logged or Logged ADIF for updated records"
     );
+}
+
+// ------------------------------------------------------------------ #112 (CL-112-01..06)
+
+/// The saved control of the fixture profile (no radio command).
+fn control(f: &Fixture, mode: &str, endpoint: Option<&str>) {
+    let mut store = f.state.store.lock().unwrap();
+    store.document.control.mode = mode.into();
+    store.document.control.endpoint = endpoint.map(str::to_owned);
+}
+/// An owner on a udp.json without targets (nothing is ever sent), its name in `root`.
+fn quiet_owner(f: &Fixture, root: &std::path::Path) -> Arc<Owner> {
+    let doc = json!({"schema_version":1,"profile_id":f.id,"revision":0,"targets":[]});
+    std::fs::write(f.dir.join(FILE_NAME), serde_json::to_vec(&doc).unwrap()).unwrap();
+    Owner::open(&f.state, false, root)
+}
+fn name_of(owner: &Owner, f: &Fixture) -> Value {
+    owner.snapshot(&f.state.recording)["instance_name"].clone()
+}
+/// A native Flex fixture: the session double, set before the owner opens.
+fn flex_fixture(origin: &str) -> (Fixture, Arc<wstx_rust::flex::Session>) {
+    let f = fixture(origin, false);
+    let session = wstx_rust::flex::Session::double();
+    assert!(f.state.recording.flex.set(session.clone()).is_ok());
+    (f, session)
+}
+fn flex_ready(session: &wstx_rust::flex::Session, letter: &str) {
+    session.double_set(|s| {
+        s.state = wstx_rust::flex::State::Ready;
+        s.radio = Some(wstx_rust::flex::session::RadioFacts {
+            model: Some("FLEX-6600".into()),
+            ..Default::default()
+        });
+        s.slice = Some(wstx_rust::flex::session::SliceFacts {
+            letter: Some(letter.into()),
+            ..Default::default()
+        });
+    });
+}
+
+/// The lock file a `lock_holder_child` process holds, and the line it prints once it holds it.
+const LOCK_HOLDER: &str = "WSTX_TEST_LOCK_HOLDER";
+const LOCKED: &str = "lock-holder: locked";
+/// Not a test of its own: the child process of TC-112-001 (c). It holds an exclusive lock on
+/// the file LOCK_HOLDER names until it is killed (as a live server holds its name).
+#[test]
+#[ignore = "child process of tc_112_001_instance_name"]
+fn lock_holder_child() {
+    let Some(path) = std::env::var_os(LOCK_HOLDER) else {
+        return;
+    };
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path)
+        .unwrap();
+    file.lock().unwrap();
+    println!("{LOCKED}");
+    // Held until killed; a parent that ends without killing it closes this pipe.
+    let _ = std::io::Read::read_to_end(&mut std::io::stdin(), &mut Vec::new());
+}
+
+// Proves: CL-112-01, TC-112-001. The instance name: base forms, numbering on a clash, a
+// released name taken again (dropped, and a killed process), an unusable lock folder, the name
+// on every datagram and in GET /udp, no change by a radio change while running, WSTX_UDP=off
+// claims nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_112_001_instance_name() {
+    let f = fixture("http://127.0.0.1:18411", false);
+    let root = locks(&f);
+    // (a) and (b).
+    control(&f, "disabled", None);
+    let plain = quiet_owner(&f, &root);
+    assert_eq!(name_of(&plain, &f), "WSTX-Rust");
+    control(
+        &f,
+        "cat",
+        Some("icom7300://COM3?baud=9600&radio=94&controller=E0"),
+    );
+    let saved = quiet_owner(&f, &root);
+    assert_eq!(name_of(&saved, &f), "WSTX-Rust - IC-7300");
+    drop(saved);
+    control(&f, "cat", Some("COM3"));
+    let first = quiet_owner(&f, &root);
+    assert_eq!(
+        name_of(&first, &f),
+        "WSTX-Rust - IC-7300",
+        "a plain COM3 is an IC-7300; the released name is free again"
+    );
+    let second = quiet_owner(&f, &root);
+    let third = quiet_owner(&f, &root);
+    assert_eq!(name_of(&second, &f), "WSTX-Rust - IC-7300 2");
+    assert_eq!(name_of(&third, &f), "WSTX-Rust - IC-7300 3");
+    control(&f, "disabled", None);
+    assert_eq!(name_of(&quiet_owner(&f, &root), &f), "WSTX-Rust 2");
+    // (c) the first released: a new start takes the base form.
+    drop(first);
+    control(&f, "cat", Some("COM3"));
+    let again = quiet_owner(&f, &root);
+    assert_eq!(name_of(&again, &f), "WSTX-Rust - IC-7300");
+    // (f) a radio change while running does not change the name.
+    control(&f, "disabled", None);
+    again.step(&f.state);
+    assert_eq!(name_of(&again, &f), "WSTX-Rust - IC-7300");
+    drop((plain, second, third, again));
+
+    // (c) a killed process: a child process holds the base form's lock; while it lives a new
+    // owner numbers, once it is killed the next owner takes the base form.
+    let p = fixture("http://127.0.0.1:18424", false);
+    control(&p, "cat", Some("COM3"));
+    let root = locks(&p);
+    std::fs::create_dir_all(&root).unwrap();
+    let held = root.join("WSTX-Rust_-_IC-7300.lock");
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "udp::tests::lock_holder_child",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(LOCK_HOLDER, &held)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        use std::io::BufRead;
+        let out = std::io::BufReader::new(child.stdout.take().unwrap());
+        assert!(
+            out.lines()
+                .map_while(Result::ok)
+                .any(|l| l.contains(LOCKED)),
+            "the child holds the lock"
+        );
+    }
+    let while_alive = quiet_owner(&p, &root);
+    assert_eq!(name_of(&while_alive, &p), "WSTX-Rust - IC-7300 2");
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let after_kill = quiet_owner(&p, &root);
+    assert_eq!(
+        name_of(&after_kill, &p),
+        "WSTX-Rust - IC-7300",
+        "a killed process frees its name"
+    );
+    drop((while_alive, after_kill));
+
+    // (d) an unusable lock folder (a file): the base form, the start proceeds and sends.
+    let g = fixture("http://127.0.0.1:18412", false);
+    control(&g, "cat", Some("COM3"));
+    let a = peer();
+    let doc = json!({"schema_version":1,"profile_id":g.id,"revision":0,
+        "targets":[target_json(a.local_addr().unwrap(), &MESSAGES)]});
+    std::fs::write(g.dir.join(FILE_NAME), serde_json::to_vec(&doc).unwrap()).unwrap();
+    let unusable = g.dir.join("profile.json");
+    let owner = Owner::open(&g.state, false, &unusable);
+    owner.step(&g.state);
+    let sent = drain(&a);
+    assert_eq!(kinds(&sent), [0, 1]);
+    assert_eq!(head(&sent[0]).2, "WSTX-Rust - IC-7300");
+    drop(owner);
+
+    // (e) every datagram carries the name; GET /udp shows it.
+    let h = fixture("http://127.0.0.1:18413", false);
+    control(&h, "cat", Some("COM3"));
+    let a = peer();
+    let owner = install(&h, vec![target_json(a.local_addr().unwrap(), &MESSAGES)]);
+    let name = "WSTX-Rust - IC-7300";
+    let (_, v) = call(&h, "GET", "/udp", None).await;
+    assert_eq!(v["instance_name"], name);
+    h.state
+        .recording
+        .fixture_operating(Some("20m"), Some(14_074_000), "manual");
+    h.state.recording.fixture_live_job("ft8");
+    h.state.recording.fixture_publish_period(
+        &period_text(P1101),
+        vec![record("CQ K1ABC FN42", 1234.6, Some(-12.4))],
+    );
+    owner.step(&h.state);
+    h.state
+        .recording
+        .fixture_operating(Some("40m"), Some(7_074_000), "manual");
+    owner.step(&h.state);
+    let saved = json!({"v":1,"profile_id":h.id,"boot_id":h.boot,"command_id":profile::new_uuid().unwrap(),
+        "record":{"contact_id":profile::new_uuid().unwrap(),"call":"K1ABC","gridsquare":"FN42","mode":"FT8",
+        "submode":null,"rst_sent":"-12","rst_rcvd":"-09","qso_date":"20261101","time_on":"123430",
+        "qso_date_off":"20261101","time_off":"123615","band":null,"freq":null,
+        "station_callsign":"HB9BLA","my_gridsquare":"JN47AA","tx_pwr":null,"comment":null}});
+    let (s, v) = call(
+        &h,
+        "POST",
+        "/contacts",
+        Some(serde_json::to_vec(&saved).unwrap()),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{v}");
+    owner.close_all();
+    let all = drain(&a);
+    let mut seen = kinds(&all);
+    seen.sort_unstable();
+    seen.dedup();
+    assert_eq!(seen, [0, 1, 2, 3, 5, 6, 12], "every kind was sent");
+    assert!(all.iter().all(|b| head(b).2 == name), "{:?}", kinds(&all));
+    drop(owner);
+
+    // (g) native Flex: nothing before the first ready, then the name with model and slice
+    // letter, kept after a reconnect with another letter; a second Flex owner numbers.
+    let (k, session) = flex_fixture("http://127.0.0.1:18414");
+    let a = peer();
+    let owner = install(&k, vec![target_json(a.local_addr().unwrap(), &MESSAGES)]);
+    owner.step(&k.state);
+    assert!(drain(&a).is_empty(), "no datagram before the first ready");
+    assert_eq!(name_of(&owner, &k), Value::Null);
+    session.double_set(|s| s.state = wstx_rust::flex::State::Connecting);
+    owner.step(&k.state);
+    assert!(drain(&a).is_empty());
+    flex_ready(&session, "A");
+    owner.step(&k.state);
+    let sent = drain(&a);
+    assert_eq!(kinds(&sent), [0, 1]);
+    assert_eq!(head(&sent[0]).2, "WSTX-Rust - FLEX-6600 A");
+    assert_eq!(name_of(&owner, &k), "WSTX-Rust - FLEX-6600 A");
+    session.double_set(|s| s.state = wstx_rust::flex::State::Connecting);
+    owner.step(&k.state);
+    flex_ready(&session, "B");
+    owner.step(&k.state);
+    assert_eq!(
+        name_of(&owner, &k),
+        "WSTX-Rust - FLEX-6600 A",
+        "kept after a reconnect"
+    );
+    let (m, other) = flex_fixture("http://127.0.0.1:18415");
+    let second = quiet_owner(&m, &locks(&k));
+    flex_ready(&other, "A");
+    second.step(&m.state);
+    assert_eq!(name_of(&second, &m), "WSTX-Rust - FLEX-6600 A 2");
+
+    // (h) WSTX_UDP=off: no lock file is created.
+    let n = fixture("http://127.0.0.1:18416", false);
+    let off = open(&n, true);
+    assert_eq!(name_of(&off, &n), "WSTX-Rust");
+    assert!(!locks(&n).exists(), "nothing claimed");
+}
+
+// Proves: CL-112-02, TC-112-002. Status dial frequency (CAT, else the selection, else 0) and
+// the report as WSJT-X QString::number writes it.
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_112_002_status_dial_and_report() {
+    let f = fixture("http://127.0.0.1:18417", false);
+    let r = &f.state.recording;
+    assert_eq!(status_of(&f.state, r).dial_hz, 0, "neither");
+    r.fixture_operating(Some("40m"), Some(7_074_000), "manual");
+    assert_eq!(status_of(&f.state, r).dial_hz, 7_074_000, "CAT unconfirmed");
+    r.fixture_operating(Some("20m"), Some(14_074_000), "manual");
+    // The radio double's dial is 7.074 MHz once its CAT confirms it.
+    let (actor, _) = crate::radio_http_tests::actor(r.profile.clone(), r.boot.clone(), 0, false);
+    r.fixture_radio(actor.clone());
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while contact_http::confirmed_dial(r).is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        status_of(&f.state, r).dial_hz,
+        7_074_000,
+        "the confirmed CAT dial wins over the selection 14074000"
+    );
+    actor.request_close();
+    for (report, text) in [
+        (-9, "-9"),
+        (3, "3"),
+        (0, "0"),
+        (-24, "-24"),
+        (49, "49"),
+        (-50, "-50"),
+    ] {
+        operate(&f, "set_report", json!({ "report": report }), false);
+        assert_eq!(status_of(&f.state, r).report, text);
+    }
+}
+
+// Proves: CL-112-03, TC-112-003. Decode delta time rounded to one decimal as Band Activity
+// shows it; a live record without a period start gives no Decode and is never sent later.
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_112_003_decode_delta_time() {
+    for (dt, tenths) in [
+        (Some(0.04), "0.0"),
+        (Some(-0.06), "-0.1"),
+        (Some(0.25), "0.3"),
+        (Some(-0.25), "-0.3"),
+        (Some(1.349), "1.3"),
+        (None, "0"),
+    ] {
+        assert_eq!(delta_time(dt), tenths.parse::<f32>().unwrap(), "{dt:?}");
+    }
+    let f = fixture("http://127.0.0.1:18418", false);
+    let a = peer();
+    let owner = install(&f, vec![target_json(a.local_addr().unwrap(), &["decode"])]);
+    f.state.recording.fixture_live_job("ft8");
+    let mut row = record("CQ K1ABC FN42", 1234.6, Some(-12.4));
+    row["dt_seconds"] = json!(0.25);
+    let first = f
+        .state
+        .recording
+        .fixture_publish_period(&period_text(P1101), vec![row.clone()]);
+    f.state.recording.fixture_uncorrelated(first[0]);
+    owner.step(&f.state);
+    assert!(drain(&a).is_empty(), "no Decode without a period start");
+    f.state
+        .recording
+        .fixture_publish_period(&period_text(P1101 + 15_000), vec![row]);
+    owner.step(&f.state);
+    let sent = drain(&a);
+    assert_eq!(kinds(&sent), [2], "the later correlated record, once");
+    let decode = decode_fields(&sent[0]);
+    assert_eq!(decode.3, f64::from("0.3".parse::<f32>().unwrap()));
+    assert_eq!(decode.1, 45_285_000, "the second period");
+    owner.step(&f.state);
+    assert!(
+        drain(&a).is_empty(),
+        "the uncorrelated record is never sent"
+    );
+}
+
+// Proves: CL-112-04, TC-112-004. Clear only when the operating selection's band changes.
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_112_004_clear_on_a_band_change_only() {
+    let f = fixture("http://127.0.0.1:18419", false);
+    let r = &f.state.recording;
+    let (a, b) = (peer(), peer());
+    let owner = install(
+        &f,
+        vec![
+            target_json(a.local_addr().unwrap(), &MESSAGES),
+            target_json(
+                b.local_addr().unwrap(),
+                &["heartbeat", "decode", "qso_logged"],
+            ),
+        ],
+    );
+    let mut period = P1101;
+    let mut decoded = |owner: &Owner| {
+        if r.live_identity().is_some() {
+            period += 15_000;
+            r.fixture_publish_period(
+                &period_text(period),
+                vec![record("CQ K1ABC FN42", 1234.6, Some(-12.4))],
+            );
+        }
+        owner.step(&f.state);
+        drain(&a);
+        drain(&b);
+    };
+    let clears = |list: &[Vec<u8>]| kinds(list).iter().filter(|k| **k == 3).count();
+    r.fixture_operating(Some("20m"), Some(14_074_000), "manual");
+    r.fixture_live_job("ft8");
+    decoded(&owner);
+    // A band selection 20m -> 40m.
+    r.fixture_operating(Some("40m"), Some(7_074_000), "manual");
+    owner.step(&f.state);
+    assert_eq!(clears(&drain(&a)), 1, "band selection");
+    assert_eq!(clears(&drain(&b)), 0, "B does not select clear");
+    // Adoption of a CAT dial on another band (ReadbackSelectionAdoption).
+    decoded(&owner);
+    r.fixture_operating(None, None, "manual");
+    owner.step(&f.state);
+    r.fixture_operating(Some("20m"), Some(14_074_000), "cat_readback");
+    owner.step(&f.state);
+    assert_eq!(clears(&drain(&a)), 1, "CAT readback adoption");
+    // A second band change with no Decode in between.
+    r.fixture_operating(Some("40m"), Some(7_074_000), "manual");
+    owner.step(&f.state);
+    assert_eq!(clears(&drain(&a)), 1, "without a Decode since");
+    // No Clear on the same band.
+    let none: [(&str, &dyn Fn()); 6] = [
+        ("mode change FT8 -> FT4", &|| {
+            r.fixture_live_job("ft4");
+        }),
+        ("receive restart", &|| {
+            r.fixture_live_job("ft4");
+        }),
+        ("loss-only source epoch", &|| r.fixture_loss_epoch()),
+        ("receive stop", &|| r.fixture_stop_live_job()),
+        ("new live job", &|| {
+            r.fixture_live_job("ft8");
+        }),
+        ("frequency within the band", &|| {
+            r.fixture_operating(Some("40m"), Some(7_047_500), "manual")
+        }),
+    ];
+    for (what, change) in none {
+        decoded(&owner);
+        change();
+        owner.step(&f.state);
+        assert_eq!(clears(&drain(&a)), 0, "{what}");
+    }
+}
+
+// Proves: CL-040-01, CL-112-04. Guard of existing behaviour: decodes of a played recording are
+// never sent, and no Clear goes out for them.
+#[tokio::test(flavor = "multi_thread")]
+async fn played_recording_sends_no_decode_and_no_clear() {
+    let f = fixture("http://127.0.0.1:18420", false);
+    let a = peer();
+    let owner = install(&f, vec![target_json(a.local_addr().unwrap(), &MESSAGES)]);
+    owner.step(&f.state);
+    drain(&a);
+    f.state.recording.fixture_live_job("ft8");
+    f.state.recording.fixture_job_kind("recording");
+    f.state.recording.fixture_publish_period(
+        &period_text(P1101),
+        vec![record("CQ K1ABC FN42", 1234.6, Some(-12.4))],
+    );
+    owner.step(&f.state);
+    f.state.recording.fixture_stop_live_job();
+    owner.step(&f.state);
+    assert!(
+        kinds(&drain(&a)).iter().all(|k| *k != 2 && *k != 3),
+        "no Decode and no Clear"
+    );
+}
+
+/// (exchange sent, exchange received) of a QSO Logged datagram.
+fn exchanges(b: &[u8]) -> (String, String) {
+    let (_, kind, _, mut q) = head(b);
+    assert_eq!(kind, 5);
+    let _ = (q.i64(), q.u32(), q.u8());
+    let _ = (q.s(), q.s(), q.u64());
+    for _ in 0..6 {
+        q.s();
+    }
+    let _ = (q.i64(), q.u32(), q.u8());
+    for _ in 0..3 {
+        q.s();
+    }
+    (q.s(), q.s())
+}
+/// A completed contact of `activity` with the exchanges and grid as the engine holds them.
+fn contest_contact(
+    activity: contact::Activity,
+    grid: Option<&str>,
+    sent: Option<&str>,
+    rcvd: Option<&str>,
+) -> contact::Contact {
+    contact::Contact {
+        id: profile::new_uuid().unwrap(),
+        origin: contact::Origin::DecodedRow,
+        mode: decoder::Mode::Ft8,
+        dx_call: Some("K1ABC".into()),
+        dx_grid: grid.map(str::to_owned),
+        report: -12,
+        report_rcvd: Some(-9),
+        report_sent: Some(-12),
+        exchange_sent: sent.map(str::to_owned),
+        exchange_rcvd: rcvd.map(str::to_owned),
+        activity,
+        band: None,
+        state: contact::State::Completed,
+        next: contact::Slot::Tx6,
+        tx4: contact::Tx4::Rr73,
+        messages: Default::default(),
+        started_tx1_skipped: false,
+        prepared_utc_ms: P1101,
+        first_tx_period: Some(P1101 + 15_000),
+        first_tx2_period: Some(P1101 + 15_000),
+        first_tx3_period: None,
+        last_counted_end: Some(P1101 + 60_000),
+        logged_on_completion: true,
+        suggested: None,
+        last_rcvd: None,
+        dialogue: Default::default(),
+        busy_with: None,
+        his_last: None,
+    }
+}
+async fn text_of(f: &Fixture, path: &str) -> String {
+    let request = axum::http::Request::builder()
+        .method("GET")
+        .uri(path)
+        .header(header::ORIGIN, &f.origin)
+        .body(Body::empty())
+        .unwrap();
+    let response = f.router.clone().oneshot(request).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    String::from_utf8(bytes.to_vec()).unwrap()
+}
+
+// Proves: CL-112-05, TC-112-005. QSO Logged exchanges as WSJT-X, built the same way from the
+// stored record by DirectLog and SaveContact; the logged record carries its activity.
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_112_005_qso_logged_exchanges() {
+    use contact::Activity as A;
+    let f = fixture("http://127.0.0.1:18421", false);
+    f.state.recording.fixture_live_job("ft8");
+    let a = peer();
+    let owner = install(
+        &f,
+        vec![target_json(
+            a.local_addr().unwrap(),
+            &["qso_logged", "logged_adif"],
+        )],
+    );
+    owner.step(&f.state);
+    let cases = [
+        (
+            A::FieldDay,
+            None,
+            Some("1A EMA"),
+            Some("2B CT"),
+            "JN47AA",
+            ("1A EMA", "2B CT"),
+        ),
+        (
+            A::Rtty,
+            None,
+            Some("559 MA"),
+            Some("579 MA"),
+            "JN47AA",
+            ("559 MA", "579 MA"),
+        ),
+        (
+            A::Rtty,
+            None,
+            Some("559 0003"),
+            Some("559 0013"),
+            "JN47AA",
+            ("559 0003", "559 0013"),
+        ),
+        (
+            A::EuVhf,
+            Some("IO91NP"),
+            Some("550001 JN37VL"),
+            Some("590003 IO91NP"),
+            "JN37VL",
+            ("550001 JN37VL", "590003 IO91NP"),
+        ),
+        (
+            A::NaVhf,
+            Some("FN42"),
+            None,
+            None,
+            "JN47AA",
+            ("JN47", "FN42"),
+        ),
+        (
+            A::WwDigi,
+            Some("FN42ab"),
+            None,
+            None,
+            "JN47AA",
+            ("JN47", "FN42"),
+        ),
+        (A::ArrlDigi, None, None, None, "JN47AA", ("JN47", "")),
+        (A::Hound, Some("FN42"), None, None, "JN47AA", ("", "")),
+        (A::None, Some("FN42"), None, None, "JN47AA", ("", "")),
+    ];
+    for (activity, grid, sent, rcvd, locator, expected) in cases {
+        f.state.store.lock().unwrap().document.locator = locator.into();
+        let c = contest_contact(activity, grid, sent, rcvd);
+        let id = c.id.clone();
+        f.contact().fixture_log(c);
+        f.tick();
+        let logged = drain(&a);
+        assert_eq!(kinds(&logged), [5, 12], "{activity:?} DirectLog");
+        let want = (expected.0.to_owned(), expected.1.to_owned());
+        assert_eq!(exchanges(&logged[0]), want, "{activity:?} DirectLog");
+        // The same record through SaveContact under a new contact id.
+        let total = f.state.logbook.total().unwrap();
+        let mut wire = f.state.logbook.history(&f.id, total - 1, 1).unwrap()["records"][0].clone();
+        assert_eq!(wire["contact_id"], id.as_str());
+        let saved_id = profile::new_uuid().unwrap();
+        let o = wire.as_object_mut().unwrap();
+        o.remove("index");
+        o.remove("unknown_field_count");
+        o.insert("contact_id".into(), json!(saved_id));
+        if activity != A::None {
+            o.insert("app_wstxrust_activity".into(), json!(activity.name()));
+        }
+        let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,
+            "command_id":profile::new_uuid().unwrap(),"record":wire});
+        let (s, v) = call(
+            &f,
+            "POST",
+            "/contacts",
+            Some(serde_json::to_vec(&body).unwrap()),
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED, "{activity:?} {v}");
+        let logged = drain(&a);
+        assert_eq!(exchanges(&logged[0]), want, "{activity:?} SaveContact");
+        let (_, _, _, mut adif) = head(&logged[1]);
+        let text = adif.s();
+        if activity == A::None {
+            assert!(!text.contains("app_wstxrust_activity"), "{text}");
+        } else {
+            let field = format!(
+                "<app_wstxrust_contact_id:36>{saved_id} <app_wstxrust_activity:{}>{} <EOR>",
+                activity.name().len(),
+                activity.name()
+            );
+            assert!(text.ends_with(&field), "{text}");
+        }
+    }
+    f.state.store.lock().unwrap().document.locator = "JN47AA".into();
+    // A record without the field (an older log) has activity none: "" / "".
+    let older = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
+        "record":{"contact_id":profile::new_uuid().unwrap(),"call":"K1ABC","gridsquare":"FN42","mode":"FT8",
+        "submode":null,"rst_sent":"-12","rst_rcvd":"-09","qso_date":"20261101","time_on":"123430",
+        "qso_date_off":"20261101","time_off":"123615","band":null,"freq":null,
+        "station_callsign":"HB9BLA","my_gridsquare":"JN47AA","tx_pwr":null,"comment":null,
+        "stx_string":"1A EMA","srx_string":"2B CT"}});
+    let (s, _) = call(
+        &f,
+        "POST",
+        "/contacts",
+        Some(serde_json::to_vec(&older).unwrap()),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED);
+    assert_eq!(exchanges(&drain(&a)[0]), (String::new(), String::new()));
+    // An invalid activity is refused with its field; nothing is stored.
+    let total = f.state.logbook.total().unwrap();
+    let mut invalid = older.clone();
+    invalid["command_id"] = json!(profile::new_uuid().unwrap());
+    invalid["record"]["contact_id"] = json!(profile::new_uuid().unwrap());
+    invalid["record"]["app_wstxrust_activity"] = json!("contest");
+    let (s, v) = call(
+        &f,
+        "POST",
+        "/contacts",
+        Some(serde_json::to_vec(&invalid).unwrap()),
+    )
+    .await;
+    assert_eq!(
+        (s, v["error"]["code"].as_str(), v["error"]["field"].as_str()),
+        (
+            StatusCode::BAD_REQUEST,
+            Some("log_invalid_field"),
+            Some("record.app_wstxrust_activity")
+        )
+    );
+    assert_eq!(f.state.logbook.total().unwrap(), total, "nothing stored");
+    // A resave differing only in the activity: already_saved, unchanged, no datagram.
+    let mut resave = older.clone();
+    resave["command_id"] = json!(profile::new_uuid().unwrap());
+    resave["record"]["app_wstxrust_activity"] = json!("field_day");
+    let before = std::fs::read(f.dir.join(logbook::FILE_NAME)).unwrap();
+    let (s, v) = call(
+        &f,
+        "POST",
+        "/contacts",
+        Some(serde_json::to_vec(&resave).unwrap()),
+    )
+    .await;
+    assert_eq!(
+        (s, v["outcome"].as_str()),
+        (StatusCode::OK, Some("already_saved"))
+    );
+    assert_eq!(
+        std::fs::read(f.dir.join(logbook::FILE_NAME)).unwrap(),
+        before
+    );
+    assert!(drain(&a).is_empty(), "no datagram for already_saved");
+    // Placement in contacts.adi and the ADI export, and the reopen.
+    let stored = String::from_utf8(before).unwrap();
+    assert!(
+        stored.contains("<app_wstxrust_activity:6>na_vhf <eor>"),
+        "after the contact id: {stored}"
+    );
+    let export = text_of(&f, "/contacts/export.adi").await;
+    assert!(
+        export.contains("<app_wstxrust_activity:6>na_vhf <eor>"),
+        "{export}"
+    );
+    // After APP_WSTXRUST_SOURCE on a record that has one.
+    let record = logbook::Record {
+        contact_id: "11111111-1111-4111-8111-111111111111".into(),
+        source: Some("LOG4OM2".into()),
+        activity: Some("na_vhf".into()),
+        ..Default::default()
+    };
+    assert!(record.adi_fields().ends_with(
+        "<app_wstxrust_contact_id:36>11111111-1111-4111-8111-111111111111 \
+         <app_wstxrust_source:7>LOG4OM2 <app_wstxrust_activity:6>na_vhf"
+    ));
+    let f = f.restart();
+    let export = text_of(&f, "/contacts/export.adi").await;
+    assert!(
+        export.contains("<app_wstxrust_activity:6>na_vhf <eor>"),
+        "it survives a reopen: {export}"
+    );
+}
+
+// Proves: CL-112-06, TC-112-006. The exit guard: the transmit release first within its bound,
+// then one Close under the instance name to each active target that selects close.
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_112_006_close_at_shutdown() {
+    let f = fixture("http://127.0.0.1:18422", true);
+    let (a, b, c) = (peer(), peer(), peer());
+    let mut disabled = target_json(c.local_addr().unwrap(), &MESSAGES);
+    disabled["enabled"] = json!(false);
+    let owner = install(
+        &f,
+        vec![
+            target_json(a.local_addr().unwrap(), &MESSAGES),
+            target_json(b.local_addr().unwrap(), &["heartbeat", "status"]),
+            disabled,
+            json!({"address":"[ff15::5754:5358]:2238","enabled":true,"multicast_ttl":1,
+                "multicast_interface":"4000000000","messages":MESSAGES}),
+        ],
+    );
+    owner.step(&f.state);
+    drain(&a);
+    drain(&b);
+    assert_eq!(
+        owner.snapshot(&f.state.recording)["status"][3]["error"],
+        "socket_unavailable"
+    );
+    let mut released = None;
+    exit(&f.state.recording, || {
+        let at = Instant::now();
+        f.state
+            .recording
+            .transmit
+            .get()
+            .unwrap()
+            .emergency_release();
+        released = Some((at.elapsed(), drain(&a).len()));
+    });
+    let (took, before) = released.expect("the release ran");
+    assert!(took < Duration::from_millis(500), "{took:?}");
+    assert_eq!(before, 0, "nothing was sent before the release returned");
+    let sent = drain(&a);
+    assert_eq!(kinds(&sent), [6], "one Close");
+    assert_eq!(head(&sent[0]).2, "WSTX-Rust");
+    assert!(drain(&b).is_empty() && drain(&c).is_empty());
+    // A Flex server whose session was never ready sends nothing.
+    let (k, _session) = flex_fixture("http://127.0.0.1:18423");
+    let p = peer();
+    let _owner = install(&k, vec![target_json(p.local_addr().unwrap(), &MESSAGES)]);
+    exit(&k.state.recording, || {});
+    assert!(drain(&p).is_empty());
 }
