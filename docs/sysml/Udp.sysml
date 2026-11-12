@@ -1,5 +1,6 @@
 package WstxUdp {
     private import ScalarValues::*;
+    private import ModelNotes::DiffersFromSource;
     doc /* Canonical contract of the WSJT-X-compatible UDP interface with multiple targets
          (CL-040-01..04, CL-040-06, CL-040-07 and CL-112-01..06 in WstxRequirements;
          verification TC-012-001..004, 006, 007 and TC-112-001..006).
@@ -13,14 +14,8 @@ package WstxUdp {
          b640a632f38b218f97b9c9cf5b5a09b183e1629c613c33d90f39635f9b3fdb3d) and
          MessageClient.cpp (SHA-256
          8cfa89debc2b916b39151975437619e7f9b28aefa698f05231fbdf2247cb9f35); the message
-         types used here are the same in beta6.
-
-         DIFFERENT from WSJT-X, deliberately: Status is resent at each pulse (CL-040-07);
-         the program id of Logged ADIF is this product's; the header schema is raised only
-         by a target's own Heartbeat with the station's id (InboundRules); the interface is
-         send-only (CL-040-03); a played recording sends no Decode (Off air is never true);
-         Logged ADIF carries the app fields APP_WSTXRUST_CONTACT_ID, APP_WSTXRUST_SOURCE and
-         APP_WSTXRUST_ACTIVITY of the stored record.
+         types used here are the same in beta6. The deliberate differences are marked
+         DiffersFromSource on OutboundRules and InboundRules.
 
          Operator decision 2026-11-06 (issue #40): "GridTracker just listens. We only react
          to the front end or to the MCP." and "The UI has to be able to halt the station in
@@ -87,7 +82,9 @@ package WstxUdp {
              killed process frees it. Up to 99 numbers are tried; beyond, and when the lock
              folder cannot be created or opened, the base form is taken unchecked. With
              WSTX_UDP=off no lock is taken and the name is the base form. GET /udp shows it
-             as instance_name (null while a Flex profile's session was never ready). */
+             as instance_name (null while a Flex profile's session was never ready). A Flex
+             session that is ready without a model or a slice letter does not fix the name:
+             the server waits until both are known. */
     }
     enum def OutboundMessage {
         enum heartbeat; enum status; enum decode; enum clear; enum qso_logged; enum close;
@@ -139,6 +136,21 @@ package WstxUdp {
              successful send clears send_failed)}. */
     }
     attribute def OutboundRules {
+        @DiffersFromSource {
+            what = "Status is resent unchanged at each 15 s pulse (CL-040-07); WSJT-X sends it "
+                + "only on a change.";
+        }
+        @DiffersFromSource {
+            what = "The Logged ADIF header names this product, programid WSTX-Rust, not WSJT-X.";
+        }
+        @DiffersFromSource {
+            what = "A played recording sends no Decode; WSJT-X sends its decodes with Off air "
+                + "true.";
+        }
+        @DiffersFromSource {
+            what = "Logged ADIF carries the stored record's app fields APP_WSTXRUST_CONTACT_ID, "
+                + "APP_WSTXRUST_SOURCE and APP_WSTXRUST_ACTIVITY.";
+        }
         doc /* Each enabled target has its own UDP socket, bound to the loopback address of
              the target's family for a loopback target and to the unspecified address
              otherwise, ephemeral port; an IPv4 multicast target sets multicast_ttl and,
@@ -203,6 +215,15 @@ package WstxUdp {
              WSPRDecode (10) is not applicable. */
     }
     attribute def InboundRules {
+        @DiffersFromSource {
+            what = "Send-only (CL-040-03): no inbound message acts; WSJT-X acts on Reply, Clear, "
+                + "Close, Replay, Halt Tx, Free Text, Location, Highlight Callsign, Switch "
+                + "Configuration, Configure, Annotation Info and Tx Inhibit.";
+        }
+        @DiffersFromSource {
+            what = "Only a Heartbeat from the target's own address with the station's id raises "
+                + "the header schema; WSJT-X takes a higher schema from any readable datagram.";
+        }
         doc /* Send-only (operator decision 2026-11-06, CL-040-03): the station reacts to the
              browser and MCP only. The one thing read from a target is its Heartbeat, because
              the WSJT-X protocol negotiates the header schema through it: each station step
