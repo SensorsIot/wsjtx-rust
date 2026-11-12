@@ -74,7 +74,7 @@ package WstxArchitecture {
                  computer. */
             @FollowsSource {
                 reference = "Model Context Protocol, Streamable HTTP, "
-                    + "the eras WstxMcp::McpEndpoint names";
+                    + "the eras WstxMcp::ProtocolEras names";
             }
         }
         enum udpPeer {
