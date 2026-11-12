@@ -21,7 +21,7 @@ package WstxArchitecture {
          groups do not introduce additional runtime services or a strategy engine.
          Items below describe semantic responsibilities, not wire schemas or Rust APIs.
          Detailed behaviour stays with WstxStationProtocol, WstxProfiles,
-         WstxRecordingReceive, WstxOfflineDecode, WstxRadioIO,
+         WstxRecordingReceive, WstxOfflineDecode, WstxModemDecode, WstxRadioIO,
          WstxOperatingLayout and WstxOperatingReceive. */
 
     part physicalStation {
@@ -1628,7 +1628,8 @@ package WstxArchitecture {
     item def ProcessingResult {
         doc /* WstxRecordingReceive::SpectrumFrame owns spectrum units, identity,
              bounds and replaceable display delivery. WstxOfflineDecode::ResultRecord
-             and ResultPage own mode payloads and required result delivery/retention.
+             and WstxRecordingReceive::ResultPage own mode payloads and required result
+             delivery/retention.
              These have different delivery obligations despite sharing processing. */
     }
     item def EncodeRequest;
@@ -1837,7 +1838,7 @@ package WstxArchitecture {
              no source-specific modem resamplers. PCM unit mapping differs from AGC
              and modem normalization. WstxRecordingReceive owns recorded spectrum,
              shared RustFFT 6.4.1 ordering/scaling and buffer obligations;
-             WstxOfflineDecode owns mode window/history/decoder quanta and independent
+             WstxModemDecode owns mode window/history/decoder quanta and independent
              vectors; WstxRadioIO owns live adapter/conversion semantics. */
         port jobs : ~StationOperations;
         port audio : ~ReceiveSamples;
@@ -1848,8 +1849,8 @@ package WstxArchitecture {
         attribute intendedModeCapabilities : WstxProductScope::ModeCapability[*];
         doc /* Pure protocol/symbol/waveform and decoding calculations with independent vectors; no filesystem/hardware/network/wall-clock dependency. */
         doc /* Pure receive calculations and encoding/waveform generation depend on no
-             device, filesystem, wall-clock or network. WstxOfflineDecode owns concrete
-             mode contracts and status; hardware format adaptation and common rate
+             device, filesystem, wall-clock or network. WstxModemDecode and
+             WstxOfflineDecode own concrete mode contracts and status; hardware format adaptation and common rate
              conversion remain outside this boundary. */
         port receive : ~ReceiveProcessing;
         port encode : ~EncodeProcessing;

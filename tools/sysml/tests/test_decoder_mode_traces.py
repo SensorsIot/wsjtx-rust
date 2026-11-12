@@ -1,30 +1,27 @@
-# Proves: CL-007-03; TC-004-001, TC-004-002.
-"""CL-007-03: each decoder mode's offline case is executed by that mode's own fixtures.
+# Guards the binding rule of TC-004-001 and TC-004-002.
+"""TC-004-001 and TC-004-002: each mode case binds only tests that select that mode and load its own fixture.
 
 TC-004-001 (FT4) and TC-004-002 (FT8) must bind named Rust tests whose bodies select
 that mode and load an independent fixture containing that mode's cases. An FT8-only
 executable, or a whole-file binding that only names the case in a Proves tag, does not
 establish FT4 correctness (and vice versa).
 """
+import importlib.util
 import json
 from pathlib import Path
 import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-REQUIREMENTS = ROOT / "docs/sysml/Requirements.sysml"
+spec = importlib.util.spec_from_file_location("decoder_mode_traces_tool", ROOT / "tools/sysml.py")
+tool = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(tool)
 CASES = {"TC-004-001": ("ft4", "Mode::Ft4"), "TC-004-002": ("ft8", "Mode::Ft8")}
 
 
 def executable(identifier: str) -> list[str]:
-    texts = (path.read_text(encoding="utf-8") for path in sorted(REQUIREMENTS.parent.rglob("*.sysml")))
-    text = next(text for text in texts if f"verification '{identifier}' {{" in text)
-    start = text.index(f"verification '{identifier}' {{")
-    body = text[start:text.index("\n    }", start)]
-    binding = re.search(r'attribute\s+executable\s*:\s*String\s*=\s*"([^"]*)"\s*;', body)
-    if not binding:
-        return []
-    return [item.strip() for item in binding[1].split(";") if item.strip()]
+    # The effective binding of the case wherever it is declared, in either form.
+    return tool.canonical_catalog(ROOT / "docs/sysml", ROOT)[identifier]["bindings"]
 
 
 def function_body(path: Path, symbol: str) -> str:

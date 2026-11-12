@@ -202,7 +202,7 @@ pub(super) async fn observe(
         .await?
         .map(|(word, kind)| (word, Some(kind))))
 }
-/// The a-priori passes (WstxStationDecode::APrioriHypotheses), tried in order only after
+/// The a-priori passes (WstxModemDecode::APrioriHypotheses), tried in order only after
 /// every unassisted family failed. A word needs at most 36 hard disagreements in both modes,
 /// a decoded payload (WSJT-X drops an a-priori word that does not unpack and tries the next
 /// pass) and, except for FT8's CQ type 1, WSJT-X's confidence (not marked '?').

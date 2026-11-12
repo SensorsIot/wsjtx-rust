@@ -451,7 +451,7 @@ impl DecodeState {
     pub fn set_period_start(&mut self, frame: Option<u64>) {
         self.period_start = frame;
     }
-    /// WstxStationDecode::APrioriContext of the next window; the default allows only the CQ
+    /// WstxModemDecode::APrioriContext of the next window; the default allows only the CQ
     /// hypothesis.
     pub fn set_a_priori(&mut self, a_priori: super::APriori) {
         self.a_priori = a_priori;

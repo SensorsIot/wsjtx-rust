@@ -1,7 +1,10 @@
 // Canonical authority: SysML
 package WstxRequirements {
     private import ScalarValues::*;
-    public import WstxRequirementsModes::*;
+    private import WstxModemDecode::'TC-004-001';
+    private import WstxModemDecode::'TC-004-002';
+    private import WstxModemDecode::'TC-004-003';
+    private import WstxOfflineDecode::'TC-005-002';
     public import WstxRequirementsReceive::*;
     public import WstxRequirementsProfile::*;
     public import WstxRequirementsMcp::*;

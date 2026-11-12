@@ -1,19 +1,19 @@
-package WstxOfflineDecode {
+package WstxModemDecode {
     private import ScalarValues::*;
-    doc /* Canonical pure-modem contract used by live receive and internal numerical fixtures.
-         Partial Rust FT4/FT8 implementation exists; declared coverage is not test results.
-         Package name preserves established identities, not a public offline-decode API.
-         Contract: WstxProductScope::ContractIndex 4.4 CR7, 6.4 TC-004-001/002/003, 12.7, 13.6.
-         Protocol: https://wsjt.sourceforge.io/FT4_FT8_QEX.pdf sections2-5/AppendixA;
-         current source boundaries and fixed vectors use the pinned beta4 reference manifest.
-         Pinned GPL-compatible physical routines may be adapted with source provenance/attribution. Independent meaning/readiness
-         review is required before production code; semantic parsing is not that review.
-         Existing physical station/receive/modem/web/browser usages remain owners. */
+    private import WstxRequirements::ImplementationState;
+    private import WstxRequirements::AutomationState;
+    private import WstxRequirements::'FR-003';
+    private import WstxRequirements::'FR-004';
+    private import WstxRequirements::'FR-018';
+    private import WstxRequirements::'FR-019';
+    private import WstxRequirements::'FR-021';
+    private import WstxRequirements::'CL-007-01';
+    private import WstxRequirements::'CL-007-02';
+    private import WstxRequirements::'TC-004-004';
+    private import WstxOfflineDecode::Mode;
+    private import WstxOfflineDecode::ResultRecord;
+    private import WstxRecordingReceive::DecodeJob;
 
-    enum def Mode { enum ft4; enum ft8; }
-    enum def FrameStatus { enum decoded; enum unsupported; enum invalid_payload; }
-    enum def CallKind { enum call; enum token; enum hash; }
-    enum def ExchangeKind { enum blank; enum grid; enum report; enum roger; }
     attribute def ModemPublicationKey {
         attribute payload77 : String;
         attribute startFrame : Integer;
@@ -113,340 +113,6 @@ package WstxOfflineDecode {
              symbolCount == 105 and syncCount == 16 and gaussianBT == 1 and
              timeToleranceFrames == 144 and frequencyToleranceHz == 3.0)
         }
-    }
-    attribute def Settings { attribute mode : Mode; }
-    item def DecodeJob :> WstxRecordingReceive::ReceiveJob {
-        attribute :>> kind = WstxRecordingReceive::ReceiveKind::live;
-        attribute settings : Settings;
-        attribute available_count : Integer;
-        attribute search_limited : Boolean;
-        assert constraint boundedProgress {
-            processed_frames >= 0 and processed_frames <= (900719925 * 10000000 + 4740991) and
-            available_count >= 0 and available_count <= 2048
-        }
-        doc /* Existing station receive-job authority, kind=live with immutable mode.
-             One import OR recorded spectrum OR continuous receive; no queue.
-             Source-relative FT8/FT4 windows, reliable live ring and epoch rules12.8.
-             Numerical recorded fixtures have no production receive operation. */
-    }
-    attribute def PayloadCodebook {
-        attribute payloadBits : Integer = 77;
-        attribute crcInputBits : Integer = 82;
-        attribute informationBits : Integer = 91;
-        attribute codewordBits : Integer = 174;
-        attribute crcPolynomial : Integer = 26455;
-        attribute crcInitialState : Integer = 0;
-        attribute freeTextRadix : Integer = 42;
-        attribute nonstandardCallRadix : Integer = 38;
-        attribute cqNumericFirst : Integer = 3;
-        attribute cqNumericLast : Integer = 1002;
-        attribute cqAlphabeticBase : Integer = 1003;
-        attribute callHash22Base : Integer = 2063592;
-        attribute standardCallBase : Integer = 6257896;
-        attribute gridMaximum : Integer = 32399;
-        attribute reservedGridCode : Integer = 32400;
-        attribute blankExchange : Integer = 32401;
-        attribute rrrExchange : Integer = 32402;
-        attribute rr73Exchange : Integer = 32403;
-        attribute goodbyeExchange : Integer = 32404;
-        attribute maximumExchangeCode : Integer = 32505;
-        attribute ft4XorMask : String = "01001010010111101000100110110100101100001000101001111001010101011011111000101";
-        attribute generatorTable : String = "fixtures/decoder/protocol-data/generator.dat";
-        attribute parityTable : String = "fixtures/decoder/protocol-data/parity.dat";
-        attribute sectionTable : String = "fixtures/decoder/protocol-data/arrl_rac_sections.json";
-        attribute stateProvinceTable : String = "fixtures/decoder/protocol-data/states_provinces.json";
-        attribute protocolReference : String = "https://wsjt.sourceforge.io/FT4_FT8_QEX.pdf";
-        doc /* QEX sections2..5/AppendixA plus published data-only tables define normal
-             77-bit FT4/FT8. Current source-field boundaries are pinned independently by
-             WstxProductScope::BehaviorBaseline's portable codec manifest and fixed official
-             vectors. This does not adopt permissive malformed-payload aliases, context guessing
-             beyond the a-priori passes of APrioriHypotheses (#56), SuperFox, FT8var, legacy2019FT4 or automatic QSO/TX behaviour.
-             Both modes share source families:0.0 free text,0.1 DXpedition,0.3/.4 FieldDay,
-             0.5 telemetry,1/2 standard /R or /P,3 RTTY,4 nonstandard,5 extended VHF.
-             0.2/.6/.7 and6/7 are unsupported; WSPR packaging0.6 is not an ordinary message.
-             Preserve exact77bits even for unsupported/invalid_payload; CRC-invalid never
-             publishes. n3 precedes i3 for type0; all fields MSB-first in published order.
-             Type1/2 widths28,1,28,1,1,15,3; type3=1,28,28,1,3,13,3;
-             type4=12,58,1,2,1,3; currenttype5=12,22,1,3,11,25,3.
-             Free-text alphabet is blank,0..9,A..Z,+-./?; trim trailing padding only,
-             allblank invalid. Telemetry is71bits,18uppercasehex,firstdigit0..7,zero valid.
-             FieldDay0.3 uses1..16 transmitters,0.4 uses17..32,classA..F; one-based86
-             sections includeDX (sectionTable: the WSJT-X 3.3.0-beta5 PACK77_ARRL_SECTIONS,
-             #24 S2b, which jt9 and ft8code use; it replaces the QEX 2020 84-entry table,
-             whose entries 16/25/44 GTA/MAR/NT are GH/NS/TER there and which lacks PE and NB);
-             0/>86 invalid. RTTY report529..599 step10, serial0..7999;
-            8001..8171 map the stateProvinceTable (WSJT-X 3.3.0-beta5
-             PACK77_RTTY_MULTIPLIERS: the QEX 65 states/provinces/DC plus the Dutch provinces
-             DR FR GD GR OV ZH ZL and X01..X99); 8000/>8171 invalid. The transmit packer
-             reads the same two tables (WstxTransmit::PackMessage).
-             DXpedition report is even-30..32; nonstandard fullcall<=11base38characters;
-             VHF report52..59,serial0..2047,gridAA00AA..RR99XX.
-             Standard c28:DE0/QRZ1/CQ2; numericCQ3..1002=>CQ000..999;
-             alphabeticCQ1003+four-positionbase27 blank/A..Z modifier with leading
-             blanks removed and no embedded/trailing blank. Reserved holes invalid.
-             hash22=2063592+hash; standard mixed-radix call=6257896+call.
-             Calls normalize digit into position3; radix37,36,10,27,27,27 alphabets are
-             blank/digits/letters; digits/letters; digits; blank/letters three times.
-             At least one of first two characters is a letter; nonempty suffix has no
-             embedded blank. K1ABC=10214965,W9XYZ=12751800. Grid4 radices18,18,10,10
-             with A..R,A..R,0..9,0..9 giveFN42=10342; grid6 adds24,24 lettersA..X.
-             Grid/report0..32399 aregrids,32400reserved,32401blank,32402RRR,
-            32403RR73,32404'73'. ReportCode below is exact,>32505invalid. Invalid
-             structured content never falls back to free text. Hashes keep10/12/22-bit
-             numeric identity. The pure unpack has no hash table and displays<...>; only a
-             station's live publication fills a hash in, from its HashResolution table of
-             calls heard and sent (CL-024-01, #24), never by inverse guessing. A concrete
-             type4full call stays concrete; no cross-profile cache.
-             CRC14 polynomial0x6757,zero state, operates on payload zero-extended82bits;
-             append14CRCbits to77payload bits then published GF(2) parity=>174bits.
-             FT4 XORs the exact77-bit mask beforeCRC/FEC and reverses onlyafter validation.
-             Gray maps by bit-group value:FT8[0,1,3,2,5,6,4,7],FT4[0,1,3,2].
-             FT8=79symbols*1920frames;FT4=105incl2ramps*576frames. Published Costas,
-             continuous phase, GaussianBT2/1 and raised-cosine ramps are normative.
-             Independent fixtures use separate polynomial division/streaming recurrence,
-             published syndrome and fixed tones before audio synthesis; never production
-             decoder/reconstruction as sole oracle. Vectors record provenance, fields,
-             bits/CRC/codeword/tones,start/frequency/amplitude/noise/seed/parameters/hash.
-             Cross-math audio permits1PCM-LSB; retained WAV bytes use exact SHA256. */
-    }
-    calc def ReportCode {
-        in report : Integer;
-        return code : Integer = if report < -30 ? 32400 + report + 35 + 101 else 32400 + report + 35;
-        assert constraint domain { report >= -50 and report <= 50 }
-    }
-    calc def StandardCallCode {
-        in firstIndex : Integer;
-        in secondIndex : Integer;
-        in digitIndex : Integer;
-        in suffixOne : Integer;
-        in suffixTwo : Integer;
-        in suffixThree : Integer;
-        return code : Integer = 6257896 + (((((firstIndex * 36 + secondIndex) * 10 + digitIndex) * 27 + suffixOne) * 27 + suffixTwo) * 27 + suffixThree);
-        assert constraint radixDomains { firstIndex >= 0 and firstIndex < 37 and secondIndex >= 0 and secondIndex < 36 and
-            digitIndex >= 0 and digitIndex < 10 and suffixOne >= 0 and suffixOne < 27 and
-            suffixTwo >= 0 and suffixTwo < 27 and suffixThree >= 0 and suffixThree < 27 }
-        doc /* Indices are from PayloadCodebook's normalized alphabets; caller enforces
-             letter-prefix/nonblank-suffix/no-embedded-blank constraints before use. */
-    }
-    requirement SharedWireMapping {
-        doc /* ResultRecord has exact keys sequence,status,payload77,i3,n3,text,fields,
-             start_frame,frequency_hz,snr_db, plus a_priori (Integer 1..6, the WSJT-X aN
-             type of APrioriHypotheses) present only for an a-priori word, whose status is
-             always decoded (#56 slice 5).
-             LiveTimedResultRecord adds exactly
-             period_start_utc anddt_seconds. Fields null unless decoded; text null unless
-             decoded then<=80canonicalASCII; payload77exact77ASCIIbits; i3=0..7,
-             n3nullunlessi3=0then0..7. Sequence/start are nonnegative safe integers below
-             actual lifetime next_sequence/captured next_frame; finitefrequency200..3500,
-             SNRnullorfinite[-60,60]. Record<=2048UTF8bytes, numericalcharge<=1024;
-             oversizedpublication=>decode_limit with acceptedpartials. CallValue exactly
-             {kind,text,hash_bits,hash_value}; concretecall uppercase1..13(nonstandard<=11),
-             tokenCQ/DE/QRZ/modifier bothnullhashfields; hash exactwidth/value with text null,
-             or the call without brackets when HashResolution filled it in (the message text
-             then shows<CALL>).
-             Every supported PayloadFields variant has all its defined keys, no extras:
-             free_text/telemetry{type,value};standard{type,to,from,ack,exchange};
-             rtty{type,tu,to,from,ack,report,exchange};dxpedition{type,first,second,hashed,report};
-             field_day{type,to,from,ack,transmitters,class,section};
-             nonstandard{type,full_call,hashed_call,hash_second,cq,roger};
-             vhf{type,to,from,ack,report,serial,grid}. Semantic StandardExchange
-             serial/state union members map to exact wire{kind,value}, not extra keys.
-             A standard exchange packed as the grid square RR73 (32373, as some programs
-             send RR73) is the roger {kind roger, value RR73}, never a grid (#55; WSJT-X
-             grid_regexp excludes RR73); the text is unchanged. Nonstandard CQ ignores hash for presentation while preserving raw bits/hash.
-             i3/n3 disambiguates source family. WstxRadioIO owns live lifecycle/page/error/
-             cancellation/retention. No production file-decode route, test-source/raw-path
-             command or browser offline-decode action is implied by numerical fixtures. */
-    }
-    attribute def CallValue {
-        attribute kind : CallKind;
-        attribute text : String[0..1];
-        attribute hash_bits : Integer[0..1];
-        attribute hash_value : Integer[0..1];
-        doc /* Exact wire keys. call/token have text and null hash fields; hash has
-             width10/12/22 and unsigned value below2^width, and text null (displayed<...>)
-             or, in a station's live publication, the call HashResolution filled in, without
-             brackets (displayed<CALL>; kind stays hash). No inverse guessing; no cache across
-             profiles. */
-    }
-    requirement def HashResolution {
-        doc /* CL-024-01 (#24 S1, reversing the earlier "display<...>, no station inverse"
-             rule at the operator's approval of 2026-11-03): WSJT-X shows a hashed call as
-             <CALL> once the full call is known (packjt77.f90 save_hash_call, hash10/12/22,
-             hashmy10/12/22; one session-persistent table shared by receive and transmit),
-             and so does the station. One table per station instance (profile process), kept
-             for the process lifetime across jobs, bands and modes, never shared between
-             profiles, never saved.
-             Hash: ihashcall, the top m bits (10/12/22) of the low 64 bits of
-             47055833459 * the base-38 value of the call's first 11 characters, blank
-             padded (WstxTransmit::PackMessage uses the same function).
-             Learning (save_hash_call): a call of at least 3 characters, brackets removed,
-             sets calls10[h10] and calls12[h12] unless it is my call, and in the 22-bit list
-             of at most 1000 entries replaces the call of an existing h22 entry, else is put
-             first (the oldest entry falls out). Calls learned: my profile callsign at
-             startup and whenever it changes; from each decoded record as it is published
-             (after its own fill-in), the concrete 'from' call of a standard i3=1/2 message
-             (with its /R or /P) and the full call of a nonstandard i3=4 message whose hash
-             is the 'to' call (including CQ); a 'to' call or other families teach nothing
-             (unpack77 nrx=1, not configured); from each transmit request the transmit owner
-             accepts, every concrete call of a standard (its base call without /R or /P, as
-             pack77_parse_type12_call stages it)/Field Day/RTTY message, the full call of a
-             nonstandard CQ and every bracketed <CALL> (pack28/pack77_hash_index).
-             Deliberate deviations: WSJT-X packs transmitted texts in its GUI process and
-             feeds the decoder's table the DX call instead (ft8apset/dxcall13); the station
-             learns from accepted requests. unpack77's DX-call rules (a 0.1 h10 equal to the
-             DX call's hash shows the DX call; a nonstandard 'to' h12 equal to my h12 is my
-             call when the full call is the DX call, even if calls12 holds another call)
-             need the contact's DX call: the station sets the current contact's DX call
-             on the table at each contact step (#24 S1b) and applies the nonstandard rule
-             and the 0.1 rule (#24 S4a): a received 0.1 h10 equal to the 10-bit hash of that
-             DX call (at least 3 characters) shows <DXCALL>, before and instead of the calls10
-             entry of that hash (unpack77 n3=1, nrx=1, hashdx10).
-             Fill-in (unpack77 nrx=1), per hashed slot: standard/Field Day/RTTY h22 from the
-             22-bit list, and a standard 'to' h22 equal to my h22 is my call; nonstandard h12
-             from calls12, and when that is empty and the hash is the 'to' call equal to my
-             h12, my call (a nonstandard CQ shows no hash); DXpedition h10 from calls10;
-             EU VHF 'to' h12 is my call when equal to my h12, else calls12, 'from' h22 from
-             the list. A slot not found stays<...> with text null. Records published before
-             a call was learned keep their text (no rewriting of history). The filled-in text
-             reaches Band Activity, the QSO pane, MCP reads and the UDP Decode message
-             (WstxUdp::OutboundRules) unchanged. A hashed slot stays kind hash. Contact
-             selection and sequencing read a filled-in hash as its call (WstxContact::
-             SelectDecodedRow, #24 S1b); the strategy, Call 1st, DXCC/worked-before and
-             Pounce, which need a plain concrete call, keep treating it as no call. */
-    }
-    attribute def StandardExchange {
-        attribute kind : ExchangeKind;
-        attribute textValue : String[0..1];
-        attribute numericValue : Integer[0..1];
-        doc /* Semantic union, wire exactly{kind,value}: blank=>null, grid=>grid4,
-             report=>integer-50..50, roger=>RRR/RR73/73. Internal semantic arm names
-             are not extra wire fields; SharedWireMapping is the exact canonical JSON mapping. */
-    }
-    attribute def PayloadFields;
-    attribute def FreeTextFields :> PayloadFields {
-        attribute 'type' : String = "free_text";
-        attribute value : String;
-        doc /* type=free_text; 1..13 base42 chars, nonblank, trim trailing padding only. */
-    }
-    attribute def TelemetryFields :> PayloadFields {
-        attribute 'type' : String = "telemetry";
-        attribute value : String;
-        doc /* type=telemetry; exact18uppercasehex, leading0..7, zero allowed. */
-    }
-    attribute def StandardFields :> PayloadFields {
-        attribute 'type' : String = "standard";
-        attribute 'to' : CallValue;
-        attribute 'from' : CallValue;
-        attribute ack : Boolean;
-        attribute exchange : StandardExchange;
-        doc /* type=standard; i3=1/R or2/P. Exact c28/grid/report canonical maps are PayloadCodebook and ReportCode;
-             codes32400 and>32505 invalid, not fallback text. */
-    }
-    attribute def RttyFields :> PayloadFields {
-        attribute 'type' : String = "rtty";
-        attribute tu : Boolean;
-        attribute 'to' : CallValue;
-        attribute 'from' : CallValue;
-        attribute ack : Boolean;
-        attribute report : Integer;
-        attribute exchangeKind : String;
-        attribute serial : Integer[0..1];
-        attribute stateToken : String[0..1];
-        doc /* type=rtty; exact wire exchange{kind,value} chooses serial0..7999 or
-             exchanges8001..8171 (stateProvinceTable), reserved8000 invalid. report529..599 step10. Semantic
-             union arm names are not extra JSON fields. */
-    }
-    attribute def DxpeditionFields :> PayloadFields {
-        attribute 'type' : String = "dxpedition";
-        attribute 'first' : CallValue;
-        attribute 'second' : CallValue;
-        attribute hashed : CallValue;
-        attribute report : Integer;
-        doc /* type=dxpedition,0.1; h10 exact, even report-30..32; firstRR73;secondhashreport. */
-    }
-    attribute def FieldDayFields :> PayloadFields {
-        attribute 'type' : String = "field_day";
-        attribute 'to' : CallValue;
-        attribute 'from' : CallValue;
-        attribute ack : Boolean;
-        attribute transmitters : Integer;
-        attribute 'class' : String;
-        attribute section : String;
-        doc /* type=field_day,0.3=>1..16,0.4=>17..32; classA..F, section1..86 inclusiveDX
-             (sectionTable). S7=75WCF,76WI,84DX,85PE,86NB; 0/>86 invalid. */
-    }
-    attribute def NonstandardFields :> PayloadFields {
-        attribute 'type' : String = "nonstandard";
-        attribute full_call : CallValue;
-        attribute hashed_call : CallValue;
-        attribute hash_second : Boolean;
-        attribute cq : Boolean;
-        attribute roger : String[0..1];
-        doc /* type=nonstandard,i3=4; full call<=11base38 chars, h12 exact; r2blank/RRR/RR73/73.
-             CQ ignores hash for display, preserves typed bits; empty/out-of-domain call invalid. */
-    }
-    attribute def VhfFields :> PayloadFields {
-        attribute 'type' : String = "vhf";
-        attribute 'to' : CallValue;
-        attribute 'from' : CallValue;
-        attribute ack : Boolean;
-        attribute report : Integer;
-        attribute serial : Integer;
-        attribute grid : String;
-        doc /* type=vhf,currenti3=5; hash12to/hash22from, report52..59, serial0..2047,
-             mixed18,18,10,10,24,24 grid0..18662399=>AA00AA..RR99XX. */
-    }
-    item def ResultRecord :> WstxArchitecture::ProcessingResult {
-        attribute sequence : Integer;
-        attribute status : FrameStatus;
-        attribute payload77 : String;
-        attribute i3 : Integer;
-        attribute n3 : Integer[0..1];
-        attribute text : String[0..1];
-        attribute fields : PayloadFields[0..1];
-        attribute start_frame : Integer;
-        attribute frequency_hz : Real;
-        attribute snr_db : Real[0..1];
-        attribute a_priori : Integer[0..1];
-        assert constraint boundedRecord {
-            sequence >= 0 and sequence <= (900719925 * 10000000 + 4740991) and i3 >= 0 and i3 <= 7 and
-            start_frame >= 0 and start_frame <= (900719925 * 10000000 + 4740991) and
-            frequency_hz >= 200.0 and frequency_hz <= 3500.0
-        }
-        doc /* Exact shared live wire keys,<=2048UTF8bytes. payload77 exactly77binarychars; n3 only
-             ifi3=0; text<=80ASCII and matching fields only when decoded, otherwise null.
-             Supported0.0/.1/.3/.4/.5,1/2/3/4/5;0.2/.6/.7,6/7 unsupported. BadCRC never
-             published. start indexes canonical12k first ramp/sync, never native orUTC.
-             SNR null orfinite[-60,60], bounds labeled; full identity is page envelope. */
-    }
-    item def LiveTimedResultRecord :> ResultRecord {
-        attribute period_start_utc : String[0..1];
-        attribute dt_seconds : Real[0..1];
-        doc /* Live-only manager extension4.7.4/12.8, native Decode unchanged.
-             Both null without correlated source timing; otherwise nearest nominal
-             period and signed relative seconds via WstxRadioIO::RelativeDecodeTiming.
-             Existing2048-byte live record cap and stricter1024-byte modem cap remain. */
-    }
-    item def ResultPage {
-        attribute v : Integer = 1;
-        attribute correlation : WstxRecordingReceive::Correlation;
-        attribute mode : Mode;
-        attribute 'state' : WstxRecordingReceive::ReceiveState;
-        attribute error : WstxRecordingReceive::ErrorCode[0..1];
-        attribute search_limited : Boolean;
-        attribute first_sequence : Integer;
-        attribute next_sequence : Integer;
-        attribute available_count : Integer;
-        attribute 'next' : Integer;
-        attribute more : Boolean;
-        item records : LiveTimedResultRecord[0..16];
-        attribute latest_decode : WstxRadioIO::LatestDecodePeriod[0..1];
-        assert constraint pageCursor { first_sequence >= 0 and next_sequence >= first_sequence and next_sequence <= (900719925 * 10000000 + 4740991) and available_count == next_sequence - first_sequence and available_count <= 2048 and 'next' >= first_sequence and 'next' <= next_sequence }
-        doc /* Exact12.8 live envelope<=16384bytes,record<=2048bytes; Thinlimit1/page3072.
-             Each record sequence<next_sequence,start_frame<actually captured next_frame.
-             cursor<first=>410cursor_expired,cursor>next=>400,cursor==next=>empty.
-             No file decode operation/snapshot/page endpoint. */
     }
     attribute def Ft8CarrierSearchPolicy {
         attribute minimumCarrierHz : Real = 200.0;
@@ -888,18 +554,6 @@ package WstxOfflineDecode {
              Originalsamplesimmutable,3passes/200verifiedsubtractions,passFFTinvalidated.
              Sharedpurewaveform/measurement/FFT/cancelownership,within64MiB. */
     }
-    action def AdmitDecode {
-        in source : WstxRecordingReceive::SourceDescriptor[0..1];
-        in settings : Settings;
-        out job : DecodeJob;
-        doc /* Production12.8 live start only; selected-profile auth/Origin/schema,
-             boot/generation/profile-revision and shared receive admission precede capture.
-             Mode immutable. Source absent during opening before first provider ACK;
-             no publication until acknowledged full tuple. Initialstart freshjob/gen,
-             firstsourceACK samejob/gen;
-             subsequent unknownepoch freshsource/job/gen beforeproviderACK and ring reset.
-             Recorded waveforms are internal numerical/integration fixtures, no file API. */
-    }
     doc /* Coarse search explicitly includes both200 and3500Hz even when off the uniform
          half-tone FFT grid. Evaluate exact off-grid endpoint power by direct quadrature;
          refine clipped to inclusive bounds. FT4mustnotround3500awayorrelax3Hzoracle. */
@@ -911,23 +565,6 @@ package WstxOfflineDecode {
              physicalalgorithmsconsumeTHATprivatewindow,notone4096-framecaptureblock.
              Purecanonical12kconsumer,noWAV/device/network/UTCaccess. LiveFT8<=30s/15sadvance,
              FT4<=15s/7.5sadvance;finiteinternaltestutilitywindow/historyunchanged.
-             Live window schedule (#47, CL-007-05): with a correlated source UTC anchor the
-             shared receive owner completes two windows per period at fixed source-counter
-             residues of the advance: FT8 prompt +13.8 s/15 s of audio (DT -1.7..+0.66 s)
-             and late +15.7 s/15 s (DT +0.2..+2.56 s); FT4 prompt +6.5 s/7.5 s (DT
-             -1.5..+0.96 s) and late +7.9 s/7.5 s (DT -0.1..+2.36 s). Overlapping frames are
-             deduplicated by the modem history. The late window arriving during the prompt
-             decode waits in one slot until that decode completes; any other window arriving
-             during a decode abandons it as an overrun (last_overrun names the newest skipped
-             support). The residues come from the epoch's UTC anchor plus the measured
-             capture-clock offset (CL-007-05): when it moved by more than 50 ms the residues
-             are recomputed and each scheduled window's next completion moves by the signed
-             correction of any size, staying the completion of the same UTC period (no
-             wrap by a period). One moved into the past completes now; coinciding ones
-             complete one after the other in schedule order (prompt, then late); each then
-             returns to its grid, so none is dropped or repeated. A scheduled late window
-             extends its period's view under the same id.
-             Without a correlated anchor the counter grid (30 s/15 s, 15 s/7.5 s) applies.
              The modem reads no UTC.
              FT8coarseN1920/hop480/half-tone200..3500inclusive/endpoints;FT4N576/hop144
              noisegridseparatefromFt4FrequencyCandidates/Ft4BandLimitAndFineSync.
@@ -1023,34 +660,12 @@ package WstxOfflineDecode {
              ordinary+-2Hz/min drift andarbitraryinitialphase remaineligible.
              No dBFS/noiseless/crowded reference-SNR inference. */
     }
-    action def PublishResults {
-        in job : DecodeJob;
-        in records : ResultRecord[0..2048];
-        out page : ResultPage;
-        doc /* Stationauthority rechecks fullidentity/generation beforeappend. Cancelinvalid
-             beforeack; terminalonlyafterrelease<=250ms; retain marked partials onstop/failure.
-             Newjob/source/restart invalidates oldpages/callbacks. Reliable2048/2MiB live ring;
-             evictionadvancesfirst_sequence, lifetime safecountersneverreset within an epoch.
-             SearchLimited=>failed/decode_limit+search_limited=true,acceptedpartialsretained;
-             accepted cancellation has priority. No invented calls/exception strings.
-             Browser onependingpage,Thinlimit1/starts>=4sbehindexplicitstatus; optional
-             spectrum<=1/2s; two32kbitclients<=3000accountedB/s/direction,status<=2s.
-             No automaticmutationreplay or browsermodem/clockauthority. */
-    }
-    action admitDecode : AdmitDecode;
     action advanceDecode : AdvanceDecode;
     action measureFrame : MeasureFrame;
-    action publishResults : PublishResults;
-    satisfy WstxRequirements::'CL-007-01' by admitDecode;
-    satisfy WstxRequirements::'CL-007-02' by publishResults;
-    satisfy WstxRequirements::'CL-007-03' by measureFrame;
-    satisfy WstxRequirements::'CL-007-04' by advanceDecode;
-    satisfy WstxRequirements::'CL-007-05' by advanceDecode;
-    dependency admissionOwner from admitDecode to WstxArchitecture::physicalStation::backend::stations::receive;
+    satisfy 'CL-007-03' by measureFrame;
+    satisfy 'CL-007-04' by advanceDecode;
     dependency calculationOwner from advanceDecode to WstxArchitecture::physicalStation::backend::stations::modes;
     dependency measurementOwner from measureFrame to WstxArchitecture::physicalStation::backend::stations::modes;
-    dependency publicationOwner from publishResults to WstxArchitecture::physicalStation::backend::stations::web;
-    dependency viewerOwner from publishResults to WstxArchitecture::physicalStation::frontend::browsers;
     package IndependentVerification {
         doc /* Verification intent; executable coverage is declared in WstxRequirements metadata. Cost2
              offlineWindowsPC, actualcandidate
@@ -1061,7 +676,7 @@ package WstxOfflineDecode {
              fieldboundary and supportedfamily vectors additional. Actual execution not claimed. */
         verification ft4 {
             subject decoder : AdvanceDecode;
-            objective { verify WstxRequirements::'CL-007-01'; verify WstxRequirements::'CL-007-03'; verify WstxRequirements::'CL-007-04'; }
+            objective { verify WstxRequirements::'CL-007-01'; verify 'CL-007-03'; verify 'CL-007-04'; }
             doc /* FT4exactpayload/CRC/H/105tones/GFSKallfamilies+boundaries; strong36/40@-10,
                  weak20/40@-13; overlapsboth18/20at2spacings,strong18/weak10at1spacing6dB;
                  official>=16/19matches notexhaustivetruth. Error144frames/3Hz,3dBstrongAWGN.
@@ -1085,10 +700,10 @@ package WstxOfflineDecode {
                  cancellation/64MiBthresholds. Sameoracleappliestobothmodes' sharedfitkernel.
                  Rust/decoderfixture bindings are declared in WstxRequirements; no production encoder oracle. */
         }
-        dependency ft4Case from ft4 to WstxRequirements::'TC-004-001';
+        dependency ft4Case from ft4 to 'TC-004-001';
         verification ft8 {
             subject decoder : AdvanceDecode;
-            objective { verify WstxRequirements::'CL-007-01'; verify WstxRequirements::'CL-007-03'; verify WstxRequirements::'CL-007-04'; }
+            objective { verify WstxRequirements::'CL-007-01'; verify 'CL-007-03'; verify 'CL-007-04'; }
             doc /* FT8exactpayload/CRC/H/79tones/GFSKallfamilies+boundaries; strong36/40@-15,
                  weak20/40@-18; sameoverlapcounts; official>=12/14matches,22inheritedtexts
                  supplementaryonly. The shared known-wordfitkernel uses the SAME eight-frequency
@@ -1097,10 +712,10 @@ package WstxOfflineDecode {
                  Error240frames/1Hz,3dBstrongAWGN. Valid/RandTUvectors
                  retainedpositivesdespitereferencenondetection; no qualityscopeweakening. */
         }
-        dependency ft8Case from ft8 to WstxRequirements::'TC-004-002';
+        dependency ft8Case from ft8 to 'TC-004-002';
         verification rejectionLifecycleResources {
             subject decoder : AdvanceDecode;
-            objective { verify WstxRequirements::'CL-007-02'; verify WstxRequirements::'CL-007-04'; }
+            objective { verify WstxRequirements::'CL-007-02'; verify 'CL-007-04'; }
             doc /* 1000noise/modefourRMSplusinvalid/wrongmode/silence/goodFECbadCRC require
                  zeropublishedframes. Unsupported/invalidonlyinjectedvalidCRCframes, nopanic.
                  Repeatpayloadmultiset,time<=1frame,freq<=.2HzFT8/.5HzFT4. Cancelallphases,
@@ -1114,7 +729,7 @@ package WstxOfflineDecode {
         }
         verification phaseLikelihoodAndScale {
             subject decoder : AdvanceDecode;
-            objective { verify WstxRequirements::'CL-007-01'; verify WstxRequirements::'CL-007-03'; verify WstxRequirements::'CL-007-04'; }
+            objective { verify WstxRequirements::'CL-007-01'; verify 'CL-007-03'; verify 'CL-007-04'; }
             doc /* Independent additional recipes:phase.7/pi/2,drift+-1/30Hz/s,canonicalgains1e-4/8,
                  secondstation80dBbelowstronger with sub-PCM16-quantumamplitude andfloatrepeat;
                  retainbothmessages. Quantizationresiduals afterindependent best-fit subtraction:
@@ -1127,12 +742,12 @@ package WstxOfflineDecode {
                  physicalhits/complexenvelopeSIC/rank91/64MiB.
                  No externaldecoder oracle or skipped case pass. */
         }
-        dependency phaseLikelihoodCase from phaseLikelihoodAndScale to WstxRequirements::'TC-004-003';
-        dependency rejectionCase from rejectionLifecycleResources to WstxRequirements::'TC-004-003';
+        dependency phaseLikelihoodCase from phaseLikelihoodAndScale to 'TC-004-003';
+        dependency rejectionCase from rejectionLifecycleResources to 'TC-004-003';
     }
     verification ft8ArbitraryCarrierOffsets {
         subject decoder : AdvanceDecode;
-        objective { verify WstxRequirements::'CL-007-01'; verify WstxRequirements::'CL-007-04'; }
+        objective { verify WstxRequirements::'CL-007-01'; verify 'CL-007-04'; }
         doc /* TC-004-002 uses the existing twenty independent frequency/start
              combinations, including lowest-tone carriers200.5/1000.3/3499Hz.
              These offsets need not be multiples of6.25Hz. Exact injected payloads
@@ -1143,10 +758,10 @@ package WstxOfflineDecode {
              follows from this model or its semantic validation. */
     }
     dependency ft8ArbitraryCarrierCase from ft8ArbitraryCarrierOffsets
-        to WstxRequirements::'TC-004-002';
+        to 'TC-004-002';
     verification ft8PhysicalOracles {
         subject decoder : AdvanceDecode;
-        objective { verify WstxRequirements::'CL-007-03'; verify WstxRequirements::'CL-007-04'; }
+        objective { verify 'CL-007-03'; verify 'CL-007-04'; }
         doc /* Cost2WindowsPC, independentdirectDFTselectedbins,15/30sFFTdimensions,
              bandedges/centerbin/scaling/400Hzcandidate+2600Hzunrelatedcarrier.
              DFTerror<=1e-9*max(1,sumabsinput); basebandsample<=1e-8*max(1,inputRMS).
@@ -1165,12 +780,12 @@ package WstxOfflineDecode {
              No localFortrancompiler; source-builtreferenceartifactcomesfromGitHubActions.
              Thisverificationdefinitionisnotanexecutionverdict. */
     }
-    dependency ft8PhysicalCase from ft8PhysicalOracles to WstxRequirements::'TC-004-002';
-    dependency ft8PhysicalRejectionCase from ft8PhysicalOracles to WstxRequirements::'TC-004-003';
+    dependency ft8PhysicalCase from ft8PhysicalOracles to 'TC-004-002';
+    dependency ft8PhysicalRejectionCase from ft8PhysicalOracles to 'TC-004-003';
 
     verification ft4PhysicalOracles {
         subject decoder : AdvanceDecode;
-        objective { verify WstxRequirements::'CL-007-03'; verify WstxRequirements::'CL-007-04'; }
+        objective { verify 'CL-007-03'; verify 'CL-007-04'; }
         doc /* Cost2WindowsPC: independentdirectDFT/asymmetrictaper/bincenter/RMS,
              all4/16/256sequenceenumerations,206normalization/174extraction/Gray/polarity,
              last-familybitcopies; hardtone7/8 andhardsync19/20; first-ramp0/1/incomplete;Nuttall/scalarDFT/knownquartic/constant/zero/singular
@@ -1186,8 +801,8 @@ package WstxOfflineDecode {
              falsepublication/cancel/typedpayloadthresholds. SourcebuiltFortrancomparison
              separatewithPCM/settings/depth/APidentity. No candidate-generatedgoldens. */
     }
-    dependency ft4PhysicalCase from ft4PhysicalOracles to WstxRequirements::'TC-004-001';
-    dependency ft4PhysicalRejectionCase from ft4PhysicalOracles to WstxRequirements::'TC-004-003';
+    dependency ft4PhysicalCase from ft4PhysicalOracles to 'TC-004-001';
+    dependency ft4PhysicalRejectionCase from ft4PhysicalOracles to 'TC-004-003';
 
     package SimulatedReferenceFixtures {
         attribute def SimulatorFixture {
@@ -1344,7 +959,7 @@ package WstxOfflineDecode {
         }
         verification simulatorFixtureIntegrity {
             subject decoder : AdvanceDecode;
-            objective { verify WstxRequirements::'CL-007-03'; }
+            objective { verify 'CL-007-03'; }
             doc /* Existing TC-004-001/002 simulator subcases: eight admitted
                  12k mono PCM16 files, exact lengths/hashes, declared-vs-emitted
                  message/canonical77bits/79or103tones independently checked. Retain
@@ -1360,7 +975,7 @@ package WstxOfflineDecode {
         }
         verification simulatorFixtureRefusals {
             subject decoder : AdvanceDecode;
-            objective { verify WstxRequirements::'CL-007-03'; verify WstxRequirements::'CL-007-04'; }
+            objective { verify 'CL-007-03'; verify 'CL-007-04'; }
             doc /* TC-004-003: independently malformed/hash-mismatched/truncated
                  metadata, invalid format/length, nonfinite mixture and clipping
                  are refused. In a disposable valid copied mode dataset, keep all
@@ -1376,7 +991,7 @@ package WstxOfflineDecode {
         }
         verification simulatorFixtureProvenance {
             subject decoder : AdvanceDecode;
-            objective { verify WstxRequirements::'CL-007-03'; }
+            objective { verify 'CL-007-03'; }
             doc /* TC-004-002 provenance subcase, cost 2 offline artifact review on
                  Windows PC. Compare supplied package inventory with provenance:
                  FT8 includes build-ft8sim.log, cmake-version.txt,
@@ -1386,15 +1001,94 @@ package WstxOfflineDecode {
                  not evidence that bytes are bundled. Repair wording only; preserve
                  generation inputs, frozen PCM, manifest truth and comparisons. */
         }
-        dependency simulatorProvenanceCase from simulatorFixtureProvenance to WstxRequirements::'TC-004-002';
-        dependency ft4SimulatorCases from simulatorFixtureIntegrity to WstxRequirements::'TC-004-001';
-        dependency ft8SimulatorCases from simulatorFixtureIntegrity to WstxRequirements::'TC-004-002';
-        dependency simulatorRefusalCases from simulatorFixtureRefusals to WstxRequirements::'TC-004-003';
+        dependency simulatorProvenanceCase from simulatorFixtureProvenance to 'TC-004-002';
+        dependency ft4SimulatorCases from simulatorFixtureIntegrity to 'TC-004-001';
+        dependency ft8SimulatorCases from simulatorFixtureIntegrity to 'TC-004-002';
+        dependency simulatorRefusalCases from simulatorFixtureRefusals to 'TC-004-003';
     }
 
-    doc /* contract 4.7.5/12.8.1 coordinated operating selection is modeled by
-         WstxOperatingReceive. This companion retains the unchanged legacy strict
-         receive/radio/result shapes and owner/cancellation/source contracts.
-         New selection uses the same authority, explicit actual release before
-         setters/new capture and a fresh context, not a second pipeline or actor. */
+    requirement 'CL-007-03' {
+        doc /* Each mode MUST satisfy independent payload/channel/waveform oracles; reference decoder output alone MUST NOT define exhaustive truth or make a hash reversible. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/decoder/mod.rs; server/src/receive.rs; client/recording.js";
+    }
+    dependency CL_007_03_to_FR_003 from 'CL-007-03' to 'FR-003';
+    dependency CL_007_03_to_FR_004 from 'CL-007-03' to 'FR-004';
+    dependency CL_007_03_to_FR_018 from 'CL-007-03' to 'FR-018';
+    requirement 'CL-007-04' {
+        doc /* CPU-only decoding MUST meet the per-mode quality, rejection, runtime, memory, repeatability, cancellation and link budgets below, with explicit bounded-work failure. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/decoder/mod.rs; server/src/receive.rs; client/recording.js";
+    }
+    dependency CL_007_04_to_FR_003 from 'CL-007-04' to 'FR-003';
+    dependency CL_007_04_to_FR_004 from 'CL-007-04' to 'FR-004';
+    dependency CL_007_04_to_FR_019 from 'CL-007-04' to 'FR-019';
+    dependency CL_007_04_to_FR_021 from 'CL-007-04' to 'FR-021';
+    verification 'TC-004-001' {
+        doc /* TC-004-001 — Offline FT4
+             FR-003, FR-004, FR-018; CL-007-01, CL-007-02, CL-007-03, CL-007-04
+             Load independently labelled FT4 recordings, select FT4 and run the candidate decoder. Include the selected message variants and controlled signal conditions.
+             Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT4 budgets.
+             SNR (#52): every decoded observation of the pinned modern FT4 recording reports a whole-dB SNR within 1 dB of the pinned reference jt9 report in recording-baselines.json; every corpus SNR is a whole dB at or above -21.
+             A-priori decoding (#56 slice 5, WstxModemDecode::APrioriHypotheses): in FT4 a weak CQ decodes through type 1 without context and a weak HB9BLA K1ABC RR73 through type 6 only with the right calls.
+             2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. */
+        attribute automation : AutomationState = AutomationState::partial;
+        objective {
+            verify 'CL-007-01';
+            verify 'CL-007-02';
+            verify 'CL-007-03';
+            verify 'CL-007-04';
+            verify 'FR-003';
+            verify 'FR-004';
+            verify 'FR-018';
+        }
+        attribute executable : String = "server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/decoder/search_test.rs::ft4_a_priori_recovers_weak_cq_and_qso_words";
+    }
+    verification 'TC-004-002' {
+        doc /* TC-004-002 — Offline FT8
+             FR-003, FR-004, FR-018; CL-007-01, CL-007-02, CL-007-03, CL-007-04
+             Load independently labelled FT8 recordings, select FT8 and run the candidate decoder under the selected signal conditions.
+             Decoded fields agree with the independently established expected results; misses, incorrect decodes and runtime meet the agreed FT8 budgets.
+             Recorded corpus (22 FT8 recordings, the official FT8 and the modern FT4 recording, #56): the decoder finds at least the pinned number of the 409 complete-frame decodes of WSJT-X 3.3.0-beta5 jt9 -8/-5 -d 3 (fixtures/decoder/jt9-deep-reference.json; same text, carrier within 5 Hz, or, for the one pinned case PA3EPP SP8NFO KN09 in 191111_110615, the same text on another carrier of the period: the station publishes the +23 dB 906 Hz signal, jt9 its 1056 Hz image, each publishing a message once per period, the first copy its own order verifies); jt9 is a lower bound, not exhaustive truth. A strong FT8 frame that began before the window, or runs past its end, masks a weak complete frame on the same carrier: the weak frame decodes and the partial frame is never published; a frame starting at most half a symbol before the window is published at start 0, one starting earlier is not (#56 Ft8PaddedResidual). The same word on a carrier more than 50 Hz away is published once and subtracted, so a weak frame under the second copy decodes. The weak-word guard rejects exactly an FT8 word with at most 10 Costas hits and a measured SNR below -25 dB. A weak word that fails at its fine point decodes at the nearby data point (#56 slice 4 Ft8DataPoint). A failed FT8 candidate overlapped by a frame subtracted in the same pass is qualified again on the next pass (Ft8RetryOverlapped); its evidence is the parity count (WA2FZW DL5AXX RR73 in the official recording is found only through it), not a dedicated synthetic test. A-priori decoding (#56 slice 5, WstxModemDecode::APrioriHypotheses): the type table per QSO state, lapcqonly, MyCall/DxCall availability and the 50 Hz Rx/Tx width match WSJT-X; the fixed bits are the packed message bits (FT4 scrambled); in FT8 a weak synthetic HB9BLA K1ABC FN42 (report state, type 3 at its true point) and HB9BLA K1ABC RR73 (rogers state, type 6 at its true point) below the unassisted limit decode only with the right MyCall, DxCall, state and Rx/Tx, and the full decode publishes them with an a_priori type of the state (2..the expected one); a wrong DxCall in every state, FT8 and FT4, over many seeds and levels never yields a word other than the transmitted one, and noise none; an a-priori word is published only with a decoded payload and at WSJT-X confidence qual >= 0.17 (except FT8 type 1); the live station sets MyCall, DxCall, state and Rx/Tx from the profile and the current contact, and cq-only until Enable Tx is on and again 300 s after it went off. The mode-independent evidence, the confidence boundary (server/src/decoder/apriori_test.rs::low_confidence_boundary) and the live station context (server/src/contact_http_tests.rs::a_priori_context_follows_profile_and_contact), is traced by its Proves tags, not bound here (CL-007-03: each mode case binds only tests that select its mode).
+             SNR (#52): every decoded observation of the pinned official FT8 recording reports a whole-dB SNR within 1 dB of the pinned reference jt9 report in recording-baselines.json; every corpus SNR is a whole dB at or above -25. Through the live worker with a correlated UTC clock, the published SNR of a synthetic FT8 period (louder noise in its first 0.25 s and before it) equals the file decode of the same period-aligned audio.
+             2 — Isolated automated tests; Windows PC, offline fixtures and real candidate server/browser. */
+        attribute automation : AutomationState = AutomationState::partial;
+        objective {
+            verify 'CL-007-01';
+            verify 'CL-007-02';
+            verify 'CL-007-03';
+            verify 'CL-007-04';
+            verify 'FR-003';
+            verify 'FR-004';
+            verify 'FR-018';
+        }
+        attribute executable : String = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/recording_tests.rs::live_ft8_snr_measures_from_the_utc_period_start; server/tests/decoder_signal.rs::recorded_corpus_reaches_jt9_deep_decodes; server/src/decoder/bitmetrics_test.rs::cq_a_priori_bits_recover_a_buried_cq_word; server/src/decoder/search_test.rs::partial_frame_interferer_is_subtracted_not_published; server/src/decoder/search_test.rs::frame_past_the_window_end_is_subtracted_not_published; server/src/decoder/search_test.rs::half_symbol_publication_boundary; server/src/decoder/search_test.rs::duplicate_on_a_distant_carrier_is_subtracted_and_published_once; server/src/decoder/search_test.rs::weak_word_guard_boundaries; server/src/decoder/search_test.rs::failed_fine_point_retries_at_the_data_point; server/src/decoder/apriori_test.rs::a_priori_types_follow_the_wsjtx_state_table; server/src/decoder/apriori_test.rs::a_priori_bits_are_the_packed_message_bits; server/src/decoder/bitmetrics_test.rs::a_priori_words_need_a_decoded_payload_and_confidence; server/src/decoder/search_test.rs::weak_qso_words_decode_only_with_the_right_calls; server/src/decoder/search_test.rs::wrong_dx_call_never_yields_a_false_word; server/tests/audio_receive.rs::live_native_provider_decodes_independent_ft8_callsign";
+    }
+    verification 'TC-004-003' {
+        doc /* TC-004-003 — Invalid and nonmatching input
+             FR-003, FR-004, FR-018; CL-007-01, CL-007-02, CL-007-03, CL-007-04
+             Exercise unsupported/truncated audio, silence/noise, an explicit mode mismatch and a second offline run.
+             Invalid input is reported without corrupting station state; false decodes meet the agreed rejection criteria; replay produces equivalent results within defined tolerances. Use hand-specified errors and independent reference fixtures.
+             Runtime matrix qualification (#36 decision): a poll whose wall time exceeds 50 ms leaves that configuration's 50 ms CPU quantum unmeasured, which is neither a pass nor a violation. The configuration is re-measured, at most three attempts; the runtime (including the four-worker 2x bound), cold-start and 64 MiB budgets bind every attempt, and any exceedance is a failure. A configuration still unmeasured after the third attempt makes the matrix inconclusive. The ordinary push gate keeps the matrix as a regression detector: an inconclusive matrix exits with the harness NOT RUN code 77, so the gate lists the suite as not run, records it as not-run, never memoises it as passed and does not block the push; such a run is never a pass and never CL-007-04 evidence. CL-007-04 runtime evidence comes only from the strict exclusive-window run on the reference PC, which refuses an inconclusive matrix.
+             Station process case (#71): receive_http_tests::resource_station_process_delta_and_owner_release (private-commit delta at most 96 MiB over idle, receive-owner release at most 250 ms after Stop, FT8 and FT4, after a decode and during a busy window) runs in the release timing suite live-station-latency, alone, as a regression detector. A gate run of it is never CL-007-04 evidence; that evidence comes only from the strict exclusive-window run on the reference PC.
+             2 — Isolated automated tests; Windows PC with disposable recordings, no radio or live service. */
+        attribute automation : AutomationState = AutomationState::partial;
+        objective {
+            verify 'CL-007-01';
+            verify 'CL-007-02';
+            verify 'CL-007-03';
+            verify 'CL-007-04';
+            verify 'FR-003';
+            verify 'FR-004';
+            verify 'FR-018';
+        }
+        attribute executable : String = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::unmodulated_sources_are_not_frames; server/tests/decoder_signal.rs::physical_noise_reproduction_has_no_frame; server/tests/decoder_signal.rs::physical_wrong_mode_reproduction_has_no_frame_or_search_error; server/tests/decoder_signal.rs::release_runtime_and_overlapping_window_history; server/src/receive_http_tests.rs::resource_station_process_delta_and_owner_release";
+    }
+    dependency CL_007_03_verified_by_TC_004_001 from 'CL-007-03' to 'TC-004-001';
+    dependency CL_007_03_verified_by_TC_004_002 from 'CL-007-03' to 'TC-004-002';
+    dependency CL_007_03_verified_by_TC_004_003 from 'CL-007-03' to 'TC-004-003';
+    dependency CL_007_04_verified_by_TC_004_001 from 'CL-007-04' to 'TC-004-001';
+    dependency CL_007_04_verified_by_TC_004_002 from 'CL-007-04' to 'TC-004-002';
+    dependency CL_007_04_verified_by_TC_004_003 from 'CL-007-04' to 'TC-004-003';
+    dependency CL_007_04_verified_by_TC_004_004 from 'CL-007-04' to 'TC-004-004';
 }

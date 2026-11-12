@@ -1,7 +1,6 @@
 package WstxProductScope {
     private import ScalarValues::*;
     private import WstxRequirements::*;
-    private import WstxRequirementsModes::*;
     private import WstxRequirementsReceive::*;
     private import WstxRequirementsProfile::*;
     private import WstxRequirementsMcp::*;
@@ -32,7 +31,7 @@ package WstxProductScope {
          FR/CL/TC declarations. WstxArchitecture owns parts/ports/connections;
          WstxStationProtocol the shared status/auth/transport contract;
          WstxProfiles configuration/persistence; WstxRecordingReceive recording/display;
-         WstxOfflineDecode pure FT4/FT8 processing and payloads; WstxRadioIO live
+         WstxModemDecode pure FT4/FT8 decoding; WstxOfflineDecode payloads; WstxRadioIO live
          capture/conversion/CAT; WstxOperatingLayout presentation and WstxOperatingReceive receive selection/content coding;
          WstxTransmit FT8/FT4 message packing, waveform and transmit period scheduling;
          WstxContact the standard FT8 contact, sequencing, log and operator displays;
@@ -134,7 +133,7 @@ package WstxProductScope {
              discrete packing/FEC/symbol vectors and justified floating tolerances are
              independent expectations. Evaluate success, false positives, sensitivity,
              runtime, weak/overlapping/offset signals and device/operator workflows.
-             WstxOfflineDecode fixes its current mode-specific numeric/resource limits;
+             WstxModemDecode fixes its current mode-specific numeric/resource limits;
              those concrete limits supersede general unsettled-budget language.
              Reference decoder output alone is not exhaustive truth. Pin reference
              binary/version/hash/settings/input; do not substitute the original archive.
@@ -152,7 +151,7 @@ package WstxProductScope {
              canonical immutable sample blocks, shared receive jobs, FFT spectrum and
              pure FT4/FT8 modem are implemented boundaries, not a second profile or
              transport authority. WstxRecordingReceive defines source schema/lifetime,
-             WstxRadioIO native conversion/timing and WstxOfflineDecode numerical work.
+             WstxRadioIO native conversion/timing and WstxModemDecode numerical work.
              Integer-to-real PCM mapping is not AGC/filtering/normalization. Native
              rate conversion has one owner; no recorded/live-specific modem resamplers.
              RustFFT provider/conventions are shared while mode/display plans remain
@@ -387,7 +386,7 @@ package WstxProductScope {
              live recordings to measure sensitivity, false decodes and numeric error.
              Evaluate interoperability/quality/latency rather than adopting embedded
              resource limits. Sample use does not require importing its decoder.
-             WstxOfflineDecode owns concrete protocol/physical fixture expectations and
+             WstxModemDecode owns concrete protocol/physical fixture expectations and
              simulator admission; README retains attribution and sample licensing.
              Investigation dates or discovery history are not functional obligations. */
     }
@@ -404,6 +403,7 @@ package WstxProductScope {
         alias NativeFlex for WstxProductScope::NativeFlexBoundary;
         alias RecordingAndDisplay for WstxRecordingReceive;
         alias Modem for WstxOfflineDecode;
+        alias ModemDecode for WstxModemDecode;
         alias LiveRadio for WstxRadioIO;
         alias Operating for WstxOperatingLayout;
         alias OperatingReceive for WstxOperatingReceive;

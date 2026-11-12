@@ -93,7 +93,7 @@ struct Inner {
     /// Newly saved records for the UDP targets, sent by the station tick only, after the
     /// station lock is released.
     outbox: Vec<logbook::Record>,
-    /// WstxStationDecode::APrioriContext of the next decode window, refreshed every tick.
+    /// WstxModemDecode::APrioriContext of the next decode window, refreshed every tick.
     a_priori: decoder::APriori,
     /// The last tick (UTC ms) at which the station transmitted, tuned or had Enable Tx on
     /// (WSJT-X m_dateTimeLastTX, refreshed while m_transmitting, m_auto or m_tune).
@@ -405,7 +405,7 @@ impl Station {
             e.paused_due(),
         )
     }
-    /// WstxStationDecode::APrioriContext for the next live decode window (#56 slice 5).
+    /// WstxModemDecode::APrioriContext for the next live decode window (#56 slice 5).
     pub(crate) fn a_priori(&self) -> decoder::APriori {
         self.lock().a_priori.clone()
     }

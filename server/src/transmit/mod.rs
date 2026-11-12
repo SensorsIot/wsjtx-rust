@@ -33,7 +33,7 @@ pub struct Ft4Frame {
     pub tones: [u8; 103],
 }
 
-/// The a-priori call bits of WstxStationDecode::APrioriContext (WSJT-X ft8apset): payload
+/// The a-priori call bits of WstxModemDecode::APrioriContext (WSJT-X ft8apset): payload
 /// bits 0..29 of MyCall and 29..58 of DxCall in the standard message "MyCall DxCall RRR",
 /// which must pack as i3=1 and render exactly. Without a DxCall of at least three characters
 /// the dummy KA1ABC packs MyCall and there are no DxCall bits; without such a message, neither.
