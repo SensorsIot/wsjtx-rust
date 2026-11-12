@@ -134,7 +134,9 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, the model file whose values its provenance sweep reads (`docs/sysml/backend/profile/Recordings.sysml`), `docs/sysml/shared/Units.sysml` and the JavaScript model-value reader, plus Node package metadata |
 | `model-values` | TC-DOC-014: the JavaScript model-value reader on its fixture tree | The JavaScript model-value reader, its test file, the model-value fixture tree, plus Node package metadata |
 | `sysml-documentation` | Canonical catalog/trace checks, one full semantic validation (`sysml.py check`), the tests that read the model `test_[dr]*.py` | Model and tooling changes; bound source remains a complete fingerprint/dirty-guard input |
-| `sysml-tools` | The SysML tool's own unit tests `test_[!adr]*.py` on isolated models | The SysML tool and its tests |
+| `sysml-tools` | The SysML tool's own unit tests `test_[!adre]*.py` on isolated models | The SysML tool and its tests |
+| `sysml-equivalence-tests` | TC-DOC-015: `equivalence` and `identities` on temporary repositories and the repository's history, `test_e*.py` | `tools/sysml.py`, `Validate.java` and the test file |
+| `sysml-equivalence` | CL-014-17: `equivalence --marked` on each commit of `master..HEAD` marked `Model-Move: pure` | The model, the SysML tool and the files whose model citations it reads |
 | `sysml-architecture` | TC-DOC-005 architecture integrity: the mutation tests `test_a*.py`, one Pilot validation per mutation | `Architecture.sysml`, the SysML tool, `Validate.java`, the oracle file `architecture-oracle.json`, the toolchain pin and the test file |
 | `decoder-correctness` | The release `decoder_signal` correctness, #57 thread-parity and #56 jt9-parity passes (all ordinary passes but the 50 ms quantum and busy-period latency) | Decoder fixtures, the library root and the model files whose values its passes read (`docs/sysml/backend/modes/Decode.sysml`, `MessagePayload.sysml`, `docs/sysml/shared/Units.sysml`) (a production decoder source selects `decoder-quality`, which runs the same passes) |
 | `decoder-quality` | Timing: all seventeen release decoder passes bound to the artifact, and the owned-Job resource matrix (runs alone) | Timing inputs: the production decoder sources (not its `*_test.rs` or the test-only resource observer), `decoder_signal.rs`, the fixtures and vector tool the timed passes decode, its resource-job tools, the model files holding the budgets the matrix reads and their unit suffixes (`docs/sysml/backend/modes/Decode.sysml`, `docs/sysml/shared/Units.sysml`) and the Rust toolchain/dependency pins |
@@ -640,6 +642,30 @@ edits select this fast check; model/tool changes retain the full checks as well.
   over all kinds in name order; without a `ModelNotes` file it is `0 markers`. Exit code 0.
 - Named kinds restrict lines and counts to those kinds. An unknown kind: exit 2,
   `Unknown marker kind: <name>`.
+
+`python tools/sysml.py equivalence <base> [<head>]` shows that a model move changed no
+meaning (CL-014-17):
+
+- Each revision is a commit-ish; without `<head>` the head is the working tree. Each side
+  is extracted with `git archive` into a temporary folder that is removed afterwards and
+  exported once per distinct tree by the pinned Pilot (`Validate.java --export`).
+- Lines: `missing|added <relative name> <package> <file>`,
+  `changed <relative name> <property> <base file> -> <head file>`,
+  `missing|added package-level <class> "<text>" <file>`, `missing|added note "<text>" <file>`,
+  `stale-by-change <file>:<line> <citation>`, then `moved <relative name> <base package>
+  <base file> -> <head package> <head file>`, `pair <base file> -> <head file>: <count>`,
+  `unresolved <file>:<line> <citation>` and a summary.
+- Exit 0 equivalent, 1 differences, 2 cannot compare (unknown revision, or a side failing
+  the Pilot validation).
+- `equivalence --marked` checks each commit of `master..HEAD` with the trailer
+  `Model-Move: pure` against its first parent and prints `checked`/`skipped` per commit and
+  the number of exports; without a marked commit it prints `no marked commit`, exit 0.
+
+`python tools/sysml.py identities <base> [<head>]` lists the identity diff: one line
+`<ID> <status> <base file> -> <head file>` per FR/CL/TC identity of either side (status
+unchanged, moved, changed, added, removed, or retired with `test <path>`), FR, CL, TC
+in order, then `<n> identities: <count> <status>, ...`. It reads `docs/sysml` of each side
+without the Pilot or the catalog checks; exit 0, or 2 when a side cannot be read.
 
 The `sysml-documentation` level-2 suite owns these checks. Application outcomes remain
 in their existing functional suites and issue evidence; no duplicate application build
