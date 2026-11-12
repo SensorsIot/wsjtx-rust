@@ -32,51 +32,56 @@ fn canonical_negotiations(model: &Model) -> Result<Vec<(Vec<String>, &'static st
             return Err("missing, changed or duplicate oracle provenance".into());
         }
     }
+    let table = "WstxOperatingReceive::NegotiationOracleVector";
     let mut vectors = Vec::new();
     for usage in model
-        .table(
-            "WstxOperatingReceive",
-            "WstxOperatingReceive::NegotiationOracleVector",
-        )
+        .table("WstxOperatingReceive", table)
         .map_err(|e| e.to_string())?
     {
-        let name = usage
-            .name
-            .strip_prefix("negotiation")
-            .ok_or("malformed canonical negotiation declaration")?;
-        let ordinal: usize = name.parse().map_err(|_| "invalid negotiation ordinal")?;
-        if name != format!("{ordinal:02}") || ordinal != vectors.len() + 1 {
-            return Err("missing, duplicate or reordered negotiation case".into());
-        }
-        if usage.field_names() != ["caseId", "orderedRawHeaderFieldsJson", "expected"] {
-            return Err("extra or missing negotiation fields".into());
-        }
-        let case_id = match usage.number("caseId").map_err(|e| e.to_string())? {
-            Some(Number::Integer(id)) => usize::try_from(id).ok(),
-            _ => None,
-        }
-        .ok_or("invalid negotiation case ID")?;
-        if case_id != ordinal {
-            return Err("negotiation declaration and case ID differ".into());
-        }
-        let encoded = usage
-            .string("orderedRawHeaderFieldsJson")
-            .map_err(|e| e.to_string())?;
-        let fields: Vec<String> =
-            serde_json::from_str(&encoded).map_err(|_| "invalid ordered raw-header array")?;
-        let expected = match usage.enum_value("expected").map_err(|e| e.to_string())? {
-            (def, member) if def == "HttpCodingSelection" => match member.as_str() {
-                "gzip" => "gzip",
-                "identity" => "identity",
-                "noAcceptable" => "406",
+        // Each failure names the usage it was read from.
+        let vector = || -> Result<(Vec<String>, &'static str), String> {
+            let name = usage
+                .name
+                .strip_prefix("negotiation")
+                .ok_or("malformed canonical negotiation declaration")?;
+            let ordinal: usize = name.parse().map_err(|_| "invalid negotiation ordinal")?;
+            if name != format!("{ordinal:02}") || ordinal != vectors.len() + 1 {
+                return Err("missing, duplicate or reordered negotiation case".into());
+            }
+            if usage.field_names() != ["caseId", "orderedRawHeaderFieldsJson", "expected"] {
+                return Err("extra or missing negotiation fields".into());
+            }
+            let case_id = match usage.number("caseId").map_err(|e| e.to_string())? {
+                Some(Number::Integer(id)) => usize::try_from(id).ok(),
+                _ => None,
+            }
+            .ok_or("invalid negotiation case ID")?;
+            if case_id != ordinal {
+                return Err("negotiation declaration and case ID differ".into());
+            }
+            let encoded = usage
+                .string("orderedRawHeaderFieldsJson")
+                .map_err(|e| e.to_string())?;
+            let fields: Vec<String> =
+                serde_json::from_str(&encoded).map_err(|_| "invalid ordered raw-header array")?;
+            let expected = match usage.enum_value("expected").map_err(|e| e.to_string())? {
+                (def, member) if def == "HttpCodingSelection" => match member.as_str() {
+                    "gzip" => "gzip",
+                    "identity" => "identity",
+                    "noAcceptable" => "406",
+                    _ => return Err("unknown independently specified outcome".into()),
+                },
                 _ => return Err("unknown independently specified outcome".into()),
-            },
-            _ => return Err("unknown independently specified outcome".into()),
+            };
+            Ok((fields, expected))
         };
-        vectors.push((fields, expected));
+        let vector = vector().map_err(|e| format!("{}: {e}", usage.qualified))?;
+        vectors.push(vector);
     }
     if vectors.len() != 49 {
-        return Err("all 49 canonical negotiation cases are required".into());
+        return Err(format!(
+            "{table}: all 49 canonical negotiation cases are required"
+        ));
     }
     Ok(vectors)
 }

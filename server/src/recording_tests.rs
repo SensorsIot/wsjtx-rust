@@ -764,42 +764,46 @@ fn canonical_preferred_entries(
         Some(Number::Integer(hz)) => u64::try_from(hz).map(Some).map_err(|_| invalid.to_string()),
         Some(Number::Real(_)) => Err(invalid.to_string()),
     };
+    let table = "WstxOperatingReceive::PreferredBandEntry";
     let mut rows = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     for usage in model
-        .table(
-            "WstxOperatingReceive",
-            "WstxOperatingReceive::PreferredBandEntry",
-        )
+        .table("WstxOperatingReceive", table)
         .map_err(|e| e.to_string())?
     {
-        let label = usage
-            .name
-            .strip_prefix("preferred")
-            .ok_or("malformed canonical preferred-band declaration")?;
-        if usage.field_names() != ["band", "ft8Hz", "ft4Hz"] {
-            return Err("extra, missing or zero-valued preferred-band field".into());
-        }
-        let band = usage.string("band").map_err(|e| e.to_string())?;
-        if band.is_empty() || band != label || !seen.insert(band.clone()) {
-            return Err("missing, duplicate or mismatched band label".into());
-        }
-        let ft8 = hertz(
-            usage.number_with_unit("ft8Hz").map_err(|e| e.to_string())?,
-            "invalid FT8 integer frequency",
-        )?
-        .ok_or("invalid FT8 integer frequency")?;
-        let ft4 = hertz(
-            usage.number_with_unit("ft4Hz").map_err(|e| e.to_string())?,
-            "invalid FT4 integer frequency",
-        )?;
-        if ft8 == 0 || ft4 == Some(0) {
-            return Err("extra, missing or zero-valued preferred-band field".into());
-        }
-        rows.push((band, ft8, ft4));
+        // Each failure names the usage it was read from.
+        let mut row = || -> std::result::Result<CanonicalBandEntry, String> {
+            let label = usage
+                .name
+                .strip_prefix("preferred")
+                .ok_or("malformed canonical preferred-band declaration")?;
+            if usage.field_names() != ["band", "ft8Hz", "ft4Hz"] {
+                return Err("extra, missing or zero-valued preferred-band field".into());
+            }
+            let band = usage.string("band").map_err(|e| e.to_string())?;
+            if band.is_empty() || band != label || !seen.insert(band.clone()) {
+                return Err("missing, duplicate or mismatched band label".into());
+            }
+            let ft8 = hertz(
+                usage.number_with_unit("ft8Hz").map_err(|e| e.to_string())?,
+                "invalid FT8 integer frequency",
+            )?
+            .ok_or("invalid FT8 integer frequency")?;
+            let ft4 = hertz(
+                usage.number_with_unit("ft4Hz").map_err(|e| e.to_string())?,
+                "invalid FT4 integer frequency",
+            )?;
+            if ft8 == 0 || ft4 == Some(0) {
+                return Err("extra, missing or zero-valued preferred-band field".into());
+            }
+            Ok((band, ft8, ft4))
+        };
+        rows.push(row().map_err(|e| format!("{}: {e}", usage.qualified))?);
     }
     if rows.len() != 12 || rows.iter().filter(|row| row.2.is_none()).count() != 2 {
-        return Err("all 12 band rows and both unsupported FT4 cells are required".into());
+        return Err(format!(
+            "{table}: all 12 band rows and both unsupported FT4 cells are required"
+        ));
     }
     Ok(rows)
 }

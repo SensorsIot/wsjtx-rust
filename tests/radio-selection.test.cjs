@@ -191,18 +191,21 @@ function canonicalNegotiations(model){
     ['negotiationSourceSha256','329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56'],
     ['originalVectorArtifactSha256','d8da8bdb86485cc8691e2ad4f37afcbbaf84969c5b1a145f3a187a86d114a3c9'],
   ])assert.equal(model.string(`WstxOperatingReceive::${name}`),expected);
-  for(const usage of model.table('WstxOperatingReceive','WstxOperatingReceive::NegotiationOracleVector')){
+  const table='WstxOperatingReceive::NegotiationOracleVector';
+  for(const usage of model.table('WstxOperatingReceive',table)){
+    // Each failure names the usage it was read from.
+    const at=message=>`${usage.qualified}: ${message}`;
     const match=/^negotiation(\d{2})$/.exec(usage.name);
-    assert.ok(match,'malformed canonical negotiation declaration');const id=Number(match[1]);
-    assert.equal(id,vectors.length+1,'all cases occur once in canonical order');
-    assert.deepEqual(usage.fieldNames(),['caseId','orderedRawHeaderFieldsJson','expected'],'no extra or missing oracle fields');
-    assert.equal(usage.number('caseId'),id,'declaration and case ID agree');
+    assert.ok(match,at('malformed canonical negotiation declaration'));const id=Number(match[1]);
+    assert.equal(id,vectors.length+1,at('all cases occur once in canonical order'));
+    assert.deepEqual(usage.fieldNames(),['caseId','orderedRawHeaderFieldsJson','expected'],at('no extra or missing oracle fields'));
+    assert.equal(usage.number('caseId'),id,at('declaration and case ID agree'));
     const encoded=usage.string('orderedRawHeaderFieldsJson');assert.equal(typeof encoded,'string');
-    const fields=JSON.parse(encoded);assert.ok(Array.isArray(fields)&&fields.every(field=>typeof field==='string'),'ordered raw-header string array');
-    const [def,outcome]=usage.enumValue('expected');assert.ok(def==='HttpCodingSelection'&&['gzip','identity','noAcceptable'].includes(outcome),'known independent outcome');
+    const fields=JSON.parse(encoded);assert.ok(Array.isArray(fields)&&fields.every(field=>typeof field==='string'),at('ordered raw-header string array'));
+    const [def,outcome]=usage.enumValue('expected');assert.ok(def==='HttpCodingSelection'&&['gzip','identity','noAcceptable'].includes(outcome),at('known independent outcome'));
     vectors.push({fields,expected:outcome==='noAcceptable'?'406':outcome});
   }
-  assert.equal(vectors.length,49,'all 49 frozen cases must execute');return vectors;
+  assert.equal(vectors.length,49,`${table}: all 49 frozen cases must execute`);return vectors;
 }
 
 test('TC-009-005 SysML negotiation reader refuses missing malformed and duplicate oracles',async()=>{
