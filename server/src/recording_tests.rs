@@ -743,71 +743,76 @@ fn selection_start_checks_independent_loaded_profile_revision_after_unlock() {
 // never generated from the implementation's band/frequency table.
 type CanonicalBandEntry = (String, u64, Option<u64>);
 
+// Each test module of the station executable includes the test-only reader itself.
+#[allow(dead_code, clippy::duplicate_mod)]
+#[path = "model_values.rs"]
+mod model_values;
+use model_values::{Model, Number};
+
 fn canonical_preferred_entries(
-    source: &str,
-) -> std::result::Result<Vec<CanonicalBandEntry>, &'static str> {
-    fn value<'a>(
-        line: Option<&'a str>,
-        prefix: &str,
-    ) -> std::result::Result<&'a str, &'static str> {
-        line.and_then(|line| line.strip_prefix(prefix))
-            .and_then(|line| line.strip_suffix(';'))
-            .ok_or("malformed canonical preferred-band field")
+    model: &Model,
+) -> std::result::Result<Vec<CanonicalBandEntry>, String> {
+    let pin = model
+        .string("WstxOperatingReceive::preferredTableSourceSha256")
+        .map_err(|e| e.to_string())?;
+    if pin != "e556d7ab30462ee8d8b1480f7781a7575101b71d5213c05fa1300344622cc0d4" {
+        return Err("missing, changed or duplicate preferred-table source pin".into());
     }
-    let prefix = "attribute preferredTableSourceSha256 : String = ";
-    let mut pins = source
-        .lines()
-        .map(str::trim)
-        .filter(|line| line.starts_with(prefix));
-    let pin: String = serde_json::from_str(value(pins.next(), prefix)?)
-        .map_err(|_| "invalid preferred-table source pin")?;
-    if pin != "e556d7ab30462ee8d8b1480f7781a7575101b71d5213c05fa1300344622cc0d4"
-        || pins.next().is_some()
-    {
-        return Err("missing, changed or duplicate preferred-table source pin");
-    }
-    let mut lines = source.lines().map(str::trim);
+    // An integer frequency in Hz; null where the table has no cell.
+    let hertz = |value: Option<Number>, invalid: &str| match value {
+        None => Ok(None),
+        Some(Number::Integer(hz)) => u64::try_from(hz).map(Some).map_err(|_| invalid.to_string()),
+        Some(Number::Real(_)) => Err(invalid.to_string()),
+    };
+    let table = "WstxOperatingReceive::PreferredBandEntry";
     let mut rows = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
-    while let Some(line) = lines.next() {
-        if !line.contains(": PreferredBandEntry") {
-            continue;
-        }
-        let label = line
-            .strip_prefix("attribute preferred")
-            .and_then(|line| line.strip_suffix(" : PreferredBandEntry {"))
-            .ok_or("malformed canonical preferred-band declaration")?;
-        let band: String = serde_json::from_str(value(lines.next(), "attribute :>> band = ")?)
-            .map_err(|_| "invalid canonical band label")?;
-        if band.is_empty() || band != label || !seen.insert(band.clone()) {
-            return Err("missing, duplicate or mismatched band label");
-        }
-        let ft8 = value(lines.next(), "attribute :>> ft8Hz = ")?
-            .parse::<u64>()
-            .map_err(|_| "invalid FT8 integer frequency")?;
-        let ft4 = match value(lines.next(), "attribute :>> ft4Hz = ")? {
-            "null" => None,
-            number => Some(
-                number
-                    .parse::<u64>()
-                    .map_err(|_| "invalid FT4 integer frequency")?,
-            ),
+    for usage in model
+        .table("WstxOperatingReceive", table)
+        .map_err(|e| e.to_string())?
+    {
+        // Each failure names the usage it was read from.
+        let mut row = || -> std::result::Result<CanonicalBandEntry, String> {
+            let label = usage
+                .name
+                .strip_prefix("preferred")
+                .ok_or("malformed canonical preferred-band declaration")?;
+            if usage.field_names() != ["band", "ft8Hz", "ft4Hz"] {
+                return Err("extra, missing or zero-valued preferred-band field".into());
+            }
+            let band = usage.string("band").map_err(|e| e.to_string())?;
+            if band.is_empty() || band != label || !seen.insert(band.clone()) {
+                return Err("missing, duplicate or mismatched band label".into());
+            }
+            let ft8 = hertz(
+                usage.number_with_unit("ft8Hz").map_err(|e| e.to_string())?,
+                "invalid FT8 integer frequency",
+            )?
+            .ok_or("invalid FT8 integer frequency")?;
+            let ft4 = hertz(
+                usage.number_with_unit("ft4Hz").map_err(|e| e.to_string())?,
+                "invalid FT4 integer frequency",
+            )?;
+            if ft8 == 0 || ft4 == Some(0) {
+                return Err("extra, missing or zero-valued preferred-band field".into());
+            }
+            Ok((band, ft8, ft4))
         };
-        if ft8 == 0 || ft4 == Some(0) || lines.next() != Some("}") {
-            return Err("extra, missing or zero-valued preferred-band field");
-        }
-        rows.push((band, ft8, ft4));
+        rows.push(row().map_err(|e| format!("{}: {e}", usage.qualified))?);
     }
     if rows.len() != 12 || rows.iter().filter(|row| row.2.is_none()).count() != 2 {
-        return Err("all 12 band rows and both unsupported FT4 cells are required");
+        return Err(format!(
+            "{table}: all 12 band rows and both unsupported FT4 cells are required"
+        ));
     }
     Ok(rows)
 }
 
 #[test]
 fn canonical_preferred_table_rejects_missing_malformed_and_duplicate_data() {
-    let source = include_str!("../../docs/sysml/OperatingReceive.sysml");
-    assert_eq!(canonical_preferred_entries(source).unwrap().len(), 12);
+    let model = Model::load();
+    assert_eq!(canonical_preferred_entries(&model).unwrap().len(), 12);
+    let source = model.package_text("WstxOperatingReceive").unwrap();
     for damaged in [
         source.replace("attribute preferred160m :", "attribute omitted160m :"),
         source.replace(
@@ -820,14 +825,16 @@ fn canonical_preferred_table_rejects_missing_malformed_and_duplicate_data() {
         ),
         source.replace("attribute :>> ft4Hz = null;", "attribute :>> ft4Hz = 1;"),
     ] {
+        let damaged = model
+            .with_package_text("WstxOperatingReceive", &damaged)
+            .unwrap();
         assert!(canonical_preferred_entries(&damaged).is_err());
     }
 }
 
 #[test]
 fn selection_preferred_entries_match_complete_canonical_integer_table() {
-    let rows = canonical_preferred_entries(include_str!("../../docs/sysml/OperatingReceive.sysml"))
-        .unwrap();
+    let rows = canonical_preferred_entries(&Model::load()).unwrap();
     assert_eq!(selection::BANDS.len(), rows.len());
     for (index, (band, ft8, ft4)) in rows.iter().enumerate() {
         assert_eq!(selection::BANDS[index], band);

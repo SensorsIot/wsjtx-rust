@@ -36,6 +36,7 @@
   - server/
   - fixtures/transmit/
   - fixtures/decoder/
+  - tests/fixtures/model-values/
   - src/
   - benches/
   - examples/
@@ -69,6 +70,7 @@
   - server/src/transmit/pack.rs
   - server/src/transmit/mod.rs
   - server/src/lib.rs
+  - server/src/model_values.rs
   - server/Cargo.toml
   - fixtures/decoder/
   - Cargo.toml
@@ -272,6 +274,23 @@
   - package.json
   - package-lock.json
   needs: Node 24 and WSTX_SAMPLE_DIR with verified original recordings (TC-018-001 provenance sweep). Windows PC; offline pinned fixture setup/refusal tests. No download in the gate.
+
+- suite: model-values
+  cost: 2
+  run: node --test --test-concurrency=1 tests/model-values.test.cjs
+  paths:
+  - tests/model-values.cjs
+  - tests/model-values.test.cjs
+  - tests/fixtures/model-values/
+  - package.json
+  - package-lock.json
+  select:
+  - tests/model-values.cjs
+  - tests/model-values.test.cjs
+  - tests/fixtures/model-values/
+  - package.json
+  - package-lock.json
+  needs: "Node 24. Windows PC; TC-DOC-014: the JavaScript model-value reader on the fixture tree tests/fixtures/model-values/ and its list of expected values. No browser, radio or Rust build."
 
 - suite: sysml-documentation
   cost: 2
@@ -786,6 +805,7 @@
   - client/recording.css
   - tests/radio-selection.test.cjs
   - tests/support.cjs
+  - tests/model-values.cjs
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml

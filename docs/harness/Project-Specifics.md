@@ -117,8 +117,8 @@ names in its own `select` the files whose behaviour its test cases prove.
 
 | Group | Functional coverage | Direct change owners |
 |---|---|---|
-| `wstx-rust` | Rust unit and integration tests, except the library's `decoder::` unit tests (`wstx-rust-decoder`) | Native sources, the transmit and decoder fixtures the tests include, the model (`docs/sysml/`), whose values its tests read, Cargo inputs and Rust toolchain |
-| `wstx-rust-decoder` | The library's `decoder::` unit tests, optimized with debug assertions and overflow checks | Decoder sources, the transmit packer (`transmit/pack.rs`, `transmit/mod.rs`), the library root, the decoder fixtures they include, the model (`docs/sysml/`), whose values its tests read, Cargo inputs and Rust toolchain |
+| `wstx-rust` | Rust unit and integration tests, except the library's `decoder::` unit tests (`wstx-rust-decoder`) | Native sources, the transmit and decoder fixtures the tests include, the model (`docs/sysml/`), whose values its tests read, the model-value fixture tree, Cargo inputs and Rust toolchain |
+| `wstx-rust-decoder` | The library's `decoder::` unit tests, optimized with debug assertions and overflow checks | Decoder sources, the transmit packer (`transmit/pack.rs`, `transmit/mod.rs`), the library root, the decoder fixtures they include, the model (`docs/sysml/`), whose values its tests read, the Rust model-value reader, Cargo inputs and Rust toolchain |
 | `protocol` | Status messages, sessions, reconnect and TLS login | Router (`main.rs`), status page client (`app.js`, `index.html`, `style.css`), protocol tests/helpers, runtime dependencies |
 | `protocol-thin` | Timing: TC-021-007 silence bounds, TC-021-008 32 kbit/s link and 60-second idle budget, stalled-reader liveness, link simulator | Timing inputs: router/websocket, HTTP compression, status page client, protocol tests and link simulator helpers |
 | `profiles` | Saved settings, independent stations, authorization and pending-status behavior | Router, profile and authorization owners, page and recording client (shared controls container), profile tests |
@@ -127,11 +127,12 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `recording-thin` | Timing: display pacing, bounded subscribers, the full 32 kbit/s display/status regression and the TC-010-005 Detailed peer cadence | Timing inputs: router, recording/spectrum owners, HTTP compression, status and recording clients (loaded cold over the link), recording test file and link helpers |
 | `operating-layout` | Operating screen, settings drawer, receive races, logbook, strategy, UDP editor, transmit status | Router and the HTTP owners the operating page calls; page, recording, contact and logbook clients; its test file |
 | `contact-browser` | Contact engine, QSO sequencing, logging and halt through the browser | Router, contact/logbook/transmit owners, contact/logbook/recording clients, contact test |
-| `radio-selection` | H1 compression negotiation, commissioning, browser selection cases | Router, compression, selection/radio/CAT/receive/source owners, status and recording clients, selection test, the model (`docs/sysml/`), whose values its tests read |
+| `radio-selection` | H1 compression negotiation, commissioning, browser selection cases | Router, compression, selection/radio/CAT/receive/source owners, status and recording clients, selection test, the model (`docs/sysml/`), whose values its tests read, the JavaScript model-value reader |
 | `radio-selection-thin` | Timing: the native/CAT selection workload on an unshaped TLS connection (no 32 kbit/s link since #80) and its 4230-5000 ms native setup bound | Timing inputs: router, compression, selection/CAT/receive/spectrum owners, status and recording clients, its Rust and browser test files and link helpers |
 | `native-flex` | FR-023 native FlexRadio against the loopback emulator: route isolation, reconciliation, capacity, mixed profiles, push-only status | Native session and status (`flex/`, `flex_http.rs`), router, authorization, profile, radio setup, recording, receive, selection and startup owners, page, recording and contact clients, its test and emulator |
 | `mcp` | MCP client grant and refusals | Router, MCP/automation/authorization owners, authorization client, MCP test and credential helper |
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, plus Node package metadata |
+| `model-values` | TC-DOC-014: the JavaScript model-value reader on its fixture tree | The JavaScript model-value reader, its test file, the model-value fixture tree, plus Node package metadata |
 | `sysml-documentation` | Canonical catalog/trace checks, one full semantic validation (`sysml.py check`), the tests that read the model `test_[dr]*.py` | Model and tooling changes; bound source remains a complete fingerprint/dirty-guard input |
 | `sysml-tools` | The SysML tool's own unit tests `test_[!adr]*.py` on isolated models | The SysML tool and its tests |
 | `sysml-architecture` | TC-DOC-005 architecture integrity: the mutation tests `test_a*.py`, one Pilot validation per mutation | `Architecture.sysml`, the SysML tool, `Validate.java`, the oracle file `architecture-oracle.json`, the toolchain pin and the test file |
@@ -786,12 +787,14 @@ These are HOW bindings, not product requirements and not SysML model elements.
 | CL-014-12 | Marker listing | `markers` lists every `ModelNotes` marker of the model by file key and line, with counts by kind; it checks nothing and writes nothing. | TC-DOC-010 |
 | CL-014-13 | Tag and binding agree | Every test that names a verification case, by an attached `Proves:` tag or a JavaScript test name, is in that case's binding, as its file or as `path::symbol`. A `path::symbol` binding of a manual case names an existing test. The gate's model bindings report a revision and do not apply this rule. | TC-DOC-011 |
 | CL-014-15 | Retired case | A verification case retires by `@RetiredCase { identity = "<TC>"; test = "<path>"; }` directly in the body whose `@DetailTests` names that path as written; an FR, a clause, another spelling, a path that body's detail tests do not name, an identity retired twice and a retired identity declared again are refused. A retired identity counts as present for the stable baseline, is not a catalog entry and is never declared again; tags, test names and clause dependencies naming it are refused as for any undeclared identity. `retired` checks the catalog and lists the retirements; the gate's model bindings list neither the retired identity nor its test file. | TC-DOC-013 |
+| CL-014-16 | Model values in tests | A contract test reads a value the model holds as data from the `.sysml` text by its qualified name, through the one reader of its language. It never writes the value again or parses the model with its own patterns. A value with a unit ends its name in a member of `WstxUnits::UnitSuffix`. A missing, duplicate or unreadable value, or a broken unit rule, fails the test; it never skips. | TC-DOC-014 |
 
 ## Documentation-tool test definitions
 
 These checks prove HOW clauses, not radio functionality. Level 2 means isolated
-verification on the documentation development PC using local fixtures and the pinned
-portable Pilot. No radio, live service, Jupyter server or global Java is needed.
+verification using local fixtures. TC-DOC-014 runs in the Rust and Node suites on the test
+machine without the Pilot; the other rows run on the documentation development PC with the
+pinned portable Pilot. No radio, live service, Jupyter server or global Java is needed.
 
 | ID | Clauses | Independent actions and expected observations | Method and location |
 |---|---|---|---|
@@ -807,9 +810,11 @@ portable Pilot. No radio, live service, Jupyter server or global Java is needed.
 | TC-DOC-010 | CL-014-12 | List markers in each form across folders, in comments, with joined strings, by kind, with an added kind, an unknown kind, no ModelNotes file, a broken catalog and no authority. | Automated isolated Python fixtures on this PC. |
 | TC-DOC-011 | CL-014-13 | Tag a test in a file its case does not bind, and as another symbol of a file bound by symbols; name a case by shorthand, in a tag for two cases, in a JavaScript test name, above a helper, on an ignored test, on a planned and on a manual case, and outside the source roots; bind a manual case to a missing symbol. Each fault is refused naming case, path and test; adding the binding or removing the identity is accepted; the gate's bindings still report such a revision. | Automated isolated Python fixtures on this PC. |
 | TC-DOC-013 | CL-014-15 | Remove a baseline case and retire it beside the `@DetailTests` that names its file, with and without package names, two in one body, in a subfolder file and in a comment; retire an FR and a clause, a malformed identity, a missing, repeated or other feature, a value that is not one literal, a test with `;` or `::`, the `metadata` keyword form, a file named only by another body or by no `@DetailTests`, one identity twice in one file and in two, and a retired identity declared again; name the retired identity in a tag, a JavaScript test name and a clause dependency. Each accepted model passes with the declared identities only, each fault is refused with its message, key and line, and the existing messages are unchanged. List three retirements in two files and none with `retired`, on a broken catalog and with no authority. The gate's bindings of a retiring revision equal those of the revision without the case. The pinned Pilot resolves the def text and refuses a misspelt feature. | Automated isolated Python fixtures and one full Pilot validation on this PC. |
+| TC-DOC-014 | CL-014-16 | Each reader reads the fixture tree `tests/fixtures/model-values/`, with its own `WstxUnits::UnitSuffix`, against the hand-written list of expected values there, in an LF and a CRLF copy: a value two folders deep in a file named other than its package; package-level, definition and usage-redefinition values; a quoted name; integer, negative real, a string holding `\"`, `;`, braces and `//`, `true`, `false`, `null` and an enumeration value; enum members in both forms after a definition `doc` and with a doc body; three usages of a definition, one typed by its qualified name; declarations in comments and `doc` not read; numbers with and without their unit. Each refusal names the qualified name and the reason: a missing and an empty folder, a non-UTF-8 file, a package in no file and in two, a name not declared and declared twice, a value missing, an expression, a `+` join, a list, a unit expression, a feature only the definition states, an empty table, an unlisted suffix, a value with a unit read as a plain number, and the suffix list missing and empty. The six tests that read `WstxOperatingReceive` pass with the parent's assertions, also with its file moved and renamed, and go red on a scratch copy with a changed or removed vector, a changed or removed band entry, a renamed `ft8Hz` and `Hz` removed from the suffix list. | Automated fixtures in the Rust and Node suites on the test machine, without the Pilot; scratch-copy runs on the test machine, quoted on the owning issue. |
 
 Executable companions are `tools/sysml.py`, `tools/sysml/tests/` and the pinned
-`tools/sysml/Validate.java` adapter. Results and independent review
+`tools/sysml/Validate.java` adapter; for TC-DOC-014 they are the two model-value readers
+and their tests. Results and independent review
 are recorded on the owning issue, never as invented model verdicts.
 
 ## Communication verification model
@@ -1088,3 +1093,94 @@ baseline; a verification identity counts as present when it is declared or retir
 declared again. A verification case retires only in that form, in a change of its own;
 any other retirement or an authority change requires explicit review rather than deleting
 a definition to obtain a green check.
+
+### Model values read by tests
+
+This section is CL-014-16; TC-DOC-014 verifies it.
+
+- **Rule.** Where the model holds an observable value as data (a typed value, an
+  enumeration of external names, a table of instances), the contract test that compares the
+  product with it reads the value from the model and does not write it again. A value that
+  exists only in the prose of a case stays in the test. A test reads the `.sysml` files
+  themselves, at run time, through the one reader of its language:
+  `server/src/model_values.rs` for tests under `server/`, `tests/model-values.cjs` for tests
+  under `tests/`. No file is generated from the model for a test, and no test parses the
+  model with its own patterns. The one exception is the test "TC-097-019 the model carries
+  no superseded wording" in `tests/ui-operating.test.cjs`: it reads no model value and
+  compares nothing with the product, but scans the model text for superseded wording, so it
+  reads the model files itself. The model it reads is every model file as defined in
+  "Canonical model catalog and source bindings". Transition tables and other behaviour
+  (states, transitions, actions) are not read yet; the change that first needs one extends
+  this rule and both readers.
+- **Naming.** A value is named by its qualified name `Package::Element(::Feature)*`.
+  `Package` is the package of a model file. Each further segment names an element or
+  feature declared directly in the body of the segment before it; a quoted name keeps its
+  quotes (`WstxOfflineDecode::FreeTextFields::'type'`). The file's name and folder are never
+  part of the name, so moving, renaming or splitting a model file changes no name while one
+  file keeps the package. Renaming an element, or moving it to another package, changes the
+  name; the tests that cite it change in the same change, as code comments that cite
+  elements do.
+- **What is read.**
+  - The value of an attribute: `attribute <name> [: <Type>] = <literal>;`, or a
+    redefinition `attribute :>> <name> = <literal>;`, in a package, a definition body or a
+    usage body.
+  - The members of an `enum def`, in declaration order, written `a;` or `enum a;`. A `doc`
+    on the definition is skipped. A member may also carry a body that holds only a `doc`
+    comment; that is valid SysML, although `WstxUnits::UnitSuffix` does not use it.
+  - The attribute usages declared directly in a named package or body and typed by a named
+    attribute definition (short or qualified name), in declaration order. Each comes with
+    its name and the literal values of its own body.
+  - Literals: integer and real, with a sign; string, with its escapes, where `;`, braces
+    and `//` inside it belong to the string; `true`, `false`; `null`; an enumeration value
+    `Def::member`.
+  - Only what the element's own body states is read. Specialization, inherited defaults,
+    imports and aliases are not followed: a value stated on a definition is named on the
+    definition.
+  - Text in `//` and `/* */` comments and in `doc` bodies is not read. A file read with
+    CRLF and the same file read with LF give the same values.
+- **Units.** The unit suffixes are the members of `WstxUnits::UnitSuffix`. The readers read
+  them from the model they read, through "What is read". A value with a unit carries one of
+  them as the last part of its name. A name *ends in a suffix* when its last characters are
+  the suffix and the character before them is a lowercase letter or a digit (`ft8Hz`,
+  `pollMs`, `workerMemoryMaxMiB`). The value is written in the unit its promise is stated
+  in, as an integer where one exists. No literal is a unit expression; existing quantity
+  types stay, and they type fields without values.
+
+  A test reads a number either *with its unit* or *as a plain number*:
+  - Read with its unit, the name must end in a suffix. Otherwise the read fails
+    (`unit suffix not on the list`), so a misspelt or unlisted suffix such as
+    `ft8WindowMaxSecs` is refused.
+  - Read as a plain number, the name must not end in a suffix. Otherwise the read fails
+    (`value has a unit; read it with its unit`). A count without a unit (`pageRecords`,
+    `candidateCap`, `caseId`) is read this way.
+  - `null` is read in either way.
+  - Strings, Booleans and enumeration values carry no unit and are not judged by the
+    suffixes.
+
+  A suffix is added as a member of `UnitSuffix`, with its sentence in the definition's
+  `doc`, in the change that first needs it.
+- **Failure: fail, never skip.** The reader returns an error naming the qualified name and
+  the reason (Rust), or throws it (JavaScript), and a test that reads a value fails on it.
+  The reasons are:
+  - the model folder is missing, holds no model file, or holds a file that is unreadable
+    or not UTF-8;
+  - no file, or more than one file, has the package;
+  - the name is not declared, or is declared twice in one body;
+  - the value is missing (an attribute declared without `=`), or is not one literal of
+    "What is read": an expression, a `+` join, a list, or a unit expression;
+  - a unit rule of "Units" is broken, or `WstxUnits::UnitSuffix` is missing or has no
+    member;
+  - a table has no usage.
+
+  No test that reads a model value skips, returns early, passes with nothing read, or
+  reports NOT RUN because a value is missing.
+- **What the test still states.** A provenance pin, an expected count, and the order and
+  shape checks of a table stay in the test, as independent checks of what it read.
+- **Scratch copy.** A test that reads a value is shown to read it by the scratch-copy
+  check: in a scratch copy of the model the value is changed or removed, the test goes red,
+  and it is green on the real model. Both readers find the model folder from their own
+  file (`docs/sysml` beside `server/` and `tests/`), so the scratch copy is a throwaway
+  checkout of the candidate (`git worktree add`) whose model files are edited; the tests
+  run there unchanged, the Node tests on that checkout's own build (`WSTX_TEST_EXE`). A
+  damaged copy inside a test replaces the text of the file of one package
+  (`Model::with_package_text`, `withPackageText`), found by package, not by path.
