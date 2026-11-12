@@ -40,6 +40,23 @@ fn model_value(name: &str) -> f64 {
 fn quality(feature: &str) -> f64 {
     model_value(&format!("WstxModemDecode::DecodeQuality::{feature}"))
 }
+/// The start tolerance of a decoded frame in frames (WstxModemDecode::DecodeQuality).
+fn start_tolerance(mode: Mode) -> u64 {
+    quality(if mode == Mode::Ft8 {
+        "ft8StartToleranceFrames"
+    } else {
+        "ft4StartToleranceFrames"
+    }) as u64
+}
+/// The lowest-tone frequency tolerance of a decoded frame in Hz
+/// (WstxModemDecode::DecodeQuality).
+fn frequency_tolerance(mode: Mode) -> f64 {
+    quality(if mode == Mode::Ft8 {
+        "ft8FrequencyToleranceHz"
+    } else {
+        "ft4FrequencyToleranceHz"
+    })
+}
 /// A value of WstxModemDecode::DecodeBudgets.
 fn budget(feature: &str) -> f64 {
     model_value(&format!("WstxModemDecode::DecodeBudgets::{feature}"))
@@ -179,19 +196,16 @@ fn independent_waveforms_decode() {
             v["payload77"].as_str().unwrap(),
             "{id}"
         );
+        // WstxModemDecode::DecodeQuality: the start and frequency tolerances of the mode.
         assert!(
-            d.start_frame.abs_diff(6000)
-                <= v["expected_receive"]["time_tolerance_frames"]
-                    .as_u64()
-                    .unwrap(),
-            "{id}"
+            d.start_frame.abs_diff(6000) <= start_tolerance(mode),
+            "{id}: start {}",
+            d.start_frame
         );
         assert!(
-            (d.frequency_hz - 1000.).abs()
-                <= v["expected_receive"]["frequency_tolerance_hz"]
-                    .as_f64()
-                    .unwrap(),
-            "{id}"
+            (d.frequency_hz - 1000.).abs() <= frequency_tolerance(mode),
+            "{id}: frequency {}",
+            d.frequency_hz
         );
     }
 }
@@ -279,34 +293,27 @@ fn quality_corpus() {
                     x["text"],
                     "text {id}"
                 );
-                let (start_tolerance, frequency_tolerance) = if mode == Mode::Ft8 {
-                    (
-                        quality("ft8StartToleranceFrames"),
-                        quality("ft8FrequencyToleranceHz"),
-                    )
-                } else {
-                    (
-                        quality("ft4StartToleranceFrames"),
-                        quality("ft4FrequencyToleranceHz"),
-                    )
-                };
+                // WstxModemDecode::DecodeQuality: the start and frequency tolerances.
                 assert!(
                     d.start_frame.abs_diff(x["start_frame"].as_u64().unwrap())
-                        <= x["time_tolerance_frames"]
-                            .as_u64()
-                            .unwrap_or(start_tolerance as u64),
+                        <= start_tolerance(mode),
                     "time {id}: {d:?}"
                 );
                 assert!(
                     (d.frequency_hz - x["frequency_hz"].as_f64().unwrap()).abs()
-                        <= x["frequency_tolerance_hz"]
-                            .as_f64()
-                            .unwrap_or(frequency_tolerance),
+                        <= frequency_tolerance(mode),
                     "frequency {id}: {d:?}"
                 );
-                if let (Some(snr), Some(tolerance)) =
+                if let (Some(snr), Some(fixture_tolerance)) =
                     (x["snr2500_db"].as_f64(), x["snr_tolerance_db"].as_f64())
                 {
+                    // WstxModemDecode::DecodeQuality: the SNR limit of a strong isolated
+                    // signal; the weak signals keep the fixture's own tolerance.
+                    let tolerance = if group == "strong" {
+                        quality("strongAwgnSnrToleranceDb")
+                    } else {
+                        fixture_tolerance
+                    };
                     assert!(
                         (d.snr_db.expect("noise-defined SNR") - snr).abs() <= tolerance,
                         "SNR {id}: {d:?}"
@@ -1745,7 +1752,7 @@ fn resource_finite_child() {
                 expected.iter().any(|record| record
                     .start_frame
                     .abs_diff(expected[0].start_frame + index as u64 * base.len() as u64)
-                    <= if mode == Mode::Ft8 { 240 } else { 144 }),
+                    <= start_tolerance(mode)),
                 "original120s edge/overlap oracle"
             );
         }
@@ -2297,7 +2304,7 @@ fn same_frequency_preserves_two_temporal_frames() {
         .unwrap();
     for (v, start) in vectors.iter().zip([6000u64, 96000]) {
         assert!(
-            result.iter().any(|r| r.start_frame.abs_diff(start) <= 144
+            result.iter().any(|r| r.start_frame.abs_diff(start) <= start_tolerance(Mode::Ft4)
                 && r.payload.text == v["expected_receive"]["text"].as_str().map(str::to_owned)),
             "missing temporal frame {start}: {result:?}"
         );
