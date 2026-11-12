@@ -579,8 +579,9 @@ struct Inner {
     /// builds again.
     free_tx_slots: Option<(u64, Value)>,
     free_tx_slots_key: Option<FreeKey>,
-    /// The latest complete publication of a counted period's decodes the value was built on.
-    free_tx_slots_decoded: Option<u64>,
+    /// The latest complete publication of a counted period's decodes the value was built on, as
+    /// (id, next_sequence): the late window grows it under the same id (#105).
+    free_tx_slots_decoded: Option<(u64, u64)>,
 }
 /// What one open-slot build judges (#82 Built): the live job, its mode, a QSO, the judged parity,
 /// the period in progress and the band change the periods count from.
@@ -748,7 +749,8 @@ impl Owner {
     }
     /// #82 WstxStrategy::FreeTxSlots Built (main.rs station timer, after the automation step):
     /// the station's open slots of my Rx parity, with or without a run, a QSO or Auto, built
-    /// again at each period start, when the decodes of a counted period are published, and at
+    /// again at each period start, when the decodes of a counted period are published and again
+    /// when that publication grows by its period's late window (#105), and at
     /// once when a QSO starts or ends or the live job, its mode or the station band changes;
     /// null without a live receive.
     pub(crate) fn build_free_tx_slots(
@@ -806,7 +808,8 @@ impl Owner {
         // "Rebuild on decodes" (operator 2026-11-09): the build at a period start counts the
         // period just ended before its decodes exist; the publication of a counted period's
         // decodes builds again; #89 also the complete publication of the period in progress of
-        // the judged parity, which makes it due.
+        // the judged parity, which makes it due. #105: the late window grows that publication
+        // under the same id (next_sequence rises), which builds again.
         let published = published_start(r);
         let counted = freeslot::recent_starts(mode, rx, (now, published));
         let decoded = r
@@ -817,7 +820,7 @@ impl Owner {
                     .and_then(crate::contact::parse_utc)
                     .is_some_and(|s| s >= since && counted.contains(&s))
             })
-            .map(|p| p.0);
+            .map(|p| (p.0, p.2));
         let fresh_decodes = decoded.is_some() && decoded != inner.free_tx_slots_decoded;
         if fresh_decodes {
             inner.free_tx_slots_decoded = decoded;

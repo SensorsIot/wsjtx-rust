@@ -963,6 +963,30 @@ impl Recording {
     ) -> Vec<u64> {
         self.fixture_publish_view(period_start_utc, records, false)
     }
+    /// Test seam: the late window of the latest publication's period (as `publish_view`): its
+    /// `records` appended to that period, the view extended under the same id (only
+    /// next_sequence moves) and the publication watch signalled, also when `records` is empty.
+    #[cfg(test)]
+    pub(crate) fn fixture_grow_publication(&self, records: Vec<Value>) {
+        let mut s = self.state.lock().unwrap();
+        let period = s
+            .latest_decode
+            .as_ref()
+            .and_then(|v| v.period_start_utc.clone())
+            .expect("a publication of a period");
+        let l = s.live.as_mut().unwrap();
+        for mut record in records {
+            record["sequence"] = json!(l.next_sequence);
+            record["period_start_utc"] = json!(period);
+            let size = serde_json::to_vec(&record).unwrap().len();
+            l.records.push_back((record, size));
+            l.record_bytes += size;
+            l.next_sequence += 1;
+        }
+        let next = l.next_sequence;
+        s.latest_decode.as_mut().unwrap().next_sequence = next;
+        self.publication.send_modify(|n| *n = n.wrapping_add(1));
+    }
     #[cfg(test)]
     fn fixture_publish_view(
         &self,
