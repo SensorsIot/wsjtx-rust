@@ -1105,7 +1105,10 @@ This section is CL-014-16; TC-DOC-014 verifies it.
   themselves, at run time, through the one reader of its language:
   `server/src/model_values.rs` for tests under `server/`, `tests/model-values.cjs` for tests
   under `tests/`. No file is generated from the model for a test, and no test parses the
-  model with its own patterns. The model it reads is every model file as defined in
+  model with its own patterns. The one exception is the test "TC-097-019 the model carries
+  no superseded wording" in `tests/ui-operating.test.cjs`: it reads no model value and
+  compares nothing with the product, but scans the model text for superseded wording, so it
+  reads the model files itself. The model it reads is every model file as defined in
   "Canonical model catalog and source bindings". Transition tables and other behaviour
   (states, transitions, actions) are not read yet; the change that first needs one extends
   this rule and both readers.
