@@ -1,0 +1,66 @@
+{
+  "source": "Hand-written list of the values in tree/ (TC-DOC-014, Project-Specifics 'Model values read by tests'), each taken from the fixture text by reading it, not from a reader. Exact values; a refusal matches when the reader's reason contains the reason given here. Both readers (server/src/model_values.rs, tests/model-values.cjs) are judged against this file, on an LF and a CRLF copy of tree/.",
+  "tree": "tree",
+  "values": [
+    { "name": "FixtureValues::pageRecords", "read": "plain", "expect": { "integer": 1 } },
+    { "name": "FixtureValues::workerMemoryMaxMiB", "read": "unit", "expect": { "integer": 64 } },
+    { "name": "FixtureValues::offsetHz", "read": "unit", "expect": { "integer": -150 } },
+    { "name": "FixtureValues::enabled", "read": "boolean", "expect": { "boolean": true } },
+    { "name": "FixtureValues::disabled", "read": "boolean", "expect": { "boolean": false } },
+    { "name": "FixtureValues::'type'", "read": "string", "expect": { "string": "quoted name" } },
+    { "name": "FixtureValues::text", "read": "string", "expect": { "string": "say \"hi\"; {open} close} // not a comment" } },
+    { "name": "FixtureValues::chosen", "read": "enum", "expect": { "enum": ["Mode", "second"] } },
+    { "name": "FixtureValues::Entry::weight", "read": "plain", "expect": { "real": -2.5 } },
+    { "name": "FixtureValues::entryOne::ft8Hz", "read": "unit", "expect": { "integer": 14074000 } },
+    { "name": "FixtureValues::entryTwo::ft4Hz", "read": "unit", "expect": { "null": true } }
+  ],
+  "members": [
+    { "name": "FixtureValues::Mode", "expect": ["first", "second", "third"] }
+  ],
+  "tables": [
+    {
+      "container": "FixtureValues",
+      "definition": "FixtureValues::Entry",
+      "expect": [
+        { "name": "entryOne", "fields": [
+          ["band", "string", { "string": "20m" }],
+          ["ft8Hz", "unit", { "integer": 14074000 }],
+          ["ft4Hz", "unit", { "integer": 14080000 }]
+        ] },
+        { "name": "entryTwo", "fields": [
+          ["band", "string", { "string": "160m" }],
+          ["ft8Hz", "unit", { "integer": 1840000 }],
+          ["ft4Hz", "unit", { "null": true }]
+        ] },
+        { "name": "entryThree", "fields": [
+          ["band", "string", { "string": "6m" }],
+          ["ft8Hz", "unit", { "integer": 50313000 }],
+          ["ft4Hz", "unit", { "integer": 50318000 }]
+        ] }
+      ]
+    }
+  ],
+  "refused": [
+    { "name": "FixtureValues::commentedLine", "read": "plain", "reason": "not declared" },
+    { "name": "FixtureValues::commentedBlock", "read": "plain", "reason": "not declared" },
+    { "name": "FixtureValues::documentedOnly", "read": "plain", "reason": "not declared" },
+    { "name": "FixtureValues::entryOne::weight", "read": "plain", "reason": "not declared" },
+    { "name": "Nowhere::value", "read": "plain", "reason": "no model file has the package Nowhere" },
+    { "name": "FixtureFaults::missing", "read": "plain", "reason": "not declared" },
+    { "name": "FixtureFaults::twice", "read": "plain", "reason": "declared twice in one body" },
+    { "name": "FixtureFaults::unset", "read": "plain", "reason": "value missing" },
+    { "name": "FixtureFaults::sum", "read": "plain", "reason": "not one literal: an expression" },
+    { "name": "FixtureFaults::joined", "read": "string", "reason": "not one literal: a + join" },
+    { "name": "FixtureFaults::pair", "read": "plain", "reason": "not one literal: a list" },
+    { "name": "FixtureFaults::windowSeconds", "read": "plain", "reason": "not one literal: a unit expression" },
+    { "name": "FixtureFaults::ft8WindowMaxSecs", "read": "unit", "reason": "unit suffix not on the list" },
+    { "name": "FixtureFaults::pollMs", "read": "plain", "reason": "value has a unit; read it with its unit" },
+    { "table": { "container": "FixtureFaults", "definition": "FixtureFaults::Unused" }, "reason": "table has no usage" },
+    { "tree": { "folder": "missing" }, "name": "FixtureValues::pageRecords", "read": "plain", "reason": "model folder missing" },
+    { "tree": { "folder": "empty" }, "name": "FixtureValues::pageRecords", "read": "plain", "reason": "model folder holds no model file" },
+    { "tree": { "writeBytes": { "broken/Broken.sysml": "fffe41" } }, "name": "FixtureValues::pageRecords", "read": "plain", "reason": "model file not UTF-8: broken/Broken.sysml" },
+    { "tree": { "write": { "copy/Second.sysml": "package FixtureValues { }\n" } }, "name": "FixtureValues::pageRecords", "read": "plain", "reason": "more than one model file has the package FixtureValues" },
+    { "tree": { "remove": ["Units.sysml"] }, "name": "FixtureValues::workerMemoryMaxMiB", "read": "unit", "reason": "unit suffixes: WstxUnits::UnitSuffix: no model file has the package WstxUnits" },
+    { "tree": { "write": { "Units.sysml": "package WstxUnits { enum def UnitSuffix { doc /* none */ } }\n" } }, "name": "FixtureValues::workerMemoryMaxMiB", "read": "unit", "reason": "unit suffixes: WstxUnits::UnitSuffix has no member" }
+  ]
+}
