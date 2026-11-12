@@ -2531,7 +2531,8 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
   page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(r.postData());});
  }});
  await page.locator('tr[data-result-id][data-worked]').first().waitFor();
- const seen=await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.children[4]).backgroundColor]));
+ // One page task collects and reads the rows, so a redraw cannot detach them between the two.
+ const seen=await page.evaluate(()=>[...document.querySelectorAll('tr[data-result-id]')].map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.children[4]).backgroundColor]));
  assert.deepEqual(seen,[
   ['HB9BLA K1AA R-05','worked_this_band_and_mode','mycall','rgba(255, 102, 102, 0.32)'],
   ['CQ K2BB FN42','worked_other_band_or_mode','new_call_band','rgba(153, 255, 255, 0.2)'],
