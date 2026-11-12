@@ -348,7 +348,8 @@ package WstxModemDecode {
                  ft8FrequencyToleranceHz.
              (b) The quality counts of DecodeQuality for FT8; on each strong isolated signal
                  an SNR within strongAwgnSnrToleranceDb of the injected one; a second station
-                 80 dB below a stronger one keeps both messages.
+                 80 dB below a stronger one keeps both messages. Open: no bound test shows
+                 the 80 dB station.
              (c) At least ft8OfficialDecodedMin of the ft8OfficialMessages official
                  messages; SNR within jt9SnrToleranceDb of jt9 and at least ft8SnrFloorDb.
              (d) At least the pinned count of jt9-deep's 409 decodes.

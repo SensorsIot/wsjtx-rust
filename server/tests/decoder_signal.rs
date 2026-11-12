@@ -339,24 +339,28 @@ fn quality_corpus() {
     let level = quality("signalsPerLevel") as usize;
     let pairs = quality("overlapPairs") as usize;
     for (key, (n, success, individual)) in totals {
-        if key.ends_with("/strong") && n == level {
+        if key.ends_with("/strong") {
+            assert_eq!(n, level, "{key}: group size against signalsPerLevel");
             assert!(
                 success >= quality("strongDecodedMin") as usize,
                 "{key}: {success}/{n}"
             );
-        } else if key.ends_with("/weak") && n == level {
+        } else if key.ends_with("/weak") {
+            assert_eq!(n, level, "{key}: group size against signalsPerLevel");
             assert!(
                 success >= quality("weakDecodedMin") as usize,
                 "{key}: {success}/{n}"
             );
         } else if key.ends_with("/offset") {
             assert_eq!(success, n, "{key}");
-        } else if key.ends_with("/two-spacing") && n == pairs {
+        } else if key.ends_with("/two-spacing") {
+            assert_eq!(n, pairs, "{key}: group size against overlapPairs");
             assert!(
                 success >= quality("overlapDecodedMin") as usize,
                 "{key}: {success}/{n}"
             );
-        } else if key.ends_with("/one-spacing-6db") && n == pairs {
+        } else if key.ends_with("/one-spacing-6db") {
+            assert_eq!(n, pairs, "{key}: group size against overlapPairs");
             assert!(
                 individual[0] >= quality("oneSpacingStrongDecodedMin") as usize,
                 "{key} stronger: {:?}",
