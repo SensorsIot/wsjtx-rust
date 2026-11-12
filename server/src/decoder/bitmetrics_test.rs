@@ -210,7 +210,7 @@ fn a_word_with_up_to_36_hard_disagreements_is_accepted() {
         );
     }
 }
-// Proves: FR-003, FR-004, CL-007-03 (#56). ft8b a-priori type 1: a CQ frame whose CQ and i3
+// Detail test of WstxModemDecode (#56). ft8b a-priori type 1: a CQ frame whose CQ and i3
 // bits are buried (strongly wrong) decodes once those 32 bits are fixed, and only then.
 #[test]
 fn cq_a_priori_bits_recover_a_buried_cq_word() {

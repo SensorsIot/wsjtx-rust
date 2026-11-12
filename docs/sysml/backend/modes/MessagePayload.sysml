@@ -190,8 +190,7 @@ package WstxOfflineDecode {
     action def UnpackPayload {
         in payload77 : String;
         out record : ResultRecord;
-        @ImplementedIn { module = "server/src/decoder/payload.rs; server/src/decoder/hashes.rs"; }
-        @FollowsSource {
+        @ImplementedIn { module = "server/src/decoder/payload.rs; server/src/decoder/hashes.rs"; }        @FollowsSource {
             reference = "QEX FT4/FT8 sections 2 to 5 and appendix A; WSJT-X 3.3.0-beta5 packjt77";
         }
         doc /* The supported families are 0.0 free text, 0.1 DXpedition, 0.3 and 0.4 Field

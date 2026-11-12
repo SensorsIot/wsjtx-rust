@@ -17,6 +17,7 @@ package WstxModemDecode {
     private import ModelBindings::Automation;
     private import ModelBindings::ImplementedIn;
     private import ModelBindings::TestedBy;
+    private import ModelBindings::DetailTests;
     private import ModelNotes::FollowsSource;
     private import ModelNotes::DiffersFromSource;
     doc /* The decode function of the modes part (WstxArchitecture::ModeFunctions). A window
@@ -126,6 +127,14 @@ package WstxModemDecode {
         out records : ResultRecord[0..2048];
         @ImplementedIn {
             module = "server/src/decoder/mod.rs; server/src/decoder/apriori.rs; server/src/decoder/baseband.rs; server/src/decoder/bitmetrics.rs; server/src/decoder/channel.rs; server/src/decoder/coarse_ft4.rs; server/src/decoder/fit.rs; server/src/decoder/history.rs; server/src/decoder/parallel.rs; server/src/decoder/physical_ft4.rs; server/src/decoder/physical_sync.rs; server/src/decoder/search.rs; server/src/decoder/snr.rs; server/src/decoder/subtraction.rs; server/src/decoder/synchronization.rs; server/src/decoder/waveform.rs";
+        }
+        @DetailTests {
+            tests = "server/src/decoder/baseband_test.rs; server/src/decoder/bitmetrics_test.rs; server/src/decoder/coarse_ft4_test.rs; server/src/decoder/physical_ft4_test.rs; server/src/decoder/subtraction_test.rs; server/src/decoder/channel_resource_test.rs; server/src/decoder/snr_test.rs; server/src/decoder/search_test.rs; server/src/decoder/apriori_test.rs; server/tests/decoder_live.rs";
+            covers = "band limit, baseband and symbol transforms, bit metrics and their "
+                + "a-priori fixed bits, coarse FT4 search, qualified-support geometry, "
+                + "subtraction kernels, channel decoding, SNR measurement, ranked grid "
+                + "refinement and the modem history; the contract tests of these files are "
+                + "those bound to TC-004-001..003";
         }
         @FollowsSource {
             reference = "QEX FT4/FT8 sections 2 to 5 and appendix A; WSJT-X 3.3.0-beta5 sync8, "
@@ -348,7 +357,7 @@ package WstxModemDecode {
             verify 'FR-018';
         }
         @TestedBy {
-            test = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/recording_tests.rs::live_ft8_snr_measures_from_the_utc_period_start; server/tests/decoder_signal.rs::recorded_corpus_reaches_jt9_deep_decodes; server/src/decoder/bitmetrics_test.rs::cq_a_priori_bits_recover_a_buried_cq_word; server/src/decoder/search_test.rs::partial_frame_interferer_is_subtracted_not_published; server/src/decoder/search_test.rs::frame_past_the_window_end_is_subtracted_not_published; server/src/decoder/search_test.rs::half_symbol_publication_boundary; server/src/decoder/search_test.rs::duplicate_on_a_distant_carrier_is_subtracted_and_published_once; server/src/decoder/search_test.rs::weak_word_guard_boundaries; server/src/decoder/search_test.rs::failed_fine_point_retries_at_the_data_point; server/src/decoder/apriori_test.rs::a_priori_types_follow_the_wsjtx_state_table; server/src/decoder/apriori_test.rs::a_priori_bits_are_the_packed_message_bits; server/src/decoder/bitmetrics_test.rs::a_priori_words_need_a_decoded_payload_and_confidence; server/src/decoder/search_test.rs::weak_qso_words_decode_only_with_the_right_calls; server/src/decoder/search_test.rs::wrong_dx_call_never_yields_a_false_word; server/tests/audio_receive.rs::live_native_provider_decodes_independent_ft8_callsign";
+            test = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/recording_tests.rs::live_ft8_snr_measures_from_the_utc_period_start; server/tests/decoder_signal.rs::recorded_corpus_reaches_jt9_deep_decodes; server/src/decoder/search_test.rs::partial_frame_interferer_is_subtracted_not_published; server/src/decoder/search_test.rs::frame_past_the_window_end_is_subtracted_not_published; server/src/decoder/search_test.rs::half_symbol_publication_boundary; server/src/decoder/search_test.rs::duplicate_on_a_distant_carrier_is_subtracted_and_published_once; server/src/decoder/search_test.rs::weak_word_guard_boundaries; server/src/decoder/search_test.rs::failed_fine_point_retries_at_the_data_point; server/src/decoder/apriori_test.rs::a_priori_types_follow_the_wsjtx_state_table; server/src/decoder/bitmetrics_test.rs::a_priori_words_need_a_decoded_payload_and_confidence; server/src/decoder/search_test.rs::weak_qso_words_decode_only_with_the_right_calls; server/src/decoder/search_test.rs::wrong_dx_call_never_yields_a_false_word; server/tests/audio_receive.rs::live_native_provider_decodes_independent_ft8_callsign";
         }
     }
     verification 'TC-004-003' {
@@ -379,7 +388,7 @@ package WstxModemDecode {
             verify 'FR-018';
         }
         @TestedBy {
-            test = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::unmodulated_sources_are_not_frames; server/tests/decoder_signal.rs::physical_noise_reproduction_has_no_frame; server/tests/decoder_signal.rs::physical_wrong_mode_reproduction_has_no_frame_or_search_error; server/tests/decoder_signal.rs::release_runtime_and_overlapping_window_history; server/src/receive_http_tests.rs::resource_station_process_delta_and_owner_release";
+            test = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::unmodulated_sources_are_not_frames; server/tests/decoder_signal.rs::physical_noise_reproduction_has_no_frame; server/tests/decoder_signal.rs::physical_wrong_mode_reproduction_has_no_frame_or_search_error; server/tests/decoder_signal.rs::release_runtime_and_overlapping_window_history; server/src/receive_http_tests.rs::resource_station_process_delta_and_owner_release; server/src/decoder/physical_ft4_test.rs::qualified_support_count_keeps_the_256_257_barrier";
         }
     }
     dependency CL_007_03_verified_by_TC_004_001 from 'CL-007-03' to 'TC-004-001';

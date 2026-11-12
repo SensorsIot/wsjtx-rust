@@ -54,7 +54,7 @@ fn a_priori_types_follow_the_wsjtx_state_table() {
     assert_eq!(types(Mode::Ft8, &APriori::default(), 1500.), vec![1]);
 }
 
-// Proves: FR-003 (#56 slice 5). The fixed bits are the packed message bits: CQ token and i3
+// Detail test of WstxModemDecode (#56 slice 5). The fixed bits are the packed message bits: CQ token and i3
 // for FT8 type 1, MyCall/DxCall from the packed calls, RRR/73/RR73 tails, FT4 scrambled and
 // without i3 for types 1..3.
 #[test]
