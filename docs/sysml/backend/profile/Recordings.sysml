@@ -2,13 +2,13 @@ package WstxProfileRecordings {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::AutomationState;
-    private import WstxRequirements::'FR-003';
-    private import WstxRequirements::'FR-018';
-    private import WstxRequirements::'CL-006-02';
-    private import WstxRequirements::'CL-006-04';
+    private import WstxArchitecture::'FR-003';
+    private import WstxArchitecture::'FR-018';
+    private import WstxRecordingReceive::'CL-006-02';
+    private import WstxRecordingReceive::'CL-006-04';
     private import WstxRecordingReceive::ErrorCode;
     private import WstxRecordingReceive::JobView;
-    private import WstxRecordingReceive::HttpValidation;
+    private import WstxStationProtocol::HttpValidation;
     private import ModelBindings::Status;
     private import ModelBindings::Automation;
     private import ModelBindings::ImplementedIn;
@@ -20,7 +20,7 @@ package WstxProfileRecordings {
          (WstxArchitecture::OutsideThing::profileFiles) across restarts, and its samples
          offered, timed and immutable, through the port samples of RecordedSource. Replay
          is the receive part's, the cancellation of an import the station's
-         (WstxRecordingReceive::CancelImport). */
+         (WstxStationAuthority::CancelImport). */
     @ImplementedIn { module = "server/src/recording.rs; server/src/recording_http.rs"; }
 
     attribute def RecordingLimits {
@@ -168,7 +168,7 @@ package WstxProfileRecordings {
              not make a valid file unsupported. RF64, RIFX, extensible, compressed and float
              formats, stereo, another rate, a duplicate fmt or data chunk, inconsistent sizes
              and a truncated header, data or padding are refused, with the errors of
-             WstxRecordingReceive::HttpValidation: a malformed structure differs from an
+             WstxStationProtocol::HttpValidation: a malformed structure differs from an
              unsupported capability. */
         doc /* The import keeps the whole original file, ancillary chunks included. It uses no
              codec and no resampler; a device rate or another format is a separate capability,
@@ -409,7 +409,7 @@ package WstxProfileRecordings {
              (c) No partial source becomes replayable, and no unbounded pending file is left.
                  Cleanup keeps committed data and reports its own failure.
              (d) Other stations, other profiles and the status stay available.
-             Oracle: hand-specified errors of WstxRecordingReceive::HttpValidation.
+             Oracle: hand-specified errors of WstxStationProtocol::HttpValidation.
              2 — Isolated automated tests; Windows PC, disposable profiles, no radio. */
         @Automation { run = AutomationState::implemented; }
         objective {

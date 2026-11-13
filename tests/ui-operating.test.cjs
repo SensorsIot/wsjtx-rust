@@ -191,7 +191,7 @@ test('receive snapshot race preserves unknown mutation until a later read',{time
   await chip.filter({hasText:'Receive stopped'}).waitFor();
   assert.deepEqual(errors,[]);
 });
-// WstxContact::AbortQso (#39) / OperatingLayout escapeClosesRegion=false: Escape aborts
+// WstxQsoTransmit::AbortQso (#39) / OperatingLayout escapeClosesRegion=false: Escape aborts
 // the QSO but closes no panel or drawer; its Back/Close control returns.
 async function returnToOperation(page){
   const open=await page.locator('.op-secondary:not([hidden])').count();
@@ -319,7 +319,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
  for(const id of ['#strategy-highlight','#strategy-auto'])assert.equal(await page.locator(id).count(),0,`${id} is gone`);
  assert.equal(await page.locator('#activity-value').isVisible(),true,'the Value control is visible');
  assert.equal(await page.locator('#station-automation').textContent(),'Automation idle');
- // WstxContact::OperatorDisplays (D11): server UTC in the top bar. #50: one period bar only, the QSO pane's NEXT bar.
+ // WstxQsoWire::OperatorDisplays (D11): server UTC in the top bar. #50: one period bar only, the QSO pane's NEXT bar.
  await page.locator('#radio-toolbar .op-period > span').filter({hasText:/^UTC \d\d:\d\d:\d\d$/}).waitFor();
  assert.deepEqual(await page.locator('#radio-toolbar .op-period').evaluate(p=>[p.children.length,!!p.querySelector('.op-period-track,small')]),[1,false],'no period bar in the top bar');
  assert.equal(await page.locator('#rx-focus .op-qso-progress #qso-progress').count(),1,'the period bar stays in the QSO pane');
@@ -715,7 +715,7 @@ test('TC-097-017 the busy marker follows WD:n and the leave label',{timeout:4000
 });
 
 // Proves: TC-097-013 (b), (c), (d), (e) (CL-097-04; oracle WstxStrategy::LeaveCountLabel and
-// WstxContact::ContactSnapshot). In a run's own contact (tx_remaining_calls null) the QSO pane's
+// WstxQsoWire::ContactSnapshot). In a run's own contact (tx_remaining_calls null) the QSO pane's
 // watchdog line is the leave label: "Leave in 4 calls" .. "Leave in 1 calls"; a contest stay "Stay ·
 // most valuable", never "WD:∞"; until_logged "Until logged", then "Until logged · leave if gone 7
 // min". Unattended (an integer count) and in a manual contact it is WD:n, 6 down to 1. Station
@@ -1498,7 +1498,7 @@ test('TC-050-007 the waterfall pointer, Rx/Tx lines and axis share one frequency
   }
 });
 
-// #82 WstxOperatingLayout::FreeTxSlotMarks (TC-082-004). Oracle: the CL-050-07 mapping (the waterfall
+// #82 WstxSignalArea::FreeTxSlotMarks (TC-082-004). Oracle: the CL-050-07 mapping (the waterfall
 // canvas's own box carries 0..3000 Hz), the operator's #82 answers ("open slots are shown all the time
 // as a part of the waterfall", "nothing else on screen") and #76 numbers (bars 8 px high, 2 px inset
 // at each end, a drawn colour difference of at least 40); the free_tx_slots values are hand-written.
@@ -1838,7 +1838,7 @@ test('TC-007-002 in-page navigation preserves unsaved profile and selected recor
  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();assert.equal(await page.locator('#display-name').inputValue(),'Unsaved operator edit');
  await page.locator('#tab-expert').click();
  assert.equal(await page.locator('#recording-file').evaluate(el=>el.files[0].name),'selected-but-not-imported.wav');
- // Escape is Abort QSO (WstxContact::AbortQso, #39): with no contact in progress it sends
+ // Escape is Abort QSO (WstxQsoTransmit::AbortQso, #39): with no contact in progress it sends
  // nothing, and it is never a halt.
  assert.deepEqual(mutations,[],'navigation does not save/import or issue station mutations, and Esc sends no halt');
  assert.deepEqual(errors,[]);
@@ -3287,7 +3287,7 @@ test('TC-081-006 the Auto button says that Auto off finishes a QSO already start
   assert.equal(s.autos.length,0,'the browser sent nothing');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-039-20; TC-039-046 (#39 strategydef, WstxStrategy::PskrUse, WstxOperatingLayout::QsoPane): the two PSK
+// Proves: CL-039-20; TC-039-046 (#39 strategydef, WstxStrategy::PskrUse, WstxQsoPane::QsoPane): the two PSK
 // Reporter lines while Use is on and a run's own contact has a target, with the age from
 // station.tick; hidden otherwise; no polling; the QSO pane keeps its height at 1366x768 and 360x740.
 test('TC-039-046 the PSK Reporter lines in the QSO pane, their age formats, no polling and the fixed pane',{timeout:90000},async t=>{
@@ -3343,7 +3343,7 @@ test('TC-039-046 the PSK Reporter lines in the QSO pane, their age formats, no p
   assert.equal(await pane(),phone,'the pane keeps its height at 360 px');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-097-01; TC-097-014 (#97 WstxStrategy::StrategyEditor and StrategySelector; it replaces
+// Proves: CL-097-01; TC-097-014 (#97 WstxSettings::StrategyEditor and StrategySelector; it replaces
 // TC-039-046's editor of Filter, Value and Exit and its S&P/Run prompt, whose warning on Auto on
 // TC-063-012 keeps): the editor grouped Strategy and Contest with Duplicate only, the nine decisions,
 // one PUT of the schema 4 object written here, the contest strategy's view, a refusal at its
@@ -3623,7 +3623,7 @@ test('TC-074-001 a page kept open across a station restart shows the new boot st
 // Proves: CL-074-01; TC-074-002 the strategy line with None and no strategy run: drawn from the
 // strategy and automation snapshots together at each change of either; with None and no strategy
 // run it is the automation snapshot's text, "Automation idle" without a run; GET /automation only
-// after automation.state. Expected texts: WstxMcp::AutomationIndicator, WstxStrategy::StrategySelector.
+// after automation.state. Expected texts: WstxOperatingLayout::AutomationIndicator, WstxStrategy::StrategySelector.
 test('TC-074-002 the strategy line with None and no strategy run shows the automation text',{timeout:60000},async t=>{
   const {page,errors,s,announce,settle,status}=await strategydefStation(t,{width:1366,height:768});
   const reads=()=>s.requests.filter(r=>r==='GET /automation').length;
@@ -4553,7 +4553,7 @@ test('TC-061-001 an audio loss epoch keeps the waterfall and Band Activity; a St
 });
 
 // ---------------------------------------------------------------- #37 lower panel
-// WstxOperatingLayout::LowerPanel, ControlPanel, ErrorField. Oracle: the operator's #37 comments
+// WstxLowerPanel::LowerPanel, ControlPanel, ErrorField. Oracle: the operator's #37 comments
 // of 2026-11-03 (vertical stack, the QSO card's width, the controls always visible, the error
 // field with current problems only and no history), not the candidate markup.
 const panelControls=['#dx-call','#dx-grid','#dx-generate','#contact-report','#contact-auto','#contact-call-first','#contact-hold','#contact-parity'];
@@ -5325,12 +5325,21 @@ test('TC-097-019 the model carries no superseded wording',async()=>{
   const P1=/\b(run|runs|run's)\b|StrategyRun|ManualIntervention|S&P|[Pp]ounce|policy run|select_row|enable_tx/;
   const P2=/(strategy|contest)( strategy)? (selects|calls|answers|leaves|arms|transmits|starts)/;
   const P3=/#97 replaces|it replaces|which replaces|formerly|\(target\)|until delivered|#97( \([^)]*\))?:/i;
-  const S='Strategy.sysml',C='Contest.sysml',R='Requirements.sysml';
+  // A file found by the package it declares; an element by its qualified name, at any depth.
+  const fileOf=pkg=>{
+    const file=Object.keys(files).find(f=>new RegExp(`^package\\s+${quote(pkg)}\\s*\\{`,'m').test(files[f]));
+    assert.ok(file,`package ${pkg} not found`);
+    return file;
+  };
+  const element=qualified=>{const [pkg,name]=qualified.split('::');return doc(fileOf(pkg),name);};
+  const S=fileOf('WstxStrategy'),C=fileOf('WstxContest'),R='Requirements.sysml';
   const scope=[
     ...[1,2,3,15,19].map(n=>decision(S,n)),
-    ...['StrategyClass','NewWhat','NewPer','ValueCriterion','Needed','LeaveMode','PskCase','Strategy','StrategyBands','CountryList','UsStateFilter','UsStateOf','CqTargetList','BuiltinStrategies','StrategyConfiguration','NewNeeded','CallerOfMyCall','Candidate','ValueOrder','Verdict','StrategyEditor'].map(n=>doc(S,n)),
+    ...['StrategyClass','NewWhat','NewPer','ValueCriterion','Needed','LeaveMode','PskCase','Strategy','StrategyBands','CountryList','UsStateFilter','UsStateOf','CqTargetList','BuiltinStrategies','StrategyConfiguration','NewNeeded','CallerOfMyCall','Candidate','ValueOrder','Verdict'].map(n=>element(`WstxStrategy::${n}`)),
+    element("WstxSettings::StrategyEditor"),
     head(C),decision(C,1),decision(C,11),
-    ...['ContestSelection','ContestPrompt','ContestValueOrder','ContestView'].map(n=>doc(C,n)),
+    ...['ContestSelection','ContestPrompt','ContestValueOrder'].map(n=>element(`WstxContest::${n}`)),
+    element("WstxSettings::ContestView"),
     ...['CL-039-01','CL-039-02','CL-039-04','CL-039-11','CL-042-01','CL-063-03'].map(n=>doc(R,n)),
   ];
   assert.deepEqual(scope.flatMap(span=>[P1,P2,P3].flatMap(re=>hits(span,re))),[],'(1) run vocabulary in a rewritten element');
@@ -5346,9 +5355,9 @@ test('TC-097-019 the model carries no superseded wording',async()=>{
     return {file:span.file,s,e};
   };
   const kept=[
-    sentence(doc(S,'Strategy'),'Nothing else exists:'),
-    sentence(doc(S,'StrategyConfiguration'),'Upgrade: a file of schema_version 1','Names: in every schema'),
-    sentence(doc(C,'ContestSelection'),'The keys operation,','null or absent'),
+    sentence(element('WstxStrategy::Strategy'),'Nothing else exists:'),
+    sentence(element('WstxStrategy::StrategyConfiguration'),'Upgrade: a file of schema_version 1','Names: in every schema'),
+    sentence(element('WstxContest::ContestSelection'),'The keys operation,','null or absent'),
     doc(R,'TC-097-001'),doc(R,'TC-097-002'),
   ];
   const outside=(file,i)=>!kept.some(k=>k.file===file&&i>=k.s&&i<k.e);

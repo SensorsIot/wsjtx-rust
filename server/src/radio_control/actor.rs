@@ -297,7 +297,7 @@ impl Actor {
             thread: Some(worker),
         })
     }
-    /// WstxTransmit::PttControl. Keys (`on`) or releases the transmit switch with
+    /// WstxRadioIO::PttControl. Keys (`on`) or releases the transmit switch with
     /// readback through this single I/O owner. Keying first takes the transmit hold
     /// (lease 4), waiting until `deadline` for a running poll or operation to finish;
     /// the hold excludes every ordinary operation, transition and poll until a release

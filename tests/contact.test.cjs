@@ -92,7 +92,7 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
 });
 
 test('TC-007-001 double-click starts transmission, partner report advances to Tx3, Esc aborts the QSO (no halt) with a panel open',{timeout:90000},async()=>{
-  // #37 WstxContact::SetEnableTx: no Enable Tx control and no Reply button (gone since the #50
+  // #37 WstxQsoTransmit::SetEnableTx: no Enable Tx control and no Reply button (gone since the #50
   // double-click fix); a double-click on the decoded row selects it again and arms.
   assert.equal(await page.locator('#contact-enable,#qso-reply').count(),0);
   const shown=(await snapshot()).transmit.safety_revision;

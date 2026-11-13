@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 //! FR-023 native FlexRadio wire subset: bounded TCP control lines, VITA-49 DAX receive
 //! packets and discovery packets. Independently written from the SmartSDR TCP/IP API
-//! wiki and the wire facts recorded in WstxProductScope::NativeFlexWireSubset; no
+//! wiki and the wire facts recorded in WstxFlexSession::NativeFlexWireSubset; no
 //! vendor code is translated or linked.
 
 /// Control TCP port and the discovery UDP port of the pinned API (both 4992).

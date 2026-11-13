@@ -56,7 +56,7 @@ function stationDataRoot() {
   return stationData;
 }
 // Environment of a station a test starts: no inherited WSTX_ setting, no public SNTP
-// server (WstxTransmit::TransmitClock), no UDP interface, and the per-run station data.
+// server (WstxTransmitClock::TransmitClock), no UDP interface, and the per-run station data.
 function stationEnv(env = {}) {
   const clean = {...process.env};
   // Windows environment names ignore case: no differently cased LOCALAPPDATA may survive.

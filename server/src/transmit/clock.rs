@@ -1,4 +1,4 @@
-//! WstxTransmit::TransmitClock: the station measures its own UTC offset by SNTP
+//! WstxTransmitClock::TransmitClock: the station measures its own UTC offset by SNTP
 //! (RFC 4330 client, RFC 5905 packet) instead of relying on Windows reporting that a
 //! time service disciplines the clock (a third-party tool that steps the clock is
 //! never reported as discipline). Measurements run on their own thread; the transmit

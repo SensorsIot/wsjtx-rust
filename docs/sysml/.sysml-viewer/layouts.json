@@ -4,7 +4,7 @@
   "preferences": [
     {
       "focus": {
-        "file": "Architecture.sysml",
+        "file": "Station.sysml",
         "qualified": "WstxArchitecture",
         "kind": "package"
       },

@@ -23,11 +23,11 @@ spec = importlib.util.spec_from_file_location("tree_tool", ROOT / "tools/sysml.p
 tool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tool)
 
-REQUIRED = {"FR-001", "CL-003-01", "TC-001-001"}
+REQUIRED = {"FR-901", "CL-003-01", "TC-001-001"}
 ENUMS = '''    enum def ImplementationState { enum target; enum partial; enum implemented; }
     enum def AutomationState { enum planned; enum partial; enum implemented; }
 '''
-FR = '''    requirement 'FR-001' {
+FR = '''    requirement 'FR-901' {
         attribute coverage : ImplementationState = ImplementationState::target;
     }
 '''
@@ -37,10 +37,10 @@ CLAUSE = '''    requirement 'CL-003-01' {
 '''
 CASE = '''    verification 'TC-001-001' {
         attribute automation : AutomationState = AutomationState::planned;
-        objective { verify 'FR-001'; verify 'CL-003-01'; }
+        objective { verify 'FR-901'; verify 'CL-003-01'; }
     }
 '''
-OWNS = "    dependency owns from 'CL-003-01' to 'FR-001';\n"
+OWNS = "    dependency owns from 'CL-003-01' to 'FR-901';\n"
 CHECKS = "    dependency checks from 'CL-003-01' to 'TC-001-001';\n"
 MARKER = "// Canonical authority: SysML\n"
 # The whole catalog in the entry file, and the same catalog split over two folders.
@@ -294,7 +294,7 @@ class ModelTreeTests(unittest.TestCase):
         radio = next(key for key, text in self.written.items() if text == "package WstxRadioIO {}")
         self.remove(radio)
         self.commit("without the package")
-        case = {"automated": True, "verifies": ["FR-001", "CL-003-01"], "paths": ["tests/case.cjs"],
+        case = {"automated": True, "verifies": ["FR-901", "CL-003-01"], "paths": ["tests/case.cjs"],
                 "tests": [{"path": "tests/case.cjs", "name": "identity"}], "unresolved": []}
         real_catalog = bindings.sysml.canonical_catalog
         with mock.patch.object(bindings, "ROOT", self.root), \
@@ -303,7 +303,7 @@ class ModelTreeTests(unittest.TestCase):
             with self.subTest("revision 1, flat"):
                 self.assertEqual(flat["models"], ["docs/sysml/" + key for key in flat_keys])
                 self.assertEqual(flat["cases"], {"TC-001-001": case})
-                self.assertEqual(set(flat["promises"]), {"FR-001", "CL-003-01"})
+                self.assertEqual(set(flat["promises"]), {"FR-901", "CL-003-01"})
             with self.subTest("revision 2, moved and renamed"):
                 moved = bindings.bindings("HEAD~1")
                 self.assertEqual(moved["models"], ["docs/sysml/" + key for key in moved_keys])
@@ -337,7 +337,7 @@ class ModelTreeTests(unittest.TestCase):
         for qualifier in ("PPart::", "A::B::"):
             with self.subTest(accepted=qualifier):
                 self.write("Requirements.sysml", FLAT.replace("verify 'CL-003-01';", "verify " + qualifier + "'CL-003-01';"))
-                self.assertEqual(self.check()["TC-001-001"]["refs"], ["FR-001", "CL-003-01"])
+                self.assertEqual(self.check()["TC-001-001"]["refs"], ["FR-901", "CL-003-01"])
         second = '''    verification 'TC-001-002' {
         attribute automation : AutomationState = AutomationState::planned;
         objective { verify PPart::'CL-003-01'; }
@@ -349,18 +349,18 @@ class ModelTreeTests(unittest.TestCase):
             with self.refused("Nonreciprocal canonical verification links: TC-001-002"):
                 self.check()
         with self.subTest("undefined target"):
-            self.write("Requirements.sysml", FLAT.replace("verify 'FR-001';", "verify PPart::'FR-999';"))
+            self.write("Requirements.sysml", FLAT.replace("verify 'FR-901';", "verify PPart::'FR-999';"))
             with self.refused("verification target: TC-001-001"):
                 self.check()
 
     # T5
     # Proves: CL-014-10; TC-DOC-008
     def test_clause_dependency_ends_through_package_names_are_read_and_checked(self):
-        owns = "    dependency owns from PPart::'CL-003-01' to WstxRequirements::'FR-001';\n"
+        owns = "    dependency owns from PPart::'CL-003-01' to WstxRequirements::'FR-901';\n"
         checks = "    dependency checks from PPart::'CL-003-01' to A::B::'TC-001-001';\n"
         self.write("Requirements.sysml", FLAT.replace(OWNS, owns).replace(CHECKS, checks))
         self.assertEqual(set(self.check()), REQUIRED)
-        for label, text in (("owner", FLAT.replace(OWNS, owns.replace("FR-001", "FR-999")).replace(CHECKS, checks)),
+        for label, text in (("owner", FLAT.replace(OWNS, owns.replace("FR-901", "FR-999")).replace(CHECKS, checks)),
                             ("case", FLAT.replace(OWNS, owns).replace(CHECKS, checks.replace("TC-001-001", "TC-001-999")))):
             with self.subTest(undefined=label):
                 self.write("Requirements.sysml", text)
@@ -481,7 +481,7 @@ class ModelTreeTests(unittest.TestCase):
         git("commit", "-q", "--no-verify", "-m", "tree")
         tree_keys = sorted(self.written)
         real_catalog = bindings.sysml.canonical_catalog
-        case = {"automated": True, "verifies": ["FR-001", "CL-003-01"], "paths": ["tests/case.cjs"],
+        case = {"automated": True, "verifies": ["FR-901", "CL-003-01"], "paths": ["tests/case.cjs"],
                 "tests": [{"path": "tests/case.cjs", "name": "identity"}], "unresolved": []}
         with mock.patch.object(bindings, "ROOT", self.root), \
                 mock.patch.object(bindings.sysml, "canonical_catalog", side_effect=lambda d, r: real_catalog(d, r, required=REQUIRED)):
@@ -490,7 +490,7 @@ class ModelTreeTests(unittest.TestCase):
                     result = bindings.bindings(rev)
                     self.assertEqual(result["models"], ["docs/sysml/" + key for key in keys])
                     self.assertEqual(result["cases"], {"TC-001-001": case})
-                    self.assertEqual(set(result["promises"]), {"FR-001", "CL-003-01"})
+                    self.assertEqual(set(result["promises"]), {"FR-901", "CL-003-01"})
         self.assertIn(PART_KEY, tree_keys)
         self.assertTrue(all("/" not in key for key in flat_keys))
 

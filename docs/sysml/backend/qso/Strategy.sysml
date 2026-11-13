@@ -249,7 +249,7 @@ package WstxStrategy {
              names)". filters.countries = {include, exclude}, each 0..64 entries {kind, value,
              bands}: kind "prefix" with value 1..13 of A-Z 0-9 / (upper case), matching when the
              decoded call begins with it; or kind "country" with value a full entity name of the
-             country table (WstxContact::EntityOfCall, a WAE entity by its own name), matching the
+             country table (WstxCountryFile::EntityOfCall, a WAE entity by its own name), matching the
              sender's entity, compared ignoring case; a name the current table does not hold is
              refused at the PUT (an entry read from the file whose name a replaced cty.dat no
              longer holds matches nothing); bands null (every band) or 1..32 unique ADIF band
@@ -269,7 +269,7 @@ package WstxStrategy {
     calc def UsStateOf {
         in sender : String;
         return stateCode : String[0..1];
-        doc /* The state of a sender of the entities 291, 6 or 110 (WstxContact::EntityOfCall),
+        doc /* The state of a sender of the entities 291, 6 or 110 (WstxCountryFile::EntityOfCall),
              the first source that knows it: (1) the decoded message, when its exchange carries a
              US state (the RTTY Roundup family; an ARRL or RAC section once #98's section table maps
              it to a state); (2) the log: the ADIF STATE of the newest record of that call that has
@@ -399,7 +399,7 @@ package WstxStrategy {
     calc def ContinentOfCall {
         in call : String;
         return continent : String[0..1];
-        doc /* #55: the continent of WstxContact::EntityOfCall for the call (with a {cont}
+        doc /* #55: the continent of WstxCountryFile::EntityOfCall for the call (with a {cont}
              override of the matching cty.dat entry applied); none when the call has no
              entity (/MM, /AM, unknown prefix). It replaces the earlier locator-rectangle
              approximation: the message grid no longer decides a station's continent.
@@ -415,7 +415,7 @@ package WstxStrategy {
         doc /* Whether one NewWhat is new for a
              decoded sender, per NewPer, against WorkedWindow of the strategy (worked_since):
              not_worked: no logged QSO with the same key; not_confirmed: none, or none confirmed
-             (dxcc::Standing). The key: dxcc the sender's entity (WstxContact::EntityOfCall, WAE
+             (dxcc::Standing). The key: dxcc the sender's entity (WstxCountryFile::EntityOfCall, WAE
              entities by their own full name); call the call; grid the 4-character grid square in
              the decoded message, with the rule of D13 (no grid in the message is not new; a sender
              with a logged QSO without a grid in the window has an unknown grid status and is not
@@ -527,7 +527,7 @@ package WstxStrategy {
         doc /* The distance for the value criterion distance: the great-circle distance from
              the centre of the profile locator to the centre of the 4-character grid in the
              message; otherwise to the sender's entity centre from cty.dat (the approximate
-             entity distance of WstxContact::DecodedEntity). Unknown without a profile locator
+             entity distance of WstxCountryFile::DecodedEntity). Unknown without a profile locator
              or without grid and entity (/MM, /AM, unknown prefix). Whole km, truncated. */
     }
     attribute def MostWantedList {
@@ -655,7 +655,7 @@ package WstxStrategy {
              period_start_utc), call, message (the record text), rule (the strategy name),
              band (station band, null when unknown), mode (the live
              job mode, ft8 or ft4), snr_db (null when unknown), dxcc (the full entity name
-             of WstxContact::EntityOfCall, null without an entity)}; revision counts every
+             of WstxCountryFile::EntityOfCall, null without an entity)}; revision counts every
              alert recorded and every clear since the station started.
              Routes (the StrategyHttp rules for Origin, authorization, media and size): GET
              /strategy/alerts (operating access, no query, empty body) -> {v 1,
@@ -665,7 +665,7 @@ package WstxStrategy {
              unsupported_version, 403 wrong_profile, 409 state_conflict boot_id); it
              empties the history, revision + 1, and returns the alerts snapshot. No MCP
              tool dispatches to the clear (an MCP principal is refused, #58); wstx_read
-             view alerts reads GET /strategy/alerts (WstxMcp::ToolCatalog).
+             view alerts reads GET /strategy/alerts (WstxMcpEndpoint::ToolCatalog).
              Event: a display-subscribed peer receives alert.state {v 1, type
              "alert.state", data {profile_id, boot_id, alert_revision}} when the revision
              changes after it subscribed (never on subscription itself), paced with
@@ -696,7 +696,7 @@ package WstxStrategy {
              is answerable when its directive does not exclude me: a plain CQ (no target);
              "CQ x" with x my continent; "CQ DX" when both continents are known and differ.
              Contest activity (#63, WstxContest::ContestDirective): the word of the station's
-             special activity (WstxContact::SpecialActivity: na_vhf, eu_vhf and arrl_digi TEST, ww_digi WW,
+             special activity (WstxSpecialActivities::SpecialActivity: na_vhf, eu_vhf and arrl_digi TEST, ww_digi WW,
              field_day FD, rtty RU) is answerable too, whatever the continents.
              Every other directive is not answerable: another continent or region (NA, JA,
              SA, ...), any other word (TEST, POTA, a number; a contest word outside its activity),
@@ -806,73 +806,6 @@ package WstxStrategy {
              job (another job: 409 stale_request job_id; no active strategy: 409
              not_configured strategy) in display order: every one when explain, else only
              those with a rank or grey. Never changes station state. */
-    }
-    attribute def ValueView {
-        doc /* While a strategy is active the browser renders the station's verdicts in Band
-             Activity: after a new publication event (never on a timer) it asks POST
-             /strategy/evaluate once for the shown sequences of the current live identity; rows
-             arriving during an evaluation are asked for when it ends.
-             A row with a rank has the existing strategy mark (colour stays per
-             WstxOperatingLayout::BandActivityColours: only interesting stations); greyed rows
-             are dimmed and struck through; other rows have no mark. With the sort on value (the
-             default, the visible "Value" control in the strategy element) rows are ordered in
-             their period block by ValueOrder: the partner rows stay on top (#50), rows to my
-             call next, then rows with a rank by rank, then the rest in ActivityOrdering.
-             Clicking a column header sorts by that column until the operator returns to Value
-             (ActivityOrdering; the marks stay). No active strategy: no evaluation request and
-             no mark. After an Ignore or Stop ignoring the shown rows are evaluated again.
-             Selecting a strategy never restarts receive. */
-    }
-    attribute def StrategyEditor {
-        doc /* The edit (pencil) popup (a modal dialog carrying its own HALT with the top-bar HALT's
-             action and enabled state; receive keeps running): choose, duplicate and delete
-             strategies (a new strategy is only a duplicate, "<name> copy", of a built-in or
-             user strategy, keeping its class and contest; there is no blank "Add"); the list
-             grouped Strategy, Contest (the two classes). Exactly the settings of Strategy, as the nine
-             numbered decisions in order (D19, mockups of 2026-11-09):
-             name and class (strategy or contest, shown, never switchable: a duplicate keeps it);
-             1 Band: "All bands" or band checkboxes;
-             2 Filters, as questions with answers: "What must be new?" (DXCC entity, Call, Grid,
-             CQ zone (WAZ), ITU zone, Continent (WAC), Prefix (WPX) checkboxes); "New per" (Ever,
-             Band, Band and mode); "New means" (Not worked, Not confirmed (QSL/LoTW)); "Region"
-             (All, Other continents than mine, Selected continents with checkboxes); "Minimum SNR"
-             (empty: none); "Worked since" (Any time, Today UTC, From/to UTC dates); "Treat 73 as
-             CQ"; "Prefix/country" include and exclude lists (an entry: a prefix or a country name
-             typed as free text, checked by the station on Save with a refusal shown at the entry;
-             no picker, optional bands); "US state" include and exclude
-             (state codes); "CQ target" include and exclude (words); the line "Callers of my call
-             must pass these filters too". A contest strategy shows its contest (read-only) and
-             only the three lists, under "Contest rules first, then:".
-             3 Order: dropdown rows, one criterion each (add a row from the ValueCriterion names
-             not yet listed, remove one, move one up or down; "the first decides, the next breaks
-             a tie"; the line "then SNR" under the rows, not removable); a contest strategy shows
-             "Ranked by the contest's rules" instead.
-             4 "Calling stations are answered" (a checkbox, callers_first).
-             5 "Leaving a station": After <n> calls without answer, <m> if he hears us | Until
-             logged, leave when not decoded for <n> min | Contest style: while he hears us stay as
-             long as he is the most valuable, else leave after <n> Tx changes.
-             6 "Tx frequency": for each PSK case (He reports and hears us · He reports, does not
-             hear us · He does not report) Stay | Move every call | Move every <n>-th call; the line
-             "a move goes to a quiet slot, never onto a frequency he reports busy, never below 500
-             Hz".
-             7 "Busy pause: while he is in a QSO with another station keep calling on a split
-             frequency and do not count".
-             8 "CQ when idle, after <n> periods with nothing callable" (a checkbox, cq_when_idle,
-             and a number 1..20, cq_wait_periods).
-             9 "Retry pause (minutes)" before a left station is called again.
-             Labels of the criteria: Most wanted (Club Log rank), New DXCC, New DXCC on band, New
-             DXCC on band and mode, New call, New call on band, New grid, New grid on band, New CQ
-             zone, New ITU zone, New continent, New prefix, SNR bucket (above 0, -10..0, below
-             -10), SNR (stronger first), Distance (farthest first), Hears us first (PSK
-             Reporter). A refused field is shown at its control with the station's reason. The
-             live preview evaluates the
-             unsaved draft against the latest period (POST /strategy/evaluate with explain,
-             400 ms after an edit, one request per edit, no timer otherwise) and shows each
-             decode's rank and why. Save sends one PUT /strategy, applies at once (also to the
-             active strategy) and never selects a strategy. A built-in strategy is listed read-only with
-             its settings shown and its preview; only Duplicate acts on it. With no user strategy the
-             popup opens on the first built-in and Save stores none. My continent is set in
-             Settings > General (StrategyConfiguration continent, saved by PUT /strategy). */
     }
     attribute def HearingFeed {
         attribute heardWindowSeconds : Integer = 600;
@@ -1012,7 +945,7 @@ package WstxStrategy {
              WstxContact::BusyPartner keeps Tx clear of his signal; no TxMoveRule move is made while
              he is busy.
              Bound (operator 2026-11-09, #97 Q5): at most N paused calls per message, N the
-             Tx watchdog limit (WstxContact::TxWatchdog); the (N+1)-th call while he is busy counts
+             Tx watchdog limit (WstxQsoTransmit::TxWatchdog); the (N+1)-th call while he is busy counts
              as any call. A new message (the exchange advanced) or a new contact restarts it; the
              target's being busy never does.
              busy_pause off: a busy target's repetitions count as today, and WstxContact's
@@ -1055,7 +988,7 @@ package WstxStrategy {
              No client polling. The line is drawn from the current strategy snapshot and the
              current automation snapshot together at each change of either, so that it never
              keeps the text of an earlier state (#74, CL-074-01): with None, or no strategy
-             snapshot yet, and no strategy run it shows the WstxMcp::AutomationIndicator text
+             snapshot yet, and no strategy run it shows the WstxOperatingLayout::AutomationIndicator text
              of the automation snapshot ("Automation idle" without a run). A new boot
              (WstxStationProtocol::PushedStationState): when the browser learns a boot_id other
              than that of its held strategy snapshot, the element drops that snapshot and its
@@ -1153,7 +1086,7 @@ package WstxStrategy {
     }
     attribute def AutoToggle {
         doc /* Mode (Q5, Q11, Q12, Q17, Q29). Auto is a toggle above the QSO pane next to CQ
-             (WstxOperatingLayout::QsoPane): green on, grey off. It is not part of a strategy
+             (WstxQsoPane::QsoPane): green on, grey off. It is not part of a strategy
              and one toggle serves strategies and contests. It is station state in memory only:
              off after a station restart, after HALT from any source and after every run end
              (StrategyRun). With Auto off a selected strategy or contest only marks its
@@ -1186,7 +1119,7 @@ package WstxStrategy {
              starts"). For every run of WstxMcp::OperatingAutomation: a strategy or contest
              run, a pounce and an MCP policy run.
              Started: the run's contact is a started QSO when its dialogue (the contact
-             engine's, WstxContact::ContactSnapshot; never the run's own memory) holds a
+             engine's, WstxQsoWire::ContactSnapshot; never the run's own memory) holds a
              decoded message of the partner to my call and an own transmission to the partner
              that has started (keyed, also one still on the air). No started QSO: a station
              that called my call before our transmission to it started (a reply only armed),
@@ -1203,7 +1136,7 @@ package WstxStrategy {
              its end and logs it once (WstxContact::QsoAndLogging). The run's rules for it end
              with the run: no LeaveRule, no QuietTime, no slot check, no WD:n, no target
              subscription (HearingFeed), and no StrategyWatchdog exemption: the Tx watchdog's
-             stop at N applies from the next send (WstxContact::TxWatchdog; a message already
+             stop at N applies from the next send (WstxQsoTransmit::TxWatchdog; a message already
              repeated N times under the exemption is not sent again). Tx and Rx stay where
              they are (FreeTxSlot: nothing else moves them in the exchange). Nothing new is
              selected, called or answered for it and its CQ is not called again. A run started
@@ -1212,10 +1145,10 @@ package WstxStrategy {
              (Auto off, None, stop) changes nothing.
              Not started at a finishing end: the contact is disarmed and cancelled at once as
              before; a transmission already on the air (the run's CQ, a Tx1, a reply)
-             finishes its period (WstxContact::SetEnableTx) and nothing after it is keyed.
+             finishes its period (WstxQsoTransmit::SetEnableTx) and nothing after it is keyed.
              Still at once (Enable Tx off and the contact cancelled, nothing logged): HALT from
              any source; Abort QSO; an operator's selection of another station (a double-click,
-             WstxContact::ChangeContact); the Tx watchdog's stop; the grant revoked or a safety
+             WstxStandardQso::ChangeContact); the Tx watchdog's stop; the grant revoked or a safety
              edit (authority_lost; a safety edit disarms in the transmit owner itself,
              authorityChanged); a band change or a mode change by the operator; a station
              restart (transmit is disarmed at every start); and the run's leaving while it runs
@@ -1232,7 +1165,7 @@ package WstxStrategy {
              replaced, when a new run starts, or on a restart. */
     }
     attribute def PskrUse {
-        doc /* Use PSK Reporter (Q17, Q29): a toggle next to Auto (WstxOperatingLayout::QsoPane),
+        doc /* Use PSK Reporter (Q17, Q29): a toggle next to Auto (WstxQsoPane::QsoPane),
              kept across restarts in pskr.json use (HearingFeed), on by default. The Settings
              switch (HearingFeed enabled) stays the master: with it off the toggle is disabled
              (title "PSK Reporter is off in Settings") and counts as off. POST /pskr/use saves
@@ -1275,7 +1208,7 @@ package WstxStrategy {
              calls {calls n, calls_heard m}: the run leaves at the repetition that brings the count
              to n, or to m while the target hears us, in both situations (reason repetitions).
              until_logged {gone_minutes g}: no count; the run stays until the QSO is completed (and
-             logged, WstxContact::DirectLog) and leaves at the first fresh complete publication of
+             logged, WstxLogbook::DirectLog) and leaves at the first fresh complete publication of
              the target's parity at whose period start the newest decoded message of the target
              (any message, to anyone, on this band and mode; at the selection the message it was
              selected on) has a period start g minutes or more earlier (reason gone): exactly g
@@ -1478,7 +1411,7 @@ package WstxStrategy {
         attribute rangesMaxFt4 : Integer = 26;
         doc /* Open Tx slots (#65, replaced by #82, D18): every free frequency on my side at
              the time the other station will be transmitting, for the operator to see on the
-             waterfall and to place Tx by hand (WstxOperatingLayout::FreeTxSlotMarks). The
+             waterfall and to place Tx by hand (WstxSignalArea::FreeTxSlotMarks). The
              station's own value, built with or without an automation run, a QSO or Auto (no
              run_id, no ranking, no limit; #65's five best of each run decision go).
              Judged parity (round 2 Q1, "when he will be transmitting"): my Rx parity, the
@@ -1494,7 +1427,7 @@ package WstxStrategy {
              receive leaving a gap; the WSJT-X
              passband floor; a slot's largest rise above it in those periods, clamped at 0 in
              whole dB). They are taken from the station's live job in the station's operating
-             mode (WstxContact::StationOperatingMode), from the last station band change on
+             mode (WstxQsoTransmit::StationOperatingMode), from the last station band change on
              and from a new live identity's first period (FreeTxSlot Band, kept by the station,
              not by a run).
              Open (round 2 Q2): a Tx frequency f of FreeTxSlot's candidate grid (stepHz 10 Hz
@@ -1535,7 +1468,7 @@ package WstxStrategy {
     }
     attribute def WatchdogFromOperator {
         doc /* The Tx watchdog limits the repetitions of one message
-             (WstxContact::TxWatchdog, operator rule 2026-11-06) and is never paused by
+             (WstxQsoTransmit::TxWatchdog, operator rule 2026-11-06) and is never paused by
              automation; a new message or station restarts the repetition count, so it
              bounds a run per message, not in total (max_run_minutes bounds a policy run; a
              strategy run is bounded by its 8 hour run limit and its grant). A
@@ -1555,75 +1488,72 @@ package WstxStrategy {
              checks are unchanged. */
     }
 
-    dependency storeClause from StrategyConfiguration to WstxRequirements::'CL-039-01';
-    dependency evaluateClause from Verdict to WstxRequirements::'CL-039-02';
-    dependency goalClause from NewNeeded to WstxRequirements::'CL-039-02';
-    dependency strategyRedesignClause from Strategy to WstxRequirements::'CL-097-01';
-    dependency strategyClassClause from StrategyClass to WstxRequirements::'CL-097-01';
-    dependency builtinRedesignClause from BuiltinStrategies to WstxRequirements::'CL-097-01';
-    dependency storeRedesignClause from StrategyConfiguration to WstxRequirements::'CL-097-01';
-    dependency editorRedesignClause from StrategyEditor to WstxRequirements::'CL-097-01';
-    dependency bandsClause from StrategyBands to WstxRequirements::'CL-097-02';
-    dependency filterClause from Candidate to WstxRequirements::'CL-097-02';
-    dependency newNeededClause from NewNeeded to WstxRequirements::'CL-097-02';
-    dependency callerFilterClause from CallerOfMyCall to WstxRequirements::'CL-097-02';
-    dependency countryClause from CountryList to WstxRequirements::'CL-097-02';
-    dependency stateClause from UsStateFilter to WstxRequirements::'CL-097-02';
-    dependency stateOfClause from UsStateOf to WstxRequirements::'CL-097-02';
-    dependency cqTargetClause from CqTargetList to WstxRequirements::'CL-097-02';
-    dependency orderClause from ValueOrder to WstxRequirements::'CL-097-03';
-    dependency leaveRedesignClause from LeaveRule to WstxRequirements::'CL-097-04';
-    dependency retryClause from QuietTime to WstxRequirements::'CL-097-04';
-    dependency leaveLabelClause from LeaveCountLabel to WstxRequirements::'CL-097-04';
-    dependency watchdogLabelClause from StrategyWatchdog to WstxRequirements::'CL-097-04';
-    dependency txMoveClause from TxMoveRule to WstxRequirements::'CL-097-05';
+    dependency storeClause from StrategyConfiguration to WstxContact::'CL-039-01';
+    dependency evaluateClause from Verdict to WstxContact::'CL-039-02';
+    dependency goalClause from NewNeeded to WstxContact::'CL-039-02';
+    dependency strategyRedesignClause from Strategy to WstxContact::'CL-097-01';
+    dependency strategyClassClause from StrategyClass to WstxContact::'CL-097-01';
+    dependency builtinRedesignClause from BuiltinStrategies to WstxContact::'CL-097-01';
+    dependency storeRedesignClause from StrategyConfiguration to WstxContact::'CL-097-01';
+    dependency bandsClause from StrategyBands to WstxContact::'CL-097-02';
+    dependency filterClause from Candidate to WstxContact::'CL-097-02';
+    dependency newNeededClause from NewNeeded to WstxContact::'CL-097-02';
+    dependency callerFilterClause from CallerOfMyCall to WstxContact::'CL-097-02';
+    dependency countryClause from CountryList to WstxContact::'CL-097-02';
+    dependency stateClause from UsStateFilter to WstxContact::'CL-097-02';
+    dependency stateOfClause from UsStateOf to WstxContact::'CL-097-02';
+    dependency cqTargetClause from CqTargetList to WstxContact::'CL-097-02';
+    dependency orderClause from ValueOrder to WstxContact::'CL-097-03';
+    dependency leaveRedesignClause from LeaveRule to WstxContact::'CL-097-04';
+    dependency retryClause from QuietTime to WstxContact::'CL-097-04';
+    dependency leaveLabelClause from LeaveCountLabel to WstxContact::'CL-097-04';
+    dependency watchdogLabelClause from StrategyWatchdog to WstxContact::'CL-097-04';
+    dependency txMoveClause from TxMoveRule to WstxContact::'CL-097-05';
     dependency txMoveSlot from TxMoveRule to FreeTxSlot;
     dependency txMoveHearing from TxMoveRule to HearingFeed;
-    dependency slotEdgeClause from FreeTxSlot to WstxRequirements::'CL-097-05';
-    dependency busyPauseClause from BusyPause to WstxRequirements::'CL-097-06';
+    dependency slotEdgeClause from FreeTxSlot to WstxContact::'CL-097-05';
+    dependency busyPauseClause from BusyPause to WstxContact::'CL-097-06';
     dependency busyPausePartner from BusyPause to WstxContact::BusyPartner;
-    dependency cqIdleClause from CqWhenNoTarget to WstxRequirements::'CL-097-01';
-    dependency contestClassClause from StrategyClass to WstxRequirements::'CL-097-07';
-    dependency valueClause from ValueOrder to WstxRequirements::'CL-039-02';
-    dependency builtinClause from BuiltinStrategies to WstxRequirements::'CL-039-11';
-    dependency mostWantedClause from MostWantedList to WstxRequirements::'CL-039-10';
-    dependency ignoreClause from IgnoreLists to WstxRequirements::'CL-042-02';
-    dependency pounceClause from Pounce to WstxRequirements::'CL-042-03';
+    dependency cqIdleClause from CqWhenNoTarget to WstxContact::'CL-097-01';
+    dependency contestClassClause from StrategyClass to WstxContact::'CL-097-07';
+    dependency valueClause from ValueOrder to WstxContact::'CL-039-02';
+    dependency builtinClause from BuiltinStrategies to WstxContact::'CL-039-11';
+    dependency mostWantedClause from MostWantedList to WstxContact::'CL-039-10';
+    dependency ignoreClause from IgnoreLists to WstxContact::'CL-042-02';
+    dependency pounceClause from Pounce to WstxContact::'CL-042-03';
     dependency pouncePath from Pounce to WstxMcp::OperatingAutomation;
-    dependency alertClause from Alert to WstxRequirements::'CL-042-04';
-    dependency directedClause from DirectedCqRule to WstxRequirements::'CL-039-03';
-    dependency myContinentClause from MyContinent to WstxRequirements::'CL-039-03';
-    dependency manualClause from ManualIntervention to WstxRequirements::'CL-039-05';
-    dependency valueViewClause from ValueView to WstxRequirements::'CL-039-04';
-    dependency editorClause from StrategyEditor to WstxRequirements::'CL-039-04';
-    dependency selectorClause from StrategySelector to WstxRequirements::'CL-039-04';
-    dependency selectorBootClause from StrategySelector to WstxRequirements::'CL-074-01';
-    dependency runClause from StrategyRun to WstxRequirements::'CL-039-05';
-    dependency freeSlotClause from FreeTxSlot to WstxRequirements::'CL-039-09';
+    dependency alertClause from Alert to WstxContact::'CL-042-04';
+    dependency directedClause from DirectedCqRule to WstxContact::'CL-039-03';
+    dependency myContinentClause from MyContinent to WstxContact::'CL-039-03';
+    dependency manualClause from ManualIntervention to WstxContact::'CL-039-05';
+    dependency selectorClause from StrategySelector to WstxOperatingLayout::'CL-039-04';
+    dependency selectorBootClause from StrategySelector to WstxOperatingLayout::'CL-074-01';
+    dependency runClause from StrategyRun to WstxContact::'CL-039-05';
+    dependency freeSlotClause from FreeTxSlot to WstxContact::'CL-039-09';
     dependency freeSlotRun from StrategyRun to FreeTxSlot;
     dependency freeSlotPounce from Pounce to FreeTxSlot;
-    dependency freeTxSlotsClause from FreeTxSlots to WstxRequirements::'CL-065-01';
+    dependency freeTxSlotsClause from FreeTxSlots to WstxContact::'CL-065-01';
     dependency freeTxSlotsChoice from FreeTxSlots to FreeTxSlot;
-    dependency watchdogClause from WatchdogFromOperator to WstxRequirements::'CL-039-06';
-    dependency hearingClause from HearingFeed to WstxRequirements::'CL-039-20';
-    dependency strategyWatchdogClause from StrategyWatchdog to WstxRequirements::'CL-039-21';
+    dependency watchdogClause from WatchdogFromOperator to WstxTransmit::'CL-039-06';
+    dependency hearingClause from HearingFeed to WstxContact::'CL-039-20';
+    dependency strategyWatchdogClause from StrategyWatchdog to WstxContact::'CL-039-21';
     dependency strategyWatchdogHearing from StrategyWatchdog to HearingFeed;
     dependency strategyWatchdogSlot from StrategyWatchdog to FreeTxSlot;
-    dependency strategyWatchdogOwner from StrategyWatchdog to WstxContact::TxWatchdog;
+    dependency strategyWatchdogOwner from StrategyWatchdog to WstxQsoTransmit::TxWatchdog;
     dependency automationPath from StrategyRun to WstxMcp::OperatingAutomation;
-    dependency autoClause from AutoToggle to WstxRequirements::'CL-039-22';
-    dependency autoFinishClause from AutoToggle to WstxRequirements::'CL-081-01';
-    dependency startedQsoClause from StartedQso to WstxRequirements::'CL-081-01';
+    dependency autoClause from AutoToggle to WstxContact::'CL-039-22';
+    dependency autoFinishClause from AutoToggle to WstxContact::'CL-081-01';
+    dependency startedQsoClause from StartedQso to WstxContact::'CL-081-01';
     dependency startedQsoRun from StrategyRun to StartedQso;
     dependency startedQsoAutomation from StartedQso to WstxMcp::OperatingAutomation;
-    dependency startedQsoWatchdog from StartedQso to WstxContact::TxWatchdog;
-    dependency pskrUseClause from PskrUse to WstxRequirements::'CL-039-20';
-    dependency leaveClause from LeaveRule to WstxRequirements::'CL-039-23';
-    dependency quietClause from QuietTime to WstxRequirements::'CL-039-23';
-    dependency cqClause from CqWhenNoTarget to WstxRequirements::'CL-039-22';
-    dependency distanceClause from StationDistance to WstxRequirements::'CL-039-02';
+    dependency startedQsoWatchdog from StartedQso to WstxQsoTransmit::TxWatchdog;
+    dependency pskrUseClause from PskrUse to WstxContact::'CL-039-20';
+    dependency leaveClause from LeaveRule to WstxContact::'CL-039-23';
+    dependency quietClause from QuietTime to WstxContact::'CL-039-23';
+    dependency cqClause from CqWhenNoTarget to WstxContact::'CL-039-22';
+    dependency distanceClause from StationDistance to WstxContact::'CL-039-02';
     dependency leaveHearing from LeaveRule to HearingFeed;
     dependency leaveRun from StrategyRun to LeaveRule;
     dependency cqRun from StrategyRun to CqWhenNoTarget;
-    dependency watchdogOwner from WatchdogFromOperator to WstxContact::TxWatchdog;
+    dependency watchdogOwner from WatchdogFromOperator to WstxQsoTransmit::TxWatchdog;
 }

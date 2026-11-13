@@ -2,7 +2,7 @@
 // Independent local emulator of the FR-023 native FlexRadio wire subset (TC-023-001..003).
 // Written from the SmartSDR TCP/IP API wiki (command/reply/status/handle/version lines,
 // slice/stream/client commands) and the VITA-49 field layout recorded in
-// WstxProductScope::NativeFlexWireSubset; it shares no code with the Rust candidate.
+// WstxFlexSession::NativeFlexWireSubset; it shares no code with the Rust candidate.
 // Loopback only: it announces by unicast to the test's own ports, never broadcasts and never
 // contacts a real radio.
 const net = require('node:net');

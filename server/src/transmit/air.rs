@@ -1,4 +1,4 @@
-//! #43/#92 WstxTransmit::AirClock: the stations heard are the time reference. Station UTC
+//! #43/#92 WstxTransmitClock::AirClock: the stations heard are the time reference. Station UTC
 //! is always the system clock plus a correction from the air; the station keeps itself in
 //! the middle of the stations it decodes. There is no source setting and no basis: the
 //! SNTP measurement (TransmitClock) only measures the system clock for warnings, it is

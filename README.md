@@ -7,7 +7,7 @@ The project has a Rust station server, a browser status/settings interface and a
 Create a profile with `wstx-rust --create-profile <directory>`, then start it with
 `wstx-rust --profile <directory>` and open the reported URL. Each simultaneous server
 uses its own profile directory and port. The [profile contract](docs/sysml/backend/profile/Profile.sysml)
-defines configuration, locking and recovery, the [station protocol](docs/sysml/StationProtocol.sysml)
+defines configuration, locking and recovery, the [station protocol](docs/sysml/backend/web/StationProtocol.sysml)
 access; device selections are saved intent
 and do not activate hardware. No-argument startup retains the original status mode.
 
@@ -52,7 +52,7 @@ The first release targets Windows desktop. macOS and Linux are planned afterward
 
 The [canonical SysML product scope](docs/sysml/ProductScope.sysml) and
 [requirements and verification](docs/sysml/Requirements.sysml) define the functional
-contract. The [architecture](docs/sysml/Architecture.sysml) defines component boundaries,
+contract. The [architecture](docs/sysml/Station.sysml) defines component boundaries,
 internal contract ownership and connections. This README provides orientation, setup
 and licensing; it is not a second functional specification.
 
@@ -72,7 +72,7 @@ Build, test and packaging instructions are in the [project-specific harness](doc
 
 - [Canonical functional model and behaviour baseline](docs/sysml/ProductScope.sysml)
 - [Stable requirements and verification cases](docs/sysml/Requirements.sysml)
-- [Architecture](docs/sysml/Architecture.sysml)
+- [Architecture](docs/sysml/Station.sysml)
 - [Project-specific harness: Windows builds and model validation](docs/harness/Project-Specifics.md)
 - [Reusable SysML authoring instruction](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/sysml-v2.md)
 

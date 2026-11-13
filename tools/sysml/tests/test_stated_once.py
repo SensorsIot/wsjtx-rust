@@ -22,7 +22,7 @@ tool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tool)
 
 CACHE = Path.home() / ".cache/wsjtx-rust/sysml-tools"
-REQUIRED = {"FR-001", "CL-003-01", "TC-001-001"}
+REQUIRED = {"FR-901", "CL-003-01", "TC-001-001"}
 MARKER = "// Canonical authority: SysML\n"
 # The fixture's model files and the required package each declares, written by hand.
 REQUIRED_FILES = {
@@ -35,11 +35,11 @@ REQUIRED_FILES = {
 ENUMS = '''    enum def ImplementationState { enum target; enum partial; enum implemented; }
     enum def AutomationState { enum planned; enum partial; enum implemented; }
 '''
-FR = '''    requirement 'FR-001' {
+FR = '''    requirement 'FR-901' {
         attribute coverage : ImplementationState = ImplementationState::target;
     }
 '''
-OWNS = "    dependency owns from 'CL-003-01' to 'FR-001';\n"
+OWNS = "    dependency owns from 'CL-003-01' to 'FR-901';\n"
 CHECKS = "    dependency checks from 'CL-003-01' to 'TC-001-001';\n"
 PART_KEY = "backend/qso/Part.sysml"
 PART_KEY_PATTERN = re.escape(PART_KEY) + "$"
@@ -97,7 +97,7 @@ def clause(body):
 
 def case(body, typed=""):
     return ("    verification 'TC-001-001'" + typed + " {\n" + body
-            + "        objective { verify 'FR-001'; verify 'CL-003-01'; }\n    }\n")
+            + "        objective { verify 'FR-901'; verify 'CL-003-01'; }\n    }\n")
 
 
 def flat(clause_body, case_body, typed="", extra=""):
@@ -310,7 +310,7 @@ class StatedOnceTests(unittest.TestCase):
         for label, stated in (("attribute", automation("implemented")), ("metadata", run("implemented"))):
             with self.subTest("state taken", definition=label):
                 entries = self.flat(target, tested_by("tests/case.cjs"), typed, definition(stated))
-                self.assertEqual(entries["TC-001-001"], {"kind": "verification", "state": "implemented", "refs": ["FR-001", "CL-003-01"],
+                self.assertEqual(entries["TC-001-001"], {"kind": "verification", "state": "implemented", "refs": ["FR-901", "CL-003-01"],
                                                          "bindings": ["tests/case.cjs"], "manual": False})
             with self.subTest("the case's own state wins over an implemented definition", definition=label):
                 for own in (automation("planned"), run("planned")):
@@ -457,12 +457,12 @@ class StatedOnceTests(unittest.TestCase):
         # Written by hand from the fixture: the manual case binds no test by tag, the clause's
         # module is its own in the first commit and its function's in the second.
         cases = {
-            "TC-001-001": {"automated": False, "verifies": ["FR-001", "CL-003-01"], "paths": ["tests/untagged.cjs"],
+            "TC-001-001": {"automated": False, "verifies": ["FR-901", "CL-003-01"], "paths": ["tests/untagged.cjs"],
                            "tests": [], "unresolved": ["tests/untagged.cjs"]},
             "TC-001-002": {"automated": True, "verifies": ["CL-003-01"], "paths": ["tests/second.cjs"],
                            "tests": [{"path": "tests/second.cjs", "name": "second"}], "unresolved": []},
         }
-        promises = {"FR-001": {"implementation": []}, "CL-003-01": {"implementation": ["server/contact.rs"]}}
+        promises = {"FR-901": {"implementation": []}, "CL-003-01": {"implementation": ["server/contact.rs"]}}
         real_catalog = bindings.sysml.canonical_catalog
         results = {}
         with mock.patch.object(bindings, "ROOT", self.root), \
@@ -494,7 +494,7 @@ class StatedOnceTests(unittest.TestCase):
 PILOT_REQUIREMENTS = MARKER + '''package WstxRequirements {
     enum def ImplementationState { enum target; enum partial; enum implemented; }
     enum def AutomationState { enum planned; enum partial; enum implemented; }
-    requirement 'FR-001' {
+    requirement 'FR-901' {
         attribute coverage : ImplementationState = ImplementationState::target;
     }
 }
@@ -519,7 +519,7 @@ PILOT_ENGINE = '''package EngineFunction {
         @Automation { run = AutomationState::implemented; }
     }
     verification 'TC-001-001' : EngineCase {
-        objective { verify 'CL-003-01'; verify WstxRequirements::'FR-001'; verify WireFunction::'CL-003-02'; }
+        objective { verify 'CL-003-01'; verify WstxRequirements::'FR-901'; verify WireFunction::'CL-003-02'; }
         @TestedBy { test = "server/src/contact_tests.rs"; }
     }
     verification def ReviewCase {
@@ -530,7 +530,7 @@ PILOT_ENGINE = '''package EngineFunction {
         objective { verify 'CL-003-01'; }
         @TestedBy { test = "server/src/review_notes.rs"; }
     }
-    dependency owns from 'CL-003-01' to WstxRequirements::'FR-001';
+    dependency owns from 'CL-003-01' to WstxRequirements::'FR-901';
     dependency checks from 'CL-003-01' to 'TC-001-001';
     dependency reviews from 'CL-003-01' to 'TC-001-002';
 }
@@ -543,7 +543,7 @@ PILOT_WIRE = '''package WireFunction {
         @ModelBindings::Status { build = WstxRequirements::ImplementationState::partial; }
         @ModelBindings::ImplementedIn { module = "server/src/wire.rs"; }
     }
-    dependency owns from 'CL-003-02' to WstxRequirements::'FR-001';
+    dependency owns from 'CL-003-02' to WstxRequirements::'FR-901';
     dependency checks from 'CL-003-02' to EngineFunction::'TC-001-001';
 }
 '''
@@ -585,7 +585,7 @@ class NewFormsOnThePilotTests(unittest.TestCase):
     def test_catalog_reads_the_text_the_pilot_resolves(self):
         entries = tool.canonical_catalog(self.models, self.root, required=REQUIRED)
         expected = {
-            "FR-001": ("target", [], False),
+            "FR-901": ("target", [], False),
             "CL-003-01": ("implemented", ["server/src/contact.rs"], False),
             "CL-003-02": ("partial", ["server/src/wire.rs"], False),
             "TC-001-001": ("implemented", ["server/src/contact_tests.rs"], False),

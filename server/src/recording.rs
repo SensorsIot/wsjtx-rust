@@ -260,7 +260,7 @@ pub struct State {
     operating: selection::Operating,
     live_worker: Option<std::thread::JoinHandle<()>>,
     live_owner_released: bool,
-    /// WstxContact::StationOperatingMode: the mode of the last started ft4/ft8 live job
+    /// WstxQsoTransmit::StationOperatingMode: the mode of the last started ft4/ft8 live job
     /// or admitted mode selection, whichever came last (FT8 at a fresh boot).
     operating_mode: &'static str,
 }
@@ -404,7 +404,7 @@ struct LiveState {
     /// applied with the drift: windows, period and DT refer to system UTC plus both.
     clock_correction: i128,
     publication_error: Option<&'static str>,
-    /// WstxContact::OperatorDisplays Rx level accumulation (sum of squares in 16-bit
+    /// WstxQsoWire::OperatorDisplays Rx level accumulation (sum of squares in 16-bit
     /// full-scale units, sample count, window start) and the last published value.
     level: (f64, u64, Option<Instant>, Option<i32>),
     /// Unknown-loss epoch rotations of this live receive and the latest trigger code;
@@ -676,7 +676,7 @@ impl Recording {
         let source = l.source.as_ref()?.source_id.clone();
         matches!(l.mode, "ft8" | "ft4").then(|| (source, j.id.clone(), j.generation, l.mode))
     }
-    /// WstxContact::StationOperatingMode: the mode of the last started ft4/ft8 live job
+    /// WstxQsoTransmit::StationOperatingMode: the mode of the last started ft4/ft8 live job
     /// or admitted operating mode selection (persists across a receive stop).
     pub(crate) fn operating_mode(&self) -> &'static str {
         self.state.lock().unwrap().operating_mode

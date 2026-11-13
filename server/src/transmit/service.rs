@@ -21,7 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Native playback rate of every transmission (WstxTransmit::Ft8WaveformContract).
+/// Native playback rate of every transmission (WstxMessageEncode::Ft8WaveformContract).
 pub const SAMPLE_RATE_HZ: u32 = 48_000;
 /// WstxTransmit::TransmitTiming haltMs: audio stopped, PTT released and read back.
 pub const HALT_BOUND_MS: u64 = 250;
@@ -662,7 +662,7 @@ impl<H: Hardware> Core<H> {
         self.cancel_unstarted(OutcomeKind::Refused, Some(TransmitRefusal::NotArmed));
     }
     /// Accepted operator activity in the browser: a human was seen this boot. It changes
-    /// nothing of the Tx watchdog's limit, repetitions or stop (WstxContact::TxWatchdog).
+    /// nothing of the Tx watchdog's limit, repetitions or stop (WstxQsoTransmit::TxWatchdog).
     pub fn activity(&mut self) {
         self.operator_seen = true;
     }
@@ -671,7 +671,7 @@ impl<H: Hardware> Core<H> {
         self.operator_seen = true;
         self.tx_expired = false;
     }
-    /// The limit of repetitions of one message (WstxContact::TxWatchdog).
+    /// The limit of repetitions of one message (WstxQsoTransmit::TxWatchdog).
     pub fn tx_limit(&self) -> u32 {
         self.tx_calls
     }
@@ -1522,7 +1522,7 @@ fn map_actor_error(e: crate::radio_control::Error) -> PttError {
         _ => PttError::Unavailable,
     }
 }
-/// PTT through the station's single CI-V owner (WstxTransmit::PttControl).
+/// PTT through the station's single CI-V owner (WstxRadioIO::PttControl).
 pub fn actor_ptt(
     actor: &crate::radio_control::actor::Actor,
     on: bool,

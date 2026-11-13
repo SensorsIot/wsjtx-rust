@@ -16,7 +16,7 @@ const settingsForm = document.querySelector('#settings');
 const settingsResult = document.querySelector('#settings-result');
 let profileData, editingRevision, dirty = false, conflict = false, saving = false;
 let socket, timer, pendingId, handshakeProbe;
-// WstxMcp::AutomationIndicator (#74): the socket that has carried an automation.state, so that
+// WstxOperatingLayout::AutomationIndicator (#74): the socket that has carried an automation.state, so that
 // the operating client, loaded after the first snapshots, reads GET /automation only after one.
 let automationAnnounced = null;
 // #82 FreeTxSlotMarks: the socket's latest free_tx_slots.state value, for an operating client that
@@ -127,7 +127,7 @@ async function connect() {
   };
   current.onclose = () => loseSocket('socket-closed');
 }
-// WstxStationProtocol::PageUpdate (#51): a page served with another client build than the
+// WstxOperatingLayout::PageUpdate (#51): a page served with another client build than the
 // station's reloads itself once (local settings stay in browser storage). The operating
 // screen may hold the reload (window.wstxReloadHeld: QSO, dialog, unsaved settings); it then
 // shows its "Station updated" chip. A second mismatch for the same build never loops.
@@ -142,7 +142,7 @@ function stationUpdated(build) {
   window.dispatchEvent(new CustomEvent('station-updated', {detail: build}));
   return false;
 }
-// WstxStationProtocol::BrowserLinkLifecycle (#8): the page's own deferred client download shares
+// WstxOperatingLayout::BrowserLinkLifecycle (#8): the page's own deferred client download shares
 // the one station-to-browser bottleneck, so on a 32 kbit/s link the station's messages can queue
 // behind it for more than 12 s. While one is pending the silence bound is 30 s; its completion
 // or failure counts as a message. No other request extends the bound.

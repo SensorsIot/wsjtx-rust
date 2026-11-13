@@ -1578,7 +1578,7 @@ async fn tc_097_009_g_a_caller_is_answered_at_once_in_each_mode() {
     }
 }
 
-// Proves: TC-097-013 (g) (CL-097-04, WstxContact::ContactSnapshot and Transmit's watchdog):
+// Proves: TC-097-013 (g) (CL-097-04, WstxQsoWire::ContactSnapshot and Transmit's watchdog):
 // GET /transmit watchdog.tx_remaining_calls is null in the attended run's own contact, the Tx
 // watchdog's integer once the run is unattended (no client for 60 s) and in a manual contact (the
 // operator's double-click of CQ K1ABC, no run).

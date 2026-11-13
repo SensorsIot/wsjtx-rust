@@ -2,15 +2,13 @@ package WstxProfiles {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::AutomationState;
-    private import WstxRequirements::'FR-001';
-    private import WstxRequirements::'FR-016';
-    private import WstxRequirements::'FR-021';
-    private import WstxRequirements::'FR-022';
-    private import WstxRequirements::'FR-023';
-    private import WstxRequirements::'CL-005-02';
-    private import WstxRequirements::'CL-005-03';
-    private import WstxRequirements::'TC-022-001';
-    private import WstxRequirements::'TC-022-004';
+    private import WstxArchitecture::'FR-001';
+    private import WstxArchitecture::'FR-016';
+    private import WstxArchitecture::'FR-021';
+    private import WstxArchitecture::'FR-022';
+    private import WstxArchitecture::'FR-023';
+    private import WstxStationProtocol::'CL-005-03';
+    private import WstxStationProtocol::'TC-022-004';
     private import WstxStationProtocol::RuntimeInputs;
     private import ModelBindings::Status;
     private import ModelBindings::Automation;
@@ -18,6 +16,16 @@ package WstxProfiles {
     private import ModelBindings::TestedBy;
     private import ModelNotes::FollowsSource;
     private import ModelNotes::Conflict;
+    private import WstxArchitecture::'FR-019';
+    private import WstxArchitecture::'FR-002';
+    private import WstxArchitecture::'FR-009';
+    private import WstxLiveReceive::'CL-008-02';
+    private import WstxRecordingReceive::'CL-008-03';
+    private import WstxRadioIO::'CL-008-04';
+    private import WstxRadioIO::'CL-008-06';
+    private import WstxRecordingReceive::'CL-006-04';
+    private import WstxRadioSetup::'TC-044-002';
+    private import WstxRadioSetup::'TC-044-004';
     doc /* The profile part (WstxArchitecture::PersistedProfile, deployed as
          physicalStation::backend::stations::profile): the saved profile of one station, its
          creation, its launch with ownership, its save through GET and PUT /profile, its stop
@@ -26,7 +34,7 @@ package WstxProfiles {
          WstxProfileRecordings; authentication is the web part's (WstxStationProtocol), the
          profile form the browser's (WstxOperatingLayout). */
     doc /* The content coding of a GET /profile body is
-         WstxOperatingReceive::HttpContentCodingBoundary's; the checks of this package come
+         WstxHttpContentCoding::HttpContentCodingBoundary's; the checks of this package come
          before it, and it adds no owner, wire JSON or WebSocket codec. */
     @ImplementedIn { module = "server/src/profile.rs; server/src/main.rs"; }
 
@@ -547,7 +555,7 @@ package WstxProfiles {
              Setup: four running profiles with valid inputs; each fault is applied alone, with
              otherwise valid TLS and token inputs.
              (a) Profile 1 stops and restarts while the other three refresh within
-                 WstxOperatingLayout::loopbackRefreshDeadlineSeconds and stay unchanged.
+                 WstxSettings::loopbackRefreshDeadlineSeconds and stay unchanged.
                  Profile 1 returns with its UUID and revision and a new boot ID.
              (b) The same path, an alias or a copied UUID gives profile_in_use until the
                  owner exits, whatever the directory's name. An occupied port gives
@@ -579,4 +587,178 @@ package WstxProfiles {
     dependency CL_005_04_verified_by_TC_022_004 from 'CL-005-04' to 'TC-022-004';
     dependency CL_005_05_verified_by_TC_022_001 from 'CL-005-05' to 'TC-022-001';
     dependency CL_005_05_verified_by_TC_022_002 from 'CL-005-05' to 'TC-022-002';
+    requirement 'CL-005-02' {
+        doc /* Stable identity, schema, validated settings, revision and acknowledged saves MUST survive process restart. The browser MUST identify the selected profile and permit the bounded edits below. */
+        attribute coverage : ImplementationState = ImplementationState::partial;
+        attribute implementation : String = "server/src/profile.rs; client/app.js";
+    }
+    dependency CL_005_02_to_FR_001 from 'CL-005-02' to 'FR-001';
+    dependency CL_005_02_to_FR_016 from 'CL-005-02' to 'FR-016';
+    dependency CL_005_02_to_FR_019 from 'CL-005-02' to 'FR-019';
+    dependency CL_005_02_to_FR_022 from 'CL-005-02' to 'FR-022';
+    requirement 'CL-008-01' {
+        doc /* Persist independently selected audio and typed IC-7300 control intent through the existing profile revision/atomic-store boundary; settings never assert device availability. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
+    }
+    dependency CL_008_01_to_FR_001 from 'CL-008-01' to 'FR-001';
+    dependency CL_008_01_to_FR_002 from 'CL-008-01' to 'FR-002';
+    dependency CL_008_01_to_FR_009 from 'CL-008-01' to 'FR-009';
+    dependency CL_008_01_to_FR_022 from 'CL-008-01' to 'FR-022';
+    verification 'TC-002-001' {
+        doc /* TC-002-001 — Canonical live audio
+             CL-008-01, CL-008-02, CL-008-03
+             Inject independently timed mono/stereo native float/PCM packets, silence flags, arbitrary splits, exact queue limits/one-over, gaps, timestamp errors, DATA_DISCONTINUITY flags on contiguous positions with QPC steps inside and just outside the2 ms bound, missing devices and cancellation into actual capture/converter boundaries. Generate analytic tones/impulses and rational frame maps independently.
+             Channel0/normalization/finite-value rules, exact rational counts and block partition invariance within2e-5, group-delay alignment within one canonical frame, passband0.1dB/stopband60dB, bounded storage and no gap-crossing/fake silence. A contiguous flag within2 ms of the QPC timeline keeps one epoch and gap-free frames; beyond2 ms it is unknown loss; every unknown-loss epoch names its trigger. Canonical recordings unchanged. Cancel release<=250ms except explicit failed-close state; capture never invokes CAT.
+             2 — Isolated automated tests; Windows development PC, actual candidate modules and independent device/clock fixtures. */
+        attribute automation : AutomationState = AutomationState::partial;
+        objective {
+            verify 'CL-008-01';
+            verify 'CL-008-02';
+            verify 'CL-008-03';
+        }
+        attribute executable : String = "server/tests/audio_contract.rs; server/tests/audio_receive.rs; server/tests/receive_integration.rs; server/tests/source_contract.rs; server/src/audio.rs";
+    }
+    verification 'TC-009-001' {
+        doc /* TC-009-001 — Typed radio control
+             CL-008-01, CL-008-03, CL-008-04, CL-008-06
+             Feed manually derived CI-V query/set/ACK/NG/readback bytes through fragmented, malformed, echoed, foreign, stale, flooded and boundary-sized transport fixtures. Test auto-baud order/deadlines, invalid catalogue/URI, physical alias conflicts and cancellation before/after send.
+             Exact bytes/readback semantics; no bytes for invalid/raw/TX requests; no deadline renewal/in-flight exchange retry/write replay; one owner/no queue; every cap and one-over; missing/busy/failed-close state truthful; two processes cannot own the same physical resource.
+             2 — Isolated automated tests; Windows development PC, compiled control service and independent protocol/serial emulator. */
+        attribute automation : AutomationState = AutomationState::partial;
+        objective {
+            verify 'CL-008-01';
+            verify 'CL-008-03';
+            verify 'CL-008-04';
+            verify 'CL-008-06';
+        }
+        attribute executable : String = "server/tests/radio_control.rs";
+        attribute method : String = "manual";
+    }
+    verification 'TC-022-001' {
+        doc /* #### TC-022-001 — Variable independent servers and browser windows
+
+             **Promises:** FR-001, FR-019, FR-021, FR-022; CL-005-01, CL-005-02, CL-005-03,
+             CL-005-05. **Level:** 2 — isolated automated tests.
+             **Where:** Windows PC, N real server processes and separate real browser windows.
+
+             **Setup partition:** Operational browser windows and save/readiness regressions
+             use four saved HTTPS localhost endpoints and legitimate selected grants in one
+             browser context, per WstxSettings::IndependentVerification. Plaintext trusted
+             numeric-loopback HTTP/launch compatibility is a separate mandatory companion,
+             not an operational configuration GUI or Connected/protected-WS prerequisite.
+
+             **Steps:** Launch each table profile with `--profile`; open one window per recorded
+             endpoint. Match every visible full UUID, display name, endpoint, boot ID and revision
+             to its fixture; require N distinct boot IDs/listeners/PIDs. Refresh every window.
+             In window 1 save name `Edited station 1`, audio input `changed-input-1` and CAT endpoint
+             `fixture-cat-1`, CAT mode and disabled PTT; retain its output and all other fields.
+             Reload/Refresh a second window on profile 1 and all other station windows. Repeat with
+             empty audio selections and disabled CAT; save audio alone and control alone.
+
+             **Oracle/outcome:** Only profile 1 advances to the next revision and changes the
+             specified fields; every other file and visible identity/settings remains equal to the
+             input table. The second window observes the same acknowledged revision on refresh.
+             All windows show radio unconfigured and saved device selections not activated. No
+             serial/device access is attempted. The native option is visibly reserved/disabled.
+             There is no four-entry ceiling. Check the form at desktop width and 360 px: identity,
+             errors and Save remain readable/reachable with keyboard input.
+
+             **Plaintext API companion:** With trusted numeric loopback, no cookie and the
+             exact saved Origin where supplied, require GET/valid durable PUT200, identical
+             JSON keys/UUID/revision/settings/size expectations, ordered errors/domain/byte
+             boundaries, unchanged file bytes on rejection and exact durable fields on success.
+             Retain the complete validation matrix below in this companion AND current-grant
+             HTTPS protected ordered checks; no auth bypass or omitted existing variant.
+             Plaintext auth-v1/protected WS/native remain denied, never operational readiness.
+
+             **Validation variants:** In one isolated profile, submit every editable field's empty,
+             maximum and one-beyond-maximum value from 4.2, controls/newlines, malformed callsign/
+             locator, wrong JSON types, invalid CAT/PTT combinations and an attempted native selection.
+             Empty callsign/locator and nullable audio are valid; empty display name/opaque identifier
+             are invalid. Test literal markup in a valid display name and require visible text without
+             HTML execution. In particular, save display name `<img src=x onerror=alert(1)>` and
+             audio identifier `<script>alert(1)</script>`; require their exact literal text in the
+             appropriate page/form fields, no injected element, and no script/dialog execution.
+             Exercise wrong profile ID, stale revision, duplicate/extra/missing fields,
+             invalid JSON, unsupported media type and exact 8,192/8,193-byte bodies per 12.5 (pad
+             an otherwise valid JSON object with whitespace). Each rejected save
+             leaves memory/revision/file unchanged and shows its field/error outcome; valid boundary
+             saves persist exactly. Revision exhaustion refuses another save. Test a second window
+             saving from an old revision: one save wins, one receives 409, no silent merge/lost update.
+             Also hold an announced revision's GET response, begin and hold a PUT, then release the GET while the
+             save remains pending. Save stays disabled and even a repeated form submission sends
+             no second PUT. Release the PUT: exactly one revision advances, editable controls and
+             Save recover their usable state, and permanently read-only controls remain disabled.
+             Repeat with the opposite response order on an unchanged revision-0 station: hold the
+             announced revision's GET response, complete the PUT, whose 200 reply is the revision-1
+             snapshot (CL-073-01, no follow-up GET), then release the old response. Visible revision, saved fields and acknowledged-save feedback remain at
+             revision 1. A changed boot identity still permits restart/recovery resynchronization.
+
+             **Automation coverage:** Existing companions retain the delivered profile,
+             domain/API and form-ordering subset. Operational HTTPS/grant fixture conversion
+             and complete separate plaintext plus protected-HTTPS validation coverage remain
+             pending; the expanded case is partial, without discarding existing assertions. */
+        attribute automation : AutomationState = AutomationState::partial;
+        objective {
+            verify 'CL-005-01';
+            verify 'CL-005-02';
+            verify 'CL-005-03';
+            verify 'CL-005-05';
+            verify 'FR-001';
+            verify 'FR-019';
+            verify 'FR-021';
+            verify 'FR-022';
+        }
+        attribute executable : String = "tests/profiles.test.cjs; server/src/profile_tests.rs";
+    }
+    verification 'TC-022-005' {
+        doc /* #### TC-022-005 — Status readiness independent of settings transport
+
+             Proves CL-005-02, CL-005-03 and CL-006-04. Level 2, automated Windows real Chromium/server
+             fixture in tests/profiles.test.cjs, using the common four-process operational
+             HTTPS/grant fixture before each relevant protected socket. Preserve separate
+             plaintext HTTP/launch compatibility; auth setup requests do not count as profile
+             GETs and auth status cannot replace correlated WS status.
+             On an established socket a Refresh sends no GET /profile (#10 profile.state); an
+             independent save makes the station announce the revision and the browser reads once.
+             Hold that GET behind a controlled barrier, click Refresh,
+             observe its actual correlated WebSocket status and require changed visible updated plus
+             enabled Refresh within 2 seconds before releasing HTTP. Repeat Refresh while held: it adds no GET; a second independent save while held starts no parallel read, and
+             one follow-up eventually obtains that newer
+             revision without overwriting dirty input. On a fresh socket hold initial GET: Connected,
+             station-ready and optional display remain withheld until validated success. Close that
+             socket with HTTP held, establish a replacement, then release the old response: it cannot
+             restore Connected, replace the newer profile snapshot or overwrite its form. Fail the
+             initial/background GET separately: visible failure/stale, no false configuration success.
+             Oracles are these independent canonical timing/identity expectations, real WS traffic and independently
+             prepared profile revisions; barrier release happens only after the status assertion.
+
+             **Automation coverage:** Existing companions retain the delivered legacy
+             socket/settings-readiness subset. The operational HTTPS/grant fixture conversion
+             remains pending; the expanded case is partial, with every existing timing,
+             held-response, count and stale-form assertion retained. */
+        attribute automation : AutomationState = AutomationState::partial;
+        objective {
+            verify 'CL-005-02';
+            verify 'CL-005-03';
+            verify 'CL-006-04';
+        }
+        attribute executable : String = "tests/profiles.test.cjs";
+    }
+    dependency CL_005_02_verified_by_TC_022_001 from 'CL-005-02' to 'TC-022-001';
+    dependency CL_005_02_verified_by_TC_022_002 from 'CL-005-02' to 'TC-022-002';
+    dependency CL_005_02_verified_by_TC_022_005 from 'CL-005-02' to 'TC-022-005';
+    dependency CL_008_01_verified_by_TC_002_001 from 'CL-008-01' to 'TC-002-001';
+    dependency CL_008_01_verified_by_TC_009_001 from 'CL-008-01' to 'TC-009-001';
+    requirement 'CL-044-05' {
+        doc /* PUT /profile refuses an audio device that is not a WASAPI endpoint ID: settings.audio.input_device must be a capture endpoint ID {0.0.1.00000000}.{GUID} and settings.audio.output_device a render endpoint ID {0.0.0.00000000}.{GUID} (lower- or upper-case hex), else 400 audio_device_not_endpoint with the field; null stays allowed. At station start an existing profile whose device entry is not an endpoint ID is migrated: when exactly one active endpoint of that flow has exactly that friendly name, the entry is replaced by its ID and the profile saved (revision + 1); otherwise it is kept and the startup log names the field and the reason (not_found or ambiguous). Loading a profile never fails because of a device entry. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/profile.rs; server/src/main.rs; server/src/radio_control/setup.rs; server/src/audio/windows.rs";
+    }
+    dependency CL_044_05_to_FR_001 from 'CL-044-05' to 'FR-001';
+    dependency CL_044_05_to_FR_002 from 'CL-044-05' to 'FR-002';
+    dependency CL_044_05_to_FR_016 from 'CL-044-05' to 'FR-016';
+    dependency CL_044_05_verified_by_TC_044_002 from 'CL-044-05' to 'TC-044-002';
+    dependency CL_044_05_verified_by_TC_044_004 from 'CL-044-05' to 'TC-044-004';
 }

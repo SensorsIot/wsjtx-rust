@@ -281,7 +281,7 @@ impl<T: Transport> Executor<T> {
             }
         }
     }
-    /// Transmit switch with independent readback (WstxTransmit::PttControl): write
+    /// Transmit switch with independent readback (WstxRadioIO::PttControl): write
     /// 1C 00 01|00, require ACK, then read 1C 00 and require the requested state.
     /// Only the actor's transmit hold calls this; it is not an `Operation`, so neither
     /// the catalogue nor the wire can reach it. Exchange failure closes the connection

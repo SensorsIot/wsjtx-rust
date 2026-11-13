@@ -92,7 +92,7 @@ package WstxContest {
     attribute def ContestProfile {
         doc /* Rule facts only, one data entry per contest, no behaviour of its own; wire keys of
              GET /strategy/contests exactly: id, name, cabrillo (null: no Cabrillo log),
-             cabrillo_confirmed, activity (WstxContact::SpecialActivity name), bands (ADIF band
+             cabrillo_confirmed, activity (WstxSpecialActivities::SpecialActivity name), bands (ADIF band
              names), modes, exchange, dupes (DupeRule), points (PointsRule), multipliers
              (MultiplierRule), score, automation (AutomationClause), automation_text (the clause
              as the rules word it, or that they do not address it), schedule (the rule in words),
@@ -160,7 +160,7 @@ package WstxContest {
              digital. Phone is SSB, USB, LSB, AM, FM, DIGITALVOICE; CW is CW; every other mode is
              digital. In time order; a QSO that is a dupe by the DupeRule counts nothing. Band and
              mode are the record's effective values, the grid its first four characters; a record without
-             a band (logged without a confirmed CAT dial, WstxContact::DirectLog) counts for nothing. band_grid
+             a band (logged without a confirmed CAT dial, WstxLogbook::DirectLog) counts for nothing. band_grid
              with no grid: a logged QSO without a grid dupes every grid of that call on the band, a
              decoded message without a grid is a dupe when the call is logged on that band. The
              tally: qsos, multipliers (distinct keys of the MultiplierRule), points (the PointsRule;
@@ -200,13 +200,13 @@ package WstxContest {
     }
     attribute def ContestPrompt {
         doc /* The Contest button of the strategy element opens a modal dialog with its own HALT (the
-             top-bar HALT's action, as WstxStrategy::StrategyEditor); receive keeps running. It reads
+             top-bar HALT's action, as WstxSettings::StrategyEditor); receive keeps running. It reads
              GET /strategy/contests once at opening, so the pre-fill is current. It offers the
              profiles; Start and End (UTC, to the minute): the selection in force when it matches, else
              the profile's period, empty when asked; the schedule in words; the strategy (D11: the
              profile's contest built-in, first and chosen, and every saved contest strategy of that
              profile, by name; there is no operation choice, the settings are the strategy's own,
-             WstxStrategy::StrategyEditor); the automation text and the notes. Whether it transmits is
+             WstxSettings::StrategyEditor); the automation text and the notes. Whether it transmits is
              the Auto toggle's (WstxStrategy::AutoToggle): a forbidden clause asks its
              confirmation when Auto is switched on, not at Start. When the profile's
              activity differs from the station's, one line says so. Start with an empty period
@@ -215,24 +215,6 @@ package WstxContest {
              changes nothing. In the selector the contest in force is one more option "<name>
              (contest)"; None or a strategy of class strategy sends a PUT without contest (the selector's other
              rule, WstxStrategy::StrategySelector, is unchanged). */
-    }
-    attribute def ContestView {
-        doc /* With a contest in force the browser renders the verdicts as WstxStrategy::ValueView
-             does, on the same events (a new publication, a save; never a timer). Band Activity lists
-             only the rows with a rank, in rank order under the value sort; rows to my call and the
-             partner rows stay (#50); every other row is hidden. Show all (a toggle in the strategy
-             element, visible only with a contest, off at each page load, kept in the page only)
-             shows them all again without a new request: a dupe and a greyed row dimmed, no colour; a
-             row with a new multiplier has its own colour beside the strategy mark
-             (WstxOperatingLayout::BandActivityColours: only interesting stations). The colour slots of the
-             all-time log (new call, DXCC, zone, grid and LotW) are off while a contest is in force,
-             their reasons leave the hover too, and they come back with its end: QSOs outside the
-             period do not count (the My call slot stays; the Settings choice is unchanged). The hover names "#n",
-             new multiplier and points, or the dupe. The status beside it: "Contest <name> \· <MM-DD
-             HH:MM> to <MM-DD HH:MM> UTC \· <strategy name> \· Auto <on or off>" (Auto off is
-             colouring only) and, once evaluated, " \· <n> QSOs \· <m>
-             mult \· score <s>". Manual operation stays as it is: every row selects as ever, the
-             double-click and the directive warning unchanged. */
     }
     attribute def ContestRun {
         doc /* A contest with Auto on is a WstxStrategy::StrategyRun: one run at a time, through
@@ -273,7 +255,7 @@ package WstxContest {
              Waiting for the newest period, #89, StrategyRun Decision timing;
              with Hold Tx on the held Tx, no decision, WstxStrategy D16) and
              sends enable_tx with no partner, which calls CQ with the activity's Tx6; state
-             calling_cq. WstxContact::CallFirst does not answer a CQ started by automation. On each
+             calling_cq. WstxStandardQso::CallFirst does not answer a CQ started by automation. On each
              fresh complete publication of the partner's parity the callers of my call
              (ContestVerdict kind caller with a rank, so only with Calling stations are answered on
              and never a dupe; in ContestValueOrder; not worked in this run on this band and mode,
@@ -314,22 +296,21 @@ package WstxContest {
              the activity alone, not on a selected contest strategy (D2). */
     }
 
-    dependency profileClause from ContestProfile to WstxRequirements::'CL-063-01';
-    dependency scheduleClause from ScheduleRule to WstxRequirements::'CL-063-01';
-    dependency tableClause from ProfileTable to WstxRequirements::'CL-063-01';
-    dependency httpClause from ContestHttp to WstxRequirements::'CL-063-01';
-    dependency directiveClause from ContestDirective to WstxRequirements::'CL-063-02';
+    dependency profileClause from ContestProfile to WstxContact::'CL-063-01';
+    dependency scheduleClause from ScheduleRule to WstxContact::'CL-063-01';
+    dependency tableClause from ProfileTable to WstxContact::'CL-063-01';
+    dependency httpClause from ContestHttp to WstxContact::'CL-063-01';
+    dependency directiveClause from ContestDirective to WstxContact::'CL-063-02';
     dependency directiveOwner from ContestDirective to WstxStrategy::DirectedCqRule;
-    dependency selectionClause from ContestSelection to WstxRequirements::'CL-063-03';
-    dependency promptClause from ContestPrompt to WstxRequirements::'CL-063-03';
-    dependency logClause from ContestLog to WstxRequirements::'CL-063-03';
-    dependency verdictClause from ContestVerdict to WstxRequirements::'CL-063-04';
-    dependency orderClause from ContestValueOrder to WstxRequirements::'CL-063-04';
-    dependency viewClause from ContestView to WstxRequirements::'CL-063-04';
-    dependency runClause from ContestRun to WstxRequirements::'CL-063-05';
-    dependency runSafety from ContestRun to WstxRequirements::'CL-063-06';
+    dependency selectionClause from ContestSelection to WstxContact::'CL-063-03';
+    dependency promptClause from ContestPrompt to WstxContact::'CL-063-03';
+    dependency logClause from ContestLog to WstxContact::'CL-063-03';
+    dependency verdictClause from ContestVerdict to WstxContact::'CL-063-04';
+    dependency orderClause from ContestValueOrder to WstxContact::'CL-063-04';
+    dependency runClause from ContestRun to WstxContact::'CL-063-05';
+    dependency runSafety from ContestRun to WstxContact::'CL-063-06';
     dependency runPath from ContestRun to WstxStrategy::StrategyRun;
-    dependency contestStrategySelection from ContestSelection to WstxRequirements::'CL-097-07';
-    dependency contestStrategyPrompt from ContestPrompt to WstxRequirements::'CL-097-07';
-    dependency contestStrategyRun from ContestRun to WstxRequirements::'CL-097-07';
+    dependency contestStrategySelection from ContestSelection to WstxContact::'CL-097-07';
+    dependency contestStrategyPrompt from ContestPrompt to WstxContact::'CL-097-07';
+    dependency contestStrategyRun from ContestRun to WstxContact::'CL-097-07';
 }

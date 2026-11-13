@@ -10,7 +10,9 @@ spec = importlib.util.spec_from_file_location("context_tool", TOOL)
 tool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tool)
 
-ARCHITECTURE = TOOL.parent.parent / "docs/sysml/Architecture.sysml"
+# The model file of WstxArchitecture, found by its package.
+ARCHITECTURE = next(path for path in tool.model_files(TOOL.parent.parent / "docs/sysml").values()
+                    if tool.file_package(tool.without_comments(path.read_text(encoding="utf-8"))) == "WstxArchitecture")
 ORACLE_FILE = TOOL.parent / "sysml/architecture-oracle.json"
 ROOT = "physicalStation"
 

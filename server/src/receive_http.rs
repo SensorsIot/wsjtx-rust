@@ -332,7 +332,7 @@ pub async fn start(
     contact_step(station).await;
     reply
 }
-/// WstxContact::ModeChange: one synchronous station contact step before a receive or
+/// WstxQsoTransmit::ModeChange: one synchronous station contact step before a receive or
 /// selection mutation is answered, so a mode change is applied to the contact at once.
 pub(crate) async fn contact_step(state: Arc<ProfileState>) {
     let _ = tokio::task::spawn_blocking(move || crate::contact_http::station_tick(&state)).await;

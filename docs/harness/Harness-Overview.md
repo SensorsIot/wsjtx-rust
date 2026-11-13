@@ -7,8 +7,8 @@ contract; the references below are the constraints a change must respect.
 | Subject | Reference |
 |---|---|
 | Product contract | [Functional model entry point](../sysml/Requirements.sysml); [exclusive authority selection](Project-Specifics.md#exclusive-functional-authority) |
-| Product component/interface boundaries | [Architecture](../sysml/Architecture.sysml) and its referenced behaviour/interface packages |
-| Product SysML artifacts and view scope | [Architecture model](../sysml/Architecture.sysml); [catalog and validation](Project-Specifics.md#canonical-model-catalog-and-source-bindings) |
+| Product component/interface boundaries | [Architecture](../sysml/Station.sysml) and its referenced behaviour/interface packages |
+| Product SysML artifacts and view scope | [Architecture model](../sysml/Station.sysml); [catalog and validation](Project-Specifics.md#canonical-model-catalog-and-source-bindings) |
 | Behavior baseline and provenance | [Functional model](../sysml/Requirements.sysml) and its referenced scope/provenance packages; distribution notices in [README](../../README.md#license-and-attribution) |
 | Which machine is needed for what (HB9BLA has the transceiver) | [Machines and roles](Project-Specifics.md#machines-and-roles) |
 | Project-specific environment, build and model validation | [Project specifics](Project-Specifics.md), `.github/workflows/windows-rust.yml` |

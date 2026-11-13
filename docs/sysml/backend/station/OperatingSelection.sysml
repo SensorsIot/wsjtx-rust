@@ -1,353 +1,13 @@
 package WstxOperatingReceive {
     private import ScalarValues::*;
-
-
-    enum def HttpCodingSelection { identity; gzip; noAcceptable; }
-    attribute def NegotiationOracleVector {
-        attribute caseId : Integer;
-        attribute orderedRawHeaderFieldsJson : String;
-        attribute expected : HttpCodingSelection;
-        doc /* JSON encodes separate raw Accept-Encoding fields in insertion order;
-             [] is absent, not one empty field. Parse only to supply raw test input,
-             never as production negotiation or an expected value derived from it. */
-    }
-    attribute negotiationSourceVersion : String = "tower-http0.7.1 content_encoding.rs";
-    attribute negotiationSourceSha256 : String = "329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56";
-    attribute originalVectorArtifactSha256 : String = "d8da8bdb86485cc8691e2ad4f37afcbbaf84969c5b1a145f3a187a86d114a3c9";
-    doc /* Original independent source/vector artifact digests are provenance, not
-         a digest of this model serialization. Negotiation semantics below are
-         established-library compatibility, not a claim conflicting duplicates have
-         a unique interpretation mandated by HTTP. The complete ordered oracle is
-         these49 typed cases, independent of candidate output. */
-    attribute negotiation01 : NegotiationOracleVector {
-        attribute :>> caseId = 1;
-        attribute :>> orderedRawHeaderFieldsJson = "[]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation02 : NegotiationOracleVector {
-        attribute :>> caseId = 2;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation03 : NegotiationOracleVector {
-        attribute :>> caseId = 3;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"identity\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation04 : NegotiationOracleVector {
-        attribute :>> caseId = 4;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation05 : NegotiationOracleVector {
-        attribute :>> caseId = 5;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"GZip\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation06 : NegotiationOracleVector {
-        attribute :>> caseId = 6;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"x-gzip\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation07 : NegotiationOracleVector {
-        attribute :>> caseId = 7;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=0\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation08 : NegotiationOracleVector {
-        attribute :>> caseId = 8;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=0,identity;q=0\"]";
-        attribute :>> expected = HttpCodingSelection::noAcceptable;
-    }
-    attribute negotiation09 : NegotiationOracleVector {
-        attribute :>> caseId = 9;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"identity;q=0,gzip;q=bad\"]";
-        attribute :>> expected = HttpCodingSelection::noAcceptable;
-    }
-    attribute negotiation10 : NegotiationOracleVector {
-        attribute :>> caseId = 10;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=bad\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation11 : NegotiationOracleVector {
-        attribute :>> caseId = 11;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"br\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation12 : NegotiationOracleVector {
-        attribute :>> caseId = 12;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"br,identity;q=0\"]";
-        attribute :>> expected = HttpCodingSelection::noAcceptable;
-    }
-    attribute negotiation13 : NegotiationOracleVector {
-        attribute :>> caseId = 13;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=0.5\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation14 : NegotiationOracleVector {
-        attribute :>> caseId = 14;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=0.5,identity;q=1\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation15 : NegotiationOracleVector {
-        attribute :>> caseId = 15;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=0.5,identity;q=0.5\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation16 : NegotiationOracleVector {
-        attribute :>> caseId = 16;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"identity;q=0,gzip\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation17 : NegotiationOracleVector {
-        attribute :>> caseId = 17;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=0.\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation18 : NegotiationOracleVector {
-        attribute :>> caseId = 18;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=1.\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation19 : NegotiationOracleVector {
-        attribute :>> caseId = 19;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;Q=0.500\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation20 : NegotiationOracleVector {
-        attribute :>> caseId = 20;
-        attribute :>> orderedRawHeaderFieldsJson = "[\" gzip\\t; q=0.5 \"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation21 : NegotiationOracleVector {
-        attribute :>> caseId = 21;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q =0.5\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation22 : NegotiationOracleVector {
-        attribute :>> caseId = 22;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q= 0.5\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation23 : NegotiationOracleVector {
-        attribute :>> caseId = 23;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=.5\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation24 : NegotiationOracleVector {
-        attribute :>> caseId = 24;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=00.5\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation25 : NegotiationOracleVector {
-        attribute :>> caseId = 25;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=0.5000\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation26 : NegotiationOracleVector {
-        attribute :>> caseId = 26;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=1.001\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation27 : NegotiationOracleVector {
-        attribute :>> caseId = 27;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=-0.1\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation28 : NegotiationOracleVector {
-        attribute :>> caseId = 28;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=0.5;foo=bar\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation29 : NegotiationOracleVector {
-        attribute :>> caseId = 29;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"*\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation30 : NegotiationOracleVector {
-        attribute :>> caseId = 30;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"*;q=0\"]";
-        attribute :>> expected = HttpCodingSelection::noAcceptable;
-    }
-    attribute negotiation31 : NegotiationOracleVector {
-        attribute :>> caseId = 31;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"*;q=0.5\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation32 : NegotiationOracleVector {
-        attribute :>> caseId = 32;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"*;q=0,gzip;q=0.5\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation33 : NegotiationOracleVector {
-        attribute :>> caseId = 33;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"*;q=1,gzip;q=0\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation34 : NegotiationOracleVector {
-        attribute :>> caseId = 34;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"*;q=1,identity;q=0\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation35 : NegotiationOracleVector {
-        attribute :>> caseId = 35;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"*;q=0,identity;q=1\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation36 : NegotiationOracleVector {
-        attribute :>> caseId = 36;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"*;q=bad\"]";
-        attribute :>> expected = HttpCodingSelection::identity;
-    }
-    attribute negotiation37 : NegotiationOracleVector {
-        attribute :>> caseId = 37;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"*;q=bad,identity;q=0\"]";
-        attribute :>> expected = HttpCodingSelection::noAcceptable;
-    }
-    attribute negotiation38 : NegotiationOracleVector {
-        attribute :>> caseId = 38;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=0,gzip;q=1\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation39 : NegotiationOracleVector {
-        attribute :>> caseId = 39;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=1,gzip;q=0\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation40 : NegotiationOracleVector {
-        attribute :>> caseId = 40;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=0,gzip;q=1,*;q=0\"]";
-        attribute :>> expected = HttpCodingSelection::noAcceptable;
-    }
-    attribute negotiation41 : NegotiationOracleVector {
-        attribute :>> caseId = 41;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=1,gzip;q=0,*;q=0\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation42 : NegotiationOracleVector {
-        attribute :>> caseId = 42;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"*;q=0,*;q=1\"]";
-        attribute :>> expected = HttpCodingSelection::noAcceptable;
-    }
-    attribute negotiation43 : NegotiationOracleVector {
-        attribute :>> caseId = 43;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"*;q=1,*;q=0\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation44 : NegotiationOracleVector {
-        attribute :>> caseId = 44;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"*;q=bad,*;q=1\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation45 : NegotiationOracleVector {
-        attribute :>> caseId = 45;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=0\", \"gzip;q=1\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation46 : NegotiationOracleVector {
-        attribute :>> caseId = 46;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=0\", \"gzip;q=1,*;q=0\"]";
-        attribute :>> expected = HttpCodingSelection::noAcceptable;
-    }
-    attribute negotiation47 : NegotiationOracleVector {
-        attribute :>> caseId = 47;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"br;q=1\", \"gzip;q=0.4\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    attribute negotiation48 : NegotiationOracleVector {
-        attribute :>> caseId = 48;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"identity;q=0\", \"gzip;q=bad\"]";
-        attribute :>> expected = HttpCodingSelection::noAcceptable;
-    }
-    attribute negotiation49 : NegotiationOracleVector {
-        attribute :>> caseId = 49;
-        attribute :>> orderedRawHeaderFieldsJson = "[\"gzip;q=bad,gzip;q=0.7\"]";
-        attribute :>> expected = HttpCodingSelection::gzip;
-    }
-    calc def ExactCompressedGetRoute {
-        in method : String;
-        in path : String;
-        return allowed : Boolean = method == "GET" and
-            (path == "/receive/selection" or path == "/receive" or path == "/receive/results" or
-             path == "/profile" or path == "/radio" or path == "/recording");
-        doc /* Exact URI path only; valid /receive/results query remains unchanged.
-             This is the complete six-route allowlist, not prefix matching. The #10
-             contact routes (/contact, /contact/*, /contacts, /contacts/*) and
-             /transmit/halt are deliberately excluded and stay identity-coded
-             (WstxContact::ContactSnapshot); this allowlist is unchanged. */
-    }
-    calc def UncompressedGetLogicalCap {
-        in path : String;
-        return bytes : Integer = if path == "/receive/selection" ? 3072 else
-            if path == "/radio" ? 2048 else if path == "/receive/results" ? 16384 else
-            if path == "/profile" or path == "/recording" or path == "/receive" ? 8192 else 0;
-        doc /* Zero denotes an excluded route, never admission for an empty JSON body.
-             Logical UTF-8 representation caps apply before compression or negotiation. */
-    }
-    enum def SnapshotCodingAdmission { enum original; enum snapshotLimit; enum negotiate; }
-    calc def SnapshotBeforeNegotiation {
-        in exactAllowedGet : Boolean;
-        in authenticatedSuccessfulJson : Boolean;
-        in hasCredentials : Boolean;
-        in headOrNoBody : Boolean;
-        in alreadyEncodedOrRanged : Boolean;
-        in exactSizeKnown : Boolean;
-        in exactSize : Integer;
-        in routeCap : Integer;
-        return admission : SnapshotCodingAdmission = if not exactAllowedGet or
-            not authenticatedSuccessfulJson or hasCredentials or headOrNoBody or
-            alreadyEncodedOrRanged ? SnapshotCodingAdmission::original else
-            if not exactSizeKnown or exactSize <= 0 or exactSize > routeCap ?
-                SnapshotCodingAdmission::snapshotLimit else SnapshotCodingAdmission::negotiate;
-        doc /* Evaluate existing handler exactly ONCE. Auth/original errors and excluded
-             responses bypass negotiation entirely, even when all encodings are forbidden.
-             An otherwise eligible success must have exact nonempty serialized size.
-             Unknown/empty/excess size=>503 with exactly{error:{code:snapshot_limit,field:null}}
-             before negotiation, retaining cache/security headers, with no body polling,
-             buffering, second handler/auth/actor dispatch or redispatch. Only after
-             this admission can noAcceptable produce406. A predicate evaluated by a
-             library after negotiation is insufficient to preserve this ordering. */
-    }
-    requirement NegotiatedContentCoding {
-        doc /* Transfer representation only; decompressed JSON fields/nulls/types,
-             timestamps/query provenance/ownership/error semantics and logical caps
-             remain unchanged. A successful authenticated allowlisted nonempty JSON
-             GET selected as gzip MUST be gzip, even the2-byte{} body below library
-             minimum-size defaults. Cookie/Authorization request headers used for
-             authentication are not disqualifying; credentials never enter eligible JSON.
-             With no wildcard select highest positive explicit supported q, gzip on
-             tie; only if none remains use identity unless valididentity;q=0 rejects it.
-             Do not inject implicitidentityq=1 into explicit competition. With wildcard,
-             use FIRST valid explicitq per supported encoding else FIRST valid wildcardq,
-             highest positiveq/gzip tie. Ignore invalidtokens/q, not positive acceptance;
-             a later validduplicate may select encoding. Identityfallback is ONLY that
-             permitted by this pinned algorithm; identity;q=0,gzip;q=bad=>406.
-             Unsupported algorithms are never selected; malformed wire headers retain
-             HTTP-stack refusal. No customAccept-Encoding parser or request decompression.
-             /session, all nonGET including PUTprofile/POSToperations, /ws handshake or
-             messages, auth/error/credential/authority responses are excluded. HEAD,
-             no-body, existingContent-Encoding andContent-Range preserve original semantics.
-             Static / is excluded. Static /app.js,/authorization.js,/recording.js,/logbook.js,/contact.js,
-             /style.css,/recording.css (public, no secret or reflected input, so no
-             BREACH exposure) are gzip only when the pinned algorithm positively selects
-             gzip; every other negotiation, including all encodings forbidden, returns
-             the exact identity bytes, never406 (issue22 supervisor decision).
-             No lossy application codec, changed clocks, cached facts or blanket future
-             TX/QSO/MCP compression permission. Re-review allowlist when responses gain secrets. */
-    }
-    requirement EncodedResponseHeaders {
-        doc /* Encoded response hasContent-Encoding:gzip and original correct Content-Type.
-             Merge exact comma-delimited case-insensitive Accept-Encoding token across ALL
-             Vary fields, trimmingOWS and preserving unrelated values. X-Accept-Encoding-Other
-             is NOT the token. Vary:* dominates and remains; otherwise append the exact
-             token only when absent. No upstream substring match or overwrite. Remove stale
-             uncompressedContent-Length; supplied encodedlength must be accurate, else
-             normal streaming/chunked framing. Identitylength stays correct. Do not reuse
-             a strongvalidator across unequal encoded bytes; no new ETag/conditional-cache
-             promise. Preserve Cache-Control/security/CORS/auth headers; Vary never grants
-             public/shared cacheability. No shared compressed-body cache or stale snapshots;
-             context fresh per response, not shared across requests/users. */
-    }
+    private import WstxRequirements::ImplementationState;
+    private import WstxArchitecture::'FR-002';
+    private import WstxArchitecture::'FR-009';
+    private import WstxArchitecture::'FR-019';
+    private import WstxArchitecture::'FR-021';
+    private import WstxLiveReceive::'TC-009-002';
+    private import WstxStationProtocol::'TC-009-005';
+    private import WstxRequirements::AutomationState;
     // CombinedLinkEvidence retired by #80 (operator 2026-11-09): no test measures the 32 kbit/s
     // link; its budget is a target judged from WstxStationProtocol::LinkTrafficLog.
     attribute def SelectionStateEvent {
@@ -371,49 +31,6 @@ package WstxOperatingReceive {
              of an unknown outcome, also not while the command's POST is pending. A read lost on
              the link before its answer changes nothing while this socket's events hold the state. */
     }
-    part def HttpContentCodingBoundary {
-        doc /* Six current GET routes have fixed serialized JSON. Each own logical cap
-             and exact nonempty size precede negotiation. Unknown/excess is existing
-             bounded503snapshot_limit {error:{code:"snapshot_limit",field:null}}, even
-             all encodings forbidden; no polling/buffering/redispatch; retain security/cache. */
-        attribute exactAllowedGet : Boolean;
-        attribute authenticated : Boolean;
-        attribute successfulJson : Boolean;
-        attribute containsCredentials : Boolean;
-        attribute logicalCapsSatisfied : Boolean;
-        attribute nonempty : Boolean;
-        attribute headOrNoBody : Boolean;
-        attribute alreadyEncoded : Boolean;
-        attribute contentRange : Boolean;
-        attribute eligible : Boolean;
-        attribute selection : HttpCodingSelection;
-        attribute compressed : Boolean;
-        attribute status406 : Boolean;
-        constraint eligibility { eligible ==
-            (exactAllowedGet and authenticated and successfulJson and
-             not containsCredentials and logicalCapsSatisfied and nonempty and
-             not headOrNoBody and not alreadyEncoded and not contentRange) }
-        constraint exactCompression { compressed ==
-            (eligible and selection == HttpCodingSelection::gzip) }
-        constraint exactRefusal { status406 ==
-            (eligible and selection == HttpCodingSelection::noAcceptable) }
-        constraint excludedPreservation { not eligible implies
-            (not compressed and not status406) }
-        // HttpCodingSelection comes from pinned tower-http0.7.1, NegotiationOracleVector instances; no custom parser.
-        // ALL eligible nonempty selected-gzip JSON encoded even <32bytes.
-        // Ineligible responses preserve original status/bytes/headers before negotiation.
-        // Vary exact-token merge BEFORE library; no substring comparison.
-        // Logical schemas/caps/provenance/owner and WS/request representations unchanged.
-    }
-    verification def HttpNegotiationAndIdentity { doc /* TC009005case8 A/B: every pinned
-       NegotiationOracleVector instances incl field order, duplicate/wildcard/malformed q; identity
-       only when selected; noAcceptable406. Raw gzip/independent decoder, exact JSON,
-       tiny2bytebody, correct Vary token merge and framing. */ }
-    verification def HttpExcludedAndCaps { doc /* case8 C: HEAD/no-body/already-encoded/range,
-       auth/errors/secrets/mutations bypass BEFORE negotiation, even all-encodings-forbidden;
-       no duplicate effects, per-route logical caps/exact size before compression, unknown/excess503snapshot_limit before negotiation, no body polling/buffering/redispatch, no request decompression. */ }
-    verification def HttpActualCombinedTls { doc /* case8 D: real two-browser native/CAT75s
-       Thin and75sOff, unchanged TLS accounting/status/cadences/oracles; no estimated PASS. */ }
 
     doc /* Target implementation contract for contract 4.7.5/6.6 TC009005/12.8.1.
          The canonical contract is this package and WstxRequirements; no execution or implementation verdict.
@@ -532,20 +149,6 @@ package WstxOperatingReceive {
              40mFT8=7074000/FT4=7047500. Absent preferred-entry subcase explicitly
              unsupported initialslice, no invented standard fallback. */
     }
-    attribute def RadioFacts {
-        attribute frequencyHz : Integer[0..1];
-        attribute usb : Boolean[0..1];
-        attribute dataOn : Boolean[0..1];
-        attribute filterNumber : Integer[0..1];
-        attribute frequencyConfirmed : Boolean;
-        attribute modeConfirmed : Boolean;
-        attribute dataConfirmed : Boolean;
-        attribute operationContext : String;
-        doc /* contract 4.7.5: requested/committednominal versus physical facts separate.
-             Each current fact has matching successful query provenance; aggregate
-             observed_at cannot freshen cached unqueried fields. FIL1 not numeric
-             width3000Hz. Partial failure never implies rollback or target success. */
-    }
     calc def DesiredMonitorAfterOrdinarySelection {
         in originalMonitor : Boolean;
         in ordinarySelectionCommitted : Boolean;
@@ -647,84 +250,11 @@ package WstxOperatingReceive {
     verification def TypedReadback { doc /* TC009005case3 independentCI-V and perfieldprovenance,partialsettererrors,authority/deadlinecaps. */ }
     verification def ContextAndFailure { doc /* TC009005cases4/5/6 actualcancel/release/newidentity,failedclose/Stop/profileedit/staleinterleavings;no fakehardwaretruth or secondowner. */ }
     verification def PhysicalReceive { doc /* TC009002 authorizedcost4 actualIC7300 readback+actualbrowser,notordinarygate/noTX. */ }
-    enum def ReceiveMode { enum spectrum; enum ft4; enum ft8; }
-    enum def ReceiveState { enum stopped; enum running; enum cancelling; enum failed; }
-    enum def MutationState { enum idle; enum pending; enum outcomeUnknown; }
-    enum def ReceiveIntent { enum monitor; enum stop; enum chooseNextMode; }
-    enum def ExistingOperation { enum none; enum start; enum stop; }
-    calc def MapToolbarIntent {
-        in intent : ReceiveIntent;
-        in current : ReceiveState;
-        in mutation : MutationState;
-        in receiveCapability : Boolean;
-        in currentContextValidated : Boolean;
-        in previousOwnershipReleased : Boolean;
-        return operation : ExistingOperation =
-            if not receiveCapability or not currentContextValidated or mutation != MutationState::idle ? ExistingOperation::none else
-            if intent == ReceiveIntent::chooseNextMode ? ExistingOperation::none else
-            if intent == ReceiveIntent::stop and current == ReceiveState::running ? ExistingOperation::stop else
-            if intent == ReceiveIntent::monitor and current == ReceiveState::running ? ExistingOperation::stop else
-            if intent == ReceiveIntent::monitor and previousOwnershipReleased and (current == ReceiveState::stopped or current == ReceiveState::failed) ? ExistingOperation::start else
-            ExistingOperation::none;
-        doc /* contract 4.7.51/2/3/4/6. Existing server guards still decide admission; none does
-             not claim success. Observed Monitor-off and Stop share receive-only stopped indications
-             and retained texts; Receiving may remain green transitionally. Hidden
-             loop/wait/TX effects and native release are unobserved. Abstract stopped
-             maps absent/completed/cancelled job. Failed job does not prove ownership
-             released. previousOwnershipReleased is confirmed prior-owner release;
-             currentContextValidated includes validated current station/profile/boot
-             snapshot even if job absent. No first/stale snapshot request permitted. No PTT, disarm, QSO cancellation or CAT. */
-    }
-    attribute def ReceivePresentation {
-        attribute activeMode : ReceiveMode;
-        attribute nextMode : ReceiveMode;
-        attribute receive : ReceiveState;
-        attribute mutation : MutationState;
-        attribute currentTupleValidated : Boolean;
-        attribute canMutate : Boolean;
-        assert constraint mutationAuthority {
-            canMutate implies (currentTupleValidated and mutation == MutationState::idle and receive != ReceiveState::cancelling)
-        }
-        doc /* Existing profile/boot/source/job/generation and revision are retained,
-             not replaced with a new ownership scheme. Next selection starts no device
-             and never changes activeMode. Active mode and running/released state come
-             from authoritative receive snapshot. Partial results remain explicit. */
-    }
-    enum def MutationEvent {
-        enum submitted; enum confirmed; enum rejected; enum responseLost;
-        enum laterAuthoritativeReconciliation;
-    }
-    state def ExistingMutationBarrier {
-        attribute acceptedEvent : MutationEvent;
-        entry; then idle;
-        state idle; state pending; state outcomeUnknown;
-        transition submit first idle if acceptedEvent == MutationEvent::submitted then pending;
-        transition complete first pending if acceptedEvent == MutationEvent::confirmed or acceptedEvent == MutationEvent::rejected then idle;
-        transition uncertain first pending if acceptedEvent == MutationEvent::responseLost then outcomeUnknown;
-        transition reconcile first outcomeUnknown if acceptedEvent == MutationEvent::laterAuthoritativeReconciliation then idle;
-        doc /* contract 4.7.54. Old/pre-intent reads never emit laterAuthoritativeReconciliation.
-             This names the legacy Start/Stop browser barrier only; coordinated selection
-             uses MayClearUnknown and explicit12.8.1 fencing; it adds no mutation queue/retry.
-             Reconciliation determines real state, not automatic desired success. */
-    }
-    action def StartWithExistingReceiveAPI {
-        in nextMode : ReceiveMode;
-        doc /* contract 4.7.51/3: POST /receive/start with unchanged contract 12.8 exact shape,
-             saved input/current revision/current context. One receive owner and
-             actual decoder; no audio selection fallback or radio command. */
-    }
-    action def StopWithExistingReceiveAPI {
-        doc /* contract 4.7.52/5: exact current-job Stop, publication invalid before ACK;
-             existing cancellation/release bounds and failure ownership preserved.
-             Verified partial results remain; stale callbacks cannot publish. */
-    }
     enum def Action { enum mode; enum band; enum cancel; }
     enum def NominalOrigin { enum unknown; enum manual; enum cat_readback; enum native_readback; }
     enum def OperationResult { enum pending; enum success; enum failed; enum cancelled; }
     enum def CancelResult { enum cancelled; enum fenced; enum already_cancelled; }
-    enum def QueryKind { enum frequency; enum mode; enum data; enum rx_tx; enum split; }
     enum def SelectionPhase { enum releasing; enum applying; enum restarting; enum applied; enum failed; enum release_blocked; enum cancelled; }
-    attribute maxSafe : Integer = (900719925 * 10000000 + 4740991);
     attribute def WireSelection {
         attribute mode : Mode;
         attribute band : String[0..1];
@@ -743,7 +273,7 @@ package WstxOperatingReceive {
             (exactReadbackBandUnique and readbackCurrent);
         doc /* S1a: otherwise409select_band_first beforeanydevice/start/stop/revision
              change. Explicitband selectsitsentry. Noapproximate/defaultbandguess.
-             #11: a band action resolves its entry in WstxContact::StationOperatingMode
+             #11: a band action resolves its entry in WstxQsoTransmit::StationOperatingMode
              (the last started ft4/ft8 live job or admitted selection), so a band change
              keeps the station's mode; WireSelection mode then follows the commit. */
     }
@@ -844,29 +374,6 @@ package WstxOperatingReceive {
              explicitcancel/fence needed. Clearunknownclassification doesnot clear
              activeoperationbusystate. OldreadcannotundoStop/newintent. */
     }
-    attribute def QueryCompletion {
-        attribute connectionGeneration : Integer;
-        attribute querySequence : Integer;
-        attribute kind : QueryKind;
-        attribute observedAtMs : Integer;
-        assert constraint counters {
-            connectionGeneration > 0 and connectionGeneration <= maxSafe and
-            querySequence > 0 and querySequence <= maxSafe and
-            observedAtMs >= 0 and observedAtMs <= maxSafe
-        }
-        doc /* S6: sameexistingactor/typedquery,eventonlyaftervalidaddressedreply,
-             typeddecodedvalueattached. ACK/broadcast/echo/setterisnotcompletion.
-             Onefactupdatedperquery;perconnectionclearbeforefirstnewquery. */
-    }
-    attribute def FactProvenance {
-        attribute querySequence : Integer[0..1];
-        attribute observedAtMs : Integer[0..1];
-        attribute confirmed : Boolean = false;
-        doc /* S4/S6: pairedvalueofthatfactalsooptional;unknownallnull+false.
-             Lastknownvalue/timestampretainedifstale,confirmedfalse. Neverfreshen
-             fromanotherqueryoraggregateobserved_at. timestamp<=snapshotmonotonic.
-             Wholefinalsetupsuccessrequiresmatchingcurrentmode/DATA/frequencyfacts. */
-    }
     attribute def OperationRecord {
         attribute commandId : String;
         attribute baseRevision : Integer;
@@ -889,13 +396,6 @@ package WstxOperatingReceive {
         attribute pendingReads : Integer = 1;
         attribute pendingOrdinaryMutations : Integer = 1;
         doc /* S7: Target engineering bounds. Old strict v1 routes unchanged. */
-    }
-    action def RadioFactPublication {
-        doc /* S6 existingactor/executorreportsquerycompletionkind/value/provenance
-             tostationalreadyownedstateoutsideI/Olocks. Possiblytouchedfieldsstale
-             onpartialwrite;successupdatesonlyqueriedfact. Genericdirectsettercannot
-             bypasssameRFcontextorchestration;keepunsupporteduntilbarrierbound.
-             /radioexistingaggregatev1shapeunchanged,newfactsinselectionendpointonly. */
     }
     action def ExistingReceiveStop {
         doc /* S1/S5: matchingold/currenttupleStopalsoclearsowningtransitionresume;
@@ -942,12 +442,12 @@ package WstxOperatingReceive {
     }
     verification def CoherentReceiveControls {
         objective {
-            verify WstxRequirements::'CL-008-07';
-            verify WstxRequirements::'CL-008-03';
-            verify WstxRequirements::'CL-008-05';
-            verify WstxRequirements::'CL-010-05';
-            verify WstxRequirements::'CL-010-07';
-            verify WstxRequirements::'CL-010-08';
+            verify WstxOperatingReceive::'CL-008-07';
+            verify WstxRecordingReceive::'CL-008-03';
+            verify WstxRadioIO::'CL-008-05';
+            verify WstxOperatingLayout::'CL-010-05';
+            verify WstxOperatingLayout::'CL-010-07';
+            verify WstxOperatingLayout::'CL-010-08';
         }
         doc /* TC009005 cases1..7 cost2 isolated Windows real services/Chromium,
              independent typed CI-V/native packet/frozen payload and TLS link fixtures.
@@ -1003,7 +503,7 @@ selection band is unknown, a CL-022-03/04 automatic lifecycle tick that observes
 current eligible connection Ready, with a confirmed fresh frequency fact bound to this
 profile, boot, profile revision and connection generation, and no active operation,
 adopts that dial when it EXACTLY equals the preferred entry of the station operating
-mode (WstxContact::StationOperatingMode) for exactly one band. It commits selection
+mode (WstxQsoTransmit::StationOperatingMode) for exactly one band. It commits selection
 {mode: operating mode, band, nominal_hz: dial, origin: cat_readback,
 confirmed_command_id: null}. This applies at startup and after every reconnect (radio
 return, released port, cable return). Adoption never infers the mode, never replaces a
@@ -1074,7 +574,7 @@ connect/capture/reconcile mutation. Encoded response is at most3072UTF-8bytes; o
 returns503snapshot_limit without truncation. Verify the maximum valid shape before
 admitting a candidate; truncating entries is not a size policy.
 
-`control` is exactly `manual|cat` from current saved settings, independent of availability, or `native` on a native FlexRadio profile (WstxProductScope::NativeFlexWireSubset).
+`control` is exactly `manual|cat` from current saved settings, independent of availability, or `native` on a native FlexRadio profile (WstxFlexSession::NativeFlexWireSubset).
 `selection` is exactly `{mode,band,nominal_hz,origin,confirmed_command_id}`: mode ft4|ft8;
 band nullable admitted enum; nominal_hz nullable integer30000..74800000; band/nominal
 are both null or both known and name the same admitted row for that mode. Origin is
@@ -1198,62 +698,37 @@ logical uncompressed JSON.
 
 
     */
-
-    enum def AutomaticCatCondition { enum disabled; enum unauthorized; enum commissioningRequired; enum waitingForDevice; enum connecting; enum ready; enum retryWaiting; enum closing; enum quarantined; }
-    enum def AutomaticCatEvent { enum eligible; enum readbackConfirmed; enum attemptFailedReleased; enum delayElapsed; enum disabledOrRevoked; enum identityChanged; enum releaseFailed; enum recoveryConfirmed; }
-    attribute def AuthStatusRequest {
-        doc /* Strict read-only POST /authorization/v1/status JSON {version:1};
-             no scope/operation/extra keys. GET on this new path405/no effects. */
-        attribute version : Integer = 1;
+    requirement 'CL-008-07' {
+        doc /* Coordinate receive-only operating mode and preferred band changes through the existing station/receive owner and typed CAT actor, with explicit nominal/observed truth, actual release barriers, per-query provenance and cancellation fencing. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/selection.rs; server/src/selection_http.rs; server/src/radio_http.rs; server/src/radio_control/actor.rs; client/recording.js";
     }
-    attribute def AutomaticCatStatus {
-        doc /* Target current condition, not behavioral states or another actor. One
-             authority-owned observation per selected radio; boot/connection generation
-             and query sequence still fence every fact. A retained frequency is not
-             fresh in any condition except ready with its matching observation proof.
-             Existing strict version1 status objects remain unchanged; expose this
-             additive target status via POST /authorization/v1/status with
-             AuthStatusRequest; same-origin browser POST supplies actual Origin, not a
-             script-forged header. Preserve exact Origin/TLS before auth, active scoped
-             grant (401 otherwise), no CORS and Cache-Control:no-store. Missing/wrong
-             Origin on accepted POST403; legacy GET/profile absence policy is unchanged.
-             Read-only snapshot: no identity/grant/session/receipt/native effects or
-             CAT retry scheduling. GET on this new path405/no effects; no fallback.
-             Strict response version1,scope (AuthWireScope projection),condition,
-             error,retry_after_ms,commissioned,receive_state. Error is bounded mapped
-             code/null, retry_after_ms safe integer0..8000/null, commissioned Boolean;
-             receive_state is existing authoritative audio/decoder summary, no copied
-             numerical/result state. Logical response<=1024bytes, reuse existing status
-             publication/heartbeat and accounting; no parallel timer/poll stream. */
-        attribute scope : WstxStationProtocol::SelectedRadioAuthorizationScope;
-        attribute condition : AutomaticCatCondition;
-        attribute retryAfterMilliseconds : Integer[0..1];
-        attribute errorCode : String[0..1];
+    dependency CL_008_07_to_FR_002 from 'CL-008-07' to 'FR-002';
+    dependency CL_008_07_to_FR_009 from 'CL-008-07' to 'FR-009';
+    dependency CL_008_07_to_FR_019 from 'CL-008-07' to 'FR-019';
+    dependency CL_008_07_to_FR_021 from 'CL-008-07' to 'FR-021';
+    dependency CL_008_07_verified_by_TC_009_002 from 'CL-008-07' to 'TC-009-002';
+    dependency CL_008_07_verified_by_TC_009_005 from 'CL-008-07' to 'TC-009-005';
+    // Live finding 2026-11-06 (#44 comment 6683284855): a band change from the operator must simply work.
+    requirement 'CL-044-16' {
+        doc /* A selection of POST /receive/select that finds the CAT lease held by the 1 s poll, a menu or AGC exchange or another transition waits for it up to 3 s, without a queue, off the async runtime, and then proceeds: a poll no longer refuses a band change. After the wait the preflight runs again as before. A lease still held at 3 s refuses busy, as does a transmit hold, at once, since a transmission lasts far longer than the wait. The busy refusal of a held lease comes at 3 s from the request, never before, with a margin of at most 250 ms for scheduling and request handling: on the development PC (HB9BLA, 2026-11-07, 35 runs) it came 2 to 82 ms after 3 s, the most beside a build, so 250 ms is about three times the worst seen and well below a 3.5 s wait. A refusal changes nothing: the operating revision and the selection stay as they were, and the Band control shows the band the station is on, with "Selection refused · busy". */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/radio_control/actor.rs; server/src/recording.rs; server/src/selection.rs; server/src/selection_http.rs";
     }
-    action def MaintainCommissionedCat {
-        doc /* Target CL-022-03/04 action under existing selected-radio authority and
-             radio actor/executor. Preconditions: control enabled, matching unrevoked
-             grant, durable current commissioning and confirmed resource release.
-             One immediate attempt at eligible startup/enable/new valid configuration;
-             absence/open failure/timeout retries after confirmed failure release at
-             1,2,4,8,8seconds monotonic delays. One timer and task across all browsers;
-             no catch-up, backlog, extra actor/native builder or endpoint discovery.
-             Reset series only on actual fresh readback. Disable/last-grant revocation/
-             invalid commissioning/identity change cancels timer and task; re-enable
-             waits for release. Existing setup5s/exchange1s/cancel50ms/RFrelease250ms
-             remain hard bounds. Failed close quarantines; no timed reopen until
-             explicit recovery proves release. Late completions are identity fenced.
-             Automatic I/O is read-only queries only, no setters/PTT/audio start or
-             replay, except the WstxTransmit::StartupSafetyRelease (one off-only PTT
-             release with readback per boot, only when TX is observed before the boot
-             ever keyed). Stop/Halt clears receive/RF tokens and pending resume; background
-             CAT cannot undo Stop or broaden RF ownership. Missing precondition causes
-             zero native open/query/set/PTT. Confirmation itself has no native effect.
-             Delivered in server/src/cat_lifecycle.rs driven by Recording::cat_maintain;
-             failed-close quarantine lasts until station restart. */
-        in scope : WstxStationProtocol::SelectedRadioAuthorizationScope;
-        in commissioning : WstxStationProtocol::RadioCommissioningRecord;
-        out current : AutomaticCatStatus;
+    dependency CL_044_16_to_FR_009 from 'CL-044-16' to 'FR-009';
+    verification 'TC-044-023' {
+        doc /* TC-044-023 — A band change meets a held CAT lease
+             CL-044-16
+             Setup: the actual router, Recording and CAT actor on a scripted IC-7300; Chromium with one refusal injected.
+             Steps: (a) POST /receive/select while the lease is held for 300 ms; (b) while it stays held; (c) reserve the lease under a transmit hold; (d) in the browser, select a band and answer 409 busy.
+             Expected: (a) 202 after the wait; (b) 409 busy at least 3000 ms and under 3250 ms after the request (3 s plus the 250 ms margin of CL-044-16; a red under load is rerun once), with the operating revision and selection unchanged; (c) Busy at once; (d) "Selection refused · busy" and the Band control back on the current band.
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-16';
+        }
+        attribute executable : String = "server/src/radio_level_tests.rs; tests/radio-selection.test.cjs";
     }
+    dependency CL_044_16_verified_by_TC_044_023 from 'CL-044-16' to 'TC-044-023';
 
 }
