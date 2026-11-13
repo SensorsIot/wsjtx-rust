@@ -1088,6 +1088,25 @@ def run_export(side: Side, names: list[str], cache: Path, folder: Path) -> dict:
     return export
 
 
+def resolve_links(text: str, file_key: str, package_of: dict) -> str:
+    """`text` with each relative Markdown link of the model file `file_key` resolved (P4):
+    a link to a model file (a key of `package_of`) as the package it holds, any other as
+    its path below the repository; a URL or a bare anchor stays as written."""
+
+    def link(match) -> str:
+        target = match[1]
+        if re.match(r"[A-Za-z][\w+.-]*:|#", target):
+            return match[0]
+        path, _, anchor = target.partition("#")
+        full = posixpath.normpath(posixpath.join("docs/sysml", posixpath.dirname(file_key),
+                                                 urllib.parse.unquote(path)))
+        model = full[len("docs/sysml/"):] if full.startswith("docs/sysml/") else None
+        resolved = f"package:{package_of[model]}" if model in package_of else "file:" + full
+        return "](<" + resolved + ">" + ("#" + anchor if anchor else "") + ")"
+
+    return LINK.sub(link, text)
+
+
 class Normal:
     """Normalises the facts of one side for comparison. `token` maps an entry key to the
     token its references compare by."""
@@ -1107,22 +1126,11 @@ class Normal:
         indent = min((len(line) - len(line.lstrip()) for line in rest), default=0)
         body = "\n".join(lines[:1] + [line[indent:] for line in lines[1:]]).strip()
 
-        def link(match) -> str:
-            target = match[1]
-            if re.match(r"[A-Za-z][\w+.-]*:|#", target):
-                return match[0]
-            path, _, anchor = target.partition("#")
-            full = posixpath.normpath(posixpath.join("docs/sysml", posixpath.dirname(file_key),
-                                                     urllib.parse.unquote(path)))
-            model = full[len("docs/sysml/"):] if full.startswith("docs/sysml/") else None
-            resolved = f"package:{self.side.package_of[model]}" if model in self.side.sources else "file:" + full
-            return "](<" + resolved + ">" + ("#" + anchor if anchor else "") + ")"
-
         def name(match) -> str:
             target = self.side.export["resolved"].get(match[0])
             return "<" + self.ref(target) + ">" if target else match[0]
 
-        return QNAME.sub(name, LINK.sub(link, body))
+        return QNAME.sub(name, resolve_links(body, file_key, self.side.package_of))
 
     def facts(self, facts: tuple, file_key: str) -> tuple:
         return tuple((path, kind, feature,
@@ -1190,22 +1198,38 @@ def compare(base: Side, head: Side, citations: list) -> tuple[int, list[str]]:
     rel_b, rel_h = by_rel(entries_b), by_rel(entries_h)
     pair, missing, added = {}, [], []
     # Owners first, so that a member prefers the counterpart under its owner's counterpart.
+    # Among equal candidates (D2) each name is paired in passes, so that no element takes a
+    # candidate another one is preferred for: a member of a paired owner under the owner's
+    # counterpart; then a top-level element, or a member of an unpaired owner, in its own
+    # package (P3 still allows a change of package); then any equal one. File order decides
+    # only among candidates no pass tells apart.
     for name in sorted(set(rel_b) | set(rel_h), key=lambda name: (len(QNAME_SEGMENT.findall(name)), name)):
         bases, heads = rel_b.get(name, []), list(rel_h.get(name, []))
         if len(bases) == 1 and len(heads) == 1:
             pair[bases[0]] = heads[0]
             continue
+        matches = {}
         for key in bases:
             content = deep(entries_b, members_b, loose_b, memo_b, key)
-            matches = [other for other in heads if deep(entries_h, members_h, loose_h, memo_h, other) == content]
+            matches[key] = [other for other in heads if deep(entries_h, members_h, loose_h, memo_h, other) == content]
+
+        def by_owner(key, other):
             owner = entries_b[key]["owner"]
-            preferred = [other for other in matches if owner is None or entries_h[other]["owner"] == pair.get(owner)]
-            match = (preferred or matches or [None])[0]
-            if match is None:
-                missing.append(key)
-            else:
-                pair[key] = match
-                heads.remove(match)
+            return owner in pair and entries_h[other]["owner"] == pair[owner]
+
+        def by_package(key, other):
+            owner = entries_b[key]["owner"]
+            return (owner is None or owner not in pair) and entries_h[other]["package"] == entries_b[key]["package"]
+
+        for preferred in (by_owner, by_package, lambda _key, _other: True):
+            for key in bases:
+                if key in pair:
+                    continue
+                match = next((other for other in matches[key] if other in heads and preferred(key, other)), None)
+                if match is not None:
+                    pair[key] = match
+                    heads.remove(match)
+        missing.extend(key for key in bases if key not in pair)
         added.extend(heads)
     paired = set(pair.values())
     strict_b = Normal(base, lambda key: "M:" + pair[key] if key in pair else "U:" + rel(entries_b, key))
@@ -1348,16 +1372,10 @@ def identity_side(directory: Path) -> tuple[dict, dict]:
     sources = {key: path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n") for key, path in files.items()}
     codes = {key: blanked(source, strings=False) for key, source in sources.items()}
     tops = set().union(*(top_packages(blanked(source)) for source in sources.values())) if sources else set()
+    package_of = {key: file_package(blanked(source)) for key, source in sources.items()}
 
     def normal(text: str, key: str) -> str:
-        def link(match) -> str:
-            target = match[1].strip("<>")
-            if re.match(r"[A-Za-z][\w+.-]*:|#", target):
-                return match[0]
-            path, separator, anchor = target.partition("#")
-            return "](" + posixpath.normpath(posixpath.join(posixpath.dirname(key), urllib.parse.unquote(path))) + separator + anchor + ")"
-
-        text = re.sub(r"\]\(([^)]+)\)", link, text)
+        text = resolve_links(text, key, package_of)
         return re.sub(r"(?<![\w:'])(\w+)::", lambda match: "" if match[1] in tops else match[0], text)
 
     entries, dependencies, retired = {}, {}, {}
@@ -1368,7 +1386,7 @@ def identity_side(directory: Path) -> tuple[dict, dict]:
             opening = match.end() - 1
             end = opening + len(declaration_body(code, opening)) + 2
             spans.append((match.start(), end))
-            entries.setdefault(match[3], (normal(source[match.start():end], key), key, file_package(blanked(source))))
+            entries.setdefault(match[3], (normal(source[match.start():end], key), key, package_of[key]))
         for match in re.finditer(r"\bdependency\b[^;{}]*;", code):
             if any(start <= match.start() < end for start, end in spans):
                 continue
