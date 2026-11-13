@@ -928,6 +928,24 @@ def fixed_rules(records: dict, root=None) -> None:
         raise ValueError("Architecture integrity: shared radio requires one effective authority")
 
 
+def end_resolver(root: str, refs: dict):
+    """The deployment path of a connection end, written relative to its owner path (or from
+    the root): an end reached through a reference resolves to the referenced part."""
+    targets = {path: values[3] for path, values in refs.items() if len(values) > 3 and values[3]}
+
+    def resolved(owner: str, end: str) -> str:
+        path = end if end.startswith(root + ".") else owner + "." + end
+        for _ in range(len(targets) + 1):
+            prefix = next((ref for ref in sorted(targets, key=len, reverse=True)
+                           if path == ref or path.startswith(ref + ".")), None)
+            if prefix is None:
+                break
+            path = targets[prefix] + path[len(prefix):]
+        return path
+
+    return resolved
+
+
 def architecture_integrity(output: str) -> dict[str, int]:
     """TC-DOC-005 (CL-014-03, CL-014-06): the deployment against the oracle file.
 
@@ -1005,18 +1023,7 @@ def architecture_integrity(output: str) -> dict[str, int]:
         raise ValueError("Architecture integrity: unexpected reference " + unlisted[0])
     # Every port joins a function: it is an end of a connection, an end reached through a
     # reference resolving to the referenced part's port. A binding joins no port.
-    targets = {path: values[3] for path, values in refs.items() if len(values) > 3 and values[3]}
-
-    def resolved(owner: str, end: str) -> str:
-        path = end if end.startswith(root + ".") else owner + "." + end
-        for _ in range(len(targets) + 1):
-            prefix = next((ref for ref in sorted(targets, key=len, reverse=True)
-                           if path == ref or path.startswith(ref + ".")), None)
-            if prefix is None:
-                break
-            path = targets[prefix] + path[len(prefix):]
-        return path
-
+    resolved = end_resolver(root, refs)
     joined = {resolved(owner, end) for owner, kind, endpoints in actual_edges if kind == "connection"
               for end in endpoints}
     if unjoined := sorted(set(ports) - joined):
@@ -1153,6 +1160,434 @@ def write_architecture_oracle(cache: Path) -> list[str]:
     counts = {section: len(new[section]) for section in ("parts", "references", "contracts", "ports")}
     counts.update({section: sum(map(len, new[section].values())) for section in ("connections", "bindings")})
     return lines + ["Architecture oracle written: " + ", ".join(f"{count} {kind}" for kind, count in counts.items())]
+
+
+# ---- Target structure checks (CL-014-18, TC-DOC-016) ----
+
+# What is not yet in target form: `files` (model file keys, exempt from every rule) and
+# `elements` (qualified name -> owning function; exempt with their members). Only `check`
+# reads it; a rewrite takes its entries off.
+PENDING = Path(__file__).with_name("sysml") / "pending-structure.json"
+STATION_FILE = "Station.sysml"
+STATION_LINK = "interfaces/internal/StationLink.sysml"
+STATION_COMMANDS = "interfaces/internal/StationCommands.sysml"
+MCP_INTERFACE = "interfaces/external/Mcp.sysml"
+OPERATING_CHAIN = "interfaces/internal/OperatingChain.sysml"
+OPERATOR_INTERACTION = "interfaces/external/OperatorInteraction.sysml"
+# The outside interfaces the browser client may have, each with the usage directly in the
+# root its port connects to. An issue that needs a further outside connection adds it here.
+BROWSER_OUTSIDE = {OPERATOR_INTERACTION: "operator"}
+CONTROL_SUFFIX = "Control"
+CHAIN = ("ranking", "auto", "qso", "transmit")
+OUTSIDE_MEMBERS = {"port", "attribute", "metadata"}
+UNLISTABLE = (CONTEXT_FILE, "interfaces/internal/", "interfaces/external/")
+FR_STATED = ((re.compile(r"\bcoverage\b"), "coverage"), (re.compile(r"\bimplementation\b"), "implementation"),
+             (re.compile(r"(?:@|\bmetadata\b[^;{}]*?:)\s*(?:\w+::)*(Status|ImplementedIn|TestedBy|DetailTests)\b(?!::)"), None))
+SATISFY_FR = re.compile(r"satisfy\s+(?:requirement\s+)?(?:(?:\w+|'[^'\r\n]*')::)*'FR-\d{3}'\s+by\b")
+STATION_ALLOWED = re.compile(r"(?:part\s+def|part|ref\s+part|connection(?!\s+def\b)|connect|interface(?!\s+def\b)"
+                             r"|flow(?!\s+def\b)|binding|bind|import|doc|comment)\b")
+
+
+def pending_list(path: Path, keys) -> tuple[set, dict]:
+    """The pending list at `path` as (file keys, {element name: owner}); refused whole
+    when it is unreadable, not of its form, lists an entry twice, a key that is no model
+    file or that cannot be listed, or an element with an empty owner."""
+    def refused(what: str) -> ValueError:
+        return ValueError("Pending structure list: " + what)
+
+    def unique(pairs):
+        names = [name for name, _value in pairs]
+        if twice := sorted({name for name in names if names.count(name) > 1}):
+            raise refused("listed twice: " + twice[0])
+        return dict(pairs)
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        raise refused(f"unavailable or not JSON: {path}") from None
+    if not isinstance(data, dict) or set(data) != {"files", "elements"} or not isinstance(data["files"], list) \
+            or not all(isinstance(key, str) for key in data["files"]) or not isinstance(data["elements"], dict) \
+            or not all(isinstance(owner, str) for owner in data["elements"].values()):
+        raise refused("not a map of files (a list of keys) and elements (names to owners)")
+    files = data["files"]
+    if twice := sorted({key for key in files if files.count(key) > 1}):
+        raise refused("listed twice: " + twice[0])
+    for key in sorted(files):
+        if key == CONTEXT_FILE or key.startswith(UNLISTABLE[1:]):
+            raise refused("file cannot be listed: " + key)
+        if key not in keys:
+            raise refused("no model file: " + key)
+    for name, owner in sorted(data["elements"].items()):
+        if not owner.strip():
+            raise refused("element without owner: " + name)
+    return set(files), dict(data["elements"])
+
+
+def model_elements(records: dict, keys: list[str]) -> dict:
+    """The named elements of the inventory by qualified name: (metaclass, file key, first
+    line, last line, model features of a definition or None); the first of a name."""
+    elements = {}
+    for name, kind, index, start, end, features in records.get("ELEM", []):
+        position = int(index)
+        elements.setdefault(name, (kind, keys[position] if 0 <= position < len(keys) else "", int(start), int(end),
+                                   int(features) if features else None))
+    return elements
+
+
+def pending_elements(listed: dict, records: dict, keys: list[str]) -> dict:
+    """Each listed element name with the place of its element; a name that resolves to no
+    element of the model files refuses the list."""
+    elements = model_elements(records, keys) if listed else {}
+    for name in sorted(listed):
+        if name not in elements or not elements[name][1]:
+            raise ValueError("Pending structure list: no model element: " + name)
+    return {name: elements[name] for name in listed}
+
+
+def part_folder(key: str):
+    """The part folder of a model file: a folder directly under `backend/` other than
+    `operating/`, a folder directly under `backend/operating/`, or `frontend/`."""
+    parts = key.split("/")
+    if parts[0] == "backend" and len(parts) >= 3:
+        if parts[1] == "operating":
+            return "/".join(parts[:3]) if len(parts) >= 4 else None
+        return "/".join(parts[:2])
+    if parts[0] == "frontend" and len(parts) >= 2:
+        return "frontend"
+    return None
+
+
+def control_file(key: str) -> bool:
+    return re.fullmatch(r"interfaces/internal/[^/]*" + CONTROL_SUFFIX + r"\.sysml", key) is not None
+
+
+def may_name(key: str, target: str) -> bool:
+    """Rule 1: whether the file `key` may name the package of the file `target`."""
+    if target == key or target == "Requirements.sysml" or target.startswith("shared/"):
+        return True
+    if (folder := part_folder(key)) is not None:
+        return target.startswith("interfaces/") or part_folder(target) == folder
+    if not target.startswith("interfaces/"):
+        return False
+    if key.startswith("interfaces/external/") and target.startswith("interfaces/internal/"):
+        return key == MCP_INTERFACE and control_file(target)
+    return not (control_file(key) and target in (STATION_LINK, STATION_COMMANDS, MCP_INTERFACE, OPERATING_CHAIN))
+
+
+def structure_code(source: str) -> str:
+    """`source` with comments, the inside of strings and every `doc` and `comment` with its
+    body replaced by spaces; offsets and line breaks kept."""
+    code = blanked(source)
+    for match in list(re.finditer(r"\b(?:doc|comment)\b", code)):
+        opening = source.find("/*", match.end())
+        if opening < 0 or re.search(r"[;{}]", code[match.end():opening]):
+            continue
+        closing = source.find("*/", opening)
+        end = len(source) if closing < 0 else closing + 2
+        code = code[:match.start()] + re.sub(r"[^\r\n]", " ", code[match.start():end]) + code[end:]
+    return code
+
+
+def statement_end(code: str, begin: int, end: int) -> int:
+    """The end of the statement starting at `begin`: after its `;` or its body's `}`."""
+    depth = 0
+    for index in range(begin, end):
+        if code[index] == "{":
+            depth += 1
+        elif code[index] == "}":
+            depth -= 1
+            if depth <= 0:
+                return index + 1
+        elif code[index] == ";" and depth == 0:
+            return index + 1
+    return end
+
+
+def station_faults(key: str, code: str) -> list[tuple]:
+    """Rule 2: the statements of `Station.sysml` at package level and in its part
+    definitions other than composition, connections, `satisfy` of an FR and imports."""
+    faults = []
+
+    def judge(start: int, end: int, top: bool):
+        position = start
+        while begin := re.compile(r"\S").search(code, position, end):
+            begin = begin.start()
+            stop = statement_end(code, begin, end)
+            head = re.sub(r"^(?:(?:private|public|protected)\s+)?(?:(?:abstract|variation)\s+)*", "", code[begin:stop])
+            opening = code.find("{", begin, stop)
+            line = code.count("\n", 0, begin) + 1
+            if top and re.match(r"package\b", head):
+                if opening >= 0:
+                    judge(opening + 1, stop - 1, False)
+            elif re.match(r"part\s+def\b", head):
+                if opening >= 0:
+                    judge(opening + 1, stop - 1, False)
+            elif re.match(r"satisfy\b", head):
+                if not SATISFY_FR.match(head):
+                    faults.append((2, key, line, "satisfy of no FR"))
+            elif not STATION_ALLOWED.match(head):
+                word = re.match(r"@\s*(?:\w+::)*\w+|#?\w+(?:\s+def\b)?|\S", head)[0]
+                faults.append((2, key, line, re.sub(r"\s+", " ", word) + " not allowed"))
+            position = stop
+
+    judge(0, len(code), True)
+    return faults
+
+
+def file_faults(sources: dict[str, str]) -> list[tuple]:
+    """Rules 1, 2, 8, 9 and 10 on the model text, as (rule, key, line, what)."""
+    codes = {key: structure_code(source) for key, source in sources.items()}
+    package_files = {}
+    for key, code in codes.items():
+        for package in top_packages(code):
+            package_files.setdefault(package, set()).add(key)
+    faults = []
+    for key, source in sources.items():
+        code = codes[key]
+        unquoted = re.sub(r"'[^'\r\n]*'", lambda match: " " * len(match[0]), code)
+
+        def at(offset: int) -> int:
+            return code.count("\n", 0, offset) + 1
+
+        # Rule 1: the packages a file names by import or by qualified name in code.
+        if part_folder(key) is not None or key.startswith("interfaces/"):
+            named = {match.start(1): match[1] for match in re.finditer(r"\bimport\s+(?:all\s+)?(\w+|'[^'\r\n]*')", code)}
+            named.update((match.start(), match[0].split("::", 1)[0]) for match in QNAME.finditer(code))
+            for offset, package in sorted(named.items()):
+                targets = package_files.get(package, set())
+                if targets and not any(may_name(key, target) for target in targets):
+                    faults.append((1, key, at(offset), "names package " + package))
+        if key == STATION_FILE:
+            faults += station_faults(key, code)
+        # Rule 8: an FR states no status, no binding and no issue reference.
+        text = blanked(source, strings=False)
+        for match in DECLARATION.finditer(text):
+            if match[1] != "requirement" or not match[3].startswith("FR-"):
+                continue
+            start = match.end()
+            end = start + len(declaration_body(text, start - 1))
+            for pattern, what in FR_STATED:
+                for found in pattern.finditer(code, start, end):
+                    faults.append((8, key, at(found.start()), f"{match[3]} states {what or '@' + found[1]}"))
+            for found in re.finditer(r"#\d+", source[start:end]):
+                faults.append((8, key, at(start + found.start()), f"{match[3]} names issue {found[0]}"))
+        # Rule 9: no dependency.
+        for found in re.finditer(r"\bdependency\b", unquoted):
+            faults.append((9, key, at(found.start()), "dependency declared"))
+        # Rule 10: every requirement, definition or usage, declares a subject.
+        for found in re.finditer(r"\brequirement\b(?:\s+def\b)?", unquoted):
+            if re.search(r"(?:\bsatisfy|\bverify|\bframe|\brequire|\bassume|#|::|\.)\s*$", unquoted[:found.start()]):
+                continue
+            stop = re.compile(r"[;{]").search(code, found.end())
+            name = (code[found.end():stop.start() if stop else len(code)].split() or ["?"])[0]
+            if stop and stop[0] == "{":
+                flat, depth = [], 0
+                for character in declaration_body(code, stop.start()):
+                    depth += character == "{"
+                    flat.append(character if depth == 0 else " ")
+                    depth -= character == "}"
+                if re.search(r"\bsubject\b", "".join(flat)):
+                    continue
+            faults.append((10, key, at(found.start()), f"requirement {name} declares no subject"))
+    return faults
+
+
+def interface_faults(records: dict, elements: dict) -> list[tuple]:
+    """Rule 3 on the interface definitions: one under `interfaces/` has items; every item
+    is typed by a definition with a model feature. As (rule, key, line, what, names)."""
+    items = {}
+    for interface, _end, item, _direction, types in records.get("IITEM", []):
+        items.setdefault(interface, []).append((item, [name for name in types.split(",") if name]))
+    faults = []
+    for name, (kind, key, line, _end, _features) in elements.items():
+        if kind != "InterfaceDefinition" or not key:
+            continue
+        simple = name.rsplit("::", 1)[-1]
+        if key.startswith("interfaces/") and not items.get(name):
+            faults.append((3, key, line, f"interface {simple} without items", (name,)))
+        for item, types in items.get(name, []):
+            if not types:
+                faults.append((3, key, line, f"interface {simple} item {item} untyped", (name,)))
+            for typed in types:
+                if not (elements.get(typed) or (None,) * 5)[4]:
+                    faults.append((3, key, line, f"interface {simple} item {item} typed by featureless {typed}", (name, typed)))
+    return faults
+
+
+def deployment_faults(records: dict, keys: list[str], elements: dict) -> list[tuple]:
+    """Rules 3 (connections), 4, 5, 6 and 7 on the resolved deployment, as (rule, path,
+    what, places), each place a (file key, qualified name) that exempts the fault."""
+    def key_of(index: str) -> str:
+        position = int(index)
+        return keys[position] if 0 <= position < len(keys) else ""
+
+    def within(path: str, base: str) -> bool:
+        return path == base or path.startswith(base + ".")
+
+    root = records["ROOTPART"][0][0].rsplit("::", 1)[-1]
+    parts = {row[0]: row[1:] for row in records.get("PART", [])}
+    refs = {row[0]: row[1:] for row in records.get("REF", [])}
+    ports = {row[0]: row[1] for row in records.get("PORT", [])}
+    where = {path: (key_of(index), name) for path, name, index in records.get("WHERE", [])}
+    resolved = end_resolver(root, refs)
+    connections = []
+    for owner, _name, ends, types, index, anchor in records.get("CONN", []):
+        written = ends.split("|")
+        if len(written) < 2:
+            continue
+        connections.append({"label": f"{owner} {written[0]} -> {written[1]}", "first": resolved(owner, written[0]),
+                            "second": resolved(owner, written[1]), "types": [name for name in types.split(",") if name],
+                            "places": [(key_of(index), anchor)]})
+
+    def kind(name: str) -> str:
+        return (elements.get(name) or ("",))[0]
+
+    def file(name: str) -> str:
+        return (elements.get(name) or ("", ""))[1]
+
+    def connected(path: str, base: str) -> bool:
+        return any(within(connection[a], path) and within(connection[b], base) for connection in connections
+                   for a, b in (("first", "second"), ("second", "first")))
+
+    faults = []
+    stations = sorted(path for path, values in parts.items() if of_type(values, STATION_TYPE))
+    # Rule 3: every connection is typed by an interface definition of `interfaces/`.
+    for connection in connections:
+        interfaces = [name for name in connection["types"] if kind(name) == "InterfaceDefinition"]
+        if not connection["types"]:
+            what = "untyped connection"
+        elif not interfaces:
+            what = "connection typed by no interface"
+        elif not any(file(name).startswith("interfaces/") for name in interfaces):
+            what = "connection typed by an interface outside interfaces/"
+        else:
+            continue
+        faults.append((3, connection["label"], what, connection["places"]))
+    # Rule 4: the outside parts, directly in the root other than the station.
+    station = root + ".station"
+    members = {}
+    for path, side, category, name in records.get("MEMBER", []):
+        members.setdefault(path, []).append((side, category, name))
+    for path, types in records.get("OUTSIDE", []):
+        if path == station:
+            continue
+        types = [name for name in types.split(",") if name]
+        # The part itself is listed by its usage; its type exempts only faults about the type's members.
+        places = [where.get(path, ("", ""))]
+        type_places = places + [(file(name), name) for name in types]
+        for side, category, name in members.get(path, []):
+            if category not in OUTSIDE_MEMBERS:
+                faults.append((4, path, f"outside part with {category} {name}" + (" in its type" if side == "type" else ""),
+                               type_places if side == "type" else places))
+        usage = where.get(path, ("", ""))[1]
+        for anchor, index, subject_types, subsetted in records.get("SUBJECT", []):
+            if set(subject_types.split(",")) & set(types) or usage and usage in subsetted.split(","):
+                faults.append((4, path, f"subject of requirement {anchor}", places + [(key_of(index), anchor)]))
+        own = [port for port in ports if port.startswith(path + ".") and "." not in port[len(path) + 1:]]
+        if not any(connected(port, station) for port in own):
+            faults.append((4, path, "outside part joined to no function", places))
+    # Rule 5: a control interface has the station service at its commanding end.
+    for process in stations:
+        if process + ".station" not in parts:
+            faults.append((5, process + ".station", "missing role part", []))
+    for connection in connections:
+        controls = [name for name in connection["types"]
+                    if kind(name) == "InterfaceDefinition" and name.rsplit("::", 1)[-1].endswith(CONTROL_SUFFIX)]
+        if controls and not any(within(connection["first"], process + ".station") for process in stations):
+            faults.append((5, connection["label"], f"control interface {controls[0].rsplit('::', 1)[-1]} not commanded "
+                                                   "by the station service", connection["places"]))
+    # Rule 6: the browser client.
+    frontend = station + ".frontend"
+    browsers = frontend + ".browsers"
+    webs = [process + ".web" for process in stations]
+    missing = [path for path in (station, frontend, browsers, root + ".operator", *webs) if path not in parts]
+    faults += [(6, path, "missing role part", []) for path in missing]
+    faults += [(6, key, "missing role file", []) for key in (STATION_LINK, OPERATOR_INTERACTION) if key not in keys]
+    if not missing and STATION_LINK in keys and OPERATOR_INTERACTION in keys:
+        own = sorted(port for port in ports if port.startswith(browsers + ".") and "." not in port[len(browsers) + 1:])
+        typed = {port: file(ports[port].removeprefix("~")) for port in own}
+        internal = [port for port in own if typed[port].startswith("interfaces/internal/")]
+        if len(internal) != 1:
+            faults.append((6, browsers, f"browser client with {len(internal)} ports typed by internal interfaces",
+                           [where.get(browsers, ("", ""))]))
+        allowed = {}
+        for port in internal:
+            if typed[port] != STATION_LINK:
+                faults.append((6, port, "internal port not typed by StationLink", [where.get(port, ("", ""))]))
+            elif not any(connected(port, web) for web in webs):
+                faults.append((6, port, "StationLink port not connected to web", [where.get(port, ("", ""))]))
+            else:
+                allowed[port] = webs
+        counts = Counter()
+        for port in own:
+            if port in internal:
+                continue
+            if typed[port] not in BROWSER_OUTSIDE:
+                faults.append((6, port, "port of an interface the browser client may not have", [where.get(port, ("", ""))]))
+                continue
+            counts[typed[port]] += 1
+            peer = root + "." + BROWSER_OUTSIDE[typed[port]]
+            if not connected(port, peer):
+                faults.append((6, port, "port not connected to " + BROWSER_OUTSIDE[typed[port]], [where.get(port, ("", ""))]))
+            allowed[port] = [peer]
+        for key, count in sorted(counts.items()):
+            if count > 1:
+                faults.append((6, browsers, f"browser client with {count} ports typed by {key}", [where.get(browsers, ("", ""))]))
+        for connection in connections:
+            for inside, other in (("first", "second"), ("second", "first")):
+                if within(connection[inside], frontend) and not within(connection[other], frontend) \
+                        and not any(within(connection[inside], port) and any(within(connection[other], peer) for peer in peers)
+                                    for port, peers in allowed.items()):
+                    faults.append((6, connection["label"], "frontend connection ends at " + connection[other],
+                                   connection["places"]))
+    # Rule 7: the operating chain commands only downward, between neighbours.
+    order = set(zip(CHAIN, CHAIN[1:]))
+    for process in stations:
+        faults += [(7, process + "." + role, "missing role part", []) for role in CHAIN if process + "." + role not in parts]
+
+        def role(path: str):
+            return next((name for name in CHAIN if within(path, process + "." + name)), None)
+
+        for connection in connections:
+            first, second = role(connection["first"]), role(connection["second"])
+            if first and second and first != second and (first, second) not in order:
+                faults.append((7, connection["label"], f"{first} to {second} outside the operating chain", connection["places"]))
+    return faults
+
+
+def structure_lines(models: Path, records: dict, keys: list[str], pending: tuple[set, dict], named: dict) -> list[str]:
+    """CL-014-18: the ten rules on every model file and element not on the pending list,
+    the deployment rules once `Station.sysml` is not listed. Returns the passed line;
+    prints every fault, sorted by rule, key and line, and raises when there is one."""
+    listed, listed_elements = pending
+    files = model_files(models)
+    sources = {key: files[key].read_text(encoding="utf-8") for key in keys if key in files}
+    elements = model_elements(records, keys)
+    deployment = STATION_FILE not in listed
+
+    def covered(name: str) -> bool:
+        return any(name == listed_name or name.startswith(listed_name + "::") for listed_name in named)
+
+    def exempt_line(key: str, line: int) -> bool:
+        return key in listed or any(place[1] == key and place[2] <= line <= place[3] for place in named.values())
+
+    found = set()
+    for rule, key, line, what in file_faults(sources):
+        if not exempt_line(key, line):
+            found.add((rule, key, line, f"Structure rule {rule}: {what}: {key}:{line}"))
+    for rule, key, line, what, names in interface_faults(records, elements):
+        if not exempt_line(key, line) and not any(covered(name) for name in names):
+            found.add((rule, key, line, f"Structure rule {rule}: {what}: {key}:{line}"))
+    if deployment and records.get("ROOTPART"):
+        for rule, path, what, places in deployment_faults(records, keys, elements):
+            if not any(key in listed or covered(name) for key, name in places if key or name):
+                found.add((rule, path, 0, f"Structure rule {rule}: {what}: {path}"))
+    if found:
+        for *_order, line in sorted(found):
+            print(line)
+        raise ValueError(f"{len(found)} structure faults")
+    return [f"Structure checks passed: {len(keys) - len(listed)} files in target form, {len(listed)} files and "
+            f"{len(listed_elements)} elements pending; deployment rules {'on' if deployment else 'off'}"]
 
 
 def validate(paths: list[Path], cache: Path, inventory: bool = False) -> subprocess.CompletedProcess:
@@ -1753,12 +2188,19 @@ def main(argv=None):
             authority(MODELS, FSD)
             entries = canonical_catalog(MODELS, ROOT)
             binding_agreement(entries, ROOT)
-            print(f"Canonical SysML catalog/trace checks passed: {len(entries)} identities; behavioral correspondence remains independently reviewed.")
             entry = "Requirements.sysml"
-            paths = [MODELS / entry, *(path for key, path in model_files(MODELS).items() if key != entry)]
+            files = model_files(MODELS)
+            keys = [entry, *(key for key in files if key != entry)]
+            paths = [MODELS / entry, *(path for key, path in files.items() if key != entry)]
+            # The pending list is refused whole before any passed line (CL-014-18).
+            pending = pending_list(PENDING, set(files))
         else:
             paths = args.files
         result = validate(paths, args.cache_dir, inventory=args.command == "check")
+        if args.command == "check":
+            if result.returncode == 0:
+                named = pending_elements(pending[1], inventory_records(result.stdout) if pending[1] else {}, keys)
+            print(f"Canonical SysML catalog/trace checks passed: {len(entries)} identities; behavioral correspondence remains independently reviewed.")
         for line in result.stdout.splitlines():
             if not line.startswith(("Reading ", "AST\t")):
                 print(line)
@@ -1767,6 +2209,8 @@ def main(argv=None):
         if result.returncode == 0 and args.command == "check":
             counts = architecture_integrity(result.stdout)
             print("Architecture integrity passed: " + ", ".join(f"{count} {kind}" for kind, count in counts.items()) + "; runtime behavior not proved.")
+            records = inventory_records(result.stdout) if "AST\t" in result.stdout else {}
+            print("\n".join(structure_lines(MODELS, records, keys, pending, named)))
         return result.returncode
     except (OSError, ValueError, subprocess.TimeoutExpired) as error:
         print(f"SysML check failed: {error}", file=sys.stderr)

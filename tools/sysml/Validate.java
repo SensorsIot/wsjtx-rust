@@ -60,6 +60,7 @@ public class Validate {
         if (result.hasErrors() || result.getException() != null) System.exit(1);
         if (inventory) {
             modelResource = interactive.getResource();
+            sourceStarts = starts;
             collectScope(interactive);
             // The deployment is the one package-level part usage, whatever its name and package;
             // with none or several, only the count and the usages are listed (CL-014-06).
@@ -69,7 +70,9 @@ public class Validate {
             if (rootParts.size() == 1) {
                 var root = rootParts.values().iterator().next();
                 inspect(root, name(root), 0);
+                outside(root, name(root));
             }
+            structure();
         }
         if (export) {
             modelResource = interactive.getResource();
@@ -154,22 +157,26 @@ public class Validate {
             bounds(part), String.valueOf(part.isVariation()),
             String.join(",", part.getOwnedSubsetting().stream().map(x -> chain(x.getSubsettedFeature())).toList()),
             kinds(part));
+        if (!(part instanceof ConnectionUsage)) row("WHERE", path, anchor(part), String.valueOf(fileOf(part)));
         if (part.isReference() && !part.getOwnedSubsetting().isEmpty()) return;
         for (var feature : part.getFeature()) {
             if (!project(feature)) continue;
             if (feature instanceof Connector connector) {
                 var ends = connector.getRelatedFeature();
                 row("EDGE", path, name(connector), connector instanceof BindingConnector ? "binding" : "connection", String.join("|", ends.stream().map(Validate::chain).toList()));
+                connection(path, connector);
                 if (connector instanceof ConnectionUsage connection) inspect(connection, path + "." + name(connection), depth + 1);
             } else if (feature instanceof PortUsage port) {
                 var portPath = path + "." + name(port);
                 row("PORT", portPath, String.join(",", port.getPortDefinition().stream().map(Validate::portDefinition).toList()));
+                row("WHERE", portPath, anchor(port), String.valueOf(fileOf(port)));
                 for (var definition : port.getPortDefinition()) {
                     boolean conjugated = definition instanceof ConjugatedPortDefinition;
                     var original = conjugated ? ((ConjugatedPortDefinition)definition).getOriginalPortDefinition() : definition;
                     for (var item : original.getFeature()) {
                         if (item instanceof Connector connector && project(item)) {
                             row("EDGE", portPath, name(connector), connector instanceof BindingConnector ? "binding" : "connection", String.join("|", connector.getRelatedFeature().stream().map(Validate::chain).toList()));
+                            connection(portPath, connector);
                         }
                         if (item instanceof ItemUsage && project(item)) {
                             var direction = String.valueOf(item.getDirection());
@@ -186,6 +193,105 @@ public class Validate {
         if (part.isVariation()) {
             for (var variant : part.getVariant()) inspect((PartUsage)variant, path + "." + name(variant), depth + 1);
             row("VARIANTS", path, String.join(",", part.getVariant().stream().map(Validate::name).toList()));
+        }
+    }
+
+    // ---- Inputs of the structure rules (CL-014-18, `tools/sysml.py check`) ----
+    // A file is written as its index in the order of the model files on the command line,
+    // -1 for none; a line is counted from 1 in that file.
+
+    /** The qualified name of the element or of its nearest owner that has one. */
+    static String anchor(Element element) {
+        for (var current = element; current != null; current = current.getOwner()) {
+            if (current.getDeclaredName() != null && current.getQualifiedName() != null) return current.getQualifiedName();
+        }
+        return "";
+    }
+    static int[] lines(org.eclipse.emf.ecore.EObject object) {
+        var node = org.eclipse.xtext.nodemodel.util.NodeModelUtils.getNode(object);
+        if (node == null) return new int[] {-1, -1};
+        int start = node.getStartLine(), source = 0;
+        while (source + 1 < sourceStarts.size() && start >= sourceStarts.get(source + 1)) source++;
+        return new int[] {start - sourceStarts.get(source) + 1, node.getEndLine() - sourceStarts.get(source) + 1};
+    }
+    /** The types a feature is declared with, by qualified name; implied typings left out. */
+    static String typing(Feature feature) {
+        return String.join(",", feature.getOwnedTyping().stream().filter(typing -> !typing.isImplied() && typing.getType() != null)
+            .map(typing -> String.valueOf(typing.getType().getQualifiedName())).toList());
+    }
+    static String category(Feature feature) {
+        return feature instanceof PortUsage ? "port" : feature instanceof MetadataUsage ? "metadata"
+            : feature instanceof AttributeUsage ? "attribute" : feature.eClass().getName();
+    }
+    /** A connection (not a binding): its owner path, name, ends, the model types it is
+     * typed by, its file and the qualified name of it or its nearest named owner. */
+    static void connection(String owner, Connector connector) {
+        if (connector instanceof BindingConnector) return;
+        row("CONN", owner, name(connector), String.join("|", connector.getRelatedFeature().stream().map(Validate::chain).toList()),
+            String.join(",", connector.getType().stream().filter(type -> type.eResource() == modelResource)
+                .map(type -> String.valueOf(type.getQualifiedName())).toList()),
+            String.valueOf(fileOf(connector)), anchor(connector));
+    }
+    /** The part usages directly in the root: the members of each and of its types. */
+    static void outside(PartUsage root, String path) {
+        for (var feature : root.getFeature()) {
+            if (!project(feature) || feature instanceof Connector || !(feature instanceof PartUsage child)) continue;
+            var childPath = path + "." + name(child);
+            row("OUTSIDE", childPath, String.join(",", child.getDefinition().stream().map(Element::getQualifiedName).toList()));
+            for (var member : child.getOwnedFeature()) {
+                if (member.eResource() == modelResource) row("MEMBER", childPath, "usage", category(member), name(member));
+            }
+            for (var definition : child.getDefinition()) {
+                for (var member : definition.getFeature()) {
+                    if (member.eResource() == modelResource) row("MEMBER", childPath, "type", category(member), name(member));
+                }
+            }
+        }
+    }
+    /** Every named element of the model files; the items of every interface definition;
+     * the subject of every requirement. */
+    static void structure() {
+        var contents = modelResource.getAllContents();
+        while (contents.hasNext()) {
+            if (!(contents.next() instanceof Element element)) continue;
+            if (element.getDeclaredName() != null && element.getQualifiedName() != null) {
+                var at = lines(element);
+                var features = element instanceof Definition definition
+                    ? String.valueOf(definition.getFeature().stream().filter(feature -> feature.eResource() == modelResource).count()) : "";
+                row("ELEM", element.getQualifiedName(), element.eClass().getName(), String.valueOf(fileOf(element)),
+                    String.valueOf(at[0]), String.valueOf(at[1]), features);
+            }
+            if (element instanceof InterfaceDefinition definition) interfaceItems(definition);
+            Usage subject = element instanceof RequirementUsage usage ? usage.getSubjectParameter()
+                : element instanceof RequirementDefinition requirement ? requirement.getSubjectParameter() : null;
+            if (element instanceof RequirementUsage || element instanceof RequirementDefinition) {
+                row("SUBJECT", anchor(element), String.valueOf(fileOf(element)), subject == null ? "" : typing(subject),
+                    subject == null ? "" : String.join(",", subject.getOwnedSubsetting().stream()
+                        .filter(subsetting -> !subsetting.isImplied() && subsetting.getSubsettedFeature() != null)
+                        .map(subsetting -> String.valueOf(subsetting.getSubsettedFeature().getQualifiedName())).toList()));
+            }
+        }
+    }
+    /** The items of an interface definition: of the port definitions of its ends, as seen
+     * from each end, and those it declares itself. */
+    static void interfaceItems(InterfaceDefinition definition) {
+        var interfaceName = String.valueOf(definition.getQualifiedName());
+        for (var feature : definition.getFeature()) {
+            if (feature.eResource() != modelResource) continue;
+            if (feature.isEnd() && feature instanceof PortUsage port) {
+                for (var type : port.getPortDefinition()) {
+                    boolean conjugated = type instanceof ConjugatedPortDefinition;
+                    var original = conjugated ? ((ConjugatedPortDefinition)type).getOriginalPortDefinition() : type;
+                    for (var item : original.getFeature()) {
+                        if (!(item instanceof ItemUsage) || item instanceof MetadataUsage || item.eResource() != modelResource) continue;
+                        var direction = String.valueOf(item.getDirection());
+                        if (conjugated) direction = direction.equals("in") ? "out" : direction.equals("out") ? "in" : direction;
+                        row("IITEM", interfaceName, name(port), name(item), direction, typing(item));
+                    }
+                }
+            } else if (!feature.isEnd() && feature instanceof ItemUsage item && !(item instanceof MetadataUsage)) {
+                row("IITEM", interfaceName, "", name(item), String.valueOf(item.getDirection()), typing(item));
+            }
         }
     }
 

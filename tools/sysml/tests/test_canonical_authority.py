@@ -204,7 +204,10 @@ class CanonicalAuthorityTests(unittest.TestCase):
                 raise AssertionError("Canonical tooling attempted to read an archived specification")
             return real_read(path, *args, **kwargs)
 
-        with mock.patch.object(tool, "ROOT", self.root), mock.patch.object(tool, "MODELS", self.models), mock.patch.object(tool, "FSD", self.fsd), mock.patch.object(tool, "canonical_catalog", side_effect=lambda d, r: real_catalog(d, r, required=REQUIRED)), mock.patch.object(tool, "validate", return_value=subprocess.CompletedProcess([], 0, "semantic fixture", "")) as validate, mock.patch.object(tool, "architecture_integrity", return_value={"connections": 69}), mock.patch.object(Path, "read_text", read):
+        # Every fixture file on the pending list: the structure checks are TC-DOC-016's.
+        pending = self.root / "pending-structure.json"
+        pending.write_text('{"files": ["Architecture.sysml", "Requirements.sysml"], "elements": {}}', encoding="utf-8")
+        with mock.patch.object(tool, "ROOT", self.root), mock.patch.object(tool, "MODELS", self.models), mock.patch.object(tool, "FSD", self.fsd), mock.patch.object(tool, "PENDING", pending), mock.patch.object(tool, "canonical_catalog", side_effect=lambda d, r: real_catalog(d, r, required=REQUIRED)), mock.patch.object(tool, "validate", return_value=subprocess.CompletedProcess([], 0, "semantic fixture", "")) as validate, mock.patch.object(tool, "architecture_integrity", return_value={"connections": 69}), mock.patch.object(Path, "read_text", read):
             for state in ("missing", "edited"):
                 if state == "edited":
                     archive.write_text("Contradictory historical Markdown", encoding="utf-8")
