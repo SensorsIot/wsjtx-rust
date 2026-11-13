@@ -5,7 +5,7 @@ It is not maintained, canonical, generated, or an input to active model validati
 issue preparation, implementation or verification. Its links and implementation claims
 are preserved as historical content and may be obsolete.
 
-The active functional authority is the [SysML model](../sysml/ProductScope.sysml),
+The active functional authority is the [SysML model](../sysml/),
 with [stable requirements and verification](../sysml/Requirements.sysml).
 Harness/process instructions remain active Markdown under `docs/harness/`.
 
