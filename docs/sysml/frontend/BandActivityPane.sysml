@@ -106,8 +106,8 @@ package WstxBandActivity {
              Operator decision (#55, 2026-11-03, CL-055-04), deviating from WSJT-X, which colours
              only CQ/QRZ and calling-me lines: the new_* slots apply to the sender of every decoded
              message (CQ, replies to others, reports, R-reports, RR73, 73; the sender call of
-             WstxCountryFile::DecodedEntity), and they match
-             only the record's flags (WstxCountryFile::DecodedEntity; the worked-before status adds no
+             WstxLogControl::DecodedEntity), and they match
+             only the record's flags (WstxLogControl::DecodedEntity; the worked-before status adds no
              slots). A row without a flag has no colour: there is no cq slot (#50). A row
              to my call keeps mycall on top. A row with a reason of its colour carries the reason
              tip of BandActivityHover (#50 CL-050-08). Settings > General > Display lists the slots with their
@@ -127,7 +127,7 @@ package WstxBandActivity {
         doc /* CL-050-08 (#50, operator 2026-11-04). The sender of a row is recordFrom (the
              'from' call, also as a filled-in hash, or the sender of a nonstandard i3=4
              message); the partner is the dx_call of the contact snapshot the page already
-             holds (WstxQsoWire::ContactSnapshot, no further request or poll) while the
+             holds (WstxQsoControl::ContactSnapshot, no further request or poll) while the
              contact is prepared or running (replying, report, roger_report, rogers,
              signoff): from the contact preparation (select_row) until it is logged
              (completed) or cancelled. Marks (BandActivityRowMark):
@@ -167,7 +167,7 @@ package WstxBandActivity {
              continent (flags new_dxcc, new_continent); 4 new DXCC or continent on this band
              (new_dxcc_band, new_continent_band); 5 new CQ or ITU zone, ever or on this band;
              6 new grid, ever or on this band; 7 new call, ever or on this band; 8 no flag.
-             The flags are those of WstxCountryFile::DecodedEntity for its sender call, CQ or
+             The flags are those of WstxLogControl::DecodedEntity for its sender call, CQ or
              not. */
     }
     attribute def BandActivityHover {
@@ -218,7 +218,7 @@ package WstxBandActivity {
              keeps its divider and stays when the next period arrives (CL-061-03).
              After a page load only the latest period shows until the next one arrives. Within a period the ActivityOrdering applies (column
              header click). DXCC shows the shown name of the sender's entity
-             (WstxCountryFile::DecodedEntity dxcc; title: name, continent, CQ and ITU zone),
+             (WstxLogControl::DecodedEntity dxcc; title: name, continent, CQ and ITU zone),
              an explicit unavailable mark without one. Distance is the great-circle
              distance from the profile locator to a grid carried in the message (RR73 is
              the roger, never a grid; a grid from another row or the log is not used);

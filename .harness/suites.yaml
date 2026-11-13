@@ -357,7 +357,20 @@
   - .github/workflows/windows-rust.yml
   select:
   - docs/sysml/Station.sysml
-  - docs/sysml/backend/radioControl/RadioProperties.sysml
+  - docs/sysml/Context.sysml
+  - docs/sysml/Requirements.sysml
+  - docs/sysml/interfaces/
+  - docs/sysml/interfaces/external/RadioProperties.sysml
+  - docs/sysml/frontend/BrowserClient.sysml
+  - docs/sysml/backend/station/Station.sysml
+  - docs/sysml/backend/web/Web.sysml
+  - docs/sysml/backend/mcp/Mcp.sysml
+  - docs/sysml/backend/receive/Receive.sysml
+  - docs/sysml/backend/modes/Modes.sysml
+  - docs/sysml/backend/transmit/Transmit.sysml
+  - docs/sysml/backend/operating/qso/Qso.sysml
+  - docs/sysml/backend/audio/Audio.sysml
+  - docs/sysml/backend/radioControl/RadioControl.sysml
   - tools/sysml.py
   - tools/sysml/Validate.java
   - tools/sysml/architecture-oracle.json

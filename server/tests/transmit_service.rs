@@ -1233,7 +1233,7 @@ fn halt_during_a_slow_key_releases_within_the_bound() {
     driver.join().unwrap();
 }
 
-// Proves: CL-039-06 (WstxTransmit::TransmitHaltUse). The watchdog stop never touches
+// Proves: CL-039-06 (WstxTransmitControl::TransmitHaltUse). The watchdog stop never touches
 // PTT: a failing release cannot make it indeterminate, and no halt is recorded.
 #[test]
 fn watchdog_stop_never_touches_ptt() {

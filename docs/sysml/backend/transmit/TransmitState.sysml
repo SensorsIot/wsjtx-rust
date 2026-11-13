@@ -1,30 +1,33 @@
 package WstxTransmit {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-008';
-    private import WstxArchitecture::'FR-009';
-    private import WstxArchitecture::'FR-002';
-    private import WstxArchitecture::'FR-006';
+    private import WstxRequirements::'FR-008';
+    private import WstxRequirements::'FR-009';
+    private import WstxRequirements::'FR-002';
+    private import WstxRequirements::'FR-006';
     private import WstxRequirements::AutomationState;
     private import WstxTransmitSchedule::'CL-009-02';
     private import WstxMcpEndpoint::'TC-020-004';
-    private import WstxArchitecture::'FR-016';
-    private import WstxArchitecture::'FR-005';
+    private import WstxRequirements::'FR-016';
+    private import WstxRequirements::'FR-005';
     private import WstxTransmitClock::'TC-043-001';
     private import WstxLiveReceive::'CL-007-05';
     private import WstxTransmitClock::'CL-043-02';
     private import WstxTransmitClock::'TC-092-001';
     private import WstxOperatingLayout::'CL-037-02';
-    private import WstxArchitecture::'FR-019';
+    private import WstxRequirements::'FR-019';
     private import WstxTxLevel::'TC-044-014';
     private import WstxTxLevel::'TC-044-016';
     private import WstxContact::'TC-039-007';
-    private import WstxArchitecture::'FR-007';
+    private import WstxRequirements::'FR-007';
     private import WstxQsoTransmit::'TC-111-008';
     private import WstxQsoTransmit::'CL-111-02';
     private import WstxOperatingLayout::'CL-111-04';
     private import WstxQsoTransmit::'CL-111-08';
-    private import WstxArchitecture::'FR-010';
+    private import WstxRequirements::'FR-010';
+    private import WstxTransmitControl::ArmState;
+    private import WstxOperatingChain::TransmitRefusal;
+    private import WstxTransmitControl::TransmitHaltUse;
     doc /* Canonical FT8 and FT4 transmit contract. Slice A (issue #9, FT4 issue #11
          slice A): message packing, channel symbols, waveform and pure period
          scheduling, none of which opens audio, keys PTT or touches a radio. Slice B
@@ -45,14 +48,6 @@ package WstxTransmit {
          Gray map and Costas arrays of the published protocol (QEX FT4/FT8, sections 2
          to 5 and appendix A); it adds no second codebook. */
     enum def ClockState { enum synchronized; enum unsynchronized; enum unknown; }
-    enum def PeriodParity { enum even; enum odd; }
-    // ------------------------------------------------------------------
-    // #9 slice B transmit owner (delivered; consumer contract of WstxContact #10,
-    // supervisor decision 2026-10-31 on #10). Implementation:
-    // server/src/transmit/service.rs (owner), server/src/radio_control/actor.rs and
-    // executor.rs (PttControl), server/src/playback.rs (AudioPlayback),
-    // server/src/transmit_http.rs (station hardware, TransmitWire).
-    enum def ArmState { enum disarmed; enum armed; }
     enum def DisarmCause {
         enum operator; enum halt; enum contactCompleted; enum contactCancelled;
         enum txWatchdog; enum refused; enum failed; enum deviceLost; enum startup;
@@ -60,12 +55,6 @@ package WstxTransmit {
         enum partnerWorksOther; enum modeChanged; enum bandChanged; enum runEnded;
     }
     enum def ArmCause { enum operator; enum auto; }
-    enum def TransmitRefusal {
-        enum transmitUnsupported; enum notArmed; enum audioStarted; enum duplicateSequence;
-        enum staleRequest; enum clockNotSynchronized; enum misalignedPeriod; enum stalePeriod;
-        enum packRefused; enum frequencyOutOfRange; enum busy; enum notAuthorized;
-        enum radioUnavailable;
-    }
     enum def TransmitFailure {
         enum pttTimeout; enum pttRejected; enum pttReadbackMismatch; enum pttIndeterminate;
         enum radioLost; enum audioUnavailable; enum audioDeviceLost; enum audioStalled;
@@ -77,7 +66,7 @@ package WstxTransmit {
     attribute def TransmitAuthority {
         attribute armedOnStartup : Boolean = false;
         attribute persisted : Boolean = false;
-        doc /* The station's explicit transmit authority (WstxArchitecture::RadioAuthority),
+        doc /* The station's explicit transmit authority (WstxRadioControlPart::RadioAuthority),
              evaluated at Arm, at every request admission, at keying and on every
              owner step. Capability: unsupported unless the saved profile has
              control.mode cat, control.ptt cat and an exact audio.output_device (a
@@ -171,7 +160,7 @@ package WstxTransmit {
         attribute lastDisarmCause : DisarmCause = DisarmCause::startup;
         attribute lastArmCause : ArmCause[0..1];
         doc /* The station's one transmit state (CL-111-01), on (armed) or off (disarmed),
-             owned by WstxArchitecture::TransmitService; off at startup and after every
+             owned by WstxTransmitPart::TransmitService; off at startup and after every
              DisarmCause. lastArmCause is who switched it on last (operator, or auto for
              a run or an MCP client) and is absent until the first switch-on of a boot.
              Arm/Disarm are requests from QsoAndLogging (the start actions
@@ -202,31 +191,6 @@ package WstxTransmit {
     }
     dependency stopOrderClause from StopOrder to WstxTransmit::'CL-111-03';
     dependency transmitStateClause from TransmitArming to WstxTransmit::'CL-111-01';
-    attribute def TransmitRequest {
-        attribute contactId : String[0..1];
-        attribute requestSequence : Integer;
-        attribute mode : WstxOfflineDecode::Mode;
-        attribute periodStartUtcMs : Integer;
-        attribute messageText : String;
-        attribute txOffsetHz : Integer;
-        doc /* At most one request per station waits to be keyed. Admitted only
-             while armed under TransmitAuthority; the service packs messageText
-             (PackMessage), plans the start (PlanTransmitStart), encodes the 48 kHz
-             waveform, keys PTT and plays (TransmitTiming). requestSequence is a
-             strictly increasing safe integer per boot: a lower or equal sequence is
-             duplicateSequence, never transmits twice and changes nothing (a retry does
-             not disarm). A new admitted request REPLACES the pending one (replaced)
-             while its audio has not started; a keyed request is replaced only by one
-             for the same period. From keying a request for another period becomes the
-             next pending request, started after the current one completes, and from
-             audio start one for the same period is refused audioStarted (no disarm):
-             the keyed request never makes another one busy or disarms (#10).
-             Clock, alignment and lateness refusals (clockNotSynchronized,
-             misalignedPeriod, stalePeriod) and packRefused or frequencyOutOfRange are
-             checked at admission; the start is planned again at keying and at audio
-             start, so a request that became stale is refused, never replayed. A
-             request of another boot is refused at the wire (state_conflict). */
-    }
     enum def TransmitOutcomeKind { enum accepted; enum replaced; enum started; enum completed; enum halted; enum refused; enum failed; enum aborted; }
     attribute def TransmitOutcome {
         attribute outcomeSequence : Integer;
@@ -281,39 +245,14 @@ package WstxTransmit {
              current request as outcome aborted and disarm with the caller's cause. It is
              not HaltTransmit: halt_state and the halt count are unchanged. */
     }
-    attribute def TransmitHaltUse {
-        doc /* HALT is the operator's emergency stop only (operator decision #39,
-             2026-11-04): the browser HALT buttons and Alt+H, and the remote emergency
-             stop MCP wstx_transmit_halt (UDP is send-only and has no Halt Tx, CL-040-03).
-             The station and its automation
-             never send HaltTransmit in normal flow: a completed contact and ending a run
-             disarm, the partner-works-other stop and Abort QSO use
-             AbortTransmission. */
-    }
     dependency haltUseClause from TransmitHaltUse to WstxContact::'CL-010-03';
     dependency abortClause from AbortTransmission to WstxContact::'CL-010-03';
-    attribute def TransmitWatchdog {
-        doc /* WstxQsoTransmit::TxWatchdog (#39, 2026-11-06): the owner holds the limit, 1..99
-             repetitions (default 6 at each start), and no count: the contact consumer
-             compares its dialogue Rep with the limit and reports that Rep for
-             tx_remaining_calls (the Tx watchdog's only; a strategy run's own contact, which has
-             no stop while attended, reports none: WstxStrategy::StrategyWatchdog, LeaveCountLabel;
-             a busy partner's paused calls are not counted: WstxContact::BusyPartner). GET /transmit
-             watchdog.tx_remaining_calls is therefore an integer or null: null exactly while armed for
-             such a contact (never the leave count and never the limit minus the Rep as a fallback);
-             0 while disarmed as before. The receive page's transmit line (recording) shows "WD <n>
-             calls" for an integer and leaves the WD part out for null; MCP wstx_read passes it on. At the consumer's stop the owner disarms (txWatchdog)
-             without keying, so PTT is never keyed for that send and no halt happens (HALT
-             is the operator's emergency stop only), and reports tx_expired until the next
-             Arm. A request submitted directly on the transmit route has no dialogue and
-             is not bounded by it: each one is its own browser request. */
-    }
-    dependency armingPromise from TransmitArming to WstxArchitecture::'FR-008';
+    dependency armingPromise from TransmitArming to WstxRequirements::'FR-008';
     dependency authorityPromise from TransmitAuthority to WstxTransmit::'CL-009-03';
     dependency haltClausePromise from HaltTransmit to WstxTransmit::'CL-009-04';
 
     attribute def StationModeGate {
-        attribute stationMode : WstxOfflineDecode::Mode[0..1];
+        attribute stationMode : WstxModeProcessing::Mode[0..1];
         doc /* #11 CL-011-04 (review repair 2026-11-01). The transmit owner holds the
              station's operating mode (WstxQsoTransmit::StationOperatingMode), set by the
              station at every change of that mode (live job start, admitted operating
@@ -344,7 +283,7 @@ package WstxTransmit {
              or CAT loss, off-only recovery, no VOX; physical acceptance remains
              TC-008-002. */
     }
-    dependency safetyBoundary from TransmitSafetyPolicy to WstxArchitecture::'FR-008';
+    dependency safetyBoundary from TransmitSafetyPolicy to WstxRequirements::'FR-008';
     requirement 'CL-009-03' {
         doc /* Manage PTT and transmit audio through the station's one transmit owner and
              its explicit transmit authority: arm only by an explicit operator request
@@ -539,7 +478,7 @@ package WstxTransmit {
              {median_dt_ms, stations, plus, minus, age_ms}}, warning null | pc_clock_off
              | ntp_unreachable | stations_off, capture_warning null | uncorrelated |
              drift_high, clock_revision}. Pushed state (#92 operator 2026-11-09
-             "Everywhere"; WstxStationProtocol::PushedStationState): a WebSocket event
+             "Everywhere"; WstxStationLink::PushedStationState): a WebSocket event
              exactly {v:1, type:"clock.state", data:{profile_id, boot_id,
              clock_revision, clock:{state, correction_ms, warning, ntp_offset_ms,
              capture_warning}}}, at most 512 bytes, for every profile (receive-only
@@ -1096,7 +1035,7 @@ package WstxTransmit {
     dependency CL_044_13_verified_by_TC_044_015 from 'CL-044-13' to 'TC-044-015';
     dependency CL_044_13_verified_by_TC_044_016 from 'CL-044-13' to 'TC-044-016';
     requirement 'CL-039-06' {
-        doc /* The Tx watchdog limits the repetitions of one message (WstxQsoTransmit::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or a strategy selection from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or strategy selection from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run and MCP requests (including starting or restarting a run) never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a pounce or MCP policy run stops tx_watchdog, while a strategy run's own contact has no stop and is bounded by CL-039-21 instead; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxQsoTransmit::TxWatchdog. */
+        doc /* The Tx watchdog limits the repetitions of one message (WstxQsoControl::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or a strategy selection from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or strategy selection from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run and MCP requests (including starting or restarting a run) never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a pounce or MCP policy run stops tx_watchdog, while a strategy run's own contact has no stop and is bounded by CL-039-21 instead; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxQsoControl::TxWatchdog. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs; server/src/mcp.rs; server/src/authorization.rs";
     }
@@ -1104,7 +1043,7 @@ package WstxTransmit {
     verification 'TC-039-005' {
         doc /* TC-039-005 — The Tx watchdog stop is never ended by automation
              CL-039-06
-             Setup: as TC-039-004; for the unit cases the #9 Core on the hardware double; counts per WstxQsoTransmit::TxWatchdog (#39, 2026-11-06).
+             Setup: as TC-039-004; for the unit cases the #9 Core on the hardware double; counts per WstxQsoControl::TxWatchdog (#39, 2026-11-06).
              Steps: (1) browser limit 2; a pounce on K1ABC started from the browser (a strategy run has no stop: TC-039-022); publish CQ K1ABC at E; transmit the call at E+15 s and its repeat at E+45 s; reach E+75 s; cancel, select a strategy from the browser and publish another CQ. (2) MCP and browser: an MCP Enable Tx before any browser action; browser limit 1; an MCP Enable Tx (CQ) transmitted at E+15 s; MCP set_frequency; MCP set_watchdogs 99; reach E+45 s; a station calls HB9BLA in period E+30 s; an MCP Enable Tx; an MCP run start and a matching CQ; a browser action and an MCP Enable Tx. (3) MCP route: browser limit 1, an MCP Enable Tx and its CQ, MCP-principal commands through the tool and straight to /contact/command, then MCP Enable Tx on both. Unit: automatic arm before any operator action; activity, limit 2, automatic arm; operator arm.
              Expected: (1) remaining calls 1 after the first call (the run's selection does not extend it), the request at E+75 s is never keyed, the run stops tx_watchdog, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the selection arms again. (2) refused tx_watchdog; not spent after the one CQ and the MCP command, set_watchdogs refused operator_required, the next CQ never keyed and spent, still spent after the caller (an answer after a stop ends nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; still spent after an unrelated browser action; after a browser Enable Tx not spent and the MCP Enable Tx arms. (3) after the stop spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
              2 — Isolated automated functional tests; Windows development PC, transmit double; no RF. */
@@ -1174,7 +1113,7 @@ package WstxTransmit {
              CL-111-01
              Setup: the actual station router (contact_http_tests fixture).
              Steps: GET /contact and the transmit.state event at a station start, after a start and after a stop; the largest snapshot and the first event with the longest cause of each direction.
-             Expected (WstxQsoWire::ContactSnapshot, WstxTransmitWire::TransmitWire): the transmit view carries the causes of CL-111-03 as snake_case values and last_arm_cause (operator, auto or null); the largest snapshot stays at most 4096 bytes and the event at most 1024.
+             Expected (WstxQsoControl::ContactSnapshot, WstxTransmitControl::TransmitWire): the transmit view carries the causes of CL-111-03 as snake_case values and last_arm_cause (operator, auto or null); the largest snapshot stays at most 4096 bytes and the event at most 1024.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {

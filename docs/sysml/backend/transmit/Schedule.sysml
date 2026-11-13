@@ -1,8 +1,8 @@
 package WstxTransmitSchedule {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-006';
-    private import WstxArchitecture::'FR-005';
+    private import WstxRequirements::'FR-006';
+    private import WstxRequirements::'FR-005';
     private import WstxRequirements::AutomationState;
     private import WstxTransmit::'TC-006-003';
     private import WstxTransmit::ClockState;
@@ -86,7 +86,7 @@ package WstxTransmitSchedule {
              is clockNotSynchronized. */
     }
     action def PlanTransmitStart {
-        in mode : WstxOfflineDecode::Mode;
+        in mode : WstxModeProcessing::Mode;
         in nowUtcMs : Integer;
         in clock : ClockState;
         in periodStartUtcMs : Integer;

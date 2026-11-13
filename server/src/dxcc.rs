@@ -532,7 +532,7 @@ impl Worked {
     pub fn from_log(table: &Table, logged: &[Logged]) -> Self {
         Self::from_log_window(table, logged, None)
     }
-    /// #39 WstxStrategy::WorkedWindow: only the records dated in `window` (first and last
+    /// #39 WstxRankingControl::WorkedWindow: only the records dated in `window` (first and last
     /// date as YYYYMMDD, inclusive), if given; a record without a date counts only without.
     pub fn from_log_window(table: &Table, logged: &[Logged], window: Option<(u32, u32)>) -> Self {
         let mut w = Self::default();

@@ -89,7 +89,7 @@ package WstxSignalArea {
              the waterfall, with no setting (#82 removes the Settings > Expert checkbox "Show
              free Tx slots"; its browser storage key is no longer read): on every page with
              the waterfall, each open range [lo_hz, hi_hz) of the latest held free_tx_slots
-             (WstxStrategy::FreeTxSlots) is a bar in the frequency ruler directly above the
+             (WstxAutoControl::FreeTxSlots) is a bar in the frequency ruler directly above the
              waterfall over lo to hi, on the waterfall's one frequency mapping (RxTxStrip,
              CL-050-07), with or without a run, a QSO or Auto (no run_id match). The held
              value: each free_tx_slots.state replaces it in socket order; a GET /automation

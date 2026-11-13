@@ -1,30 +1,29 @@
 package WstxOperatingLayout {
     private import ScalarValues::*;
-    private import WstxProfiles::HttpProfileRepresentation;
-    private import WstxProfiles::HttpProfilePut;
+    private import WstxProfileAccess::HttpProfileRepresentation;
+    private import WstxProfileAccess::HttpProfilePut;
     private import WstxSignalArea::DisplayLevels;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-010';
-    private import WstxArchitecture::'FR-019';
-    private import WstxArchitecture::'FR-021';
-    private import WstxArchitecture::'FR-004';
-    private import WstxArchitecture::'FR-007';
+    private import WstxRequirements::'FR-010';
+    private import WstxRequirements::'FR-019';
+    private import WstxRequirements::'FR-021';
+    private import WstxRequirements::'FR-004';
+    private import WstxRequirements::'FR-007';
     private import WstxStandardQso::'TC-007-003';
-    private import WstxArchitecture::'FR-022';
+    private import WstxRequirements::'FR-022';
     private import WstxRequirements::AutomationState;
     private import WstxTransmit::'TC-092-005';
-    private import WstxContact::'TC-039-046';
     private import WstxContact::'TC-039-006';
     private import WstxContact::'TC-039-007';
     private import WstxStationProtocol::'TC-051-001';
     private import WstxStationProtocol::'TC-051-003';
-    private import WstxArchitecture::'FR-008';
+    private import WstxRequirements::'FR-008';
     private import WstxContact::'TC-065-004';
     private import WstxContact::'TC-082-005';
     private import WstxContact::'TC-082-006';
-    private import WstxArchitecture::'FR-003';
-    private import WstxArchitecture::'FR-001';
-    private import WstxArchitecture::'FR-009';
+    private import WstxRequirements::'FR-003';
+    private import WstxRequirements::'FR-001';
+    private import WstxRequirements::'FR-009';
     private import WstxStandardQso::'TC-007-004';
     private import WstxStationProtocol::'CL-003-08';
     private import WstxUdp::'CL-040-02';
@@ -40,12 +39,15 @@ package WstxOperatingLayout {
     private import WstxRadioIO::'CL-022-03';
     private import WstxCatLifecycle::'CL-022-04';
     private import WstxStationProtocol::'CL-022-05';
-    private import WstxArchitecture::'FR-002';
+    private import WstxRequirements::'FR-002';
     private import WstxModemDecode::'TC-057-002';
     private import WstxLiveReceive::'CL-007-05';
     private import WstxModemDecode::'CL-057-02';
     private import WstxContact::'CL-055-02';
     private import WstxTransmit::'TC-111-015';
+    private import WstxContact::'CL-039-20';
+    private import WstxContact::'CL-039-22';
+    private import WstxContact::'CL-063-05';
 
     doc /* Implementation contract for the profile-mode read-only operating layout.
          Contract: WstxProductScope::ContractIndex4.7.1 and6.6 TC007002. Existing signal and
@@ -390,7 +392,7 @@ attribute def ActivityOrdering {
              still the same vertical stack, at most 48em everything stacks (a phone
              scrolls the workspace, never horizontally).
              Strategy element: `Strategy [name] [edit] [Value] [Contest] [Show all]` (#39, WstxStrategy;
-             Contest opens WstxContest::ContestPrompt, Show all only with a contest, ContestView): the name
+             Contest opens WstxStrategies::ContestPrompt, Show all only with a contest, ContestView): the name
              selects the active strategy, which starts it, None stops it
              (StrategySelector, StrategyRun); edit opens the StrategyEditor popup; Value returns
              Band Activity to the value order (ValueView); beside them the run state. HALT
@@ -409,7 +411,7 @@ attribute def ActivityOrdering {
              Dark and Night (dim warm/red for dark adaptation). byTime switches Day/Night at
              two local times; bySun at sunrise and sunset computed for the profile locator.
              The continent (General) is a station setting since #39
-             (WstxStrategy::StrategyConfiguration continent); its default derives from the
+             (WstxStrategies::StrategyConfiguration continent); its default derives from the
              locator. */
     }
     attribute def UnauthorizedView {
@@ -737,7 +739,7 @@ attribute def ActivityOrdering {
              waiting or in a contact it shows "Automation waiting" or "Automation in
              contact", the first 8 characters of the run id and "Halt ends it" (#42 a
              pounce run: "Pounce <call> waiting" or "Pounce <call> in QSO" and "HALT ends
-             it", WstxStrategy::Pounce; a strategy run: WstxStrategy::StrategySelector); a
+             it", WstxStrategy::Pounce; a strategy run: WstxOperatingLayout::StrategySelector); a
              stopped run with a reason other than stopped "Automation stopped · <reason>";
              "Automation idle" otherwise (#74, operator 2026-11-08), also with no strategy
              selected and no run. The station sends automation.state {profile_id, boot_id,
@@ -746,12 +748,12 @@ attribute def ActivityOrdering {
              either revision is nonzero; the browser then reads GET /automation, and only
              then: no read once per socket or on connect (#74). No event or request
              while automation is never used. A new boot (#74, CL-074-01,
-             WstxStationProtocol::PushedStationState): when the browser learns a boot_id
+             WstxStationLink::PushedStationState): when the browser learns a boot_id
              other than that of its held automation state, it drops that state at once and
              holds the never-used state (configuration, run, strategy_refusal and
              free_tx_slots null) without a request; an automation.state of the new boot then
              reads GET /automation; a snapshot reply of another boot is discarded. "No event"
-             concerns automation.state: free_tx_slots.state (#82, WstxStrategy::FreeTxSlots)
+             concerns automation.state: free_tx_slots.state (#82, WstxAutoControl::FreeTxSlots)
              carries the station's open slots, not automation state, and is pushed every
              period also while automation is never used; the browser reads nothing after
              it. */
@@ -858,8 +860,25 @@ attribute def ActivityOrdering {
     dependency CL_039_04_verified_by_TC_039_046 from 'CL-039-04' to 'TC-039-046';
     dependency CL_039_04_verified_by_TC_039_006 from 'CL-039-04' to 'TC-039-006';
     dependency CL_039_04_verified_by_TC_039_007 from 'CL-039-04' to 'TC-039-007';
+    verification 'TC-039-046' {
+        doc /* TC-039-046 — Auto, Use PSK Reporter, the QSO pane lines and the editor in the browser
+             CL-039-04, CL-039-20, CL-039-22, CL-063-05
+             Setup: the actual isolated server and Chromium at 1366x768 and 360x740; routed replies for GET and PUT /strategy, POST /strategy/auto, GET /pskr, POST /pskr/use, GET /strategy/contests and GET /automation; pushed strategy.state, pskr.state and automation.state.
+             Steps: open with no selection; select the saved strategy "New calls" (class strategy); click Auto; push the snapshot with auto true; push a HALT (auto false); click PSK; push enabled false (Settings off); push a run with hearing {heard, 75 s old, -12} and tx_slot {1420, his_end yes}, then {heard, 600 s}, {no}, {unknown} and his_end no and unknown; Use off; 10 s with no event; a contest prompt for WW Digi, Start; Auto on with the warning declined, then confirmed; FT8 Activity. The editor's steps are TC-097-014's and the prompt's fields TC-097-015's.
+             Status (the station element and the contest status, from pushed automation.state and strategy.state): a waiting run, calling_cq, Auto off, a contest with Auto on and with Auto off; the contact snapshot without transmit capability.
+             Expected: the strategy element reads "Strategy New calls waiting", "Strategy New calls · calling CQ" and "Strategy New calls · Auto off"; the contest status "Contest WW Digi · <period> UTC · WW Digi · Auto on" and "· Auto off" (the strategy name); Auto disabled with the reason "Receive only" as its title without transmit capability; Auto disabled with its reason without a selection; selecting sends one PUT and nothing else; the click sends exactly one POST /strategy/auto {auto true}; the button green only after the push and grey after the HALT push; PSK sends POST /pskr/use {use false} and is disabled with "PSK Reporter is off in Settings" when the switch is off; the lines "Hears us: 75 s ago · −12 dB" and "Tx 1420 Hz · open at his end: yes", then "Hears us: 10 min ago · −12 dB", "Hears us: no", "Hears us: unknown", "· no", "· unknown"; no lines with Use off or without a target; no request during the silence (no polling); the prompt's Start sends one PUT without automation_confirmed; Auto on for WW Digi shows the clause, sends nothing when declined and one POST with automation_confirmed true when confirmed; no warning for FT8 Activity; no horizontal overflow at 360 px and the QSO pane keeps its height.
+             2 — Isolated automated browser test; Windows development PC. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-039-04';
+            verify 'CL-039-20';
+            verify 'CL-039-22';
+            verify 'CL-063-05';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
     requirement 'CL-055-04' {
-        doc /* Band Activity colours, hover text and order (operator 2026-11-03). Operator decision deviating from WSJT-X, which colours only CQ/QRZ and calling-me lines: the sender of every decoded message (CQ, replies to others, reports, R-reports, RR73, 73; the sender call of WstxCountryFile::DecodedEntity) is coloured by the same new DXCC, continent, zone, grid and call flags (the whole row for a CQ or QRZ, only the sender's call otherwise, #50 CL-050-08); a message to my call keeps the calling-me colour on top; a row without a flag has no colour (there is no CQ slot, #50, and worked before never colours). Every row with a reason carries hover text (title and aria-description, on the row and its colour mark) naming each reason in value order (#50 CL-050-08 replaces this Band Activity hover by its one-line reason tip; the QSO pane callers keep it): calling me, the strategy verdict, each new flag with its entity, zone, grid or band, then the worked-before status, for example "New DXCC: Romania", "New DXCC on 40m", "New CQ zone 20", "New grid KN34", "New call", "Worked before on 40m FT8". Within each period the rows are sorted by value (1 calling me, 2 strategy hits by their rank, 3 new DXCC, 4 new DXCC on this band, 5 new CQ or ITU zone, 6 new grid, 7 new call, 8 no flag), then by SNR strongest first, ties in decode order; the column headers still choose another order and the DXCC header returns to it. Details: WstxBandActivity::BandActivityColours, BandActivityValue, BandActivityHover, ActivityOrdering. */
+        doc /* Band Activity colours, hover text and order (operator 2026-11-03). Operator decision deviating from WSJT-X, which colours only CQ/QRZ and calling-me lines: the sender of every decoded message (CQ, replies to others, reports, R-reports, RR73, 73; the sender call of WstxLogControl::DecodedEntity) is coloured by the same new DXCC, continent, zone, grid and call flags (the whole row for a CQ or QRZ, only the sender's call otherwise, #50 CL-050-08); a message to my call keeps the calling-me colour on top; a row without a flag has no colour (there is no CQ slot, #50, and worked before never colours). Every row with a reason carries hover text (title and aria-description, on the row and its colour mark) naming each reason in value order (#50 CL-050-08 replaces this Band Activity hover by its one-line reason tip; the QSO pane callers keep it): calling me, the strategy verdict, each new flag with its entity, zone, grid or band, then the worked-before status, for example "New DXCC: Romania", "New DXCC on 40m", "New CQ zone 20", "New grid KN34", "New call", "Worked before on 40m FT8". Within each period the rows are sorted by value (1 calling me, 2 strategy hits by their rank, 3 new DXCC, 4 new DXCC on this band, 5 new CQ or ITU zone, 6 new grid, 7 new call, 8 no flag), then by SNR strongest first, ties in decode order; the column headers still choose another order and the DXCC header returns to it. Details: WstxBandActivity::BandActivityColours, BandActivityValue, BandActivityHover, ActivityOrdering. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/recording.js; client/contact.js; client/logbook.js";
     }
@@ -1923,7 +1942,7 @@ attribute def ActivityOrdering {
 
     // #57 Decode display speed (operator 2026-11-02; defaults recorded on issue #57).
     requirement 'CL-057-01' {
-        doc /* Band Activity on the Detailed display profile shows a published decode view without waiting for a refresh cadence: each new or grown latest_decode publication is announced to every Detailed WebSocket peer at once as a receive.state event (Thin and Off peers keep the 2 s receive tick), and a Detailed browser then fetches the view's records immediately, page after page (limit 16), until its cursor reaches the view's frozen end, instead of at most once per 4 s. A failed result read (which falls back to at most once per 4 s until a page succeeds) and the Thin rules (one pending request, limit 1, at most once per 4 s, page at most 3072 bytes) are unchanged; with no announced or unread view and no failed GET /receive or result read, the idle read on every display profile is only a safety read at most once per 30 s (#10 WstxStationProtocol::PushedStationState), so the two-browser 32 kbit/s budget still holds. On a LAN every row of a published view is painted at most 0.3 s after its publication; "Loading results" shows only while records of the view are still being fetched. */
+        doc /* Band Activity on the Detailed display profile shows a published decode view without waiting for a refresh cadence: each new or grown latest_decode publication is announced to every Detailed WebSocket peer at once as a receive.state event (Thin and Off peers keep the 2 s receive tick), and a Detailed browser then fetches the view's records immediately, page after page (limit 16), until its cursor reaches the view's frozen end, instead of at most once per 4 s. A failed result read (which falls back to at most once per 4 s until a page succeeds) and the Thin rules (one pending request, limit 1, at most once per 4 s, page at most 3072 bytes) are unchanged; with no announced or unread view and no failed GET /receive or result read, the idle read on every display profile is only a safety read at most once per 30 s (#10 WstxStationLink::PushedStationState), so the two-browser 32 kbit/s budget still holds. On a LAN every row of a published view is painted at most 0.3 s after its publication; "Loading results" shows only while records of the view are still being fetched. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/recording.rs; server/src/main.rs; client/recording.js";
     }
@@ -2070,7 +2089,7 @@ attribute def ActivityOrdering {
     dependency CL_037_05_verified_by_TC_037_004 from 'CL-037-05' to 'TC-037-004';
     // #74 An open page after a station restart (operator 2026-11-08, one grill-me round).
     requirement 'CL-074-01' {
-        doc /* (#74, live acceptance 2026-11-08, #39 comment 6719540492: after a station restart an open page kept "Strategy Farthest new on band · Auto off" until reloaded, while the station had None and Auto off) After a station restart an open page shows the new boot's state without a reload, within the push rule. When the browser learns a boot_id other than the one a view's held station state belongs to, that view drops the state at once and shows the form of a freshly loaded page before its reads; it never shows a value of the previous boot, alone or with values of the new boot; a snapshot reply naming another boot is discarded; once the new boot's reads and first events have arrived the page equals a freshly loaded one. The automation view reads GET /automation only after an automation.state event, never once per socket, and on a new boot holds the never-used state without a request. The strategy element's line is drawn from the current strategy and automation snapshots together at each change of either; with None and no strategy run it shows the automation text, "Automation idle" without a run. No new request kind, no retry timer, no server change. Details: WstxStationProtocol::PushedStationState, WstxOperatingLayout::AutomationIndicator, WstxStrategy::StrategySelector. */
+        doc /* (#74, live acceptance 2026-11-08, #39 comment 6719540492: after a station restart an open page kept "Strategy Farthest new on band · Auto off" until reloaded, while the station had None and Auto off) After a station restart an open page shows the new boot's state without a reload, within the push rule. When the browser learns a boot_id other than the one a view's held station state belongs to, that view drops the state at once and shows the form of a freshly loaded page before its reads; it never shows a value of the previous boot, alone or with values of the new boot; a snapshot reply naming another boot is discarded; once the new boot's reads and first events have arrived the page equals a freshly loaded one. The automation view reads GET /automation only after an automation.state event, never once per socket, and on a new boot holds the never-used state without a request. The strategy element's line is drawn from the current strategy and automation snapshots together at each change of either; with None and no strategy run it shows the automation text, "Automation idle" without a run. No new request kind, no retry timer, no server change. Details: WstxStationLink::PushedStationState, WstxOperatingLayout::AutomationIndicator, WstxOperatingLayout::StrategySelector. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/app.js; client/contact.js; client/recording.js";
     }
@@ -2094,7 +2113,7 @@ attribute def ActivityOrdering {
              CL-074-01
              Setup: actual browser with hand-written replies for GET and PUT /strategy and GET /automation and pushed strategy.state and automation.state (as TC-039-046); no automation.state before the steps.
              Steps: read the line; select "New calls" with Auto off; select None; push a pounce run (automation.state, configuration strategy false, pounce K1ABC waiting); push its stop with reason no_answer; push run null.
-             Expected (oracle: the texts of WstxOperatingLayout::AutomationIndicator and WstxStrategy::StrategySelector): "Automation idle"; "Strategy New calls · Auto off"; "Automation idle" (not the previous text); "Pounce K1ABC waiting · HALT ends it"; "Automation stopped · no answer"; "Automation idle"; no GET /automation before the first automation.state and exactly one after each. Red on the parent: "Strategy New calls · Auto off" stays after None.
+             Expected (oracle: the texts of WstxOperatingLayout::AutomationIndicator and WstxOperatingLayout::StrategySelector): "Automation idle"; "Strategy New calls · Auto off"; "Automation idle" (not the previous text); "Pounce K1ABC waiting · HALT ends it"; "Automation stopped · no answer"; "Automation idle"; no GET /automation before the first automation.state and exactly one after each. Red on the parent: "Strategy New calls · Auto off" stays after None.
              2 — Isolated automated browser test; Windows development PC. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
@@ -2107,7 +2126,7 @@ attribute def ActivityOrdering {
         doc /* TC-074-003 — Every view on a new boot
              CL-074-01
              Setup: actual browser and isolated server; the test rewrites the server's replies and socket messages to name boot A, then boot B, and holds boot B's reads (GET /contact, /recording, /strategy, /pskr, /receive/startup, /strategy/alerts) and a boot A POST /strategy/ignore reply until it releases them; boot A has replies for GET /profile, /contact, /strategy (Farthest new on band selected, Auto on), /automation (an active strategy run in contact with K1ABC, with hearing and free_tx_slots, announced by automation.state), /pskr (connected), /receive/startup (Monitor off at startup on), /strategy/alerts and the recording and receive reads, and pushed radio.agc, radio.tx_level and transmit.state of boot A; "Show free Tx slots" on; then the socket closed and a new one whose GET /profile names boot B, the replies of boot B (None, Auto off, PSK Reporter off, Monitor off at startup off, no alerts, no automation.state) each held back 2 s; a late reply of boot A to GET /strategy and GET /pskr delivered after boot B is learned; a second case in which boot B's GET /strategy and GET /pskr answer 503.
-             Steps: read every view listed in WstxStationProtocol::PushedStationState at each change from the moment boot B is learned until 3 s after the last reply; then open a second page on boot B's replies and read the same views; count the requests.
+             Steps: read every view listed in WstxStationLink::PushedStationState at each change from the moment boot B is learned until 3 s after the last reply; then open a second page on boot B's replies and read the same views; count the requests.
              Expected (oracles: the boot B replies written in the test and the second page): from the moment boot B is learned no view shows a value of boot A: line not "Pounce", data-active false, no Free Tx slot marks, no PSK hearing lines, Auto not pressed, the selector not on "Farthest new on band", PSK Reporter and Monitor off at startup not shown as on; while the replies are held each faulty view shows the second page's form before its reads; the late boot A replies change nothing; at the end every view equals the second page's; with 503 the strategy and PSK Reporter views stay in their empty form and nothing of boot A returns; no GET /automation on boot B, no request beyond one read per state and socket, no timer request in 5 s; the already conforming views (contact, recording, receive, operating, AGC, Tx level, native, transmit, alerts) show no boot A value as well. Red on the parent: boot A's strategy, automation and PSK Reporter values are shown after boot B is learned.
              #82: there is no "Show free Tx slots" checkbox (the marks are always shown); boot A's open slot marks come from a pushed free_tx_slots.state of boot A, and from the moment boot B is learned no mark of boot A is drawn until boot B's first free_tx_slots.state.
              2 — Isolated automated browser test; Windows development PC. */
@@ -2131,4 +2150,38 @@ attribute def ActivityOrdering {
         }
     }
     dependency CL_074_01_verified_by_TC_074_004 from 'CL-074-01' to 'TC-074-004';
+    attribute def StrategySelector {
+        doc /* The strategy element in the operating view: a selector with None and the
+             names of the built-in and user strategies (grouped Strategy, Contest, "DXCC
+             all" first; the contest group lists the user's contest strategies and the contest in
+             force, "<name> (contest)"; the contest built-ins are chosen in the contest prompt,
+             WstxStrategies::ContestPrompt). Choosing a saved contest strategy: with a contest of its
+             profile in force it sends one PUT with that active and the same contest key; with no
+             contest or another contest in force it sends nothing and opens the contest prompt on
+             its contest with that strategy chosen and the contest's period pre-filled, whose Start
+             sends active and the contest (Cancel keeps the earlier selection, and the selector shows
+             it again). Every other change sends PUT /strategy with the
+             new active and nothing else: it asks nothing. With Auto off it only marks
+             (ValueView); with Auto on the run of the old selection ends and that of the new
+             one starts (AutoToggle); None also turns Auto off. HALT is always on screen. A
+             refused start leaves the selector on the strategy with the reason beside it. The
+             element shows the run state from GET /automation, read only on an automation.state
+             event: "Strategy <name> waiting", "· <call>", "· calling CQ", "· your QSO", a
+             waiting reason, the stop reason, or "Strategy <name> · Auto off" while Auto is off.
+             No client polling. The line is drawn from the current strategy snapshot and the
+             current automation snapshot together at each change of either, so that it never
+             keeps the text of an earlier state (#74, CL-074-01): with None, or no strategy
+             snapshot yet, and no strategy run it shows the WstxOperatingLayout::AutomationIndicator text
+             of the automation snapshot ("Automation idle" without a run). A new boot
+             (WstxStationLink::PushedStationState): when the browser learns a boot_id other
+             than that of its held strategy snapshot, the element drops that snapshot and its
+             verdicts at once and shows what a freshly loaded page shows before its GET
+             /strategy answers (the selector with None only and disabled, Auto disabled with
+             "Strategies are loading", "Automation idle", no marks), then the new boot's
+             snapshot; nothing of the previous boot is drawn, also not with the new boot's
+             automation snapshot. */
+    }
+    dependency CL_039_20_verified_by_TC_039_046 from 'CL-039-20' to 'TC-039-046';
+    dependency CL_039_22_verified_by_TC_039_046 from 'CL-039-22' to 'TC-039-046';
+    dependency CL_063_05_verified_by_TC_039_046 from 'CL-063-05' to 'TC-039-046';
 }

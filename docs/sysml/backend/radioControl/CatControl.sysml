@@ -3,21 +3,23 @@ package WstxRadioIO {
     private import WstxLiveReceive::ConvertAndReceive;
     private import WstxAudioCapture::CaptureAudio;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-009';
+    private import WstxRequirements::'FR-009';
     private import WstxProfiles::'TC-009-001';
-    private import WstxArchitecture::'FR-002';
+    private import WstxRequirements::'FR-002';
     private import WstxRequirements::AutomationState;
     private import WstxLiveReceive::'TC-009-002';
     private import WstxLiveReceive::'TC-002-003';
     private import WstxRecordingReceive::'TC-009-004';
     private import WstxStationProtocol::'TC-009-005';
-    private import WstxArchitecture::'FR-008';
-    private import WstxArchitecture::'FR-021';
+    private import WstxRequirements::'FR-008';
+    private import WstxRequirements::'FR-021';
     private import WstxCatLifecycle::'CL-022-04';
     private import WstxOperatingLayout::'TC-022-010';
-    private import WstxArchitecture::'FR-019';
+    private import WstxRequirements::'FR-019';
     private import WstxRadioSetup::'TC-044-009';
     private import WstxRadioSetup::'TC-044-011';
+    private import WstxRadioControl::CatRequest;
+    private import WstxRadioControl::CatResult;
     doc /* Canonical capture/CAT contract with partial native Windows and IC-7300 implementation;
          hardware matrix completion and physical acceptance remain separately declared.
          Contract: contract 4.5/12.8; recorded source and pure decoder contracts remain
@@ -25,7 +27,6 @@ package WstxRadioIO {
          Windows binding0.62.2 shared between WASAPI and overlapped serial I/O.
          Full normative operation, state, wire and oracle text follows this package. */
     enum def CatState { enum closed; enum connecting; enum ready; enum closing; enum unavailable; }
-    enum def CatOperation { enum read_frequency; enum read_mode; enum read_data; enum read_rx_tx; enum read_split; enum set_frequency; enum set_mode; enum set_data; enum receive_setup; }
     attribute def Limits {
         attribute canonicalHz : Integer = 12000;
         attribute blockFrames : Integer = 240;
@@ -49,37 +50,6 @@ package WstxRadioIO {
         attribute retainedBytes : Integer = 2097152;
         attribute correlatedClockUncertaintyNs : Integer = 2000000;
         attribute clockJumpMs : Integer = 20;
-    }
-    attribute def RadioObservation {
-        attribute frequencyHz : Integer[0..1];
-        attribute mode : String[0..1];
-        attribute 'filter' : Integer[0..1];
-        attribute data : Boolean[0..1];
-        attribute dataFilter : Integer[0..1];
-        attribute split : Boolean[0..1];
-        attribute rxTx : String[0..1];
-        attribute observedAtMs : Integer;
-        doc /* Only measured values, unknown is absent/null. Closed/stale observations
-             are never current readiness. Unknown mode code is preserved explicitly. */
-    }
-    item def CatRequest :> WstxArchitecture::ControlRequest {
-        attribute operation : CatOperation;
-        attribute connectionGeneration : Integer;
-        attribute frequencyHz : Integer[0..1];
-        attribute mode : String[0..1];
-        attribute 'filter' : Integer[0..1];
-        attribute data : Boolean[0..1];
-        attribute dataFilter : Integer[0..1];
-        doc /* Compiled typed union exact per contract 12.8, not arbitrary optional combinations.
-             Frequency30000..74800000; settersUSB/LSB/FIL1..3; DATAOFF00/00.
-             No raw command, PTT/TX setter, VOX or tuner operation. */
-    }
-    item def CatResult :> WstxArchitecture::ControlOutcome {
-        attribute connectionGeneration : Integer;
-        attribute observation : RadioObservation;
-        attribute error : String[0..1];
-        doc /* ACK requires independent matching readback; mismatch/failure indeterminate.
-             No retry, replay or invented rollback. Independent from receive generation. */
     }
     action def ExecuteCat {
         in request : CatRequest;
@@ -455,7 +425,7 @@ Live spectrum reuses the exact12.6 frame messages and subscriptions, with the li
 source/job identity; no native PCM crosses the browser link. For a live source the
 receiver checks safe monotonically increasing canonical frame counters and nominal
 row duration instead of a finite recording length. receive.state carries the job's
-progress and the audio (#10 WstxStationProtocol::PushedStationState); its exact data is
+progress and the audio (#10 WstxStationLink::PushedStationState); its exact data is
 `{profile_id,boot_id,generation,source_id,job_id,state,audio,clock,job}`, nullable IDs/state
 when idle, audio as in GET /receive, clock exactly
 `{correlated,utc_anchor,canonical_anchor_frame,uncertainty_ns}` and job exactly
@@ -479,11 +449,11 @@ behind explicit status/control. With no announced or unread view (receive.state 
 each publication; the browser answers it with result reads until one read at the job's
 end that started after it) and no failed live or result read, a browser on any display profile
 keeps only a safety result read at most once/30 s (#10
-WstxStationProtocol::PushedStationState). Its result page is at most3072 encoded bytes.
+WstxStationLink::PushedStationState). Its result page is at most3072 encoded bytes.
 Detailed remains an explicit fast-link option; Off disables optional spectrum only.
 On Detailed a decode publication is announced at once and its records are fetched page
 after page without the 4 s cadence (#57 CL-057-01).
-The two-browser 32 kbit/s budget (WstxStationProtocol::ThinLinkBudget: <=3000 B/s mean
+The two-browser 32 kbit/s budget (WstxStationLink::ThinLinkBudget: <=3000 B/s mean
 in each direction and <=2 s visible status response) is a target judged from the link
 byte log (#80). Read requests may retry after
 explicit stale/error handling; mutations are never automatically replayed.
@@ -541,7 +511,7 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
              off-only release. After an indeterminate release the owner retries
              off-only releases (never a key) and refuses Arm until one is confirmed. */
     }
-    dependency pttPromise from PttControl to WstxArchitecture::'FR-009';
+    dependency pttPromise from PttControl to WstxRequirements::'FR-009';
     requirement 'CL-008-06' {
         doc /* Separate a versioned factual radio catalogue, compiled typed operations and bounded protocol execution. Catalogue data cannot authorize raw or transmit commands. */
         attribute coverage : ImplementationState = ImplementationState::implemented;

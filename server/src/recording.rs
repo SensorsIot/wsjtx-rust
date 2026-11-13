@@ -279,13 +279,13 @@ pub struct Recording {
     pub(crate) contact: std::sync::OnceLock<Arc<crate::contact_http::Station>>,
     /// FR-023 native session of a native profile, started once by the process.
     pub(crate) flex: std::sync::OnceLock<Arc<wstx_rust::flex::Session>>,
-    /// #39 who is connected, for WstxStrategy::StrategyRun's rule without a client.
+    /// #39 who is connected, for WstxAutoControl::StrategyRun's rule without a client.
     pub(crate) clients: crate::automation::Clients,
     /// #39 WstxStrategy::FreeTxSlot: the per-period waterfall power of the live receive.
     pub(crate) waterfall: Mutex<crate::freeslot::Waterfall>,
     /// WstxUdp interface of this station (#40), opened once by the process.
     pub(crate) udp: std::sync::OnceLock<Arc<crate::udp::Owner>>,
-    /// The read-only PSK Reporter feed (#39 WstxStrategy::HearingFeed), started once by the
+    /// The read-only PSK Reporter feed (#39 WstxHearingFeed::HearingFeed), started once by the
     /// process; absent in in-process tests, so none of them can reach the network.
     pub(crate) pskr: std::sync::OnceLock<Arc<crate::pskr::Feed>>,
     /// The station clock and its saved source (#43), started once by the process.
@@ -3768,7 +3768,7 @@ impl Recording {
         });
         json!({"v":1,"profile_id":self.profile,"boot_id":self.boot,"generation":s.generation,"recording":recording,"source_error":s.source_error,"storage_error":s.storage_error,"import":import,"job":s.job})
     }
-    /// WstxStationProtocol::PushedStationState profile.state: the saved revision this station runs.
+    /// WstxStationLink::PushedStationState profile.state: the saved revision this station runs.
     pub(crate) fn profile_state_event(&self) -> (u64, String) {
         let revision = self.state.lock().unwrap().operating.profile_revision;
         (
@@ -3777,7 +3777,7 @@ impl Recording {
                 .to_string(),
         )
     }
-    /// RecordingReceive pushed recording.state data (WstxStationProtocol::PushedStationState).
+    /// RecordingReceive pushed recording.state data (WstxStationLink::PushedStationState).
     pub fn state_event_data(&self) -> Value {
         let s = self.snapshot();
         let source = if s["job"]["kind"] == "live" {

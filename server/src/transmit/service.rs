@@ -298,7 +298,7 @@ pub struct View {
     pub clock_measurement: Option<super::clock::Measurement>,
     pub tx_calls: u32,
     pub tx_remaining_calls: u32,
-    /// #97 (WstxTransmit::TransmitWatchdog): armed for a strategy run's own contact, which the
+    /// #97 (WstxTransmitControl::TransmitWatchdog): armed for a strategy run's own contact, which the
     /// Tx watchdog does not bound while attended: tx_remaining_calls is null on the wire.
     pub tx_remaining_null: bool,
     pub tx_expired: bool,
@@ -353,7 +353,7 @@ pub struct Core<H: Hardware> {
     refusal: Option<TransmitRefusal>,
     outcomes: VecDeque<Outcome>,
     outcome_sequence: u64,
-    /// WstxTransmit::TransmitWatchdog: the limit of repetitions of one message (#39,
+    /// WstxTransmitControl::TransmitWatchdog: the limit of repetitions of one message (#39,
     /// 2026-11-06).
     tx_calls: u32,
     tune_seconds: u32,
@@ -662,7 +662,7 @@ impl<H: Hardware> Core<H> {
         self.cancel_unstarted(OutcomeKind::Refused, Some(TransmitRefusal::NotArmed));
     }
     /// Accepted operator activity in the browser: a human was seen this boot. It changes
-    /// nothing of the Tx watchdog's limit, repetitions or stop (WstxQsoTransmit::TxWatchdog).
+    /// nothing of the Tx watchdog's limit, repetitions or stop (WstxQsoControl::TxWatchdog).
     pub fn activity(&mut self) {
         self.operator_seen = true;
     }
@@ -671,7 +671,7 @@ impl<H: Hardware> Core<H> {
         self.operator_seen = true;
         self.tx_expired = false;
     }
-    /// The limit of repetitions of one message (WstxQsoTransmit::TxWatchdog).
+    /// The limit of repetitions of one message (WstxQsoControl::TxWatchdog).
     pub fn tx_limit(&self) -> u32 {
         self.tx_calls
     }

@@ -1,36 +1,13 @@
 package WstxOperatingReceive {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-002';
-    private import WstxArchitecture::'FR-009';
-    private import WstxArchitecture::'FR-019';
-    private import WstxArchitecture::'FR-021';
+    private import WstxRequirements::'FR-002';
+    private import WstxRequirements::'FR-009';
+    private import WstxRequirements::'FR-019';
+    private import WstxRequirements::'FR-021';
     private import WstxLiveReceive::'TC-009-002';
     private import WstxStationProtocol::'TC-009-005';
     private import WstxRequirements::AutomationState;
-    // CombinedLinkEvidence retired by #80 (operator 2026-11-09): no test measures the 32 kbit/s
-    // link; its budget is a target judged from WstxStationProtocol::LinkTrafficLog.
-    attribute def SelectionStateEvent {
-        attribute maximumBytes : Integer = 2048;
-        attribute radioDatesDetailedMs : Integer = 2000;
-        attribute radioDatesBelowDetailedMs : Integer = 30000;
-        doc /* selection.state (WstxStationProtocol::PushedStationState, #10): exactly
-             {v:1,type:"selection.state",data:{profile_id,boot_id,snapshot_sequence,monotonic_ms,changed}}
-             to a display-subscribed peer, checked once per second. changed holds the top-level
-             fields of the GET /receive/selection snapshot this peer does not hold (a socket's
-             first event: all of them), at most maximumBytes per event; what does not fit goes at the next
-             check, so a snapshot near its 3072 B cap comes in two events and the browser waits for all fields. Each CAT poll dates the
-             radio facts anew: a change of the radio field in query_sequence or observed_at_ms alone
-             goes at most every radioDatesDetailedMs on Detailed and every
-             radioDatesBelowDetailedMs below it; any other change goes at the next check. The
-             browser builds its view of a socket from that socket's events alone and accepts it
-             like a read: not with a snapshot_sequence older than the state shown, and only for the
-             identity of its current status. It has no timer read. It reads GET /receive/selection
-             once per socket, on a saved profile revision or boot change, on the operator's Refresh
-             and after a command whose outcome is unknown; a pushed state never clears the barrier
-             of an unknown outcome, also not while the command's POST is pending. A read lost on
-             the link before its answer changes nothing while this socket's events hold the state. */
-    }
 
     doc /* Target implementation contract for contract 4.7.5/6.6 TC009005/12.8.1.
          The canonical contract is this package and WstxRequirements; no execution or implementation verdict.
@@ -689,7 +666,7 @@ no added result parallelism. One explicit
 reconciliation read is allowed when needed, not a retry loop.
 Stop is not held behind a result read. No audio/fixture data
 is transported. Selection and mode/band traffic is not part of a 32 kbit/s link test; its
-bytes appear in the link byte log (WstxStationProtocol::LinkTrafficLog, #80). Fast-link
+bytes appear in the link byte log (WstxStationLink::LinkTrafficLog, #80). Fast-link
 cadence is not a32kbit/s promise.
 The browser does not poll the selection: SelectionStateEvent carries it, and an explicit
 read is never counted as a pushed one. TC-009-005 case7 defines the coverage evidence.

@@ -20,7 +20,7 @@ package WstxMcp {
             JSON-RPC batches, which this endpoint refuses (review finding 6).
          D3 Authorization (operator decision on #58, 2026-11-02, replacing the #12 choice
             of an auth-v1 grant per MCP client): an MCP client holds an MCP client token of
-            its own (McpCredential, WstxStationProtocol::McpClientCredential), created and revoked
+            its own (McpCredential, WstxStationLink::McpClientCredential), created and revoked
             by the browser in Settings > General > Access & grants; it is separate from the
             station access token (WSTX_TOKEN) and from every browser grant. POST /mcp
             accepts only such a token; browser routes refuse it; it is never exchanged for
@@ -51,10 +51,10 @@ package WstxMcp {
             of that browser grant, revocation of that grant or MCP client, or a safety edit
             stop it authority_lost; a browser proof never ends an MCP client's run) and no
             longer than max_run_minutes (default 120, 1..480; stop time_limit); a strategy run
-            follows its grant instead, D8 and WstxStrategy::StrategyRun. A running
+            follows its grant instead, D8 and WstxAutoControl::StrategyRun. A running
             automation is shown read-only in the browser station bar (AutomationIndicator).
-         D8 Strategy runs (#39, WstxStrategy::StrategyRun): a selected strategy with Auto on
-            (WstxStrategy::AutoToggle, the browser only) is a run of this owner in which the active strategy chooses and
+         D8 Strategy runs (#39, WstxAutoControl::StrategyRun): a selected strategy with Auto on
+            (WstxAutoControl::AutoToggle, the browser only) is a run of this owner in which the active strategy chooses and
             orders stations; it has no contact limit, its own limit of 8 hours (run_limit) and never stops no_answer. An
             MCP client cannot select one: the configuration key strategy true is refused
             operator_required, PUT /strategy has no MCP tool. For every run
@@ -157,7 +157,7 @@ package WstxMcp {
              change of (state, report_rcvd) since the selection or the last change counts
              unanswered, at max_unanswered_periods stop no_answer.
              Stopped runs stay visible until the next start. A run with strategy true
-             follows WstxStrategy::StrategyRun instead of CandidateSelection, its bounds,
+             follows WstxAutoControl::StrategyRun instead of CandidateSelection, its bounds,
              its context_changed stop and the no_answer stop; a run with pounce follows
              WstxStrategy::Pounce instead of CandidateSelection, its completion and no_answer
              rules, and stops band_changed on a station band change; a disarm by the Tx watchdog stops
@@ -176,16 +176,16 @@ package WstxMcp {
              or {call, reason repetitions|gone|tx_changes|caller}, the last station a strategy or
              contest run left, WstxStrategy::LeaveRule, #97), quiet ([{call, band, mode, remaining_s}],
              WstxStrategy::QuietTime, the retry pause), hearing (null or {state heard|no|unknown,
-             reports, spot_utc_s, snr_db}, WstxStrategy::PskrUse), tx_slot (null or {hz, power_db, his_end
+             reports, spot_utc_s, snr_db}, WstxHearingFeed::PskrUse), tx_slot (null or {hz, power_db, his_end
              yes|no|unknown}, power_db the slot's whole-dB rise above the passband floor clamped at 0 (#66),
              WstxStrategy::FreeTxSlot), slot_check (null or {repetitions, case
              heard|not_heard|no_reports, hears_us, moved, hz}, WstxStrategy::StrategyWatchdog,
              TxMoveRule), leave (null or {mode, remaining, busy, paused, staying},
              WstxStrategy::LeaveCountLabel, #97), pounce (null or
              {call, band}, #42)), strategy_refusal (null or why the last selection started no run,
-             WstxStrategy::StrategyRun), free_tx_slots (the station's open slots, with
+             WstxAutoControl::StrategyRun), free_tx_slots (the station's open slots, with
              or without a run: null without a live receive, else the latest built value,
-             WstxStrategy::FreeTxSlots, #82)};
+             WstxAutoControl::FreeTxSlots, #82)};
              existing auth and Origin rules of GET routes.
              POST /automation/command (AutomationCommand): exactly {v, profile_id, boot_id,
              command_id, action} plus configure {expected_policy_revision, configuration};
@@ -209,11 +209,11 @@ package WstxMcp {
              then the run's contact is disarmed, unless it is a started QSO, which is finished
              (#81, WstxStrategy::StartedQso). Accepted: 202 {v:1, profile_id, boot_id,
              command_id, accepted:true, policy_revision, run_revision, run_id, state
-             off|waiting|contact_active|calling_cq|manual|stopped} (calling_cq: only a contest Run, WstxContest::ContestRun). run_revision also advances on every run
+             off|waiting|contact_active|calling_cq|manual|stopped} (calling_cq: only a contest Run, WstxAutoControl::ContestRun). run_revision also advances on every run
              change (selection, contact transition, counters, stop). Counters at
              9007199254740991 refuse counter_exhausted. Accepted means admitted, not keyed. */
     }
-    dependency contactPath from OperatingAutomation to WstxQsoWire::ContactCommand;
+    dependency contactPath from OperatingAutomation to WstxQsoControl::ContactCommand;
     dependency haltPath from OperatingAutomation to WstxTransmit::HaltTransmit;
     dependency automationClause from OperatingAutomation to WstxMcpEndpoint::'CL-012-03';
     dependency policyClause from CandidateSelection to WstxMcpEndpoint::'CL-012-04';

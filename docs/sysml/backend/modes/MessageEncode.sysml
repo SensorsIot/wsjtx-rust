@@ -1,9 +1,9 @@
 package WstxMessageEncode {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-005';
+    private import WstxRequirements::'FR-005';
     private import WstxRequirements::AutomationState;
-    private import WstxArchitecture::'FR-006';
+    private import WstxRequirements::'FR-006';
     private import WstxContact::'CL-011-02';
 
     enum def MessageFamily { enum standardCalls; enum portableCalls; enum nonstandard; enum freeText; enum telemetry; enum fieldDay; enum rttyRoundup; enum euVhf; }

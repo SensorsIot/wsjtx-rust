@@ -1,8 +1,8 @@
 package WstxTransmitClock {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-006';
-    private import WstxArchitecture::'FR-004';
+    private import WstxRequirements::'FR-006';
+    private import WstxRequirements::'FR-004';
     private import WstxTransmit::'TC-043-004';
     private import WstxTransmit::'CL-009-05';
     private import WstxTransmit::'CL-043-03';

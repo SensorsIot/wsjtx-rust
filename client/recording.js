@@ -430,7 +430,7 @@ async function sync(current=socket) {
   } catch(error){if(current===socket){statusText.textContent=`Recording state unavailable · ${error.message}`;if(subscribedSocket===current)disconnect(current,'recording-sync-failed');}} finally{syncPending=false;if(syncAgain){syncAgain=false;sync(socket);}}
 }
 addEventListener('station-ready',event => {if(subscribedSocket!==event.detail || snapshot?.boot_id!==profileData.boot_id)sync(event.detail);});
-// WstxStationProtocol::PushedStationState (#74): a new boot drops the recording and live receive
+// WstxStationLink::PushedStationState (#74): a new boot drops the recording and live receive
 // state of the previous boot at once; both show their freshly loaded form until the new boot's reads.
 addEventListener('station-boot',()=>{
   snapshot=undefined;importOutcome=undefined;rows=[];resetLevels();paint();
@@ -528,7 +528,7 @@ if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.stat
 
 let live,liveFailed=false,resultsAnnounced=null,livePending=false,liveAgain=null,resultPending=false,resultFailed=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
 let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingIntent=null,operatingSocket=null;
-// What this socket's selection.state events hold (WstxOperatingReceive::SelectionStateEvent).
+// What this socket's selection.state events hold (WstxStationCommands::SelectionStateEvent).
 let operatingHeld=null,operatingHeldSocket=null;
 let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 
@@ -1016,7 +1016,7 @@ addEventListener('station-ready',event=>{
   operatingShow();
 });
 addEventListener('station-stale',()=>{operatingFailure='Disconnected · operating data stale';operatingShow();});
-// WstxOperatingReceive::SelectionStateEvent (#10): the socket's first event holds every field,
+// WstxStationCommands::SelectionStateEvent (#10): the socket's first event holds every field,
 // each later one what changed. Only events build this view, so a read never mixes into it.
 addEventListener('station-message',event=>{
   const {current,message}=event.detail;if(current!==socket||message.type!=='selection.state'||!message.data?.changed)return;
@@ -1244,7 +1244,7 @@ txLevelShow();
 detectEl('detect-use').addEventListener('click',()=>{const agc=detectProposal?.radio?.agc;if(agc){const field=document.getElementById('control-agc');field.value=agc;field.dispatchEvent(new Event('change',{bubbles:true}));}agcShow();});
 agcShow();
 addEventListener('station-stale',catShow);
-// WstxTransmitWire::TransmitWire operator panel (#9 slice B). Active only for a profile with
+// WstxTransmitControl::TransmitWire operator panel (#9 slice B). Active only for a profile with
 // CAT PTT; the browser renders server-confirmed transmit state and sends explicit
 // requests. It runs no transmit timer: the server plans, keys and halts.
 const transmitPanel=document.createElement('div');transmitPanel.id='transmit-panel';
@@ -1268,12 +1268,12 @@ function transmitShow(){
   status.textContent=`${t.capability} · ${t.arm_state} (${t.last_disarm_cause}) · PTT ${v.ptt}${v.transmitting?' · TRANSMITTING':''}${t.tune?' · TUNE':''} · clock ${v.clock}${clock} · halt ${t.halt_state}${t.refusal?' · '+t.refusal:''}${t.last_text?' · last '+t.last_text:''}${v.watchdog.tx_remaining_calls==null?'':` · WD ${v.watchdog.tx_remaining_calls} calls`}`;
   const tune=document.querySelector('#tx-tune');if(tune)tune.textContent=t.tune?'Tune off':'Tune';
 }
-// WstxStationProtocol::PushedStationState / WstxTransmitWire::TransmitWire (#10): the browser holds
+// WstxStationLink::PushedStationState / WstxTransmitControl::TransmitWire (#10): the browser holds
 // the transmit state from transmit.state: the socket's first event has every field, each later
 // one what changed. It does not read GET /transmit. Ages advance locally; HALT is enabled as
 // soon as the station is ready (#57).
 let transmitEventSocket=null;
-// WstxQsoWire::ContactStateEvent (#10): this client is loaded before the socket opens and the
+// WstxQsoControl::ContactStateEvent (#10): this client is loaded before the socket opens and the
 // contact client is not, so the contact state from the events is held here: every field in the
 // socket's first event, what changed after it.
 let contactHeld=null,contactHeldSocket=null;

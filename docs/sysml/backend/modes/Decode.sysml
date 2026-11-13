@@ -2,17 +2,17 @@ package WstxModemDecode {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::AutomationState;
-    private import WstxArchitecture::'FR-003';
-    private import WstxArchitecture::'FR-004';
-    private import WstxArchitecture::'FR-018';
+    private import WstxRequirements::'FR-003';
+    private import WstxRequirements::'FR-004';
+    private import WstxRequirements::'FR-018';
     private import WstxLiveReceive::'CL-007-01';
     private import WstxOperatingLayout::'CL-007-02';
     private import WstxLiveReceive::'TC-004-004';
-    private import WstxOfflineDecode::Mode;
-    private import WstxOfflineDecode::ResultRecord;
+    private import WstxModeProcessing::Mode;
+    private import WstxDecodes::ResultRecord;
     private import WstxOfflineDecode::DecodeBand;
     private import WstxOfflineDecode::'CL-007-09';
-    private import WstxRecordingReceive::DecodeJob;
+    private import WstxModeProcessing::DecodeJob;
     private import ModelBindings::Status;
     private import ModelBindings::Automation;
     private import ModelBindings::ImplementedIn;
@@ -23,7 +23,7 @@ package WstxModemDecode {
     private import WstxLiveReceive::'CL-007-05';
     private import WstxOperatingLayout::'CL-057-01';
     private import WstxOperatingLayout::'TC-057-003';
-    doc /* The decode function of the modes part (WstxArchitecture::ModeFunctions). A window
+    doc /* The decode function of the modes part (WstxModesPart::ModeFunctions). A window
          of canonical 12 kHz samples with its mode and a-priori context goes in; the records
          of the frames decoded in it come out. The payload, channel code and waveform are
          those of the published protocol; this package states the product's choices over
@@ -163,7 +163,7 @@ package WstxModemDecode {
         }
         doc /* A record larger than the modem record cap that
              WstxLiveReceive::LiveTimedResultRecord states is not published; the window
-             ends with decode_limit (WstxRecordingReceive::ErrorCode), keeping the records
+             ends with decode_limit (WstxReceiveControl::ErrorCode), keeping the records
              already published. */
         doc /* A frame that starts before the window or runs past its end is subtracted and
              never published, so that a weaker frame under it decodes; a frame that starts
@@ -362,7 +362,7 @@ package WstxModemDecode {
              (f) One word on a carrier more than 50 Hz away publishes once, and the weak
                  frame under its copy decodes.
              (g) CRC-valid unsupported and invalid payloads are retained with status
-                 unsupported or invalid_payload (WstxOfflineDecode::FrameStatus), exact
+                 unsupported or invalid_payload (WstxDecodes::FrameStatus), exact
                  payload77, and null text and fields.
              (h) Weak "HB9BLA K1ABC FN42" (report) and "HB9BLA K1ABC RR73" (rogers) decode
                  only with the right calls, state and Rx/Tx, with a_priori 3 and 6; a wrong

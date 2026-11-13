@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! WstxQsoWire::ContactWire for the contact engine: GET /contact (ContactSnapshot) and
+//! WstxQsoControl::ContactWire for the contact engine: GET /contact (ContactSnapshot) and
 //! POST /contact/command (ContactCommand, CommandReceipt), the station step of the
 //! engine, its direct log (WstxLogbook::DirectLog, #41) and the contact.state /
 //! station.tick WebSocket event payloads. Validation
@@ -265,7 +265,7 @@ fn contest_of(f: &Value) -> Option<Standard> {
         exchange: Exchange::Contest(kind, text),
     })
 }
-/// A published live result record as an engine row (WstxOfflineDecode::StandardFields).
+/// A published live result record as an engine row (WstxDecodes::StandardFields).
 pub(crate) fn row_of(record: &Value, identity: &(String, String, u64), mode: &str) -> Option<Row> {
     let f = &record["fields"];
     let nonstandard = (record["status"] == "decoded" && f["type"] == "nonstandard")
@@ -395,7 +395,7 @@ impl Station {
         });
         (e.revision, facts, e.settings.auto_seq)
     }
-    /// #97 WstxContact::BusyPartner for the run: (the partner is busy, the paused calls of the
+    /// #97 WstxOperatingChain::BusyPartner for the run: (the partner is busy, the paused calls of the
     /// message due next).
     pub(crate) fn busy_facts(&self) -> (bool, u32) {
         let inner = self.lock();
@@ -457,7 +457,7 @@ impl Station {
         }
     }
     /// One ContactCommand body through exactly the browser's validation and execution
-    /// (WstxQsoWire::ContactCommand) as a browser operator action; `granted` is the
+    /// (WstxQsoControl::ContactCommand) as a browser operator action; `granted` is the
     /// caller's current CL-022 grant. Station code uses `operate_as` with its source.
     #[cfg(test)]
     pub(crate) fn operate(
@@ -854,7 +854,7 @@ impl Station {
                 json!(v.tx_remaining_calls)
             }
         });
-        // #97 WstxContact::BusyPartner: busy_with and the paused calls of the message due next.
+        // #97 WstxOperatingChain::BusyPartner: busy_with and the paused calls of the message due next.
         let watchdog = json!({"tx_remaining_calls":remaining,
             "tx_expired":view.as_ref().is_some_and(|v|v.tx_expired),
             "tune_remaining_seconds":view.as_ref().map_or(0,|v|v.tune_remaining_seconds),
@@ -896,7 +896,7 @@ fn parity_name(p: Parity) -> &'static str {
         Parity::Odd => "odd",
     }
 }
-/// The #9 read view WstxQsoWire::ContactSnapshot carries (refusal: the latest #9
+/// The #9 read view WstxQsoControl::ContactSnapshot carries (refusal: the latest #9
 /// refusal, or the contact's last refused/failed transmit outcome).
 fn transmit_view(v: &View, problem: Option<&str>, safety_revision: Option<u64>) -> Value {
     let name = |t: String| contact::snake(&t);
@@ -1451,7 +1451,7 @@ pub(crate) fn station_tick(state: &ProfileState) {
     if let Some(s) = state.recording.contact.get() {
         // Read before the contact step: the engine then has every record of it.
         let publication = state.recording.latest_publication();
-        // WstxStrategy::StrategyRun: a HALT from any source turns Auto off (the selection stays).
+        // WstxAutoControl::StrategyRun: a HALT from any source turns Auto off (the selection stays).
         s.strategy.halt_step(state);
         // #42 IgnoreLists: a station band change empties the session list before a run step.
         s.strategy
@@ -1460,9 +1460,9 @@ pub(crate) fn station_tick(state: &ProfileState) {
         s.strategy.alert_step(state);
         s.tick(state);
         s.automation.tick(s, state, publication);
-        // #82 WstxStrategy::FreeTxSlots: the station's open slots, with or without a run.
+        // #82 WstxAutoControl::FreeTxSlots: the station's open slots, with or without a run.
         s.automation.build_free_tx_slots(s, state);
-        // WstxStrategy::AutoToggle: every run end turns Auto off.
+        // WstxAutoControl::AutoToggle: every run end turns Auto off.
         let epoch = s.strategy.auto_epoch();
         s.strategy
             .auto_step(state, epoch, s.automation.strategy_running());

@@ -47,7 +47,7 @@ fn empty(body: Result<Bytes, BytesRejection>) -> Result<(), &'static str> {
     }
 }
 
-/// The data of receive.state (WstxStationProtocol::PushedStationState): the identity and what a
+/// The data of receive.state (WstxStationLink::PushedStationState): the identity and what a
 /// browser holding it would otherwise read GET /receive for. It leaves out what frames carry.
 pub(crate) fn receive_state_data(s: &Value) -> Value {
     let (j, c) = (&s["job"], &s["clock"]);

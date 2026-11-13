@@ -104,7 +104,7 @@ async function connect() {
       if (message.type === 'automation.state') automationAnnounced = current;
       if (message.type === 'free_tx_slots.state' && message.data) freeTxSlotsHeld = {current, value: message.data.free_tx_slots};
       window.dispatchEvent(new CustomEvent('station-message', {detail: {message, current}}));
-      // WstxStationProtocol::PushedStationState: the first status of a socket reads the profile, then only a newer announced revision does.
+      // WstxStationLink::PushedStationState: the first status of a socket reads the profile, then only a newer announced revision does.
       if (message.type === 'profile.state' && profileRefresh.initialized && (message.data?.boot_id !== profileData?.boot_id || message.data?.revision > profileData?.revision)) refreshProfile(current, profileRefresh).catch(() => disconnect(current, 'profile-refresh-failed'));
       if (message.type === 'station.status' && message.id === pendingId && typeof message.data?.version === 'string' && message.data.radio === 'unconfigured') {
         if (stationUpdated(message.data.build)) return;
@@ -254,7 +254,7 @@ function applyProfile(data, reload) {
   if (profileData && data.boot_id === profileData.boot_id && data.revision < profileData.revision) return false;
   const newBoot = !!profileData && data.boot_id !== profileData.boot_id;
   profileData = data; document.querySelector('#profile-panel').hidden = false;
-  // WstxStationProtocol::PushedStationState (#74): a new boot is learned here; each view of
+  // WstxStationLink::PushedStationState (#74): a new boot is learned here; each view of
   // station state drops what it holds at once and shows its freshly loaded form.
   if (newBoot) window.dispatchEvent(new CustomEvent('station-boot', {detail: data.boot_id}));
   // FR-023: the connection type is read-only and shown as saved.

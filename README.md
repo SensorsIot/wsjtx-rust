@@ -50,7 +50,7 @@ The first release targets Windows desktop. macOS and Linux are planned afterward
 
 ## Repository layout
 
-The [canonical SysML product scope](docs/sysml/ProductScope.sysml) and
+The [canonical SysML product scope](docs/sysml/Requirements.sysml) and
 [requirements and verification](docs/sysml/Requirements.sysml) define the functional
 contract. The [architecture](docs/sysml/Station.sysml) defines component boundaries,
 internal contract ownership and connections. This README provides orientation, setup
@@ -70,7 +70,7 @@ Build, test and packaging instructions are in the [project-specific harness](doc
 
 ## Documentation
 
-- [Canonical functional model and behaviour baseline](docs/sysml/ProductScope.sysml)
+- [Canonical functional model and behaviour baseline](docs/sysml/Requirements.sysml)
 - [Stable requirements and verification cases](docs/sysml/Requirements.sysml)
 - [Architecture](docs/sysml/Station.sysml)
 - [Project-specific harness: Windows builds and model validation](docs/harness/Project-Specifics.md)

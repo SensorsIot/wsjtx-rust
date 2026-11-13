@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// TC-080-001 link byte log (WstxStationProtocol::LinkTrafficLog): the actual router in the test
+// TC-080-001 link byte log (WstxStationLink::LinkTrafficLog): the actual router in the test
 // process, served by the station's own listener (TLS on a selected HTTPS profile with one enrolled
 // browser grant and one MCP client; plaintext loopback in case (i)). The log's period clock and
 // mode are driven by the test, and so is the runtime clock (paused): the station's heartbeat and
@@ -123,7 +123,7 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for Wire<T> {
     }
 }
 
-/// WstxStationProtocol::LinkTrafficLog estimate with IndependentLinkAccounting, as the contract
+/// WstxStationLink::LinkTrafficLog estimate with IndependentLinkAccounting, as the contract
 /// states it: t = 29 on TLS, 0 on plaintext; each message of b bytes takes
 /// w = b + t x ceil(b / 16384) wire bytes and ceil(w / 512) segments, the rest of the bytes
 /// ceil(r / 512); estimate = bytes + 80 x S(this direction) + 80 x S(other direction).

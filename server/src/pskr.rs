@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! WstxStrategy::HearingFeed (#39): the read-only PSK Reporter MQTT subscriber and the
+//! WstxHearingFeed::HearingFeed (#39): the read-only PSK Reporter MQTT subscriber and the
 //! bounded "heard by target" / "frequencies the target decodes" model. Its own thread does
 //! all network waiting; the station only reads a short-held mutex, and no connection means
 //! unknown, never an error for the operator. It sends the MQTT handshake, the two
@@ -162,7 +162,7 @@ struct WireSpot {
     b: String,
     rp: Option<Value>,
 }
-/// WstxStrategy::HearingFeed rp: an integer -99..99; absent or anything else is unknown.
+/// WstxHearingFeed::HearingFeed rp: an integer -99..99; absent or anything else is unknown.
 fn reported_snr(rp: Option<&Value>) -> Option<i32> {
     rp.and_then(Value::as_i64)
         .filter(|n| (-99..=99).contains(n))
@@ -190,7 +190,7 @@ pub(crate) fn parse_spot(payload: &[u8]) -> Option<Spot> {
         parity,
     })
 }
-/// WstxStrategy::PskrUse: what the feed knows of whether the target hears us.
+/// WstxHearingFeed::PskrUse: what the feed knows of whether the target hears us.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HearingState {
     /// The newest spot of my call at the target, at most 600 s old: its time and rp.
@@ -556,7 +556,7 @@ enum Link {
 }
 struct Inner {
     enabled: bool,
-    /// WstxStrategy::PskrUse (beneath the Settings switch `enabled`).
+    /// WstxHearingFeed::PskrUse (beneath the Settings switch `enabled`).
     use_: bool,
     storage_error: Option<&'static str>,
     my_call: Option<String>,
@@ -602,7 +602,7 @@ impl Shared {
         }
     }
 }
-/// pskr.json, schema_version 2 (WstxStrategy::HearingFeed).
+/// pskr.json, schema_version 2 (WstxHearingFeed::HearingFeed).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Record {
@@ -737,7 +737,7 @@ impl Feed {
     pub(crate) fn revision(&self) -> u64 {
         self.shared.lock().revision
     }
-    /// WstxStrategy::PskrUse in effect: the toggle on beneath the Settings switch on. With it
+    /// WstxHearingFeed::PskrUse in effect: the toggle on beneath the Settings switch on. With it
     /// off runs use no spot.
     pub(crate) fn use_on(&self) -> bool {
         let i = self.shared.lock();
@@ -748,7 +748,7 @@ impl Feed {
     pub(crate) fn hears_us(&self, target: &str, mode: &str, band: &str) -> bool {
         self.hearing(target, mode, band).hears_us()
     }
-    /// WstxStrategy::PskrUse: whether `target` hears us on this mode and band: heard (the
+    /// WstxHearingFeed::PskrUse: whether `target` hears us on this mode and band: heard (the
     /// newest spot of my call at it, at most 600 s old, with its rp); no (the feed connected,
     /// the call subscribed as the current target, no such spot); unknown otherwise, also with
     /// Use off.
@@ -873,7 +873,7 @@ impl Feed {
         saved.map_err(|_| "storage_unavailable")?;
         Ok(self.view())
     }
-    /// POST /pskr/use: saves WstxStrategy::PskrUse (pskr.json schema 2) and pushes pskr.state.
+    /// POST /pskr/use: saves WstxHearingFeed::PskrUse (pskr.json schema 2) and pushes pskr.state.
     /// Off ends the target subscription at the session's next look; on subscribes it again.
     fn set_use(&self, profile: &str, boot: &str, use_: bool) -> Result<Value, &'static str> {
         if profile != self.profile {
@@ -1027,7 +1027,7 @@ fn session(
                     || !i.enabled
                     || i.switched != switched
                     || i.my_call.as_deref() != Some(my_call),
-                // WstxStrategy::PskrUse: the target is subscribed only while Use is on.
+                // WstxHearingFeed::PskrUse: the target is subscribed only while Use is on.
                 i.target
                     .as_deref()
                     .filter(|_| i.use_)
@@ -1101,7 +1101,7 @@ fn mode_name(mode: decoder::Mode) -> &'static str {
         decoder::Mode::Ft4 => "FT4",
     }
 }
-/// WstxStrategy::PskrUse for a run (S2's LeaveRule and the run snapshot): whether `target`
+/// WstxHearingFeed::PskrUse for a run (S2's LeaveRule and the run snapshot): whether `target`
 /// hears us on the station band and `mode`. Unknown without the feed, a band or a target, and
 /// with Use off.
 pub(crate) fn target_hearing(
@@ -1154,7 +1154,7 @@ pub(crate) fn target_offsets(
     let dial = contact_http::confirmed_dial(r);
     Some(feed.decoded_of_parity(mode_name(mode), band, dial?, freeslot::band(mode), parity))
 }
-/// WstxStrategy::PskrUse in effect (the toggle and the Settings switch on); false without a
+/// WstxHearingFeed::PskrUse in effect (the toggle and the Settings switch on); false without a
 /// feed.
 #[cfg(test)]
 pub(crate) fn use_on(r: &recording::Recording) -> bool {
@@ -1178,7 +1178,7 @@ struct UseEdit {
     #[serde(rename = "use")]
     use_: bool,
 }
-/// POST /pskr/use {v 1, profile_id, boot_id, use}: WstxStrategy::PskrUse, with the refusals
+/// POST /pskr/use {v 1, profile_id, boot_id, use}: WstxHearingFeed::PskrUse, with the refusals
 /// of POST /pskr (an MCP principal is refused at the boundary, #58).
 pub async fn update_use(
     State(app): State<App>,

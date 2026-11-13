@@ -25,9 +25,10 @@ const readinessMs = () => profileValue('readinessDeadlineSeconds') * 1000;
 // The members of an outcome enumeration of WstxProfiles: naming one the model does not list
 // throws, so the test fails when the model no longer has it.
 function outcomes(definition) {
-  const members = openModel().enumMembers(`WstxProfiles::${definition}`);
+  const qualified = `${definition === 'HttpOutcome' ? 'WstxProfileAccess' : 'WstxProfiles'}::${definition}`;
+  const members = openModel().enumMembers(qualified);
   return new Proxy({}, {get: (_, name) => {
-    if (typeof name !== 'string' || !members.includes(name)) throw new Error(`${String(name)} is not a member of WstxProfiles::${definition}: ${members.join(', ')}`);
+    if (typeof name !== 'string' || !members.includes(name)) throw new Error(`${String(name)} is not a member of ${qualified}: ${members.join(', ')}`);
     return name;
   }});
 }
@@ -37,7 +38,7 @@ function outcomes(definition) {
 function defaultDocument() {
   const model = openModel();
   const value = name => {
-    const literal = model.literal(`WstxProfiles::${name}`);
+    const literal = model.literal(`${name.startsWith('ControlSelection::') ? 'WstxRadioControl' : 'WstxProfileAccess'}::${name}`);
     if (literal.kind === 'null') return null;
     if (literal.kind === 'enum') return literal.member.replace(/^'(.*)'$/, '$1');
     return literal.value;

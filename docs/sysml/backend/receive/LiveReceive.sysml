@@ -1,16 +1,16 @@
 package WstxLiveReceive {
     private import ScalarValues::*;
-    private import WstxOfflineDecode::ResultRecord;
-    private import WstxOfflineDecode::Mode;
-    private import WstxRecordingReceive::DecodeJob;
+    private import WstxDecodes::ResultRecord;
+    private import WstxModeProcessing::Mode;
+    private import WstxModeProcessing::DecodeJob;
     private import WstxRecordingReceive::ReceiveMode;
-    private import WstxAudio::NativePacket;
+    private import WstxAudioStreams::NativePacket;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-003';
-    private import WstxArchitecture::'FR-004';
-    private import WstxArchitecture::'FR-018';
-    private import WstxArchitecture::'FR-021';
-    private import WstxArchitecture::'FR-002';
+    private import WstxRequirements::'FR-003';
+    private import WstxRequirements::'FR-004';
+    private import WstxRequirements::'FR-018';
+    private import WstxRequirements::'FR-021';
+    private import WstxRequirements::'FR-002';
     private import WstxModemDecode::'CL-007-04';
     private import WstxRequirements::AutomationState;
     private import WstxModemDecode::'TC-004-001';
@@ -35,8 +35,8 @@ package WstxLiveReceive {
         attribute v : Integer = 1;
         attribute correlation : WstxRecordingReceive::Correlation;
         attribute mode : Mode;
-        attribute 'state' : WstxRecordingReceive::ReceiveState;
-        attribute error : WstxRecordingReceive::ErrorCode[0..1];
+        attribute 'state' : WstxReceiveControl::ReceiveState;
+        attribute error : WstxReceiveControl::ErrorCode[0..1];
         attribute search_limited : Boolean;
         attribute first_sequence : Integer;
         attribute next_sequence : Integer;
@@ -126,7 +126,7 @@ package WstxLiveReceive {
     }
     action def AcknowledgeEpoch {
         in proposal : EpochProposal;
-        in descriptor : WstxAudio::SourceDescriptor;
+        in descriptor : WstxAudioStreams::SourceDescriptor;
         in timing : SourceTiming;
         out accepted : Boolean;
         doc /* acknowledge_epoch(proposalCounter,descriptor,timing) accepts only current

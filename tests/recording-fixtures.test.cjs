@@ -17,8 +17,8 @@ test('TC-018-001 fixture setup validates full pinned plan and atomic promotion w
   assert.deepEqual(await fs.readdir(dir),['audio.wav']);const pinned=await plan();assert.equal(pinned.filter(e=>e.frames).length,25);assert.ok(pinned.some(e=>e.name==='ft8_lib-LICENSE.txt'&&e.url==='https://raw.githubusercontent.com/kgoba/ft8_lib/9fec6ca39886edbf96f4f5e71edc76da5074e871/LICENSE'));assert.ok(pinned.some(e=>e.name==='ft4/official-project-COPYING.txt'));
 });
 const {openModel}=require('./model-values.cjs');
-// A bound of the profile's recordings, WstxProfileRecordings::RecordingLimits, read from the model.
-const recordingLimit=feature=>openModel().numberWithUnit(`WstxProfileRecordings::RecordingLimits::${feature}`);
+// A bound of the profile's recordings, WstxRecordingTransfer::RecordingLimits, read from the model.
+const recordingLimit=feature=>openModel().numberWithUnit(`WstxRecordingTransfer::RecordingLimits::${feature}`);
 // Hand-parsed RIFF header: walks the chunks, independent of the server's and the setup tool's parsers.
 function riff(bytes){
   assert.equal(bytes.toString('latin1',0,4),'RIFF');assert.equal(bytes.toString('latin1',8,12),'WAVE');

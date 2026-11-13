@@ -1,9 +1,9 @@
 package WstxFlexSession {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-023';
-    private import WstxArchitecture::'FR-008';
-    private import WstxArchitecture::'FR-009';
+    private import WstxRequirements::'FR-023';
+    private import WstxRequirements::'FR-008';
+    private import WstxRequirements::'FR-009';
     private import WstxRequirements::AutomationState;
     requirement 'CL-013-01' {
         doc /* Phase 2 MUST offer direct native-network integration as an optional profile connection type for the selected radio control, status and sample-stream functions. When selected, that native path MUST NOT require the external SmartSDR desktop application, SmartSDR CAT or DAX applications to be installed/running as bridges. This restriction does not prohibit those tools as operator-selected infrastructure for the standard connection path. A Rust implementation may coordinate shared radio access internally without forcing one hardware GUI-client session per logical station server. */
@@ -423,5 +423,20 @@ package WstxFlexSession {
              24 kHz DAX, latency/timestamps, >= 4 usable slices, broadcast discovery and resource
              release on disconnect (TC-023-004/005); transmit (TC-023-006). */
     }
-    dependency nativeWireSubset from NativeFlexWireSubset to WstxArchitecture::'FR-023';
+    dependency nativeWireSubset from NativeFlexWireSubset to WstxRequirements::'FR-023';
+    requirement NativeFlexBoundary {
+        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::partial;
+        doc /* Phase2 optional native radio path retains standard independent audio/CAT
+             and browser/DSP/QSO/MCP boundaries, without external SmartSDR desktop,
+             CAT or DAX bridges. Radio-side firmware/API support still matters. Audio
+             and control may reference one managed session, settled in NativeFlexWireSubset.
+             Persist profile intent without a radio identity (#22, 2026-11-06);
+             reconcile transient handles on connection, never guess another slice or
+             replay transmit intent. One effective arbitration authority spans shared
+             physical resources and transmission; an in-process mutex per station is
+             insufficient. A verified API may justify a common connector, but its
+             lifetime cannot depend on one station whose stop must leave others usable.
+             No fixed four-GUI-client or simultaneous independent transmitter promise. */
+    }
+    dependency nativeBoundary from NativeFlexBoundary to WstxRequirements::'FR-023';
 }

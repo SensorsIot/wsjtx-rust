@@ -1,12 +1,12 @@
 package WstxSpecialActivities {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-007';
-    private import WstxArchitecture::'FR-008';
+    private import WstxRequirements::'FR-007';
+    private import WstxRequirements::'FR-008';
     private import WstxRequirements::AutomationState;
-    private import WstxArchitecture::'FR-024';
-    private import WstxArchitecture::'FR-004';
-    private import WstxArchitecture::'FR-005';
+    private import WstxRequirements::'FR-024';
+    private import WstxRequirements::'FR-004';
+    private import WstxRequirements::'FR-005';
     requirement 'CL-111-10' {
         doc /* Hound limits. While the Hound still calls with Tx1, the transmit state goes off (cause txWatchdog) when 300 s have passed since the last accepted start. Every accepted start restarts the 300 s, a run's start included. reset_repetitions does not restart it. The reply timeout ends at every accepted start and at completion; nothing else about WstxSpecialActivities::HoundOperation changes, "a Fox report never switches transmission on" included. Details: WstxSpecialActivities::HoundOperation. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -349,7 +349,7 @@ package WstxSpecialActivities {
              refused invalid_request field exchange), FT8 and FT4, a boot setting like the
              other activities (not saved). It is refused profile_incomplete with field
              locator, the activity unchanged, while the selected profile's locator
-             (WstxProfiles::Settings) has fewer than 6 characters (empty or 4: WSJT-X only
+             (WstxProfileAccess::Settings) has fewer than 6 characters (empty or 4: WSJT-X only
              warns, "EU VHF Contest messages require a 6-character locator"), and refused
              invalid_call with field callsign while the profile callsign has more than 11
              characters (a hashed slot holds no more; the profile admits 12). The serial is

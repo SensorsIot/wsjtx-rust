@@ -19,10 +19,10 @@ const MAX_SAFE: u64 = 9_007_199_254_740_991;
 const AUTOMATION: authorization::Principal = authorization::Principal::Automation;
 pub const RECEIPTS: usize = 16;
 pub const CALLS_MAX: usize = 16;
-/// #39 WstxStrategy::StrategyRun (operator decision, #39 comment 6685226511): with no
+/// #39 WstxAutoControl::StrategyRun (operator decision, #39 comment 6685226511): with no
 /// authenticated client for this long a strategy starts nothing new.
 pub const CLIENT_GONE: Duration = Duration::from_secs(60);
-/// #39 WstxStrategy::StrategyRun (operator decision 2026-11-06): the longest a strategy run lasts
+/// #39 WstxAutoControl::StrategyRun (operator decision 2026-11-06): the longest a strategy run lasts
 /// from its selection, also with a browser open.
 pub const STRATEGY_RUN_MAX: Duration = Duration::from_secs(8 * 3600);
 /// #39 who is connected: open status WebSocket sessions (authenticated at the upgrade) and an
@@ -92,7 +92,7 @@ pub(crate) struct Config {
     pub max_unanswered: u64,
     pub next_candidate: bool,
     pub max_run_minutes: u64,
-    /// #39 WstxStrategy::StrategyRun: the active strategy chooses and orders; no bounds. Only
+    /// #39 WstxAutoControl::StrategyRun: the active strategy chooses and orders; no bounds. Only
     /// a browser's selection sets it.
     pub strategy: bool,
     /// #42 WstxStrategy::Pounce: the one call this run waits for and answers.
@@ -109,7 +109,7 @@ impl Config {
             "strategy":self.strategy,"pounce":self.pounce})
     }
 }
-/// The configuration of a strategy run (WstxStrategy::StrategyRun): no contact or time
+/// The configuration of a strategy run (WstxAutoControl::StrategyRun): no contact or time
 /// limit, the list and the order are the strategy's.
 fn strategy_config(mode: &'static str) -> Config {
     Config {
@@ -219,7 +219,7 @@ pub(crate) fn parse_config(v: &Value) -> Result<Option<Config>, Refusal> {
         Some("next_candidate") => true,
         _ => return Err(bad("completion_action")),
     };
-    // #39 a strategy run starts only by a browser's selection (WstxStrategy::StrategyRun).
+    // #39 a strategy run starts only by a browser's selection (WstxAutoControl::StrategyRun).
     match o.get("strategy") {
         None | Some(Value::Bool(false)) => {}
         Some(Value::Bool(true)) => return Err(("operator_required", Some("strategy"))),
@@ -351,7 +351,7 @@ enum RunState {
     ContactActive,
     /// #39 ManualIntervention: an operator's contact is on the engine; the strategy waits.
     Manual,
-    /// #63 WstxContest::ContestRun: the run's own CQ is on the air.
+    /// #63 WstxAutoControl::ContestRun: the run's own CQ is on the air.
     CallingCq,
     Stopped,
 }
@@ -438,7 +438,7 @@ struct Run {
     left: Option<Value>,
     quiet: Vec<Quiet>,
     target: Target,
-    /// When a client was last there (WstxStrategy::StrategyRun; a selection counts).
+    /// When a client was last there (WstxAutoControl::StrategyRun; a selection counts).
     client_seen: Instant,
     /// #42 Pounce: the call and the station band captured at start.
     pounce: Option<(String, String)>,
@@ -452,7 +452,7 @@ struct Run {
     /// time from which periods count (Inner's).
     tx_slot: Option<Value>,
     slot_since_ms: i64,
-    /// WstxStrategy::PskrUse: the run's own contact's target hearing us.
+    /// WstxHearingFeed::PskrUse: the run's own contact's target hearing us.
     hearing: Option<Value>,
     /// WstxStrategy::CqWhenNoTarget: consecutive fresh publications with nothing listed.
     empty_publications: u32,
@@ -573,7 +573,7 @@ struct Inner {
     /// waterfall periods count (a retune keeps the live job), for every run.
     slot_band: Option<&'static str>,
     slot_since_ms: i64,
-    /// #82 WstxStrategy::FreeTxSlots: the station's latest built value (null without a live
+    /// #82 WstxAutoControl::FreeTxSlots: the station's latest built value (null without a live
     /// receive) with its free_tx_slots.state cursor, None before the first build; and what that
     /// build judged, so that a new period, a QSO start or end, a new live job, mode or band
     /// builds again.
@@ -685,7 +685,7 @@ impl Owner {
             })
             .and_then(|run| run.contact_id.clone())
     }
-    /// #97 WstxContact::BusyPartner: the contact a run owns and how it treats a busy partner. A
+    /// #97 WstxOperatingChain::BusyPartner: the contact a run owns and how it treats a busy partner. A
     /// strategy or contest run whose strategy has busy_pause on takes the split move, and its sends
     /// pause while it is attended; a pounce, an MCP policy run and busy_pause off neither.
     pub(crate) fn busy_policy(&self) -> Option<crate::contact::Automated> {
@@ -700,7 +700,7 @@ impl Owner {
         })
     }
     /// The strategy or contest run's own contact (attended or not): its target is the one
-    /// the PSK Reporter feed subscribes to (WstxStrategy::HearingFeed).
+    /// the PSK Reporter feed subscribes to (WstxHearingFeed::HearingFeed).
     pub(crate) fn own_contact(&self) -> Option<String> {
         self.lock()
             .run
@@ -746,7 +746,7 @@ impl Owner {
         let (cursor, value) = inner.free_tx_slots.as_ref()?;
         (seen != Some(*cursor)).then(|| (*cursor, free_tx_slots_event(r, value), value.is_null()))
     }
-    /// #82 WstxStrategy::FreeTxSlots Built (main.rs station timer, after the automation step):
+    /// #82 WstxAutoControl::FreeTxSlots Built (main.rs station timer, after the automation step):
     /// the station's open slots of my Rx parity, with or without a run, a QSO or Auto, built
     /// again at each period start, when the decodes of a counted period are published, and at
     /// once when a QSO starts or ends or the live job, its mode or the station band changes;
@@ -983,7 +983,7 @@ impl Owner {
                     .clone()
                     .ok_or(("not_configured", Some("configuration")))?;
                 // #39 only a browser's selection starts a strategy run (the configuration a
-                // stopped one left stays until replaced; WstxStrategy::StrategyRun).
+                // stopped one left stays until replaced; WstxAutoControl::StrategyRun).
                 if config.strategy {
                     return Err(("operator_required", Some("strategy")));
                 }
@@ -1163,7 +1163,7 @@ impl Owner {
             inner.run_revision = inner.run_revision.saturating_add(1).min(MAX_SAFE);
         }
     }
-    /// WstxStrategy::StrategyRun: a browser's selection change or Auto on (no strategy lock
+    /// WstxAutoControl::StrategyRun: a browser's selection change or Auto on (no strategy lock
     /// held). Any run ends: a contact it armed is disarmed and cancelled, except a started QSO,
     /// which is finished (#81, StartedQso); with `start` (Auto on) and a selection a run starts
     /// with the request's grant. True when a run started; a refused start names why in
@@ -1181,7 +1181,7 @@ impl Owner {
         if let Some(t) = r.transmit.get() {
             t.service.with(|c| c.operator_restart());
         }
-        // WstxStrategy::AutoToggle: with Auto off a selection only marks.
+        // WstxAutoControl::AutoToggle: with Auto off a selection only marks.
         let active = start
             && contact
                 .strategy
@@ -1191,7 +1191,7 @@ impl Owner {
         let mut inner = self.lock();
         // Auto on ends any run (the operator wins over a pounce or MCP run); a selection with
         // Auto off ends only a strategy or contest run and leaves a pounce or MCP run and its
-        // contact alone (WstxStrategy::AutoToggle, Pounce).
+        // contact alone (WstxAutoControl::AutoToggle, Pounce).
         let running = inner
             .run
             .as_ref()
@@ -1203,7 +1203,7 @@ impl Owner {
             Self::finish(&mut inner, "stopped");
         }
         // A selection change, None, a contest deselected: the run's contact that is no started
-        // QSO is disarmed and cancelled at once (WstxStrategy::StrategyRun "Ends at once").
+        // QSO is disarmed and cancelled at once (WstxAutoControl::StrategyRun "Ends at once").
         if let Some((true, _)) = running
             && !kept
         {
@@ -1258,7 +1258,7 @@ impl Owner {
             }
         }
     }
-    /// A strategy or contest run that has not stopped (WstxStrategy::AutoToggle: every run end
+    /// A strategy or contest run that has not stopped (WstxAutoControl::AutoToggle: every run end
     /// turns Auto off).
     pub(crate) fn strategy_running(&self) -> bool {
         self.lock()
@@ -1270,7 +1270,7 @@ impl Owner {
     pub(crate) fn strategy_refusal(&self) -> Option<&'static str> {
         self.lock().strategy_refusal
     }
-    /// WstxStrategy::AutoToggle Auto off: the strategy or contest run ends at once, stopped; a
+    /// WstxAutoControl::AutoToggle Auto off: the strategy or contest run ends at once, stopped; a
     /// contact it armed (its CQ too) is disarmed and cancelled, except a started QSO, which is
     /// finished as an ordinary contact (#81, StartedQso). A pounce or MCP run is not Auto's and is
     /// left alone.
@@ -1291,7 +1291,7 @@ impl Owner {
             disarm(contact, state);
         }
     }
-    /// WstxStrategy::StrategyRun: re-identifies on the live identity and returns the reason
+    /// WstxAutoControl::StrategyRun: re-identifies on the live identity and returns the reason
     /// the run cannot select now (a waiting reason); armed contact disarmed and cancelled.
     fn strategy_context(
         inner: &mut Inner,
@@ -1340,7 +1340,7 @@ impl Owner {
         if contact_http::my_call(state).is_some_and(|c| !crate::contact::is_standard_call(&c)) {
             return Some("call");
         }
-        // An award strategy waits in any activity, a contest for its own (WstxContest::ContestRun).
+        // An award strategy waits in any activity, a contest for its own (WstxAutoControl::ContestRun).
         let wanted = contest.map_or(crate::contact::Activity::None, |c| c.profile.activity);
         if contact.status_facts().activity != wanted {
             return Some("activity");
@@ -1469,11 +1469,11 @@ impl Owner {
         } else {
             None
         };
-        // WstxStrategy::WorkedWindow: keeps the worked set current off the step.
+        // WstxRankingControl::WorkedWindow: keeps the worked set current off the step.
         if let Some((_, s)) = &chosen {
             strategy::worked_of(state, s.window);
         }
-        // WstxContest::ContestRun likewise: the next evaluation after a QSO counts that QSO.
+        // WstxAutoControl::ContestRun likewise: the next evaluation after a QSO counts that QSO.
         if let Some(c) = &contest {
             let (_, locator) = contact_http::profile_facts(state);
             contact
@@ -1537,7 +1537,7 @@ impl Owner {
                     inner.run_revision += 1;
                 }
             }
-            // WstxContest::ContestRun and WstxStrategy::CqWhenNoTarget: the own CQ until a
+            // WstxAutoControl::ContestRun and WstxStrategy::CqWhenNoTarget: the own CQ until a
             // station is listed.
             RunState::CallingCq => {
                 let Some(c) = facts.filter(|c| Some(&c.id) == run.contact_id.as_ref()) else {
@@ -1679,7 +1679,7 @@ impl Owner {
                     return;
                 }
                 let target = c.dx_call.clone();
-                // WstxStrategy::PskrUse: whether the target hears us (unknown with Use off).
+                // WstxHearingFeed::PskrUse: whether the target hears us (unknown with Use off).
                 let hearing = pskr::target_hearing(r, target.as_deref(), mode);
                 let heard = hearing.hears_us();
                 // #97 TxMoveRule: the PSK case (he reports: HearingFeed "He reports").
@@ -2011,7 +2011,7 @@ impl Owner {
         }
         inner.run_revision += 1;
     }
-    /// The run's own CQ (WstxContest::ContestRun, WstxStrategy::CqWhenNoTarget): from a slot quiet
+    /// The run's own CQ (WstxAutoControl::ContestRun, WstxStrategy::CqWhenNoTarget): from a slot quiet
     /// in my Rx parity (FreeTxSlot, #66; no called station), then enable_tx with no partner.
     fn calling(&self, inner: &mut Inner, contact: &contact_http::Station, state: &ProfileState) {
         let run = inner.run.as_mut().expect("checked");
@@ -2023,7 +2023,7 @@ impl Owner {
         };
         self.call_cq(inner, contact, state, revision)
     }
-    /// WstxStrategy::StrategyRun Waiting (and a station listed during the run's CQ): select the
+    /// WstxAutoControl::StrategyRun Waiting (and a station listed during the run's CQ): select the
     /// station, take its slot (FreeTxSlot) and arm, or from the CQ answer it with Enable Tx kept.
     fn select(
         &self,
@@ -2161,7 +2161,7 @@ impl Owner {
         };
         inner.run_revision += 1;
     }
-    /// #63 WstxContest::ContestRun: the own CQ, through the same Enable Tx as any contact; the
+    /// #63 WstxAutoControl::ContestRun: the own CQ, through the same Enable Tx as any contact; the
     /// engine leaves its callers to this run (never Call 1st).
     fn call_cq(
         &self,
@@ -2266,7 +2266,7 @@ fn period_of(records: &[Value], sequence: u64) -> Option<i64> {
         .and_then(|r| r["period_start_utc"].as_str())
         .and_then(contact::parse_utc)
 }
-/// The verdicts of `records` as the run's own evaluation reads them: WstxContest::ContestVerdict
+/// The verdicts of `records` as the run's own evaluation reads them: WstxOperatingChain::ContestVerdict
 /// in a contest (a dupe has no rank), WstxStrategy::Verdict otherwise. The step never builds the
 /// contest log.
 fn verdicts(
@@ -2287,7 +2287,7 @@ fn verdicts(
         None => strategy::evaluate(s, records, &st),
     }
 }
-/// WstxStrategy::StrategyRun Waiting: the verdicts with a rank, eligible (not completed in this
+/// WstxAutoControl::StrategyRun Waiting: the verdicts with a rank, eligible (not completed in this
 /// run on this band and mode, not given up, not in QuietTime), one per call, in value order.
 fn picks(
     run: &Run,
@@ -2456,7 +2456,7 @@ enum SlotRule {
     /// Its own CQ: the quietest slot of my Rx parity, the other of the CQ's (#66), no his end;
     /// with Hold Tx on the held Tx.
     Listen,
-    /// Answering from its own CQ (CqWhenNoTarget, WstxContest::ContestRun): the CQ's slot stays
+    /// Answering from its own CQ (CqWhenNoTarget, WstxAutoControl::ContestRun): the CQ's slot stays
     /// unless it is within 50 Hz of the called station, then the nearest candidate away.
     KeepCq,
 }
@@ -2644,7 +2644,7 @@ fn disarm(contact: &contact_http::Station, state: &ProfileState) {
 /// A policy run: the starting transport is still this grant's current, unexpired transport
 /// (a revocation, safety edit, expiry or a newer proof of the grant ends it). A strategy run:
 /// the grant itself is current (a revocation or safety edit ends it; a page load's new proof
-/// or the transport's deadline does not, WstxStrategy::StrategyRun).
+/// or the transport's deadline does not, WstxAutoControl::StrategyRun).
 fn grant_current(
     state: &ProfileState,
     access: &authorization::Access,

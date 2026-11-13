@@ -1154,10 +1154,10 @@ fn import(r: &Arc<Recording>, bytes: &[u8]) -> Result<String> {
     }
     Ok(id.to_owned())
 }
-/// A bound of `WstxProfileRecordings::RecordingLimits`, read from the model: with its unit
+/// A bound of `WstxRecordingTransfer::RecordingLimits`, read from the model: with its unit
 /// (`fileBytes`, `importMaxFrames`, `rateHz`) or as a plain count (`importMaxRiffChunks`).
 fn recording_limit(feature: &str) -> usize {
-    let name = format!("WstxProfileRecordings::RecordingLimits::{feature}");
+    let name = format!("WstxRecordingTransfer::RecordingLimits::{feature}");
     let model = Model::load();
     let value = if feature == "importMaxRiffChunks" {
         model.number(&name)

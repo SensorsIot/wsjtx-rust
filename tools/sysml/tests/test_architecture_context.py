@@ -1,4 +1,4 @@
-"""TC-DOC-005: the context list WstxArchitecture::OutsideThing, read from the model text."""
+"""TC-DOC-005: the context list WstxContext::OutsideThing, read from the model text."""
 import importlib.util
 import json
 from pathlib import Path
@@ -10,9 +10,9 @@ spec = importlib.util.spec_from_file_location("context_tool", TOOL)
 tool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tool)
 
-# The model file of WstxArchitecture, found by its package.
+# The model file of WstxContext, found by its package.
 ARCHITECTURE = next(path for path in tool.model_files(TOOL.parent.parent / "docs/sysml").values()
-                    if tool.file_package(tool.without_comments(path.read_text(encoding="utf-8"))) == "WstxArchitecture")
+                    if tool.file_package(tool.without_comments(path.read_text(encoding="utf-8"))) == "WstxContext")
 ORACLE_FILE = TOOL.parent / "sysml/architecture-oracle.json"
 ROOT = "physicalStation"
 

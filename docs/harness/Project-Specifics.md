@@ -137,7 +137,7 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `sysml-tools` | The SysML tool's own unit tests `test_[!adre]*.py` on isolated models | The SysML tool and its tests |
 | `sysml-equivalence-tests` | TC-DOC-015: `equivalence` and `identities` on temporary repositories and the repository's history, `test_e*.py` | `tools/sysml.py`, `Validate.java` and the test file |
 | `sysml-equivalence` | CL-014-17: `equivalence --marked` on each commit of `master..HEAD` marked `Model-Move: pure` | The model, the SysML tool and the files whose model citations it reads |
-| `sysml-architecture` | TC-DOC-005 architecture integrity: the mutation tests `test_a*.py` on the pinned model of `1df1ba3a5` and its oracle file, and the `oracle` tests and TC-DOC-016's structure-check tests on fixture trees, one Pilot validation per mutation or model state | `Station.sysml`, `backend/radioControl/RadioProperties.sysml`, the SysML tool, `Validate.java`, the oracle file `architecture-oracle.json`, the toolchain pin and the test file |
+| `sysml-architecture` | TC-DOC-005 architecture integrity: the mutation tests `test_a*.py` on the pinned model of `1df1ba3a5` and its oracle file, and the `oracle` tests and TC-DOC-016's structure-check tests on fixture trees, one Pilot validation per mutation or model state | `Station.sysml`, `Context.sysml`, `Requirements.sysml`, `interfaces/`, the new part files, the SysML tool, `Validate.java`, the oracle file `architecture-oracle.json`, the toolchain pin and the test file |
 | `decoder-correctness` | The release `decoder_signal` correctness, #57 thread-parity and #56 jt9-parity passes (all ordinary passes but the 50 ms quantum and busy-period latency) | Decoder fixtures, the library root and the model files whose values its passes read (`docs/sysml/backend/modes/Decode.sysml`, `MessagePayload.sysml`, `docs/sysml/shared/Units.sysml`) (a production decoder source selects `decoder-quality`, which runs the same passes) |
 | `decoder-quality` | Timing: all seventeen release decoder passes bound to the artifact, and the owned-Job resource matrix (runs alone) | Timing inputs: the production decoder sources (not its `*_test.rs` or the test-only resource observer), `decoder_signal.rs`, the fixtures and vector tool the timed passes decode, its resource-job tools, the model files holding the budgets the matrix reads and their unit suffixes (`docs/sysml/backend/modes/Decode.sysml`, `docs/sysml/shared/Units.sysml`) and the Rust toolchain/dependency pins |
 | `live-station-browser` | Native fixture through the actual Router, receive owner and browser (callsign rows) | Router, profile/recording/receive/source/audio/decoder owners, client, its test files |
@@ -1262,11 +1262,11 @@ action def StandardContact {
     @DetailTests { tests = "server/src/contact_tests.rs"; covers = "the engine on a virtual clock"; }
 }
 requirement 'CL-010-18' {                      // takes server/src/contact.rs
-    subject qso : WstxArchitecture::QsoAndLogging;
+    subject qso : WstxQsoPart::QsoAndLogging;
     @Status { build = ImplementationState::implemented; }
 }
 verification def EngineCase {
-    subject qso : WstxArchitecture::QsoAndLogging;
+    subject qso : WstxQsoPart::QsoAndLogging;
     attribute level : Integer = 2;
     attribute location : String = "Windows development PC, isolated, no RF";
     @Automation { run = AutomationState::implemented; }
@@ -1459,7 +1459,7 @@ This section is CL-014-16; TC-DOC-014 verifies it.
 - **Naming.** A value is named by its qualified name `Package::Element(::Feature)*`.
   `Package` is the package of a model file. Each further segment names an element or
   feature declared directly in the body of the segment before it; a quoted name keeps its
-  quotes (`WstxOfflineDecode::FreeTextFields::'type'`). The file's name and folder are never
+  quotes (`WstxDecodes::FreeTextFields::'type'`). The file's name and folder are never
   part of the name, so moving, renaming or splitting a model file changes no name while one
   file keeps the package. Renaming an element, or moving it to another package, changes the
   name; the tests that cite it change in the same change, as code comments that cite

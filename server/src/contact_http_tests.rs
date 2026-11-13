@@ -475,7 +475,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
 }
 const MAX_SAFE_TEST: u64 = 9_007_199_254_740_991;
 
-// Proves: TC-097-017 (d) (CL-097-06, WstxContact::BusyPartner "Shown"). The operator selects CQ
+// Proves: TC-097-017 (d) (CL-097-06, WstxOperatingChain::BusyPartner "Shown"). The operator selects CQ
 // KE1J; KE1J's report to W9XYZ (packed with the real codec) is published: GET /contact's watchdog
 // carries busy_with "W9XYZ" and paused_calls 0 (no paused send yet); his RR73 to W9XYZ clears it.
 // Red on the parent: no busy_with key.

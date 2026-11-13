@@ -1,11 +1,11 @@
 package WstxLogbook {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-007';
-    private import WstxArchitecture::'FR-011';
+    private import WstxRequirements::'FR-007';
+    private import WstxRequirements::'FR-011';
     private import WstxRequirements::AutomationState;
     private import WstxStandardQso::'TC-007-007';
-    private import WstxArchitecture::'FR-016';
+    private import WstxRequirements::'FR-016';
     private import WstxContact::'CL-011-04';
     private import WstxStandardQso::'CL-010-02';
     private import WstxContact::'CL-010-17';
@@ -412,7 +412,7 @@ package WstxLogbook {
              (DecodedEntity, #55); LoTW highlighting is not adopted (B-list of #25). The
              station determines it on each decoded record it serves (worked_status,
              DecodedEntity) and the browser sends no query (#10
-             WstxStationProtocol::PushedStationState); a row without the key shows unknown
+             WstxStationLink::PushedStationState); a row without the key shows unknown
              (no indicator): a hashed or absent call, or no band known. Indication uses a
              text/icon label plus colour; it changes no decoding, sequence or log.
              Award standing (#10, operator 2026-11-04, consumed by the #39 award
@@ -596,8 +596,8 @@ package WstxLogbook {
              fields; ExportAdi carries them). Read-only inspection; no edit or
              delete. */
     }
-    dependency qsoSettingsOwner from QsoSettingsFile to WstxArchitecture::QsoAndLogging;
+    dependency qsoSettingsOwner from QsoSettingsFile to WstxQsoPart::QsoAndLogging;
     dependency qsoSettingsClause from QsoSettingsFile to WstxLogbook::'CL-110-01';
-    dependency logPromise from LogRecord to WstxArchitecture::'FR-011';
+    dependency logPromise from LogRecord to WstxRequirements::'FR-011';
     dependency directLogClause from DirectLog to WstxLogbook::'CL-010-04';
 }
