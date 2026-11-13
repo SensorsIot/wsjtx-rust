@@ -1,5 +1,5 @@
 {
-  "about": "TC-DOC-005 oracle, written by hand from the reviewed architecture; never generated",
+  "about": "TC-DOC-005 oracle, written by python tools/sysml.py oracle from the resolved inventory",
   "bindings": {
     "physicalStation.backend.radioAuthority": [
       ["authorized.request", "requests.request"],
