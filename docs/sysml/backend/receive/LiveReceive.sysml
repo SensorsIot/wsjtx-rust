@@ -19,7 +19,7 @@ package WstxLiveReceive {
     private import WstxRequirements::'TC-002-001';
     private import WstxTransmit::'TC-043-002';
     private import WstxModemDecode::'TC-057-002';
-    private import WstxRequirements::'TC-057-003';
+    private import WstxOperatingLayout::'TC-057-003';
     private import WstxRadioIO::'CL-008-04';
     private import WstxRadioIO::'CL-008-05';
     private import WstxOperatingReceive::'CL-008-07';
@@ -86,7 +86,7 @@ package WstxLiveReceive {
     }
     action liveWindowSchedule : LiveWindowSchedule;
     action publishResults : PublishResults;
-    satisfy WstxRequirements::'CL-007-02' by publishResults;
+    satisfy WstxOperatingLayout::'CL-007-02' by publishResults;
     satisfy WstxLiveReceive::'CL-007-05' by liveWindowSchedule;
     dependency publicationOwner from publishResults to WstxArchitecture::physicalStation::backend::stations::web;
     dependency viewerOwner from publishResults to WstxArchitecture::physicalStation::frontend::browsers;

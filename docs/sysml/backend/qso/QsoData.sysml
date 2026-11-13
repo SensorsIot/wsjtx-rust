@@ -17,11 +17,11 @@ package WstxContact {
     private import WstxStandardQso::'TC-007-007';
     private import WstxRequirements::'FR-016';
     private import WstxRequirements::'FR-012';
-    private import WstxRequirementsFrontend::'CL-039-04';
+    private import WstxOperatingLayout::'CL-039-04';
     private import WstxTransmit::'CL-039-06';
-    private import WstxRequirements::'TC-055-006';
+    private import WstxOperatingLayout::'TC-055-006';
     private import WstxLogbook::'TC-110-004';
-    private import WstxRequirementsFrontend::'CL-065-02';
+    private import WstxOperatingLayout::'CL-065-02';
     doc /* Canonical contract of the standard FT8 contact (issue #10, CL-010-01..04, -06,
          -10..-14 in WstxRequirements): standard messages Tx1-Tx6, the server-owned
          auto-sequencing state machine, manual DX Call/Grid entry, Rx/Tx audio frequency
@@ -241,14 +241,14 @@ package WstxContact {
         doc /* D3 adopted (PL mouseReleaseEvent ~976, mouseDoubleClickEvent ~1012; MW
              setFreq4 ~12816). pointerAction and pointerHz: pointerHz is the waterfall/spectrum frequency under the
              pointer from the fixed 0..3000 Hz axis, rounded to integer Hz, by the waterfall's one
-             frequency mapping (WstxOperatingLayout::RxTxStrip, CL-050-07) (the native/
+             frequency mapping (WstxSignalArea::RxTxStrip, CL-050-07) (the native/
              projected readout of WstxRecordingReceive is unchanged). #50 (CL-050-01, operator
              2026-11-02, replacing the #37 mapping): click -> Tx, sent after 250 ms so that a
              leftDoubleClick -> Rx and Tx sends only its one request; shiftClick and ctrlClick
              act as click; rightClick and rightDoubleClick set nothing (no context menu).
              No decode-at-point: the fixed full-band decoder always runs and the browser sends
              no redecode. Dragging the Rx or Tx marker sets that offset on release
-             (WstxOperatingLayout::RxTxStrip). Explicit Tx pointer actions move Tx even with Hold Tx on, as
+             (WstxSignalArea::RxTxStrip). Explicit Tx pointer actions move Tx even with Hold Tx on, as
              WSJT-X setFreq4 (Hold Tx only stops implicit moves on selection).
              A Tx outside its domain is refused with the domain; Rx accepts 0..3000.
              Each is a server request; markers move only after confirmation, the
@@ -276,7 +276,7 @@ package WstxContact {
         return routed : Boolean = firstCallIsMyCall or containsMyCallAndDxCall or
             (rowFrequencyHz >= rxOffsetHz - 10.0 and rowFrequencyHz <= rxOffsetHz + 10.0);
         doc /* #37 (2026-11-02): no browser pane shows the routed rows any more; the
-             compact QSO pane (WstxOperatingLayout::QsoPane) shows the last partner message
+             compact QSO pane (WstxQsoPane::QsoPane) shows the last partner message
              and at most two other stations instead. The completion and log rules below
              are unchanged. Earlier text:
              D2 adopted (DOP decideRouting ~391-441): a decoded row is shown in the Rx
@@ -703,7 +703,7 @@ package WstxContact {
              Setup: profile log fixture with K1ABC on 20m FT8, W1XYZ on 40m FT8, DL1ABC on 20m MFSK/FT4; dial 20m FT8; rows from K1ABC, W1XYZ, DL1ABC, k1abc case variant, N0NEW and a hashed call; 65 distinct calls in one period.
              Steps: publish periods, save a new contact with N0NEW, publish again.
              Expected: K1ABC this band and mode; W1XYZ and DL1ABC other band or mode; N0NEW not worked then this band and mode after the save; hashed unknown; the status is text (hover text and aria-description, BandActivityHover) in Band Activity and the QSO pane's stations calling me, colour only from the enabled new_* slots of the record flags, so worked before on this band and mode has no colour; each record carries its status (worked_status, WstxCountryFile::DecodedEntity) and the browser sends no query; no change to decoding, sequence or log.
-             QSO pane subset (#10 2026-11-04, WstxOperatingLayout::QsoPane item 3). Setup: selection 20m FT8; routed records of one period with callers to my call HB9BLA K1ABC FN42 (no flags, worked_this_band_and_mode), HB9BLA W1XYZ FN31 (new_call, new_call_band, not_worked) and HB9BLA DL1ABC -10 (new_call_band, worked_other_band_or_mode). Steps: wait for the worked-before status of the rows; read the callers; turn New call off in Settings; refresh status. Expected (#50 BandActivityHover compact rule, #37 2026-11-04): K1ABC no colour and no hover text; W1XYZ the New call colour and the one-line hover "New call"; DL1ABC the New call on band colour and "New on 20m (worked on another band or mode)"; no My call colour; with New call off W1XYZ takes New call on band and the hover "New on 20m"; no worked-before query.
+             QSO pane subset (#10 2026-11-04, WstxQsoPane::QsoPane item 3). Setup: selection 20m FT8; routed records of one period with callers to my call HB9BLA K1ABC FN42 (no flags, worked_this_band_and_mode), HB9BLA W1XYZ FN31 (new_call, new_call_band, not_worked) and HB9BLA DL1ABC -10 (new_call_band, worked_other_band_or_mode). Steps: wait for the worked-before status of the rows; read the callers; turn New call off in Settings; refresh status. Expected (#50 BandActivityHover compact rule, #37 2026-11-04): K1ABC no colour and no hover text; W1XYZ the New call colour and the one-line hover "New call"; DL1ABC the New call on band colour and "New on 20m (worked on another band or mode)"; no My call colour; with New call off W1XYZ takes New call on band and the hover "New on 20m"; no worked-before query.
              2 — Isolated automated functional tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
@@ -768,7 +768,7 @@ package WstxContact {
     }
     dependency CL_039_07_verified_by_TC_039_008 from 'CL-039-07' to 'TC-039-008';
     requirement 'CL-039-22' {
-        doc /* Mode (operator grill 2026-11-07, Q5, Q11, Q12, Q17, Q29, Q35, Q40). Auto is a toggle above the QSO pane next to CQ, green on and grey off, not part of a strategy, one toggle for strategies and contests; the station owns it in memory: off after a station restart, after HALT from any source and after every run end, and only the browser switches it (POST /strategy/auto; an MCP principal is refused). With Auto off a selected strategy or contest only marks its candidates; switching it on needs a selection and starts the run, and a contest whose rules forbid automatic operation asks the existing warning and needs its confirmation; switching it off ends the run at once, and a QSO the run has started is finished as an ordinary contact (#81, CL-081-01: Auto only decides whether new QSOs start); selecting None turns it off, another selection with Auto on starts that one. CQ when idle is a strategy setting with its CQ wait (CL-097-01, CL-097-08; on in Casual and the contest built-ins): with it on the run calls CQ after cq_wait_periods publications with nothing callable, answers callers (with Calling stations are answered on) and calls a candidate that appears; the Tx watchdog stops its CQ. With Hold Tx on (#39 holdtx round 1 Q3) the CQ goes out on the held Tx without a slot decision; with Hold Tx off it takes the slot quiet in my Rx parity (CL-039-09, #66). Details: WstxStrategy::AutoToggle, CqWhenNoTarget, StrategyRun, PskrUse; WstxOperatingLayout::QsoPane. */
+        doc /* Mode (operator grill 2026-11-07, Q5, Q11, Q12, Q17, Q29, Q35, Q40). Auto is a toggle above the QSO pane next to CQ, green on and grey off, not part of a strategy, one toggle for strategies and contests; the station owns it in memory: off after a station restart, after HALT from any source and after every run end, and only the browser switches it (POST /strategy/auto; an MCP principal is refused). With Auto off a selected strategy or contest only marks its candidates; switching it on needs a selection and starts the run, and a contest whose rules forbid automatic operation asks the existing warning and needs its confirmation; switching it off ends the run at once, and a QSO the run has started is finished as an ordinary contact (#81, CL-081-01: Auto only decides whether new QSOs start); selecting None turns it off, another selection with Auto on starts that one. CQ when idle is a strategy setting with its CQ wait (CL-097-01, CL-097-08; on in Casual and the contest built-ins): with it on the run calls CQ after cq_wait_periods publications with nothing callable, answers callers (with Calling stations are answered on) and calls a candidate that appears; the Tx watchdog stops its CQ. With Hold Tx on (#39 holdtx round 1 Q3) the CQ goes out on the held Tx without a slot decision; with Hold Tx off it takes the slot quiet in my Rx parity (CL-039-09, #66). Details: WstxStrategy::AutoToggle, CqWhenNoTarget, StrategyRun, PskrUse; WstxQsoPane::QsoPane. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js";
     }
@@ -1438,7 +1438,7 @@ package WstxContact {
     }
     dependency CL_050_04_verified_by_TC_050_004 from 'CL-050-04' to 'TC-050-004';
     requirement 'CL-050-06' {
-        doc /* (#37) The contact snapshot carries the QSO dialogue of the current contact, at most 16 entries: each partner message the engine counted (with SNR) and each of our transmissions of that contact as sent, with its period start and a repeat count; the QSO pane shows it while the QSO runs, oldest first and newest at the bottom, scrolling inside the card without growing the page, and drops it with the QSO. Details: WstxQsoWire::ContactSnapshot dialogue, WstxOperatingLayout::QsoPane. */
+        doc /* (#37) The contact snapshot carries the QSO dialogue of the current contact, at most 16 entries: each partner message the engine counted (with SNR) and each of our transmissions of that contact as sent, with its period start and a repeat count; the QSO pane shows it while the QSO runs, oldest first and newest at the bottom, scrolling inside the card without growing the page, and drops it with the QSO. Details: WstxQsoWire::ContactSnapshot dialogue, WstxQsoPane::QsoPane. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; client/contact.js; client/recording.css";
     }
@@ -2134,7 +2134,7 @@ package WstxContact {
              CL-097-01
              Setup: the actual isolated server and Chromium at 1366x768 and 360x740; routed replies for GET and PUT /strategy and POST /strategy/evaluate; a snapshot with the built-ins, two saved strategies of class strategy (an award-like and a casual-like one) and one of class contest, and configuration_note [{from "Casual", to "Casual copy"}].
              Steps: open the editor; read the decisions of "DXCC all", decision 4's label, decision 8 and every text of the editor; Duplicate "DXCC all"; set every control of the nine decisions (the CQ wait 5); look for a class control; open the contest strategy; enter a country name that the station refuses; Save; close; open the selector; choose the saved contest strategy (contest ww_digi) with no contest in force, then with ww_digi in force, then with another contest in force (FT8 Activity in the test), and Cancel and Start in the prompt it opens.
-             Expected (oracle: WstxStrategy::StrategyEditor and StrategySelector): the list grouped Strategy, Contest, no Add; the headings 1 Band .. 9 Retry pause with decision 4 "Calling stations are answered" (its checkbox labelled the same) and decision 8 reading "CQ when idle, after <n> periods with nothing callable" with n 2 for the built-in; no "default" in the editor's text or options; "DXCC all copy" of class strategy with the nine decisions in order and their labels; Save sends exactly one PUT whose strategy is the schema 4 object written in the test, key for key, with cq_wait_periods 5; the class shown and never switchable; the contest strategy shows its contest read-only, only the three lists and "Ranked by the contest's rules"; the refusal shown at the country control; "Renamed Casual to Casual copy" shown once; the selector grouped with "DXCC all" first and no contest built-ins; one evaluate request 400 ms after an edit; no horizontal overflow at 360 px; choosing the contest strategy with no contest or with another contest in force (FT8 Activity in the test) sends nothing and opens the prompt on WW Digi with that strategy chosen and the period pre-filled, Cancel sends nothing and the selector returns to the earlier selection, Start sends one PUT {active the strategy, contest {ww_digi, start, end}}; with ww_digi in force it sends one PUT with that active and the same contest key. Red on the parent: decision 4 is headed "Callers first" and decision 8 has no CQ wait.
+             Expected (oracle: WstxSettings::StrategyEditor and StrategySelector): the list grouped Strategy, Contest, no Add; the headings 1 Band .. 9 Retry pause with decision 4 "Calling stations are answered" (its checkbox labelled the same) and decision 8 reading "CQ when idle, after <n> periods with nothing callable" with n 2 for the built-in; no "default" in the editor's text or options; "DXCC all copy" of class strategy with the nine decisions in order and their labels; Save sends exactly one PUT whose strategy is the schema 4 object written in the test, key for key, with cq_wait_periods 5; the class shown and never switchable; the contest strategy shows its contest read-only, only the three lists and "Ranked by the contest's rules"; the refusal shown at the country control; "Renamed Casual to Casual copy" shown once; the selector grouped with "DXCC all" first and no contest built-ins; one evaluate request 400 ms after an edit; no horizontal overflow at 360 px; choosing the contest strategy with no contest or with another contest in force (FT8 Activity in the test) sends nothing and opens the prompt on WW Digi with that strategy chosen and the period pre-filled, Cancel sends nothing and the selector returns to the earlier selection, Start sends one PUT {active the strategy, contest {ww_digi, start, end}}; with ww_digi in force it sends one PUT with that active and the same contest key. Red on the parent: decision 4 is headed "Callers first" and decision 8 has no CQ wait.
              2 — Isolated automated browser test; Windows development PC. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {

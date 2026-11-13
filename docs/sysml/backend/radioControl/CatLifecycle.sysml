@@ -5,7 +5,7 @@ package WstxCatLifecycle {
     private import WstxRequirements::'FR-009';
     private import WstxRequirements::'FR-021';
     private import WstxRadioIO::'TC-022-009';
-    private import WstxRequirements::'TC-022-010';
+    private import WstxOperatingLayout::'TC-022-010';
     requirement 'CL-022-04' {
         doc /* Selected target cadence: after confirmed released failed attempt wait
              1,2,4,8seconds on successive failures, then8seconds capped. Use one timer

@@ -807,73 +807,6 @@ package WstxStrategy {
              not_configured strategy) in display order: every one when explain, else only
              those with a rank or grey. Never changes station state. */
     }
-    attribute def ValueView {
-        doc /* While a strategy is active the browser renders the station's verdicts in Band
-             Activity: after a new publication event (never on a timer) it asks POST
-             /strategy/evaluate once for the shown sequences of the current live identity; rows
-             arriving during an evaluation are asked for when it ends.
-             A row with a rank has the existing strategy mark (colour stays per
-             WstxOperatingLayout::BandActivityColours: only interesting stations); greyed rows
-             are dimmed and struck through; other rows have no mark. With the sort on value (the
-             default, the visible "Value" control in the strategy element) rows are ordered in
-             their period block by ValueOrder: the partner rows stay on top (#50), rows to my
-             call next, then rows with a rank by rank, then the rest in ActivityOrdering.
-             Clicking a column header sorts by that column until the operator returns to Value
-             (ActivityOrdering; the marks stay). No active strategy: no evaluation request and
-             no mark. After an Ignore or Stop ignoring the shown rows are evaluated again.
-             Selecting a strategy never restarts receive. */
-    }
-    attribute def StrategyEditor {
-        doc /* The edit (pencil) popup (a modal dialog carrying its own HALT with the top-bar HALT's
-             action and enabled state; receive keeps running): choose, duplicate and delete
-             strategies (a new strategy is only a duplicate, "<name> copy", of a built-in or
-             user strategy, keeping its class and contest; there is no blank "Add"); the list
-             grouped Strategy, Contest (the two classes). Exactly the settings of Strategy, as the nine
-             numbered decisions in order (D19, mockups of 2026-11-09):
-             name and class (strategy or contest, shown, never switchable: a duplicate keeps it);
-             1 Band: "All bands" or band checkboxes;
-             2 Filters, as questions with answers: "What must be new?" (DXCC entity, Call, Grid,
-             CQ zone (WAZ), ITU zone, Continent (WAC), Prefix (WPX) checkboxes); "New per" (Ever,
-             Band, Band and mode); "New means" (Not worked, Not confirmed (QSL/LoTW)); "Region"
-             (All, Other continents than mine, Selected continents with checkboxes); "Minimum SNR"
-             (empty: none); "Worked since" (Any time, Today UTC, From/to UTC dates); "Treat 73 as
-             CQ"; "Prefix/country" include and exclude lists (an entry: a prefix or a country name
-             typed as free text, checked by the station on Save with a refusal shown at the entry;
-             no picker, optional bands); "US state" include and exclude
-             (state codes); "CQ target" include and exclude (words); the line "Callers of my call
-             must pass these filters too". A contest strategy shows its contest (read-only) and
-             only the three lists, under "Contest rules first, then:".
-             3 Order: dropdown rows, one criterion each (add a row from the ValueCriterion names
-             not yet listed, remove one, move one up or down; "the first decides, the next breaks
-             a tie"; the line "then SNR" under the rows, not removable); a contest strategy shows
-             "Ranked by the contest's rules" instead.
-             4 "Calling stations are answered" (a checkbox, callers_first).
-             5 "Leaving a station": After <n> calls without answer, <m> if he hears us | Until
-             logged, leave when not decoded for <n> min | Contest style: while he hears us stay as
-             long as he is the most valuable, else leave after <n> Tx changes.
-             6 "Tx frequency": for each PSK case (He reports and hears us · He reports, does not
-             hear us · He does not report) Stay | Move every call | Move every <n>-th call; the line
-             "a move goes to a quiet slot, never onto a frequency he reports busy, never below 500
-             Hz".
-             7 "Busy pause: while he is in a QSO with another station keep calling on a split
-             frequency and do not count".
-             8 "CQ when idle, after <n> periods with nothing callable" (a checkbox, cq_when_idle,
-             and a number 1..20, cq_wait_periods).
-             9 "Retry pause (minutes)" before a left station is called again.
-             Labels of the criteria: Most wanted (Club Log rank), New DXCC, New DXCC on band, New
-             DXCC on band and mode, New call, New call on band, New grid, New grid on band, New CQ
-             zone, New ITU zone, New continent, New prefix, SNR bucket (above 0, -10..0, below
-             -10), SNR (stronger first), Distance (farthest first), Hears us first (PSK
-             Reporter). A refused field is shown at its control with the station's reason. The
-             live preview evaluates the
-             unsaved draft against the latest period (POST /strategy/evaluate with explain,
-             400 ms after an edit, one request per edit, no timer otherwise) and shows each
-             decode's rank and why. Save sends one PUT /strategy, applies at once (also to the
-             active strategy) and never selects a strategy. A built-in strategy is listed read-only with
-             its settings shown and its preview; only Duplicate acts on it. With no user strategy the
-             popup opens on the first built-in and Save stores none. My continent is set in
-             Settings > General (StrategyConfiguration continent, saved by PUT /strategy). */
-    }
     attribute def HearingFeed {
         attribute heardWindowSeconds : Integer = 600;
         doc /* The read-only PSK Reporter MQTT feed (#39, the operator's agreement of
@@ -1055,7 +988,7 @@ package WstxStrategy {
              No client polling. The line is drawn from the current strategy snapshot and the
              current automation snapshot together at each change of either, so that it never
              keeps the text of an earlier state (#74, CL-074-01): with None, or no strategy
-             snapshot yet, and no strategy run it shows the WstxMcp::AutomationIndicator text
+             snapshot yet, and no strategy run it shows the WstxOperatingLayout::AutomationIndicator text
              of the automation snapshot ("Automation idle" without a run). A new boot
              (WstxStationProtocol::PushedStationState): when the browser learns a boot_id other
              than that of its held strategy snapshot, the element drops that snapshot and its
@@ -1153,7 +1086,7 @@ package WstxStrategy {
     }
     attribute def AutoToggle {
         doc /* Mode (Q5, Q11, Q12, Q17, Q29). Auto is a toggle above the QSO pane next to CQ
-             (WstxOperatingLayout::QsoPane): green on, grey off. It is not part of a strategy
+             (WstxQsoPane::QsoPane): green on, grey off. It is not part of a strategy
              and one toggle serves strategies and contests. It is station state in memory only:
              off after a station restart, after HALT from any source and after every run end
              (StrategyRun). With Auto off a selected strategy or contest only marks its
@@ -1232,7 +1165,7 @@ package WstxStrategy {
              replaced, when a new run starts, or on a restart. */
     }
     attribute def PskrUse {
-        doc /* Use PSK Reporter (Q17, Q29): a toggle next to Auto (WstxOperatingLayout::QsoPane),
+        doc /* Use PSK Reporter (Q17, Q29): a toggle next to Auto (WstxQsoPane::QsoPane),
              kept across restarts in pskr.json use (HearingFeed), on by default. The Settings
              switch (HearingFeed enabled) stays the master: with it off the toggle is disabled
              (title "PSK Reporter is off in Settings") and counts as off. POST /pskr/use saves
@@ -1478,7 +1411,7 @@ package WstxStrategy {
         attribute rangesMaxFt4 : Integer = 26;
         doc /* Open Tx slots (#65, replaced by #82, D18): every free frequency on my side at
              the time the other station will be transmitting, for the operator to see on the
-             waterfall and to place Tx by hand (WstxOperatingLayout::FreeTxSlotMarks). The
+             waterfall and to place Tx by hand (WstxSignalArea::FreeTxSlotMarks). The
              station's own value, built with or without an automation run, a QSO or Auto (no
              run_id, no ranking, no limit; #65's five best of each run decision go).
              Judged parity (round 2 Q1, "when he will be transmitting"): my Rx parity, the
@@ -1562,7 +1495,6 @@ package WstxStrategy {
     dependency strategyClassClause from StrategyClass to WstxContact::'CL-097-01';
     dependency builtinRedesignClause from BuiltinStrategies to WstxContact::'CL-097-01';
     dependency storeRedesignClause from StrategyConfiguration to WstxContact::'CL-097-01';
-    dependency editorRedesignClause from StrategyEditor to WstxContact::'CL-097-01';
     dependency bandsClause from StrategyBands to WstxContact::'CL-097-02';
     dependency filterClause from Candidate to WstxContact::'CL-097-02';
     dependency newNeededClause from NewNeeded to WstxContact::'CL-097-02';
@@ -1594,10 +1526,8 @@ package WstxStrategy {
     dependency directedClause from DirectedCqRule to WstxContact::'CL-039-03';
     dependency myContinentClause from MyContinent to WstxContact::'CL-039-03';
     dependency manualClause from ManualIntervention to WstxContact::'CL-039-05';
-    dependency valueViewClause from ValueView to WstxRequirements::'CL-039-04';
-    dependency editorClause from StrategyEditor to WstxRequirements::'CL-039-04';
-    dependency selectorClause from StrategySelector to WstxRequirements::'CL-039-04';
-    dependency selectorBootClause from StrategySelector to WstxRequirements::'CL-074-01';
+    dependency selectorClause from StrategySelector to WstxOperatingLayout::'CL-039-04';
+    dependency selectorBootClause from StrategySelector to WstxOperatingLayout::'CL-074-01';
     dependency runClause from StrategyRun to WstxContact::'CL-039-05';
     dependency freeSlotClause from FreeTxSlot to WstxContact::'CL-039-09';
     dependency freeSlotRun from StrategyRun to FreeTxSlot;

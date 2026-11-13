@@ -8,23 +8,23 @@ package WstxStationProtocol {
     private import WstxRequirements::AutomationState;
     private import WstxRequirements::'FR-019';
     private import WstxRequirements::'FR-022';
-    private import WstxRequirements::'CL-003-04';
+    private import WstxOperatingLayout::'CL-003-04';
     private import WstxProfiles::'CL-005-04';
     private import WstxRecordingReceive::'CL-008-03';
     private import WstxRadioIO::'CL-008-05';
     private import WstxOperatingReceive::'CL-008-07';
-    private import WstxRequirements::'CL-010-05';
-    private import WstxRequirements::'CL-010-07';
-    private import WstxRequirements::'CL-010-08';
-    private import WstxRequirements::'TC-021-007';
+    private import WstxOperatingLayout::'CL-010-05';
+    private import WstxOperatingLayout::'CL-010-07';
+    private import WstxOperatingLayout::'CL-010-08';
+    private import WstxOperatingLayout::'TC-021-007';
     private import WstxRequirements::'TC-022-001';
     private import WstxProfiles::'TC-022-003';
     private import WstxRequirements::'TC-022-005';
     private import WstxRequirements::'FR-003';
     private import WstxRequirements::'FR-010';
-    private import WstxRequirements::'TC-022-006';
-    private import WstxRequirements::'TC-022-010';
-    private import WstxRequirementsFrontend::'CL-051-02';
+    private import WstxOperatingLayout::'TC-022-006';
+    private import WstxOperatingLayout::'TC-022-010';
+    private import WstxOperatingLayout::'CL-051-02';
     doc /* Canonical status, authentication and transport contract. Profile, recording,
          live receive and display extensions refine this shared boundary in WstxProfiles,
          WstxProfileRecordings, WstxRecordingReceive WstxRadioIO and WstxOperatingReceive. They do not create separate authentication
@@ -138,34 +138,6 @@ package WstxStationProtocol {
              station's (StatusData::build). Equal builds mean the page's client is the
              station's; a station update that changes the client changes the build. */
     }
-    attribute def PageUpdate {
-        attribute reloadsAtMostOncePerBuild : Boolean = true;
-        attribute keepsBrowserSettings : Boolean = true;
-        attribute heldByQsoDialogOrUnsavedSettings : Boolean = true;
-        attribute rejectedSnapshotSilent : Boolean = false;
-        doc /* CL-051-02/03 (#51). On every station.status (each connect and reconnect,
-             and Refresh) the page compares StatusData::build with its own ClientBuild.
-             Different: the page reloads itself, once per station build (the build it
-             reloaded for is kept in this tab's session storage; a later mismatch for
-             that same build shows the chip instead of reloading again). Browser storage
-             (theme, display and speed preferences) is kept. The operating screen holds
-             the reload while a contact or transmission is in progress (contact not idle,
-             completed or cancelled; Tx armed; Tune on), a confirmation or editor popup is
-             open or the Settings form has unsaved edits; it then shows the
-             ErrorFieldEntry stationUpdated (WstxOperatingLayout::ErrorField) "Station updated · reload", whose click
-             reloads. A held page keeps working with its old client.
-             A station snapshot the page rejects by its exact validation (the receive
-             snapshot, a result page, the operating selection snapshot, the contact
-             snapshot, a waterfall frame of an unknown shape) shows the ErrorFieldEntry stationDataRejected "Station data not
-             understood (<which>) · reload" with the same reload action; a later valid
-             snapshot of that kind clears it. Neither chip opens the Settings drawer.
-             Chosen defaults (#51 implementation, the issue left them open): the build is
-             compared on every station.status, that is on each connect and reconnect and
-             on Refresh; a held update stays a chip until the operator clicks it, with no
-             later automatic reload; unsaved Settings edits hold the reload like a popup.
-             CAT status (WstxRadioIO) keeps its own CAT chip and is not part of this chip;
-             a page of another build reloads before any of its snapshots matter. */
-    }
     item def StatusReply {
         attribute v : Integer = 1;
         attribute 'type' : String = "station.status";
@@ -213,43 +185,6 @@ package WstxStationProtocol {
              output queue; each send<=2s. An unresponsive peer is removed without
              blocking another task. Ready control/state/heartbeat traffic precedes
              optional visualization under WstxRecordingReceive's headroom policy. */
-    }
-    attribute def BrowserSnapshotPolicy {
-        attribute requiredBeforeConnected : Boolean = true;
-        attribute refreshUsesExistingSocket : Boolean = true;
-        attribute constantStatusPolling : Boolean = false;
-        attribute changingStatusEventDriven : Boolean = true;
-        doc /* Initial/reconnected socket requests a complete status snapshot before
-             Connected. Profile-mode readiness additionally needs WstxProfiles' valid
-             GET. Refresh sends station.get on the existing socket. Last updated
-             changes only when a matching snapshot is rendered. No changing station
-             properties or subscriptions are implied by the legacy status slice.
-             Native receive events have their explicitly declared extension schema.
-             UI renders literal text and distinguishes confirmed/pending/stale state. */
-    }
-    state def BrowserLinkLifecycle {
-        in connectionOpened : Boolean;
-        in snapshotAccepted : Boolean;
-        in connectionClosed : Boolean;
-        in silentTooLong : Boolean;
-        state connecting; state connected; state stale;
-        entry; then connecting;
-        transition ready first connecting if connectionOpened and snapshotAccepted then connected;
-        transition closed first connected if connectionClosed then stale;
-        transition silent first connected if silentTooLong then stale;
-        transition retry first stale then connecting;
-        doc /* >12s with no message checked each1s permits13s detection. Closed socket
-             marks state stale immediately. The page's own deferred client download
-             (WstxContact log and contact clients after the first snapshots) shares the one
-             station-to-browser bottleneck and can hold queued messages behind it (#8): while
-             one is pending the bound is >30s, checked each1s (31s detection); its
-             completion or failure counts as a message, so the 12s bound restarts there.
-             No other request extends the bound. Reconnect waits1,2,4s then caps4s;
-             accepted fresh snapshot resets backoff. A new connection not open within5s
-             is abandoned. Watchdog starts reconnect without waiting for old close
-             handshake. Ignore replaced-socket callbacks. After restored connectivity
-             and loss detection, fresh displayed status<=10s; undetected loss adds its
-             separate detection bound. Reconnect never replays old mutable operations. */
     }
     attribute def ThinLinkBudget {
         attribute bitsPerSecondEachDirection : Integer = 32000;
@@ -393,7 +328,7 @@ package WstxStationProtocol {
              the state at once and shows the form a freshly loaded page shows before its reads
              (no value of the previous boot, alone or together with values of the new boot),
              then reads its snapshot under its own rule (one read per socket, or only after its
-             announcement event where its rule says so, as WstxMcp::AutomationIndicator) or
+             announcement event where its rule says so, as WstxOperatingLayout::AutomationIndicator) or
              waits for its first event; a snapshot reply that names another boot_id than the
              browser's current one is discarded (events of a closed socket are already
              ignored). This holds for every view of station state:
@@ -428,17 +363,13 @@ package WstxStationProtocol {
     satisfy WstxStationProtocol::'CL-003-02' by exchangeStatus;
     dependency stationOwner from exchangeStatus to WstxArchitecture::physicalStation::backend::stations::station;
     dependency transportOwner from exchangeStatus to WstxArchitecture::physicalStation::backend::stations::web;
-    dependency presentationOwner from BrowserSnapshotPolicy to WstxArchitecture::physicalStation::frontend::browsers;
     dependency securityPromise from SessionSecurity to WstxStationProtocol::'CL-003-07';
-    dependency reconnectPromise from BrowserLinkLifecycle to WstxRequirements::'CL-003-04';
     dependency budgetPromise from ThinLinkBudget to WstxRequirements::'CL-003-05';
     dependency pushedStatePromise from PushedStationState to WstxRequirements::'CL-003-05';
-    dependency pushedStateBootPromise from PushedStationState to WstxRequirements::'CL-074-01';
+    dependency pushedStateBootPromise from PushedStationState to WstxOperatingLayout::'CL-074-01';
     dependency pushedStateOwner from PushedStationState to WstxArchitecture::physicalStation::backend::stations::web;
     dependency bufferPromise from Limits to WstxStationProtocol::'CL-003-06';
     dependency exchangeVerification from ExchangeStatus to WstxStationProtocol::'TC-021-005';
-    dependency browserVerification from BrowserSnapshotPolicy to WstxStationProtocol::'TC-021-006';
-    dependency reconnectVerification from BrowserLinkLifecycle to WstxRequirements::'TC-021-007';
     dependency budgetJudgedFromLog from ThinLinkBudget to LinkTrafficLog;
     dependency trafficLogPromise from LinkTrafficLog to WstxRequirements::'CL-003-05';
     dependency trafficLogOwner from LinkTrafficLog to WstxArchitecture::physicalStation::backend::stations::web;
@@ -446,9 +377,6 @@ package WstxStationProtocol {
     dependency livenessVerification from Heartbeat to WstxStationProtocol::'TC-021-008';
     dependency tlsVerification from SessionSecurity to WstxStationProtocol::'TC-021-009';
     dependency buildPromise from ClientBuild to WstxStationProtocol::'CL-051-01';
-    dependency pageUpdatePromise from PageUpdate to WstxRequirements::'CL-051-02';
-    dependency rejectedSnapshotPromise from PageUpdate to WstxRequirements::'CL-051-03';
-    dependency buildPresentationOwner from PageUpdate to WstxArchitecture::physicalStation::frontend::browsers;
 
     attribute loginBodyMaxBytes : Integer = 1024;
     attribute cookieMaxAgeSeconds : Integer = 28800;

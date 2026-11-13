@@ -14,7 +14,7 @@ package WstxTransmit {
     private import WstxLiveReceive::'CL-007-05';
     private import WstxTransmitClock::'CL-043-02';
     private import WstxTransmitClock::'TC-092-001';
-    private import WstxRequirementsFrontend::'CL-037-02';
+    private import WstxOperatingLayout::'CL-037-02';
     private import WstxRequirements::'FR-019';
     private import WstxTxLevel::'TC-044-014';
     private import WstxTxLevel::'TC-044-016';
@@ -22,7 +22,7 @@ package WstxTransmit {
     private import WstxRequirements::'FR-007';
     private import WstxQsoTransmit::'TC-111-008';
     private import WstxQsoTransmit::'CL-111-02';
-    private import WstxRequirements::'CL-111-04';
+    private import WstxOperatingLayout::'CL-111-04';
     private import WstxQsoTransmit::'CL-111-08';
     private import WstxRequirements::'FR-010';
     doc /* Canonical FT8 and FT4 transmit contract. Slice A (issue #9, FT4 issue #11

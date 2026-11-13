@@ -1,6 +1,6 @@
 package WstxReceiveStartup {
     private import ScalarValues::*;
-    private import WstxRequirements::'TC-007-009';
+    private import WstxOperatingLayout::'TC-007-009';
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::'FR-016';
     private import WstxRequirements::'FR-003';

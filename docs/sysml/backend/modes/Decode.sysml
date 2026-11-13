@@ -6,7 +6,7 @@ package WstxModemDecode {
     private import WstxRequirements::'FR-004';
     private import WstxRequirements::'FR-018';
     private import WstxLiveReceive::'CL-007-01';
-    private import WstxRequirements::'CL-007-02';
+    private import WstxOperatingLayout::'CL-007-02';
     private import WstxLiveReceive::'TC-004-004';
     private import WstxOfflineDecode::Mode;
     private import WstxOfflineDecode::ResultRecord;
@@ -21,8 +21,8 @@ package WstxModemDecode {
     private import ModelNotes::FollowsSource;
     private import ModelNotes::DiffersFromSource;
     private import WstxLiveReceive::'CL-007-05';
-    private import WstxRequirements::'CL-057-01';
-    private import WstxRequirements::'TC-057-003';
+    private import WstxOperatingLayout::'CL-057-01';
+    private import WstxOperatingLayout::'TC-057-003';
     doc /* The decode function of the modes part (WstxArchitecture::ModeFunctions). A window
          of canonical 12 kHz samples with its mode and a-priori context goes in; the records
          of the frames decoded in it come out. The payload, channel code and waveform are

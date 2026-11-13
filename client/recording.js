@@ -112,7 +112,7 @@ const localPreferences=document.createElement('div');localPreferences.id='local-
 localPreferences.innerHTML='<label>Waterfall link <select id="display-profile"><option value="detail">Detailed (fast link, up to 10 KiB/s per viewer)</option><option value="thin">Thin (32 kbit/s link)</option><option value="off">Off</option></select></label><div id="display-levels"><label class="op-check"><input id="display-flatten" type="checkbox"> Flatten (even out the passband across frequency)</label><label class="op-check"><input id="display-spectrum" type="checkbox"> Show spectrum line</label><output id="bin-readout" aria-live="polite">Select a bin with pointer or arrow keys</output></div>';
 panel.append(document.querySelector('#signal-meta'));
 displaySettings.append(localPreferences);
-// #50 WstxOperatingLayout::BandActivityColours: WSJT-X 3.3 DecodeHighlightingModel slots in its priority order;
+// #50 WstxBandActivity::BandActivityColours: WSJT-X 3.3 DecodeHighlightingModel slots in its priority order;
 // only interesting stations are coloured (operator 2026-11-03, unlike WSJT-X: no CQ slot, New call on by default).
 // A slot without data (cty.dat flags #55; grids, LotW) stays inactive until a record carries it. Worked before: none.
 const bandSlots=[['mycall','My call',true],['new_continent','New continent',true],['new_continent_band','New continent on band',true],['new_cq_zone','New CQ zone',true],['new_cq_zone_band','New CQ zone on band',true],['new_itu_zone','New ITU zone',false],['new_itu_zone_band','New ITU zone on band',false],['new_dxcc','New DXCC',true],['new_dxcc_band','New DXCC on band',true],['new_grid','New grid',false],['new_grid_band','New grid on band',false],['new_call','New call',true],['new_call_band','New call on band',true],['lotw','LotW user',false]];
@@ -123,7 +123,7 @@ displaySettings.append(bandColours);
 function bandColoursApply(){
   let saved=null;try{saved=JSON.parse(localStorage.getItem('wstx.band-colours.v1'));}catch{}
   const on=bandSlots.filter(([k,,d])=>typeof saved?.[k]==='boolean'?saved[k]:d).map(([k])=>k);
-  // WstxContest::ContestView: with a contest in force only my call keeps its slot; the rest is the all-time log.
+  // WstxSettings::ContestView: with a contest in force only my call keeps its slot; the rest is the all-time log.
   document.querySelector('#band-activity').dataset.hlOn=(window.wstxContestOn?on.filter(k=>k==='mycall'):on).join(' ');
   for(const box of bandColours.querySelectorAll('[data-hl-slot]'))box.checked=on.includes(box.dataset.hlSlot);
   for(const row of document.querySelectorAll('#band-activity tr[data-sequence]'))activityWhy(row);
@@ -185,7 +185,7 @@ function restoreDisplayPreference(){
   profileSelect.value=['detail','thin','off'].includes(saved)?saved:defaultDisplayProfile();
 }
 restoreDisplayPreference();
-// #54 WstxRecordingReceive::DisplayLevels: a fixed dBFS-to-colour mapping (WSJT-X Wide Graph): no level follows the signal
+// #54 WstxSignalArea::DisplayLevels: a fixed dBFS-to-colour mapping (WSJT-X Wide Graph): no level follows the signal
 // over time. displayBlack is the fixed -85 dBFS reference; nothing in this page changes it.
 let displayBlack=-85, displayRange=50, flatten=false, spectrumLine=false, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=0, speed=1, fallbackText='', detailRequest;
 try{const saved=Number(localStorage.getItem('wstx.waterfall-speed.v1'));if(saved>=.5&&saved<=8&&Number.isInteger(2*saved))speed=saved;}catch{}
@@ -1352,7 +1352,7 @@ function clientsLoad(){
 addEventListener('station-ready',clientsLoad);if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected')clientsLoad();
 chipsReady=true;chipsShow();
 
-// WstxStationProtocol::PageUpdate (#51). app.js reloads a page whose client build differs
+// WstxOperatingLayout::PageUpdate (#51). app.js reloads a page whose client build differs
 // from the station's, unless this screen holds the reload: a QSO or transmission in
 // progress, an open dialog or unsaved settings. A held update and a station snapshot this
 // page cannot validate are never silent: one chip names it and reloads on a click.
@@ -1384,7 +1384,7 @@ function keepWaterfall(){
   rows.push({sequence:-1,first_frame:-interval,end_frame:0,levels:null,held:false});paint();
 }
 
-// #55 CL-055-04 WstxOperatingLayout::BandActivityValue (1 calling me .. 8 no flag; 2, the strategy
+// #55 CL-055-04 WstxBandActivity::BandActivityValue (1 calling me .. 8 no flag; 2, the strategy
 // hits, is applied by the value view in contact.js) and BandActivityHover (title and aria-description).
 // #24 S1b: the call a decoded message is addressed to, also as a filled-in hash <MYCALL> or the
 // 'to' call of a nonstandard i3=4 message; shared by the my-call colour and value 1 (#55).
@@ -1447,7 +1447,7 @@ function activityWhy(row){
  new MutationObserver(()=>{if(state.row&&!state.row.isConnected)state.show(null);}).observe(tbody,{childList:true});}
 window.wstxActivityWhy=activityWhy;
 
-// WstxOperatingLayout::RxTxStrip frequency mapping (#50, CL-050-07): the waterfall canvas's own
+// WstxSignalArea::RxTxStrip frequency mapping (#50, CL-050-07): the waterfall canvas's own
 // box carries the fixed 0..3000 Hz span (the time ruler beside it is outside). The frequency axis
 // ticks, the Rx/Tx lines with their brackets and the pointer frequency all use this one mapping.
 // x(hz,container): the CSS px offset of hz in the container's padding box; hz(clientX): the

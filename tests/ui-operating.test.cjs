@@ -1498,7 +1498,7 @@ test('TC-050-007 the waterfall pointer, Rx/Tx lines and axis share one frequency
   }
 });
 
-// #82 WstxOperatingLayout::FreeTxSlotMarks (TC-082-004). Oracle: the CL-050-07 mapping (the waterfall
+// #82 WstxSignalArea::FreeTxSlotMarks (TC-082-004). Oracle: the CL-050-07 mapping (the waterfall
 // canvas's own box carries 0..3000 Hz), the operator's #82 answers ("open slots are shown all the time
 // as a part of the waterfall", "nothing else on screen") and #76 numbers (bars 8 px high, 2 px inset
 // at each end, a drawn colour difference of at least 40); the free_tx_slots values are hand-written.
@@ -3287,7 +3287,7 @@ test('TC-081-006 the Auto button says that Auto off finishes a QSO already start
   assert.equal(s.autos.length,0,'the browser sent nothing');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-039-20; TC-039-046 (#39 strategydef, WstxStrategy::PskrUse, WstxOperatingLayout::QsoPane): the two PSK
+// Proves: CL-039-20; TC-039-046 (#39 strategydef, WstxStrategy::PskrUse, WstxQsoPane::QsoPane): the two PSK
 // Reporter lines while Use is on and a run's own contact has a target, with the age from
 // station.tick; hidden otherwise; no polling; the QSO pane keeps its height at 1366x768 and 360x740.
 test('TC-039-046 the PSK Reporter lines in the QSO pane, their age formats, no polling and the fixed pane',{timeout:90000},async t=>{
@@ -3343,7 +3343,7 @@ test('TC-039-046 the PSK Reporter lines in the QSO pane, their age formats, no p
   assert.equal(await pane(),phone,'the pane keeps its height at 360 px');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-097-01; TC-097-014 (#97 WstxStrategy::StrategyEditor and StrategySelector; it replaces
+// Proves: CL-097-01; TC-097-014 (#97 WstxSettings::StrategyEditor and StrategySelector; it replaces
 // TC-039-046's editor of Filter, Value and Exit and its S&P/Run prompt, whose warning on Auto on
 // TC-063-012 keeps): the editor grouped Strategy and Contest with Duplicate only, the nine decisions,
 // one PUT of the schema 4 object written here, the contest strategy's view, a refusal at its
@@ -3623,7 +3623,7 @@ test('TC-074-001 a page kept open across a station restart shows the new boot st
 // Proves: CL-074-01; TC-074-002 the strategy line with None and no strategy run: drawn from the
 // strategy and automation snapshots together at each change of either; with None and no strategy
 // run it is the automation snapshot's text, "Automation idle" without a run; GET /automation only
-// after automation.state. Expected texts: WstxMcp::AutomationIndicator, WstxStrategy::StrategySelector.
+// after automation.state. Expected texts: WstxOperatingLayout::AutomationIndicator, WstxStrategy::StrategySelector.
 test('TC-074-002 the strategy line with None and no strategy run shows the automation text',{timeout:60000},async t=>{
   const {page,errors,s,announce,settle,status}=await strategydefStation(t,{width:1366,height:768});
   const reads=()=>s.requests.filter(r=>r==='GET /automation').length;
@@ -4553,7 +4553,7 @@ test('TC-061-001 an audio loss epoch keeps the waterfall and Band Activity; a St
 });
 
 // ---------------------------------------------------------------- #37 lower panel
-// WstxOperatingLayout::LowerPanel, ControlPanel, ErrorField. Oracle: the operator's #37 comments
+// WstxLowerPanel::LowerPanel, ControlPanel, ErrorField. Oracle: the operator's #37 comments
 // of 2026-11-03 (vertical stack, the QSO card's width, the controls always visible, the error
 // field with current problems only and no history), not the candidate markup.
 const panelControls=['#dx-call','#dx-grid','#dx-generate','#contact-report','#contact-auto','#contact-call-first','#contact-hold','#contact-parity'];
@@ -5336,10 +5336,10 @@ test('TC-097-019 the model carries no superseded wording',async()=>{
   const scope=[
     ...[1,2,3,15,19].map(n=>decision(S,n)),
     ...['StrategyClass','NewWhat','NewPer','ValueCriterion','Needed','LeaveMode','PskCase','Strategy','StrategyBands','CountryList','UsStateFilter','UsStateOf','CqTargetList','BuiltinStrategies','StrategyConfiguration','NewNeeded','CallerOfMyCall','Candidate','ValueOrder','Verdict'].map(n=>element(`WstxStrategy::${n}`)),
-    element("WstxStrategy::StrategyEditor"),
+    element("WstxSettings::StrategyEditor"),
     head(C),decision(C,1),decision(C,11),
     ...['ContestSelection','ContestPrompt','ContestValueOrder'].map(n=>element(`WstxContest::${n}`)),
-    element("WstxContest::ContestView"),
+    element("WstxSettings::ContestView"),
     ...['CL-039-01','CL-039-02','CL-039-04','CL-039-11','CL-042-01','CL-063-03'].map(n=>doc(R,n)),
   ];
   assert.deepEqual(scope.flatMap(span=>[P1,P2,P3].flatMap(re=>hits(span,re))),[],'(1) run vocabulary in a rewritten element');

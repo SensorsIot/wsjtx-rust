@@ -547,7 +547,7 @@ package WstxProfiles {
              Setup: four running profiles with valid inputs; each fault is applied alone, with
              otherwise valid TLS and token inputs.
              (a) Profile 1 stops and restarts while the other three refresh within
-                 WstxOperatingLayout::loopbackRefreshDeadlineSeconds and stay unchanged.
+                 WstxSettings::loopbackRefreshDeadlineSeconds and stay unchanged.
                  Profile 1 returns with its UUID and revision and a new boot ID.
              (b) The same path, an alias or a copied UUID gives profile_in_use until the
                  owner exits, whatever the directory's name. An occupied port gives

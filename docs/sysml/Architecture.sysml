@@ -430,11 +430,11 @@ package WstxArchitecture {
         binding replyContext bind outcome.request = request;
     }
     part def BrowserClient {
-        attribute localDisplayLevels : WstxRecordingReceive::DisplayLevels;
-        attribute localDisplayPreference : WstxRecordingReceive::BrowserDisplayPreference;
+        attribute localDisplayLevels : WstxSignalArea::DisplayLevels;
+        attribute localDisplayPreference : WstxSettings::BrowserDisplayPreference;
         attribute localActivityOrdering : WstxOperatingLayout::ActivityOrdering;
         attribute observedPresentation : WstxOperatingLayout::OperatingPresentation;
-        attribute receivePresentation : WstxOperatingReceive::ReceivePresentation;
+        attribute receivePresentation : WstxSignalArea::ReceivePresentation;
         attribute browserWaterfallSpanHz : FrequencyRange;
         doc /* Presentation and preferences are frontend-owned. Waterfall frequency span
              is independent of physical receiver filter width and the radio's own scope. */

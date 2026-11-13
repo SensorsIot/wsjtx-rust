@@ -47,7 +47,7 @@ package WstxQsoWire {
              while #9 reports an active transmission, "▶ TX now" with the seconds left
              (#37, QsoPane NEXT); the top bar shows UTC only.
              The bar is red in a period of my Tx parity while Enable Tx is on and whenever
-             transmitting is true, green otherwise (WstxOperatingLayout::QsoPane NEXT).
+             transmitting is true, green otherwise (WstxQsoPane::QsoPane NEXT).
              StationPeriodClock (#50, operator 2026-11-02): the UTC clock, the bar and the
              countdown run on the station's UTC (the transmit owner's now_utc_ms, system
              clock plus the #43 correction, the clock the transmitter keys on), never on the

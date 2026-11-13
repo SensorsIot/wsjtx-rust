@@ -1,7 +1,7 @@
 package WstxUdp {
     private import ScalarValues::*;
     private import ModelNotes::DiffersFromSource;
-    private import WstxRequirements::'TC-007-009';
+    private import WstxOperatingLayout::'TC-007-009';
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::'FR-012';
     private import WstxRequirements::'FR-001';

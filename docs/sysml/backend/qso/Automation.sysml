@@ -165,30 +165,6 @@ package WstxMcp {
              instead (WstxStrategy::StrategyWatchdog); a refused enable_tx with code tx_watchdog stops
              tx_watchdog. Run commands are automatic: they never end a Tx watchdog stop. */
     }
-    attribute def AutomationIndicator {
-        doc /* Browser station bar, read-only, beside the transmit state: while a run is
-             waiting or in a contact it shows "Automation waiting" or "Automation in
-             contact", the first 8 characters of the run id and "Halt ends it" (#42 a
-             pounce run: "Pounce <call> waiting" or "Pounce <call> in QSO" and "HALT ends
-             it", WstxStrategy::Pounce; a strategy run: WstxStrategy::StrategySelector); a
-             stopped run with a reason other than stopped "Automation stopped · <reason>";
-             "Automation idle" otherwise (#74, operator 2026-11-08), also with no strategy
-             selected and no run. The station sends automation.state {profile_id, boot_id,
-             policy_revision, run_revision} (an optional write paced with contact.state)
-             after each change since boot, also once to a peer that subscribes while
-             either revision is nonzero; the browser then reads GET /automation, and only
-             then: no read once per socket or on connect (#74). No event or request
-             while automation is never used. A new boot (#74, CL-074-01,
-             WstxStationProtocol::PushedStationState): when the browser learns a boot_id
-             other than that of its held automation state, it drops that state at once and
-             holds the never-used state (configuration, run, strategy_refusal and
-             free_tx_slots null) without a request; an automation.state of the new boot then
-             reads GET /automation; a snapshot reply of another boot is discarded. "No event"
-             concerns automation.state: free_tx_slots.state (#82, WstxStrategy::FreeTxSlots)
-             carries the station's open slots, not automation state, and is pushed every
-             period also while automation is never used; the browser reads nothing after
-             it. */
-    }
     attribute def AutomationWire {
         attribute receiptsRetained : Integer = 16;
         attribute bodyBytesMax : Integer = 1024;
@@ -242,5 +218,4 @@ package WstxMcp {
     dependency automationClause from OperatingAutomation to WstxMcpEndpoint::'CL-012-03';
     dependency policyClause from CandidateSelection to WstxMcpEndpoint::'CL-012-04';
     dependency configurationClause from AutomationConfiguration to WstxMcpEndpoint::'CL-012-04';
-    dependency indicatorBootClause from AutomationIndicator to WstxRequirements::'CL-074-01';
 }

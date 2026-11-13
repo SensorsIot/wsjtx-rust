@@ -1,5 +1,5 @@
 'use strict';
-// (WstxOperatingLayout::QsoPane, RxTxStrip, BandActivityView). The server owns the contact,
+// (WstxQsoPane::QsoPane, RxTxStrip, BandActivityView). The server owns the contact,
 (()=>{
 const focus=document.querySelector('#rx-focus');
 if(!focus||document.body.dataset.profile!=='true')return;
@@ -25,7 +25,7 @@ document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<p id="q
 <div id="qso-next" class="op-qso-next" hidden><span id="qso-next-label" class="op-eyebrow">&#9656; next:</span><strong id="contact-next">None</strong><span id="qso-countdown" class="op-muted"></span><div class="op-qso-progress" aria-hidden="true"><i id="qso-progress"></i></div></div>
 <p id="transmit-unavailable" class="op-unavailable">Transmission unavailable: this server does not offer transmit control.</p><p id="contact-unavailable" class="op-unavailable" hidden>Log QSO needs a running QSO.</p><p id="contact-result" class="op-muted" role="status"></p><p id="contact-logged" class="op-muted" role="status"></p>
 `);
-// WstxOperatingLayout::QsoPane item 8 (#37, operator 2026-11-04): the pane has a fixed height so
+// WstxQsoPane::QsoPane item 8 (#37, operator 2026-11-04): the pane has a fixed height so
 // the Control panel below it never moves. Its two sections have fixed heights and scroll inside:
 // QSO (the #60 dialogue table, kept at its newest row) and Calling me (every station calling my
 // call except the partner). The lines above them take the rest of the pane and scroll inside.
@@ -49,13 +49,13 @@ focus.querySelector('.op-contact-body').insertAdjacentHTML('beforeend',`<details
 // (it moves nothing). NEXT leads the message lines below it.
 {const head=focus.querySelector('.op-qso-head'),tools=document.createElement('div');tools.className='ct-head-tools';
   tools.append(focus.querySelector('.op-qso-buttons'),$('qso-more'));head.append($('qso-heard'),tools);}
-// WstxOperatingLayout::LowerPanel (#37, operator 2026-11-03): one vertical column on the right,
+// WstxLowerPanel::LowerPanel (#37, operator 2026-11-03): one vertical column on the right,
 // the QSO pane, the Control panel and the error field, each the width of the QSO pane card.
 const qsoColumn=document.createElement('div');qsoColumn.id='qso-column';qsoColumn.className='op-qso-column';
 focus.before(qsoColumn);qsoColumn.append(focus);
 qsoColumn.insertAdjacentHTML('beforeend',`<section id="qso-control" class="op-card op-lower" aria-labelledby="control-heading"><h3 id="control-heading" class="op-lower-head">Control</h3><div class="op-control-grid"><div class="op-control-row"><label>DX Call<input id="dx-call" maxlength="13" autocomplete="off" spellcheck="false" disabled></label><label>DX Grid<input id="dx-grid" maxlength="6" autocomplete="off" spellcheck="false" disabled></label><button type="button" id="dx-generate" disabled>Generate</button><label>Report<input id="contact-report" type="number" min="-50" max="49" step="1" disabled><span>dB</span></label></div><div class="op-control-row"><label class="op-check"><input type="checkbox" id="contact-auto" disabled aria-label="Auto sequence unavailable">Auto Seq</label><label class="op-check" title="While calling CQ, answer the first station that calls me (WSJT-X Call 1st)"><input type="checkbox" id="contact-call-first" disabled>Call 1st</label><label class="op-check" title="Keep the Tx audio frequency when a station is selected"><input type="checkbox" id="contact-hold" disabled>Hold Tx</label><label>Tx<select id="contact-parity" disabled aria-label="Tx period"><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label></div></div></section>
 <section id="error-field" class="op-card op-lower" aria-labelledby="error-heading"><h3 id="error-heading" class="op-lower-head">Problems</h3><div class="op-error-body"><p class="op-muted op-error-none" role="status">No problems</p></div></section>`);
-// WstxOperatingLayout::ErrorField (CL-037-02): the former top-bar exception chips, current only.
+// WstxLowerPanel::ErrorField (CL-037-02): the former top-bar exception chips, current only.
 const errorBody=qsoColumn.querySelector('#error-field .op-error-body');
 // A wheel notch moves by at most the visible height, so no line is skipped where the block has only one (1366x768).
 errorBody.addEventListener('wheel',event=>{if(errorBody.scrollHeight<=errorBody.clientHeight||errorBody.clientHeight>=Math.abs(event.deltaY))return;event.preventDefault();errorBody.scrollTop+=Math.sign(event.deltaY)*errorBody.clientHeight;},{passive:false});
@@ -329,7 +329,7 @@ function logShow(){
 }
 const stationTxNode=document.createElement('span');stationTxNode.id='station-tx';stationTxNode.className='ct-station-tx';stationTxNode.setAttribute('role','status');stationTxNode.hidden=true;
 document.querySelector('#halt-tx')?.before(stationTxNode);
-// WstxMcp::AutomationIndicator: the run state sits in the strategy element (its line is drawn by
+// WstxOperatingLayout::AutomationIndicator: the run state sits in the strategy element (its line is drawn by
 // the strategy client from both snapshots, #74 D1); HALT ends it. GET /automation is read only
 // after an automation.state event (#74): null is the never-used state, held without a request.
 let automationLoading=null,automationView=null;
@@ -790,7 +790,7 @@ menu.addEventListener('click',event=>{
 });
 menu.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();closeMenu();}});
 document.addEventListener('pointerdown',event=>{if(!menu.hidden&&!menu.contains(event.target))closeMenu();},true);
-// WstxOperatingLayout::QsoPane Calling me (#37, operator 2026-11-04): every station calling my
+// WstxQsoPane::QsoPane Calling me (#37, operator 2026-11-04): every station calling my
 // call from the latest two published periods except the partner, one line per station (its
 // newest decode): call, SNR, grid and country. While a QSO runs a double-click switches the
 // contact to that station and replies (⚠ marks one within ±50 Hz of my Rx or Tx offset,
@@ -829,7 +829,7 @@ function othersShow(){
   // first, the newest at the bottom.
   const seen=new Set(),lines=newest.filter(({record,context})=>{const from=recordFrom(record.fields),k=from?from.toUpperCase():`${context}/${record.sequence}`;if(seen.has(k))return false;seen.add(k);return true;}).slice(0,OTHER_LINES).reverse();
   $('qso-others-none').hidden=!!lines.length;$('calling-table').hidden=!lines.length;
-  // CL-010-13 (WstxOperatingLayout::QsoPane item 3): each caller carries the Band Activity
+  // CL-010-13 (WstxQsoPane::QsoPane item 3): each caller carries the Band Activity
   // marks of its sender: the enabled new_* slot colours of its #55 flags (My call is not used,
   // every line calls me), the reasons and the worked-before status as text; worked before on
   // this band and mode adds no colour.
@@ -867,7 +867,7 @@ document.addEventListener('wstx-worked',()=>othersShow());
 // The Band Activity colour choice (Settings > General > Display) applies to the callers too.
 const bandActivity=document.querySelector('#band-activity');
 if(bandActivity){const mirror=()=>{focus.dataset.hlOn=bandActivity.dataset.hlOn??'';othersShow();};mirror();new MutationObserver(mirror).observe(bandActivity,{attributes:true,attributeFilter:['data-hl-on']});}
-// WstxOperatingLayout::RxTxStrip: confirmed values only; 1 Hz steps, Shift 10 Hz.
+// WstxSignalArea::RxTxStrip: confirmed values only; 1 Hz steps, Shift 10 Hz.
 function setFrequency(key,value,label){if(!Number.isSafeInteger(value)||value<0){resultText.textContent='Frequency must be a whole number of Hz';return;}send('set_frequency',{rx_hz:key==='rx'?value:null,tx_hz:key==='tx'?value:null},label);}
 const confirmed=key=>snap?.settings?.[key==='rx'?'rx_hz':'tx_hz'];
 for(const key of ['rx','tx']){
@@ -921,7 +921,7 @@ waterfall?.addEventListener('click',event=>{
   pointerTimer=setTimeout(()=>pointer(null,hz,'Tx frequency'),250);
 });
 waterfall?.addEventListener('dblclick',event=>{clearTimeout(pointerTimer);const hz=pointerHz(event);pointer(hz,hz,'Rx and Tx frequency');});
-// #82 WstxOperatingLayout::FreeTxSlotMarks: part of the waterfall, no setting. Each open range
+// #82 WstxSignalArea::FreeTxSlotMarks: part of the waterfall, no setting. Each open range
 // [lo, hi) of the latest held free_tx_slots is a bar over lo..hi in the frequency ruler, on the
 // waterfall's one mapping (CL-050-07), with or without a run (no run_id match). The held value:
 // each free_tx_slots.state replaces it in socket order; a GET /automation reply (read only after
@@ -1212,7 +1212,7 @@ async function saveConfiguration(configuration,label){
   }catch(error){statusNode.textContent=`${label} not saved · ${error.message}`;return false;}
 }
 const words_=t=>String(t).replace(/_/g,' ');
-// WstxMcp::AutomationIndicator: the automation snapshot's own text (null: never used, idle).
+// WstxOperatingLayout::AutomationIndicator: the automation snapshot's own text (null: never used, idle).
 function automationLine(){
   const r=automation?.run,active=!!r&&r.state!=='stopped';
   statusNode.dataset.active=String(active);
@@ -1224,14 +1224,14 @@ function automationLine(){
 // read on automation.state only) together at each change of either.
 function showRun(){
   const name=config()?.active;
-  // WstxContest::ContestView: the contest, its period and the log inside it.
+  // WstxSettings::ContestView: the contest, its period and the log inside it.
   const contest=selection(),on=auto()&&!refusal&&strategyRun();
   // A run that ended turned Auto off with its stop reason (StrategyRun); a plain stop says nothing more.
   const stopped=!auto()&&run?.strategy&&run.state==='stopped'&&run.reason&&run.reason!=='stopped'?` · stopped · ${words_(run.reason)}`:'';
   const doing=()=>run.state==='contact_active'?run.selected?.call??'in QSO':run.state==='calling_cq'?'calling CQ':run.state==='manual'?'your QSO':null;
   if(contest){
     const when=t=>`${t.slice(5,10)} ${t.slice(11,16)}`,tally=contestSummary?` · ${contestSummary.qsos} QSOs · ${contestSummary.multipliers} mult · score ${contestSummary.score}`:'';
-    // WstxContest::ContestView, ContestRun: the operation, Auto (off is colouring only) and the run
+    // WstxSettings::ContestView, ContestRun: the operation, Auto (off is colouring only) and the run
     // state from GET /automation, read on automation.state only.
     const state=refusal?` · not started · ${words_(refusal)}`:on?` · ${doing()??`waiting${run.reason?` · ${words_(run.reason)}`:''}`}`:stopped;
     statusNode.dataset.active=String(!!on);statusNode.textContent=`Contest ${selectedProfile()?.name??contest.profile} · ${when(contest.start)} to ${when(contest.end)} UTC · ${config()?.active??''} · Auto ${auto()?'on':'off'}${state}${tally}`;
@@ -1312,14 +1312,14 @@ function decorate(){
     const v=on?verdicts.get(tr.dataset.resultId):null;
     const ranked=v?.rank!==null&&v?.rank!==undefined;
     tr.classList.toggle('ba-strategy',ranked);tr.classList.toggle('ba-grey',!!v?.grey);
-    // WstxContest::ContestView: only what can be called, unless Show all; the partner and rows to me stay.
+    // WstxSettings::ContestView: only what can be called, unless Show all; the partner and rows to me stay.
     tr.classList.toggle('ba-contest-mult',!!v?.new_multiplier);tr.classList.toggle('ba-dupe',!!v?.dupe);
     tr.classList.toggle('ba-hidden',on&&!!selection()&&!showAll&&!ranked&&!tr.classList.contains('ba-tome')&&!tr.classList.contains('ba-partner'));
     if(v&&v.rank!==null)tr.dataset.rank=String(v.rank+1);else delete tr.dataset.rank;
     // #55 BandActivityHover: the verdict joins the row's other reasons.
     if(v?.grey)tr.dataset.whyStrategy='Directed CQ, not calling us: the strategy skips it, a double-click warns';else if(v?.dupe)tr.dataset.whyStrategy='Dupe in the contest period';else if(selection()&&v&&v.rank!==null)tr.dataset.whyStrategy=[`Contest ${selectedProfile()?.name??selection().profile}: #${v.rank+1}`,v.new_multiplier?'new multiplier':'',v.points!==null&&v.points!==undefined?`${v.points} points`:''].filter(Boolean).join(' · ');else if(v&&v.rank!==null)tr.dataset.whyStrategy=`Strategy ${config().active}: #${v.rank+1}`;else delete tr.dataset.whyStrategy;window.wstxActivityWhy?.(tr);
   }
-  // WstxStrategy::ValueView: in the value sort the ranked rows go up in the station's order; a
+  // WstxSettings::ValueView: in the value sort the ranked rows go up in the station's order; a
   // column click sorts by the column until Value is chosen again (the marks stay).
   if(!on||!valueSort())return;
   reordering=true;
@@ -1581,7 +1581,7 @@ $('mw-update')?.addEventListener('click',async()=>{
 });
 // ---------------------------------------------------------------- editor popup
 const CONTINENTS=[['AF','Africa'],['AN','Antarctica'],['AS','Asia'],['EU','Europe'],['NA','North America'],['OC','Oceania'],['SA','South America']];
-// #97 WstxStrategy::StrategyEditor: the answers of the nine decisions, with the model's labels.
+// #97 WstxSettings::StrategyEditor: the answers of the nine decisions, with the model's labels.
 const NEW_WHAT=[['dxcc','DXCC entity'],['call','Call'],['grid','Grid'],['cq_zone','CQ zone (WAZ)'],['itu_zone','ITU zone'],['continent','Continent (WAC)'],['prefix','Prefix (WPX)']];
 const NEW_PER=[['ever','Ever'],['band','Band'],['band_mode','Band and mode']];
 const NEW_MEANS=[['not_worked','Not worked'],['not_confirmed','Not confirmed (QSL/LoTW)']];
@@ -1641,7 +1641,7 @@ $('cp-go').addEventListener('click',async()=>{
   const ok=await saveConfiguration({...c,active,contest},'Contest');
   if(ok)contestPrompt.close('ok');else $('cp-result').textContent=statusNode.textContent;
 });
-// #97 WstxStrategy::StrategyEditor: a strategy is new only as a duplicate ("<name> copy", then
+// #97 WstxSettings::StrategyEditor: a strategy is new only as a duplicate ("<name> copy", then
 // "<name> copy 2" ..., at most 32 characters), keeping its class and contest; there is no Add.
 function copyName(name){
   const taken=n=>drafts.some(d=>d.name.toLowerCase()===n.toLowerCase());

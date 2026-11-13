@@ -1,7 +1,6 @@
 package WstxProductScope {
     private import ScalarValues::*;
     private import WstxRequirements::*;
-    private import WstxRequirementsFrontend::*;
     private import WstxArchitecture::*;
     private import WstxStationProtocol::*;
     private import WstxProfiles::*;
@@ -265,6 +264,11 @@ package WstxProductScope {
         alias LogbookPackage for WstxLogbook;
         alias CountryFilePackage for WstxCountryFile;
         alias QsoWirePackage for WstxQsoWire;
+        alias BandActivityPackage for WstxBandActivity;
+        alias SignalAreaPackage for WstxSignalArea;
+        alias QsoPanePackage for WstxQsoPane;
+        alias LowerPanelPackage for WstxLowerPanel;
+        alias SettingsPackage for WstxSettings;
     }
     dependency scopeBoundary from ProductCapabilities to WstxRequirements::'FR-004';
     dependency nativeBoundary from NativeFlexBoundary to WstxRequirements::'FR-023';

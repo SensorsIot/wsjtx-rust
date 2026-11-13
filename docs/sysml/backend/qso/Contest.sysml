@@ -200,13 +200,13 @@ package WstxContest {
     }
     attribute def ContestPrompt {
         doc /* The Contest button of the strategy element opens a modal dialog with its own HALT (the
-             top-bar HALT's action, as WstxStrategy::StrategyEditor); receive keeps running. It reads
+             top-bar HALT's action, as WstxSettings::StrategyEditor); receive keeps running. It reads
              GET /strategy/contests once at opening, so the pre-fill is current. It offers the
              profiles; Start and End (UTC, to the minute): the selection in force when it matches, else
              the profile's period, empty when asked; the schedule in words; the strategy (D11: the
              profile's contest built-in, first and chosen, and every saved contest strategy of that
              profile, by name; there is no operation choice, the settings are the strategy's own,
-             WstxStrategy::StrategyEditor); the automation text and the notes. Whether it transmits is
+             WstxSettings::StrategyEditor); the automation text and the notes. Whether it transmits is
              the Auto toggle's (WstxStrategy::AutoToggle): a forbidden clause asks its
              confirmation when Auto is switched on, not at Start. When the profile's
              activity differs from the station's, one line says so. Start with an empty period
@@ -215,24 +215,6 @@ package WstxContest {
              changes nothing. In the selector the contest in force is one more option "<name>
              (contest)"; None or a strategy of class strategy sends a PUT without contest (the selector's other
              rule, WstxStrategy::StrategySelector, is unchanged). */
-    }
-    attribute def ContestView {
-        doc /* With a contest in force the browser renders the verdicts as WstxStrategy::ValueView
-             does, on the same events (a new publication, a save; never a timer). Band Activity lists
-             only the rows with a rank, in rank order under the value sort; rows to my call and the
-             partner rows stay (#50); every other row is hidden. Show all (a toggle in the strategy
-             element, visible only with a contest, off at each page load, kept in the page only)
-             shows them all again without a new request: a dupe and a greyed row dimmed, no colour; a
-             row with a new multiplier has its own colour beside the strategy mark
-             (WstxOperatingLayout::BandActivityColours: only interesting stations). The colour slots of the
-             all-time log (new call, DXCC, zone, grid and LotW) are off while a contest is in force,
-             their reasons leave the hover too, and they come back with its end: QSOs outside the
-             period do not count (the My call slot stays; the Settings choice is unchanged). The hover names "#n",
-             new multiplier and points, or the dupe. The status beside it: "Contest <name> \· <MM-DD
-             HH:MM> to <MM-DD HH:MM> UTC \· <strategy name> \· Auto <on or off>" (Auto off is
-             colouring only) and, once evaluated, " \· <n> QSOs \· <m>
-             mult \· score <s>". Manual operation stays as it is: every row selects as ever, the
-             double-click and the directive warning unchanged. */
     }
     attribute def ContestRun {
         doc /* A contest with Auto on is a WstxStrategy::StrategyRun: one run at a time, through
@@ -325,7 +307,6 @@ package WstxContest {
     dependency logClause from ContestLog to WstxContact::'CL-063-03';
     dependency verdictClause from ContestVerdict to WstxContact::'CL-063-04';
     dependency orderClause from ContestValueOrder to WstxContact::'CL-063-04';
-    dependency viewClause from ContestView to WstxContact::'CL-063-04';
     dependency runClause from ContestRun to WstxContact::'CL-063-05';
     dependency runSafety from ContestRun to WstxContact::'CL-063-06';
     dependency runPath from ContestRun to WstxStrategy::StrategyRun;

@@ -14,7 +14,7 @@ package WstxRadioIO {
     private import WstxRequirements::'FR-008';
     private import WstxRequirements::'FR-021';
     private import WstxCatLifecycle::'CL-022-04';
-    private import WstxRequirements::'TC-022-010';
+    private import WstxOperatingLayout::'TC-022-010';
     private import WstxRequirements::'FR-019';
     private import WstxRadioSetup::'TC-044-009';
     private import WstxRadioSetup::'TC-044-011';

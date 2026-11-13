@@ -7,9 +7,9 @@ package WstxStandardQso {
     private import WstxRequirements::AutomationState;
     private import WstxRequirements::'FR-008';
     private import WstxRequirements::'FR-019';
-    private import WstxRequirementsFrontend::'CL-010-06';
-    private import WstxRequirements::'CL-010-07';
-    private import WstxRequirements::'CL-010-08';
+    private import WstxOperatingLayout::'CL-010-06';
+    private import WstxOperatingLayout::'CL-010-07';
+    private import WstxOperatingLayout::'CL-010-08';
     private import WstxQsoWire::'CL-010-15';
     private import WstxLogbook::'CL-010-04';
     private import WstxContact::'CL-010-10';
