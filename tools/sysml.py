@@ -1472,10 +1472,13 @@ def deployment_faults(records: dict, keys: list[str], elements: dict) -> list[tu
         if path == station:
             continue
         types = [name for name in types.split(",") if name]
-        places = [where.get(path, ("", ""))] + [(file(name), name) for name in types]
+        # The part itself is listed by its usage; its type exempts only faults about the type's members.
+        places = [where.get(path, ("", ""))]
+        type_places = places + [(file(name), name) for name in types]
         for side, category, name in members.get(path, []):
             if category not in OUTSIDE_MEMBERS:
-                faults.append((4, path, f"outside part with {category} {name}" + (" in its type" if side == "type" else ""), places))
+                faults.append((4, path, f"outside part with {category} {name}" + (" in its type" if side == "type" else ""),
+                               type_places if side == "type" else places))
         usage = where.get(path, ("", ""))[1]
         for anchor, index, subject_types, subsetted in records.get("SUBJECT", []):
             if set(subject_types.split(",")) & set(types) or usage and usage in subsetted.split(","):

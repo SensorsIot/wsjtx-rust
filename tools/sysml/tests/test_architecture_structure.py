@@ -353,6 +353,11 @@ STATES = {
                    (SP, "        interface ranked : RankedTargets connect ranking.next to auto.ranked;\n", "")),
     # X2, and two faults of two rules (S11)
     "lonely": LONELY,
+    "lonely, type in a part file": (
+        (CTX, "        part catRadio : CatRadio;\n", "        part catRadio : CatRadio;\n        part lonely : Lonely;\n"),
+        (CTX, "    private import WstxModelBindings::*;\n", "    private import WstxModelBindings::*;\n    private import WstxProfile::*;\n"),
+        ("backend/profile/Profile.sysml", "part def PersistedProfile;",
+         "part def PersistedProfile;\n    part def Lonely { attribute weight : ScalarValues::Integer; }")),
     "two faults": LONELY + ((CTX, CONTEXT_PART, "    dependency watch from CatRadio to Operator;\n" + CONTEXT_PART),),
 }
 
@@ -541,6 +546,9 @@ class StructureCheckTests(unittest.TestCase):
     def test_outside_part_without_connection_needs_the_pending_list(self):
         self.assertEqual(self.faults("lonely"), ["Structure rule 4: outside part joined to no function: context.lonely"])
         self.assertEqual(self.faults("lonely", {"WstxContext::context::lonely": "station"}), [])
+        with self.subTest("only its type's file on the pending list: the part itself is not listed"):
+            self.assertEqual(self.faults("lonely, type in a part file", files=["backend/profile/Profile.sysml"]),
+                             ["Structure rule 4: outside part joined to no function: context.lonely"])
 
     # S11: the pending list is refused whole; faults are listed in rule, key and line order
     # Proves: CL-014-18; TC-DOC-016
