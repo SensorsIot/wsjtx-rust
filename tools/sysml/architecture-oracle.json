@@ -45,16 +45,16 @@
     ]
   },
   "contracts": {
-    "WstxAudioControl::AudioStatus": {"items": {"outcome": ["out", "WstxArchitecture::AudioOutcome"]}},
-    "WstxAudioStreams::AudioExchange": {"items": {"capture": ["in", "WstxArchitecture::SampleBlock"], "outcome": ["in", "WstxArchitecture::AudioOutcome"], "playback": ["out", "WstxArchitecture::SampleBlock"]}},
-    "WstxAudioStreams::ReceiveSamples": {"items": {"outcome": ["out", "WstxArchitecture::AudioOutcome"], "samples": ["out", "WstxArchitecture::SampleBlock"]}},
-    "WstxModeProcessing::EncodeProcessing": {"items": {"request": ["out", "WstxArchitecture::EncodeRequest"], "waveform": ["in", "WstxArchitecture::Waveform"]}},
-    "WstxModeProcessing::ReceiveProcessing": {"items": {"request": ["out", "WstxArchitecture::ProcessingRequest"], "result": ["in", "WstxArchitecture::ProcessingResult"]}},
-    "WstxProfileAccess::ProfileAccess": {"items": {"outcome": ["in", "WstxArchitecture::ProfileOutcome"], "request": ["out", "WstxArchitecture::ProfileRequest"]}},
-    "WstxRadioControl::RadioControl": {"bindings": [["outcome.request", "request"]], "items": {"outcome": ["in", "WstxArchitecture::ControlOutcome"], "request": ["out", "WstxArchitecture::ControlRequest"]}},
-    "WstxRecordingTransfer::RecordingTransfer": {"items": {"recording": ["out", "WstxArchitecture::Recording"]}},
-    "WstxStationCommands::StationOperations": {"items": {"outcome": ["in", "WstxArchitecture::StationOutcome"], "request": ["out", "WstxArchitecture::StationRequest"]}},
-    "WstxStationLink::BrowserExchange": {"items": {"outcome": ["in", "WstxArchitecture::StationOutcome"], "request": ["out", "WstxArchitecture::StationRequest"], "upload": ["out", "WstxArchitecture::Recording"]}}
+    "WstxAudioControl::AudioStatus": {"items": {"outcome": ["out", "WstxAudioControl::AudioOutcome"]}},
+    "WstxAudioStreams::AudioExchange": {"items": {"capture": ["in", "WstxAudioStreams::SampleBlock"], "outcome": ["in", "WstxAudioControl::AudioOutcome"], "playback": ["out", "WstxAudioStreams::SampleBlock"]}},
+    "WstxAudioStreams::ReceiveSamples": {"items": {"outcome": ["out", "WstxAudioControl::AudioOutcome"], "samples": ["out", "WstxAudioStreams::SampleBlock"]}},
+    "WstxModeProcessing::EncodeProcessing": {"items": {"request": ["out", "WstxModeProcessing::EncodeRequest"], "waveform": ["in", "WstxModeProcessing::Waveform"]}},
+    "WstxModeProcessing::ReceiveProcessing": {"items": {"request": ["out", "WstxModeProcessing::ProcessingRequest"], "result": ["in", "WstxModeProcessing::ProcessingResult"]}},
+    "WstxProfileAccess::ProfileAccess": {"items": {"outcome": ["in", "WstxProfileAccess::ProfileOutcome"], "request": ["out", "WstxProfileAccess::ProfileRequest"]}},
+    "WstxRadioControl::RadioControl": {"bindings": [["outcome.request", "request"]], "items": {"outcome": ["in", "WstxRadioControl::ControlOutcome"], "request": ["out", "WstxRadioControl::ControlRequest"]}},
+    "WstxRecordingTransfer::RecordingTransfer": {"items": {"recording": ["out", "WstxRecordingTransfer::Recording"]}},
+    "WstxStationCommands::StationOperations": {"items": {"outcome": ["in", "WstxStationCommands::StationOutcome"], "request": ["out", "WstxStationCommands::StationRequest"]}},
+    "WstxStationLink::BrowserExchange": {"items": {"outcome": ["in", "WstxStationCommands::StationOutcome"], "request": ["out", "WstxStationCommands::StationRequest"], "upload": ["out", "WstxRecordingTransfer::Recording"]}}
   },
   "parts": {
     "physicalStation.backend": {"population": "1..1", "type": "WstxArchitecture::Backend"},

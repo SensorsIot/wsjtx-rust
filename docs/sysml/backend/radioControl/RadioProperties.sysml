@@ -1,8 +1,8 @@
 package WstxRadioProperties {
     private import ScalarValues::*;
     private import WstxArchitecture::Radio;
-    private import WstxArchitecture::RadioStateOutcome;
-    private import WstxArchitecture::RadioSettingsOutcome;
+    private import WstxRadioControl::RadioStateOutcome;
+    private import WstxRadioControl::RadioSettingsOutcome;
 
     doc /* Physical radio values are structured data attributes (OMG SysML 2.0 section7.7),
          not new components. Each property/context has ONE current observable value below.

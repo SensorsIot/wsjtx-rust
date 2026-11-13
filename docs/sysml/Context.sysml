@@ -37,7 +37,7 @@ package WstxContext {
         enum mcpClient {
             doc /* MCP clients, POST /mcp on the same listener. A client reaches one station's
                  McpAdapter over that station's own HTTPS listener with its own auth-v1 grant
-                 (WstxMcpEndpoint::McpEndpoint, McpCredential); it may run on any authorized
+                 (WstxMcpInterface::McpEndpoint, McpCredential); it may run on any authorized
                  computer. */
             @FollowsSource {
                 reference = "Model Context Protocol, Streamable HTTP, "

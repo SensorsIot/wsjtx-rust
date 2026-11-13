@@ -684,7 +684,7 @@ test('TC-050-003 the period bar follows the station clock and is red in my Tx pe
   assert.deepEqual(errors,[]);
 });
 
-// Proves: TC-097-017 (d), TC-097-013 (f) (CL-097-06, WstxContact::BusyPartner "Shown"). While
+// Proves: TC-097-017 (d), TC-097-013 (f) (CL-097-06, WstxOperatingChain::BusyPartner "Shown"). While
 // busy_with is set " · K1ABC busy with W9XYZ, not counted (2/6)" follows WD:n in the QSO pane and
 // the station bar (k the paused_calls, N the Tx watchdog's tx_calls), gone with busy_with null; in a
 // run's own contact (tx_remaining_calls null) it follows the leave label with the run's paused.
@@ -715,7 +715,7 @@ test('TC-097-017 the busy marker follows WD:n and the leave label',{timeout:4000
 });
 
 // Proves: TC-097-013 (b), (c), (d), (e) (CL-097-04; oracle WstxStrategy::LeaveCountLabel and
-// WstxQsoWire::ContactSnapshot). In a run's own contact (tx_remaining_calls null) the QSO pane's
+// WstxQsoControl::ContactSnapshot). In a run's own contact (tx_remaining_calls null) the QSO pane's
 // watchdog line is the leave label: "Leave in 4 calls" .. "Leave in 1 calls"; a contest stay "Stay ·
 // most valuable", never "WD:∞"; until_logged "Until logged", then "Until logged · leave if gone 7
 // min". Unattended (an integer count) and in a manual contact it is WD:n, 6 down to 1. Station
@@ -2931,7 +2931,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   for(let i=0;i<60&&!evaluations.length;i++)await page.waitForTimeout(50);
   assert.equal(await page.locator('#op-confirm[open]').count(),0,'selecting asks nothing');
   assert.deepEqual(puts.map(b=>[b.expected_revision,b.configuration.active,b.configuration.strategies]),[[4,'DX first',[strategy]]]);
-  // WstxStrategy::AutoToggle: a selection only marks; it never switches Auto.
+  // WstxAutoControl::AutoToggle: a selection only marks; it never switches Auto.
   await page.locator('#station-automation').filter({hasText:'Strategy DX first · Auto off'}).waitFor();
   assert.deepEqual(switches,[],'selecting sends no POST /strategy/auto');
   assert.deepEqual(evaluations.map(b=>[b.source_id,b.job_id,b.generation,b.first_sequence,b.next_sequence,b.strategy,b.explain]),[[state.source.id,state.job.id,state.generation,0,3,null,false]]);
@@ -2999,7 +2999,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   await page.locator('#se-save').click();for(let i=0;i<40&&puts.length<3;i++)await page.waitForTimeout(50);
   assert.deepEqual([puts[2].configuration.active,puts[2].configuration.strategies],['DX first',[edited,{...edited,name:'DX first copy'}]]);
   await page.locator('#strategy-editor button[value=cancel]').click();assert.equal(await page.locator('#strategy-editor').evaluate(d=>d.open),false);
-  // A HALT is pushed: Auto off, the selection and its marks stay (WstxStrategy::StrategyRun).
+  // A HALT is pushed: Auto off, the selection and its marks stay (WstxAutoControl::StrategyRun).
   view={...view,revision:view.revision+1,auto:false};
   await announce('strategy.state',{strategy_revision:view.revision});
   await page.waitForFunction(()=>document.querySelector('#qso-auto').getAttribute('aria-pressed')==='false',null,{timeout:5000});
@@ -3152,8 +3152,8 @@ const CONTEST_PROFILES=[contestProfile('ww_digi','WW Digi',{activity:'ww_digi',a
 const strategyRunOf=(state,extra={})=>({id:'7d1f6c2e-0000-4000-8000-000000000039',state,reason:null,mode:'ft8',completed_contacts:0,unanswered_periods:0,contact_id:null,selected:null,last_decision:null,given_up:[],left:null,quiet:[],hearing:null,tx_slot:null,slot_check:null,pounce:null,...extra});
 // The routed station of the strategydef browser cases (TC-039-046): GET and PUT /strategy, POST
 // /strategy/auto, GET /pskr, POST /pskr/use, GET /strategy/contests and GET /automation answer with
-// the model's wire shapes (WstxStrategy::StrategyHttp, AutoToggle, HearingFeed, PskrUse;
-// WstxContest::ContestSelection; WstxMcp::AutomationWire). The station changes its state on a
+// the model's wire shapes (WstxStrategies::StrategyHttp, AutoToggle, HearingFeed, PskrUse;
+// WstxStrategies::ContestSelection; WstxMcp::AutomationWire). The station changes its state on a
 // command; the page learns it only from the pushes strategy.state, pskr.state and automation.state.
 async function strategydefStation(t,viewport,{strategies=[userStrategy('Mine')]}={}){
   const s={view:null,pskr:null,automation:{policy:0,runRevision:0,configuration:null,run:null,refusal:null},transmit:{},contact:null,puts:[],autos:[],uses:[],requests:[],commands:[]};
@@ -3165,7 +3165,7 @@ async function strategydefStation(t,viewport,{strategies=[userStrategy('Mine')]}
     p.on('request',r=>{const u=new URL(r.url());if(u.origin===app.origin&&u.pathname!=='/'&&!/\.(js|css|svg|png|ico|woff2?)$/.test(u.pathname))s.requests.push(`${r.method()} ${u.pathname}`);});
     await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{transmit:s.transmit,contact:s.contact})}));
     await contactCommands(p,s.commands);
-    // None turns Auto off (WstxStrategy::AutoToggle); another selection keeps it.
+    // None turns Auto off (WstxAutoControl::AutoToggle); another selection keeps it.
     // s.refuse(body): the station's refusal of a PUT (its error object), else null.
     await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());s.puts.push(b);const refused=s.refuse?.(b);if(refused)return route.fulfill({status:400,json:{error:refused}});s.view={...s.view,revision:s.view.revision+1,configuration:b.configuration,auto:b.configuration.active||b.configuration.contest?s.view.auto:false};}await route.fulfill({json:s.view});});
     await p.route('**/strategy/auto',async route=>{const b=JSON.parse(route.request().postData());s.autos.push(b);s.view={...s.view,revision:s.view.revision+1,auto:b.auto};await route.fulfill({json:s.view});});
@@ -3262,7 +3262,7 @@ test('TC-039-046 Auto and PSK follow only the push, one POST per click, their di
   assert.equal(s.commands.some(c=>c.action==='enable_tx'),false,'the browser never arms for a strategy');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-081-01; TC-081-006 (#81, WstxStrategy::AutoToggle, StrategySelector): with Auto on the Auto
+// Proves: CL-081-01; TC-081-006 (#81, WstxAutoControl::AutoToggle, StrategySelector): with Auto on the Auto
 // button's title says that a QSO already started is finished; after the pushed Auto off with the run
 // stopped and the contact still in progress the button is grey with the off title, the strategy line
 // reads "Strategy Casual · Auto off" and the QSO pane still shows K1ABC. Expected texts are the model's.
@@ -3464,7 +3464,7 @@ test('TC-097-014 the editor with the nine decisions and the selector with the sa
   assert.deepEqual(errors,[]);
 });
 // Proves: CL-097-07; TC-097-015 (the prompt in Chromium; oracle WstxContest D11 and
-// WstxStrategy::BuiltinStrategies): with the contest built-in "WW Digi" and a saved copy "WW Digi
+// WstxStrategies::BuiltinStrategies): with the contest built-in "WW Digi" and a saved copy "WW Digi
 // fast" the prompt offers "WW Digi" first (chosen) and then "WW Digi fast"; its controls are the
 // contest, the period and the strategy only (no operation choice, repetitions or retry pause);
 // Start sends one PUT {active "WW Digi", contest {ww_digi, start, end}}; the status reads "Contest
@@ -3644,7 +3644,7 @@ test('TC-074-002 the strategy line with None and no strategy run shows the autom
   await run(null);await status('Automation idle');assert.equal(reads(),3);
   assert.deepEqual(errors,[]);
 });
-// The views of station state a page shows (WstxStationProtocol::PushedStationState), read in the page.
+// The views of station state a page shows (WstxStationLink::PushedStationState), read in the page.
 function stationViews(){
   const q=s=>document.querySelector(s),a=q('#qso-auto'),sel=q('#strategy-name'),use=q('#qso-pskr'),layer=q('#free-tx-slots');
   return {line:q('#station-automation').textContent,active:q('#station-automation').dataset.active??null,
@@ -4038,7 +4038,7 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
 // alert history, Sound and Browser notification (off by default; permission asked only on
 // the click). The station's alert snapshots are hand-written fixtures; the page's
 // Notification and AudioContext are recording doubles; the expected lines, tones and
-// notifications are written here from WstxStrategy::Alert.
+// notifications are written here from WstxRankingControl::Alert.
 test('TC-042-007 Alert history, sound and browser notification',{timeout:60000},async t=>{
   let view;const puts=[],clears=[];let history=[],revision=1;
   const strategy={name:'CQ',class:'award',goals:['new_call'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,value:['most_wanted'],callers_first:true,cq_when_no_target:false,repetitions:4,quiet_minutes:10,treat_73_as_cq:false,window:{kind:'all'}};
@@ -5344,7 +5344,7 @@ test('TC-097-019 the model carries no superseded wording',async()=>{
   ];
   assert.deepEqual(scope.flatMap(span=>[P1,P2,P3].flatMap(re=>hits(span,re))),[],'(1) run vocabulary in a rewritten element');
   // (2) No old setting vocabulary anywhere, except the kept texts: the refused-keys sentences of
-  // WstxStrategy::Strategy and WstxContest::ContestSelection, StrategyConfiguration's upgrade text,
+  // WstxStrategy::Strategy and WstxStrategies::ContestSelection, StrategyConfiguration's upgrade text,
   // TC-097-001 and TC-097-002.
   const OLD=/S&P|operation "sp"|\bsp:|[Rr]epetitions before leaving|cq_when_no_target|CQ when no target|quiet_minutes|GoalNeeded|enum def Goal|always answered|Callers of my call first|award strateg|class award/;
   const sentence=(span,lead,end)=>{

@@ -4,9 +4,9 @@
 //! (WstxMcp::OperatingAutomation with a strategy) both use these verdicts; the browser
 //! never evaluates a strategy itself. Routes: GET /strategy (StrategySnapshot), PUT
 //! /strategy (configuration; a changed selection ends a run and, while Auto is on, starts
-//! the new one), POST /strategy/auto (WstxStrategy::AutoToggle), POST /strategy/evaluate (verdicts of retained live rows), #42 GET /strategy/alerts and POST
-//! /strategy/alerts/clear (WstxStrategy::Alert), POST /strategy/most-wanted/download
-//! (WstxStrategy::MostWantedList), GET /strategy/contests (WstxContest::ContestHttp).
+//! the new one), POST /strategy/auto (WstxAutoControl::AutoToggle), POST /strategy/evaluate (verdicts of retained live rows), #42 GET /strategy/alerts and POST
+//! /strategy/alerts/clear (WstxRankingControl::Alert), POST /strategy/most-wanted/download
+//! (WstxRankingControl::MostWantedList), GET /strategy/contests (WstxStrategies::ContestHttp).
 use crate::*;
 use axum::extract::RawQuery;
 use recording_http::authorize;
@@ -22,11 +22,11 @@ pub const FILE_NAME: &str = "strategy.json";
 pub const BODY_MAX: usize = 32_768;
 pub const STRATEGIES_MAX: usize = 16;
 pub const EVALUATE_MAX: u64 = 2048;
-/// #42 WstxStrategy::IgnoreLists bounds.
+/// #42 WstxRankingControl::IgnoreLists bounds.
 pub const IGNORE_CALLS_MAX: usize = 100;
 pub const SESSION_IGNORE_MAX: usize = 64;
 pub const SESSION_IGNORE_MINUTES: u64 = 30;
-/// #42 WstxStrategy::Alert bounds: the history length and the dedupe window.
+/// #42 WstxRankingControl::Alert bounds: the history length and the dedupe window.
 pub const ALERT_HISTORY_MAX: usize = 100;
 pub const ALERT_DEDUPE_MS: i64 = 10 * 60_000;
 const FILE_BYTES_MAX: u64 = 262_144;
@@ -244,7 +244,7 @@ pub(crate) enum Region {
     Dx,
     Selected(Vec<String>),
 }
-/// WstxStrategy::WorkedWindow; dates are YYYYMMDD.
+/// WstxRankingControl::WorkedWindow; dates are YYYYMMDD.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Window {
     All,
@@ -328,7 +328,7 @@ impl Strategy {
         self.contest.and_then(crate::contest::profile)
     }
 }
-/// WstxStrategy::BuiltinStrategies: the five built-ins of class strategy, in this order.
+/// WstxStrategies::BuiltinStrategies: the five built-ins of class strategy, in this order.
 pub(crate) fn builtins() -> &'static [Strategy] {
     static TABLE: std::sync::OnceLock<Vec<Strategy>> = std::sync::OnceLock::new();
     TABLE.get_or_init(|| {
@@ -363,7 +363,7 @@ pub(crate) fn builtins() -> &'static [Strategy] {
         ]
     })
 }
-/// WstxStrategy::BuiltinStrategies: one read-only contest built-in per contest of the table,
+/// WstxStrategies::BuiltinStrategies: one read-only contest built-in per contest of the table,
 /// with the contest defaults.
 pub(crate) fn contest_builtins() -> &'static [Strategy] {
     static TABLE: std::sync::OnceLock<Vec<Strategy>> = std::sync::OnceLock::new();
@@ -392,7 +392,7 @@ fn is_builtin(name: &str) -> bool {
         .chain(contest_builtins())
         .any(|b| b.name.eq_ignore_ascii_case(name))
 }
-/// WstxStrategy::StrategyConfiguration.
+/// WstxStrategies::StrategyConfiguration.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Config {
     pub continent: Option<String>,
@@ -890,7 +890,7 @@ pub(crate) fn parse_config(v: &Value, table: Option<&crate::dxcc::Table>) -> Res
         }
         ignore_calls.push(c);
     }
-    // WstxContest::ContestSelection (#97): a contest goes with active naming a contest strategy
+    // WstxStrategies::ContestSelection (#97): a contest goes with active naming a contest strategy
     // of its profile, and a contest strategy only with its contest.
     let contest = match v.get("contest") {
         None | Some(Value::Null) => None,
@@ -1160,8 +1160,8 @@ impl Config {
         }
         v
     }
-    /// The contest in force (WstxContest::ContestSelection): with Auto on it runs
-    /// (WstxContest::ContestRun), with Auto off it only marks.
+    /// The contest in force (WstxStrategies::ContestSelection): with Auto on it runs
+    /// (WstxAutoControl::ContestRun), with Auto off it only marks.
     pub(crate) fn automatic_contest(&self) -> Option<crate::contest::Selection> {
         self.contest
     }
@@ -1170,7 +1170,7 @@ impl Config {
         self.contest
             .is_some_and(|c| c.profile.automation == crate::contest::AutomationClause::Forbidden)
     }
-    /// A selection: an active strategy or a contest (WstxStrategy::AutoToggle).
+    /// A selection: an active strategy or a contest (WstxAutoControl::AutoToggle).
     pub(crate) fn selected(&self) -> bool {
         self.active.is_some() || self.contest.is_some()
     }
@@ -1340,7 +1340,7 @@ struct SessionEntry {
     band: Option<String>,
     until: Instant,
 }
-/// #42 WstxStrategy::IgnoreLists session list: station memory only, at most 64 entries in
+/// #42 WstxRankingControl::IgnoreLists session list: station memory only, at most 64 entries in
 /// the order added, each ending at its expiry; any change of the observed station band
 /// empties it.
 #[derive(Clone, Debug, Default)]
@@ -1651,7 +1651,7 @@ pub(crate) struct Verdict {
     pub grey: bool,
     pub why: String,
     pub kind: Option<Kind>,
-    /// #63 what a contest adds (WstxContest::ContestVerdict).
+    /// #63 what a contest adds (WstxOperatingChain::ContestVerdict).
     pub contest: Option<crate::contest::ContestValue>,
 }
 impl Verdict {
@@ -1830,7 +1830,7 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
     out.extend(rest);
     out
 }
-/// #97 a contest strategy's verdicts: the contest's (WstxContest::ContestVerdict, the contest's
+/// #97 a contest strategy's verdicts: the contest's (WstxOperatingChain::ContestVerdict, the contest's
 /// rules first), then the strategy's bands and its country, US state and CQ target lists on top,
 /// ranked by ContestValueOrder with the strategy's callers_first.
 pub(crate) fn evaluate_contest(
@@ -1925,7 +1925,7 @@ fn window_dates(window: Window) -> Option<(u32, u32)> {
         Window::FromTo(first, last) => Some((first, last)),
     }
 }
-/// WstxStrategy::WorkedWindow for the station step: never builds on it.
+/// WstxRankingControl::WorkedWindow for the station step: never builds on it.
 pub(crate) fn worked_of(state: &ProfileState, window: Window) -> Option<std::sync::Arc<Worked>> {
     state.logbook.worked_latest(window_dates(window))
 }
@@ -2004,7 +2004,7 @@ fn contest_log(
 }
 
 // ------------------------------------------------------------------ alerts
-/// #42 WstxStrategy::Alert: the station's alert history (memory only) with its live-job
+/// #42 WstxRankingControl::Alert: the station's alert history (memory only) with its live-job
 /// cursor and the dedupe memory (kept apart from the history: Clear keeps it).
 #[derive(Default)]
 struct AlertLog {
@@ -2048,7 +2048,7 @@ struct Inner {
     revision: u64,
     config: Option<Config>,
     error: Option<&'static str>,
-    /// WstxStrategy::AutoToggle: station memory only, off at start.
+    /// WstxAutoControl::AutoToggle: station memory only, off at start.
     auto: bool,
     /// #97 configuration_note: the renames of the upgrade (from, to) until the next PUT.
     notes: Vec<(String, String)>,
@@ -2074,7 +2074,7 @@ pub(crate) struct Owner {
     /// Counts each Auto on, so that the station step never turns off an Auto that was switched
     /// on after it looked at the run (auto_step).
     auto_epoch: std::sync::atomic::AtomicU64,
-    /// WstxStrategy::MostWantedList: a leaf lock over the parsed list; the file is read
+    /// WstxRankingControl::MostWantedList: a leaf lock over the parsed list; the file is read
     /// off the station step (`most_wanted_load`), the step only clones the Arc.
     most_wanted: Mutex<MostWantedState>,
     /// Test seam: the reply of the next Download now in place of the HTTP fetch.
@@ -2117,7 +2117,7 @@ impl Owner {
                             .flatten()
                             .map(|mut c| {
                                 // active never survives a restart (WstxStrategy D2), nor
-                                // does a contest (WstxContest::ContestSelection).
+                                // does a contest (WstxStrategies::ContestSelection).
                                 c.active = None;
                                 c.contest = None;
                                 (v["revision"].as_u64().unwrap_or(0), c, notes)
@@ -2379,7 +2379,7 @@ impl Owner {
             .store(inner.revision, std::sync::atomic::Ordering::Release);
         true
     }
-    /// WstxStrategy::AutoToggle: whether Auto is on.
+    /// WstxAutoControl::AutoToggle: whether Auto is on.
     pub(crate) fn auto(&self, state: &ProfileState) -> bool {
         self.lock(state).auto
     }
@@ -2414,7 +2414,7 @@ impl Owner {
             self.switch_auto(&mut inner, false);
         }
     }
-    /// #42 WstxStrategy::Alert, once per station step: reads the live records past the
+    /// #42 WstxRankingControl::Alert, once per station step: reads the live records past the
     /// cursor once each and records an alert for each new candidate of the active strategy.
     /// Never transmits or changes a contact or run.
     pub(crate) fn alert_step(&self, state: &ProfileState) {
@@ -2587,7 +2587,7 @@ impl Owner {
         Ok(self.snapshot(state))
     }
     /// POST /strategy/auto {v, profile_id, boot_id, auto, automation_confirmed?} after the
-    /// route checks (WstxStrategy::AutoToggle): the requested value. auto true needs a
+    /// route checks (WstxAutoControl::AutoToggle): the requested value. auto true needs a
     /// selection (409 not_configured strategy) and, for a contest whose AutomationClause is
     /// forbidden, automation_confirmed true (400 invalid_request automation_confirmed).
     pub(crate) fn auto_request(&self, state: &ProfileState, body: &Value) -> Result<bool, Refusal> {
@@ -2624,7 +2624,7 @@ impl Owner {
     }
     /// PUT /strategy after the route checks: the snapshot and whether active changed (the
     /// route then ends the run and, while Auto is on, starts the new one,
-    /// WstxStrategy::StrategyRun).
+    /// WstxAutoControl::StrategyRun).
     pub(crate) fn put(&self, state: &ProfileState, body: Value) -> Result<(Value, bool), Refusal> {
         let r = &state.recording;
         let keys = [
@@ -2697,7 +2697,7 @@ impl Owner {
         inner.revision = revision;
         inner.error = None;
         inner.notes.clear();
-        // WstxStrategy::AutoToggle: selecting None turns Auto off (in this revision).
+        // WstxAutoControl::AutoToggle: selecting None turns Auto off (in this revision).
         if !config.selected() {
             inner.auto = false;
         }
@@ -2785,7 +2785,7 @@ impl Owner {
             .config(state)
             .ok_or(("not_configured", Some("configuration".into())))?;
         self.most_wanted_load(state);
-        // WstxContest::ContestVerdict: a draft is a preview (a contest draft over the contest in
+        // WstxOperatingChain::ContestVerdict: a draft is a preview (a contest draft over the contest in
         // force, or its contest's period from now); else the active strategy.
         let chosen = match draft {
             Some(s) => s,
@@ -2922,7 +2922,7 @@ async fn body_of(
         _ => Err(Box::new(refusal("not_found", None))),
     }
 }
-/// WstxStrategy::StrategyRun start and end, on a blocking thread with no strategy lock held:
+/// WstxAutoControl::StrategyRun start and end, on a blocking thread with no strategy lock held:
 /// ends any run and, when `start` and a selection exist, starts the selection's run through
 /// the same internal path as AutomationCommand start (the request's grant; a browser's
 /// selection or Auto on ends a Tx watchdog stop, WatchdogFromOperator). A start that is
@@ -2967,7 +2967,7 @@ pub async fn put(
         Ok(v) => v,
         Err(e) => return *e,
     };
-    // WstxStrategy::StrategyRun: the request's grant starts the run (the boundary guard has
+    // WstxAutoControl::StrategyRun: the request's grant starts the run (the boundary guard has
     // refused an MCP principal: this request is the browser's, #58).
     let access = authorization_http::operating_access_async(&headers, &app)
         .await
@@ -2981,7 +2981,7 @@ pub async fn put(
         }
         // A changed selection ends any run; while Auto is on the new one starts, except a
         // contest whose clause is forbidden: Auto goes off, the confirmation goes only with
-        // Auto on (WstxStrategy::AutoToggle).
+        // Auto on (WstxAutoControl::AutoToggle).
         let forbidden = station
             .strategy
             .config(&state)
@@ -2997,7 +2997,7 @@ pub async fn put(
         Err(_) => refusal("storage_unavailable", None),
     }
 }
-/// POST /strategy/auto (WstxStrategy::AutoToggle): the browser only (the boundary guard has
+/// POST /strategy/auto (WstxAutoControl::AutoToggle): the browser only (the boundary guard has
 /// refused an MCP principal, #58). Auto on ends any running pounce or MCP run and starts the
 /// selection's run; Auto off ends the run at once. Returns the GET /strategy snapshot.
 pub async fn auto_route(
@@ -3084,7 +3084,7 @@ pub async fn clear_alerts_route(
         Err((code, field)) => refusal(code, field.as_deref()),
     }
 }
-/// GET /strategy/contests (WstxContest::ContestHttp): the profiles with their current or
+/// GET /strategy/contests (WstxStrategies::ContestHttp): the profiles with their current or
 /// next period, read at (re)connect and when the period prompt opens.
 pub async fn contests_route(
     State(app): State<App>,

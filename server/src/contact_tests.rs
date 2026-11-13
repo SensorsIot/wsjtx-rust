@@ -775,7 +775,7 @@ fn partner_working_another_call_within_50_hz_stops_in_replying_and_skipped_repor
             s.deliver(&[elsewhere]);
             assert_eq!(!s.armed(), stops, "offset {offset} skipped {skipped}");
             assert_eq!(!s.core.view().transmitting, stops);
-            // #39: the stop is an abort, never a halt (WstxTransmit::TransmitHaltUse).
+            // #39: the stop is an abort, never a halt (WstxTransmitControl::TransmitHaltUse).
             assert_eq!(s.core.view().halt_state, HaltState::Idle, "no halt");
             if stops {
                 assert_eq!(
@@ -828,7 +828,7 @@ fn sends(s: &Station) -> Vec<i64> {
 }
 
 // Proves: TC-097-012 (a), (c), (d), (e) (CL-097-06, #93 reproduction of 2026-11-09 14:39 UTC).
-// Oracle: operator #93 "Keep calling, don't count" and the bound of WstxQsoTransmit::TxWatchdog
+// Oracle: operator #93 "Keep calling, don't count" and the bound of WstxQsoControl::TxWatchdog
 // (at most N paused calls per message). 10m FT4, Tx watchdog 6. (a) KE1J works W9XYZ for 8 of his
 // periods: our Tx1 is keyed in each of the 8 following periods, the first 6 paused (WD stays 6),
 // the 7th and 8th counted (5, 4); his RR73 ends it, the 9th..12th count (3..0) and the 13th is
@@ -902,7 +902,7 @@ fn tc_097_012_b_a_busy_station_near_my_tx_moves_tx_clear_of_him() {
     );
 }
 
-// Proves: TC-097-017 (a) (CL-097-06, WstxContact::BusyPartner). Start: KE1J's grid, report and
+// Proves: TC-097-017 (a) (CL-097-06, WstxOperatingChain::BusyPartner). Start: KE1J's grid, report and
 // R-report to W9XYZ start busy_with W9XYZ; an unresolved hash "<...>" starts busy_with "<...>";
 // a hash filled with my call is a message to me (no busy). End: RR73, RRR and 73 to W9XYZ, his CQ
 // and his message to my call each clear it.
@@ -941,7 +941,7 @@ fn tc_097_017_a_busy_starts_and_ends_by_his_own_messages() {
     );
 }
 
-// Proves: TC-097-017 (a) (CL-097-06, WstxContact::BusyPartner, #97 coordinator default). A free
+// Proves: TC-097-017 (a) (CL-097-06, WstxOperatingChain::BusyPartner, #97 coordinator default). A free
 // text has no sender: "TNX QSO" ends busy only when decoded in his period (the parity of his last
 // decode) within 10 Hz of his last decode. FT8, his report to W9XYZ at 1200 Hz in period 0: a free
 // text at 1211 Hz (11 Hz) and one at 1200 Hz in my period (period 1) keep busy; one at 1210 Hz
@@ -970,7 +970,7 @@ fn tc_097_017_a_his_free_text_within_10_hz_in_his_period_ends_busy() {
     }
 }
 
-// Proves: TC-097-017 (b) (CL-097-06, WstxQsoTransmit::TxWatchdog stop point). FT8, limit 6, six
+// Proves: TC-097-017 (b) (CL-097-06, WstxQsoControl::TxWatchdog stop point). FT8, limit 6, six
 // counted Tx1 sends: the send due in period 13 is at the limit. KE1J's busy start published 1.1 s
 // into that period: the send is planned late, keyed and paused (counted stays 6). Published 1.3 s
 // into it: the Tx watchdog stopped it at 1.2 s (Enable Tx off, txWatchdog), nothing keyed.
@@ -1002,7 +1002,7 @@ fn tc_097_017_b_the_stop_point_decides_which_send_a_busy_start_counts_for() {
     }
 }
 
-// Proves: TC-097-017 (c) (CL-097-06, WstxContact::BusyPartner split table, hand-worked). Clear:
+// Proves: TC-097-017 (c) (CL-097-06, WstxOperatingChain::BusyPartner split table, hand-worked). Clear:
 // |Tx - his| at least FT8 100 Hz, FT4 140 Hz. From Tx 1500: FT8 his at 1500 (0 Hz) -> 1400 (1400
 // and 1600 tie, the lower), 1550 -> 1450, 1551 -> 1450 (951 is off the 10 Hz grid), 1599 -> 1490,
 // 1600 stays; FT4 1639 -> 1490 (1639 - 140 = 1499), 1640 stays. Never below 500: Tx 550 his 600 ->

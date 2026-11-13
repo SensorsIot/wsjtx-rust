@@ -6,6 +6,7 @@ package WstxCatLifecycle {
     private import WstxRequirements::'FR-021';
     private import WstxRadioIO::'TC-022-009';
     private import WstxOperatingLayout::'TC-022-010';
+    private import WstxRadioControl::AutomaticCatStatus;
     requirement 'CL-022-04' {
         doc /* Selected target cadence: after confirmed released failed attempt wait
              1,2,4,8seconds on successive failures, then8seconds capped. Use one timer
@@ -37,33 +38,7 @@ package WstxCatLifecycle {
     dependency CL_022_04_to_FR_021 from 'CL-022-04' to 'FR-021';
     dependency CL_022_04_verified_by_TC_022_009 from 'CL-022-04' to 'TC-022-009';
     dependency CL_022_04_verified_by_TC_022_010 from 'CL-022-04' to 'TC-022-010';
-
-    enum def AutomaticCatCondition { enum disabled; enum unauthorized; enum commissioningRequired; enum waitingForDevice; enum connecting; enum ready; enum retryWaiting; enum closing; enum quarantined; }
     enum def AutomaticCatEvent { enum eligible; enum readbackConfirmed; enum attemptFailedReleased; enum delayElapsed; enum disabledOrRevoked; enum identityChanged; enum releaseFailed; enum recoveryConfirmed; }
-    attribute def AutomaticCatStatus {
-        doc /* Target current condition, not behavioral states or another actor. One
-             authority-owned observation per selected radio; boot/connection generation
-             and query sequence still fence every fact. A retained frequency is not
-             fresh in any condition except ready with its matching observation proof.
-             Existing strict version1 status objects remain unchanged; expose this
-             additive target status via POST /authorization/v1/status with
-             AuthStatusRequest; same-origin browser POST supplies actual Origin, not a
-             script-forged header. Preserve exact Origin/TLS before auth, active scoped
-             grant (401 otherwise), no CORS and Cache-Control:no-store. Missing/wrong
-             Origin on accepted POST403; legacy GET/profile absence policy is unchanged.
-             Read-only snapshot: no identity/grant/session/receipt/native effects or
-             CAT retry scheduling. GET on this new path405/no effects; no fallback.
-             Strict response version1,scope (AuthWireScope projection),condition,
-             error,retry_after_ms,commissioned,receive_state. Error is bounded mapped
-             code/null, retry_after_ms safe integer0..8000/null, commissioned Boolean;
-             receive_state is existing authoritative audio/decoder summary, no copied
-             numerical/result state. Logical response<=1024bytes, reuse existing status
-             publication/heartbeat and accounting; no parallel timer/poll stream. */
-        attribute scope : WstxStationProtocol::SelectedRadioAuthorizationScope;
-        attribute condition : AutomaticCatCondition;
-        attribute retryAfterMilliseconds : Integer[0..1];
-        attribute errorCode : String[0..1];
-    }
     action def MaintainCommissionedCat {
         doc /* Target CL-022-03/04 action under existing selected-radio authority and
              radio actor/executor. Preconditions: control enabled, matching unrevoked
@@ -85,8 +60,8 @@ package WstxCatLifecycle {
              zero native open/query/set/PTT. Confirmation itself has no native effect.
              Delivered in server/src/cat_lifecycle.rs driven by Recording::cat_maintain;
              failed-close quarantine lasts until station restart. */
-        in scope : WstxStationProtocol::SelectedRadioAuthorizationScope;
-        in commissioning : WstxStationProtocol::RadioCommissioningRecord;
+        in scope : WstxStationLink::SelectedRadioAuthorizationScope;
+        in commissioning : WstxStationLink::RadioCommissioningRecord;
         out current : AutomaticCatStatus;
     }
 }

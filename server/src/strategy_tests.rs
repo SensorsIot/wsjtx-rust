@@ -45,7 +45,7 @@ fn me() -> Station {
     }
 }
 /// The schema 3 goals of the cases written before #97, run as their mapped schema 4 whats
-/// (#97 notes on TC-039-030, TC-039-040: the upgrade table of WstxStrategy::StrategyConfiguration,
+/// (#97 notes on TC-039-030, TC-039-040: the upgrade table of WstxStrategies::StrategyConfiguration,
 /// written out here).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Goal {
@@ -687,7 +687,7 @@ pub(crate) fn strategy_json(name: &str) -> Value {
 }
 /// The presets #97 removed, as schema 3 strategies (their former settings): cases written before
 /// #97 that select one run with a saved user strategy of that name, as the upgrade maps it
-/// (WstxStrategy::BuiltinStrategies).
+/// (WstxStrategies::BuiltinStrategies).
 fn removed_preset(name: &str) -> Option<Value> {
     let (goal, region, value, today, cq) = match name {
         "New calls" => ("new_call", "all", "most_wanted", false, false),
@@ -741,7 +741,7 @@ fn tc_039_001_configuration_is_exact() {
 #[path = "strategy97_tests.rs"]
 mod redesign;
 
-// Proves: TC-039-030 (WstxStrategy::StrategyConfiguration upgrade and restart).
+// Proves: TC-039-030 (WstxStrategies::StrategyConfiguration upgrade and restart).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_030_an_old_file_upgrades_and_active_never_survives_a_restart() {
     let f = station(true).await;
@@ -1136,7 +1136,7 @@ async fn tc_039_032_a_builtin_is_selected_like_any_strategy_and_never_stored() {
 }
 
 // ------------------------------------------------------------------ strategy runs
-/// POST /strategy/auto from the browser (WstxStrategy::AutoToggle).
+/// POST /strategy/auto from the browser (WstxAutoControl::AutoToggle).
 pub(crate) async fn auto(f: &Mcp, on: bool, confirmed: Option<bool>) -> crate::mcp_tests::Reply {
     let mut body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"auto":on});
     if let Some(c) = confirmed {
@@ -1861,7 +1861,7 @@ fn at_skew(f: &Mcp, seconds: u64) {
     f.tick();
 }
 
-// Proves: TC-039-033 (WstxStrategy::StrategyRun, coordinator default): with no client for 60 s a
+// Proves: TC-039-033 (WstxAutoControl::StrategyRun, coordinator default): with no client for 60 s a
 // strategy selects nothing new, the exchange in progress runs on, then it stops no_client.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_033_without_a_client_for_60_s_nothing_new_and_the_exchange_ends() {
@@ -2204,7 +2204,7 @@ async fn tc_039_033_waiting_stops_at_60_s_and_a_client_or_reload_keeps_it() {
     assert_eq!(f.keys(), 0);
 }
 
-// Proves: TC-039-030 (WstxStrategy::WorkedWindow through the store): a QSO of this UTC date
+// Proves: TC-039-030 (WstxRankingControl::WorkedWindow through the store): a QSO of this UTC date
 // counts in today, not in a window that ended before.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_030_today_and_from_to_read_the_log_of_the_window() {
@@ -3156,7 +3156,7 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
 }
 
 // ------------------------------------------------------------------ #42 ignore lists
-// Proves: TC-042-002 (WstxStrategy::IgnoreLists; the expected tiers, reasons, expiries
+// Proves: TC-042-002 (WstxRankingControl::IgnoreLists; the expected tiers, reasons, expiries
 // and selections are written here from the contract, not evaluator output).
 #[test]
 fn tc_042_002_ignore_configuration_is_exact() {
@@ -7964,7 +7964,7 @@ async fn tc_039_050_a_period_counts_only_when_its_levels_reach_bin_921() {
     }
 }
 
-// #65 WstxStrategy::FreeTxSlots on the wire (TC-065-002). Oracle: the operator's rules of
+// #65 WstxAutoControl::FreeTxSlots on the wire (TC-065-002). Oracle: the operator's rules of
 // 2026-11-08 (issue #65 Functionality 1-2) worked by hand from the hand-authored waterfall rows
 // below, and the model's exact keys (WstxMcp::AutomationWire, WstxStationProtocol).
 
@@ -8125,10 +8125,10 @@ async fn free_tx_slots(f: &Mcp) -> Value {
     get["free_tx_slots"].clone()
 }
 
-// #82 WstxStrategy::FreeTxSlots: the station's open slots with or without a run (TC-082-002,
+// #82 WstxAutoControl::FreeTxSlots: the station's open slots with or without a run (TC-082-002,
 // TC-082-003). Oracle: CL-065-01's parity rule and build times (the operator's round 1 Q3 and round
 // 2 Q1 answers), its open rule worked by hand from the hand-authored rows below, and the model's
-// exact keys (WstxMcp::AutomationWire, WstxStationProtocol::PushedStationState).
+// exact keys (WstxMcp::AutomationWire, WstxStationLink::PushedStationState).
 
 /// The station clock stands still at `at`; then one station step (the build runs in it).
 fn step_at(f: &Mcp, at: i64) {

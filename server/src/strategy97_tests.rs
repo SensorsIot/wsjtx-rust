@@ -1578,7 +1578,7 @@ async fn tc_097_009_g_a_caller_is_answered_at_once_in_each_mode() {
     }
 }
 
-// Proves: TC-097-013 (g) (CL-097-04, WstxQsoWire::ContactSnapshot and Transmit's watchdog):
+// Proves: TC-097-013 (g) (CL-097-04, WstxQsoControl::ContactSnapshot and Transmit's watchdog):
 // GET /transmit watchdog.tx_remaining_calls is null in the attended run's own contact, the Tx
 // watchdog's integer once the run is unattended (no client for 60 s) and in a manual contact (the
 // operator's double-click of CQ K1ABC, no run).
@@ -1928,7 +1928,7 @@ async fn tc_097_011_f_busy_pause_off_counts_and_keeps_the_wsjtx_stop() {
     assert_eq!(frequencies(f).await.1, json!(1500), "no split move");
 }
 
-// Proves: TC-097-011 (h) (CL-097-06, hand-worked from WstxContact::BusyPartner). KE1J's grid to
+// Proves: TC-097-011 (h) (CL-097-06, hand-worked from WstxOperatingChain::BusyPartner). KE1J's grid to
 // W9XYZ starts busy (leave.busy true, paused 1, remaining stays 4); his 73 to W9XYZ ends it and
 // that publication's call counts (busy false, remaining 3). Red on the parent: a grid to another
 // call is no busy start (the call counts, remaining 3, busy false).
@@ -1943,7 +1943,7 @@ async fn tc_097_011_h_a_grid_to_another_starts_busy_and_his_73_ends_it() {
     assert_eq!(contact(f).await.2, json!("armed"));
 }
 
-// Proves: TC-097-011 (g) (CL-097-06: "unattended there is no pause"; WstxContact::BusyPartner: the
+// Proves: TC-097-011 (g) (CL-097-06: "unattended there is no pause"; WstxOperatingChain::BusyPartner: the
 // split move applies to every contact that pauses, also while it is not pausing). No client for
 // 60 s, busy_pause on, Tx watchdog 3: KE1J's R-report to W9XYZ at 1510 Hz moves Tx to 1410 (Rx
 // stays 1800, Enable Tx on); the calls while he is busy count (WD 1, 0 after the 2nd and 3rd
@@ -1991,7 +1991,7 @@ async fn tc_097_011_g_unattended_the_busy_calls_count_and_tx_still_moves() {
 }
 
 // Proves: TC-097-015, TC-097-018 (CL-097-07 refusals; CL-097-04 the contest strategy's run;
-// hand-worked from WstxContest D11, WstxStrategy::BuiltinStrategies
+// hand-worked from WstxContest D11, WstxStrategies::BuiltinStrategies
 // and LeaveRule). WW Digi on 20m, the period in force, W1DUP a dupe in the log, Auto on. The
 // built-in "WW Digi" (cq_when_idle on): no CQ after one empty publication, the CQ after the second;
 // CQ JA1XYZ (new multiplier, farthest), CQ K1ABC and the dupe W1DUP calling my call: JA1XYZ
@@ -2092,7 +2092,7 @@ async fn tc_097_015_the_contest_built_in_and_a_saved_contest_strategy_run() {
     );
 }
 
-// Proves: TC-097-011 (i) (CL-097-06, hand-worked from WstxContact::BusyPartner and the #97
+// Proves: TC-097-011 (i) (CL-097-06, hand-worked from WstxOperatingChain::BusyPartner and the #97
 // coordinator default for a free text). KE1J's report to W9XYZ starts busy (paused 1); his report
 // to K2ABC keeps it (busy_with K2ABC, paused 2, remaining stays 4) and Tx stays 1500 (no TxMoveRule
 // move while busy, although tx_move_every no_reports 1 moves at every counted call); his free text

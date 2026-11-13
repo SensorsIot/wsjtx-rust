@@ -86,7 +86,7 @@ package WstxTransmitSchedule {
              is clockNotSynchronized. */
     }
     action def PlanTransmitStart {
-        in mode : WstxOfflineDecode::Mode;
+        in mode : WstxModeProcessing::Mode;
         in nowUtcMs : Integer;
         in clock : ClockState;
         in periodStartUtcMs : Integer;

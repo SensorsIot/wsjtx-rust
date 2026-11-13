@@ -1,8 +1,8 @@
 package WstxSettings {
     private import ScalarValues::*;
-    private import WstxStationProtocol::DisplayProfile;
-    private import WstxProfiles::HttpProfilePut;
-    private import WstxProfiles::HttpProfileRepresentation;
+    private import WstxStationLink::DisplayProfile;
+    private import WstxProfileAccess::HttpProfilePut;
+    private import WstxProfileAccess::HttpProfileRepresentation;
     attribute def BrowserDisplayPreference {
         attribute effectiveOrigin : String;
         attribute profileUuid : String;
@@ -84,11 +84,11 @@ package WstxSettings {
              control or a pointer action outside it. Exactly four sections
              (SettingsSection):
              General: station (display name, callsign, locator, continent, #42 the
-             ignore lists of WstxStrategy::IgnoreLists: permanent calls, session expiry
+             ignore lists of WstxRankingControl::IgnoreLists: permanent calls, session expiry
              minutes, the session list with remove controls; #42 the Alerts section of
-             WstxStrategy::Alert: Sound and Browser notification checkboxes, both off by
+             WstxRankingControl::Alert: Sound and Browser notification checkboxes, both off by
              default, and the alert history newest first with Clear; #39 the Most Wanted
-             section of WstxStrategy::MostWantedList: status with the date and source attribution, and one button Update Most Wanted), clock
+             section of WstxRankingControl::MostWantedList: status with the date and source attribution, and one button Update Most Wanted), clock
              (#43/#92 CL-043-01 a status line only, no source setting: the SNTP state,
              the Windows Time service state, the correction and the stations heard
              (median DT, how many above +0.1 s and below -0.1 s), the warning and its remedy, read with GET /clock when the drawer

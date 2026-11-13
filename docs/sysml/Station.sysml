@@ -65,78 +65,6 @@ package WstxArchitecture {
     view physicalInterconnection : StandardViewDefinitions::InterconnectionView {
         expose physicalStation::*;
     }
-
-    item def StationRequest;
-    item def StationOutcome;
-    item def Recording;
-    item def SampleBlock {
-        doc /* Immutable recorded and live samples feed the same receive boundary.
-             WstxAudio::SampleBlock owns concrete recorded element units,
-             clocks, ownership/lifetime and bounds; WstxRadioIO owns live adaptation.
-             Source-specific metadata and discontinuities must be explicit; a generic
-             architectural item does not settle every future live format. */
-    }
-    item def AudioOutcome;
-    item def ControlRequest { ref part resourceContext : RadioBinding; }
-    item def ControlOutcome { ref item request : ControlRequest; }
-    item def ReadRadioCapabilities :> ControlRequest;
-    item def RadioCapabilitiesOutcome :> ControlOutcome {
-        attribute status : RadioResultStatus;
-        attribute capabilities : RadioCapabilities[0..1];
-        attribute explanation : String[0..1];
-    }
-    item def ReadRadioState :> ControlRequest;
-    item def RadioStateOutcome :> ControlOutcome {
-        attribute status : RadioResultStatus;
-        attribute observedState : RadioState[0..1];
-        attribute explanation : String[0..1];
-    }
-    item def ApplyRadioSettings :> ControlRequest {
-        attribute requested : RadioSettings;
-    }
-    item def RadioSettingsOutcome :> ControlOutcome {
-        attribute status : RadioResultStatus;
-        attribute confirmedState : RadioState[0..1];
-        attribute explanation : String[0..1];
-    }
-    item def ReadRadioMeters :> ControlRequest;
-    item def RadioMetersOutcome :> ControlOutcome {
-        attribute status : RadioResultStatus;
-        attribute meters : RadioMeters[0..1];
-        attribute explanation : String[0..1];
-    }
-    doc /* The operations the CAT driver makes the radio perform, carried by the control
-         request and outcome items through the selected binding and the common authority:
-         readCapabilities(ReadRadioCapabilities) -> RadioCapabilitiesOutcome;
-         readState(ReadRadioState) -> RadioStateOutcome;
-         applySettings(ApplyRadioSettings { requested : RadioSettings }) -> RadioSettingsOutcome;
-         readMeters(ReadRadioMeters) -> RadioMetersOutcome.
-         Each request inherits resourceContext : RadioBinding and every outcome inherits
-         request : ControlRequest. Status distinguishes confirmed results from unavailable,
-         unsupported, rejected and failed operations. Optional payload absence is never
-         confirmation; a returned state contains only actual observations, never requested
-         values copied into observations. A successful acknowledgement without observed
-         state does not establish confirmedState. Concrete readback behaviour remains
-         in the responsible radio contract. Existing CAT request refinements remain valid.
-         These are semantic signatures, not new wire protocols or executable adapters. */
-    item def ProcessingRequest {
-        doc /* Receive job/cancel lifecycle correlates profile, boot, source, job and
-             generation with immutable settings/results. WstxRecordingReceive owns
-             recorded spectrum lifetimes, bounds and cancellation; WstxOfflineDecode
-             refines mode settings/results on that lifecycle. Transmit lifecycle and
-             independent halt remain outside receive jobs. */
-    }
-    item def ProcessingResult {
-        doc /* WstxReceiveSpectrum::SpectrumFrame owns spectrum units, identity,
-             bounds and replaceable display delivery. WstxOfflineDecode::ResultRecord
-             and WstxLiveReceive::ResultPage own mode payloads and required result
-             delivery/retention.
-             These have different delivery obligations despite sharing processing. */
-    }
-    item def EncodeRequest;
-    item def Waveform;
-    item def ProfileRequest;
-    item def ProfileOutcome;
     part def BrowserClient {
         attribute localDisplayLevels : WstxSignalArea::DisplayLevels;
         attribute localDisplayPreference : WstxSettings::BrowserDisplayPreference;
@@ -147,7 +75,7 @@ package WstxArchitecture {
         doc /* Presentation and preferences are frontend-owned. Waterfall frequency span
              is independent of physical receiver filter width and the radio's own scope. */
         doc /* Own presentation/local filtering/color, pending/stale state and requests; not authoritative radio state, timing-critical modulation or transmit authority. */
-        doc /* Holds station state from one snapshot plus the station's pushed events and does not poll it (WstxStationProtocol::PushedStationState, the governing rule of this exchange). */
+        doc /* Holds station state from one snapshot plus the station's pushed events and does not poll it (WstxStationLink::PushedStationState, the governing rule of this exchange). */
         port station : BrowserExchange;
     }
     part def Frontend {
@@ -256,7 +184,7 @@ package WstxArchitecture {
         port audioStatus : ~AudioStatus;
     }
     part def WebAdapter {
-        attribute privateRuntimeInputs : WstxStationProtocol::RuntimeInputs;
+        attribute privateRuntimeInputs : WstxStationLink::RuntimeInputs;
         attribute effectiveEndpoint : WstxStationProtocol::EndpointPolicy;
         doc /* Runtime inputs and effective transport/authentication settings are distinct
              from saved endpoint intent. No credential values are instantiated here. */
@@ -270,11 +198,11 @@ package WstxArchitecture {
         port recording : RecordingTransfer;
     }
     part def McpAdapter {
-        doc /* Own protocol validation/caller context and configured station-selection/automation requests. No independent station state, backend access or separate transmit permission; same station operations and safety policy as browser. Delivered (#12) as the station's Streamable HTTP endpoint mapping each tool onto one existing station route in-process (WstxMcpEndpoint::ToolCatalog); the configured automation run is owned with the contact engine (WstxMcp::OperatingAutomation) and reaches it only through ContactCommand. */
+        doc /* Own protocol validation/caller context and configured station-selection/automation requests. No independent station state, backend access or separate transmit permission; same station operations and safety policy as browser. Delivered (#12) as the station's Streamable HTTP endpoint mapping each tool onto one existing station route in-process (WstxMcpInterface::ToolCatalog); the configured automation run is owned with the contact engine (WstxMcp::OperatingAutomation) and reaches it only through ContactCommand. */
         port station : StationOperations;
     }
     part def PersistedProfile {
-        attribute configuration : WstxProfiles::ProfileDocument;
+        attribute configuration : WstxProfileAccess::ProfileDocument;
         doc /* Backend-owned saved configuration uses exactly the canonical profile schema.
              Live operating selection, browser preference and runtime secrets are separate. */
         doc /* Bootstrap/profile owns selection, stable identity, endpoints, exclusive ownership, validation and storage; not DSP or browser state. */
@@ -310,7 +238,7 @@ package WstxArchitecture {
         port processing : ReceiveProcessing;
     }
     part def ModeFunctions {
-        attribute currentReceiveSettings : WstxOfflineDecode::Settings[0..1];
+        attribute currentReceiveSettings : WstxModeProcessing::Settings[0..1];
         attribute intendedModeCapabilities : WstxRequirements::ModeCapability[*];
         doc /* Pure protocol/symbol/waveform and decoding calculations with independent vectors; no filesystem/hardware/network/wall-clock dependency. */
         doc /* Pure receive calculations and encoding/waveform generation depend on no
@@ -347,7 +275,7 @@ package WstxArchitecture {
     part def AudioInterface {
         attribute configuredIntent : WstxAudio::DeviceIntent;
         attribute observedState : WstxAudio::AudioState;
-        attribute observedNativeFormat : WstxAudio::NativeFormat[0..1];
+        attribute observedNativeFormat : WstxAudioStreams::NativeFormat[0..1];
         attribute observedNativeRateHz : Integer[0..1];
         attribute observedNativeChannels : Integer[0..1];
         attribute observedNativeEndpointId : String[0..1];
@@ -361,7 +289,7 @@ package WstxArchitecture {
         port backend : AudioExchange;
     }
     part def RadioControlInterface {
-        attribute configuredIntent : WstxProfiles::ControlSelection;
+        attribute configuredIntent : WstxRadioControl::ControlSelection;
         attribute observedState : WstxRadioIO::CatState;
         attribute currentFacts : WstxRadioFacts::RadioFacts[0..1];
         attribute frequencyProvenance : WstxRadioFacts::FactProvenance;
@@ -378,8 +306,8 @@ package WstxArchitecture {
         port host : ~AudioExchange;
     }
     part def RustRadioDriver {
-        attribute connectionSettings : WstxProfiles::ControlSelection;
-        attribute observed : WstxRadioIO::RadioObservation[0..1];
+        attribute connectionSettings : WstxRadioControl::ControlSelection;
+        attribute observed : WstxRadioControl::RadioObservation[0..1];
         port authorized : ~RadioControl;
     }
     part def StationProcess {

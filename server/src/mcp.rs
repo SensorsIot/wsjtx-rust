@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! WstxMcpEndpoint::McpEndpoint: the station's MCP Streamable HTTP endpoint (POST /mcp).
+//! WstxMcpInterface::McpEndpoint: the station's MCP Streamable HTTP endpoint (POST /mcp).
 //! Dual-era: modern 2026-07-28 (per-request `_meta`, `server/discover`) and legacy
 //! 2025-11-25/2025-06-18 (`initialize`, stateless: no Mcp-Session-Id). 2025-03-26 is not
 //! offered: it requires JSON-RPC batches, which this endpoint refuses.
@@ -132,7 +132,7 @@ const VIEWS: [(&str, &str); 9] = [
     ("strategy", "/strategy"),
     ("alerts", "/strategy/alerts"),
 ];
-/// The station routes an MCP tool call dispatches to (WstxMcpEndpoint::ToolCatalog).
+/// The station routes an MCP tool call dispatches to (WstxMcpInterface::ToolCatalog).
 fn tool_route(method: &Method, path: &str) -> bool {
     match *method {
         Method::GET => path == "/receive/results" || VIEWS.iter().any(|(_, p)| *p == path),
@@ -184,7 +184,7 @@ pub(crate) async fn principal_guard(
     }
     response
 }
-/// WstxMcpEndpoint::ToolCatalog, in this fixed order.
+/// WstxMcpInterface::ToolCatalog, in this fixed order.
 pub fn tools() -> Value {
     let output = json!({"type":"object","properties":{"v":{"const":1},"tool":{"type":"string"},
         "status":{"type":"integer"},"result":{}},"required":["v","tool","status","result"],"additionalProperties":false});
@@ -436,7 +436,7 @@ pub async fn endpoint(
             );
         }
     };
-    // #39 an authenticated client is here (WstxStrategy::StrategyRun; MCP is per request).
+    // #39 an authenticated client is here (WstxAutoControl::StrategyRun; MCP is per request).
     if let Some(p) = &app.profile {
         p.recording.clients.mcp_request();
     }

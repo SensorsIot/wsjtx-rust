@@ -161,7 +161,7 @@ fn qso_refused() -> Station {
 }
 /// The current QSO is a contact that never pauses for a busy partner (an MCP policy run's
 /// contact, CL-097-06): his message to another call on my Tx frequency stops it. A manual
-/// contact pauses and moves Tx clear instead (WstxContact::BusyPartner, TC-097-017).
+/// contact pauses and moves Tx clear instead (WstxOperatingChain::BusyPartner, TC-097-017).
 fn not_pausing(s: &mut Station) {
     s.engine.automated = Some(Automated {
         contact_id: id(s),

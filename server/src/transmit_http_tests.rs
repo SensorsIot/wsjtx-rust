@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 // Proves: CL-009-03, CL-009-04; TC-008-003. The actual station transmit owner with the
 // automatic CL-022 lifecycle and an independent scripted CI-V peer; wire strictness of
-// WstxTransmitWire::TransmitWire on the actual router.
+// WstxTransmitControl::TransmitWire on the actual router.
 use super::*;
 use crate::cat_lifecycle::{Gate, Key};
 use crate::cat_lifecycle_tests::{Device, ENDPOINT, attach_peer};

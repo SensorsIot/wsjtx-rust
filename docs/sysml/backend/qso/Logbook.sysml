@@ -412,7 +412,7 @@ package WstxLogbook {
              (DecodedEntity, #55); LoTW highlighting is not adopted (B-list of #25). The
              station determines it on each decoded record it serves (worked_status,
              DecodedEntity) and the browser sends no query (#10
-             WstxStationProtocol::PushedStationState); a row without the key shows unknown
+             WstxStationLink::PushedStationState); a row without the key shows unknown
              (no indicator): a hashed or absent call, or no band known. Indication uses a
              text/icon label plus colour; it changes no decoding, sequence or log.
              Award standing (#10, operator 2026-11-04, consumed by the #39 award

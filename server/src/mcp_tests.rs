@@ -407,7 +407,7 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
     );
     assert!(saved.is_ok());
     f.state.logbook.worked_set().unwrap();
-    // Modern discovery and the fixed WstxMcpEndpoint::ToolCatalog.
+    // Modern discovery and the fixed WstxMcpInterface::ToolCatalog.
     let d = f.modern("server/discover", json!({})).await;
     assert_eq!(d.status, StatusCode::OK);
     assert_eq!(

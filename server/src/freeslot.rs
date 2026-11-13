@@ -73,7 +73,7 @@ fn on_upper_edge(f: u32, width: u32) -> bool {
 pub(crate) fn split_clear(mode: Mode, f: u32, d: u32) -> bool {
     (i64::from(f) - i64::from(d)).abs() >= i64::from(width_hz(mode)) + CLEARANCE_HZ
 }
-/// #97 WstxContact::BusyPartner split frequency: FreeTxSlot's grid from 500 Hz inside the Tx range,
+/// #97 WstxOperatingChain::BusyPartner split frequency: FreeTxSlot's grid from 500 Hz inside the Tx range,
 /// clear of his signal at `his_signal` (`split_clear`); of them those overlapping no station
 /// `decoded` while one is free, and those at least 50 Hz from a frequency his PSK Reporter spots
 /// show him decoding in my Tx parity (`his`) while one is free; the nearest to `current`, the lower
@@ -404,7 +404,7 @@ pub(crate) struct Numbers {
     pub level: f64,
     pub floor: f64,
 }
-/// WstxStrategy::FreeTxSlots Open (#82): the Tx frequencies f of FreeTxSlot's candidate grid
+/// WstxAutoControl::FreeTxSlots Open (#82): the Tx frequencies f of FreeTxSlot's candidate grid
 /// (every STEP_HZ inside the Tx range, `band`) whose compared value is 0 (at or under the floor;
 /// None, no counted period, is not 0) and whose signal [f, f + width) overlaps no station
 /// `decoded` in a counted period. No other filter, no fallback, no ranking, no limit.
@@ -419,7 +419,7 @@ pub(crate) fn open_slots(
         .filter(|f| !occupied(*f, decoded, width) && value(*f).map(compared) == Some(0))
         .collect()
 }
-/// WstxStrategy::FreeTxSlots Open ranges (#82): the union of the half-open signals [f, f + width)
+/// WstxAutoControl::FreeTxSlots Open ranges (#82): the union of the half-open signals [f, f + width)
 /// of the ascending open `slots`; overlapping signals join, touching ones stay separate.
 pub(crate) fn open_ranges(mode: Mode, slots: &[u32]) -> Vec<(u32, u32)> {
     let width = width_hz(mode);
@@ -703,7 +703,7 @@ fn parity_name(of: Parity) -> &'static str {
         Parity::Odd => "odd",
     }
 }
-/// The value of one build (#82 WstxStrategy::FreeTxSlots, WstxMcp::AutomationWire
+/// The value of one build (#82 WstxAutoControl::FreeTxSlots, WstxMcp::AutomationWire
 /// free_tx_slots): {at_utc_ms, mode, rx_parity, qso, periods (the counted number), open [[lo_hz,
 /// hi_hz], ...]}, no per-slot numbers.
 pub(crate) fn value(

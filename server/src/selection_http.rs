@@ -91,7 +91,7 @@ const STATE_IDENTITY: [&str; 5] = [
     "snapshot_sequence",
     "monotonic_ms",
 ];
-/// WstxOperatingReceive::SelectionStateEvent: the snapshot GET /receive/selection gives this
+/// WstxStationCommands::SelectionStateEvent: the snapshot GET /receive/selection gives this
 /// station now.
 pub(crate) fn pushed_view(state: &ProfileState) -> Option<Value> {
     let cat = state.store.lock().ok()?.document.control.mode == "cat";

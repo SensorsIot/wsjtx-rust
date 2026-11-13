@@ -1436,7 +1436,7 @@ fn base26(mut n: u32) -> String {
     s
 }
 
-// Proves: TC-039-030 WstxStrategy::WorkedWindow off the station step: the last set at once,
+// Proves: TC-039-030 WstxRankingControl::WorkedWindow off the station step: the last set at once,
 // never built on the caller's thread; the new one follows on its own thread.
 #[test]
 fn worked_latest_returns_the_last_set_and_builds_off_the_caller() {
@@ -1480,7 +1480,7 @@ fn worked_latest_returns_the_last_set_and_builds_off_the_caller() {
     }
 }
 
-// Proves: TC-039-030 WstxStrategy::WorkedWindow: only the records of the window, cached until
+// Proves: TC-039-030 WstxRankingControl::WorkedWindow: only the records of the window, cached until
 // the log changes, a record without a date only for all time.
 #[test]
 fn worked_window_reads_only_the_dated_records_and_is_cached_per_revision() {

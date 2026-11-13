@@ -104,7 +104,7 @@ async function fetchSnapshot(){
     if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&value.boot_id===profileData?.boot_id&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence)){snap=value;render();}heldWake();}
   }catch{}
 }
-// WstxQsoWire::ContactStateEvent (#10): show what recording.js holds from the station's events,
+// WstxQsoControl::ContactStateEvent (#10): show what recording.js holds from the station's events,
 // unless this client's own read is newer.
 function stateShow(){
   const view=contactHeld;if(!view)return;
@@ -112,7 +112,7 @@ function stateShow(){
   if(valid(view)&&view.boot_id===profileData?.boot_id){stationSample(view.utc_ms);if(!snap||snap.boot_id!==view.boot_id||view.snapshot_sequence>=snap.snapshot_sequence){snap=view;render();}}
   heldWake();
 }
-// WstxStationProtocol::PushedStationState (#74): a new boot drops the contact state at once;
+// WstxStationLink::PushedStationState (#74): a new boot drops the contact state at once;
 // the QSO pane shows its freshly loaded form until the new boot's read or first event.
 addEventListener('station-boot',()=>{snap=null;render();});
 // #10 PushedStationState: an accepted command's result comes in contact.state; the next command
@@ -336,7 +336,7 @@ let automationLoading=null,automationView=null;
 function loadAutomation(){
   if(automationLoading)return automationLoading;
   const loading=automationLoading=stationFetch('/automation',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(a=>{
-    // WstxStationProtocol::PushedStationState: a reply of another boot is discarded.
+    // WstxStationLink::PushedStationState: a reply of another boot is discarded.
     if(loading!==automationLoading||a?.v!==1||a.boot_id!==profileData?.boot_id)return;
     automationView=a;freeTxSlotsRead(a);pskrLinesShow();leaveShow();dispatchEvent(new CustomEvent('wstx-automation',{detail:a}));
   }).catch(()=>{}).finally(()=>{if(loading===automationLoading)automationLoading=null;});
@@ -350,7 +350,7 @@ function leaveLabel(){
   const n=l.remaining;
   return l.mode==='calls'?`Leave in ${n} calls`:l.mode==='until_logged'?(n==null?'Until logged':`Until logged · leave if gone ${n} min`):l.staying?'Stay · most valuable':`Leave in ${n} Tx changes`;
 }
-// #97 WstxContact::BusyPartner: while the partner is busy " · <call> busy with <other>, not
+// #97 WstxOperatingChain::BusyPartner: while the partner is busy " · <call> busy with <other>, not
 // counted (<k>/<N>)" follows WD:n (k the paused calls of the message due) or, in a run's own
 // contact, the leave label (k the run's paused calls).
 function busySuffix(wd,k){
@@ -653,7 +653,7 @@ function loadStartup(){
   const loading=startupLoading=stationFetch('/receive/startup',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>r.ok?r.json():null).then(v=>{if(loading===startupLoading&&v?.v===1&&currentBoot(v)){startupView=v;startupShow();}}).catch(()=>{}).finally(()=>{if(loading===startupLoading)startupLoading=null;});
   return loading;
 }
-// WstxStationProtocol::PushedStationState (#74): a new boot drops the automation, Free Tx slots,
+// WstxStationLink::PushedStationState (#74): a new boot drops the automation, Free Tx slots,
 // PSK Reporter and Monitor off at startup state of the previous boot at once; each view shows
 // the form of a freshly loaded page until its own read or event of the new boot.
 let bootReads=false;
@@ -1025,7 +1025,7 @@ render();
 if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){readySocket=socket;load();loadStartup();loadPskr();if(automationAnnounced===socket)loadAutomation();}
 // #82: a free_tx_slots.state the socket carried before this client loaded is drawn now.
 if(freeTxSlotsHeld&&freeTxSlotsHeld.current===socket)freeTxSlotsPushed(freeTxSlotsHeld.value);
-// WstxTransmitWire::TransmitWire: explicit requests only; the server plans, keys and halts.
+// WstxTransmitControl::TransmitWire: explicit requests only; the server plans, keys and halts.
 document.querySelector('#transmit-status').insertAdjacentHTML('afterend','<label>Message<input id="tx-message" maxlength="37" value="CQ"></label><label>Mode<select id="tx-mode" disabled title="Follows the station operating mode"><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label><label>Tx offset Hz<input id="tx-offset" type="number" min="200" max="2950" value="1500"></label><label>Period<select id="tx-parity"><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><p><button type="button" id="tx-arm">Arm (Enable Tx)</button> <button type="button" id="tx-disarm">Disarm</button> <button type="button" id="tx-send">Send next period</button> <button type="button" id="tx-tune">Tune</button></p>');
 let transmitSequence=0;
 addEventListener('station-message',event=>{const m=event.detail?.message;if(m?.type==='station.tick'&&[15000,7500].includes(m.data?.period_ms)){const ft4=m.data.period_ms===7500;document.querySelector('#tx-mode').value=ft4?'ft4':'ft8';document.querySelector('#tx-offset').max=ft4?'2916':'2950';}});
@@ -1169,7 +1169,7 @@ const autoButton=$('qso-auto');let autoPosting=false;
 let view=null,viewLoading=null,viewAgain=false,strategyMissing=false,automation=null,run=null,refusal=null,pounceConfirmed=false,verdicts=new Map(),evaluatedKey='',evaluating=false,evaluateAgain=false;
 const config=()=>view?.configuration??null;
 const builtins=()=>view?.builtin_strategies??[];
-// WstxStrategy::AutoToggle: station state, read from the snapshot only (never a local guess).
+// WstxAutoControl::AutoToggle: station state, read from the snapshot only (never a local guess).
 const auto=()=>view?.auto===true;
 const active=()=>{const c=config();return [...(c?.strategies??[]),...builtins()].find(s=>s.name===c?.active)??null;};
 // #63 WstxContest: the contest in force and the profiles of GET /strategy/contests.
@@ -1187,7 +1187,7 @@ const strategyRun=()=>runActive()&&run.strategy;
 function loadStrategy(){
   // A change announced during a read reads again: it must not leave an older view.
   if(viewLoading){viewAgain=true;return viewLoading;}
-  // WstxStationProtocol::PushedStationState: a reply of another boot (or of a read a new boot
+  // WstxStationLink::PushedStationState: a reply of another boot (or of a read a new boot
   // dropped) is discarded.
   const loading=viewLoading=stationFetch('/strategy',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>{if(loading===viewLoading)strategyMissing=r.status===404;return r.ok?r.json():null;}).then(v=>{if(loading!==viewLoading||v?.v!==1||v.boot_id!==profileData?.boot_id)return;if(view?.revision!==v.revision){verdicts=new Map();evaluatedKey='';}view=v;show();evaluateShown();}).catch(()=>{}).finally(()=>{if(loading!==viewLoading)return;viewLoading=null;if(viewAgain){viewAgain=false;loadStrategy();}});
   return loading;
@@ -1270,7 +1270,7 @@ function show(){
   decorate();
 }
 // ---------------------------------------------------------------- Auto (QsoPane direct buttons)
-// WstxStrategy::AutoToggle: green while the station says on, grey while off; a click sends one
+// WstxAutoControl::AutoToggle: green while the station says on, grey while off; a click sends one
 // POST /strategy/auto with the other value, for a contest whose rules forbid automatic operation
 // after its warning. Switching off is always possible; on needs a selection and transmit.
 const selected=()=>!!config()?.active||!!selection();
@@ -1389,7 +1389,7 @@ async function automationCommand(action,extra){
   return data;
 }
 async function readAutomation(){const r=await stationFetch('/automation',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!r.ok)throw new Error(`automation ${r.status}`);return r.json();}
-// WstxStrategy::StrategyHttp strategy.state: a HALT's None or another browser's selection.
+// WstxStrategies::StrategyHttp strategy.state: a HALT's None or another browser's selection.
 addEventListener('station-message',event=>{const m=event.detail?.message;if(m?.type==='contact.state'){show();evaluateShown();}else if(m?.type==='strategy.state'&&event.detail?.current===socket&&m.data?.strategy_revision!==view?.revision)loadStrategy();});
 // ---------------------------------------------------------------- continent (Settings > General)
 const continentSelect=$('station-continent');
@@ -1400,7 +1400,7 @@ function showContinent(){
 }
 continentSelect?.addEventListener('change',()=>{const c=config();if(c)saveConfiguration({...c,continent:continentSelect.value||null},'Continent');});
 // ---------------------------------------------------------------- #42 ignore lists
-// WstxStrategy::IgnoreLists: the station keeps both lists and applies them; this client
+// WstxRankingControl::IgnoreLists: the station keeps both lists and applies them; this client
 // only edits them (PUT /strategy for the permanent list, POST /strategy/ignore for the
 // session list) and shows the session list the station returns.
 continentSelect?.closest('label')?.insertAdjacentHTML('afterend','<label>Always ignore (calls)<input id="ignore-calls" spellcheck="false" autocomplete="off" placeholder="K1ABC DL1XYZ" aria-describedby="ignore-help"></label><label>Session ignore (minutes)<input id="ignore-minutes" type="number" min="1" max="720" step="1"></label><div class="op-ignore-session"><small id="ignore-help">Ignored stations are never marked or answered by a strategy. Band Activity right-click adds a station for this session; a band change clears the session list.</small><ul id="ignore-session" aria-label="Ignored this session"></ul></div>');
@@ -1459,7 +1459,7 @@ addEventListener('wstx-row-menu',event=>{
 });
 ignoreItem.addEventListener('click',()=>{const call=ignoreItem.dataset.call;if(call)ignore(call,!sessionIgnored(call));});
 // ---------------------------------------------------------------- #42 Alert
-// WstxStrategy::Alert: the station records an alert for each new candidate of the active strategy; this client
+// WstxRankingControl::Alert: the station records an alert for each new candidate of the active strategy; this client
 // lists the history and announces new alerts as the operator chose (both off by default):
 // a short tone while the page is visible, a browser notification also while it is hidden.
 ignoreList?.closest('.op-ignore-session')?.insertAdjacentHTML('afterend','<div class="op-alerts" style="min-width:0"><strong>Alerts</strong> <small>Each new station the active strategy would call records an alert; alerts never transmit.</small><br><label class="op-check"><input type="checkbox" id="alert-sound">Sound</label> <label class="op-check"><input type="checkbox" id="alert-notify">Browser notification</label> <small id="alert-note" role="status"></small><ul id="alert-history" aria-label="Alert history" style="margin:4px 0 0;padding-left:1.2em;max-height:12em;overflow:auto;overflow-wrap:anywhere"></ul><button type="button" id="alert-clear">Clear alerts</button></div>');
@@ -1525,7 +1525,7 @@ for(const el of [alertSound,alertNotify])for(const type of ['input','change'])el
 addEventListener('pointerdown',()=>{if(audio?.state==='suspended')audio.resume?.();},true);
 addEventListener('station-message',event=>{const {message,current}=event.detail;if(current===socket&&message?.type==='alert.state')loadAlerts(false);});
 addEventListener('station-ready',event=>{if(event.detail===alertSocket)return;alertSocket=event.detail;loadAlerts(true);});
-// WstxStationProtocol::PushedStationState (#74): a new boot drops the previous boot's history at once.
+// WstxStationLink::PushedStationState (#74): a new boot drops the previous boot's history at once.
 addEventListener('station-boot',()=>{alertSeq++;alertView=null;alertSeen=null;showAlerts();});
 if(settingsDrawer)new MutationObserver(()=>{if(!settingsDrawer.hidden)loadAlerts(false);}).observe(settingsDrawer,{attributes:true,attributeFilter:['hidden']});
 if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){alertSocket=socket;loadAlerts(true);}
@@ -1559,7 +1559,7 @@ async function startPounce(call){
 }
 pounceItem.addEventListener('click',()=>{const call=pounceItem.dataset.call;if(!call)return;if(pouncing(call))stopPounce();else startPounce(call);});
 // ---------------------------------------------------------------- #39 Most Wanted list
-// WstxStrategy::MostWantedList in Settings > General: status with the source attribution, an upload
+// WstxRankingControl::MostWantedList in Settings > General: status with the source attribution, an upload
 // the station validates, and Download now, one fetch on the operator's click. No automatic refresh.
 if(typeof block==='function'&&document.querySelector('#settings-general'))block('settings-most-wanted','Most Wanted list',document.querySelector('#settings-general'),'<p class="op-actions"><span id="mw-status" class="op-muted" role="status">No list</span> <button type="button" id="mw-update" title="Fetches the list from clublog.org once, now">Update Most Wanted</button></p><p id="mw-result" class="op-muted" role="status"></p><p id="mw-attribution" class="op-muted"></p><p class="op-muted">A strategy calls the stations on this list first, by their rank, then the strongest; without a list the strongest first. It only changes when you click: Club Log states no terms for it.</p>');
 function showMostWanted(){
@@ -1591,7 +1591,7 @@ const BANDS=['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','
 // WstxStrategy::ValueCriterion in the model's order, with the editor's labels (StrategyEditor).
 const CRITERIA=[['most_wanted','Most wanted (Club Log rank)'],['new_dxcc','New DXCC'],['new_dxcc_band','New DXCC on band'],['new_dxcc_band_mode','New DXCC on band and mode'],['new_call','New call'],['new_call_band','New call on band'],['new_grid','New grid'],['new_grid_band','New grid on band'],['new_cq_zone','New CQ zone'],['new_itu_zone','New ITU zone'],['new_continent','New continent'],['new_prefix','New prefix'],['snr_bucket','SNR bucket (above 0, -10..0, below -10)'],['snr','SNR (stronger first)'],['distance','Distance (farthest first)'],['hears_us','Hears us first (PSK Reporter)']];
 const PSK_CASES=[['heard','He reports and hears us'],['not_heard','He reports, does not hear us'],['no_reports','He does not report']];
-// WstxContest::ContestPrompt: choose the contest, its period (pre-filled from the schedule rule)
+// WstxStrategies::ContestPrompt: choose the contest, its period (pre-filled from the schedule rule)
 // and the operation; the station keeps receiving and HALT stays reachable.
 const contestPrompt=document.createElement('dialog');contestPrompt.id='contest-prompt';contestPrompt.className='op-dialog op-strategy-editor';contestPrompt.setAttribute('aria-labelledby','contest-prompt-title');
 contestPrompt.innerHTML=`<form method="dialog"><header class="se-head"><h2 id="contest-prompt-title">Contest strategy</h2><button type="button" class="op-halt-small" id="contest-prompt-halt" title="Halt Tx: emergency stop (Alt+H)">HALT</button></header>
@@ -1604,7 +1604,7 @@ document.querySelector('main').append(contestPrompt);
 function contestFill(keep){
   const p=contests.find(x=>x.id===$('cp-profile').value)??contests[0];if(!p)return;
   const minute=t=>t?t.slice(0,16):'';
-  // #97 WstxContest::ContestPrompt: the profile's contest built-in first (the default), then every
+  // #97 WstxStrategies::ContestPrompt: the profile's contest built-in first (the default), then every
   // saved contest strategy of that profile; the active one when a selection of it is in force.
   const ofProfile=[...builtins(),...(config()?.strategies??[])].filter(s=>s.class==='contest'&&s.contest===p.id);
   $('cp-strategy').replaceChildren(...ofProfile.map(s=>{const o=document.createElement('option');o.value=s.name;o.textContent=s.name;return o;}));
@@ -1635,7 +1635,7 @@ $('cp-go').addEventListener('click',async()=>{
   if(!start||!end){$('cp-result').textContent='Enter the start and the end of the contest period';return;}
   const utc=t=>`${t.slice(0,16)}Z`;contestSummary=null;
   // Start only selects: whether it transmits is the Auto toggle's, which asks a forbidden clause's
-  // warning (WstxStrategy::AutoToggle); the clause is on screen here.
+  // warning (WstxAutoControl::AutoToggle); the clause is on screen here.
   const profile=$('cp-profile').value,active=$('cp-strategy').value;
   const contest={profile,start:utc(start),end:utc(end)};
   const ok=await saveConfiguration({...c,active,contest},'Contest');
@@ -1658,7 +1658,7 @@ document.querySelector('main').append(editor);
 let drafts=[],current=0,previewTimer=null,previewSeq=0,editorRefusal=null;const notesShown=new Set();
 function editorOpen(){
   const c=config();drafts=structuredClone(c?.strategies??[]);
-  // WstxStrategy::BuiltinStrategies: after the user's, read-only; Save never sends them.
+  // WstxStrategies::BuiltinStrategies: after the user's, read-only; Save never sends them.
   drafts.push(...structuredClone(builtins()));current=Math.max(0,drafts.findIndex(s=>s.name===c?.active));editorRefusal=null;
   editor.querySelector('#strategy-editor-halt').disabled=document.querySelector('#halt-tx')?.disabled??true;
   $('se-result').textContent=c?`My continent ${view.my_continent??'unknown'} (Settings > General) · Save applies at once; selecting marks, Auto transmits`:'Saved strategies unreadable: Save replaces them';

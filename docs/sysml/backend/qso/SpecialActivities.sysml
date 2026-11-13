@@ -349,7 +349,7 @@ package WstxSpecialActivities {
              refused invalid_request field exchange), FT8 and FT4, a boot setting like the
              other activities (not saved). It is refused profile_incomplete with field
              locator, the activity unchanged, while the selected profile's locator
-             (WstxProfiles::Settings) has fewer than 6 characters (empty or 4: WSJT-X only
+             (WstxProfileAccess::Settings) has fewer than 6 characters (empty or 4: WSJT-X only
              warns, "EU VHF Contest messages require a 6-character locator"), and refused
              invalid_call with field callsign while the profile callsign has more than 11
              characters (a hashed slot holds no more; the profile admits 12). The serial is

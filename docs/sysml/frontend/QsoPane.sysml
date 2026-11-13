@@ -42,7 +42,7 @@ package WstxQsoPane {
              transmit state with the last transmitted text, Tx watchdog remaining calls WD:n
              (#97, #91: the Tx watchdog only; in a strategy run's own contact the run's leave label
              instead, WstxStrategy::LeaveCountLabel; a busy partner appended,
-             WstxContact::BusyPartner)
+             WstxOperatingChain::BusyPartner)
              or "Tx watchdog: same message sent N times", visible in every region. Radio toolbar (its period
              and level slots): UTC clock, Tx progress v/15 with Transmitting label, Rx
              level meter 0..90 dB with high/low text labels
@@ -219,7 +219,7 @@ package WstxQsoPane {
              and green, as the Rx marker rgb(48,208,80), in every other (receive) period.
              5. Direct buttons: CQ, Auto, PSK, Tune, HALT, Abort QSO (Esc), Log QSO (#39
              strategydef, operator Q5, Q17, Q29: "Auto" right of CQ, a toggle green while on and
-             grey while off, WstxStrategy::AutoToggle; "PSK", "Use PSK Reporter" as its title,
+             grey while off, WstxAutoControl::AutoToggle; "PSK", "Use PSK Reporter" as its title,
              right of Auto, a toggle green while on, WstxStrategy::PskrUse, disabled while the
              Settings switch is off; both follow only the pushed station state). (SetEnableTx (#37). Operator
              2026-11-03 ("We have two HALT buttons ... I do not understand why we need a Reply

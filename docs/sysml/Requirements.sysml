@@ -514,7 +514,7 @@ package WstxRequirements {
         alias Udp for WstxUdp;
         alias Strategy for WstxStrategy;
         alias ContestStrategies for WstxContest;
-        alias SharedRecord for WstxOfflineDecode::ResultRecord;
+        alias SharedRecord for WstxDecodes::ResultRecord;
         alias ReceiveSpectrum for WstxReceiveSpectrum;
         alias LiveReceive for WstxLiveReceive;
         alias ReceiveStartup for WstxReceiveStartup;
@@ -532,7 +532,6 @@ package WstxRequirements {
         alias StationAuthorityPackage for WstxStationAuthority;
         alias TransmitSchedulePackage for WstxTransmitSchedule;
         alias TransmitClockPackage for WstxTransmitClock;
-        alias TransmitWirePackage for WstxTransmitWire;
         alias TxLevelPackage for WstxTxLevel;
         alias MessageEncodePackage for WstxMessageEncode;
         alias StandardQsoPackage for WstxStandardQso;

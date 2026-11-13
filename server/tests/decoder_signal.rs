@@ -546,9 +546,9 @@ fn crc_valid_unsupported_and_invalid_payloads_are_retained() {
                 serde_json::to_value(d.payload.status).unwrap(),
                 expected["expected_status"]
             );
-            // The status names of WstxOfflineDecode::FrameStatus, read from the model.
+            // The status names of WstxDecodes::FrameStatus, read from the model.
             let statuses = model_values::Model::load()
-                .enum_members("WstxOfflineDecode::FrameStatus")
+                .enum_members("WstxDecodes::FrameStatus")
                 .unwrap_or_else(|e| panic!("model value {e}"));
             let status = serde_json::to_value(d.payload.status).unwrap();
             assert!(

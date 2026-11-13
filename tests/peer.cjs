@@ -28,7 +28,7 @@ function receive(ws, milliseconds = 3000) {
       try { value = JSON.parse(String(data)); } catch (error) {finish(error); return;}
       if (value && typeof value === 'object' && !Array.isArray(value)
           && Object.keys(value).length === 2 && value.v === 1 && value.type === 'heartbeat') return;
-      // WstxQsoWire::ContactStateEvent/StationTickEvent WstxTransmit transmit.state and the pushed recording.state are unsolicited optional events of
+      // WstxQsoControl::ContactStateEvent/StationTickEvent WstxTransmit transmit.state and the pushed recording.state are unsolicited optional events of
       // a display-subscribed peer; like heartbeats they interleave with a response. Only
       // the exact versioned shapes within their byte bounds are skipped.
       if (contactEvent(value, Buffer.byteLength(String(data)))) return;

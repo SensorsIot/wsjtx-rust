@@ -1,4 +1,4 @@
-//! WstxQsoWire::ContactWire log routes: POST/GET /contacts, GET /contacts/export.adi,
+//! WstxQsoControl::ContactWire log routes: POST/GET /contacts, GET /contacts/export.adi,
 //! POST /contacts/imports and GET/PUT /contacts/imports/{id}.
 //! Validation order follows WstxOperatingReceive S2: route, Origin, TLS/session,
 //! size/media/syntax, version/UUIDs/integers, profile, boot, state. Every log mutation

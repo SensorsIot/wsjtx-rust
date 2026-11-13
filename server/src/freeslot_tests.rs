@@ -706,7 +706,7 @@ fn tc_066_002_his_end_applies_among_the_candidates_left_by_decodes() {
     assert!(!open.iter().any(|f| (1460..=1540).contains(f)), "{open:?}");
 }
 
-// #82 WstxStrategy::FreeTxSlots Open and Open ranges (TC-082-001). Oracle: the open rule of
+// #82 WstxAutoControl::FreeTxSlots Open and Open ranges (TC-082-001). Oracle: the open rule of
 // CL-065-01 (value 0 and no counted decode overlapped, no other filter, no fallback, no ranking, no
 // limit) and FreeTxSlot's floor and value, the flat-floor floor F + 0.65 of TC-039-050; every range
 // below is a hand computation written in the comment above its test.
@@ -892,7 +892,7 @@ fn tc_082_001_other_parity_and_uncounted_decodes_close_nothing_the_busiest_perio
 }
 
 // Proves: CL-065-01; TC-082-001, TC-065-001 (#82: replaced by TC-082-001). The value of one build has exactly {at_utc_ms, mode, rx_parity,
-// qso, periods, open} with the ranges as [lo_hz, hi_hz] integer pairs (WstxStrategy::FreeTxSlots
+// qso, periods, open} with the ranges as [lo_hz, hi_hz] integer pairs (WstxAutoControl::FreeTxSlots
 // Value): no run_id, listening, slots or per-slot numbers.
 #[test]
 fn tc_082_001_the_value_of_a_build() {

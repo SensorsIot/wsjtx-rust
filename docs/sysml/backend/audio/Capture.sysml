@@ -1,7 +1,7 @@
 package WstxAudioCapture {
     private import ScalarValues::*;
     private import WstxAudio::DeviceIntent;
-    private import WstxAudio::NativePacket;
+    private import WstxAudioStreams::NativePacket;
     action def CaptureAudio {
         in intent : DeviceIntent;
         out packet : NativePacket;

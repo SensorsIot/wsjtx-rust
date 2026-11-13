@@ -274,7 +274,7 @@ package WstxHttpContentCoding {
              This is the complete six-route allowlist, not prefix matching. The #10
              contact routes (/contact, /contact/*, /contacts, /contacts/*) and
              /transmit/halt are deliberately excluded and stay identity-coded
-             (WstxQsoWire::ContactSnapshot); this allowlist is unchanged. */
+             (WstxQsoControl::ContactSnapshot); this allowlist is unchanged. */
     }
     calc def UncompressedGetLogicalCap {
         in path : String;

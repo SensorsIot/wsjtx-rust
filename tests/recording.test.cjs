@@ -14,8 +14,8 @@ const WebSocket=require('ws');
 const {receive}=require('./peer.cjs');
 const {server,loginPage,browserPort}=require('./support.cjs');
 const {openModel}=require('./model-values.cjs');
-// A bound of the profile's recordings, WstxProfileRecordings::RecordingLimits, read from the model.
-const recordingLimit=feature=>openModel().numberWithUnit(`WstxProfileRecordings::RecordingLimits::${feature}`);
+// A bound of the profile's recordings, WstxRecordingTransfer::RecordingLimits, read from the model.
+const recordingLimit=feature=>openModel().numberWithUnit(`WstxRecordingTransfer::RecordingLimits::${feature}`);
 // Selected HTTPS profile: each browser context enrolls its own CL-022-01 key through the
 // real token form, then the cache is cleared so later cold measurements stay uncached.
 async function enroll(context,origin,token){const p=await context.newPage();await loginPage(p,origin,token,120000);const cdp=await context.newCDPSession(p);await cdp.send('Network.clearBrowserCache');await p.close();}

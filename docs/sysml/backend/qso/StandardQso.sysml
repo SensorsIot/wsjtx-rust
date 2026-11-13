@@ -18,7 +18,7 @@ package WstxStandardQso {
     private import WstxContact::Contact;
     private import WstxContact::ReceivedKind;
     private import WstxContact::SequenceEvent;
-    private import WstxContact::TxSlot;
+    private import WstxOperatingChain::TxSlot;
     // #10 standard FT8 contact (decisions: issue #10 comment 6539901776, 2026-10-31);
     // detailed contract in WstxContact. FT4 rules marked FT4-NOTE there belong to #11.
     requirement 'CL-010-01' {
@@ -148,7 +148,7 @@ package WstxStandardQso {
              Tx4 "DX MYCALL RRR" or "DX MYCALL RR73" per tx4; Tx5 "DX MYCALL 73";
              Tx6 "CQ MYCALL GRID4". MYCALL and GRID4 come from the selected profile's
              callsign and the first four characters of its locator
-             (WstxProfiles::Settings); without a profile callsign, or a locator for
+             (WstxProfileAccess::Settings); without a profile callsign, or a locator for
              Tx1/Tx6, no message set is generated and transmit stays unavailable with
              that reason. Without a DX call only Tx6 exists. Directed CQ (CQ DX/nnn)
              is not offered.
@@ -201,7 +201,7 @@ package WstxStandardQso {
         out prepared : Contact[0..1];
         doc /* CL-010-01. rowIdentity is the full validated profile/boot/source/job/
              generation/sequence tuple of a live result row with a concrete 'from' call:
-             a standard i3=1/2 message (WstxOfflineDecode::StandardFields) whose 'from'
+             a standard i3=1/2 message (WstxDecodes::StandardFields) whose 'from'
              is a concrete call or a hash the station filled in (HashResolution), or a
              nonstandard i3=4 message (#24 S1b), whose 'from' and 'to' are the full call
              and the filled-in hash in their hash_second order, a CQ having 'to' CQ and
@@ -273,7 +273,7 @@ package WstxStandardQso {
              auto_tx_mode(true); AutoRespondPeriod.cpp ~11-32
              isDirectAutoRespondCandidate: addressed to my call, a callsign sender other
              than me, an exchange that is not R+report, RRR, RR73 or 73): while the
-             contact is calling (an own CQ started by the operator; an MCP run keeps its own rules, WstxMcp; a CQ called by automation: the automation answers its callers only with Calling stations are answered on, WstxStrategy::CallerOfMyCall, WstxContest::ContestRun) with Enable Tx,
+             contact is calling (an own CQ started by the operator; an MCP run keeps its own rules, WstxMcp; a CQ called by automation: the automation answers its callers only with Calling stations are answered on, WstxStrategy::CallerOfMyCall, WstxAutoControl::ContestRun) with Enable Tx,
              Auto Seq and Call 1st on (WSJT-X AutoRespondPeriod.cpp observePeriod opens
              the respond period only while Enable Tx is on), the first decoded row of the step, in decode order (row
              sequence), that is a standard message to my call from a concrete call in the

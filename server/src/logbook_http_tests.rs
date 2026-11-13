@@ -1,5 +1,5 @@
 // Cost 2: actual Router over disposable selected profiles (HTTPS grant and plaintext
-// runtime token). Expected codes, keys and caps are written from WstxQsoWire::ContactWire.
+// runtime token). Expected codes, keys and caps are written from WstxQsoControl::ContactWire.
 use super::*;
 use axum::http::Method;
 

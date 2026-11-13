@@ -1,6 +1,6 @@
 package WstxStationAuthority {
     private import ScalarValues::*;
-    private import WstxProfileRecordings::ImportView;
+    private import WstxRecordingTransfer::ImportView;
     action def CancelImport {
         in importId : String;
         out resource : ImportView;
@@ -20,9 +20,4 @@ package WstxStationAuthority {
     }
     action cancelImport : CancelImport;
     dependency importAuthority from cancelImport to WstxArchitecture::physicalStation::backend::stations::station;
-    attribute def AuthStatusRequest {
-        doc /* Strict read-only POST /authorization/v1/status JSON {version:1};
-             no scope/operation/extra keys. GET on this new path405/no effects. */
-        attribute version : Integer = 1;
-    }
 }

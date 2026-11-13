@@ -8,11 +8,11 @@ package WstxModemDecode {
     private import WstxLiveReceive::'CL-007-01';
     private import WstxOperatingLayout::'CL-007-02';
     private import WstxLiveReceive::'TC-004-004';
-    private import WstxOfflineDecode::Mode;
-    private import WstxOfflineDecode::ResultRecord;
+    private import WstxModeProcessing::Mode;
+    private import WstxDecodes::ResultRecord;
     private import WstxOfflineDecode::DecodeBand;
     private import WstxOfflineDecode::'CL-007-09';
-    private import WstxRecordingReceive::DecodeJob;
+    private import WstxModeProcessing::DecodeJob;
     private import ModelBindings::Status;
     private import ModelBindings::Automation;
     private import ModelBindings::ImplementedIn;
@@ -163,7 +163,7 @@ package WstxModemDecode {
         }
         doc /* A record larger than the modem record cap that
              WstxLiveReceive::LiveTimedResultRecord states is not published; the window
-             ends with decode_limit (WstxRecordingReceive::ErrorCode), keeping the records
+             ends with decode_limit (WstxReceiveControl::ErrorCode), keeping the records
              already published. */
         doc /* A frame that starts before the window or runs past its end is subtracted and
              never published, so that a weaker frame under it decodes; a frame that starts
@@ -362,7 +362,7 @@ package WstxModemDecode {
              (f) One word on a carrier more than 50 Hz away publishes once, and the weak
                  frame under its copy decodes.
              (g) CRC-valid unsupported and invalid payloads are retained with status
-                 unsupported or invalid_payload (WstxOfflineDecode::FrameStatus), exact
+                 unsupported or invalid_payload (WstxDecodes::FrameStatus), exact
                  payload77, and null text and fields.
              (h) Weak "HB9BLA K1ABC FN42" (report) and "HB9BLA K1ABC RR73" (rogers) decode
                  only with the right calls, state and Rx/Tx, with a_priori 3 and 6; a wrong

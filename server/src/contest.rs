@@ -11,7 +11,7 @@ use std::collections::HashSet;
 #[path = "contest_tests.rs"]
 mod tests;
 
-/// What makes a second QSO a dupe (WstxContest::ContestProfile).
+/// What makes a second QSO a dupe (WstxStrategies::ContestProfile).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Dupes {
     Band,
@@ -29,7 +29,7 @@ impl Dupes {
         }
     }
 }
-/// The QSO points rule (WstxContest::ContestProfile).
+/// The QSO points rule (WstxStrategies::ContestProfile).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Points {
     OnePlusPer3000Km,
@@ -53,7 +53,7 @@ impl Points {
         }
     }
 }
-/// The multiplier rule (WstxContest::ContestProfile).
+/// The multiplier rule (WstxStrategies::ContestProfile).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Multipliers {
     None,
@@ -121,7 +121,7 @@ pub(crate) struct Occurrence {
     pub end_ms: i64,
     pub band: Option<&'static str>,
 }
-/// WstxContest::ContestProfile: rule facts of one contest.
+/// WstxStrategies::ContestProfile: rule facts of one contest.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Profile {
     pub id: &'static str,
@@ -504,13 +504,13 @@ pub(crate) fn profile(id: &str) -> Option<&'static Profile> {
     PROFILES.iter().find(|p| p.id == id)
 }
 
-/// #97 the contest table (WstxStrategy::BuiltinStrategies: one contest built-in per profile).
+/// #97 the contest table (WstxStrategies::BuiltinStrategies: one contest built-in per profile).
 pub(crate) fn all_profiles() -> &'static [Profile] {
     PROFILES
 }
 
 // ------------------------------------------------------------------ the selection
-/// WstxContest::ContestSelection: the contest in force, in memory only (#97 D11: the period
+/// WstxStrategies::ContestSelection: the contest in force, in memory only (#97 D11: the period
 /// only; the operation, repetitions and quiet time are the contest strategy's own decisions).
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Selection {
@@ -760,7 +760,7 @@ pub(crate) struct ContestValue {
     pub new_multiplier: bool,
     pub points: Option<u64>,
 }
-/// One record's classification (WstxContest::ContestVerdict): kind, grey, why and the value.
+/// One record's classification (WstxOperatingChain::ContestVerdict): kind, grey, why and the value.
 fn classify(
     s: &Selection,
     f: &Facts,
@@ -892,7 +892,7 @@ pub(crate) fn order_by(a: &Verdict, b: &Verdict, callers_first: bool) -> std::cm
         // An exact tie only: the lower audio frequency, then the call; never decode order.
         .then_with(|| crate::strategy::exact_tie(&a.facts, &b.facts))
 }
-/// WstxContest::ContestVerdict: in display order, by ContestValueOrder.
+/// WstxOperatingChain::ContestVerdict: in display order, by ContestValueOrder.
 pub(crate) fn evaluate(
     s: &Selection,
     records: &[Value],

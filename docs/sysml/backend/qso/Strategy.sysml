@@ -1,5 +1,13 @@
 package WstxStrategy {
     private import ScalarValues::*;
+    private import WstxStrategies::StrategyConfiguration;
+    private import WstxStrategies::BuiltinStrategies;
+    private import WstxRankingControl::MostWantedList;
+    private import WstxRankingControl::IgnoreLists;
+    private import WstxRankingControl::Alert;
+    private import WstxAutoControl::StrategyRun;
+    private import WstxAutoControl::FreeTxSlots;
+    private import WstxAutoControl::AutoToggle;
     doc /* Canonical contract of the strategy engine (issue #39, CL-039-01..11 and CL-039-20..23 in
          WstxRequirements; verification TC-039-001..010, TC-039-020..022, TC-039-030..033 and
          the strategydef cases TC-039-040..048, the holdtx cases TC-039-049..051, the quiet
@@ -107,7 +115,7 @@ package WstxStrategy {
             in this order: 1 Band (StrategyBands), 2 Filters (Candidate, CountryList,
             UsStateFilter, CqTargetList), 3 Order (ValueOrder), 4 Calling stations are answered
             (CallerOfMyCall), 5 Leaving a station (LeaveRule), 6 Tx frequency (TxMoveRule,
-            FreeTxSlot), 7 Busy pause (BusyPause, WstxContact::BusyPartner), 8 CQ when idle with
+            FreeTxSlot), 7 Busy pause (BusyPause, WstxOperatingChain::BusyPartner), 8 CQ when idle with
             the CQ wait (CqWhenNoTarget), 9 Retry pause (QuietTime). Filters and Order come from
             one of two sources: the filter questions (class strategy) or a contest (class
             contest: the contest's rules, WstxContest, with the operator's country, US state and
@@ -241,7 +249,7 @@ package WstxStrategy {
              Off its bands: every verdict has rank null with why "band not in the strategy" ("band
              unknown" when unknown), so nothing is marked, alerted or called. A contest strategy
              works only on the bands both of its list and of the contest
-             (WstxContest::ContestVerdict "band not in the contest"). */
+             (WstxOperatingChain::ContestVerdict "band not in the contest"). */
     }
     attribute def CountryList {
         attribute entriesMax : Integer = 64;
@@ -296,106 +304,6 @@ package WstxStrategy {
              (operator 2026-11-09, #97 Q2: "we could define a pota/sota strategy"; the built-in
              POTA/SOTA, BuiltinStrategies). */
     }
-    attribute def BuiltinStrategies {
-        doc /* D19 (operator grill 2026-11-09). The read-only presets, one table in the
-             station in this order, listed in the GET /strategy snapshot as builtin_strategies,
-             each a Strategy with builtin true:
-             | name | class | filters new, new_per, new_means | order | leave | cq_when_idle |
-             DXCC all | strategy | [dxcc], band_mode, not_confirmed | [most_wanted, snr] |
-             until_logged, gone_minutes 10 | false;
-             New DXCC on band | strategy | [dxcc], band, not_confirmed | [most_wanted, snr] |
-             until_logged, gone_minutes 10 | false;
-             New DXCC | strategy | [dxcc], ever, not_confirmed | [most_wanted, snr] | until_logged,
-             gone_minutes 10 | false;
-             Casual | strategy | [call], band, not_worked | [snr_bucket, distance] | calls, calls 4,
-             calls_heard 8 | true;
-             POTA/SOTA | strategy | [call], band, not_worked, with worked_since today and
-             cq_targets {include [POTA, SOTA], exclude []} | [snr_bucket, distance] | calls, calls 4,
-             calls_heard 8 | false.
-             The five differ only in their answers, not in their class. POTA/SOTA (operator
-             2026-11-09, #97 Q2 "we could define a pota/sota strategy"; its values are the
-             definer's defaults, listed on #97): it ranks only CQ POTA and CQ SOTA (CqTargetList
-             makes them answerable for it), each activator not yet worked on this band today (a
-             new park or summit is usually a new day), the strongest bucket first and then the
-             farthest; its cq_when_idle is false.
-             All five, unless stated in the table: bands null (all), region all, min_snr_db null,
-             worked_since all, treat_73_as_cq true, countries, states and cq_targets empty, contest
-             null, callers_first true, tx_move_every {heard 0, not_heard 1, no_reports 2} (stay,
-             every call, every 2nd call), busy_pause true, cq_wait_periods 2, retry_minutes 10.
-             "DXCC all" is first in the selector and in the editor; active stays None at a station
-             start (StrategyConfiguration; operator 2026-11-09, Q8 "first in the list, not
-             selected at start"). No built-in is named or marked as a default.
-             Contest built-ins (operator 2026-11-09, Q1 "One per contest"): one per contest of the
-             contest table (WstxContest::ProfileTable), class contest, named by the
-             contest's name and holding its id, with the contest defaults: bands null, the three
-             lists empty, order [], callers_first true, leave {mode contest, tx_changes 2},
-             tx_move_every {heard 0, not_heard 2, no_reports 2}, busy_pause false, cq_when_idle
-             true, cq_wait_periods 2, retry_minutes 10. They are offered by the contest prompt
-             (WstxContest::ContestPrompt) and in the editor's contest group, not as rows of the
-             strategy selector.
-             The built-ins are not part of the configuration and never written to strategy.json.
-             active may name one (exactly as listed; a contest built-in only with its contest
-             selection, WstxContest::ContestSelection). A PUT cannot edit one: a configuration
-             strategy with a built-in's name, also differing in case, is refused 400 invalid_request strategies[i].name, and the key
-             builtin is refused like any extra key. In the editor a built-in is shown read-only
-             and Duplicate copies it to a user strategy named "<name> copy" (StrategyEditor). A
-             saved strategy whose name collides with a built-in's, ignoring case (saved before the
-             built-in existed, also a contest added to the table later), reads renamed
-             (StrategyConfiguration); it is never dropped. */
-    }
-    attribute def StrategyConfiguration {
-        attribute continent : String[0..1];
-        attribute active : String[0..1];
-        attribute strategiesMax : Integer = 16;
-        attribute ignoreCallsMax : Integer = 100;
-        attribute sessionIgnoreMinutes : Integer = 30;
-        assert constraint sessionMinutesRange { sessionIgnoreMinutes >= 1 and sessionIgnoreMinutes <= 720 }
-        doc /* Wire keys exactly continent (null: ContinentOfCall of my callsign, else one of
-             the seven codes: my continent for the directed-CQ rule and region dx), active
-             (null or the name of a listed or built-in strategy), strategies (0..16 Strategy),
-             ignore_calls (#42 the permanent ignore list: 0..100 unique calls of 1..13
-             A-Z 0-9 /, IgnoreLists), session_ignore_minutes (#42 the session list
-             expiry, an integer 1..720, default 30) and the optional contest (#63,
-             WstxContest::ContestSelection, never persisted). Persisted as strategy.json beside
-             profile.json: {schema_version 4, profile_id, revision, configuration} (#97), written
-             atomically like udp.json; missing: the default {null, null, [], [], 30} at
-             revision 0; foreign, malformed or larger than 262144 bytes: configuration null
-             with configuration_error invalid_configuration until a PUT replaces it.
-             active does not survive a station restart: the file always holds active null
-             and any active read is None, so the station never transmits after a restart
-             without a human selection.
-             Upgrade: a file of schema_version 1 (the configuration with rules, sort, auto
-             role and highlight) reads as: strategies dropped, active None, continent and
-             the ignore keys kept at its revision (one written before #42 with neither
-             ignore key reads [] and 30; with exactly one of them, or a bad continent, it
-             is malformed). A file of schema_version 2 (strategies with calls_per_station,
-             before strategydef) reads at its revision with each strategy's
-             calls_per_station dropped and value [most_wanted], callers_first true,
-             cq_when_no_target false, repetitions 4 and quiet_minutes 10 added; a strategy
-             of it that is otherwise malformed makes the file malformed. Each then reads on as a
-             schema 3 file.
-             Upgrade of schema 3 (#97, every strategy of class award) at its revision, each
-             strategy mapped key by key: class strategy; bands null; filters.new and new_per from
-             goals (dxcc: dxcc ever; dxcc_band: dxcc band; dxcc_slot: dxcc band_mode; waz: cq_zone
-             ever; wpx: prefix ever; grid: grid ever; new_call: call ever; new_call_band: call
-             band), the whats in goal order without repeats, and when the goals' pers differ the
-             most specific of them (band_mode before band before ever), so that every station the
-             strategy needed before is still needed; new_means = needed; region, min_snr_db and
-             treat_73_as_cq kept; worked_since = window; countries, states and cq_targets {include
-             [], exclude []}; order = value with new_dxcc_slot renamed new_dxcc_band_mode; contest
-             null; callers_first kept; leave {mode calls, calls = repetitions, calls_heard = 2 x
-             repetitions} (the doubling of the old LeaveRule); tx_move_every {heard 0, not_heard 1,
-             no_reports 2} (#94, the built-ins' values); busy_pause true; cq_when_idle =
-             cq_when_no_target; cq_wait_periods 2; retry_minutes = quiet_minutes. A schema 3
-             strategy that is otherwise malformed makes the file malformed.
-             A schema 4 file whose strategy has no cq_wait_periods (written before the key
-             existed) reads it as 2; a PUT must carry it, as every key.
-             Names: in every schema, a saved strategy whose name equals a built-in's ignoring case
-             reads renamed "<name> copy", else "<name> copy 2", "<name> copy 3" and so on, the
-             first name that is free and at most 32 characters (the name cut so that the suffix
-             fits); its configuration_note lists each rename {from, to} until the next PUT (GET
-             /strategy, StrategyHttp). Every older file is written as schema 4 by the next PUT. */
-    }
     calc def ContinentOfCall {
         in call : String;
         return continent : String[0..1];
@@ -443,26 +351,13 @@ package WstxStrategy {
              The designator is the shorter part, the left one when both are equally long.
              Upper case. */
     }
-    attribute def WorkedWindow {
-        doc /* window all: the log's cached worked set (rebuilt after a log or country table
-             change). today (the current UTC date) and from_to: a worked set built only from
-             the records whose QSO_DATE lies in the window, inclusive; cached per (log
-             revision, country table, first date, last date; today is its UTC date), at most 4
-             windows, so it is not rebuilt per evaluation. A record without a date counts only
-             for all. A rebuild takes about 100 ms with 26,902 QSOs (measured 2026-11-06, release
-             build, two station steps), so it never runs on the station step: the step uses the
-             last built set of the window at once, and a set missing or behind the log is
-             built on its own thread for a later step. A selection and POST /strategy/evaluate
-             (blocking threads) wait for the current set. With no set yet nothing is
-             needed in that step (no claim of needed). */
-    }
     attribute def CallerOfMyCall {
         doc /* A decoded standard message with a resolved sender, addressed to my call, other
              than the sender's RR73/73, whose sender is not ignored (IgnoreLists). Decision 2
              (operator 2026-11-09): a caller of my call has a rank only when it passes the filters
              too: every line of Candidate except "a CQ" (and the CQ target line, which judges only
              CQs); for a contest strategy the contest's verdict (a dupe never has a rank,
-             WstxContest::ContestVerdict) and the country and US state lists. A caller that fails
+             WstxOperatingChain::ContestVerdict) and the country and US state lists. A caller that fails
              gets rank null with the failing line as why ("calls my call · not new", "calls my
              call · region"). Decision 4, Calling stations are answered (callers_first): on, the
              callers that pass come first (ValueOrder); off, a caller that passes has rank null
@@ -527,74 +422,15 @@ package WstxStrategy {
         doc /* The distance for the value criterion distance: the great-circle distance from
              the centre of the profile locator to the centre of the 4-character grid in the
              message; otherwise to the sender's entity centre from cty.dat (the approximate
-             entity distance of WstxCountryFile::DecodedEntity). Unknown without a profile locator
+             entity distance of WstxLogControl::DecodedEntity). Unknown without a profile locator
              or without grid and entity (/MM, /AM, unknown prefix). Whole km, truncated. */
-    }
-    attribute def MostWantedList {
-        attribute entriesMax : Integer = 1000;
-        doc /* D12. Source https://clublog.org/mostwanted.php?api=1: JSON {"1":"344","2":"123",
-             ...}, rank to ADIF DXCC number (340 entries, verified 2026-11-06). Parsed exactly:
-             an object of 1..1000 keys, each a positive integer in text, each value a positive
-             integer below 10000 in text or as a number, no number twice; else the update fails,
-             nothing changed. Stored in the profile folder as
-             most_wanted.json {schema_version 1, profile_id, date (UTC date of the download), list}. cty.dat has no ADIF numbers: the
-             table most_wanted::ENTITIES maps cty.dat entity full names to ADIF numbers (the
-             340 current entities; WAE-only entities, Sicily, African Italy, Bear Island,
-             Shetland Islands, European Turkey and Vienna Intl Ctr, carry their DXCC parent's
-             number). A number of the list without a table entry is ignored and counted as
-             unmapped in the status. An entity not in the table or not on the list has no rank
-             (ValueOrder sorts it after the listed ones). A list once fetched stays until the next
-             update. The file is read off the station step (the first
-             GET /strategy, POST /strategy/evaluate or selection, on a blocking thread); the
-             step only reads a parsed Arc behind a leaf lock. An unreadable file: no list,
-             most_wanted_unreadable true.
-             Status in the GET /strategy snapshot: most_wanted null or {date, entries,
-             unmapped}, most_wanted_unreadable, most_wanted_attribution "Club Log Most Wanted
-             list, Club Log (c) Michael Wells G7VJR, clublog.org".
-             Browser, Settings > General: "List from <date> · <entries> entries" (and how many
-             are not mapped), or "No list; strategies call the strongest first", with beside it one
-             button "Update Most Wanted"; one click does everything. A failure keeps the list and shows the
-             reason in one line.
-             POST /strategy/most-wanted/download {v, profile_id, boot_id}:
-             the station fetches the source once on the operator's click, with the User-Agent
-             of most_wanted::USER_AGENT naming this project; a failure or a reply that is no list is 502 download_failed with
-             error.reason, nothing changed. Exact keys, with the refusals of POST /strategy/ignore, and
-             it returns the snapshot; no MCP tool dispatches to it. There is no automatic
-             refresh. */
-    }
-    attribute def IgnoreLists {
-        attribute sessionEntriesMax : Integer = 64;
-        doc /* #42 (CL-042-02). A sender is ignored when its call (exactly, not as a prefix)
-             is on the permanent list (configuration ignore_calls) or on the session list.
-             The session list lives in station memory only (never persisted; a station
-             restart empties it): at most 64 entries in the order added, each {call, band,
-             expiry}, the band being the station band (CAT dial band, else the operating
-             selection band; null when unknown) and the expiry session_ignore_minutes
-             after the add, both taken when added (adding a listed call again renews
-             them and moves it last; adding a 65th call drops the oldest). An entry ends
-             at its expiry.
-             Band change: the station's contact step (every 50 ms, whether or not a
-             browser is connected) compares the station band with the band it saw last;
-             any change (also to or from unknown) empties the session list, so it is
-             empty before the next evaluation or run step on the new band.
-             Effect: an ignored sender's verdict has rank null and is not greyed, why
-             "<call> is ignored (session list)" or "(permanent list)" (session first when
-             on both); so it gets no mark, a run never selects it, also when it calls me. A
-             contact already in progress is not changed by ignoring its partner.
-             Band Activity: the right-click menu offers "Ignore <call>" for a row with a
-             resolved sender (session list), "Stop ignoring <call>" when that call is on
-             the session list, and no ignore item for other rows. Settings > General: the
-             permanent list (calls separated by spaces or commas, saved on change with
-             PUT /strategy), the session expiry in minutes (saved on change), and the
-             session list with each call's remaining minutes and a remove control; the
-             list is read again when the drawer opens. */
     }
     attribute def Pounce {
         doc /* #42 (CL-042-03). A pounce is a WstxMcp::OperatingAutomation run whose
              AutomationConfiguration has pounce = <call> (strategy false): one run at a time,
              so at most one pounce and never beside a strategy run (configure and
              start are refused state_conflict run while any run is active; switching Auto on ends a
-             running pounce, WstxStrategy::AutoToggle, and finishes its started QSO, StartedQso;
+             running pounce, WstxAutoControl::AutoToggle, and finishes its started QSO, StartedQso;
              a selection with Auto off leaves it and its contact alone). Start also
              needs a known station band (station_band: CAT dial band, else the operating
              selection band; unknown: not_ready band) and captures it with the mode; it
@@ -630,61 +466,6 @@ package WstxStrategy {
              runs, the QSO pane shows "Pouncing on <call> (<band>) · waiting for CQ or 73"
              or "· in QSO" with a Stop pounce button (stop), and the strategy element's
              status "Pounce <call> waiting" or "in QSO" with "HALT ends it". */
-    }
-    attribute def Alert {
-        attribute historyMax : Integer = 100;
-        attribute dedupeMinutes : Integer = 10;
-        doc /* #42 (CL-042-04, without a setting since #39 2026-11-06). Station side: the
-             station's contact step (every 50 ms, whether or not a browser is connected) reads
-             the records of the current live job past its alert cursor once each (a job not seen
-             before from its first retained record); the cursor advances also while no strategy
-             is active, so a later selection never alerts on older decodes. With an active
-             strategy, each new record that is a Candidate of it (Verdict, its window and list)
-             records an alert; a caller of my call, an ignored sender and a CQ greyed by
-             DirectedCqRule never alert. Dedupe: no alert when the
-             station recorded one for the same call and the same station band
-             (station_band at that time; unknown counts as its own band) whose period
-             start lies less than 10 minutes before this record's period start (exactly
-             10 minutes later alerts again); this memory is kept apart from the history,
-             so Clear does not reset it. An alert never transmits, never selects, arms or
-             changes a contact, the automation run, the Tx watchdog or the strategy
-             store.
-             History: station memory only (it survives page reloads, a station restart
-             empties it), the last 100 alerts in the order recorded (the 101st drops the
-             oldest), each {id (1, 2, ... since the station started), utc (the record's
-             period_start_utc), call, message (the record text), rule (the strategy name),
-             band (station band, null when unknown), mode (the live
-             job mode, ft8 or ft4), snr_db (null when unknown), dxcc (the full entity name
-             of WstxCountryFile::EntityOfCall, null without an entity)}; revision counts every
-             alert recorded and every clear since the station started.
-             Routes (the StrategyHttp rules for Origin, authorization, media and size): GET
-             /strategy/alerts (operating access, no query, empty body) -> {v 1,
-             profile_id, boot_id, revision, alerts (oldest first)}. POST
-             /strategy/alerts/clear {v, profile_id, boot_id}: exact keys, the refusals of
-             POST /strategy/ignore (400 invalid_request with the field,
-             unsupported_version, 403 wrong_profile, 409 state_conflict boot_id); it
-             empties the history, revision + 1, and returns the alerts snapshot. No MCP
-             tool dispatches to the clear (an MCP principal is refused, #58); wstx_read
-             view alerts reads GET /strategy/alerts (WstxMcpEndpoint::ToolCatalog).
-             Event: a display-subscribed peer receives alert.state {v 1, type
-             "alert.state", data {profile_id, boot_id, alert_revision}} when the revision
-             changes after it subscribed (never on subscription itself), paced with
-             contact.state; the browser then reads GET /strategy/alerts.
-             Browser: Settings > General shows an Alerts section: "Sound" and "Browser
-             notification" checkboxes, both off by default, kept per browser and profile
-             in localStorage (wstx.alerts.v1:<profile_id> = {sound, notify}; unreadable:
-             both off); checking Browser notification is the only place that asks for the
-             browser's notification permission (Notification.requestPermission on that
-             click, never otherwise); a permission other than granted leaves it unchecked
-             with the reason. The history list, newest first, each line "<HH:MM:SS> <call>
-             <message> · <rule> · <band> <MODE> · <snr> dB · <dxcc>" (unknown parts left
-             out), and a Clear button (POST /strategy/alerts/clear). An alert counts as new
-             when its id is above the highest id this page has seen (the history read at
-             page load or reconnect announces nothing): for each new alert a short tone
-             (Web Audio, about 0.15 s) only when Sound is on and the page is visible, and a
-             notification titled "Alert <call>" with body "<message> · <rule>" when Browser
-             notification is on and permission is granted (also while the page is hidden);
-             with both off nothing is announced (the history still lists it). */
     }
     calc def DirectedCqRule {
         in target : String[0..1];
@@ -763,50 +544,6 @@ package WstxStrategy {
              "<call> is ignored (session list)" / "(permanent list)". Display order: rank
              ascending; records without a rank follow in sequence order. */
     }
-    attribute def StrategyHttp {
-        attribute bodyBytesMax : Integer = 32768;
-        attribute evaluateRecordsMax : Integer = 2048;
-        doc /* GET /strategy (operating access, no query, empty body): {v 1, profile_id,
-             boot_id, revision, configuration (or null), configuration_error, my_continent
-             (configured, else derived; null when unknown), derived_continent,
-             session_ignore (#42: the session list in the order added without ended
-             entries, each {call, band, remaining_s: whole seconds to its expiry, rounded
-             up}), the MostWantedList status, builtin_strategies (BuiltinStrategies) and
-             configuration_note ([] or the renames of the upgrade, [{from, to}], until the next
-             PUT; the editor shows each once as "Renamed <from> to <to>")}. The body limit stays
-             32768 bytes: a configuration whose PUT is larger is refused like any oversized body,
-             and the editor says so.
-             POST /strategy/ignore {v, profile_id, boot_id, call, ignore} (#42): exact
-             keys; same Origin/authorization/media/size rules and refusal codes as PUT
-             /strategy (400 invalid_request with the field, unsupported_version, 403
-             wrong_profile, 409 state_conflict boot_id); call 1..13 of A-Z 0-9 /; ignore
-             true adds the call to the session list (or renews it), false removes it (not
-             listed: no change). It changes no revision, is allowed while a strategy runs and
-             applies at the next evaluation; returns the snapshot. No MCP tool dispatches
-             to it (an MCP principal is refused, #58 principal guard).
-             PUT /strategy {v, profile_id, boot_id, expected_revision, configuration}:
-             exact keys; same Origin/authorization/media/size rules and refusal codes as
-             PUT /udp (400 invalid_request with the field, unsupported_version, 403
-             wrong_profile, 409 state_conflict boot_id, 409 stale_revision); returns the
-             snapshot with revision + 1. It is a browser action: an MCP principal is refused 401
-             at the boundary (#58 principal guard) and no MCP tool dispatches to it, so an MCP
-             client can never select a strategy. A changed active ends a running run and,
-             while Auto is on, starts the new one; None turns Auto off (AutoToggle,
-             StrategyRun); saving anything else leaves a running strategy running and applies
-             at its next step.
-             strategy.state {v 1, type "strategy.state", data {profile_id, boot_id,
-             strategy_revision}}: a display-subscribed peer receives it when the revision
-             changes after it subscribed (never on subscription itself), paced with
-             contact.state; the browser then reads GET /strategy. So a HALT's Auto off and another
-             browser's selection or toggle are pushed.
-             POST /strategy/evaluate {v, profile_id, boot_id, source_id, job_id,
-             generation, first_sequence, next_sequence (0 <= next - first <= 2048),
-             strategy (null: the saved active strategy, else a draft Strategy), explain}:
-             the verdicts of the retained live records [first, next) of exactly that live
-             job (another job: 409 stale_request job_id; no active strategy: 409
-             not_configured strategy) in display order: every one when explain, else only
-             those with a rank or grey. Never changes station state. */
-    }
     attribute def HearingFeed {
         attribute heardWindowSeconds : Integer = 600;
         doc /* The read-only PSK Reporter MQTT feed (#39, the operator's agreement of
@@ -874,7 +611,7 @@ package WstxStrategy {
              the browser only) saves the switch and POST /pskr/use {v 1, profile_id, boot_id,
              use} saves PskrUse (exact keys and the refusals of POST /pskr each); a display-subscribed peer receives pskr.state
              with the same data on a change, for spots at most once per 30 s, and renders the
-             age from station.tick. No polling (WstxStationProtocol::PushedStationState).
+             age from station.tick. No polling (WstxStationLink::PushedStationState).
              Tests: WSTX_PSKR=off opens no connection; WSTX_PSKR=tcp:<loopback>:<port> speaks
              plain MQTT to a local peer; nothing else can replace the broker. */
     }
@@ -884,7 +621,7 @@ package WstxStrategy {
              never stops the run's own contact (operator decisions 6626745310, 6626799951 on
              #39): the engine sends past the limit for that contact only, and LeaveRule bounds
              it instead. A CQ of the run is no such contact (CqWhenNoTarget,
-             WstxContest::ContestRun): the Tx watchdog stops it like any message.
+             WstxAutoControl::ContestRun): the Tx watchdog stops it like any message.
              Tx moves: at each repetition (LeaveRule) of a target that has not answered in this
              contact, Tx follows TxMoveRule (decision 6). A target that has answered (a message to my call in this
              contact) has proved the slot: Tx never leaves it in that exchange. The Rep goes on
@@ -933,7 +670,7 @@ package WstxStrategy {
              transmitting on a split frequency) till the called station finishes its other qso.
              reason: he cannot call us, but he sees us on his dashboard and knows that we want a
              contact"; "check if we are not on his transmit frequency").
-             Busy: WstxContact::BusyPartner (from his message to another call until he ends that
+             Busy: WstxOperatingChain::BusyPartner (from his message to another call until he ends that
              QSO, however long he is not decoded). A repetition (LeaveRule) while the target is busy
              is a paused call, when the strategy's busy_pause is on, the run is attended and the
              bound below is not reached. Unattended, or past the bound, the calls count, while the
@@ -942,10 +679,10 @@ package WstxStrategy {
              calls, the change points of mode contest), not toward TxMoveRule's count; until_logged
              is not affected (it counts minutes without his decode, not calls; busy or not, its
              gone timer runs only while he is not decoded). Tx keeps calling: the split move of
-             WstxContact::BusyPartner keeps Tx clear of his signal; no TxMoveRule move is made while
+             WstxOperatingChain::BusyPartner keeps Tx clear of his signal; no TxMoveRule move is made while
              he is busy.
              Bound (operator 2026-11-09, #97 Q5): at most N paused calls per message, N the
-             Tx watchdog limit (WstxQsoTransmit::TxWatchdog); the (N+1)-th call while he is busy counts
+             Tx watchdog limit (WstxQsoControl::TxWatchdog); the (N+1)-th call while he is busy counts
              as any call. A new message (the exchange advanced) or a new contact restarts it; the
              target's being busy never does.
              busy_pause off: a busy target's repetitions count as today, and WstxContact's
@@ -964,7 +701,7 @@ package WstxStrategy {
              station bar's transmit state), as: "Leave in <n> calls", "Until logged · leave if gone
              <n> min" ("Until logged" while he is decoded), "Leave in <n> Tx changes", "Stay · most
              valuable"; while busy " · <call> busy with <other>, not counted (<k>/<N>)" is appended (the text of
-             WstxContact::BusyPartner). WD:n is never
+             WstxOperatingChain::BusyPartner). WD:n is never
              used for it. A manual contact, a pounce and an MCP run have leave null. */
     }
     attribute def StrategySelector {
@@ -972,7 +709,7 @@ package WstxStrategy {
              names of the built-in and user strategies (grouped Strategy, Contest, "DXCC
              all" first; the contest group lists the user's contest strategies and the contest in
              force, "<name> (contest)"; the contest built-ins are chosen in the contest prompt,
-             WstxContest::ContestPrompt). Choosing a saved contest strategy: with a contest of its
+             WstxStrategies::ContestPrompt). Choosing a saved contest strategy: with a contest of its
              profile in force it sends one PUT with that active and the same contest key; with no
              contest or another contest in force it sends nothing and opens the contest prompt on
              its contest with that strategy chosen and the contest's period pre-filled, whose Start
@@ -990,7 +727,7 @@ package WstxStrategy {
              keeps the text of an earlier state (#74, CL-074-01): with None, or no strategy
              snapshot yet, and no strategy run it shows the WstxOperatingLayout::AutomationIndicator text
              of the automation snapshot ("Automation idle" without a run). A new boot
-             (WstxStationProtocol::PushedStationState): when the browser learns a boot_id other
+             (WstxStationLink::PushedStationState): when the browser learns a boot_id other
              than that of its held strategy snapshot, the element drops that snapshot and its
              verdicts at once and shows what a freshly loaded page shows before its GET
              /strategy answers (the selector with None only and disabled, Auto disabled with
@@ -998,128 +735,13 @@ package WstxStrategy {
              snapshot; nothing of the previous boot is drawn, also not with the new boot's
              automation snapshot. */
     }
-    attribute def StrategyRun {
-        doc /* A WstxMcp::OperatingAutomation run with strategy true; one run at a time.
-             Start and end (AutoToggle): a run starts only when Auto is switched on with a
-             strategy or a contest selected, or when the selection changes while Auto is on.
-             Switching Auto on ends any running pounce or MCP run (the operator wins). It starts
-             through the same internal path as AutomationCommand configure and start, with the
-             request's grant, the current safety revision and the operator's watchdog activity
-             (WatchdogFromOperator), as the station's decision: the client sends only the
-             selection and the toggle. Without a grant transport or transmit owner no run
-             starts: Auto goes off and the snapshot's strategy_refusal names the reason
-             (transmit_unavailable) until the next Auto on or selection. A selection change ends
-             the run (a contact the run armed is disarmed, and cancelled so that the next can
-             start, unless it is a started QSO, which is finished, StartedQso; a manual contact
-             is left alone).
-             max_contacts and max_run_minutes do not apply and read null. Run limit (operator
-             decision 2026-11-06; the constant automation::STRATEGY_RUN_MAX, no setting): a run lasts
-             at most 8 hours from its start, also with a browser open; a new start
-             gives a new 8 hours. Unattended (operator decision 2026-11-06, #39 comment
-             6685226511; the constant automation::CLIENT_GONE, no setting): no authenticated
-             client for 60 s. A client is there while a status WebSocket session is open
-             (authenticated at its upgrade), and at each authenticated POST /mcp, which has only
-             per-request authentication: its last request within the 60 s; an Auto on or a
-             selection itself counts. A client back before the stop continues the run.
-             At the run limit or unattended ("Finish the QSO first", operator 2026-11-07): the
-             run selects and calls no new station and answers no caller; its own CQ is
-             disarmed and cancelled at once; a contact in progress ends its normal way: a QSO
-             the partner is answering is completed, otherwise LeaveRule ends it (its unattended
-             rule: no m, no contest stay, no busy pause) or the stop at N that is back
-             (StrategyWatchdog); a manual one is left alone; when the run next waits it stops
-             run_limit or no_client. So with every browser closed it does not go on calling.
-             The run checks the grant, not the transport of the starting request: a page load, a
-             second tab or a 401 recovery (a new proof) and the transport's own 8 h deadline do
-             not end it; a revoked grant or a safety edit does (authority_lost).
-             The run ends only by HALT, Auto off, a selection change, the grant
-             (authority_lost), no client (no_client), the run limit (run_limit), a Tx watchdog
-             stop (tx_watchdog: of its CQ, or left by a manual contact, which refuses the run's
-             next enable_tx), or a refused command (transmit_refused, provider_error). Every end
-             turns Auto off with the stop reason shown; the strategy stays selected and only an
-             Auto on (or a new selection while Auto is on) starts it again: an AutomationCommand
-             start of a configuration a strategy run left is refused 409 operator_required
-             strategy, from an MCP client and from the browser. HALT from any source (button,
-             Alt+H, MCP) ends the run and turns Auto off at the next station step, also with no
-             run; the selection stays, so the marks stay (operator Q5, which replaces "HALT sets
-             active None"); pushed by strategy.state. Esc (Abort QSO) changes neither.
-             Ends at once (Q6; the contact is disarmed and cancelled at the next station step,
-             no QuietTime): a band change (the station band differs from the band at the
-             target's selection; the station never changes band or mode itself), a mode change
-             (a new live identity), HALT; and, for a contact that is no started QSO, the end of
-             a contest period, a contest deselected, Auto off (#81: a started QSO is finished,
-             StartedQso). The run goes on after a band or mode change (it waits and selects from the
-             next publication on the new band or mode) and after a period end (it waits
-             outside_period; manual while a started QSO finishes); it stops after the others.
-             Receive: a strategy run has no receive identity of its own. Without FT8 or FT4
-             receive it waits with reason no_receive; when receive starts or the live identity
-             changes it re-identifies and waits instead of stopping; last_decode restarts at
-             the latest publication.
-             Waiting reasons (run.reason while state waiting): no_receive, auto_seq (Auto Seq
-             off), call (a nonstandard own call, #24 S1b), activity (a contest activity or Hound,
-             #24 S2a; a contest strategy: any other than its own, WstxContest::ContestRun), band
-             (the station band is not one of the strategy's, StrategyBands; a contact the run
-             armed on a band it then left ends at once as a band change does); it
-             selects nothing until the reason is gone.
-             Waiting: on each fresh complete publication the list is the verdicts with a rank,
-             not completed in this run on this band and mode, not given up by the operator
-             (ManualIntervention) and not in QuietTime, one per call, in ValueOrder (callers
-             first with callers_first). The first is selected (select_row {replace false}), Tx
-             and Rx take their place by FreeTxSlot (with Hold Tx on Tx stays and Rx is on the
-             station, D16) and it is armed (enable_tx). Nothing listed: it
-             keeps waiting, or calls CQ (CqWhenNoTarget). A contact the run did not select:
-             ManualIntervention.
-             Decision timing (#89, operator 2026-11-09: "decision always fastest when needed
-             info is available. this is a general rule for the auto mode"): every decision of an
-             Auto run (a selection, a slot, a slot check, a CQ, a leaving) is taken at the
-             earliest moment the information it needs is available, never later: on the
-             publication that brings it at once, and, where that information can be missing,
-             at the latest at the moment its own rule names, then with what is there. A
-             decision whose information is all there is taken at once, without waiting. The
-             waiting cases are named where the decision is defined (FreeTxSlot "Waiting for
-             the newest period").
-             In a contact: completion counts and returns to waiting; LeaveRule decides when the
-             run leaves the target; no stop. The browser itself never sends enable_tx for a
-             strategy. The run snapshot (WstxMcp) carries left (null or {call, reason
-             repetitions|gone|tx_changes|caller}, #97 LeaveRule), quiet ([{call,
-             band, mode, remaining_s}], the retry pause), hearing (PskrUse), tx_slot (FreeTxSlot),
-             slot_check (StrategyWatchdog) and leave (LeaveCountLabel). */
-    }
-    attribute def AutoToggle {
-        doc /* Mode (Q5, Q11, Q12, Q17, Q29). Auto is a toggle above the QSO pane next to CQ
-             (WstxQsoPane::QsoPane): green on, grey off. It is not part of a strategy
-             and one toggle serves strategies and contests. It is station state in memory only:
-             off after a station restart, after HALT from any source and after every run end
-             (StrategyRun). With Auto off a selected strategy or contest only marks its
-             candidates in Band Activity and nothing transmits for it.
-             POST /strategy/auto {v 1, profile_id, boot_id, auto, automation_confirmed?}
-             (operating access, the browser only; an MCP principal is refused at the boundary,
-             #58, and no MCP tool dispatches to it; exact keys, the refusals of POST
-             /strategy/ignore). auto true needs a selection: an active strategy or a contest
-             (else 409 not_configured strategy, Auto stays off); a contest whose
-             AutomationClause is forbidden needs automation_confirmed true (else 400
-             invalid_request field automation_confirmed, Auto stays off), the browser asking the
-             WstxContest::ContestPrompt warning first. A selection change while Auto is on to a
-             contest whose clause is forbidden turns Auto off instead of starting it: the
-             confirmation goes only with Auto on. auto false ends the run; a QSO the run has
-             started is finished as an ordinary contact (StartedQso, #81: Auto only decides
-             whether new QSOs start). Selecting None turns Auto off. The GET /strategy snapshot carries auto (boolean) and
-             strategy_refusal; a change increments the strategy revision and is pushed by
-             strategy.state. The reply is the GET /strategy snapshot.
-             Browser: the Auto button reads the snapshot's auto (never a local guess); it is
-             disabled without a selection or without transmit capability, with the reason as its
-             title; enabled, its title is "Auto on: the selection transmits. Click to switch
-             Auto off; a QSO already started is finished" while on (#81) and "Auto off: the
-             selection only marks. Click to let it transmit" while off; a click sends POST
-             /strategy/auto with the other value (for a forbidden contest after the
-             confirmation). */
-    }
     attribute def StartedQso {
         doc /* Courtesy (#81, operator 2026-11-08: "A started QSO should always be finished out
              of courtesy. If we did not answer, then this does not count as a QSO"; "Auto only
              starts"). For every run of WstxMcp::OperatingAutomation: a strategy or contest
              run, a pounce and an MCP policy run.
              Started: the run's contact is a started QSO when its dialogue (the contact
-             engine's, WstxQsoWire::ContactSnapshot; never the run's own memory) holds a
+             engine's, WstxQsoControl::ContactSnapshot; never the run's own memory) holds a
              decoded message of the partner to my call and an own transmission to the partner
              that has started (keyed, also one still on the air). No started QSO: a station
              that called my call before our transmission to it started (a reply only armed),
@@ -1136,7 +758,7 @@ package WstxStrategy {
              its end and logs it once (WstxContact::QsoAndLogging). The run's rules for it end
              with the run: no LeaveRule, no QuietTime, no slot check, no WD:n, no target
              subscription (HearingFeed), and no StrategyWatchdog exemption: the Tx watchdog's
-             stop at N applies from the next send (WstxQsoTransmit::TxWatchdog; a message already
+             stop at N applies from the next send (WstxQsoControl::TxWatchdog; a message already
              repeated N times under the exemption is not sent again). Tx and Rx stay where
              they are (FreeTxSlot: nothing else moves them in the exchange). Nothing new is
              selected, called or answered for it and its CQ is not called again. A run started
@@ -1257,7 +879,7 @@ package WstxStrategy {
              built-in). It is not a special class. With it on, a waiting run with no waiting reason
              that has seen cq_wait_periods consecutive fresh complete publications with nothing
              listed (StrategyRun Waiting; every period counts, both parities: 2 is 30 s in FT8 and
-             15 s in FT4) calls CQ (WstxContest::ContestRun). The count starts at 0 at Auto on
+             15 s in FT4) calls CQ (WstxAutoControl::ContestRun). The count starts at 0 at Auto on
              (a new run), after a QSO ends and after a leaving, and a publication with a listed
              station ends the wait (it is selected). With cq_when_idle off the CQ wait has no
              effect and is kept. The CQ:
@@ -1312,7 +934,7 @@ package WstxStrategy {
              counts by its levels, and its decodes count from their publication on (unchanged).
              No decision already taken is taken again because a period becomes due.
              Waiting for the newest period (#89 round 1 Q1, StrategyRun Decision timing): every
-             CQ of a contest Run (WstxContest::ContestRun) decided in waiting without a fresh
+             CQ of a contest Run (WstxAutoControl::ContestRun) decided in waiting without a fresh
              publication (at Auto on, when a waiting reason ends, when a manual contact ends or
              Esc gives a caller up, after a completion or a leaving) while the newest period of
              its Rx parity (in progress or ended) has no complete publication waits for that
@@ -1394,7 +1016,7 @@ package WstxStrategy {
              selection and for a CQ unless it must move by the 50 Hz rule; at a move it
              is no candidate and Tx moves into the range (round 3 Q6 "Move into the range"). Status with Hold Tx on: tx_slot names the held Tx with its rise and his
              end.
-             Busy (WstxContact::BusyPartner): when he sends to another call and Tx is not clear of
+             Busy (WstxOperatingChain::BusyPartner): when he sends to another call and Tx is not clear of
              his signal (FT8 100 Hz, FT4 140 Hz between the lower edges), Tx alone moves to the
              nearest candidate clear of it and Rx stays on him, with Hold Tx on and off alike.
              Nothing else during the exchange moves it; the
@@ -1405,62 +1027,6 @@ package WstxStrategy {
              the whole-dB compared value of that slot, its largest rise above the passband floor
              clamped at 0 (null without power). */
     }
-    attribute def FreeTxSlots {
-        attribute eventBytesMax : Integer = 1024;
-        attribute rangesMaxFt8 : Integer = 48;
-        attribute rangesMaxFt4 : Integer = 26;
-        doc /* Open Tx slots (#65, replaced by #82, D18): every free frequency on my side at
-             the time the other station will be transmitting, for the operator to see on the
-             waterfall and to place Tx by hand (WstxSignalArea::FreeTxSlotMarks). The
-             station's own value, built with or without an automation run, a QSO or Auto (no
-             run_id, no ranking, no limit; #65's five best of each run decision go).
-             Judged parity (round 2 Q1, "when he will be transmitting"): my Rx parity, the
-             periods the other station transmits in (#66). In a QSO (Enable Tx on, my own CQ
-             included, or a contact in progress, replying..signoff; by a run or by hand) the
-             contact's Rx parity, the other of its Tx parity, so the value stays on that one
-             parity. Otherwise (only listening: no run, a run waiting, Tune alone) the next
-             period I could transmit in is the one after the period P in progress, and its Rx
-             parity is P's own (round 1 Q3): the parity alternates every period.
-             Counted periods, floor and value: FreeTxSlot's, unchanged (the last
-             periodsPerParity periods of that parity that are due, ended on the clock or in
-             progress with their complete publication published, #89; a period I transmitted in or did not
-             receive leaving a gap; the WSJT-X
-             passband floor; a slot's largest rise above it in those periods, clamped at 0 in
-             whole dB). They are taken from the station's live job in the station's operating
-             mode (WstxQsoTransmit::StationOperatingMode), from the last station band change on
-             and from a new live identity's first period (FreeTxSlot Band, kept by the station,
-             not by a run).
-             Open (round 2 Q2): a Tx frequency f of FreeTxSlot's candidate grid (stepHz 10 Hz
-             steps with my whole signal inside the Tx range, FT8 300..2650, FT4 300..2610) is
-             open when its compared value is 0 (at or under the floor) and its signal
-             [f, f + width) (FT8 50 Hz, FT4 90 Hz) overlaps no station decoded in a counted
-             period (|f - d| below the width, d the decoded audio frequency). Nothing else
-             applies: no clearance of a called station or of my Rx, no his end, no fallback
-             when none is open, no ranking. The partner and every other decoded station of the
-             counted periods close their own slots.
-             Open ranges: the union of the signals [f, f + width) of the open f, as half-open
-             intervals; overlapping intervals join, touching ones stay separate. Each range is
-             [lo_hz, hi_hz) with lo an open f and hi an open f + width, at least one width
-             long, ascending and disjoint. So at most rangesMaxFt8 (48, 2400 / 50) in FT8 and
-             rangesMaxFt4 (26, floor of 2400 / 90) in FT4.
-             Built: at each period start on the station clock; when the decodes of a counted
-             period are published (operator 2026-11-09, Rebuild on decodes), also the complete
-             publication of the period in progress of the judged parity, which makes it due and
-             counted from that build on (#89; while only listening the judged parity is that
-             period's own, so the last build before the next period start counts it); at once when a QSO starts or ends (the judged parity may change); at once when the live job, its mode or the
-             station band changes. Without a live receive (no live job) the value is null; with
-             no counted period open is [].
-             Value: null or {at_utc_ms (station time of the build), mode ft8|ft4, rx_parity
-             even|odd (the judged parity), qso (true in a QSO), periods (the number of counted
-             periods, 0..periodsPerParity), open [[lo_hz, hi_hz], ...]}, integers in Hz, no
-             per-slot numbers. It is GET /automation free_tx_slots (WstxMcp::AutomationWire)
-             and the free_tx_slots.state event (WstxStationProtocol::PushedStationState), at
-             most eventBytesMax (1024) bytes with the most ranges at their longest numbers.
-             Auto's choice is FreeTxSlot's, unchanged: its own candidates (clear of the called
-             station and with Hold Tx on of my Rx, his end where known), its own ranking (the
-             lowest value, then the current Tx, nearer it, lower) and tx_slot in the run status.
-             That ranking is not on screen. */
-    }
     calc def SaneCall {
         in call : String;
         return sane : Boolean;
@@ -1468,7 +1034,7 @@ package WstxStrategy {
     }
     attribute def WatchdogFromOperator {
         doc /* The Tx watchdog limits the repetitions of one message
-             (WstxQsoTransmit::TxWatchdog, operator rule 2026-11-06) and is never paused by
+             (WstxQsoControl::TxWatchdog, operator rule 2026-11-06) and is never paused by
              automation; a new message or station restarts the repetition count, so it
              bounds a run per message, not in total (max_run_minutes bounds a policy run; a
              strategy run is bounded by its 8 hour run limit and its grant). A
@@ -1513,7 +1079,7 @@ package WstxStrategy {
     dependency txMoveHearing from TxMoveRule to HearingFeed;
     dependency slotEdgeClause from FreeTxSlot to WstxContact::'CL-097-05';
     dependency busyPauseClause from BusyPause to WstxContact::'CL-097-06';
-    dependency busyPausePartner from BusyPause to WstxContact::BusyPartner;
+    dependency busyPausePartner from BusyPause to WstxOperatingChain::BusyPartner;
     dependency cqIdleClause from CqWhenNoTarget to WstxContact::'CL-097-01';
     dependency contestClassClause from StrategyClass to WstxContact::'CL-097-07';
     dependency valueClause from ValueOrder to WstxContact::'CL-039-02';
@@ -1539,14 +1105,14 @@ package WstxStrategy {
     dependency strategyWatchdogClause from StrategyWatchdog to WstxContact::'CL-039-21';
     dependency strategyWatchdogHearing from StrategyWatchdog to HearingFeed;
     dependency strategyWatchdogSlot from StrategyWatchdog to FreeTxSlot;
-    dependency strategyWatchdogOwner from StrategyWatchdog to WstxQsoTransmit::TxWatchdog;
+    dependency strategyWatchdogOwner from StrategyWatchdog to WstxQsoControl::TxWatchdog;
     dependency automationPath from StrategyRun to WstxMcp::OperatingAutomation;
     dependency autoClause from AutoToggle to WstxContact::'CL-039-22';
     dependency autoFinishClause from AutoToggle to WstxContact::'CL-081-01';
     dependency startedQsoClause from StartedQso to WstxContact::'CL-081-01';
     dependency startedQsoRun from StrategyRun to StartedQso;
     dependency startedQsoAutomation from StartedQso to WstxMcp::OperatingAutomation;
-    dependency startedQsoWatchdog from StartedQso to WstxQsoTransmit::TxWatchdog;
+    dependency startedQsoWatchdog from StartedQso to WstxQsoControl::TxWatchdog;
     dependency pskrUseClause from PskrUse to WstxContact::'CL-039-20';
     dependency leaveClause from LeaveRule to WstxContact::'CL-039-23';
     dependency quietClause from QuietTime to WstxContact::'CL-039-23';
@@ -1555,5 +1121,5 @@ package WstxStrategy {
     dependency leaveHearing from LeaveRule to HearingFeed;
     dependency leaveRun from StrategyRun to LeaveRule;
     dependency cqRun from StrategyRun to CqWhenNoTarget;
-    dependency watchdogOwner from WatchdogFromOperator to WstxQsoTransmit::TxWatchdog;
+    dependency watchdogOwner from WatchdogFromOperator to WstxQsoControl::TxWatchdog;
 }

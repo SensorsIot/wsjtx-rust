@@ -487,7 +487,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         None => None,
     };
-    // #80 WstxStationProtocol::LinkTrafficLog: a station with a profile directory counts the
+    // #80 WstxStationLink::LinkTrafficLog: a station with a profile directory counts the
     // bytes of every accepted connection and writes them per period; without one, no log.
     let log = profile.as_ref().map(|state| {
         let log = link_log::Log::new(Box::new(link_log::StationClock(state.recording.clone())));
@@ -942,7 +942,7 @@ async fn upgrade(
         .max_write_buffer_size(4096)
         .on_upgrade(move |socket| async move {
             let _permit = permit;
-            // #39 an authenticated client is here (WstxStrategy::StrategyRun).
+            // #39 an authenticated client is here (WstxAutoControl::StrategyRun).
             let _client = app.profile.as_ref().map(|p| p.recording.clients.session());
             connection(link_log::Socket::new(socket, link), app.profile, authority).await
         })
@@ -1182,14 +1182,14 @@ async fn connection(
     // #57 CL-057-01: a Detailed peer is told of each new or grown decode view at once; Thin
     // and Off keep the 2 s receive tick that their link budget is measured with.
     let mut publication = recording.as_ref().map(|r| r.publication.subscribe());
-    // WstxQsoWire::ContactStateEvent / StationTickEvent pacing (optional writes).
+    // WstxQsoControl::ContactStateEvent / StationTickEvent pacing (optional writes).
     let mut contact_tick = interval(Duration::from_secs(1));
     contact_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut contact_seen: Option<(u64, Option<u64>)> = None;
     // What this peer holds of the contact snapshot, and when it was last sent.
     let mut contact_sent = Value::Null;
     let mut contact_sent_at = Instant::now();
-    // WstxTransmitWire::TransmitWire transmit.state (pushed state, coalesced like contact.state).
+    // WstxTransmitControl::TransmitWire transmit.state (pushed state, coalesced like contact.state).
     let mut transmit_seen: Option<u64> = None;
     // What this peer holds: the fields it was last sent, and when.
     let mut transmit_sent = Value::Null;
@@ -1199,9 +1199,9 @@ async fn connection(
     // #82 free_tx_slots.state: the build this Detailed or Thin peer holds (None: none, also
     // while Off, so that a peer coming from Off gets the current value once).
     let mut free_tx_slots_seen: Option<u64> = None;
-    // #39 WstxStrategy::StrategyHttp strategy.state: only after a change since this peer subscribed.
+    // #39 WstxStrategies::StrategyHttp strategy.state: only after a change since this peer subscribed.
     let mut strategy_seen: Option<u64> = None;
-    // #42 WstxStrategy::Alert alert.state: only after a change since this peer subscribed.
+    // #42 WstxRankingControl::Alert alert.state: only after a change since this peer subscribed.
     let mut alert_seen: Option<u64> = None;
     // #44 CL-044-11 radio.agc: the managed AGC and its last read-back, once known, then
     // after each change (the first event is this peer's snapshot).
@@ -1224,7 +1224,7 @@ async fn connection(
     clock_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut clock_seen: Option<u64> = None;
     let mut clock_sent_at: Option<Instant> = None;
-    // WstxOperatingReceive::SelectionStateEvent: what this peer holds, and when it was last sent.
+    // WstxStationCommands::SelectionStateEvent: what this peer holds, and when it was last sent.
     let mut selection_sent = Value::Null;
     let mut selection_sent_at = Instant::now();
     let mut last_station_tick: Option<Instant> = None;

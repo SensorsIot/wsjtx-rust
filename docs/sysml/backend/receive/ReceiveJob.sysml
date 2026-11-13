@@ -1,13 +1,13 @@
 package WstxRecordingReceive {
     private import ScalarValues::*;
-    private import WstxOfflineDecode::Mode;
-    private import WstxOfflineDecode::Settings;
-    private import WstxOfflineDecode::ResultRecord;
-    private import WstxProfileRecordings::StartImportBody;
-    private import WstxProfileRecordings::ImportView;
+    private import WstxModeProcessing::Mode;
+    private import WstxModeProcessing::Settings;
+    private import WstxDecodes::ResultRecord;
+    private import WstxRecordingTransfer::StartImportBody;
+    private import WstxRecordingTransfer::ImportView;
     private import WstxReceiveSpectrum::spectrum;
-    private import WstxReceiveSpectrum::DetailedSpectrumFrame;
-    private import WstxReceiveSpectrum::SpectrumFrame;
+    private import WstxDisplayData::DetailedSpectrumFrame;
+    private import WstxDisplayData::SpectrumFrame;
     private import WstxReceiveSpectrum::CalculateSpectrum;
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::'FR-018';
@@ -28,9 +28,11 @@ package WstxRecordingReceive {
     private import WstxProfiles::'TC-009-001';
     private import WstxStationProtocol::'TC-009-005';
     private import WstxRequirements::'FR-003';
-    private import WstxStationProtocol::DisplayProfile;
+    private import WstxStationLink::DisplayProfile;
     private import WstxStationProtocol::TransferDisplay;
     private import WstxOperatingLayout::PresentStation;
+    private import WstxReceiveControl::ReceiveState;
+    private import WstxModeProcessing::DecodeJob;
     doc /* Implementation contract from authoritative contract 4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable
          verification companions exist;
          actual run/review/acceptance evidence belongs to issue #6. Existing
@@ -39,18 +41,6 @@ package WstxRecordingReceive {
          https://docs.rs/rustfft/6.4.1/rustfft/trait.Fft.html and
          https://docs.rs/rustfft/6.4.1/rustfft/struct.FftPlannerScalar.html.
          Independent DFT/math/oracles remain independent case expectations and direct math, not library output. */
-    enum def ReceiveState { enum running; enum cancelling; enum completed; enum cancelled; enum failed; }
-    enum def ReceiveKind { enum spectrum; enum live; }
-    enum def ErrorCode {
-        enum forbidden_origin; enum unauthorized; enum unsupported_media_type;
-        enum request_too_large; enum invalid_request; enum unsupported_version;
-        enum wrong_profile; enum state_conflict; enum not_found; enum busy;
-        enum invalid_state; enum invalid_recording; enum unsupported_audio;
-        enum recording_limit; enum storage_unavailable; enum upload_timeout;
-        enum cancelled; enum no_recording; enum generation_exhausted;
-        enum recording_unavailable; enum unavailable; enum counter_exhausted;
-        enum invalid_samples; enum decode_limit; enum decode_failed;
-    }
     attribute def Limits {
         attribute blockSamples : Integer = 4096;
         attribute spectrumBlocks : Integer = 2;
@@ -102,43 +92,6 @@ package WstxRecordingReceive {
              before publication. New replay allocates job+generation,source unchanged. */
         assert constraint safeGeneration { generation >= 0 and generation <= (900719925 * 10000000 + 4740991) }
     }
-    attribute def ReceiveContext {
-        attribute profile_id : String;
-        attribute boot_id : String;
-        attribute source_id : String[0..1];
-        attribute job_id : String;
-        attribute generation : Integer;
-        assert constraint safeGeneration { generation >= 0 and generation <= (900719925 * 10000000 + 4740991) }
-        doc /* Opening live job may lack source only until initial provider epoch ACK.
-             Recorded spectrum and acknowledged live jobs require their source UUID.
-             This pending context never permits publication. Correlation remains the
-             REQUIRED full source/job/generation tuple for every frame/result page. */
-    }
-    item def ReceiveJob :> WstxArchitecture::ProcessingRequest {
-        attribute schema_version : Integer = 1;
-        attribute correlation : ReceiveContext;
-        attribute kind : ReceiveKind;
-        attribute 'state' : ReceiveState;
-        attribute processed_frames : Integer;
-        attribute error : ErrorCode[0..1];
-        attribute cancelRequested : Boolean;
-        assert constraint progress { processed_frames >= 0 and ((kind == ReceiveKind::spectrum and processed_frames <= 1440000) or (kind == ReceiveKind::live and processed_frames <= (900719925 * 10000000 + 4740991))) }
-        doc /* Shared receive lifecycle: recorded spectrum below and continuous live mode
-             through WstxRadioIO/WstxModemDecode. One import OR recorded spectrum OR live receive,
-             one worker/no pendingjobs; no CPU/file work holding state/profile lock. New
-             generation on import/replay,refuse ceiling not wrap. Cancellation invalidates
-             publication before ack;terminal progress remains until nextjob. No TX scope. */
-    }
-    attribute def JobView {
-        attribute id : String;
-        attribute source_id : String[0..1];
-        attribute generation : Integer;
-        attribute kind : ReceiveKind;
-        attribute 'state' : ReceiveState;
-        attribute processed_frames : Integer;
-        attribute error : ErrorCode[0..1];
-        doc /* source_id null only for live opening before first ACK; recorded source and all publication tuples remain required UUIDs. */
-    }
 
     attribute def StartReplayBody :> StartImportBody { attribute recording_id : String; }
     action def CancelReceive {
@@ -168,22 +121,8 @@ package WstxRecordingReceive {
     action cancelReceive : CancelReceive;
     satisfy WstxRecordingReceive::'CL-006-04' by cancelReceive;
     dependency cancellationOwner from cancelReceive to WstxArchitecture::physicalStation::backend::stations::receive;
-    item def DecodeJob :> WstxRecordingReceive::ReceiveJob {
-        attribute :>> kind = WstxRecordingReceive::ReceiveKind::live;
-        attribute settings : Settings;
-        attribute available_count : Integer;
-        attribute search_limited : Boolean;
-        assert constraint boundedProgress {
-            processed_frames >= 0 and processed_frames <= (900719925 * 10000000 + 4740991) and
-            available_count >= 0 and available_count <= 2048
-        }
-        doc /* Existing station receive-job authority, kind=live with immutable mode.
-             One import OR recorded spectrum OR continuous receive; no queue.
-             Source-relative FT8/FT4 windows, reliable live ring and epoch rules12.8.
-             Numerical recorded fixtures have no production receive operation. */
-    }
     action def AdmitDecode {
-        in source : WstxAudio::SourceDescriptor[0..1];
+        in source : WstxAudioStreams::SourceDescriptor[0..1];
         in settings : Settings;
         out job : DecodeJob;
         doc /* Production12.8 live start only; selected-profile auth/Origin/schema,

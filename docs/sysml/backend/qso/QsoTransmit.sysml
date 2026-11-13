@@ -6,7 +6,8 @@ package WstxQsoTransmit {
     private import WstxRequirements::AutomationState;
     private import WstxTransmit::'TC-111-015';
     private import WstxTransmit::'CL-039-06';
-    private import WstxContact::TxSlot;
+    private import WstxOperatingChain::TxSlot;
+    private import WstxQsoControl::TxWatchdog;
     requirement 'CL-111-02' {
         doc /* Start actions. The start actions are exactly these. Each is one ContactCommand and carries the safety revision shown to its sender; grant, clock, period and safety-revision checks are unchanged. Reply: double-click or row menu Reply on a Band Activity row, double-click or Enter on a Calling me row: reply {row, directive_confirmed?, safety_revision}. CQ: the CQ button: call_cq {safety_revision}. Call: Enter in the DX call or grid field, and the button beside them: call_dx {dx_call, dx_grid, replace, safety_revision}. Send next: "Send <exchange> next": send_next {slot, safety_revision}. Reset: the Reset button: reset_repetitions {safety_revision}. Auto: a strategy, contest or policy run: reply or call_cq sent by the run, cause auto. The outcome of each start in each state is the table of WstxQsoTransmit::StartActions. A Hound's call_cq is no_contact. A slot without text is invalid_message, as choose_next. enable_tx is retired: refused invalid_request with field action, for the browser and for MCP clients. select_row, enter_dx and choose_next stay and never start. An MCP client may send reply, call_cq, call_dx and send_next; its start is automatic: after a repetition-limit stop, or when no browser action was seen this boot, it is refused tx_watchdog. A start refused for a stale contact or safety revision, for tx_watchdog, or by a row or call refusal changes nothing: no QSO is prepared. The browser retries a start refused stale_revision at most twice with the reloaded snapshot, as CL-061-02. Not delivered yet: the browser controls and the runs still send select_row or enter_dx and enable_tx, enable_tx is still accepted, and the MCP tool description does not name the starts. Details: WstxQsoTransmit::StartActions, ContactCommand. */
         attribute coverage : ImplementationState = ImplementationState::partial;
@@ -101,9 +102,9 @@ package WstxQsoTransmit {
         }
     }
     calc def StationOperatingMode {
-        in liveDecodingMode : WstxOfflineDecode::Mode[0..1];
-        in selectionMode : WstxOfflineDecode::Mode;
-        return mode : WstxOfflineDecode::Mode;
+        in liveDecodingMode : WstxModeProcessing::Mode[0..1];
+        in selectionMode : WstxModeProcessing::Mode;
+        return mode : WstxModeProcessing::Mode;
         doc /* #11 CL-011-02. The station's operating mode is the mode of whichever came
              last: the last started ft4|ft8 live decoding job (WstxOperatingReceive
              receive start, including the former Next receive mode control) or the last
@@ -152,7 +153,7 @@ package WstxQsoTransmit {
     attribute def TransmitSubmission {
         attribute contactId : String;
         attribute slot : TxSlot;
-        doc /* How QsoAndLogging uses WstxTransmit::TransmitRequest. While armed it keeps
+        doc /* How QsoAndLogging uses WstxOperatingChain::TransmitRequest. While armed it keeps
              one pending request for the next period of the contact's txParity with the
              current nextSlot text, txOffsetHz and mode, and a new requestSequence for
              every change. A sequence, text, report or offset change replaces the pending
@@ -266,7 +267,7 @@ package WstxQsoTransmit {
              (never waiting for the contact client), skipped only when the station is
              known receive-only. The remote emergency stop is MCP wstx_transmit_halt only;
              UDP has no Halt Tx. The station and its automation never send it in normal flow
-             (WstxTransmit::TransmitHaltUse). */
+             (WstxTransmitControl::TransmitHaltUse). */
     }
     action def AbortQso {
         doc /* Abort QSO (operator decision #39, 2026-11-04, "stop the transmission and
@@ -285,62 +286,6 @@ package WstxQsoTransmit {
              automation run reacts to the cancelled contact as to any operator contact
              change. */
     }
-
-    // ---------------------------------------------------------------- watchdogs
-    attribute def TxWatchdog {
-        attribute limitCalls : Integer = 6;
-        attribute minimumCalls : Integer = 1;
-        attribute maximumCalls : Integer = 99;
-        attribute remainingCalls : Integer;
-        assert constraint limitDomain { limitCalls >= minimumCalls and limitCalls <= maximumCalls }
-        doc /* Operator rule #39, 2026-11-06 (replaces the WSJT-X time watchdog, CFG
-             TxWatchdog ~3749, MW tx_watchdog ~14646, and the unanswered count of
-             2026-11-04): the Tx watchdog limits how often one message is repeated, in
-             manual operation and under automation alike, whatever the message (CQ,
-             Tx1..Tx5, free text), except a strategy run's own contact while the run is attended,
-             which has no stop (WstxStrategy::StrategyWatchdog; WD:n shows only this watchdog,
-             never the run's leave count). Server-owned station-session setting: limit 1..99
-             repetitions, default 6 at each station start. DIFFERENT: WSJT-X 0 = disabled
-             is not offered; a safety bound always applies.
-             It keeps no count of its own: the repetition count is the Rep of the
-             ContactSnapshot dialogue, the count of the newest tx entry when that entry
-             holds the message due next, otherwise 0. Whatever restarts that Rep is the
-             only restart: a different message (the exchange advanced), a new contact, and
-             one addition for the operator: an operator Enable Tx while Enable Tx
-             is off makes the next transmission open a new tx entry, so a stopped station
-             may send the same message again; while it is on it restarts nothing. Partner messages, browser clicks, settings, Auto Seq, MCP
-             and automation requests restart nothing by themselves.
-             Stop: when the send due next would exceed the limit it is never planned or
-             keyed: 1.2 s into its period (past the latest live decode measured, #47) Enable
-             Tx goes off (cause txWatchdog), PTT stays released, nothing is halted (no HaltTransmit,
-             halt_state unchanged), a transmission already keyed finishes, the contact
-             state is kept and the station shows "Tx watchdog: same message sent N times" until
-             the next Enable Tx. A partner message decoded before that moment still changes
-             the message due next, sent by a late start as below the limit. A request still pending when
-             the send due next is at the limit (the limit lowered, or a Tx button going back to
-             a message at its limit) would key, so Enable Tx goes off at once. The repetitions left are shown while Enable Tx is on
-             (WD:n, watchdog tx_remaining_calls = limit - Rep, less the paused calls below).
-             Automation (WstxStrategy::WatchdogFromOperator): an automatic Enable Tx is
-             refused tx_watchdog after a stop or while no browser action was seen this
-             boot; only the browser may set the watchdogs (set_watchdogs from another
-             source is refused operator_required). A new message or target chosen by a run
-             restarts the Rep like any other, so a run is bounded per message, not in
-             total. Mouse movement the server cannot observe is not activity.
-             Busy pause (#97 decision 7, BusyPartner; operator #93 2026-11-09 "Keep calling, don't
-             count"): a send of the message due next while the partner is busy at its stop point
-             (1.2 s into its period, BusyPartner) is a paused call and does not count toward the
-             limit: the counted repetitions are Rep minus the
-             paused calls of that tx entry, and tx_remaining_calls = limit - counted. The paused
-             calls of one message are at most limitCalls (operator 2026-11-09, #97 Q5: at most N
-             paused calls per message, N the limit); a further send while he is busy counts. So
-             one message is sent at most twice the limit; nothing the partner does can extend it.
-             A new message or contact restarts the paused count with the Rep; the operator's Enable
-             Tx while off restarts it as it restarts the Rep. Which contacts pause: a manual contact
-             (operator 2026-11-09, #97 Q7 "yes, both") and a strategy or contest run's own contact
-             whose strategy has busy_pause on (WstxStrategy::BusyPause; the run's own contact has no
-             stop while attended, StrategyWatchdog, so there the pause counts for the leave rule).
-             A pounce and an MCP policy run never pause. */
-    }
     attribute def TuneWatchdog {
         attribute limitSeconds : Integer = 90;
         attribute minimumSeconds : Integer = 1;
@@ -352,7 +297,7 @@ package WstxQsoTransmit {
              station session. Starts when #9 confirms Tune on; at expiry the server
              ends Tune through #9; the remaining seconds are shown on the Tune control. */
     }
-    dependency transmitBoundary from TransmitSubmission to WstxTransmit::TransmitRequest;
+    dependency transmitBoundary from TransmitSubmission to WstxOperatingChain::TransmitRequest;
     dependency transmitOwner from TransmitSubmission to WstxArchitecture::TransmitService;
     dependency transmitPromise from TxWatchdog to WstxRequirements::'FR-008';
     dependency busyWatchdogClause from TxWatchdog to WstxContact::'CL-097-06';

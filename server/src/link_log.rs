@@ -1,4 +1,4 @@
-//! WstxStationProtocol::LinkTrafficLog (#80, CL-003-05): the bytes between each client and the
+//! WstxStationLink::LinkTrafficLog (#80, CL-003-05): the bytes between each client and the
 //! station, per period, in `link-traffic.log` of the profile directory.
 //!
 //! Counting only adds to counters: each accepted TCP stream is wrapped below TLS (`Counted`),

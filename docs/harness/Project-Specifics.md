@@ -1459,7 +1459,7 @@ This section is CL-014-16; TC-DOC-014 verifies it.
 - **Naming.** A value is named by its qualified name `Package::Element(::Feature)*`.
   `Package` is the package of a model file. Each further segment names an element or
   feature declared directly in the body of the segment before it; a quoted name keeps its
-  quotes (`WstxOfflineDecode::FreeTextFields::'type'`). The file's name and folder are never
+  quotes (`WstxDecodes::FreeTextFields::'type'`). The file's name and folder are never
   part of the name, so moving, renaming or splitting a model file changes no name while one
   file keeps the package. Renaming an element, or moving it to another package, changes the
   name; the tests that cite it change in the same change, as code comments that cite
