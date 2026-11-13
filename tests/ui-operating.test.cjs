@@ -5335,10 +5335,12 @@ test('TC-097-019 the model carries no superseded wording',async()=>{
   const S=fileOf('WstxStrategy'),C=fileOf('WstxContest'),R='Requirements.sysml';
   const scope=[
     ...[1,2,3,15,19].map(n=>decision(S,n)),
-    ...['StrategyClass','NewWhat','NewPer','ValueCriterion','Needed','LeaveMode','PskCase','Strategy','StrategyBands','CountryList','UsStateFilter','UsStateOf','CqTargetList','BuiltinStrategies','StrategyConfiguration','NewNeeded','CallerOfMyCall','Candidate','ValueOrder','Verdict'].map(n=>element(`WstxStrategy::${n}`)),
+    ...['StrategyClass','NewWhat','NewPer','ValueCriterion','Needed','LeaveMode','PskCase','Strategy','StrategyBands','CountryList','UsStateFilter','UsStateOf','CqTargetList','NewNeeded','CallerOfMyCall','Candidate','ValueOrder','Verdict'].map(n=>element(`WstxStrategy::${n}`)),
+    ...['BuiltinStrategies','StrategyConfiguration'].map(n=>element(`WstxStrategies::${n}`)),
     element("WstxSettings::StrategyEditor"),
     head(C),decision(C,1),decision(C,11),
-    ...['ContestSelection','ContestPrompt','ContestValueOrder'].map(n=>element(`WstxContest::${n}`)),
+    ...['ContestSelection','ContestPrompt'].map(n=>element(`WstxStrategies::${n}`)),
+    element('WstxContest::ContestValueOrder'),
     element("WstxSettings::ContestView"),
     ...['CL-039-01','CL-039-02','CL-039-04','CL-039-11','CL-042-01','CL-063-03'].map(n=>doc(R,n)),
   ];
@@ -5356,8 +5358,8 @@ test('TC-097-019 the model carries no superseded wording',async()=>{
   };
   const kept=[
     sentence(element('WstxStrategy::Strategy'),'Nothing else exists:'),
-    sentence(element('WstxStrategy::StrategyConfiguration'),'Upgrade: a file of schema_version 1','Names: in every schema'),
-    sentence(element('WstxContest::ContestSelection'),'The keys operation,','null or absent'),
+    sentence(element('WstxStrategies::StrategyConfiguration'),'Upgrade: a file of schema_version 1','Names: in every schema'),
+    sentence(element('WstxStrategies::ContestSelection'),'The keys operation,','null or absent'),
     doc(R,'TC-097-001'),doc(R,'TC-097-002'),
   ];
   const outside=(file,i)=>!kept.some(k=>k.file===file&&i>=k.s&&i<k.e);
