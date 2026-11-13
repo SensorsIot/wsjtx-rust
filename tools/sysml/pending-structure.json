@@ -50,6 +50,14 @@
     "interfaces/Udp.sysml"
   ],
   "elements": {
+    "WstxAudioControl": "audio",
+    "WstxAudioStreams": "audio",
+    "WstxModeProcessing": "modes",
+    "WstxProfileAccess": "profile",
+    "WstxRadioControl": "radioControl",
+    "WstxRecordingTransfer": "profile",
+    "WstxStationCommands": "station",
+    "WstxStationLink": "web",
     "WstxContext::browserOwner": "web",
     "WstxContext::catRadioOwner": "radioControl",
     "WstxContext::clubLogOwner": "qso",

@@ -21,6 +21,16 @@ package WstxArchitecture {
     private import WstxRadioProperties::RadioTuningValues;
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::AutomationState;
+    private import WstxStationLink::BrowserExchange;
+    private import WstxRadioControl::RadioControl;
+    private import WstxAudioControl::AudioStatus;
+    private import WstxProfileAccess::ProfileAccess;
+    private import WstxRecordingTransfer::RecordingTransfer;
+    private import WstxStationCommands::StationOperations;
+    private import WstxAudioStreams::ReceiveSamples;
+    private import WstxModeProcessing::ReceiveProcessing;
+    private import WstxModeProcessing::EncodeProcessing;
+    private import WstxAudioStreams::AudioExchange;
     doc /* Product structure: one selected-radio deployment context, its frontend and backend
          containers of the product's functions, software owners and typed exchanges.
          The frontend may run locally on the backend computer or remotely over the
@@ -127,42 +137,6 @@ package WstxArchitecture {
     item def Waveform;
     item def ProfileRequest;
     item def ProfileOutcome;
-
-    port def StationOperations {
-        out item request : StationRequest;
-        in item outcome : StationOutcome;
-    }
-    port def BrowserExchange :> StationOperations {
-        out item upload : Recording;
-    }
-    port def RecordingTransfer { out item recording : Recording; }
-    port def ProfileAccess {
-        out item request : ProfileRequest;
-        in item outcome : ProfileOutcome;
-    }
-    port def AudioExchange {
-        out item playback : SampleBlock;
-        in item capture : SampleBlock;
-        in item outcome : AudioOutcome;
-    }
-    port def AudioStatus { out item outcome : AudioOutcome; }
-    port def ReceiveSamples {
-        out item samples : SampleBlock;
-        out item outcome : AudioOutcome;
-    }
-    port def ReceiveProcessing {
-        out item request : ProcessingRequest;
-        in item result : ProcessingResult;
-    }
-    port def EncodeProcessing {
-        out item request : EncodeRequest;
-        in item waveform : Waveform;
-    }
-    port def RadioControl {
-        out item request : ControlRequest;
-        in item outcome : ControlOutcome;
-        binding replyContext bind outcome.request = request;
-    }
     part def BrowserClient {
         attribute localDisplayLevels : WstxSignalArea::DisplayLevels;
         attribute localDisplayPreference : WstxSettings::BrowserDisplayPreference;
