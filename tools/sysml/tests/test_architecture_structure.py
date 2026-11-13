@@ -16,6 +16,8 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -298,6 +300,8 @@ LONELY = ((CTX, "        part catRadio : CatRadio;\n", "        part catRadio : 
 LINK_AT_RECEIVE = (RECEIVE, "        port control : ~ReceiveCommandPort;\n",
                    "        port control : ~ReceiveCommandPort;\n        port link : ~LinkPort;\n")
 STATIONS = "context.station.stations"
+EXTRA_FILE = "backend/extra/Extra.sysml"
+PENDING_KEY = "tools/sysml/pending-structure.json"
 
 # One edit list of BASE per model state; each state is validated once by the Pilot.
 STATES = {
@@ -359,14 +363,21 @@ STATES = {
         ("backend/profile/Profile.sysml", "part def PersistedProfile;",
          "part def PersistedProfile;\n    part def Lonely { attribute weight : ScalarValues::Integer; }")),
     "two faults": LONELY + ((CTX, CONTEXT_PART, "    dependency watch from CatRadio to Operator;\n" + CONTEXT_PART),),
+    # Pinned checks (P2, P3): a commit with a dependency; a commit with one more model file.
+    "dependency": ((CTX, CONTEXT_PART, "    dependency watch from CatRadio to Operator;\n" + CONTEXT_PART),),
+    "extra file": ((EXTRA_FILE, None, "package WstxExtra { part def Spare; }\n"),),
 }
 
 
 def texts(edits=()):
-    """BASE with each edit applied once; fails when an edit no longer targets the fixture."""
+    """BASE with each edit applied once (original None: a new file); fails when an edit no
+    longer targets the fixture."""
     files = dict(BASE)
     for key, original, replacement in edits:
-        if original not in files[key]:
+        if original is None and key not in files:
+            files[key] = replacement
+            continue
+        if original is None or original not in files[key]:
             raise AssertionError(f"edit no longer targets {key}: {original}")
         files[key] = files[key].replace(original, replacement, 1)
     return files
@@ -586,6 +597,109 @@ class StructureCheckTests(unittest.TestCase):
             self.assertEqual(lines[-2:], ["Structure rule 4: outside part joined to no function: context.lonely",
                                           f"Structure rule 9: dependency declared: {CTX}:{dependency}"])
             self.assertTrue(err.endswith("SysML check failed: 2 structure faults\n"), err)
+
+    def pinned_check(self, state, commit_list, working_list):
+        """A check on a pinned model: commit C of a fixture repository holds the model state
+        and the pending list text `commit_list` (None: no list file); the working tree then
+        holds the base state and `working_list`. The Pilot inventory is the state's, as the
+        caller supplies it. (exit code, stdout lines, stderr)."""
+        result = self.results[state]
+        self.assertEqual(result.returncode, 0, result.stderr[-3000:])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+            env.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+            def git(*args):
+                return subprocess.run(["git", "-c", "core.autocrlf=false", "-C", str(root), *args], check=True,
+                                      capture_output=True, text=True, env=env).stdout.strip()
+
+            git("init", "-q", "-b", "master")
+            models = write_tree(root, texts(STATES[state]))
+            listing = root / PENDING_KEY
+            listing.parent.mkdir(parents=True)
+            if commit_list is not None:
+                listing.write_text(commit_list, encoding="utf-8", newline="\n")
+            git("add", "-A")
+            git("commit", "-q", "-m", "C")
+            commit = git("rev-parse", "HEAD")
+            shutil.rmtree(models)
+            write_tree(root, texts())
+            listing.write_text(working_list, encoding="utf-8")
+            out, err = io.StringIO(), io.StringIO()
+            patches = [mock.patch.object(tool, "MODELS", models), mock.patch.object(tool, "ROOT", root),
+                       mock.patch.object(tool, "FSD", root / "docs/absent FSD.md"),
+                       mock.patch.object(tool, "PENDING", listing),
+                       mock.patch.object(tool, "CHECK_COMMIT", commit, create=True),
+                       mock.patch.object(tool, "canonical_catalog", functools.partial(tool.canonical_catalog, required=REQUIRED)),
+                       mock.patch.object(tool, "validate", return_value=result),
+                       mock.patch.object(tool, "architecture_integrity", return_value={"parts": 0})]
+            with contextlib.ExitStack() as stack:
+                for patch in patches:
+                    stack.enter_context(patch)
+                stack.enter_context(contextlib.redirect_stdout(out))
+                stack.enter_context(contextlib.redirect_stderr(err))
+                code = tool.main(["check"])
+        return code, out.getvalue().splitlines(), err.getvalue()
+
+    # P1: a pinned check on a commit without a pending list runs no structure stage
+    # Proves: CL-014-18; TC-DOC-016
+    def test_p1_pinned_commit_without_a_list_runs_no_structure_stage(self):
+        absent = subprocess.run(["git", "-C", str(tool.ROOT), "cat-file", "-e", "1df1ba3a5:" + PENDING_KEY],
+                                capture_output=True)
+        self.assertNotEqual(absent.returncode, 0)
+        accepted = subprocess.CompletedProcess([], 0, "OMG Pilot 0.62.0 syntax/name/semantic validation passed; "
+                                                      "behavior not executed.\n", "")
+        with tempfile.TemporaryDirectory() as directory:
+            listing = Path(directory) / "pending-structure.json"
+            listing.write_text(json.dumps({"files": [], "elements": {"WstxContext::browserOwner": "web"}}), encoding="utf-8")
+            out, err = io.StringIO(), io.StringIO()
+            with mock.patch.object(tool, "PENDING", listing), mock.patch.object(tool, "CHECK_COMMIT", "1df1ba3a5", create=True), \
+                    mock.patch.object(tool, "validate", return_value=accepted), \
+                    mock.patch.object(tool, "architecture_integrity", return_value={"parts": 0}), \
+                    contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = tool.main(["check"])
+        lines = out.getvalue().splitlines()
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertEqual(lines[-1], "Structure checks not run: 1df1ba3a5 has no pending list")
+        self.assertFalse([line for line in lines if line.startswith("Structure ") and line != lines[-1]], lines)
+
+    # P2: an empty list at the commit means the target is reached: all ten rules on its model
+    # Proves: CL-014-18; TC-DOC-016
+    def test_p2_pinned_commit_with_an_empty_list_applies_every_rule_to_its_model(self):
+        empty, working = json.dumps({"files": [], "elements": {}}), json.dumps({"files": [RECEIVE], "elements": {}})
+        code, lines, err = self.pinned_check("dependency", empty, working)
+        self.assertEqual(code, 2, lines)
+        self.assertEqual([line for line in lines if line.startswith("Structure rule ")],
+                         [f"Structure rule 9: dependency declared: {CTX}:{line_of('dependency', CTX, 'dependency watch')}"])
+        self.assertIn("SysML check failed: 1 structure faults", err)
+        code, lines, err = self.pinned_check("base", empty, working)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(lines[-1], f"Structure checks passed: {len(BASE)} files in target form, 0 files and 0 elements "
+                                    "pending; deployment rules on")
+
+    # P3: the commit's list is checked against the commit's key set and the supplied inventory
+    # Proves: CL-014-18; TC-DOC-016
+    def test_p3_pinned_commit_list_is_checked_against_the_commit(self):
+        extra = json.dumps({"files": [EXTRA_FILE], "elements": {}})
+        with self.subTest("a key of the commit, absent from the working tree"):
+            code, lines, err = self.pinned_check("extra file", extra, extra)
+            self.assertEqual(code, 0, err)
+            self.assertEqual(lines[-1], f"Structure checks passed: {len(BASE)} files in target form, 1 files and 0 elements "
+                                        "pending; deployment rules on")
+        empty = json.dumps({"files": [], "elements": {}})
+        with self.subTest("an element absent from the supplied inventory"):
+            code, lines, err = self.pinned_check("base", json.dumps({"files": [], "elements": {"WstxContext::Missing": "station"}}),
+                                                 empty)
+            self.assertEqual(code, 2, lines)
+            self.assertIn("SysML check failed: Pending structure list: no model element: WstxContext::Missing", err)
+        for label, text, message in (("zero bytes", "", "unavailable or not JSON"), ("not JSON", "{files: []}", "unavailable or not JSON"),
+                                     ("not a map", "[]", "not a map of files")):
+            with self.subTest(label):
+                code, lines, err = self.pinned_check("base", text, empty)
+                self.assertEqual(code, 2, lines)
+                self.assertIn("SysML check failed: Pending structure list: " + message, err)
+                self.assertEqual([line for line in lines if "passed" in line], [])
 
 
 if __name__ == "__main__":

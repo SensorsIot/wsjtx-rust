@@ -241,6 +241,33 @@ CASES = {
     "E13": (MODES, MODES_MOVED),
     "E14": (MODES, {**MODES_MOVED, "docs/sysml/Z/A.sysml": modes("A", "a", "enum ft4; enum ft8; enum ft2;")}),
 }
+PROBE = "tools/sysml/tests/test_probe.py"
+FIXTURE_PROBE = "tools/sysml/tests/test_fixture_probe.py"
+PLAIN_PROBE = "tools/sysml/tests/test_plain.py"
+# The base without Run (the head of E3 action): a pinned model in which Core::Run is absent.
+NO_RUN = edit(BASE, CORE_PATH, RUN, "")
+
+
+def probe(pinned: str, extra: str = "") -> str:
+    """A test below tools/sysml/tests/ naming `pinned` as PINNED; it cites Core::Run at line 3."""
+    return f'"""A probe."""\nPINNED = "{pinned}"\n# Reads Core::Run.\n' + extra
+
+
+def pinned_cases(base: str, no_run: str) -> dict:
+    """E15 a to f: (base files, head files), the base committed as `base`, NO_RUN as `no_run`."""
+    run_moved = moved(BASE, ticket=False)
+    return {
+        "E15 a": (BASE, {**run_moved, PROBE: probe(base)}),
+        "E15 b": (BASE, {**run_moved, PROBE: probe(no_run)}),
+        "E15 c": (BASE, {**run_moved, PROBE: probe("deadbeefdeadbeef")}),
+        "E15 d": (BASE, {**limits_moved(BASE), FIXTURE_PROBE: 'STATION = "package Core {"\n# Reads Core::Limits.\n'
+                                                              "# Reads Extra::Limits.\n"}),
+        "E15 e": (BASE, {**run_moved, "tests/probe.cjs": f'PINNED = "{base}"\n// package Core {{\n// Reads Core::Run.\n',
+                         PLAIN_PROBE: "# Reads Core::Run.\n"}),
+        "E15 f": (BASE, {**run_moved, PROBE: probe(no_run, 'FIXTURE = "package Core {"\n')}),
+    }
+
+
 # The #170 assignment table (issue #170, Technical details): part file -> moved identities.
 TABLE = {
     "backend/modes/ModesCatalog.sysml": "CL-007-03 CL-007-04 CL-009-01 TC-005-001 TC-005-002 TC-004-001 TC-004-002 TC-004-003",
@@ -320,8 +347,9 @@ class SyntheticEquivalenceTests(unittest.TestCase):
                 commits[key] = repository.commit(files)
             return commits[key]
 
-        names = list(CASES)
-        pairs = [(sha(base), sha(head)) for base, head in CASES.values()]
+        cases = {**CASES, **pinned_cases(sha(BASE), sha(NO_RUN))}
+        names = list(cases)
+        pairs = [(sha(base), sha(head)) for base, head in cases.values()]
         cls.broken = sha(edit(BASE, CORE_PATH, "part def Base;", "part def Base :> Missing;"))
         cls.base = sha(BASE)
         cls.patch = mock.patch.object(tool, "ROOT", repository.root)
@@ -393,6 +421,53 @@ class SyntheticEquivalenceTests(unittest.TestCase):
         self.outcome("E8 b updated", 0)
         lines = self.outcome("E8 d", 0)
         self.assertFalse(any("Core::Run" in line for line in lines), lines)
+        for name in ("E8 a", "E8 a updated", "E8 b", "E8 b updated", "E8 d"):
+            self.assertNoExemption(name)
+
+    def assertNoExemption(self, name: str, path: str = ""):
+        """No exempt line of `path` (any file: "") and no exempt entry in the summary."""
+        lines = self.results[name][1]
+        self.assertFalse([line for line in lines if line.startswith("exempt " + path)], lines)
+        self.assertNotIn("; exempt:", lines[-1])
+
+    # E15 a: a citation that resolves in the pinned commit's model is exempt
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e15a_pinned_reader_citation_resolving_in_its_model_is_exempt(self):
+        lines = self.outcome("E15 a", 0, f"exempt {PROBE}:3 Core::Run (pinned)")
+        self.assertTrue(lines[-1].startswith("equivalent: ") and lines[-1].endswith(f"; exempt: {PROBE} 1"), lines)
+        self.assertFalse([line for line in lines if line.startswith("stale-by-change")], lines)
+
+    # E15 b: the guard; a citation that resolves neither in the pinned model nor at head stays stale
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e15b_pinned_reader_citation_absent_from_its_model_stays_stale(self):
+        self.outcome("E15 b", 1, f"stale-by-change {PROBE}:3 Core::Run")
+        self.assertNoExemption("E15 b")
+
+    # E15 c: PINNED naming no commit of the repository
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e15c_pinned_line_naming_no_commit_keeps_p6(self):
+        self.outcome("E15 c", 1, f"stale-by-change {PROBE}:3 Core::Run")
+        self.assertNoExemption("E15 c")
+
+    # E15 d: a fixture reader's citations of its own package are exempt, of another package not
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e15d_fixture_reader_exempts_only_its_declared_package(self):
+        lines = self.outcome("E15 d", 1, f"exempt {FIXTURE_PROBE}:2 Core::Limits (fixture)",
+                             f"stale-by-change {FIXTURE_PROBE}:3 Extra::Limits")
+        self.assertNotIn(f"stale-by-change {FIXTURE_PROBE}:2 Core::Limits", lines)
+        self.assertTrue(lines[-1].endswith(f"; exempt: {FIXTURE_PROBE} 1"), lines)
+
+    # E15 e: the guard; a file outside tools/sysml/tests/ or with neither sign keeps P6
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e15e_other_files_keep_p6(self):
+        self.outcome("E15 e", 1, "stale-by-change tests/probe.cjs:3 Core::Run", f"stale-by-change {PLAIN_PROBE}:1 Core::Run")
+        self.assertNoExemption("E15 e")
+
+    # E15 f: the guard; a pinned reader that also declares the package is judged by the pinned rule only
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e15f_pinned_rule_takes_precedence_over_the_fixture_rule(self):
+        self.outcome("E15 f", 1, f"stale-by-change {PROBE}:3 Core::Run")
+        self.assertNoExemption("E15 f")
 
     # Proves: CL-014-17; TC-DOC-015
     def test_e9_cannot_compare(self):
@@ -621,6 +696,41 @@ class RealHistoryTests(unittest.TestCase):
         self.assertIn("TC-021-005", moved)
         self.assertIn("TC-021-008", moved)
         self.assertEqual(lines[-1], "522 identities: 320 unchanged, 202 moved, 0 changed, 0 added, 0 retired, 0 removed")
+
+
+class ReaderRecognitionTests(unittest.TestCase):
+    """R-real: the pinned and fixture readers of this repository."""
+
+    # Proves: CL-014-17; TC-DOC-015
+    def test_r_real_readers_of_this_repository(self):
+        integrity, oracle = "tools/sysml/tests/test_architecture_integrity.py", "tools/sysml/tests/test_architecture_oracle.py"
+        texts = {path: (ROOT / path).read_text(encoding="utf-8") for path in (integrity, oracle, "server/src/main.rs")}
+        lines = {path: text.splitlines() for path, text in texts.items()}
+        self.assertEqual(lines[integrity][24], 'PINNED = "1df1ba3a5"')
+        self.assertEqual(lines[integrity][269], 'PACKAGE = "package WstxArchitecture {"')
+        commit = tool.commit_of("1df1ba3a5")
+        self.assertEqual(tool.citation_reader(integrity, texts[integrity]), ("pinned", commit))
+        kind, tops = tool.citation_reader(oracle, texts[oracle])
+        self.assertEqual(kind, "fixture")
+        self.assertIn("WstxArchitecture", tops)
+        self.assertIsNone(tool.citation_reader("server/src/main.rs", texts["server/src/main.rs"]))
+        for number in (135, 136):
+            cited = [match[0] for match in tool.QNAME.finditer(lines[oracle][number - 1])]
+            self.assertTrue(cited and all(name.startswith("WstxArchitecture::") for name in cited), (number, cited))
+        # The issue's line numbers are master f9bee57bb's; R7's lines (607, 609, 611 there)
+        # moved with the setup lines added above them, so they are found by their case.
+        shift = next(index for index, line in enumerate(lines[integrity]) if '("port path twice", ' in line) + 1 - 607
+        cited = {}
+        for number in (118, 119, 125, 187, 190, 191, 192, 607 + shift, 609 + shift, 611 + shift):
+            cited[number] = [match[0] for match in tool.QNAME.finditer(lines[integrity][number - 1])
+                             if match[0].startswith("WstxArchitecture::")]
+            self.assertTrue(cited[number], number)
+        names = sorted({name for found in cited.values() for name in found})
+        with tempfile.TemporaryDirectory() as folder:
+            pinned = Path(folder) / "pinned"
+            tool.extract(commit, pinned, ["docs/sysml"])
+            export = tool.run_export(tool.Side("pinned", pinned, commit), names, CACHE, Path(folder))
+        self.assertEqual([name for name in names if export["resolved"].get(name) is None], [])
 
 
 class MarkedCommitTests(unittest.TestCase):
