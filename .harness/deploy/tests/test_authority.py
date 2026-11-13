@@ -3,10 +3,13 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 
-import pwsh
+# The one copy of the PowerShell runner is tools/deploy/tests/pwsh.py.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "tools", "deploy", "tests"))
+import pwsh  # noqa: E402
 
 AUTH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "authority")
 LIB = os.path.join(AUTH, "authority-lib.ps1")

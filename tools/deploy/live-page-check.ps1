@@ -1,7 +1,11 @@
 # Harness retrospective item 3 (SensorsIot/harness#38): runs tests/live-page-check.cjs against the
 # station installed on this PC, and gives it the one real restart it asks for, after it has
 # watched the page for several periods. Receive only: it keys nothing and sets nothing on the radio.
-#   live-page-check.ps1 [-WaitSeconds 300]
+#   live-page-check.ps1 -Repo <repository root> -Shared <git common dir>\harness-parallel
+#                       -AgentClient <agent-client.ps1> [-WaitSeconds 300] [-Station <folder>]
+# It derives no path from its own location, so it runs from a station package as well: the check
+# is <Repo>\tests\live-page-check.cjs (with the repository's node_modules), the radio lease is
+# <Shared>\radio\lease.json.
 # The restart happens only while /transmit is disarmed, not transmitting and PTT released, /contact
 # has no running contact, /automation has no active run, no update runs and nobody holds the radio
 # lease; otherwise it waits up to -WaitSeconds and gives up with the station untouched.
@@ -11,7 +15,8 @@
 # Exit 0: PASS. 1: RED. 2: ERROR, it could not run or the station did not come back (it says which).
 # 3: BUSY, the station was in use and was not restarted. 4: NOT-EXERCISED, nothing was shown wrong
 # but a live trigger of #22 or #50 was not on screen (the PAGE CHECK line says which).
-param([int]$WaitSeconds = 300, [string]$Station, [string]$AgentClient, [string]$RadioDir, [string]$Check = 'tests/live-page-check.cjs',
+param([Parameter(Mandatory)][string]$Repo, [Parameter(Mandatory)][string]$Shared, [Parameter(Mandatory)][string]$AgentClient,
+      [int]$WaitSeconds = 300, [string]$Station, [string]$Check = 'tests/live-page-check.cjs',
       [string]$TaskName = 'WSTX Rust Station HB9BLA')
 $ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest
 
@@ -95,18 +100,18 @@ $node = $null; $control = $null; $script:Session = $null; $script:Lock = $null; 
 try {
   # Only this script and the check: the station starts from its task, outside this priority.
   [Diagnostics.Process]::GetCurrentProcess().PriorityClass = 'BelowNormal'
-  $common = git -C $PSScriptRoot rev-parse --path-format=absolute --git-common-dir
   if (-not $Station) { $Station = Join-Path $env:LOCALAPPDATA 'WstxRust\station' }
-  if (-not $AgentClient) { $AgentClient = Join-Path $common 'harness-parallel\resources\station-update\agent-client.ps1' }
-  if (-not $RadioDir) { $RadioDir = Join-Path $common 'harness-parallel\radio' }
+  $Repo = [IO.Path]::GetFullPath($Repo)
+  $RadioDir = Join-Path $Shared 'radio'
+  if (-not [IO.Path]::IsPathRooted($Check)) { $Check = Join-Path $Repo $Check }
   . $AgentClient
   $control = Join-Path ([IO.Path]::GetTempPath()) "wstx-page-check-$([guid]::NewGuid().ToString('N'))"
   [void][IO.Directory]::CreateDirectory($control)
 
   $start = New-Object Diagnostics.ProcessStartInfo
   $start.FileName = (Get-Command node).Source
-  $start.Arguments = $Check
-  $start.WorkingDirectory = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+  $start.Arguments = '"' + $Check + '"'
+  $start.WorkingDirectory = $Repo
   $start.UseShellExecute = $false
   $start.RedirectStandardInput = $true
   $start.EnvironmentVariables['WSTX_LIVE_PAGE_ORIGIN'] = $AgentUrl

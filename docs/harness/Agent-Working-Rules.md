@@ -121,6 +121,7 @@ guard:
     - 'python (\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/)?fixtures/transmit/generate\.py( --(bin|compare-bin|ft4sim) C:/WSJT/[A-Za-z0-9._/-]+)+'
     - '(python|py)(\.exe)? D:/wstx-tmp/moves/[0-9]+/[A-Za-z0-9_-]+\.py( .*)?'
     - 'python -m unittest discover -s \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml/tests( -t \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+)?( -p [A-Za-z0-9_*.]+)?( -v)?'
+    - 'python -m unittest discover -s \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/deploy/tests( -t \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+)?( -p [A-Za-z0-9_*.]+)?( -v)?'
     - 'python \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml\.py oracle'
   writes: ["D:/wstx-tmp/moves/**"]
   deny:
@@ -193,7 +194,7 @@ any other repository, for reading too.
 ```yaml
 guard:
   commands:
-    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|\.harness/deploy/(radio-preflight|live-page-check))\.ps1( .*)?'
+    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|\.harness/deploy/radio-preflight|tools/deploy/live-page-check)\.ps1( .*)?'
   writes: ["D:/wstx-tmp/live/**"]
 ```
 
@@ -203,11 +204,12 @@ abort at or after RR73 or 73, a contact you did not start, and the settings a co
 test sets back. A run writes under `D:/wstx-tmp/live/<issue>/`
 ([limits for experiments](Project-Specifics.md#limits-for-experiments)): its log, and its
 scripts, which act on the station only through the station client
-`.git/harness-parallel/resources/station-update/agent-client.ps1` (dot-sourced:
+`tools/deploy/agent-client.ps1` (dot-sourced:
 `Open-AgentSession`, `Agent-Get`, `Agent-Post`). It runs them, and the radio preflight or
 the live page check, as
 `powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/live/<issue>/<name>.ps1 …`
-or `… -File .harness/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <value>`. It
+or `… -File .harness/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <value>`, or
+`… -File tools/deploy/live-page-check.ps1 -Repo D:/Github/wsjtx-rust -Shared D:/Github/wsjtx-rust/.git/harness-parallel -AgentClient tools/deploy/agent-client.ps1`. It
 installs nothing and restarts the station only through those deploy scripts.
 
 ### Role: prober
@@ -249,3 +251,7 @@ are the coder's above.
   `gh issue comment <number> --body '<text>'`: single quotes, no `'`, `$` or backticks in the
   text, no `--body-file`, and no `--repo` on this project's issues (the harness-improver's
   harness issues above are the one exception).
+- **The deploy OK is the operator's.** An agent never posts a comment that starts with
+  `Deploy OK:`. When a deploy needs that OK
+  ([deployment authority](Project-Specifics.md#deployment-authority)), the agent stops, gives
+  the operator the exact line the deploy printed, and waits for the comment's id.

@@ -167,8 +167,9 @@ stayed unmeasured, at most three attempts, and the runtime (including the four-w
 bound), cold-start and 64 MiB budgets of `WstxModemDecode::DecodeBudgets` bind every attempt:
 any exceedance in any attempt is a failure.
 
-The **live page check** (`.harness/deploy/live-page-check.ps1`, harness#38 item 3) is in no
-suite: it needs the installed station and one real restart. It runs on HB9BLA at live
+The **live page check** (`tools/deploy/live-page-check.ps1`, harness#38 item 3) is in no
+suite: it needs the installed station and one real restart. It runs on HB9BLA after every
+deploy under the [standing deploy policy](#standing-deploy-policy) and at live
 acceptance (CR step 6) of a change to `client/`, the receive, recording or logbook owners or
 `tests/page-watch.cjs`, receive only, and restarts the station only while nothing is armed,
 keyed, in a contact or an automation run. `live-station-browser` gates the same oracle in-process.
@@ -370,22 +371,160 @@ This is the project's binding of the harness
 rules (#26).
 
 **Mechanism.** There is one deploy mechanism: the Windows release executable built on
-HB9BLA and installed there at user level by the reviewed station-update scripts in
-`.git/harness-parallel/resources/station-update/` (operator decision 2026-10-31, see #30).
-`make_package.py <commit> <push-gate log>` builds a package of a commit on GitHub master
-whose push gate passed; `station-update.ps1 -Manifest <package>\manifest.json [-DryRun]`
-verifies it, stops the station gracefully, switches `active.json`, starts the task and
-switches back on failure; `station-update.ps1 -Rollback` returns to the previous version.
-The operator's one-time `setup-once.ps1` points the scheduled task at
-`station\launcher.ps1`, which runs the version named in `active.json`. The manual
-`windows-rust.yml` workflow and its `wstx-rust-windows-x64` artifact are build evidence
-only (operator decision 2026-10-30): that artifact is never installed on the station.
+HB9BLA and installed there at user level by the reviewed, versioned deploy scripts under
+`tools/deploy/` (operator decisions 2026-10-31, see #30, and 2026-11-13, see #171).
+`tools/deploy/` is a product path: a change to it is a CR with review and the merge
+queue's gate, and suite `deploy-tooling` tests it. The **mechanism paths** are every file
+under `tools/deploy/station-update/` (`station-update.ps1`, `make_package.py`,
+`launcher.ps1`) plus `tools/deploy/agent-client.ps1`, `tools/deploy/station-probe.ps1`
+and `tools/deploy/live-page-check.ps1`. Every step of the
+[standing deploy policy](#standing-deploy-policy) lives in those files. `.gitattributes`
+marks them `-text`, so their bytes in git, in a checkout and in a package are the same.
+The live page check's checker `tests/live-page-check.cjs` is product, gated by CRs, and is
+not pinned: the deploy runs it from the repository root it passes (`-Repo`, the main
+checkout `D:\Github\wsjtx-rust`) with that checkout's `node_modules`, not from the package.
 
-**After every install** run the independent probe; on `PROBE FAIL` (exit 1) run
-`station-update.ps1 -Rollback`; `PROBE ERROR` (exit 2) is a wrong argument, not a verdict:
+A deploy starts with one line in Git Bash on HB9BLA, which runs `make_package.py` as
+extracted from the commit it installs, so no working folder is read:
+
+```bash
+git -C D:/Github/wsjtx-rust show <commit>:tools/deploy/station-update/make_package.py | python - <commit> <push-gate log>
+```
+
+It builds a package of a commit on GitHub master whose push gate passed (the push-gate log
+is a merge-queue log under `.git\harness-parallel\queue\logs\` that shows the push) in
+`.git\harness-parallel\resources\station-update\packages\<ver>\`, never in a working tree,
+copies the mechanism files from the commit's `git archive` export into the package's
+`deploy\` folder and lists their SHA-256 in the manifest. It prints the next command: the
+package's own copy,
+`<package>\deploy\tools\deploy\station-update\station-update.ps1 -Manifest <package>\manifest.json [-DryRun] [-OkComment <id>]`,
+which refuses to run from anywhere else. It verifies the package, checks the pins, waits for
+an idle station, stops it gracefully, switches `active.json`, starts the task, switches
+back on failure, runs the probe and the live page check from the package, returns to the
+previous version when either fails and posts the install record. Exit 0: installed (or the
+dry run passed); 1: refused, failed or returned; 3: the station stayed busy, nothing
+changed; 5: the deploy mechanism changed and the operator's OK is needed.
+`station-update.ps1 -Rollback` returns to the previous version and never asks. The
+operator's one-time `setup-once.ps1` (in `.git\harness-parallel\resources\station-update\`,
+not used by deploys) points the scheduled task at `station\launcher.ps1`, which runs the
+version named in `active.json`; the task names no repository path and no deploy changes it.
+The manual `windows-rust.yml` workflow and its `wstx-rust-windows-x64` artifact are build
+evidence only (operator decision 2026-10-30): that artifact is never installed on the station.
+
+### Standing deploy policy
+
+Approved by the operator on 2026-11-13 (#171 comments 6859504815, 6861452505,
+6861571300), on the decision of 2026-11-12: "The operator is kept out of the loop, with one
+exception: when a decision is needed." It binds the deploy part of the harness rule
+[standing deploy and consent policies](../../harness/core/docs/CR-Process.md#standing-deploy-and-consent-policies). A deploy
+under it needs no OK per install.
+
+1. **When a deploy applies without asking.** All of these hold:
+   - the push gate is green on exactly that commit and the package matches it (the package
+     checks of `station-update.ps1`);
+   - the station is idle, checked inside `station\logs\update.lock`, which the deploy holds
+     from the check until the station has stopped. Idle means all of: the update lock is
+     free; no live radio lease (`.git\harness-parallel\radio\lease.json` missing or
+     expired); exactly one station process; GET /transmit shows `arm_state` `disarmed`,
+     `ptt` `released` and `transmitting` false; GET /contact shows no contact, or one that
+     is `idle`, `completed` or `cancelled`; GET /automation shows no run, or a stopped one.
+     A state that cannot be read counts as busy. While busy, the deploy reads again every
+     10 s for up to 300 s, then gives up with the station untouched (exit 3); the CR stays
+     landed and the deploy is retried later. A station that is down is not idle. A contact
+     the agents did not start is never aborted by them; a deploy it blocks past the wait is
+     reported to the operator;
+   - it is outside the scheduled-job window. The product has no scheduled job, so the
+     window is none.
+2. **The mechanism is pinned.** [Deploy pins](#deploy-pins) lists one line per mechanism
+   file.
+3. **The deploy runs the bytes of the commit it installs.** `make_package.py` runs as
+   extracted with `git show`; `station-update.ps1`, the probe and the page check run from
+   the package. The page check takes the repository root, the shared folder and the agent
+   client as parameters and derives none of them from its own location. Before any write,
+   `station-update.ps1` compares each mechanism file of the package and the launcher in the
+   station folder with the pins of the commit's own `Project-Specifics.md` (read with
+   `git show`).
+4. **A changed mechanism asks the operator first** (the harness rule keeps a per-deploy OK
+   for a change to the deploy mechanism). It is the case when a file differs from its pin, when the pins of the commit to install
+   differ from the pins of the running commit, or when either commit has no pins. The deploy
+   then refuses before any write (exit 5) and prints the exact line the operator posts:
+   `Deploy OK: <commit> scripts <H1> <H2> …`, with the full 40-hex commit and the 64-hex
+   SHA-256 it computed for each mechanism file, in pin order, separated by single spaces.
+   The agent stops, gives the operator that line, and waits; an agent never posts a comment
+   that starts with `Deploy OK:` ([agent working rules](Agent-Working-Rules.md)). The
+   comment may stand on any issue of this repository. The deploy proceeds only when started
+   with `-OkComment <id>` of a comment by `SensorsIot` whose whole text is that line with
+   exactly the commit and hashes it computed; it reads the comment from GitHub and refuses
+   any other text, author, commit or hash, and an unreadable comment. With an OK and a
+   changed launcher, it saves the old launcher in the station folder's `logs\` and writes
+   the new one after the stop, before starting the task; the switch-back restores the old
+   launcher with the profile. The task itself is never changed. `-Rollback` never asks, so
+   the automatic return always works.
+5. **Proof and return.** After the switch the probe runs, inside the lock. The deploy then
+   releases `update.lock`, and the live page check runs (it takes the lock itself for its
+   restart). Probe not `PASS`, page check `RED` or `ERROR`: the previous version is
+   reinstalled without asking, under the lock again, and each CR in the install goes back
+   to step 2. Page check `BUSY` or `NOT-EXERCISED`: no return, and the result is recorded;
+   before the live acceptance of the CRs of that install the page check runs again, and
+   acceptance needs its `PASS`.
+6. **Install record.** Every install posts its record on each CR issue it moves to
+   installed (`cr_state.py installed <commit> --since <previous>` finds them); after a
+   return, on each issue the subjects of `<previous>..<commit>` name. The record holds the
+   commit, the previous version, the SHA-256 of the package executable, the SHA-256 of each
+   mechanism file, the probe result line, the page check result line, the OK comment id if
+   any, and any return to the previous version. It holds no quote, dollar sign or backtick.
+7. **Accepted limits** (operator, verbatim):
+   - 2026-11-13 (6859504815): "I accept knowingly that this guards against accidents and
+     shortcuts, not against a deliberate swap by a session running under my account."
+   - 2026-11-13 (6861452505): "I accept that the check cannot tell my comment from one an
+     agent posts under my account; rule 1 is the guard."
+
+   The rules of the table under [rules not met yet](#rules-not-met-yet) stay not met.
+
+### Deploy pins
+
+The SHA-256 of each mechanism file's blob at this commit, then its path, in the order
+`station-update.ps1` reads them. A change to a mechanism file changes its pin in the same
+CR, and the first deploy of that CR needs the operator's OK (policy item 4). Suite `deploy-tooling`
+(`test_deploy_pins.py`) recomputes every pin from git.
+
+```text
+b79afb56fcac26fb5d99fa3304782006226e34b06b5685bae545ffc0fdc99cb1  tools/deploy/station-update/station-update.ps1
+0d1fb5e9676faafc71a3c1ab3c694793485a0513fe416d2eac0372719b8aa044  tools/deploy/station-update/make_package.py
+8579d535aa68596bd466b0fc400e4d8a8ca25c50e42291b3a09648ab01455509  tools/deploy/station-update/launcher.ps1
+9d0524dfc1dc536f5d54e3a1b956b737f5b2b8a5a1ccfebaa896b97241c89dd2  tools/deploy/agent-client.ps1
+8743e2a12916e12bebbc01eabf6728af6aeb8064e468861fb274f97c9bffad34  tools/deploy/station-probe.ps1
+187270d4b645d7c7e123c6718a6f9264698d27749d9810a3b106c7cfcb26bab7  tools/deploy/live-page-check.ps1
+```
+
+### Standing consent at 1 %
+
+Approved by the operator on 2026-11-12: "Transmitting is not a concern: tests transmit at
+1 % RF power, except QSO tests." Cost 4 and 5 live tests run without asking when all of
+these hold:
+
+- `.harness/deploy/radio-preflight.ps1` has taken the radio lease and set RF power to
+  `0003` (1 %, 1.2 % of the control) with read-back before anything keys;
+- the test transmits only on 10, 15, 20 or 40 m;
+- afterwards it restores the power found and every setting it changed.
+
+QSO tests, their power and their bounds are not covered by this consent (#192).
+
+### Operator role and returns
+
+The operator is asked only for open questions and changes to the product contract, whether
+to push past a red test, items only a person can judge, and the `Deploy OK:` of a changed
+deploy mechanism. An installed CR that fails acceptance or is returned gets a row in the
+escapes ledger.
+
+### Probe, tests and drill
+
+**After every install** `station-update.ps1` runs the independent probe itself (policy
+item 5). Run by hand, `PROBE FAIL` (exit 1) calls for `station-update.ps1 -Rollback`;
+`PROBE ERROR` (exit 2) is a wrong argument, not a verdict:
 
 ```powershell
-.harness\deploy\station-probe.ps1 -Manifest <package>\manifest.json
+<package>\deploy\tools\deploy\station-probe.ps1 -Manifest <package>\manifest.json
 ```
 
 It is read-only. It asks Windows which process listens on TCP 18081, hashes that
@@ -397,8 +536,9 @@ CL-033-01). This is the commit the running service itself reports. `make_package
 compiles it in as `WSTX_SOURCE_COMMIT`, and a build without one reports `unknown`, which
 fails. A build from before #33 sends no header, for example a rollback target. The probe
 then says so and keeps the image digest as the identity. Last, it checks that the launcher
-receipt agrees with what it observed. Tests:
-`python -m unittest discover -s .harness/deploy/tests`.
+receipt agrees with what it observed. Tests of the deploy mechanism, its pins and its drill
+are suite `deploy-tooling` (cost 2, `.harness/suites.yaml`):
+`python -m unittest discover -s tools/deploy/tests -v`.
 
 The operator can check the result without any agent, from PC Andreas (the only address
 the firewall admits). This is not a step of each install (operator decision 2026-11-01):
@@ -411,10 +551,10 @@ It prints the commit the station reports. Compare it with the commit announced o
 issue.
 
 **When `station-update.ps1` changes** run the refusal drill and record its output on the
-change's issue:
+change's issue (suite `deploy-tooling` runs it too, through `test_station_drill.py`):
 
 ```powershell
-python .harness\deploy\station_drill.py
+python tools\deploy\station_drill.py
 ```
 
 It runs a copy of the script against a sandbox station, with `LOCALAPPDATA` in a temporary
@@ -437,9 +577,28 @@ the script reaches the station stop. Two `LIMIT` cases are expected to be accept
 consistent rewrite of executable and records, and an older commit on master. With the
 authority patch applied, two more cases cover an approved and a refused approval.
 
-**Rules not met yet.** Until each issue is done, the operator's standing permission to
-run `station-update.ps1` (decision 2026-10-31, recorded on #30) authorizes this mechanism
-in place of an OK per install.
+The drill runs the package's own pinned copy with a scripted clock (10 s polls from
+12:00:00) and a sandbox station whose state the package's agent client reports. The idle
+cases (#171, TC-171-01) each require the busy reason in the refusal, no stop sentinel and an
+unchanged destination: update lock held, a live radio lease, no and two station processes,
+transmit armed, PTT keyed, transmitting, a contact replying, a contact replying after a
+`device_lost` disarm, an automation run active, and a state that cannot be read. Busy that
+clears at 290 s proceeds to the stop; still busy at 300 s gives up. A second update started
+between the idle check and the stop is refused because the first holds the lock. The pin
+and OK cases (TC-171-02): all pins equal passes `-DryRun`; a working-folder copy of the
+script is refused (only the package's copy runs); a package file edited after the build,
+new pins that differ from the running pins, a commit without pins, a running commit
+without pins and a station launcher that differs from its pin each refuse with the item-5
+message and the `Deploy OK:` line before any write. An OK comment that is exactly that line
+reaches the stop; one changed hash, a short commit, another commit, hashes out of order,
+extra text, an unreadable comment and a comment by another account are refused.
+`-Rollback` with differing pins reaches the stop without asking.
+
+### Rules not met yet
+
+Until each issue is done, the [standing deploy policy](#standing-deploy-policy) authorizes
+this mechanism in place of an OK per install; it bounds the operator's standing permission
+to run `station-update.ps1` (decision 2026-10-31, recorded on #30).
 
 | Rule | State today | Issue |
 |---|---|---|
@@ -447,7 +606,7 @@ in place of an OK per install.
 | Approval names the candidate | Off (today): the manifest names commit and executable SHA-256, but the agents write it and no approval is bound to it. Prepared: an operator-signed approval of one commit, one digest and one destination. | #31 |
 | Verify before writing | Off (today): `station-update.ps1` refuses a changed artifact, package path, gates record, push-gate log, unpublished commit, task or firewall scope before writing, but against an agent-written manifest beside the artifact. Prepared: the protected verifier hashes the executable itself against the signed digest before the switch, and the protected launcher again before it starts it. | #32 |
 | Prove the result | `station-update.ps1` checks the launcher receipt and HTTP 200. `station-probe.ps1` then checks, independently of the receipt, that the process listening on 18081 runs the candidate's bytes, answers over trusted TLS and reports the candidate's commit itself (`x-wstx-source-commit`). The operator can read that report from PC Andreas without an agent. Not met in full: an agent runs the probe and the rollback after it. On HB9BLA everything except the operator runs with the agents' rights, so a prober the agents cannot alter needs another account (an operator decision, see the deploy authority's limits). | #33 |
-| Show the refusals | `station_drill.py` shows each refusal of `station-update.ps1` before the destination changes (below). Not met in full: the drill shows that a consistent rewrite of artifact and records and an older commit on master are accepted (#32, #31), and a mismatched approval exists only with the deploy authority on. | #34 |
+| Show the refusals | `station_drill.py` shows each refusal of `station-update.ps1` before the destination changes (above). Not met in full: the drill shows that a consistent rewrite of artifact and records and an older commit on master are accepted (#32, #31), and a mismatched approval exists only with the deploy authority on. | #34 |
 
 No rule is met in full.
 
@@ -519,7 +678,7 @@ switches back.
 4. Apply `.harness/deploy/authority/station-update-authority.patch` to
    `station-update.ps1` (it accepts the protected launcher in `Assert-Setup` and calls
    the verifier after the package checks). Then run
-   `python .harness/deploy/station_drill.py`: it must show the two approval cases.
+   `python tools/deploy/station_drill.py`: it must show the two approval cases.
    Without the patch, `station-update.ps1` refuses every install and rollback with
    "setup-once.ps1 has not been run".
 

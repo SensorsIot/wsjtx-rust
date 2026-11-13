@@ -56,11 +56,16 @@ verify their availability in the actual agent environment before starting work.
 - Station log: `%LOCALAPPDATA%\WstxRust\station\profiles\ic7300\contacts.adi`, updated on
   2026-11-04 from the operator's Log4OM export (26,886 QSOs). A rerun of Update logbook
   with the same export adds nothing.
-- Install: build `.git\harness-parallel\resources\station-update\make_package.py <commit> <green gate log>` (a
-  merge-queue log under `.git\harness-parallel\queue\logs\` that shows the push), then
-  `station-update.ps1 -Manifest …`, then `.harness\deploy\station-probe.ps1 -Manifest …`;
-  afterwards `cr_state.py installed <commit> --since <previous>`. Check `/transmit` is
-  idle first; never install while the operator is in a QSO without asking.
+- Install under the standing deploy policy ([deployment authority](Project-Specifics.md#deployment-authority)):
+  in Git Bash, `git -C D:/Github/wsjtx-rust show <commit>:tools/deploy/station-update/make_package.py | python - <commit> <green gate log>`
+  (a merge-queue log under `.git\harness-parallel\queue\logs\` that shows the push), then the
+  package's own `deploy\tools\deploy\station-update\station-update.ps1 -Manifest …` that it
+  prints. That one run waits for an idle station (at most 300 s, else exit 3 and nothing
+  changed), installs, runs the probe and the live page check, returns to the previous version
+  when either fails, moves the CRs to installed and posts the install record. Exit 5: the
+  deploy mechanism changed; give the operator the printed `Deploy OK:` line, wait for their
+  comment and run again with `-OkComment <id>`. A contact you did not start is never aborted
+  to make the station idle.
 - Official WSJT-X **3.3.0-beta4** runs alongside ours as `WSTX-Comparison`,
   Rig=None, no CAT/PTT, Fast/AP-off. A connected Edge frontend runs here too.
 - Keep credentials private. Codex is signed in. Development secrets/SSH keys and

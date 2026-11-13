@@ -1,6 +1,5 @@
 """station_drill.py (#34): the drill refuses unknown commands and catches a lost refusal."""
 import os
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -10,11 +9,7 @@ import station_drill  # noqa: E402
 
 
 def real_script():
-    here = os.path.dirname(os.path.abspath(__file__))
-    common = subprocess.run(["git", "-C", here, "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                            capture_output=True, text=True).stdout.strip()
-    path = os.path.join(common, "harness-parallel", "resources", "station-update", "station-update.ps1")
-    return path if os.path.isfile(path) else None
+    return station_drill.SCRIPT
 
 
 def read(path):
@@ -67,7 +62,6 @@ class ClassifyTests(unittest.TestCase):
             self.assertEqual(station_drill.classify(path), [])
 
 
-@unittest.skipUnless(real_script(), "station-update.ps1 is not in this clone's shared resources")
 class LostRefusalTests(unittest.TestCase):
     def run_one(self, script_text, name):
         with tempfile.TemporaryDirectory() as tmp:
@@ -91,6 +85,30 @@ class LostRefusalTests(unittest.TestCase):
         self.assertTrue(problems, out)
         # The script still refuses later for another reason; that does not count as this refusal.
         self.assertIn("expected message", problems[0])
+
+
+class DrillCaseTests(unittest.TestCase):
+    """The drill's cases against the script in the tree, one group per test."""
+
+    def run_group(self, cases):
+        lines = []
+        with tempfile.TemporaryDirectory() as tmp:
+            failures = station_drill.run_cases(real_script(), cases, tmp, lines.append)
+        self.assertEqual(failures, 0, "\n".join(lines))
+
+    def test_the_script_uses_only_classified_commands(self):
+        self.assertEqual(station_drill.classify(real_script()), [])
+
+    def test_package_refusals_and_controls(self):
+        self.run_group(station_drill.CASES)
+
+    def test_idle_refusal_and_wait(self):
+        """TC-171-01: each busy reason refuses before the stop; 290 s proceeds, 300 s gives up."""
+        self.run_group(station_drill.IDLE_CASES)
+
+    def test_pins_and_operator_ok(self):
+        """TC-171-02 (a) to (h): item 5 refuses before any write with the line; only the exact OK proceeds."""
+        self.run_group(station_drill.PIN_CASES)
 
 
 if __name__ == "__main__":

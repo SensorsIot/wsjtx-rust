@@ -7,10 +7,13 @@ process, scheduled task, station HTTP) is a mock function; no radio or station i
 """
 import json
 import os
+import sys
 import tempfile
 import unittest
 
-import pwsh
+# The one copy of the PowerShell runner is tools/deploy/tests/pwsh.py.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "tools", "deploy", "tests"))
+import pwsh  # noqa: E402
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOL = os.path.join(HERE, "radio-preflight.ps1")
