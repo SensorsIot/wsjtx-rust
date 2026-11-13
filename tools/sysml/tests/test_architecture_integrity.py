@@ -1,4 +1,8 @@
-"""TC-DOC-005: independent architecture oracle using the real pinned Pilot AST."""
+"""TC-DOC-005: independent architecture oracle using the real pinned Pilot AST.
+
+The mutation and fixture tests judge the model of PINNED against the oracle file of the
+same commit, both extracted with `git archive` (they need the commit in the history); the
+working tree's architecture is judged by `check` with the generated oracle file."""
 from concurrent.futures import ThreadPoolExecutor
 import contextlib
 import hashlib
@@ -17,8 +21,11 @@ spec = importlib.util.spec_from_file_location("architecture_tool", TOOL)
 tool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tool)
 
-# The oracle file by its contract path, not by the tool's constant.
-ORACLE_FILE = TOOL.parent / "sysml/architecture-oracle.json"
+# The pinned model and its hand-written oracle file, by the oracle's contract path.
+PINNED = "1df1ba3a5"
+ORACLE_PATH = "tools/sysml/architecture-oracle.json"
+# Set to the extracted oracle file of PINNED while ArchitectureIntegrityTests runs.
+ORACLE_FILE = None
 SECTIONS = ("parts", "references", "contracts", "ports", "connections", "bindings")
 # The oracle file's sizes are the parent's, counted by hand before the outside things left
 # (26 parts below the root, 8 references, 56 ports, 11 contracts, 34 pairs of which 4 are
@@ -265,9 +272,9 @@ COMPANION_PROBE = PACKAGE + "\n    attribute propertyOwnerProbe : WstxProfiles::
 UNDEFINED_PROBE = PACKAGE + "\n    attribute propertyOwnerProbe : WstxProfiles::UndefinedPropertyType;"
 
 
-def architecture_key():
+def architecture_key(models=None):
     """The key of the model file whose package is WstxArchitecture, found by its package."""
-    return next(key for key, path in tool.model_files(tool.MODELS).items()
+    return next(key for key, path in tool.model_files(models or tool.MODELS).items()
                 if tool.file_package(tool.without_comments(path.read_text(encoding="utf-8"))) == "WstxArchitecture")
 
 
@@ -280,11 +287,25 @@ def rejects(original, replacement, diagnostic):
 
 
 class ArchitectureIntegrityTests(unittest.TestCase):
+    # The model folder the tests judge: PINNED's while the class runs, else the tool's.
+    models = None
+
     # Proves: CL-014-03, CL-014-06; TC-DOC-005. No viewer/parser substitute.
     @classmethod
     def setUpClass(cls):
+        global ORACLE_FILE
         cls.cache = Path.home() / ".cache/wsjtx-rust/sysml-tools"
-        cls.source = tool.model_files(tool.MODELS)[architecture_key()].read_text(encoding="utf-8")
+        folder = tempfile.TemporaryDirectory(prefix="sysml-pinned-")
+        cls.addClassCleanup(folder.cleanup)
+        pinned = Path(folder.name)
+        tool.extract(tool.commit_of(PINNED), pinned, ["docs/sysml", ORACLE_PATH])
+        cls.models, ORACLE_FILE = pinned / "docs/sysml", pinned / ORACLE_PATH
+        cls.addClassCleanup(setattr, cls, "models", None)
+        # Every judgement without an oracle of its own reads PINNED's file, as `check` would.
+        patch = mock.patch.object(tool, "ORACLE", ORACLE_FILE)
+        patch.start()
+        cls.addClassCleanup(patch.stop)
+        cls.source = tool.model_files(cls.models)[architecture_key(cls.models)].read_text(encoding="utf-8")
         mutated = [cls.source.replace(PACKAGE, COMPANION_PROBE, 1), cls.source.replace(PACKAGE, UNDEFINED_PROBE, 1)]
         for name in dir(cls):
             original, replacement = getattr(getattr(cls, name), "mutation", (None, None))
@@ -303,8 +324,9 @@ class ArchitectureIntegrityTests(unittest.TestCase):
 
     @classmethod
     def model_paths(cls, architecture=None):
-        files = tool.model_files(tool.MODELS)
-        key = architecture_key()
+        models = cls.models or tool.MODELS
+        files = tool.model_files(models)
+        key = architecture_key(models)
         companions = [path for name, path in files.items()
                       if name not in ("Requirements.sysml", key)]
         return [files["Requirements.sysml"], architecture or files[key], *companions]
@@ -427,6 +449,39 @@ class ArchitectureIntegrityTests(unittest.TestCase):
     test_disconnected_parallel_world = rejects("part physicalStation {", "part detachedStations[*] : StationProcess; part physicalStation {", "one physical deployment")
 
     test_view_cannot_create_semantics = rejects("expose physicalStation::*;", "expose physicalStation::*; part inventedStation : StationProcess;", "views may expose")
+
+    # G1 (#185): `oracle` on the pinned model rewrites its hand-written oracle file as the
+    # same data: every section equal, each pair with its ends in the same order, `about` kept.
+    # Proves: CL-014-06; TC-DOC-005
+    def test_oracle_regenerates_the_hand_written_file_as_data(self):
+        def data(oracle):
+            def pairs(listed):
+                return {tuple(pair) for pair in listed}
+            normal = {key: oracle[key] for key in ("about", "root", "parts", "references", "ports")}
+            normal["contracts"] = {name: (contract["items"], pairs(contract.get("bindings", [])),
+                                          pairs(contract.get("connections", [])))
+                                   for name, contract in oracle["contracts"].items()}
+            for section in ("connections", "bindings"):
+                normal[section] = {owner: pairs(listed) for owner, listed in oracle[section].items()}
+            return normal
+
+        hand = real_oracle()
+        self.assertEqual(self.accepted.returncode, 0, self.accepted.stdout + self.accepted.stderr)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "architecture-oracle.json"
+            path.write_bytes(ORACLE_FILE.read_bytes())
+            out, err = io.StringIO(), io.StringIO()
+            with mock.patch.object(tool, "ORACLE", path), mock.patch.object(tool, "MODELS", self.models), \
+                    mock.patch.object(tool, "validate", return_value=self.accepted), \
+                    contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = tool.main(["oracle"])
+            self.assertEqual(code, 0, out.getvalue() + err.getvalue())
+            lines = out.getvalue().splitlines()
+            self.assertEqual(len(lines), 1, lines)
+            self.assertRegex(lines[0], r"^Architecture oracle (unchanged|written: .*)$")
+            written = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(sorted(written), sorted(hand))
+        self.assertEqual(data(written), data(hand))
 
     def test_missing_inventory_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "missing resolved Pilot inventory"):

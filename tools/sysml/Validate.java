@@ -61,11 +61,15 @@ public class Validate {
         if (inventory) {
             modelResource = interactive.getResource();
             collectScope(interactive);
-            var root = interactive.resolve("WstxArchitecture::physicalStation");
-            if (!(root instanceof PartUsage)) throw new IllegalStateException("Missing physicalStation usage");
-            for (var entry : rootParts) row("ROOTPART", entry);
+            // The deployment is the one package-level part usage, whatever its name and package;
+            // with none or several, only the count and the usages are listed (CL-014-06).
+            row("ROOTS", String.valueOf(rootParts.size()));
+            for (var entry : rootParts.keySet()) row("ROOTPART", entry);
             for (var entry : viewSemantics) row("VIEWSEMANTIC", entry);
-            inspect((PartUsage)root, "physicalStation", 0);
+            if (rootParts.size() == 1) {
+                var root = rootParts.values().iterator().next();
+                inspect(root, name(root), 0);
+            }
         }
         if (export) {
             modelResource = interactive.getResource();
@@ -74,7 +78,7 @@ public class Validate {
         }
         System.out.println("OMG Pilot 0.62.0 syntax/name/semantic validation passed; behavior not executed.");
     }
-    static Set<String> rootParts = new TreeSet<>();
+    static Map<String, PartUsage> rootParts = new TreeMap<>();
     static Set<String> viewSemantics = new TreeSet<>();
     // The one resource that holds every model file of the submission. Everything the pinned
     // model library declares lies in other resources; a `library package` written in a model
@@ -86,7 +90,7 @@ public class Validate {
             var object = contents.next();
             if (object instanceof PartUsage part && !(part instanceof Connector) && !(part instanceof ViewUsage)
                     && part.getOwningNamespace() instanceof org.omg.sysml.lang.sysml.Package) {
-                rootParts.add(String.valueOf(part.getQualifiedName()));
+                rootParts.put(String.valueOf(part.getQualifiedName()), part);
             }
             if (object instanceof ViewUsage view) {
                 for (var feature : view.getOwnedFeature()) {
