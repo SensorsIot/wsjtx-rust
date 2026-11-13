@@ -12,7 +12,6 @@ package WstxRequirements {
     private import WstxProfiles::'TC-022-003';
     private import WstxProfileRecordings::'TC-018-001';
     private import WstxProfileRecordings::'TC-018-002';
-    public import WstxRequirementsUdp::*;
     public import WstxRequirementsFrontend::*;
     private import WstxLiveReceive::'CL-008-02';
     private import WstxRecordingReceive::'CL-008-03';
@@ -43,6 +42,8 @@ package WstxRequirements {
     private import WstxModemDecode::'CL-057-02';
     private import WstxStandardQso::'TC-007-004';
     private import WstxContact::'CL-055-02';
+    private import WstxUdp::'CL-040-02';
+    private import WstxUdp::'CL-112-01';
     doc /* Canonical functional requirements and durable verification definitions.
          The other Wstx packages own detailed typed contracts; validation does not execute tests.
          Coverage flags describe implemented source slices, not acceptance or whole-project parity. */
@@ -877,26 +878,6 @@ package WstxRequirements {
         }
     }
     dependency CL_022_01_verified_by_TC_022_010 from 'CL-022-01' to 'TC-022-010';
-    requirement 'CL-112-05' {
-        doc /* QSO Logged exchanges as WSJT-X. 1. The logged record carries its activity: when DirectLog stores a contact, the record gets the app field APP_WSTXRUST_ACTIVITY with the contact's activity at logging time, one of field_day, rtty, eu_vhf, na_vhf, ww_digi, arrl_digi, hound; it is absent for activity none, and a record without the field is activity none. In contacts.adi, the ADI export and the Logged ADIF datagram it is written after APP_WSTXRUST_CONTACT_ID and, when present, APP_WSTXRUST_SOURCE, and before any preserved unknown fields (WstxLogbook::LogRecord order). It is read back when the log loads. SaveContact accepts it; any other value is refused 400 log_invalid_field with field record.app_wstxrust_activity, as every other record field (WstxQsoWire::ContactWire), and nothing is stored. UpdateLogbook keeps a valid value and drops an invalid one, as it does for other contest values. Listed default (as for APP_WSTXRUST_SOURCE: the resave comparison covers the main field list only): a SaveContact resave of a stored contact id that differs only in the activity is 200 already_saved, with the stored record unchanged and no datagram; likewise a DirectLog store that differs only in the activity is already_saved and keeps the stored activity. Field name, values and these rules are listed defaults; the operator decided only that the activity is stored in the record. 2. Exchange sent and Exchange received are the exchange WSJT-X passes from its log dialog (widgets/mainwindow_qso.cpp captureLogQso, widgets/logqso.cpp xsent/xrcvd), chosen by the record's activity: na_vhf, ww_digi, arrl_digi: sent is the first 4 characters of MY_GRIDSQUARE, received the first 4 of GRIDSQUARE ("JN47" / "FN42"); a missing partner grid gives "", as WSJT-X with its default ZZ00 off. field_day, rtty, eu_vhf: the contact's exchange_sent / exchange_rcvd as ContestExchange / EuVhfExchange define them ("1A EMA" / "2B CT", "559 0003" / "579 MA", "550001 JN37VL" / "590003 IO91NP"), rebuilt from the stored record's contest fields, RST, grid and activity: the reverse of ContestExchange's and EuVhfExchange's log mapping. hound, none, or no field: "" / "". 3. DirectLog and SaveContact build them the same way, from the stored record, so the same record always gives the same exchanges; the explicit save exists to resend what a logging program missed. Details: WstxUdp::OutboundRules, WstxLogbook::LogRecord. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/udp.rs; server/src/logbook.rs; server/src/logbook_http.rs; server/src/contact_http.rs";
-    }
-    dependency CL_112_05_to_FR_012 from 'CL-112-05' to 'FR-012';
-    verification 'TC-112-005' {
-        doc /* TC-112-005 — QSO Logged exchanges
-             CL-112-05
-             Setup: actual candidate router, contact engine, logbook and UDP owner on the contact fixture (profile HB9BLA JN47AA); a loopback peer selecting qso_logged and logged_adif.
-             Steps: each completed contact through DirectLog, then the same stored record through POST /contacts under a new contact id: field_day "1A EMA" / "2B CT"; rtty "559 MA" / "579 MA" and "559 0003" / "559 0013"; eu_vhf (profile JN37VL) "550001 JN37VL" / "590003 IO91NP"; na_vhf with partner FN42; ww_digi with partner FN42ab; arrl_digi without partner grid; hound; none. A record without app_wstxrust_activity (an older log); POST /contacts with app_wstxrust_activity "contest"; a resave of a stored contact id differing only in the activity; contacts.adi, the ADI export, a record with APP_WSTXRUST_SOURCE, and the export after a station restart.
-             Expected (WSJT-X mainwindow_qso.cpp captureLogQso grids left 4, logqso.cpp; ContestExchange / EuVhfExchange; ContactWire refusal; CL-112-05 listed default), sent / received for both paths: "1A EMA" / "2B CT"; "559 MA" / "579 MA"; "559 0003" / "559 0013"; "550001 JN37VL" / "590003 IO91NP"; "JN47" / "FN42"; "JN47" / "FN42"; "JN47" / ""; "" / ""; "" / "". The older record "" / "". The Logged ADIF ends with the contact id then app_wstxrust_activity (absent for none); "contest" is refused 400 log_invalid_field field record.app_wstxrust_activity and nothing is stored; the resave is 200 already_saved, contacts.adi unchanged and no datagram; contacts.adi and the export carry <app_wstxrust_activity:6>na_vhf right after the contact id, after app_wstxrust_source on a record that has one, and it survives the restart.
-             2 — Isolated automated functional tests; Windows development PC, loopback UDP only. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-112-05';
-        }
-        attribute executable : String = "server/src/udp_tests.rs";
-    }
-    dependency CL_112_05_verified_by_TC_112_005 from 'CL-112-05' to 'TC-112-005';
     requirement 'CL-044-05' {
         doc /* PUT /profile refuses an audio device that is not a WASAPI endpoint ID: settings.audio.input_device must be a capture endpoint ID {0.0.1.00000000}.{GUID} and settings.audio.output_device a render endpoint ID {0.0.0.00000000}.{GUID} (lower- or upper-case hex), else 400 audio_device_not_endpoint with the field; null stays allowed. At station start an existing profile whose device entry is not an endpoint ID is migrated: when exactly one active endpoint of that flow has exactly that friendly name, the entry is replaced by its ID and the profile saved (revision + 1); otherwise it is kept and the startup log names the field and the reason (not_found or ambiguous). Loading a profile never fails because of a device entry. */
         attribute coverage : ImplementationState = ImplementationState::implemented;

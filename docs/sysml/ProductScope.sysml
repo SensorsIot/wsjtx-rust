@@ -1,7 +1,6 @@
 package WstxProductScope {
     private import ScalarValues::*;
     private import WstxRequirements::*;
-    private import WstxRequirementsUdp::*;
     private import WstxRequirementsFrontend::*;
     private import WstxArchitecture::*;
     private import WstxStationProtocol::*;

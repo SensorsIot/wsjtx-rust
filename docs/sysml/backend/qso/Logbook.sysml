@@ -316,7 +316,7 @@ package WstxLogbook {
              with the program it came from and is absent on the station's own records.
              APP_WSTXRUST_ACTIVITY (activity) is the contact's activity at logging time,
              one of field_day, rtty, eu_vhf, na_vhf, ww_digi, arrl_digi, hound, absent for
-             none (WstxRequirements::'CL-112-05'). App fields follow the fields above in this
+             none (WstxUdp::'CL-112-05'). App fields follow the fields above in this
              order: APP_WSTXRUST_CONTACT_ID, APP_WSTXRUST_SOURCE, APP_WSTXRUST_ACTIVITY, then
              the preserved unknown fields; they are read back on load and are outside the
              one-record-per-contactId comparison.

@@ -307,7 +307,7 @@ package WstxSpecialActivities {
              DIFFERENT from WSJT-X: a contest contact without exchange_sent or
              exchange_rcvd is still logged (logqso.cpp ~415 refuses it), and the RTTY RST of
              each side is replaced independently. UDP QSO Logged carries the exchanges as
-             WstxRequirements::'CL-112-05' rebuilds them from the stored record.
+             WstxUdp::'CL-112-05' rebuilds them from the stored record.
              Messages (both calls must be standard calls; otherwise generation fails
              invalid_call, since WSJT-X would hash and alter the call): Tx6 "CQ FD MYCALL
              GRID4" / "CQ RU MYCALL GRID4"; the sent exchange is the Field Day exchange,
