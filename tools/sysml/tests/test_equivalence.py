@@ -168,6 +168,15 @@ def limits_moved(files: dict, value="100") -> dict:
     return {**files, "docs/sysml/Moved.sysml": text}
 
 
+def modes(package: str, user: str, literals: str = "enum ft4; enum ft8;") -> str:
+    """A package holding an enum def Mode and a part def whose attribute `user` it types."""
+    return (f"package {package} {{\n    enum def Mode {{ {literals} }}\n"
+            f"    part def Use{package} {{\n        attribute {user} : Mode;\n    }}\n}}\n")
+
+
+# E13, E14: equal same-named Modes in A and B; A's file renamed so that it is read after B's.
+MODES = {"docs/sysml/A.sysml": modes("A", "a"), "docs/sysml/B.sysml": modes("B", "b")}
+MODES_MOVED = {"docs/sysml/B.sysml": modes("B", "b"), "docs/sysml/Z/A.sysml": modes("A", "a")}
 CORE_PATH = "docs/sysml/Core.sysml"
 CITED = {**BASE, **CITING}
 RUN_ONLY = moved(CITED, ticket=False)
@@ -229,6 +238,8 @@ CASES = {
     # so that it is read first: equivalent, paired by their named members.
     "E12 s": (NODOC, {**{k: v for k, v in NODOC.items() if k != "docs/sysml/Extra.sysml"},
                       "docs/sysml/A/Extra.sysml": EXTRA}),
+    "E13": (MODES, MODES_MOVED),
+    "E14": (MODES, {**MODES_MOVED, "docs/sysml/Z/A.sysml": modes("A", "a", "enum ft4; enum ft8; enum ft2;")}),
 }
 # The #170 assignment table (issue #170, Technical details): part file -> moved identities.
 TABLE = {
@@ -457,6 +468,20 @@ class SyntheticEquivalenceTests(unittest.TestCase):
                      'added package-level Comment "Shared metadata header!" Meta.sysml')
         self.outcome("E12 r dropped", 1, 'missing package-level Comment "Shared metadata header." Meta.sysml')
 
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e13_equal_same_named_elements_pair_in_their_package(self):
+        lines = self.outcome("E13", 0, "moved Mode A A.sysml -> A Z/A.sysml")
+        self.assertFalse(any(line.startswith("moved ") and " B " in line for line in lines), lines)
+
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e14_changed_element_leaves_its_equal_namesake_paired(self):
+        lines = self.outcome("E14", 1, "missing Mode A A.sysml", "added Mode A Z/A.sysml",
+                             "added Mode::ft2 A Z/A.sysml")
+        for line in lines:
+            if " owner " in line:
+                self.assertTrue(line.endswith(" owner A.sysml -> Z/A.sysml"), lines)
+        self.assertFalse([line for line in lines if "B.sysml" in line or "FeatureTyping.target" in line], lines)
+
 
 class IdentityTests(unittest.TestCase):
     # Proves: CL-014-17; TC-DOC-015
@@ -496,6 +521,33 @@ class IdentityTests(unittest.TestCase):
             "TC-001-002 retired R.sysml -> - test tests/x.rs",
             "6 identities: 1 unchanged, 1 moved, 1 changed, 1 added, 1 retired, 1 removed",
         ])
+
+    @staticmethod
+    def moved_case(link: str) -> str:
+        """The `identities` line of TC-001-001, moved from R.sysml to web/W.sysml in the commit
+        that moves Proto.sysml to station/, its link to Proto.sysml rewritten as `link`."""
+        def case(package: str, target: str) -> str:
+            return f"package {package} {{\n    verification 'TC-001-001' {{ doc /* See [protocol]({target}). */ }}\n}}\n"
+
+        proto, other = "package Proto {\n    part def Station;\n}\n", "package Other {\n    part def Spare;\n}\n"
+        with tempfile.TemporaryDirectory() as folder:
+            repository = Repository(Path(folder))
+            old = repository.commit({"docs/sysml/R.sysml": case("R", "Proto.sysml"),
+                                     "docs/sysml/Proto.sysml": proto, "docs/sysml/Other.sysml": other})
+            new = repository.commit({"docs/sysml/R.sysml": "package R {\n}\n", "docs/sysml/station/Proto.sysml": proto,
+                                     "docs/sysml/Other.sysml": other, "docs/sysml/web/W.sysml": case("W", link)})
+            with mock.patch.object(tool, "ROOT", repository.root):
+                code, out, _err = run("identities", old, new)
+        assert code == 0, out
+        return out.splitlines()[0]
+
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e15_link_following_a_moved_file(self):
+        self.assertEqual(self.moved_case("../station/Proto.sysml"), "TC-001-001 moved R.sysml -> web/W.sysml")
+
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e15_guard_link_retargeted_to_another_file(self):
+        self.assertEqual(self.moved_case("../Other.sysml"), "TC-001-001 changed R.sysml -> web/W.sysml")
 
     # Proves: CL-014-17; TC-DOC-015
     def test_e10b_real_revisions_list_the_union(self):
