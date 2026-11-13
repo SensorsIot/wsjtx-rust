@@ -25,8 +25,8 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=720bd0350e4b4693daed1702454af189a14376f5b8f47216bc1b7622f0fc4875 -->
 <!-- source harness/lang/rust/standard.md sha256=aca19c7c31f2c63e8f136bbed51cda2bf1566ec5202c347a5aaee5416d998267 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=d7f83f446e2f04890b38665659933af8b5d7b2d15b6e4c228840024d1fb92049 -->
-<!-- harness-role-policy {"commands": ["gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*gate\\.py --live( --plan)?( --base [0-9a-f]{7,40})?( --consent)?", "gh issue comment [0-9]+ --body 'Live test: (PASS|RED|NOT RUN)[^'\\n]*(\\n[^']*)?'", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|\\.harness/deploy/(radio-preflight|live-page-check))\\.ps1( .*)?", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": ["D:/wstx-tmp/live/**"], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=5fc35c6f2da226f9733869da4207b9afbdf08738470271475dfaecdf82b91bd9 -->
+<!-- harness-role-policy {"commands": ["gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*gate\\.py --live( --plan)?( --base [0-9a-f]{7,40})?( --consent)?", "gh issue comment [0-9]+ --body 'Live test: (PASS|RED|NOT RUN)[^'\\n]*(\\n[^']*)?'", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|\\.harness/deploy/radio-preflight|tools/deploy/live-page-check)\\.ps1( .*)?", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": ["D:/wstx-tmp/live/**"], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
 
 You run the live tests the coordinator names for one issue: a function test of step 2 on a
 development build, or the live acceptance of [CR process](../../harness/core/docs/CR-Process.md#steps)
@@ -66,11 +66,12 @@ abort at or after RR73 or 73, a contact you did not start, and the settings a co
 test sets back. A run writes under `D:/wstx-tmp/live/<issue>/`
 ([limits for experiments](../../docs/harness/Project-Specifics.md#limits-for-experiments)): its log, and its
 scripts, which act on the station only through the station client
-`.git/harness-parallel/resources/station-update/agent-client.ps1` (dot-sourced:
+`tools/deploy/agent-client.ps1` (dot-sourced:
 `Open-AgentSession`, `Agent-Get`, `Agent-Post`). It runs them, and the radio preflight or
 the live page check, as
 `powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/live/<issue>/<name>.ps1 …`
-or `… -File .harness/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <value>`. It
+or `… -File .harness/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <value>`, or
+`… -File tools/deploy/live-page-check.ps1 -Repo D:/Github/wsjtx-rust -Shared D:/Github/wsjtx-rust/.git/harness-parallel -AgentClient tools/deploy/agent-client.ps1`. It
 installs nothing and restarts the station only through those deploy scripts.
 
 The [agent working rules](../../docs/harness/Agent-Working-Rules.md) hold for every role. Gate build folders
@@ -87,11 +88,15 @@ are the coder's above.
   `gh issue comment <number> --body '<text>'`: single quotes, no `'`, `$` or backticks in the
   text, no `--body-file`, and no `--repo` on this project's issues (the harness-improver's
   harness issues above are the one exception).
+- **The deploy OK is the operator's.** An agent never posts a comment that starts with
+  `Deploy OK:`. When a deploy needs that OK
+  ([deployment authority](../../docs/harness/Project-Specifics.md#deployment-authority)), the agent stops, gives
+  the operator the exact line the deploy printed, and waits for the comment's id.
 
 ## Limits the role hook enforces
 
-- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `gh issue view [0-9]+( .*)?`, `(python3?|py)(\.exe)? \S*gate\.py --live( --plan)?( --base [0-9a-f]{7,40})?( --consent)?`, `gh issue comment [0-9]+ --body 'Live test: (PASS|RED|NOT RUN)[^'\n]*(\n[^']*)?'`, `(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|\.harness/deploy/(radio-preflight|live-page-check))\.ps1( .*)?`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})`
+- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `gh issue view [0-9]+( .*)?`, `(python3?|py)(\.exe)? \S*gate\.py --live( --plan)?( --base [0-9a-f]{7,40})?( --consent)?`, `gh issue comment [0-9]+ --body 'Live test: (PASS|RED|NOT RUN)[^'\n]*(\n[^']*)?'`, `(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|\.harness/deploy/radio-preflight|tools/deploy/live-page-check)\.ps1( .*)?`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})`
 - Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: `D:/wstx-tmp/live/**`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=9143ce247dee24489901beaf224e5ee9caebaf894ba7e90777fc059d61fc9095 -->
+<!-- harness-agent-v1 sha256=d4f7172dd75f13e9a89b78e8a46d93d042e66ae28ba9727e64b4926a0330d0b7 -->

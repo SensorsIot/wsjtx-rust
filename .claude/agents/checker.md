@@ -22,7 +22,7 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=720bd0350e4b4693daed1702454af189a14376f5b8f47216bc1b7622f0fc4875 -->
 <!-- source harness/lang/rust/standard.md sha256=aca19c7c31f2c63e8f136bbed51cda2bf1566ec5202c347a5aaee5416d998267 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=d7f83f446e2f04890b38665659933af8b5d7b2d15b6e4c228840024d1fb92049 -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=5fc35c6f2da226f9733869da4207b9afbdf08738470271475dfaecdf82b91bd9 -->
 <!-- harness-role-policy {"commands": ["gh issue (view|list)( .*)?", "gh pr (view|list)( .*)?", "gh search issues( .*)?", "gh issue comment [0-9]+ --body 'Ready: (PASS|not yet)(\\n[^']*)?'", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": [], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
 
 You did not write this issue. Do the [ready check](../../harness/core/docs/CR-Process.md#ready-check)
@@ -76,6 +76,10 @@ are the coder's above.
   `gh issue comment <number> --body '<text>'`: single quotes, no `'`, `$` or backticks in the
   text, no `--body-file`, and no `--repo` on this project's issues (the harness-improver's
   harness issues above are the one exception).
+- **The deploy OK is the operator's.** An agent never posts a comment that starts with
+  `Deploy OK:`. When a deploy needs that OK
+  ([deployment authority](../../docs/harness/Project-Specifics.md#deployment-authority)), the agent stops, gives
+  the operator the exact line the deploy printed, and waits for the comment's id.
 
 ## Limits the role hook enforces
 
@@ -83,4 +87,4 @@ are the coder's above.
 - Shell commands always refused, wherever they stand outside quotes: `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: none
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=728e10554624db39e73befe40eb72b4c4f5af8166d9b1740d5e979fa60e7ca29 -->
+<!-- harness-agent-v1 sha256=19acac2f9e363ea2f07b50ed4262579438c9b27c98439efaa6d5abe85fc7cc7c -->
