@@ -429,7 +429,7 @@ if ($returned) { $issues=Issues-Named $commit $current }
 else {
   $moved=Move-Installed $commit $current
   foreach ($l in $moved) { Step "cr_state: $l" }
-  $issues=@($moved | ForEach-Object { if ([string]$_ -match '^#([0-9]+)(:? already| .* ->) installed$') { [int]$Matches[1] } } | Sort-Object -Unique)
+  $issues=@($moved | ForEach-Object { if ([string]$_ -match '^(?:cr state: )?#([0-9]+)(?:: already| .* ->) installed$') { [int]$Matches[1] } } | Sort-Object -Unique)
 }
 if (-not @($issues).Count) { Step 'record not posted: no CR issue found for this install' }
 foreach ($n in @($issues)) {
