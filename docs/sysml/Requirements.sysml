@@ -12,7 +12,6 @@ package WstxRequirements {
     private import WstxProfiles::'TC-022-003';
     private import WstxProfileRecordings::'TC-018-001';
     private import WstxProfileRecordings::'TC-018-002';
-    public import WstxRequirementsReceive::*;
     public import WstxRequirementsMcp::*;
     public import WstxRequirementsAudio::*;
     public import WstxRequirementsRadioControl::*;
@@ -22,6 +21,14 @@ package WstxRequirements {
     public import WstxRequirementsQso::*;
     public import WstxRequirementsUdp::*;
     public import WstxRequirementsFrontend::*;
+    private import WstxLiveReceive::'CL-008-02';
+    private import WstxRecordingReceive::'CL-008-03';
+    private import WstxRecordingReceive::'CL-006-04';
+    private import WstxReceiveStartup::'CL-045-01';
+    private import WstxLiveReceive::'TC-009-002';
+    private import WstxLiveReceive::'TC-002-003';
+    private import WstxRecordingReceive::'TC-009-004';
+    private import WstxLiveReceive::'CL-007-05';
     doc /* Canonical functional requirements and durable verification definitions.
          The other Wstx packages own detailed typed contracts; validation does not execute tests.
          Coverage flags describe implemented source slices, not acceptance or whole-project parity. */
@@ -156,7 +163,7 @@ package WstxRequirements {
     }
     requirement 'FR-023' {
         doc /* Optional direct FlexRadio integration — phase 2 target
-             Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist their receive intent (never a radio identity, slice index or handle) and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Receive and control at isolated level 2 are delivered (WstxProductScope::NativeFlexWireSubset); live hardware qualification TC-023-004/005 and transmit TC-023-006 remain open. */
+             Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist their receive intent (never a radio identity, slice index or handle) and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Receive and control at isolated level 2 are delivered (WstxFlexSession::NativeFlexWireSubset); live hardware qualification TC-023-004/005 and transmit TC-023-006 remain open. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/flex/session.rs; server/src/flex/wire.rs; server/src/flex_http.rs; server/src/profile.rs; client/recording.js";
     }
@@ -222,65 +229,6 @@ package WstxRequirements {
     dependency CL_005_03_to_FR_019 from 'CL-005-03' to 'FR-019';
     dependency CL_005_03_to_FR_021 from 'CL-005-03' to 'FR-021';
     dependency CL_005_03_to_FR_022 from 'CL-005-03' to 'FR-022';
-    requirement 'CL-013-01' {
-        doc /* Phase 2 MUST offer direct native-network integration as an optional profile connection type for the selected radio control, status and sample-stream functions. When selected, that native path MUST NOT require the external SmartSDR desktop application, SmartSDR CAT or DAX applications to be installed/running as bridges. This restriction does not prohibit those tools as operator-selected infrastructure for the standard connection path. A Rust implementation may coordinate shared radio access internally without forcing one hardware GUI-client session per logical station server. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/flex/session.rs; server/src/main.rs";
-    }
-    dependency CL_013_01_to_FR_023 from 'CL-013-01' to 'FR-023';
-    requirement 'CL-013-02' {
-        doc /* This independence concerns desktop applications. Compatible radio-side firmware and its API remain required; this specification does not promise a FlexRadio operating without its SmartSDR radio firmware or an unrestricted firmware compatibility range. Pin supported models, firmware/API versions and selected stream formats before implementation. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/flex/wire.rs; server/src/flex/session.rs";
-    }
-    dependency CL_013_02_to_FR_023 from 'CL-013-02' to 'FR-023';
-    requirement 'CL-013-03' {
-        doc /* Each native FlexRadio profile MUST persist its receive intent: its own client identity and receive antenna, and no radio identity (operator decision 2026-11-06 on #22: the station uses whichever radio discovery finds available). Where discovery cannot reach the radio, the profile may also save the radio's address (operator decision 2026-11-06 on #13): a locator for that one radio, not compared with anything. On every connection/reconnection the system MUST reconcile that intent with authoritative discovery/status and current runtime handles. A changed/transient slice index MUST NOT redirect a station to another station's slice. Unresolvable associations MUST produce a visible unavailable/conflict state rather than guessing a replacement. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/flex/session.rs; server/src/profile.rs";
-    }
-    dependency CL_013_03_to_FR_023 from 'CL-013-03' to 'FR-023';
-    requirement 'CL-013-04' {
-        doc /* Control responses and received stream data MUST be routed to the associated station. Capacity shortages, occupied resources and incompatible API behavior MUST be reported without stealing another profile's slice or silently reducing the requested independence. Four-slice hardware validation requires a model/configuration that actually provides at least four usable slices. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/flex/session.rs";
-    }
-    dependency CL_013_04_to_FR_023 from 'CL-013-04' to 'FR-023';
-    requirement 'CL-013-05' {
-        doc /* Shared-radio transmit, tuning and other constrained-resource authority MUST be coordinated under FR-008/FR-009 before those operations are enabled. Four station profiles do not confer simultaneous independent transmit authority. Reconnect/profile restoration MUST NOT replay an old transmit request or bypass the future ownership policy. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/flex/session.rs; server/src/transmit_http.rs";
-    }
-    dependency CL_013_05_to_FR_008 from 'CL-013-05' to 'FR-008';
-    dependency CL_013_05_to_FR_009 from 'CL-013-05' to 'FR-009';
-    dependency CL_013_05_to_FR_023 from 'CL-013-05' to 'FR-023';
-    requirement 'CL-013-06' {
-        doc /* The native path MUST reuse the common browser, station-operation, DSP/modem and future MCP interfaces. The default standard connection remains usable without FlexRadio hardware or native-profile fields. A mixed set of instances MUST preserve each profile's selected path, configuration and routing independently. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/recording.rs; server/src/receive_http.rs; server/src/selection_http.rs; client/recording.js; client/contact.js";
-    }
-    dependency CL_013_06_to_FR_023 from 'CL-013-06' to 'FR-023';
-    requirement 'CL-006-02' {
-        doc /* Profile-owned import/replay/cancellation have explicit pending, terminal and recoverable error states; replacement never destroys the previous committed source before commit. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/recording.rs; server/src/recording_http.rs; server/src/spectrum.rs; client/recording.js";
-    }
-    dependency CL_006_02_to_FR_018 from 'CL-006-02' to 'FR-018';
-    dependency CL_006_02_to_FR_019 from 'CL-006-02' to 'FR-019';
-    requirement 'CL-006-03' {
-        doc /* Show measured spectrum and source-time waterfall together above station controls in one station page; use the defined axes/math, accessible divider and bounded selectable Detailed/Thin/Off display. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/recording.rs; server/src/recording_http.rs; server/src/spectrum.rs; client/recording.js";
-    }
-    dependency CL_006_03_to_FR_010 from 'CL-006-03' to 'FR-010';
-    dependency CL_006_03_to_FR_019 from 'CL-006-03' to 'FR-019';
-    dependency CL_006_03_to_FR_021 from 'CL-006-03' to 'FR-021';
-    requirement 'CL-006-04' {
-        doc /* Bound import, sample, worker and visualization resources; refuse excess work explicitly, discard obsolete display work, preserve status service and invalidate late receive output on cancellation/replacement. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/recording.rs; server/src/recording_http.rs; server/src/spectrum.rs; client/recording.js";
-    }
-    dependency CL_006_04_to_FR_021 from 'CL-006-04' to 'FR-021';
     requirement 'CL-007-02' {
         doc /* The common browser MUST show exact supported payload fields, hash identities (filled in by the station per CL-024-01 or unresolved), UTC period time and relative DT when correlated or explicit unknown timing under4.7.4, lowest-tone audio frequency and calibrated SNR or explicit unavailable SNR, with reliable bounded result delivery. */
         attribute coverage : ImplementationState = ImplementationState::partial;
@@ -298,15 +246,6 @@ package WstxRequirements {
     dependency CL_008_01_to_FR_002 from 'CL-008-01' to 'FR-002';
     dependency CL_008_01_to_FR_009 from 'CL-008-01' to 'FR-009';
     dependency CL_008_01_to_FR_022 from 'CL-008-01' to 'FR-022';
-    requirement 'CL-008-03' {
-        doc /* Publish independently truthful audio/control states, bounded live results and explicit loss/recovery while preserving worker, cancellation and thin-link bounds. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
-    }
-    dependency CL_008_03_to_FR_002 from 'CL-008-03' to 'FR-002';
-    dependency CL_008_03_to_FR_009 from 'CL-008-03' to 'FR-009';
-    dependency CL_008_03_to_FR_019 from 'CL-008-03' to 'FR-019';
-    dependency CL_008_03_to_FR_021 from 'CL-008-03' to 'FR-021';
     requirement 'CL-008-04' {
         doc /* Support the Windows shared-audio and IC-7300 receive-control matrix below, with independently verified receive-only physical acceptance. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -577,35 +516,6 @@ package WstxRequirements {
         attribute executable : String = "server/tests/radio_control.rs";
         attribute method : String = "manual";
     }
-    verification 'TC-009-002' {
-        doc /* TC-009-002 — Controlled IC-7300 receive station
-             CL-008-02, CL-008-04, CL-008-05, CL-008-07
-             On the designated Windows IC-7300 PC, verify receive inhibit/keying settings, selected USB input and COM3 identity; inspect readback against radio indications, capture known on-air/reference receive signals, restore original receive settings. Compare decoded payloads with simultaneous reference receive observations.
-             Correct physical input/port, no transmission, authoritative CAT observations, visible live spectrum/decodes and independent source timing/error records. Loss/reconnect and clock-quality labels agree with actual state. Reference counts alone are not exhaustive decoder truth.
-             4 — Controlled live tests; HB9BLA radio PC and development browser, physical IC-7300, operator-authorized receive-only setup. */
-        attribute automation : AutomationState = AutomationState::partial;
-        objective {
-            verify 'CL-008-02';
-            verify 'CL-008-04';
-            verify 'CL-008-05';
-            verify 'CL-008-07';
-        }
-        attribute executable : String = "server/tests/radio_native.rs::read_only_selected_endpoint_discovery; server/tests/radio_hardware.rs::authorized_ic7300_frequency_query_evidence; server/tests/radio_hardware.rs::authorized_ic7300_readonly_inventory_evidence; server/tests/radio_hardware.rs::authorized_ic7300_prepare_usb_data; server/tests/radio_hardware.rs::authorized_ic7300_restore_lsb_data_off; server/tests/audio_hardware.rs::selected_radio_audio_capture_evidence; server/tests/audio_listen.rs::selected_radio_audio_to_listening_wav";
-        attribute method : String = "manual";
-    }
-    verification 'TC-002-003' {
-        doc /* TC-002-003 — Audio without CAT
-             CL-008-02, CL-008-05
-             Stream known packets with CAT disabled/unavailable and inject audio loss; exercise live spectrum and decoder fixture consumer.
-             Correct samples/spectrum/results without any CAT bytes; own errors/reopen/epochs visible; engine glitches keep job/generation; GET /receive audio.loss_epochs counts unknown-loss rotations only and audio.last_loss names the latest trigger (null iff0); no default-device substitution or audio archiving.
-             2 — Isolated automated tests; Windows PC, actual receive service and independent device/control fixtures. */
-        attribute automation : AutomationState = AutomationState::partial;
-        objective {
-            verify 'CL-008-02';
-            verify 'CL-008-05';
-        }
-        attribute executable : String = "server/tests/audio_contract.rs; server/tests/audio_receive.rs; server/src/recording_tests.rs";
-    }
     verification 'TC-009-003' {
         doc /* TC-009-003 — Control without audio
              CL-008-05, CL-008-06
@@ -618,22 +528,6 @@ package WstxRequirements {
             verify 'CL-008-06';
         }
         attribute executable : String = "server/tests/radio_control.rs";
-    }
-    verification 'TC-009-004' {
-        doc /* TC-009-004 — Independent failure and shared worker
-             CL-008-03, CL-008-05, CL-010-05, CL-010-07, CL-010-08
-             Lose either interface, overrun/stop/reopen capture, stall CAT and combine native48k conversion, display and bounded decoder quanta for four profiles; seed live result counters2047/2048/2049, eviction/cursor and safe-integer boundaries; simulate later TX/halt ownership. Hold and release result-page/snapshot responses across a confirmed cancellation and unknown Start outcome; inject a current live frame while the recorded-input job is null.
-             Independent availability, no false ready state, no cross-profile samples/results, conversion service<=50ms quanta and native-to-canonical software backlog<=200ms under the declared workload, <=250ms normal cancel, <=2s status (no 32 kbit/s link scenario, #80); failed close retains ownership. No real RF transmission. Delayed pages preserve newer confirmed lifecycle/error state and do not advance cursors; pre-mutation reads cannot clear the unknown-outcome control barrier, while a later explicit reconciliation can. Live progress updates only its matching live owner, with no exception or false disconnection when the recorded-input job is absent.
-             2 — Isolated automated tests; Windows PC, actual services/browser/link model, independently scripted device/control and decoder-step fixtures. */
-        attribute automation : AutomationState = AutomationState::partial;
-        objective {
-            verify 'CL-008-03';
-            verify 'CL-008-05';
-            verify 'CL-010-05';
-            verify 'CL-010-07';
-            verify 'CL-010-08';
-        }
-        attribute executable : String = "tests/receive-integration.test.cjs; tests/ui-operating.test.cjs; server/tests/audio_receive.rs; server/tests/radio_control.rs; server/tests/source_contract.rs; server/src/receive_http_tests.rs; server/src/recording_tests.rs; server/tests/audio_contract.rs";
     }
     requirement 'CL-010-05' {
         doc /* Present one operating-first profile page with the fixed-band signal display above the message/contact workspace, an accessible adjustable split and secondary in-page settings. */
@@ -1130,330 +1024,6 @@ package WstxRequirements {
         }
         attribute executable : String = "tests/profiles.test.cjs";
     }
-    verification 'TC-023-001' {
-        doc /* #### TC-023-001 — Direct protocol and four-station route isolation
-
-             **Promise:** FR-023; CL-013-01, CL-013-04. **Level: 2 — Isolated automated tests.**
-             **Where it runs:** Windows PC, candidate Rust system, four station profiles/windows
-             and an independent local FlexRadio protocol emulator; no real radio or external service.
-
-             **Inputs/actions:** Run with external SmartSDR desktop/CAT/DAX applications absent or
-             stopped. Exercise the selected native TCP command/status exchange and UDP sample-stream
-             path against pinned reference fixtures. Give each emulated slice distinguishable state
-             and data; send concurrent operations from the four logical station servers.
-
-             **Expected results:** The Rust system connects directly to the emulated API without a
-             desktop bridge. Each response/state update/stream reaches the intended station and no
-             other station. Operations change only the associated emulated resource. The oracle uses
-             independently specified protocol fixtures, not packets generated by the code under test.
-
-             **Level-2 realization:** tests/native-flex.test.cjs starts the independent loopback
-             emulator tests/flex-emulator.cjs (TCP command/status, unicast loopback discovery and
-             VITA-49 DAX float 24 kHz streams at the radio's 187.5 packets/s in the form a real
-             FLEX-6600 sent, its encoder checked byte for byte against that captured packet; no code
-             shared with the candidate) and four real
-             station servers with disposable schema-2 HTTPS profiles. Each emulated slice carries
-             a 1 kHz tone of a slice-specific amplitude, and every eighth packet another client's
-             stream ID is sent at amplitude 0.95. Oracle: the emulator's own slice/stream/owner
-             records and command log. Each station owns exactly one slice and stream whose index
-             and ID its /native-flex snapshot repeats; its accepted channel-0 peak equals its own
-             slice amplitude within 1e-4 with foreign packets counted. Four concurrent band
-             selections through /receive/select tune only the selecting client's slice and return
-             control native/origin native_readback; the restarted live receive runs on device
-             native_flex with advancing source frames and a correlated UTC anchor within 2 s of the
-             test's own clock. Read first: repeating a selection whose slice already reports the
-             frequency sends no slice tune and no mode write (command log count unchanged); an
-             emulator that does not report the new frequency makes the selection fail visibly with
-             error radio_timeout and leaves no native_readback origin. The emulator reports a tune
-             only when asked, as the real radio does; a selection is confirmed also with its replies
-             and statuses 130 to 260 ms late, and a repeated selection also sends no sub slice all. One packet in 60 delayed by 4 places counts neither lost nor late; delayed by 6
-             places it counts lost once and late once. Neither opens an epoch or changes the rate. A 400 ms
-             outage after which the count comes back shifted by 9 opens an epoch (native_discontinuity)
-             and changes neither lost nor late: the count starts over, and what waited goes on first.
-             Rust unit tests also check that a duplicate is dropped, whether its first copy still waits or
-             its turn has passed, and the burst limit: 7 lost in a row count lost, 8 read as late. Two stations whose DAX
-             status arrives 300 ms late end on different channels, the emulator's audio following
-             the channel, not the owner. Datagrams with the own stream ID from another address
-             (127.0.0.2, amplitude 0.95) are never accepted. No slice command targets another
-             client's slice and no transmit, disconnect or persistence command is sent. Rust unit
-             tests check the captured packet and the pinned independent vector field by field, their
-             negative cases, documented control lines and the 4096-byte line bound. The live check
-             script tests/flex-live-check.cjs, run against the emulator streaming the verified FT8
-             vector on the UTC period at 24 kHz with one packet in 64 lost, measures that loss, reports jitter, shows the
-             vector's expected text from the station's decoder with DT within 0.3 s from arrival
-             anchoring, saves the windows and leaves no slice or client. It stops as occupied with a
-             client or slice present, whichever way round the replies come, as unverified when a
-             reply is refused, reports not_released for a slice left behind or a closing look it cannot
-             verify, and reports the loss it saw. One packet in four
-             lost is counted at 25% and filled with silence, with the canonical frame rate kept and no new epoch, and a
-             120 ms stall reads as at least 90 ms of jitter; a 400 ms stall with packets missing opens a
-             new epoch (native_discontinuity). Another model on the admitted API connects and its announced
-             model, serial and firmware are shown. GET /native-flex reports the packet's timestamp
-             kind and this host's clock minus its time, which a new session without own packets
-             shows as null. A saved address connects with nothing announced and no discovery
-             listener; model, serial and firmware then come from the radio's info reply; the stream
-             arrives only after client udp_register from the stream's port, which repeats, and no
-             command names a local address. A full radio on a saved address reports
-             radio_refused. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs";
-        objective {
-            verify 'CL-013-01';
-            verify 'CL-013-04';
-            verify 'FR-023';
-        }
-    }
-    verification 'TC-023-002' {
-        doc /* #### TC-023-002 — Persisted intent and changed runtime handles
-
-             **Promise:** FR-023; CL-013-03, CL-013-04, CL-013-05. **Level: 2 — Isolated automated tests.**
-             **Where it runs:** Windows PC, disposable persisted profiles and a local radio emulator.
-
-             **Inputs/actions:** Save the native receive intent, disconnect/restart the
-             emulated radio and assign different runtime handles before reconnecting. Also present
-             missing, ambiguous or occupied intended resources and stale status updates.
-
-             **Expected results:** Each profile reconciles its intent with current authoritative
-             resources; transient indices do not route it to another station. Unresolved intent is
-             reported as unavailable/conflicting without stealing a resource, replaying transmit
-             requests or accepting stale handles as authority.
-
-             **Level-2 realization:** two native stations on the loopback emulator. The emulator is
-             stopped and restarted with new client handles, reversed slice indices, new stream IDs
-             and the old stream IDs replayed: each station reports transport_lost, then a new session
-             reaches ready on its own newly created slice (emulator owner record), the old stream
-             IDs are only counted as foreign, the accepted peak follows the new own slice, and a
-             receive job running before the restart stays the operator's running job and advances
-             again after a new source epoch, without an operator action. Occupied: an external
-             connected client carries station A's saved client identity; A shows
-             conflict/client_identity_in_use, sends no client gui and creates no slice while B is
-             ready, and recovers once the identity disappears. Ambiguous: a slice already attributed
-             to A's fresh handle yields conflict/ownership_ambiguous with no slice/stream command
-             from A. Missing: nothing is announced; both report radio_not_found with zero TCP
-             connections. Next available: of two emulators on one discovery port, the one announcing
-             available_clients=0 receives no connection and the station becomes ready on the other.
-             A selected frequency returns on the new slice after a restart, and the same occupied
-             case holds when the radio answers before it lists the clients. Without a session a
-             new receive start is refused radio_unavailable. Startup resume (CL-045-02): a
-             spectrum and a band choice resume started, the band on the slice, and with no radio
-             the resume ends failed/radio_unavailable after 15 to 30 s.
-             Authorization: a native station without a grant makes no TCP connection and, after
-             its only grant is revoked, its client and slice leave the emulator.
-             profile.json bytes stay unchanged and hold no radio identity (no serial key). */
-        attribute automation : AutomationState = AutomationState::implemented;
-        attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
-        objective {
-            verify 'CL-013-03';
-            verify 'CL-013-04';
-            verify 'CL-013-05';
-            verify 'FR-023';
-        }
-    }
-    verification 'TC-023-003' {
-        doc /* #### TC-023-003 — Capability limits and shared-resource coordination
-
-             **Promise:** FR-023; FR-008/FR-009; CL-013-02, CL-013-04, CL-013-05, CL-013-06. **Level: 2 — Isolated automated tests.**
-             **Where it runs:** Windows PC, four logical station servers and an API/resource emulator.
-
-             **Inputs/actions:** Emulate sufficient and insufficient slice capacities, incompatible
-             supported-version conditions and concurrent conflicting resource requests. Include a
-             mixed set of standard audio/rig-control profiles and native FlexRadio profiles, with
-             the standard device/rig-control side represented by independent local fixtures. Exercise
-             the shared-radio authority policy once specified; use simulated transmit intent only.
-
-             **Expected results:** Supported capacity permits the requested independent receive
-             resources; insufficient capacity/version incompatibility is explicit and preserves
-             existing station ownership. Conflicting operations follow the agreed coordination
-             policy. Four server instances never imply four independently authorized transmitters.
-             Standard profiles continue through their selected audio/rig-control path without native
-             FlexRadio settings; native profiles use the direct API. Both are presented through the
-             same browser and shared station-operation interfaces, with no cross-profile routing.
-
-             **Level-2 realization:** emulator capacity two slices with three native stations: two
-             become ready, the third reports capacity_slices, and the two owners' slice records stay
-             identical. Announced available_clients=0 yields capacity_clients with zero connections;
-             API version 1.5.0.0 yields incompatible_api with zero commands. A schema-1 standard
-             station on the same PC returns 404 for /native-flex, control manual and the unchanged
-             audio_unconfigured receive refusal and makes no connection to a radio it could hear, while the native
-             station reports control native and starts receive. Safety: on both, transmit capability
-             is unsupported, Enable Tx is refused with the same error, and HALT answers with the same
-             status and halt state; no transmit command reaches the radio. A native settings edit
-             naming an audio device or CAT control and Detect radio are refused without changing
-             profile.json. One real browser shows Standard and Native FlexRadio as read-only
-             connection types. The native status line and error-field entry arrive only by the
-             radio.native WebSocket push: the page sends no /native-flex request, and stopping the
-             emulator changes the line without a request or reload. The error field never shows
-             No audio input for it. The line stands in the receive details, not in the top bar, and
-             opens from its error-field entry; the screen has no page scroll at 1366x768. Stopping
-             the station turns the line stale. No page errors. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        attribute executable : String = "tests/native-flex.test.cjs";
-        objective {
-            verify 'CL-013-02';
-            verify 'CL-013-04';
-            verify 'CL-013-05';
-            verify 'CL-013-06';
-            verify 'FR-008';
-            verify 'FR-009';
-            verify 'FR-023';
-        }
-    }
-    verification 'TC-023-004' {
-        doc /* #### TC-023-004 — Live direct-radio tuning and slice lifecycle
-
-             **Promise:** FR-023; FR-009. **Level: 4 — Controlled live tests with operator consent.**
-             **Where it runs:** Windows PC and a designated FlexRadio test station, using a recorded
-             supported model/firmware and hardware capacity of at least four usable slices.
-
-             **Inputs/actions:** With explicit consent, stop the external SmartSDR desktop/CAT/DAX
-             applications, connect the candidate directly, establish the intended slice associations
-             and perform approved receive tuning and slice allocation/release/reconnection. Record
-             and restore the test station's agreed operating state. Do not transmit in this case.
-
-             **Expected results:** Direct control/status and selected receive streams operate without
-             those desktop applications. Each station retains its intended slice and other stations
-             remain isolated through the approved lifecycle actions. Live tuning/allocation changes
-             radio state, so this case is not classified as read-only level 3. */
-        attribute automation : AutomationState = AutomationState::planned;
-        objective {
-            verify 'FR-009';
-            verify 'FR-023';
-        }
-    }
-    verification 'TC-023-005' {
-        doc /* #### TC-023-005 — Observational live status, only where genuinely read-only
-
-             **Promise:** FR-023. **Level: 3 — Live read-only tests.**
-             **Where it runs:** An authorized designated FlexRadio station and the Windows PC.
-
-             **Inputs/actions:** Observe existing discovery/status/stream identity using a path that
-             does not allocate/release slices, tune, change configuration or request transmission.
-
-             **Expected results:** Reported state matches the designated radio without changing its
-             operating resources. If the selected API workflow requires such changes, use the level-4
-             case and operator consent instead; do not relabel a mutating test as observational. */
-        attribute automation : AutomationState = AutomationState::planned;
-        objective {
-            verify 'FR-023';
-        }
-    }
-    verification 'TC-023-006' {
-        doc /* #### TC-023-006 — Conditional future transmit validation
-
-             **Promise:** FR-008/FR-009, FR-023; CL-013-05.
-             **Level: 5 — Tests with external effects and explicit operator consent.**
-             **Where it runs:** A designated authorized physical test station, only after transmit
-             functionality, its ownership policy and the specific test operation have been approved.
-
-             **Inputs/actions:** Under that later approval, request a controlled transmission from
-             the owning station and a conflicting request from another profile; exercise the
-             specified abort/device-loss path.
-
-             **Expected results:** The agreed single-radio transmit authority is enforced, conflicts
-             are refused and FR-008 halt/failure behavior is met. This conditional definition does
-             not authorize transmission now or make it part of the receive-only live test above. */
-        attribute automation : AutomationState = AutomationState::planned;
-        objective {
-            verify 'CL-013-05';
-            verify 'FR-008';
-            verify 'FR-009';
-            verify 'FR-023';
-        }
-    }
-    verification 'TC-018-003' {
-        doc /* TC-018-003
-             CL-006-02, CL-006-04
-             Two independent authenticated clients race import/replay/cancel using current/stale/wrong boot, profile, generation and token IDs; inject a late worker publication, disconnect/reconnect, restart during replay; separately restart during an uncommitted reserved/receiving import, then query the fresh snapshot and old import/job IDs before starting new work; run maximum source and four processes. In a separate current running job with no cancellation, hold worker release, report processing failure, then source completion, inspect state before release and finally release the worker. Enumerate every 12.6 endpoint with missing/wrong Origin/cookie, method, media type, body/schema and token errors. In a real browser, reject the reservation POST with known409 busy and separately503 storage_unavailable; observe local pending/error display and all subsequent requests.
-             Exactly one serialized start wins. A known rejected reservation ends local pending and visibly reports its exact error, sends no PUT/DELETE/retried POST and preserves authoritative busy/degraded/identity state; it cannot fabricate an accepted import or successful snapshot. Restart preserves the last committed source UUID/bytes but changes boot, resets generation0 and returns import:null/job:null; prior import resource and job DELETE return404, with no cancelled-job record or automatic replay. Errors and snapshots match fixed state-transition table, lost-response recovery never auto-replays. Wrong identities cannot affect selected station. Replay cancel invalidates output before ack and reaches terminal/worker release <=250 ms under stated workload; import cancel prevents commit when accepted before committing, acknowledges locally<=250ms, cleans normally<=1s or becomes failed/storage_unavailable by5s with slot/files quarantined and no false deletion; progress never exceeds frame count. The held-worker failure vector stays running/nonterminal before release, becomes failed on release and is never completed, including simultaneous source completion. Instrument retained block/worker/slot counts against contract bounds; this is not a total RSS claim. Original station.get/auth/profile regression assertions remain in force. Also corrupt the committed original/metadata/manifest in separate fixtures, restart, open a fresh browser, obtain200 snapshot with source_error and valid identities, then import a valid replacement using those identities: replacement succeeds, clears source_error and replays; replay before replacement returns409 recording_unavailable. */
-        attribute automation : AutomationState = AutomationState::partial;
-        objective {
-            verify 'CL-006-02';
-            verify 'CL-006-04';
-        }
-        attribute executable : String = "tests/recording.test.cjs; server/src/recording_tests.rs";
-    }
-    verification 'TC-010-001' {
-        doc /* TC-010-001
-             CL-006-03
-             Independently synthesize silence, DC, coherent tones at 750/1500/2250 Hz at amplitudes 0.5/0.25, two simultaneous tones, a noncoherent tone, clipped input and a burst with specified source-frame start/end. Compute selected windows using a direct DFT test oracle; replay through real browser.
-             Direct DFT uses published formula without candidate FFT/provider helpers; peak group equals floor(k/4) for coherent bins and row interval follows window-start rule. Half-amplitude change is -6.0206 dB within 0.05 dB prequantization; quantized levels add <=0.5 dB. Silence equals floor; DC uses one-sided exception. Require normal and portable scalar FFT paths against the same direct DFT oracle, then compare full selected rows, axes/legend/row gaps in DOM/canvas sampling and source metadata, not screenshot resemblance alone. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-006-03';
-        }
-        attribute executable : String = "tests/recording.test.cjs; server/src/recording_tests.rs";
-    }
-    verification 'TC-010-002' {
-        doc /* TC-010-002
-             CL-006-03, CL-006-04
-             #80 (operator 2026-11-09): the two-browser 32 kbit/s replay, Off and upload measurements, the stalled thin subscriber and the paced optional-output case are retired; the link budget is judged from the link byte log (CL-003-05, TC-080-001) and dead peer removal is TC-021-008. Actual server and browser on an unshaped local connection: import and replay a recording, an independent peer subscribes Off and another stays unsubscribed, another actor replays and imports; a read failing after an announcement; injected Thin frames with gaps, obsolete identities and more than 120 rows.
-             The browser sends no recording.get and no timer GET /recording; a subscribed peer (Off included) receives one recording.state after subscribing and then only on a change, within 2 s, with received_bytes alone at most once per 5 s, shown without a read; a peer without a subscription receives none. A failed read after an announcement closes the socket and the reconnect reads again. The browser keeps at most 120 rows, shows missing rows as gaps and ignores obsolete identities. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-006-03';
-            verify 'CL-006-04';
-        }
-        attribute executable : String = "tests/recording.test.cjs; server/src/protocol_tests.rs";
-    }
-    verification 'TC-010-003' {
-        doc /* TC-010-003
-             CL-006-03
-             Real browser at 1100x850 and 360x640: import actual recording, verify one station page, drag divider beyond both extremes, use keyboard/touch/zoom and resize during replay. Repeat four independent station windows.
-             Measured pane bounds meet 160/200 px minima, separator is 12 px and accessible, keyboard steps16px/Home/End clamp, small-height page scrolls, no horizontal page overflow, controls and axes remain reachable. Pointer/keyboard actions change only that station's pane, no second waterfall window appears and data/source identity survives resize. Browser assertions plus desktop/narrow screenshots verify actual layout. */
-        attribute automation : AutomationState = AutomationState::partial;
-        objective {
-            verify 'CL-006-03';
-        }
-        attribute executable : String = "tests/recording.test.cjs";
-    }
-    verification 'TC-010-004' {
-        doc /* TC-010-004
-             CL-006-03, CL-006-04
-             Cost2, automated Windows Rust numerical tests and real browser/server fixtures. Synthesize independent PCM16 vectors: silence/DC, single tones at native k256 and k257 separately and summed with fixed phases/amplitudes; simultaneous750 and756.25 Hz tones; amplitude0.5/0.25 and bursts at source frames1920/2400/2880 and sources of1/2399/2400/2401/2879/2880/2881 frames with short/EOS windows. Compare N4096 normal/scalar FFT bins and complete selected power-averaged rows against a test-only f64 direct DFT of the hand-specified periodic Hann formula, without candidate FFT/window/quantizer helpers. Replay one source with simultaneous Thin and Detailed peers, then race cancellation/replacement.
-             Native k256=750Hz and k257=752.9296875Hz remain separate values; Hann leakage/interference is compared to the independent DFT, not an assertion that adjacent equal tones must form two local maxima. 750/756.25Hz signal retains independently predicted bin peaks/valley; no four-bin pooling or frequency resampling. Prequantized error <=0.05dB on independently specified bins above -80dBFS and absolute amplitude error<=2e-6 elsewhere; quantized values differ by <=1 level from independently rounded DFT, exact silence0. One coherent half-amplitude tone gives -6.0206dBFS before PCM error. Row assignment uses global hop480: five starts/full2400-frame row, one to five at EOS, including start2400 in source_frames2401. Independent mean-square amplitude then10log10 differs from Thin maximum and from averaging dB; zero Hann endpoint yields legitimate final silence for2401. Intervals are2400 frames, shortened EOS, sequence<=599. One source/worker, the latest Thin frame and the retained Detailed rows (#54, at most 25), declared workspace/history limits and cancellation release<=250ms remain; stale publications cannot overwrite either profile. Thin numerical expectations from TC-010-001 remain unchanged. */
-        attribute automation : AutomationState = AutomationState::partial;
-        objective {
-            verify 'CL-006-03';
-            verify 'CL-006-04';
-        }
-        attribute executable : String = "server/src/recording_tests.rs";
-    }
-    verification 'TC-010-005' {
-        doc /* TC-010-005
-             CL-006-03, CL-006-04
-             Cost2, automated Windows real browser/candidate server plus deterministic injected wire fixtures. Exercise cleartext loopback and HTTPS defaults; explicit three-profile changes, old Thin-only/older server, simultaneous Thin/Detailed peers, malformed base64 alphabet/padding/pad bits/decoded lengths/values, unknown/missing keys, safe-integer/interval edges, wrong tuples/old sockets and skipped sequences. Use alternating known quantized levels in adjacent native bins/rows and read actual getImageData at1100x850 and360x640, DPR1/2,200% zoom, splitter extremes, resize and repaint; exercise the fixed level mapping (#54 DisplayLevels: reference, Zero/Gain sliders, no automatic level) and range/legend/readout consistency. Retain actual busy FT8 recording desktop/mobile screenshots and compare their trace/noise contrast, orientation and rulers qualitatively with WSJT-X/FlexRadio reference images. Stall Detailed output with a controlled sink returning Pending, then issue status/control and cancel/off.
-             Detail events have exact schema,1024 decoded bytes, canonical1368-char base64 and<=2048 UTF-8 bytes; exactly-at-limit values accepted and malformed/obsolete input leaves canvas/history unchanged. At most 1 Hz Thin and, for Detailed, 5 rows/s steady with catch-up of retained rows at most 5.9 rows/s (#54 TransferDisplay); no second worker. Thin/control input1024 and binary1003 guards preserved. Optional write test independently requires readiness/control priority,4096 cap,1024+28 control reserve; Detailed fast-link status responses display<=2s on unshaped localhost with two peers. The 32 kbit/s Thin/Off budget is judged from the link byte log (#80, TC-080-001). Every origin defaults Detailed; explicit saved Thin/Off is honored and fallback attempts Thin once and labels unavailability. Pixel oracle computes integer edges/fixed source-time cell edges from contract, samples interiors and both sides of boundaries for exact palette colors/uniform cells, using independently calculated RGB interpolation/rounding from the stated anchors, with grey gaps and dark unobserved areas on a full-height canvas; no blended spatial colors. New rows enter at top; Auto ignores median0 then locks once at median-3dB, manual Black/Range disables it, job/profile reset restores30dB/Auto and original calibrated data remains invariant. Frequency500/100Hz ticks and visible source-time5s ruler agree with pixel/readout positions and clipping. Fixed0..3000Hz axis endpoints/ticks through resize/DPR/zoom, no horizontal frequency scroll, unmodified native1024-value buffer, peak-preserving max projection with every bin contributing at widths below1024, native/projected readout centers/ranges/levels/intervals, keyboard selection, recent-row orientation,600-row cap and no page overflow hold through geometry changes. Thin uses the same integer geometry with128 bins; original numerical/wire values stay unchanged. A narrow strong tone at every native-bin position contributes to its assigned column and never disappears when W<B. Screenshots establish actual layout and independently synthesized data establishes numerical correctness.  Preference persistence: with disposable browser storage and actual server/Chromium, verify unchanged defaults without a valid choice; explicit Detailed/Thin/Off survives reload and reopened browser context; origins/ports and profile UUIDs are isolated while boot/revision changes preserve choice. Invalid value or denied storage uses normal defaults without page error and leaves in-memory selection usable. Inspect only versioned UUID keys and enumerated values, with no secrets. Unknown-command runtime Thin fallback preserves stored Detailed; subsequent explicit Thin replaces it. Existing subscription commands, no retry loop and Detailed bounds remain unchanged; no synthetic decoded records are used. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-006-03';
-            verify 'CL-006-04';
-        }
-        attribute executable : String = "tests/recording.test.cjs; tests/ui-operating.test.cjs; server/src/protocol_tests.rs";
-    }
-    verification 'TC-010-006' {
-        doc /* TC-010-006
-             CL-006-03, CL-006-04
-             Cost2 automated Windows real browser/candidate fixtures. Inject independently known native rows of2,75,600 Detailed or120 Thin values with contrasting bins/rows and gaps; inspect actual RGBA/backing and CSS box dimensions at desktop1100x850/mobile360x640, DPR1/2,200% zoom and splitter bounds. Exercise Sensitivity-30/0/+30 and Speed1/2/8 via input, keyboard and numeric outputs, Range 10/50/80 (#54), new jobs/profiles and resize. Replay actual busy FT8 with a red saturated carrier, capture desktop/mobile screenshots and move both live sliders.
-             Independent oracle: palette endpoint/saturated cells are exactly[255,0,0,255], floor/no-signal[0,0,12,255], no white signal cells; legend uses identical RGB anchors/endpoints. With the fixed reference B=-85 and R=50 (#54), g=+10 yields E=-95 and g=-30 yields E=-55, clamped[-120,-R]; original row arrays, source/job/generation and curve base scale stay unchanged. No setting follows the signal or resets on a new job or profile; Sensitivity, Range and Speed persist per browser. Fixed source-time scrolling, independent pixel movement, clipping, gap and unobserved-region oracles are specified in TC-010-007. Native/projected readouts and rulers agree with that mapping. Spectrum/waterfall CSS heights follow1:5 within2CSSpx rounding, actual bitmap sizes equal rounded CSS boxes times DPR, neither geometry nor intrinsic height drifts over repeated paints. No horizontal overflow/changed0..3000Hz span, interpolation, fake history or network/source-rate change. Real FT8 screenshots show a full-height waterfall canvas with unobserved regions dark, dark floor, red strongest traces and visible working live sliders; original numeric/wire/security assertions remain. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-006-03';
-            verify 'CL-006-04';
-        }
-        attribute executable : String = "tests/recording.test.cjs";
-    }
-    verification 'TC-010-007' {
-        doc /* TC-010-007
-             CL-006-03, CL-006-04
-             Cost2 automated on the Windows development PC with real Chromium/candidate server and independently injected accepted source rows. Start empty; inject a uniquely marked row then successive Detailed0.2s rows and Thin1s rows, at Speed0.5/1/2/8. Inspect actual RGBA before/after each update, through enough source time to move the mark off the bottom. Exercise short/EOS rows, gaps, no input/completion/cancel/disconnect, invalid/stale frames, new replay/profile, resize, DPR1/2,200% zoom and minimum splitter height at360CSSpx, desktop and2048px width.
-             With p=10*v and newest end T, independently calculate each row edges floor((T-b)*p*H/C)..floor((T-a)*p*H/C); a fixed mark advances by2*v CSSpx per Detailed update or10*v per Thin update, independent of N. Minimum speed0.5 gives5CSSpx/s, half Speed1; default2 gives20CSSpx/s. It exits below H and never sticks or repeats. Empty/unobserved pixels are exactly navy with no-measurement readout; explicit gaps grey. Changing height changes capacity C/p, not pixels per source second; changing speed changes displacement without modifying tuples/data/network. Short EOS uses actual duration; no source row means no motion; stale/invalid frames cannot move history. Pointer native/projected intervals, keyboard clamps and5s rulers match the same time mapping. Existing sliders remain visible and keyboard-operable; actual canvas remains full allotted height, spectrum:waterfall1:5 and fixed0..3000Hz. Existing palette/sensitivity and wire/numerical assertions remain unchanged. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-006-03';
-            verify 'CL-006-04';
-        }
-        attribute executable : String = "tests/recording.test.cjs";
-    }
     verification 'TC-007-002' {
         doc /* #### TC-007-002 — Read-only operating layout slice
 
@@ -1747,34 +1317,12 @@ package WstxRequirements {
     dependency CL_005_03_verified_by_TC_022_003 from 'CL-005-03' to 'TC-022-003';
     dependency CL_005_03_verified_by_TC_022_004 from 'CL-005-03' to 'TC-022-004';
     dependency CL_005_03_verified_by_TC_022_005 from 'CL-005-03' to 'TC-022-005';
-    dependency CL_006_02_verified_by_TC_018_001 from 'CL-006-02' to 'TC-018-001';
-    dependency CL_006_02_verified_by_TC_018_002 from 'CL-006-02' to 'TC-018-002';
-    dependency CL_006_02_verified_by_TC_018_003 from 'CL-006-02' to 'TC-018-003';
-    dependency CL_006_03_verified_by_TC_010_001 from 'CL-006-03' to 'TC-010-001';
-    dependency CL_006_03_verified_by_TC_010_002 from 'CL-006-03' to 'TC-010-002';
-    dependency CL_006_03_verified_by_TC_010_003 from 'CL-006-03' to 'TC-010-003';
-    dependency CL_006_03_verified_by_TC_010_004 from 'CL-006-03' to 'TC-010-004';
-    dependency CL_006_03_verified_by_TC_010_005 from 'CL-006-03' to 'TC-010-005';
-    dependency CL_006_03_verified_by_TC_010_006 from 'CL-006-03' to 'TC-010-006';
-    dependency CL_006_03_verified_by_TC_010_007 from 'CL-006-03' to 'TC-010-007';
-    dependency CL_006_04_verified_by_TC_010_002 from 'CL-006-04' to 'TC-010-002';
-    dependency CL_006_04_verified_by_TC_010_004 from 'CL-006-04' to 'TC-010-004';
-    dependency CL_006_04_verified_by_TC_010_005 from 'CL-006-04' to 'TC-010-005';
-    dependency CL_006_04_verified_by_TC_010_006 from 'CL-006-04' to 'TC-010-006';
-    dependency CL_006_04_verified_by_TC_010_007 from 'CL-006-04' to 'TC-010-007';
-    dependency CL_006_04_verified_by_TC_018_002 from 'CL-006-04' to 'TC-018-002';
-    dependency CL_006_04_verified_by_TC_018_003 from 'CL-006-04' to 'TC-018-003';
-    dependency CL_006_04_verified_by_TC_022_005 from 'CL-006-04' to 'TC-022-005';
     dependency CL_007_02_verified_by_TC_004_001 from 'CL-007-02' to 'TC-004-001';
     dependency CL_007_02_verified_by_TC_004_002 from 'CL-007-02' to 'TC-004-002';
     dependency CL_007_02_verified_by_TC_004_003 from 'CL-007-02' to 'TC-004-003';
     dependency CL_007_02_verified_by_TC_007_006 from 'CL-007-02' to 'TC-007-006';
     dependency CL_008_01_verified_by_TC_002_001 from 'CL-008-01' to 'TC-002-001';
     dependency CL_008_01_verified_by_TC_009_001 from 'CL-008-01' to 'TC-009-001';
-    dependency CL_008_03_verified_by_TC_002_001 from 'CL-008-03' to 'TC-002-001';
-    dependency CL_008_03_verified_by_TC_009_001 from 'CL-008-03' to 'TC-009-001';
-    dependency CL_008_03_verified_by_TC_009_004 from 'CL-008-03' to 'TC-009-004';
-    dependency CL_008_03_verified_by_TC_009_005 from 'CL-008-03' to 'TC-009-005';
     dependency CL_008_04_verified_by_TC_009_001 from 'CL-008-04' to 'TC-009-001';
     dependency CL_008_04_verified_by_TC_009_002 from 'CL-008-04' to 'TC-009-002';
     dependency CL_008_05_verified_by_TC_002_003 from 'CL-008-05' to 'TC-002-003';
@@ -1792,16 +1340,6 @@ package WstxRequirements {
     dependency CL_010_08_verified_by_TC_009_004 from 'CL-010-08' to 'TC-009-004';
     dependency CL_010_08_verified_by_TC_009_005 from 'CL-010-08' to 'TC-009-005';
     dependency CL_010_09_verified_by_TC_007_006 from 'CL-010-09' to 'TC-007-006';
-    dependency CL_013_01_verified_by_TC_023_001 from 'CL-013-01' to 'TC-023-001';
-    dependency CL_013_02_verified_by_TC_023_003 from 'CL-013-02' to 'TC-023-003';
-    dependency CL_013_03_verified_by_TC_023_002 from 'CL-013-03' to 'TC-023-002';
-    dependency CL_013_04_verified_by_TC_023_001 from 'CL-013-04' to 'TC-023-001';
-    dependency CL_013_04_verified_by_TC_023_002 from 'CL-013-04' to 'TC-023-002';
-    dependency CL_013_04_verified_by_TC_023_003 from 'CL-013-04' to 'TC-023-003';
-    dependency CL_013_05_verified_by_TC_023_002 from 'CL-013-05' to 'TC-023-002';
-    dependency CL_013_05_verified_by_TC_023_003 from 'CL-013-05' to 'TC-023-003';
-    dependency CL_013_05_verified_by_TC_023_006 from 'CL-013-05' to 'TC-023-006';
-    dependency CL_013_06_verified_by_TC_023_003 from 'CL-013-06' to 'TC-023-003';
 
     doc /* Issue22 contract. Delivered: CL-022-01 persistent browser key,
          enrollment, challenge/proof transport, retained-key recovery and the
@@ -3313,28 +2851,6 @@ package WstxRequirements {
     }
     dependency CL_057_02_verified_by_TC_057_003 from 'CL-057-02' to 'TC-057-003';
     dependency CL_057_01_verified_by_TC_057_003 from 'CL-057-01' to 'TC-057-003';
-
-    // #52 Decode window diagnostics (approved on #52, 2026-11-02): what the station decoded.
-    requirement 'CL-052-01' {
-        doc /* For every live analysis window the receive owner keeps, in memory, the counters of the latest 20 windows: {mode, origin, frames, late, period_start_frame, period_start_utc, window_offset_ms (window start minus UTC period start), zero_samples (samples exactly 0), longest_zero_run, early_buffer_zero_samples (zeros inside the FT8 early buffer, the first 41*3456 frames of the period; null without a correlated clock), zero_filled_frames (frames the capture engine delivered as silence and the source filled with zeros), glitch_frames (frames of engine glitches accepted on a continuous timeline), capture (the capture's cumulative queue_contention, queue_full, pool_exhausted, invalid_packet, clock_step, timestamp_error, native_discontinuity, frame_backstep counters), capture_drift_ms, dump}; the capture counts are null when the input does not report them. GET /receive/diagnostics (receive read authorization, no query, empty body) returns exactly {v 1, profile_id, boot_id, window_dump, storage_error, dump_error, dumped_windows, windows}; it is read when Settings opens (at most every 30 s) or on Refresh, never polled, and nothing of it is added to GET /receive. The FT8 prompt-window dump is off by default and per profile: receive-diagnostics.json next to profile.json holds exactly {schema_version 1, profile_id, window_dump boolean}, written atomically; a missing file is off, a foreign, malformed or other-schema file is off with storage_error invalid_diagnostics. POST /receive/diagnostics {v 1, profile_id, boot_id, window_dump} with operator authority sets it (wrong profile wrong_profile, other boot state_conflict, any other key or type invalid_request) and acts from the next window without a restart; Settings > Expert shows it as "Save FT8 decode windows" with the latest window's counters. While on, each FT8 prompt window (not the late window, not FT4) is written off the decode path as diagnostic-windows/<origin, 15 digits>-<period UTC without separators>.wav, 12 kHz mono PCM16 as jt9 reads it, with a .json sidecar {v 1, rate_hz 12000, sample_format pcm16_mono, window: its counters}; the folder keeps the newest 20 windows within 16 MiB, deleting the oldest; a failed write sets dump_error dump_failed and never affects decoding. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/receive_diagnostics.rs; server/src/recording.rs; server/src/receive_http.rs; server/src/main.rs; server/src/audio.rs; server/src/audio/windows.rs; client/contact.js";
-    }
-    dependency CL_052_01_to_FR_003 from 'CL-052-01' to 'FR-003';
-    verification 'TC-052-001' {
-        doc /* TC-052-001 — Decode window diagnostics
-             CL-052-01
-             Setup: actual Recording owner on a disposable profile directory; the actual station router (contact_http_tests fixture); the real PacketQueue/LiveSource with injected native packets; the browser on the actual station.
-             Steps: (a) counters of a hand-built window with zeros at known frames and a known early buffer; (b) a PCM16 WAV of 0, 0.5, -1, 1; (c) defaults, POST on, reopen, foreign/other-schema/extra-key files, wrong profile and boot; (d) windows noted with the dump off, a late window, then 27 prompt windows with it on; (e) five windows of a third of the cap; (f) GET/POST through the router with refused bodies, a foreign origin and a query; (g) 100 native 480-frame packets at 48 kHz with packets 10 and 11 silent, 40 and 70 accepted glitches, then a timestamp error; one signal packet followed by 600 silent ones; (h) the Expert toggle in the browser.
-             Expected (hand-calculated): (a) 6 zeros, longest run 3, 4 in the early buffer (frames 104, 110, 118, 119); (b) RIFF/WAVE, PCM 1 channel 12000 Hz 16 bit, samples 0, 16384, -32768, 32767; (c) off, then {schema_version 1, profile_id, window_dump true} and on after reopening, each bad file off with invalid_diagnostics, refusals wrong_profile and state_conflict; (d) nothing written while off or for the late window, then <origin>-20261102T0916000000000Z.wav and .json with the window's counters, the newest 20 windows kept, the view's last 20 windows from origin 10, dumped_windows 27; (e) the two newest windows kept; (f) 200 views, 403 wrong_profile and forbidden_origin, 409 state_conflict, 400 invalid_request, GET /receive without window counters; (g) zero-filled 240 and glitch 240 canonical frames in [0, 12000), 180 and 60 in [1260, 4860), none after the new epoch; 72000 zero-filled frames, counted in full beyond the 512-mark limit; (h) the checkbox in Settings > Expert reads back the saved value and one POST per change.
-             2 — Isolated automated tests; Windows PC, no radio or audio device. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-052-01';
-        }
-        attribute executable : String = "server/src/receive_diagnostics_tests.rs; server/tests/audio_contract.rs::audio_zero_filled_and_glitch_frames_are_marked_per_window; tests/ui-operating.test.cjs; server/tests/audio_contract.rs::audio_sustained_silence_is_counted_in_full";
-    }
-    dependency CL_052_01_verified_by_TC_052_001 from 'CL-052-01' to 'TC-052-001';
 
     // #39 Strategy engine: selection, value order, editor popup, directed-CQ rule (decisions
     // on #37/#39/#42, 2026-11-01); detailed contract in WstxStrategy.

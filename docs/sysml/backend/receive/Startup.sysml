@@ -1,56 +1,12 @@
-package WstxRequirementsReceive {
+package WstxReceiveStartup {
     private import ScalarValues::*;
-    private import WstxRequirements::*;
-    private import WstxModemDecode::'CL-007-04';
-    private import WstxModemDecode::'TC-004-001';
-    private import WstxModemDecode::'TC-004-002';
-    private import WstxModemDecode::'TC-004-003';
-    requirement 'CL-007-01' {
-        doc /* Explicit FT4/FT8 selection MUST process the immutable canonical 12 kHz live source through the existing receive-job authority. Independent recorded fixtures MUST exercise the same pure modem without a physical radio; no file-decoding product operation is provided. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/decoder/mod.rs; server/src/receive.rs; client/recording.js";
-    }
-    dependency CL_007_01_to_FR_003 from 'CL-007-01' to 'FR-003';
-    dependency CL_007_01_to_FR_004 from 'CL-007-01' to 'FR-004';
-    dependency CL_007_01_to_FR_018 from 'CL-007-01' to 'FR-018';
-    requirement 'CL-007-05' {
-        doc /* Live decode latency (#47). With a correlated UTC source clock, on the reference PC HB9BLA under normal station load (receive, waterfall, one browser, UDP enabled), for any session length: live FT8 MUST publish every decode of a frame with DT -1.6 s to +0.56 s by its period start + 15.0 s, and live FT4 every decode with DT -1.4 s to +0.86 s by period start + 7.5 s. Every frame with DT -1.6 s to +2.4 s (FT8) or -1.4 s to +2.2 s (FT4) MUST be published, the later ones from a late window early in the next period, which waits for the prompt decode instead of cutting it short, and extends its period's view with them under the same view id (nothing new publishes nothing), so clients keep their rows and cursor. The receive owner MUST measure the capture clock against UTC continuously (each timestamped packet's canonical frame against its QPC/system-time UTC, averaged over about 1 s, a jump above 0.2 s restarting the average) and re-anchor the window schedule, period UTC and DT whenever the measured offset moved by more than 50 ms, without dropping, repeating or reordering a window for a correction of any size; the measured offset and rate are read on demand from GET /receive/clock (capture_drift_ms, capture_drift_ppm), never added to the high-frequency GET /receive snapshot, whose clock object and thin-link size stay unchanged. (At zero offset the prompt windows hold FT8 DT -1.7..+0.66 s and FT4 -1.5..+0.96 s, prompt plus late windows FT8 -1.7..+2.56 s and FT4 -1.5..+2.36 s; the ranges above keep 0.1 s for the re-anchoring residual: the 50 ms threshold and drift within one period.) No per-period decode count cap applies; the only search bound is the existing 256 qualified-candidate limit with explicit SearchLimited. Without a correlated UTC clock the source-counter window grid of WstxRecordingReceive::LiveWindowSchedule applies and no latency is promised. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/receive.rs; server/src/recording.rs; server/src/decoder/search.rs; server/src/decoder/subtraction.rs";
-    }
-    dependency CL_007_05_to_FR_003 from 'CL-007-05' to 'FR-003';
-    dependency CL_007_05_to_FR_004 from 'CL-007-05' to 'FR-004';
-    dependency CL_007_05_to_FR_021 from 'CL-007-05' to 'FR-021';
-    requirement 'CL-008-02' {
-        doc /* Deliver immutable canonical 12 kHz mono samples and explicit timing/gaps through one common converter to the existing spectrum/decoder worker, without fabricating samples or UTC accuracy. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
-    }
-    dependency CL_008_02_to_FR_002 from 'CL-008-02' to 'FR-002';
-    dependency CL_008_02_to_FR_003 from 'CL-008-02' to 'FR-003';
-    dependency CL_008_02_to_FR_004 from 'CL-008-02' to 'FR-004';
-    verification 'TC-004-004' {
-        doc /* TC-004-004 — Live decode latency on a recorded busy period (#47)
-             FR-003, FR-004, FR-021; CL-007-04, CL-007-05
-             Cost 2 (release, Windows PC, no radio): the hash-pinned busy recording websdr_test7.wav (27 decodes) is presented as the UTC-aligned FT8 prompt window, 15 s of audio completing at period start + 13.8 s, to the live modem history. The time from window completion to the last published decode is at most 1.0 s (best of three runs, leaving 0.2 s of the 1.2 s budget for capture and publication) and at least 25 distinct decodes are published, so no per-period cap applies. Cost 1: the UTC schedule places FT8 prompt/late windows at +13.8 s/+15.7 s and FT4 at +6.5 s/+7.9 s of the period from a correlated anchor, and none without one; the window buffer emits each scheduled window at its source-counter residue with its own length and wait flag; a late window arriving during the prompt decode waits for it, with no overrun and a complete prompt result. Cost 1 (drift, #47 re-review): through the live worker's clock tracking and the real window buffer, a capture clock 2000 ppm slow over 600 s plus a +0.4 s system clock step (1.6 s in all) keeps every prompt window within 0.1 s of +13.8 s UTC and holding a DT 0 frame, while the same capture without re-anchoring completes more than 1.2 s late; GET /receive/clock reports the offset and rate while the /receive clock object keeps its exact keys; the on-demand read has the operating-read authorization and refuses a query. Cost 1: a re-anchored schedule moves completions for a forward shift and a backward step without dropping or repeating a window, and UTC steps of +2 s, -2 s and +8 s taken just before a prompt completion still complete every period's prompt and late window exactly once, in order (coinciding completions one after the other, no shift by a period). Cost 1: the FT8 late window at its real geometry (UTC +0.7..+15.7 s), analysed by the live worker, leaves latest_decode and the whole snapshot unchanged when it adds nothing, and with a DT +1.2 s late starter keeps the view id and only grows next_sequence. Cost 2 (browser): a correlated period view extended in place (same id, period and first_sequence; next_sequence grown, complete false to true) adds the late row from the existing cursor, without clearing rows, moving the period to history or an error state, while any other same-id change stays a descriptor error.
-             Cost 5 acceptance: live on HB9BLA, 10 consecutive FT8 periods publish their last decode by +15.0 s and FT4 by +7.5 s, with decode parity against jt9 on the same captured periods unchanged or better; the run records the receive session age and GET /receive/clock. */
-        attribute automation : AutomationState = AutomationState::partial;
-        objective {
-            verify 'CL-007-04';
-            verify 'CL-007-05';
-            verify 'FR-003';
-            verify 'FR-004';
-            verify 'FR-021';
-        }
-        attribute executable : String = "server/tests/decoder_signal.rs::live_busy_period_publishes_every_decode_promptly; server/tests/receive_integration.rs::receive_schedule_completes_windows_at_period_residues; server/src/recording_tests.rs::live_window_schedule_follows_the_utc_period_grid; server/src/recording_tests.rs::late_window_waits_for_the_prompt_decode_without_overrun; server/src/recording_tests.rs::drifting_capture_clock_keeps_prompt_windows_on_the_utc_period; server/src/recording_tests.rs::late_window_republishes_its_period_view_with_late_starters; server/tests/receive_integration.rs::receive_reschedule_moves_completions_without_dropping_or_repeating; server/tests/receive_integration.rs::receive_clock_steps_keep_each_period_window_once_and_in_order; server/src/auth_tests.rs::plaintext_profile_operating_routes_and_ws_require_runtime_token; tests/ui-operating.test.cjs";
-    }
-    dependency CL_007_01_verified_by_TC_004_001 from 'CL-007-01' to 'TC-004-001';
-    dependency CL_007_01_verified_by_TC_004_002 from 'CL-007-01' to 'TC-004-002';
-    dependency CL_007_01_verified_by_TC_004_003 from 'CL-007-01' to 'TC-004-003';
-    dependency CL_007_05_verified_by_TC_004_004 from 'CL-007-05' to 'TC-004-004';
-    dependency CL_008_02_verified_by_TC_002_001 from 'CL-008-02' to 'TC-002-001';
-    dependency CL_008_02_verified_by_TC_002_003 from 'CL-008-02' to 'TC-002-003';
-    dependency CL_008_02_verified_by_TC_009_002 from 'CL-008-02' to 'TC-009-002';
+    private import WstxRequirements::'TC-007-009';
+    private import WstxRequirements::ImplementationState;
+    private import WstxRequirements::'FR-016';
+    private import WstxRequirements::'FR-003';
+    private import WstxRequirements::'FR-021';
+    private import WstxRequirements::'FR-008';
+    private import WstxRequirements::AutomationState;
     dependency CL_045_01_verified_by_TC_007_009 from 'CL-045-01' to 'TC-007-009';
 
     // #45 Resume receive (Monitor) after a station restart (defaults recorded on issue #45).
@@ -109,7 +65,4 @@ package WstxRequirementsReceive {
     dependency CL_045_01_verified_by_TC_045_002 from 'CL-045-01' to 'TC-045-002';
     dependency CL_045_02_verified_by_TC_045_002 from 'CL-045-02' to 'TC-045-002';
     dependency CL_045_03_verified_by_TC_045_002 from 'CL-045-03' to 'TC-045-002';
-    dependency CL_007_05_verified_by_TC_043_002 from 'CL-007-05' to 'TC-043-002';
-    dependency CL_007_05_verified_by_TC_057_002 from 'CL-007-05' to 'TC-057-002';
-    dependency CL_007_05_verified_by_TC_057_003 from 'CL-007-05' to 'TC-057-003';
 }

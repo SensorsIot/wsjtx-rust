@@ -4,8 +4,8 @@ package WstxProfileRecordings {
     private import WstxRequirements::AutomationState;
     private import WstxRequirements::'FR-003';
     private import WstxRequirements::'FR-018';
-    private import WstxRequirements::'CL-006-02';
-    private import WstxRequirements::'CL-006-04';
+    private import WstxRecordingReceive::'CL-006-02';
+    private import WstxRecordingReceive::'CL-006-04';
     private import WstxRecordingReceive::ErrorCode;
     private import WstxRecordingReceive::JobView;
     private import WstxRecordingReceive::HttpValidation;

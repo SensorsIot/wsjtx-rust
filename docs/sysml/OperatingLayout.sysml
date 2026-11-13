@@ -288,7 +288,7 @@ attribute def ActivityOrdering {
              HTTP interleavings are response-order evidence, not modem evidence.
              The unsupported/no-input TC-007-002 baseline remains separate. */
     }
-    dependency livePresentationCase from livePresentation004 to WstxRequirements::'TC-009-004';
+    dependency livePresentationCase from livePresentation004 to WstxRecordingReceive::'TC-009-004';
     // #37: Band Activity (with the strategy element above it) and the QSO pane; the
     // Strategy card, Rx Frequency card and separate regions for settings, preferences,
     // recordings, connection and strategies are retired.
@@ -1494,7 +1494,7 @@ attribute def ActivityOrdering {
         }
         verification statusReadiness {
             subject operation : PresentAndEditProfile;
-            objective { verify WstxRequirements::'CL-005-02'; verify WstxRequirements::'CL-005-03'; verify WstxRequirements::'CL-006-04'; }
+            objective { verify WstxRequirements::'CL-005-02'; verify WstxRequirements::'CL-005-03'; verify WstxRecordingReceive::'CL-006-04'; }
             doc /* TC-022-005, tests/profiles.test.cjs, level2 Windows real Chromium/server.
                  Use the common operational HTTPS/grant partition before each relevant
                  protected socket; count profile GETs separately from auth setup, never

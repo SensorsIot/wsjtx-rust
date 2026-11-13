@@ -5,9 +5,9 @@ package WstxModemDecode {
     private import WstxRequirements::'FR-003';
     private import WstxRequirements::'FR-004';
     private import WstxRequirements::'FR-018';
-    private import WstxRequirements::'CL-007-01';
+    private import WstxLiveReceive::'CL-007-01';
     private import WstxRequirements::'CL-007-02';
-    private import WstxRequirements::'TC-004-004';
+    private import WstxLiveReceive::'TC-004-004';
     private import WstxOfflineDecode::Mode;
     private import WstxOfflineDecode::ResultRecord;
     private import WstxOfflineDecode::DecodeBand;
@@ -159,7 +159,7 @@ package WstxModemDecode {
                 + "the modem runs neither that decoder nor its hint passes.";
         }
         doc /* A record larger than the modem record cap that
-             WstxRecordingReceive::LiveTimedResultRecord states is not published; the window
+             WstxLiveReceive::LiveTimedResultRecord states is not published; the window
              ends with decode_limit (WstxRecordingReceive::ErrorCode), keeping the records
              already published. */
         doc /* A frame that starts before the window or runs past its end is subtracted and

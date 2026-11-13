@@ -1,6 +1,7 @@
 package WstxRequirementsStation {
     private import ScalarValues::*;
     private import WstxRequirements::*;
+    private import WstxLiveReceive::'TC-009-002';
     requirement 'CL-008-07' {
         doc /* Coordinate receive-only operating mode and preferred band changes through the existing station/receive owner and typed CAT actor, with explicit nominal/observed truth, actual release barriers, per-query provenance and cancellation fencing. */
         attribute coverage : ImplementationState = ImplementationState::implemented;

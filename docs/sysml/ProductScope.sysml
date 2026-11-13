@@ -1,7 +1,6 @@
 package WstxProductScope {
     private import ScalarValues::*;
     private import WstxRequirements::*;
-    private import WstxRequirementsReceive::*;
     private import WstxRequirementsMcp::*;
     private import WstxRequirementsAudio::*;
     private import WstxRequirementsRadioControl::*;
@@ -232,147 +231,6 @@ package WstxProductScope {
              lifetime cannot depend on one station whose stop must leave others usable.
              No fixed four-GUI-client or simultaneous independent transmitter promise. */
     }
-    requirement NativeFlexWireSubset {
-        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::partial;
-        doc /* FR-023 delivered receive/control subset and the defaults chosen where the
-             model left gaps (issue #13, level 2). Wire facts come from the SmartSDR TCP/IP
-             API wiki and the pinned FlexLib 4.3.16.42034 reference archive SHA-256
-             60978db51dac6ea781899dd80832ad4e7876ce96ed72532b57106376fc26463f, used as a
-             protocol reference only: no vendor code is translated, linked, run or
-             redistributed, and the station needs no .NET, SmartSDR, CAT or DAX program.
-             Placement: one station process is one GUI-class API client on its own TCP
-             session; the radio's client-scoped ownership of slices/streams is the shared
-             arbitration authority. The station changes only the one slice and stream it
-             created and confirmed under its current client handle and never sends client
-             disconnect, start_persistence on, load_from, tx, xmit or other transmit or
-             global commands. A common cross-process connector stays unimplemented; the
-             radio's GUI-client limit is therefore a visible capacity limit. The session is
-             owned by the station's receive owner and started with the process; a band
-             selection tunes through it inside the selection's own operation, one at a time,
-             without a CAT transition lease.
-             Authorization (mirrors CL-022-03): the session sends and opens nothing on the radio
-             until the HTTPS profile holds a current grant for its scope (state unauthorized);
-             no commissioning applies, because no port opens and nothing can key. Losing the
-             last grant closes the session, whose slice the radio then releases. A plaintext
-             profile therefore never reaches a radio. Monitor-off and receive state do not
-             affect the session. States: unauthorized, discovering, connecting, ready,
-             unavailable, conflict, stopped. Conflict is client_identity_in_use,
-             ownership_ambiguous, slice_ownership or dax_channel_conflict; every other error is unavailable:
-             discovery_unavailable, radio_not_found, incompatible_api, capacity_clients,
-             capacity_slices, capacity_dax, antenna_unavailable, radio_refused, transport_lost,
-             protocol_error, timeout, resource_lost.
-             Discovery: passive listening on UDP 4992 shared with address reuse, never a
-             broadcast or any datagram sent (WSTX_FLEX_DISCOVERY may name another IPv4 bind
-             address, which the tests use with loopback); VITA type 3, OUI 0x001C2D, class
-             0xFFFF; 3 s per attempt. No radio identity is saved (#22): the station takes the
-             first announced radio with a free GUI client (next available); a radio announcing
-             available_clients=0 gets no connection, and when only such radios are heard the
-             result is capacity_clients; nothing heard is radio_not_found. The serial in an
-             announcement is shown, never saved or compared. This inbound radio traffic is not
-             the WSJT-X UDP interface, which stays send-only (#40). A profile's radio_address
-             replaces discovery (nothing listens) and means that one radio, with no fallback: a
-             routed path carries no broadcast. A full radio there reports radio_refused, since no
-             announcement states capacity. Model, serial and firmware then come from the radio's
-             info reply, sent after the API check. The radio takes the client's address from the
-             control connection, so a NAT stays right and only the port is told (client udpport).
-             On that path the session sends client udp_register handle=<own handle> from the
-             stream's own UDP port to the radio's UDP ports 4991 and 4993, right after client
-             udpport and every 5 s, to open and keep open the way back through connection tracking
-             (WSTX_FLEX_REGISTER_PORT replaces both ports for tests).
-             Control: TCP to the announced ip/port (default 4992) or the saved address, connect/step deadline 5 s,
-             lines <= 4096 bytes incoming and <= 1024 outgoing, one outstanding command, reply
-             codes hexadecimal. Only API protocol V1.4.0.0 is admitted; any other version
-             refuses before the first command (incompatible_api). Firmware/model are displayed,
-             not qualified.
-             Session: sub client all; client start_persistence off, whose reply proves the client
-             list has arrived; then refuse if the saved client identity is already connected
-             (client_identity_in_use, no takeover); client gui <saved client identity>; sub slice all; sub dax all; any slice already
-             attributed to the fresh handle is ownership_ambiguous and untouched; client udpport
-             <own UDP port>; slice create rxant=<saved antenna> mode=DIGU (no frequency: the
-             radio's choice until the station operation tunes); success needs the slice status
-             with the own client handle; reply 50000001/50000003/5000001D is capacity_slices; a
-             different reported antenna releases the own slice (antenna_unavailable); DAX channel
-             = lowest of 1..8 unused by any visible slice (else capacity_dax); slice set dax;
-             stream create type=dax_rx; ready only with the stream status of the own handle and
-             channel, and with the slice on the frequency of the last confirmed selection when
-             there is one (read first, a read-back failure ends the attempt), so the selection
-             stays true after a reconnect. Stations choosing together can pick one channel: while
-             a lower slice shows the own channel, the session closes (dax_channel_conflict) and
-             chooses again.
-             Read first (CL-044 rule): a slice setting (mode, frequency, DAX channel) is compared
-             with the slice's current status and written only on a difference, then read back
-             from the radio's status for that slice. A FLEX-6600 on firmware 4.3.16 replies to slice
-             tune and volunteers no status (measured 2026-11-06), so after a write the session asks
-             with sub slice all, whose full status is the read-back; a read-back that does not arrive
-             by the step deadline fails the operation. A band selection then fails with radio_timeout (a
-             radio refusal with radio_rejected, a lost session with radio_unavailable) and keeps
-             no native_readback origin. Equal status sends no command. All BANDS stay admitted:
-             the radio's refusal decides. The radio object of /receive/selection keeps its shape:
-             connection_generation is the session number, state ready / connecting (discovering,
-             connecting) / closed (stopped, unauthorized) / unavailable (unavailable, conflict),
-             error the session error, frequency the own slice's status while ready, every other
-             observation null.
-             Samples: only datagrams from the radio address with the own stream ID, VITA type 3
-             and packet class 0x03E3 (stereo big-endian float32, 24 kHz, 128 frames per packet, as
-             the station's FLEX-6600 sent on 2026-11-06) enter the existing native
-             queue/converter/epoch path, channel 0 only, each frame held twice for the 48 kHz
-             converter, whose 6 kHz low-pass removes the images; other IDs are counted foreign,
-             48/96 kHz and reduced-bandwidth classes are refused as invalid. A real routed path reorders
-             about one packet in 300 and truly loses about 0.04% (measured 2026-11-06), so packets go
-             on in the order of their 4-bit count, waiting until at most 5 packets wait behind a
-             missing one (8 or more lost in a row cannot be told from late by the count, and read as late). A turn given up becomes silence of the packet's length, keeping the timeline
-             and the analysis window, and counts lost; that packet arriving later, or any packet
-             arriving twice, is dropped and counted late. An arrival gap above 200 ms is unknown loss
-             (native_discontinuity) because the count may have wrapped: what waits goes on first and
-             the count starts over. The receive socket asks for a 1 MiB buffer, and packets enter the queue in
-             groups of at least 10 ms, as an audio device delivers them. Timing: each packet carries its host arrival
-             time less its own duration, so the epoch is correlated to the system clock; network
-             and radio latency stay in it: the same anchor gave 453 decodes in 11 of 11 periods with
-             a median DT of -0.1 s against jt9 over a routed path (2026-11-06). VITA timestamps are not used: that radio, with no
-             GPS, sent a frozen filler value on every packet (GET /native-flex reports the radio's timestamp kind and this host's
-             clock minus it, for that measurement), and drift follows the same filtered clock tracking as an audio device.
-             Tuning: the station operation's band selection on the own slice (origin
-             native_readback).
-             Loss: closing the own TCP session is the only cleanup of a lost session; the radio's
-             release of a GUI client's resources on disconnect is assumed and must be confirmed
-             live. Retry backoff 1, 2, 4 s (cap 4 s), reset after ready. A receive job started on
-             the native input survives a lost session: its audio status shows unavailable, and the
-             new session's first packet opens a new source epoch (reason capture_loss, trigger
-             native_discontinuity, counted in loss_epochs and last_loss). A new receive start while
-             the session is not ready is refused radio_unavailable. Startup resume (CL-045-02)
-             uses the session as its input and waits up to the same 20 s for it.
-             Push: state, error, radio facts and own slice facts reach the client only as the
-             radio.native WebSocket event under the PushedStationState subscription rule, sent once
-             per peer as its snapshot and then on each change, never for packet counters; the client
-             sends no request for them. Exact data {profile_id,boot_id,state,error,radio_code,
-             session,radio,slice,retry_after_ms,transmit}, radio null or {serial,model,firmware,
-             protocol,address}, slice null or {index,letter,frequency_hz,mode,rx_antenna,
-             dax_channel,stream_id}, transmit always unsupported, at most 4096
-             encoded bytes. GET /native-flex is the read-only snapshot, the same keys plus v, packets
-             {accepted,foreign,invalid,lost,late}, last_peak and vita {tsi,host_minus_radio_ms} and arrival
-             {jitter_mean_ms,jitter_max_ms}, reset per session, for diagnosis and tests, 404 for standard
-             profiles; no request accepts a slice, stream or handle as authority. A session that is
-             not ready shows the ErrorFieldEntry nativeRadio with its state and error; the
-             "No audio input" entry does not apply to a native profile. The status line stands
-             below the operating radio line in the receive details, never in the top bar; on a
-             lost station link it reads stale instead of the last radio state.
-             Transmit: not offered (capability unsupported, TC-023-006 later and separately
-             approved). HALT, the Tx watchdog and Abort stay in the server's one transmit owner
-             with no native key path, so they answer as on an unconfigured standard station and
-             nothing can key the radio. CAT, Detect radio, radio settings and the Tx level do not
-             apply and are refused or inert; the standard path is unaffected and never opens a
-             native socket.
-             Pinned (CL-013-02), read from the station's radio on 2026-11-06: model FLEX-6600,
-             firmware SmartSDR 4.3.16.42034, API V1.4.0.0, 4 slices. Admission is by API version;
-             another model or firmware speaking it connects and is displayed but not claimed as
-             supported. The displayed model, serial and firmware are the announced ones, or the
-             info reply's on a saved address.
-             Profile: the connection type is chosen at creation (--create-native-flex-profile
-             <dir> <rx antenna> [<address:port>]) and is read-only in the browser. tests/flex-live-check.cjs is the one-run live measurement. Remaining: hardware/firmware,
-             24 kHz DAX, latency/timestamps, >= 4 usable slices, broadcast discovery and resource
-             release on disconnect (TC-023-004/005); transmit (TC-023-006). */
-    }
-    dependency nativeWireSubset from NativeFlexWireSubset to WstxRequirements::'FR-023';
     attribute def FixtureProvenance {
         attribute ft8Manifest : String = "fixtures/decoder/manifest.json";
         attribute ft4Manifest : String = "fixtures/decoder/ft4-manifest.json";
@@ -415,6 +273,10 @@ package WstxProductScope {
         alias Strategy for WstxStrategy;
         alias ContestStrategies for WstxContest;
         alias SharedRecord for WstxOfflineDecode::ResultRecord;
+        alias ReceiveSpectrum for WstxReceiveSpectrum;
+        alias LiveReceive for WstxLiveReceive;
+        alias ReceiveStartup for WstxReceiveStartup;
+        alias FlexSession for WstxFlexSession;
     }
     dependency scopeBoundary from ProductCapabilities to WstxRequirements::'FR-004';
     dependency contactBoundary from CompletedContactIdentity to WstxRequirements::'FR-011';

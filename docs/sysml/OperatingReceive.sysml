@@ -943,7 +943,7 @@ package WstxOperatingReceive {
     verification def CoherentReceiveControls {
         objective {
             verify WstxRequirements::'CL-008-07';
-            verify WstxRequirements::'CL-008-03';
+            verify WstxRecordingReceive::'CL-008-03';
             verify WstxRequirements::'CL-008-05';
             verify WstxRequirements::'CL-010-05';
             verify WstxRequirements::'CL-010-07';
@@ -1074,7 +1074,7 @@ connect/capture/reconcile mutation. Encoded response is at most3072UTF-8bytes; o
 returns503snapshot_limit without truncation. Verify the maximum valid shape before
 admitting a candidate; truncating entries is not a size policy.
 
-`control` is exactly `manual|cat` from current saved settings, independent of availability, or `native` on a native FlexRadio profile (WstxProductScope::NativeFlexWireSubset).
+`control` is exactly `manual|cat` from current saved settings, independent of availability, or `native` on a native FlexRadio profile (WstxFlexSession::NativeFlexWireSubset).
 `selection` is exactly `{mode,band,nominal_hz,origin,confirmed_command_id}`: mode ft4|ft8;
 band nullable admitted enum; nominal_hz nullable integer30000..74800000; band/nominal
 are both null or both known and name the same admitted row for that mode. Origin is

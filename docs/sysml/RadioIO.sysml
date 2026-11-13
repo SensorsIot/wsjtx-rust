@@ -1,5 +1,6 @@
 package WstxRadioIO {
     private import ScalarValues::*;
+    private import WstxLiveReceive::ConvertAndReceive;
     doc /* Canonical capture/CAT contract with partial native Windows and IC-7300 implementation;
          hardware matrix completion and physical acceptance remain separately declared.
          Contract: contract 4.5/12.8; recorded source and pure decoder contracts remain
@@ -9,7 +10,6 @@ package WstxRadioIO {
     enum def AudioState { enum closed; enum opening; enum running; enum closing; enum unavailable; }
     enum def CatState { enum closed; enum connecting; enum ready; enum closing; enum unavailable; }
     enum def NativeFormat { enum float32; enum pcm16; enum pcm24; enum pcm32; }
-    enum def ReceiveMode { enum spectrum; enum ft4; enum ft8; }
     enum def CatOperation { enum read_frequency; enum read_mode; enum read_data; enum read_rx_tx; enum read_split; enum set_frequency; enum set_mode; enum set_data; enum receive_setup; }
     attribute def Limits {
         attribute canonicalHz : Integer = 12000;
@@ -66,127 +66,6 @@ package WstxRadioIO {
              timeline: measured samples, no gap and no epoch; no interval is missing
              beyond the at most2 ms QPC deviation this bound admits. */
     }
-    attribute def SourceTiming {
-        attribute sourceId : String;
-        attribute segment : Integer;
-        attribute nativeRate : Integer;
-        attribute nativeAnchorFrame : Real;
-        attribute canonicalAnchorFrame : Integer;
-        attribute converterDelayNativeFrames : Real;
-        attribute qpcAnchor100ns : Integer[0..1];
-        attribute systemUtcAnchor : String[0..1];
-        attribute uncertaintyNs : Integer[0..1];
-        attribute correlated : Boolean;
-        attribute externalAccuracy : String = "unknown";
-        doc /* Exact rational12000/nativeRate mapping; group delay counted once.
-             System-UTC/QPC bracket<=2ms; recheck1s, jump>20ms new timing segment.
-             External clock accuracy is not inferred. No wall-time-derived sample count.
-             Known gaps advance canonical count; unknown gaps/reopen new identity. */
-    }
-    attribute def EpochProposal {
-        attribute proposalCounter : Integer;
-        attribute reason : String;
-        attribute trigger : String;
-        attribute nativeRate : Integer;
-        attribute firstDeviceFrame : Integer;
-        attribute packetQpc100ns : Integer[0..1];
-        attribute converterDelayNativeFrames : Real;
-        doc /* Identity-free proposal. Receive authority alone allocates new immutable
-             descriptor/source/job/generation/timing and acknowledges current counter.
-             Until acknowledgement producer returns Pending, exposes no descriptor and
-             emits no block. Stale acknowledgement rejected; no old IDs reused.
-             trigger is a bounded diagnostic code naming the capture condition:
-             capture_start, queue_full, queue_contention, pool_exhausted, invalid_packet,
-             clock_step (capture-thread UTC/QPC recheck), timestamp_error, frame_backstep
-             or native_discontinuity; loss flag and trigger are one atomic value. */
-    }
-    action def AcknowledgeEpoch {
-        in proposal : EpochProposal;
-        in descriptor : WstxRecordingReceive::SourceDescriptor;
-        in timing : SourceTiming;
-        out accepted : Boolean;
-        doc /* acknowledge_epoch(proposalCounter,descriptor,timing) accepts only current
-             source-local proposal. Capture I/O cannot invent station identities. */
-    }
-    item def LiveSampleBlock :> WstxRecordingReceive::SampleBlock {
-        attribute timing : SourceTiming;
-        doc /* Refines SAME immutable canonical12k SampleBlock, <=240frames here;
-             descriptor.total_frames absent. No change to recordedPCM/32768 semantics.
-             One converter only, no fake filter edges/silence, no gap-crossing window.
-             Consumers retain<=2active references plus separately bounded FIFO. */
-    }
-    attribute def AnalysisOverrun {
-        attribute first_frame : Integer;
-        attribute end_frame : Integer;
-        assert constraint boundedInterval { first_frame >= 0 and first_frame < end_frame and end_frame <= (900719925 * 10000000 + 4740991) }
-        doc /* Latest abandoned analysis window's half-open support, not missing audio.
-             end_frame<=capturedNextFrame. Null until overrun, replace on next,
-             clear on newjob/sourceepoch. ExactGET/receive.job key last_overrun. */
-    }
-    attribute def RelativeDecodeTiming {
-        attribute mode : ReceiveMode;
-        attribute correlated : Boolean;
-        attribute observedStartSeconds : Real;
-        attribute periodStartSeconds : Real;
-        attribute periodSeconds : Real;
-        attribute nominalStartSeconds : Real;
-        attribute dtSeconds : Real;
-        attribute externalAccuracyKnown : Boolean = false;
-        assert constraint modeTiming {
-            (mode == ReceiveMode::ft8 and periodSeconds == 15.0 and nominalStartSeconds == 0.5) or
-            (mode == ReceiveMode::ft4 and periodSeconds == 7.5 and nominalStartSeconds == 0.452)
-        }
-        assert constraint relativeOffset {
-            dtSeconds == observedStartSeconds - periodStartSeconds - nominalStartSeconds and
-            dtSeconds >= -periodSeconds / 2.0 and dtSeconds < periodSeconds / 2.0
-        }
-        doc /* contract 4.7.4/12.8. Used only with correlated source timing. Observed start
-             comes from canonical frame/UTC anchor at12000Hz, not arrival/browser time.
-             Nearest nominal UTC grid start; ties select later period. Positive late,
-             negative early. External accuracy unknown does not suppress relative DT.
-             Without correlation live wire period_start_utc and dt_seconds are null.
-             FT4 includes leading576-frame ramp:0.5-576/12000=0.452s. */
-    }
-    attribute def LatestDecodePeriod {
-        attribute id : Integer;
-        attribute first_sequence : Integer;
-        attribute next_sequence : Integer;
-        attribute period_start_utc : String[0..1];
-        attribute complete : Boolean;
-        attribute abandoned : Boolean;
-        attribute qualifiedWindow : Boolean;
-        assert constraint safeIdentity { id > 0 and id <= (900719925 * 10000000 + 4740991) }
-        assert constraint frozenRange { first_sequence >= 0 and next_sequence >= first_sequence and next_sequence <= (900719925 * 10000000 + 4740991) }
-        assert constraint neverFalseComplete { abandoned implies not complete }
-        doc /* Existing manager owns this nullable metadata and existing ring, no new
-             endpoint/cache/modem. Publish atomically at finished/overrun attempt only.
-             Select latest UTC period with nominal support wholly inside actual window;
-             FT8 support12.64s/period15s/offset0.5, FT4 5.04s/7.5s/0.452.
-             No qualified period => no publication; never move selected period backwards.
-             Without correlation range is that attempt's newly published records, time null.
-             Correlated range encloses matching retained records, empty => both equal
-             frozen publication end. Job snapshot and result page expose same exact keys.
-             Gap clears view without reusing IDs; epoch resets it/ID. Cancellation/failure
-             cannot create complete empty view; last published output keeps truthful status.
-             Existing evictions/410/caps remain authoritative. */
-    }
-    attribute def LiveResultWindow {
-        attribute latest_decode : LatestDecodePeriod[0..1];
-        attribute last_overrun : AnalysisOverrun[0..1];
-        attribute first_sequence : Integer;
-        attribute next_sequence : Integer;
-        attribute available_count : Integer;
-        attribute capturedNextFrame : Integer;
-        assert constraint retained { first_sequence >= 0 and next_sequence >= first_sequence and available_count == next_sequence - first_sequence and available_count <= 2048 }
-        assert constraint safeCounters { next_sequence <= (900719925 * 10000000 + 4740991) and capturedNextFrame >= 0 and capturedNextFrame <= (900719925 * 10000000 + 4740991) }
-        doc /* Live ONLY: sequence/start_frame safe nonnegative integers below lifetime
-             next_sequence/capturedNextFrame, using safe lifetime domains rather than finite fixture bounds.
-             Oldest eviction advancesfirst_sequence,2048records/2MiB, no counter reuse.
-             Counterexhaustion fails beforeoverflow. Exact live page keys12.8; cursor<first
-             gives410cursor_expired, cursor>next400, cursor==nextempty/morefalse.
-             first6/next2054/count2048,cursor7limit1=>record7,next8,moretrue;cursor5=>410.
-             Tests2047/2048/2049 andsafeintboundaries; Live record domains use safe lifetime counters and actual captured bounds. */
-    }
     attribute def RadioObservation {
         attribute frequencyHz : Integer[0..1];
         attribute mode : String[0..1];
@@ -226,24 +105,6 @@ package WstxRadioIO {
              1/2/4/8s same-endpoint reopen only while capture desired; new epoch each open.
              Actual close before readiness/release; independent CAT remains responsive. */
     }
-    action def ConvertAndReceive {
-        in packet : NativePacket;
-        out block : LiveSampleBlock;
-        doc /* Single DSP owner fans out to existing FFT and pure decoder. FIR passband
-             0..3500Hz +-0.1dB, stop>=5500Hz >=60dB, exact rational output count and
-             partition invariance2e-5; delay<=20ms/<=1024native support. No second
-             conversion or AGC. Known gaps reset FIR/FFT/decoder without invented samples.
-             FT8trailing30s/advance15s, FT4trailing15s/advance7.5s; no queued analyses,
-             except that with a correlated UTC anchor one scheduled late window waits
-             for the prompt analysis in progress (WstxRecordingReceive::LiveWindowSchedule, #47).
-             Missed boundary drops outstanding future and records latest abandoned
-             window support in last_overrun; partials retained, no fabricated audio gap.
-             Newest supported window replaces obsolete work, never claims complete history.
-             Existing receive owner mutually excludes imports/file jobs/live; CPU50ms
-             quanta service conversion/spectrum. Software backlog<=200ms, normalcancel250ms.
-             Retain2048records/2MiB; livefirst_sequence eviction and410cursor_expired.
-             Fixed0..3000display does not change decoder200..3500search. */
-    }
     action def ExecuteCat {
         in request : CatRequest;
         out result : CatResult;
@@ -270,32 +131,28 @@ package WstxRadioIO {
              a keying action, not a setting). Menu/AGC exchanges run under the same single lease. */
     }
     action capture : CaptureAudio;
-    action convertReceive : ConvertAndReceive;
     action execute : ExecuteCat;
     satisfy WstxRequirements::'CL-008-01' by capture;
-    satisfy WstxRequirements::'CL-008-02' by convertReceive;
-    satisfy WstxRequirements::'CL-008-03' by convertReceive;
     satisfy WstxRequirements::'CL-008-04' by execute;
     satisfy WstxRequirements::'CL-008-05' by capture;
     satisfy WstxRequirements::'CL-008-06' by execute;
     dependency captureOwner from capture to WstxArchitecture::physicalStation::backend::stations::audio;
-    dependency conversionOwner from convertReceive to WstxArchitecture::physicalStation::backend::stations::receive;
     dependency controlOwner from execute to WstxArchitecture::physicalStation::backend::stations::radioControl;
     package Verification {
         doc /* Planned Cost2Windows actual candidate adapters/services/browser and independent
              native-clock/device/serial/decoder-step fixtures, no hardware. Physicalcase
              onlyCost4 receive-onlytarget afterverifiedUSBkeyinginhibit. Exact cases and
              complete normative contracts are the source text in this package below. */
-        verification audio { subject candidate : ConvertAndReceive; objective { verify WstxRequirements::'CL-008-02'; } }
+        verification audio { subject candidate : ConvertAndReceive; objective { verify WstxLiveReceive::'CL-008-02'; } }
         verification cat { subject candidate : ExecuteCat; objective { verify WstxRequirements::'CL-008-06'; } }
         verification independent { subject candidate : CaptureAudio; objective { verify WstxRequirements::'CL-008-05'; } }
         dependency audioCase from audio to WstxRequirements::'TC-002-001';
         dependency catCase from cat to WstxRequirements::'TC-009-001';
-        dependency independenceCase from independent to WstxRequirements::'TC-002-003';
+        dependency independenceCase from independent to WstxLiveReceive::'TC-002-003';
         dependency catIndependenceCase from cat to WstxRequirements::'TC-009-003';
-        dependency combinedCase from independent to WstxRequirements::'TC-009-004';
-        dependency physicalCase from cat to WstxRequirements::'TC-009-002';
-        dependency physicalIndependenceCase from independent to WstxRequirements::'TC-009-002';
+        dependency combinedCase from independent to WstxRecordingReceive::'TC-009-004';
+        dependency physicalCase from cat to WstxLiveReceive::'TC-009-002';
+        dependency physicalIndependenceCase from independent to WstxLiveReceive::'TC-009-002';
     }
     doc /* Canonical detailed behavior and verification
 ### 4.5 Separate audio and radio-control functions — target FR-002/FR-009
@@ -421,7 +278,7 @@ one continuous receive job until stop or failure. Incomplete initial waveform su
 is not a decode. Analyze trailing up-to30 s windows every15 s for FT8 and trailing
 up-to15 s windows every7.5 s for FT4, including initial shorter complete supports.
 Reuse #7 kernels/records, preserving global canonical start_frame across known gaps.
-With a correlated UTC anchor, analysis windows follow the UTC schedule of WstxRecordingReceive::LiveWindowSchedule (#47), and its one late window per period waits for the prompt analysis in progress. Otherwise no queued analysis windows: if processing misses the next boundary, report overrun and
+With a correlated UTC anchor, analysis windows follow the UTC schedule of WstxLiveReceive::LiveWindowSchedule (#47), and its one late window per period waits for the prompt analysis in progress. Otherwise no queued analysis windows: if processing misses the next boundary, report overrun and
 the skipped interval, abandon obsolete work and use the latest supported window.
 The reported last_overrun interval is the half-open support of the most recently
 abandoned analysis window. It reports skipped analysis, not missing audio or fabricated
@@ -502,7 +359,7 @@ operations, catalogue or automatic lifecycle. #9 slice B adds only the compiled 
 transmit switch (WstxTransmit::PttControl) to the same owner, reachable solely by the
 transmit service under its transmit hold and authority; #9 owns transmit authority and halt.
 Besides that, the single permitted exception is the #9 StartupSafetyRelease (WstxTransmit): one off-only PTT release 1C 00 00 with readback, once per boot, only when the first fresh 1C 00 readback of the boot shows TX before that boot ever keyed, sent by the transmit owner through the same actor; it is a safety release, never a key, and a radio in receive
-at boot sees zero setter bytes. Optional native FlexRadio (#13) is a separate network session (WstxProductScope::NativeFlexWireSubset), never this CI-V owner.
+at boot sees zero setter bytes. Optional native FlexRadio (#13) is a separate network session (WstxFlexSession::NativeFlexWireSubset), never this CI-V owner.
 
 #### Interface verification
 

@@ -1426,7 +1426,7 @@ package WstxArchitecture {
              serve the radio the station's radio binding selects, and control MUST NOT
              bypass the common authority.
              A native FlexRadio profile instead reaches its radio through the one native
-             session of its station (WstxProductScope::NativeFlexWireSubset), owned by the
+             session of its station (WstxFlexSession::NativeFlexWireSubset), owned by the
              station's receive owner, with no CAT driver in the path. */
     }
     requirement ResponsibilityAndExchangeBoundaries {
@@ -1626,9 +1626,9 @@ package WstxArchitecture {
              independent halt remain outside receive jobs. */
     }
     item def ProcessingResult {
-        doc /* WstxRecordingReceive::SpectrumFrame owns spectrum units, identity,
+        doc /* WstxReceiveSpectrum::SpectrumFrame owns spectrum units, identity,
              bounds and replaceable display delivery. WstxOfflineDecode::ResultRecord
-             and WstxRecordingReceive::ResultPage own mode payloads and required result
+             and WstxLiveReceive::ResultPage own mode payloads and required result
              delivery/retention.
              These have different delivery obligations despite sharing processing. */
     }
@@ -1736,7 +1736,7 @@ package WstxArchitecture {
         doc /* The station's selected radio resource. Persisted intent resolves it at
              connection, and every control request carries it as resource context. The
              radio itself is an outside thing (OutsideThing catRadio, flexRadio).
-             WstxProductScope::NativeFlexWireSubset settles native slice and handle
+             WstxFlexSession::NativeFlexWireSubset settles native slice and handle
              reconciliation; actual radio capacity is reported at runtime. */
     }
     part def RadioAuthority {
@@ -1935,7 +1935,7 @@ package WstxArchitecture {
         doc /* Phase 1 radio-facing parts are independent audio and CAT adapters.
              Logical driver existence does not assert connected control or ready TX.
              FR-023 native Flex runs as a per-station session behind these same audio
-             and control boundaries (WstxProductScope::NativeFlexWireSubset); it adds
+             and control boundaries (WstxFlexSession::NativeFlexWireSubset); it adds
              no part, combined backend or common connector to this graph. */
         part audioAdapter : AudioDeviceAdapter;
         part catAdapter : RustRadioDriver;
