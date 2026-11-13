@@ -26,16 +26,16 @@ fn canonical_negotiations(model: &Model) -> Result<Vec<(Vec<String>, &'static st
         ),
     ] {
         let actual = model
-            .string(&format!("WstxOperatingReceive::{name}"))
+            .string(&format!("WstxHttpContentCoding::{name}"))
             .map_err(|e| e.to_string())?;
         if actual != expected {
             return Err("missing, changed or duplicate oracle provenance".into());
         }
     }
-    let table = "WstxOperatingReceive::NegotiationOracleVector";
+    let table = "WstxHttpContentCoding::NegotiationOracleVector";
     let mut vectors = Vec::new();
     for usage in model
-        .table("WstxOperatingReceive", table)
+        .table("WstxHttpContentCoding", table)
         .map_err(|e| e.to_string())?
     {
         // Each failure names the usage it was read from.
@@ -91,7 +91,7 @@ fn canonical_negotiations(model: &Model) -> Result<Vec<(Vec<String>, &'static st
 fn canonical_negotiation_oracle_rejects_missing_malformed_and_duplicate_data() {
     let model = Model::load();
     assert_eq!(canonical_negotiations(&model).unwrap().len(), 49);
-    let source = model.package_text("WstxOperatingReceive").unwrap();
+    let source = model.package_text("WstxHttpContentCoding").unwrap();
     for damaged in [
         source.replace("attribute negotiation01 :", "attribute omitted01 :"),
         source.replace("attribute :>> caseId = 2;", "attribute :>> caseId = 1;"),
@@ -105,7 +105,7 @@ fn canonical_negotiation_oracle_rejects_missing_malformed_and_duplicate_data() {
         ),
     ] {
         let damaged = model
-            .with_package_text("WstxOperatingReceive", &damaged)
+            .with_package_text("WstxHttpContentCoding", &damaged)
             .unwrap();
         assert!(canonical_negotiations(&damaged).is_err());
     }

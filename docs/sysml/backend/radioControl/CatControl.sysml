@@ -10,7 +10,7 @@ package WstxRadioIO {
     private import WstxLiveReceive::'TC-009-002';
     private import WstxLiveReceive::'TC-002-003';
     private import WstxRecordingReceive::'TC-009-004';
-    private import WstxRequirements::'TC-009-005';
+    private import WstxStationProtocol::'TC-009-005';
     private import WstxRequirements::'FR-008';
     private import WstxRequirements::'FR-021';
     private import WstxCatLifecycle::'CL-022-04';

@@ -1,7 +1,6 @@
 package WstxProductScope {
     private import ScalarValues::*;
     private import WstxRequirements::*;
-    private import WstxRequirementsWeb::*;
     private import WstxRequirementsStation::*;
     private import WstxRequirementsTransmit::*;
     private import WstxRequirementsQso::*;
@@ -283,6 +282,7 @@ package WstxProductScope {
         alias RadioFactsPackage for WstxRadioFacts;
         alias RadioSetupPackage for WstxRadioSetup;
         alias RadioPropertiesPackage for WstxRadioProperties;
+        alias HttpContentCodingPackage for WstxHttpContentCoding;
     }
     dependency scopeBoundary from ProductCapabilities to WstxRequirements::'FR-004';
     dependency contactBoundary from CompletedContactIdentity to WstxRequirements::'FR-011';

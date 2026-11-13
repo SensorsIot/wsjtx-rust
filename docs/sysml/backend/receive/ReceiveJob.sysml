@@ -26,8 +26,10 @@ package WstxRecordingReceive {
     private import WstxRequirements::'TC-022-005';
     private import WstxRequirements::'TC-002-001';
     private import WstxRequirements::'TC-009-001';
-    private import WstxRequirements::'TC-009-005';
+    private import WstxStationProtocol::'TC-009-005';
     private import WstxRequirements::'FR-003';
+    private import WstxStationProtocol::DisplayProfile;
+    private import WstxStationProtocol::TransferDisplay;
     doc /* Implementation contract from authoritative contract 4.4/6.4/12.6. Original Thin/recording and Detailed refinement implementations with executable
          verification companions exist;
          actual run/review/acceptance evidence belongs to issue #6. Existing
@@ -37,7 +39,6 @@ package WstxRecordingReceive {
          https://docs.rs/rustfft/6.4.1/rustfft/struct.FftPlannerScalar.html.
          Independent DFT/math/oracles remain independent case expectations and direct math, not library output. */
     enum def ReceiveState { enum running; enum cancelling; enum completed; enum cancelled; enum failed; }
-    enum def DisplayProfile { enum off; enum thin; enum detail; }
     enum def ReceiveKind { enum spectrum; enum live; }
     enum def ErrorCode {
         enum forbidden_origin; enum unauthorized; enum unsupported_media_type;
@@ -164,77 +165,6 @@ package WstxRecordingReceive {
     }
 
     attribute def StartReplayBody :> StartImportBody { attribute recording_id : String; }
-    enum def HttpMethod { enum get; enum mutation; }
-    attribute def HttpResponsePolicy {
-        attribute cacheControl : String = "no-store";
-        attribute corsAllowed : Boolean = false;
-        attribute jsonMediaType : String = "application/json";
-        doc /* contract 12.6: UTF-8 JSON except raw WAV input. No CORS permission is emitted.
-             JSON accepts optional UTF-8 charset as12.5. JSON schemas are exact:
-             reject duplicate/unknown/missing keys. */
-    }
-    attribute def HttpErrorDetail {
-        attribute code : ErrorCode;
-        attribute 'field' : String[0..0];
-        doc /* Exact members code and field. field is JSON null; code is the stable
-             declared error code, never reflected request input. */
-    }
-    attribute def HttpErrorBody {
-        attribute error : HttpErrorDetail;
-        doc /* Exact UTF-8 wire shape {"error":{"code":"...","field":null}}. */
-    }
-    calc def OriginAllowed {
-        in method : HttpMethod;
-        in originHeaderCount : Integer;
-        in suppliedOriginEqualsSelectedOrigin : Boolean;
-        return allowed : Boolean =
-            (method == HttpMethod::get and originHeaderCount == 0) or
-            (originHeaderCount == 1 and suppliedOriginEqualsSelectedOrigin);
-        doc /* contract 12.6: GET alone permits absent Origin. Every mutation requires
-             one exact Origin even on loopback. Repeated Origin is refused. */
-    }
-    calc def HttpAccessStatus {
-        in selectedProfileModeAndKnownRoute : Boolean;
-        in originAllowed : Boolean;
-        in tls : Boolean;
-        in selectedProfileSessionValid : Boolean;
-        return status : Integer = if not selectedProfileModeAndKnownRoute ? 404 else
-            if not originAllowed ? 403 else
-            if tls and not selectedProfileSessionValid ? 401 else 200;
-        doc /* Precedence is mode/route, Origin, TLS session, then payload/resource
-             checks in HttpValidation. TLS requires its selected profile's session
-             on every recording route. 200 means admitted, not a final route result. */
-    }
-    attribute def HttpValidation {
-        attribute selectedProfile : Boolean;
-        attribute originAllowed : Boolean;
-        attribute authenticated : Boolean;
-        attribute responsePolicy : HttpResponsePolicy;
-        attribute mediaAllowed : Boolean;
-        attribute bodyBounded : Boolean;
-        attribute schemaValid : Boolean;
-        attribute versionSupported : Boolean;
-        attribute sameProfile : Boolean;
-        attribute sameBootGeneration : Boolean;
-        attribute resourceKnown : Boolean;
-        attribute stateAllowed : Boolean;
-        doc /* Validation order: mode/route existence; Origin (403 forbidden_origin); TLS auth
-             (401 unauthorized); content type/encoding (415 unsupported_media_type); declared or
-             observed body bound (413 request_too_large, transport rejection may occur earlier);
-             exact JSON/UUID/safe-integer/version schema (400 invalid_request/unsupported_version);
-             profile mismatch (403 wrong_profile); boot/generation mismatch (409 state_conflict);
-             resource existence (404 not_found); busy/state compatibility (409 busy/invalid_state);
-             file structure (422 invalid_recording); supported PCM capability (422 unsupported_audio);
-             frame/duration/chunk limit (422 recording_limit); I/O/cleanup (503 storage_unavailable).
-             Malformed/missing/duplicate Content-Range is400 invalid_request; incorrect byte offset
-             or changed total is409 state_conflict. An import total above the file cap is413
-             request_too_large. A stalled/expired import is408 upload_timeout, explicit cancel is409 cancelled on an
-             in-flight PUT; completed DELETE still returns200. A missing recording is409 no_recording;
-             generation ceiling is409 generation_exhausted. Syntactic UUID errors are400; foreign
-             well-formed UUIDs are404 except explicit profile_id mismatch. Errors do not echo input.
-             Input progress is bytes received/declared Content-Range total while receiving; before
-             the first chunk show awaiting upload rather than a fabricated percent. Validation/commit states are distinct from completed. */
-    }
     action def CancelImport {
         in importId : String;
         out resource : ImportView;
@@ -290,96 +220,6 @@ package WstxRecordingReceive {
              effective choice only, never overwrites the explicit saved choice, and retains existing
              single Thin fallback/no retry loop. Detailed keeps fast-link/up-to10KiB/s notice and
              no32kbit/s promise; Thin retains all bandwidth limits. */
-    }
-    action def TransferDisplay {
-        in 'frame' : SpectrumFrame[0..1];
-        in detailedFrame : DetailedSpectrumFrame[0..1];
-        in requestedProfile : DisplayProfile;
-        doc /* **Opt-in WebSocket extension.** Keep `wstx.v1`, 1024-byte incoming request/frame/message
-             limits; outbound Thin/control payloads remain <=1024 bytes, except receive.state (RadioIO). Set the outbound write
-             buffer cap to4096 bytes to admit a <=2048-byte Detailed event while reserving a full
-             1024-byte control payload and two conservative14-byte framing allowances. Preserve existing station.get/status/error envelopes, validation order,
-             binary1003, heartbeats and liveness unchanged. Add exact three-field requests
-             `{v:1,type:"recording.get"|"spectrum.thin"|"spectrum.detail"|"spectrum.off",id}`. `recording.get` returns
-             `{v:1,type:"recording.state",id,data:{generation,source_id,job_id,state}}` with nullable
-             IDs/state; full snapshot stays HTTP. A peer that has chosen a display subscription also
-             receives the pushed event without id (WstxStationProtocol::PushedStationState, #10):
-             `{v:1,type:"recording.state",data:{generation,source_id,job_id,state,import}}`, `import` null
-             or `{id,state,received_bytes,total_bytes,error}` of the running import. It is sent once after
-             the first subscription and then only on a change, checked once per second, on every display
-             profile including Off; a change of received_bytes alone is sent at most once per
-             5 s. It is an optional write that a full socket defers and never loses. The browser sends no
-             recording.get: it reads GET /recording once per socket (the snapshot), after its own mutation
-             and when the event differs from its snapshot in identity, job state or import identity;
-             the rest of the import updates its view without a read. A failed read on a subscribed socket closes
-             the socket: an event is sent once and no timer reads, so the reconnect reads again; an upload in progress then stops with its reservation left to cancel. Thin/detail/off acknowledge
-             `{v:1,type:"spectrum.subscription",id,data:{profile:"thin"|"detail"|"off"}}`. Selected-profile
-             absence returns recoverable `unavailable` for these commands. Every new connection starts
-             off; legacy peers receive only existing status/heartbeat messages. New browser obtains
-             status/profile/recording HTTP snapshots before opting into the selected profile and showing current
-             recording data; unknown_command from an older server visibly disables recording display.
-             Default browser selection is Detailed on every origin, including remote HTTPS,
-             using existing1024 native bins at3000/1024 = 2.9296875Hz; no FFT/protocol/source
-             resolution change. The selector offers
-             "Detailed (fast link, up to 10 KiB/s per viewer)", "Thin (32 kbit/s link)" and Off.
-             Without a valid saved choice, Detailed is selected. RestoreDisplayChoice resolves the
-             origin/profile-specific BrowserDisplayPreference; explicit selector changes use
-             SelectDisplayChoice. Only a user choice persists; runtime Thin fallback does not replace it.
-             Storage failure/invalid value preserves normal defaults and usable in-memory controls.
-             Detailed is explicitly selectable on HTTPS but carries no32 kbit/s promise. A server
-             that supports recording/Thin but refuses spectrum.detail with unknown_command triggers
-             one Thin subscription and visible "Detailed unavailable; using Thin" feedback. A server
-             refusing recording.get/Thin disables recording display visibly as before. Never loop
-             retries or replay a mutation. An environment-only server returns unavailable.
-             No side effects occur through new WS requests apart from that connection's subscription.
-
-             Only subscribed thin peers receive events
-             `{v:1,type:"spectrum.frame",data:{boot_id,source_id,job_id,generation,sequence,first_frame,end_frame,levels}}`.
-             IDs are UUIDs, sequence starts0 per replay row and increments even when rows are dropped;
-             frame interval is [first_frame,end_frame), with first=12000*sequence, end=min(first+12000,
-             source_frames). `levels` is exactly128 integers0..120 under 4.4's frequency/level contract.
-             No null/unbounded extension fields. Each encoded event remains<=1024 bytes. No unsolicited
-             recording snapshot/status payload change or application compression. Incoming binary still
-             closes1003. Obsolete boot/source/job/generation events and callbacks from old sockets are
-             ignored. Event loss cannot be used to infer missed decoder results.
-
-             Detailed peers instead receive exactly
-             `{v:1,type:"spectrum.detail.frame",data:{boot_id,source_id,job_id,generation,sequence,first_frame,end_frame,levels_b64}}`.
-             A live row of a Tx period (#61 CL-061-04) carries "tx": true in data, in Thin and
-             Detailed frames alike; the key is absent otherwise, and the browser paints such a
-             row as a Tx row RGB(90,20,30), not with its levels; a run of such rows is collapsed to a thin band (CL-061-05).
-             The UUID/safe-integer identity rules are unchanged, first=2400*sequence,
-             end=min(first+2400,source_frames), sequence0..599. levels_b64 is canonical RFC4648
-             standard base64 with padding: exactly1368 ASCII characters decoding to1024 bytes,
-             each0..120. Reject wrong alphabet/padding/length/noncanonical pad bits, values>120,
-             unknown/missing fields, unsafe/out-of-range sequence/interval or stale identity/socket;
-             never render partially accepted data. Every encoded Detailed event is<=2048 UTF-8
-             bytes; no binary messages, lossy nibble packing or application compression.
-These application-payload and WebSocket exclusions do not prohibit the bounded
-HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
-
-             One replaceable pending Thin event per peer and <=1 Thin send per second. #54 (CL-054-01):
-             the station retains the last 25 Detailed rows (5 s) of the current job, and each
-             Detailed peer receives every retained row after the last one it was sent, oldest
-             first: 200 ms apart, 170 ms apart while rows wait (at most 5.9 sends per second,
-             within 10 KiB/s), so a processing stall delays rows instead of dropping them; a peer
-             further behind than the retained window has a real gap. A new subscription starts at
-             the newest row; no replay of old
-             frames after reconnect or off. Ready status replies and heartbeats take precedence;
-             optional display output never waits in the connection loop and is skipped when send
-             readiness/control headroom is unavailable. Its guard enforces event payload <=2048 and
-             payload+1024+2*14<=4096; this intentionally replaces the previous996-byte guard, not
-             bypasses it. A partially flushed optional write retains the original2s deadline;
-             subsequent control output cannot reset or extend that deadline. Switching/off/reconnect
-             forgets prior frame cursors and pending replacements; already buffered output remains
-             bounded and is rejected by browser profile/identity guards. No old rows are replayed.
-             Maintain existing two-second write deadline and bounded peer removal. Browser schedules
-             at most one pending repaint and bounds history as in4.4. In normal operation two Thin
-             clients stay within WstxStationProtocol::ThinLinkBudget, judged from the link byte log
-             (#80); a recording replay or import carries no link budget. Browser sends one
-             <=2048-byte chunk and waits for its response before the next. No completion-time
-             promise is made for bulk import. Reconnection resets subscription and refreshes snapshots,
-             never resumes or retries a mutation implicitly. */
     }
     action def PresentStation {
         attribute levels : DisplayLevels;
@@ -569,12 +409,10 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
     }
     action cancelImport : CancelImport;
     action cancelReceive : CancelReceive;
-    action transfer : TransferDisplay;
     action present : PresentStation;
     satisfy WstxRecordingReceive::'CL-006-04' by cancelReceive;
     dependency importAuthority from cancelImport to WstxArchitecture::physicalStation::backend::stations::station;
     dependency cancellationOwner from cancelReceive to WstxArchitecture::physicalStation::backend::stations::receive;
-    dependency transferOwner from transfer to WstxArchitecture::physicalStation::backend::stations::web;
     dependency browserOwner from present to WstxArchitecture::physicalStation::frontend::browsers;
     item def DecodeJob :> WstxRecordingReceive::ReceiveJob {
         attribute :>> kind = WstxRecordingReceive::ReceiveKind::live;

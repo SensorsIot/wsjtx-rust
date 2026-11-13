@@ -554,7 +554,7 @@ package WstxArchitecture {
              from saved endpoint intent. No credential values are instantiated here. */
         doc /* Own embedded client, HTTP/file transfer/versioned WebSocket, transport authentication and Origin checks; no second QSO/modem engine or direct radio writes. */
         doc /* WstxStationProtocol owns shared authentication, Origin and HTTP/WebSocket
-             semantics. WstxOperatingReceive::HttpContentCodingBoundary refines bounded
+             semantics. WstxHttpContentCoding::HttpContentCodingBoundary refines bounded
              GET coding after handler/auth/errors/caps, with one dispatch and unchanged
              JSON/WebSocket identity; it creates no second transport authority. */
         port client : ~BrowserExchange;
@@ -753,8 +753,8 @@ package WstxArchitecture {
              The target deployment does not assert full radio/modem or MCP delivery;
              detailed coverage remains in WstxRequirements and the owning packages. */
         part def StatusServer;
-        dependency statusScope from StatusServer to WstxRequirements::'CL-003-01';
-        dependency statusProtocol from StatusServer to WstxRequirements::'CL-003-02';
+        dependency statusScope from StatusServer to WstxStationProtocol::'CL-003-01';
+        dependency statusProtocol from StatusServer to WstxStationProtocol::'CL-003-02';
     }
     dependency coordinatedReceivePromise from ReceivePipeline to WstxRequirements::'CL-008-07';
     doc /* WstxOperatingReceive refines coordinated receive controls on the existing

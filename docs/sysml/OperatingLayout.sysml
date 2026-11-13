@@ -1467,7 +1467,7 @@ attribute def ActivityOrdering {
              additional mandatory 1/6-server runtime repeats are not required. */
         verification variableServers {
             subject operation : PresentAndEditProfile;
-            objective { verify WstxProfiles::'CL-005-01'; verify WstxRequirements::'CL-005-02'; verify WstxRequirements::'CL-005-03'; verify WstxProfiles::'CL-005-05'; }
+            objective { verify WstxProfiles::'CL-005-01'; verify WstxRequirements::'CL-005-02'; verify WstxStationProtocol::'CL-005-03'; verify WstxProfiles::'CL-005-05'; }
             doc /* TC-022-001: operational HTTPS/grant setup and separate plaintext API
                  compatibility use the common partition above. Four PID/listener/boot-ID/
                  visible-UUID endpoints, Refresh all. Edit only profile1: Edited station 1,
@@ -1494,7 +1494,7 @@ attribute def ActivityOrdering {
         }
         verification statusReadiness {
             subject operation : PresentAndEditProfile;
-            objective { verify WstxRequirements::'CL-005-02'; verify WstxRequirements::'CL-005-03'; verify WstxRecordingReceive::'CL-006-04'; }
+            objective { verify WstxRequirements::'CL-005-02'; verify WstxStationProtocol::'CL-005-03'; verify WstxRecordingReceive::'CL-006-04'; }
             doc /* TC-022-005, tests/profiles.test.cjs, level2 Windows real Chromium/server.
                  Use the common operational HTTPS/grant partition before each relevant
                  protected socket; count profile GETs separately from auth setup, never

@@ -8,9 +8,9 @@ package WstxProfiles {
     private import WstxRequirements::'FR-022';
     private import WstxRequirements::'FR-023';
     private import WstxRequirements::'CL-005-02';
-    private import WstxRequirements::'CL-005-03';
+    private import WstxStationProtocol::'CL-005-03';
     private import WstxRequirements::'TC-022-001';
-    private import WstxRequirements::'TC-022-004';
+    private import WstxStationProtocol::'TC-022-004';
     private import WstxStationProtocol::RuntimeInputs;
     private import ModelBindings::Status;
     private import ModelBindings::Automation;
@@ -26,7 +26,7 @@ package WstxProfiles {
          WstxProfileRecordings; authentication is the web part's (WstxStationProtocol), the
          profile form the browser's (WstxOperatingLayout). */
     doc /* The content coding of a GET /profile body is
-         WstxOperatingReceive::HttpContentCodingBoundary's; the checks of this package come
+         WstxHttpContentCoding::HttpContentCodingBoundary's; the checks of this package come
          before it, and it adds no owner, wire JSON or WebSocket codec. */
     @ImplementedIn { module = "server/src/profile.rs; server/src/main.rs"; }
 

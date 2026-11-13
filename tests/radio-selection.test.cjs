@@ -190,9 +190,9 @@ function canonicalNegotiations(model){
   for(const [name,expected]of [
     ['negotiationSourceSha256','329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56'],
     ['originalVectorArtifactSha256','d8da8bdb86485cc8691e2ad4f37afcbbaf84969c5b1a145f3a187a86d114a3c9'],
-  ])assert.equal(model.string(`WstxOperatingReceive::${name}`),expected);
-  const table='WstxOperatingReceive::NegotiationOracleVector';
-  for(const usage of model.table('WstxOperatingReceive',table)){
+  ])assert.equal(model.string(`WstxHttpContentCoding::${name}`),expected);
+  const table='WstxHttpContentCoding::NegotiationOracleVector';
+  for(const usage of model.table('WstxHttpContentCoding',table)){
     // Each failure names the usage it was read from.
     const at=message=>`${usage.qualified}: ${message}`;
     const match=/^negotiation(\d{2})$/.exec(usage.name);
@@ -210,7 +210,7 @@ function canonicalNegotiations(model){
 }
 
 test('TC-009-005 SysML negotiation reader refuses missing malformed and duplicate oracles',async()=>{
-  const model=openModel(),source=model.packageText('WstxOperatingReceive');
+  const model=openModel(),source=model.packageText('WstxHttpContentCoding');
   assert.equal(canonicalNegotiations(model).length,49);
   for(const damaged of [
     source.replace('attribute negotiation01 :','attribute omitted01 :'),
@@ -219,7 +219,7 @@ test('TC-009-005 SysML negotiation reader refuses missing malformed and duplicat
     source.replace('attribute :>> orderedRawHeaderFieldsJson = "[]";','attribute :>> orderedRawHeaderFieldsJson = "{bad}";'),
     source.replace('HttpCodingSelection::noAcceptable;','HttpCodingSelection::unknown;'),
     source.replace('329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56','changed'),
-  ])assert.throws(()=>canonicalNegotiations(model.withPackageText('WstxOperatingReceive',damaged)));
+  ])assert.throws(()=>canonicalNegotiations(model.withPackageText('WstxHttpContentCoding',damaged)));
 });
 
 test('TC-009-005 H1 all 49 ordered header cases use the real authenticated TLS router',{timeout:30000},async t=>{

@@ -12,7 +12,6 @@ package WstxRequirements {
     private import WstxProfiles::'TC-022-003';
     private import WstxProfileRecordings::'TC-018-001';
     private import WstxProfileRecordings::'TC-018-002';
-    public import WstxRequirementsWeb::*;
     public import WstxRequirementsStation::*;
     public import WstxRequirementsTransmit::*;
     public import WstxRequirementsQso::*;
@@ -34,6 +33,12 @@ package WstxRequirements {
     private import WstxCatLifecycle::'CL-022-04';
     private import WstxRadioSetup::'TC-044-002';
     private import WstxRadioSetup::'TC-044-004';
+    private import WstxStationProtocol::'CL-003-08';
+    private import WstxStationProtocol::'CL-005-03';
+    private import WstxStationProtocol::'TC-021-006';
+    private import WstxStationProtocol::'TC-009-005';
+    private import WstxStationProtocol::'CL-022-02';
+    private import WstxStationProtocol::'CL-022-05';
     doc /* Canonical functional requirements and durable verification definitions.
          The other Wstx packages own detailed typed contracts; validation does not execute tests.
          Coverage flags describe implemented source slices, not acceptance or whole-project parity. */
@@ -178,19 +183,6 @@ package WstxRequirements {
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/decoder/hashes.rs; server/src/recording.rs; server/src/contact.rs; server/src/transmit/pack.rs";
     }
-    requirement 'CL-003-01' {
-        doc /* The Rust server MUST serve the HTML/CSS/JavaScript operator client. The browser MUST visibly show server version, connection state and an unconfigured radio. Refresh status MUST request a fresh snapshot and update the displayed last-update time. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs; client/app.js";
-    }
-    dependency CL_003_01_to_FR_019 from 'CL-003-01' to 'FR-019';
-    dependency CL_003_01_to_FR_021 from 'CL-003-01' to 'FR-021';
-    requirement 'CL-003-02' {
-        doc /* Each browser MUST use one versioned WebSocket connection for status requests and responses. The server MUST echo each request ID on the requesting connection and return authoritative version/radio state. Concurrent clients MUST remain independent. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs; client/app.js";
-    }
-    dependency CL_003_02_to_FR_021 from 'CL-003-02' to 'FR-021';
     requirement 'CL-003-04' {
         doc /* The browser MUST distinguish stale/disconnected state from current station state, detect a silently unresponsive connection, retry at a bounded rate and obtain a full snapshot before showing Connected again. Recovery MUST not wait indefinitely for an old socket to close. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -204,19 +196,6 @@ package WstxRequirements {
         attribute implementation : String = "server/src/main.rs; server/src/link_log.rs; server/src/mcp.rs; client/app.js";
     }
     dependency CL_003_05_to_FR_021 from 'CL-003-05' to 'FR-021';
-    requirement 'CL-003-07' {
-        doc /* Remote access MUST use the contract's authenticated TLS path and exact Origin validation. The browser MUST offer token login, and invalid or oversized login requests MUST be refused. Insecure remote startup and invalid access settings MUST fail closed. Explicit loopback development MAY remain unauthenticated. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs; client/app.js";
-    }
-    dependency CL_003_07_to_FR_021 from 'CL-003-07' to 'FR-021';
-    requirement 'CL-003-08' {
-        doc /* Status MUST use initial/reconnection snapshots, explicit refresh requests and event-driven updates when state changes exist. The client MUST avoid constant status polling and tolerate protocol heartbeats between responses. The initial profile MUST carry no raw audio or spectrum stream and use no application payload codec or negotiated WebSocket compression. Bounded negotiated HTTP content coding is permitted only by12.1.1. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs; client/app.js";
-    }
-    dependency CL_003_08_to_FR_019 from 'CL-003-08' to 'FR-019';
-    dependency CL_003_08_to_FR_021 from 'CL-003-08' to 'FR-021';
     requirement 'CL-005-02' {
         doc /* Stable identity, schema, validated settings, revision and acknowledged saves MUST survive process restart. The browser MUST identify the selected profile and permit the bounded edits below. */
         attribute coverage : ImplementationState = ImplementationState::partial;
@@ -226,14 +205,6 @@ package WstxRequirements {
     dependency CL_005_02_to_FR_016 from 'CL-005-02' to 'FR-016';
     dependency CL_005_02_to_FR_019 from 'CL-005-02' to 'FR-019';
     dependency CL_005_02_to_FR_022 from 'CL-005-02' to 'FR-022';
-    requirement 'CL-005-03' {
-        doc /* Profile lifecycle, revision, configuration and authenticated sessions MUST be independent, including one browser cookie store on one hostname with distinct TLS ports. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/profile.rs; client/app.js";
-    }
-    dependency CL_005_03_to_FR_019 from 'CL-005-03' to 'FR-019';
-    dependency CL_005_03_to_FR_021 from 'CL-005-03' to 'FR-021';
-    dependency CL_005_03_to_FR_022 from 'CL-005-03' to 'FR-022';
     requirement 'CL-007-02' {
         doc /* The common browser MUST show exact supported payload fields, hash identities (filled in by the station per CL-024-01 or unresolved), UTC period time and relative DT when correlated or explicit unknown timing under4.7.4, lowest-tone audio frequency and calibrated SNR or explicit unavailable SNR, with reliable bounded result delivery. */
         attribute coverage : ImplementationState = ImplementationState::partial;
@@ -707,39 +678,6 @@ package WstxRequirements {
     dependency CL_010_11_verified_by_TC_010_008 from 'CL-010-11' to 'TC-010-008';
     dependency CL_010_13_verified_by_TC_011_003 from 'CL-010-13' to 'TC-011-003';
     dependency CL_010_14_verified_by_TC_010_009 from 'CL-010-14' to 'TC-010-009';
-    verification 'TC-021-006' {
-        doc /* #### TC-021-006 — Actual browser interface
-
-             **Clauses:** CL-003-01, CL-003-04. **Promises:** FR-019, FR-021.
-             **Level:** 2 — Isolated automated tests.
-             **Where it runs:** Windows PC, automated Chromium with fresh independent browser
-             contexts connected to the locally started candidate server.
-
-             **Inputs/actions and expected results:**
-
-             1. Navigate to the station page. Expect the required HTML, JavaScript and CSS to load
-                successfully, no uncaught page errors, and visible Connected state, candidate version
-                and Radio not configured text.
-             2. Open a second independent browser context. Expect the same authoritative version
-                and radio state in both clients.
-             3. Capture the desktop view and a 360-pixel-wide view. Expect no horizontal overflow;
-                inspect the screenshots for readable status, login/refresh controls and responsive layout.
-             4. Stop the actual server. Expect the page to mark its last state stale/disconnected.
-
-             **Oracle:** visible functions in CL-003-01/04 and package version, not a golden image
-             generated by the implementation. **Executable trace:**
-             [communication.test.cjs](../../tests/communication.test.cjs),
-             `TC-021-006: real browser, two clients, desktop and mobile layout`.
-             Screenshots are `test-results/station-desktop.png` and `test-results/station-mobile.png`. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-003-01';
-            verify 'CL-003-04';
-            verify 'FR-019';
-            verify 'FR-021';
-        }
-        attribute executable : String = "tests/communication.test.cjs";
-    }
     verification 'TC-021-007' {
         doc /* #### TC-021-007 — Disconnect, retry and state resynchronization
 
@@ -757,7 +695,7 @@ package WstxRequirements {
                 initial snapshot request and no periodic station.get polling.
              2. Cut the connection and keep it unavailable. Expect visible stale/disconnected state
                 and attempts at the bounded reconnect rate from the
-                [liveness contract](StationProtocol.sysml).
+                [liveness contract](backend/web/StationProtocol.sysml).
              3. Restore connectivity to the actual server. Expect a new station.get exchange and a
                 fresh full snapshot before Connected, within the contract's recovery bound. If a
                 server restart or version change is exercised, the fresh state MUST replace the old
@@ -797,41 +735,6 @@ package WstxRequirements {
             verify 'CL-003-05';
         }
         attribute executable : String = "server/src/link_log_tests.rs";
-    }
-    verification 'TC-021-009' {
-        doc /* #### TC-021-009 — Remote access boundary
-
-             **Clause:** CL-003-07. **Promise:** FR-021.
-             **Level:** 2 — Isolated automated tests.
-             **Where it runs:** Windows PC, candidate server, real browser and independent peers
-             using a disposable local TLS certificate, test token and configured allowed Origin.
-
-             **Inputs/actions and expected results:**
-
-             1. Open the TLS page and submit the valid test token through its login form. Expect an
-                authenticated status exchange and the contract's protected cookie attributes.
-             2. Attempt WebSocket upgrade with absent/invalid credentials and, separately, a
-                disallowed Origin. Expect the specified denial before station data is returned.
-             3. Submit login with missing/disallowed Origin. Expect refusal. Submit an invalid token
-                body at the HTTP body limit and one byte beyond; expect authentication refusal for
-                the former and size rejection for the latter. Exhaust the login-attempt budget and
-                expect the contract's rate-limit response.
-             4. Attempt plaintext access to the TLS listener. Expect refusal and no plaintext
-                station response.
-             5. Attempt non-loopback startup with required TLS, token or explicit Origin missing;
-                plaintext token configuration; and an Origin containing a path. Expect startup failure.
-                The explicit loopback development fixture remains limited to its configured loopback address.
-
-             **Oracle:** [access and startup contract](StationProtocol.sysml),
-             HTTP/upgrade outcomes and protected cookie attributes. **Executable trace:**
-             [communication.test.cjs](../../tests/communication.test.cjs),
-             `TC-021-009: TLS login, unauthorized/origin denial, plaintext refusal`. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-003-07';
-            verify 'FR-021';
-        }
-        attribute executable : String = "tests/communication.test.cjs";
     }
     verification 'TC-022-001' {
         doc /* #### TC-022-001 — Variable independent servers and browser windows
@@ -909,64 +812,6 @@ package WstxRequirements {
             verify 'FR-022';
         }
         attribute executable : String = "tests/profiles.test.cjs; server/src/profile_tests.rs";
-    }
-    verification 'TC-022-004' {
-        doc /* #### TC-022-004 — Multi-instance authentication in one browser profile
-
-             **Promises:** FR-019, FR-021, FR-022; CL-005-03, CL-005-04.
-             **Level:** 2 — isolated automated tests. **Where:** Windows PC, N real disposable TLS
-             listeners on **localhost**, different ports/tokens, N windows in **one browser context**.
-             Independent contexts do not satisfy this case; tests never contact an external service.
-
-             **Steps:** Before login request GET/PUT /profile and WebSocket upgrade without a cookie.
-             Fresh selected authorization at each station is session204, bootstrap-scope200
-             with non-null migrated scope, completed storage of key/grant/enrollment operation
-             IDs BEFORE enroll200, then challenge/proof204/status200. Session204 alone is not
-             ordinary permission. Initial migration assigns identity to existing selection even
-             with disabled control, but creates no grant/commission or native effects; a
-             null scope cannot be invented. Fetch GET `/profile` using
-             ordinary same-origin browser fetch with no manually supplied Origin and require200.
-             Inspect cookie names/attributes only, then Refresh/reconnect every window. Repeat
-             retained authorization in reverse order with proof/status, no token or enrollment
-             replay. Copy station
-             1's token to station 2's login, cookie name/value to station 2's upgrade and /profile
-             requests, and station 1's session value under station 2's expected cookie name. Supply
-             a legacy `wstx_session` cookie and duplicate expected-name cookies. Exercise missing/
-             wrong Origin on login, PUT and upgrade, including another station's port and an unrelated
-             origin. Operator bootstrap rotation is explicit profile revoke-all, unlike
-             transport-handle rotation/expiry or ordinary restart with unchanged bootstrap.
-             Require actual durable revoke-all commit/receipt for profile1, then rotate its
-             bootstrap token and restart; an environment-variable change alone is not proof;
-             query other stations throughout. Run local and cross-station negatives with the same
-             four-server fixture. Exercise namespaced transport-cookie expiry and automatic retained-key proof recovery without clearing others; ordinary restart does not revoke grants.
-
-             **Delivered amendment:** the companion converts rotation to the actual revoke-all receipt then restart with a new token; the rejected browser makes no automatic retry, uses Forget to re-enroll with the new token, and Log out deletes its key/cookie while other profiles stay usable. Only setup calls count against the 10/60 budget (enrollment 3 admissions, retained proof none).
-
-             **Oracle/outcome:** Exactly one expected namespaced session per logged-in UUID exists
-             with the 12.1 attributes and no Domain attribute. All independent sessions survive other
-             ports' logins/reconnects. Missing/wrong/duplicated/cross-profile cookies yield 401; wrong
-             Origin yields 403 before credentials or settings are accepted. Wrong-station token login
-             returns 401. Only the HttpOnly transport cookie and CL-022-01 nonextractable IndexedDB signing key are permitted browser-persisted credentials. No secret appears in localStorage/sessionStorage, profile JSON, retained
-             form/page state after login submission, URLs, stdout or test reports. Reports inspect
-             cookie names/attributes only; the test may transfer values internally for negative cases.
-             The explicitly revoked profile1 grant and old bootstrap token are refused; fresh enrollment with its new token succeeds while other profiles keep working. Ordinary restart preserves unrevoked grants. Exact-own-Origin authenticated saves succeed only
-             at their selected profile, and a different profile's UUID in the HTTP PUT body's
-             `profile_id` is denied. Numeric WebSocket correlation IDs retain 12.2's unchanged
-             connection-local meaning and are not profile identities. Verify 12.1's body
-             and per-process rate limits independently of other profiles. Count actual auth-v1
-             setup admissions (session/bootstrap-scope/enroll) under the10/60 budget and prove10 admitted/11th429 per
-             process in bounded fixture subcases; no production clock/rate switch, status poll
-             stream, relaxed deadline or omitted companion. Same-host cookie transport
-             is explicitly observed; it is not proof against a hostile service on that hostname. */
-        attribute automation : AutomationState = AutomationState::partial;
-        objective {
-            verify 'CL-005-03';
-            verify 'CL-005-04';
-            verify 'FR-019';
-            verify 'FR-021';
-            verify 'FR-022';
-        }
-        attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs";
     }
     verification 'TC-022-005' {
         doc /* #### TC-022-005 — Status readiness independent of settings transport
@@ -1112,129 +957,6 @@ package WstxRequirements {
         }
         attribute executable : String = "tests/ui-operating.test.cjs; server/src/contact_tests.rs";
     }
-    verification 'TC-009-005' {
-        doc /* #### TC-009-005 — Coherent receive operating controls
-
-             Proves CL-003-08, CL-008-03/05/07 and CL-010-05/07/08. Cost2, isolated Windows development PC:
-             actual station/receive manager, converter, decoder, HTTPS API and Chromium, independent
-             native/CI-V fixtures and TLS (no 32 kbit/s link, #80). This is planned coverage,
-             not an execution verdict. TC-009-002 remains the separate authorized cost4 physical
-             IC-7300/browser readback check. All existing cases remain required.
-
-             1. From a validated stopped snapshot, the explicit receive start (Expert, or the
-                Receive stopped chip; #37 removed Monitor/Stop from the operating screen) uses
-                the existing Start, and the explicit stop cancels the exact running tuple. Hold native close and inject failed
-                close: Start stays blocked until real release. Start uses the operating FT8/FT4 selection;
-                there is no separate Next receive mode control. Retain partial latest-period rows after Stop,
-                clear on a fresh identity. Unsupported/invalid audio, CAT-disabled, stale snapshot,
-                lost response, pre-intent read and reconnect cases never create a second owner,
-                implicit input selection, automatic restart or mutation retry; reconnects,
-                status refreshes, readiness events and a second tab send no receive start, stop
-                or selection by themselves (#37 guard). Keyboard/360px/200% text retains
-                accessible receive state and persistent unsupported Halt Tx.
-             2. Use the complete4.7.5 table as fixed independent integer truth. Test every admitted
-                preferred band/mode plus missing160m/4m FT4, backend range edges and wrong enum.
-                Expect20m14074000/14080000 and40m7074000/7047500. Cold unknown band/nominal mode
-                selection returns409select_band_first with zero revision/device/stop/start effects;
-                fresh unique exact readback can resolve the explicit mode, stale/off-grid cannot.
-                Manual Monitor-off→band and off→mode start the actual new receive mode without CAT;
-                a fixed independently known native FT4/FT8 payload traverses the real pipeline and
-                appears literally in the browser. No positive mock decoder or fabricated rows.
-             3. Independent fragmented CI-V replies prove ReadRxTx RX, exact ReceiveSetup and final
-                per-field readback. ACK, echo, foreign/broadcast/stale reply and unrelated query do
-                not refresh another field. Verify original timestamps remain, connection replacement
-                clears facts, and partial setter failures mark all possibly touched facts unconfirmed.
-                Mismatch,NG,timeout,busy alias,unverified receive-only and configured-unavailable CAT
-                refuse truthfully with no automatic manual fallback, replay or restoring writes.
-             4. Hold old worker/release, then release or fail it: no setters/new input before actual
-                release. Inject CAT-applied/audio-start failure, Stop before/after sent writes,
-                profile edit and late setup/page/old job callback. Expect exactly4.7.5 lifecycle,
-                unchanged250ms/2s bounds, fresh context and no cross-retune windows or stale restart.
-             5. Exercise each12.8.1 request union: missing/unknown/duplicate keys, malformed UUID,
-                enums,1024/1025 bytes, required media/Origin/auth/profile/boot/revision/generation,
-                safe counter maximum/one-over and exhaustion. Refusals occur before device effects.
-                Build maximum valid receipt/snapshot/metadata shapes and check384/3072/4096 byte
-                caps without truncation. Two authenticated browsers racing commands admit one.
-             6. Delay the original POST body until after an empty GET: that GET cannot clear the
-                unknown barrier. An explicit unseen-command fence increments revision, returns
-                phase cancelled and cancellation.result=fenced, creates no normal operation, and
-                causes delayed old POST refusal. Same cancel replay returns200 without effects;
-                changed body with retained ID conflicts. Before/after-job target cancellation may
-                stop only its own current tuple; superseded target cannot stop a later job. Old
-                boot/pre-intent reads never clear newer intent. Test profile edit/intervening fence.
-             7. New server/old strict client keeps all old shapes; old server/new client disables
-                only unsupported operating controls. Invalid schema/identity is stale/error, never
-                manual fallback. Include the pushed selection.state (WstxOperatingReceive::SelectionStateEvent),
-                normal receive/results/status, mode/band traffic, stalls and explicit Stop
-                in a two-browser workload on an unshaped TLS connection (#80, operator 2026-11-09:
-                CAT and selection tests run off the 32 kbit/s link; its budget is judged from the
-                link byte log, TC-080-001). Assert one pending selection read/ordinary mutation.
-                Without a timer read: the first selection.state of a socket
-                holds what GET /receive/selection gives, a later one the changed fields (at most 2048 B,
-                at most one per second), a change from outside shown with no read, and the radio
-                facts' new dates alone at most every 2 s on Detailed and every 30 s below it.
-
-                Read evidence classifies each selection read using recorded CDP initiators and the
-                caller mapping derived from the served client source (its single selection fetch, every
-                caller explicit; a caller inside a timer, a missing, ambiguous or unmapped site refuses),
-                joined to validated responses. In EACH Thin/Off window a browser makes at
-                most one selection read per operator gesture, and each command's pending state is
-                seen by at least one browser through an event or a read; each browser ends holding the
-                command's result. Missing coverage fails rather than fabricating pending values or
-                forcing a legal short command to last longer. Frozen negative controls refuse a timer
-                caller, an unknown stack and a lost or doubled fetch. Preserve all five CQ contexts and
-                two transitions/window; each window is as long as its gestures need; no product
-                delay or padding.
-
-                A Thin or Off window that fails prints in the test output, for each browser:
-                - every socket with its open and close times;
-                - each stale event with its path label, the page's silence, pending deferred
-                  download, socket state and authorization state;
-                - the frames received in the 12000 ms up to and including each close.
-                For every socket the station ended, it prints the station's reason, begin and end
-                times, last heartbeat write and longest heartbeat interval (from the begin; earliest
-                on a tie). All times are UTC milliseconds of the one machine; station times are the
-                begin's UTC plus the runtime clock's elapsed time. This is failure evidence, not a
-                pass condition.
-
-             8. Bounded HTTP content coding12.1.1 (same cost2 boundary):
-                A. Real application/router + normal TLS/session: authenticate once through existing /session; for each allowlisted successful GET gzip decode must equal identity logical JSON exactly on immutable state, exact shape/caps preserved. Use independent standard decoder (Node zlib) and assert actual raw gzip magic/header/trailer + body rather than fetch auto-decoded size. Check Content-Type/Vary/Content-Length correctness; existing Vary/cache/security headers retained. Mutable facts compare frozen fixture context, never pretend two temporally distinct snapshots must match timestamps.
-                B. Table: absent/empty, identity, gzip, GZip case-insensitivity, gzip;q=0, gzip;q=0.5 vs identity;q=1, identity;q=0 with gzip acceptable, br-only, wildcard and explicit exclusions, invalid q/token/multiple header instances. Expected outcomes are frozen in the ordered12.1.1 negotiation table from the pinned source; malformed headers must follow the frozen ordered12.1.1 negotiation table without panic/leak; duplicate/wildcard selection follows the exact table, not a blanket last-q or any-q0 rule. Both gzip+identity explicitly forbidden=>406 only eligible successful GET. Preserve original401/403/404/400/409/500 on excluded error paths even with forbidden encodings. Every row of the frozen ordered table runs through the product's own response encoder (http_compression::encode_response) on an eligible successful JSON GET, never through a bare library layer (#71).
-                C. Every excluded method/path including POST/session, PUT/profile, POST/receive/select and /radio operations remains unencoded and byte/schema compatible; no duplicate mutation effects. Authenticate cookies/tokens never appear in body/debug logs. Authenticated eligible snapshots contain no credential fields; malicious literal decoded text is unchanged. Oversized logical result rejected/capped BEFORE gzip, encoded size cannot admit extra rows; valid max logical result still decodes within original cap. Request Content-Encoding:gzip must not add support or bypass request body limit. HEAD/no-body/range/already-encoded cases must not be double-compressed or misframed.
-                D. Retired by #80 (operator 2026-11-09): content coding is not measured on the
-                32 kbit/s link; identity path correctness stays mandatory (A-C).
-                Include tiny `{}` (2bytes) with `identity;q=0,gzip`; selected gzip must encode
-                it despite a default library minimum-size predicate. HEAD/204/304/range/already-
-                encoded responses bypass negotiation even when all encodings are forbidden.
-                Preserve Vary fields `[Origin,X-Accept-Encoding-Other]` and append the exact
-                Accept-Encoding token; existing case-insensitive exact token and Vary:* remain.
-                Preserve security/cache headers. Every table row retains actual multiheader order.
-                Unknown/excess serialized size on an otherwise eligible success returns the existing
-                bounded503snapshot_limit before negotiation even with all encodings forbidden; verify
-                each route own logical cap, no body polling/buffering/redispatch, and retained security headers.
-
-             Independent oracles are the pinned source/table and observed default flow, manually
-             derived CI-V exchanges, independently fixed waveform payloads, exact wire schemas and
-             the pre-existing lifecycle/identity/resource bounds. Expected records are not derived
-             from candidate output. Placement: wstx-rust typed/control/receive tests, protocol and
-             live-browser/profile regressions, recording-thin encrypted transport tests and layout
-             accessibility cases; additive wiring must preserve every existing suite and assertion.
-             Physical TC-009-002 checks actual receive-only settings, numeric width/notches/PBT
-             independently when available, physical frequency/USB/DATA/FIL versus browser facts,
-             mode/band changes and Stop, with verified restoration. A quiet band is not fabricated
-             as successful decoding; fixture proof and actual RF observations are labelled separately. */
-        attribute automation : AutomationState = AutomationState::partial;
-        objective {
-            verify 'CL-003-08';
-            verify 'CL-008-03';
-            verify 'CL-008-05';
-            verify 'CL-008-07';
-            verify 'CL-010-05';
-            verify 'CL-010-07';
-            verify 'CL-010-08';
-        }
-        attribute executable : String = "tests/radio-selection.test.cjs; server/src/selection_http_tests.rs; server/src/http_compression_tests.rs; server/src/recording_tests.rs; server/tests/radio_control.rs; tests/contact.test.cjs; tests/recording.test.cjs; tests/ui-operating.test.cjs";
-    }
     verification 'TC-007-006' {
         doc /* #### TC-007-006 — Latest decode and signed relative timing
 
@@ -1277,24 +999,12 @@ package WstxRequirements {
         }
         attribute executable : String = "tests/ui-operating.test.cjs; server/src/recording_tests.rs";
     }
-
-    // Reciprocal ownership is verification intent, not an execution verdict.
-    dependency CL_003_01_verified_by_TC_021_006 from 'CL-003-01' to 'TC-021-006';
-    dependency CL_003_02_verified_by_TC_021_005 from 'CL-003-02' to 'TC-021-005';
-    dependency CL_003_02_verified_by_TC_021_008 from 'CL-003-02' to 'TC-021-008';
     dependency CL_003_04_verified_by_TC_021_006 from 'CL-003-04' to 'TC-021-006';
     dependency CL_003_04_verified_by_TC_021_007 from 'CL-003-04' to 'TC-021-007';
     dependency CL_003_05_verified_by_TC_080_001 from 'CL-003-05' to 'TC-080-001';
-    dependency CL_003_07_verified_by_TC_021_009 from 'CL-003-07' to 'TC-021-009';
-    dependency CL_003_08_verified_by_TC_009_005 from 'CL-003-08' to 'TC-009-005';
-    dependency CL_003_08_verified_by_TC_021_007 from 'CL-003-08' to 'TC-021-007';
     dependency CL_005_02_verified_by_TC_022_001 from 'CL-005-02' to 'TC-022-001';
     dependency CL_005_02_verified_by_TC_022_002 from 'CL-005-02' to 'TC-022-002';
     dependency CL_005_02_verified_by_TC_022_005 from 'CL-005-02' to 'TC-022-005';
-    dependency CL_005_03_verified_by_TC_022_001 from 'CL-005-03' to 'TC-022-001';
-    dependency CL_005_03_verified_by_TC_022_003 from 'CL-005-03' to 'TC-022-003';
-    dependency CL_005_03_verified_by_TC_022_004 from 'CL-005-03' to 'TC-022-004';
-    dependency CL_005_03_verified_by_TC_022_005 from 'CL-005-03' to 'TC-022-005';
     dependency CL_007_02_verified_by_TC_004_001 from 'CL-007-02' to 'TC-004-001';
     dependency CL_007_02_verified_by_TC_004_002 from 'CL-007-02' to 'TC-004-002';
     dependency CL_007_02_verified_by_TC_004_003 from 'CL-007-02' to 'TC-004-003';
@@ -1415,119 +1125,6 @@ package WstxRequirements {
     dependency CL_022_01_to_FR_019 from 'CL-022-01' to 'FR-019';
     dependency CL_022_01_to_FR_021 from 'CL-022-01' to 'FR-021';
     dependency CL_022_01_to_FR_022 from 'CL-022-01' to 'FR-022';
-    requirement 'CL-022-02' {
-        doc /* SelectedRadioId is a station-assigned random UUID persisted with the
-             selected radio configuration, separate from profile UUID, COM endpoint,
-             browser identity, boot/generation and radio-model label. Existing station
-             authority alone owns it; audio/CAT adapters refer to that same identity.
-             Initial migration assigns one UUID to the existing selected configuration,
-             but creates NO authorization grant or commissioning acknowledgement.
-             Operator decision 2026-11-06 (#22): no explicit radio identity
-             Add/Replace/Remove operation exists. Automatic discovery of an available
-             transmitter is requested on #44 and is not delivered or promised by this
-             clause. Fresh
-             bootstrap alone grants no control: ReadBootstrapScope provides its read-only
-             authority tuple before enrollment. Disable/re-enable never removes or
-             changes identity. Endpoint/model/PTT edits
-             preserve selected UUID but increment SafetyConfigurationRevision and
-             invalidate commissioning; they cannot make a newly configured device
-             usable until explicit re-commissioning. Endpoint reversion also needs
-             re-commissioning. USB disappearance/reappearance at unchanged configured
-             endpoint does not change UUID/revision. No claim of cryptographic hardware
-             identification: substituted hardware at the same endpoint is within the
-             existing trusted operator physical-configuration boundary. Radio identity
-             here is the selected configured asset, not an inferred COM3 hardware ID.
-
-             Durable store is one versioned atomic record per profile under
-             its existing private OS-protected service data, separate from public
-             profile JSON: radio identities/revisions, commissioning record, grant
-             public verifiers/IDs and revocation generation. No private browser key
-             or bootstrap token is persisted there by this change. Existing atomic
-             acknowledged-write protocol and OS ACL boundary apply; no new database
-             service or shared writer. Enrollment/revocation/commissioning success is
-             acknowledged only after durable commit. Corrupt/unreadable/unwritable
-             store fails closed with explicit reason; never synthesize empty/default
-             authorization. Uncommitted enrollment is unusable after restart.
-             A durably committed enrollment whose success response was lost remains
-             retained after restart; response delivery is not a server-observable
-             commit condition. Its browser remains unauthorized/unknown and queues
-             no CAT effects until read-only reconciliation of the same enrollment
-             operation ID proves the committed tuple/verifier and completes scoped
-             proof recovery. Do not replay enrollment or infer success from status.
-
-             Logout revokes this browser grant for the selected tuple and deletes its
-             matching cookie/key only after reconciliation; other browser grants and
-             other radios/profiles remain usable. Explicit Revoke all for this radio
-             deletes all matching verifiers and increments durable generation.
-             Bootstrap rotation is an explicit operator revoke-all operation for this
-             profile; ordinary restart neither rotates bootstrap nor revokes grants.
-             Removing a radio deletes its verifiers; recreating it assigns a new UUID.
-             Deleted verifier IDs never become valid by renewal; re-enrollment needs
-             fresh bootstrap authorization. No unbounded revoked-ID tombstone list:
-             unknown/deleted grant ID always rejects, including old cookies/signatures.
-
-             Station authority serializes grant validation and protected-effect
-             dispatch with selection/revocation transitions. The revocation commit is
-             the linearization point: effects whose request has not passed the locked
-             admission check before it are rejected (see accepted bound below for an
-             admitted request still in flight); already-dispatched I/O cannot be retroactively undone and is
-             cancelled using existing acknowledged-release rules without unsafe replay.
-             Existing affected sockets close and new HTTP/WS effects fail. Revocation
-             write failure quarantines affected access in memory immediately, reports
-             NOT durably revoked, and requires successful retry before acknowledgement;
-             restart can restore the last committed grant, which UI must disclose.
-             Lost acknowledgement uses idempotent operation ID and read-only receipt
-             reconciliation; no blind new enrollment or mutation replay. If response
-             reconciliation is unavailable, browser stays unauthorized/unknown until
-             resolved. Server restart reloads only committed state.
-             Delivered: durable record, logout/revoke-all, a locked admission check of
-             every operating HTTP route and WS upgrade, WS-message rechecks of an earlier
-             admitted grant, safety-revision advance and the commissioning server API.
-             Accepted bound: an operating HTTP request is admitted by validating its
-             transport (scope, grant, current revocation generation) under the authority
-             lock; the lock is then released. Such an admitted request may still be
-             queued (body parsing, the recording/native owner lock, the blocking pool)
-             when a revocation commits. It is not re-checked, refused or undone: at most
-             one in-flight effect per admitted request follows, under the existing
-             cancellation/release rules. Every request admitted after the commit is
-             refused, and the affected WS closes before its next message. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/authorization.rs; server/src/authorization_http.rs; server/src/recording_http.rs; server/src/main.rs";
-    }
-    dependency CL_022_02_to_FR_019 from 'CL-022-02' to 'FR-019';
-    dependency CL_022_02_to_FR_021 from 'CL-022-02' to 'FR-021';
-    dependency CL_022_02_to_FR_022 from 'CL-022-02' to 'FR-022';
-    requirement 'CL-022-05' {
-        doc /* Session, CAT and audio/decoder health remain distinct current observations. HTTP401 marks
-             session authorization unavailable within existing<=2s visible-status
-             acceptance even if WS still open; retained key proof may recover it.
-             Show proof retry/revocation/lost credential/persistence failure distinctly.
-             CAT waiting/connecting/retry/unavailable/quarantined never labels retained
-             frequency fresh. Audio/decoder state remains separate. No new status poll
-             stream; reuse versioned status publication/heartbeat. Its status reads and
-             recovery are not part of a 32 kbit/s link test; their bytes appear in the link
-             byte log (CL-003-05; #80, operator 2026-11-09). Issue10 existing
-             continuity/stale fixes are reused; this proposal adds no duplicate helper.
-             The freeze is accepted on the recorded trace (6622256637).
-             Delivered: POST /authorization/v1/status reports the actual lifecycle
-             condition, mapped error and retry delay, with receive_state separate; the
-             browser reads it only when the versioned /receive/selection
-             snapshot_sequence changes or after a confirmation (no own timer) and
-             shows session, CAT and audio/decoder separately. A retained frequency is
-             labelled stale/unconfirmed unless the WS is connected and its fact is
-             confirmed in ready. The lifecycle reports a serial open refused because
-             the port is held (Windows access denied or sharing violation, or another
-             station's ownership lock; also the rare ambiguous case of two serial
-             interfaces with the same port name) as error port_in_use, and the browser names it
-             '<port> in use by another program' (for example 'COM3 in use by another
-             program'); other unavailable causes keep radio_unavailable. The Thin/Off
-             accounted-traffic companion once planned here is retired (#80). */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/authorization_http.rs; client/recording.js; client/authorization.js; client/app.js";
-    }
-    dependency CL_022_05_to_FR_003 from 'CL-022-05' to 'FR-003';
-    dependency CL_022_05_to_FR_010 from 'CL-022-05' to 'FR-010';
-    dependency CL_022_05_to_FR_021 from 'CL-022-05' to 'FR-021';
     verification 'TC-022-006' {
         doc /* TC-022-006, CL-022-01/02; cost2 profiles/protocol companions
              using existing TLS/browser helpers. Reopening a page with a retained credential while
@@ -1649,37 +1246,6 @@ package WstxRequirements {
         }
     }
     dependency CL_022_01_verified_by_TC_022_006 from 'CL-022-01' to 'TC-022-006';
-    dependency CL_022_02_verified_by_TC_022_006 from 'CL-022-02' to 'TC-022-006';
-    // TC-022-007 retired (operator 2026-11-06, radio identity Add/Replace/Remove dropped, #22);
-    // its revocation and configuration-edit cases moved to TC-022-006. The identity is not reused.
-    verification 'TC-022-008' {
-        doc /* TC-022-008 CL-022-05 cost2 actual TLS browser. Preserve original missing-cookie/
-             openWS reproduction and held-old-response cases; prove401 invalidation and
-             proof recovery with independent network observations. Actual same-origin
-             browser POST /authorization/v1/status sends only {version:1}; independently
-             observe its automatically supplied exact Origin and current-grant200, with
-             no identity/session/native effects. Independent TLS peer missing/wrong
-             Origin403 before auth, invalid grant401, extra/duplicate/missing fields400,
-             wrong media415,1025bytes413; GETnewstatus405/no effects/no fallback. Existing
-             GET/profile permits absent Origin as before, not a relaxed POST policy.
-             The real freeze
-             is accepted on the recorded trace (6622256637). Existing issue10 barriers/unknown
-             state assertions remain. The once planned Thin/Off accounted-traffic companion is
-             retired (#80, operator 2026-11-09: no 32 kbit/s link test; the link byte log shows
-             these bytes). Automated: tests/profiles.test.cjs TC-022-008 (the original freeze
-             reproduction: transport cookie lost under an OPEN WebSocket without
-             reload; the 401 read ends 'Connected' within2s, retained-key proof
-             reconnects with one OPEN socket and zero token/session/enrollment, every
-             status read is POST {"version":1} with the exact page Origin) and
-             server/src/auth_tests.rs (status GET405, wrong and missing Origin403
-             before auth, strict body/media/size refusals, unknown transport401). */
-        attribute automation : AutomationState = AutomationState::implemented;
-        attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs";
-        objective {
-            verify 'CL-022-05';
-        }
-    }
-    dependency CL_022_05_verified_by_TC_022_008 from 'CL-022-05' to 'TC-022-008';
     verification 'TC-022-010' {
         doc /* TC-022-010 CL-022-01..05 authorized cost4 IC7300 receive-only acceptance. Record the actual deployed SHA/receipt/fresh radio identity and preserve official
              WSJTX noCAT/PTT comparison. Observe explicit initial commissioning once,
@@ -1701,8 +1267,6 @@ package WstxRequirements {
         }
     }
     dependency CL_022_01_verified_by_TC_022_010 from 'CL-022-01' to 'TC-022-010';
-    dependency CL_022_02_verified_by_TC_022_010 from 'CL-022-02' to 'TC-022-010';
-    dependency CL_022_05_verified_by_TC_022_010 from 'CL-022-05' to 'TC-022-010';
     dependency CL_039_06_verified_by_TC_020_004 from 'CL-039-06' to 'TC-020-004';
     requirement 'CL-112-05' {
         doc /* QSO Logged exchanges as WSJT-X. 1. The logged record carries its activity: when DirectLog stores a contact, the record gets the app field APP_WSTXRUST_ACTIVITY with the contact's activity at logging time, one of field_day, rtty, eu_vhf, na_vhf, ww_digi, arrl_digi, hound; it is absent for activity none, and a record without the field is activity none. In contacts.adi, the ADI export and the Logged ADIF datagram it is written after APP_WSTXRUST_CONTACT_ID and, when present, APP_WSTXRUST_SOURCE, and before any preserved unknown fields (WstxContact::LogRecord order). It is read back when the log loads. SaveContact accepts it; any other value is refused 400 log_invalid_field with field record.app_wstxrust_activity, as every other record field (WstxContact::ContactWire), and nothing is stored. UpdateLogbook keeps a valid value and drops an invalid one, as it does for other contest values. Listed default (as for APP_WSTXRUST_SOURCE: the resave comparison covers the main field list only): a SaveContact resave of a stored contact id that differs only in the activity is 200 already_saved, with the stored record unchanged and no datagram; likewise a DirectLog store that differs only in the activity is already_saved and keeps the stored activity. Field name, values and these rules are listed defaults; the operator decided only that the activity is stored in the record. 2. Exchange sent and Exchange received are the exchange WSJT-X passes from its log dialog (widgets/mainwindow_qso.cpp captureLogQso, widgets/logqso.cpp xsent/xrcvd), chosen by the record's activity: na_vhf, ww_digi, arrl_digi: sent is the first 4 characters of MY_GRIDSQUARE, received the first 4 of GRIDSQUARE ("JN47" / "FN42"); a missing partner grid gives "", as WSJT-X with its default ZZ00 off. field_day, rtty, eu_vhf: the contact's exchange_sent / exchange_rcvd as ContestExchange / EuVhfExchange define them ("1A EMA" / "2B CT", "559 0003" / "579 MA", "550001 JN37VL" / "590003 IO91NP"), rebuilt from the stored record's contest fields, RST, grid and activity: the reverse of ContestExchange's and EuVhfExchange's log mapping. hound, none, or no field: "" / "". 3. DirectLog and SaveContact build them the same way, from the stored record, so the same record always gives the same exchanges; the explicit save exists to resend what a logging program missed. Details: WstxUdp::OutboundRules, WstxContact::LogRecord. */
@@ -3319,58 +2883,8 @@ package WstxRequirements {
     }
     dependency CL_055_02_verified_by_TC_055_005 from 'CL-055-02' to 'TC-055-005';
     dependency CL_055_03_verified_by_TC_055_005 from 'CL-055-03' to 'TC-055-005';
-    verification 'TC-051-001' {
-        doc /* TC-051-001 — An open page reloads after a station update and receives again
-             CL-051-01, CL-051-02
-             Setup: actual candidate server on a disposable profile and Chromium at 1366x768; browser storage theme day and waterfall speed 4; a WebSocket proxy (Playwright routeWebSocket) forwards every message and, after the restart, rewrites the build of one station.status to 0123456789abcdef, standing for the updated station. The communication suite computes the build independently (Node SHA-256 over the client files on disk).
-             Steps: read the page's data-build; reconnect; stop the server and start it again on the same profile; wait for the page; let a later status of the same rewritten build arrive.
-             Expected: the page build is 16 hex digits and equals the status build of the unchanged station (no reload); after the restart exactly one reload, a new boot id, the receive snapshot of the new station accepted, theme day and speed 4 kept, the tab's session storage names the build; the second mismatch for the same build shows "Station updated · reload" with no second reload. The status envelope is {version 0.1.0, radio unconfigured, build}.
-             2 — Isolated automated functional tests; Windows development PC, loopback only. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-051-01';
-            verify 'CL-051-02';
-        }
-        attribute executable : String = "tests/ui-operating.test.cjs; tests/communication.test.cjs; server/src/protocol_tests.rs";
-    }
-    verification 'TC-051-003' {
-        doc /* TC-051-003 — Live update with the operating page open
-             CL-051-01, CL-051-02
-             Setup: HB9BLA running a build of this CR or later, the operator's page open and receiving, no QSO in progress.
-             Steps: install a later candidate whose client differs, with the page open.
-             Expected: the page reloads by itself and the waterfall moves again within about 10 s of the station's restart; browser settings kept.
-             3 — Live, read-only on the station; run at CR acceptance with the operator. */
-        attribute automation : AutomationState = AutomationState::planned;
-        attribute method : String = "manual";
-        objective {
-            verify 'CL-051-01';
-            verify 'CL-051-02';
-        }
-    }
-
-    // #33 The station reports its own source commit, for the independent post-install probe.
-    requirement 'CL-033-01' {
-        doc /* Every response to GET / carries exactly one header x-wstx-source-commit: the 40 lower-case hex digits of the source commit the executable was built from (compile-time WSTX_SOURCE_COMMIT), or unknown when the build had none or a value of any other form. It needs no authentication; station.status and the served page body are unchanged. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs";
-    }
-    dependency CL_033_01_to_FR_021 from 'CL-033-01' to 'FR-021';
-    verification 'TC-033-001' {
-        doc /* TC-033-001 — The served page reports the build's source commit
-             CL-033-01
-             Setup: the router of the test build with no selected profile; the source-commit validation called directly.
-             Steps: GET / through the router; validate a 40-digit lower-case commit, none, an empty, a short, an upper-case, a CR/LF-terminated and a 41-digit value.
-             Expected: exactly one x-wstx-source-commit header, equal to the test build's own WSTX_SOURCE_COMMIT when it is 40 lower-case hex and unknown otherwise; the valid commit is reported unchanged and every other value as unknown.
-             2 — Isolated automated functional tests; Windows development PC, no network. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-033-01';
-        }
-        attribute executable : String = "server/src/protocol_tests.rs";
-    }
-    dependency CL_033_01_verified_by_TC_033_001 from 'CL-033-01' to 'TC-033-001';
     requirement 'CL-054-01' {
-        doc /* A Detailed waterfall subscriber receives every Detailed row of the current job in order after a processing stall: the station retains the last 25 rows and sends each peer the oldest row it has not sent, 200 ms apart, 170 ms apart while rows wait (WstxRecordingReceive::TransferDisplay). Live Thin sends keep a fixed 2 s grid from the previous deadline, restarted at a send more than 1 s late, so sends stay at least 1 s apart. The browser draws a gap row only for a real gap; one or two live Thin rows paced out between two sent rows are drawn with the next row. */
+        doc /* A Detailed waterfall subscriber receives every Detailed row of the current job in order after a processing stall: the station retains the last 25 rows and sends each peer the oldest row it has not sent, 200 ms apart, 170 ms apart while rows wait (WstxStationProtocol::TransferDisplay). Live Thin sends keep a fixed 2 s grid from the previous deadline, restarted at a send more than 1 s late, so sends stay at least 1 s apart. The browser draws a gap row only for a real gap; one or two live Thin rows paced out between two sent rows are drawn with the next row. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/recording.rs; server/src/main.rs; client/recording.js";
     }

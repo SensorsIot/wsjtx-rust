@@ -1698,7 +1698,7 @@ package WstxContact {
              accepted command and every server-side sequence/transmit/watchdog change;
              snapshot_sequence also on clock-free material changes. No content coding:
              /contact, /contacts and /contacts/* are not in the six-route
-             WstxOperatingReceive::ExactCompressedGetRoute allowlist and stay identity. */
+             WstxHttpContentCoding::ExactCompressedGetRoute allowlist and stay identity. */
     }
     item def ContactStateEvent {
         attribute v : Integer = 1;
