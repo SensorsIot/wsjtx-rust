@@ -137,7 +137,7 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `sysml-tools` | The SysML tool's own unit tests `test_[!adre]*.py` on isolated models | The SysML tool and its tests |
 | `sysml-equivalence-tests` | TC-DOC-015: `equivalence` and `identities` on temporary repositories and the repository's history, `test_e*.py` | `tools/sysml.py`, `Validate.java` and the test file |
 | `sysml-equivalence` | CL-014-17: `equivalence --marked` on each commit of `master..HEAD` marked `Model-Move: pure` | The model, the SysML tool and the files whose model citations it reads |
-| `sysml-architecture` | TC-DOC-005 architecture integrity: the mutation tests `test_a*.py`, one Pilot validation per mutation | `Station.sysml`, `backend/radioControl/RadioProperties.sysml`, the SysML tool, `Validate.java`, the oracle file `architecture-oracle.json`, the toolchain pin and the test file |
+| `sysml-architecture` | TC-DOC-005 architecture integrity: the mutation tests `test_a*.py` on the pinned model of `1df1ba3a5` and its oracle file, and the `oracle` tests on fixture trees, one Pilot validation per mutation or model state | `Station.sysml`, `backend/radioControl/RadioProperties.sysml`, the SysML tool, `Validate.java`, the oracle file `architecture-oracle.json`, the toolchain pin and the test file |
 | `decoder-correctness` | The release `decoder_signal` correctness, #57 thread-parity and #56 jt9-parity passes (all ordinary passes but the 50 ms quantum and busy-period latency) | Decoder fixtures, the library root and the model files whose values its passes read (`docs/sysml/backend/modes/Decode.sysml`, `MessagePayload.sysml`, `docs/sysml/shared/Units.sysml`) (a production decoder source selects `decoder-quality`, which runs the same passes) |
 | `decoder-quality` | Timing: all seventeen release decoder passes bound to the artifact, and the owned-Job resource matrix (runs alone) | Timing inputs: the production decoder sources (not its `*_test.rs` or the test-only resource observer), `decoder_signal.rs`, the fixtures and vector tool the timed passes decode, its resource-job tools, the model files holding the budgets the matrix reads and their unit suffixes (`docs/sysml/backend/modes/Decode.sysml`, `docs/sysml/shared/Units.sysml`) and the Rust toolchain/dependency pins |
 | `live-station-browser` | Native fixture through the actual Router, receive owner and browser (callsign rows) | Router, profile/recording/receive/source/audio/decoder owners, client, its test files |
@@ -615,12 +615,13 @@ Do not infer functional truth from a regenerated artifact or observed defective 
 python tools/sysml.py check
 python tools/sysml.py traces
 python tools/sysml.py status
+python tools/sysml.py oracle
 python -m unittest discover -s tools/sysml/tests -q
 ```
 
 `check` admits only canonical SysML, checks canonical identities/states and trace
-bindings, loads the complete model set in the pinned Pilot, then applies the independent
-architecture integrity oracle. `fingerprints` prints one hash per model file by key (its
+bindings, loads the complete model set in the pinned Pilot, then compares the resolved
+inventory with the architecture oracle file. `fingerprints` prints one hash per model file by key (its
 path relative to `docs/sysml`, with forward slashes), sorted by key, for review;
 it never renews model approval. No command writes a model.
 `traces` requires canonical SysML and checks only authority, catalog and source/model
@@ -636,6 +637,23 @@ edits select this fast check; model/tool changes retain the full checks as well.
   states a different status, `; stated <state>` is added.
 - A last line gives `<n> FRs: <count> implemented, <count> partial, <count> target`.
 - Exit 0, or 2 with the catalog's message (`SysML check failed: <message>`).
+
+`python tools/sysml.py oracle` writes the architecture oracle file
+`tools/sysml/architecture-oracle.json` from the resolved inventory of the working tree
+(CL-014-06):
+
+- It needs the canonical authority, runs the Pilot validation of `check` and then the fixed
+  rules; on a refusal it exits 2 (`SysML check failed: <message>`) and leaves the file
+  unchanged. It runs no catalog check, and the gate never runs it.
+- It prints one line per difference to the file it replaces, sorted:
+  `added part <path> <type>`, `removed part <path> <type>`, `added port <path> <contract>`,
+  `removed port <path> <contract>`, `added connection <owner> <end> <-> <end>`,
+  `removed connection <owner> <end> <-> <end>`, and `changed <section> <key>` for any
+  other difference (a reference, a binding, a contract's items, a type or a population).
+- Then `Architecture oracle written: <counts>`, or `Architecture oracle unchanged` with no
+  change line and the file not rewritten.
+- The file has the form `check` reads, sections and keys sorted, and keeps the file's
+  `about` text, or a fixed sentence when there is no file.
 
 `python tools/sysml.py markers [<Kind> ...]` lists what the model leaves open:
 
@@ -706,15 +724,16 @@ process. The Java adapter traverses actual usage/type/connector objects, inherit
 features, conjugated directed items, reference subsetting, binding-versus-ordinary connector kinds
 and backend variants.
 
-- **The inventory is complete.** The *deployment* is `WstxArchitecture::physicalStation`
-  and everything reachable from it. The inventory holds every part, reference, port with
+- **The inventory is complete.** The *deployment* is the one package-level part usage of
+  the model files, whatever its name and package, and everything reachable from it; with
+  none or several, the inventory lists only the package-level part usages. The inventory holds every part, reference, port with
   its items, connection and binding of the deployment, whatever package declares the
   element or its definition, also a feature a definition inherits from a definition of
   another package. Left out are only the elements of the pinned model library's files; an
   element of a model file is never left out, also in a `library package`. Definitions and
-  item types are named by qualified name; paths are dot paths from `physicalStation`.
-- **The oracle is data.** `check` compares the inventory with the hand-written file
-  `tools/sysml/architecture-oracle.json`. It states `root` (the qualified name of the one
+  item types are named by qualified name; paths are dot paths from the deployment's name.
+- **The oracle is data.** `check` compares the inventory with the file
+  `tools/sysml/architecture-oracle.json`, which only `oracle` writes. It states `root` (the qualified name of the one
   deployment); `parts` (per path below the root: qualified type, population `"1..1"` or
   `"0..*"`, and `variation: true` when it is one); `references` (per path: type,
   population, target path); `contracts` (per port definition: its items as name,
@@ -740,38 +759,49 @@ and backend variants.
   `port joined to no function <path>`.
 - **Fixed rules stay in the tool** and hold whatever the file lists: exactly one part
   usage at package level in all model files (the root); no view in any model file adds a
-  part or connection; exactly one part of type `RadioAuthority`, at
-  `physicalStation.backend.radioAuthority`; per station exactly one `audioAdapter :
-  AudioDeviceAdapter`, one `catAdapter : RustRadioDriver` and one `profile :
-  PersistedProfile`, each `1..1` and no variation, and no other part of the two adapter
-  types; a variable station population (`0..*`); and a non-empty inventory. For the
-  authority and the two adapter types, a part whose definition specializes the type,
-  directly or through other definitions in any package, counts as one of them. Every
-  port of the deployment is an end of at least one connection of the deployment; an end
-  reached through a reference resolves to the referenced part's port (`authority.requests`
-  to `physicalStation.backend.radioAuthority.requests`), and a binding, also one a contract
-  declares, joins no port. Otherwise the first unjoined port in sorted path order is named.
-  The rule cannot tell an outside thing from a function: an outside part put back with its
-  connection is refused only while the oracle file, a reviewed hand edit, does not list it.
-  A change to a fixed rule is a tool change with its own issue.
+  part or connection; exactly one part typed by `RadioAuthority` (the authority); exactly
+  one part typed by `StationProcess` (the station population), variable (`0..*`); directly
+  in it exactly one `audioAdapter : AudioDeviceAdapter`, one `catAdapter : RustRadioDriver`
+  and one `profile : PersistedProfile`, found by usage name, each `1..1` and no variation,
+  and no other part of the two adapter types; and a non-empty inventory. A type is matched
+  by the simple name of the part's definition or of a definition it specializes, directly
+  or through other definitions, in any package; no rule names a root, a path or a package.
+  `check` applies these rules and `oracle` applies them before it writes. Then `check`
+  alone: every port of the deployment is an end of at least one connection of the
+  deployment; an end reached through a reference resolves to the referenced part's port
+  (`authority.requests` to `physicalStation.backend.radioAuthority.requests`), and a
+  binding, also one a contract declares, joins no port. Otherwise the first unjoined port
+  in sorted path order is named. The rule cannot tell an outside thing from a function:
+  an outside part put back with its connection is refused only while the oracle file does
+  not list it. A change to a fixed rule is a tool change with its own issue.
 - **The oracle file fails closed.** A missing, unreadable or non-JSON file is refused
   with `Architecture oracle unavailable: <path>`. A missing section, an unknown key, a
   key stated twice, an entry of another shape, a direction other than `in` or `out`, a
   malformed population, a port naming a contract the file lacks, or a pair listed twice
   or as both connection and binding is refused with
   `Invalid architecture oracle: <what>: <key>`. Neither prints a passed line.
-- **Independent.** No command writes, creates or completes the oracle file, and none
-  prints the inventory in its form. Only `check` reads it; `traces`, `markers`,
-  `fingerprints`, `validate` and `setup` work without it.
+- **Generated, independent in the issue.** Only `python tools/sysml.py oracle` writes the
+  file, from the resolved inventory of the working tree, after the Pilot validation and
+  the fixed rules pass; otherwise it exits 2 and leaves the file unchanged. The gate never
+  runs `oracle`; `check` compares inventory and file exactly as before. The independence
+  is in the issue: every issue that changes the architecture lists the parts and
+  connections it adds or removes, written by the definer before the generator is run and
+  never from its output; comparing `oracle`'s change lines with that list is a numbered
+  acceptance item and a review step. `check` and `oracle` read the file; `traces`,
+  `markers`, `fingerprints`, `status`, `validate` and `setup` work without it.
 
 Identity obligations require binding connectors; ordinary connections between the same
 endpoints do not satisfy them. The oracle is deliberately specific to this target
-architecture, not a general SysML connectivity theorem or generated approval of
-whatever the candidate model contains.
+architecture, not a general SysML connectivity theorem; a regenerated file approves
+nothing until its change lines are compared with the issue's list of additions and
+removals.
 
 TC-DOC-005 fixtures remove connections, bypass authority, split authority, duplicate a
 backend, redirect association/context identity, change waveform/provider directions or semantic item kinds, weaken identity bindings, add detached
-stations, add runtime structure to a view and put back removed outside things. They run through the real Pilot before
+stations, add runtime structure to a view and put back removed outside things. They judge
+the pinned model of commit `1df1ba3a5` against the oracle file of the same commit, both
+extracted with `git archive`, so a rewrite of the working tree's model changes no such
+test. They run through the real Pilot before
 the integrity assertions. Legal but disconnected/miswired models must fail the explicit
 integrity oracle even when ordinary semantic validation succeeds. The fixture list and
 expected diagnostics remain executable companions to the HOW test definitions below.
@@ -787,6 +817,9 @@ belong to test output and the implementing CR. Code/model correspondence and con
 1. Identify the current canonical contract, implemented baseline and affected owners.
 2. Define changed requirements and independent verification expectations in the canonical
    artifact. For SysML authority, update the model directly; do not edit archived Markdown.
+   An issue that changes the architecture lists its added and removed parts, ports and
+   connections, written before `python tools/sysml.py oracle` runs and never from its
+   output; its acceptance compares that list with `oracle`'s change lines.
 3. Settle open decisions on behaviour, data, ownership, states, timing, errors and test
    oracles with the operator; unresolved ones block the issue. A device or protocol whose
    behaviour is unknown gets an experiment (`cr:experimenting`) within the
@@ -825,7 +858,7 @@ These are HOW bindings, not product requirements and not SysML model elements.
 | CL-014-03 | Architecture | The architecture model is functional: a part of the deployment is a function of the software, a port is the interface one function offers to another, and every connection joins two functions. An outside thing (hardware, a person, another program, a file or a service) is no part and has no port. It is an entry of the context list `WstxArchitecture::OutsideThing` with exactly one owning function, a part of the deployment, and the `@FollowsSource` reference of its protocol or format. What an outside thing is made to do is a promise of its owning function, observed at the peer system. Preserve population, identity, ownership and directed semantic exchanges. Views select existing model facts and cannot supply missing architecture. | TC-DOC-005 |
 | CL-014-04 | Real validation | Required checks use the pinned full validator/library. Missing tools/files, syntax/name/semantic errors or missing completion evidence fail with no lint fallback. | TC-DOC-003; TC-DOC-004 |
 | CL-014-05 | Stable identities and traces | Preserve stable FR/CL/TC identities and declared states; a verification case may instead retire under CL-014-15. Clause ownership and verification links are reciprocal. A clause derived from its FR by a derivation connection of the pinned model library (`#original` the FR, `#derive` the clause) is owned by that FR and verified by the cases whose objective verifies it; no reciprocal `dependency` is written for it. Clause and case keep their declared states; an FR's status is computed (CL-014-19). Delivered declarations name existing implementation/executable or explicit manual bindings; no declared status means a test passed. | TC-DOC-001; TC-DOC-002; TC-DOC-007 |
-| CL-014-06 | Structural integrity | Validate the resolved architecture against the independent end-to-end oracle, including identity bindings, exclusive backend and shared authority. A legal but miswired model fails the oracle. The oracle is the hand-written data file `tools/sysml/architecture-oracle.json`. It lists every part, reference, port with its items, connection and binding of the deployment, whatever package declares them; an unlisted or a missing one is refused, and so is a missing or invalid file. The rules on the one deployment, views, the one authority, the adapters, the profile and the station population are fixed in the tool, hold in every model file and count subtypes. A port joined to no function is refused. | TC-DOC-005 |
+| CL-014-06 | Structural integrity | Validate the resolved architecture against the independent end-to-end oracle, including identity bindings, exclusive backend and shared authority. A legal but miswired model fails the oracle. The oracle is the data file `tools/sysml/architecture-oracle.json`. Only `python tools/sysml.py oracle` writes it, from the resolved inventory of the working tree, after the Pilot validation and the fixed rules pass; otherwise it exits 2 and leaves the file unchanged. The gate never runs `oracle`; `check` compares inventory and file exactly as before. The independence is in the issue: every issue that changes the architecture lists the parts and connections it adds or removes, written by the definer before the generator is run and never from its output; comparing `oracle`'s change lines with that list is a numbered acceptance item and a review step. `oracle` prints one line per difference to the file it replaces, sorted (`added`/`removed part <path> <type>`, `added`/`removed port <path> <contract>`, `added`/`removed connection <owner> <end> <-> <end>`, and `changed <section> <key>` for any other difference), then `Architecture oracle written: <counts>`, or `Architecture oracle unchanged` with no change line and the file not rewritten; it writes the file's form with sorted keys and keeps its `about` text, or writes a fixed sentence when there is no file. The file lists every part, reference, port with its items, connection and binding of the deployment, whatever package declares them; an unlisted or a missing one is refused, and so is a missing or invalid file. The inventory starts at the one package-level part usage and names every path from it. The fixed rules find the station population as the parts typed by `StationProcess`, the authority as the parts typed by `RadioAuthority`, and `profile : PersistedProfile`, `audioAdapter : AudioDeviceAdapter` and `catAdapter : RustRadioDriver` by usage name directly in the station process; a type is matched by the simple name of its definition or of a definition it specializes, in any package. The rules on the one deployment, views, the one authority, the adapters, the profile and the station population are fixed in the tool and hold in every model file. A port joined to no function is refused. | TC-DOC-005 |
 | CL-014-07 | Implementation readiness | Before code, the issue's ready check passes: the selected model slice settles observable behaviour, interfaces/data, ownership, state/timing/error choices and independent oracles. Explicit implementation freedoms do not authorize unresolved functional decisions. | TC-DOC-006 |
 | CL-014-08 | Functional sequence and closure | Use the declared canonical artifact first, pass the ready check, implement against it and verify with independent expected results. Reconcile delivered behaviour and durable cases before closing the issue. SysML-only authority requires no maintained/generated Markdown specification. | TC-DOC-006; TC-DOC-007; independent closure review |
 | CL-014-09 | Modeling feedback | Correct differences against the declared authority; do not bless code defects by rewriting requirements. Record causes/review on the issue and improve demonstrated reusable/project-specific gaps, with a focused regression where useful. | TC-DOC-006; independent review |
@@ -851,7 +884,7 @@ pinned portable Pilot. No radio, live service, Jupyter server or global Java is 
 | TC-DOC-002 | CL-014-05 | Mutate declared state/identity/link or remove a required artifact and expect a named nonzero refusal. A clause derived from its FR and verified by a case, with no dependency, is accepted, also with package names on the metadata and the ends, and the pinned Pilot resolves that form; a clause with both dependencies and no derivation is accepted. Refused: a clause with neither a derivation nor a dependency to an FR (`Canonical clause lacks requirement ownership`), a derived clause no case verifies (`Canonical clauses lack verification links`), a clause owned by dependency without its case dependency or a case verifying it without the reciprocal one, a derivation from a missing FR or deriving an FR (`Invalid canonical clause dependency`), and a derivation body other than one `#original` and one or more `#derive` ends (`Invalid canonical derivation: <key>:<line>`). | Automated isolated fixtures on this PC. |
 | TC-DOC-003 | CL-014-04 | Feed the actual Pilot a valid model, malformed syntax and unresolved names/types. Accept only the valid model; other cases return diagnostics and nonzero. | Automated pinned Pilot, local fixtures. |
 | TC-DOC-004 | CL-014-04 | Remove/corrupt Java, validator/library or model paths. Required validation fails nonzero and never reports semantic PASS. | Automated tool/prerequisite fixtures on this PC. |
-| TC-DOC-005 | CL-014-03, CL-014-06 | Load the complete architecture with the actual Pilot, inspect resolved port/item/association/binding inventory and compare with independent endpoint expectations. Remove/delegate/bypass/split/duplicate/redirect a required path or authority, change item type/direction, weaken identity binding or add view-only runtime parts. Each negative fails semantics or integrity; a rendered view cannot repair it. Remove each entry of the oracle file alone, damage or remove the file, declare a port, a part and a bypass connection in a definition of another package, used as a type or inherited, and put a second deployment, a view-made part and a subtype of the authority into a library package or another package: each is refused. A function of another package with its port and connection passes once the oracle file names them. Put back the parent's removed outside things with their ports and connections: refused while unlisted. List a port that no connection joins: refused, naming the first in sorted path order. The context list names exactly the issue's outside things, each with one owner in the deployment and one `@FollowsSource`. | Automated full-validator mutation fixtures and independent architecture review on this PC. |
+| TC-DOC-005 | CL-014-03, CL-014-06 | Load the complete architecture with the actual Pilot, inspect resolved port/item/association/binding inventory and compare with independent endpoint expectations. Remove/delegate/bypass/split/duplicate/redirect a required path or authority, change item type/direction, weaken identity binding or add view-only runtime parts. Each negative fails semantics or integrity; a rendered view cannot repair it. Remove each entry of the oracle file alone, damage or remove the file, declare a port, a part and a bypass connection in a definition of another package, used as a type or inherited, and put a second deployment, a view-made part and a subtype of the authority into a library package or another package: each is refused. A function of another package with its port and connection passes once the oracle file names them. Put back the parent's removed outside things with their ports and connections: refused while unlisted. List a port that no connection joins: refused, naming the first in sorted path order. The context list names exactly the issue's outside things, each with one owner in the deployment and one `@FollowsSource`. The mutation and fixture cases judge the model of commit `1df1ba3a5` against the oracle file of the same commit, both extracted by `git archive`. `oracle` on that model writes a file equal as data to its hand-written oracle and prints no change line. On a fixture tree in the skeleton's form (root `context` in `Context.sysml`, parts and interfaces in packages of their own folders): `oracle` then `check` pass, a second `oracle` prints `unchanged` and leaves the bytes equal, and an added connection is refused by `check` until `oracle` runs again; a part, a port and a connection added and removed and an item type changed, one at a time, each print exactly their one change line; a model the Pilot refuses, a second authority in another package, a second package-level part usage, a duplicate `catAdapter` and a station population `1..1` make `oracle` exit 2 with today's message and the file unchanged, and `traces`, `markers`, `fingerprints`, `status` and `check` neither create nor change it; an outside part joined to its owner's port passes and unjoined is refused with `port joined to no function`. | Automated full-validator mutation fixtures and independent architecture review on this PC. |
 | TC-DOC-006 | CL-014-07, CL-014-08, CL-014-09 | An agent that did not write the issue reads it and the canonical contract it names; missing required decisions, missing test cases or a shared-only generated oracle give `Ready: not yet`, and `cr_state.py` refuses `implementing` without a `Ready: PASS`. The independent review of the candidate rechecks exact changes and closure reconciliation. On request, a model-readiness review traces the contract to code boundaries. No syntax/fingerprint result establishes implementation sufficiency. | Manual source/model/meaning reading on this PC; automation cannot establish complete intended meaning. |
 | TC-DOC-007 | CL-014-01, CL-014-05, CL-014-08 | Refuse dual/missing authority and an active FSD without the marker, missing/duplicate stable IDs, missing required packages, invalid state, nonreciprocal verification links, missing/escaping source paths and unsupported executable claims. Refuse dangling active references to retired FSD content. Edited/missing archived Markdown does not change canonical checks; no command rewrites the model. A new package needs no reference and is validated in full; a model with or without `WstxProductScope` is accepted. `Context.sysml` with `WstxContext` is accepted; `Context.sysml` with another package or none, `Context.sysml` declaring an identity, and another file importing, naming or declaring `WstxContext` are refused; with `Context.sysml` removed while another file names `WstxContext`, the pinned Pilot refuses. Source edits/deletions invalidate both model suites' evidence; source-only changes select fast traces without the full model suite. Fast traces refuses a deleted binding and never invokes Java. | Automated isolated Python fixtures on this PC; full integrated Pilot validation remains separate. |
 | TC-DOC-008 | CL-014-10 | Place a clause and its case in a subfolder file, move, rename and split the file of a required package, remove the package (`WstxRequirements`, `WstxArchitecture`), declare it in two files, move the entry file, verify and link a clause through a package-qualified name, add an additional package referred to by import, by alias and not at all, with and without `WstxProductScope`, and a former library package and a file without a package. The real model is accepted. The tree is accepted, each fault is refused by package or key, fingerprints and the gate's model list name every file by key, and the real model with one file of a required package moved into a folder under another name passes the full validation with the same identities. | Automated isolated Python fixtures and one full Pilot validation on this PC. |

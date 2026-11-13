@@ -363,7 +363,7 @@
   - tools/sysml/architecture-oracle.json
   - tools/sysml/toolchain.json
   - tools/sysml/tests/test_a
-  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; TC-DOC-005 architecture integrity: each mutation of the architecture model (Station.sysml) is one full Pilot validation in a bounded pool. Selected by the architecture model, the radio property catalogue whose types it uses, and the tool that judges it; the companion models are validated by sysml-documentation (check). No radio or live service."
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the full git history of the checkout (the mutation tests read the model and oracle file of 1df1ba3a5). TC-DOC-005 architecture integrity: each mutation of the architecture model (Station.sysml) is one full Pilot validation in a bounded pool, and each model state of the oracle tests' fixture tree one more. Selected by the architecture model, the radio property catalogue whose types it uses, and the tool that judges it; the companion models are validated by sysml-documentation (check). No radio or live service."
 
 # TC-DOC-015: the tests of `equivalence` and `identities`, apart from sysml-tools so that a
 # model edit does not run them; about 9 minutes (some 30 Pilot exports, 2 at a time).

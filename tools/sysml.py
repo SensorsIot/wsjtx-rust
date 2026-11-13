@@ -6,8 +6,9 @@ pinned Java parser/name resolver/semantic validator. markers lists the ModelNote
 and checks nothing. retired checks the catalog and lists the `@RetiredCase` retirements;
 status checks it and prints each FR's status computed from its clauses (CL-014-19).
 equivalence compares two revisions of the model by meaning and identities lists the
-identity diff of two revisions (CL-014-17); both only read the repository.
-None executes modeled behavior.
+identity diff of two revisions (CL-014-17); both only read the repository. oracle
+writes the architecture oracle file from the resolved inventory, printing one line per
+change (CL-014-06); no other command writes it. None executes modeled behavior.
 """
 from __future__ import annotations
 
@@ -33,8 +34,8 @@ ROOT = Path(__file__).resolve().parents[1]
 FSD = ROOT / "docs/WSTX Rust FSD.md"
 MODELS = ROOT / "docs/sysml"
 TOOLCHAIN = Path(__file__).with_name("sysml") / "toolchain.json"
-# The hand-written TC-DOC-005 oracle of the deployment. Only `check` reads it; no command
-# writes, creates or completes it, and none prints the inventory in its form.
+# The TC-DOC-005 oracle of the deployment. `check` compares it with the inventory; only
+# `oracle` writes it, after the Pilot validation and the fixed rules pass (CL-014-06).
 ORACLE = Path(__file__).with_name("sysml") / "architecture-oracle.json"
 ID = re.compile(r"\b(?:FR-\d{3}|CL-\d{3}-\d{2}|TC-(?:\d{3}|DOC)-\d{3})\b")
 CANONICAL_MARKER = "// Canonical authority: SysML"
@@ -770,9 +771,14 @@ def tool_paths(cache: Path) -> tuple[Path, Path, Path]:
 ORACLE_SECTIONS = ("root", "parts", "references", "contracts", "ports", "connections", "bindings")
 QUALIFIED = re.compile(r"(?:\w+::)+\w+")
 POPULATION = re.compile(r"(0|[1-9][0-9]*)\.\.(0|[1-9][0-9]*|\*)")
-# The fixed rules of CL-014-06 name these paths and types; the oracle file cannot change them.
-STATIONS = "physicalStation.backend.stations"
-AUTHORITY = "physicalStation.backend.radioAuthority"
+# The fixed rules of CL-014-06 find their parts by these simple definition names, in any
+# package, and the station's direct parts by usage name; the oracle file cannot change them.
+STATION_TYPE = "StationProcess"
+AUTHORITY_TYPE = "RadioAuthority"
+STATION_PARTS = (("profile", "PersistedProfile"), ("audioAdapter", "AudioDeviceAdapter"),
+                 ("catAdapter", "RustRadioDriver"))
+EXCLUSIVE_PARTS = ("audioAdapter", "catAdapter")
+ORACLE_ABOUT = "TC-DOC-005 oracle, written by python tools/sysml.py oracle from the resolved inventory"
 
 
 def architecture_oracle(path: Path) -> dict:
@@ -881,46 +887,61 @@ def population(bounds: str) -> str:
     return lower + ".." + ("*" if upper == "-1" else upper)
 
 
-def architecture_integrity(output: str) -> dict[str, int]:
-    """TC-DOC-005 (CL-014-03, CL-014-06): the deployment against the independent oracle.
-
-    Input is the pinned Pilot's resolved semantic inventory, not SysML source or a
-    viewer graph. The oracle is the hand-written file `ORACLE`; the inventory and the
-    file must agree exactly. The fixed rules below hold whatever the file lists. Only
-    the first difference is reported.
-    """
-    oracle = architecture_oracle(ORACLE)
+def inventory_records(output: str) -> dict[str, list[list[str]]]:
+    """The rows of the resolved Pilot inventory in `output` by kind; refused when empty."""
     rows = [line.split("\t")[1:] for line in output.splitlines() if line.startswith("AST\t")]
     if not rows:
         raise ValueError("Architecture integrity: missing resolved Pilot inventory")
-    records = {kind: [row[1:] for row in rows if row[0] == kind] for kind in {row[0] for row in rows}}
-    if records.get("ROOTPART") != [[oracle["root"]]]:
+    return {kind: [row[1:] for row in rows if row[0] == kind] for kind in {row[0] for row in rows}}
+
+
+def of_type(values: list, type_name: str) -> bool:
+    """A PART row's definition, or a definition it specializes, has the simple name
+    `type_name`, in any package."""
+    return len(values) > 4 and any(kind.rsplit("::", 1)[-1] == type_name for kind in values[4].split(",") if kind)
+
+
+def fixed_rules(records: dict, root=None) -> None:
+    """The fixed rules of CL-014-06, whatever the oracle file lists: the one deployment
+    (and, given `root`, the oracle's), no view-made part or connection, one variable
+    station population, its direct profile and adapters, no other adapter and one
+    authority. Parts are found by type name, never by path or package."""
+    roots = records.get("ROOTPART", [])
+    if len(roots) != 1 or root is not None and roots != [[root]]:
         raise ValueError("Architecture integrity: expected one physical deployment")
     if records.get("VIEWSEMANTIC"):
         raise ValueError("Architecture integrity: views may expose, not create runtime parts/connections")
     parts = {row[0]: row[1:] for row in records.get("PART", [])}
-    refs = {row[0]: row[1:] for row in records.get("REF", [])}
-    ports = {row[0]: row[1] for row in records.get("PORT", [])}
-
-    def of_type(values: list, type_name: str) -> bool:
-        """The part's definition is the type or specializes it, in any package."""
-        return len(values) > 4 and "WstxArchitecture::" + type_name in values[4].split(",")
-
-    if parts.get(STATIONS, [None, None])[1] != "0:-1":
+    stations = [path for path, values in parts.items() if of_type(values, STATION_TYPE)]
+    if len(stations) != 1 or parts[stations[0]][1] != "0:-1":
         raise ValueError("Architecture integrity: station population must remain variable")
-    for name, type_name in (("profile", "PersistedProfile"),
-                            ("audioAdapter", "AudioDeviceAdapter"), ("catAdapter", "RustRadioDriver")):
-        values = parts.get(STATIONS + "." + name, [])
-        typed = values[:1] == ["WstxArchitecture::" + type_name] if name == "profile" else of_type(values, type_name)
-        if len(values) < 3 or not typed or values[1] != "1:1" or values[2] != "false":
+    station = stations[0]
+    for name, type_name in STATION_PARTS:
+        values = parts.get(station + "." + name, [])
+        if len(values) < 3 or not of_type(values, type_name) or values[1] != "1:1" or values[2] != "false":
             raise ValueError("Architecture integrity: exactly one direct " + name + " per station")
-    for name, type_name in (("audioAdapter", "AudioDeviceAdapter"), ("catAdapter", "RustRadioDriver")):
-        adapter_parts = {path for path, values in parts.items() if of_type(values, type_name)}
-        if adapter_parts != {STATIONS + "." + name}:
-            raise ValueError("Architecture integrity: duplicate or detached " + name)
-    authorities = [path for path, values in parts.items() if of_type(values, "RadioAuthority")]
-    if authorities != [AUTHORITY]:
+    for name, type_name in STATION_PARTS:
+        if name in EXCLUSIVE_PARTS:
+            if {path for path, values in parts.items() if of_type(values, type_name)} != {station + "." + name}:
+                raise ValueError("Architecture integrity: duplicate or detached " + name)
+    if len([path for path, values in parts.items() if of_type(values, AUTHORITY_TYPE)]) != 1:
         raise ValueError("Architecture integrity: shared radio requires one effective authority")
+
+
+def architecture_integrity(output: str) -> dict[str, int]:
+    """TC-DOC-005 (CL-014-03, CL-014-06): the deployment against the oracle file.
+
+    Input is the pinned Pilot's resolved semantic inventory, not SysML source or a
+    viewer graph. The oracle is the file `ORACLE`, which only `oracle` writes; the
+    inventory and the file must agree exactly. The fixed rules hold whatever the file
+    lists. Only the first difference is reported.
+    """
+    oracle = architecture_oracle(ORACLE)
+    records = inventory_records(output)
+    fixed_rules(records, oracle["root"])
+    refs = {row[0]: row[1:] for row in records.get("REF", [])}
+    parts = {row[0]: row[1:] for row in records.get("PART", [])}
+    ports = {row[0]: row[1] for row in records.get("PORT", [])}
 
     for path, listed in oracle["references"].items():
         actual = refs.get(path, [])
@@ -1001,6 +1022,137 @@ def architecture_integrity(output: str) -> dict[str, int]:
     if unjoined := sorted(set(ports) - joined):
         raise ValueError("Architecture integrity: port joined to no function " + unjoined[0])
     return {"parts": len(parts), "references": len(refs), "ports": len(ports), "connections": len(actual_edges)}
+
+
+def inventory_oracle(records: dict, about: str) -> dict:
+    """The oracle file's content for the inventory `records`, whose fixed rules passed:
+    every part, reference, port, contract, connection and binding, in the file's form."""
+    root = records["ROOTPART"][0][0]
+    name = root.rsplit("::", 1)[1]
+    oracle = {"about": about, "root": root, "parts": {}, "references": {}, "contracts": {}, "ports": {},
+              "connections": {}, "bindings": {}}
+    for path, *values in records.get("PART", []):
+        if path != name:
+            oracle["parts"][path] = {"type": values[0], "population": population(values[1])}
+            if values[2] == "true":
+                oracle["parts"][path]["variation"] = True
+    for path, *values in records.get("REF", []):
+        oracle["references"][path] = {"type": values[0], "population": population(values[1]), "target": values[3]}
+    for path, typed in records.get("PORT", []):
+        oracle["ports"][path] = typed
+        oracle["contracts"].setdefault(typed.removeprefix("~"), {"items": {}})
+    for path, item, direction, types in records.get("ITEM", []):
+        typed = oracle["ports"][path]
+        if typed.startswith("~"):
+            direction = {"in": "out", "out": "in"}.get(direction, direction)
+        oracle["contracts"][typed.removeprefix("~")]["items"][item] = [direction, types]
+    for owner, _name, kind, ends in records.get("EDGE", []):
+        pair = ends.split("|")
+        if owner in oracle["ports"]:
+            listed = oracle["contracts"][oracle["ports"][owner].removeprefix("~")].setdefault(kind + "s", [])
+        else:
+            listed = oracle[kind + "s"].setdefault(owner, [])
+        if frozenset(pair) not in map(frozenset, listed):
+            listed.append(pair)
+    for holder in [*oracle["contracts"].values(), oracle["connections"], oracle["bindings"]]:
+        for key, value in holder.items():
+            if isinstance(value, list):
+                value.sort()
+    return oracle
+
+
+def oracle_text(oracle: dict) -> str:
+    """The file text: sections and keys sorted, one entry or pair per line."""
+    def dump(value) -> str:
+        return json.dumps(value, sort_keys=True)
+
+    lines = ["{"]
+    keys = sorted(oracle)
+    for index, key in enumerate(keys):
+        value, comma = oracle[key], "," if index + 1 < len(keys) else ""
+        if not isinstance(value, dict) or not value:
+            lines.append(f"  {dump(key)}: {dump(value)}{comma}")
+            continue
+        lines.append(f"  {dump(key)}: {{")
+        entries = sorted(value)
+        for position, entry in enumerate(entries):
+            inner, separator = value[entry], "," if position + 1 < len(entries) else ""
+            if isinstance(inner, list) and inner:
+                lines.append(f"    {dump(entry)}: [")
+                lines.extend(f"      {dump(pair)}" + ("," if row + 1 < len(inner) else "") for row, pair in enumerate(inner))
+                lines.append("    ]" + separator)
+            else:
+                lines.append(f"    {dump(entry)}: {dump(inner)}{separator}")
+        lines.append("  }" + comma)
+    return "\n".join(lines + ["}"]) + "\n"
+
+
+def oracle_changes(old: dict, new: dict) -> list[str]:
+    """One line per difference from `old` to `new`, sorted: parts, ports and connections
+    added or removed, and `changed <section> <key>` for every other difference."""
+    lines = []
+    for kind, section in (("part", "parts"), ("port", "ports")):
+        before, after = old.get(section, {}), new[section]
+
+        def typed(value):
+            return value["type"] if isinstance(value, dict) else value
+
+        lines += [f"added {kind} {key} {typed(after[key])}" for key in after.keys() - before.keys()]
+        lines += [f"removed {kind} {key} {typed(before[key])}" for key in before.keys() - after.keys()]
+        lines += [f"changed {section} {key}" for key in before.keys() & after.keys() if before[key] != after[key]]
+
+    def pairs(section: dict) -> dict:
+        return {(owner, frozenset(pair)): pair for owner, listed in section.items() for pair in listed}
+
+    before, after = pairs(old.get("connections", {})), pairs(new["connections"])
+    lines += [f"added connection {key[0]} {' <-> '.join(after[key])}" for key in after.keys() - before.keys()]
+    lines += [f"removed connection {key[0]} {' <-> '.join(before[key])}" for key in before.keys() - after.keys()]
+
+    def contract(value: dict) -> tuple:
+        return value["items"], *(frozenset(map(frozenset, value.get(kind, []))) for kind in ("bindings", "connections"))
+
+    for section, normal in (("references", lambda value: value), ("contracts", contract),
+                            ("bindings", lambda value: frozenset(map(frozenset, value)))):
+        before, after = old.get(section, {}), new[section]
+        lines += [f"changed {section} {key}" for key in before.keys() | after.keys()
+                  if key not in before or key not in after or normal(before[key]) != normal(after[key])]
+    if old.get("root") != new["root"]:
+        lines.append(f"changed root {new['root']}")
+    return sorted(lines)
+
+
+def write_architecture_oracle(cache: Path) -> list[str]:
+    """`oracle` (CL-014-06): the Pilot validation and the fixed rules on the working tree's
+    model, then the file `ORACLE` written from the resolved inventory, keeping its `about`.
+    A refusal raises and leaves the file as it was; an equal file is not rewritten."""
+    entry = "Requirements.sysml"
+    paths = [MODELS / entry, *(path for key, path in model_files(MODELS).items() if key != entry)]
+    result = validate(paths, cache, inventory=True)
+    if result.returncode:
+        for line in result.stdout.splitlines():
+            if not line.startswith(("Reading ", "AST\t")):
+                print(line)
+        print(result.stderr, file=sys.stderr, end="")
+        raise ValueError("Semantic validation failed; architecture oracle not written")
+    records = inventory_records(result.stdout)
+    fixed_rules(records)
+    try:
+        old = architecture_oracle(ORACLE)
+    except ValueError:
+        old = {}
+    text = oracle_text(inventory_oracle(records, old.get("about", ORACLE_ABOUT)))
+    with tempfile.TemporaryDirectory(prefix="sysml-oracle-") as folder:
+        written = Path(folder) / ORACLE.name
+        written.write_bytes(text.encode("utf-8"))
+        new = architecture_oracle(written)
+    lines = oracle_changes(old, new)
+    # A checkout's CRLF line ends are the same text.
+    if not lines and ORACLE.is_file() and ORACLE.read_bytes().replace(b"\r\n", b"\n") == text.encode("utf-8"):
+        return ["Architecture oracle unchanged"]
+    ORACLE.write_bytes(text.encode("utf-8"))
+    counts = {section: len(new[section]) for section in ("parts", "references", "contracts", "ports")}
+    counts.update({section: sum(map(len, new[section].values())) for section in ("connections", "bindings")})
+    return lines + ["Architecture oracle written: " + ", ".join(f"{count} {kind}" for kind, count in counts.items())]
 
 
 def validate(paths: list[Path], cache: Path, inventory: bool = False) -> subprocess.CompletedProcess:
@@ -1537,6 +1689,7 @@ def main(argv=None):
     listing.add_argument("kinds", nargs="*", metavar="Kind")
     commands.add_parser("retired", help="Check the catalog as fingerprints does, then list the retired cases by identity; writes nothing")
     commands.add_parser("status", help="Check the catalog, then print each FR's status computed from its clauses; writes nothing")
+    commands.add_parser("oracle", help="Write the architecture oracle file from the resolved inventory after validation and the fixed rules; print its changes")
     semantic = commands.add_parser("validate", help="Run real semantic validation on ordered files")
     semantic.add_argument("files", nargs="+", type=Path)
     same = commands.add_parser("equivalence", help="Compare the model of two revisions by meaning (head omitted: the working tree); writes nothing")
@@ -1586,6 +1739,10 @@ def main(argv=None):
         if args.command == "status":
             authority(MODELS, FSD)
             print("\n".join(status_lines(canonical_catalog(MODELS, ROOT))))
+            return 0
+        if args.command == "oracle":
+            authority(MODELS, FSD)
+            print("\n".join(write_architecture_oracle(args.cache_dir)))
             return 0
         if args.command == "fingerprints":
             authority(MODELS, FSD)
