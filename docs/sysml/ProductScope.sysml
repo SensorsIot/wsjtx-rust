@@ -269,6 +269,7 @@ package WstxProductScope {
         alias TransmitClockPackage for WstxTransmitClock;
         alias TransmitWirePackage for WstxTransmitWire;
         alias TxLevelPackage for WstxTxLevel;
+        alias MessageEncodePackage for WstxMessageEncode;
     }
     dependency scopeBoundary from ProductCapabilities to WstxRequirements::'FR-004';
     dependency contactBoundary from CompletedContactIdentity to WstxRequirements::'FR-011';

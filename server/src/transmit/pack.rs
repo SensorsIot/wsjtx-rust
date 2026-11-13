@@ -1,6 +1,6 @@
 //! 77-bit FT8 message packing: the inverse of `decoder::unpack` for the supported
 //! families, following WSJT-X 3.3.0-beta5 packjt77.f90/packjt77_grammar.f90.
-//! See WstxTransmit::PackMessage. Every result is unpacked again and must render the
+//! See WstxMessageEncode::PackMessage. Every result is unpacked again and must render the
 //! normalized input; WSJT-X's truncating free-text fallback is not reproduced.
 use crate::decoder::{PayloadStatus, arrl_sections, rtty_exchanges, unpack};
 

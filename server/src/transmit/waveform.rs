@@ -1,5 +1,5 @@
 //! FT8 and FT4 GFSK waveforms with the arithmetic of WSJT-X gen_ft8wave/emit_ft8_waveform
-//! and gen_ft4wave, evaluated in binary64. See WstxTransmit::Ft8WaveformContract and
+//! and gen_ft4wave, evaluated in binary64. See WstxMessageEncode::Ft8WaveformContract and
 //! Ft4WaveformContract.
 use crate::decoder::{Mode, gaussian_pulse};
 use std::f64::consts::{PI, TAU};

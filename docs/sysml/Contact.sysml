@@ -93,7 +93,7 @@ package WstxContact {
              "CQ MYCALL" (no grid; genCQMsg). Two nonstandard calls have no message set: such
              a DX call is refused invalid_call (make-qso.adoc: no QSO between two nonstandard
              calls). Every generated text must pack unaltered with
-             WstxTransmit::PackMessage as the standard i3=1/2 or the nonstandard i3=4
+             WstxMessageEncode::PackMessage as the standard i3=1/2 or the nonstandard i3=4
              family; a DX call that does not is refused at entry. Contest forms belong to
              #24 S2. Regenerating after a report, DX call or tx4 change
              replaces Tx2-Tx4 (and Tx1/Tx5 on a DX-call change); operator-edited text
@@ -206,7 +206,7 @@ package WstxContact {
              guiUpdate ~8008-8011 and ~8203-8207, ~3431 and ~10280 (6-character locator),
              ~10542 and ~10669 (serial, eu_vhf_type5_serial_max), DecodedMessageReaction.cpp
              ~501-565 and ~772-776, AdifQso.cpp to_adif ~87-124; packjt77 type 5:
-             WstxTransmit::PackMessage). The EU VHF contest message: report, serial and
+             WstxMessageEncode::PackMessage). The EU VHF contest message: report, serial and
              6-character locator, both calls hashed.
              Choosing. set_activity {activity:"eu_vhf"} without an exchange (an exchange is
              refused invalid_request field exchange), FT8 and FT4, a boot setting like the

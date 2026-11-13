@@ -20,6 +20,9 @@ package WstxModemDecode {
     private import ModelBindings::DetailTests;
     private import ModelNotes::FollowsSource;
     private import ModelNotes::DiffersFromSource;
+    private import WstxLiveReceive::'CL-007-05';
+    private import WstxRequirements::'CL-057-01';
+    private import WstxRequirements::'TC-057-003';
     doc /* The decode function of the modes part (WstxArchitecture::ModeFunctions). A window
          of canonical 12 kHz samples with its mode and a-priori context goes in; the records
          of the frames decoded in it come out. The payload, channel code and waveform are
@@ -436,4 +439,28 @@ package WstxModemDecode {
     dependency CL_007_08_verified_by_TC_004_003 from 'CL-007-08' to 'TC-004-003';
     dependency CL_007_10_verified_by_TC_004_001 from 'CL-007-10' to 'TC-004-001';
     dependency CL_007_10_verified_by_TC_004_002 from 'CL-007-10' to 'TC-004-002';
+    requirement 'CL-057-02' {
+        doc /* The modem decodes on all CPU cores with headroom: its parallel stages use up to the logical CPU count minus one threads (at least one; the calling thread included), scoped to each stage, so capture, display and transmit threads keep a core; the native audio capture and transmit render threads run at raised (highest) thread priority. Parallel stages are the rows of the FT8 detection spectrum, the FT8 sync-peak qualification, the verification of each pass's candidates (demodulation, channel decode, refinement, physical check and, for a supported complete FT8 frame, its SNR signal power; at most sixteen at once, each holding one 1.2 MB known-word waveform while it refines) and the synthesis of the waveforms to subtract; peak blocking, the duplicate checks, the SNR baseline (per period) and SNR value, publication and the residual subtraction stay in candidate order. The decode set and its order (payload, start frame, frequency and SNR) are identical for every thread count. At most four subtraction waveforms are built at a time: the next four are built on other threads while the previous four are subtracted, so at most eight are held, bounding their memory. The last pass's verified frames are not subtracted, because no later pass reads that residual (#57: these keep a busy FT8 prompt window at about 0.3 s of decode, well inside the CL-007-05 publication bound of period start + 15.0 s; #72: no bound from window completion to painted row is promised beyond CL-007-05 and CL-057-01). The CL-007-04 per-CPU-worker runtime, memory and four-profile budgets are measured with one decode thread per worker. Parallel work runs in rounds of about 10 ms, each started item finishing, and the decode future yields and checks cancellation between rounds, so the station worker keeps draining capture and a cancellation returns as before. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/decoder/parallel.rs; server/src/decoder/search.rs; server/src/decoder/synchronization.rs; server/src/decoder/baseband.rs; server/src/audio/windows.rs; server/src/playback/windows.rs";
+    }
+    dependency CL_057_02_to_FR_003 from 'CL-057-02' to 'FR-003';
+    dependency CL_057_02_to_FR_004 from 'CL-057-02' to 'FR-004';
+    verification 'TC-057-002' {
+        doc /* TC-057-002 — Parallel decode: identical result, wall time by thread count
+             CL-057-02, CL-057-01, CL-007-05
+             Setup: release build; the hash-pinned busy recording websdr_test7.wav as the UTC-aligned FT8 prompt window (as TC-004-004); for the end-to-end case the TC-057-001 live path and Detailed browser.
+             Steps: decode the window three times each on 1, 4 and 12 threads; order-preserving map of 200 items on 1, 2, 4 and 8 threads with one slow item, and with cancellation from inside the work; the TC-057-001 run with the default thread count.
+             Expected (independent oracle: the single-threaded decode of the same window and the input order): the records on 4 and 12 threads equal those on 1 thread bit for bit and in order, at least 25 records; best wall times are reported per thread count (busy corpus period); the map returns every item once in input order and a cancelled caller ends with Cancelled; the cooperative-quanta and quality cases of TC-004-001 stay green; end to end (TC-057-001 setup, two busy periods), each period's view is published by its period start + 15.0 s on the server timeline (CL-007-05) and its rows are painted at most 300 ms after that publication (CL-057-01), so every row is painted by period start + 15.3 s; the time from window completion (+13.8 s) to the painted rows is reported, not asserted (#72: no contract states that bound).
+             2 — Isolated automated functional tests; Windows PC, no radio. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-057-02';
+            verify 'CL-057-01';
+            verify 'CL-007-05';
+        }
+        attribute executable : String = "server/tests/decoder_signal.rs; server/src/decoder/parallel.rs; server/src/receive_http_tests.rs";
+    }
+    dependency CL_057_02_verified_by_TC_057_002 from 'CL-057-02' to 'TC-057-002';
+    dependency CL_057_02_verified_by_TC_057_003 from 'CL-057-02' to 'TC-057-003';
 }

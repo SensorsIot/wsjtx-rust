@@ -21,7 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Native playback rate of every transmission (WstxTransmit::Ft8WaveformContract).
+/// Native playback rate of every transmission (WstxMessageEncode::Ft8WaveformContract).
 pub const SAMPLE_RATE_HZ: u32 = 48_000;
 /// WstxTransmit::TransmitTiming haltMs: audio stopped, PTT released and read back.
 pub const HALT_BOUND_MS: u64 = 250;
