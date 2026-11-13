@@ -12,7 +12,6 @@ package WstxRequirements {
     private import WstxProfiles::'TC-022-003';
     private import WstxProfileRecordings::'TC-018-001';
     private import WstxProfileRecordings::'TC-018-002';
-    public import WstxRequirementsRadioControl::*;
     public import WstxRequirementsWeb::*;
     public import WstxRequirementsStation::*;
     public import WstxRequirementsTransmit::*;
@@ -28,6 +27,13 @@ package WstxRequirements {
     private import WstxRecordingReceive::'TC-009-004';
     private import WstxLiveReceive::'CL-007-05';
     private import WstxMcpEndpoint::'TC-020-004';
+    private import WstxRadioIO::'CL-008-04';
+    private import WstxRadioIO::'CL-008-06';
+    private import WstxRadioIO::'CL-008-05';
+    private import WstxRadioIO::'CL-022-03';
+    private import WstxCatLifecycle::'CL-022-04';
+    private import WstxRadioSetup::'TC-044-002';
+    private import WstxRadioSetup::'TC-044-004';
     doc /* Canonical functional requirements and durable verification definitions.
          The other Wstx packages own detailed typed contracts; validation does not execute tests.
          Coverage flags describe implemented source slices, not acceptance or whole-project parity. */
@@ -245,20 +251,6 @@ package WstxRequirements {
     dependency CL_008_01_to_FR_002 from 'CL-008-01' to 'FR-002';
     dependency CL_008_01_to_FR_009 from 'CL-008-01' to 'FR-009';
     dependency CL_008_01_to_FR_022 from 'CL-008-01' to 'FR-022';
-    requirement 'CL-008-04' {
-        doc /* Support the Windows shared-audio and IC-7300 receive-control matrix below, with independently verified receive-only physical acceptance. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
-    }
-    dependency CL_008_04_to_FR_002 from 'CL-008-04' to 'FR-002';
-    dependency CL_008_04_to_FR_009 from 'CL-008-04' to 'FR-009';
-    requirement 'CL-008-05' {
-        doc /* Audio never requires CAT; CAT never opens audio. Unsupported operations fail before device bytes; independent failure never creates false readiness. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
-    }
-    dependency CL_008_05_to_FR_002 from 'CL-008-05' to 'FR-002';
-    dependency CL_008_05_to_FR_009 from 'CL-008-05' to 'FR-009';
     requirement 'CL-009-05' {
         doc /* Determine the station clock state for transmit from the station's own SNTP
              measurement, off the transmit and audio threads, at start and every 60 s
@@ -514,19 +506,6 @@ package WstxRequirements {
         }
         attribute executable : String = "server/tests/radio_control.rs";
         attribute method : String = "manual";
-    }
-    verification 'TC-009-003' {
-        doc /* TC-009-003 — Control without audio
-             CL-008-05, CL-008-06
-             Exercise every supported query and receive setter while audio is closed/unavailable.
-             Exact control/status and capability failures without activating any audio endpoint; catalogue cannot enable raw/TX operations.
-             2 — Isolated automated tests; Windows PC, actual Rust control module and serial emulator. */
-        attribute automation : AutomationState = AutomationState::partial;
-        objective {
-            verify 'CL-008-05';
-            verify 'CL-008-06';
-        }
-        attribute executable : String = "server/tests/radio_control.rs";
     }
     requirement 'CL-010-05' {
         doc /* Present one operating-first profile page with the fixed-band signal display above the message/contact workspace, an accessible adjustable split and secondary in-page settings. */
@@ -1322,13 +1301,6 @@ package WstxRequirements {
     dependency CL_007_02_verified_by_TC_007_006 from 'CL-007-02' to 'TC-007-006';
     dependency CL_008_01_verified_by_TC_002_001 from 'CL-008-01' to 'TC-002-001';
     dependency CL_008_01_verified_by_TC_009_001 from 'CL-008-01' to 'TC-009-001';
-    dependency CL_008_04_verified_by_TC_009_001 from 'CL-008-04' to 'TC-009-001';
-    dependency CL_008_04_verified_by_TC_009_002 from 'CL-008-04' to 'TC-009-002';
-    dependency CL_008_05_verified_by_TC_002_003 from 'CL-008-05' to 'TC-002-003';
-    dependency CL_008_05_verified_by_TC_009_002 from 'CL-008-05' to 'TC-009-002';
-    dependency CL_008_05_verified_by_TC_009_003 from 'CL-008-05' to 'TC-009-003';
-    dependency CL_008_05_verified_by_TC_009_004 from 'CL-008-05' to 'TC-009-004';
-    dependency CL_008_05_verified_by_TC_009_005 from 'CL-008-05' to 'TC-009-005';
     dependency CL_010_05_verified_by_TC_007_002 from 'CL-010-05' to 'TC-007-002';
     dependency CL_010_05_verified_by_TC_009_004 from 'CL-010-05' to 'TC-009-004';
     dependency CL_010_05_verified_by_TC_009_005 from 'CL-010-05' to 'TC-009-005';
@@ -1525,55 +1497,6 @@ package WstxRequirements {
     dependency CL_022_02_to_FR_019 from 'CL-022-02' to 'FR-019';
     dependency CL_022_02_to_FR_021 from 'CL-022-02' to 'FR-021';
     dependency CL_022_02_to_FR_022 from 'CL-022-02' to 'FR-022';
-    requirement 'CL-022-03' {
-        doc /* Target replacement for explicit Connect/per-click receive_only_verified:
-             configuration UI has a one-time per-safety-revision action 'Confirm
-             receive-only setup', showing selected radio, endpoint, model and PTT
-             configuration. It requires a valid matching grant, explicit operator
-             acknowledgement and durable commit. It never opens CAT or transmits as
-             part of confirmation. Existing transceiver-test consent is not silently
-             converted into a persisted acknowledgement; migration starts unconfirmed.
-             Invalidated commissioning displays 'Confirm changed receive-only setup'
-             and exposes that same recovery action; no normal Connect/Disconnect CAT
-             buttons. CAT disabled remains disabled and there is no serial
-             enumeration/fallback, except the read-only discovery of CL-044-15 after its
-             persisted keying confirmation, which may also save a found radio as CAT control.
-             Missing/revoked/mismatched grant, missing/invalid commissioning, disabled
-             CAT and corrupt authorization store cause zero automatic native open,
-             query, setter or PTT bytes (the sole exception is that same discovery, which
-             opens and sends 19 00 only). One matching unrevoked grant plus valid
-             commissioning authorizes the station's automatic read-only CAT lifecycle
-             even when that browser is closed; it does not authorize another browser's
-             HTTP controls. Last-grant revocation cancels that lifecycle and releases
-             the native owner through existing rules. Station startup/radio return
-             obtains actual fresh readback automatically after preconditions hold.
-             Selection/query/set refer to the same current observable values and
-             identity/provenance. Automatic lifecycle never sends a setter/PTT command,
-             replays user commands, starts audio/decoder or grants transmit authority;
-             the single permitted exception is the #9 StartupSafetyRelease (WstxTransmit): one off-only PTT release 1C 00 00 with readback, once per boot, only when the first fresh 1C 00 readback of the boot shows TX before that boot ever keyed, sent by the transmit owner through the same actor. It never keys and never grants transmit authority.
-             Delivered (issue22 slice B): the browser operating panel shows the
-             action with radio identity, endpoint, model, PTT and setup revision,
-             requires an explicit receive-only acknowledgement checkbox and posts the
-             existing commission API; the label reads 'Confirm changed receive-only
-             setup' when the safety revision is above1. A selected plaintext profile
-             has no grant authority and therefore never runs the lifecycle (zero CAT
-             I/O); its automatic CAT is unavailable by design. Live IC-7300
-             acceptance (TC-022-010) passed on 2026-11-08 (6719540079).
-             Reconnect restores the selection (operator finding 2026-11-02, another
-             program held the port and released it): when the lifecycle's eligible
-             connection becomes Ready with a confirmed fresh dial while the selection
-             band is unknown, the station adopts that dial as the selection exactly as
-             WstxOperatingReceive S1 ReadbackSelectionAdoption states (exact preferred
-             entry of the station operating mode for one band, origin cat_readback,
-             read-only, no receive restart, no revision advance, never replacing a known
-             selection), so no band choice by hand is needed after startup or a
-             reconnect. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization.rs; server/src/authorization_http.rs; server/src/radio_http.rs; server/src/main.rs; client/recording.js";
-    }
-    dependency CL_022_03_to_FR_008 from 'CL-022-03' to 'FR-008';
-    dependency CL_022_03_to_FR_009 from 'CL-022-03' to 'FR-009';
-    dependency CL_022_03_to_FR_021 from 'CL-022-03' to 'FR-021';
     requirement 'CL-022-05' {
         doc /* Session, CAT and audio/decoder health remain distinct current observations. HTTP401 marks
              session authorization unavailable within existing<=2s visible-status
@@ -1757,53 +1680,6 @@ package WstxRequirements {
         }
     }
     dependency CL_022_05_verified_by_TC_022_008 from 'CL-022-05' to 'TC-022-008';
-    verification 'TC-022-009' {
-        doc /* TC-022-009 CL-022-03/04 cost2 existing station/native scripted peer + injected
-             monotonic time. Test immediate available startup, absent/openfail/timeout/
-             removal/return, concurrent observers/RF work, identity change mid-attempt,
-             exact1/2/4/8/8 scheduling/reset/disable/re-enable, one timer/owner, no catchup,
-             late completion and failedclose zero subsequent opens. Test missing/revoked/
-             wrong grant, corrupt store, disabled CAT, absent/invalidation commissioning
-             with zero native open/query/set/PTT; explicit confirmation persists only
-             after commit, no native I/O in confirmation. Endpoint/model/PTT edit needs
-             re-confirmation; ordinary USB return does not. Independent raw-byte peer
-             rejects all setter/PTT, not merely reported TX=false. Separate real Windows
-             cost2 native fixture release/cancel measurements prove unchanged250/50ms
-             bounds and required four-profile workload; injected time is no substitute.
-             Use R4 provider/consumer fixtures, no second native builder.
-             Automated: server/src/cat_lifecycle_tests.rs (injected-time policy:
-             immediate startup, exact1/2/4/8/8, reset only on readback, no catch-up,
-             disable/revoke/identity cancel, quarantine; scripted CI-V peer through
-             the real Actor/Executor: absent/open failure/timeout/removal/return,
-             failed close zero reopen, query-only bytes; port held by another program
-             reports port_in_use, then its release reconnects and adopts the exact
-             operating-mode dial as the selection with zero setter bytes and unchanged
-             operating revision; a non-matching dial or an already known selection
-             is left unchanged), server/src/auth_tests.rs
-             automatic_cat (real grant/commission flow, zero I/O before commission,
-             endpoint edit and last-grant revocation release, deprecated routes409
-             zero I/O, status retry reason) and tests/radio-selection.test.cjs
-             TC-022-009 (browser confirm action, no Connect/Disconnect, retry reason,
-             non-fresh frequency). Corrupt store: auth_tests automatic_cat
-             failed_store_write_quarantines_and_releases_cat_with_zero_reopen (a failed
-             write/flush/replace while CAT is ready quarantines the authority, the owner
-             is released, zero later open/byte, status503) with profile_tests startup
-             refusal of a corrupt/missing expected record. RF work: cat_lifecycle_tests
-             station_rf_work_shares_the_one_owner_without_lifecycle_interference (an
-             operator band selection on the same owner: no attempt/open/close by the
-             lifecycle or status observers, lifecycle bytes stay query-only),
-             station_revocation_during_rf_work_cancels_it_and_releases_without_reopen
-             (<=250ms release, work failed, no reopen/replay) and
-             policy_attempt_deferred_by_rf_work_is_not_a_failure. Pending: real Windows
-             native release/cancel measurement. */
-        attribute automation : AutomationState = AutomationState::partial;
-        attribute executable : String = "server/src/cat_lifecycle_tests.rs; server/src/auth_tests.rs; server/src/selection_http_tests.rs; tests/radio-selection.test.cjs";
-        objective {
-            verify 'CL-022-03';
-            verify 'CL-022-04';
-        }
-    }
-    dependency CL_022_03_verified_by_TC_022_009 from 'CL-022-03' to 'TC-022-009';
     verification 'TC-022-010' {
         doc /* TC-022-010 CL-022-01..05 authorized cost4 IC7300 receive-only acceptance. Record the actual deployed SHA/receipt/fresh radio identity and preserve official
              WSJTX noCAT/PTT comparison. Observe explicit initial commissioning once,
@@ -1826,7 +1702,6 @@ package WstxRequirements {
     }
     dependency CL_022_01_verified_by_TC_022_010 from 'CL-022-01' to 'TC-022-010';
     dependency CL_022_02_verified_by_TC_022_010 from 'CL-022-02' to 'TC-022-010';
-    dependency CL_022_03_verified_by_TC_022_010 from 'CL-022-03' to 'TC-022-010';
     dependency CL_022_05_verified_by_TC_022_010 from 'CL-022-05' to 'TC-022-010';
     dependency CL_039_06_verified_by_TC_020_004 from 'CL-039-06' to 'TC-020-004';
     requirement 'CL-112-05' {
@@ -2489,76 +2364,8 @@ package WstxRequirements {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_044_06_verified_by_TC_044_005 from 'CL-044-06' to 'TC-044-005';
-    verification 'TC-044-002' {
-        doc /* TC-044-002 — Audio matching, proposal, validation and migration
-             CL-044-01, CL-044-02, CL-044-05
-             Setup: fake port and endpoint lists with hand-written container IDs and USB parents; the actual router on a disposable profile with an injected detection hardware double.
-             Steps: (a) one IC-7300 port and its CODEC capture and render under the same hub, a webcam microphone elsewhere; (b) two capture endpoints under the hub; (c) same container ID, different parents; (d) only a root-hub parent shared; (e) POST /radio/detect valid, other profile, other boot, extra key, v 2, without keying_inhibit_confirmed, with it false, foreign Origin, a query, a concurrent second detect; (f) PUT /profile with "Speakers (USB Audio CODEC )", a capture ID as output, a render ID as input, valid IDs, null; (g) startup migration with a unique name, a duplicated name, an unknown name and an ID.
-             Expected: (a) proposal COM3 IC-7300 94h 19200, endpoint icom7300://COM3?baud=19200&radio=94&controller=e0, ptt cat, both CODEC endpoint IDs; (b) input ambiguous, output proposed; (c) matched; (d) none; (e) 200 report, 403 wrong_profile, 409 state_conflict, 400 invalid_request, 400 unsupported_version, 400 invalid_request, 409 confirmation_required, 403 forbidden_origin, 400, 409 busy; (f) 400 audio_device_not_endpoint with the field for the first three, 200 for the rest; (g) ID saved with revision + 1, the others unchanged with reasons ambiguous, not_found, unchanged.
-             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
-        // Partial: (e) the concurrent second detect is not run (the test sets busy itself); (a) no test proposes COM3 at 19200 (the tests show COM3 at 9600 from the station CAT and an unconfigured COM4 at 19200).
-        attribute automation : AutomationState = AutomationState::partial;
-        objective {
-            verify 'CL-044-01';
-            verify 'CL-044-02';
-            verify 'CL-044-05';
-        }
-        attribute executable : String = "server/src/radio_control/setup_tests.rs; server/src/radio_setup_tests.rs; tests/profiles.test.cjs";
-    }
     dependency CL_044_05_verified_by_TC_044_002 from 'CL-044-05' to 'TC-044-002';
-    verification 'TC-044-004' {
-        doc /* TC-044-004 — Live detection and setup on HB9BLA
-             CL-044-01, CL-044-02, CL-044-03, CL-044-04, CL-044-05
-             Setup: the gated candidate installed on HB9BLA with only the IC-7300 plugged in, its USB Audio CODEC, the operator present.
-             Steps: Detect radio; compare the proposal; apply it with the receive-only confirmation; read the settings check; Apply recommended radio settings; Undo; Apply again; FT8 transmit test on a dummy load or a clear frequency.
-             Expected: proposal COM3, IC-7300, 94h, the station baud, the CODEC capture and render endpoint IDs; CAT ready after apply; the radio never keys during detection; the menu values match the radio's menu; undo restores them; the transmit test produces RF with audio from USB.
-             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
-        attribute automation : AutomationState = AutomationState::planned;
-        objective {
-            verify 'CL-044-01';
-            verify 'CL-044-02';
-            verify 'CL-044-03';
-            verify 'CL-044-04';
-            verify 'CL-044-05';
-        }
-    }
     dependency CL_044_05_verified_by_TC_044_004 from 'CL-044-05' to 'TC-044-004';
-    requirement 'CL-044-11' {
-        doc /* The server pushes the AGC state (client-server rule of #10): each WebSocket peer with a display subscription receives radio.agc {v 1, type radio.agc, data {profile_id, boot_id, target, connection_generation, value, result, trigger}} once the station has an AGC target and then after each change (target the saved AGC or null; value the AGC the radio reported last or null; result unchanged, written or the radio error code, null before the first exchange; trigger connect or selection); nothing is polled. Settings > Radio, CAT group: an AGC select FAST/MID/SLOW, shown only while the form's control is CAT with an IC-7300 endpoint, saved with Apply ⟳ as settings.radio.agc (a hidden select sends no radio key), and below it the read-back line from radio.agc: "Radio AGC <value> · read back, already as set", "Radio AGC <value> · set to <target> and read back", "Radio AGC <target> not applied · <result>". Detect radio (CL-044-02) proposes radio {agc SLOW} with the IC-7300 proposal, shows the row "AGC SLOW · recommended for FT8/FT4", and "Use this setup" sets the AGC select. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/radio_agc.rs; server/src/main.rs; server/src/radio_setup.rs; client/index.html; client/app.js; client/recording.js";
-    }
-    dependency CL_044_11_to_FR_019 from 'CL-044-11' to 'FR-019';
-    dependency CL_044_11_to_FR_009 from 'CL-044-11' to 'FR-009';
-    verification 'TC-044-009' {
-        doc /* TC-044-009 — AGC applied on connect and FT8/FT4 selection, never while transmitting; profile field and migration
-             CL-044-10, CL-044-11
-             Setup: the actual router, Recording owner, CAT lifecycle tick and CAT actor on a disposable profile with a scripted IC-7300 on COM3.
-             Steps: (a) profile with IC-7300 CAT and agc SLOW, radio at MID: AGC tick after ready, then another tick; (b) radio already at SLOW; (c) radio reporting TX: tick, then RX after 2 s; (d) the transmitter armed: tick; (e) FT8 band selection with the radio changed to FAST meanwhile; (f) FT4 mode selection with the radio at SLOW; (g) radio.agc event before and after (a); (h) profile files: IC-7300 CAT without radio, CAT disabled without radio, GET /profile; PUT without radio, with agc MID, with agc LOW, with radio for a disabled control; (i) Detect radio proposal.
-             Expected: (a) one 16 12 03 write after the read, read back, status written SLOW, the second tick sends nothing; (b) only the read, status unchanged; (c) no write while TX (busy), the write after RX; (d) no AGC frame at all; (e) a 16 12 03 write inside the selection after the dial setter, trigger selection; (f) only the AGC read, result unchanged, trigger selection; (g) target SLOW with result null, then value SLOW result written; (h) settings.radio {agc SLOW} for IC-7300, no radio key for disabled, the file unchanged; PUT keeps SLOW, saves MID, 400 settings.radio.agc, 400 radio; (i) proposal radio {agc SLOW}.
-             2 — Isolated automated tests; Windows development PC, no radio or RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-044-10';
-            verify 'CL-044-11';
-        }
-        attribute executable : String = "server/src/radio_agc_tests.rs; server/src/radio_setup_tests.rs";
-    }
-    dependency CL_044_11_verified_by_TC_044_009 from 'CL-044-11' to 'TC-044-009';
-    verification 'TC-044-010' {
-        doc /* TC-044-010 — AGC field and read-back in Settings > Radio
-             CL-044-11
-             Setup: actual candidate server on a disposable plaintext profile with IC-7300 CAT (not authorized, so no CAT owner opens anything) and Chromium; radio.agc events injected into the page's station-message stream as the server sends them; /radio/detect answered by a route fixture with the IC-7300 proposal.
-             Steps: open Settings > Radio; read the AGC select; deliver radio.agc written SLOW, then a busy result; choose MID and Apply ⟳; GET /profile; set control Disabled; restore CAT, Detect radio with the proposal and Use this setup; 360 px width.
-             Expected: the AGC select in the CAT group shows SLOW (migrated default); the read-back line "Radio AGC SLOW · set to SLOW and read back", then "Radio AGC SLOW not applied · busy"; the saved profile holds settings.radio.agc MID; with control Disabled the select and line are hidden; the proposal row "AGC SLOW · recommended for FT8/FT4" and the select set to SLOW; no horizontal scroll at 360 px; no page error.
-             2 — Isolated automated browser test; Windows development PC, no radio, serial port or RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-044-11';
-        }
-        attribute executable : String = "tests/ui-operating.test.cjs";
-    }
-    dependency CL_044_11_verified_by_TC_044_010 from 'CL-044-11' to 'TC-044-010';
     // Operator decisions 2026-11-04 (#44 comments 6627977497, 6628000054): Tx audio level.
     // IC-7300 meters: Icom IC-7300 Full Manual section 19, command table "15 11 Po" (0000 0 %,
     // 0143 50 %, 0213 100 %), "15 12 SWR" (0000 1.0, 0048 1.5, 0080 2.0, 0120 3.0), "15 13 ALC"
@@ -2724,22 +2531,6 @@ package WstxRequirements {
     }
     dependency CL_044_12_verified_by_TC_044_016 from 'CL-044-12' to 'TC-044-016';
     dependency CL_044_13_verified_by_TC_044_016 from 'CL-044-13' to 'TC-044-016';
-    verification 'TC-044-011' {
-        doc /* TC-044-011 — AGC on HB9BLA
-             CL-044-09, CL-044-10, CL-044-11
-             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator present.
-             Steps: set the radio's AGC to FAST by hand; restart CAT (Apply ⟳); read the Settings line and the radio display; select FT8 40 m; select FT4; watch the waterfall between periods.
-             Expected: the radio shows AGC SLOW after connect and the line reads "set to SLOW and read back"; the following selections read "already as set" with no write; no AGC recovery line between periods.
-             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
-        attribute automation : AutomationState = AutomationState::planned;
-        attribute method : String = "manual";
-        objective {
-            verify 'CL-044-09';
-            verify 'CL-044-10';
-            verify 'CL-044-11';
-        }
-    }
-    dependency CL_044_11_verified_by_TC_044_011 from 'CL-044-11' to 'TC-044-011';
 
     // #57 Decode display speed (operator 2026-11-02; defaults recorded on issue #57).
     requirement 'CL-057-01' {

@@ -16,7 +16,7 @@ package WstxRecordingReceive {
     private import WstxRequirements::'FR-021';
     private import WstxRequirements::'FR-002';
     private import WstxRequirements::'FR-009';
-    private import WstxRequirements::'CL-008-05';
+    private import WstxRadioIO::'CL-008-05';
     private import WstxRequirements::'CL-010-05';
     private import WstxRequirements::'CL-010-07';
     private import WstxRequirements::'CL-010-08';

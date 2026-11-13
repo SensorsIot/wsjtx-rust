@@ -532,20 +532,6 @@ package WstxOperatingReceive {
              40mFT8=7074000/FT4=7047500. Absent preferred-entry subcase explicitly
              unsupported initialslice, no invented standard fallback. */
     }
-    attribute def RadioFacts {
-        attribute frequencyHz : Integer[0..1];
-        attribute usb : Boolean[0..1];
-        attribute dataOn : Boolean[0..1];
-        attribute filterNumber : Integer[0..1];
-        attribute frequencyConfirmed : Boolean;
-        attribute modeConfirmed : Boolean;
-        attribute dataConfirmed : Boolean;
-        attribute operationContext : String;
-        doc /* contract 4.7.5: requested/committednominal versus physical facts separate.
-             Each current fact has matching successful query provenance; aggregate
-             observed_at cannot freshen cached unqueried fields. FIL1 not numeric
-             width3000Hz. Partial failure never implies rollback or target success. */
-    }
     calc def DesiredMonitorAfterOrdinarySelection {
         in originalMonitor : Boolean;
         in ordinarySelectionCommitted : Boolean;
@@ -722,9 +708,7 @@ package WstxOperatingReceive {
     enum def NominalOrigin { enum unknown; enum manual; enum cat_readback; enum native_readback; }
     enum def OperationResult { enum pending; enum success; enum failed; enum cancelled; }
     enum def CancelResult { enum cancelled; enum fenced; enum already_cancelled; }
-    enum def QueryKind { enum frequency; enum mode; enum data; enum rx_tx; enum split; }
     enum def SelectionPhase { enum releasing; enum applying; enum restarting; enum applied; enum failed; enum release_blocked; enum cancelled; }
-    attribute maxSafe : Integer = (900719925 * 10000000 + 4740991);
     attribute def WireSelection {
         attribute mode : Mode;
         attribute band : String[0..1];
@@ -844,29 +828,6 @@ package WstxOperatingReceive {
              explicitcancel/fence needed. Clearunknownclassification doesnot clear
              activeoperationbusystate. OldreadcannotundoStop/newintent. */
     }
-    attribute def QueryCompletion {
-        attribute connectionGeneration : Integer;
-        attribute querySequence : Integer;
-        attribute kind : QueryKind;
-        attribute observedAtMs : Integer;
-        assert constraint counters {
-            connectionGeneration > 0 and connectionGeneration <= maxSafe and
-            querySequence > 0 and querySequence <= maxSafe and
-            observedAtMs >= 0 and observedAtMs <= maxSafe
-        }
-        doc /* S6: sameexistingactor/typedquery,eventonlyaftervalidaddressedreply,
-             typeddecodedvalueattached. ACK/broadcast/echo/setterisnotcompletion.
-             Onefactupdatedperquery;perconnectionclearbeforefirstnewquery. */
-    }
-    attribute def FactProvenance {
-        attribute querySequence : Integer[0..1];
-        attribute observedAtMs : Integer[0..1];
-        attribute confirmed : Boolean = false;
-        doc /* S4/S6: pairedvalueofthatfactalsooptional;unknownallnull+false.
-             Lastknownvalue/timestampretainedifstale,confirmedfalse. Neverfreshen
-             fromanotherqueryoraggregateobserved_at. timestamp<=snapshotmonotonic.
-             Wholefinalsetupsuccessrequiresmatchingcurrentmode/DATA/frequencyfacts. */
-    }
     attribute def OperationRecord {
         attribute commandId : String;
         attribute baseRevision : Integer;
@@ -889,13 +850,6 @@ package WstxOperatingReceive {
         attribute pendingReads : Integer = 1;
         attribute pendingOrdinaryMutations : Integer = 1;
         doc /* S7: Target engineering bounds. Old strict v1 routes unchanged. */
-    }
-    action def RadioFactPublication {
-        doc /* S6 existingactor/executorreportsquerycompletionkind/value/provenance
-             tostationalreadyownedstateoutsideI/Olocks. Possiblytouchedfieldsstale
-             onpartialwrite;successupdatesonlyqueriedfact. Genericdirectsettercannot
-             bypasssameRFcontextorchestration;keepunsupporteduntilbarrierbound.
-             /radioexistingaggregatev1shapeunchanged,newfactsinselectionendpointonly. */
     }
     action def ExistingReceiveStop {
         doc /* S1/S5: matchingold/currenttupleStopalsoclearsowningtransitionresume;
@@ -944,7 +898,7 @@ package WstxOperatingReceive {
         objective {
             verify WstxRequirements::'CL-008-07';
             verify WstxRecordingReceive::'CL-008-03';
-            verify WstxRequirements::'CL-008-05';
+            verify WstxRadioIO::'CL-008-05';
             verify WstxRequirements::'CL-010-05';
             verify WstxRequirements::'CL-010-07';
             verify WstxRequirements::'CL-010-08';
@@ -1198,62 +1152,10 @@ logical uncompressed JSON.
 
 
     */
-
-    enum def AutomaticCatCondition { enum disabled; enum unauthorized; enum commissioningRequired; enum waitingForDevice; enum connecting; enum ready; enum retryWaiting; enum closing; enum quarantined; }
-    enum def AutomaticCatEvent { enum eligible; enum readbackConfirmed; enum attemptFailedReleased; enum delayElapsed; enum disabledOrRevoked; enum identityChanged; enum releaseFailed; enum recoveryConfirmed; }
     attribute def AuthStatusRequest {
         doc /* Strict read-only POST /authorization/v1/status JSON {version:1};
              no scope/operation/extra keys. GET on this new path405/no effects. */
         attribute version : Integer = 1;
-    }
-    attribute def AutomaticCatStatus {
-        doc /* Target current condition, not behavioral states or another actor. One
-             authority-owned observation per selected radio; boot/connection generation
-             and query sequence still fence every fact. A retained frequency is not
-             fresh in any condition except ready with its matching observation proof.
-             Existing strict version1 status objects remain unchanged; expose this
-             additive target status via POST /authorization/v1/status with
-             AuthStatusRequest; same-origin browser POST supplies actual Origin, not a
-             script-forged header. Preserve exact Origin/TLS before auth, active scoped
-             grant (401 otherwise), no CORS and Cache-Control:no-store. Missing/wrong
-             Origin on accepted POST403; legacy GET/profile absence policy is unchanged.
-             Read-only snapshot: no identity/grant/session/receipt/native effects or
-             CAT retry scheduling. GET on this new path405/no effects; no fallback.
-             Strict response version1,scope (AuthWireScope projection),condition,
-             error,retry_after_ms,commissioned,receive_state. Error is bounded mapped
-             code/null, retry_after_ms safe integer0..8000/null, commissioned Boolean;
-             receive_state is existing authoritative audio/decoder summary, no copied
-             numerical/result state. Logical response<=1024bytes, reuse existing status
-             publication/heartbeat and accounting; no parallel timer/poll stream. */
-        attribute scope : WstxStationProtocol::SelectedRadioAuthorizationScope;
-        attribute condition : AutomaticCatCondition;
-        attribute retryAfterMilliseconds : Integer[0..1];
-        attribute errorCode : String[0..1];
-    }
-    action def MaintainCommissionedCat {
-        doc /* Target CL-022-03/04 action under existing selected-radio authority and
-             radio actor/executor. Preconditions: control enabled, matching unrevoked
-             grant, durable current commissioning and confirmed resource release.
-             One immediate attempt at eligible startup/enable/new valid configuration;
-             absence/open failure/timeout retries after confirmed failure release at
-             1,2,4,8,8seconds monotonic delays. One timer and task across all browsers;
-             no catch-up, backlog, extra actor/native builder or endpoint discovery.
-             Reset series only on actual fresh readback. Disable/last-grant revocation/
-             invalid commissioning/identity change cancels timer and task; re-enable
-             waits for release. Existing setup5s/exchange1s/cancel50ms/RFrelease250ms
-             remain hard bounds. Failed close quarantines; no timed reopen until
-             explicit recovery proves release. Late completions are identity fenced.
-             Automatic I/O is read-only queries only, no setters/PTT/audio start or
-             replay, except the WstxTransmit::StartupSafetyRelease (one off-only PTT
-             release with readback per boot, only when TX is observed before the boot
-             ever keyed). Stop/Halt clears receive/RF tokens and pending resume; background
-             CAT cannot undo Stop or broaden RF ownership. Missing precondition causes
-             zero native open/query/set/PTT. Confirmation itself has no native effect.
-             Delivered in server/src/cat_lifecycle.rs driven by Recording::cat_maintain;
-             failed-close quarantine lasts until station restart. */
-        in scope : WstxStationProtocol::SelectedRadioAuthorizationScope;
-        in commissioning : WstxStationProtocol::RadioCommissioningRecord;
-        out current : AutomaticCatStatus;
     }
 
 }

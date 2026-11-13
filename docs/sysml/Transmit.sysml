@@ -455,20 +455,6 @@ package WstxTransmit {
              so the correction converges to the middle without oscillating with the
              receive windows or the capture drift tracker (WstxRadioIO, #47). */
     }
-    action def PttControl {
-        in enable : Boolean;
-        doc /* Typed CI-V transmit switch through the one WstxRadioIO CAT owner:
-             FE FE radio controller 1C 00 01|00 FD, ACK FB required (NG FA is
-             pttRejected), then the 1C 00 query must read back the requested state.
-             Compiled code, not an Operation: catalogue data, POST /radio/operation and
-             the automatic CL-022 lifecycle cannot reach it, and the lifecycle emits
-             no PTT. Keying takes the actor's transmit hold, which waits for a running
-             poll or operation and then excludes every ordinary operation, receive
-             transition and poll until a release is confirmed, so a release is the
-             next exchange. Closing a connection that may be keyed first sends one
-             off-only release. After an indeterminate release the owner retries
-             off-only releases (never a key) and refuses Arm until one is confirmed. */
-    }
     enum def StartupRelease { enum pending; enum notNeeded; enum released; enum failed; }
     action def StartupSafetyRelease {
         doc /* Safety release after a station boot (supervisor decision 2026-10-31 on #9):
@@ -674,7 +660,6 @@ package WstxTransmit {
              another boot is state_conflict. POST /transmit/halt: HaltTransmit. */
     }
     dependency armingPromise from TransmitArming to WstxRequirements::'FR-008';
-    dependency pttPromise from PttControl to WstxRequirements::'FR-009';
     dependency authorityPromise from TransmitAuthority to WstxRequirements::'CL-009-03';
     dependency haltClausePromise from HaltTransmit to WstxRequirements::'CL-009-04';
 

@@ -1,45 +1,13 @@
-package WstxRequirementsRadioControl {
+package WstxRadioSetup {
     private import ScalarValues::*;
-    private import WstxRequirements::*;
-    requirement 'CL-008-06' {
-        doc /* Separate a versioned factual radio catalogue, compiled typed operations and bounded protocol execution. Catalogue data cannot authorize raw or transmit commands. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
-    }
-    dependency CL_008_06_to_FR_009 from 'CL-008-06' to 'FR-009';
-    dependency CL_008_06_verified_by_TC_009_001 from 'CL-008-06' to 'TC-009-001';
-    dependency CL_008_06_verified_by_TC_009_003 from 'CL-008-06' to 'TC-009-003';
-    requirement 'CL-022-04' {
-        doc /* Selected target cadence: after confirmed released failed attempt wait
-             1,2,4,8seconds on successive failures, then8seconds capped. Use one timer
-             and one in-flight task under existing station authority; no catch-up or
-             backlog. Delays use monotonic time, start after attempt completion and
-             confirmed release; reset only after actual fresh successful readback.
-             Startup/explicit enable/new valid selected configuration gets one immediate
-             attempt; disable/identity change/revocation/invalid commissioning cancels
-             timer and current attempt. Re-enable starts a fresh series only after
-             release confirmation. Simultaneous browsers do not create extra attempts.
-             Preserve setup<=5s, exchange<=1s, cancellation checkpoint<=50ms and ordinary
-             RF-context release<=250ms. Bounds are not permissions to assume release.
-             Real close failure quarantines the resource; no timed reopen until an
-             explicit recovery proves release. Stop/Halt invalidates relevant receive/
-             RF-operation tokens and pending resume; CAT housekeeping may not restart
-             audio or setters. Late results are identity/generation fenced. Existing
-             shared native owner/resource arbitration with RF work stays authoritative.
-             Delivered: one station-wide50ms lifecycle tick (one timer, at most one
-             tick and one actor in flight) evaluates the grant/commissioning gate under
-             the profile store and authority locks, then the policy. A delay starts at
-             the first tick observing the confirmed released failure (<=one tick
-             after release). Explicit recovery from a failed-close quarantine is a
-             station restart; no in-process action clears it. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization_http.rs; server/src/main.rs";
-    }
-    dependency CL_022_04_to_FR_008 from 'CL-022-04' to 'FR-008';
-    dependency CL_022_04_to_FR_009 from 'CL-022-04' to 'FR-009';
-    dependency CL_022_04_to_FR_021 from 'CL-022-04' to 'FR-021';
-    dependency CL_022_04_verified_by_TC_022_009 from 'CL-022-04' to 'TC-022-009';
-    dependency CL_022_04_verified_by_TC_022_010 from 'CL-022-04' to 'TC-022-010';
+    private import WstxRequirements::ImplementationState;
+    private import WstxRequirements::'FR-009';
+    private import WstxRequirements::'FR-001';
+    private import WstxRequirements::'FR-008';
+    private import WstxRequirements::'FR-002';
+    private import WstxRequirements::AutomationState;
+    private import WstxRequirements::'CL-044-05';
+    private import WstxRadioIO::'CL-044-11';
 
     // #44 Automatic radio detection and setup (operator decision 2026-11-01 on issue #44:
     // IC-7300 settings may be written via CI-V, each read back, old values kept for undo).
@@ -213,4 +181,65 @@ package WstxRequirementsRadioControl {
     dependency CL_044_15_verified_by_TC_044_021 from 'CL-044-15' to 'TC-044-021';
     dependency CL_044_09_verified_by_TC_044_011 from 'CL-044-09' to 'TC-044-011';
     dependency CL_044_10_verified_by_TC_044_011 from 'CL-044-10' to 'TC-044-011';
+    verification 'TC-044-002' {
+        doc /* TC-044-002 — Audio matching, proposal, validation and migration
+             CL-044-01, CL-044-02, CL-044-05
+             Setup: fake port and endpoint lists with hand-written container IDs and USB parents; the actual router on a disposable profile with an injected detection hardware double.
+             Steps: (a) one IC-7300 port and its CODEC capture and render under the same hub, a webcam microphone elsewhere; (b) two capture endpoints under the hub; (c) same container ID, different parents; (d) only a root-hub parent shared; (e) POST /radio/detect valid, other profile, other boot, extra key, v 2, without keying_inhibit_confirmed, with it false, foreign Origin, a query, a concurrent second detect; (f) PUT /profile with "Speakers (USB Audio CODEC )", a capture ID as output, a render ID as input, valid IDs, null; (g) startup migration with a unique name, a duplicated name, an unknown name and an ID.
+             Expected: (a) proposal COM3 IC-7300 94h 19200, endpoint icom7300://COM3?baud=19200&radio=94&controller=e0, ptt cat, both CODEC endpoint IDs; (b) input ambiguous, output proposed; (c) matched; (d) none; (e) 200 report, 403 wrong_profile, 409 state_conflict, 400 invalid_request, 400 unsupported_version, 400 invalid_request, 409 confirmation_required, 403 forbidden_origin, 400, 409 busy; (f) 400 audio_device_not_endpoint with the field for the first three, 200 for the rest; (g) ID saved with revision + 1, the others unchanged with reasons ambiguous, not_found, unchanged.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        // Partial: (e) the concurrent second detect is not run (the test sets busy itself); (a) no test proposes COM3 at 19200 (the tests show COM3 at 9600 from the station CAT and an unconfigured COM4 at 19200).
+        attribute automation : AutomationState = AutomationState::partial;
+        objective {
+            verify 'CL-044-01';
+            verify 'CL-044-02';
+            verify 'CL-044-05';
+        }
+        attribute executable : String = "server/src/radio_control/setup_tests.rs; server/src/radio_setup_tests.rs; tests/profiles.test.cjs";
+    }
+    verification 'TC-044-004' {
+        doc /* TC-044-004 — Live detection and setup on HB9BLA
+             CL-044-01, CL-044-02, CL-044-03, CL-044-04, CL-044-05
+             Setup: the gated candidate installed on HB9BLA with only the IC-7300 plugged in, its USB Audio CODEC, the operator present.
+             Steps: Detect radio; compare the proposal; apply it with the receive-only confirmation; read the settings check; Apply recommended radio settings; Undo; Apply again; FT8 transmit test on a dummy load or a clear frequency.
+             Expected: proposal COM3, IC-7300, 94h, the station baud, the CODEC capture and render endpoint IDs; CAT ready after apply; the radio never keys during detection; the menu values match the radio's menu; undo restores them; the transmit test produces RF with audio from USB.
+             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-044-01';
+            verify 'CL-044-02';
+            verify 'CL-044-03';
+            verify 'CL-044-04';
+            verify 'CL-044-05';
+        }
+    }
+    verification 'TC-044-009' {
+        doc /* TC-044-009 — AGC applied on connect and FT8/FT4 selection, never while transmitting; profile field and migration
+             CL-044-10, CL-044-11
+             Setup: the actual router, Recording owner, CAT lifecycle tick and CAT actor on a disposable profile with a scripted IC-7300 on COM3.
+             Steps: (a) profile with IC-7300 CAT and agc SLOW, radio at MID: AGC tick after ready, then another tick; (b) radio already at SLOW; (c) radio reporting TX: tick, then RX after 2 s; (d) the transmitter armed: tick; (e) FT8 band selection with the radio changed to FAST meanwhile; (f) FT4 mode selection with the radio at SLOW; (g) radio.agc event before and after (a); (h) profile files: IC-7300 CAT without radio, CAT disabled without radio, GET /profile; PUT without radio, with agc MID, with agc LOW, with radio for a disabled control; (i) Detect radio proposal.
+             Expected: (a) one 16 12 03 write after the read, read back, status written SLOW, the second tick sends nothing; (b) only the read, status unchanged; (c) no write while TX (busy), the write after RX; (d) no AGC frame at all; (e) a 16 12 03 write inside the selection after the dial setter, trigger selection; (f) only the AGC read, result unchanged, trigger selection; (g) target SLOW with result null, then value SLOW result written; (h) settings.radio {agc SLOW} for IC-7300, no radio key for disabled, the file unchanged; PUT keeps SLOW, saves MID, 400 settings.radio.agc, 400 radio; (i) proposal radio {agc SLOW}.
+             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-044-10';
+            verify 'CL-044-11';
+        }
+        attribute executable : String = "server/src/radio_agc_tests.rs; server/src/radio_setup_tests.rs";
+    }
+    verification 'TC-044-011' {
+        doc /* TC-044-011 — AGC on HB9BLA
+             CL-044-09, CL-044-10, CL-044-11
+             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator present.
+             Steps: set the radio's AGC to FAST by hand; restart CAT (Apply ⟳); read the Settings line and the radio display; select FT8 40 m; select FT4; watch the waterfall between periods.
+             Expected: the radio shows AGC SLOW after connect and the line reads "set to SLOW and read back"; the following selections read "already as set" with no write; no AGC recovery line between periods.
+             4 — Live on the station with the operator's consent; HB9BLA. Not run by the automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        attribute method : String = "manual";
+        objective {
+            verify 'CL-044-09';
+            verify 'CL-044-10';
+            verify 'CL-044-11';
+        }
+    }
 }

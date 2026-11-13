@@ -20,8 +20,8 @@ package WstxLiveReceive {
     private import WstxRequirements::'TC-043-002';
     private import WstxRequirements::'TC-057-002';
     private import WstxRequirements::'TC-057-003';
-    private import WstxRequirements::'CL-008-04';
-    private import WstxRequirements::'CL-008-05';
+    private import WstxRadioIO::'CL-008-04';
+    private import WstxRadioIO::'CL-008-05';
     private import WstxRequirementsStation::'CL-008-07';
     item def LiveTimedResultRecord :> ResultRecord {
         attribute period_start_utc : String[0..1];

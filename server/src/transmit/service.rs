@@ -1522,7 +1522,7 @@ fn map_actor_error(e: crate::radio_control::Error) -> PttError {
         _ => PttError::Unavailable,
     }
 }
-/// PTT through the station's single CI-V owner (WstxTransmit::PttControl).
+/// PTT through the station's single CI-V owner (WstxRadioIO::PttControl).
 pub fn actor_ptt(
     actor: &crate::radio_control::actor::Actor,
     on: bool,

@@ -31,7 +31,11 @@ def field(text, name):
 class RadioPropertyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.text = (ROOT / "docs/sysml/Architecture.sysml").read_text(encoding="utf-8")
+        # The file of each package, found by package; their text is read together.
+        packages = ("WstxArchitecture", "WstxRadioProperties", "WstxQuantities")
+        files = [path for path in tool.model_files(ROOT / "docs/sysml").values()
+                 if tool.file_package(tool.without_comments(path.read_text(encoding="utf-8"))) in packages]
+        cls.text = "\n".join(path.read_text(encoding="utf-8") for path in files)
         cls.code = tool.without_comments(cls.text)
 
     # Proves: ComponentPropertyOwnership, RadioModelReferenceSeparation.

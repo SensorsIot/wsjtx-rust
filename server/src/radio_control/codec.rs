@@ -68,7 +68,7 @@ pub fn request(config: &Configuration, operation: &Operation) -> Result<Vec<u8>>
 
 /// Typed CI-V transmit switch (command 0x1C 0x00, data 01 transmit / 00 receive).
 /// It is compiled here, never catalogue- or wire-authorized; only the transmit
-/// service reaches it through the actor's transmit hold (WstxTransmit::PttControl).
+/// service reaches it through the actor's transmit hold (WstxRadioIO::PttControl).
 pub fn ptt_request(config: &Configuration, on: bool) -> Result<Vec<u8>> {
     config.validate()?;
     Ok(vec![
