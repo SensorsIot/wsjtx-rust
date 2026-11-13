@@ -16,6 +16,7 @@ import argparse
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -1664,18 +1665,22 @@ def extract(commit: str, destination: Path, paths=()) -> None:
     archive`; links are left out. Nothing in the repository is written."""
     destination.mkdir(parents=True, exist_ok=True)
     env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-    process = subprocess.Popen(["git", "-C", str(ROOT), "archive", "--format=tar", commit, *paths],
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    # The whole archive is read before it is unpacked: reading it as a stream stopped at the
+    # end-of-archive blocks and left git blocked on the rest of its output (#193).
     try:
-        with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
+        result = subprocess.run(["git", "-C", str(ROOT), "archive", "--format=tar", commit, *paths],
+                                stdin=subprocess.DEVNULL, capture_output=True, env=env, timeout=600)
+    except subprocess.TimeoutExpired:
+        raise Unreadable(f"git archive {commit} {' '.join(paths)}: timed out") from None
+    if result.returncode:
+        raise Unreadable(f"git archive {commit} {' '.join(paths)}: {result.stderr.decode('utf-8', 'replace').strip()}")
+    try:
+        with tarfile.open(fileobj=io.BytesIO(result.stdout), mode="r:") as archive:
             for member in archive:
                 if member.isfile() or member.isdir():
                     archive.extract(member, destination, filter="data")
-    except tarfile.TarError:
-        pass
-    error = process.stderr.read().decode("utf-8", "replace").strip()
-    if process.wait():
-        raise Unreadable(f"git archive {commit} {' '.join(paths)}: {error}")
+    except tarfile.TarError as error:
+        raise Unreadable(f"git archive {commit} {' '.join(paths)}: {error}") from None
 
 
 def citation_reader(path: str, text: str):

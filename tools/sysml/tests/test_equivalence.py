@@ -717,8 +717,11 @@ class ReaderRecognitionTests(unittest.TestCase):
         for number in (135, 136):
             cited = [match[0] for match in tool.QNAME.finditer(lines[oracle][number - 1])]
             self.assertTrue(cited and all(name.startswith("WstxArchitecture::") for name in cited), (number, cited))
+        # The issue's line numbers are master f9bee57bb's; R7's lines (607, 609, 611 there)
+        # moved with the setup lines added above them, so they are found by their case.
+        shift = next(index for index, line in enumerate(lines[integrity]) if '("port path twice", ' in line) + 1 - 607
         cited = {}
-        for number in (118, 119, 125, 187, 190, 191, 192, 607, 609, 611):
+        for number in (118, 119, 125, 187, 190, 191, 192, 607 + shift, 609 + shift, 611 + shift):
             cited[number] = [match[0] for match in tool.QNAME.finditer(lines[integrity][number - 1])
                              if match[0].startswith("WstxArchitecture::")]
             self.assertTrue(cited[number], number)
