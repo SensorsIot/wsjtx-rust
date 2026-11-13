@@ -12,7 +12,7 @@ package WstxStationProtocol {
     private import WstxProfiles::'CL-005-04';
     private import WstxRecordingReceive::'CL-008-03';
     private import WstxRadioIO::'CL-008-05';
-    private import WstxRequirementsStation::'CL-008-07';
+    private import WstxOperatingReceive::'CL-008-07';
     private import WstxRequirements::'CL-010-05';
     private import WstxRequirements::'CL-010-07';
     private import WstxRequirements::'CL-010-08';
@@ -802,7 +802,7 @@ package WstxStationProtocol {
              grant/challenge caps64, saturation429. All responses<=1024UTF8bytes,
              uncompressed, no auth material in errors/logs. No endpoint opens CAT.
              bootstrap-scope: BootstrapScopeRequest/Response via ReadBootstrapScope;
-             status: WstxOperatingReceive::AuthStatusRequest, read-only active-grant
+             status: WstxStationAuthority::AuthStatusRequest, read-only active-grant
              snapshot per AutomaticCatStatus, no effects and no GET fallback;
              enroll: AuthEnrollmentRequest, ephemeral bootstrap cookie required;
              non-null current scope and exact bootstrap-scope binding required, stale

@@ -22,7 +22,7 @@ package WstxLiveReceive {
     private import WstxRequirements::'TC-057-003';
     private import WstxRadioIO::'CL-008-04';
     private import WstxRadioIO::'CL-008-05';
-    private import WstxRequirementsStation::'CL-008-07';
+    private import WstxOperatingReceive::'CL-008-07';
     item def LiveTimedResultRecord :> ResultRecord {
         attribute period_start_utc : String[0..1];
         attribute dt_seconds : Real[0..1];

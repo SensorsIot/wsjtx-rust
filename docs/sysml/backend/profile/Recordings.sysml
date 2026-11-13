@@ -20,7 +20,7 @@ package WstxProfileRecordings {
          (WstxArchitecture::OutsideThing::profileFiles) across restarts, and its samples
          offered, timed and immutable, through the port samples of RecordedSource. Replay
          is the receive part's, the cancellation of an import the station's
-         (WstxRecordingReceive::CancelImport). */
+         (WstxStationAuthority::CancelImport). */
     @ImplementedIn { module = "server/src/recording.rs; server/src/recording_http.rs"; }
 
     attribute def RecordingLimits {

@@ -165,23 +165,6 @@ package WstxRecordingReceive {
     }
 
     attribute def StartReplayBody :> StartImportBody { attribute recording_id : String; }
-    action def CancelImport {
-        in importId : String;
-        out resource : ImportView;
-        doc /* Cancellation invalidates publication/commit authorization before its HTTP acknowledgement;
-             accepting that operation and constructing its response take at most250ms locally,
-             excluding network transit. Normal cleanup finishes within1s in isolated Windows tests.
-             After an I/O error or5s cleanup deadline, publish failed/storage_unavailable and set
-             storage_error; keep the pending files/handles quarantined and retain the one occupied
-             operation/worker slot. Refuse further import/replay with503 storage_unavailable until
-             cleanup actually succeeds or restart reconciles the directory. Do not claim deletion,
-             start replacement workers or revert an already committed source. A blocked OS call may
-             finish later, but its invalidated token cannot commit; final release clears storage_error
-             only after real cleanup. Status/profile/settings and cancellation observation stay usable.
-             Restart attempts cleanup once before enabling imports; failure keeps the degraded state.
-             These are bounded application outcomes, not a claim to interrupt a blocked Windows I/O
-             system call. A commit already begun is reconciled via snapshot, not cancelled. */
-    }
     action def CancelReceive {
         in jobId : String;
         out 'state' : ReceiveState;
@@ -407,11 +390,9 @@ package WstxRecordingReceive {
              remains unchanged until an independently validated snapshot changes it.
              idle means no local upload, not permission to ignore authoritative busy state. */
     }
-    action cancelImport : CancelImport;
     action cancelReceive : CancelReceive;
     action present : PresentStation;
     satisfy WstxRecordingReceive::'CL-006-04' by cancelReceive;
-    dependency importAuthority from cancelImport to WstxArchitecture::physicalStation::backend::stations::station;
     dependency cancellationOwner from cancelReceive to WstxArchitecture::physicalStation::backend::stations::receive;
     dependency browserOwner from present to WstxArchitecture::physicalStation::frontend::browsers;
     item def DecodeJob :> WstxRecordingReceive::ReceiveJob {

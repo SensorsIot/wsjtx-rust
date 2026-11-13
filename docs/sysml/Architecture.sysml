@@ -756,7 +756,7 @@ package WstxArchitecture {
         dependency statusScope from StatusServer to WstxStationProtocol::'CL-003-01';
         dependency statusProtocol from StatusServer to WstxStationProtocol::'CL-003-02';
     }
-    dependency coordinatedReceivePromise from ReceivePipeline to WstxRequirements::'CL-008-07';
+    dependency coordinatedReceivePromise from ReceivePipeline to WstxOperatingReceive::'CL-008-07';
     doc /* WstxOperatingReceive refines coordinated receive controls on the existing
          receive and radio authority path: single-owner release/setup/readback/restart
          and cancellation fences. It introduces no additional station/backend/physical
