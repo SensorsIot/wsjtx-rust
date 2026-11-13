@@ -1570,7 +1570,7 @@ package WstxArchitecture {
     item def Recording;
     item def SampleBlock {
         doc /* Immutable recorded and live samples feed the same receive boundary.
-             WstxRecordingReceive::SampleBlock owns concrete recorded element units,
+             WstxAudio::SampleBlock owns concrete recorded element units,
              clocks, ownership/lifetime and bounds; WstxRadioIO owns live adaptation.
              Source-specific metadata and discontinuities must be explicit; a generic
              architectural item does not settle every future live format. */
@@ -1880,9 +1880,9 @@ package WstxArchitecture {
              no PTT, audio or radio port exists here. */
     }
     part def AudioInterface {
-        attribute configuredIntent : WstxRadioIO::DeviceIntent;
-        attribute observedState : WstxRadioIO::AudioState;
-        attribute observedNativeFormat : WstxRadioIO::NativeFormat[0..1];
+        attribute configuredIntent : WstxAudio::DeviceIntent;
+        attribute observedState : WstxAudio::AudioState;
+        attribute observedNativeFormat : WstxAudio::NativeFormat[0..1];
         attribute observedNativeRateHz : Integer[0..1];
         attribute observedNativeChannels : Integer[0..1];
         attribute observedNativeEndpointId : String[0..1];

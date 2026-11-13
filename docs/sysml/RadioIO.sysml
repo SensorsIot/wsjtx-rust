@@ -1,15 +1,14 @@
 package WstxRadioIO {
     private import ScalarValues::*;
     private import WstxLiveReceive::ConvertAndReceive;
+    private import WstxAudioCapture::CaptureAudio;
     doc /* Canonical capture/CAT contract with partial native Windows and IC-7300 implementation;
          hardware matrix completion and physical acceptance remain separately declared.
          Contract: contract 4.5/12.8; recorded source and pure decoder contracts remain
          WstxRecordingReceive/WstxModemDecode. One physical architecture, no new deployment.
          Windows binding0.62.2 shared between WASAPI and overlapped serial I/O.
          Full normative operation, state, wire and oracle text follows this package. */
-    enum def AudioState { enum closed; enum opening; enum running; enum closing; enum unavailable; }
     enum def CatState { enum closed; enum connecting; enum ready; enum closing; enum unavailable; }
-    enum def NativeFormat { enum float32; enum pcm16; enum pcm24; enum pcm32; }
     enum def CatOperation { enum read_frequency; enum read_mode; enum read_data; enum read_rx_tx; enum read_split; enum set_frequency; enum set_mode; enum set_data; enum receive_setup; }
     attribute def Limits {
         attribute canonicalHz : Integer = 12000;
@@ -34,37 +33,6 @@ package WstxRadioIO {
         attribute retainedBytes : Integer = 2097152;
         attribute correlatedClockUncertaintyNs : Integer = 2000000;
         attribute clockJumpMs : Integer = 20;
-    }
-    attribute def DeviceIntent {
-        attribute audioEndpointId : String[0..1];
-        attribute audioChannel : Integer = 0;
-        attribute controlEndpoint : String[0..1];
-        attribute pttDisabled : Boolean = true;
-        doc /* Existing schema1 profile/audio/control shape and revision own persistence.
-             Exact opaque audio ID, no default fallback. COMn compatibility or strict
-             icom7300://COMn?baud=auto&radio=94&controller=E0 with contract 4.5 grammar.
-             Catalogue/live observations are not persisted intent or permission. */
-    }
-    item def NativePacket {
-        attribute endpointId : String;
-        attribute deviceFrame : Integer;
-        attribute packetQpc100ns : Integer;
-        attribute frames : Integer;
-        attribute channels : Integer;
-        attribute rateHz : Integer;
-        attribute format : NativeFormat;
-        attribute bytes : Integer[0..65536];
-        attribute silent : Boolean;
-        attribute discontinuity : Boolean;
-        attribute timestampError : Boolean;
-        assert constraint packetBound { frames > 0 and frames <= 8192 and channels >= 1 and channels <= 2 and (rateHz == 44100 or rateHz == 48000) }
-        doc /* Raw interleaved little-endian device packet. Byte values0..255. Capture
-             pump copies/releases only; float normalization/conversion belongs worker.
-             SILENT is known measured zero; timestamp-error/gap is not silence.
-             A discontinuity flag whose deviceFrame and packetQpc100ns both continue the
-             previous packet (QPC within2ms) is a counted engine glitch on a continuous
-             timeline: measured samples, no gap and no epoch; no interval is missing
-             beyond the at most2 ms QPC deviation this bound admits. */
     }
     attribute def RadioObservation {
         attribute frequencyHz : Integer[0..1];
@@ -97,14 +65,6 @@ package WstxRadioIO {
         doc /* ACK requires independent matching readback; mismatch/failure indeterminate.
              No retry, replay or invented rollback. Independent from receive generation. */
     }
-    action def CaptureAudio {
-        in intent : DeviceIntent;
-        out packet : NativePacket;
-        doc /* WASAPIshared/event-driven, exact inputID, no fallback. Bounded preallocated
-             I/O pump releases packets before heavy work. NativeFIFO500ms; no disk spool.
-             1/2/4/8s same-endpoint reopen only while capture desired; new epoch each open.
-             Actual close before readiness/release; independent CAT remains responsive. */
-    }
     action def ExecuteCat {
         in request : CatRequest;
         out result : CatResult;
@@ -130,13 +90,9 @@ package WstxRadioIO {
              reaches, have no RX check of their own), ACK, then readback (the transmit switch is
              a keying action, not a setting). Menu/AGC exchanges run under the same single lease. */
     }
-    action capture : CaptureAudio;
     action execute : ExecuteCat;
-    satisfy WstxRequirements::'CL-008-01' by capture;
     satisfy WstxRequirements::'CL-008-04' by execute;
-    satisfy WstxRequirements::'CL-008-05' by capture;
     satisfy WstxRequirements::'CL-008-06' by execute;
-    dependency captureOwner from capture to WstxArchitecture::physicalStation::backend::stations::audio;
     dependency controlOwner from execute to WstxArchitecture::physicalStation::backend::stations::radioControl;
     package Verification {
         doc /* Planned Cost2Windows actual candidate adapters/services/browser and independent

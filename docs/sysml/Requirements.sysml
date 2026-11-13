@@ -12,7 +12,6 @@ package WstxRequirements {
     private import WstxProfiles::'TC-022-003';
     private import WstxProfileRecordings::'TC-018-001';
     private import WstxProfileRecordings::'TC-018-002';
-    public import WstxRequirementsAudio::*;
     public import WstxRequirementsRadioControl::*;
     public import WstxRequirementsWeb::*;
     public import WstxRequirementsStation::*;

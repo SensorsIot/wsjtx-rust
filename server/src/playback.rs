@@ -1,5 +1,5 @@
 #![deny(unsafe_code)]
-//! Transmit audio output (WstxTransmit::AudioPlayback): one shared-mode output stream
+//! Transmit audio output (WstxAudioPlayback::AudioPlayback): one shared-mode output stream
 //! on the profile's exact `audio.output_device`, opened before PTT, playing one program
 //! (waveform from its planned sample, or a Tune tone) on every channel of the 48 kHz
 //! mix format. Capture never opens it; it never touches CAT.
@@ -121,14 +121,14 @@ pub fn write_sample(encoding: Encoding, value: f32, out: &mut [u8]) {
     }
 }
 
-/// Requested shared-mode render buffer (WstxTransmit::AudioPlayback renderBufferMs). The
+/// Requested shared-mode render buffer (WstxAudioPlayback::AudioPlayback renderBufferMs). The
 /// program keeps up to this much queued, so a render thread delayed by CPU load does
 /// not underrun the device and stretch the transmission (#49).
 pub const RENDER_BUFFER_MS: u32 = 100;
 /// Silence kept queued while no program plays (silencePrefillMs, 20 ms at 48 kHz): the
 /// first program sample is never queued behind a full buffer of silence.
 pub const SILENCE_FRAMES: u32 = 960;
-/// What the render loop does with the device buffer (WstxTransmit::AudioPlayback drain
+/// What the render loop does with the device buffer (WstxAudioPlayback::AudioPlayback drain
 /// rule): silence is topped up to SILENCE_FRAMES, a program fills the whole buffer;
 /// after the program is exhausted nothing more is written, so the device padding
 /// drains to zero and the end is reported once every program frame was consumed.

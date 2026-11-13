@@ -124,7 +124,7 @@ package WstxModemDecode {
     }
 
     action def AdvanceDecode {
-        in block : WstxRecordingReceive::SampleBlock;
+        in block : WstxAudio::SampleBlock;
         in job : DecodeJob;
         in context : APrioriContext;
         out records : ResultRecord[0..2048];
@@ -192,7 +192,7 @@ package WstxModemDecode {
     }
 
     action def MeasureFrame {
-        in block : WstxRecordingReceive::SampleBlock;
+        in block : WstxAudio::SampleBlock;
         out record : ResultRecord;
         doc /* The start is the canonical frame of the first ramp or sync symbol, never a
              native or UTC time; the frequency is the audio frequency of the lowest tone. */

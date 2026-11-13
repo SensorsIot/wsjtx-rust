@@ -1,7 +1,6 @@
 package WstxProductScope {
     private import ScalarValues::*;
     private import WstxRequirements::*;
-    private import WstxRequirementsAudio::*;
     private import WstxRequirementsRadioControl::*;
     private import WstxRequirementsWeb::*;
     private import WstxRequirementsStation::*;
@@ -277,6 +276,10 @@ package WstxProductScope {
         alias ReceiveStartup for WstxReceiveStartup;
         alias FlexSession for WstxFlexSession;
         alias McpEndpointPackage for WstxMcpEndpoint;
+        alias AudioDevicePackage for WstxAudio;
+        alias AudioCapturePackage for WstxAudioCapture;
+        alias AudioEndpointsPackage for WstxAudioEndpoints;
+        alias AudioPlaybackPackage for WstxAudioPlayback;
     }
     dependency scopeBoundary from ProductCapabilities to WstxRequirements::'FR-004';
     dependency contactBoundary from CompletedContactIdentity to WstxRequirements::'FR-011';

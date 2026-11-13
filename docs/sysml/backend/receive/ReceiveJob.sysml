@@ -137,35 +137,6 @@ package WstxRecordingReceive {
              This pending context never permits publication. Correlation remains the
              REQUIRED full source/job/generation tuple for every frame/result page. */
     }
-    attribute def SourceDescriptor {
-        attribute schema_version : Integer = 1;
-        attribute profile_id : String;
-        attribute boot_id : String;
-        attribute source_id : String;
-        attribute rate_hz : Integer;
-        attribute channel : String = "mono_real";
-        attribute total_frames : Integer[0..1];
-        attribute utc_anchor : String[0..1];
-        doc /* Immutable source lifetime. Recording12000Hz,known1..1440000frames,UTCnull;
-             no filename timestamp. #8 settles live rates/clock/UTC/discontinuity before
-             device code. Optional UTC separate from sample clock,not hardware support. */
-        assert constraint schemaRate { schema_version == 1 and rate_hz > 0 }
-    }
-    item def SampleBlock :> WstxArchitecture::SampleBlock {
-        attribute source : SourceDescriptor;
-        attribute first_frame : Integer;
-        attribute samples : Real[1..4096];
-        attribute discontinuity : Boolean;
-        attribute end_of_stream : Boolean;
-        assert constraint nonnegativePosition { first_frame >= 0 }
-        doc /* Finite f32 mono real,signedPCM16/32768 exactly. Arc<[f32]> or equivalent
-             immutable shared owner;borrowers cannot mutate,producer reuse waits for
-             last reference release. #6 spectrum path retains<=2blocks incl producer/
-             consumers,no whole-file float array/backlog. #7 separately bounds modem
-             history,not restricted to2blocks. Recordings start0,contiguous positions,
-             discontinuityfalse,EOS last nonempty block. Semantic incompatible changes
-             need coordinated new version. Unit conversion !=AGC/preprocessing/resampling. */
-    }
     item def ReceiveJob :> WstxArchitecture::ProcessingRequest {
         attribute schema_version : Integer = 1;
         attribute correlation : ReceiveContext;
@@ -605,7 +576,6 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
     dependency cancellationOwner from cancelReceive to WstxArchitecture::physicalStation::backend::stations::receive;
     dependency transferOwner from transfer to WstxArchitecture::physicalStation::backend::stations::web;
     dependency browserOwner from present to WstxArchitecture::physicalStation::frontend::browsers;
-    dependency sharedInput from SampleBlock to WstxArchitecture::physicalStation::backend::stations::audio;
     item def DecodeJob :> WstxRecordingReceive::ReceiveJob {
         attribute :>> kind = WstxRecordingReceive::ReceiveKind::live;
         attribute settings : Settings;
@@ -621,7 +591,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              Numerical recorded fixtures have no production receive operation. */
     }
     action def AdmitDecode {
-        in source : WstxRecordingReceive::SourceDescriptor[0..1];
+        in source : WstxAudio::SourceDescriptor[0..1];
         in settings : Settings;
         out job : DecodeJob;
         doc /* Production12.8 live start only; selected-profile auth/Origin/schema,

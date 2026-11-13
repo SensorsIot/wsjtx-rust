@@ -4,7 +4,7 @@ package WstxLiveReceive {
     private import WstxOfflineDecode::Mode;
     private import WstxRecordingReceive::DecodeJob;
     private import WstxRecordingReceive::ReceiveMode;
-    private import WstxRadioIO::NativePacket;
+    private import WstxAudio::NativePacket;
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::'FR-003';
     private import WstxRequirements::'FR-004';
@@ -126,13 +126,13 @@ package WstxLiveReceive {
     }
     action def AcknowledgeEpoch {
         in proposal : EpochProposal;
-        in descriptor : WstxRecordingReceive::SourceDescriptor;
+        in descriptor : WstxAudio::SourceDescriptor;
         in timing : SourceTiming;
         out accepted : Boolean;
         doc /* acknowledge_epoch(proposalCounter,descriptor,timing) accepts only current
              source-local proposal. Capture I/O cannot invent station identities. */
     }
-    item def LiveSampleBlock :> WstxRecordingReceive::SampleBlock {
+    item def LiveSampleBlock :> WstxAudio::SampleBlock {
         attribute timing : SourceTiming;
         doc /* Refines SAME immutable canonical12k SampleBlock, <=240frames here;
              descriptor.total_frames absent. No change to recordedPCM/32768 semantics.

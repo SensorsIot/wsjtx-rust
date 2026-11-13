@@ -2,7 +2,7 @@ package WstxReceiveSpectrum {
     private import ScalarValues::*;
     private import WstxRecordingReceive::ReceiveJob;
     private import WstxRecordingReceive::StartReplayBody;
-    private import WstxRecordingReceive::SampleBlock;
+    private import WstxAudio::SampleBlock;
     item def SpectrumFrame :> WstxArchitecture::ProcessingResult {
         attribute v : Integer = 1;
         attribute boot_id : String;
