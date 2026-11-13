@@ -25,13 +25,7 @@ CACHE = Path.home() / ".cache/wsjtx-rust/sysml-tools"
 REQUIRED = {"FR-901", "CL-003-01", "TC-001-001"}
 MARKER = "// Canonical authority: SysML\n"
 # The fixture's model files and the required package each declares, written by hand.
-REQUIRED_FILES = {
-    "Requirements.sysml": "WstxRequirements", "Architecture.sysml": "WstxArchitecture",
-    "Profiles.sysml": "WstxProfiles", "RecordingReceive.sysml": "WstxRecordingReceive",
-    "StationDecode.sysml": "WstxOfflineDecode", "RadioIO.sysml": "WstxRadioIO",
-    "OperatingLayout.sysml": "WstxOperatingLayout", "OperatingReceive.sysml": "WstxOperatingReceive",
-    "StationProtocol.sysml": "WstxStationProtocol", "ProductScope.sysml": "WstxProductScope",
-}
+REQUIRED_FILES = {"Requirements.sysml": "WstxRequirements", "Architecture.sysml": "WstxArchitecture"}
 ENUMS = '''    enum def ImplementationState { enum target; enum partial; enum implemented; }
     enum def AutomationState { enum planned; enum partial; enum implemented; }
 '''
@@ -142,7 +136,6 @@ class StatedOnceTests(unittest.TestCase):
 
     def tree(self, *args, top="", **kwargs):
         self.write("Requirements.sysml", MARKER + "package WstxRequirements {\n" + ENUMS + FR + top + "}\n")
-        self.write("ProductScope.sysml", "package WstxProductScope { private import PPart::*; }")
         self.write(PART_KEY, part(*args, **kwargs))
         return self.check()
 
@@ -411,11 +404,9 @@ class StatedOnceTests(unittest.TestCase):
             with self.subTest(form=form, key=PART_KEY), self.refused(
                     "Unreadable canonical declaration: " + identifier + ": " + PART_KEY_PATTERN):
                 self.write("Requirements.sysml", MARKER + "package WstxRequirements {\n" + ENUMS + FR + "}\n")
-                self.write("ProductScope.sysml", "package WstxProductScope { private import PPart::*; }")
                 self.write(PART_KEY, part(coverage("target"), automation("planned")).replace(header, "    " + form))
                 self.check()
             (self.models / PART_KEY).unlink()
-            self.write("ProductScope.sysml", "package WstxProductScope {}")
             for label, comment in (("line", "    // " + form + " }\n"), ("block", "    /* " + form + "\n       } */\n")):
                 with self.subTest(form=form, comment=label):
                     self.write("Requirements.sysml", good.replace(OWNS, comment + OWNS))
@@ -476,17 +467,14 @@ class StatedOnceTests(unittest.TestCase):
 
     # T8
     # Proves: CL-014-11; TC-DOC-009
-    def test_model_bindings_package_is_a_library_package(self):
+    def test_model_bindings_package_is_accepted_in_any_file(self):
         self.write("Requirements.sysml", flat(coverage("target"), automation("planned")))
-        for key in ("ModelBindings.sysml", "shared/ModelBindings.sysml"):
-            with self.subTest(accepted=key):
-                self.write(key, "package ModelBindings { metadata def Status; }")
+        for key, package in (("ModelBindings.sysml", "ModelBindings"), ("shared/ModelBindings.sysml", "ModelBindings"),
+                             ("ModelBindings.sysml", "ModelBindingsX")):
+            with self.subTest(key=key, package=package):
+                self.write(key, "package " + package + " { metadata def Status; }")
                 self.assertEqual(set(self.check()), REQUIRED)
                 (self.models / key).unlink()
-        with self.subTest("another package in a file of that name"), self.refused(r"lacks a ProductScope reference: ModelBindings\.sysml$"):
-            self.write("ModelBindings.sysml", "package ModelBindingsX {}")
-            self.check()
-        self.assertEqual(tool.LIBRARY_PACKAGES, {"ModelNotes", "ModelBindings"})
 
 
 # A small model in the new forms that the real Pilot resolves: the forms of the issue, and in
@@ -547,7 +535,6 @@ PILOT_WIRE = '''package WireFunction {
     dependency checks from 'CL-003-02' to EngineFunction::'TC-001-001';
 }
 '''
-PILOT_SCOPE = "package WstxProductScope { private import EngineFunction::*; private import WireFunction::*; }\n"
 
 
 class NewFormsOnThePilotTests(unittest.TestCase):
@@ -557,7 +544,7 @@ class NewFormsOnThePilotTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.models = self.root / "docs/sysml"
         texts = {name: "package " + package + " {}\n" for name, package in REQUIRED_FILES.items()}
-        texts.update({"Requirements.sysml": PILOT_REQUIREMENTS, "ProductScope.sysml": PILOT_SCOPE,
+        texts.update({"Requirements.sysml": PILOT_REQUIREMENTS,
                       "ModelBindings.sysml": MODEL_BINDINGS, "backend/qso/Engine.sysml": PILOT_ENGINE,
                       "interfaces/Wire.sysml": PILOT_WIRE})
         for key, text in texts.items():

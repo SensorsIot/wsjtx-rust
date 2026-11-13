@@ -26,13 +26,7 @@ REQUIRED = {"FR-001", "CL-003-01", "TC-001-001"}
 # The baseline of a model from which TC-001-002 was removed and retired.
 RETIRED = REQUIRED | {"TC-001-002"}
 MARKER = "// Canonical authority: SysML\n"
-REQUIRED_FILES = {
-    "Requirements.sysml": "WstxRequirements", "Architecture.sysml": "WstxArchitecture",
-    "Profiles.sysml": "WstxProfiles", "RecordingReceive.sysml": "WstxRecordingReceive",
-    "StationDecode.sysml": "WstxOfflineDecode", "RadioIO.sysml": "WstxRadioIO",
-    "OperatingLayout.sysml": "WstxOperatingLayout", "OperatingReceive.sysml": "WstxOperatingReceive",
-    "StationProtocol.sysml": "WstxStationProtocol", "ProductScope.sysml": "WstxProductScope",
-}
+REQUIRED_FILES = {"Requirements.sysml": "WstxRequirements", "Architecture.sysml": "WstxArchitecture"}
 ENUMS = '''    enum def ImplementationState { enum target; enum partial; enum implemented; }
     enum def AutomationState { enum planned; enum partial; enum implemented; }
 '''
@@ -89,7 +83,6 @@ class Fixture(unittest.TestCase):
         for name, package in REQUIRED_FILES.items():
             self.write(name, "package " + package + " {}\n")
         self.write("Requirements.sysml", ENTRY)
-        self.write("ProductScope.sysml", "package WstxProductScope { private import PPart::*; }\n")
         self.source(ENGINE_TESTS, "#[test]\nfn engine() {}\n")
         self.source("tests/part.cjs", "test('part',()=>{});\n")
 
@@ -421,7 +414,6 @@ class RetirementOnThePilotTests(unittest.TestCase):
             models = Path(directory) / "docs/sysml"
             texts = {name: "package " + package + " {}\n" for name, package in REQUIRED_FILES.items()}
             texts.update({"Requirements.sysml": MARKER + "package WstxRequirements {\n" + ENUMS + FR + "}\n",
-                          "ProductScope.sysml": "package WstxProductScope { private import EngineFunction::*; }\n",
                           "ModelBindings.sysml": PILOT_MODEL_BINDINGS, "backend/qso/Engine.sysml": PILOT_ENGINE})
             for key, text in texts.items():
                 path = models / key
@@ -435,6 +427,145 @@ class RetirementOnThePilotTests(unittest.TestCase):
             engine = models / "backend/qso/Engine.sysml"
             self.assertIn('{ identity = "TC-001-002";', PILOT_ENGINE)
             engine.write_text(PILOT_ENGINE.replace('{ identity = "TC-001-002";', '{ identiy = "TC-001-002";'), encoding="utf-8")
+            result = tool.validate(paths, CACHE)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn(passed, result.stdout)
+
+
+# R1 of #183: a case whose checks went to other contract cases retires as superseded.
+# TC-001-002 (TC-A) is superseded by TC-001-003 and TC-001-004 (TC-B, TC-C), declared beside
+# TC-001-001 in the entry file.
+EXTENDED_DEF = ("metadata def RetiredCase { attribute identity : String; attribute test : String[0..1]; "
+                "attribute supersededBy : String[0..1]; }")
+SUPERSEDING = '''    verification 'TC-001-003' {
+        attribute automation : AutomationState = AutomationState::planned;
+        objective { verify 'FR-001'; }
+    }
+    verification 'TC-001-004' {
+        attribute automation : AutomationState = AutomationState::planned;
+        objective { verify 'FR-001'; }
+    }
+'''
+WITH_SUPERSEDING = ENTRY.replace(OWNS, SUPERSEDING + OWNS)
+SUPERSEDED_KEY = PART_KEY
+
+
+def superseded(identity="TC-001-002", value='"TC-001-003; TC-001-004"', name="@RetiredCase"):
+    return f"{name} {{ identity = \"{identity}\"; supersededBy = {value}; }}"
+
+
+def package_level(*lines):
+    """backend/qso/Part.sysml: line 1 the package, from line 2 on the given lines, one each."""
+    return "package PPart {\n" + "".join("    " + line + "\n" for line in lines) + "}\n"
+
+
+class SupersededRetirementTests(Fixture):
+    def setUp(self):
+        super().setUp()
+        self.write("Requirements.sysml", WITH_SUPERSEDING)
+        self.write("shared/ModelBindings.sysml", "package ModelBindings {\n    private import ScalarValues::*;\n    "
+                   + EXTENDED_DEF + "\n}\n")
+        self.declared = REQUIRED | {"TC-001-003", "TC-001-004"}
+
+    # R1, accepted: at package level of a subfolder file and directly in a definition body
+    # Proves: CL-014-15; TC-DOC-013
+    def test_superseded_case_counts_as_present_and_is_listed_with_its_cases(self):
+        accepted = {
+            "package level": package_level(superseded()),
+            "package names, no spaces": package_level(superseded(value='"TC-001-003;TC-001-004"',
+                                                                 name="@ModelBindings::RetiredCase")),
+            "directly in a definition body": package_level("part def Holder {", "    " + superseded(), "}"),
+        }
+        for label, text in accepted.items():
+            with self.subTest(label):
+                self.write(SUPERSEDED_KEY, text)
+                self.assertEqual(set(self.check()), self.declared)
+        self.write(SUPERSEDED_KEY, package_level(superseded()))
+        with self.subTest("traces counts the declared identities only"):
+            self.assertEqual(self.main("traces"), (0, "Canonical source/model trace checks passed: 5 identities; "
+                                                      "no semantic validation or behavior execution.\n", ""))
+        with self.subTest("retired lists it with its cases"):
+            self.assertEqual(self.main("retired"), (0, "TC-001-002: superseded by TC-001-003, TC-001-004: "
+                                                       "backend/qso/Part.sysml:2\n1 retired cases\n", ""))
+        with self.subTest("beside a retirement into the detail tests, sorted by identity"):
+            self.write(FUNCTION_KEY, function(retire("TC-001-005")))
+            self.assertEqual(self.main("retired", RETIRED | {"TC-001-005"}),
+                             (0, "TC-001-002: superseded by TC-001-003, TC-001-004: backend/qso/Part.sysml:2\n"
+                                 "TC-001-005: server/engine_tests.rs: StationDecode.sysml:4\n2 retired cases\n", ""))
+
+    # R1, refused, each with its message
+    # Proves: CL-014-15; TC-DOC-013
+    def test_superseded_retirement_in_another_spelling_or_naming_no_active_case_is_refused(self):
+        invalid = {
+            "naming itself": superseded(value='"TC-001-003; TC-001-002"'),
+            "both test and supersededBy": f'@RetiredCase {{ identity = "TC-001-002"; test = "{ENGINE_TESTS}"; '
+                                          'supersededBy = "TC-001-003"; }',
+            "neither": '@RetiredCase { identity = "TC-001-002"; }',
+            "two literals, a sequence": superseded(value='("TC-001-003", "TC-001-004")'),
+            "two literals, joined": superseded(value='"TC-001-003" + "; TC-001-004"'),
+            "a malformed identity": superseded(value='"TC-001-003; TC-01-004"'),
+            "a repeated identity": superseded(value='"TC-001-003; TC-001-003"'),
+            "an empty entry": superseded(value='"TC-001-003;"'),
+            "empty": superseded(value='""'),
+            "supersededBy twice": '@RetiredCase { identity = "TC-001-002"; supersededBy = "TC-001-003"; '
+                                  'supersededBy = "TC-001-004"; }',
+        }
+        for label, line in invalid.items():
+            with self.subTest(invalid=label), self.refused("Invalid retired case: " + re.escape(SUPERSEDED_KEY) + ":2$"):
+                self.write(SUPERSEDED_KEY, package_level(line))
+                self.check()
+        missing = "Superseding case missing or retired: TC-001-002: TC-001-004: " + re.escape(SUPERSEDED_KEY) + "$"
+        without_c = ENTRY.replace(OWNS, SUPERSEDING.split("    verification 'TC-001-004'")[0] + OWNS)
+        with self.subTest("TC-C missing"), self.refused(missing):
+            self.write("Requirements.sysml", without_c)
+            self.write(SUPERSEDED_KEY, package_level(superseded()))
+            self.check()
+        with self.subTest("TC-C itself retired"), self.refused(missing):
+            self.write("Requirements.sysml", without_c)
+            self.write(SUPERSEDED_KEY, package_level(superseded(), superseded("TC-001-004", '"TC-001-001"')))
+            self.check(RETIRED | {"TC-001-004"})
+        self.write("Requirements.sysml", WITH_SUPERSEDING)
+        self.write(SUPERSEDED_KEY, package_level(superseded()))
+        with self.subTest("a Proves tag naming TC-A"), self.refused(
+                r"Source Proves tag names undefined model identities: server/engine_tests\.rs: TC-001-002$"):
+            self.source(ENGINE_TESTS, "// Proves: TC-001-002\n#[test]\nfn engine() {}\n")
+            self.check()
+
+
+PILOT_SUPERSEDED = '''package EngineFunction {
+    private import ModelBindings::*;
+    @RetiredCase { identity = "TC-001-002"; supersededBy = "TC-001-003; TC-001-004"; }
+    action def StandardContact {
+        @DetailTests { tests = "server/src/contact_tests.rs"; covers = "the engine on a virtual clock"; }
+        @RetiredCase { identity = "TC-001-005"; test = "server/src/contact_tests.rs"; }
+    }
+}
+'''
+
+
+class SupersededOnThePilotTests(unittest.TestCase):
+    # R1: the pinned Pilot accepts the extended definition with both forms and refuses a
+    # misspelt feature; the tool does not take part.
+    # Proves: CL-014-15; TC-DOC-013
+    def test_real_pilot_resolves_the_extended_def_and_refuses_a_misspelt_feature(self):
+        with tempfile.TemporaryDirectory() as directory:
+            models = Path(directory) / "docs/sysml"
+            texts = {name: "package " + package + " {}\n" for name, package in REQUIRED_FILES.items()}
+            texts.update({"Requirements.sysml": MARKER + "package WstxRequirements {\n" + ENUMS + FR + "}\n",
+                          "shared/ModelBindings.sysml": PILOT_MODEL_BINDINGS.replace(RETIRED_CASE_DEF, EXTENDED_DEF),
+                          "backend/qso/Engine.sysml": PILOT_SUPERSEDED})
+            for key, text in texts.items():
+                path = models / key
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+            paths = [models / "Requirements.sysml", *sorted(path for path in models.rglob("*.sysml") if path.name != "Requirements.sysml")]
+            passed = "OMG Pilot 0.62.0 syntax/name/semantic validation passed; behavior not executed."
+            self.assertIn(EXTENDED_DEF, texts["shared/ModelBindings.sysml"])
+            result = tool.validate(paths, CACHE)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn(passed, result.stdout)
+            (models / "backend/qso/Engine.sysml").write_text(PILOT_SUPERSEDED.replace("supersededBy =", "supersededby ="),
+                                                             encoding="utf-8")
             result = tool.validate(paths, CACHE)
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertNotIn(passed, result.stdout)

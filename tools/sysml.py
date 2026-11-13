@@ -3,7 +3,8 @@
 traces checks catalog and source/model bindings only, and that every test naming a
 case is in that case's binding (binding_agreement). check additionally calls the
 pinned Java parser/name resolver/semantic validator. markers lists the ModelNotes markers
-and checks nothing. retired checks the catalog and lists the `@RetiredCase` retirements.
+and checks nothing. retired checks the catalog and lists the `@RetiredCase` retirements;
+status checks it and prints each FR's status computed from its clauses (CL-014-19).
 equivalence compares two revisions of the model by meaning and identities lists the
 identity diff of two revisions (CL-014-17); both only read the repository.
 None executes modeled behavior.
@@ -40,15 +41,12 @@ CANONICAL_MARKER = "// Canonical authority: SysML"
 SOURCE_BINDING_ROOTS = ("client", "server", "tests")
 # Each required package is the package of exactly one model file, whatever the file's
 # name and folder. A change that renames or dissolves one changes this list with it.
-REQUIRED_PACKAGES = {
-    "WstxRequirements", "WstxArchitecture", "WstxProfiles",
-    "WstxRecordingReceive", "WstxOfflineDecode", "WstxRadioIO",
-    "WstxOperatingLayout", "WstxOperatingReceive", "WstxStationProtocol", "WstxProductScope",
-}
-# The required package whose model file is the text ProductScope references are looked up in.
-SCOPE_PACKAGE = "WstxProductScope"
-# Packages that need no ProductScope reference, by package name (not file name).
-LIBRARY_PACKAGES = {"ModelNotes", "ModelBindings"}
+REQUIRED_PACKAGES = {"WstxRequirements", "WstxArchitecture"}
+# The context file, directly in the model folder: whenever it exists, its package is
+# CONTEXT_PACKAGE and is required too; no other model file names that package in code,
+# and the context file declares no identity (CL-014-10).
+CONTEXT_FILE = "Context.sysml"
+CONTEXT_PACKAGE = "WstxContext"
 # The package whose `metadata def` names are the marker kinds that `markers` lists.
 MARKER_PACKAGE = "ModelNotes"
 IDENTITY = r"(?:FR-\d{3}|CL-\d{3}-\d{2}|TC-\d{3}-\d{3})"
@@ -225,12 +223,15 @@ def owning_bodies(code: str, offsets: list[int]) -> dict[int, int]:
     return owners
 
 
-def file_retirements(key: str, source: str) -> list[tuple[str, str, int]]:
-    """The `@RetiredCase { identity = "<TC>"; test = "<path>"; }` of one model file, in the
-    order of the file, as (identity, test, line). Each is checked in that order: an FR or
-    CL identity, any other spelling (the line of the `@`, or of the word `metadata` in the
-    keyword form), and a test that no `@DetailTests` directly in the same body names as
-    written. The file itself is the `@DetailTests` check's; this reads nothing else."""
+def file_retirements(key: str, source: str) -> list[tuple[str, str, int, tuple]]:
+    """The `@RetiredCase` annotations of one model file, in the order of the file, as
+    (identity, test, line, superseding cases). A retirement into the detail tests,
+    `{ identity = "<TC>"; test = "<path>"; }`, has no superseding cases; a superseded one,
+    `{ identity = "<TC>"; supersededBy = "<TC>; <TC>"; }`, has test None. Each is checked
+    in that order: an FR or CL identity, any other spelling (the line of the `@`, or of
+    the word `metadata` in the keyword form), and for the test form a test that no
+    `@DetailTests` directly in the same body names as written. The file itself is the
+    `@DetailTests` check's; whether the superseding cases exist is the catalog's."""
     text, code = blanked(source, strings=False), blanked(source)
     found = list(annotations(text, code, "RetiredCase"))
     found += [(match.start(), None) for match in
@@ -249,15 +250,26 @@ def file_retirements(key: str, source: str) -> list[tuple[str, str, int]]:
         line = code.count("\n", 0, offset) + 1
         features = [feature for feature, _value in pairs or []]
         values = {feature: string_literal(value) for feature, value in pairs or []}
-        identity, test = values.get("identity"), values.get("test")
+        identity, test, superseded = values.get("identity"), values.get("test"), values.get("supersededBy")
         if features.count("identity") == 1 and identity and re.fullmatch(r"FR-\d{3}|CL-\d{3}-\d{2}", identity):
             raise ValueError(f"Only a verification case retires: {identity}: {key}")
-        if pairs is None or sorted(features) != ["identity", "test"] or identity is None or test is None \
-                or not re.fullmatch(r"TC-\d{3}-\d{3}", identity) or ";" in test or "::" in test:
-            raise ValueError(f"Invalid retired case: {key}:{line}")
+        invalid = ValueError(f"Invalid retired case: {key}:{line}")
+        if pairs is None or features.count("identity") != 1 or identity is None or not re.fullmatch(r"TC-\d{3}-\d{3}", identity):
+            raise invalid
+        others = sorted(feature for feature in features if feature != "identity")
+        if others == ["supersededBy"]:
+            # One literal of one or more distinct case identities, separated by `;`, not the case itself.
+            names = tuple(name.strip() for name in superseded.split(";")) if superseded is not None else ()
+            if not names or not all(re.fullmatch(r"TC-\d{3}-\d{3}", name) for name in names) \
+                    or len(set(names)) != len(names) or identity in names:
+                raise invalid
+            retired.append((identity, None, line, names))
+            continue
+        if others != ["test"] or test is None or ";" in test or "::" in test:
+            raise invalid
         if test not in named.get(owners[offset], set()):
             raise ValueError(f"Retired case outside the detail tests: {identity}: {test}: {key}")
-        retired.append((identity, test, line))
+        retired.append((identity, test, line, ()))
     return retired
 
 
@@ -392,11 +404,39 @@ def file_package(code: str):
     return package[1] if package else None
 
 
-def scope_reference(package: str, scope: str) -> bool:
-    """Whether comment-free ProductScope text refers to `package`: a qualified name
-    `Package::...`, `import Package;` or `alias <name> for Package;`."""
-    name = re.escape(package)
-    return bool(re.search(r"\b" + name + r"::|\bimport\s+" + name + r"\s*;|\balias\s+\w+\s+for\s+" + name + r"\s*;", scope))
+# A derivation of the pinned model library (Requirement Derivation): `#derivation
+# connection { end #original ::> <FR>; end #derive ::> <clause>; }`, with or without
+# package names on the metadata and the ends.
+DERIVATION = re.compile(r"#\s*(?:\w+::)*derivation\s+connection\b[^{};]*\{")
+DERIVATION_END = re.compile(r"\bend\s+#\s*(?:\w+::)*(original|derive)\s*::>\s*(?:(?:\w+|'[^']*')::)*'([^']+)'\s*;")
+
+
+def file_derivations(key: str, clean: str) -> list[tuple[str, list[str]]]:
+    """The derivation connections of one comment-free model file, in file order, as
+    (original, derived). A body holding anything but one `#original` end and one or more
+    `#derive` ends is refused: `Invalid canonical derivation: <key>:<line>`."""
+    code = blanked(clean)
+    found = []
+    for match in DERIVATION.finditer(code):
+        body = declaration_body(clean, match.end() - 1)
+        ends = list(DERIVATION_END.finditer(body))
+        rest = DERIVATION_END.sub(" ", blanked(body, strings=False))
+        originals = [end[2] for end in ends if end[1] == "original"]
+        derived = [end[2] for end in ends if end[1] == "derive"]
+        if rest.strip() or len(originals) != 1 or not derived:
+            raise ValueError(f"Invalid canonical derivation: {key}:{code.count(chr(10), 0, match.start()) + 1}")
+        found.append((originals[0], derived))
+    return found
+
+
+def computed_status(states: list[str]) -> str:
+    """CL-014-19: implemented when all clauses are, target when all are or there is none,
+    partial in every other case."""
+    if all(state == "target" for state in states):
+        return "target"
+    if all(state == "implemented" for state in states):
+        return "implemented"
+    return "partial"
 
 
 def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES) -> dict[str, dict]:
@@ -404,16 +444,26 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
     sources = {key: path.read_text(encoding="utf-8") for key, path in files.items()}
     clean_models = {key: without_comments(source) for key, source in sources.items()}
     packages = {key: file_package(clean) for key, clean in clean_models.items()}
+    required_packages = set(REQUIRED_PACKAGES)
+    if CONTEXT_FILE in files:
+        if packages[CONTEXT_FILE] != CONTEXT_PACKAGE:
+            raise ValueError(f"Context file package is not {CONTEXT_PACKAGE}: {CONTEXT_FILE}")
+        if identity := IDENTITY_DECLARATION.search(blanked(clean_models[CONTEXT_FILE])):
+            raise ValueError(f"Context file declares an identity: {identity[1] or identity[2]}: {CONTEXT_FILE}")
+        required_packages.add(CONTEXT_PACKAGE)
+    for key, clean in clean_models.items():
+        if key != CONTEXT_FILE and re.search(r"\b" + CONTEXT_PACKAGE + r"\b", blanked(clean)):
+            raise ValueError(f"Model file names the context package: {CONTEXT_PACKAGE}: {key}")
     keys_of = {}
     for key, package in packages.items():
-        if package in REQUIRED_PACKAGES:
+        if package in required_packages:
             keys_of.setdefault(package, []).append(key)
-    if missing := REQUIRED_PACKAGES - keys_of.keys():
+    if missing := required_packages - keys_of.keys():
         raise ValueError("Canonical model packages missing: " + ", ".join(sorted(missing)))
-    for package in sorted(REQUIRED_PACKAGES):
+    for package in sorted(required_packages):
         if len(keys_of[package]) > 1:
             raise ValueError("Duplicate canonical model package: " + package + ": " + ", ".join(sorted(keys_of[package])))
-    entries, declared_in, retired = {}, {}, {}
+    entries, declared_in, retired, superseding, derivations = {}, {}, {}, {}, []
     for key, path in files.items():
         source = sources[key]
         if re.search(r"Canonical FSD|\bFSD(?:\s+(?:chapter|section))?\s*\d|WSTX(?:%20| )Rust(?:%20| )FSD", source):
@@ -477,12 +527,14 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
                         raise ValueError("Invalid verification/implementation metadata: " + identifier)
                     methods = definition[0][1]
             allowed = {"planned", "partial", "implemented"} if kind == "verification" else {"target", "partial", "implemented"}
-            if len(states) != 1 or states[0] not in allowed:
+            # An FR may state no status: its status is computed from its clauses (CL-014-19).
+            unstated = identifier.startswith("FR-") and not states and "state" not in unread
+            if not unstated and (len(states) != 1 or states[0] not in allowed):
                 raise ValueError("Missing or invalid declared model state: " + identifier)
             refs = re.findall(r"\bverify\s+(?:\w+::)*'([^']+)'\s*;", body)
             if len(bindings) > 1 or len(methods) > 1 or None in bindings or (methods and methods[0] not in {"manual", "automated"}):
                 raise ValueError("Invalid verification/implementation metadata: " + identifier)
-            delivered = states[0] in {"partial", "implemented"}
+            delivered = not unstated and states[0] in {"partial", "implemented"}
             if kind == "requirement" and delivered and not bindings:
                 # A clause takes its module from the function of its own model file.
                 if functions and "binding" in unread:
@@ -498,51 +550,71 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
             if kind == "verification" and unbound:
                 raise ValueError(f"No Proves tag or named-test identity for {identifier}: {'; '.join(unbound)}")
             # The effective values, stated or taken over, whatever form states them.
-            entries[identifier] = {"kind": kind, "state": states[0], "refs": refs,
+            entries[identifier] = {"kind": kind, "state": states[0] if states else None, "refs": refs,
                                    "bindings": [binding.strip() for binding in bindings[0].split(";")] if bindings else [],
                                    "manual": methods == ["manual"]}
             declared_in[identifier] = key
+        derivations.extend(file_derivations(key, clean))
         # Retired cases: after the file's detail tests and declarations are checked.
-        for identity, _test, _line in file_retirements(key, source):
+        for identity, _test, _line, names in file_retirements(key, source):
             retired.setdefault(identity, []).append(key)
+            if names:
+                superseding[identity] = (names, key)
     for identity in sorted(retired):
         if len(retired[identity]) > 1:
             raise ValueError(f"Duplicate retired case: {identity}: " + ", ".join(sorted(set(retired[identity]))))
     for identity in sorted(retired):
         if identity in entries:
             raise ValueError(f"Retired case declared again: {identity}: {declared_in[identity]}")
+    # A superseded retirement names declared cases that are not retired.
+    for identity in sorted(superseding):
+        names, key = superseding[identity]
+        for name in names:
+            if name not in entries or name in retired:
+                raise ValueError(f"Superseding case missing or retired: {identity}: {name}: {key}")
     # A retired identity counts as present for the baseline; it is not a catalog entry.
     if missing := set(required) - entries.keys() - retired.keys():
         raise ValueError("Missing stable canonical identities: " + ", ".join(sorted(missing)))
-    scope = clean_models[keys_of[SCOPE_PACKAGE][0]]
-    for key, package in packages.items():
-        if package in REQUIRED_PACKAGES or package in LIBRARY_PACKAGES:
-            continue
-        if not package or not scope_reference(package, scope):
-            raise ValueError("Additional canonical package lacks a ProductScope reference: " + key)
-    dependencies, case_links = {}, {}
+    dependencies, case_links, derived = {}, {}, {}
     for source in clean_models.values():
         for owner, target in re.findall(r"\bdependency\s+\w+\s+from\s+(?:\w+::)*'(CL-[^']+)'\s+to\s+(?:\w+::)*'([^']+)'\s*;", source):
             if owner not in entries or target not in entries or not target.startswith(("FR-", "TC-")):
                 raise ValueError("Invalid canonical clause dependency: " + owner + " -> " + target)
             (dependencies if target.startswith("FR-") else case_links).setdefault(owner, set()).add(target)
+    # A clause derived from its FR is owned by it; no reciprocal dependency is written for it.
+    for original, clauses in derivations:
+        for clause in clauses:
+            if clause not in entries or original not in entries or not clause.startswith("CL-") or not original.startswith("FR-"):
+                raise ValueError("Invalid canonical clause dependency: " + clause + " -> " + original)
+            derived.setdefault(clause, set()).add(original)
     verified = set()
     for identifier, entry in entries.items():
-        if identifier.startswith("CL-") and identifier not in dependencies:
+        if identifier.startswith("CL-") and identifier not in dependencies and identifier not in derived:
             raise ValueError("Canonical clause lacks requirement ownership: " + identifier)
-        if identifier.startswith("CL-") and identifier not in case_links:
+        if identifier.startswith("CL-") and identifier in dependencies and identifier not in case_links:
             raise ValueError("Canonical clause lacks a declared verification case: " + identifier)
         if entry["kind"] == "verification":
             if not entry["refs"] or any(ref not in entries or ref.startswith("TC-") for ref in entry["refs"]):
                 raise ValueError("Undefined or absent verification target: " + identifier)
             verified.update(entry["refs"])
-            actual_clauses = {ref for ref in entry["refs"] if ref.startswith("CL-")}
-            declared_clauses = {clause for clause, cases in case_links.items() if identifier in cases}
+            # Reciprocity holds for the clauses owned by a dependency only.
+            actual_clauses = {ref for ref in entry["refs"] if ref.startswith("CL-") and ref in dependencies}
+            declared_clauses = {clause for clause, cases in case_links.items() if identifier in cases and clause in dependencies}
             if actual_clauses != declared_clauses:
                 raise ValueError("Nonreciprocal canonical verification links: " + identifier)
     unverified = {i for i in entries if i.startswith("CL-")} - verified
     if unverified:
         raise ValueError("Canonical clauses lack verification links: " + ", ".join(sorted(unverified)))
+    # CL-014-19: each FR's status, computed from the clauses it owns by either form. The
+    # entry keeps the stated status (None when there is none) beside the computed one.
+    for identifier, entry in entries.items():
+        if identifier.startswith("FR-"):
+            clauses = sorted(clause for clause in entries if identifier in dependencies.get(clause, set()) | derived.get(clause, set()))
+            entry["stated"] = entry["state"]
+            entry["clauses"] = clauses
+            entry["status"] = computed_status([entries[clause]["state"] for clause in clauses])
+            if entry["state"] is None:
+                entry["state"] = entry["status"]
     for directory_name in SOURCE_BINDING_ROOTS:
         for path in sorted((root / directory_name).rglob("*")):
             if not path.is_file() or path.suffix not in {".rs", ".js", ".cjs"}:
@@ -551,6 +623,22 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
                 if unknown := source_proves(tag) - entries.keys():
                     raise ValueError("Source Proves tag names undefined model identities: " + path.relative_to(root).as_posix() + ": " + ", ".join(sorted(unknown)))
     return entries
+
+
+def status_lines(entries: dict[str, dict]) -> list[str]:
+    """The lines of `status` (CL-014-19): one per FR in identity order, then the summary."""
+    lines, counts = [], Counter()
+    for identifier in sorted(identifier for identifier in entries if identifier.startswith("FR-")):
+        entry = entries[identifier]
+        states = Counter(entries[clause]["state"] for clause in entry["clauses"])
+        line = (f"{identifier} {entry['status']}: {len(entry['clauses'])} clauses, {states['implemented']} implemented, "
+                f"{states['partial']} partial, {states['target']} target")
+        if entry["stated"] and entry["stated"] != entry["status"]:
+            line += "; stated " + entry["stated"]
+        lines.append(line)
+        counts[entry["status"]] += 1
+    lines.append(f"{len(lines)} FRs: {counts['implemented']} implemented, {counts['partial']} partial, {counts['target']} target")
+    return lines
 
 
 def markers(directory: Path, kinds=()) -> list[str]:
@@ -1366,8 +1454,9 @@ def marked(cache: Path) -> tuple[int, list[str]]:
 
 
 def identity_side(directory: Path) -> tuple[dict, dict]:
-    """P7: (identity -> (text, file, package), retired identity -> test) of one side, read
-    from the declarations without validating the tree."""
+    """P7: (identity -> (text, file, package), retired identity -> `test <path>` or
+    `superseded by <TC>, <TC>`) of one side, read from the declarations without validating
+    the tree."""
     files = model_files(directory) if directory.is_dir() else {}
     sources = {key: path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n") for key, path in files.items()}
     codes = {key: blanked(source, strings=False) for key, source in sources.items()}
@@ -1393,8 +1482,8 @@ def identity_side(directory: Path) -> tuple[dict, dict]:
             origin = re.search(r"\bfrom\s+(?:(?:\w+|'[^']*')::)*'(" + IDENTITY + r")'", match[0])
             if origin:
                 dependencies.setdefault(origin[1], []).append(" ".join(normal(source[match.start():match.end()], key).split()))
-        for identity, test, _line in file_retirements(key, sources[key]):
-            retired[identity] = test
+        for identity, test, _line, names in file_retirements(key, sources[key]):
+            retired[identity] = "superseded by " + ", ".join(names) if names else "test " + test
     texts = {identity: (text + "\n" + "\n".join(sorted(dependencies.get(identity, []))), key, package)
              for identity, (text, key, package) in entries.items()}
     return texts, retired
@@ -1427,7 +1516,7 @@ def identities(base: str, head) -> tuple[int, list[str]]:
         elif after:
             status = "added"
         elif identity in retired:
-            status, suffix = "retired", " test " + retired[identity]
+            status, suffix = "retired", " " + retired[identity]
         else:
             status = "removed"
         counts[status] += 1
@@ -1447,6 +1536,7 @@ def main(argv=None):
     listing = commands.add_parser("markers", help="List the ModelNotes markers of the model by file key and line; checks and writes nothing")
     listing.add_argument("kinds", nargs="*", metavar="Kind")
     commands.add_parser("retired", help="Check the catalog as fingerprints does, then list the retired cases by identity; writes nothing")
+    commands.add_parser("status", help="Check the catalog, then print each FR's status computed from its clauses; writes nothing")
     semantic = commands.add_parser("validate", help="Run real semantic validation on ordered files")
     semantic.add_argument("files", nargs="+", type=Path)
     same = commands.add_parser("equivalence", help="Compare the model of two revisions by meaning (head omitted: the working tree); writes nothing")
@@ -1488,9 +1578,14 @@ def main(argv=None):
         if args.command == "retired":
             authority(MODELS, FSD)
             canonical_catalog(MODELS, ROOT)
-            lines = sorted(f"{identity}: {test}: {key}:{line}" for key, path in model_files(MODELS).items()
-                           for identity, test, line in file_retirements(key, path.read_text(encoding="utf-8")))
+            lines = sorted(f"{identity}: {'superseded by ' + ', '.join(names) if names else test}: {key}:{line}"
+                           for key, path in model_files(MODELS).items()
+                           for identity, test, line, names in file_retirements(key, path.read_text(encoding="utf-8")))
             print("\n".join(lines + [f"{len(lines)} retired cases"]))
+            return 0
+        if args.command == "status":
+            authority(MODELS, FSD)
+            print("\n".join(status_lines(canonical_catalog(MODELS, ROOT))))
             return 0
         if args.command == "fingerprints":
             authority(MODELS, FSD)
