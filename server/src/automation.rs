@@ -452,7 +452,7 @@ struct Run {
     /// time from which periods count (Inner's).
     tx_slot: Option<Value>,
     slot_since_ms: i64,
-    /// WstxStrategy::PskrUse: the run's own contact's target hearing us.
+    /// WstxHearingFeed::PskrUse: the run's own contact's target hearing us.
     hearing: Option<Value>,
     /// WstxStrategy::CqWhenNoTarget: consecutive fresh publications with nothing listed.
     empty_publications: u32,
@@ -700,7 +700,7 @@ impl Owner {
         })
     }
     /// The strategy or contest run's own contact (attended or not): its target is the one
-    /// the PSK Reporter feed subscribes to (WstxStrategy::HearingFeed).
+    /// the PSK Reporter feed subscribes to (WstxHearingFeed::HearingFeed).
     pub(crate) fn own_contact(&self) -> Option<String> {
         self.lock()
             .run
@@ -1679,7 +1679,7 @@ impl Owner {
                     return;
                 }
                 let target = c.dx_call.clone();
-                // WstxStrategy::PskrUse: whether the target hears us (unknown with Use off).
+                // WstxHearingFeed::PskrUse: whether the target hears us (unknown with Use off).
                 let hearing = pskr::target_hearing(r, target.as_deref(), mode);
                 let heard = hearing.hears_us();
                 // #97 TxMoveRule: the PSK case (he reports: HearingFeed "He reports").

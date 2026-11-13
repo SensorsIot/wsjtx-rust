@@ -382,7 +382,7 @@ class ModelTreeTests(unittest.TestCase):
     # T8
     # Proves: CL-014-10; TC-DOC-008
     def test_documentation_link_resolves_from_the_files_own_folder_and_messages_name_the_key(self):
-        # Three folders up from docs/sysml/backend/qso is docs, so the target is docs/tests/case.cjs.
+        # Three folders up from docs/sysml/backend/log is docs, so the target is docs/tests/case.cjs.
         linked = PART.replace("package PPart {", "package PPart {\n    doc /* [t](../../../tests/case.cjs) */")
         target = self.root / "docs/tests/case.cjs"
         target.parent.mkdir()

@@ -715,7 +715,7 @@ package WstxContact {
     dependency CL_039_22_to_FR_007 from 'CL-039-22' to 'FR-007';
     dependency CL_039_22_to_FR_020 from 'CL-039-22' to 'FR-020';
     requirement 'CL-039-20' {
-        doc /* A read-only PSK Reporter MQTT feed tells the station whether the current target hears my call (with the SNR it reported) and which frequencies it decodes, with their parity: two exact subscriptions (my call as sender; the strategy or contest target as receiver while Use PSK Reporter is on, replaced when the target changes), never a wildcard from a decoded call, TLS against compiled-in roots, an identifiable client id, bounded reconnect backoff, bounded memory, spots expiring after 600 s, a spot of another band or mode ignored. Settings shows the master switch (on by default) and the status, pushed; the Use PSK Reporter toggle next to Auto (on by default, kept across restarts) decides whether runs use the feed, and while it is on the QSO pane shows "hears us" (spot age and reported SNR, or no, or unknown) and "open at his end" with the chosen slot. It sends nothing but the handshake, keep-alive and subscriptions; everything works without it: no connection is unknown, never an operator error, and receive and the 50 ms station step never wait on it. Details: WstxStrategy::HearingFeed, PskrUse. */
+        doc /* A read-only PSK Reporter MQTT feed tells the station whether the current target hears my call (with the SNR it reported) and which frequencies it decodes, with their parity: two exact subscriptions (my call as sender; the strategy or contest target as receiver while Use PSK Reporter is on, replaced when the target changes), never a wildcard from a decoded call, TLS against compiled-in roots, an identifiable client id, bounded reconnect backoff, bounded memory, spots expiring after 600 s, a spot of another band or mode ignored. Settings shows the master switch (on by default) and the status, pushed; the Use PSK Reporter toggle next to Auto (on by default, kept across restarts) decides whether runs use the feed, and while it is on the QSO pane shows "hears us" (spot age and reported SNR, or no, or unknown) and "open at his end" with the chosen slot. It sends nothing but the handshake, keep-alive and subscriptions; everything works without it: no connection is unknown, never an operator error, and receive and the 50 ms station step never wait on it. Details: WstxHearingFeed::HearingFeed, PskrUse. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/pskr.rs; server/src/main.rs; server/src/contact_http.rs; server/src/recording.rs; client/contact.js";
     }
@@ -940,26 +940,6 @@ package WstxContact {
         attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_039_22_verified_by_TC_039_045 from 'CL-039-22' to 'TC-039-045';
-    verification 'TC-039-046' {
-        doc /* TC-039-046 — Auto, Use PSK Reporter, the QSO pane lines and the editor in the browser
-             CL-039-04, CL-039-20, CL-039-22, CL-063-05
-             Setup: the actual isolated server and Chromium at 1366x768 and 360x740; routed replies for GET and PUT /strategy, POST /strategy/auto, GET /pskr, POST /pskr/use, GET /strategy/contests and GET /automation; pushed strategy.state, pskr.state and automation.state.
-             Steps: open with no selection; select the saved strategy "New calls" (class strategy); click Auto; push the snapshot with auto true; push a HALT (auto false); click PSK; push enabled false (Settings off); push a run with hearing {heard, 75 s old, -12} and tx_slot {1420, his_end yes}, then {heard, 600 s}, {no}, {unknown} and his_end no and unknown; Use off; 10 s with no event; a contest prompt for WW Digi, Start; Auto on with the warning declined, then confirmed; FT8 Activity. The editor's steps are TC-097-014's and the prompt's fields TC-097-015's.
-             Status (the station element and the contest status, from pushed automation.state and strategy.state): a waiting run, calling_cq, Auto off, a contest with Auto on and with Auto off; the contact snapshot without transmit capability.
-             Expected: the strategy element reads "Strategy New calls waiting", "Strategy New calls · calling CQ" and "Strategy New calls · Auto off"; the contest status "Contest WW Digi · <period> UTC · WW Digi · Auto on" and "· Auto off" (the strategy name); Auto disabled with the reason "Receive only" as its title without transmit capability; Auto disabled with its reason without a selection; selecting sends one PUT and nothing else; the click sends exactly one POST /strategy/auto {auto true}; the button green only after the push and grey after the HALT push; PSK sends POST /pskr/use {use false} and is disabled with "PSK Reporter is off in Settings" when the switch is off; the lines "Hears us: 75 s ago · −12 dB" and "Tx 1420 Hz · open at his end: yes", then "Hears us: 10 min ago · −12 dB", "Hears us: no", "Hears us: unknown", "· no", "· unknown"; no lines with Use off or without a target; no request during the silence (no polling); the prompt's Start sends one PUT without automation_confirmed; Auto on for WW Digi shows the clause, sends nothing when declined and one POST with automation_confirmed true when confirmed; no warning for FT8 Activity; no horizontal overflow at 360 px and the QSO pane keeps its height.
-             2 — Isolated automated browser test; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-039-04';
-            verify 'CL-039-20';
-            verify 'CL-039-22';
-            verify 'CL-063-05';
-        }
-        attribute executable : String = "tests/ui-operating.test.cjs";
-    }
-    dependency CL_039_20_verified_by_TC_039_046 from 'CL-039-20' to 'TC-039-046';
-    dependency CL_039_22_verified_by_TC_039_046 from 'CL-039-22' to 'TC-039-046';
-    dependency CL_063_05_verified_by_TC_039_046 from 'CL-063-05' to 'TC-039-046';
     verification 'TC-039-047' {
         doc /* TC-039-047 — Live strategydef on HB9BLA at 30 W, 20 m FT8
              CL-039-02, CL-039-09, CL-039-20, CL-039-21, CL-039-22, CL-039-23

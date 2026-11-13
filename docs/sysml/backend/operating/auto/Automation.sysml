@@ -176,7 +176,7 @@ package WstxMcp {
              or {call, reason repetitions|gone|tx_changes|caller}, the last station a strategy or
              contest run left, WstxStrategy::LeaveRule, #97), quiet ([{call, band, mode, remaining_s}],
              WstxStrategy::QuietTime, the retry pause), hearing (null or {state heard|no|unknown,
-             reports, spot_utc_s, snr_db}, WstxStrategy::PskrUse), tx_slot (null or {hz, power_db, his_end
+             reports, spot_utc_s, snr_db}, WstxHearingFeed::PskrUse), tx_slot (null or {hz, power_db, his_end
              yes|no|unknown}, power_db the slot's whole-dB rise above the passband floor clamped at 0 (#66),
              WstxStrategy::FreeTxSlot), slot_check (null or {repetitions, case
              heard|not_heard|no_reports, hears_us, moved, hz}, WstxStrategy::StrategyWatchdog,

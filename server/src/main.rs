@@ -430,7 +430,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
             .await?;
             let _ = state.recording.udp.set(owner);
-            // WstxStrategy::HearingFeed: read-only; its thread waits on the network, nothing
+            // WstxHearingFeed::HearingFeed: read-only; its thread waits on the network, nothing
             // else does. WSTX_PSKR=off opens no connection (isolated tests of the executable).
             let feed_base = selected.clone().ok_or("profile directory absent")?;
             let feed_setting = env::var("WSTX_PSKR").ok();
@@ -1206,7 +1206,7 @@ async fn connection(
     // #44 CL-044-11 radio.agc: the managed AGC and its last read-back, once known, then
     // after each change (the first event is this peer's snapshot).
     let mut agc_seen: u64 = 0;
-    // #39 WstxStrategy::HearingFeed pskr.state: after a change since this peer subscribed
+    // #39 WstxHearingFeed::HearingFeed pskr.state: after a change since this peer subscribed
     // (the first event follows its GET /pskr snapshot).
     let mut pskr_seen: u64 = 0;
     // #44 CL-044-13 radio.tx_level: after each change of the level, assistant or meters.

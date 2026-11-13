@@ -192,7 +192,7 @@ package WstxStationLink {
              browser's current one is discarded (events of a closed socket are already
              ignored). This holds for every view of station state:
              contact, recording, receive, operating selection, AGC, Tx level, native radio,
-             transmit, strategy (WstxStrategy::StrategySelector), automation, PSK Reporter,
+             transmit, strategy (WstxOperatingLayout::StrategySelector), automation, PSK Reporter,
              Monitor off at startup and alerts. Once the reads and first events of the new boot
              have arrived, each view shows what a page loaded fresh at that moment shows. A
              failed read leaves the empty form until that view's next read under its rule; no

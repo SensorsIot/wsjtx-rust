@@ -590,7 +590,7 @@ function startupShow(){
   const last=v.last_receive,choice=last?` · last ${[last.band,last.mode.toUpperCase()].filter(Boolean).join(' ')}`:'';
   $('startup-resume').textContent=`${resumeText[v.resume.state]??v.resume.state}${v.resume.error?` · ${v.resume.error}`:''}${choice}${v.storage_error?` · ${v.storage_error}`:''}`;
 }
-// #39 WstxStrategy::HearingFeed: one snapshot per connection, then pskr.state events; the
+// #39 WstxHearingFeed::HearingFeed: one snapshot per connection, then pskr.state events; the
 // age counts on with the station tick. Nothing is polled and no state here is an error chip.
 let pskrView=null,pskrUtcMs=null;
 function pskrShow(){
@@ -600,7 +600,7 @@ function pskrShow(){
   const text={off:'Off',connecting:v.error?`Connecting · last try ${v.error}`:'Connecting',connected:`Connected · ${spot}`,error:`Not connected · ${v.error} · retrying`}[v.state]??v.state;
   $('pskr-status').textContent=`${text}${v.storage_error?` · ${v.storage_error}`:''}`;$('pskr-status').dataset.state=v.state;
 }
-// #39 WstxStrategy::PskrUse: the PSK toggle beside Auto shows only the station's pushed use; the
+// #39 WstxHearingFeed::PskrUse: the PSK toggle beside Auto shows only the station's pushed use; the
 // Settings switch is the master (off: disabled, counts as off). A click sends one POST /pskr/use.
 const pskrUse=()=>!!pskrView?.enabled&&pskrView.use===true;
 let pskrPosting=false;
@@ -1192,7 +1192,7 @@ function loadStrategy(){
   const loading=viewLoading=stationFetch('/strategy',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>{if(loading===viewLoading)strategyMissing=r.status===404;return r.ok?r.json():null;}).then(v=>{if(loading!==viewLoading||v?.v!==1||v.boot_id!==profileData?.boot_id)return;if(view?.revision!==v.revision){verdicts=new Map();evaluatedKey='';}view=v;show();evaluateShown();}).catch(()=>{}).finally(()=>{if(loading!==viewLoading)return;viewLoading=null;if(viewAgain){viewAgain=false;loadStrategy();}});
   return loading;
 }
-// WstxStrategy::StrategySelector (#74): a new boot drops the strategy snapshot, its verdicts and
+// WstxOperatingLayout::StrategySelector (#74): a new boot drops the strategy snapshot, its verdicts and
 // the automation snapshot at once; the element shows the freshly loaded form until GET /strategy.
 addEventListener('station-boot',()=>{
   view=null;viewLoading=null;viewAgain=false;strategyMissing=false;automation=null;run=null;refusal=null;
@@ -1219,7 +1219,7 @@ function automationLine(){
   // #42 a pounce run names its call (WstxStrategy::Pounce).
   statusNode.textContent=active&&r.pounce?`Pounce ${r.pounce.call} ${r.state==='waiting'?'waiting':'in QSO'} · HALT ends it`:active?`Automation ${{waiting:'waiting',manual:'paused for your QSO'}[r.state]??'in contact'} · run ${String(r.id).slice(0,8)} · HALT ends it`:r?.reason&&r.reason!=='stopped'?`Automation stopped · ${words_(r.reason)}`:'Automation idle';
 }
-// WstxStrategy::StrategySelector (#74 D1): the one writer of the #station-automation line, drawn
+// WstxOperatingLayout::StrategySelector (#74 D1): the one writer of the #station-automation line, drawn
 // from the current strategy snapshot and the current automation snapshot (GET /automation,
 // read on automation.state only) together at each change of either.
 function showRun(){
@@ -1243,13 +1243,13 @@ function showRun(){
   if(refusal){statusNode.textContent=`Strategy ${name} not started · ${words_(refusal)}`;statusNode.dataset.active='false';return;}
   if(runActive()&&run.pounce){automationLine();return;}
   statusNode.dataset.active=String(!!on);
-  // WstxStrategy::StrategySelector: with Auto off a selection only marks.
+  // WstxOperatingLayout::StrategySelector: with Auto off a selection only marks.
   statusNode.textContent=!auto()?`Strategy ${name} · Auto off${stopped}`:!on?`Strategy ${name} · Auto on`:doing()?`Strategy ${name} · ${doing()}`:`Strategy ${name} waiting${run.reason?` · ${words_(run.reason)}`:''}`;
 }
 function show(){
   const c=config();
   const contest=selection(),contestValue=contest?`contest:${contest.profile}`:null;
-  // #97 WstxStrategy::StrategySelector: None, then the groups Strategy (the built-ins, "DXCC all"
+  // #97 WstxOperatingLayout::StrategySelector: None, then the groups Strategy (the built-ins, "DXCC all"
   // first, then the user's) and Contest (the user's contest strategies and the contest in force);
   // the contest built-ins are chosen in the contest prompt.
   const mine=c?.strategies??[],named=s=>[s.name,s.name];

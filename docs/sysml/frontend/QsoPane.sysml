@@ -220,7 +220,7 @@ package WstxQsoPane {
              5. Direct buttons: CQ, Auto, PSK, Tune, HALT, Abort QSO (Esc), Log QSO (#39
              strategydef, operator Q5, Q17, Q29: "Auto" right of CQ, a toggle green while on and
              grey while off, WstxAutoControl::AutoToggle; "PSK", "Use PSK Reporter" as its title,
-             right of Auto, a toggle green while on, WstxStrategy::PskrUse, disabled while the
+             right of Auto, a toggle green while on, WstxHearingFeed::PskrUse, disabled while the
              Settings switch is off; both follow only the pushed station state). (SetEnableTx (#37). Operator
              2026-11-03 ("We have two HALT buttons ... I do not understand why we need a Reply
              and an RR73 and a 73 button there"): RR73 and 73 are gone, Auto Seq sends them
@@ -280,7 +280,7 @@ package WstxQsoPane {
              next" button (e.g. "Send 73 next", the full message as its title) that chooses
              that slot and arms (Reply). It is hidden otherwise and never clipped on the
              1366x768 screen.
-             PSK Reporter lines (#39 strategydef, WstxStrategy::PskrUse): while Use PSK Reporter
+             PSK Reporter lines (#39 strategydef, WstxHearingFeed::PskrUse): while Use PSK Reporter
              is on and a strategy or contest run's own contact has a target, two lines under the
              header, in the message lines' fixed area: "Hears us: <age> ago · <rp> dB", "Hears
              us: no" or "Hears us: unknown"; and "Tx <hz> Hz · open at his end: yes", "· no" or

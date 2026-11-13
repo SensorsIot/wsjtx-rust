@@ -8,6 +8,9 @@ package WstxStrategy {
     private import WstxAutoControl::StrategyRun;
     private import WstxAutoControl::FreeTxSlots;
     private import WstxAutoControl::AutoToggle;
+    private import WstxHearingFeed::HearingFeed;
+    private import WstxOperatingLayout::StrategySelector;
+    private import WstxHearingFeed::PskrUse;
     doc /* Canonical contract of the strategy engine (issue #39, CL-039-01..11 and CL-039-20..23 in
          WstxRequirements; verification TC-039-001..010, TC-039-020..022, TC-039-030..033 and
          the strategydef cases TC-039-040..048, the holdtx cases TC-039-049..051, the quiet
@@ -544,77 +547,6 @@ package WstxStrategy {
              "<call> is ignored (session list)" / "(permanent list)". Display order: rank
              ascending; records without a rank follow in sequence order. */
     }
-    attribute def HearingFeed {
-        attribute heardWindowSeconds : Integer = 600;
-        doc /* The read-only PSK Reporter MQTT feed (#39, the operator's agreement of
-             2026-11-04): whether the current target hears my call and which frequencies it
-             decodes. Everything works without it: no connection is unknown, never an error
-             for the operator, and receive and the 50 ms station step never wait on it (its
-             own thread does all network waiting; the station reads a short-held lock).
-             Broker: mqtt.pskreporter.info port 1884, MQTT 3.1.1 over TLS, trusting only the
-             compiled-in ISRG Root X1 and X2 with the name checked (that chain validated on
-             2026-11-06); a broker moved to another CA shows an error in Settings and needs
-             a new build. The broker's page states no formal terms and no rate limit, says
-             "No account and no polling", is provided by Tom M0LTE, and says the feed
-             originates from Philip Gladstone at pskreporter.info, used with permission.
-             Client id: wstx, my call and 4 characters of the boot id (alphanumeric, at most
-             23 bytes), so that the operator of the broker can identify the station. No
-             user name, password or will. QoS 0, clean session.
-             The station sends only the MQTT handshake, keep-alive pings every 45 s of
-             silence (keep-alive 60 s), its subscriptions and DISCONNECT. Exactly two filters
-             of the filtered feed, never the raw feeds: pskr/filter/v2/+/+/<my call>/+/#
-             and, only while a strategy or contest run's own contact has a DX call and
-             PskrUse is on (not a pounce, an MCP policy run or a manual contact),
-             pskr/filter/v2/+/+/+/<target>/#, replaced when the target changes. A call
-             forms a topic segment only as 1..16 of A-Z 0-9; any other call, such as one
-             with a slash or anything decoded with an MQTT wildcard, gets no subscription and
-             stays unknown (the broker documents no form for it).
-             Reconnect: 5 s after every session end, doubling to 300 s; it starts over only
-             after a session of 60 s, and no change of a setting skips the wait. 90 s without
-             any packet ends a session. A packet over 4096 bytes or outside the subset is a
-             protocol error and ends the session; a payload that is no spot is dropped.
-             A spot: f (Hz), md, b, sc, rc and t_tx (or t when absent), fields of 1..16
-             characters, and rp (the receiver's reported SNR in dB, an integer -99..99;
-             absent or another value: unknown, the spot still counts). The payload decides, not the topic: a spot neither from my call nor
-             to the current target is dropped. A time ahead of the station counts as now.
-             Hearing: the target hears us when a spot from my call to that receiver on the
-             station's mode and band is at most heardWindowSeconds old. 600 s because
-             reporters upload in batches up to about 5 minutes late, so a spot can only be
-             expected within that delay plus one more upload; an older spot no longer
-             describes this path. Newest time per (receiver, band, mode) with that spot's rp,
-             at most 256 entries, the oldest going first.
-             Frequencies the target decodes: spots to the current target from other senders
-             (at most 128, forgotten when the target changes), as audio offset = f minus the
-             radio's confirmed dial of this band, with the parity of their t_tx (the period of
-             the sender's transmission), only for the station's mode and band, at most
-             heardWindowSeconds old, inside the free slot range of the mode, newest first and
-             distinct per (offset, parity), at most 32. A spot on another band or mode is
-             ignored. An unknown dial or band gives none.
-             He reports (#97, #94 "reports its stations"): at least one spot whose receiver is the
-             current target, from any sender (my call included), on the station's band and mode,
-             at most heardWindowSeconds old, whatever its offset (the 32-offset bound and the slot
-             range do not apply to this test). A spot of my call at him (he hears us) is one. With
-             no target subscription yet, or one younger than a spot's upload delay, he reports only
-             when such a spot has arrived: until then the PSK case is no_reports (TxMoveRule).
-             Setting: on by default, because the operator agreed to this read-only
-             subscription; it is the master switch beneath PskrUse. pskr.json {schema_version
-             2, profile_id, enabled, use} beside profile.json (use: PskrUse; a file of
-             schema_version 1 reads with use true and is written as 2 by the next change; a
-             foreign or broken file reads as on with use true, naming invalid_pskr). Off
-             disconnects and forgets everything the feed said. Each change of the switch ends the
-             session of the earlier setting; the status shows connecting while the switch
-             is on and the station waits for its next attempt, and off only when no connection
-             can be made.
-             GET /pskr {v 1, profile_id, boot_id, enabled, use, state off|connecting|connected|error,
-             error (code or null), last_spot_utc_s, storage_error}, read once on each
-             connection; POST /pskr {v 1, profile_id, boot_id, enabled} (operating access,
-             the browser only) saves the switch and POST /pskr/use {v 1, profile_id, boot_id,
-             use} saves PskrUse (exact keys and the refusals of POST /pskr each); a display-subscribed peer receives pskr.state
-             with the same data on a change, for spots at most once per 30 s, and renders the
-             age from station.tick. No polling (WstxStationLink::PushedStationState).
-             Tests: WSTX_PSKR=off opens no connection; WSTX_PSKR=tcp:<loopback>:<port> speaks
-             plain MQTT to a local peer; nothing else can replace the broker. */
-    }
     attribute def StrategyWatchdog {
         doc /* In a strategy or contest run (not a pounce, an MCP policy run, a contact the run
              did not select, or manual operation, which keep the stop at N) the Tx watchdog
@@ -704,37 +636,6 @@ package WstxStrategy {
              WstxOperatingChain::BusyPartner). WD:n is never
              used for it. A manual contact, a pounce and an MCP run have leave null. */
     }
-    attribute def StrategySelector {
-        doc /* The strategy element in the operating view: a selector with None and the
-             names of the built-in and user strategies (grouped Strategy, Contest, "DXCC
-             all" first; the contest group lists the user's contest strategies and the contest in
-             force, "<name> (contest)"; the contest built-ins are chosen in the contest prompt,
-             WstxStrategies::ContestPrompt). Choosing a saved contest strategy: with a contest of its
-             profile in force it sends one PUT with that active and the same contest key; with no
-             contest or another contest in force it sends nothing and opens the contest prompt on
-             its contest with that strategy chosen and the contest's period pre-filled, whose Start
-             sends active and the contest (Cancel keeps the earlier selection, and the selector shows
-             it again). Every other change sends PUT /strategy with the
-             new active and nothing else: it asks nothing. With Auto off it only marks
-             (ValueView); with Auto on the run of the old selection ends and that of the new
-             one starts (AutoToggle); None also turns Auto off. HALT is always on screen. A
-             refused start leaves the selector on the strategy with the reason beside it. The
-             element shows the run state from GET /automation, read only on an automation.state
-             event: "Strategy <name> waiting", "· <call>", "· calling CQ", "· your QSO", a
-             waiting reason, the stop reason, or "Strategy <name> · Auto off" while Auto is off.
-             No client polling. The line is drawn from the current strategy snapshot and the
-             current automation snapshot together at each change of either, so that it never
-             keeps the text of an earlier state (#74, CL-074-01): with None, or no strategy
-             snapshot yet, and no strategy run it shows the WstxOperatingLayout::AutomationIndicator text
-             of the automation snapshot ("Automation idle" without a run). A new boot
-             (WstxStationLink::PushedStationState): when the browser learns a boot_id other
-             than that of its held strategy snapshot, the element drops that snapshot and its
-             verdicts at once and shows what a freshly loaded page shows before its GET
-             /strategy answers (the selector with None only and disabled, Auto disabled with
-             "Strategies are loading", "Automation idle", no marks), then the new boot's
-             snapshot; nothing of the previous boot is drawn, also not with the new boot's
-             automation snapshot. */
-    }
     attribute def StartedQso {
         doc /* Courtesy (#81, operator 2026-11-08: "A started QSO should always be finished out
              of courtesy. If we did not answer, then this does not count as a QSO"; "Auto only
@@ -785,29 +686,6 @@ package WstxStrategy {
              safety edit) or the HALT count has grown. It never arms, selects, answers or
              moves a frequency. The guard ends when the contact is no longer active or is
              replaced, when a new run starts, or on a restart. */
-    }
-    attribute def PskrUse {
-        doc /* Use PSK Reporter (Q17, Q29): a toggle next to Auto (WstxQsoPane::QsoPane),
-             kept across restarts in pskr.json use (HearingFeed), on by default. The Settings
-             switch (HearingFeed enabled) stays the master: with it off the toggle is disabled
-             (title "PSK Reporter is off in Settings") and counts as off. POST /pskr/use saves
-             it; pskr.state pushes it. With it off, runs use no spot: no target subscription, no
-             target hears us or reports (LeaveRule uses n, never m, the contest stays nothing,
-             TxMoveRule's case is no_reports, ValueOrder hears_us ties), and FreeTxSlot ignores his
-             end.
-             While it is on, a strategy or contest run's own contact has a target, the QSO pane
-             shows two lines under the header: "Hears us: <age> ago · <rp> dB" from the newest
-             spot of my call at the target (age from station.tick: "<n> s" below 120 s, else
-             "<n> min" in whole minutes; rp signed as "−12"; "· ? dB" without rp),
-             "Hears us: no" when the feed is connected, the call has a subscription and no such
-             spot is at most 600 s old, and "Hears us: unknown" otherwise; and "Tx <hz> Hz ·
-             open at his end: yes" (no frequency he decodes from my Tx parity lies within 50 Hz
-             of the slot), "· no" (the slot was chosen although one does, FreeTxSlot), or
-             "· unknown" (he has no such spot). The run snapshot (GET /automation, read on
-             automation.state) carries hearing {state heard|no|unknown, reports (he reports,
-             HearingFeed; false also when unknown), spot_utc_s, snr_db} and
-             tx_slot {hz, power_db, his_end yes|no|unknown}; a change of either increments the
-             run revision. The QSO pane's PSK line itself is #95's. */
     }
     attribute def LeaveRule {
         attribute leaveMode : LeaveMode;

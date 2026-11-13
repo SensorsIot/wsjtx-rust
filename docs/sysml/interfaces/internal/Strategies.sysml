@@ -200,6 +200,6 @@ package WstxStrategies {
              strategy and contest. Cancel
              changes nothing. In the selector the contest in force is one more option "<name>
              (contest)"; None or a strategy of class strategy sends a PUT without contest (the selector's other
-             rule, WstxStrategy::StrategySelector, is unchanged). */
+             rule, WstxOperatingLayout::StrategySelector, is unchanged). */
     }
 }

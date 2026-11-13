@@ -120,7 +120,7 @@ package WstxSettings {
              is a setting that restarts nothing (no restart mark). PSK Reporter: the read-only
              feed's switch and status (off; connecting; connected with the age of the last
              spot, or no spot yet; not connected with the error and retrying) from
-             WstxStrategy::HearingFeed; plain setting, saved at once, never an error
+             WstxHearingFeed::HearingFeed; plain setting, saved at once, never an error
              elsewhere on the screen.
              Expert: raw CAT readback, receive job/generation, timing, the explicit receive
              start/stop, the startup resume state of #45 (resume state and last receive

@@ -3287,7 +3287,7 @@ test('TC-081-006 the Auto button says that Auto off finishes a QSO already start
   assert.equal(s.autos.length,0,'the browser sent nothing');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-039-20; TC-039-046 (#39 strategydef, WstxStrategy::PskrUse, WstxQsoPane::QsoPane): the two PSK
+// Proves: CL-039-20; TC-039-046 (#39 strategydef, WstxHearingFeed::PskrUse, WstxQsoPane::QsoPane): the two PSK
 // Reporter lines while Use is on and a run's own contact has a target, with the age from
 // station.tick; hidden otherwise; no polling; the QSO pane keeps its height at 1366x768 and 360x740.
 test('TC-039-046 the PSK Reporter lines in the QSO pane, their age formats, no polling and the fixed pane',{timeout:90000},async t=>{
@@ -3623,7 +3623,7 @@ test('TC-074-001 a page kept open across a station restart shows the new boot st
 // Proves: CL-074-01; TC-074-002 the strategy line with None and no strategy run: drawn from the
 // strategy and automation snapshots together at each change of either; with None and no strategy
 // run it is the automation snapshot's text, "Automation idle" without a run; GET /automation only
-// after automation.state. Expected texts: WstxOperatingLayout::AutomationIndicator, WstxStrategy::StrategySelector.
+// after automation.state. Expected texts: WstxOperatingLayout::AutomationIndicator, WstxOperatingLayout::StrategySelector.
 test('TC-074-002 the strategy line with None and no strategy run shows the automation text',{timeout:60000},async t=>{
   const {page,errors,s,announce,settle,status}=await strategydefStation(t,{width:1366,height:768});
   const reads=()=>s.requests.filter(r=>r==='GET /automation').length;
@@ -3663,7 +3663,7 @@ const heldBoots=page=>page.evaluate(()=>({contact:window.wstxContact?.snapshot()
 // alert; then a new socket whose GET /profile names boot B, with boot B's replies held until the page
 // has been read, and boot A's late replies to GET /strategy and GET /pskr. From then on every station
 // reply and socket message of the page names boot B (the test rewrites the boot id). Oracles: the boot
-// B replies written here, the freshly loaded form (WstxStrategy::StrategySelector and the page's own
+// B replies written here, the freshly loaded form (WstxOperatingLayout::StrategySelector and the page's own
 // initial texts) and a second page on boot B.
 test('TC-074-003 on a new boot every view drops the previous boot at once, discards its late replies and ends as a fresh page',{timeout:240000},async t=>{
   for(const failing of [false,true]){
