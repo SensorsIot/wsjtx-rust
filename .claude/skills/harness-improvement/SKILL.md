@@ -12,5 +12,5 @@ Filesystem path relative to this entrypoint: `../../../harness/core/skills/impro
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=3d70b1bfa70223fcc1b45fa1de97303a31937df86c78bd9e72f99e01a5ab2f76 -->
-<!-- harness-forwarder-v1 sha256=6cbd4fe14d69b83dae7468be0921ae4fa68fdba494aadc70550e52896547ca79 -->
+<!-- canonical-source-sha256=8a68191505086d66a2114b3bae1185dc858cb2cdb977dcfbfc20bcf1842424a6 -->
+<!-- harness-forwarder-v1 sha256=6a05652579d8a6bc8ede4cb43f102058b03f54c044e6e3a2f8ed18e3f80b0177 -->

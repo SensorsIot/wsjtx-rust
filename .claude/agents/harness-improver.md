@@ -25,8 +25,8 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=b4d55f1cf3c377ee97ecf334123ca0015214a4d1048866211057abd656db2f2a -->
 <!-- source harness/lang/rust/standard.md sha256=aca19c7c31f2c63e8f136bbed51cda2bf1566ec5202c347a5aaee5416d998267 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=2470fbf7e4ac771fc9e3b367d38117e1431bf9ec67a2aadd4288d0ff168e12d0 -->
-<!-- harness-role-policy {"commands": ["git( -C \\S+)? (log|show|diff)( .*)?", "gh issue (view|list)( .*)?", "gh pr (view|list)( .*)?", "gh search issues( .*)?", "(python3?|py)(\\.exe)? \\S*merge_queue\\.py history( --flakes| --conflicts)?( --json)?", "gh issue comment [0-9]+ --repo [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+ --body '[^']*'", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|markers( [A-Za-z]+)*)"], "writes": [], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py", "\\s(--repo(?=[\\s=]|$)|-R)(?!\\sSensorsIot/harness(\\s|$))"], "model": {"files": [], "facts": []}} -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=6d2aa5b48eea50d2a59c2251a37ba956e55f366d12e4648c7a7a42c9d0b90d49 -->
+<!-- harness-role-policy {"commands": ["git( -C \\S+)? (log|show|diff)( .*)?", "gh issue (view|list)( .*)?", "gh pr (view|list)( .*)?", "gh search issues( .*)?", "(python3?|py)(\\.exe)? \\S*merge_queue\\.py history( --flakes| --conflicts)?( --json)?", "gh issue comment [0-9]+ --repo [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+ --body '[^']*'", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": [], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py", "\\s(--repo(?=[\\s=]|$)|-R)(?!\\sSensorsIot/harness(\\s|$))"], "model": {"files": [], "facts": []}} -->
 
 You run the [improvement](../../harness/core/skills/improvement/SKILL.md) review of the harness; the
 preloaded skill is the method, and you never review a CR.
@@ -71,8 +71,8 @@ are the coder's above.
 
 ## Limits the role hook enforces
 
-- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `git( -C \S+)? (log|show|diff)( .*)?`, `gh issue (view|list)( .*)?`, `gh pr (view|list)( .*)?`, `gh search issues( .*)?`, `(python3?|py)(\.exe)? \S*merge_queue\.py history( --flakes| --conflicts)?( --json)?`, `gh issue comment [0-9]+ --repo [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+ --body '[^']*'`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints|markers( [A-Za-z]+)*)`
+- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `git( -C \S+)? (log|show|diff)( .*)?`, `gh issue (view|list)( .*)?`, `gh pr (view|list)( .*)?`, `gh search issues( .*)?`, `(python3?|py)(\.exe)? \S*merge_queue\.py history( --flakes| --conflicts)?( --json)?`, `gh issue comment [0-9]+ --repo [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+ --body '[^']*'`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})`
 - Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`, `\s(--repo(?=[\s=]|$)|-R)(?!\sSensorsIot/harness(\s|$))`
 - Files you may write, relative to the project unless absolute: none
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=d25dc2350f8594677b395d271d187745a9bd76303d83832851fbffaa7bf09be4 -->
+<!-- harness-agent-v1 sha256=c31064bd7b898bbf53dc82fe92bc9a752a6c6c7bf147f30b7281251abfc01f41 -->
