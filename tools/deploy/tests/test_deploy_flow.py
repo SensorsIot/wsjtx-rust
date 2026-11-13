@@ -62,7 +62,7 @@ function gh {
     $n = $args[2]; $body = $args[[array]::IndexOf($args, '--body') + 1]; $repo = $args[[array]::IndexOf($args, '--repo') + 1]
     [IO.File]::WriteAllText((Join-Path $env:FLOW_POSTS "$n.txt"), $body); Flow "posted $n repo=$repo"; $global:LASTEXITCODE = 0; return }
   throw "unexpected gh $args" }
-function python { Flow "python $($args -join ' ')"; '#171 landed -> installed'; '#23: not moved, at implementing'; $global:LASTEXITCODE = 0 }
+function python { Flow "python $($args -join ' ')"; 'cr state: #171 landed -> installed'; 'cr state: #23: not moved, at implementing'; $global:LASTEXITCODE = 0 }
 function powershell.exe {
   $joined = $args -join ' '
   if ($joined -like '*station-probe.ps1*') { Flow "probe lock=$(Lock-State) $joined"; $env:FLOW_PROBE_LINE; $global:LASTEXITCODE = [int]$env:FLOW_PROBE_RC; return }
