@@ -31,14 +31,14 @@ package WstxContact {
          worked-before determination, the contact log and operator display items.
          Declared coverage is target; nothing here is an execution result.
 
-         Ownership. WstxArchitecture::QsoAndLogging owns contact identity, the sequence
+         Ownership. WstxQsoPart::QsoAndLogging owns contact identity, the sequence
          state, next-message choice, completion and the per-profile log. It never keys
          PTT, opens audio or touches a radio. It consumes the TARGET #9 slice B consumer
          contract in WstxTransmit (TransmitArming, TransmitRequest, TransmitOutcome,
          HaltTransmit, SetTune) over the qso.transmit -> transmit.contacts connection of
          WstxArchitecture::StationProcess. #9 slice B owns the armed state, halt, PTT
          and pending-request replacement; TransmitService alone holds the station's
-         explicit transmit authority (WstxArchitecture::RadioAuthority) and plans starts
+         explicit transmit authority (WstxRadioControlPart::RadioAuthority) and plans starts
          with WstxTransmitSchedule::PlanTransmitStart. #9 slice B is delivered (WstxTransmit
          transmit owner); the engine consumes it in-process, so a station with transmit
          capability and a current CL-022 grant can arm through Enable Tx.
@@ -257,7 +257,7 @@ package WstxContact {
         enum tx_watchdog; enum operator_required; enum clock_not_synchronized;
     }
 
-    dependency contactOwner from Contact to WstxArchitecture::QsoAndLogging;
+    dependency contactOwner from Contact to WstxQsoPart::QsoAndLogging;
     dependency busyPartnerClause from BusyPartner to WstxContact::'CL-097-06';
     requirement CompletedContactIdentity {
         attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::target;

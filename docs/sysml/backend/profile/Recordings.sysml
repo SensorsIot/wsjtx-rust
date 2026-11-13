@@ -19,7 +19,9 @@ package WstxProfileRecordings {
     private import WstxRecordingTransfer::RecordingSnapshot;
     private import WstxRecordingTransfer::ImportState;
     private import WstxRecordingTransfer::RecordingLimits;
-    doc /* The recordings function of the profile part (WstxArchitecture::RecordedSource,
+    private import WstxAudioStreams::ReceiveSamples;
+    private import WstxRecordingTransfer::RecordingTransfer;
+    doc /* The recordings function of the profile part (WstxProfileRecordings::RecordedSource,
          deployed as physicalStation::backend::stations::profile::recordings): one imported
          recording per profile, kept with its metadata and manifest in the profile directory
          (WstxContext::OutsideThing::profileFiles) across restarts, and its samples
@@ -334,4 +336,12 @@ package WstxProfileRecordings {
     }
     dependency CL_006_01_verified_by_TC_018_001 from 'CL-006-01' to 'TC-018-001';
     dependency CL_006_01_verified_by_TC_018_002 from 'CL-006-01' to 'TC-018-002';
+    part def RecordedSource {
+        attribute storedMetadata : WstxProfileRecordings::RecordingMetadata[*];
+        attribute storedManifests : WstxProfileRecordings::RecordingManifest[*];
+        doc /* Validated profile-owned recording, selected by identity rather than arbitrary
+             client paths. No live audio device is required for this input. */
+        port upload : ~RecordingTransfer;
+        port samples : ReceiveSamples;
+    }
 }

@@ -298,7 +298,7 @@ package WstxQsoTransmit {
              ends Tune through #9; the remaining seconds are shown on the Tune control. */
     }
     dependency transmitBoundary from TransmitSubmission to WstxOperatingChain::TransmitRequest;
-    dependency transmitOwner from TransmitSubmission to WstxArchitecture::TransmitService;
+    dependency transmitOwner from TransmitSubmission to WstxTransmitPart::TransmitService;
     dependency transmitPromise from TxWatchdog to WstxRequirements::'FR-008';
     dependency busyWatchdogClause from TxWatchdog to WstxContact::'CL-097-06';
 }

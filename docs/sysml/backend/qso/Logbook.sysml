@@ -596,7 +596,7 @@ package WstxLogbook {
              fields; ExportAdi carries them). Read-only inspection; no edit or
              delete. */
     }
-    dependency qsoSettingsOwner from QsoSettingsFile to WstxArchitecture::QsoAndLogging;
+    dependency qsoSettingsOwner from QsoSettingsFile to WstxQsoPart::QsoAndLogging;
     dependency qsoSettingsClause from QsoSettingsFile to WstxLogbook::'CL-110-01';
     dependency logPromise from LogRecord to WstxRequirements::'FR-011';
     dependency directLogClause from DirectLog to WstxLogbook::'CL-010-04';

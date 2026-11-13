@@ -23,7 +23,7 @@ package WstxModemDecode {
     private import WstxLiveReceive::'CL-007-05';
     private import WstxOperatingLayout::'CL-057-01';
     private import WstxOperatingLayout::'TC-057-003';
-    doc /* The decode function of the modes part (WstxArchitecture::ModeFunctions). A window
+    doc /* The decode function of the modes part (WstxModesPart::ModeFunctions). A window
          of canonical 12 kHz samples with its mode and a-priori context goes in; the records
          of the frames decoded in it come out. The payload, channel code and waveform are
          those of the published protocol; this package states the product's choices over

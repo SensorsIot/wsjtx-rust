@@ -1,6 +1,5 @@
 package WstxRadioProperties {
     private import ScalarValues::*;
-    private import WstxArchitecture::Radio;
     private import WstxRadioControl::RadioStateOutcome;
     private import WstxRadioControl::RadioSettingsOutcome;
 
@@ -1264,4 +1263,25 @@ package WstxRadioProperties {
          complete vendor-extension coverage, no raw vendor/API/driver inventory. Action-like
          SEND_MORSE/SEND_VOICE_MEM are operation availability, never observed Boolean state.
          Future actions/workflows need implementation/acceptance; this model is no verdict. */
+    part def Radio {
+        attribute modelId : String[0..1];
+        attribute physicalIdentity : String[0..1];
+        attribute capabilities : RadioCapabilities[0..1];
+        attribute tuning : RadioTuningValues[0..1];
+        attribute transmitter : RadioTransmitterSettings[*];
+        attribute receiver : RadioReceiverSettings[*];
+        attribute audioControls : RadioAudioSettings[*];
+        attribute keyer : RadioKeyerSettings[*];
+        attribute tones : RadioToneSettings[*];
+        attribute scope : RadioScopeSettings[*];
+        attribute meters : RadioMeters[*];
+        attribute frontPanel : RadioFrontPanelValues[*];
+        attribute scanning : RadioScanningValues[*];
+        attribute digital : RadioDigitalValues[*];
+        attribute memories : RadioMemoryValues[0..1];
+        attribute spectrum : RadioSpectrum[*];
+        doc /* Physical model identity and sparse exposed facts are navigable from the
+             selected radio. No catalogue/driver-management service is implied. Observed
+             controls, meters and scope remain distinct from requested settings. */
+    }
 }

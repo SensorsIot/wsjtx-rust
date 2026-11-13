@@ -268,8 +268,8 @@ package WstxUdp {
              one; an unchanged target always keeps its socket, schema and status). */
     }
 
-    dependency servicePlacement from OutboundRules to WstxArchitecture::StationService;
-    dependency profilePlacement from UdpConfiguration to WstxArchitecture::PersistedProfile;
+    dependency servicePlacement from OutboundRules to WstxStationPart::StationService;
+    dependency profilePlacement from UdpConfiguration to WstxProfiles::PersistedProfile;
     dependency logPath from OutboundRules to WstxLogbook::SaveContact;
     dependency directLogPath from OutboundRules to WstxLogbook::DirectLog;
     dependency wireClause from UdpWire to WstxUdp::'CL-040-01';

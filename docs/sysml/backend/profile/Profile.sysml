@@ -32,7 +32,11 @@ package WstxProfiles {
     private import WstxProfileAccess::ProfileDocument;
     private import WstxProfileAccess::SaveProfile;
     private import WstxProfileAccess::HttpProfilePut;
-    doc /* The profile part (WstxArchitecture::PersistedProfile, deployed as
+    private import WstxProfileAccess::ProfileAccess;
+    private import WstxAudioStreams::ReceiveSamples;
+    private import WstxProfileRecordings::RecordedSource;
+    private import WstxRecordingTransfer::RecordingTransfer;
+    doc /* The profile part (WstxProfiles::PersistedProfile, deployed as
          physicalStation::backend::stations::profile): the saved profile of one station, its
          creation, its launch with ownership, its save through GET and PUT /profile, its stop
          and its recovery. Its directory is the outside thing
@@ -290,7 +294,7 @@ package WstxProfiles {
         to WstxArchitecture::physicalStation::backend::stations::profile;
     dependency stationValidationOwner from saveProfile
         to WstxArchitecture::physicalStation::backend::stations::station;
-    dependency createOwner from createProfile to WstxArchitecture::PersistedProfile;
+    dependency createOwner from createProfile to WstxProfiles::PersistedProfile;
     dependency lifecycleOwner from stopOrRecover
         to WstxArchitecture::physicalStation::backend::stations;
     dependency internalRequestRefinement from SaveProfile to WstxProfileAccess::ProfileRequest;
@@ -590,4 +594,20 @@ package WstxProfiles {
     dependency CL_044_05_to_FR_016 from 'CL-044-05' to 'FR-016';
     dependency CL_044_05_verified_by_TC_044_002 from 'CL-044-05' to 'TC-044-002';
     dependency CL_044_05_verified_by_TC_044_004 from 'CL-044-05' to 'TC-044-004';
+    part def PersistedProfile {
+        attribute configuration : WstxProfileAccess::ProfileDocument;
+        doc /* Backend-owned saved configuration uses exactly the canonical profile schema.
+             Live operating selection, browser preference and runtime secrets are separate. */
+        doc /* Bootstrap/profile owns selection, stable identity, endpoints, exclusive ownership, validation and storage; not DSP or browser state. */
+        doc /* Exactly one explicitly selected profile per process owns stable identity,
+             configuration, contacts and recordings. WstxProfiles owns its schema,
+             persistence, validation and session behaviour. */
+        port context : ~ProfileAccess;
+        port contacts : ~ProfileAccess;
+        port upload : ~RecordingTransfer;
+        port recordedSamples : ReceiveSamples;
+        part recordings : RecordedSource;
+        connection storedUpload connect upload to recordings.upload;
+        connection storedSamples connect recordings.samples to recordedSamples;
+    }
 }

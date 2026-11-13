@@ -31,6 +31,22 @@ package WstxArchitecture {
     private import WstxModeProcessing::ReceiveProcessing;
     private import WstxModeProcessing::EncodeProcessing;
     private import WstxAudioStreams::AudioExchange;
+    private import WstxBrowserClientPart::BrowserClient;
+    private import WstxRadioControlPart::RadioAuthority;
+    private import WstxAudioPart::AudioDeviceAdapter;
+    private import WstxAudioPart::AudioInterface;
+    private import WstxMcpPart::McpAdapter;
+    private import WstxModesPart::ModeFunctions;
+    private import WstxProfiles::PersistedProfile;
+    private import WstxQsoPart::QsoAndLogging;
+    private import WstxRadioControlPart::RadioBinding;
+    private import WstxRadioControlPart::RadioControlInterface;
+    private import WstxReceivePart::ReceivePipeline;
+    private import WstxRadioControlPart::RustRadioDriver;
+    private import WstxStationPart::StationService;
+    private import WstxTransmitPart::TransmitService;
+    private import WstxWebPart::WebAdapter;
+    private import WstxProfileRecordings::RecordedSource;
     doc /* Product structure: one selected-radio deployment context, its frontend and backend
          containers of the product's functions, software owners and typed exchanges.
          The frontend may run locally on the backend computer or remotely over the
@@ -65,44 +81,10 @@ package WstxArchitecture {
     view physicalInterconnection : StandardViewDefinitions::InterconnectionView {
         expose physicalStation::*;
     }
-    part def BrowserClient {
-        attribute localDisplayLevels : WstxSignalArea::DisplayLevels;
-        attribute localDisplayPreference : WstxSettings::BrowserDisplayPreference;
-        attribute localActivityOrdering : WstxOperatingLayout::ActivityOrdering;
-        attribute observedPresentation : WstxOperatingLayout::OperatingPresentation;
-        attribute receivePresentation : WstxSignalArea::ReceivePresentation;
-        attribute browserWaterfallSpanHz : FrequencyRange;
-        doc /* Presentation and preferences are frontend-owned. Waterfall frequency span
-             is independent of physical receiver filter width and the radio's own scope. */
-        doc /* Own presentation/local filtering/color, pending/stale state and requests; not authoritative radio state, timing-critical modulation or transmit authority. */
-        doc /* Holds station state from one snapshot plus the station's pushed events and does not poll it (WstxStationLink::PushedStationState, the governing rule of this exchange). */
-        port station : BrowserExchange;
-    }
     part def Frontend {
         doc /* Deployment container only; station exchanges terminate
              directly on selected contained BrowserClient instances. */
         part browsers[*] : BrowserClient;
-    }
-    part def Radio {
-        attribute modelId : String[0..1];
-        attribute physicalIdentity : String[0..1];
-        attribute capabilities : RadioCapabilities[0..1];
-        attribute tuning : RadioTuningValues[0..1];
-        attribute transmitter : RadioTransmitterSettings[*];
-        attribute receiver : RadioReceiverSettings[*];
-        attribute audioControls : RadioAudioSettings[*];
-        attribute keyer : RadioKeyerSettings[*];
-        attribute tones : RadioToneSettings[*];
-        attribute scope : RadioScopeSettings[*];
-        attribute meters : RadioMeters[*];
-        attribute frontPanel : RadioFrontPanelValues[*];
-        attribute scanning : RadioScanningValues[*];
-        attribute digital : RadioDigitalValues[*];
-        attribute memories : RadioMemoryValues[0..1];
-        attribute spectrum : RadioSpectrum[*];
-        doc /* Physical model identity and sparse exposed facts are navigable from the
-             selected radio. No catalogue/driver-management service is implied. Observed
-             controls, meters and scope remain distinct from requested settings. */
     }
     part def Backend {
         doc /* The variable station population has no architecture-imposed numeric limit. */
@@ -124,191 +106,6 @@ package WstxArchitecture {
         ref part browser : BrowserClient :> physicalStation.frontend.browsers;
         ref part station : StationProcess :> physicalStation.backend.stations;
         connection browserStation connect browser.station to station.web.client;
-    }
-    part def RadioBinding {
-        doc /* The station's selected radio resource. Persisted intent resolves it at
-             connection, and every control request carries it as resource context. The
-             radio itself is an outside thing (OutsideThing catRadio, flexRadio).
-             WstxFlexSession::NativeFlexWireSubset settles native slice and handle
-             reconciliation; actual radio capacity is reported at runtime. */
-    }
-    part def RadioAuthority {
-        doc /* One effective authority for constrained resources and transmit access across
-             all station/backend choices. This is not a new process placement decision. */
-        port requests : ~RadioControl;
-        port authorized : RadioControl;
-        binding authorizedContext bind authorized.request = requests.request;
-        binding returnedContext bind requests.outcome = authorized.outcome;
-    }
-    part def StationService {
-        attribute currentOperatingSelection : WstxOperatingReceive::WireSelection;
-        attribute resolvedOperatingSelection : WstxOperatingReceive::Selection[0..1];
-        attribute activeSelectionOperation : WstxOperatingReceive::OperationRecord[0..1];
-        attribute snapshotIdentity : WstxOperatingReceive::SnapshotIdentity;
-        attribute preferred160m : WstxOperatingReceive::PreferredBandEntry = WstxOperatingReceive::preferred160m;
-        attribute preferred80m : WstxOperatingReceive::PreferredBandEntry = WstxOperatingReceive::preferred80m;
-        attribute preferred60m : WstxOperatingReceive::PreferredBandEntry = WstxOperatingReceive::preferred60m;
-        attribute preferred40m : WstxOperatingReceive::PreferredBandEntry = WstxOperatingReceive::preferred40m;
-        attribute preferred30m : WstxOperatingReceive::PreferredBandEntry = WstxOperatingReceive::preferred30m;
-        attribute preferred20m : WstxOperatingReceive::PreferredBandEntry = WstxOperatingReceive::preferred20m;
-        attribute preferred17m : WstxOperatingReceive::PreferredBandEntry = WstxOperatingReceive::preferred17m;
-        attribute preferred15m : WstxOperatingReceive::PreferredBandEntry = WstxOperatingReceive::preferred15m;
-        attribute preferred12m : WstxOperatingReceive::PreferredBandEntry = WstxOperatingReceive::preferred12m;
-        attribute preferred10m : WstxOperatingReceive::PreferredBandEntry = WstxOperatingReceive::preferred10m;
-        attribute preferred6m : WstxOperatingReceive::PreferredBandEntry = WstxOperatingReceive::preferred6m;
-        attribute preferred4m : WstxOperatingReceive::PreferredBandEntry = WstxOperatingReceive::preferred4m;
-        attribute preferredTableSourceCommit : String = WstxOperatingReceive::preferredTableSourceCommit;
-        attribute preferredTableSourcePath : String = WstxOperatingReceive::preferredTableSourcePath;
-        attribute preferredTableSourceSha256 : String = WstxOperatingReceive::preferredTableSourceSha256;
-        attribute minimumSelectionHz : Integer = WstxOperatingReceive::receiveSelectionMinimumHz;
-        attribute maximumSelectionHz : Integer = WstxOperatingReceive::receiveSelectionMaximumHz;
-        doc /* Mode, band and nominal frequency are live boot/session state, not saved
-             profile fields. Preferred entries reference the canonical twelve-band table;
-             they do not confer transmit permission or confirm actual radio state. */
-        doc /* Own authoritative station state, operations/jobs/transitions and authorization; not HTTP/MCP parsing or device protocol syntax. One owner validates profile/source/generation and rejects obsolete results. */
-        doc /* The WSJT-X UDP interface (#40, WstxUdp) is a station-owned adapter of this
-             service: it observes station state and results and sends to its configured
-             targets; send-only, it enters no command into the station (operator 2026-11-06)
-             and owns no station state, modem or transmit authority. */
-        doc /* Station-owned validation, state, jobs and operation authority. This owner
-             validates uploads before handing them to its selected profile's storage. */
-        port webOperations : ~StationOperations;
-        port mcpOperations : ~StationOperations;
-        port profile : ProfileAccess;
-        port receive : StationOperations;
-        port transmit : StationOperations;
-        port qso : StationOperations;
-        port control : RadioControl;
-        port upload : ~RecordingTransfer;
-        port acceptedRecording : RecordingTransfer;
-        port audioStatus : ~AudioStatus;
-    }
-    part def WebAdapter {
-        attribute privateRuntimeInputs : WstxStationLink::RuntimeInputs;
-        attribute effectiveEndpoint : WstxStationProtocol::EndpointPolicy;
-        doc /* Runtime inputs and effective transport/authentication settings are distinct
-             from saved endpoint intent. No credential values are instantiated here. */
-        doc /* Own embedded client, HTTP/file transfer/versioned WebSocket, transport authentication and Origin checks; no second QSO/modem engine or direct radio writes. */
-        doc /* WstxStationProtocol owns shared authentication, Origin and HTTP/WebSocket
-             semantics. WstxHttpContentCoding::HttpContentCodingBoundary refines bounded
-             GET coding after handler/auth/errors/caps, with one dispatch and unchanged
-             JSON/WebSocket identity; it creates no second transport authority. */
-        port client : ~BrowserExchange;
-        port station : StationOperations;
-        port recording : RecordingTransfer;
-    }
-    part def McpAdapter {
-        doc /* Own protocol validation/caller context and configured station-selection/automation requests. No independent station state, backend access or separate transmit permission; same station operations and safety policy as browser. Delivered (#12) as the station's Streamable HTTP endpoint mapping each tool onto one existing station route in-process (WstxMcpInterface::ToolCatalog); the configured automation run is owned with the contact engine (WstxMcp::OperatingAutomation) and reaches it only through ContactCommand. */
-        port station : StationOperations;
-    }
-    part def PersistedProfile {
-        attribute configuration : WstxProfileAccess::ProfileDocument;
-        doc /* Backend-owned saved configuration uses exactly the canonical profile schema.
-             Live operating selection, browser preference and runtime secrets are separate. */
-        doc /* Bootstrap/profile owns selection, stable identity, endpoints, exclusive ownership, validation and storage; not DSP or browser state. */
-        doc /* Exactly one explicitly selected profile per process owns stable identity,
-             configuration, contacts and recordings. WstxProfiles owns its schema,
-             persistence, validation and session behaviour. */
-        port context : ~ProfileAccess;
-        port contacts : ~ProfileAccess;
-        port upload : ~RecordingTransfer;
-        port recordedSamples : ReceiveSamples;
-        part recordings : RecordedSource;
-        connection storedUpload connect upload to recordings.upload;
-        connection storedSamples connect recordings.samples to recordedSamples;
-    }
-    part def RecordedSource {
-        attribute storedMetadata : WstxProfileRecordings::RecordingMetadata[*];
-        attribute storedManifests : WstxProfileRecordings::RecordingManifest[*];
-        doc /* Validated profile-owned recording, selected by identity rather than arbitrary
-             client paths. No live audio device is required for this input. */
-        port upload : ~RecordingTransfer;
-        port samples : ReceiveSamples;
-    }
-    part def ReceivePipeline {
-        doc /* Own sample-window handling, normalization/resampling and bounded jobs/spectrum; not file dialogs, HTTP, CAT or UI rendering. PCM-unit mapping is not gain control and native conversion has one owner. */
-        doc /* One shared native-format/rate conversion owner feeds canonical samples;
-             no source-specific modem resamplers. PCM unit mapping differs from AGC
-             and modem normalization. WstxRecordingReceive owns recorded spectrum,
-             shared RustFFT 6.4.1 ordering/scaling and buffer obligations;
-             WstxModemDecode owns mode window/history/decoder quanta and independent
-             vectors; WstxRadioIO owns live adapter/conversion semantics. */
-        port jobs : ~StationOperations;
-        port audio : ~ReceiveSamples;
-        port processing : ReceiveProcessing;
-    }
-    part def ModeFunctions {
-        attribute currentReceiveSettings : WstxModeProcessing::Settings[0..1];
-        attribute intendedModeCapabilities : WstxRequirements::ModeCapability[*];
-        doc /* Pure protocol/symbol/waveform and decoding calculations with independent vectors; no filesystem/hardware/network/wall-clock dependency. */
-        doc /* Pure receive calculations and encoding/waveform generation depend on no
-             device, filesystem, wall-clock or network. WstxModemDecode and
-             WstxOfflineDecode own concrete mode contracts and status; hardware format
-             adaptation and common rate conversion remain outside this boundary. */
-        port receive : ~ReceiveProcessing;
-        port encode : ~EncodeProcessing;
-    }
-    part def TransmitService {
-        doc /* Own UTC scheduling, transmit state, audio/PTT coordination and priority halt; no browser timer or visualization-queue dependency. Defaults UNARMED on startup. Halt never waits for decode, receive cancellation or congestion. Backend/device loss and authority-expiry policy are settled before hardware TX and cannot be replaced in MCP. */
-        doc /* UTC scheduling, operation authority and audio/PTT coordination reuse the
-             common resource context. WstxTransmit::TransmitSafetyPolicy owns
-             unresolved deadlines/backend-loss/expiry policy before hardware TX;
-             WstxRequirements::ProcessingAndHaltOwnership separates priority halt from
-             receive completion/cancellation and optional display congestion. */
-        port operations : ~StationOperations;
-        port contacts : ~StationOperations;
-        port encode : EncodeProcessing;
-        port audio : AudioExchange;
-        port control : RadioControl;
-        doc /* contacts receives QsoAndLogging's arm/disarm, TransmitRequest and halt
-             requests and returns TransmitOutcome (WstxTransmit #9 slice B consumer
-             contract, target). It is the only RF path of the contact workflow. */
-    }
-    part def QsoAndLogging {
-        doc /* Own exchange/completion/cancel and durable contacts; never bypass transmit authority or another profile storage. Stable completion identity and explicit persisted/unsaved outcome prevent silent duplicate contacts when completion replays. Concrete log schema/compatibility remains a target decision. */
-        port operations : ~StationOperations;
-        port contacts : ProfileAccess;
-        port transmit : StationOperations;
-        doc /* transmit carries contact transmissions only to TransmitService (WstxContact);
-             no PTT, audio or radio port exists here. */
-    }
-    part def AudioInterface {
-        attribute configuredIntent : WstxAudio::DeviceIntent;
-        attribute observedState : WstxAudio::AudioState;
-        attribute observedNativeFormat : WstxAudioStreams::NativeFormat[0..1];
-        attribute observedNativeRateHz : Integer[0..1];
-        attribute observedNativeChannels : Integer[0..1];
-        attribute observedNativeEndpointId : String[0..1];
-        doc /* Own sources/sinks, device/channel sample movement, metadata and device failures. No CAT/PTT, mode decoding or QSO decisions. CAT-disabled audio and control without an open audio device remain independent. */
-        doc /* Independent samples, timing and failures; CAT-disabled live input and stored
-             recordings use the same receive boundary. Does not issue control commands. */
-        port status : AudioStatus;
-        port recorded : ~ReceiveSamples;
-        port receive : ReceiveSamples;
-        port transmit : ~AudioExchange;
-        port backend : AudioExchange;
-    }
-    part def RadioControlInterface {
-        attribute configuredIntent : WstxRadioControl::ControlSelection;
-        attribute observedState : WstxRadioIO::CatState;
-        attribute currentFacts : WstxRadioFacts::RadioFacts[0..1];
-        attribute frequencyProvenance : WstxRadioFacts::FactProvenance;
-        attribute modeProvenance : WstxRadioFacts::FactProvenance;
-        attribute dataProvenance : WstxRadioFacts::FactProvenance;
-        doc /* Own selected capabilities, typed CAT/control/PTT/status/resource claims; not audio samples/sound devices, browser/MCP policy or duplicate modem logic. */
-        doc /* Capabilities, CAT/PTT/status, independent failures and resource claims. No
-             samples; control implementation coverage does not limit physical radio capabilities. */
-        port station : ~RadioControl;
-        port transmit : ~RadioControl;
-        port backend : RadioControl;
-    }
-    part def AudioDeviceAdapter {
-        port host : ~AudioExchange;
-    }
-    part def RustRadioDriver {
-        attribute connectionSettings : WstxRadioControl::ControlSelection;
-        attribute observed : WstxRadioControl::RadioObservation[0..1];
-        port authorized : ~RadioControl;
     }
     part def StationProcess {
         part profile : PersistedProfile;
@@ -384,15 +181,6 @@ package WstxArchitecture {
     dependency htmlPromise from WebAdapter to WstxRequirements::'FR-019';
     dependency mcpPromise from McpAdapter to WstxRequirements::'FR-020';
     dependency linkPromise from BrowserAttachment to WstxRequirements::'FR-021';
-    package ImplementedStatusSlice {
-        doc /* Implemented status/TLS subset alongside WstxProfiles profile functionality.
-             The target deployment does not assert full radio/modem or MCP delivery;
-             detailed coverage remains in WstxRequirements and the owning packages. */
-        part def StatusServer;
-        dependency statusScope from StatusServer to WstxStationProtocol::'CL-003-01';
-        dependency statusProtocol from StatusServer to WstxStationProtocol::'CL-003-02';
-    }
-    dependency coordinatedReceivePromise from ReceivePipeline to WstxOperatingReceive::'CL-008-07';
     doc /* WstxOperatingReceive refines coordinated receive controls on the existing
          receive and radio authority path: single-owner release/setup/readback/restart
          and cancellation fences. It introduces no additional station/backend/physical

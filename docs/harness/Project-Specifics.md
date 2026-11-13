@@ -1262,11 +1262,11 @@ action def StandardContact {
     @DetailTests { tests = "server/src/contact_tests.rs"; covers = "the engine on a virtual clock"; }
 }
 requirement 'CL-010-18' {                      // takes server/src/contact.rs
-    subject qso : WstxArchitecture::QsoAndLogging;
+    subject qso : WstxQsoPart::QsoAndLogging;
     @Status { build = ImplementationState::implemented; }
 }
 verification def EngineCase {
-    subject qso : WstxArchitecture::QsoAndLogging;
+    subject qso : WstxQsoPart::QsoAndLogging;
     attribute level : Integer = 2;
     attribute location : String = "Windows development PC, isolated, no RF";
     @Automation { run = AutomationState::implemented; }

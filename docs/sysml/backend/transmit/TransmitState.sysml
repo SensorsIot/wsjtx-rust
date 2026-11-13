@@ -66,7 +66,7 @@ package WstxTransmit {
     attribute def TransmitAuthority {
         attribute armedOnStartup : Boolean = false;
         attribute persisted : Boolean = false;
-        doc /* The station's explicit transmit authority (WstxArchitecture::RadioAuthority),
+        doc /* The station's explicit transmit authority (WstxRadioControlPart::RadioAuthority),
              evaluated at Arm, at every request admission, at keying and on every
              owner step. Capability: unsupported unless the saved profile has
              control.mode cat, control.ptt cat and an exact audio.output_device (a
@@ -160,7 +160,7 @@ package WstxTransmit {
         attribute lastDisarmCause : DisarmCause = DisarmCause::startup;
         attribute lastArmCause : ArmCause[0..1];
         doc /* The station's one transmit state (CL-111-01), on (armed) or off (disarmed),
-             owned by WstxArchitecture::TransmitService; off at startup and after every
+             owned by WstxTransmitPart::TransmitService; off at startup and after every
              DisarmCause. lastArmCause is who switched it on last (operator, or auto for
              a run or an MCP client) and is absent until the first switch-on of a boot.
              Arm/Disarm are requests from QsoAndLogging (the start actions

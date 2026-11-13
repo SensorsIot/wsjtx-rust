@@ -58,25 +58,25 @@
   },
   "parts": {
     "physicalStation.backend": {"population": "1..1", "type": "WstxArchitecture::Backend"},
-    "physicalStation.backend.radioAuthority": {"population": "1..1", "type": "WstxArchitecture::RadioAuthority"},
+    "physicalStation.backend.radioAuthority": {"population": "1..1", "type": "WstxRadioControlPart::RadioAuthority"},
     "physicalStation.backend.stations": {"population": "0..*", "type": "WstxArchitecture::StationProcess"},
-    "physicalStation.backend.stations.audio": {"population": "1..1", "type": "WstxArchitecture::AudioInterface"},
-    "physicalStation.backend.stations.audioAdapter": {"population": "1..1", "type": "WstxArchitecture::AudioDeviceAdapter"},
-    "physicalStation.backend.stations.catAdapter": {"population": "1..1", "type": "WstxArchitecture::RustRadioDriver"},
-    "physicalStation.backend.stations.mcp": {"population": "1..1", "type": "WstxArchitecture::McpAdapter"},
-    "physicalStation.backend.stations.modes": {"population": "1..1", "type": "WstxArchitecture::ModeFunctions"},
-    "physicalStation.backend.stations.profile": {"population": "1..1", "type": "WstxArchitecture::PersistedProfile"},
-    "physicalStation.backend.stations.profile.recordings": {"population": "1..1", "type": "WstxArchitecture::RecordedSource"},
-    "physicalStation.backend.stations.qso": {"population": "1..1", "type": "WstxArchitecture::QsoAndLogging"},
-    "physicalStation.backend.stations.radioBinding": {"population": "1..1", "type": "WstxArchitecture::RadioBinding"},
-    "physicalStation.backend.stations.radioControl": {"population": "1..1", "type": "WstxArchitecture::RadioControlInterface"},
-    "physicalStation.backend.stations.receive": {"population": "1..1", "type": "WstxArchitecture::ReceivePipeline"},
-    "physicalStation.backend.stations.station": {"population": "1..1", "type": "WstxArchitecture::StationService"},
-    "physicalStation.backend.stations.transmit": {"population": "1..1", "type": "WstxArchitecture::TransmitService"},
-    "physicalStation.backend.stations.web": {"population": "1..1", "type": "WstxArchitecture::WebAdapter"},
+    "physicalStation.backend.stations.audio": {"population": "1..1", "type": "WstxAudioPart::AudioInterface"},
+    "physicalStation.backend.stations.audioAdapter": {"population": "1..1", "type": "WstxAudioPart::AudioDeviceAdapter"},
+    "physicalStation.backend.stations.catAdapter": {"population": "1..1", "type": "WstxRadioControlPart::RustRadioDriver"},
+    "physicalStation.backend.stations.mcp": {"population": "1..1", "type": "WstxMcpPart::McpAdapter"},
+    "physicalStation.backend.stations.modes": {"population": "1..1", "type": "WstxModesPart::ModeFunctions"},
+    "physicalStation.backend.stations.profile": {"population": "1..1", "type": "WstxProfiles::PersistedProfile"},
+    "physicalStation.backend.stations.profile.recordings": {"population": "1..1", "type": "WstxProfileRecordings::RecordedSource"},
+    "physicalStation.backend.stations.qso": {"population": "1..1", "type": "WstxQsoPart::QsoAndLogging"},
+    "physicalStation.backend.stations.radioBinding": {"population": "1..1", "type": "WstxRadioControlPart::RadioBinding"},
+    "physicalStation.backend.stations.radioControl": {"population": "1..1", "type": "WstxRadioControlPart::RadioControlInterface"},
+    "physicalStation.backend.stations.receive": {"population": "1..1", "type": "WstxReceivePart::ReceivePipeline"},
+    "physicalStation.backend.stations.station": {"population": "1..1", "type": "WstxStationPart::StationService"},
+    "physicalStation.backend.stations.transmit": {"population": "1..1", "type": "WstxTransmitPart::TransmitService"},
+    "physicalStation.backend.stations.web": {"population": "1..1", "type": "WstxWebPart::WebAdapter"},
     "physicalStation.browserAttachments": {"population": "0..*", "type": "WstxArchitecture::BrowserAttachment"},
     "physicalStation.frontend": {"population": "1..1", "type": "WstxArchitecture::Frontend"},
-    "physicalStation.frontend.browsers": {"population": "0..*", "type": "WstxArchitecture::BrowserClient"}
+    "physicalStation.frontend.browsers": {"population": "0..*", "type": "WstxBrowserClientPart::BrowserClient"}
   },
   "ports": {
     "physicalStation.backend.radioAuthority.authorized": "WstxRadioControl::RadioControl",
@@ -129,8 +129,8 @@
     "physicalStation.frontend.browsers.station": "WstxStationLink::BrowserExchange"
   },
   "references": {
-    "physicalStation.backend.stations.authority": {"population": "1..1", "target": "physicalStation.backend.radioAuthority", "type": "WstxArchitecture::RadioAuthority"},
-    "physicalStation.browserAttachments.browser": {"population": "1..1", "target": "physicalStation.frontend.browsers", "type": "WstxArchitecture::BrowserClient"},
+    "physicalStation.backend.stations.authority": {"population": "1..1", "target": "physicalStation.backend.radioAuthority", "type": "WstxRadioControlPart::RadioAuthority"},
+    "physicalStation.browserAttachments.browser": {"population": "1..1", "target": "physicalStation.frontend.browsers", "type": "WstxBrowserClientPart::BrowserClient"},
     "physicalStation.browserAttachments.station": {"population": "1..1", "target": "physicalStation.backend.stations", "type": "WstxArchitecture::StationProcess"}
   },
   "root": "WstxArchitecture::physicalStation"

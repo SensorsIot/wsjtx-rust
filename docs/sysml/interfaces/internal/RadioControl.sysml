@@ -10,7 +10,7 @@ package WstxRadioControl {
         in item outcome : ControlOutcome;
         binding replyContext bind outcome.request = request;
     }
-    item def ControlRequest { ref part resourceContext : WstxArchitecture::RadioBinding; }
+    item def ControlRequest { ref part resourceContext : WstxRadioControlPart::RadioBinding; }
     item def ControlOutcome { ref item request : ControlRequest; }
     item def ReadRadioCapabilities :> ControlRequest;
     item def RadioCapabilitiesOutcome :> ControlOutcome {

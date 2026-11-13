@@ -37,7 +37,7 @@ package WstxMcpEndpoint {
              tool error, never a JSON-RPC error; no MCP-specific code replaces it. */
     }
 
-    dependency adapterOwner from McpEndpoint to WstxArchitecture::McpAdapter;
+    dependency adapterOwner from McpEndpoint to WstxMcpPart::McpAdapter;
     dependency endpointClause from McpEndpoint to WstxMcpEndpoint::'CL-012-01';
     dependency toolsClause from ToolCatalog to WstxMcpEndpoint::'CL-012-02';
     dependency credentialClause from McpCredential to WstxMcpEndpoint::'CL-012-03';
