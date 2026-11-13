@@ -2,3 +2,10 @@
 *.md text eol=lf
 *.rs text eol=lf
 *.toml text eol=lf
+# The deploy mechanism files keep their exact bytes in git, in every checkout and in the
+# station package, so that each pin (docs/harness/Project-Specifics.md, Deploy pins) is the
+# SHA-256 of the file that runs.
+tools/deploy/station-update/** -text
+tools/deploy/agent-client.ps1 -text
+tools/deploy/station-probe.ps1 -text
+tools/deploy/live-page-check.ps1 -text

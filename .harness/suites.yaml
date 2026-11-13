@@ -420,6 +420,17 @@
   - tools/sysml/
   needs: Python 3.12. Windows PC; canonical source/model identity and binding checks only. No Java, model mutation suite, compilation, radio or behavior proof.
 
+# The deploy mechanism (Project-Specifics.md, Deployment authority): its pins, the station drill
+# and the mocked install flow. -v names every test and every skip in the gate log.
+- suite: deploy-tooling
+  cost: 2
+  run: python -m unittest discover -s tools/deploy/tests -v
+  paths:
+  - tools/deploy/
+  select:
+  - tools/deploy/
+  needs: "Python 3.12, Windows PowerShell 5.1 and git with the checkout's history. Windows PC; every station, scheduled task, firewall, process, network, git remote and GitHub call is a mock in a temporary sandbox. No station, radio or network service."
+
 - suite: fortran-reference-tools
   cost: 2
   run: python -m unittest discover -s tools -p "test_wsjtx*reference.py" -v && python -m unittest discover -s tools -p test_analyze_fortran_trace.py -v

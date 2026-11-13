@@ -1,6 +1,6 @@
 """Show each refusal of station-update.ps1 happening before the destination changes (#34).
 
-usage: python .harness/deploy/station_drill.py [--script <station-update.ps1>] [--keep <dir>]
+usage: python tools/deploy/station_drill.py [--script <station-update.ps1>] [--keep <dir>]
 
 Runs a copy of the install script against a sandbox station (LOCALAPPDATA points into a
 temporary directory) with every command that reaches the system replaced by a mock: the
@@ -34,6 +34,7 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+SCRIPT = os.path.join(HERE, "station-update", "station-update.ps1")
 POWERSHELL = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), r"System32\WindowsPowerShell\v1.0\powershell.exe")
 CURRENT = "c" * 40
 COMMIT = "1234567890" + "ab" * 15
@@ -352,17 +353,13 @@ def run_case(root, script, case):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--script", help="station-update.ps1 to drill (default: the shared resources copy)")
+    parser.add_argument("--script", help="station-update.ps1 to drill (default: tools/deploy/station-update/station-update.ps1)")
     parser.add_argument("--keep", help="keep the sandboxes in this directory")
     a = parser.parse_args(argv)
     try:
-        script = a.script
-        if not script:
-            common = subprocess.run(["git", "-C", HERE, "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                                    capture_output=True, text=True, check=True).stdout.strip()
-            script = os.path.join(common, "harness-parallel", "resources", "station-update", "station-update.ps1")
+        script = a.script or SCRIPT
         open(script, "rb").close()
-    except (OSError, subprocess.CalledProcessError) as e:
+    except OSError as e:
         print(f"DRILL ERROR cannot read the install script: {e}")
         return 2
     unknown = classify(script)

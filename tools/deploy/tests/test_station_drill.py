@@ -1,6 +1,5 @@
 """station_drill.py (#34): the drill refuses unknown commands and catches a lost refusal."""
 import os
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -10,11 +9,7 @@ import station_drill  # noqa: E402
 
 
 def real_script():
-    here = os.path.dirname(os.path.abspath(__file__))
-    common = subprocess.run(["git", "-C", here, "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                            capture_output=True, text=True).stdout.strip()
-    path = os.path.join(common, "harness-parallel", "resources", "station-update", "station-update.ps1")
-    return path if os.path.isfile(path) else None
+    return station_drill.SCRIPT
 
 
 def read(path):
@@ -67,7 +62,6 @@ class ClassifyTests(unittest.TestCase):
             self.assertEqual(station_drill.classify(path), [])
 
 
-@unittest.skipUnless(real_script(), "station-update.ps1 is not in this clone's shared resources")
 class LostRefusalTests(unittest.TestCase):
     def run_one(self, script_text, name):
         with tempfile.TemporaryDirectory() as tmp:
