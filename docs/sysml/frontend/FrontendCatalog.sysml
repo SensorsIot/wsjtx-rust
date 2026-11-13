@@ -3,6 +3,7 @@ package WstxRequirementsFrontend {
     private import WstxRequirements::*;
     private import WstxStationProtocol::'TC-051-001';
     private import WstxStationProtocol::'TC-051-003';
+    private import WstxTransmit::'TC-092-005';
     requirement 'CL-010-16' {
         doc /* Present the laptop operating screen of WstxOperatingLayout::OperatingScreen: a top bar with only band, mode, dial, UTC/period, Logbook, Settings, HALT and Abort QSO (Esc); the full-width waterfall with the Rx/Tx strip; Band Activity with the strategy element and the QSO pane with direct buttons and no Enable Tx control; setup and diagnostics in the four-section Settings drawer; themes; WSJT-X keyboard shortcuts; and only the token form for an unauthorized browser. Details: OperatingScreen, RxTxStrip, BandActivityView, QsoPane, SettingsDrawer, ThemeChoice, UnauthorizedView, KeyboardShortcuts, WstxContact::SetEnableTx. */
         attribute coverage : ImplementationState = ImplementationState::implemented;

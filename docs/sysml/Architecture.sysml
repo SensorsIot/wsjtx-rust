@@ -615,7 +615,7 @@ package WstxArchitecture {
     part def TransmitService {
         doc /* Own UTC scheduling, transmit state, audio/PTT coordination and priority halt; no browser timer or visualization-queue dependency. Defaults UNARMED on startup. Halt never waits for decode, receive cancellation or congestion. Backend/device loss and authority-expiry policy are settled before hardware TX and cannot be replaced in MCP. */
         doc /* UTC scheduling, operation authority and audio/PTT coordination reuse the
-             common resource context. WstxProductScope::TransmitSafetyPolicy owns
+             common resource context. WstxTransmit::TransmitSafetyPolicy owns
              unresolved deadlines/backend-loss/expiry policy before hardware TX;
              WstxProductScope::ProcessingAndHaltOwnership separates priority halt from
              receive completion/cancellation and optional display congestion. */

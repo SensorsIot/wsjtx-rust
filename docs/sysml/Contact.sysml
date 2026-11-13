@@ -15,7 +15,7 @@ package WstxContact {
          WstxArchitecture::StationProcess. #9 slice B owns the armed state, halt, PTT
          and pending-request replacement; TransmitService alone holds the station's
          explicit transmit authority (WstxArchitecture::RadioAuthority) and plans starts
-         with WstxTransmit::PlanTransmitStart. #9 slice B is delivered (WstxTransmit
+         with WstxTransmitSchedule::PlanTransmitStart. #9 slice B is delivered (WstxTransmit
          transmit owner); the engine consumes it in-process, so a station with transmit
          capability and a current CL-022 grant can arm through Enable Tx.
          A receive-only station (no transmit capability) can still select rows, prepare
@@ -34,7 +34,7 @@ package WstxContact {
          marked DIFFERENT with their reason.
 
          FT4 (#11 CL-011-02..04) reuses this contract unchanged except the rules marked
-         FT4-NOTE: 7.5 s periods (WstxTransmit::Ft4Schedule), Tx4 always RR73 (MW
+         FT4-NOTE: 7.5 s periods (WstxTransmitSchedule::Ft4Schedule), Tx4 always RR73 (MW
          ~11227 forces m_send_RR73 in FT4), ADIF MODE MFSK with SUBMODE FT4 (ADQ
          to_adif), Tx offset upper bound 2916 Hz (Ft4WaveformContract). Which mode a
          contact uses and what a mode change does: StationOperatingMode, ContactMode
@@ -882,7 +882,7 @@ package WstxContact {
              and takes the band. An unknown station band is no band change, and a
              contact prepared while the band was unknown takes the first band seen. */
     }
-    dependency bandChangeClause from BandChange to WstxRequirements::'CL-111-03';
+    dependency bandChangeClause from BandChange to WstxTransmit::'CL-111-03';
     action def HaltTx {
         doc /* The operator's emergency stop (operator decision #39, 2026-11-04: HALT is
              emergency only and only manual): the Halt Tx buttons and Alt+H (HT). Sends

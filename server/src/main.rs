@@ -310,7 +310,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
             recording.initialize_profile_revision(store.document.revision);
             // WstxTransmit slice B: one transmit owner per station, disarmed at startup.
-            // WstxTransmit::TransmitClock: the station measures its UTC offset by SNTP
+            // WstxTransmitClock::TransmitClock: the station measures its UTC offset by SNTP
             // on its own thread, at start and every minute. WSTX_SNTP_SERVERS replaces
             // the server order (comma-separated; empty: never measure, no NTP warning).
             let mut sntp = wstx_rust::transmit::clock::Sntp::station();
@@ -1189,7 +1189,7 @@ async fn connection(
     // What this peer holds of the contact snapshot, and when it was last sent.
     let mut contact_sent = Value::Null;
     let mut contact_sent_at = Instant::now();
-    // WstxTransmit::TransmitWire transmit.state (pushed state, coalesced like contact.state).
+    // WstxTransmitWire::TransmitWire transmit.state (pushed state, coalesced like contact.state).
     let mut transmit_seen: Option<u64> = None;
     // What this peer holds: the fields it was last sent, and when.
     let mut transmit_sent = Value::Null;

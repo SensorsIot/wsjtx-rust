@@ -1,7 +1,6 @@
 package WstxProductScope {
     private import ScalarValues::*;
     private import WstxRequirements::*;
-    private import WstxRequirementsTransmit::*;
     private import WstxRequirementsQso::*;
     private import WstxRequirementsUdp::*;
     private import WstxRequirementsFrontend::*;
@@ -182,23 +181,6 @@ package WstxProductScope {
              blocking task is not claimed abortable. Concrete shared executor and
              acceleration choices require measured workloads, with CPU correctness. */
     }
-    attribute def TransmitSafetyPolicy {
-        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::partial;
-        attribute armedOnStartup : Boolean = false;
-        attribute haltWaitsForDecode : Boolean = false;
-        attribute mcpMayOverrideLossPolicy : Boolean = false;
-        doc /* Transmission is not enabled by the receive baseline. Before hardware
-             TX, settle controller/device loss and authority expiry, local stop deadline
-             and resource/VOX policy. MCP cannot invent a different safety policy.
-             Obtain common authority, prepare selected audio and radio/PTT, schedule,
-             then handle completion/halt/failure. Audio failure leaves control-side
-             halt/release usable; control failure never fabricates radio-ready state.
-             Browser timers or optional display congestion cannot hold transmit authority.
-             Settled by #9 slice B (WstxTransmit::TransmitAuthority, TransmitTiming,
-             PttControl): per-boot explicit authority, 250 ms halt, release on device
-             or CAT loss, off-only recovery, no VOX; physical acceptance remains
-             TC-008-002. */
-    }
     requirement RemoteDeliveryPolicy {
         doc /* Commands/state/results have priority over discardable visualization.
              Server produces reduced display data; JavaScript renders/colors/local
@@ -283,10 +265,13 @@ package WstxProductScope {
         alias RadioPropertiesPackage for WstxRadioProperties;
         alias HttpContentCodingPackage for WstxHttpContentCoding;
         alias StationAuthorityPackage for WstxStationAuthority;
+        alias TransmitSchedulePackage for WstxTransmitSchedule;
+        alias TransmitClockPackage for WstxTransmitClock;
+        alias TransmitWirePackage for WstxTransmitWire;
+        alias TxLevelPackage for WstxTxLevel;
     }
     dependency scopeBoundary from ProductCapabilities to WstxRequirements::'FR-004';
     dependency contactBoundary from CompletedContactIdentity to WstxRequirements::'FR-011';
-    dependency safetyBoundary from TransmitSafetyPolicy to WstxRequirements::'FR-008';
     dependency nativeBoundary from NativeFlexBoundary to WstxRequirements::'FR-023';
     dependency deliveryBoundary from RemoteDeliveryPolicy to WstxRequirements::'FR-021';
 }

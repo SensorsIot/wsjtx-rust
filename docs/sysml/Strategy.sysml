@@ -1604,7 +1604,7 @@ package WstxStrategy {
     dependency freeSlotPounce from Pounce to FreeTxSlot;
     dependency freeTxSlotsClause from FreeTxSlots to WstxRequirements::'CL-065-01';
     dependency freeTxSlotsChoice from FreeTxSlots to FreeTxSlot;
-    dependency watchdogClause from WatchdogFromOperator to WstxRequirements::'CL-039-06';
+    dependency watchdogClause from WatchdogFromOperator to WstxTransmit::'CL-039-06';
     dependency hearingClause from HearingFeed to WstxRequirements::'CL-039-20';
     dependency strategyWatchdogClause from StrategyWatchdog to WstxRequirements::'CL-039-21';
     dependency strategyWatchdogHearing from StrategyWatchdog to HearingFeed;

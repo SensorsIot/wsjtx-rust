@@ -1,6 +1,7 @@
 package WstxRequirementsQso {
     private import ScalarValues::*;
     private import WstxRequirements::*;
+    private import WstxTransmit::'TC-111-015';
     requirement 'CL-011-03' {
         doc /* Complete and log FT4 contacts through the common contact engine with the
              FT4 rules: the contact's mode fixed at preparation and carried in every

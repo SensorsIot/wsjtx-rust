@@ -17,7 +17,7 @@ package WstxLiveReceive {
     private import WstxModemDecode::'TC-004-002';
     private import WstxModemDecode::'TC-004-003';
     private import WstxRequirements::'TC-002-001';
-    private import WstxRequirements::'TC-043-002';
+    private import WstxTransmit::'TC-043-002';
     private import WstxRequirements::'TC-057-002';
     private import WstxRequirements::'TC-057-003';
     private import WstxRadioIO::'CL-008-04';

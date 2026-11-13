@@ -1025,7 +1025,7 @@ render();
 if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){readySocket=socket;load();loadStartup();loadPskr();if(automationAnnounced===socket)loadAutomation();}
 // #82: a free_tx_slots.state the socket carried before this client loaded is drawn now.
 if(freeTxSlotsHeld&&freeTxSlotsHeld.current===socket)freeTxSlotsPushed(freeTxSlotsHeld.value);
-// WstxTransmit::TransmitWire: explicit requests only; the server plans, keys and halts.
+// WstxTransmitWire::TransmitWire: explicit requests only; the server plans, keys and halts.
 document.querySelector('#transmit-status').insertAdjacentHTML('afterend','<label>Message<input id="tx-message" maxlength="37" value="CQ"></label><label>Mode<select id="tx-mode" disabled title="Follows the station operating mode"><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label><label>Tx offset Hz<input id="tx-offset" type="number" min="200" max="2950" value="1500"></label><label>Period<select id="tx-parity"><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><p><button type="button" id="tx-arm">Arm (Enable Tx)</button> <button type="button" id="tx-disarm">Disarm</button> <button type="button" id="tx-send">Send next period</button> <button type="button" id="tx-tune">Tune</button></p>');
 let transmitSequence=0;
 addEventListener('station-message',event=>{const m=event.detail?.message;if(m?.type==='station.tick'&&[15000,7500].includes(m.data?.period_ms)){const ft4=m.data.period_ms===7500;document.querySelector('#tx-mode').value=ft4?'ft4':'ft8';document.querySelector('#tx-offset').max=ft4?'2916':'2950';}});

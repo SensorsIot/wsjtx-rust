@@ -357,7 +357,7 @@ package WstxStationProtocol {
              almost nothing beyond heartbeat and station.tick. HTTP carries commands and
              one snapshot read per state on (re)connect. transmit.state, contact.state,
              selection.state, receive.state and clock.state (#92, every profile) carry
-             their state (WstxTransmit::TransmitWire, WstxContact::ContactStateEvent,
+             their state (WstxTransmitWire::TransmitWire, WstxContact::ContactStateEvent,
              WstxOperatingReceive::SelectionStateEvent, the receive wire, WstxRequirements
              CL-043-01); decode records are not carried yet;
              a state not yet carried is read after its announcement event (one pending read
@@ -366,7 +366,7 @@ package WstxStationProtocol {
              than once per safetyReadMinimumMs. The browser holds the state (snapshot plus events) and
              renders locally. Safety decisions (HALT, watchdog, PTT keying and release)
              stay on the station and never wait for a browser read. Existing reads are
-             migrated in slices: first GET /transmit (WstxTransmit::TransmitWire
+             migrated in slices: first GET /transmit (WstxTransmitWire::TransmitWire
              transmit.state), then receive results, recording (WstxRecordingReceive
              recording.state), profile (profile.state: exactly {v:1,type:"profile.state",
              data:{profile_id,boot_id,revision}}, sent to a display-subscribed peer once
