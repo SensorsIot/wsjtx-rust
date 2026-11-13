@@ -137,7 +137,7 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `sysml-tools` | The SysML tool's own unit tests `test_[!adre]*.py` on isolated models | The SysML tool and its tests |
 | `sysml-equivalence-tests` | TC-DOC-015: `equivalence` and `identities` on temporary repositories and the repository's history, `test_e*.py` | `tools/sysml.py`, `Validate.java` and the test file |
 | `sysml-equivalence` | CL-014-17: `equivalence --marked` on each commit of `master..HEAD` marked `Model-Move: pure` | The model, the SysML tool and the files whose model citations it reads |
-| `sysml-architecture` | TC-DOC-005 architecture integrity: the mutation tests `test_a*.py`, one Pilot validation per mutation | `Architecture.sysml`, the SysML tool, `Validate.java`, the oracle file `architecture-oracle.json`, the toolchain pin and the test file |
+| `sysml-architecture` | TC-DOC-005 architecture integrity: the mutation tests `test_a*.py`, one Pilot validation per mutation | `Station.sysml`, `backend/radioControl/RadioProperties.sysml`, the SysML tool, `Validate.java`, the oracle file `architecture-oracle.json`, the toolchain pin and the test file |
 | `decoder-correctness` | The release `decoder_signal` correctness, #57 thread-parity and #56 jt9-parity passes (all ordinary passes but the 50 ms quantum and busy-period latency) | Decoder fixtures, the library root and the model files whose values its passes read (`docs/sysml/backend/modes/Decode.sysml`, `MessagePayload.sysml`, `docs/sysml/shared/Units.sysml`) (a production decoder source selects `decoder-quality`, which runs the same passes) |
 | `decoder-quality` | Timing: all seventeen release decoder passes bound to the artifact, and the owned-Job resource matrix (runs alone) | Timing inputs: the production decoder sources (not its `*_test.rs` or the test-only resource observer), `decoder_signal.rs`, the fixtures and vector tool the timed passes decode, its resource-job tools, the model files holding the budgets the matrix reads and their unit suffixes (`docs/sysml/backend/modes/Decode.sysml`, `docs/sysml/shared/Units.sysml`) and the Rust toolchain/dependency pins |
 | `live-station-browser` | Native fixture through the actual Router, receive owner and browser (callsign rows) | Router, profile/recording/receive/source/audio/decoder owners, client, its test files |
@@ -264,7 +264,7 @@ The model has an explicit documentation owner. Its edits select the catalog/trac
 one full semantic validation and the tests that read the model (`sysml-documentation`, about
 30 s); the tool's own unit tests (`sysml-tools`, about 50 s) run only when the tool changes;
 the architecture mutation tests (`sysml-architecture`, one Pilot JVM per mutation) run
-only when `Architecture.sysml` or the tool that judges it changes, since the companion
+only when `Station.sysml`, `RadioProperties.sysml` or the tool that judges it changes, since the companion
 models are validated by `check` itself. Runtime oracles are selected by changed
 implementation and executable tests. Source
 edits also select the fast binding check, without a dependency that runs the full Pilot
@@ -560,7 +560,7 @@ enforced by the platform.
 The reusable [SysML authoring instruction](../../harness/core/docs/standards/sysml-v2.md)
 explains how to write models without project-specific assumptions. This binding selects the exclusive authority policy below and the local toolchain. The
 functional entry point is [Requirements.sysml](../sysml/Requirements.sysml), with the
-[architecture](../sysml/Architecture.sysml) and the model packages it references.
+[architecture](../sysml/Station.sysml) and the model packages it references.
 Harness instructions are not represented in product SysML.
 
 ### Exclusive functional authority
@@ -681,7 +681,7 @@ order does not change the result (the adapter resolves all files as one graph).
 `validate <files>` with an explicit list is unchanged:
 
 ```powershell
-python tools/sysml.py validate docs/sysml/Requirements.sysml docs/sysml/Architecture.sysml
+python tools/sysml.py validate docs/sysml/Requirements.sysml docs/sysml/Station.sysml
 ```
 
 Syntax/type/reference errors fail. Missing/invalid tools, model libraries or model files,

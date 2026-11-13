@@ -1,12 +1,12 @@
 package WstxRadioSetup {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxRequirements::'FR-009';
-    private import WstxRequirements::'FR-001';
-    private import WstxRequirements::'FR-008';
-    private import WstxRequirements::'FR-002';
+    private import WstxArchitecture::'FR-009';
+    private import WstxArchitecture::'FR-001';
+    private import WstxArchitecture::'FR-008';
+    private import WstxArchitecture::'FR-002';
     private import WstxRequirements::AutomationState;
-    private import WstxRequirements::'CL-044-05';
+    private import WstxProfiles::'CL-044-05';
     private import WstxRadioIO::'CL-044-11';
 
     // #44 Automatic radio detection and setup (operator decision 2026-11-01 on issue #44:

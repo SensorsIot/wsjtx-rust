@@ -3,19 +3,19 @@ package WstxRadioIO {
     private import WstxLiveReceive::ConvertAndReceive;
     private import WstxAudioCapture::CaptureAudio;
     private import WstxRequirements::ImplementationState;
-    private import WstxRequirements::'FR-009';
-    private import WstxRequirements::'TC-009-001';
-    private import WstxRequirements::'FR-002';
+    private import WstxArchitecture::'FR-009';
+    private import WstxProfiles::'TC-009-001';
+    private import WstxArchitecture::'FR-002';
     private import WstxRequirements::AutomationState;
     private import WstxLiveReceive::'TC-009-002';
     private import WstxLiveReceive::'TC-002-003';
     private import WstxRecordingReceive::'TC-009-004';
     private import WstxStationProtocol::'TC-009-005';
-    private import WstxRequirements::'FR-008';
-    private import WstxRequirements::'FR-021';
+    private import WstxArchitecture::'FR-008';
+    private import WstxArchitecture::'FR-021';
     private import WstxCatLifecycle::'CL-022-04';
     private import WstxOperatingLayout::'TC-022-010';
-    private import WstxRequirements::'FR-019';
+    private import WstxArchitecture::'FR-019';
     private import WstxRadioSetup::'TC-044-009';
     private import WstxRadioSetup::'TC-044-011';
     doc /* Canonical capture/CAT contract with partial native Windows and IC-7300 implementation;
@@ -118,8 +118,8 @@ package WstxRadioIO {
         verification audio { subject candidate : ConvertAndReceive; objective { verify WstxLiveReceive::'CL-008-02'; } }
         verification cat { subject candidate : ExecuteCat; objective { verify WstxRadioIO::'CL-008-06'; } }
         verification independent { subject candidate : CaptureAudio; objective { verify WstxRadioIO::'CL-008-05'; } }
-        dependency audioCase from audio to WstxRequirements::'TC-002-001';
-        dependency catCase from cat to WstxRequirements::'TC-009-001';
+        dependency audioCase from audio to WstxProfiles::'TC-002-001';
+        dependency catCase from cat to WstxProfiles::'TC-009-001';
         dependency independenceCase from independent to WstxLiveReceive::'TC-002-003';
         dependency catIndependenceCase from cat to WstxRadioIO::'TC-009-003';
         dependency combinedCase from independent to WstxRecordingReceive::'TC-009-004';
@@ -541,7 +541,7 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
              off-only release. After an indeterminate release the owner retries
              off-only releases (never a key) and refuses Arm until one is confirmed. */
     }
-    dependency pttPromise from PttControl to WstxRequirements::'FR-009';
+    dependency pttPromise from PttControl to WstxArchitecture::'FR-009';
     requirement 'CL-008-06' {
         doc /* Separate a versioned factual radio catalogue, compiled typed operations and bounded protocol execution. Catalogue data cannot authorize raw or transmit commands. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -704,4 +704,20 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
     }
     dependency CL_044_11_verified_by_TC_044_010 from 'CL-044-11' to 'TC-044-010';
     dependency CL_044_11_verified_by_TC_044_011 from 'CL-044-11' to 'TC-044-011';
+
+    doc /* Issue22 contract. Delivered: CL-022-01 persistent browser key,
+         enrollment, challenge/proof transport, retained-key recovery and the
+         browser Log out / forget-rejected-credential actions; CL-022-02 durable
+         private record, revocation (logout, revoke-all), dispatch fencing of every
+         operating HTTP/WS effect under the authority lock, safety-revision
+         advance and the commissioning server API (POST /authorization/v1/commission
+         and the status condition). Delivered:
+         CL-022-03 'Confirm receive-only setup' UI and the automatic read-only CAT
+         lifecycle, CL-022-04 cadence, CL-022-05 CAT status/freshness presentation;
+         TC-022-009 automated companions. Radio identity Add/Replace/Remove is dropped
+         from the contract (operator 2026-11-06, CL-022-02). The CL-022-05 freeze was accepted on
+         the recorded trace (comment 6622256637); TC-022-008 is implemented (its planned Thin/Off
+         accounted-traffic companion was retired by #80); TC-022-010 was accepted live (6719540079).
+         Existing99 identities retain meaning and numbering. No parser, model
+         declaration or issue checkpoint proves execution/acceptance. */
 }

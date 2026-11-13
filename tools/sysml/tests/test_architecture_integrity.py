@@ -265,6 +265,12 @@ COMPANION_PROBE = PACKAGE + "\n    attribute propertyOwnerProbe : WstxProfiles::
 UNDEFINED_PROBE = PACKAGE + "\n    attribute propertyOwnerProbe : WstxProfiles::UndefinedPropertyType;"
 
 
+def architecture_key():
+    """The key of the model file whose package is WstxArchitecture, found by its package."""
+    return next(key for key, path in tool.model_files(tool.MODELS).items()
+                if tool.file_package(tool.without_comments(path.read_text(encoding="utf-8"))) == "WstxArchitecture")
+
+
 def rejects(original, replacement, diagnostic):
     """A test that the architecture with `original` replaced stays valid SysML but fails the oracle."""
     def test(self):
@@ -278,7 +284,7 @@ class ArchitectureIntegrityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.cache = Path.home() / ".cache/wsjtx-rust/sysml-tools"
-        cls.source = (tool.MODELS / "Architecture.sysml").read_text(encoding="utf-8")
+        cls.source = tool.model_files(tool.MODELS)[architecture_key()].read_text(encoding="utf-8")
         mutated = [cls.source.replace(PACKAGE, COMPANION_PROBE, 1), cls.source.replace(PACKAGE, UNDEFINED_PROBE, 1)]
         for name in dir(cls):
             original, replacement = getattr(getattr(cls, name), "mutation", (None, None))
@@ -298,9 +304,10 @@ class ArchitectureIntegrityTests(unittest.TestCase):
     @classmethod
     def model_paths(cls, architecture=None):
         files = tool.model_files(tool.MODELS)
-        companions = [path for key, path in files.items()
-                      if key not in ("Requirements.sysml", "Architecture.sysml")]
-        return [files["Requirements.sysml"], architecture or files["Architecture.sysml"], *companions]
+        key = architecture_key()
+        companions = [path for name, path in files.items()
+                      if name not in ("Requirements.sysml", key)]
+        return [files["Requirements.sysml"], architecture or files[key], *companions]
 
     @classmethod
     def validate_architecture(cls, source, added=()):
@@ -635,18 +642,19 @@ class CompanionListTests(unittest.TestCase):
     def test_companions_are_every_model_file_of_the_tree_but_requirements_and_architecture(self):
         with tempfile.TemporaryDirectory() as directory:
             models = Path(directory) / "docs/sysml"
-            keys = ("Requirements.sysml", "Architecture.sysml", "Profiles.sysml", "Udp.sysml",
+            keys = ("Requirements.sysml", "Station.sysml", "Profiles.sysml", "Udp.sysml",
                     "backend/qso/Part.sysml", "interfaces/Udp.sysml")
             for key in keys:
                 (models / key).parent.mkdir(parents=True, exist_ok=True)
-                (models / key).write_text("package P {}", encoding="utf-8")
+                package = "WstxArchitecture" if key == "Station.sysml" else "P"
+                (models / key).write_text("package " + package + " {}", encoding="utf-8")
             (models / "reference").mkdir()
             (models / "reference/Old.sysml.txt").write_text("package Old {}", encoding="utf-8")
             mutated = Path(directory) / "mutated/Architecture.sysml"
             with mock.patch.object(tool, "MODELS", models):
                 companions = [models / key for key in ("Profiles.sysml", "Udp.sysml", "backend/qso/Part.sysml", "interfaces/Udp.sysml")]
                 self.assertEqual(ArchitectureIntegrityTests.model_paths(),
-                                 [models / "Requirements.sysml", models / "Architecture.sysml", *companions])
+                                 [models / "Requirements.sysml", models / "Station.sysml", *companions])
                 self.assertEqual(ArchitectureIntegrityTests.model_paths(mutated),
                                  [models / "Requirements.sysml", mutated, *companions])
 

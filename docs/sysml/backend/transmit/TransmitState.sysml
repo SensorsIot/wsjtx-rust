@@ -1,30 +1,30 @@
 package WstxTransmit {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxRequirements::'FR-008';
-    private import WstxRequirements::'FR-009';
-    private import WstxRequirements::'FR-002';
-    private import WstxRequirements::'FR-006';
+    private import WstxArchitecture::'FR-008';
+    private import WstxArchitecture::'FR-009';
+    private import WstxArchitecture::'FR-002';
+    private import WstxArchitecture::'FR-006';
     private import WstxRequirements::AutomationState;
     private import WstxTransmitSchedule::'CL-009-02';
     private import WstxMcpEndpoint::'TC-020-004';
-    private import WstxRequirements::'FR-016';
-    private import WstxRequirements::'FR-005';
+    private import WstxArchitecture::'FR-016';
+    private import WstxArchitecture::'FR-005';
     private import WstxTransmitClock::'TC-043-001';
     private import WstxLiveReceive::'CL-007-05';
     private import WstxTransmitClock::'CL-043-02';
     private import WstxTransmitClock::'TC-092-001';
     private import WstxOperatingLayout::'CL-037-02';
-    private import WstxRequirements::'FR-019';
+    private import WstxArchitecture::'FR-019';
     private import WstxTxLevel::'TC-044-014';
     private import WstxTxLevel::'TC-044-016';
     private import WstxContact::'TC-039-007';
-    private import WstxRequirements::'FR-007';
+    private import WstxArchitecture::'FR-007';
     private import WstxQsoTransmit::'TC-111-008';
     private import WstxQsoTransmit::'CL-111-02';
     private import WstxOperatingLayout::'CL-111-04';
     private import WstxQsoTransmit::'CL-111-08';
-    private import WstxRequirements::'FR-010';
+    private import WstxArchitecture::'FR-010';
     doc /* Canonical FT8 and FT4 transmit contract. Slice A (issue #9, FT4 issue #11
          slice A): message packing, channel symbols, waveform and pure period
          scheduling, none of which opens audio, keys PTT or touches a radio. Slice B
@@ -308,7 +308,7 @@ package WstxTransmit {
              Arm. A request submitted directly on the transmit route has no dialogue and
              is not bounded by it: each one is its own browser request. */
     }
-    dependency armingPromise from TransmitArming to WstxRequirements::'FR-008';
+    dependency armingPromise from TransmitArming to WstxArchitecture::'FR-008';
     dependency authorityPromise from TransmitAuthority to WstxTransmit::'CL-009-03';
     dependency haltClausePromise from HaltTransmit to WstxTransmit::'CL-009-04';
 
@@ -344,7 +344,7 @@ package WstxTransmit {
              or CAT loss, off-only recovery, no VOX; physical acceptance remains
              TC-008-002. */
     }
-    dependency safetyBoundary from TransmitSafetyPolicy to WstxRequirements::'FR-008';
+    dependency safetyBoundary from TransmitSafetyPolicy to WstxArchitecture::'FR-008';
     requirement 'CL-009-03' {
         doc /* Manage PTT and transmit audio through the station's one transmit owner and
              its explicit transmit authority: arm only by an explicit operator request

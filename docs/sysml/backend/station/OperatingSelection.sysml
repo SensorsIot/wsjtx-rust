@@ -1,10 +1,10 @@
 package WstxOperatingReceive {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxRequirements::'FR-002';
-    private import WstxRequirements::'FR-009';
-    private import WstxRequirements::'FR-019';
-    private import WstxRequirements::'FR-021';
+    private import WstxArchitecture::'FR-002';
+    private import WstxArchitecture::'FR-009';
+    private import WstxArchitecture::'FR-019';
+    private import WstxArchitecture::'FR-021';
     private import WstxLiveReceive::'TC-009-002';
     private import WstxStationProtocol::'TC-009-005';
     private import WstxRequirements::AutomationState;

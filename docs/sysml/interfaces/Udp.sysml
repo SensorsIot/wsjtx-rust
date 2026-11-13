@@ -3,9 +3,9 @@ package WstxUdp {
     private import ModelNotes::DiffersFromSource;
     private import WstxOperatingLayout::'TC-007-009';
     private import WstxRequirements::ImplementationState;
-    private import WstxRequirements::'FR-012';
-    private import WstxRequirements::'FR-001';
-    private import WstxRequirements::'FR-008';
+    private import WstxArchitecture::'FR-012';
+    private import WstxArchitecture::'FR-001';
+    private import WstxArchitecture::'FR-008';
     private import WstxRequirements::AutomationState;
     doc /* Canonical contract of the WSJT-X-compatible UDP interface with multiple targets
          (CL-040-01..04, CL-040-06, CL-040-07 and CL-112-01..06 in WstxRequirements;

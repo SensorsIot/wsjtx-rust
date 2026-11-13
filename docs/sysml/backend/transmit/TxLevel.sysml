@@ -1,7 +1,7 @@
 package WstxTxLevel {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxRequirements::'FR-009';
+    private import WstxArchitecture::'FR-009';
     private import WstxRequirements::AutomationState;
     private import WstxTransmit::'CL-044-13';
     // Operator decisions 2026-11-04 (#44 comments 6627977497, 6628000054): Tx audio level.

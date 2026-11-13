@@ -1,9 +1,9 @@
 package WstxCatLifecycle {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxRequirements::'FR-008';
-    private import WstxRequirements::'FR-009';
-    private import WstxRequirements::'FR-021';
+    private import WstxArchitecture::'FR-008';
+    private import WstxArchitecture::'FR-009';
+    private import WstxArchitecture::'FR-021';
     private import WstxRadioIO::'TC-022-009';
     private import WstxOperatingLayout::'TC-022-010';
     requirement 'CL-022-04' {

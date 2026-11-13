@@ -356,14 +356,14 @@
   - tests/
   - .github/workflows/windows-rust.yml
   select:
-  - docs/sysml/Architecture.sysml
+  - docs/sysml/Station.sysml
   - docs/sysml/backend/radioControl/RadioProperties.sysml
   - tools/sysml.py
   - tools/sysml/Validate.java
   - tools/sysml/architecture-oracle.json
   - tools/sysml/toolchain.json
   - tools/sysml/tests/test_a
-  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; TC-DOC-005 architecture integrity: each mutation of Architecture.sysml is one full Pilot validation in a bounded pool. Selected by the architecture model, the radio property catalogue whose types it uses, and the tool that judges it; the companion models are validated by sysml-documentation (check). No radio or live service."
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; TC-DOC-005 architecture integrity: each mutation of the architecture model (Station.sysml) is one full Pilot validation in a bounded pool. Selected by the architecture model, the radio property catalogue whose types it uses, and the tool that judges it; the companion models are validated by sysml-documentation (check). No radio or live service."
 
 # TC-DOC-015: the tests of `equivalence` and `identities`, apart from sysml-tools so that a
 # model edit does not run them; about 9 minutes (some 30 Pilot exports, 2 at a time).

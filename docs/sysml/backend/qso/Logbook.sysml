@@ -1,11 +1,11 @@
 package WstxLogbook {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxRequirements::'FR-007';
-    private import WstxRequirements::'FR-011';
+    private import WstxArchitecture::'FR-007';
+    private import WstxArchitecture::'FR-011';
     private import WstxRequirements::AutomationState;
     private import WstxStandardQso::'TC-007-007';
-    private import WstxRequirements::'FR-016';
+    private import WstxArchitecture::'FR-016';
     private import WstxContact::'CL-011-04';
     private import WstxStandardQso::'CL-010-02';
     private import WstxContact::'CL-010-17';
@@ -598,6 +598,6 @@ package WstxLogbook {
     }
     dependency qsoSettingsOwner from QsoSettingsFile to WstxArchitecture::QsoAndLogging;
     dependency qsoSettingsClause from QsoSettingsFile to WstxLogbook::'CL-110-01';
-    dependency logPromise from LogRecord to WstxRequirements::'FR-011';
+    dependency logPromise from LogRecord to WstxArchitecture::'FR-011';
     dependency directLogClause from DirectLog to WstxLogbook::'CL-010-04';
 }

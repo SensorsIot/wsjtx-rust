@@ -2,10 +2,10 @@ package WstxReceiveStartup {
     private import ScalarValues::*;
     private import WstxOperatingLayout::'TC-007-009';
     private import WstxRequirements::ImplementationState;
-    private import WstxRequirements::'FR-016';
-    private import WstxRequirements::'FR-003';
-    private import WstxRequirements::'FR-021';
-    private import WstxRequirements::'FR-008';
+    private import WstxArchitecture::'FR-016';
+    private import WstxArchitecture::'FR-003';
+    private import WstxArchitecture::'FR-021';
+    private import WstxArchitecture::'FR-008';
     private import WstxRequirements::AutomationState;
     dependency CL_045_01_verified_by_TC_007_009 from 'CL-045-01' to 'TC-007-009';
 

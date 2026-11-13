@@ -1,21 +1,5 @@
 package WstxProductScope {
     private import ScalarValues::*;
-    private import WstxRequirements::*;
-    private import WstxArchitecture::*;
-    private import WstxStationProtocol::*;
-    private import WstxProfiles::*;
-    private import WstxRecordingReceive::*;
-    private import WstxOfflineDecode::*;
-    private import WstxRadioIO::*;
-    private import WstxOperatingLayout::*;
-    private import WstxOperatingReceive::*;
-    private import WstxTransmit::*;
-    private import WstxContact::*;
-    private import WstxMcp::*;
-    private import WstxUdp::*;
-    private import WstxStrategy::*;
-    private import WstxContest::*;
-    private import WstxUnits::*;
     doc /* Canonical product scope and navigation. WstxRequirements owns stable
          FR/CL/TC declarations. WstxArchitecture owns parts/ports/connections;
          WstxStationProtocol the shared status/auth/transport contract;
@@ -182,20 +166,6 @@ package WstxProductScope {
              No single-instance status test proves aggregate audio/DSP/display for N
              instances; each workload names its limits and measurement layer. */
     }
-    requirement NativeFlexBoundary {
-        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::partial;
-        doc /* Phase2 optional native radio path retains standard independent audio/CAT
-             and browser/DSP/QSO/MCP boundaries, without external SmartSDR desktop,
-             CAT or DAX bridges. Radio-side firmware/API support still matters. Audio
-             and control may reference one managed session, settled in NativeFlexWireSubset.
-             Persist profile intent without a radio identity (#22, 2026-11-06);
-             reconcile transient handles on connection, never guess another slice or
-             replay transmit intent. One effective arbitration authority spans shared
-             physical resources and transmission; an in-process mutex per station is
-             insufficient. A verified API may justify a common connector, but its
-             lifetime cannot depend on one station whose stop must leave others usable.
-             No fixed four-GUI-client or simultaneous independent transmitter promise. */
-    }
     attribute def FixtureProvenance {
         attribute ft8Manifest : String = "fixtures/decoder/manifest.json";
         attribute ft4Manifest : String = "fixtures/decoder/ft4-manifest.json";
@@ -223,7 +193,7 @@ package WstxProductScope {
         alias SharedProtocol for WstxStationProtocol;
         alias Profiles for WstxProfiles;
         alias ProfileRecordings for WstxProfileRecordings;
-        alias NativeFlex for WstxProductScope::NativeFlexBoundary;
+        alias NativeFlex for WstxArchitecture::NativeFlexBoundary;
         alias RecordingAndDisplay for WstxRecordingReceive;
         alias Modem for WstxOfflineDecode;
         alias ModemDecode for WstxModemDecode;
@@ -269,8 +239,8 @@ package WstxProductScope {
         alias QsoPanePackage for WstxQsoPane;
         alias LowerPanelPackage for WstxLowerPanel;
         alias SettingsPackage for WstxSettings;
+        alias UnitsPackage for WstxUnits;
     }
-    dependency scopeBoundary from ProductCapabilities to WstxRequirements::'FR-004';
-    dependency nativeBoundary from NativeFlexBoundary to WstxRequirements::'FR-023';
-    dependency deliveryBoundary from RemoteDeliveryPolicy to WstxRequirements::'FR-021';
+    dependency scopeBoundary from ProductCapabilities to WstxArchitecture::'FR-004';
+    dependency deliveryBoundary from RemoteDeliveryPolicy to WstxArchitecture::'FR-021';
 }

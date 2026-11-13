@@ -11,7 +11,7 @@ package WstxAudioCapture {
              Actual close before readiness/release; independent CAT remains responsive. */
     }
     action capture : CaptureAudio;
-    satisfy WstxRequirements::'CL-008-01' by capture;
+    satisfy WstxProfiles::'CL-008-01' by capture;
     satisfy WstxRadioIO::'CL-008-05' by capture;
     dependency captureOwner from capture to WstxArchitecture::physicalStation::backend::stations::audio;
 }

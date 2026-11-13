@@ -2,9 +2,9 @@ package WstxModemDecode {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::AutomationState;
-    private import WstxRequirements::'FR-003';
-    private import WstxRequirements::'FR-004';
-    private import WstxRequirements::'FR-018';
+    private import WstxArchitecture::'FR-003';
+    private import WstxArchitecture::'FR-004';
+    private import WstxArchitecture::'FR-018';
     private import WstxLiveReceive::'CL-007-01';
     private import WstxOperatingLayout::'CL-007-02';
     private import WstxLiveReceive::'TC-004-004';
