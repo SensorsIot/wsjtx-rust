@@ -258,7 +258,7 @@ package WstxStationProtocol {
              itself and writes them, per period, to fileName in the profile directory: one JSON
              line per client that had traffic in the period, written at the period's end; at
              rotateBytes the file first moves to link-traffic.1.log, replacing the older one (as the
-             MCP audit, WstxMcp::McpCredential). A station without a profile directory writes no
+             MCP audit, WstxMcpEndpoint::McpCredential). A station without a profile directory writes no
              log. The log is local: nothing of it is sent on a socket or in a response, and no
              client reads it; the operator reads the file. Counting never waits, and the line is
              written by its own task, never on a socket's or a request's path (the profile store's
@@ -637,7 +637,7 @@ package WstxStationProtocol {
              GET /authorization/v1/mcp-clients (read-only, Cache-Control no-store; a
              present Origin must be exact) lists {version, max_clients,
              clients [{client_id, name, created_utc_ms, last_used_utc_ms}], recent (newest
-             first audit entries, WstxMcp::McpCredential)}; .../create {version:1, name}
+             first audit entries, WstxMcpEndpoint::McpCredential)}; .../create {version:1, name}
              returns 200 {version, client_id, name, created_utc_ms, token} with Cache-Control
              no-store, the only time the token is shown (cap reached 429, invalid name 400);
              .../revoke {version:1, client_id} removes it and every transport of it at once

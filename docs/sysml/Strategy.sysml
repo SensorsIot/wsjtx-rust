@@ -665,7 +665,7 @@ package WstxStrategy {
              unsupported_version, 403 wrong_profile, 409 state_conflict boot_id); it
              empties the history, revision + 1, and returns the alerts snapshot. No MCP
              tool dispatches to the clear (an MCP principal is refused, #58); wstx_read
-             view alerts reads GET /strategy/alerts (WstxMcp::ToolCatalog).
+             view alerts reads GET /strategy/alerts (WstxMcpEndpoint::ToolCatalog).
              Event: a display-subscribed peer receives alert.state {v 1, type
              "alert.state", data {profile_id, boot_id, alert_revision}} when the revision
              changes after it subscribed (never on subscription itself), paced with

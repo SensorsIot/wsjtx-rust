@@ -70,7 +70,7 @@ package WstxArchitecture {
         enum mcpClient {
             doc /* MCP clients, POST /mcp on the same listener. A client reaches one station's
                  McpAdapter over that station's own HTTPS listener with its own auth-v1 grant
-                 (WstxMcp::McpEndpoint, McpCredential); it may run on any authorized
+                 (WstxMcpEndpoint::McpEndpoint, McpCredential); it may run on any authorized
                  computer. */
             @FollowsSource {
                 reference = "Model Context Protocol, Streamable HTTP, "
@@ -1805,7 +1805,7 @@ package WstxArchitecture {
         port recording : RecordingTransfer;
     }
     part def McpAdapter {
-        doc /* Own protocol validation/caller context and configured station-selection/automation requests. No independent station state, backend access or separate transmit permission; same station operations and safety policy as browser. Delivered (#12) as the station's Streamable HTTP endpoint mapping each tool onto one existing station route in-process (WstxMcp::ToolCatalog); the configured automation run is owned with the contact engine (WstxMcp::OperatingAutomation) and reaches it only through ContactCommand. */
+        doc /* Own protocol validation/caller context and configured station-selection/automation requests. No independent station state, backend access or separate transmit permission; same station operations and safety policy as browser. Delivered (#12) as the station's Streamable HTTP endpoint mapping each tool onto one existing station route in-process (WstxMcpEndpoint::ToolCatalog); the configured automation run is owned with the contact engine (WstxMcp::OperatingAutomation) and reaches it only through ContactCommand. */
         port station : StationOperations;
     }
     part def PersistedProfile {
