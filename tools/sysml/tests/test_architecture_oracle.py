@@ -231,6 +231,11 @@ class OracleCommandTests(unittest.TestCase):
         self.models = write_tree(self.root, BASE)
         self.oracle = self.root / "tools/sysml/architecture-oracle.json"
         self.oracle.parent.mkdir(parents=True)
+        # Every fixture file that may be listed on the pending list: the structure checks are TC-DOC-016's.
+        self.pending = self.root / "tools/sysml/pending-structure.json"
+        self.pending.write_text(json.dumps({"files": sorted(key for key in BASE if key != "Context.sysml"
+                                                            and not key.startswith("interfaces/")),
+                                            "elements": {}}), encoding="utf-8")
 
     def inventory(self, state):
         result = self.results[state]
@@ -246,7 +251,7 @@ class OracleCommandTests(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         patches = [mock.patch.object(tool, "MODELS", self.models),
                    mock.patch.object(tool, "FSD", self.root / "docs/absent FSD.md"),
-                   mock.patch.object(tool, "ORACLE", self.oracle),
+                   mock.patch.object(tool, "ORACLE", self.oracle), mock.patch.object(tool, "PENDING", self.pending),
                    mock.patch.object(tool, "canonical_catalog", functools.partial(tool.canonical_catalog, required=REQUIRED))]
         if not pilot:
             patches.append(mock.patch.object(tool, "ROOT", self.root))

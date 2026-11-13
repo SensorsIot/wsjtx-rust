@@ -95,8 +95,12 @@ class ModelTreeTests(unittest.TestCase):
         """Run a command of the tool on the fixture; returns (exit code, stdout, stderr)."""
         real_catalog = tool.canonical_catalog
         output, errors = io.StringIO(), io.StringIO()
+        # Every fixture file on the pending list: the structure checks are TC-DOC-016's.
+        pending = self.root / "tools/sysml/pending-structure.json"
+        pending.parent.mkdir(parents=True, exist_ok=True)
+        pending.write_text(json.dumps({"files": sorted(self.written), "elements": {}}), encoding="utf-8")
         with mock.patch.object(tool, "ROOT", self.root), mock.patch.object(tool, "MODELS", self.models), \
-                mock.patch.object(tool, "FSD", self.fsd), \
+                mock.patch.object(tool, "FSD", self.fsd), mock.patch.object(tool, "PENDING", pending), \
                 mock.patch.object(tool, "canonical_catalog", side_effect=lambda d, r: real_catalog(d, r, required=REQUIRED)), \
                 mock.patch.object(tool, "validate", validate or mock.Mock(side_effect=AssertionError("validator invoked"))), \
                 mock.patch.object(tool, "architecture_integrity", return_value={"connections": 0}), \
@@ -515,9 +519,19 @@ class RelocatedRealModelTests(unittest.TestCase):
             self.assertTrue((copy / relocated_key).is_file() and not (copy / movable[0]).exists())
             self.assertEqual(set(tool.canonical_catalog(copy, tool.ROOT)), set(tool.canonical_catalog(tool.MODELS, tool.ROOT)))
 
+            # The pending list follows the move. The structure checks are TC-DOC-016's: with
+            # `Station.sysml` gone the deployment rules would apply, so they are left out here.
+            listed = json.loads(tool.PENDING.read_text(encoding="utf-8"))
+            listed["files"] = [relocated_key if key == movable[0] else key for key in listed["files"]]
+            pending = Path(directory) / "pending-structure.json"
+            pending.write_text(json.dumps(listed), encoding="utf-8")
+
             def check(models):
                 output, errors = io.StringIO(), io.StringIO()
-                with mock.patch.object(tool, "MODELS", models), contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                with mock.patch.object(tool, "MODELS", models), \
+                        mock.patch.object(tool, "PENDING", pending if models == copy else tool.PENDING), \
+                        mock.patch.object(tool, "structure_lines", return_value=[]), \
+                        contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
                     status = tool.main(["check"])
                 self.assertEqual(status, 0, output.getvalue() + errors.getvalue())
                 return [line for line in output.getvalue().splitlines() if "identities" in line or line.startswith("Architecture integrity passed")]
