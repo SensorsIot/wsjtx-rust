@@ -489,7 +489,7 @@ CR, and the first deploy of that CR needs the operator's OK (policy item 4). Sui
 (`test_deploy_pins.py`) recomputes every pin from git.
 
 ```text
-983767929bcf29f9ec47871bca6152514e70fcaa56ab16d3c8305e75b9a91281  tools/deploy/station-update/station-update.ps1
+b79afb56fcac26fb5d99fa3304782006226e34b06b5685bae545ffc0fdc99cb1  tools/deploy/station-update/station-update.ps1
 0d1fb5e9676faafc71a3c1ab3c694793485a0513fe416d2eac0372719b8aa044  tools/deploy/station-update/make_package.py
 8579d535aa68596bd466b0fc400e4d8a8ca25c50e42291b3a09648ab01455509  tools/deploy/station-update/launcher.ps1
 9d0524dfc1dc536f5d54e3a1b956b737f5b2b8a5a1ccfebaa896b97241c89dd2  tools/deploy/agent-client.ps1
