@@ -134,3 +134,14 @@ queue:
     WSTX_SIMULATOR_ORACLE_DIR: "{worktree}/fixtures/decoder"
   setup:
     - {run: npm ci --ignore-scripts && npx playwright install chromium, when: [package-lock.json]}
+
+# The meter (report_cr.py --meter, harness core/docs/CR-Reporting.md "The meter").
+# List prices, USD per million tokens (Anthropic first-party rates, 2026-11);
+# cache writes default to 1.25x (5 min) and 2x (1 h) input. Haiku 5.5's cache read
+# is 0.1x input by the usual ratio. A relation, not a bill.
+meter:
+  host: claude
+  prices:
+    claude-opus-5-5: {input: 4, output: 20, cache_read: 0.20}
+    claude-sonnet-5-5: {input: 2, output: 10, cache_read: 0.10}
+    claude-haiku-5-5: {input: 0.10, output: 0.50, cache_read: 0.01}
