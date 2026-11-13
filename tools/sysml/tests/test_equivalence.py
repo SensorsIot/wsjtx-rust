@@ -522,6 +522,31 @@ class IdentityTests(unittest.TestCase):
             "6 identities: 1 unchanged, 1 moved, 1 changed, 1 added, 1 retired, 1 removed",
         ])
 
+    # R1 of #183: a case declared in the base and superseded in the head
+    # Proves: CL-014-17; TC-DOC-015
+    def test_e10c_superseded_case_is_retired_with_its_cases(self):
+        base = """package R {
+    verification 'TC-001-001' { doc /* superseded */ }
+    verification 'TC-001-002' { doc /* takes over */ }
+    verification 'TC-001-003' { doc /* takes over */ }
+}
+"""
+        head = base.replace("    verification 'TC-001-001' { doc /* superseded */ }\n",
+                            '    @RetiredCase { identity = "TC-001-001"; supersededBy = "TC-001-002; TC-001-003"; }\n')
+        with tempfile.TemporaryDirectory() as folder:
+            repository = Repository(Path(folder))
+            old = repository.commit({"docs/sysml/R.sysml": base})
+            new = repository.commit({"docs/sysml/R.sysml": head})
+            with mock.patch.object(tool, "ROOT", repository.root):
+                code, out, _err = run("identities", old, new)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out.splitlines(), [
+            "TC-001-001 retired R.sysml -> - superseded by TC-001-002, TC-001-003",
+            "TC-001-002 unchanged R.sysml -> R.sysml",
+            "TC-001-003 unchanged R.sysml -> R.sysml",
+            "3 identities: 2 unchanged, 0 moved, 0 changed, 0 added, 1 retired, 0 removed",
+        ])
+
     @staticmethod
     def moved_case(link: str) -> str:
         """The `identities` line of TC-001-001, moved from R.sysml to web/W.sysml in the commit

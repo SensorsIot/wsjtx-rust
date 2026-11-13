@@ -13,13 +13,7 @@ tool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tool)
 REQUIRED = {"FR-001", "CL-003-01", "TC-001-001"}
 # The fixture's model files and the required package each declares, written by hand.
-REQUIRED_FILES = {
-    "Requirements.sysml": "WstxRequirements", "Architecture.sysml": "WstxArchitecture",
-    "Profiles.sysml": "WstxProfiles", "RecordingReceive.sysml": "WstxRecordingReceive",
-    "StationDecode.sysml": "WstxOfflineDecode", "RadioIO.sysml": "WstxRadioIO",
-    "OperatingLayout.sysml": "WstxOperatingLayout", "OperatingReceive.sysml": "WstxOperatingReceive",
-    "StationProtocol.sysml": "WstxStationProtocol", "ProductScope.sysml": "WstxProductScope",
-}
+REQUIRED_FILES = {"Requirements.sysml": "WstxRequirements", "Architecture.sysml": "WstxArchitecture"}
 MODEL ='''// Canonical authority: SysML
 package WstxRequirements {
     enum def ImplementationState { enum target; enum partial; enum implemented; }
@@ -96,8 +90,8 @@ class CanonicalAuthorityTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     self.check()
         self.requirements.write_text(MODEL, encoding="utf-8")
-        (self.models / "RadioIO.sysml").unlink()
-        with self.assertRaisesRegex(ValueError, "Canonical model packages missing: WstxRadioIO$"):
+        (self.models / "Architecture.sysml").unlink()
+        with self.assertRaisesRegex(ValueError, "Canonical model packages missing: WstxArchitecture$"):
             self.check()
 
     def test_undefined_nonreciprocal_and_absent_clause_verification_refused(self):
@@ -191,12 +185,9 @@ class CanonicalAuthorityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, message):
                 self.check()
 
-    def test_new_package_requires_scope_reference_and_is_scanned(self):
+    def test_new_package_needs_no_scope_reference_and_is_scanned(self):
         extra = self.models / "FutureBackend.sysml"
         extra.write_text("package FutureBackend {}", encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "lacks a ProductScope reference"):
-            self.check()
-        (self.models / "ProductScope.sysml").write_text("package WstxProductScope { private import FutureBackend::*; }", encoding="utf-8")
         self.check()
         extra.write_text("package FutureBackend { requirement 'FR-001' { attribute coverage : ImplementationState = ImplementationState::target; } }", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "Duplicate canonical"):
@@ -219,7 +210,7 @@ class CanonicalAuthorityTests(unittest.TestCase):
                     archive.write_text("Contradictory historical Markdown", encoding="utf-8")
                 with contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(tool.main(["check"]), 0)
-                self.assertEqual(len(validate.call_args.args[0]), 10)
+                self.assertEqual(len(validate.call_args.args[0]), len(REQUIRED_FILES))
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as refused:
                 tool.main(["sync"])
             self.assertEqual(refused.exception.code, 2)

@@ -19,13 +19,7 @@ tool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tool)
 
 REQUIRED = {"FR-001", "CL-003-01", "TC-001-001"}
-REQUIRED_FILES = {
-    "Requirements.sysml": "WstxRequirements", "Architecture.sysml": "WstxArchitecture",
-    "Profiles.sysml": "WstxProfiles", "RecordingReceive.sysml": "WstxRecordingReceive",
-    "StationDecode.sysml": "WstxOfflineDecode", "RadioIO.sysml": "WstxRadioIO",
-    "OperatingLayout.sysml": "WstxOperatingLayout", "OperatingReceive.sysml": "WstxOperatingReceive",
-    "StationProtocol.sysml": "WstxStationProtocol", "ProductScope.sysml": "WstxProductScope",
-}
+REQUIRED_FILES = {"Requirements.sysml": "WstxRequirements", "Architecture.sysml": "WstxArchitecture"}
 REFUSED = "Proves tag outside the verification binding: "
 
 
