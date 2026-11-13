@@ -1168,6 +1168,10 @@ def write_architecture_oracle(cache: Path) -> list[str]:
 # `elements` (qualified name -> owning function; exempt with their members). Only `check`
 # reads it; a rewrite takes its entries off.
 PENDING = Path(__file__).with_name("sysml") / "pending-structure.json"
+PENDING_KEY = "tools/sysml/pending-structure.json"
+# The commit a `check` judges (a pinned check); None: the working tree. Set by the caller,
+# as `ORACLE` and the Pilot inventory are, never by a command-line option.
+CHECK_COMMIT = None
 STATION_FILE = "Station.sysml"
 STATION_LINK = "interfaces/internal/StationLink.sysml"
 STATION_COMMANDS = "interfaces/internal/StationCommands.sysml"
@@ -1242,6 +1246,22 @@ def pending_elements(listed: dict, records: dict, keys: list[str]) -> dict:
         if name not in elements or not elements[name][1]:
             raise ValueError("Pending structure list: no model element: " + name)
     return {name: elements[name] for name in listed}
+
+
+def pinned_structure(revision: str, folder: Path):
+    """CL-014-18, a check on a pinned model: (model folder, keys, pending list or None) of
+    the commit, its `docs/sysml` extracted below `folder`. Its own list is refused or applied
+    with the working tree's form rules against its key set; None when it has no list."""
+    commit = commit_of(revision)
+    extract(commit, folder, ["docs/sysml"])
+    models = folder / "docs/sysml"
+    files = model_files(models)
+    entry = "Requirements.sysml"
+    keys = [entry, *(key for key in files if key != entry)]
+    if not git("ls-tree", "--name-only", commit, "--", PENDING_KEY).strip():
+        return models, keys, None
+    extract(commit, folder, [PENDING_KEY])
+    return models, keys, pending_list(folder / PENDING_KEY, set(files))
 
 
 def part_folder(key: str):
@@ -1611,6 +1631,10 @@ MODEL_PATH = re.compile(r"docs/sysml/[\w./-]*[\w/]")
 LINK = re.compile(r"\]\(\s*<?([^)\s>]+)>?\s*\)")
 # The tracked files at <head> whose model citations `equivalence` checks.
 CITATION_ROOTS = ("server", "client", "tests", "tools", "fixtures", "docs/harness", ".harness", "README.md")
+# P6: the tests below READERS that judge a pinned commit's model or their own fixture model.
+READERS = "tools/sysml/tests/"
+PINNED_LINE = re.compile(r'(?m)^PINNED = "([0-9A-Fa-f]{7,40})"$')
+FIXTURE_PACKAGE = re.compile(r"\bpackage\s+([A-Za-z_]\w*)\s*\{")
 MOVE_TRAILER = re.compile(r"(?m)^Model-Move:\s*pure\s*$")
 EXPORT_WORKERS = 2
 
@@ -1652,6 +1676,35 @@ def extract(commit: str, destination: Path, paths=()) -> None:
     error = process.stderr.read().decode("utf-8", "replace").strip()
     if process.wait():
         raise Unreadable(f"git archive {commit} {' '.join(paths)}: {error}")
+
+
+def citation_reader(path: str, text: str):
+    """P6 (CL-014-17): which model the tracked file `path` with `text` reads. A file below
+    READERS with a line `PINNED = "<hex>"` naming a commit is a pinned reader:
+    ("pinned", commit), judged by that rule only. One there without a `PINNED` line that
+    declares `package <Top> {` is a fixture reader: ("fixture", {Top, ...}). Else None."""
+    if not path.startswith(READERS):
+        return None
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    values = PINNED_LINE.findall(text)
+    if values:
+        for value in values:
+            try:
+                return "pinned", commit_of(value)
+            except Unreadable:
+                continue
+        return None
+    tops = set(FIXTURE_PACKAGE.findall(text))
+    return ("fixture", tops) if tops else None
+
+
+def in_tree(commit: str, path: str) -> bool:
+    """Whether `path` (a file or folder) is in the tree of `commit`."""
+    try:
+        git("cat-file", "-e", f"{commit}:{path.rstrip('/')}")
+        return True
+    except Unreadable:
+        return False
 
 
 def top_packages(code: str) -> set[str]:
@@ -1837,8 +1890,9 @@ def summary(facts: tuple) -> str:
     return (owned or facts[0][3]) + (" " + json.dumps(words[:60]) if words else "")
 
 
-def compare(base: Side, head: Side, citations: list) -> tuple[int, list[str]]:
-    """P2 to P6 of CL-014-17 for two exported sides: (exit code, lines)."""
+def compare(base: Side, head: Side, citations: list, exempt=None) -> tuple[int, list[str]]:
+    """P2 to P6 of CL-014-17 for two exported sides: (exit code, lines). `exempt` maps a
+    citation of a pinned or fixture reader to its reader kind (`exemptions`)."""
     entries_b, entries_h = base.export["entries"], head.export["entries"]
 
     def by_rel(entries):
@@ -1960,21 +2014,78 @@ def compare(base: Side, head: Side, citations: list) -> tuple[int, list[str]]:
         for note, number in sorted(extra.items()):
             for file in files[note][:number]:
                 differences.append(f"{word} note {json.dumps(note)} {file}")
-    # P6: citations outside the model, read at <head>.
+    # P6: citations outside the model, read at <head>; an exempt one is an info line.
+    exempt, exempt_counts = exempt or {}, {}
     for path, line, kind, citation in citations:
-        if kind == "name":
-            on_b = base.export["resolved"].get(citation) is not None
-            on_h = head.export["resolved"].get(citation) is not None
-        else:
-            on_b, on_h = (base.root / citation).exists(), (head.root / citation).exists()
+        on_b, on_h = on_side(base, kind, citation), on_side(head, kind, citation)
         if on_b and not on_h:
-            differences.append(f"stale-by-change {path}:{line} {citation}")
+            reader = exempt.get((path, line, kind, citation))
+            if reader:
+                info.append(f"exempt {path}:{line} {citation} ({reader})")
+                exempt_counts[path] = exempt_counts.get(path, 0) + 1
+            else:
+                differences.append(f"stale-by-change {path}:{line} {citation}")
         elif not on_b and not on_h:
             info.append(f"unresolved {path}:{line} {citation}")
     lines = differences + moves + [f"pair {files[0]} -> {files[1]}: {count}" for files, count in sorted(pairs.items())] + info
-    lines.append(f"{len(differences)} differences; {len(pair)} entries paired, {len(moves)} moved"
-                 if differences else f"equivalent: {len(pair)} entries paired, {len(moves)} moved")
+    lines.append((f"{len(differences)} differences; {len(pair)} entries paired, {len(moves)} moved"
+                  if differences else f"equivalent: {len(pair)} entries paired, {len(moves)} moved")
+                 + ("; exempt: " + ", ".join(f"{path} {count}" for path, count in exempt_counts.items())
+                    if exempt_counts else ""))
     return (1 if differences else 0), lines
+
+
+def on_side(side: Side, kind: str, citation: str) -> bool:
+    """Whether a citation resolves on an exported side: a name in its export, a path in its tree."""
+    if kind == "name":
+        return side.export["resolved"].get(citation) is not None
+    return (side.root / citation).exists()
+
+
+def exemptions(pairs: list, citations: list, side_of, exported) -> list[dict]:
+    """P6 for each exported (base, head) pair: {(file, line, kind, citation): "pinned" or
+    "fixture"} for each citation that would be stale-by-change in a pinned or fixture
+    reader and is exempt. `side_of(commit)` gives a pinned commit's side, and
+    `exported(sides, names)` exports those of them not yet exported."""
+    readers, found, wanted = {}, [], {}
+    for (base, head), cited in zip(pairs, citations):
+        marks = {}
+        for path, line, kind, citation in cited:
+            if not path.startswith(READERS) or not on_side(base, kind, citation) or on_side(head, kind, citation):
+                continue
+            if (id(head), path) not in readers:
+                try:
+                    text = (head.root / path).read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    text = ""
+                readers[(id(head), path)] = citation_reader(path, text)
+            reader = readers[(id(head), path)]
+            if reader is None:
+                continue
+            if reader[0] == "fixture":
+                if kind == "name" and citation.split("::", 1)[0] in reader[1]:
+                    marks[(path, line, kind, citation)] = "fixture"
+            elif kind == "path":
+                if in_tree(reader[1], citation):
+                    marks[(path, line, kind, citation)] = "pinned"
+            else:
+                marks[(path, line, kind, citation)] = reader[1]
+                wanted.setdefault(reader[1], set()).add(citation)
+        found.append(marks)
+    models = {commit: side_of(commit) for commit in wanted}
+    names = {}
+    for commit, side in models.items():
+        names.setdefault(id(side), set()).update(wanted[commit])
+    exported({id(side): side for side in models.values()}.values(), names)
+    for marks in found:
+        for key, mark in list(marks.items()):
+            if mark in ("fixture", "pinned"):
+                continue
+            if models[mark].export["resolved"].get(key[3]) is not None:
+                marks[key] = "pinned"
+            else:
+                del marks[key]
+    return found
 
 
 def compare_revisions(pairs: list[tuple[str, object]], cache: Path) -> tuple[list[tuple[int, list[str]]], int]:
@@ -2005,11 +2116,27 @@ def compare_revisions(pairs: list[tuple[str, object]], cache: Path) -> tuple[lis
         for found in citations:
             names.update(citation for _path, _line, kind, citation in found if kind == "name")
         names = sorted(names)
-        with ThreadPoolExecutor(max_workers=EXPORT_WORKERS) as pool:
-            exports = {id(side): pool.submit(run_export, side, names, cache, folder) for side in sides.values()}
-            for side in sides.values():
-                side.export = exports[id(side)].result()
-        return [compare(base, head, found) for (base, head), found in zip(resolved, citations)], len(sides)
+
+        def exported(chosen, wanted):
+            chosen = [side for side in chosen if side.export is None]
+            with ThreadPoolExecutor(max_workers=EXPORT_WORKERS) as pool:
+                exports = {id(side): pool.submit(run_export, side, sorted(wanted.get(id(side), names)), cache, folder)
+                           for side in chosen}
+                for side in chosen:
+                    side.export = exports[id(side)].result()
+
+        def pinned_side(commit):
+            # Only the model of a pinned commit is read: its docs/sysml, exported once per tree.
+            tree = git("rev-parse", commit + "^{tree}").strip()
+            if tree not in sides:
+                extract(commit, folder / tree[:16], ["docs/sysml"])
+                sides[tree] = Side("pinned " + commit, folder / tree[:16], commit)
+            return sides[tree]
+
+        exported(list(sides.values()), {})
+        exempt = exemptions(resolved, citations, pinned_side, exported)
+        return [compare(base, head, found, marks)
+                for (base, head), found, marks in zip(resolved, citations, exempt)], len(sides)
 
 
 def marked(cache: Path) -> tuple[int, list[str]]:
@@ -2135,6 +2262,7 @@ def main(argv=None):
     listed.add_argument("base")
     listed.add_argument("head", nargs="?")
     args = parser.parse_args(argv)
+    scratch = None
     try:
         if args.command == "setup":
             setup(args.cache_dir)
@@ -2192,14 +2320,20 @@ def main(argv=None):
             files = model_files(MODELS)
             keys = [entry, *(key for key in files if key != entry)]
             paths = [MODELS / entry, *(path for key, path in files.items() if key != entry)]
-            # The pending list is refused whole before any passed line (CL-014-18).
-            pending = pending_list(PENDING, set(files))
+            # The pending list is refused whole before any passed line (CL-014-18). A pinned
+            # check reads the commit's list, key set and structure sources instead.
+            if CHECK_COMMIT is None:
+                structure_models, structure_keys = MODELS, keys
+                pending = pending_list(PENDING, set(files))
+            else:
+                scratch = tempfile.TemporaryDirectory(prefix="sysml-pinned-check-")
+                structure_models, structure_keys, pending = pinned_structure(CHECK_COMMIT, Path(scratch.name))
         else:
             paths = args.files
         result = validate(paths, args.cache_dir, inventory=args.command == "check")
         if args.command == "check":
-            if result.returncode == 0:
-                named = pending_elements(pending[1], inventory_records(result.stdout) if pending[1] else {}, keys)
+            if result.returncode == 0 and pending is not None:
+                named = pending_elements(pending[1], inventory_records(result.stdout) if pending[1] else {}, structure_keys)
             print(f"Canonical SysML catalog/trace checks passed: {len(entries)} identities; behavioral correspondence remains independently reviewed.")
         for line in result.stdout.splitlines():
             if not line.startswith(("Reading ", "AST\t")):
@@ -2209,12 +2343,18 @@ def main(argv=None):
         if result.returncode == 0 and args.command == "check":
             counts = architecture_integrity(result.stdout)
             print("Architecture integrity passed: " + ", ".join(f"{count} {kind}" for kind, count in counts.items()) + "; runtime behavior not proved.")
-            records = inventory_records(result.stdout) if "AST\t" in result.stdout else {}
-            print("\n".join(structure_lines(MODELS, records, keys, pending, named)))
+            if pending is None:
+                print(f"Structure checks not run: {CHECK_COMMIT} has no pending list")
+            else:
+                records = inventory_records(result.stdout) if "AST\t" in result.stdout else {}
+                print("\n".join(structure_lines(structure_models, records, structure_keys, pending, named)))
         return result.returncode
     except (OSError, ValueError, subprocess.TimeoutExpired) as error:
         print(f"SysML check failed: {error}", file=sys.stderr)
         return 2
+    finally:
+        if scratch is not None:
+            scratch.cleanup()
 
 
 if __name__ == "__main__":

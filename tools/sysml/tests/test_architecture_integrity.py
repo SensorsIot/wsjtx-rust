@@ -305,6 +305,14 @@ class ArchitectureIntegrityTests(unittest.TestCase):
         patch = mock.patch.object(tool, "ORACLE", ORACLE_FILE)
         patch.start()
         cls.addClassCleanup(patch.stop)
+        # `check` judges PINNED (CL-014-18): its own pending list, not the working tree's,
+        # which here carries an element PINNED lacks.
+        listing = pinned / "working-pending-structure.json"
+        listing.write_text(json.dumps({"files": [], "elements": {"WstxContext::browserOwner": "web"}}), encoding="utf-8")
+        for name, value in (("CHECK_COMMIT", PINNED), ("PENDING", listing)):
+            patch = mock.patch.object(tool, name, value, create=True)
+            patch.start()
+            cls.addClassCleanup(patch.stop)
         cls.source = tool.model_files(cls.models)[architecture_key(cls.models)].read_text(encoding="utf-8")
         mutated = [cls.source.replace(PACKAGE, COMPANION_PROBE, 1), cls.source.replace(PACKAGE, UNDEFINED_PROBE, 1)]
         for name in dir(cls):

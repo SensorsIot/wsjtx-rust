@@ -652,6 +652,21 @@ pending list `tools/sysml/pending-structure.json`:
   items of each interface definition (`IITEM`), the members of each part directly in the
   root and of its types (`OUTSIDE`, `MEMBER`) and each requirement's subject (`SUBJECT`).
   Only `check` reads the list; the other commands work without it.
+- A check on a pinned model is `check` entered with a commit by a Python-level setting of
+  the tool (`CHECK_COMMIT`), set by its caller as the oracle file and the Pilot inventory
+  are; there is no command-line option, and without it `check` reads only the working
+  tree's list and model and refuses a list that is missing or malformed. Authority,
+  catalog, trace bindings and the validation's file keys are read from the working tree;
+  the Pilot inventory is what `validate` returns, the commit's as the caller supplies it;
+  the oracle file is the tool's `ORACLE`. The pending list is the commit's own
+  `tools/sysml/pending-structure.json`, and the key set it is checked against and the model
+  files, keys and sources of the structure stage are the commit's `docs/sysml`.
+- A commit without the file predates the structure checks: no structure stage runs, and
+  `Structure checks not run: <commit> has no pending list` takes the structure line's
+  place; the exit code is that of the stages before. A file present there is refused or
+  applied with the form rules above, against the commit's key set, its elements resolved
+  against the supplied inventory; `{"files": [], "elements": {}}` means the target is
+  reached and all ten rules apply, and a zero-byte file is refused as malformed.
 
 `python tools/sysml.py status` prints each FR's status as computed from its clauses
 (CL-014-19):
@@ -708,7 +723,23 @@ meaning (CL-014-17):
   `missing|added package-level <class> "<text>" <file>`, `missing|added note "<text>" <file>`,
   `stale-by-change <file>:<line> <citation>`, then `moved <relative name> <base package>
   <base file> -> <head package> <head file>`, `pair <base file> -> <head file>: <count>`,
-  `unresolved <file>:<line> <citation>` and a summary.
+  `unresolved <file>:<line> <citation>`, `exempt <file>:<line> <citation> (pinned|fixture)`
+  and a summary.
+- A tracked file below `tools/sysml/tests/` is a pinned reader when one of its lines is
+  `PINNED = "<7 to 40 hex>"` and that value names a commit of the repository; it is judged
+  by this rule only, even when it also declares a package. A citation in it is exempt from
+  `stale-by-change` only if it resolves in the pinned commit's model (a name in that
+  commit's export, one more export per distinct pinned commit, or a `docs/sysml/` path in
+  its tree); one that does not is judged as before. A pinned commit failing the Pilot
+  validation exits 2, as any side.
+- A file there without a `PINNED` line is a fixture reader of each `<Top>` its text
+  declares as `package <Top> {` or `library package <Top> {`: its name citations whose
+  first segment is such a `<Top>` are exempt. Every other citation, in any other file,
+  keeps the rule above.
+- Each exempt citation that would have been `stale-by-change` prints its `exempt` line, no
+  difference and no change of the exit code; the summary then ends with
+  `; exempt: <file> <count>, ...`, one entry per file in file order with its number of
+  exempt lines, and is unchanged without any. This holds in each commit of `--marked`.
 - Exit 0 equivalent, 1 differences, 2 cannot compare (unknown revision, or a side failing
   the Pilot validation).
 - `equivalence --marked` checks each commit of `master..HEAD` with the trailer
