@@ -6,6 +6,7 @@ the lines it was handed (their keys only).
 """
 import json
 import os
+import shutil
 import tempfile
 import unittest
 
@@ -15,6 +16,7 @@ SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 
 FAKE_CHECK = r"""
 const fs=require('node:fs'),path=require('node:path'),readline=require('node:readline');
+console.log('CHECK CWD '+process.cwd()+' FILE '+__filename);
 fs.writeFileSync(path.join(process.env.WSTX_LIVE_PAGE_CONTROL,'restart'),'');
 let sessions=0;
 readline.createInterface({input:process.stdin}).on('line',line=>{
@@ -71,8 +73,11 @@ class LivePageCheckTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.station = os.path.join(self.tmp.name, "station")
         os.makedirs(os.path.join(self.station, "logs"))
-        self.radio = os.path.join(self.tmp.name, "radio")
+        self.shared = os.path.join(self.tmp.name, "shared")
+        self.radio = os.path.join(self.shared, "radio")
         os.makedirs(self.radio)
+        self.repo = os.path.join(self.tmp.name, "repo")
+        os.makedirs(self.repo)
         self.log = os.path.join(self.tmp.name, "log.txt")
         open(self.log, "w").close()
         self.state = os.path.join(self.tmp.name, "state.json")
@@ -86,11 +91,12 @@ class LivePageCheckTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def run_check(self, state):
+    def run_check(self, state, script=SCRIPT, check=True):
         with open(self.state, "w", encoding="utf-8") as f:
             json.dump(state, f)
-        rc, out = pwsh.run(SCRIPT, ["-WaitSeconds", "1", "-Station", self.station, "-AgentClient", self.client,
-                                    "-RadioDir", self.radio, "-Check", self.check], prelude(self.station),
+        args = ["-WaitSeconds", "1", "-Station", self.station, "-AgentClient", self.client,
+                "-Repo", self.repo, "-Shared", self.shared] + (["-Check", self.check] if check else [])
+        rc, out = pwsh.run(script, args, prelude(self.station),
                            env={"LPC_LOG": self.log, "LPC_STATE": self.state,
                                 "LPC_LOCK": os.path.join(self.station, "logs", "update.lock")})
         with open(self.log, encoding="utf-8") as f:
@@ -115,6 +121,28 @@ class LivePageCheckTests(unittest.TestCase):
                          ["CHECK GOT cookies", "CHECK GOT stopping", "CHECK GOT cookies"], out)
         self.assertNotIn("secret", out)
         self.assertIn("LIVE PAGE CHECK PASS", out)
+
+    def test_run_from_a_package_folder_takes_every_path_from_its_parameters(self):
+        """TC-171-03: the page check runs from the station package, outside any repository."""
+        package = os.path.join(self.tmp.name, "pkg", "deploy", "tools", "deploy")
+        os.makedirs(package)
+        script = os.path.join(package, "live-page-check.ps1")
+        shutil.copyfile(SCRIPT, script)
+        os.makedirs(os.path.join(self.repo, "tests"))
+        checker = os.path.join(self.repo, "tests", "live-page-check.cjs")
+        shutil.copyfile(self.check, checker)
+        rc, out, log = self.run_check(FREE, script=script, check=False)
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"CHECK CWD {self.repo} FILE {checker}", out)
+        self.assertEqual(log, ["ctrlc", "start-locked"], out)
+        self.assertIn("LIVE PAGE CHECK PASS", out)
+        # The lease of the -Shared folder, not of a repository around the script, makes it busy.
+        with open(os.path.join(self.radio, "lease.json"), "w", encoding="utf-8") as f:
+            json.dump({"holder": "qso-test", "expires": "2099-01-01T00:00:00Z"}, f)
+        open(self.log, "w").close()
+        rc, out, log = self.run_check(FREE, script=script, check=False)
+        self.assertEqual(rc, 3, out)
+        self.assertIn("qso-test holds the radio lease", out)
 
     def test_armed(self):
         self.assert_busy(dict(FREE, arm="armed"), "transmit is armed")

@@ -87,5 +87,29 @@ class LostRefusalTests(unittest.TestCase):
         self.assertIn("expected message", problems[0])
 
 
+class DrillCaseTests(unittest.TestCase):
+    """The drill's cases against the script in the tree, one group per test."""
+
+    def run_group(self, cases):
+        lines = []
+        with tempfile.TemporaryDirectory() as tmp:
+            failures = station_drill.run_cases(real_script(), cases, tmp, lines.append)
+        self.assertEqual(failures, 0, "\n".join(lines))
+
+    def test_the_script_uses_only_classified_commands(self):
+        self.assertEqual(station_drill.classify(real_script()), [])
+
+    def test_package_refusals_and_controls(self):
+        self.run_group(station_drill.CASES)
+
+    def test_idle_refusal_and_wait(self):
+        """TC-171-01: each busy reason refuses before the stop; 290 s proceeds, 300 s gives up."""
+        self.run_group(station_drill.IDLE_CASES)
+
+    def test_pins_and_operator_ok(self):
+        """TC-171-02 (a) to (h): item 5 refuses before any write with the line; only the exact OK proceeds."""
+        self.run_group(station_drill.PIN_CASES)
+
+
 if __name__ == "__main__":
     unittest.main()

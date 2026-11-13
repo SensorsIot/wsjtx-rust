@@ -1,23 +1,28 @@
-"""Show each refusal of station-update.ps1 happening before the destination changes (#34).
+"""Show each refusal of station-update.ps1 happening before the destination changes (#34, #171).
 
 usage: python tools/deploy/station_drill.py [--script <station-update.ps1>] [--keep <dir>]
 
-Runs a copy of the install script against a sandbox station (LOCALAPPDATA points into a
-temporary directory) with every command that reaches the system replaced by a mock: the
-scheduled task, the firewall rule, processes, the network and git. Commands that would
-change the system (start/stop the task, start/stop a process, web requests) record a
-sentinel and throw. Before running, the drill refuses a script that uses a command, .NET
-type or call target it has not classified, `$ExecutionContext`, an environment variable
-other than LOCALAPPDATA, or a literal absolute path other than the repository (used only
-by the mocked git) and the protected deploy-authority root. This keeps the commands the
-drill knows away from the live station; it is no sandbox against code written to escape
-it, so read a changed script's diff before drilling it.
+Runs the install script against a sandbox station (LOCALAPPDATA points into a temporary
+directory) with every command that reaches the system replaced by a mock: the scheduled
+task, the firewall rule, processes, the network, git, GitHub and the clock. Commands that
+would change the system (start/stop the task, start/stop a process, web requests, posting on
+GitHub, cr_state.py) record a sentinel and throw. Before running, the drill refuses a script
+that uses a command, .NET type or call target it has not classified, `$ExecutionContext`, an
+environment variable other than LOCALAPPDATA, or a literal absolute path other than the
+repository (whose git is mocked; the drill passes a sandbox -Repo) and the protected
+deploy-authority root. The one call without a static name it accepts is the dot-source of
+`$AgentClient`, the package's agent client: in the drill that is the sandbox's fake client.
+This keeps the commands the drill knows away from the live station; it is no sandbox against
+code written to escape it, so read a changed script's diff before drilling it.
 
-For each case it builds a package as make_package.py does, damages one thing, runs the
-script without -DryRun and requires: a non-zero exit, the refusal's own message (a refusal
-for another reason fails the case), no sentinel, and the sandbox station (version
-directories, active.json, profiles, launcher) unchanged byte for byte; only logs\\ may
-change. Two positive controls show that the mocks do not refuse everything: the intact
+For each case it builds a package as make_package.py does (with the mechanism files under
+deploy\\ and the script under test among them), gives the commit and the running commit their
+deploy pins (a mocked `git show` of Project-Specifics.md), damages one thing, runs the
+package's copy of the script and requires: a non-zero exit, the refusal's own message (a
+refusal for another reason fails the case), no sentinel, and the sandbox station (version
+directories, active.json, profiles, launcher) unchanged byte for byte; only logs\\ may change.
+A busy station gives up with exit 3, a changed mechanism refuses with exit 5 and the exact
+`Deploy OK:` line. Positive controls show that the mocks do not refuse everything: the intact
 package passes -DryRun unchanged, and without -DryRun it reaches the station stop. Cases
 marked LIMIT are not refused today; they are reported so that the rule stays stated as
 unmet (#31, #32) and fail the drill if that ever changes unnoticed.
@@ -28,6 +33,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -39,23 +45,52 @@ POWERSHELL = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), r"System3
 CURRENT = "c" * 40
 COMMIT = "1234567890" + "ab" * 15
 OLDER = "0" * 40
+PREVIOUS = "d" * 40
 TASK = "WSTX Rust Station HB9BLA"
+OPERATOR = "SensorsIot"
+COMMENT_ID = "987654321"
+# The mechanism files in pin order (docs/harness/Project-Specifics.md, Deploy pins).
+MECHANISM = ("tools/deploy/station-update/station-update.ps1", "tools/deploy/station-update/make_package.py",
+             "tools/deploy/station-update/launcher.ps1", "tools/deploy/agent-client.ps1",
+             "tools/deploy/station-probe.ps1", "tools/deploy/live-page-check.ps1")
+LAUNCHER = b"# drill: station launcher\n"
 
 # Every Verb-Noun command the script may use. Mocked ones are replaced in the prelude; the
-# rest only touch paths under the sandbox the script derives from LOCALAPPDATA and -Manifest.
+# rest only touch paths under the sandbox the script derives from LOCALAPPDATA, -Manifest and -Repo.
 MOCKED = {"Get-ScheduledTask", "Start-ScheduledTask", "Stop-ScheduledTask", "Get-NetFirewallRule",
           "Get-NetFirewallAddressFilter", "Get-NetFirewallPortFilter", "Get-CimInstance", "Start-Process",
-          "Stop-Process", "Invoke-WebRequest", "git", "powershell.exe"}
+          "Stop-Process", "Invoke-WebRequest", "git", "powershell.exe", "gh", "python", "Get-Date", "Start-Sleep",
+          "Open-AgentSession", "Agent-Get"}
 LOCAL = {"Set-StrictMode", "Join-Path", "Split-Path", "Test-Path", "Get-Item", "Get-FileHash", "Get-ChildItem",
          "Copy-Item", "New-Item", "Remove-Item", "Rename-Item", "Get-Content", "Add-Content", "ConvertFrom-Json",
-         "ConvertTo-Json", "Resolve-Path", "Write-Output", "Where-Object", "Start-Sleep", "Out-Null",
+         "ConvertTo-Json", "Resolve-Path", "Write-Output", "Where-Object", "Out-Null", "Sort-Object",
+         "Push-Location", "Pop-Location", "ForEach-Object", "(dot-source-agent-client)",
          "Safe-Child", "Station-Processes", "Assert-Setup", "Firewall-Scope", "Send-CtrlC", "Stop-Station",
-         "Start-Ready", "Write-Active", "Save-Profile", "Restore-Profile", "Switch-Back", "Step", "Hash", "ForEach-Object"}
+         "Start-Ready", "Write-Active", "Save-Profile", "Restore-Profile", "Restore-Launcher", "Switch-Back", "Step",
+         "Hash", "Now", "Read-Pins", "Pins-Text", "Assert-Ok", "Take-Lock", "Read-State", "Station-Busy",
+         "Busy-Reason", "Clean", "Last-Line", "Move-Installed", "Issues-Named"}
 # .NET types the script may name; file and path methods act on the same sandbox paths.
 TYPES = {"[Convert]", "[DateTime]", "[IO.FileAttributes]", "[IO.File]", "[IO.Path]", "[NullString]", "[StringComparison]",
-         "[Text.Encoding]", "[Text.UTF8Encoding]", "[bool]", "[int]", "[ordered]", "[string]", "[switch]"}
+         "[Text.Encoding]", "[Text.UTF8Encoding]", "[bool]", "[int]", "[ordered]", "[string]", "[switch]",
+         "[pscustomobject]", "[Globalization.CultureInfo]", "[regex]"}
 
-PRELUDE = r"""
+# The scripted clock (Get-Date and Start-Sleep) and the busy station: DRILL_BUSY names one busy
+# reason, which holds while the clock is less than DRILL_BUSY_UNTIL seconds past 12:00:00.
+CLOCK = r"""
+$global:DrillT0 = [DateTime]::new(2026, 11, 13, 12, 0, 0, [DateTimeKind]::Utc)
+$global:DrillClock = $global:DrillT0
+$global:DrillLock = $null; $global:DrillSecondDone = $false
+function Drill-Busy($kind) {
+  $until = if ($env:DRILL_BUSY_UNTIL) { [double]$env:DRILL_BUSY_UNTIL } else { 1e9 }
+  $env:DRILL_BUSY -eq $kind -and ($global:DrillClock - $global:DrillT0).TotalSeconds -lt $until }
+function Get-Date { $global:DrillClock }
+function Start-Sleep { param($Seconds = 0, $Milliseconds = 0)
+  $global:DrillClock = $global:DrillClock.AddSeconds([double]$Seconds).AddMilliseconds([double]$Milliseconds)
+  if ($global:DrillLock -and -not (Drill-Busy 'lock')) { $global:DrillLock.Dispose(); $global:DrillLock = $null } }
+if ($env:DRILL_BUSY -eq 'lock') { $global:DrillLock = [IO.File]::Open("$env:LOCALAPPDATA\WstxRust\station\logs\update.lock", 'OpenOrCreate', 'ReadWrite', 'None') }
+"""
+
+PRELUDE = CLOCK + r"""
 $global:DrillSentinel = $env:DRILL_SENTINEL
 function Drill-Mutation($name) { Add-Content -LiteralPath $global:DrillSentinel -Value $name; throw "DRILL-SENTINEL $name" }
 function Get-ScheduledTask { param($TaskName)
@@ -63,20 +98,58 @@ function Get-ScheduledTask { param($TaskName)
   [pscustomobject]@{ Actions = @([pscustomobject]@{ Arguments = $a }); State = 'Ready' } }
 function Start-ScheduledTask { Drill-Mutation 'Start-ScheduledTask' }
 function Stop-ScheduledTask { Drill-Mutation 'Stop-ScheduledTask' }
-function Start-Process { Drill-Mutation 'Start-Process' }
+# A second update started at the stop, while the first holds update.lock (DRILL_SECOND).
+function Start-Process {
+  if ($env:DRILL_SECOND -and -not $global:DrillSecondDone) {
+    $global:DrillSecondDone = $true
+    $out = try { & $env:DRILL_SECOND_SCRIPT -Manifest $env:DRILL_SECOND_MANIFEST -Repo $env:DRILL_SECOND_REPO *>&1 | Out-String } catch { 'THREW ' + $_.Exception.Message }
+    Set-Content -LiteralPath $env:DRILL_SECOND_OUT -Value ($out + "`nEXIT $LASTEXITCODE")
+  }
+  Drill-Mutation 'Start-Process' }
 function Stop-Process { Drill-Mutation 'Stop-Process' }
 function Invoke-WebRequest { Drill-Mutation 'Invoke-WebRequest' }
-function Get-CimInstance { @() }
+function Get-CimInstance { param($ClassName, $Filter)
+  $n = if (Drill-Busy 'procs0') { 0 } elseif (Drill-Busy 'procs2') { 2 } else { 1 }
+  for ($i = 0; $i -lt $n; $i++) { [pscustomobject]@{ ProcessId = 4242 + $i; ExecutablePath = "$env:LOCALAPPDATA\WstxRust\station\ccccccccc\wstx-rust.exe" } } }
 function Get-NetFirewallRule { param($Name) [pscustomobject]@{ Enabled = 'True'; Direction = 'Inbound'; Action = 'Allow' } }
 function Get-NetFirewallAddressFilter { process { [pscustomobject]@{ LocalAddress = '192.168.0.37'; RemoteAddress = $(if ($env:DRILL_REMOTE) { $env:DRILL_REMOTE } else { '192.168.0.6' }) } } }
 function Get-NetFirewallPortFilter { process { [pscustomobject]@{ Protocol = 'TCP'; LocalPort = '18081' } } }
 function git {
   if ($args -contains 'fetch') { $global:LASTEXITCODE = $(if ($env:DRILL_FETCH_FAIL) { 1 } else { 0 }); return }
   if ($args -contains 'merge-base') { $c = $args[$args.Count - 2]; $global:LASTEXITCODE = $(if (($env:DRILL_ON_MASTER -split ',') -contains $c) { 0 } else { 1 }); return }
+  if ($args -contains 'show') {
+    $spec = [string]$args[$args.Count - 1]; $i = $spec.IndexOf(':')
+    $file = Join-Path (Join-Path $env:DRILL_GIT_STORE $spec.Substring(0, $i)) ($spec.Substring($i + 1) -replace '/', '\')
+    if (Test-Path -LiteralPath $file) { Get-Content -LiteralPath $file; $global:LASTEXITCODE = 0 } else { $global:LASTEXITCODE = 128 }
+    return }
   Drill-Mutation "git $args" }
+function gh {
+  if ($args[0] -eq 'api') {
+    if ($env:DRILL_COMMENT -and (Test-Path -LiteralPath $env:DRILL_COMMENT)) { Get-Content -LiteralPath $env:DRILL_COMMENT -Raw; $global:LASTEXITCODE = 0 } else { $global:LASTEXITCODE = 1 }
+    return }
+  Drill-Mutation "gh $args" }
+function python { Drill-Mutation "python $args" }
 function powershell.exe {
   if (-not ($args -like '*\deploy-authority\verify-approval.ps1')) { Drill-Mutation "powershell.exe $args" }
   if ($env:DRILL_APPROVAL -eq 'refused') { 'REFUSED approval names artifact (drill)'; $global:LASTEXITCODE = 1 } else { 'APPROVED (drill)'; $global:LASTEXITCODE = 0 } }
+"""
+
+# The package's agent client in the sandbox: the station state the idle check reads.
+FAKE_AGENT_CLIENT = r"""# drill: agent client
+$AgentUrl = 'https://drill.invalid'
+function Open-AgentSession { if (Drill-Busy 'unreadable') { throw [Net.WebException]::new('drill: state unreadable') }; [pscustomobject]@{ Session = $null } }
+function Agent-Get($c, [string]$Route) {
+  if (Drill-Busy 'unreadable') { throw [Net.WebException]::new('drill: state unreadable') }
+  $t = [pscustomobject]@{ ptt = 'released'; transmitting = $false; transmit = [pscustomobject]@{ arm_state = 'disarmed'; last_disarm_cause = $null } }
+  $contact = $null; $run = $null
+  if (Drill-Busy 'armed') { $t.transmit.arm_state = 'armed' }
+  if (Drill-Busy 'ptt') { $t.ptt = 'keyed' }
+  if (Drill-Busy 'transmitting') { $t.transmitting = $true }
+  if (Drill-Busy 'contact') { $contact = [pscustomobject]@{ state = 'replying' } }
+  if (Drill-Busy 'device-lost') { $contact = [pscustomobject]@{ state = 'replying' }; $t.transmit.last_disarm_cause = 'device_lost' }
+  if (Drill-Busy 'run') { $run = [pscustomobject]@{ state = 'waiting' } }
+  switch ($Route) { '/transmit' { $t } '/contact' { [pscustomobject]@{ contact = $contact } } '/automation' { [pscustomobject]@{ run = $run } } }
+}
 """
 
 
@@ -99,6 +172,14 @@ def write_json(path, obj):
     write(path, json.dumps(obj, indent=2))
 
 
+def pins_text(pins, heading="### Deploy pins"):
+    """A Project-Specifics.md whose Deploy pins section holds `pins` [(sha256, path)]."""
+    lines = ["# Project-specific harness bindings", "", "## Deployment authority", "", heading, "", "```text"]
+    lines += [f"{h}  {p}" for h, p in pins]
+    lines += ["```", "", "## References", ""]
+    return "\n".join(lines) + "\n"
+
+
 TOKENIZE = r"""
 $tokens = $null; $errs = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseInput([IO.File]::ReadAllText($env:DRILL_SCRIPT), [ref]$tokens, [ref]$errs)
@@ -106,8 +187,13 @@ if ($errs.Count) { 'PARSE-ERROR'; exit 1 }
 $L = [System.Management.Automation.Language.Ast].Assembly
 function All($type) { $t = $L.GetType("System.Management.Automation.Language.$type"); $ast.FindAll({ param($n) $t.IsInstanceOfType($n) }.GetNewClosure(), $true) }
 # Every command, also inside "$(...)" of a string; `& $path`, `& "...exe"` or `. $x` has no
-# static name and is refused.
-foreach ($c in All 'CommandAst') { $n = $c.GetCommandName(); if ($n) { $n } else { '(call-without-name)' } }
+# static name and is refused, except `. $AgentClient` (the package's agent client).
+foreach ($c in All 'CommandAst') {
+  $n = $c.GetCommandName()
+  if ($n) { $n }
+  elseif ($c.InvocationOperator -eq 'Dot' -and $c.CommandElements.Count -eq 1 -and $c.CommandElements[0] -is [System.Management.Automation.Language.VariableExpressionAst] -and $c.CommandElements[0].VariablePath.UserPath -eq 'AgentClient') { '(dot-source-agent-client)' }
+  else { '(call-without-name)' }
+}
 foreach ($t in @(All 'TypeExpressionAst') + @(All 'TypeConstraintAst')) { '[' + $t.TypeName.FullName + ']' }
 # Script invocation by the engine, and environment other than the redirected LOCALAPPDATA.
 foreach ($v in All 'VariableExpressionAst') {
@@ -138,22 +224,48 @@ def classify(script):
     return sorted({n for n in names if n not in MOCKED | LOCAL | TYPES})
 
 
+def takes(script, name):
+    """Whether the script's param() names -<name> (an older script is drilled without it)."""
+    with open(script, encoding="utf-8-sig") as f:
+        return re.search(r"(?im)^param\(.*\$" + name + r"\b", f.read()) is not None
+
+
 class Sandbox:
     def __init__(self, root, script):
         self.root = root
         self.local = os.path.join(root, "LocalAppData")
         self.station = os.path.join(self.local, "WstxRust", "station")
+        self.repo = os.path.join(root, "repo")
+        self.store = os.path.join(root, "git-objects")
         self.pkg = os.path.join(root, "pkg", COMMIT[:9])
         self.sentinel = os.path.join(root, "sentinel.txt")
-        self.script = os.path.join(root, "station-update.ps1")
-        shutil.copyfile(script, self.script)
+        with open(script, "rb") as f:
+            self.script_bytes = f.read()
+        self.run_script = None
+        self.extra = []
         write(os.path.join(self.station, CURRENT[:9], "wstx-rust.exe"), b"current station image")
-        write(os.path.join(self.station, "launcher.ps1"), "# launcher\n")
+        write(os.path.join(self.station, "launcher.ps1"), LAUNCHER)
         write(os.path.join(self.station, "profiles", "ic7300", "station.json"), '{"profile": 1}')
-        write_json(os.path.join(self.station, "active.json"),
-                   {"version": CURRENT[:9], "source_commit": CURRENT, "previous": None, "switched_utc": "2026-11-01T00:00:00Z"})
+        self.set_active(None)
         os.makedirs(os.path.join(self.station, "logs"), exist_ok=True)
+        os.makedirs(os.path.join(self.repo, ".git", "harness-parallel", "radio"), exist_ok=True)
         self.package()
+        self.pin(COMMIT)
+        self.pin(CURRENT)
+
+    @property
+    def script(self):
+        return os.path.join(self.pkg, "deploy", *MECHANISM[0].split("/"))
+
+    def set_active(self, previous):
+        write_json(os.path.join(self.station, "active.json"),
+                   {"version": CURRENT[:9], "source_commit": CURRENT, "previous": previous, "switched_utc": "2026-11-01T00:00:00Z"})
+
+    def mechanism(self):
+        """The bytes of each mechanism file the package carries, as make_package.py copies them."""
+        return {MECHANISM[0]: self.script_bytes, MECHANISM[1]: b"# drill: make_package.py\n", MECHANISM[2]: LAUNCHER,
+                MECHANISM[3]: FAKE_AGENT_CLIENT.encode("utf-8"), MECHANISM[4]: b"# drill: station-probe.ps1\n",
+                MECHANISM[5]: b"# drill: live-page-check.ps1\n"}
 
     def package(self, commit=COMMIT, exe=b"candidate image"):
         """Write a package as make_package.py does."""
@@ -161,14 +273,35 @@ class Sandbox:
         write(os.path.join(pkg, "package", "wstx-rust.exe"), exe)
         write(os.path.join(pkg, "package", "licenses", "COPYING"), "license text\n")
         files = [{"path": p, "sha256": sha256(os.path.join(pkg, "package", p))} for p in ("wstx-rust.exe", r"licenses\COPYING")]
+        deploy = []
+        for path, data in self.mechanism().items():
+            write(os.path.join(pkg, "deploy", *path.split("/")), data)
+            deploy.append({"path": path, "sha256": sha256_bytes(data)})
         receipt = os.path.join(pkg, f"gate-receipt-{commit[:9]}.log")
         write(receipt, f"... suites, green\n   abc..{commit[:9]}  HEAD -> master\n")
         gates = {"source_commit": commit, "artifact_sha256": files[0]["sha256"], "status": "passed", "prepush_passed": True,
                  "gate_receipt": {"path": receipt, "sha256": sha256(receipt)}}
         self.write_gates(gates)
         self.manifest = {"source_commit": commit, "artifact_sha256": files[0]["sha256"], "package_files": files,
-                         "gate_receipt_path": os.path.join(pkg, "gates.json"), "gate_receipt_sha256": sha256(os.path.join(pkg, "gates.json"))}
+                         "deploy_files": deploy, "gate_receipt_path": os.path.join(pkg, "gates.json"),
+                         "gate_receipt_sha256": sha256(os.path.join(pkg, "gates.json"))}
         self.write_manifest()
+
+    def pins(self):
+        """[(sha256, path)] of the package's mechanism files, in pin order."""
+        return [(sha256(os.path.join(self.pkg, "deploy", *p.split("/"))), p) for p in MECHANISM]
+
+    def pin(self, commit, pins=None, text=None):
+        """Give `commit` a Project-Specifics.md (git show) with these pins (default: the package's)."""
+        path = os.path.join(self.store, commit, "docs", "harness", "Project-Specifics.md")
+        write(path, text if text is not None else pins_text(self.pins() if pins is None else pins))
+
+    def ok_line(self, commit=COMMIT):
+        return f"Deploy OK: {commit} scripts " + " ".join(h for h, _ in self.pins())
+
+    def comment(self, body, login=OPERATOR):
+        write_json(os.path.join(self.root, "comment.json"), {"id": int(COMMENT_ID), "user": {"login": login}, "body": body})
+        self.extra = ["-OkComment", COMMENT_ID]
 
     def write_gates(self, gates, rehash=False):
         write_json(os.path.join(self.pkg, "gates.json"), gates)
@@ -195,18 +328,31 @@ class Sandbox:
                 state[os.path.join(rel, name)] = sha256(os.path.join(dirpath, name))
         return state
 
-    def run(self, dry_run=False, env=None):
+    def command(self, script, dry_run=False, rollback=False):
+        args = ["-Rollback"] if rollback else [f"-Manifest '{os.path.join(self.pkg, 'manifest.json')}'"] + (["-DryRun"] if dry_run else [])
+        if takes(script, "Repo"):
+            args.append(f"-Repo '{self.repo}'")
+        args += self.extra
+        return f"& '{script}' {' '.join(args)}"
+
+    def env(self, env=None):
+        child_env = {k: v for k, v in os.environ.items() if not k.startswith("DRILL_")}
+        child_env.update({"LOCALAPPDATA": self.local, "DRILL_SENTINEL": self.sentinel, "DRILL_ON_MASTER": f"{COMMIT},{OLDER}",
+                          "DRILL_GIT_STORE": self.store, "DRILL_COMMENT": os.path.join(self.root, "comment.json"),
+                          "DRILL_SECOND_SCRIPT": self.script, "DRILL_SECOND_MANIFEST": os.path.join(self.pkg, "manifest.json"),
+                          "DRILL_SECOND_REPO": self.repo, "DRILL_SECOND_OUT": os.path.join(self.root, "second.txt")})
+        child_env.update(env or {})
+        return child_env
+
+    def run(self, dry_run=False, env=None, rollback=False, prelude=PRELUDE):
         if os.path.exists(self.sentinel):
             os.remove(self.sentinel)
         pre = os.path.join(self.root, "prelude.ps1")
-        write(pre, PRELUDE)
-        args = f"-Manifest '{os.path.join(self.pkg, 'manifest.json')}'" + (" -DryRun" if dry_run else "")
-        command = f". '{pre}'; & '{self.script}' {args}; exit $LASTEXITCODE"
-        child_env = {k: v for k, v in os.environ.items() if not k.startswith("DRILL_")}
-        child_env.update({"LOCALAPPDATA": self.local, "DRILL_SENTINEL": self.sentinel, "DRILL_ON_MASTER": f"{COMMIT},{OLDER}"})
-        child_env.update(env or {})
+        write(pre, prelude)
+        script = self.run_script or self.script
+        command = f". '{pre}'; {self.command(script, dry_run, rollback)}; exit $LASTEXITCODE"
         proc = subprocess.run([POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command],
-                              capture_output=True, text=True, encoding="utf-8", errors="replace", env=child_env, timeout=180)
+                              capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env(env), timeout=300)
         sentinels = []
         if os.path.exists(self.sentinel):
             with open(self.sentinel, encoding="utf-8") as f:
@@ -279,14 +425,81 @@ def consistent_rewrite(s):
 
 def older_commit(s):
     s.package(commit=OLDER)
+    s.pin(OLDER)
 
 
 def nothing(s):
     pass
 
 
-# (name, change, environment, expected message, outcome) where outcome is "refused",
-# "dry-run accepted", "reaches stop" or "LIMIT accepted".
+def lease(s):
+    write_json(os.path.join(s.repo, ".git", "harness-parallel", "radio", "lease.json"),
+               {"holder": "drill-qso", "expires": "2099-01-01T00:00:00Z"})
+
+
+def working_folder_copy(s):
+    """A copy of the script outside the package, edited, as in a working folder."""
+    s.run_script = os.path.join(s.root, "working-folder", "station-update.ps1")
+    write(s.run_script, s.script_bytes + b"\n# edited in the working folder\n")
+
+
+def package_file_edited(s):
+    path = os.path.join(s.pkg, "deploy", *MECHANISM[3].split("/"))
+    with open(path, "ab") as f:
+        f.write(b"# edited after the build\n")
+
+
+def running_pins_differ(s):
+    pins = s.pins()
+    pins[4] = ("0" * 64, pins[4][1])
+    s.pin(CURRENT, pins)
+
+
+def commit_without_pins(s):
+    s.pin(COMMIT, text="# Project-specific harness bindings\n\n## Deployment authority\n\nNo pins.\n")
+
+
+def running_without_pins(s):
+    s.pin(CURRENT, text="# Project-specific harness bindings\n")
+
+
+def station_launcher_differs(s):
+    write(os.path.join(s.station, "launcher.ps1"), b"# another launcher\n")
+
+
+def ok(edit=lambda line: line, login=OPERATOR, readable=True):
+    """The running commit has no pins (item 5), and the operator's comment is edit(the line)."""
+    def change(s):
+        running_without_pins(s)
+        if readable:
+            s.comment(edit(s.ok_line()), login)
+        else:
+            s.extra = ["-OkComment", COMMENT_ID]
+    return change
+
+
+def flip_first_hash(line):
+    head, hashes = line.split(" scripts ")
+    first = hashes[:64]
+    return f"{head} scripts {first[:-1]}{'0' if first[-1] != '0' else '1'}{hashes[64:]}"
+
+
+def swap_two_hashes(line):
+    head, hashes = line.split(" scripts ")
+    h = hashes.split(" ")
+    h[0], h[1] = h[1], h[0]
+    return f"{head} scripts {' '.join(h)}"
+
+
+def rollback_with_other_pins(s):
+    write(os.path.join(s.station, PREVIOUS[:9], "wstx-rust.exe"), b"previous station image")
+    s.set_active(PREVIOUS)
+    running_pins_differ(s)
+
+
+# (name, change, environment, expected messages, outcome) where outcome is "refused",
+# "busy", "item 5", "dry-run accepted", "reaches stop", "rollback reaches stop",
+# "second refused" or "LIMIT accepted".
 CASES = [
     ("intact package, -DryRun", nothing, {}, "dry run: nothing changed", "dry-run accepted"),
     ("intact package reaches the station stop", nothing, {}, "stop station", "reaches stop"),
@@ -312,6 +525,47 @@ CASES = [
     ("older commit on master (stale, #31)", older_commit, {}, "dry run: nothing changed", "LIMIT accepted"),
 ]
 
+# TC-171-01: the deploy refuses a station that is not idle before it stops anything, and waits
+# at most 300 s (10 s polls on the scripted clock from 12:00:00).
+IDLE_CASES = [
+    ("busy: update lock held", nothing, {"DRILL_BUSY": "lock"}, "the update lock is held", "busy"),
+    ("busy: live radio lease", lease, {}, "drill-qso holds the radio lease", "busy"),
+    ("busy: no station process", nothing, {"DRILL_BUSY": "procs0"}, "0 station processes are running", "busy"),
+    ("busy: two station processes", nothing, {"DRILL_BUSY": "procs2"}, "2 station processes are running", "busy"),
+    ("busy: transmit armed", nothing, {"DRILL_BUSY": "armed"}, "transmit is armed", "busy"),
+    ("busy: PTT keyed", nothing, {"DRILL_BUSY": "ptt"}, "PTT is keyed", "busy"),
+    ("busy: transmitting", nothing, {"DRILL_BUSY": "transmitting"}, "transmitting: True", "busy"),
+    ("busy: contact replying", nothing, {"DRILL_BUSY": "contact"}, "a contact is replying", "busy"),
+    ("busy: contact replying after a device_lost disarm", nothing, {"DRILL_BUSY": "device-lost"}, "a contact is replying", "busy"),
+    ("busy: automation run active", nothing, {"DRILL_BUSY": "run"}, "an automation run is waiting", "busy"),
+    ("busy: state unreadable", nothing, {"DRILL_BUSY": "unreadable"}, "its state cannot be read", "busy"),
+    ("busy clears at 290 s: proceeds", nothing, {"DRILL_BUSY": "armed", "DRILL_BUSY_UNTIL": "290"},
+     ["12:04:40 waiting: transmit is armed", "12:04:50 stop station"], "reaches stop"),
+    ("still busy at 300 s: gives up", nothing, {"DRILL_BUSY": "armed", "DRILL_BUSY_UNTIL": "310"},
+     ["12:04:50 waiting: transmit is armed", "12:05:00 BUSY: the station was not idle for 300 s"], "busy"),
+    ("second update between the check and the stop", nothing, {"DRILL_SECOND": "1"}, "stop station", "second refused"),
+]
+
+# TC-171-02: the pins and the operator's OK.
+PIN_CASES = [
+    ("pins: all equal, -DryRun", nothing, {}, ["deploy mechanism equals its pins", "dry run: nothing changed"], "dry-run accepted"),
+    ("pins: a working-folder copy of the script is not run", working_folder_copy, {}, "run the package's own copy", "refused"),
+    ("pins: package file edited after the build", package_file_edited, {}, "tools/deploy/agent-client.ps1 differs from its pin", "item 5"),
+    ("pins: new pins differ from the running pins", running_pins_differ, {}, "differ from those of the running ccccccccc", "item 5"),
+    ("pins: commit without pins", commit_without_pins, {}, "commit 123456789 has no deploy pins", "item 5"),
+    ("pins: running commit without pins", running_without_pins, {}, "the running commit ccccccccc has no deploy pins", "item 5"),
+    ("pins: station launcher differs from its pin", station_launcher_differs, {}, "the launcher in the station folder differs from its pin", "item 5"),
+    ("OK: the exact line proceeds", ok(), {}, ["operator OK: comment 987654321", "stop station"], "reaches stop"),
+    ("OK: one changed hash", ok(flip_first_hash), {}, "OK refused: comment 987654321 is not exactly the line", "refused"),
+    ("OK: a short commit", ok(lambda line: line.replace(COMMIT, COMMIT[:9])), {}, "OK refused: comment 987654321 is not exactly the line", "refused"),
+    ("OK: another commit", ok(lambda line: line.replace(COMMIT, OLDER)), {}, "OK refused: comment 987654321 is not exactly the line", "refused"),
+    ("OK: hashes out of order", ok(swap_two_hashes), {}, "OK refused: comment 987654321 is not exactly the line", "refused"),
+    ("OK: extra text", ok(lambda line: line + " thanks"), {}, "OK refused: comment 987654321 is not exactly the line", "refused"),
+    ("OK: comment unreadable", ok(readable=False), {}, "OK refused: comment 987654321 cannot be read from GitHub.", "refused"),
+    ("OK: comment by another account", ok(login="someone-else"), {}, "OK refused: comment 987654321 is by someone-else", "refused"),
+    ("rollback with differing pins never asks", rollback_with_other_pins, {}, "rollback: ccccccccc -> ddddddddd", "rollback reaches stop"),
+]
+
 # With the deploy authority on (#31), station-update.ps1 carries the amendment of
 # Project-Specifics.md#deployment-authority and asks the protected verifier first. The
 # verifier's own refusals are tested in tests/test_authority.py; here the mock answers for it.
@@ -322,6 +576,7 @@ APPROVAL_CASES = [
      "The operator has not approved this package.", "refused"),
 ]
 AMENDMENT_MARK = "verify-approval.ps1"
+STOP_SENTINELS = ("Start-Process", "Stop-ScheduledTask")
 
 
 def run_case(root, script, case):
@@ -330,25 +585,56 @@ def run_case(root, script, case):
     change(s)
     before = s.snapshot()
     dry = outcome in ("dry-run accepted", "LIMIT accepted")
-    rc, out, sentinels = s.run(dry_run=dry, env=env)
+    rc, out, sentinels = s.run(dry_run=dry, env=env, rollback=outcome == "rollback reaches stop")
     after = s.snapshot()
     problems = []
-    if expect not in out:
-        problems.append(f"expected message {expect!r} not shown")
-    if outcome == "reaches stop":
-        if "Stop-ScheduledTask" not in sentinels:
-            problems.append("did not reach the station stop")
+    for text in [expect] if isinstance(expect, str) else expect:
+        if text not in out:
+            problems.append(f"expected message {text!r} not shown")
+    if outcome in ("reaches stop", "rollback reaches stop", "second refused"):
+        if not sentinels or sentinels[0] not in STOP_SENTINELS:
+            problems.append(f"did not reach the station stop (sentinels {sentinels})")
+        if outcome == "second refused":
+            second = os.path.join(root, "second.txt")
+            text = ""
+            if os.path.exists(second):
+                with open(second, encoding="utf-8", errors="replace") as f:
+                    text = f.read()
+            if "the update lock is held" not in text or "EXIT 3" not in text:
+                problems.append(f"the second update was not refused for the held lock: {text[-300:]!r}")
     else:
         if sentinels:
             problems.append(f"reached {sentinels}")
         if before != after:
             changed = sorted(set(before.items()) ^ set(after.items()))
             problems.append(f"destination changed: {[c[0] for c in changed][:5]}")
-        if outcome == "refused" and rc == 0:
+        if outcome in ("refused", "busy", "item 5") and rc == 0:
             problems.append("exit 0")
-        if outcome != "refused" and rc != 0:
+        if outcome == "busy" and rc != 3:
+            problems.append(f"exit {rc}, not 3 (busy)")
+        if outcome == "item 5":
+            if rc != 5:
+                problems.append(f"exit {rc}, not 5 (item 5)")
+            if s.ok_line() not in out.splitlines():
+                problems.append(f"the line {s.ok_line()!r} is not printed")
+        if outcome not in ("refused", "busy", "item 5") and rc != 0:
             problems.append(f"exit {rc}")
     return problems, out
+
+
+def run_cases(script, cases, base, report=print):
+    """Run each case in its own sandbox under base; returns the number that differ."""
+    failures = 0
+    for i, case in enumerate(cases):
+        root = os.path.join(base, f"case{i:02d}")
+        os.makedirs(root, exist_ok=True)
+        problems, out = run_case(root, script, case)
+        verdict = "ok  " if not problems else "FAIL"
+        report(f"{verdict} {case[4]:<21} {case[0]}" + ("" if not problems else f": {'; '.join(problems)}"))
+        if problems:
+            failures += 1
+            report("     " + out.strip().replace("\n", "\n     ")[-1500:])
+    return failures
 
 
 def main(argv=None):
@@ -369,21 +655,12 @@ def main(argv=None):
     print(f"drill of {script}\nsha256 {sha256(script)}")
     with open(script, encoding="utf-8-sig") as f:
         amended = AMENDMENT_MARK in f.read()
-    cases = CASES + (APPROVAL_CASES if amended else [])
+    cases = CASES + IDLE_CASES + PIN_CASES + (APPROVAL_CASES if amended else [])
     if not amended:
         print("authority amendment not in the script: approval cases not applicable (deploy authority off)")
     base = a.keep or tempfile.mkdtemp(prefix="station-drill-")
-    failures = 0
     try:
-        for i, case in enumerate(cases):
-            root = os.path.join(base, f"case{i:02d}")
-            os.makedirs(root, exist_ok=True)
-            problems, out = run_case(root, script, case)
-            verdict = "ok  " if not problems else "FAIL"
-            print(f"{verdict} {case[4]:<16} {case[0]}" + ("" if not problems else f": {'; '.join(problems)}"))
-            if problems:
-                failures += 1
-                print("     " + out.strip().replace("\n", "\n     ")[-1500:])
+        failures = run_cases(script, cases, base)
     finally:
         if not a.keep:
             shutil.rmtree(base, ignore_errors=True)

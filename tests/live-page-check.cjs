@@ -2,7 +2,7 @@
 // Harness retrospective item 3 (SensorsIot/harness#38): one page kept open on the running station
 // across a real restart and several periods. Red on `undefined` or NaN in what it shows, on a
 // row tip that changes, on an uncaught page error or on a page command that is not a read.
-//   powershell -File .harness/deploy/live-page-check.ps1
+//   powershell -File tools/deploy/live-page-check.ps1 -Repo <root> -Shared <git common dir>\harness-parallel -AgentClient <client>
 // That script stops and starts the station when this asks for it, in the file <control>/restart,
 // and hands the session on stdin, one JSON line each, so that it is on no command line or disk:
 //   {"cookies":[{"name","value"}]}  at the start, and again once the new boot answers
@@ -111,6 +111,6 @@ function stdinLines(){
 module.exports={run,allowed,missingTriggers,READS};
 if(require.main===module){
   const origin=process.env.WSTX_LIVE_PAGE_ORIGIN,control=process.env.WSTX_LIVE_PAGE_CONTROL;
-  if(!origin?.startsWith('https://')||!control){console.error('run through .harness/deploy/live-page-check.ps1');process.exit(2);}
+  if(!origin?.startsWith('https://')||!control){console.error('run through tools/deploy/live-page-check.ps1');process.exit(2);}
   run({origin,control,lines:stdinLines()}).then(report=>{console.log(`PAGE CHECK ${JSON.stringify(report)}`);process.exit({green:0,busy:3,'not-exercised':4}[report.status]);},e=>{console.log(`PAGE CHECK RED ${e.message}`);process.exit(1);});
 }
