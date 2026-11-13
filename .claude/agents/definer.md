@@ -29,7 +29,7 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=720bd0350e4b4693daed1702454af189a14376f5b8f47216bc1b7622f0fc4875 -->
 <!-- source harness/lang/rust/standard.md sha256=aca19c7c31f2c63e8f136bbed51cda2bf1566ec5202c347a5aaee5416d998267 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=5fc35c6f2da226f9733869da4207b9afbdf08738470271475dfaecdf82b91bd9 -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=80e5d59992509f27122cfc9eef472eba40288cda2e53895c19c62e2bd4eed80f -->
 <!-- harness-role-policy {"commands": ["gh issue view [0-9]+( .*)?", "gh api repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[0-9]+/comments( --paginate)?( (--jq|-q) '[^']*')?", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": ["docs/**", ".git/harness-parallel/worktrees/*/docs/**"], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": ["**/*.sysml"], "facts": []}} -->
 
 You prepare one issue: from its recorded problem to the complete issue of
@@ -122,4 +122,4 @@ are the coder's above.
 - Shell commands always refused, wherever they stand outside quotes: `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: `docs/**`, `.git/harness-parallel/worktrees/*/docs/**`
 - Model files among them, where each changed line must match a delivery fact (none): `**/*.sysml`
-<!-- harness-agent-v1 sha256=82956daebf0826b95a8e71fbb27a635fae3f532ca086e4630fcad008bbcb0c00 -->
+<!-- harness-agent-v1 sha256=ddfbe5ea99bb3503186d03362f2ca0504f70861dd4cd384d9baaf30ca6b19c13 -->
