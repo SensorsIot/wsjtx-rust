@@ -10,12 +10,12 @@ package WstxRecordingReceive {
     private import WstxReceiveSpectrum::SpectrumFrame;
     private import WstxReceiveSpectrum::CalculateSpectrum;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-018';
-    private import WstxArchitecture::'FR-019';
-    private import WstxArchitecture::'FR-010';
-    private import WstxArchitecture::'FR-021';
-    private import WstxArchitecture::'FR-002';
-    private import WstxArchitecture::'FR-009';
+    private import WstxRequirements::'FR-018';
+    private import WstxRequirements::'FR-019';
+    private import WstxRequirements::'FR-010';
+    private import WstxRequirements::'FR-021';
+    private import WstxRequirements::'FR-002';
+    private import WstxRequirements::'FR-009';
     private import WstxRadioIO::'CL-008-05';
     private import WstxOperatingLayout::'CL-010-05';
     private import WstxOperatingLayout::'CL-010-07';
@@ -27,7 +27,7 @@ package WstxRecordingReceive {
     private import WstxProfiles::'TC-002-001';
     private import WstxProfiles::'TC-009-001';
     private import WstxStationProtocol::'TC-009-005';
-    private import WstxArchitecture::'FR-003';
+    private import WstxRequirements::'FR-003';
     private import WstxStationProtocol::DisplayProfile;
     private import WstxStationProtocol::TransferDisplay;
     private import WstxOperatingLayout::PresentStation;

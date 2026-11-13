@@ -1,12 +1,12 @@
 package WstxStandardQso {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-007';
-    private import WstxArchitecture::'FR-005';
+    private import WstxRequirements::'FR-007';
+    private import WstxRequirements::'FR-005';
     private import WstxContact::'CL-010-03';
     private import WstxRequirements::AutomationState;
-    private import WstxArchitecture::'FR-008';
-    private import WstxArchitecture::'FR-019';
+    private import WstxRequirements::'FR-008';
+    private import WstxRequirements::'FR-019';
     private import WstxOperatingLayout::'CL-010-06';
     private import WstxOperatingLayout::'CL-010-07';
     private import WstxOperatingLayout::'CL-010-08';
@@ -414,5 +414,5 @@ package WstxStandardQso {
              contact can resume after an explicit Enable Tx), except in calling where
              the CQ ends. cancel follows CancelContact. Esc is Abort QSO (AbortQso), not a halt. */
     }
-    dependency contactPromise from AutoSequence to WstxArchitecture::'FR-007';
+    dependency contactPromise from AutoSequence to WstxRequirements::'FR-007';
 }

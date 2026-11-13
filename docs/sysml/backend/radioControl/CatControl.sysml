@@ -3,19 +3,19 @@ package WstxRadioIO {
     private import WstxLiveReceive::ConvertAndReceive;
     private import WstxAudioCapture::CaptureAudio;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-009';
+    private import WstxRequirements::'FR-009';
     private import WstxProfiles::'TC-009-001';
-    private import WstxArchitecture::'FR-002';
+    private import WstxRequirements::'FR-002';
     private import WstxRequirements::AutomationState;
     private import WstxLiveReceive::'TC-009-002';
     private import WstxLiveReceive::'TC-002-003';
     private import WstxRecordingReceive::'TC-009-004';
     private import WstxStationProtocol::'TC-009-005';
-    private import WstxArchitecture::'FR-008';
-    private import WstxArchitecture::'FR-021';
+    private import WstxRequirements::'FR-008';
+    private import WstxRequirements::'FR-021';
     private import WstxCatLifecycle::'CL-022-04';
     private import WstxOperatingLayout::'TC-022-010';
-    private import WstxArchitecture::'FR-019';
+    private import WstxRequirements::'FR-019';
     private import WstxRadioSetup::'TC-044-009';
     private import WstxRadioSetup::'TC-044-011';
     doc /* Canonical capture/CAT contract with partial native Windows and IC-7300 implementation;
@@ -541,7 +541,7 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
              off-only release. After an indeterminate release the owner retries
              off-only releases (never a key) and refuses Arm until one is confirmed. */
     }
-    dependency pttPromise from PttControl to WstxArchitecture::'FR-009';
+    dependency pttPromise from PttControl to WstxRequirements::'FR-009';
     requirement 'CL-008-06' {
         doc /* Separate a versioned factual radio catalogue, compiled typed operations and bounded protocol execution. Catalogue data cannot authorize raw or transmit commands. */
         attribute coverage : ImplementationState = ImplementationState::implemented;

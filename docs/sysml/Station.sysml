@@ -27,7 +27,7 @@ package WstxArchitecture {
          station link; the logical
          roles and profile-scoped protocol remain the same. Windows x64/MSVC is the
          first desktop target; portability and later platforms follow
-         WstxProductScope::ReleasePolicy, not an assertion of platform acceptance.
+         WstxRequirements::ReleasePolicy, not an assertion of platform acceptance.
          WstxRequirements owns stable capability/status and verification declarations.
          WstxProductScope owns capability scope, shared data ownership, processing/halt,
          remote delivery and transmit safety policies. This structure includes target
@@ -54,274 +54,6 @@ package WstxArchitecture {
     }
     view physicalInterconnection : StandardViewDefinitions::InterconnectionView {
         expose physicalStation::*;
-    }
-
-    enum def OutsideThing {
-        doc /* The outside things the server opens a socket, device or file to. None is a
-             part or has a port. The function that owns each carries its information and
-             state on the ports it offers to other functions; the wire protocol is that
-             function's inside. */
-        enum catRadio {
-            doc /* The transceiver's CAT serial link, a COM port found by device enumeration. */
-            @FollowsSource {
-                reference = "Icom IC-7300 Full Manual A7292-4EX-12a, CI-V command table";
-            }
-        }
-        enum flexRadio {
-            doc /* A FlexRadio through its native API: a TCP command channel and UDP VITA-49
-                 streams. */
-            @FollowsSource {
-                reference = "SmartSDR TCP/IP API and FlexLib, as "
-                    + "WstxProductScope::NativeFlexWireSubset pins them";
-            }
-        }
-        enum soundDevice {
-            doc /* The sound-card capture and playback endpoints. */
-            @FollowsSource { reference = "Windows Core Audio WASAPI, shared event-driven mode"; }
-        }
-        enum browser {
-            doc /* The operator's browser, over HTTPS and WebSocket on the station listener.
-                 WstxStationProtocol is the product's own protocol over them. */
-            @FollowsSource {
-                reference = "RFC 9110 HTTP, RFC 6455 WebSocket, TLS 1.2 and 1.3 "
-                    + "(RFC 5246, RFC 8446)";
-            }
-        }
-        enum mcpClient {
-            doc /* MCP clients, POST /mcp on the same listener. A client reaches one station's
-                 McpAdapter over that station's own HTTPS listener with its own auth-v1 grant
-                 (WstxMcpEndpoint::McpEndpoint, McpCredential); it may run on any authorized
-                 computer. */
-            @FollowsSource {
-                reference = "Model Context Protocol, Streamable HTTP, "
-                    + "the eras WstxMcp::ProtocolEras names";
-            }
-        }
-        enum udpPeer {
-            doc /* The configured WSJT-X UDP targets, send-only. */
-            @FollowsSource {
-                reference = "WSJT-X Network/NetworkMessage.hpp, the version WstxUdp names";
-            }
-        }
-        enum pskReporter {
-            doc /* The PSK Reporter MQTT broker, subscribe-only over TLS. */
-            @FollowsSource { reference = "MQTT 3.1.1 (OASIS), PSK Reporter MQTT feed"; }
-        }
-        enum clubLog {
-            doc /* The Club Log Most Wanted download, on request. */
-            @FollowsSource { reference = "Club Log mostwanted.php API, JSON"; }
-        }
-        enum timeServer {
-            doc /* The SNTP servers. */
-            @FollowsSource { reference = "RFC 4330 SNTP client, RFC 5905 packet"; }
-        }
-        enum windowsTime {
-            doc /* The Windows Time service, its state read only. */
-            @FollowsSource { reference = "Win32 Service Control Manager API"; }
-        }
-        enum profileFiles {
-            doc /* The profile directory and its files. */
-            @FollowsSource {
-                reference = "ADIF 3.1.8 ADI (contacts.adi); RIFF WAVE PCM (recordings); "
-                    + "AD1C cty.dat; the other files are the product's own formats "
-                    + "of their owning packages";
-            }
-        }
-        enum tlsFiles {
-            doc /* The TLS certificate and key files named at launch. */
-            @FollowsSource { reference = "RFC 7468 PEM, X.509 certificate, PKCS#8 key"; }
-        }
-        enum resourceLocks {
-            doc /* The radio identity lock files under %LOCALAPPDATA%. */
-            @FollowsSource { reference = "Windows file locking through std::fs::File::try_lock"; }
-        }
-    }
-    dependency catRadioOwner from OutsideThing::catRadio
-        to physicalStation::backend::stations::radioControl;
-    dependency flexRadioOwner from OutsideThing::flexRadio
-        to physicalStation::backend::stations::receive;
-    dependency soundDeviceOwner from OutsideThing::soundDevice
-        to physicalStation::backend::stations::audio;
-    dependency browserOwner from OutsideThing::browser
-        to physicalStation::backend::stations::web;
-    dependency mcpClientOwner from OutsideThing::mcpClient
-        to physicalStation::backend::stations::mcp;
-    dependency udpPeerOwner from OutsideThing::udpPeer
-        to physicalStation::backend::stations::station;
-    dependency pskReporterOwner from OutsideThing::pskReporter
-        to physicalStation::backend::stations::qso;
-    dependency clubLogOwner from OutsideThing::clubLog
-        to physicalStation::backend::stations::qso;
-    dependency timeServerOwner from OutsideThing::timeServer
-        to physicalStation::backend::stations::transmit;
-    dependency windowsTimeOwner from OutsideThing::windowsTime
-        to physicalStation::backend::stations::transmit;
-    dependency profileFilesOwner from OutsideThing::profileFiles
-        to physicalStation::backend::stations::profile;
-    dependency tlsFilesOwner from OutsideThing::tlsFiles
-        to physicalStation::backend::stations::web;
-    dependency resourceLocksOwner from OutsideThing::resourceLocks
-        to physicalStation::backend::radioAuthority;
-
-    requirement PhysicalDeploymentStructure {
-        doc /* The model MUST contain the frontend and backend containers of the product's
-             functions. Frontend and Backend are pure deployment containers without
-             forwarding ports or functional policy. Browser and station exchanges MUST
-             connect selected functional endpoints directly, retaining profile-scoped
-             browser and station selection. Audio and radio control MUST stay separate
-             functions. No outside thing is a part or has a port; each is an entry of
-             OutsideThing with one owning function. Variable browser and station
-             populations MUST NOT become a fixed station count, all-to-all routing, or an
-             additional detached deployment. */
-    }
-    requirement StationResourceIdentity {
-        doc /* Architectural refinement of WstxProfiles and
-             WstxArchitecture::NativeFlexBoundary: each station MUST compose one profile,
-             one audio device adapter, one CAT driver and one selected-radio binding, and
-             reference the common authority contained in Backend. All control requests
-             and outcomes MUST retain request/resource identity through that authority
-             to the selected CAT driver. Audio and CAT MUST be separate direct station parts,
-             with no combined radio-backend wrapper or variation. Both adapters MUST
-             serve the radio the station's radio binding selects, and control MUST NOT
-             bypass the common authority.
-             A native FlexRadio profile instead reaches its radio through the one native
-             session of its station (WstxFlexSession::NativeFlexWireSubset), owned by the
-             station's receive owner, with no CAT driver in the path. */
-    }
-    requirement ResponsibilityAndExchangeBoundaries {
-        doc /* Architectural refinement of WstxProductScope::SharedDataOwnership,
-             ProcessingAndHaltOwnership, RemoteDeliveryPolicy and TransmitSafetyPolicy:
-             the declared owners MUST retain their separate typed/directed exchanges.
-             Recording storage MUST feed the common receive path; receive and encode
-             MUST connect to pure mode functions; audio and control MUST stay separate.
-             Browser/MCP adapters MUST use station operations rather than direct radio
-             adapter access. The ownership explanations and existing policy contracts apply
-             together; target parts do not claim runtime delivery or settled policy. */
-    }
-    dependency deploymentOwnership from physicalStation to PhysicalDeploymentStructure;
-    dependency stationIdentityOwnership from physicalStation::backend::stations to StationResourceIdentity;
-    dependency boundaryOwnership from physicalStation::backend::stations to ResponsibilityAndExchangeBoundaries;
-
-    verification ResolvedArchitectureGraph {
-        subject deployment :> physicalStation;
-        doc /* Level 2 isolated automated model test on the development PC; no radio,
-             device or runtime service. Resolve the accepted model and legal negative
-             mutations with the pinned semantic validator. Independent expectations are
-             literal required endpoints, complete item-kind/direction signatures,
-             population/reference subsets, separate audio/CAT adapter ownership and identity
-             bindings
-             in the existing architecture integrity oracle, not candidate-derived counts.
-             Expect selected-browser-to-web/station direct
-             connections through portless associations; frontend/backend containers MUST
-             have no forwarding ports. Expect exactly one AudioDeviceAdapter and one
-             RustRadioDriver directly
-             composed by each station, without combined backend or native-Flex topology;
-             audio.backend connects to audioAdapter.host and authorizedControl connects
-             to catAdapter.authorized; upload-to-profile-to-receive,
-             receive-to-mode and encode-to-mode paths; exactly one effective authority
-             whose bound request/outcome and resource context reach that CAT driver.
-             Missing direct browser/encode connections, added container forwarding ports,
-             reversed provider/waveform direction, wrong item kind, redirected association
-             or context, weakened identity binding, split or bypassed authority, missing,
-             duplicate or detached audio/CAT adapters, mixed audio/CAT paths, detached
-             stations, view-created structure and a port joined to no function
-             MUST be rejected even if legal SysML. Two deployment containers and the
-             portless browser association population retain selected endpoint identity;
-             counts alone are insufficient. This case checks structure, not runtime
-             timing, persistence, failure handling, platform operation or RF safety. */
-        objective {
-            verify PhysicalDeploymentStructure;
-            verify StationResourceIdentity;
-            verify ResponsibilityAndExchangeBoundaries;
-        }
-        attribute automation : WstxRequirements::AutomationState = WstxRequirements::AutomationState::implemented;
-        attribute executable : String = "tools/sysml.py check; tools/sysml/tests/test_architecture_integrity.py";
-        attribute executionStatus : String = "defined automated companion; declaration records no execution verdict";
-    }
-    verification ArchitecturalOwnershipReview {
-        subject deployment :> physicalStation;
-        doc /* Manual contract review on the development PC, without external effects.
-             Compare this decomposition with WstxProductScope::ReleasePolicy,
-             SharedDataOwnership, ProcessingAndHaltOwnership, RemoteDeliveryPolicy,
-             TransmitSafetyPolicy and NativeFlexBoundary, plus existing FR responsibility
-             dependencies below and their canonical verification cases. Independently
-             expect server-owned state/results/contacts, profile-owned storage, pure
-             mode calculations, one conversion owner, independent audio/CAT failure
-             boundaries, station-scoped browser/MCP access and priority halt outside
-             receive/display work. Check local/remote roles and Windows-first scope
-             without asserting later-platform acceptance, fixed radio capacity or
-             native-session lifetime decisions. Strategy remains target and introduces
-             no service or selection policy. Reject duplicate policy definitions,
-             inferred delivery or any ownership/safety weakening.
-             ResolvedArchitectureGraph covers only graph/signature/identity obligations;
-             this review covers responsibility prose and policy correspondence. Existing
-             WstxRequirements cases own executable product behaviour coverage. Target
-             TX/MCP/native and future-platform acceptance remain planned where declared
-             there; neither this review nor semantic validation executes those cases. */
-        objective {
-            verify PhysicalDeploymentStructure;
-            verify StationResourceIdentity;
-            verify ResponsibilityAndExchangeBoundaries;
-        }
-        attribute method : String = "manual independent contract correspondence review";
-        attribute executionStatus : String = "planned review; no verdict recorded by this declaration";
-    }
-
-    requirement ComponentPropertyOwnership {
-        doc /* Public values MUST be navigable under their owning parts using canonical
-             types and value references. Backend-owned persisted profile configuration,
-             private runtime input, frontend-owned preference, requested settings and
-             observed state MUST remain distinct. A property attachment MUST NOT create
-             persistence fields, controls, credentials, workers or another authority. */
-    }
-    requirement RadioModelReferenceSeparation {
-        doc /* A physical radio's model identifier, sparse capabilities, requested
-             settings and actual observations MUST remain separate. Current driver
-             coverage MUST NOT limit the intended physical-radio property domains.
-             Capability observations MUST NOT grant command or transmit permission.
-             Receiver filter width MUST NOT be inferred from a named filter or either
-             the radio scope span or the browser waterfall span. */
-    }
-    dependency browserPropertyOwnership from physicalStation::frontend::browsers to ComponentPropertyOwnership;
-    dependency stationPropertyOwnership from physicalStation::backend::stations to ComponentPropertyOwnership;
-    dependency radioPropertyOwnership from physicalStation::backend::stations::radioControl
-        to RadioModelReferenceSeparation;
-
-    verification ComponentPropertyInventoryReview {
-        subject deployment :> physicalStation;
-        objective {
-            verify ComponentPropertyOwnership;
-            verify RadioModelReferenceSeparation;
-        }
-        doc /* Level 2 isolated independent manual contract review on the development PC;
-             no device, credential or external effects. Compare the public properties
-             and interface signatures against the owning canonical profile, station,
-             receive, layout and radio contracts. Expect backend-owned saved profile
-             configuration distinct from runtime inputs, frontend-owned preferences,
-             boot/live station selection with twelve canonical preferred-band references,
-             and requested radio settings distinct from confirmed state and readonly
-             meters. Expect optional model/context-dependent semantic radio controls,
-             explicit physical units and multivalued/compound states without C codes,
-             universal defaults or driver-support ceilings. RadioControl retains the
-             common authority/resource and reply identities; audio remains separate.
-             Reject catalogue/inventory/driver management, implementation algorithms,
-             invented filter widths, conflation of the three Hz spans and inferred
-             delivery. Existing graph validation and product verification cases remain
-             companions; this declaration records no review or runtime verdict.
-             For radio property verification, read pinned Hamlib rig.h standard IDs and
-             channel/channel_cap definitions independently, then compare the companion
-             tools/sysml/tests/radio_source_coverage.tsv and owning types. Check all114
-             standard meanings, stored28members, units, exact native metadata-owner links,
-             context-conditioned ranges/power/steps/filter choices and separate access.
-             Remove/misroute a metadata owner or change a Hz field to fraction: focused
-             tests must refuse it. Expect one current value per property/context, separate
-             capabilities, typed temporary query/set parameters, readonly meters, explicit
-             failure/stale/unknown semantics, and no requested value confirmed by ACK.
-             Inspect unresolved extension limits rather than accepting a completeness claim.
-             Run focused tests on this PC at cost2, full Pilot/graph validation and99traces;
-             parser success does not execute these planned action contracts. */
-        attribute method : String = "manual independent public-property and interface correspondence review";
-        attribute executionStatus : String = "planned; semantic resolution does not establish review or runtime acceptance";
     }
 
     item def StationRequest;
@@ -475,7 +207,7 @@ package WstxArchitecture {
         doc /* One backend role hosts variable N station processes. The common authority
              is effective shared-radio responsibility, not a per-process mutex.
              Cross-process placement/leases and actual hardware capacity are constrained
-             by WstxArchitecture::NativeFlexBoundary and WstxRadioIO. Profile-scoped
+             by WstxFlexSession::NativeFlexBoundary and WstxRadioIO. Profile-scoped
              routing is not all-to-all delivery or simultaneous transmission. */
         doc /* Deployment container only; no host forwarding interfaces. Release and
              acceleration policy remain owned by WstxProductScope. */
@@ -605,7 +337,7 @@ package WstxArchitecture {
     }
     part def ModeFunctions {
         attribute currentReceiveSettings : WstxOfflineDecode::Settings[0..1];
-        attribute intendedModeCapabilities : WstxProductScope::ModeCapability[*];
+        attribute intendedModeCapabilities : WstxRequirements::ModeCapability[*];
         doc /* Pure protocol/symbol/waveform and decoding calculations with independent vectors; no filesystem/hardware/network/wall-clock dependency. */
         doc /* Pure receive calculations and encoding/waveform generation depend on no
              device, filesystem, wall-clock or network. WstxModemDecode and
@@ -619,7 +351,7 @@ package WstxArchitecture {
         doc /* UTC scheduling, operation authority and audio/PTT coordination reuse the
              common resource context. WstxTransmit::TransmitSafetyPolicy owns
              unresolved deadlines/backend-loss/expiry policy before hardware TX;
-             WstxProductScope::ProcessingAndHaltOwnership separates priority halt from
+             WstxRequirements::ProcessingAndHaltOwnership separates priority halt from
              receive completion/cancellation and optional display congestion. */
         port operations : ~StationOperations;
         port contacts : ~StationOperations;
@@ -725,31 +457,31 @@ package WstxArchitecture {
         binding catContext bind catAdapter.authorized.request.resourceContext = radioBinding;
     }
 
-    dependency audioPromise from AudioInterface to WstxArchitecture::'FR-002';
-    dependency controlPromise from RadioControlInterface to WstxArchitecture::'FR-009';
-    dependency profilesPromise from PersistedProfile to WstxArchitecture::'FR-022';
+    dependency audioPromise from AudioInterface to WstxRequirements::'FR-002';
+    dependency controlPromise from RadioControlInterface to WstxRequirements::'FR-009';
+    dependency profilesPromise from PersistedProfile to WstxRequirements::'FR-022';
     doc /* Responsibility traces identify the owning boundary for an existing requirement,
          not delivered capability or an executed verification. */
-    dependency configurationPromise from StationService to WstxArchitecture::'FR-001';
-    dependency receivePromise from ReceivePipeline to WstxArchitecture::'FR-003';
-    dependency decodePromise from ModeFunctions to WstxArchitecture::'FR-004';
-    dependency encodePromise from ModeFunctions to WstxArchitecture::'FR-005';
-    dependency timingPromise from TransmitService to WstxArchitecture::'FR-006';
-    dependency receiveTimingPromise from ReceivePipeline to WstxArchitecture::'FR-006';
-    dependency qsoPromise from QsoAndLogging to WstxArchitecture::'FR-007';
-    dependency haltPromise from TransmitService to WstxArchitecture::'FR-008';
-    dependency displayPromise from BrowserClient to WstxArchitecture::'FR-010';
-    dependency loggingPromise from QsoAndLogging to WstxArchitecture::'FR-011';
-    dependency integrationPromise from StationService to WstxArchitecture::'FR-012';
-    dependency emePromise from ModeFunctions to WstxArchitecture::'FR-013';
-    dependency widebandPromise from ReceivePipeline to WstxArchitecture::'FR-014';
-    dependency utilitiesPromise from ModeFunctions to WstxArchitecture::'FR-015';
-    dependency persistencePromise from PersistedProfile to WstxArchitecture::'FR-016';
-    dependency helpPromise from BrowserClient to WstxArchitecture::'FR-017';
-    dependency recordingPromise from RecordedSource to WstxArchitecture::'FR-018';
-    dependency htmlPromise from WebAdapter to WstxArchitecture::'FR-019';
-    dependency mcpPromise from McpAdapter to WstxArchitecture::'FR-020';
-    dependency linkPromise from BrowserAttachment to WstxArchitecture::'FR-021';
+    dependency configurationPromise from StationService to WstxRequirements::'FR-001';
+    dependency receivePromise from ReceivePipeline to WstxRequirements::'FR-003';
+    dependency decodePromise from ModeFunctions to WstxRequirements::'FR-004';
+    dependency encodePromise from ModeFunctions to WstxRequirements::'FR-005';
+    dependency timingPromise from TransmitService to WstxRequirements::'FR-006';
+    dependency receiveTimingPromise from ReceivePipeline to WstxRequirements::'FR-006';
+    dependency qsoPromise from QsoAndLogging to WstxRequirements::'FR-007';
+    dependency haltPromise from TransmitService to WstxRequirements::'FR-008';
+    dependency displayPromise from BrowserClient to WstxRequirements::'FR-010';
+    dependency loggingPromise from QsoAndLogging to WstxRequirements::'FR-011';
+    dependency integrationPromise from StationService to WstxRequirements::'FR-012';
+    dependency emePromise from ModeFunctions to WstxRequirements::'FR-013';
+    dependency widebandPromise from ReceivePipeline to WstxRequirements::'FR-014';
+    dependency utilitiesPromise from ModeFunctions to WstxRequirements::'FR-015';
+    dependency persistencePromise from PersistedProfile to WstxRequirements::'FR-016';
+    dependency helpPromise from BrowserClient to WstxRequirements::'FR-017';
+    dependency recordingPromise from RecordedSource to WstxRequirements::'FR-018';
+    dependency htmlPromise from WebAdapter to WstxRequirements::'FR-019';
+    dependency mcpPromise from McpAdapter to WstxRequirements::'FR-020';
+    dependency linkPromise from BrowserAttachment to WstxRequirements::'FR-021';
     package ImplementedStatusSlice {
         doc /* Implemented status/TLS subset alongside WstxProfiles profile functionality.
              The target deployment does not assert full radio/modem or MCP delivery;
@@ -763,178 +495,4 @@ package WstxArchitecture {
          receive and radio authority path: single-owner release/setup/readback/restart
          and cancellation fences. It introduces no additional station/backend/physical
          connector, sample source or deployment. */
-    requirement 'FR-001' {
-        doc /* Station setup
-             Configure and persist station identity, locator, devices, radio settings, and operating preferences. Validate values and explain invalid input. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/profile.rs; client/app.js";
-    }
-    requirement 'FR-002' {
-        doc /* Audio
-             Select supported input and output devices; capture receive audio and play generated transmit audio with the timing and sample handling required by each mode. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/receive.rs";
-    }
-    requirement 'FR-003' {
-        doc /* Receive processing
-             Process live audio and supported saved recordings; expose mode-appropriate filtering, synchronization, decoding options, and results. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/receive.rs; server/src/recording.rs; server/src/decoder/mod.rs";
-    }
-    requirement 'FR-004' {
-        doc /* Decoding
-             Decode the baseline mode and message variants, reporting available callsigns, locators, signal measurements, timing, and frequency information. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/decoder/mod.rs; server/src/decoder/payload.rs; server/src/decoder/search.rs";
-    }
-    requirement 'FR-005' {
-        doc /* Encoding
-             Produce protocol-compatible messages, channel symbols, and waveforms for supported transmit modes and variants. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/transmit/mod.rs; server/src/transmit/pack.rs; server/src/transmit/waveform.rs; server/src/transmit/schedule.rs; server/src/decoder/channel.rs";
-    }
-    requirement 'FR-006' {
-        doc /* Time and sequencing
-             Schedule receive and transmit periods against UTC and apply each mode's timing rules. Surface clock or device problems that prevent reliable operation. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/audio.rs; server/src/receive.rs; server/src/recording.rs; server/src/transmit/schedule.rs";
-    }
-    requirement 'FR-007' {
-        doc /* QSO operation
-             Support the baseline workflows for choosing a decoded station, preparing messages, progressing an exchange, and completing or aborting a contact. */
-        attribute coverage : ImplementationState = ImplementationState::target;
-    }
-    requirement 'FR-008' {
-        doc /* Transmit control
-             Provide clear transmit state and an immediate halt action; handle PTT, radio errors, and device loss without leaving transmit active unintentionally. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/playback.rs";
-    }
-    requirement 'FR-009' {
-        doc /* Radio control
-             Support baseline radio-control capabilities, including frequency, mode, PTT, split operation, and supported device interfaces. The hardware support matrix is to be inventoried. The first hardware end-to-end test target is an Icom IC-7300 on a different PC; #8 must settle its setup and acceptance contract before the test. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/radio_control/mod.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs; server/src/radio_control/codec.rs";
-    }
-    requirement 'FR-010' {
-        doc /* Displays
-             Provide spectrum, waterfall, decode, frequency, and operating-state views sufficient to carry out the baseline workflows. Pixel-identical UI reproduction is not yet a requirement. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "client/recording.js; client/recording.css; server/src/spectrum.rs";
-    }
-    requirement 'FR-011' {
-        doc /* Logging
-             Record completed contacts and support the baseline log formats, import/export paths, and duplicate or prior-contact indications where applicable. */
-        attribute coverage : ImplementationState = ImplementationState::target;
-    }
-    requirement 'FR-012' {
-        doc /* Integrations
-             Preserve required external protocols and message formats, including baseline UDP integrations and reception-reporting workflows. The WSJT-X UDP interface is specified by issue #40, CL-040-01..04 (send-only, operator 2026-11-06), contract WstxUdp; reception reporting remains target. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/network_message.rs; server/src/udp.rs; server/src/pskr.rs";
-    }
-    requirement 'FR-013' {
-        doc /* EME
-             Provide baseline astronomical information, Doppler handling, and Echo measurement workflows applicable to each application. */
-        attribute coverage : ImplementationState = ImplementationState::target;
-    }
-    requirement 'FR-014' {
-        doc /* Wideband reception
-             Replace MAP65 and QMAP capabilities, including supported wideband input, band maps, polarization processing where applicable, and coordination with the narrowband application. */
-        attribute coverage : ImplementationState = ImplementationState::target;
-    }
-    requirement 'FR-015' {
-        doc /* Utilities
-             Identify the user and validation needs served by upstream utilities. Provide the selected capabilities through the smallest practical interface, documenting any required external compatibility. */
-        attribute coverage : ImplementationState = ImplementationState::target;
-    }
-    requirement 'FR-016' {
-        doc /* Settings and migration
-             Persist Rust application settings reliably. Define compatibility and migration behavior for existing WSJT-X profiles before a user migration release. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/profile.rs";
-    }
-    requirement 'FR-017' {
-        doc /* Help and notices
-             Provide operating guidance, version information, relevant attribution, license access, and a clear indication that this is an independent port. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "client/index.html; client/app.js";
-    }
-    requirement 'FR-018' {
-        doc /* Recorded audio input
-             Load and validate recorded receive audio for repeatable processing, preserving source data and reporting unsupported or invalid input. The first recorded-input format, bounded import/replay workflow and tests are specified in4.4/6.4/12.6 ; implementation coverage is declared below. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/recording.rs; server/src/recording_http.rs";
-    }
-    requirement 'FR-019' {
-        doc /* Browser operator interface
-             Provide a modern HTML/CSS/JavaScript operator interface that can run on the home computer, rendering station information and sending control requests to the server. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "client/index.html; client/app.js; client/recording.js; server/src/main.rs";
-    }
-    requirement 'FR-020' {
-        doc /* MCP automation
-             Expose shared station operations through MCP for observing and automating FT4/FT8 activity, including station selection and QSO workflows. Exact tools and automation policies are specified in their CRs: issue #12, CL-012-01..04, contract WstxMcp. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/mcp.rs; server/src/automation.rs";
-    }
-    requirement 'FR-021' {
-        doc /* Station server and remote operation
-             Separate the Rust station server and browser client through a defined interface. Support same-machine development and remote operation over limited-bandwidth links, with authoritative server state, explicit connection status, and state resynchronization. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/main.rs; client/app.js";
-    }
-    requirement 'FR-022' {
-        doc /* Concurrent persisted station profiles — phase 1 target
-             Support a variable number of independently startable/stoppable server instances on one Windows PC, using distinct listening ports, separate browser windows and isolated persisted configurations. Four is a minimum acceptance target, not a software limit. Preserve instance identity and access isolation across restart and concurrent use. Independent persisted profile functionality is implemented; coverage and verification are declared separately. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/profile.rs; server/src/main.rs; client/app.js";
-    }
-    requirement 'FR-023' {
-        doc /* Optional direct FlexRadio integration — phase 2 target
-             Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist their receive intent (never a radio identity, slice index or handle) and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Receive and control at isolated level 2 are delivered (WstxFlexSession::NativeFlexWireSubset); live hardware qualification TC-023-004/005 and transmit TC-023-006 remain open. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/flex/session.rs; server/src/flex/wire.rs; server/src/flex_http.rs; server/src/profile.rs; client/recording.js";
-    }
-    requirement 'FR-024' {
-        doc /* Contest, special-activity and DXpedition operation — phase three
-             Offer WSJT-X's special operating activities chosen by the operator, the contest exchanges, the Hound role and the nonstandard message types, each with its decode, encode, sequencing and logging, on the shared browser/modem/QSO/log/MCP services. Approved slices (issue #24, operator 2026-11-03, WSJT-X 3.3.0-beta5 reference): S1 nonstandard/compound calls, filled-in hashed calls and free text; S2a grid-exchange contests; S2b Field Day and RTTY Roundup (ADIF contest fields, no Cabrillo); S4 classic Hound. S5 SuperFox Hound moved to its own phase-two issue #77 (operator 2026-11-08); Fox (S6) was dropped; EU VHF (S3), decoded since S1a, is sent by issue #99 (operator 2026-11-09, CL-099-01/02). */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/decoder/hashes.rs; server/src/recording.rs; server/src/contact.rs; server/src/transmit/pack.rs";
-    }
-    requirement 'CL-003-05' {
-        doc /* The minimal profile MUST support two clients sharing the contract's 32 kbit/s link model (WstxStationProtocol::ThinLinkBudget). Its traffic budgets are targets of normal operation that the operator judges from the station's link byte log, and its visible-response target is watched in the live check after each deploy (operator 2026-11-09) (WstxStationProtocol::LinkTrafficLog); no test asserts them (operator 2026-11-09, #80). The station MUST record that log: per period and client (an enrolled browser, an MCP client or local), the bytes each way in total and by message type, and the display profile of each of the client's sockets. Page and asset loading, reconnection, authorization recovery, CAT, selection changes, recording replay or import and log maintenance carry no link budget. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs; server/src/link_log.rs; server/src/mcp.rs; client/app.js";
-    }
-    dependency CL_003_05_to_FR_021 from 'CL-003-05' to 'FR-021';
-    verification 'TC-080-001' {
-        doc /* TC-080-001 — Link byte log
-             CL-003-05
-             Setup: the actual router in the test process on a selected HTTPS profile with a disposable directory, one enrolled browser grant and one MCP client; the log's period clock and the operating mode are driven by the test; raw test peers hold their own TCP sockets, count every TCP byte they write and read, run their TLS client on top, write and read HTTP/1.1 text and WebSocket frames themselves, and one peer speaks HTTP/2; each step waits until its exchanges are complete before the period clock moves.
-             Steps: (a) FT8: in one period the browser's socket subscribes Thin and sends station.get three times; on the browser's credentialed connection GET /profile, POST /authorization/v1/status and POST /receive/select with a malformed body (refused 400); the MCP client makes one tools/call; the period ends. (b) A second socket of the same grant on Off in the next period. (c) FT4: two 7.5 s periods. (d) A mode change FT8 to FT4 at 5.2 s into a period. (e) No mode selected. (f) A TLS connection without credentials: GET / and a request refused 401. (g) The browser's GET /profile over HTTP/2. (h) Lines written past the rotation size. (i) A plaintext loopback profile. (j) Methods FOO1 and FOO2 on / and on an unknown path: types "OTHER /" and "OTHER unrouted", no client text in any key (#80 review finding).
-             Expected (WstxStationProtocol::LinkTrafficLog): one JSON line per client with traffic at each period end, none for a client without traffic. bytes each way equals the TCP bytes the client's peers wrote and read in that period. Each type's count and bytes equal the peers' own counts by the log's rule: WebSocket frames header plus payload (mask included from the client); HTTP the request as written (request line, header fields, body) and the response as received minus the fields the HTTP server adds itself (date, and the content-length or transfer-encoding these routes leave unset) and minus chunk framing, re-serialized as HTTP/1.1 text; the same reconstruction for the HTTP/2 exchange. other = bytes - sum of types. estimate equals the hand calculation of the log's formula. The refused POST /receive/select is on the browser's line; the MCP client has its own line and the browser line holds no MCP bytes; (f) is on a local line on TLS. display lists each socket's profile (thin, then thin and off). FT4 lines are 7500 ms apart; the mode change gives (start, 5200, FT8), (change, until the next FT4 start, FT4), then 7500 ms FT4 lines; with no mode the lines say mode none and are 15000 ms apart. No line holds a cookie, token or proof. The file moves to link-traffic.1.log at its rotation size, replacing the older one. Nothing of the log reaches a socket or response. On the plaintext profile t is 0 and the client is local.
-             2 — Isolated automated functional test; Windows development PC; no browser, link simulator or radio. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-003-05';
-        }
-        attribute executable : String = "server/src/link_log_tests.rs";
-    }
-    dependency CL_003_05_verified_by_TC_080_001 from 'CL-003-05' to 'TC-080-001';
-    requirement NativeFlexBoundary {
-        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::partial;
-        doc /* Phase2 optional native radio path retains standard independent audio/CAT
-             and browser/DSP/QSO/MCP boundaries, without external SmartSDR desktop,
-             CAT or DAX bridges. Radio-side firmware/API support still matters. Audio
-             and control may reference one managed session, settled in NativeFlexWireSubset.
-             Persist profile intent without a radio identity (#22, 2026-11-06);
-             reconcile transient handles on connection, never guess another slice or
-             replay transmit intent. One effective arbitration authority spans shared
-             physical resources and transmission; an in-process mutex per station is
-             insufficient. A verified API may justify a common connector, but its
-             lifetime cannot depend on one station whose stop must leave others usable.
-             No fixed four-GUI-client or simultaneous independent transmitter promise. */
-    }
-    dependency nativeBoundary from NativeFlexBoundary to WstxArchitecture::'FR-023';
 }

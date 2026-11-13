@@ -1,6 +1,6 @@
 {
   "files": [
-    "ProductScope.sysml",
+    "Requirements.sysml",
     "Station.sysml",
     "backend/audio/AudioDevice.sysml",
     "backend/audio/Capture.sysml",
@@ -49,5 +49,19 @@
     "frontend/SignalArea.sysml",
     "interfaces/Udp.sysml"
   ],
-  "elements": {}
+  "elements": {
+    "WstxContext::browserOwner": "web",
+    "WstxContext::catRadioOwner": "radioControl",
+    "WstxContext::clubLogOwner": "qso",
+    "WstxContext::flexRadioOwner": "receive",
+    "WstxContext::mcpClientOwner": "mcp",
+    "WstxContext::profileFilesOwner": "profile",
+    "WstxContext::pskReporterOwner": "qso",
+    "WstxContext::resourceLocksOwner": "radioAuthority",
+    "WstxContext::soundDeviceOwner": "audio",
+    "WstxContext::timeServerOwner": "transmit",
+    "WstxContext::tlsFilesOwner": "web",
+    "WstxContext::udpPeerOwner": "station",
+    "WstxContext::windowsTimeOwner": "transmit"
+  }
 }

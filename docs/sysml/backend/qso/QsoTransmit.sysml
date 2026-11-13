@@ -1,8 +1,8 @@
 package WstxQsoTransmit {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-007';
-    private import WstxArchitecture::'FR-008';
+    private import WstxRequirements::'FR-007';
+    private import WstxRequirements::'FR-008';
     private import WstxRequirements::AutomationState;
     private import WstxTransmit::'TC-111-015';
     private import WstxTransmit::'CL-039-06';
@@ -354,6 +354,6 @@ package WstxQsoTransmit {
     }
     dependency transmitBoundary from TransmitSubmission to WstxTransmit::TransmitRequest;
     dependency transmitOwner from TransmitSubmission to WstxArchitecture::TransmitService;
-    dependency transmitPromise from TxWatchdog to WstxArchitecture::'FR-008';
+    dependency transmitPromise from TxWatchdog to WstxRequirements::'FR-008';
     dependency busyWatchdogClause from TxWatchdog to WstxContact::'CL-097-06';
 }

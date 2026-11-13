@@ -1,11 +1,11 @@
 package WstxMcpEndpoint {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-020';
-    private import WstxArchitecture::'FR-021';
-    private import WstxArchitecture::'FR-007';
+    private import WstxRequirements::'FR-020';
+    private import WstxRequirements::'FR-021';
+    private import WstxRequirements::'FR-007';
     private import WstxRequirements::AutomationState;
-    private import WstxArchitecture::'FR-008';
+    private import WstxRequirements::'FR-008';
     private import WstxTransmit::'CL-039-06';
 
     attribute def McpEndpoint {

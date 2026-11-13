@@ -2,9 +2,9 @@ package WstxOfflineDecode {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::AutomationState;
-    private import WstxArchitecture::'FR-003';
-    private import WstxArchitecture::'FR-004';
-    private import WstxArchitecture::'FR-005';
+    private import WstxRequirements::'FR-003';
+    private import WstxRequirements::'FR-004';
+    private import WstxRequirements::'FR-005';
     private import WstxMessageEncode::'CL-011-01';
     private import WstxModemDecode::'CL-007-03';
     private import WstxModemDecode::'TC-004-002';
@@ -14,7 +14,7 @@ package WstxOfflineDecode {
     private import ModelBindings::TestedBy;
     private import ModelNotes::FollowsSource;
     private import ModelNotes::DiffersFromSource;
-    private import WstxArchitecture::'FR-024';
+    private import WstxRequirements::'FR-024';
     doc /* The data the modes part shares with the other parts, and its payload function: how
          a 77-bit payload becomes a record. The payload is the one of the published
          protocol; this package states the product's choices over it. The decode function

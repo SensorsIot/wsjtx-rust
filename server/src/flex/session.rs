@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! FR-023 per-station native session (WstxArchitecture::NativeFlexBoundary). One
+//! FR-023 per-station native session (WstxFlexSession::NativeFlexBoundary). One
 //! station process is one GUI-class API client; the radio's client-scoped resource
 //! ownership is the arbitration authority between stations. This session only ever
 //! changes the one slice and stream it created and confirmed under its own current

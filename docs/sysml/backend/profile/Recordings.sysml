@@ -2,8 +2,8 @@ package WstxProfileRecordings {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::AutomationState;
-    private import WstxArchitecture::'FR-003';
-    private import WstxArchitecture::'FR-018';
+    private import WstxRequirements::'FR-003';
+    private import WstxRequirements::'FR-018';
     private import WstxRecordingReceive::'CL-006-02';
     private import WstxRecordingReceive::'CL-006-04';
     private import WstxRecordingReceive::ErrorCode;
@@ -17,7 +17,7 @@ package WstxProfileRecordings {
     doc /* The recordings function of the profile part (WstxArchitecture::RecordedSource,
          deployed as physicalStation::backend::stations::profile::recordings): one imported
          recording per profile, kept with its metadata and manifest in the profile directory
-         (WstxArchitecture::OutsideThing::profileFiles) across restarts, and its samples
+         (WstxContext::OutsideThing::profileFiles) across restarts, and its samples
          offered, timed and immutable, through the port samples of RecordedSource. Replay
          is the receive part's, the cancellation of an import the station's
          (WstxStationAuthority::CancelImport). */

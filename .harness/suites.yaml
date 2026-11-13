@@ -357,6 +357,8 @@
   - .github/workflows/windows-rust.yml
   select:
   - docs/sysml/Station.sysml
+  - docs/sysml/Context.sysml
+  - docs/sysml/Requirements.sysml
   - docs/sysml/backend/radioControl/RadioProperties.sysml
   - tools/sysml.py
   - tools/sysml/Validate.java

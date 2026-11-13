@@ -2,11 +2,11 @@ package WstxProfiles {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::AutomationState;
-    private import WstxArchitecture::'FR-001';
-    private import WstxArchitecture::'FR-016';
-    private import WstxArchitecture::'FR-021';
-    private import WstxArchitecture::'FR-022';
-    private import WstxArchitecture::'FR-023';
+    private import WstxRequirements::'FR-001';
+    private import WstxRequirements::'FR-016';
+    private import WstxRequirements::'FR-021';
+    private import WstxRequirements::'FR-022';
+    private import WstxRequirements::'FR-023';
     private import WstxStationProtocol::'CL-005-03';
     private import WstxStationProtocol::'TC-022-004';
     private import WstxStationProtocol::RuntimeInputs;
@@ -16,9 +16,9 @@ package WstxProfiles {
     private import ModelBindings::TestedBy;
     private import ModelNotes::FollowsSource;
     private import ModelNotes::Conflict;
-    private import WstxArchitecture::'FR-019';
-    private import WstxArchitecture::'FR-002';
-    private import WstxArchitecture::'FR-009';
+    private import WstxRequirements::'FR-019';
+    private import WstxRequirements::'FR-002';
+    private import WstxRequirements::'FR-009';
     private import WstxLiveReceive::'CL-008-02';
     private import WstxRecordingReceive::'CL-008-03';
     private import WstxRadioIO::'CL-008-04';
@@ -30,7 +30,7 @@ package WstxProfiles {
          physicalStation::backend::stations::profile): the saved profile of one station, its
          creation, its launch with ownership, its save through GET and PUT /profile, its stop
          and its recovery. Its directory is the outside thing
-         WstxArchitecture::OutsideThing::profileFiles. The recordings function of the part is
+         WstxContext::OutsideThing::profileFiles. The recordings function of the part is
          WstxProfileRecordings; authentication is the web part's (WstxStationProtocol), the
          profile form the browser's (WstxOperatingLayout). */
     doc /* The content coding of a GET /profile body is

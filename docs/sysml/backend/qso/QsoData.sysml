@@ -1,22 +1,22 @@
 package WstxContact {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-007';
-    private import WstxArchitecture::'FR-008';
-    private import WstxArchitecture::'FR-020';
+    private import WstxRequirements::'FR-007';
+    private import WstxRequirements::'FR-008';
+    private import WstxRequirements::'FR-020';
     private import WstxRequirements::AutomationState;
-    private import WstxArchitecture::'FR-011';
-    private import WstxArchitecture::'FR-024';
-    private import WstxArchitecture::'FR-006';
-    private import WstxArchitecture::'FR-019';
+    private import WstxRequirements::'FR-011';
+    private import WstxRequirements::'FR-024';
+    private import WstxRequirements::'FR-006';
+    private import WstxRequirements::'FR-019';
     private import WstxMessageEncode::'TC-006-002';
     private import WstxLogbook::'TC-007-008';
-    private import WstxArchitecture::'FR-010';
+    private import WstxRequirements::'FR-010';
     private import WstxStandardQso::'TC-007-001';
     private import WstxStandardQso::'TC-007-004';
     private import WstxStandardQso::'TC-007-007';
-    private import WstxArchitecture::'FR-016';
-    private import WstxArchitecture::'FR-012';
+    private import WstxRequirements::'FR-016';
+    private import WstxRequirements::'FR-012';
     private import WstxOperatingLayout::'CL-039-04';
     private import WstxTransmit::'CL-039-06';
     private import WstxOperatingLayout::'TC-055-006';
@@ -47,7 +47,7 @@ package WstxContact {
          modem or QSO state machine (#10 functional description).
 
          Behaviour reference: WSJT-X 3.3.0-beta5 source (C:/WSJT/wsjtx-3.3.0-beta5-src;
-         WstxProductScope::BehaviorBaseline v3.3.0-beta4 is unchanged for these
+         WstxRequirements::BehaviorBaseline v3.3.0-beta4 is unchanged for these
          functions). Cited as MW = widgets/mainwindow.cpp, DMR =
          DecodedMessageReaction.cpp, DOP = DecodeOutputPlan.cpp, PL = widgets/plotter.cpp,
          CFG = Configuration.cpp, LQ = widgets/logqso.cpp, ADQ = logbook/AdifQso.cpp,
@@ -328,7 +328,7 @@ package WstxContact {
              profile's storage. Exact fields/format/compatibility and duplicate/recovery
              behaviour are settled before this capability is implemented. */
     }
-    dependency contactBoundary from CompletedContactIdentity to WstxArchitecture::'FR-011';
+    dependency contactBoundary from CompletedContactIdentity to WstxRequirements::'FR-011';
     requirement 'CL-039-21' {
         doc /* A strategy or contest run never stops its own contact for the Tx watchdog; the leave rule bounds it instead (CL-039-23, CL-097-04), and while the target has not answered Tx moves by the Tx move rule per PSK case (CL-097-05); a target that has answered keeps its slot for the whole exchange. WD:n is the Tx watchdog only: the run's own contact shows the leave label instead (CL-097-04). Manual operation, a pounce and an MCP policy run keep the stop at N, and so does a run's CQ; unattended or past the run limit the stop at N is back at once. Details: WstxStrategy::StrategyWatchdog, TxMoveRule, HearingFeed, FreeTxSlot, LeaveCountLabel; WstxQsoTransmit::TxWatchdog. */
         attribute coverage : ImplementationState = ImplementationState::implemented;

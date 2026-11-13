@@ -1,10 +1,10 @@
 package WstxRadioSetup {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-009';
-    private import WstxArchitecture::'FR-001';
-    private import WstxArchitecture::'FR-008';
-    private import WstxArchitecture::'FR-002';
+    private import WstxRequirements::'FR-009';
+    private import WstxRequirements::'FR-001';
+    private import WstxRequirements::'FR-008';
+    private import WstxRequirements::'FR-002';
     private import WstxRequirements::AutomationState;
     private import WstxProfiles::'CL-044-05';
     private import WstxRadioIO::'CL-044-11';

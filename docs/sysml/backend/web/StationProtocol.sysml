@@ -4,10 +4,10 @@ package WstxStationProtocol {
     private import WstxReceiveSpectrum::DetailedSpectrumFrame;
     private import WstxReceiveSpectrum::SpectrumFrame;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-021';
+    private import WstxRequirements::'FR-021';
     private import WstxRequirements::AutomationState;
-    private import WstxArchitecture::'FR-019';
-    private import WstxArchitecture::'FR-022';
+    private import WstxRequirements::'FR-019';
+    private import WstxRequirements::'FR-022';
     private import WstxOperatingLayout::'CL-003-04';
     private import WstxProfiles::'CL-005-04';
     private import WstxRecordingReceive::'CL-008-03';
@@ -20,8 +20,8 @@ package WstxStationProtocol {
     private import WstxProfiles::'TC-022-001';
     private import WstxProfiles::'TC-022-003';
     private import WstxProfiles::'TC-022-005';
-    private import WstxArchitecture::'FR-003';
-    private import WstxArchitecture::'FR-010';
+    private import WstxRequirements::'FR-003';
+    private import WstxRequirements::'FR-010';
     private import WstxOperatingLayout::'TC-022-006';
     private import WstxOperatingLayout::'TC-022-010';
     private import WstxOperatingLayout::'CL-051-02';
@@ -364,16 +364,16 @@ package WstxStationProtocol {
     dependency stationOwner from exchangeStatus to WstxArchitecture::physicalStation::backend::stations::station;
     dependency transportOwner from exchangeStatus to WstxArchitecture::physicalStation::backend::stations::web;
     dependency securityPromise from SessionSecurity to WstxStationProtocol::'CL-003-07';
-    dependency budgetPromise from ThinLinkBudget to WstxArchitecture::'CL-003-05';
-    dependency pushedStatePromise from PushedStationState to WstxArchitecture::'CL-003-05';
+    dependency budgetPromise from ThinLinkBudget to WstxStationProtocol::'CL-003-05';
+    dependency pushedStatePromise from PushedStationState to WstxStationProtocol::'CL-003-05';
     dependency pushedStateBootPromise from PushedStationState to WstxOperatingLayout::'CL-074-01';
     dependency pushedStateOwner from PushedStationState to WstxArchitecture::physicalStation::backend::stations::web;
     dependency bufferPromise from Limits to WstxStationProtocol::'CL-003-06';
     dependency exchangeVerification from ExchangeStatus to WstxStationProtocol::'TC-021-005';
     dependency budgetJudgedFromLog from ThinLinkBudget to LinkTrafficLog;
-    dependency trafficLogPromise from LinkTrafficLog to WstxArchitecture::'CL-003-05';
+    dependency trafficLogPromise from LinkTrafficLog to WstxStationProtocol::'CL-003-05';
     dependency trafficLogOwner from LinkTrafficLog to WstxArchitecture::physicalStation::backend::stations::web;
-    dependency trafficLogVerification from LinkTrafficLog to WstxArchitecture::'TC-080-001';
+    dependency trafficLogVerification from LinkTrafficLog to WstxStationProtocol::'TC-080-001';
     dependency livenessVerification from Heartbeat to WstxStationProtocol::'TC-021-008';
     dependency tlsVerification from SessionSecurity to WstxStationProtocol::'TC-021-009';
     dependency buildPromise from ClientBuild to WstxStationProtocol::'CL-051-01';
@@ -1558,4 +1558,24 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
         attribute executable : String = "server/src/protocol_tests.rs";
     }
     dependency CL_033_01_verified_by_TC_033_001 from 'CL-033-01' to 'TC-033-001';
+    requirement 'CL-003-05' {
+        doc /* The minimal profile MUST support two clients sharing the contract's 32 kbit/s link model (WstxStationProtocol::ThinLinkBudget). Its traffic budgets are targets of normal operation that the operator judges from the station's link byte log, and its visible-response target is watched in the live check after each deploy (operator 2026-11-09) (WstxStationProtocol::LinkTrafficLog); no test asserts them (operator 2026-11-09, #80). The station MUST record that log: per period and client (an enrolled browser, an MCP client or local), the bytes each way in total and by message type, and the display profile of each of the client's sockets. Page and asset loading, reconnection, authorization recovery, CAT, selection changes, recording replay or import and log maintenance carry no link budget. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/main.rs; server/src/link_log.rs; server/src/mcp.rs; client/app.js";
+    }
+    dependency CL_003_05_to_FR_021 from 'CL-003-05' to 'FR-021';
+    verification 'TC-080-001' {
+        doc /* TC-080-001 — Link byte log
+             CL-003-05
+             Setup: the actual router in the test process on a selected HTTPS profile with a disposable directory, one enrolled browser grant and one MCP client; the log's period clock and the operating mode are driven by the test; raw test peers hold their own TCP sockets, count every TCP byte they write and read, run their TLS client on top, write and read HTTP/1.1 text and WebSocket frames themselves, and one peer speaks HTTP/2; each step waits until its exchanges are complete before the period clock moves.
+             Steps: (a) FT8: in one period the browser's socket subscribes Thin and sends station.get three times; on the browser's credentialed connection GET /profile, POST /authorization/v1/status and POST /receive/select with a malformed body (refused 400); the MCP client makes one tools/call; the period ends. (b) A second socket of the same grant on Off in the next period. (c) FT4: two 7.5 s periods. (d) A mode change FT8 to FT4 at 5.2 s into a period. (e) No mode selected. (f) A TLS connection without credentials: GET / and a request refused 401. (g) The browser's GET /profile over HTTP/2. (h) Lines written past the rotation size. (i) A plaintext loopback profile. (j) Methods FOO1 and FOO2 on / and on an unknown path: types "OTHER /" and "OTHER unrouted", no client text in any key (#80 review finding).
+             Expected (WstxStationProtocol::LinkTrafficLog): one JSON line per client with traffic at each period end, none for a client without traffic. bytes each way equals the TCP bytes the client's peers wrote and read in that period. Each type's count and bytes equal the peers' own counts by the log's rule: WebSocket frames header plus payload (mask included from the client); HTTP the request as written (request line, header fields, body) and the response as received minus the fields the HTTP server adds itself (date, and the content-length or transfer-encoding these routes leave unset) and minus chunk framing, re-serialized as HTTP/1.1 text; the same reconstruction for the HTTP/2 exchange. other = bytes - sum of types. estimate equals the hand calculation of the log's formula. The refused POST /receive/select is on the browser's line; the MCP client has its own line and the browser line holds no MCP bytes; (f) is on a local line on TLS. display lists each socket's profile (thin, then thin and off). FT4 lines are 7500 ms apart; the mode change gives (start, 5200, FT8), (change, until the next FT4 start, FT4), then 7500 ms FT4 lines; with no mode the lines say mode none and are 15000 ms apart. No line holds a cookie, token or proof. The file moves to link-traffic.1.log at its rotation size, replacing the older one. Nothing of the log reaches a socket or response. On the plaintext profile t is 0 and the client is local.
+             2 — Isolated automated functional test; Windows development PC; no browser, link simulator or radio. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-003-05';
+        }
+        attribute executable : String = "server/src/link_log_tests.rs";
+    }
+    dependency CL_003_05_verified_by_TC_080_001 from 'CL-003-05' to 'TC-080-001';
 }

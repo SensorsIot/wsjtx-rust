@@ -1,8 +1,8 @@
 package WstxQsoWire {
     private import ScalarValues::*;
     private import WstxRequirements::ImplementationState;
-    private import WstxArchitecture::'FR-019';
-    private import WstxArchitecture::'FR-021';
+    private import WstxRequirements::'FR-019';
+    private import WstxRequirements::'FR-021';
     private import WstxRequirements::AutomationState;
     private import WstxStandardQso::'TC-007-004';
     private import WstxContact::ContactAction;
