@@ -1,5 +1,5 @@
 'use strict';
-// CR #10 contact log (WstxContact::ContactHistory, UpdateLogbook, ExportAdi, WorkedBeforeQuery).
+// CR #10 contact log (WstxLogbook::ContactHistory, UpdateLogbook, ExportAdi, WorkedBeforeQuery).
 // The server owns the log, its identities, times and worked-before status, and logs each
 // completed QSO itself (DirectLog, #41: no review form); this browser renders confirmed
 // responses and sends requests.
@@ -50,7 +50,7 @@ document.addEventListener('click',event=>{if(event.target.closest?.('button[data
 document.addEventListener('keydown',event=>{if(event.key==='Enter'&&event.target.closest?.('button[data-region="logbook"]'))loadHistory(null);});
 
 // ---------------------------------------------------------------- update logbook / export
-// #10 WstxContact::UpdateLogbook in Settings > Logging & Reporting: another logger's ADIF
+// #10 WstxLogbook::UpdateLogbook in Settings > Logging & Reporting: another logger's ADIF
 // export (for example Log4OM) is consolidated into this log. The station decides what is
 // added, already present or skipped; this browser uploads the file and shows the summary.
 async function sha256(bytes){return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');}

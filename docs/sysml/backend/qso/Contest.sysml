@@ -92,7 +92,7 @@ package WstxContest {
     attribute def ContestProfile {
         doc /* Rule facts only, one data entry per contest, no behaviour of its own; wire keys of
              GET /strategy/contests exactly: id, name, cabrillo (null: no Cabrillo log),
-             cabrillo_confirmed, activity (WstxContact::SpecialActivity name), bands (ADIF band
+             cabrillo_confirmed, activity (WstxSpecialActivities::SpecialActivity name), bands (ADIF band
              names), modes, exchange, dupes (DupeRule), points (PointsRule), multipliers
              (MultiplierRule), score, automation (AutomationClause), automation_text (the clause
              as the rules word it, or that they do not address it), schedule (the rule in words),
@@ -160,7 +160,7 @@ package WstxContest {
              digital. Phone is SSB, USB, LSB, AM, FM, DIGITALVOICE; CW is CW; every other mode is
              digital. In time order; a QSO that is a dupe by the DupeRule counts nothing. Band and
              mode are the record's effective values, the grid its first four characters; a record without
-             a band (logged without a confirmed CAT dial, WstxContact::DirectLog) counts for nothing. band_grid
+             a band (logged without a confirmed CAT dial, WstxLogbook::DirectLog) counts for nothing. band_grid
              with no grid: a logged QSO without a grid dupes every grid of that call on the band, a
              decoded message without a grid is a dupe when the call is logged on that band. The
              tally: qsos, multipliers (distinct keys of the MultiplierRule), points (the PointsRule;
@@ -273,7 +273,7 @@ package WstxContest {
              Waiting for the newest period, #89, StrategyRun Decision timing;
              with Hold Tx on the held Tx, no decision, WstxStrategy D16) and
              sends enable_tx with no partner, which calls CQ with the activity's Tx6; state
-             calling_cq. WstxContact::CallFirst does not answer a CQ started by automation. On each
+             calling_cq. WstxStandardQso::CallFirst does not answer a CQ started by automation. On each
              fresh complete publication of the partner's parity the callers of my call
              (ContestVerdict kind caller with a rank, so only with Calling stations are answered on
              and never a dupe; in ContestValueOrder; not worked in this run on this band and mode,
@@ -314,22 +314,22 @@ package WstxContest {
              the activity alone, not on a selected contest strategy (D2). */
     }
 
-    dependency profileClause from ContestProfile to WstxRequirements::'CL-063-01';
-    dependency scheduleClause from ScheduleRule to WstxRequirements::'CL-063-01';
-    dependency tableClause from ProfileTable to WstxRequirements::'CL-063-01';
-    dependency httpClause from ContestHttp to WstxRequirements::'CL-063-01';
-    dependency directiveClause from ContestDirective to WstxRequirements::'CL-063-02';
+    dependency profileClause from ContestProfile to WstxContact::'CL-063-01';
+    dependency scheduleClause from ScheduleRule to WstxContact::'CL-063-01';
+    dependency tableClause from ProfileTable to WstxContact::'CL-063-01';
+    dependency httpClause from ContestHttp to WstxContact::'CL-063-01';
+    dependency directiveClause from ContestDirective to WstxContact::'CL-063-02';
     dependency directiveOwner from ContestDirective to WstxStrategy::DirectedCqRule;
-    dependency selectionClause from ContestSelection to WstxRequirements::'CL-063-03';
-    dependency promptClause from ContestPrompt to WstxRequirements::'CL-063-03';
-    dependency logClause from ContestLog to WstxRequirements::'CL-063-03';
-    dependency verdictClause from ContestVerdict to WstxRequirements::'CL-063-04';
-    dependency orderClause from ContestValueOrder to WstxRequirements::'CL-063-04';
-    dependency viewClause from ContestView to WstxRequirements::'CL-063-04';
-    dependency runClause from ContestRun to WstxRequirements::'CL-063-05';
-    dependency runSafety from ContestRun to WstxRequirements::'CL-063-06';
+    dependency selectionClause from ContestSelection to WstxContact::'CL-063-03';
+    dependency promptClause from ContestPrompt to WstxContact::'CL-063-03';
+    dependency logClause from ContestLog to WstxContact::'CL-063-03';
+    dependency verdictClause from ContestVerdict to WstxContact::'CL-063-04';
+    dependency orderClause from ContestValueOrder to WstxContact::'CL-063-04';
+    dependency viewClause from ContestView to WstxContact::'CL-063-04';
+    dependency runClause from ContestRun to WstxContact::'CL-063-05';
+    dependency runSafety from ContestRun to WstxContact::'CL-063-06';
     dependency runPath from ContestRun to WstxStrategy::StrategyRun;
-    dependency contestStrategySelection from ContestSelection to WstxRequirements::'CL-097-07';
-    dependency contestStrategyPrompt from ContestPrompt to WstxRequirements::'CL-097-07';
-    dependency contestStrategyRun from ContestRun to WstxRequirements::'CL-097-07';
+    dependency contestStrategySelection from ContestSelection to WstxContact::'CL-097-07';
+    dependency contestStrategyPrompt from ContestPrompt to WstxContact::'CL-097-07';
+    dependency contestStrategyRun from ContestRun to WstxContact::'CL-097-07';
 }

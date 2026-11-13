@@ -79,7 +79,7 @@ function load(){
   if(!queued)queued=loading.then(()=>{queued=null;return load();});
   return queued;
 }
-// WstxContact::OperatorDisplays StationPeriodClock (#50): the station's UTC (the clock the
+// WstxQsoWire::OperatorDisplays StationPeriodClock (#50): the station's UTC (the clock the
 // transmitter keys on), never the browser's wall clock. Each station observation gives an
 // offset over this browser's monotonic clock; a late delivery only lowers it, so the largest
 // offset of the last 20 s is the estimate. An offset more than 500 ms below the estimate is a
@@ -104,7 +104,7 @@ async function fetchSnapshot(){
     if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&value.boot_id===profileData?.boot_id&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence)){snap=value;render();}heldWake();}
   }catch{}
 }
-// WstxContact::ContactStateEvent (#10): show what recording.js holds from the station's events,
+// WstxQsoWire::ContactStateEvent (#10): show what recording.js holds from the station's events,
 // unless this client's own read is newer.
 function stateShow(){
   const view=contactHeld;if(!view)return;
@@ -159,7 +159,7 @@ addEventListener('keyboard-halt',event=>{
   if(h)resultText.textContent=`Halt: ${h==='stopped'?'stopped (confirmed)':h==='idle'?'nothing was transmitting':'pending · not yet confirmed'}`;
   load();
 });
-// WstxContact::AbortQso (#39): Esc and the Abort QSO button stop the transmission now
+// WstxQsoTransmit::AbortQso (#39): Esc and the Abort QSO button stop the transmission now
 // and cancel the contact; the station is not halted. The server decides what stops.
 const abortButton=document.createElement('button');abortButton.type='button';abortButton.id='abort-qso';abortButton.className='op-abort';abortButton.textContent='Abort QSO (Esc)';abortButton.title='Abort QSO (Esc): stop the transmission now and cancel the contact, without HALT';abortButton.disabled=true;
 document.querySelector('#halt-tx')?.after(abortButton);
@@ -209,7 +209,7 @@ function render(){
   $('watchdog-tx').disabled=$('watchdog-tune').disabled=!snap;
   $('contact-call-first').disabled=!transmitCapable();
   const auto=$('contact-auto');auto.disabled=!ready;auto.setAttribute('aria-label',ready?'Auto sequence':'Auto sequence unavailable');
-  // WstxContact::SetEnableTx (#37): no Enable Tx control; CQ or a double-click starts a QSO
+  // WstxQsoTransmit::SetEnableTx (#37): no Enable Tx control; CQ or a double-click starts a QSO
   // (no Reply button since the #50 double-click fix).
   $('qso-cq').disabled=!ready||(armed&&c?.state==='calling');
   // #37: no RR73/73 buttons; a fold-out Now is the manual override. Not on a finished contact:
@@ -313,7 +313,7 @@ $('qso-suggest').addEventListener('click',async()=>{
   if(snap?.transmit.arm_state!=='armed'&&transmitReady())arm('Reply');
 });
 $('qso-autoseq-on').addEventListener('click',()=>send('set_auto_seq',{enabled:true},'Auto sequence'));
-// WstxContact::DirectLog (#41): the server logs each completed QSO and every Log QSO; the
+// WstxLogbook::DirectLog (#41): the server logs each completed QSO and every Log QSO; the
 // pane shows the latest outcome, and an open Logbook page lists a newly saved record.
 const logReasons={storage_unavailable:'storage unavailable · retrying',log_queue_full:'too many unsaved QSOs · the oldest was not logged',log_invalid_field:'the station profile is incomplete'};
 const LOGGED_NOTICE_MS=8000;

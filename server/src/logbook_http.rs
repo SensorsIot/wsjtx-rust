@@ -1,4 +1,4 @@
-//! WstxContact::ContactWire log routes: POST/GET /contacts, GET /contacts/export.adi,
+//! WstxQsoWire::ContactWire log routes: POST/GET /contacts, GET /contacts/export.adi,
 //! POST /contacts/imports and GET/PUT /contacts/imports/{id}.
 //! Validation order follows WstxOperatingReceive S2: route, Origin, TLS/session,
 //! size/media/syntax, version/UUIDs/integers, profile, boot, state. Every log mutation
@@ -450,7 +450,7 @@ pub async fn export(
     }
     // The snapshot is taken off the runtime; the records are formatted chunk by chunk as
     // the connection takes them (chunked transfer, no Content-Length), so a large log is
-    // never built in memory at once (WstxContact::ExportAdi).
+    // never built in memory at once (WstxLogbook::ExportAdi).
     match tokio::task::spawn_blocking(move || state.logbook.export()).await {
         Ok(Ok(stream)) => (
             StatusCode::OK,

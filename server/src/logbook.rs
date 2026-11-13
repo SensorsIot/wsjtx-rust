@@ -1,4 +1,4 @@
-//! CR #10 persistent contact log (WstxContact::LogRecord, SaveContact, UpdateLogbook,
+//! CR #10 persistent contact log (WstxLogbook::LogRecord, SaveContact, UpdateLogbook,
 //! ExportAdi, ContactHistory, WorkedBeforeQuery, AdiLimits). The selected profile's
 //! `contacts.adi` is ADIF 3.1.8 ADI, always written as a complete new file in the
 //! profile directory, flushed and atomically replaced. The in-memory view changes only
@@ -31,7 +31,7 @@ const ID_FIELD: &str = "app_wstxrust_contact_id";
 const SOURCE_FIELD: &str = "app_wstxrust_source";
 /// CL-112-05 the contact's activity at logging time (absent for activity none).
 const ACTIVITY_FIELD: &str = "app_wstxrust_activity";
-/// The values of APP_WSTXRUST_ACTIVITY (WstxContact::LogRecord).
+/// The values of APP_WSTXRUST_ACTIVITY (WstxLogbook::LogRecord).
 pub const ACTIVITIES: [&str; 7] = [
     "field_day",
     "rtty",
@@ -817,7 +817,7 @@ pub enum SaveOutcome {
     AlreadySaved,
     Conflict,
 }
-/// WstxContact::DirectLog outcome: one record per contact id, a changed one replaced.
+/// WstxLogbook::DirectLog outcome: one record per contact id, a changed one replaced.
 #[derive(Debug, PartialEq, Eq)]
 pub enum LogOutcome {
     Saved,
@@ -1084,7 +1084,7 @@ fn header(created: &str) -> String {
 pub const EXPORT_CHUNK_RECORDS: usize = 128;
 /// ExportAdi as a stream: the header with the first chunk, then EXPORT_CHUNK_RECORDS
 /// records per chunk, each formatted only when the connection takes it, so a large log is
-/// never held as one document (WstxContact::ExportAdi).
+/// never held as one document (WstxLogbook::ExportAdi).
 pub struct AdiExport {
     header: Option<String>,
     records: Arc<Vec<Record>>,

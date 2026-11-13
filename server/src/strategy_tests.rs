@@ -4466,7 +4466,7 @@ fn logged_before(call: &str, grid: &str, e: i64) -> String {
 
 /// The shared scripted IC-7300 (cat_lifecycle_tests) on COM3, its dial on 14.074 MHz (20 m):
 /// the confirmed dial from which the record of a completed QSO takes its BAND
-/// (WstxContact::DirectLog) and the station its band. With it the contest tests let the
+/// (WstxLogbook::DirectLog) and the station its band. With it the contest tests let the
 /// product log the QSO itself instead of importing the entry.
 fn dial_20m(f: &Mcp) -> Arc<Mutex<crate::cat_lifecycle_tests::Peer>> {
     use crate::cat_lifecycle_tests::{Device, attach_peer};

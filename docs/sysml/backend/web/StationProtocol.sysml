@@ -357,7 +357,7 @@ package WstxStationProtocol {
              almost nothing beyond heartbeat and station.tick. HTTP carries commands and
              one snapshot read per state on (re)connect. transmit.state, contact.state,
              selection.state, receive.state and clock.state (#92, every profile) carry
-             their state (WstxTransmitWire::TransmitWire, WstxContact::ContactStateEvent,
+             their state (WstxTransmitWire::TransmitWire, WstxQsoWire::ContactStateEvent,
              WstxOperatingReceive::SelectionStateEvent, the receive wire, WstxRequirements
              CL-043-01); decode records are not carried yet;
              a state not yet carried is read after its announcement event (one pending read

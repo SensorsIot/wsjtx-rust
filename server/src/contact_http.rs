@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
-//! WstxContact::ContactWire for the contact engine: GET /contact (ContactSnapshot) and
+//! WstxQsoWire::ContactWire for the contact engine: GET /contact (ContactSnapshot) and
 //! POST /contact/command (ContactCommand, CommandReceipt), the station step of the
-//! engine, its direct log (WstxContact::DirectLog, #41) and the contact.state /
+//! engine, its direct log (WstxLogbook::DirectLog, #41) and the contact.state /
 //! station.tick WebSocket event payloads. Validation
 //! order is WstxOperatingReceive S2: route, Origin, TLS/session, size/media/syntax,
 //! version/enums/UUIDs/safe integers, profile, boot/revision, capability, state.
@@ -24,7 +24,7 @@ const MAX_SAFE: u64 = 9_007_199_254_740_991;
 pub const LOG_PENDING_MAX: usize = 64;
 const LOG_RETRY: Duration = Duration::from_secs(5);
 
-/// WstxContact::QsoSettingsFile (CL-110-01): Auto Seq and Call 1st of this profile, in
+/// WstxLogbook::QsoSettingsFile (CL-110-01): Auto Seq and Call 1st of this profile, in
 /// their own file so that saving them does not advance the profile revision.
 const QSO_SETTINGS_FILE: &str = "qso-settings.json";
 const QSO_SETTINGS_BYTES_MAX: u64 = 256;
@@ -205,7 +205,7 @@ fn call_of(v: &Value) -> Option<Call> {
         _ => None,
     }
 }
-/// A nonstandard i3=4 record as an engine message (WstxContact::SelectDecodedRow, #24
+/// A nonstandard i3=4 record as an engine message (WstxStandardQso::SelectDecodedRow, #24
 /// S1b): 'to' and 'from' are the hashed and the full call in hash_second order, a CQ
 /// has 'to' CQ, the roger is the exchange (none: blank).
 fn nonstandard_of(f: &Value) -> Option<Standard> {
@@ -457,7 +457,7 @@ impl Station {
         }
     }
     /// One ContactCommand body through exactly the browser's validation and execution
-    /// (WstxContact::ContactCommand) as a browser operator action; `granted` is the
+    /// (WstxQsoWire::ContactCommand) as a browser operator action; `granted` is the
     /// caller's current CL-022 grant. Station code uses `operate_as` with its source.
     #[cfg(test)]
     pub(crate) fn operate(
@@ -629,7 +629,7 @@ impl Station {
     pub(crate) fn retry_logs_now(&self) {
         self.lock().retry_at = None;
     }
-    /// The LogRecord of a contact at `now` (WstxContact::DirectLog): FREQ = confirmed
+    /// The LogRecord of a contact at `now` (WstxLogbook::DirectLog): FREQ = confirmed
     /// dial + Tx offset, BAND from the dial, MY_GRIDSQUARE the effective locator.
     pub(crate) fn record_of(
         c: &contact::Contact,
@@ -896,7 +896,7 @@ fn parity_name(p: Parity) -> &'static str {
         Parity::Odd => "odd",
     }
 }
-/// The #9 read view WstxContact::ContactSnapshot carries (refusal: the latest #9
+/// The #9 read view WstxQsoWire::ContactSnapshot carries (refusal: the latest #9
 /// refusal, or the contact's last refused/failed transmit outcome).
 fn transmit_view(v: &View, problem: Option<&str>, safety_revision: Option<u64>) -> Value {
     let name = |t: String| contact::snake(&t);

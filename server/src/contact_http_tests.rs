@@ -1525,7 +1525,7 @@ async fn select_mode(f: &Fixture, mode: &str) -> (StatusCode, Value) {
 }
 
 // Proves: CL-011-02; TC-006-002. The station's operating mode follows the live FT4 job
-// (WstxContact::StationOperatingMode) and a mode selection is refused busy while #9
+// (WstxQsoTransmit::StationOperatingMode) and a mode selection is refused busy while #9
 // keys the radio (ModeChange; WSJT-X updateModeControlLock).
 #[tokio::test]
 async fn ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_a_mode_change() {

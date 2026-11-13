@@ -191,7 +191,7 @@ test('receive snapshot race preserves unknown mutation until a later read',{time
   await chip.filter({hasText:'Receive stopped'}).waitFor();
   assert.deepEqual(errors,[]);
 });
-// WstxContact::AbortQso (#39) / OperatingLayout escapeClosesRegion=false: Escape aborts
+// WstxQsoTransmit::AbortQso (#39) / OperatingLayout escapeClosesRegion=false: Escape aborts
 // the QSO but closes no panel or drawer; its Back/Close control returns.
 async function returnToOperation(page){
   const open=await page.locator('.op-secondary:not([hidden])').count();
@@ -319,7 +319,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
  for(const id of ['#strategy-highlight','#strategy-auto'])assert.equal(await page.locator(id).count(),0,`${id} is gone`);
  assert.equal(await page.locator('#activity-value').isVisible(),true,'the Value control is visible');
  assert.equal(await page.locator('#station-automation').textContent(),'Automation idle');
- // WstxContact::OperatorDisplays (D11): server UTC in the top bar. #50: one period bar only, the QSO pane's NEXT bar.
+ // WstxQsoWire::OperatorDisplays (D11): server UTC in the top bar. #50: one period bar only, the QSO pane's NEXT bar.
  await page.locator('#radio-toolbar .op-period > span').filter({hasText:/^UTC \d\d:\d\d:\d\d$/}).waitFor();
  assert.deepEqual(await page.locator('#radio-toolbar .op-period').evaluate(p=>[p.children.length,!!p.querySelector('.op-period-track,small')]),[1,false],'no period bar in the top bar');
  assert.equal(await page.locator('#rx-focus .op-qso-progress #qso-progress').count(),1,'the period bar stays in the QSO pane');
@@ -715,7 +715,7 @@ test('TC-097-017 the busy marker follows WD:n and the leave label',{timeout:4000
 });
 
 // Proves: TC-097-013 (b), (c), (d), (e) (CL-097-04; oracle WstxStrategy::LeaveCountLabel and
-// WstxContact::ContactSnapshot). In a run's own contact (tx_remaining_calls null) the QSO pane's
+// WstxQsoWire::ContactSnapshot). In a run's own contact (tx_remaining_calls null) the QSO pane's
 // watchdog line is the leave label: "Leave in 4 calls" .. "Leave in 1 calls"; a contest stay "Stay ·
 // most valuable", never "WD:∞"; until_logged "Until logged", then "Until logged · leave if gone 7
 // min". Unattended (an integer count) and in a manual contact it is WD:n, 6 down to 1. Station
@@ -1838,7 +1838,7 @@ test('TC-007-002 in-page navigation preserves unsaved profile and selected recor
  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();assert.equal(await page.locator('#display-name').inputValue(),'Unsaved operator edit');
  await page.locator('#tab-expert').click();
  assert.equal(await page.locator('#recording-file').evaluate(el=>el.files[0].name),'selected-but-not-imported.wav');
- // Escape is Abort QSO (WstxContact::AbortQso, #39): with no contact in progress it sends
+ // Escape is Abort QSO (WstxQsoTransmit::AbortQso, #39): with no contact in progress it sends
  // nothing, and it is never a halt.
  assert.deepEqual(mutations,[],'navigation does not save/import or issue station mutations, and Esc sends no halt');
  assert.deepEqual(errors,[]);
@@ -5325,12 +5325,21 @@ test('TC-097-019 the model carries no superseded wording',async()=>{
   const P1=/\b(run|runs|run's)\b|StrategyRun|ManualIntervention|S&P|[Pp]ounce|policy run|select_row|enable_tx/;
   const P2=/(strategy|contest)( strategy)? (selects|calls|answers|leaves|arms|transmits|starts)/;
   const P3=/#97 replaces|it replaces|which replaces|formerly|\(target\)|until delivered|#97( \([^)]*\))?:/i;
-  const S='Strategy.sysml',C='Contest.sysml',R='Requirements.sysml';
+  // A file found by the package it declares; an element by its qualified name, at any depth.
+  const fileOf=pkg=>{
+    const file=Object.keys(files).find(f=>new RegExp(`^package\\s+${quote(pkg)}\\s*\\{`,'m').test(files[f]));
+    assert.ok(file,`package ${pkg} not found`);
+    return file;
+  };
+  const element=qualified=>{const [pkg,name]=qualified.split('::');return doc(fileOf(pkg),name);};
+  const S=fileOf('WstxStrategy'),C=fileOf('WstxContest'),R='Requirements.sysml';
   const scope=[
     ...[1,2,3,15,19].map(n=>decision(S,n)),
-    ...['StrategyClass','NewWhat','NewPer','ValueCriterion','Needed','LeaveMode','PskCase','Strategy','StrategyBands','CountryList','UsStateFilter','UsStateOf','CqTargetList','BuiltinStrategies','StrategyConfiguration','NewNeeded','CallerOfMyCall','Candidate','ValueOrder','Verdict','StrategyEditor'].map(n=>doc(S,n)),
+    ...['StrategyClass','NewWhat','NewPer','ValueCriterion','Needed','LeaveMode','PskCase','Strategy','StrategyBands','CountryList','UsStateFilter','UsStateOf','CqTargetList','BuiltinStrategies','StrategyConfiguration','NewNeeded','CallerOfMyCall','Candidate','ValueOrder','Verdict'].map(n=>element(`WstxStrategy::${n}`)),
+    element("WstxStrategy::StrategyEditor"),
     head(C),decision(C,1),decision(C,11),
-    ...['ContestSelection','ContestPrompt','ContestValueOrder','ContestView'].map(n=>doc(C,n)),
+    ...['ContestSelection','ContestPrompt','ContestValueOrder'].map(n=>element(`WstxContest::${n}`)),
+    element("WstxContest::ContestView"),
     ...['CL-039-01','CL-039-02','CL-039-04','CL-039-11','CL-042-01','CL-063-03'].map(n=>doc(R,n)),
   ];
   assert.deepEqual(scope.flatMap(span=>[P1,P2,P3].flatMap(re=>hits(span,re))),[],'(1) run vocabulary in a rewritten element');
@@ -5346,9 +5355,9 @@ test('TC-097-019 the model carries no superseded wording',async()=>{
     return {file:span.file,s,e};
   };
   const kept=[
-    sentence(doc(S,'Strategy'),'Nothing else exists:'),
-    sentence(doc(S,'StrategyConfiguration'),'Upgrade: a file of schema_version 1','Names: in every schema'),
-    sentence(doc(C,'ContestSelection'),'The keys operation,','null or absent'),
+    sentence(element('WstxStrategy::Strategy'),'Nothing else exists:'),
+    sentence(element('WstxStrategy::StrategyConfiguration'),'Upgrade: a file of schema_version 1','Names: in every schema'),
+    sentence(element('WstxContest::ContestSelection'),'The keys operation,','null or absent'),
     doc(R,'TC-097-001'),doc(R,'TC-097-002'),
   ];
   const outside=(file,i)=>!kept.some(k=>k.file===file&&i>=k.s&&i<k.e);

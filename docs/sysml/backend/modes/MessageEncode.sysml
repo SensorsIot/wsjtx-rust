@@ -4,7 +4,7 @@ package WstxMessageEncode {
     private import WstxRequirements::'FR-005';
     private import WstxRequirements::AutomationState;
     private import WstxRequirements::'FR-006';
-    private import WstxRequirements::'CL-011-02';
+    private import WstxContact::'CL-011-02';
 
     enum def MessageFamily { enum standardCalls; enum portableCalls; enum nonstandard; enum freeText; enum telemetry; enum fieldDay; enum rttyRoundup; enum euVhf; }
     enum def PackRefusal {
@@ -302,7 +302,7 @@ package WstxMessageEncode {
              entry; request an operating selection with action mode while Tune is on,
              while PTT is keyed before the audio, while the FT4 waveform plays, and after
              Tune ends; stop FT4 receive with an active FT4 contact.
-             CL-011-02 oracles (WstxContact::StationOperatingMode, ModeChange):
+             CL-011-02 oracles (WstxQsoTransmit::StationOperatingMode, ModeChange):
              station.tick period_ms 7500 in FT4 and 15000 in FT8; the manual contact
              uses FT4 (Tx4 RR73); the mode selection while Tune is on, PTT keyed or
              transmitting is 409 busy and nothing changes (operating revision, receive

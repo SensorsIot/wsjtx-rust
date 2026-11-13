@@ -18,12 +18,12 @@ package WstxTransmit {
     private import WstxRequirements::'FR-019';
     private import WstxTxLevel::'TC-044-014';
     private import WstxTxLevel::'TC-044-016';
-    private import WstxRequirements::'TC-039-007';
+    private import WstxContact::'TC-039-007';
     private import WstxRequirements::'FR-007';
-    private import WstxRequirements::'TC-111-008';
-    private import WstxRequirementsQso::'CL-111-02';
+    private import WstxQsoTransmit::'TC-111-008';
+    private import WstxQsoTransmit::'CL-111-02';
     private import WstxRequirements::'CL-111-04';
-    private import WstxRequirementsQso::'CL-111-08';
+    private import WstxQsoTransmit::'CL-111-08';
     private import WstxRequirements::'FR-010';
     doc /* Canonical FT8 and FT4 transmit contract. Slice A (issue #9, FT4 issue #11
          slice A): message packing, channel symbols, waveform and pure period
@@ -175,7 +175,7 @@ package WstxTransmit {
              DisarmCause. lastArmCause is who switched it on last (operator, or auto for
              a run or an MCP client) and is absent until the first switch-on of a boot.
              Arm/Disarm are requests from QsoAndLogging (the start actions
-             WstxContact::StartActions, and Enable Tx) through the qso-to-transmit
+             WstxQsoTransmit::StartActions, and Enable Tx) through the qso-to-transmit
              connection, or TransmitWire. Arming requires TransmitAuthority: unsupported capability
              is refused transmitUnsupported, unavailable radioUnavailable, a missing
              grant or a different safety revision notAuthorized, and a PTT switch left
@@ -190,7 +190,7 @@ package WstxTransmit {
     }
     attribute def StopOrder {
         doc /* CL-111-03. A station step is the time from the begin of one contact step
-             (WstxContact::AutoSequence, every 50 ms and directly after each accepted
+             (WstxStandardQso::AutoSequence, every 50 ms and directly after each accepted
              ContactCommand) to the begin of the next. When several stops are applied in
              one station step, lastDisarmCause is the first of this order, whichever
              arrived first: halt; deviceLost; authorityChanged; failed; refused;
@@ -198,7 +198,7 @@ package WstxTransmit {
              modeChanged; runEnded; contactCancelled by Cancel contact;
              contactCompleted; operator. A switch-on between two stops of a step begins
              the choice anew. A start action that arrives after a stop of the same
-             station step is refused state_conflict (WstxContact::StartActions). */
+             station step is refused state_conflict (WstxQsoTransmit::StartActions). */
     }
     dependency stopOrderClause from StopOrder to WstxTransmit::'CL-111-03';
     dependency transmitStateClause from TransmitArming to WstxTransmit::'CL-111-01';
@@ -264,11 +264,11 @@ package WstxTransmit {
              air (otherwise busy). From a run or an MCP client Tune on is refused
              tx_watchdog when no browser action was seen this boot, after a
              repetition-limit stop or after a clear fault (CL-044-14), as an automatic
-             start (WstxContact::StartActions). It never changes TransmitArming or its
+             start (WstxQsoTransmit::StartActions). It never changes TransmitArming or its
              causes: when the radio, the capability or that revision is lost Tune ends
              with PTT release, and a transmit state that is on stops for the same loss by its own
              rule. Stopped by SetTune(false), which needs no revision, HaltTransmit or
-             the tune limit (WstxContact::TuneWatchdog, default 90 s, 1..300 s) with PTT
+             the tune limit (WstxQsoTransmit::TuneWatchdog, default 90 s, 1..300 s) with PTT
              release. On POST /transmit/command tune takes no revision and is accepted
              only while armed, under the armed revision. */
     }
@@ -290,10 +290,10 @@ package WstxTransmit {
              disarm, the partner-works-other stop and Abort QSO use
              AbortTransmission. */
     }
-    dependency haltUseClause from TransmitHaltUse to WstxRequirements::'CL-010-03';
-    dependency abortClause from AbortTransmission to WstxRequirements::'CL-010-03';
+    dependency haltUseClause from TransmitHaltUse to WstxContact::'CL-010-03';
+    dependency abortClause from AbortTransmission to WstxContact::'CL-010-03';
     attribute def TransmitWatchdog {
-        doc /* WstxContact::TxWatchdog (#39, 2026-11-06): the owner holds the limit, 1..99
+        doc /* WstxQsoTransmit::TxWatchdog (#39, 2026-11-06): the owner holds the limit, 1..99
              repetitions (default 6 at each start), and no count: the contact consumer
              compares its dialogue Rep with the limit and reports that Rep for
              tx_remaining_calls (the Tx watchdog's only; a strategy run's own contact, which has
@@ -315,7 +315,7 @@ package WstxTransmit {
     attribute def StationModeGate {
         attribute stationMode : WstxOfflineDecode::Mode[0..1];
         doc /* #11 CL-011-04 (review repair 2026-11-01). The transmit owner holds the
-             station's operating mode (WstxContact::StationOperatingMode), set by the
+             station's operating mode (WstxQsoTransmit::StationOperatingMode), set by the
              station at every change of that mode (live job start, admitted operating
              selection, owner start) and refreshed by every contact step. A request
              whose mode differs is refused staleRequest at admission (disarming as any
@@ -323,7 +323,7 @@ package WstxTransmit {
              staleRequest when its period starts, before PTT is keyed or audio starts
              (a request keyed before audio is released); it is never keyed or played.
              A transmission whose audio already started finishes, as with any disarm,
-             and a mode selection is refused busy meanwhile (WstxContact::ModeChange).
+             and a mode selection is refused busy meanwhile (WstxQsoTransmit::ModeChange).
              The gate does not depend on the 50 ms contact step. Absent stationMode
              (an owner not yet told) gates nothing. */
     }
@@ -1096,7 +1096,7 @@ package WstxTransmit {
     dependency CL_044_13_verified_by_TC_044_015 from 'CL-044-13' to 'TC-044-015';
     dependency CL_044_13_verified_by_TC_044_016 from 'CL-044-13' to 'TC-044-016';
     requirement 'CL-039-06' {
-        doc /* The Tx watchdog limits the repetitions of one message (WstxContact::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or a strategy selection from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or strategy selection from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run and MCP requests (including starting or restarting a run) never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a pounce or MCP policy run stops tx_watchdog, while a strategy run's own contact has no stop and is bounded by CL-039-21 instead; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxContact::TxWatchdog. */
+        doc /* The Tx watchdog limits the repetitions of one message (WstxQsoTransmit::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or a strategy selection from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or strategy selection from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run and MCP requests (including starting or restarting a run) never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a pounce or MCP policy run stops tx_watchdog, while a strategy run's own contact has no stop and is bounded by CL-039-21 instead; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxQsoTransmit::TxWatchdog. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs; server/src/mcp.rs; server/src/authorization.rs";
     }
@@ -1104,7 +1104,7 @@ package WstxTransmit {
     verification 'TC-039-005' {
         doc /* TC-039-005 — The Tx watchdog stop is never ended by automation
              CL-039-06
-             Setup: as TC-039-004; for the unit cases the #9 Core on the hardware double; counts per WstxContact::TxWatchdog (#39, 2026-11-06).
+             Setup: as TC-039-004; for the unit cases the #9 Core on the hardware double; counts per WstxQsoTransmit::TxWatchdog (#39, 2026-11-06).
              Steps: (1) browser limit 2; a pounce on K1ABC started from the browser (a strategy run has no stop: TC-039-022); publish CQ K1ABC at E; transmit the call at E+15 s and its repeat at E+45 s; reach E+75 s; cancel, select a strategy from the browser and publish another CQ. (2) MCP and browser: an MCP Enable Tx before any browser action; browser limit 1; an MCP Enable Tx (CQ) transmitted at E+15 s; MCP set_frequency; MCP set_watchdogs 99; reach E+45 s; a station calls HB9BLA in period E+30 s; an MCP Enable Tx; an MCP run start and a matching CQ; a browser action and an MCP Enable Tx. (3) MCP route: browser limit 1, an MCP Enable Tx and its CQ, MCP-principal commands through the tool and straight to /contact/command, then MCP Enable Tx on both. Unit: automatic arm before any operator action; activity, limit 2, automatic arm; operator arm.
              Expected: (1) remaining calls 1 after the first call (the run's selection does not extend it), the request at E+75 s is never keyed, the run stops tx_watchdog, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the selection arms again. (2) refused tx_watchdog; not spent after the one CQ and the MCP command, set_watchdogs refused operator_required, the next CQ never keyed and spent, still spent after the caller (an answer after a stop ends nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; still spent after an unrelated browser action; after a browser Enable Tx not spent and the MCP Enable Tx arms. (3) after the stop spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
              2 — Isolated automated functional tests; Windows development PC, transmit double; no RF. */
@@ -1127,7 +1127,7 @@ package WstxTransmit {
     dependency CL_111_01_to_FR_007 from 'CL-111-01' to 'FR-007';
     dependency CL_111_01_to_FR_008 from 'CL-111-01' to 'FR-008';
     requirement 'CL-111-03' {
-        doc /* Stops. A completed, cancelled or stopped sequence does not transmit: the state goes off with the cause of the stop, the pending request is dropped, and nothing is sent until the next start. Stop: cause; transmission on the air; what stays of the QSO. QSO completed: contactCompleted; none; completed, logged once. Cancel contact, F4: contactCancelled; finishes; cancelled, an own CQ becomes idle. Abort QSO, Esc: contactCancelled; stops now, no halt; cancelled. Halt Tx, Alt+H, MCP halt: halt; stops now; state kept, an own CQ ends. Repetition limit (Tx watchdog): txWatchdog; none keyed; state kept, an own CQ ends. Partner works another station on the own Tx frequency: partnerWorksOther; stops now by an abort, no halt; state kept (a contact that pauses for a busy partner moves Tx clear instead and stops only when that move is refused, CL-097-06). Mode change: modeChanged; as CL-011-04; cancelled. Band change: bandChanged; finishes, and a band selection in the program is refused busy during a transmission; cancelled as by a mode change: DX call and Tx1 to Tx5 cleared, Tx6 next, an own CQ becomes idle, a completed QSO keeps its fields. Radio or capability lost: deviceLost; released; state kept. Safety revision changed: authorityChanged; state kept. Refused or failed transmission: refused, failed; state kept. A run ends and leaves a contact it did not finish or cancel, with no other stop of this list: runEnded; finishes; state kept. A band change is any change of the station band the station sees: the station band (the radio's dial band, else the band of the operating selection) differs from the band the contact was prepared on. It covers a band selection in the program and a change at the radio's own dial. An unknown station band is no band change. The band-change stop shows bandChanged in every case, also when a run's contact is ended by it. The run's own stop reason stays (a pounce: band_changed). A pounce run's contact is cancelled like every other. A stop is admitted with any earlier contact revision, as cancel and abort are. In one station step any stop wins over any start: the start is refused state_conflict and nothing is sent. When several stops arrive in one step the shown cause is the first of: halt; deviceLost, authorityChanged, failed, refused; Abort QSO (contactCancelled); txWatchdog; partnerWorksOther; bandChanged, modeChanged, runEnded, Cancel contact (contactCancelled); contactCompleted. After a stop with the state kept, the QSO continues only by Reply on the partner's row or by "Send <exchange> next"; after a repetition-limit stop also by Reset. Enter in the DX call field does not continue a stopped QSO. An own CQ ended by the repetition limit is started again with the CQ button. Not delivered yet: no run raises runEnded, and a run that is neither a strategy nor a pounce stops contact_changed when the band change ends its contact. Details: WstxTransmit::StopOrder, WstxContact::BandChange, ModeChange, AutoSequence. */
+        doc /* Stops. A completed, cancelled or stopped sequence does not transmit: the state goes off with the cause of the stop, the pending request is dropped, and nothing is sent until the next start. Stop: cause; transmission on the air; what stays of the QSO. QSO completed: contactCompleted; none; completed, logged once. Cancel contact, F4: contactCancelled; finishes; cancelled, an own CQ becomes idle. Abort QSO, Esc: contactCancelled; stops now, no halt; cancelled. Halt Tx, Alt+H, MCP halt: halt; stops now; state kept, an own CQ ends. Repetition limit (Tx watchdog): txWatchdog; none keyed; state kept, an own CQ ends. Partner works another station on the own Tx frequency: partnerWorksOther; stops now by an abort, no halt; state kept (a contact that pauses for a busy partner moves Tx clear instead and stops only when that move is refused, CL-097-06). Mode change: modeChanged; as CL-011-04; cancelled. Band change: bandChanged; finishes, and a band selection in the program is refused busy during a transmission; cancelled as by a mode change: DX call and Tx1 to Tx5 cleared, Tx6 next, an own CQ becomes idle, a completed QSO keeps its fields. Radio or capability lost: deviceLost; released; state kept. Safety revision changed: authorityChanged; state kept. Refused or failed transmission: refused, failed; state kept. A run ends and leaves a contact it did not finish or cancel, with no other stop of this list: runEnded; finishes; state kept. A band change is any change of the station band the station sees: the station band (the radio's dial band, else the band of the operating selection) differs from the band the contact was prepared on. It covers a band selection in the program and a change at the radio's own dial. An unknown station band is no band change. The band-change stop shows bandChanged in every case, also when a run's contact is ended by it. The run's own stop reason stays (a pounce: band_changed). A pounce run's contact is cancelled like every other. A stop is admitted with any earlier contact revision, as cancel and abort are. In one station step any stop wins over any start: the start is refused state_conflict and nothing is sent. When several stops arrive in one step the shown cause is the first of: halt; deviceLost, authorityChanged, failed, refused; Abort QSO (contactCancelled); txWatchdog; partnerWorksOther; bandChanged, modeChanged, runEnded, Cancel contact (contactCancelled); contactCompleted. After a stop with the state kept, the QSO continues only by Reply on the partner's row or by "Send <exchange> next"; after a repetition-limit stop also by Reset. Enter in the DX call field does not continue a stopped QSO. An own CQ ended by the repetition limit is started again with the CQ button. Not delivered yet: no run raises runEnded, and a run that is neither a strategy nor a pounce stops contact_changed when the band change ends its contact. Details: WstxTransmit::StopOrder, WstxQsoTransmit::BandChange, ModeChange, AutoSequence. */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs";
     }
@@ -1174,7 +1174,7 @@ package WstxTransmit {
              CL-111-01
              Setup: the actual station router (contact_http_tests fixture).
              Steps: GET /contact and the transmit.state event at a station start, after a start and after a stop; the largest snapshot and the first event with the longest cause of each direction.
-             Expected (WstxContact::ContactSnapshot, WstxTransmitWire::TransmitWire): the transmit view carries the causes of CL-111-03 as snake_case values and last_arm_cause (operator, auto or null); the largest snapshot stays at most 4096 bytes and the event at most 1024.
+             Expected (WstxQsoWire::ContactSnapshot, WstxTransmitWire::TransmitWire): the transmit view carries the causes of CL-111-03 as snake_case values and last_arm_cause (operator, auto or null); the largest snapshot stays at most 4096 bytes and the event at most 1024.
              2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {

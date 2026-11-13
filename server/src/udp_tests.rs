@@ -988,7 +988,7 @@ fn enter(f: &Fixture, call: &str, grid: Option<&str>) {
         false,
     );
 }
-// Proves: CL-010-04, CL-040-01, TC-011-001, TC-012-002. #41 WstxContact::DirectLog: the
+// Proves: CL-010-04, CL-040-01, TC-011-001, TC-012-002. #41 WstxLogbook::DirectLog: the
 // completed contact logs itself (no review, no browser) and reaches the UDP target as QSO
 // Logged + Logged ADIF; exactly one record per contact identity. Expected fields are
 // hand-computed from the LogRecord rules: TIME_ON = preparation (nothing transmitted),

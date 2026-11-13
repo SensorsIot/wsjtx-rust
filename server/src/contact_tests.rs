@@ -147,7 +147,7 @@ struct Station {
     /// The station band (Ctx.band); none is unknown.
     band: Option<&'static str>,
 }
-/// The one contact handed to the log since the last check (WstxContact::DirectLog).
+/// The one contact handed to the log since the last check (WstxLogbook::DirectLog).
 fn one_entry(s: &mut Station) -> (LogKind, Contact) {
     let mut logs = s.engine.take_logs();
     assert_eq!(logs.len(), 1, "exactly one contact for the log: {logs:?}");
@@ -828,7 +828,7 @@ fn sends(s: &Station) -> Vec<i64> {
 }
 
 // Proves: TC-097-012 (a), (c), (d), (e) (CL-097-06, #93 reproduction of 2026-11-09 14:39 UTC).
-// Oracle: operator #93 "Keep calling, don't count" and the bound of WstxContact::TxWatchdog
+// Oracle: operator #93 "Keep calling, don't count" and the bound of WstxQsoTransmit::TxWatchdog
 // (at most N paused calls per message). 10m FT4, Tx watchdog 6. (a) KE1J works W9XYZ for 8 of his
 // periods: our Tx1 is keyed in each of the 8 following periods, the first 6 paused (WD stays 6),
 // the 7th and 8th counted (5, 4); his RR73 ends it, the 9th..12th count (3..0) and the 13th is
@@ -970,7 +970,7 @@ fn tc_097_017_a_his_free_text_within_10_hz_in_his_period_ends_busy() {
     }
 }
 
-// Proves: TC-097-017 (b) (CL-097-06, WstxContact::TxWatchdog stop point). FT8, limit 6, six
+// Proves: TC-097-017 (b) (CL-097-06, WstxQsoTransmit::TxWatchdog stop point). FT8, limit 6, six
 // counted Tx1 sends: the send due in period 13 is at the limit. KE1J's busy start published 1.1 s
 // into that period: the send is planned late, keyed and paused (counted stays 6). Published 1.3 s
 // into it: the Tx watchdog stopped it at 1.2 s (Enable Tx off, txWatchdog), nothing keyed.
@@ -1118,7 +1118,7 @@ fn tc_097_017_a_contact_that_does_not_pause_counts_every_send() {
     assert_eq!(s.engine.busy_with(), None, "no busy marker");
 }
 
-// Proves: TC-007-004 (#39 Abort QSO, WstxContact::AbortQso). Abort stops the transmission
+// Proves: TC-007-004 (#39 Abort QSO, WstxQsoTransmit::AbortQso). Abort stops the transmission
 // now, cancels the contact and is no halt; the station stays ready for the next QSO.
 #[test]
 fn abort_stops_the_transmission_now_and_cancels_without_a_halt() {
@@ -5706,7 +5706,7 @@ fn station_started_with_saved(auto_seq: bool, call_first: bool) -> Station {
 }
 
 // Proves: CL-110-01, CL-010-17; TC-110-004 (a), (b). The restored Call 1st governs the own
-// CQ: off keeps calling (WstxContact::CallFirst), on answers the first caller as TC-010-010 (a).
+// CQ: off keeps calling (WstxStandardQso::CallFirst), on answers the first caller as TC-010-010 (a).
 #[test]
 fn tc_110_004_the_restored_call_first_governs_the_own_cq() {
     for (call_first, state, sent) in [
@@ -5733,7 +5733,7 @@ fn tc_110_004_the_restored_call_first_governs_the_own_cq() {
 }
 
 // Proves: CL-110-01, CL-010-02; TC-110-004 (c). The restored Auto Seq off: the partner's
-// report changes neither state nor next slot and offers Tx3 (WstxContact::AutoSequence).
+// report changes neither state nor next slot and offers Tx3 (WstxStandardQso::AutoSequence).
 #[test]
 fn tc_110_004_the_restored_auto_seq_off_only_offers_the_next_message() {
     let mut s = station_started_with_saved(false, true);

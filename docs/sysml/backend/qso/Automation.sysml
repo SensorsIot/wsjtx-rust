@@ -39,9 +39,9 @@ package WstxMcp {
             selects; PUT /strategy stays browser-only.
          D5 Automation: station-owned, volatile (unconfigured, no run after every boot),
             driving the contact engine only through ContactCommand select_row and
-            enable_tx with the starting request's grant; WstxContact::AutoSequence
+            enable_tx with the starting request's grant; WstxStandardQso::AutoSequence
             progresses the contact and the #9 owner transmits. Each completed contact
-            is logged by WstxContact::DirectLog (#41), as for a browser-driven one.
+            is logged by WstxLogbook::DirectLog (#41), as for a browser-driven one.
          D6 Selection: only plain CQ from a resolved call of the latest completed receive
             publication; three explicit rankings; no worked-before filter, directed CQ,
             CQ calling or attempt counter in this CR (max_unanswered_periods and
@@ -237,7 +237,7 @@ package WstxMcp {
              change (selection, contact transition, counters, stop). Counters at
              9007199254740991 refuse counter_exhausted. Accepted means admitted, not keyed. */
     }
-    dependency contactPath from OperatingAutomation to WstxContact::ContactCommand;
+    dependency contactPath from OperatingAutomation to WstxQsoWire::ContactCommand;
     dependency haltPath from OperatingAutomation to WstxTransmit::HaltTransmit;
     dependency automationClause from OperatingAutomation to WstxMcpEndpoint::'CL-012-03';
     dependency policyClause from CandidateSelection to WstxMcpEndpoint::'CL-012-04';

@@ -1182,7 +1182,7 @@ async fn connection(
     // #57 CL-057-01: a Detailed peer is told of each new or grown decode view at once; Thin
     // and Off keep the 2 s receive tick that their link budget is measured with.
     let mut publication = recording.as_ref().map(|r| r.publication.subscribe());
-    // WstxContact::ContactStateEvent / StationTickEvent pacing (optional writes).
+    // WstxQsoWire::ContactStateEvent / StationTickEvent pacing (optional writes).
     let mut contact_tick = interval(Duration::from_secs(1));
     contact_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut contact_seen: Option<(u64, Option<u64>)> = None;

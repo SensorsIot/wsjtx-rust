@@ -181,7 +181,7 @@ package WstxUdp {
              decode until it returns, completed, abandoned, failed or cancelled), Rx DF and Tx DF (Hz), DE call and DE grid
              (profile), DX grid, Tx watchdog (expired), sub-mode "", fast mode false,
              special operation the WSJT-X value of the contact settings' activity (none 0,
-             na_vhf 1, eu_vhf 2, field_day 3, rtty 4, ww_digi 5, hound 7, arrl_digi 8, WstxContact::GridExchangeContest, EuVhfExchange, HoundOperation), frequency tolerance 4294967295, T/R period 15 (FT8) or 7
+             na_vhf 1, eu_vhf 2, field_day 3, rtty 4, ww_digi 5, hound 7, arrl_digi 8, WstxSpecialActivities::GridExchangeContest, EuVhfExchange, HoundOperation), frequency tolerance 4294967295, T/R period 15 (FT8) or 7
              (FT4), configuration name (profile display name), Tx message (the contact's
              next message, else "").
              Decode (2), New true, once per decoded record (decoded status with text and a
@@ -197,7 +197,7 @@ package WstxUdp {
              passed, so it is never sent later.
              Clear (3): CL-112-04.
              QSO Logged (5) then Logged ADIF (12): when SaveContact stores a new record
-             (outcome saved, not already_saved) and when WstxContact::DirectLog first stores
+             (outcome saved, not already_saved) and when WstxLogbook::DirectLog first stores
              a contact's record (not for a replacement or an unchanged record). QSO Logged:
              Date & Time Off and On from qso_date_off/time_off and qso_date/time_on (UTC), DX
              call, DX grid, Tx frequency = freq in Hz (else 0), mode FT8 or FT4, report
@@ -264,8 +264,8 @@ package WstxUdp {
 
     dependency servicePlacement from OutboundRules to WstxArchitecture::StationService;
     dependency profilePlacement from UdpConfiguration to WstxArchitecture::PersistedProfile;
-    dependency logPath from OutboundRules to WstxContact::SaveContact;
-    dependency directLogPath from OutboundRules to WstxContact::DirectLog;
+    dependency logPath from OutboundRules to WstxLogbook::SaveContact;
+    dependency directLogPath from OutboundRules to WstxLogbook::DirectLog;
     dependency wireClause from UdpWire to WstxRequirements::'CL-040-01';
     dependency outboundClause from OutboundRules to WstxRequirements::'CL-040-01';
     dependency targetClause from UdpConfiguration to WstxRequirements::'CL-040-02';

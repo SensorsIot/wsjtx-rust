@@ -1,7 +1,6 @@
 package WstxProductScope {
     private import ScalarValues::*;
     private import WstxRequirements::*;
-    private import WstxRequirementsQso::*;
     private import WstxRequirementsUdp::*;
     private import WstxRequirementsFrontend::*;
     private import WstxArchitecture::*;
@@ -156,15 +155,6 @@ package WstxProductScope {
              never serialization of whole internal objects. File transfer is separate
              from small control messages and selects recording identity, not client paths. */
     }
-    requirement CompletedContactIdentity {
-        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::target;
-        doc /* QSO/logging owns stable completion identity, agreed fields and explicit
-             persisted-versus-unsaved outcome. Replayed completion cannot silently
-             create a second contact. Each profile owns contact storage; the browser,
-             MCP and reconnect path cannot bypass station/transmit authority or another
-             profile's storage. Exact fields/format/compatibility and duplicate/recovery
-             behaviour are settled before this capability is implemented. */
-    }
     requirement ProcessingAndHaltOwnership {
         doc /* One station owner serializes validated state transitions while bounded
              CPU work runs outside it and returns job-tagged output. Validate profile,
@@ -270,9 +260,14 @@ package WstxProductScope {
         alias TransmitWirePackage for WstxTransmitWire;
         alias TxLevelPackage for WstxTxLevel;
         alias MessageEncodePackage for WstxMessageEncode;
+        alias StandardQsoPackage for WstxStandardQso;
+        alias SpecialActivitiesPackage for WstxSpecialActivities;
+        alias QsoTransmitPackage for WstxQsoTransmit;
+        alias LogbookPackage for WstxLogbook;
+        alias CountryFilePackage for WstxCountryFile;
+        alias QsoWirePackage for WstxQsoWire;
     }
     dependency scopeBoundary from ProductCapabilities to WstxRequirements::'FR-004';
-    dependency contactBoundary from CompletedContactIdentity to WstxRequirements::'FR-011';
     dependency nativeBoundary from NativeFlexBoundary to WstxRequirements::'FR-023';
     dependency deliveryBoundary from RemoteDeliveryPolicy to WstxRequirements::'FR-021';
 }

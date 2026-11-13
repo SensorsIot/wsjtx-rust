@@ -451,7 +451,7 @@ async fn tc_020_003_automation_selects_progresses_completes_and_takes_the_next_c
         (json!("contact_active"), json!("W1AW"))
     );
     assert_eq!(a["last_decision"]["candidates"], 2);
-    // The contact engine progresses the contact (WstxContact::AutoSequence), not automation.
+    // The contact engine progresses the contact (WstxStandardQso::AutoSequence), not automation.
     publish(&f, e + 30_000, &[("HB9BLA W1AW -05", 905.0, Some(-6.0))]);
     assert_eq!(f.read("contact").await["contact"]["state"], "roger_report");
     publish(&f, e + 60_000, &[("HB9BLA W1AW RR73", 905.0, Some(-6.0))]);

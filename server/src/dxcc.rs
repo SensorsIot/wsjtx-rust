@@ -739,7 +739,7 @@ pub(crate) fn annotate(state: &crate::ProfileState, records: &mut [Value]) {
         let Some(from) = sender(record) else {
             continue;
         };
-        // WstxContact::WorkedBeforeQuery: this record's worked-before status, so the browser
+        // WstxLogbook::WorkedBeforeQuery: this record's worked-before status, so the browser
         // needs no query (#10); a hash is no concrete call.
         if let (Some(band), Some(mode)) = (band, mode.as_deref())
             && record["fields"]["type"] == "standard"

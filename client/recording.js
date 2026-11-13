@@ -1273,7 +1273,7 @@ function transmitShow(){
 // one what changed. It does not read GET /transmit. Ages advance locally; HALT is enabled as
 // soon as the station is ready (#57).
 let transmitEventSocket=null;
-// WstxContact::ContactStateEvent (#10): this client is loaded before the socket opens and the
+// WstxQsoWire::ContactStateEvent (#10): this client is loaded before the socket opens and the
 // contact client is not, so the contact state from the events is held here: every field in the
 // socket's first event, what changed after it.
 let contactHeld=null,contactHeldSocket=null;
@@ -1314,7 +1314,7 @@ halt.addEventListener('click',async()=>{
   const result=document.querySelector('#transmit-result');
   try{const r=await transmitPost('/transmit/halt',{});result.textContent=`Halt: ${r.halt_state}`;}catch(error){result.textContent=`Halt not confirmed · ${error.message}`;}
 });
-// WstxContact::HaltTx: Alt+H sends #9's priority halt (the emergency stop) from this
+// WstxQsoTransmit::HaltTx: Alt+H sends #9's priority halt (the emergency stop) from this
 // always-loaded script, in every page state and focused field. Skipped only when the
 // station is known receive-only (the contact snapshot says unsupported); without a
 // snapshot it is sent (halt is idempotent). Esc is Abort QSO, handled by contact.js.

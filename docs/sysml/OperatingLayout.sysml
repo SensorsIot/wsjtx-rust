@@ -328,7 +328,7 @@ attribute def ActivityOrdering {
              A secondary region closes with its labelled close control (keyboard
              reachable) or a pointer action outside it, returning to operation and
              restoring opener focus. Escape never closes a region: it is Abort QSO
-             (WstxContact::AbortQso, #39 2026-11-04; earlier Halt Tx plus contact
+             (WstxQsoTransmit::AbortQso, #39 2026-11-04; earlier Halt Tx plus contact
              cancellation, CL-010-03, #10 decision 5),
              replacing the earlier Escape-closes-region behaviour; existing TC-007-002
              tests asserting Escape-to-close must be updated with that implementation.
@@ -384,12 +384,12 @@ attribute def ActivityOrdering {
              the Current QSO card and the Rx Frequency pane by the QSO pane (QsoPane) with
              direct buttons, and moves the Rx/Tx inputs and Hold Tx to the Rx/Tx strip
              (RxTxStrip); where the text below names those controls, QsoPane, RxTxStrip and
-             WstxContact::SetEnableTx apply. Earlier text: Browser regions for WstxContact, inside the existing AgreedOperatingDesign
+             WstxQsoTransmit::SetEnableTx apply. Earlier text: Browser regions for WstxContact, inside the existing AgreedOperatingDesign
              order (station bar, toolbar, signal canvas, separator, band strip, cards);
              the signal area, its 0..3000 Hz span, palette, Speed/Sensitivity and split
              (CL-010-05, SplitGeometry) are unchanged.
              Station bar: Halt Tx (always visible, Alt+H; disabled with reason on a
-             receive-only station), beside it Abort QSO (Esc, WstxContact::AbortQso,
+             receive-only station), beside it Abort QSO (Esc, WstxQsoTransmit::AbortQso,
              enabled while a contact is in progress, armed or transmitting) and a compact
              transmit state with the last transmitted text, Tx watchdog remaining calls WD:n
              (#97, #91: the Tx watchdog only; in a strategy run's own contact the run's leave label
@@ -398,14 +398,14 @@ attribute def ActivityOrdering {
              or "Tx watchdog: same message sent N times", visible in every region. Radio toolbar (its period
              and level slots): UTC clock, Tx progress v/15 with Transmitting label, Rx
              level meter 0..90 dB with high/low text labels
-             (WstxContact::OperatorDisplays); they are not in the station bar because the
+             (WstxQsoWire::OperatorDisplays); they are not in the station bar because the
              360 px / 200 % station bar cannot hold them without overflow (#10 review
              decision 2026-10-31).
              Waterfall: green Rx and red Tx markers labelled Rx/Tx with their Hz, pointer
              actions per WstxContact::PointerEffect; the context menu is suppressed only
              over the canvas.
              Band Activity card: existing latest-period table plus a worked-before
-             label/icon column (the record's worked_status, WstxContact::WorkedBeforeQuery); row selection by click,
+             label/icon column (the record's worked_status, WstxLogbook::WorkedBeforeQuery); row selection by click,
              Enter or double-click is SelectDecodedRow.
              Current QSO card: DX Call and DX Grid inputs with Generate (Enter); contact
              state text and partner; six message rows Tx1..Tx6, each with a Next radio and
@@ -417,7 +417,7 @@ attribute def ActivityOrdering {
              messages, unread count and Erase. At 360 CSS px it stacks below Band Activity
              or is a labelled tab, with no horizontal page overflow.
              Logbook region: history and ADI export (since #41 there is no log
-             review form: WstxContact::DirectLog stores each completed contact and Log
+             review form: WstxLogbook::DirectLog stores each completed contact and Log
              QSO, and an open Logbook page lists a new record when the contact snapshot
              reports it saved); opening it never hides Halt Tx.
              Alt+letter bindings apply only where the browser delivers the key; every
@@ -427,7 +427,7 @@ attribute def ActivityOrdering {
              Every control is a server request; state shows only server-confirmed
              values, pending and unknown outcomes explicitly. */
     }
-    dependency contactWorkspaceClauses from ContactWorkspace to WstxRequirements::'CL-010-03';
+    dependency contactWorkspaceClauses from ContactWorkspace to WstxContact::'CL-010-03';
 
     // ---------------------------------------------------------------- #37 operating screen
     // Operator design interview 2026-11-01 (issue #37 comments). Laptop first (minimum
@@ -633,8 +633,8 @@ attribute def ActivityOrdering {
              Operator decision (#55, 2026-11-03, CL-055-04), deviating from WSJT-X, which colours
              only CQ/QRZ and calling-me lines: the new_* slots apply to the sender of every decoded
              message (CQ, replies to others, reports, R-reports, RR73, 73; the sender call of
-             WstxContact::DecodedEntity), and they match
-             only the record's flags (WstxContact::DecodedEntity; the worked-before status adds no
+             WstxCountryFile::DecodedEntity), and they match
+             only the record's flags (WstxCountryFile::DecodedEntity; the worked-before status adds no
              slots). A row without a flag has no colour: there is no cq slot (#50). A row
              to my call keeps mycall on top. A row with a reason of its colour carries the reason
              tip of BandActivityHover (#50 CL-050-08). Settings > General > Display lists the slots with their
@@ -654,7 +654,7 @@ attribute def ActivityOrdering {
         doc /* CL-050-08 (#50, operator 2026-11-04). The sender of a row is recordFrom (the
              'from' call, also as a filled-in hash, or the sender of a nonstandard i3=4
              message); the partner is the dx_call of the contact snapshot the page already
-             holds (WstxContact::ContactSnapshot, no further request or poll) while the
+             holds (WstxQsoWire::ContactSnapshot, no further request or poll) while the
              contact is prepared or running (replying, report, roger_report, rogers,
              signoff): from the contact preparation (select_row) until it is logged
              (completed) or cancelled. Marks (BandActivityRowMark):
@@ -694,7 +694,7 @@ attribute def ActivityOrdering {
              continent (flags new_dxcc, new_continent); 4 new DXCC or continent on this band
              (new_dxcc_band, new_continent_band); 5 new CQ or ITU zone, ever or on this band;
              6 new grid, ever or on this band; 7 new call, ever or on this band; 8 no flag.
-             The flags are those of WstxContact::DecodedEntity for its sender call, CQ or
+             The flags are those of WstxCountryFile::DecodedEntity for its sender call, CQ or
              not. */
     }
     attribute def BandActivityHover {
@@ -709,7 +709,7 @@ attribute def ActivityOrdering {
              zone on <band>", else "New ITU zone on <band>"; grid "New grid <square>", else "New
              grid on <band>"; call "New call", else "New on <band>" followed by the sender's
              worked-before status in parentheses ("(worked on another band or mode)" or "(worked
-             on <band> <MODE>)", the record's worked_status, WstxContact::WorkedBeforeQuery; the
+             on <band> <MODE>)", the record's worked_status, WstxLogbook::WorkedBeforeQuery; the
              status stays on the row while it is shown, also as a kept period, #50). An
              overall flag implies its on-band flag, so the on-band text appears only without
              it. Then the #39
@@ -745,7 +745,7 @@ attribute def ActivityOrdering {
              keeps its divider and stays when the next period arrives (CL-061-03).
              After a page load only the latest period shows until the next one arrives. Within a period the ActivityOrdering applies (column
              header click). DXCC shows the shown name of the sender's entity
-             (WstxContact::DecodedEntity dxcc; title: name, continent, CQ and ITU zone),
+             (WstxCountryFile::DecodedEntity dxcc; title: name, continent, CQ and ITU zone),
              an explicit unavailable mark without one. Distance is the great-circle
              distance from the profile locator to a grid carried in the message (RR73 is
              the roger, never a grid; a grid from another row or the log is not used);
@@ -783,7 +783,7 @@ attribute def ActivityOrdering {
              replies (select, then SetEnableTx on; on a row of a QSO between others the command
              line reads "Call <sender>"), and on another station while a contact
              is active, or during an own CQ, it is itself the explicit
-             WstxContact::ChangeContact (replace true, no confirmation, as WSJT-X
+             WstxStandardQso::ChangeContact (replace true, no confirmation, as WSJT-X
              handleDecodeSelection widgets/mainwindow.cpp ~9122-9229 with quick_call on,
              DecodedMessageReaction.cpp ~411-413), so the next own period calls the new
              station and Auto Seq runs that QSO to its completion and log (#50, operator
@@ -922,7 +922,7 @@ attribute def ActivityOrdering {
              enabled, no country, continent or distance text, "New on <band>" followed by the
              worked-before status in parentheses ("(worked on <band> <MODE>)" or "(worked on
              another band or mode)") from the worked_status of the sender's records of the
-             latest and the previous period (WstxContact::WorkedBeforeQuery),
+             latest and the previous period (WstxLogbook::WorkedBeforeQuery),
              e.g. "New DXCC · New call"; a line without such a reason has no hover text. The
              double-click hint is the title of the section's "Calling me" header. When no row qualifies, the section shows the muted placeholder
              "Nobody is calling" instead of an empty list, in the same height.
@@ -954,7 +954,7 @@ attribute def ActivityOrdering {
              a double-click on a Band Activity row or a Calling me row, or the row menu Reply,
              starts the reply (with the WstxStrategy::DirectedCqRule warning for a CQ not answerable);
              this HALT is the one HALT of the operating view (OperatingScreen);
-             Log QSO, offered (button and Alt+Q) while a QSO runs, logs the contact now, WstxContact::DirectLog
+             Log QSO, offered (button and Alt+Q) while a QSO runs, logs the contact now, WstxLogbook::DirectLog
              (#41), and closes it, so nothing stays queued). A command's accepted result
              line goes when the QSO ends.
              6. Log outcome: after a completion or Log QSO is stored, "✓ Logged <call>" for loggedNoticeSeconds seconds, then nothing; a contact that could not
@@ -1023,7 +1023,7 @@ attribute def ActivityOrdering {
              WSJT-X Tx5 free text, #24 S1b; the others once they have a message), Skip Tx1,
              RRR/RR73 and Cancel contact in place, and above them the Activity choice (None,
              NA VHF, EU VHF, WW Digi, ARRL Digi, Field Day, RTTY Roundup, Hound; set_activity,
-             WstxContact::GridExchangeContest, #24 S2a, EuVhfExchange, #99, HoundOperation, #24 S4b) that shows the
+             WstxSpecialActivities::GridExchangeContest, #24 S2a, EuVhfExchange, #99, HoundOperation, #24 S4b) that shows the
              station's setting, with an Exchange entry beside it (ContestExchange, #24 S2b:
              shows settings.exchange; choosing Field Day or RTTY Roundup sends set_activity
              with the entered exchange, and changing the exchange while one of them is chosen
@@ -1142,7 +1142,7 @@ attribute def ActivityOrdering {
              Use IC-7300 audio), transmit (Tx watchdog
              minutes and Tune seconds as WSJT-X, power is set on the transceiver).
              Logging & Reporting: the existing log (Logbook page, ADIF), #10 "Update
-             logbook from ADIF" (WstxContact::UpdateLogbook: an ADIF file input, the Update
+             logbook from ADIF" (WstxLogbook::UpdateLogbook: an ADIF file input, the Update
              logbook button and the summary line), the WSJT-X UDP
              interface (WstxUdp, CL-040-02): the instance name as read-only text with no
              input (CL-112-01; "not fixed yet" while GET /udp shows null) and up to 16
@@ -1273,7 +1273,7 @@ attribute def ActivityOrdering {
     dependency fullScreenToggleClause from FullScreenToggle to WstxRequirements::'CL-096-01';
     action def KeyboardShortcuts {
         doc /* WSJT-X keys 1:1 where the function exists: Alt+H halts (the emergency
-             stop, WstxContact::HaltTx); Esc aborts the QSO (WstxContact::AbortQso, #39
+             stop, WstxQsoTransmit::HaltTx); Esc aborts the QSO (WstxQsoTransmit::AbortQso, #39
              2026-11-04: transmission stopped now, contact cancelled, no halt); F1/F3/F5 and "?" open the overview;
              F2 Settings; F4 clears the DX call (contact cancel); Alt+1..Alt+6 choose the
              next message Tx1-Tx6 (Now is a fold-out button only); Alt+M receive start/stop; Alt+T Tune;

@@ -344,7 +344,7 @@ package WstxOperatingReceive {
             (exactReadbackBandUnique and readbackCurrent);
         doc /* S1a: otherwise409select_band_first beforeanydevice/start/stop/revision
              change. Explicitband selectsitsentry. Noapproximate/defaultbandguess.
-             #11: a band action resolves its entry in WstxContact::StationOperatingMode
+             #11: a band action resolves its entry in WstxQsoTransmit::StationOperatingMode
              (the last started ft4/ft8 live job or admitted selection), so a band change
              keeps the station's mode; WireSelection mode then follows the commit. */
     }
@@ -574,7 +574,7 @@ selection band is unknown, a CL-022-03/04 automatic lifecycle tick that observes
 current eligible connection Ready, with a confirmed fresh frequency fact bound to this
 profile, boot, profile revision and connection generation, and no active operation,
 adopts that dial when it EXACTLY equals the preferred entry of the station operating
-mode (WstxContact::StationOperatingMode) for exactly one band. It commits selection
+mode (WstxQsoTransmit::StationOperatingMode) for exactly one band. It commits selection
 {mode: operating mode, band, nominal_hz: dial, origin: cat_readback,
 confirmed_command_id: null}. This applies at startup and after every reconnect (radio
 return, released port, cable return). Adoption never infers the mode, never replaces a

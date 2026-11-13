@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 //! WstxContact (#10, FT4 #11): the server-owned standard FT8/FT4 contact engine. It owns contact
 //! identity, the AutoSequence state, the next-message choice, completion and which
-//! contacts are due for the log (WstxContact::DirectLog, #41); it never keys PTT, opens audio or touches a radio. Every transmission
+//! contacts are due for the log (WstxLogbook::DirectLog, #41); it never keys PTT, opens audio or touches a radio. Every transmission
 //! is a WstxTransmit::TransmitRequest submitted in-process to the #9 slice B transmit
 //! owner (`transmit::service::Core`), whose arming, halt, watchdogs and outcomes it
 //! consumes. The browser renders the snapshot and sends commands (contact_http).
@@ -37,7 +37,7 @@ pub const STOP_TOLERANCE_HZ: f64 = 50.0;
 /// A request is planned for the first period whose start window is still open this
 /// long from now, so it never turns stale between admission and keying.
 pub const LEAD_MS: i64 = 1000;
-/// WstxContact::TxWatchdog: the stop waits this long into the due period, past the latest
+/// WstxQsoTransmit::TxWatchdog: the stop waits this long into the due period, past the latest
 /// live decode measured (#47: up to 1.1 s after the FT8 period start), so a partner
 /// message that changes the next message still counts. Nothing is planned meanwhile.
 const WATCHDOG_STOP_AFTER_DUE_MS: i64 = 1200;
@@ -301,7 +301,7 @@ pub enum ContestKind {
     FieldDay,
     Rtty,
 }
-/// WstxContact::GridExchangeContest: the station's special operating activity (#24 S2a,
+/// WstxSpecialActivities::GridExchangeContest: the station's special operating activity (#24 S2a,
 /// Field Day and RTTY Roundup #24 S2b).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Activity {
@@ -474,7 +474,7 @@ pub fn classify(standard: &Standard) -> Received {
         Exchange::Blank | Exchange::Contest(..) => Received::Other,
     }
 }
-/// WstxContact::AutoSequence transitions on a counted partner message (receivedFromPartner).
+/// WstxStandardQso::AutoSequence transitions on a counted partner message (receivedFromPartner).
 pub fn transition(state: State, received: Received) -> Option<State> {
     use Received as R;
     use State as S;
@@ -575,7 +575,7 @@ pub fn valid_grid(grid: &str) -> bool {
         && b[3].is_ascii_digit()
         && (b.len() == 4 || ((b'A'..=b'X').contains(&b[4]) && (b'A'..=b'X').contains(&b[5])))
 }
-/// WstxContact::StandardMessageSet; None when a generated text would not pack unaltered.
+/// WstxStandardQso::StandardMessageSet; None when a generated text would not pack unaltered.
 pub fn generate(
     my_call: &str,
     grid4: &str,
@@ -771,7 +771,7 @@ pub struct Exchanged {
     /// An operator Enable Tx closed this entry: the next equal transmission opens a new
     /// one, so a station stopped by the Tx watchdog may send the same message again.
     pub closed: bool,
-    /// #97 WstxContact::TxWatchdog busy pause: the sends of this entry that were paused (the
+    /// #97 WstxQsoTransmit::TxWatchdog busy pause: the sends of this entry that were paused (the
     /// partner busy at their stop point), at most the Tx watchdog limit.
     pub paused: u32,
 }
@@ -826,7 +826,7 @@ impl Contact {
             .find(|e| e.tx)
             .filter(|e| e.text == text && !e.closed)
     }
-    /// WstxContact::TxWatchdog: the Rep of the transmitted `text`, 0 when the next
+    /// WstxQsoTransmit::TxWatchdog: the Rep of the transmitted `text`, 0 when the next
     /// transmission of it opens a new entry.
     fn repetitions(&self, text: &str) -> u32 {
         self.tx_entry(text).map_or(0, |e| e.count)
@@ -853,14 +853,14 @@ impl Contact {
             count,
         });
     }
-    /// WstxContact::LogRecord start time (MW set_dateTimeQSO).
+    /// WstxLogbook::LogRecord start time (MW set_dateTimeQSO).
     pub fn start_utc_ms(&self) -> Option<i64> {
         self.first_tx2_period
             .or_else(|| self.first_tx3_period.map(|p| p - period_ms(self.mode)))
             .or(self.first_tx_period)
     }
 }
-/// Why a contact is handed to the log (WstxContact::DirectLog).
+/// Why a contact is handed to the log (WstxLogbook::DirectLog).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LogKind {
     /// The contact completed (once per contact).
@@ -1028,7 +1028,7 @@ pub struct Engine {
     fingerprint: String,
     new_id: Box<dyn FnMut() -> Option<String> + Send>,
     /// The own CQ that station automation started: its callers are chosen by the
-    /// automation strategy, never by Call 1st (WstxContact::CallFirst).
+    /// automation strategy, never by Call 1st (WstxStandardQso::CallFirst).
     automatic_cq: Option<String>,
     /// FT4 TU; (ContestExchange, MW ~9783): the start of the last transmission and the
     /// time the last partner RR73 was counted.
@@ -1184,7 +1184,7 @@ impl Engine {
     fn is_hound(&self) -> bool {
         self.settings.activity == Activity::Hound
     }
-    /// The contacts due for the log since the last call (WstxContact::DirectLog).
+    /// The contacts due for the log since the last call (WstxLogbook::DirectLog).
     pub fn take_logs(&mut self) -> Vec<(LogKind, Contact)> {
         std::mem::take(&mut self.to_log)
     }
@@ -1202,7 +1202,7 @@ impl Engine {
                 .map_or(ctx.mode(), |c| c.mode),
         )
     }
-    /// WstxContact::ModeChange: a calling or active contact of another mode than the
+    /// WstxQsoTransmit::ModeChange: a calling or active contact of another mode than the
     /// station's operating mode is cancelled with Enable Tx off; the Tx offset is kept
     /// inside the station mode's domain.
     fn follow_mode<H: Hardware>(&mut self, core: Option<&mut Core<H>>, ctx: &Ctx) {
@@ -1365,7 +1365,7 @@ impl Engine {
             self.new_count();
         }
     }
-    /// WstxContact::TxWatchdog: the next transmission of the last sent message opens a new
+    /// WstxQsoTransmit::TxWatchdog: the next transmission of the last sent message opens a new
     /// dialogue entry, so its repetition count starts anew.
     fn new_count(&mut self) {
         if let Some(last) = self
@@ -2301,7 +2301,7 @@ impl Engine {
                 self.to_log.push((LogKind::LogQso, c.clone()));
             }
         }
-        // A human was seen (WstxContact::TxWatchdog); automation is no operator (#39).
+        // A human was seen (WstxQsoTransmit::TxWatchdog); automation is no operator (#39).
         if let Some(core) = core {
             if !ctx.automatic {
                 core.activity();
@@ -2736,7 +2736,7 @@ impl Engine {
         }
         true
     }
-    /// WstxContact::CallFirst (#10, MW readFromStdout cbFirst): while my own CQ runs
+    /// WstxStandardQso::CallFirst (#10, MW readFromStdout cbFirst): while my own CQ runs
     /// with Auto Seq and Call 1st on, the first row of this step in decode order that
     /// calls me with a grid or a report (not R+report, RRR, RR73 or 73) is answered as a
     /// selection of that row (Enable Tx unchanged, not operator activity).
@@ -2831,7 +2831,7 @@ impl Engine {
         )
     }
     /// Keeps exactly one pending request for the next period of the contact's parity
-    /// with the current next text and Tx offset (WstxContact::TransmitSubmission).
+    /// with the current next text and Tx offset (WstxQsoTransmit::TransmitSubmission).
     fn submit<H: Hardware>(&mut self, core: &mut Core<H>, ctx: &Ctx) {
         let hound = self.is_hound();
         let Some(c) = self.contact.as_mut() else {
@@ -2851,7 +2851,7 @@ impl Engine {
         let now = ctx.now_utc_ms;
         let mode = c.mode;
         let next = c.next;
-        // WstxContact::TxWatchdog: nothing is planned for a send beyond the limit; a
+        // WstxQsoTransmit::TxWatchdog: nothing is planned for a send beyond the limit; a
         // partner message may still change the next message until 1.2 s into its period.
         // A request still pending would key, so it stops at once; after the Nth send none is.
         // #97 BusyPartner: the counted repetitions (Rep less the paused calls); a send while
@@ -3042,7 +3042,7 @@ impl Engine {
         self.hound.reply = HoundReply::Pending;
         self.hound.reply_deadline = Some(ctx.now_utc_ms + 11 * period_ms(mode));
     }
-    /// The counted repetitions of the message due next (WstxContact::TxWatchdog): its Rep less
+    /// The counted repetitions of the message due next (WstxQsoTransmit::TxWatchdog): its Rep less
     /// its paused calls (#97).
     pub fn repetitions_due(&self) -> u32 {
         self.contact.as_ref().map_or(0, |c| {
@@ -3121,7 +3121,7 @@ impl Engine {
         crate::freeslot::split_target(mode, tx, his, decoded, &self.his_psk)
             .filter(|hz| (TX_MIN_HZ..=tx_max_hz(mode)).contains(hz))
     }
-    /// #97 WstxContact::TxWatchdog busy pause: once the stop point (1.2 s into its period) of the
+    /// #97 WstxQsoTransmit::TxWatchdog busy pause: once the stop point (1.2 s into its period) of the
     /// latest started send of this contact has passed, the send is a paused call when the
     /// partner is busy then, the contact pauses and its message has fewer than N paused calls.
     fn judge_stop_point<H: Hardware>(&mut self, core: &Core<H>, now: i64) {

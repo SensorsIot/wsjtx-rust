@@ -290,7 +290,7 @@ pub async fn select(
             store.document.control.mode == "cat",
         )
     };
-    // WstxContact::ModeChange: no mode change while #9 keys the radio, transmits or
+    // WstxQsoTransmit::ModeChange: no mode change while #9 keys the radio, transmits or
     // tunes (WSJT-X disables the mode controls while transmitting); nothing changes.
     // The owner lock can wait on a CAT exchange: read the view off the async runtime.
     if intent.action == "mode"

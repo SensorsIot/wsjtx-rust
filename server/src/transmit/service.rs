@@ -662,7 +662,7 @@ impl<H: Hardware> Core<H> {
         self.cancel_unstarted(OutcomeKind::Refused, Some(TransmitRefusal::NotArmed));
     }
     /// Accepted operator activity in the browser: a human was seen this boot. It changes
-    /// nothing of the Tx watchdog's limit, repetitions or stop (WstxContact::TxWatchdog).
+    /// nothing of the Tx watchdog's limit, repetitions or stop (WstxQsoTransmit::TxWatchdog).
     pub fn activity(&mut self) {
         self.operator_seen = true;
     }
@@ -671,7 +671,7 @@ impl<H: Hardware> Core<H> {
         self.operator_seen = true;
         self.tx_expired = false;
     }
-    /// The limit of repetitions of one message (WstxContact::TxWatchdog).
+    /// The limit of repetitions of one message (WstxQsoTransmit::TxWatchdog).
     pub fn tx_limit(&self) -> u32 {
         self.tx_calls
     }
