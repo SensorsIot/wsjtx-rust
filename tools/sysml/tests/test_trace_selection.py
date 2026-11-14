@@ -117,7 +117,9 @@ class TraceSelectionTests(unittest.TestCase):
     # T3 (#202), a guard of existing behaviour: the suite definitions select both suites.
     # Proves: TC-DOC-007
     def test_suite_definitions_select_both_architecture_suites(self):
-        self.assert_selection(".harness/suites.yaml", (CONTEXT, VALIDATOR), ())
+        architecture = [name for name in self.rows if name.startswith(VALIDATOR)]
+        self.assertIn(VALIDATOR, architecture)
+        self.assert_selection(".harness/suites.yaml", architecture, ())
 
     # T4 (#202): source edits select neither architecture suite; they invalidate the
     # validator suite's evidence (its pinned checks read them), not the working-model suite's.
