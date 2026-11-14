@@ -329,7 +329,7 @@
   - docs/sysml/
   - tools/sysml.py
   - tools/sysml/
-  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; exclusive authority, catalog/trace checks, one full semantic validation and the tests that read the model itself (test_decoder_mode_traces, test_radio_properties); the tool's unit tests are sysml-tools, the architecture mutation tests sysml-architecture. No radio or live service."
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; exclusive authority, catalog/trace checks, one full semantic validation and the tests that read the model itself (test_decoder_mode_traces, test_radio_properties); the tool's unit tests are sysml-tools; the architecture's working-model checks (the context list, read from the model, the oracle file and the pending list) are sysml-architecture-context, selected by the architecture model files, those two data files and the tool; the validator tests on the pinned model and fixture trees are sysml-architecture, selected only by the tool, Validate.java, toolchain.json and their test files. This suite is selected by every model file and by the oracle file and pending list, which check reads. No radio or live service."
 
 - suite: sysml-tools
   cost: 2
@@ -344,17 +344,18 @@
   - tools/sysml/
   needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the SysML tool's own unit tests (test_canonical_authority, test_sysml, test_trace_selection and any new test file not named for the other three suites), which judge the tool on isolated models: selected only when the tool changes (harness#38). No radio or live service."
 
-- suite: sysml-architecture
+# The working-model checks of the architecture (#202): the module that reads docs/sysml, the
+# oracle file and the pending list without the Pilot. An edit to either data file selects this
+# suite and sysml-documentation (whose `check` reads both), not the validator tests below.
+- suite: sysml-architecture-context
   cost: 2
-  run: "python -m unittest discover -s tools/sysml/tests -p \"test_a*.py\" -q"
+  run: "python -m unittest discover -s tools/sysml/tests -p \"test_architecture_context.py\" -q"
   paths:
   - docs/sysml/
   - tools/sysml.py
-  - tools/sysml/
-  - client/
-  - server/
-  - tests/
-  - .github/workflows/windows-rust.yml
+  - tools/sysml/architecture-oracle.json
+  - tools/sysml/pending-structure.json
+  - tools/sysml/tests/test_architecture_context.py
   select:
   - docs/sysml/Station.sysml
   - docs/sysml/Context.sysml
@@ -379,11 +380,43 @@
   - docs/sysml/backend/udp/Udp.sysml
   - docs/sysml/backend/flexAdapter/FlexAdapter.sysml
   - tools/sysml.py
-  - tools/sysml/Validate.java
   - tools/sysml/architecture-oracle.json
+  - tools/sysml/pending-structure.json
+  - tools/sysml/tests/test_architecture_context.py
+  needs: "Python 3.12. Windows PC; TC-DOC-005's context list: the outside things of WstxContext and their owners, read from the working model text, the oracle file and the pending list. No Java, Pilot, radio or live service."
+
+# The validator tests of the architecture (#202): every test_a*.py but the working-model module
+# above. One unittest pattern cannot leave out a single name, so -p takes the test_a*.py names
+# whose next-to-last letter before .py is not `x` (test_architecture_context.py ends in `xt`).
+# A new test_a*.py file ending in x and one letter matches no suite's pattern, and test_trace_selection.py (sysml-tools, selected by
+# any tools/sysml/ change) refuses it; it also refuses a validator test file this select
+# does not list. tools/sysml/tests/test_a_ selects the future files of that form.
+- suite: sysml-architecture
+  cost: 2
+  run: "python -m unittest discover -s tools/sysml/tests -p \"test_a*[!x]?.py\" -q"
+  paths:
+  - tools/sysml.py
+  - tools/sysml/Validate.java
   - tools/sysml/toolchain.json
-  - tools/sysml/tests/test_a
-  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the full git history of the checkout (the mutation tests read the model and oracle file of 1df1ba3a5). TC-DOC-005 architecture integrity: each mutation of the architecture model (Station.sysml) is one full Pilot validation in a bounded pool, and each model state of the oracle tests' fixture tree one more. Selected by the architecture model, the radio property catalogue whose types it uses, and the tool that judges it; the companion models are validated by sysml-documentation (check). No radio or live service."
+  - tools/sysml/tests/test_architecture_integrity.py
+  - tools/sysml/tests/test_architecture_oracle.py
+  - tools/sysml/tests/test_architecture_structure.py
+  - tools/sysml/tests/test_a_
+  # Fingerprint only, never select: the pinned checks run sysml.py on the working tree,
+  # whose authority, catalog and trace bindings they read (CL-014-18).
+  - docs/sysml/
+  - client/
+  - server/
+  - tests/
+  select:
+  - tools/sysml.py
+  - tools/sysml/Validate.java
+  - tools/sysml/toolchain.json
+  - tools/sysml/tests/test_architecture_integrity.py
+  - tools/sysml/tests/test_architecture_oracle.py
+  - tools/sysml/tests/test_architecture_structure.py
+  - tools/sysml/tests/test_a_
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the full git history of the checkout (the mutation tests read the model and oracle file of 1df1ba3a5). TC-DOC-005 architecture integrity: each mutation of the pinned architecture model of 1df1ba3a5 is one full Pilot validation in a bounded pool, and each model state of the oracle and structure tests' fixture trees one more. Selected by the tool that judges the model, the validator Validate.java, its library pin toolchain.json and its own test files (which hold the pin and the fixtures), not by a model edit, the oracle file or the pending list: the working model is judged by sysml-architecture-context and sysml-documentation (check). Model and source edits change its fingerprint only. No radio or live service."
 
 # TC-DOC-015: the tests of `equivalence` and `identities`, apart from sysml-tools so that a
 # model edit does not run them; about 9 minutes (some 30 Pilot exports, 2 at a time).
