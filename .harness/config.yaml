@@ -148,6 +148,7 @@ meter:
     claude-opus-5-5: {input: 4, output: 20, cache_read: 0.20}
     claude-sonnet-5-5: {input: 2, output: 10, cache_read: 0.10}
     claude-haiku-5-5: {input: 0.10, output: 0.50, cache_read: 0.01}
+    claude-fable-5-2: {input: 8, output: 40, cache_read: 0.20}
 
 # Alex, the coordinator's state machine, stage one (harness core/docs/Alex.md, "The numbers";
 # operator decisions of 2026-11-14 on harness#80).
@@ -160,9 +161,9 @@ alex:
   spend_per_day_usd: 200
   first: [192]
   priority_labels: [P1, P2, P3]
-  skip_labels: [paused]
+  skip_labels: [paused, model-conversion]
   restrictions:
     - until_accepted: 192
       brief: "No transmission: no agent started by Alex keys the real radio or the emulator before wsjtx-rust#192 is accepted (operator 2026-11-14)."
-  launcher: {command: claude, permission_mode: auto}
+  launcher: {command: claude, permission_mode: auto, model: claude-opus-5-5}
   poll: 120
