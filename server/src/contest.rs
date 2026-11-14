@@ -77,7 +77,7 @@ pub(crate) enum Counted {
     DigitalNoRtty,
     Any,
 }
-/// What the official rules say about automatic operation (WstxContest::AutomationClause).
+/// What the official rules say about automatic operation (WstxStrategies::AutomationClause).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum AutomationClause {
     Forbidden,
@@ -91,7 +91,7 @@ impl AutomationClause {
         }
     }
 }
-/// The day a round of a contest hangs on (WstxContest::ScheduleRule).
+/// The day a round of a contest hangs on (WstxStrategies::ScheduleRule).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum When {
     /// The n-th (1-based) weekend of a month with Saturday and Sunday both in it: its Saturday.
@@ -465,7 +465,7 @@ impl Round {
     }
 }
 impl Profile {
-    /// WstxContest::ScheduleRule: the current or next occurrence, the earliest that has not
+    /// WstxStrategies::ScheduleRule: the current or next occurrence, the earliest that has not
     /// ended; None when the rule cannot compute it.
     pub(crate) fn next_period(&self, now_ms: i64) -> Option<Occurrence> {
         let (year, month, ..) = civil(now_ms);
@@ -760,7 +760,7 @@ pub(crate) struct ContestValue {
     pub new_multiplier: bool,
     pub points: Option<u64>,
 }
-/// One record's classification (WstxOperatingChain::ContestVerdict): kind, grey, why and the value.
+/// One record's classification (WstxContestRanking::ContestVerdictRule): kind, grey, why and the value.
 fn classify(
     s: &Selection,
     f: &Facts,
@@ -868,7 +868,7 @@ fn record_facts(record: &Value) -> Option<Facts> {
         hz: record["frequency_hz"].as_f64(),
     })
 }
-/// WstxContest::ContestValueOrder, smaller first: callers of my call, a new multiplier, more
+/// WstxContestRanking::ContestValueOrder, smaller first: callers of my call, a new multiplier, more
 /// points, the stronger SNR, then for an exact tie only the lower audio frequency and the call.
 pub(crate) fn order(a: &Verdict, b: &Verdict) -> std::cmp::Ordering {
     order_by(a, b, true)
@@ -892,7 +892,7 @@ pub(crate) fn order_by(a: &Verdict, b: &Verdict, callers_first: bool) -> std::cm
         // An exact tie only: the lower audio frequency, then the call; never decode order.
         .then_with(|| crate::strategy::exact_tie(&a.facts, &b.facts))
 }
-/// WstxOperatingChain::ContestVerdict: in display order, by ContestValueOrder.
+/// WstxContestRanking::ContestVerdictRule: in display order, by ContestValueOrder.
 pub(crate) fn evaluate(
     s: &Selection,
     records: &[Value],

@@ -2896,7 +2896,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   const standard=(from,to='CQ',grid='FN42')=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}});
   const record=(sequence,text,from,hz,to,grid)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to,grid),period_start_utc:period});
   const records=[record(0,'CQ K1ABC FN42','K1ABC',1000,'CQ','FN42'),record(1,'CQ NA W1AW FN31','W1AW',1200,'CQ NA','FN31'),record(2,'CQ DL1XYZ JO62','DL1XYZ',1400,'CQ','JO62')];
-  // #97 schema 4 (WstxStrategy::Strategy).
+  // #97 schema 4 (WstxStrategies::Strategy).
   const lists={countries:{include:[],exclude:[]},states:{include:[],exclude:[]},cq_targets:{include:[],exclude:[]}};
   const strategy={name:'DX first',class:'strategy',bands:null,filters:{new:['dxcc','call'],new_per:'ever',new_means:'not_worked',region:{kind:'dx'},min_snr_db:null,worked_since:{kind:'all'},treat_73_as_cq:false,...lists},order:['most_wanted'],contest:null,callers_first:true,leave:{mode:'calls',calls:4,calls_heard:8},tx_move_every:{heard:0,not_heard:1,no_reports:2},busy_pause:true,cq_when_idle:false,cq_wait_periods:2,retry_minutes:10};
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -3131,7 +3131,7 @@ test('TC-063-008 The contest prompt, Auto off marks only, the callable list and 
 
 
 // ---------------------------------------------------------------- #39 strategydef in the browser
-// #97 WstxStrategy::Strategy (schema 4) and BuiltinStrategies as the model lists them, in its order
+// #97 WstxStrategies::Strategy (schema 4) and BuiltinStrategies as the model lists them, in its order
 // (hand-written here): the five of class strategy, then one contest built-in per contest.
 const noLists=()=>({countries:{include:[],exclude:[]},states:{include:[],exclude:[]},cq_targets:{include:[],exclude:[]}});
 const strategyFilters=(extra={})=>({new:['dxcc'],new_per:'band_mode',new_means:'not_confirmed',region:{kind:'all'},min_snr_db:null,worked_since:{kind:'all'},treat_73_as_cq:true,...noLists(),...extra});
@@ -4038,7 +4038,7 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
 // alert history, Sound and Browser notification (off by default; permission asked only on
 // the click). The station's alert snapshots are hand-written fixtures; the page's
 // Notification and AudioContext are recording doubles; the expected lines, tones and
-// notifications are written here from WstxRankingControl::Alert.
+// notifications are written here from WstxSettings::AlertDisplay.
 test('TC-042-007 Alert history, sound and browser notification',{timeout:60000},async t=>{
   let view;const puts=[],clears=[];let history=[],revision=1;
   const strategy={name:'CQ',class:'award',goals:['new_call'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,value:['most_wanted'],callers_first:true,cq_when_no_target:false,repetitions:4,quiet_minutes:10,treat_73_as_cq:false,window:{kind:'all'}};
@@ -5334,19 +5334,24 @@ test('TC-097-019 the model carries no superseded wording',async()=>{
   const element=qualified=>{const [pkg,name]=qualified.split('::');return doc(fileOf(pkg),name);};
   const S=fileOf('WstxStrategy'),C=fileOf('WstxContest'),R='Requirements.sysml';
   const scope=[
-    ...[1,2,3,15,19].map(n=>decision(S,n)),
-    ...['StrategyClass','NewWhat','NewPer','ValueCriterion','Needed','LeaveMode','PskCase','Strategy','StrategyBands','CountryList','UsStateFilter','UsStateOf','CqTargetList','NewNeeded','CallerOfMyCall','Candidate','ValueOrder','Verdict'].map(n=>element(`WstxStrategy::${n}`)),
+    ...[2,15,19].map(n=>decision(S,n)),
+    ...['NewWhat','NewPer','ValueCriterion','Needed','StrategyBands','CountryList','UsStateFilter','CqTargetList','Verdict'].map(n=>element(`WstxRankingControl::${n}`)),
+    ...['StrategyClass','LeaveMode','Strategy'].map(n=>element(`WstxStrategies::${n}`)),
+    element('WstxStrategy::PskCase'),
+    ...['UsStateOf','NewNeeded','CallerOfMyCall','Candidate','ValueOrder'].map(n=>element(`WstxValueOrder::${n}`)),
+    ...['StrategyBandsRule','CountryListRule','UsStateFilterRule','CqTargetListRule','VerdictRule'].map(n=>element(`WstxValueOrder::${n}`)),
+    element('WstxContestRanking::ContestVerdictRule'),
     ...['BuiltinStrategies','StrategyConfiguration'].map(n=>element(`WstxStrategies::${n}`)),
     element("WstxSettings::StrategyEditor"),
     head(C),decision(C,1),decision(C,11),
     ...['ContestSelection','ContestPrompt'].map(n=>element(`WstxStrategies::${n}`)),
-    element('WstxContest::ContestValueOrder'),
+    element('WstxContestRanking::ContestValueOrder'),
     element("WstxSettings::ContestView"),
     ...['CL-039-01','CL-039-02','CL-039-04','CL-039-11','CL-042-01','CL-063-03'].map(n=>doc(R,n)),
   ];
   assert.deepEqual(scope.flatMap(span=>[P1,P2,P3].flatMap(re=>hits(span,re))),[],'(1) run vocabulary in a rewritten element');
   // (2) No old setting vocabulary anywhere, except the kept texts: the refused-keys sentences of
-  // WstxStrategy::Strategy and WstxStrategies::ContestSelection, StrategyConfiguration's upgrade text,
+  // WstxStrategies::Strategy and WstxStrategies::ContestSelection, StrategyConfiguration's upgrade text,
   // TC-097-001 and TC-097-002.
   const OLD=/S&P|operation "sp"|\bsp:|[Rr]epetitions before leaving|cq_when_no_target|CQ when no target|quiet_minutes|GoalNeeded|enum def Goal|always answered|Callers of my call first|award strateg|class award/;
   const sentence=(span,lead,end)=>{
@@ -5357,7 +5362,7 @@ test('TC-097-019 the model carries no superseded wording',async()=>{
     return {file:span.file,s,e};
   };
   const kept=[
-    sentence(element('WstxStrategy::Strategy'),'Nothing else exists:'),
+    sentence(element('WstxStrategies::Strategy'),'Nothing else exists:'),
     sentence(element('WstxStrategies::StrategyConfiguration'),'Upgrade: a file of schema_version 1','Names: in every schema'),
     sentence(element('WstxStrategies::ContestSelection'),'The keys operation,','null or absent'),
     doc(R,'TC-097-001'),doc(R,'TC-097-002'),

@@ -71,7 +71,8 @@ package WstxMcpInterface {
              wstx_read {view: profile|receive|selection|radio|transmit|contact|automation|
              strategy|alerts} -> GET /profile, /receive, /receive/selection, /radio,
              /transmit, /contact, /automation, /strategy, /strategy/alerts (#42
-             WstxRankingControl::Alert, read-only; clearing stays in the browser). wstx_results {source_id, job_id: UUID; generation, cursor: safe
+             WstxStationLink::AlertWire, read-only; clearing stays in the browser). wstx_results
+             {source_id, job_id: UUID; generation, cursor: safe
              integer; limit optional 1..16} -> GET /receive/results. wstx_contact_command
              {command: WstxQsoControl::ContactCommand} -> POST /contact/command; its description
              states that open_log (WstxLogbook::DirectLog) closes an unfinished contact
@@ -80,10 +81,11 @@ package WstxMcpInterface {
              wstx_automation_command {command: AutomationCommand} -> POST
              /automation/command; its description names every AutomationConfiguration
              wire key (max_run_minutes, strategy and pounce included).
-             wstx_strategy_evaluate {request: the StrategyEvaluate body of
-             WstxStrategies::StrategyHttp} -> POST /strategy/evaluate (readOnlyHint; it never
+             wstx_strategy_evaluate {request: the request of WstxStationLink::EvaluateWire} ->
+             POST /strategy/evaluate (readOnlyHint; it never
              changes station state; the browser's refusals, e.g. 409 not_configured
-             strategy, are its tool errors). Missing, extra or mistyped arguments, an unknown view or a
+             strategy, are its tool errors). Missing, extra or mistyped arguments, an unknown
+             view or a
              non-UUID id are a tool error {status 400, error invalid_request with the field}
              without a station call. */
     }

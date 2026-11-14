@@ -39,7 +39,7 @@ package WstxQsoControl {
              {v,profile_id,boot_id,command_id,contact_revision,action} (commandAction is the JSON key action) plus exactly the
              parameters of its action (all required, nullable where stated):
              select_row {row:{source_id,job_id,generation,sequence},replace} plus the optional
-             directive_confirmed boolean (WstxStrategy::DirectedCqRule; refused
+             directive_confirmed boolean (WstxContact::DirectedCqSelection; refused
              directive_not_answerable, 409 with error.reason in the browser's case);
              enter_dx {dx_call,dx_grid|null,replace}; cancel {};
              choose_next {slot:"tx1".."tx6"}; edit_message {slot,text};

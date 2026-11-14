@@ -29,7 +29,7 @@ package WstxLogControl {
              (from EntityOfCall of each logged call; a logged call without an entity
              counts for nothing); each with its _band form: not on this band in any mode
              (WSJT-X LogBook::match with highlight by mode off, its default; the
-             strategy's filter is WstxStrategy::NewNeeded, #97). The worked set
+             strategy's filter is WstxValueOrder::NewNeeded, #97). The worked set
              is rebuilt only when the log or the country table changes; the annotation
              runs off the async runtime. Band: the CAT dial
              band, else the operating selection band; without a band no _band flag is
