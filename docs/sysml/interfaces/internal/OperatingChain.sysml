@@ -1,5 +1,55 @@
 package WstxOperatingChain {
     private import ScalarValues::*;
+    private import WstxRankingControl::RankedList;
+    private import WstxQsoControl::QsoProgress;
+    port def RankedActivityPort { out item ranked : RankedList; }
+    interface def RankedActivity {
+        doc /* The ranked list, from ranking to auto. */
+        end ranking : RankedActivityPort;
+        end auto : ~RankedActivityPort;
+    }
+    port def TargetChoicePort {
+        out item target : CallTarget;
+        out attribute slot : TxSlot;
+        in item answer : StartAnswer;
+        in item progress : QsoProgress;
+    }
+    item def CallTarget { doc /* The station to call, or CQ. */ }
+    item def StartAnswer {
+        attribute blockedBy : TransmitRefusal[0..1];
+        doc /* The answer to a start: absent when the start will happen, otherwise the arm
+             condition that blocks it, one of clockNotSynchronized, busy by Tune,
+             radioUnavailable, transmitUnsupported and notAuthorized. */
+    }
+    interface def TargetChoice {
+        doc /* The station Auto chooses, from auto to qso, and what qso answers. */
+        end auto : TargetChoicePort;
+        end qso : ~TargetChoicePort;
+    }
+    port def MessageToSendPort { out item request : TransmitRequest; }
+    interface def MessageToSend {
+        doc /* The next message of a contact and its period, from qso to transmit. */
+        end qso : MessageToSendPort;
+        end transmit : ~MessageToSendPort;
+    }
+    port def CompletedContactPort {
+        out item contact : FinishedContact;
+        in item answer : LogAnswer;
+    }
+    item def FinishedContact { doc /* The finished contact; the logged contact. */ }
+    item def LogAnswer { doc /* The log answers accepted or refused. */ }
+    interface def CompletedContact {
+        doc /* A finished contact, and the log's answer. */
+        end producer : CompletedContactPort;
+        end consumer : ~CompletedContactPort;
+    }
+    port def WorkedBeforePort { out item worked : WorkedSet; }
+    item def WorkedSet { doc /* What has been worked. */ }
+    interface def WorkedBefore {
+        doc /* What has been worked, from log to ranking. */
+        end log : WorkedBeforePort;
+        end ranking : ~WorkedBeforePort;
+    }
     attribute def ContestVerdict {
         doc /* WstxStrategy::Verdict with a contest in force, one per decoded record with a resolved
              sender that is standard, or a Field Day exchange (type field_day) to a call, in this
@@ -77,7 +127,7 @@ package WstxOperatingChain {
         enum packRefused; enum frequencyOutOfRange; enum busy; enum notAuthorized;
         enum radioUnavailable;
     }
-    attribute def TransmitRequest {
+    item def TransmitRequest {
         attribute contactId : String[0..1];
         attribute requestSequence : Integer;
         attribute mode : WstxModeProcessing::Mode;

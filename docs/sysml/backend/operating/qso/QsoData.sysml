@@ -1,5 +1,6 @@
 package WstxContact {
     private import ScalarValues::*;
+    private import ModelBindings::RetiredCase;
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::'FR-007';
     private import WstxRequirements::'FR-008';
@@ -878,6 +879,7 @@ package WstxContact {
     dependency CL_039_02_verified_by_TC_039_040 from 'CL-039-02' to 'TC-039-040';
     // TC-039-041 retired: its schema 2 and schema 3 store cases are TC-097-002's and its built-ins
     // TC-097-003's. The identity is not reused.
+    @RetiredCase { identity = "TC-039-041"; supersededBy = "TC-097-002; TC-097-003"; }
     verification 'TC-039-042' {
         doc /* TC-039-042 — The Auto toggle
              CL-039-22, CL-039-05

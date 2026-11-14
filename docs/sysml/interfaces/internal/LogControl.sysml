@@ -1,5 +1,16 @@
 package WstxLogControl {
     private import ScalarValues::*;
+    port def LogControlPort {
+        out item command : LogCommand;
+        in item 'state' : LogState;
+    }
+    item def LogCommand { doc /* Export, import, edits, the contest scoring rules. */ }
+    item def LogState { doc /* The log state. */ }
+    interface def LogControl {
+        doc /* The station service commands the log function; log reports its state. */
+        end station : LogControlPort;
+        end log : ~LogControlPort;
+    }
     attribute def DecodedEntity {
         doc /* #55 (CL-055-02). GET /receive/results adds to each decoded record whose
              sender call resolves the optional keys below; other records are unchanged. The

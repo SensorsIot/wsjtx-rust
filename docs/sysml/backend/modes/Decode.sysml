@@ -239,11 +239,11 @@ package WstxModemDecode {
     satisfy 'CL-007-08' by advanceDecode;
     satisfy 'CL-007-10' by aprioriHypotheses;
     dependency calculationOwner from advanceDecode
-        to WstxArchitecture::physicalStation::backend::stations::modes;
+        to WstxArchitecture::StationProcess::modes;
     dependency measurementOwner from measureFrame
-        to WstxArchitecture::physicalStation::backend::stations::modes;
+        to WstxArchitecture::StationProcess::modes;
     dependency aprioriOwner from aprioriHypotheses
-        to WstxArchitecture::physicalStation::backend::stations::modes;
+        to WstxArchitecture::StationProcess::modes;
 
     requirement 'CL-007-03' {
         doc /* The modem MUST decode FT8 and FT4 frames as the published protocol defines their

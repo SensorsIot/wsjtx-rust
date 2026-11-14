@@ -88,7 +88,7 @@ package WstxOfflineDecode {
     action unpackPayload : UnpackPayload;
     satisfy 'CL-007-09' by unpackPayload;
     dependency payloadOwner from unpackPayload
-        to WstxArchitecture::physicalStation::backend::stations::modes;
+        to WstxArchitecture::StationProcess::modes;
 
     requirement 'CL-007-09' {
         doc /* Each record the modem produces MUST carry exactly the fields of ResultRecord,

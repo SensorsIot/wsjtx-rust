@@ -6,6 +6,12 @@ package WstxStationLink {
     port def BrowserExchange :> StationOperations {
         out item upload : Recording;
     }
+    interface def StationLink {
+        doc /* The one front-to-back connection: a browser client and the web function of the
+             station process it is attached to. */
+        end client : BrowserExchange;
+        end web : ~BrowserExchange;
+    }
     attribute def Limits {
         attribute controlBytes : Integer = 1024;
         attribute safeIntegerMax : Integer = 900719925 * 10000000 + 4740991;

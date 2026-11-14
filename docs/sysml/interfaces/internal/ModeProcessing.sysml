@@ -11,6 +11,16 @@ package WstxModeProcessing {
         out item request : EncodeRequest;
         in item waveform : Waveform;
     }
+    interface def ReceiveProcessingLink {
+        doc /* Samples to decode and the decodes back. */
+        end receive : ReceiveProcessing;
+        end modes : ~ReceiveProcessing;
+    }
+    interface def EncodeProcessingLink {
+        doc /* A message to encode and its waveform back. */
+        end transmit : EncodeProcessing;
+        end modes : ~EncodeProcessing;
+    }
     item def ProcessingRequest {
         doc /* Receive job/cancel lifecycle correlates profile, boot, source, job and
              generation with immutable settings/results. WstxRecordingReceive owns

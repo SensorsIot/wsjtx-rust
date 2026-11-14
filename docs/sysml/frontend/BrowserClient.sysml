@@ -2,6 +2,7 @@ package WstxBrowserClientPart {
     private import ScalarValues::*;
     private import WstxStationLink::BrowserExchange;
     private import WstxRadioProperties::FrequencyRange;
+    private import WstxOperatorInteraction::OperatorInteractionPort;
     part def BrowserClient {
         attribute localDisplayLevels : WstxSignalArea::DisplayLevels;
         attribute localDisplayPreference : WstxSettings::BrowserDisplayPreference;
@@ -14,5 +15,6 @@ package WstxBrowserClientPart {
         doc /* Own presentation/local filtering/color, pending/stale state and requests; not authoritative radio state, timing-critical modulation or transmit authority. */
         doc /* Holds station state from one snapshot plus the station's pushed events and does not poll it (WstxStationLink::PushedStationState, the governing rule of this exchange). */
         port station : BrowserExchange;
+        port operator : OperatorInteractionPort;
     }
 }

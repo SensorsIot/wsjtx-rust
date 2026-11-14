@@ -1,5 +1,15 @@
 package WstxReceiveControl {
     private import ScalarValues::*;
+    port def ReceiveControlPort {
+        out item command : ReceiveCommand;
+        in attribute 'state' : ReceiveState;
+    }
+    item def ReceiveCommand { doc /* Start, stop, mode, band. */ }
+    interface def ReceiveControl {
+        doc /* The station service commands the receive function; receive reports its state. */
+        end station : ReceiveControlPort;
+        end receive : ~ReceiveControlPort;
+    }
     enum def ReceiveState { enum running; enum cancelling; enum completed; enum cancelled; enum failed; }
     enum def ReceiveKind { enum spectrum; enum live; }
     enum def ErrorCode {

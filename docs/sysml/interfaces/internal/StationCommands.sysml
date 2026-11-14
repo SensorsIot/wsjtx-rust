@@ -6,6 +6,20 @@ package WstxStationCommands {
         in item outcome : StationOutcome;
     }
 
+    interface def StationCommands {
+        doc /* Operator and agent requests to the station service, and the station's outcomes. */
+        end requester : StationOperations;
+        end station : ~StationOperations;
+    }
+    port def StationStatusPort { out item 'state' : StationState; }
+    item def StationState { doc /* The station state for the Status message. */ }
+    interface def StationStatus {
+        doc /* The station state offered to the UDP sender, which enters nothing into the
+             station. */
+        end station : StationStatusPort;
+        end udp : ~StationStatusPort;
+    }
+
     item def StationRequest;
     item def StationOutcome;
     // CombinedLinkEvidence retired by #80 (operator 2026-11-09): no test measures the 32 kbit/s

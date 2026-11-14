@@ -257,7 +257,7 @@ package WstxSettings {
     }
     action presentAndEdit : PresentAndEditProfile;
     attribute browserSource : String = "client/index.html; client/app.js; client/style.css";
-    dependency presentationOwner from presentAndEdit to WstxArchitecture::physicalStation::frontend::browsers;
+    dependency presentationOwner from presentAndEdit to WstxArchitecture::Frontend::browsers;
     satisfy WstxProfiles::'CL-005-05' by presentAndEdit;
     satisfy WstxOperatingLayout::'CL-073-01' by presentAndEdit;
 

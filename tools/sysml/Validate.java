@@ -151,14 +151,43 @@ public class Validate {
         }
         return "1:1";
     }
+    // The usages above the one being inspected, with their deployment paths.
+    static List<PartUsage> ancestorUsages = new ArrayList<>();
+    static List<String> ancestorPaths = new ArrayList<>();
+    /** The deployment path of the feature a subsetting names: a chain that starts at a feature
+     * of an enclosing usage (a nested usage naming `frontend.browsers`) is written from that
+     * usage's path; a chain that starts elsewhere (at the root) is its own path. */
+    static String subsettingTarget(Subsetting subsetting) {
+        var subsetted = subsetting.getSubsettedFeature();
+        var text = chain(subsetted);
+        var chains = subsetted.getChainingFeature();
+        Feature first = chains.isEmpty() ? subsetted : chains.get(0);
+        for (int i = ancestorUsages.size() - 1; i >= 0; i--) {
+            if (ancestorUsages.get(i).getFeature().contains(first)) return ancestorPaths.get(i) + "." + text;
+        }
+        return text;
+    }
     static void inspect(PartUsage part, String path, int depth) {
         if (depth > 16) throw new IllegalStateException("Recursive architecture decomposition");
-        row(part instanceof ConnectionUsage ? "CONNECTION" : part.isReference() && !part.getOwnedSubsetting().isEmpty() ? "REF" : "PART", path, String.join(",", part.getDefinition().stream().map(Element::getQualifiedName).toList()),
+        // A Redefinition is a Subsetting, but it names no target.
+        var targets = part.getOwnedSubsetting().stream().filter(x -> !(x instanceof Redefinition)).toList();
+        boolean reference = part.isReference() && !part.getOwnedSubsetting().isEmpty();
+        row(part instanceof ConnectionUsage ? "CONNECTION" : reference ? "REF" : "PART", path, String.join(",", part.getDefinition().stream().map(Element::getQualifiedName).toList()),
             bounds(part), String.valueOf(part.isVariation()),
-            String.join(",", part.getOwnedSubsetting().stream().map(x -> chain(x.getSubsettedFeature())).toList()),
+            String.join(",", targets.stream().map(Validate::subsettingTarget).toList()),
             kinds(part));
         if (!(part instanceof ConnectionUsage)) row("WHERE", path, anchor(part), String.valueOf(fileOf(part)));
-        if (part.isReference() && !part.getOwnedSubsetting().isEmpty()) return;
+        if (reference) return;
+        ancestorUsages.add(part);
+        ancestorPaths.add(path);
+        try {
+            inspectFeatures(part, path, depth);
+        } finally {
+            ancestorUsages.remove(ancestorUsages.size() - 1);
+            ancestorPaths.remove(ancestorPaths.size() - 1);
+        }
+    }
+    static void inspectFeatures(PartUsage part, String path, int depth) {
         for (var feature : part.getFeature()) {
             if (!project(feature)) continue;
             if (feature instanceof Connector connector) {
