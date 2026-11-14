@@ -8,7 +8,9 @@ status checks it and prints each FR's status computed from its clauses (CL-014-1
 equivalence compares two revisions of the model by meaning and identities lists the
 identity diff of two revisions (CL-014-17); both only read the repository. oracle
 writes the architecture oracle file from the resolved inventory, printing one line per
-change (CL-014-06); no other command writes it. None executes modeled behavior.
+change (CL-014-06); no other command writes it. paths rewrites only the code paths of a
+rename list in the model files (CL-014-20); no other command writes a model. None
+executes modeled behavior.
 """
 from __future__ import annotations
 
@@ -682,6 +684,223 @@ def markers(directory: Path, kinds=()) -> list[str]:
     if selected:
         summary += ": " + ", ".join(f"{counts[kind]} {kind}" for kind in selected)
     return lines + [summary]
+
+
+# CL-014-20: `paths` rewrites the code paths the model names from a rename list.
+RENAME_LINE = re.compile(r"(\S+) -> (\S+)")
+# The binding features of (a): the attribute form and each metadata form with its feature.
+BINDING_ATTRIBUTE = re.compile(r'\battribute\s+(implementation|executable)\s*:\s*String\s*=\s*"[^"\r\n]*"')
+BINDING_METADATA = {"ImplementedIn": "module", "TestedBy": "test", "DetailTests": "tests", "RetiredCase": "test"}
+# The binding forms a declaration's own binding is read from, by declaration kind (`stated`).
+DECLARATION_BINDINGS = {"requirement": ("implementation", "ImplementedIn"), "verification": ("executable", "TestedBy")}
+PATH_CHARACTER = re.compile(r"[\w/-]|\.[\w/-]")
+URL_OR_ANCHOR = re.compile(r"[A-Za-z][\w+.-]*:|#")
+
+
+def path_character(text: str, index: int) -> bool:
+    """Whether a path character stands at `index` of `text`: a letter, a digit, `_`, `-`,
+    `/`, or a `.` followed by one of these."""
+    return 0 <= index < len(text) and PATH_CHARACTER.match(text, index) is not None
+
+
+def binding_paths(source: str) -> tuple[list[tuple[int, int]], list[tuple[int, int, bool]]]:
+    """The (a) bindings of one model file outside comments: (spans of the insides of their
+    string literals, spans of each path in them without its `::symbol`, with whether the
+    catalog checks it), in file order. The catalog checks a declaration's own binding (its
+    kind's attribute or metadata, inside the body of a declaration it reads), a function
+    `@ImplementedIn` outside every declaration body, every `@DetailTests` and, through the
+    `@DetailTests` that names it, every `@RetiredCase` test."""
+    text, code = blanked(source, strings=False), blanked(source)
+    bodies = []
+    for match in DECLARATION.finditer(text):
+        if not match[4] or (match[1] == "verification" and not match[2]):
+            bodies.append((match.end(), match.end() + len(declaration_body(text, match.end() - 1)), match[1]))
+
+    def inside(offset: int, form: str | None = None) -> bool:
+        return any(start <= offset < end and (form is None or form in DECLARATION_BINDINGS[kind])
+                   for start, end, kind in bodies)
+
+    literals = []
+    for match in BINDING_ATTRIBUTE.finditer(code):
+        opening = code.rindex('"', match.start(), match.end() - 1)
+        literals.append((opening + 1, match.end() - 1, inside(match.start(), match[1])))
+    for name, feature in BINDING_METADATA.items():
+        for match in re.finditer(r"@\s*(?:\w+::)*" + name + r"\b(?!::)\s*\{", code):
+            if name == "ImplementedIn":
+                checked = inside(match.start(), name) or not inside(match.start())
+            else:
+                checked = name != "TestedBy" or inside(match.start(), name)
+            start = match.end()
+            body = declaration_body(text, start - 1)
+            for item in re.finditer(r"\b" + feature + r'\s*=\s*"[^"\r\n]*"', code[start:start + len(body)]):
+                literals.append((start + item.start() + item[0].index('"') + 1, start + item.end() - 1, checked))
+    literals.sort()
+    paths = []
+    for begin, end, checked in literals:
+        position = begin
+        for part in source[begin:end].split(";"):
+            lead = len(part) - len(part.lstrip())
+            path = part.strip().partition("::")[0].rstrip()
+            if path:
+                paths.append((position + lead, position + lead + len(path), checked))
+            position += len(part) + 1
+    return [(begin, end) for begin, end, _checked in literals], paths
+
+
+def link_targets(source: str, key: str) -> tuple[list[tuple[int, int]], list[tuple[int, int, str]]]:
+    """The Markdown links of one model file: (spans of every link's label and target, and
+    for each relative link the span of its path without `#fragment` and the repository path
+    it resolves to from the file's folder)."""
+    excluded, found = [], []
+    folder = posixpath.join("docs/sysml", posixpath.dirname(key))
+    for match in LINK.finditer(source):
+        line_start = source.rfind("\n", 0, match.start()) + 1
+        opening = source.rfind("[", line_start, match.start())
+        if opening >= 0 and "]" not in source[opening + 1:match.start()]:
+            excluded.append((opening + 1, match.start()))
+        excluded.append(match.span(1))
+        target = match[1]
+        if URL_OR_ANCHOR.match(target):
+            continue
+        path = target.partition("#")[0]
+        if path:
+            found.append((match.start(1), match.start(1) + len(path),
+                          posixpath.normpath(posixpath.join(folder, urllib.parse.unquote(path)))))
+    return excluded, found
+
+
+def renamed(path: str, entries: list[tuple[str, str, bool]]):
+    """`path` after the renames, or None when no entry covers it; with the entry's index."""
+    for index, (old, new, folder) in enumerate(entries):
+        if path == old:
+            return new, index
+        if folder and path.startswith(old + "/"):
+            return new + path[len(old):], index
+    return None
+
+
+def file_rewrites(source: str, key: str, entries: list[tuple[str, str, bool]]) -> list[tuple[int, int, str, int]]:
+    """The rewrites of one model file as (start, end, new text, entry index), sorted."""
+    _literals, bindings = binding_paths(source)
+    excluded, links = link_targets(source, key)
+    rewrites = []
+    for begin, end, _checked in bindings:
+        if result := renamed(source[begin:end], entries):
+            rewrites.append((begin, end, *result))
+    # (c) reads the rest of each (a) string too, such as the paths in a command line; only
+    # the spans (a) rewrote are left to it.
+    excluded += [(begin, end) for begin, end, _new, _index in rewrites]
+    folder = posixpath.join("docs/sysml", posixpath.dirname(key))
+    for begin, end, resolved in links:
+        if result := renamed(resolved, entries):
+            relative = posixpath.relpath("/" + result[0], "/" + folder)
+            written = source[begin:end]
+            if urllib.parse.unquote(written) != written:
+                relative = urllib.parse.quote(relative, safe="/")
+            rewrites.append((begin, end, relative, result[1]))
+    for index, (old, new, folder_entry) in enumerate(entries):
+        for match in re.finditer(re.escape(old), source):
+            begin, end = match.span()
+            if path_character(source, begin - 1) or any(start < end and begin < stop for start, stop in excluded):
+                continue
+            if folder_entry:
+                if end >= len(source) or source[end] != "/":
+                    continue
+                while path_character(source, end):
+                    end += 1
+            elif path_character(source, end):
+                continue
+            rewrites.append((begin, end, new + source[match.end():end], index))
+    return sorted(rewrites)
+
+
+def rename_list(text: str) -> tuple[list[tuple[str, str]], list[str]]:
+    """The entries of a rename list as (old, new) without a trailing `/`, and the faults
+    of its form."""
+    entries, faults, invalid = [], set(), False
+    for number, line in enumerate(text.split("\n"), 1):
+        line = line.rstrip("\r")
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        pair = RENAME_LINE.fullmatch(line.strip())
+        if not pair or "\\" in line:
+            faults.add(f"Invalid rename line {number}")
+            invalid = True
+            continue
+        valid = True
+        for written in pair.groups():
+            plain = written.rstrip("/")
+            if written.startswith("/") or re.match(r"[A-Za-z]:", written) or not plain or ".." in plain.split("/") \
+                    or plain == "docs/sysml" or plain.startswith("docs/sysml/"):
+                faults.add("Invalid rename path: " + written)
+                valid = False
+        if valid:
+            entries.append((pair[1].rstrip("/"), pair[2].rstrip("/")))
+    if not entries and not invalid and not faults:
+        faults.add("Empty rename list")
+    olds = [old for old, _new in entries]
+    for old in olds:
+        if olds.count(old) > 1:
+            faults.add("Duplicate rename: " + old)
+    for outer in set(olds):
+        for inner in set(olds):
+            if inner.startswith(outer + "/"):
+                faults.add(f"Overlapping renames: {outer}, {inner}")
+    for index, (old, new) in enumerate(entries):
+        if old == new:
+            faults.add("Rename to itself: " + old)
+        if any(old == other_new for other, (_old, other_new) in enumerate(entries) if other != index):
+            faults.add("Chained rename: " + old)
+    return entries, sorted(faults)
+
+
+def rewrite_paths(listing: Path, directory: Path, root: Path) -> tuple[int, list[str]]:
+    """CL-014-20: rewrite the code paths of the model below `directory` from the rename list
+    `listing`, after the files were moved below `root`. Returns (exit code, lines); on a
+    refusal no file is written. The faults are judged in three steps, each only on a list
+    the step before admitted: the list's form, the moved files, then the model."""
+    pairs, faults = rename_list(listing.read_bytes().decode("utf-8"))
+    if not faults:
+        for old, new in pairs:
+            if os.path.lexists(root / old):
+                faults.append("Old path still present: " + old)
+            if not (root / new).exists():
+                faults.append("New path missing: " + new)
+    if faults:
+        return 2, sorted(faults) + [f"Path rewrite refused: {len(faults)} faults"]
+    entries = [(old, new, (root / new).is_dir()) for old, new in pairs]
+    sources = {key: path.read_bytes().decode("utf-8") for key, path in model_files(directory).items()}
+    results, lines, named = {}, [], set()
+    for key, source in sources.items():
+        rewrites = file_rewrites(source, key, entries)
+        parts, position = [], 0
+        for begin, end, new, index in rewrites:
+            named.add(index)
+            line_start = source.rfind("\n", 0, begin) + 1
+            lines.append((key, source.count("\n", 0, begin) + 1, begin - line_start, source[begin:end], new))
+            parts += [source[position:begin], new]
+            position = end
+        results[key] = "".join(parts) + source[position:]
+    faults = {"Path not named by the model: " + old for index, (old, _new, _folder) in enumerate(entries) if index not in named}
+    for key, text in results.items():
+        _literals, bindings = binding_paths(text)
+        for begin, end, checked in bindings:
+            if not checked:
+                continue
+            try:
+                source_binding("paths", text[begin:end], root, manual=True)
+            except ValueError:
+                faults.add(f"Path missing after rename: {key}:{text.count(chr(10), 0, begin) + 1} {text[begin:end]}")
+        for begin, end, resolved in link_targets(text, key)[1]:
+            if resolved == ".." or resolved.startswith("../") or not (root / resolved).exists():
+                faults.add(f"Path missing after rename: {key}:{text.count(chr(10), 0, begin) + 1} {text[begin:end]}")
+    if faults:
+        return 2, sorted(faults) + [f"Path rewrite refused: {len(faults)} faults"]
+    changed = [key for key in results if results[key] != sources[key]]
+    for key in changed:
+        (directory / key).write_bytes(results[key].encode("utf-8"))
+    output = [f"rewrote {key}:{line} {old} -> {new}" for key, line, _column, old, new in sorted(lines)]
+    return 0, output + [f"Path rewrite: {len(lines)} rewrites in {len(changed)} model files"]
 
 
 def digest(text: str) -> str:
@@ -2266,6 +2485,8 @@ def main(argv=None):
     listed = commands.add_parser("identities", help="List the FR/CL/TC identities of two revisions with their status; writes nothing")
     listed.add_argument("base")
     listed.add_argument("head", nargs="?")
+    renames = commands.add_parser("paths", help="Rewrite the code paths the model names from a rename list, after the files were moved (CL-014-20)")
+    renames.add_argument("list", type=Path)
     args = parser.parse_args(argv)
     scratch = None
     try:
@@ -2296,6 +2517,11 @@ def main(argv=None):
             authority(MODELS, FSD)
             print("\n".join(markers(MODELS, args.kinds)))
             return 0
+        if args.command == "paths":
+            authority(MODELS, FSD)
+            code, lines = rewrite_paths(args.list, MODELS, ROOT)
+            print("\n".join(lines))
+            return code
         if args.command == "retired":
             authority(MODELS, FSD)
             canonical_catalog(MODELS, ROOT)
