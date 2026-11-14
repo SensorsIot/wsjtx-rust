@@ -5,6 +5,7 @@ package WstxRequirements {
     private import WstxArchitecture::Frontend;
     private import WstxArchitecture::Backend;
     private import WstxArchitecture::StationProcess;
+    private import ModelNotes::Conflict;
     doc /* Canonical functional requirements and durable verification definitions.
          The other Wstx packages own detailed typed contracts; validation does not execute tests.
          Coverage flags describe implemented source slices, not acceptance or whole-project parity. */
@@ -312,6 +313,12 @@ package WstxRequirements {
     }
     requirement 'FR-025' {
         subject station : StationProcess;
+        @Conflict {
+            what = "FR-025 and FR-026 have the subject StationProcess, while "
+                + "WstxArchitecture::StationProcess satisfies them by auto, ranking and station; "
+                + "the Pilot warns that the bound features have no conforming types. Open for "
+                + "the operator.";
+        }
         doc /* Automatic operation
              Select the next station to call, or call CQ, and choose the transmit slot, from
              the ranking of the active strategy and without operator action. The operator or

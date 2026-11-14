@@ -1,5 +1,6 @@
 package WstxTransmitPart {
     private import ScalarValues::*;
+    private import ModelNotes::Conflict;
     private import WstxAudioStreams::AudioExchange;
     private import WstxModeProcessing::EncodeProcessing;
     private import WstxKeying::Keying;
@@ -19,6 +20,11 @@ package WstxTransmitPart {
         port audio : AudioExchange;
         port control : Keying;
         port timing : ~PeriodTimingPort;
+        @Conflict {
+            what = "The doc below says contacts carries arm/disarm, TransmitRequest and halt "
+                + "requests and returns TransmitOutcome; contacts is typed ~MessageToSendPort, "
+                + "which carries only the TransmitRequest.";
+        }
         doc /* contacts receives QsoAndLogging's arm/disarm, TransmitRequest and halt
              requests and returns TransmitOutcome (WstxTransmit #9 slice B consumer
              contract, target). It is the only RF path of the contact workflow. */
