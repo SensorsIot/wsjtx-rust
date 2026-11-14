@@ -15,6 +15,7 @@ package WstxValueOrder {
     private import WstxRequirements::AutomationState;
     private import WstxRequirements::ImplementationState;
     private import RequirementDerivation::*;
+    private import ModelNotes::Conflict;
 
     attribute def Candidate {
         doc /* The filter, yes or no: every line must hold. A decoded standard message with a
@@ -229,6 +230,10 @@ package WstxValueOrder {
     }
 
     attribute def CountryListRule {
+        @Conflict {
+            what = "WstxSettings::StrategyEditor says a prefix or country entry is typed as free text "
+                + "with no picker; this text says the editor has a country picker.";
+        }
         @NotStated {
             what = "how ranking obtains the country table: its only connection from the log "
                 + "is WorkedBefore";
