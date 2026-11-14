@@ -518,6 +518,38 @@ these hold:
 
 QSO tests, their power and their bounds are not covered by this consent (#192).
 
+### Simulator live tests
+
+Live tests may run against the FT-8 Band Simulator instead of the transceiver
+(operator 2026-11-14; handoff: SensorsIot/FT-8-Band-Simulator
+`docs/ImplementerPackage/README.md`). Transmitting into the simulator, QSOs included, needs
+no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs FT8.
+
+- **Profile.** `%LOCALAPPDATA%\WstxRust\station\profiles\SIM-IC7300`: CAT and PTT on COM4
+  (`icom7300://COM4?baud=115200&radio=94&controller=e0`), the VB-Audio cables of the
+  handoff, its own `contacts.adi`, `udp.json` without targets, `pskr.json` disabled. The
+  operator profile `ic7300` and its logbook are never touched; their hashes are taken before
+  and compared after.
+- **Switch (coordinator).** The real IC-7300 is off (the operator switches it). Back up
+  `station\launcher.ps1`, point its profile line at `profiles\SIM-IC7300` and set
+  `WSTX_RADIO_DISCOVERY=off`, `WSTX_UDP=off`, `WSTX_PSKR=off` (without discovery off, a
+  silent COM4 makes the station adopt the real radio on COM3). Stop the station gracefully
+  (Ctrl+C helper of `radio-preflight.ps1`), restart the task, read back the profile.
+  Return: the backed-up launcher, the same restart.
+- **CAT confirmation.** A new profile, and any change of its CAT setup, needs the operator's
+  receive-only confirmation in the browser (Settings, "CAT receive-only confirmation");
+  until then CAT stays closed. Agents never change the CAT endpoint during a simulator run.
+- **Emulator.** The IC-7300 emulator (`D:\Github\IC-7300 simulator`,
+  `simulator.py --serial COM5 --baud 115200`, an MCP server on stdin) owns COM5. It closes
+  its serial transport when the station closes COM4 and does not recover yet, so it is
+  started after the station is up, and a station restart is followed by an emulator
+  restart. `GET /radio` reads `ready` when CAT works.
+- **Special calls.** The band simulator generates standard calls only. Nonstandard and
+  compound calls (`/MM`, special-event calls) are played with WSJT-X's `ft4sim`/`ft8sim`
+  straight into the receive cable.
+- **Deploys.** A deploy writes the pinned launcher, so the station returns to `ic7300`;
+  switch back to the simulator afterwards if the run continues.
+
 ### Operator role and returns
 
 The operator is asked only for open questions and changes to the product contract, whether
