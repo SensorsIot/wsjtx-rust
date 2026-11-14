@@ -158,12 +158,13 @@ alex:
   machines: {define: 1, check: 1, implement: 2, review: 1, coordinate: 1, test: 2}
   limits: {ready: 3, queued_landed: 2}
   buffer_per_coder: 2
-  investment_share: 1
+  investment_share: 2   # the product stop (operator 2026-11-14, #205): only investment work runs, on both coders
   fuse_minutes: {define: 180, check: 60, implement: 360, review: 90, gate: 90, coordinate: 60, test: 120}
   spend_per_day_usd: 200
-  first: [192]
+  first: [203, 204, 205, 206]   # the product stop: #205 comment 6882277210; conversions follow after their prerequisites are confirmed
+  only_first: true
   priority_labels: [P1, P2, P3]
-  skip_labels: [paused, model-conversion]
+  skip_labels: [paused]
   restrictions:
     - until_accepted: 192
       brief: "No transmission: no agent started by Alex keys the real radio or the emulator before wsjtx-rust#192 is accepted (operator 2026-11-14)."
