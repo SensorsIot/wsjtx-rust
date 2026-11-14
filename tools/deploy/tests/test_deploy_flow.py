@@ -7,6 +7,7 @@ deploy starts (station-probe.ps1 and live-page-check.ps1, as powershell.exe). Ea
 what reached it to a log, with the holder of update.lock at that moment, so the order of the
 steps and the lock are the oracle. The package and the pins are the drill's sandbox.
 """
+import glob
 import hashlib
 import json
 import os
@@ -16,7 +17,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import station_drill  # noqa: E402
-from station_drill import COMMENT_ID, COMMIT, CURRENT, MECHANISM, Sandbox  # noqa: E402
+from station_drill import COMMIT, CURRENT, MECHANISM, Sandbox  # noqa: E402
 
 OLD_LAUNCHER = b"# the launcher the station runs before the update\n"
 
@@ -52,12 +53,15 @@ function git {
     $file = Join-Path (Join-Path $env:DRILL_GIT_STORE $spec.Substring(0, $i)) ($spec.Substring($i + 1) -replace '/', '\')
     if (Test-Path -LiteralPath $file) { Get-Content -LiteralPath $file; $global:LASTEXITCODE = 0 } else { $global:LASTEXITCODE = 128 }
     return }
-  if ($args -contains 'log') { Flow "git log $($args[$args.Count - 1])"; 'Deploy without the operator (#171)'; 'Unrelated fix (#23)'; $global:LASTEXITCODE = 0; return }
+  if ($args -contains 'log') { Flow "git log $($args[$args.Count - 1])"; $env:FLOW_SUBJECTS -split '\|'; $global:LASTEXITCODE = 0; return }
   throw "unexpected git $args" }
 function gh {
-  if ($args[0] -eq 'api') {
-    if (Test-Path -LiteralPath $env:DRILL_COMMENT) { Get-Content -LiteralPath $env:DRILL_COMMENT -Raw; $global:LASTEXITCODE = 0 } else { $global:LASTEXITCODE = 1 }
-    return }
+  if ($args[0] -eq 'issue' -and $args[1] -eq 'view') {
+    $n = [string]$args[2]; Flow "issue view $n"
+    $p = ($env:FLOW_ISSUES | ConvertFrom-Json).PSObject.Properties[$n]
+    if (-not $p) { $global:LASTEXITCODE = 1; return }
+    [pscustomobject]@{ state = $p.Value.state; labels = @($p.Value.labels | ForEach-Object { [pscustomobject]@{ name = $_ } }) } | ConvertTo-Json -Depth 4 -Compress
+    $global:LASTEXITCODE = 0; return }
   if ($args[0] -eq 'issue' -and $args[1] -eq 'comment') {
     $n = $args[2]; $body = $args[[array]::IndexOf($args, '--body') + 1]; $repo = $args[[array]::IndexOf($args, '--repo') + 1]
     [IO.File]::WriteAllText((Join-Path $env:FLOW_POSTS "$n.txt"), $body); Flow "posted $n repo=$repo"; $global:LASTEXITCODE = 0; return }
@@ -70,6 +74,9 @@ function powershell.exe {
   throw "unexpected powershell.exe $joined" }
 """
 
+SUBJECTS = ["Deploy without the operator (#171)", "Unrelated fix (#23)"]
+ISSUES = {"171": ("OPEN", ["cr:landed"]), "23": ("OPEN", ["cr:implementing"])}
+OK_LINE_START = "Operator " + "OK comment"
 PROBE_PASS = ("PROBE PASS 123456789 PID 4242", "0")
 PAGE_PASS = ('LIVE PAGE CHECK PASS see the "PAGE CHECK" line $x `y', "0")
 
@@ -94,19 +101,19 @@ class DeployFlowTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def with_ok_and_old_launcher(self):
-        """The station runs another launcher, pinned so by the running commit: item 5, with the OK."""
+    def with_old_launcher(self):
+        """The station runs another launcher, pinned so by the running commit: no OK is asked."""
         s = self.s
         station_drill.write(os.path.join(s.station, "launcher.ps1"), OLD_LAUNCHER)
         pins = s.pins()
         pins[2] = (sha(OLD_LAUNCHER), pins[2][1])
         s.pin(CURRENT, pins)
-        s.comment(s.ok_line())
 
-    def deploy(self, probe=PROBE_PASS, page=PAGE_PASS):
+    def deploy(self, probe=PROBE_PASS, page=PAGE_PASS, subjects=SUBJECTS, issues=ISSUES):
         open(self.log, "w").close()
         env = {"FLOW_LOG": self.log, "FLOW_POSTS": self.posts, "FLOW_PROBE_LINE": probe[0], "FLOW_PROBE_RC": probe[1],
-               "FLOW_PAGE_LINE": page[0], "FLOW_PAGE_RC": page[1]}
+               "FLOW_PAGE_LINE": page[0], "FLOW_PAGE_RC": page[1], "FLOW_SUBJECTS": "|".join(subjects),
+               "FLOW_ISSUES": json.dumps({n: {"state": st, "labels": labels} for n, (st, labels) in issues.items()})}
         rc, out, _ = self.s.run(env=env, prelude=FLOW)
         with open(self.log, encoding="utf-8") as f:
             # A check's line ends with the lock holder; its arguments are read separately.
@@ -138,8 +145,8 @@ class DeployFlowTests(unittest.TestCase):
             self.assertNotIn(ch, record)
 
     def test_probe_and_page_check_pass_install_with_the_new_launcher_and_post_the_record(self):
-        """TC-171-02 (g) launcher, TC-171-03 order and lock, TC-171-04 record with the OK id."""
-        self.with_ok_and_old_launcher()
+        """TC-196-03 (a) and (c): launcher written without an OK; TC-171-03 order and lock; TC-171-04 record."""
+        self.with_old_launcher()
         new = sha(station_drill.LAUNCHER)[:12]
         rc, out, steps = self.deploy()
         self.assertEqual(rc, 0, out)
@@ -148,6 +155,8 @@ class DeployFlowTests(unittest.TestCase):
                                  "posted 171 repo=SensorsIot/wsjtx-rust"], out)
         self.assertEqual(self.active(), COMMIT)
         self.assertEqual(self.station_launcher(), station_drill.LAUNCHER)
+        saved = glob.glob(os.path.join(self.s.station, "logs", "update-*-launcher.ps1"))
+        self.assertEqual([read(p) for p in saved], [OLD_LAUNCHER])
         # The page check gets the repository, the shared folder and the package's agent client.
         with open(self.log, encoding="utf-8") as f:
             page = next(line for line in f.read().splitlines() if line.startswith("page-check"))
@@ -161,11 +170,11 @@ class DeployFlowTests(unittest.TestCase):
             self.assertIn(line, lines)
         self.assertIn("Probe: PROBE PASS 123456789 PID 4242", lines)
         self.assertIn("Page check: LIVE PAGE CHECK PASS see the PAGE CHECK line x y", lines)
-        self.assertIn(f"Operator OK comment: {COMMENT_ID}", lines)
+        self.assertEqual([l for l in lines if l.startswith(OK_LINE_START)], [])
         self.assertIn("Return to the previous version: none", lines)
 
-    def test_install_without_a_changed_mechanism_records_no_ok_and_keeps_the_launcher(self):
-        """TC-171-04: no OK comment, no return; the launcher is not written."""
+    def test_install_without_a_changed_mechanism_keeps_the_launcher(self):
+        """TC-171-04: no return; the launcher is not written; the record holds no OK line (TC-196-03 c)."""
         before = self.station_launcher()
         rc, out, steps = self.deploy()
         self.assertEqual(rc, 0, out)
@@ -173,11 +182,11 @@ class DeployFlowTests(unittest.TestCase):
                                      "probe lock=held", "page-check lock=free"], out)
         self.assertEqual(self.station_launcher(), before)
         lines = self.post(171).splitlines()
-        self.assertIn("Operator OK comment: none", lines)
+        self.assertEqual([l for l in lines if l.startswith(OK_LINE_START)], [])
         self.assertIn("Return to the previous version: none", lines)
 
     def test_probe_fail_page_check_red_or_error_return_under_the_lock(self):
-        """TC-171-03: each is followed by the return, under the lock, with the old launcher restored."""
+        """TC-171-03, TC-196-03 (b): each is followed by the return, under the lock, with the old launcher restored."""
         old = sha(OLD_LAUNCHER)[:12]
         new = sha(station_drill.LAUNCHER)[:12]
         cases = [("probe FAIL", ("PROBE FAIL listener PID 4242 runs another image", "1"), PAGE_PASS, False),
@@ -187,13 +196,13 @@ class DeployFlowTests(unittest.TestCase):
             with self.subTest(name):
                 self.tearDown()
                 self.setUp()
-                self.with_ok_and_old_launcher()
+                self.with_old_launcher()
                 rc, out, steps = self.deploy(probe, page)
                 self.assertEqual(rc, 1, out)
                 self.assertEqual(steps, ["stop ccccccccc lock=held", f"start 123456789 lock=held launcher={new}", "probe lock=held"]
                                  + (["page-check lock=free"] if page_ran else [])
                                  + ["stop 123456789 lock=held", f"start ccccccccc lock=held launcher={old}",
-                                    f"git log {CURRENT}..{COMMIT}", "posted 23 repo=SensorsIot/wsjtx-rust",
+                                    f"git log {CURRENT}..{COMMIT}", "issue view 23", "issue view 171",
                                     "posted 171 repo=SensorsIot/wsjtx-rust"], out)
                 self.assertEqual(self.active(), CURRENT)
                 self.assertEqual(self.station_launcher(), OLD_LAUNCHER)
@@ -223,9 +232,38 @@ class DeployFlowTests(unittest.TestCase):
                 self.assertIn(f"Page check: {line}", lines)
                 self.assertIn("Return to the previous version: none", lines)
 
+    def test_return_record_goes_only_on_open_issues_at_landed_or_installed(self):
+        """TC-196-05 (a): the other issues the subjects name are logged, not posted on."""
+        subjects = [f"Change (#{n})" for n in (171, 50, 23, 137, 60, 70)]
+        issues = {"171": ("OPEN", ["cr:landed"]), "50": ("OPEN", ["cr:installed"]), "23": ("OPEN", ["cr:implementing"]),
+                  "137": ("CLOSED", ["cr:accepted"]), "60": ("CLOSED", ["cr:landed"])}
+        rc, out, steps = self.deploy(("PROBE FAIL listener PID 4242 runs another image", "1"), subjects=subjects, issues=issues)
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(sorted(p for p in os.listdir(self.posts)), ["171.txt", "50.txt"], out)
+        for line in ("record not posted on #23: at cr:implementing", "record not posted on #137: closed",
+                     "record not posted on #60: closed", "record not posted on #70: state cannot be read"):
+            self.assertIn(line, out)
+        self.assertIn("posted 50 repo=SensorsIot/wsjtx-rust", steps)
+        self.assertIn("posted 171 repo=SensorsIot/wsjtx-rust", steps)
+
+    def test_open_issue_without_a_cr_state_gets_no_return_record(self):
+        """TC-196-05 (a) variant: the third reason of F3."""
+        rc, out, steps = self.deploy(("PROBE FAIL listener PID 4242 runs another image", "1"), subjects=["Change (#23)"],
+                                     issues={"23": ("OPEN", ["bug"])})
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(os.listdir(self.posts), [], out)
+        self.assertIn("record not posted on #23: no cr state", out)
+
+    def test_install_record_reads_no_issue(self):
+        """TC-196-05 (b): after a successful install the cr_state.py result decides, no gh issue view."""
+        rc, out, steps = self.deploy()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual([s for s in steps if s.startswith("issue view")], [], out)
+        self.assertEqual(os.listdir(self.posts), ["171.txt"], out)
+
     def test_the_task_is_never_changed(self):
         """TC-171-02 (g): no command that changes the scheduled task is in the script."""
-        self.with_ok_and_old_launcher()
+        self.with_old_launcher()
         rc, out, steps = self.deploy()
         self.assertNotIn("TASK CHANGED", steps, out)
         with open(station_drill.SCRIPT, encoding="utf-8") as f:

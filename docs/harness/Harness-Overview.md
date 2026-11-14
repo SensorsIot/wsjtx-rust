@@ -46,9 +46,8 @@ environment, build and model-maintenance instructions are in [Project specifics]
   ([machines and roles](Project-Specifics.md#machines-and-roles)); the dry run uses that
   candidate on HB9BLA. The manual hosted workflow can supply build and test evidence
   when explicitly chosen; its artifact is never installed on the station. A deploy needs no
-  OK under the standing deploy policy, approved 2026-11-13; a change to the pinned deploy
-  mechanism needs the operator's `Deploy OK:` comment
-  ([deployment authority](Project-Specifics.md#deployment-authority)).
+  OK under the standing deploy policy, approved 2026-11-13, also for a change to the deploy
+  mechanism ([deployment authority](Project-Specifics.md#deployment-authority)).
 - **Live tests:** tests that need a radio, a sound device or the network are cost 3–5,
   marked `#[ignore]`, get their own suites and run only on HB9BLA, where the transceiver is
   connected. Cost 4 and 5 run without asking under the standing consent at 1 %, approved

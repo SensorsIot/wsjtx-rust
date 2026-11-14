@@ -397,13 +397,14 @@ is a merge-queue log under `.git\harness-parallel\queue\logs\` that shows the pu
 copies the mechanism files from the commit's `git archive` export into the package's
 `deploy\` folder and lists their SHA-256 in the manifest. It prints the next command: the
 package's own copy,
-`<package>\deploy\tools\deploy\station-update\station-update.ps1 -Manifest <package>\manifest.json [-DryRun] [-OkComment <id>]`,
+`<package>\deploy\tools\deploy\station-update\station-update.ps1 -Manifest <package>\manifest.json [-DryRun]`,
 which refuses to run from anywhere else. It verifies the package, checks the pins, waits for
 an idle station, stops it gracefully, switches `active.json`, starts the task, switches
 back on failure, runs the probe and the live page check from the package, returns to the
 previous version when either fails and posts the install record. Exit 0: installed (or the
 dry run passed); 1: refused, failed or returned; 3: the station stayed busy, nothing
-changed; 5: the deploy mechanism changed and the operator's OK is needed.
+changed; 6: the radio did not answer, nothing changed. A parameter the script does not
+declare stops the call at binding, before any step.
 `station-update.ps1 -Rollback` returns to the previous version and never asks. The
 operator's one-time `setup-once.ps1` (in `.git\harness-parallel\resources\station-update\`,
 not used by deploys) points the scheduled task at `station\launcher.ps1`, which runs the
@@ -414,7 +415,7 @@ evidence only (operator decision 2026-10-30): that artifact is never installed o
 ### Standing deploy policy
 
 Approved by the operator on 2026-11-13 (#171 comments 6859504815, 6861452505,
-6861571300), on the decision of 2026-11-12: "The operator is kept out of the loop, with one
+6861571300; #196 comments 6866528840, 6867219074), on the decision of 2026-11-12: "The operator is kept out of the loop, with one
 exception: when a decision is needed." It binds the deploy part of the harness rule
 [standing deploy and consent policies](../../harness/core/docs/CR-Process.md#standing-deploy-and-consent-policies). A deploy
 under it needs no OK per install.
@@ -427,10 +428,18 @@ under it needs no OK per install.
      free; no live radio lease (`.git\harness-parallel\radio\lease.json` missing or
      expired); exactly one station process; GET /transmit shows `arm_state` `disarmed`,
      `ptt` `released` and `transmitting` false; GET /contact shows no contact, or one that
-     is `idle`, `completed` or `cancelled`; GET /automation shows no run, or a stopped one.
-     A state that cannot be read counts as busy. While busy, the deploy reads again every
+     is `idle`, `completed` or `cancelled`; GET /automation shows no run, or a stopped one;
+     GET /radio shows `state` `ready`, read in the same pass after the others. A state that
+     cannot be read counts as busy. While busy, the deploy reads again every
      10 s for up to 300 s, then gives up with the station untouched (exit 3); the CR stays
-     landed and the deploy is retried later. A station that is down is not idle. A contact
+     landed and the deploy is retried later. A radio that is not `ready` (or whose reply
+     cannot be read) is the reason `waiting for the radio (state <state>)` and waits the
+     same way; when it still does not answer after 300 s and the station is otherwise idle,
+     the deploy prints `WAITING FOR THE RADIO: the radio did not answer for 300 s, nothing
+     changed (state <state>)` and exits 6: it stages and stops nothing, runs no probe and
+     no page check, makes no return and posts no record; the same command run again later
+     repeats the whole check. `-DryRun`, `-Rollback` and the switch-back after a failed
+     probe or page check do not read the radio. A station that is down is not idle. A contact
      the agents did not start is never aborted by them; a deploy it blocks past the wait is
      reported to the operator;
    - it is outside the scheduled-job window. The product has no scheduled job, so the
@@ -441,25 +450,23 @@ under it needs no OK per install.
    extracted with `git show`; `station-update.ps1`, the probe and the page check run from
    the package. The page check takes the repository root, the shared folder and the agent
    client as parameters and derives none of them from its own location. Before any write,
-   `station-update.ps1` compares each mechanism file of the package and the launcher in the
-   station folder with the pins of the commit's own `Project-Specifics.md` (read with
-   `git show`).
-4. **A changed mechanism asks the operator first** (the harness rule keeps a per-deploy OK
-   for a change to the deploy mechanism). It is the case when a file differs from its pin, when the pins of the commit to install
-   differ from the pins of the running commit, or when either commit has no pins. The deploy
-   then refuses before any write (exit 5) and prints the exact line the operator posts:
-   `Deploy OK: <commit> scripts <H1> <H2> …`, with the full 40-hex commit and the 64-hex
-   SHA-256 it computed for each mechanism file, in pin order, separated by single spaces.
-   The agent stops, gives the operator that line, and waits; an agent never posts a comment
-   that starts with `Deploy OK:` ([agent working rules](Agent-Working-Rules.md)). The
-   comment may stand on any issue of this repository. The deploy proceeds only when started
-   with `-OkComment <id>` of a comment by `SensorsIot` whose whole text is that line with
-   exactly the commit and hashes it computed; it reads the comment from GitHub and refuses
-   any other text, author, commit or hash, and an unreadable comment. With an OK and a
-   changed launcher, it saves the old launcher in the station folder's `logs\` and writes
-   the new one after the stop, before starting the task; the switch-back restores the old
-   launcher with the profile. The task itself is never changed. `-Rollback` never asks, so
-   the automatic return always works.
+   `station-update.ps1` compares each mechanism file of the package with the pins of the
+   commit's own `Project-Specifics.md` (read with `git show`), and compares the launcher in
+   the station folder with its pin (item 4).
+4. **A changed mechanism deploys without an OK.** The deploy installs a commit whose
+   mechanism files or pins differ from those of the running commit like any other commit:
+   pins that differ from the running commit's pins, a running commit without pins and a
+   station launcher that differs from its pin are no refusal; the deploy logs one step per
+   difference (`deploy mechanism changed: <what>`) and goes on. It refuses before any write,
+   with exit 1 and its reason, when the commit to install has no deploy pins, when its pins
+   do not name the mechanism files in their order, or when a mechanism file of the package
+   differs from its pin (`<path> differs from its pin`). When the station launcher differs
+   from the package launcher, it saves the station launcher in the station folder's `logs\`
+   and writes the package launcher after the stop, before starting the task; the
+   switch-back restores the saved launcher with the profile. The task itself is never
+   changed. `-Rollback` never asks and checks no pins, so the automatic return always works.
+   `station-update.ps1` has no parameter for an operator's OK: a call that names one stops
+   at parameter binding before any step.
 5. **Proof and return.** After the switch the probe runs, inside the lock. The deploy then
    releases `update.lock`, and the live page check runs (it takes the lock itself for its
    restart). Probe not `PASS`, page check `RED` or `ERROR`: the previous version is
@@ -469,15 +476,16 @@ under it needs no OK per install.
    acceptance needs its `PASS`.
 6. **Install record.** Every install posts its record on each CR issue it moves to
    installed (`cr_state.py installed <commit> --since <previous>` finds them); after a
-   return, on each issue the subjects of `<previous>..<commit>` name. The record holds the
+   return, on each issue the subjects of `<previous>..<commit>` name that is open and carries
+   `cr:landed` or `cr:installed` (the deploy reads each with `gh issue view`; for any other
+   issue it logs `record not posted on #<n>: <closed | at <label> | no cr state | state
+   cannot be read>` and posts nothing). The record holds the
    commit, the previous version, the SHA-256 of the package executable, the SHA-256 of each
-   mechanism file, the probe result line, the page check result line, the OK comment id if
-   any, and any return to the previous version. It holds no quote, dollar sign or backtick.
+   mechanism file, the probe result line, the page check result line, and any return to the
+   previous version. It holds no quote, dollar sign or backtick.
 7. **Accepted limits** (operator, verbatim):
    - 2026-11-13 (6859504815): "I accept knowingly that this guards against accidents and
      shortcuts, not against a deliberate swap by a session running under my account."
-   - 2026-11-13 (6861452505): "I accept that the check cannot tell my comment from one an
-     agent posts under my account; rule 1 is the guard."
 
    The rules of the table under [rules not met yet](#rules-not-met-yet) stay not met.
 
@@ -485,11 +493,11 @@ under it needs no OK per install.
 
 The SHA-256 of each mechanism file's blob at this commit, then its path, in the order
 `station-update.ps1` reads them. A change to a mechanism file changes its pin in the same
-CR, and the first deploy of that CR needs the operator's OK (policy item 4). Suite `deploy-tooling`
+CR (policy item 4). Suite `deploy-tooling`
 (`test_deploy_pins.py`) recomputes every pin from git.
 
 ```text
-b79afb56fcac26fb5d99fa3304782006226e34b06b5685bae545ffc0fdc99cb1  tools/deploy/station-update/station-update.ps1
+0580f8a62387d45dedd6a7908cb61d9b9496f383144413db53259fd1dc34a790  tools/deploy/station-update/station-update.ps1
 0d1fb5e9676faafc71a3c1ab3c694793485a0513fe416d2eac0372719b8aa044  tools/deploy/station-update/make_package.py
 8579d535aa68596bd466b0fc400e4d8a8ca25c50e42291b3a09648ab01455509  tools/deploy/station-update/launcher.ps1
 9d0524dfc1dc536f5d54e3a1b956b737f5b2b8a5a1ccfebaa896b97241c89dd2  tools/deploy/agent-client.ps1
@@ -513,8 +521,7 @@ QSO tests, their power and their bounds are not covered by this consent (#192).
 ### Operator role and returns
 
 The operator is asked only for open questions and changes to the product contract, whether
-to push past a red test, items only a person can judge, and the `Deploy OK:` of a changed
-deploy mechanism. An installed CR that fails acceptance or is returned gets a row in the
+to push past a red test, and items only a person can judge. An installed CR that fails acceptance or is returned gets a row in the
 escapes ledger.
 
 ### Probe, tests and drill
@@ -583,16 +590,20 @@ cases (#171, TC-171-01) each require the busy reason in the refusal, no stop sen
 unchanged destination: update lock held, a live radio lease, no and two station processes,
 transmit armed, PTT keyed, transmitting, a contact replying, a contact replying after a
 `device_lost` disarm, an automation run active, and a state that cannot be read. Busy that
-clears at 290 s proceeds to the stop; still busy at 300 s gives up. A second update started
-between the idle check and the stop is refused because the first holds the lock. The pin
-and OK cases (TC-171-02): all pins equal passes `-DryRun`; a working-folder copy of the
-script is refused (only the package's copy runs); a package file edited after the build,
-new pins that differ from the running pins, a commit without pins, a running commit
-without pins and a station launcher that differs from its pin each refuse with the item-5
-message and the `Deploy OK:` line before any write. An OK comment that is exactly that line
-reaches the stop; one changed hash, a short commit, another commit, hashes out of order,
-extra text, an unreadable comment and a comment by another account are refused.
-`-Rollback` with differing pins reaches the stop without asking.
+clears at 290 s proceeds to the stop; still busy at 300 s gives up. The radio cases
+(#196, TC-196-04) add a radio `closed`, `connecting`, `closing`, `unavailable` or whose
+reply cannot be read: each waits to `12:05:00 WAITING FOR THE RADIO` with exit 6 and no
+stop; a radio `ready` from the first reading, or from 290 s, proceeds to the stop; transmit
+armed until 310 s with the radio closed ends with the busy reason and exit 3. A second
+update started between the idle check and the stop is refused because the first holds the
+lock. The pin cases (TC-196-01, TC-196-02): all pins equal passes `-DryRun`; a working-folder
+copy of the script is refused (only the package's copy runs); a package file edited after
+the build, a commit without pins and pins in another order each refuse with exit 1 and
+their reason before any write; new pins that differ from the running pins, a running commit
+without pins and a station launcher that differs from its pin log `deploy mechanism changed:`
+and reach the stop; a call naming the removed OK parameter stops at binding before any
+step. No case prints a `Deploy OK` line or reads a comment. `-Rollback` with differing pins
+or with the radio closed reaches the stop without asking, and `-DryRun` does not read the radio.
 
 ### Rules not met yet
 

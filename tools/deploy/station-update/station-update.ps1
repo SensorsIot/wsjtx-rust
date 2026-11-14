@@ -2,23 +2,22 @@
 # scheduled task up once). It carries out the standing deploy policy of
 # docs/harness/Project-Specifics.md (Deployment authority); every step is in this file or in
 # another pinned mechanism file of the package.
-#   <package>\deploy\tools\deploy\station-update\station-update.ps1 -Manifest <package>\manifest.json [-DryRun] [-OkComment <id>]
+#   <package>\deploy\tools\deploy\station-update\station-update.ps1 -Manifest <package>\manifest.json [-DryRun]
 #   station-update.ps1 -Rollback
 #  1. Package: only a package whose gate receipt says the push gate passed for exactly this
 #     commit and executable, and whose commit is on GitHub master.
-#  2. Pins: it runs only as the package's own copy. Each mechanism file of the package and the
-#     launcher in the station folder must equal the pins of the commit (git show of its
-#     Project-Specifics.md, never a working folder), and those pins must equal the pins of the
-#     running commit. Otherwise, or when either commit has no pins, it refuses before any write
-#     and prints the line the operator posts (Deploy OK: ...). It goes on only with -OkComment,
-#     the id of the operator's comment whose whole text is exactly that line.
+#  2. Pins: it runs only as the package's own copy. Each mechanism file of the package must
+#     equal its pin in the commit's own Project-Specifics.md (git show, never a working folder),
+#     and the pins must name the mechanism files in their order; otherwise it refuses before any
+#     write (exit 1). A difference to the running commit's pins, a running commit without pins or
+#     a station launcher that differs from its pin is logged as a step, no refusal.
 #  3. Idle: inside update.lock, which it then holds until the station has stopped: no live radio
 #     lease, one station process, transmit disarmed, PTT released, not transmitting, no contact
-#     other than idle, completed or cancelled, no automation run other than stopped. A state that
-#     cannot be read is busy. While busy it reads again every 10 s for up to 300 s, then gives up
-#     with the station untouched.
+#     other than idle, completed or cancelled, no automation run other than stopped, and the
+#     radio answering (GET /radio state ready). A state that cannot be read is busy. While busy
+#     it reads again every 10 s for up to 300 s, then gives up with the station untouched.
 #  4. Switch: stages station\<version>, stops the station gracefully (Ctrl+C: the transmit owner
-#     releases PTT on it), writes a changed launcher (only with an OK; the old one is saved),
+#     releases PTT on it), writes the package launcher when it differs (the old one is saved),
 #     switches active.json, starts the task and checks the new version answers; otherwise it
 #     switches back, profile and launcher restored. The task itself is never changed.
 #  5. Proof: the probe runs inside the lock; then the lock is released and the live page check
@@ -26,19 +25,20 @@
 #     the previous version is put back without asking, under the lock again. Page check BUSY or
 #     NOT-EXERCISED: no return; the result is recorded.
 #  6. Record: posted on each CR issue the install moves to installed (cr_state.py installed),
-#     or, after a return, on each issue the installed commits name.
+#     or, after a return, on each issue the installed commits name that is open at cr:landed or
+#     cr:installed.
 # -Rollback returns to the previous version and never asks. Every step is logged to
 # logs\update-<ts>.log in the station folder.
 # Exit 0: installed, or the dry run passed. 1: refused, failed or returned. 3: the station stayed
-# busy, nothing changed. 5: the deploy mechanism changed, the operator's OK is needed.
-param([string]$Manifest, [switch]$DryRun, [switch]$Rollback, [string]$OkComment, [string]$Repo = 'D:\Github\wsjtx-rust')
+# busy, nothing changed. 6: the radio did not answer for 300 s, nothing changed.
+[CmdletBinding()]
+param([string]$Manifest, [switch]$DryRun, [switch]$Rollback, [string]$Repo = 'D:\Github\wsjtx-rust')
 $ErrorActionPreference='Stop'; Set-StrictMode -Version Latest
 $Station=Join-Path $env:LOCALAPPDATA 'WstxRust\station'
 $TaskName='WSTX Rust Station HB9BLA'
 $RuleName='WSTX-Station-HB9BLA-18081'
 $Url='https://192.168.0.37:18081'
 $GitHubRepo='SensorsIot/wsjtx-rust'
-$Operator='SensorsIot'
 $Shared=Join-Path $Repo '.git\harness-parallel'
 # The mechanism files in pin order (Project-Specifics.md, Deploy pins).
 $MechanismPaths=@('tools/deploy/station-update/station-update.ps1','tools/deploy/station-update/make_package.py','tools/deploy/station-update/launcher.ps1','tools/deploy/agent-client.ps1','tools/deploy/station-probe.ps1','tools/deploy/live-page-check.ps1')
@@ -163,25 +163,18 @@ function Read-Pins([string]$Commit) {
   return ,$pins
 }
 function Pins-Text($pins) { (@($pins) | ForEach-Object { "$($_.sha256)  $($_.path)" }) -join "`n" }
-# Throws unless comment $Id is by the operator and its whole text is $Line.
-function Assert-Ok([string]$Id,[string]$Line) {
-  if ($Id -notmatch '^[0-9]{1,20}$') { throw "OK refused: -OkComment $Id is not a comment id." }
-  $raw=@(& gh api "repos/$GitHubRepo/issues/comments/$Id")
-  if ($LASTEXITCODE -ne 0 -or $raw.Count -eq 0) { throw "OK refused: comment $Id cannot be read from GitHub." }
-  try { $c=($raw -join "`n") | ConvertFrom-Json; $author=[string]$c.user.login; $body=[string]$c.body }
-  catch { throw "OK refused: comment $Id cannot be read from GitHub." }
-  if ($author -ne $Operator) { throw "OK refused: comment $Id is by $author, not by $Operator." }
-  if ($body.Trim() -cne $Line) { throw "OK refused: comment $Id is not exactly the line for this commit and these scripts." }
-}
 function Take-Lock {
   try { $script:Lock=[IO.File]::Open((Join-Path $Station 'logs\update.lock'),'OpenOrCreate','ReadWrite','None'); return $true } catch { return $false }
 }
-# The three readings of the station's state, one session for the whole wait (a login every
-# 10 s runs into the station's login limit).
+# The four readings of the station's state, one session for the whole wait (a login every
+# 10 s runs into the station's login limit). The radio's state is read last; a reply that cannot
+# be read is the state 'unreadable'.
 function Read-State {
   if (-not $script:Session) { $script:Session=Open-AgentSession }
   $t=Agent-Get $script:Session '/transmit'; $c=(Agent-Get $script:Session '/contact').contact; $a=(Agent-Get $script:Session '/automation').run
-  return ,@($t,$c,$a)
+  try { $r=[string](Agent-Get $script:Session '/radio').state } catch { $r='' }
+  if (-not $r) { $r='unreadable' }
+  return ,@($t,$c,$a,$r)
 }
 # Why the station is not idle now, or $null. It takes update.lock and keeps it only when idle.
 function Station-Busy {
@@ -210,6 +203,7 @@ function Busy-Reason {
     if ([string]$transmit.ptt -ne 'released' -or $transmit.transmitting -ne $false) { return "PTT is $($transmit.ptt), transmitting: $($transmit.transmitting)" }
     if ($contact -and [string]$contact.state -notin @('idle','completed','cancelled')) { return "a contact is $($contact.state)" }
     if ($run -and [string]$run.state -ne 'stopped') { return "an automation run is $($run.state)" }
+    if ([string]$s[3] -ne 'ready') { return "waiting for the radio (state $($s[3]))" }
   } catch { return "its state cannot be read ($($_.Exception.GetType().Name))" }
   return $null
 }
@@ -224,6 +218,17 @@ function Move-Installed($commit,$previous) {
   Push-Location -LiteralPath $Repo
   try { $out=@(& python (Join-Path $Repo 'harness\core\tools\cr_state.py') installed $commit --since $previous) } finally { Pop-Location }
   return ,$out
+}
+# Why issue $n gets no return record, or $null when it is open at cr:landed or cr:installed.
+function Issue-Skip([int]$n) {
+  $raw=@(& gh issue view $n --repo $GitHubRepo --json state,labels)
+  if ($LASTEXITCODE -ne 0 -or $raw.Count -eq 0) { return 'state cannot be read' }
+  try { $i=($raw -join "`n") | ConvertFrom-Json; $state=[string]$i.state; $labels=@($i.labels | ForEach-Object { [string]$_.name } | Where-Object { $_ -like 'cr:*' }) }
+  catch { return 'state cannot be read' }
+  if ($state -ne 'OPEN') { return 'closed' }
+  if (@($labels | Where-Object { $_ -in @('cr:landed','cr:installed') }).Count) { return $null }
+  if ($labels.Count) { return "at $($labels -join ', ')" }
+  return 'no cr state'
 }
 # The issues the subjects of previous..commit name (this repository's #N only).
 function Issues-Named($commit,$previous) {
@@ -295,32 +300,24 @@ $pageScript=Join-Path $deployRoot 'tools\deploy\live-page-check.ps1'
 $packageLauncher=Join-Path $deployRoot 'tools\deploy\station-update\launcher.ps1'
 $newPins=Read-Pins $commit
 $runPins=Read-Pins $current
-$why=@()
-if ($null -eq $newPins) { $why+="commit $ver has no deploy pins" }
+$refuse=@()
+if ($null -eq $newPins) { $refuse+="commit $ver has no deploy pins" }
 else {
-  if ((@($newPins | ForEach-Object { $_.path }) -join ' ') -ne ($MechanismPaths -join ' ')) { $why+="the pins of $ver do not name the mechanism files in their order" }
+  if ((@($newPins | ForEach-Object { $_.path }) -join ' ') -ne ($MechanismPaths -join ' ')) { $refuse+="the pins of $ver do not name the mechanism files in their order" }
   foreach ($c in $computed) {
     $pin=@($newPins | Where-Object { $_.path -eq $c.path })
-    if ($pin.Count -ne 1 -or $pin[0].sha256 -ne $c.sha256) { $why+="$($c.path) differs from its pin" }
+    if ($pin.Count -ne 1 -or $pin[0].sha256 -ne $c.sha256) { $refuse+="$($c.path) differs from its pin" }
   }
-  $lp=@($newPins | Where-Object { $_.path -eq $LauncherPin })
-  if (-not (Test-Path -LiteralPath $stationLauncher) -or $lp.Count -ne 1 -or (Hash $stationLauncher) -ne $lp[0].sha256) { $why+='the launcher in the station folder differs from its pin' }
 }
-if ($null -eq $runPins) { $why+="the running commit $($current.Substring(0,9)) has no deploy pins" }
-elseif ($null -ne $newPins -and (Pins-Text $newPins) -ne (Pins-Text $runPins)) { $why+="the pins of $ver differ from those of the running $($current.Substring(0,9))" }
-$okLine="Deploy OK: $commit scripts "+((@($computed | ForEach-Object { $_.sha256 })) -join ' ')
-$okId=$null
-if ($why.Count) {
-  foreach ($w in $why) { Step "deploy mechanism changed: $w" }
-  if (-not $OkComment) {
-    Step 'Item 5: the deploy mechanism changed, nothing was changed. The operator posts exactly the next line as a comment; then run again with -OkComment <its id>:'
-    Write-Output $okLine; Add-Content -LiteralPath $log -Value $okLine
-    exit 5
-  }
-  Assert-Ok $OkComment $okLine
-  $okId=$OkComment
-  Step "operator OK: comment $okId names this commit and these scripts"
-} else { Step "deploy mechanism equals its pins: $($computed.Count) files" }
+if ($refuse.Count) { foreach ($w in $refuse) { Step "refused: $w" }; throw ('Refused: '+($refuse -join '; ')+'.') }
+# A changed deploy mechanism is no refusal: each difference is one step.
+$changed=@()
+if ($null -eq $runPins) { $changed+="the running commit $($current.Substring(0,9)) has no deploy pins" }
+elseif ((Pins-Text $newPins) -ne (Pins-Text $runPins)) { $changed+="the pins of $ver differ from those of the running $($current.Substring(0,9))" }
+$lp=@($newPins | Where-Object { $_.path -eq $LauncherPin })
+if (-not (Test-Path -LiteralPath $stationLauncher) -or (Hash $stationLauncher) -ne $lp[0].sha256) { $changed+='the launcher in the station folder differs from its pin' }
+if ($changed.Count) { foreach ($w in $changed) { Step "deploy mechanism changed: $w" } }
+else { Step "deploy mechanism equals its pins: $($computed.Count) files" }
 
 $target=Safe-Child $Station (Join-Path $Station $ver)
 if (Test-Path -LiteralPath $target) {
@@ -334,7 +331,8 @@ if ($current -eq $commit) { Step 'already active'; return }
 . $AgentClient
 $waitStart=Now
 $busy=Station-Busy
-while ($busy -and ((Now)-$waitStart).TotalSeconds -lt $BusyWaitSeconds) { Step "waiting: $busy"; Start-Sleep -Seconds $BusyPollSeconds; $busy=Station-Busy }
+while ($busy -and ((Now)-$waitStart).TotalSeconds -lt $BusyWaitSeconds) { Step $(if ($busy -like 'waiting for the radio*') { $busy } else { "waiting: $busy" }); Start-Sleep -Seconds $BusyPollSeconds; $busy=Station-Busy }
+if ($busy -match '^waiting for the radio \(state (.*)\)$') { Step "WAITING FOR THE RADIO: the radio did not answer for $BusyWaitSeconds s, nothing changed (state $($Matches[1]))"; exit 6 }
 if ($busy) { Step "BUSY: the station was not idle for $BusyWaitSeconds s, nothing changed: $busy"; exit 3 }
 Step 'station idle; update.lock held'
 
@@ -351,7 +349,7 @@ else {
   Rename-Item -LiteralPath $partial -NewName (Split-Path -Leaf $target)
   Step "staged: $target"
 }
-$writeLauncher=($null -ne $okId) -and (-not (Test-Path -LiteralPath $stationLauncher) -or (Hash $stationLauncher) -ne (Hash $packageLauncher))
+$writeLauncher=(-not (Test-Path -LiteralPath $stationLauncher) -or (Hash $stationLauncher) -ne (Hash $packageLauncher))
 
 $switched=$false
 $stepName='save profile'
@@ -421,11 +419,17 @@ $lines=@("Install record: $commit $(if ($returned) { 'returned' } else { 'instal
   'Mechanism files (SHA-256 and path):')
 $lines+=@($computed | ForEach-Object { "$($_.sha256) $($_.path)" })
 $lines+=@("Probe: $probeLine", "Page check: $pageLine",
-  "Operator OK comment: $(if ($okId) { $okId } else { 'none' })",
   "Return to the previous version: $(if ($returned) { "to $current ($returned); each CR of this install goes back to step 2" } else { 'none' })")
 $record=Clean ($lines -join "`n")
 foreach ($l in ($record -split "`n")) { Step "record: $l" }
-if ($returned) { $issues=Issues-Named $commit $current }
+if ($returned) {
+  # Only an open issue at cr:landed or cr:installed gets the record of a return.
+  $issues=@()
+  foreach ($n in (Issues-Named $commit $current)) {
+    $skip=Issue-Skip $n
+    if ($skip) { Step "record not posted on #${n}: $skip" } else { $issues+=$n }
+  }
+}
 else {
   $moved=Move-Installed $commit $current
   foreach ($l in $moved) { Step "cr_state: $l" }

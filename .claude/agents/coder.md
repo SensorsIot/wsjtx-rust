@@ -28,7 +28,7 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=41b97facc8eaed22c37d2d5466c4a0ce7ba378b3cc4bd16d639e6fe543e322fd -->
 <!-- source harness/lang/rust/standard.md sha256=aca19c7c31f2c63e8f136bbed51cda2bf1566ec5202c347a5aaee5416d998267 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=80e5d59992509f27122cfc9eef472eba40288cda2e53895c19c62e2bd4eed80f -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=7be0404d9ed8d7ff1a233f7dcd70ce8a671145d6e461d8b1304fd64c9aead8c0 -->
 <!-- harness-role-policy {"commands": ["git -C (\\S*[/\\\\]|'[^']*[/\\\\]|\"[^\"]*[/\\\\])?\\.git[/\\\\]harness-parallel[/\\\\]worktrees[/\\\\](cr|issue-)[^\\s/\\\\'\"]+[/\\\\]?['\"]? \\S.*", "gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*red_on_parent\\.py .+", "(python3?|py)(\\.exe)? \\S*merge_queue\\.py (submit [0-9]+ [0-9a-f]{7,40}|status( --json)?)", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "cargo (build|check|test|clippy|fmt)(?=.* --manifest-path \\S+).*", "node --test( --test-concurrency=1| --test-name-pattern=([\\[\\]A-Za-z0-9_.,:^+=/-]+|'[^']+')){0,2}( \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\\.\\.?(?=[/\\s]|$))[A-Za-z0-9_.@+-]+)+)+", "python (\\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/)?fixtures/transmit/generate\\.py( --(bin|compare-bin|ft4sim) C:/WSJT/[A-Za-z0-9._/-]+)+", "(python|py)(\\.exe)? D:/wstx-tmp/moves/[0-9]+/[A-Za-z0-9_-]+\\.py( .*)?", "python -m unittest discover -s \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml/tests( -t \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+)?( -p [A-Za-z0-9_*.]+)?( -v)?", "python -m unittest discover -s \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/deploy/tests( -t \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+)?( -p [A-Za-z0-9_*.]+)?( -v)?", "python \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml\\.py oracle", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": [".git/harness-parallel/worktrees/cr*/**", ".git/harness-parallel/worktrees/issue-*/**", "D:/wstx-tmp/moves/**"], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py", "^(?!(python3?|py)(\\.exe)? \\S*red_on_parent\\.py )(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\\bnode\\s+--test"], "model": {"files": [], "facts": []}} -->
 
 You implement one issue that carries `Ready: PASS`. The method is
@@ -136,10 +136,6 @@ are the coder's above.
   `gh issue comment <number> --body '<text>'`: single quotes, no `'`, `$` or backticks in the
   text, no `--body-file`, and no `--repo` on this project's issues (the harness-improver's
   harness issues above are the one exception).
-- **The deploy OK is the operator's.** An agent never posts a comment that starts with
-  `Deploy OK:`. When a deploy needs that OK
-  ([deployment authority](../../docs/harness/Project-Specifics.md#deployment-authority)), the agent stops, gives
-  the operator the exact line the deploy printed, and waits for the comment's id.
 
 ## Limits the role hook enforces
 
@@ -147,4 +143,4 @@ are the coder's above.
 - Shell commands always refused, wherever they stand outside quotes: `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`, `^(?!(python3?|py)(\.exe)? \S*red_on_parent\.py )(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test`
 - Files you may write, relative to the project unless absolute: `.git/harness-parallel/worktrees/cr*/**`, `.git/harness-parallel/worktrees/issue-*/**`, `D:/wstx-tmp/moves/**`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=ef4aebad7c37b276b3b3f6f8192d0f18eb45b1453485e598b313eb290a6cb791 -->
+<!-- harness-agent-v1 sha256=8ae7b2fcddf8d12167e30feb86b31a6222d848a929fadd3b2efa63552ab40ce6 -->

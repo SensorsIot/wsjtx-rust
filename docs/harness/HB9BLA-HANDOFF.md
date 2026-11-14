@@ -60,11 +60,12 @@ verify their availability in the actual agent environment before starting work.
   in Git Bash, `git -C D:/Github/wsjtx-rust show <commit>:tools/deploy/station-update/make_package.py | python - <commit> <green gate log>`
   (a merge-queue log under `.git\harness-parallel\queue\logs\` that shows the push), then the
   package's own `deploy\tools\deploy\station-update\station-update.ps1 -Manifest …` that it
-  prints. That one run waits for an idle station (at most 300 s, else exit 3 and nothing
-  changed), installs, runs the probe and the live page check, returns to the previous version
-  when either fails, moves the CRs to installed and posts the install record. Exit 5: the
-  deploy mechanism changed; give the operator the printed `Deploy OK:` line, wait for their
-  comment and run again with `-OkComment <id>`. A contact you did not start is never aborted
+  prints. That one run waits for an idle station and an answering radio (at most 300 s, else
+  exit 3 for a busy station or exit 6 for a radio that did not answer, nothing changed),
+  installs, runs the probe and the live page check, returns to the previous version
+  when either fails, moves the CRs to installed and posts the install record. Exit 6: the
+  radio did not answer and nothing changed; report it to the operator and run the same
+  command again once the radio answers. A contact you did not start is never aborted
   to make the station idle.
 - Official WSJT-X **3.3.0-beta4** runs alongside ours as `WSTX-Comparison`,
   Rig=None, no CAT/PTT, Fast/AP-off. A connected Edge frontend runs here too.

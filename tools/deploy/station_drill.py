@@ -21,8 +21,9 @@ deploy pins (a mocked `git show` of Project-Specifics.md), damages one thing, ru
 package's copy of the script and requires: a non-zero exit, the refusal's own message (a
 refusal for another reason fails the case), no sentinel, and the sandbox station (version
 directories, active.json, profiles, launcher) unchanged byte for byte; only logs\\ may change.
-A busy station gives up with exit 3, a changed mechanism refuses with exit 5 and the exact
-`Deploy OK:` line. Positive controls show that the mocks do not refuse everything: the intact
+A busy station gives up with exit 3, a radio that does not answer with exit 6; a changed
+mechanism (#196) is no refusal and reaches the stop, while a commit without pins, pins out of
+order and a package file that differs from its pin refuse with exit 1. Positive controls show that the mocks do not refuse everything: the intact
 package passes -DryRun unchanged, and without -DryRun it reaches the station stop. Cases
 marked LIMIT are not refused today; they are reported so that the rule stays stated as
 unmet (#31, #32) and fail the drill if that ever changes unnoticed.
@@ -47,8 +48,10 @@ COMMIT = "1234567890" + "ab" * 15
 OLDER = "0" * 40
 PREVIOUS = "d" * 40
 TASK = "WSTX Rust Station HB9BLA"
-OPERATOR = "SensorsIot"
 COMMENT_ID = "987654321"
+# The removed parameter of the deploy that asked for an operator's OK (#196). Built from two
+# parts: no tracked text but the test of TC-196-07 may state it.
+REMOVED_PARAMETER = "-Ok" + "Comment"
 # The mechanism files in pin order (docs/harness/Project-Specifics.md, Deploy pins).
 MECHANISM = ("tools/deploy/station-update/station-update.ps1", "tools/deploy/station-update/make_package.py",
              "tools/deploy/station-update/launcher.ps1", "tools/deploy/agent-client.ps1",
@@ -67,7 +70,7 @@ LOCAL = {"Set-StrictMode", "Join-Path", "Split-Path", "Test-Path", "Get-Item", "
          "Push-Location", "Pop-Location", "ForEach-Object", "(dot-source-agent-client)",
          "Safe-Child", "Station-Processes", "Assert-Setup", "Firewall-Scope", "Send-CtrlC", "Stop-Station",
          "Start-Ready", "Write-Active", "Save-Profile", "Restore-Profile", "Restore-Launcher", "Switch-Back", "Step",
-         "Hash", "Now", "Read-Pins", "Pins-Text", "Assert-Ok", "Take-Lock", "Read-State", "Station-Busy",
+         "Hash", "Now", "Read-Pins", "Pins-Text", "Issue-Skip", "Take-Lock", "Read-State", "Station-Busy",
          "Busy-Reason", "Clean", "Last-Line", "Move-Installed", "Issues-Named"}
 # .NET types the script may name; file and path methods act on the same sandbox paths.
 TYPES = {"[Convert]", "[DateTime]", "[IO.FileAttributes]", "[IO.File]", "[IO.Path]", "[NullString]", "[StringComparison]",
@@ -123,11 +126,7 @@ function git {
     if (Test-Path -LiteralPath $file) { Get-Content -LiteralPath $file; $global:LASTEXITCODE = 0 } else { $global:LASTEXITCODE = 128 }
     return }
   Drill-Mutation "git $args" }
-function gh {
-  if ($args[0] -eq 'api') {
-    if ($env:DRILL_COMMENT -and (Test-Path -LiteralPath $env:DRILL_COMMENT)) { Get-Content -LiteralPath $env:DRILL_COMMENT -Raw; $global:LASTEXITCODE = 0 } else { $global:LASTEXITCODE = 1 }
-    return }
-  Drill-Mutation "gh $args" }
+function gh { Drill-Mutation "gh $args" }
 function python { Drill-Mutation "python $args" }
 function powershell.exe {
   if (-not ($args -like '*\deploy-authority\verify-approval.ps1')) { Drill-Mutation "powershell.exe $args" }
@@ -137,6 +136,11 @@ function powershell.exe {
 # The package's agent client in the sandbox: the station state the idle check reads.
 FAKE_AGENT_CLIENT = r"""# drill: agent client
 $AgentUrl = 'https://drill.invalid'
+# The radio's state: DRILL_RADIO (default ready) while the clock is less than DRILL_RADIO_UNTIL
+# seconds past 12:00:00; the value unreadable is a reply that cannot be read.
+function Drill-Radio {
+  $until = if ($env:DRILL_RADIO_UNTIL) { [double]$env:DRILL_RADIO_UNTIL } else { 1e9 }
+  if ($env:DRILL_RADIO -and ($global:DrillClock - $global:DrillT0).TotalSeconds -lt $until) { $env:DRILL_RADIO } else { 'ready' } }
 function Open-AgentSession { if (Drill-Busy 'unreadable') { throw [Net.WebException]::new('drill: state unreadable') }; [pscustomobject]@{ Session = $null } }
 function Agent-Get($c, [string]$Route) {
   if (Drill-Busy 'unreadable') { throw [Net.WebException]::new('drill: state unreadable') }
@@ -148,7 +152,8 @@ function Agent-Get($c, [string]$Route) {
   if (Drill-Busy 'contact') { $contact = [pscustomobject]@{ state = 'replying' } }
   if (Drill-Busy 'device-lost') { $contact = [pscustomobject]@{ state = 'replying' }; $t.transmit.last_disarm_cause = 'device_lost' }
   if (Drill-Busy 'run') { $run = [pscustomobject]@{ state = 'waiting' } }
-  switch ($Route) { '/transmit' { $t } '/contact' { [pscustomobject]@{ contact = $contact } } '/automation' { [pscustomobject]@{ run = $run } } }
+  switch ($Route) { '/transmit' { $t } '/contact' { [pscustomobject]@{ contact = $contact } } '/automation' { [pscustomobject]@{ run = $run } }
+    '/radio' { $st = Drill-Radio; if ($st -eq 'unreadable') { throw [Net.WebException]::new('drill: radio reply unreadable') }; [pscustomobject]@{ state = $st } } }
 }
 """
 
@@ -296,13 +301,6 @@ class Sandbox:
         path = os.path.join(self.store, commit, "docs", "harness", "Project-Specifics.md")
         write(path, text if text is not None else pins_text(self.pins() if pins is None else pins))
 
-    def ok_line(self, commit=COMMIT):
-        return f"Deploy OK: {commit} scripts " + " ".join(h for h, _ in self.pins())
-
-    def comment(self, body, login=OPERATOR):
-        write_json(os.path.join(self.root, "comment.json"), {"id": int(COMMENT_ID), "user": {"login": login}, "body": body})
-        self.extra = ["-OkComment", COMMENT_ID]
-
     def write_gates(self, gates, rehash=False):
         write_json(os.path.join(self.pkg, "gates.json"), gates)
         if rehash:
@@ -338,7 +336,7 @@ class Sandbox:
     def env(self, env=None):
         child_env = {k: v for k, v in os.environ.items() if not k.startswith("DRILL_")}
         child_env.update({"LOCALAPPDATA": self.local, "DRILL_SENTINEL": self.sentinel, "DRILL_ON_MASTER": f"{COMMIT},{OLDER}",
-                          "DRILL_GIT_STORE": self.store, "DRILL_COMMENT": os.path.join(self.root, "comment.json"),
+                          "DRILL_GIT_STORE": self.store,
                           "DRILL_SECOND_SCRIPT": self.script, "DRILL_SECOND_MANIFEST": os.path.join(self.pkg, "manifest.json"),
                           "DRILL_SECOND_REPO": self.repo, "DRILL_SECOND_OUT": os.path.join(self.root, "second.txt")})
         child_env.update(env or {})
@@ -350,7 +348,9 @@ class Sandbox:
         pre = os.path.join(self.root, "prelude.ps1")
         write(pre, prelude)
         script = self.run_script or self.script
-        command = f". '{pre}'; {self.command(script, dry_run, rollback)}; exit $LASTEXITCODE"
+        # An error that ends the script (a throw, a parameter that does not bind) is exit 1: an
+        # advanced script's terminating error does not stop the -Command by itself.
+        command = f". '{pre}'; try {{ {self.command(script, dry_run, rollback)} }} catch {{ $_.Exception.Message; exit 1 }}; exit $LASTEXITCODE"
         proc = subprocess.run([POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command],
                               capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env(env), timeout=300)
         sentinels = []
@@ -467,39 +467,28 @@ def station_launcher_differs(s):
     write(os.path.join(s.station, "launcher.ps1"), b"# another launcher\n")
 
 
-def ok(edit=lambda line: line, login=OPERATOR, readable=True):
-    """The running commit has no pins (item 5), and the operator's comment is edit(the line)."""
-    def change(s):
-        running_without_pins(s)
-        if readable:
-            s.comment(edit(s.ok_line()), login)
-        else:
-            s.extra = ["-OkComment", COMMENT_ID]
-    return change
+def removed_parameter(s):
+    """A call with the parameter that asked for an operator's OK before #196."""
+    s.extra = [REMOVED_PARAMETER, COMMENT_ID]
 
 
-def flip_first_hash(line):
-    head, hashes = line.split(" scripts ")
-    first = hashes[:64]
-    return f"{head} scripts {first[:-1]}{'0' if first[-1] != '0' else '1'}{hashes[64:]}"
+def pins_in_another_order(s):
+    s.pin(COMMIT, list(reversed(s.pins())))
 
 
-def swap_two_hashes(line):
-    head, hashes = line.split(" scripts ")
-    h = hashes.split(" ")
-    h[0], h[1] = h[1], h[0]
-    return f"{head} scripts {' '.join(h)}"
+def rollback_previous(s):
+    write(os.path.join(s.station, PREVIOUS[:9], "wstx-rust.exe"), b"previous station image")
+    s.set_active(PREVIOUS)
 
 
 def rollback_with_other_pins(s):
-    write(os.path.join(s.station, PREVIOUS[:9], "wstx-rust.exe"), b"previous station image")
-    s.set_active(PREVIOUS)
+    rollback_previous(s)
     running_pins_differ(s)
 
 
 # (name, change, environment, expected messages, outcome) where outcome is "refused",
-# "busy", "item 5", "dry-run accepted", "reaches stop", "rollback reaches stop",
-# "second refused" or "LIMIT accepted".
+# "busy", "radio", "binding refused", "dry-run accepted", "reaches stop", "rollback reaches
+# stop", "second refused" or "LIMIT accepted".
 CASES = [
     ("intact package, -DryRun", nothing, {}, "dry run: nothing changed", "dry-run accepted"),
     ("intact package reaches the station stop", nothing, {}, "stop station", "reaches stop"),
@@ -539,6 +528,16 @@ IDLE_CASES = [
     ("busy: contact replying after a device_lost disarm", nothing, {"DRILL_BUSY": "device-lost"}, "a contact is replying", "busy"),
     ("busy: automation run active", nothing, {"DRILL_BUSY": "run"}, "an automation run is waiting", "busy"),
     ("busy: state unreadable", nothing, {"DRILL_BUSY": "unreadable"}, "its state cannot be read", "busy"),
+    # TC-196-04 (a) to (e): the radio does not answer for 300 s; the run ends with exit 6.
+    *[(f"radio {state}: waits, gives up with exit 6", nothing, {"DRILL_RADIO": state},
+       [f"waiting for the radio (state {state})", "12:05:00 WAITING FOR THE RADIO"], "radio")
+      for state in ("closed", "connecting", "closing", "unavailable", "unreadable")],
+    ("radio ready from the first reading: proceeds", nothing, {"DRILL_RADIO": "ready"}, "stop station", "reaches stop"),
+    ("radio ready from 290 s: proceeds", nothing, {"DRILL_RADIO": "closed", "DRILL_RADIO_UNTIL": "290"},
+     ["12:04:40 waiting for the radio", "12:04:50 stop station"], "reaches stop"),
+    ("transmit armed until 310 s and the radio closed: busy is read first", nothing,
+     {"DRILL_BUSY": "armed", "DRILL_BUSY_UNTIL": "310", "DRILL_RADIO": "closed"},
+     "12:05:00 BUSY: the station was not idle for 300 s", "busy"),
     ("busy clears at 290 s: proceeds", nothing, {"DRILL_BUSY": "armed", "DRILL_BUSY_UNTIL": "290"},
      ["12:04:40 waiting: transmit is armed", "12:04:50 stop station"], "reaches stop"),
     ("still busy at 300 s: gives up", nothing, {"DRILL_BUSY": "armed", "DRILL_BUSY_UNTIL": "310"},
@@ -546,24 +545,23 @@ IDLE_CASES = [
     ("second update between the check and the stop", nothing, {"DRILL_SECOND": "1"}, "stop station", "second refused"),
 ]
 
-# TC-171-02: the pins and the operator's OK.
+# TC-196-01 and TC-196-02 (#196): a changed mechanism needs no OK; the pins still guard the package.
 PIN_CASES = [
     ("pins: all equal, -DryRun", nothing, {}, ["deploy mechanism equals its pins", "dry run: nothing changed"], "dry-run accepted"),
     ("pins: a working-folder copy of the script is not run", working_folder_copy, {}, "run the package's own copy", "refused"),
-    ("pins: package file edited after the build", package_file_edited, {}, "tools/deploy/agent-client.ps1 differs from its pin", "item 5"),
-    ("pins: new pins differ from the running pins", running_pins_differ, {}, "differ from those of the running ccccccccc", "item 5"),
-    ("pins: commit without pins", commit_without_pins, {}, "commit 123456789 has no deploy pins", "item 5"),
-    ("pins: running commit without pins", running_without_pins, {}, "the running commit ccccccccc has no deploy pins", "item 5"),
-    ("pins: station launcher differs from its pin", station_launcher_differs, {}, "the launcher in the station folder differs from its pin", "item 5"),
-    ("OK: the exact line proceeds", ok(), {}, ["operator OK: comment 987654321", "stop station"], "reaches stop"),
-    ("OK: one changed hash", ok(flip_first_hash), {}, "OK refused: comment 987654321 is not exactly the line", "refused"),
-    ("OK: a short commit", ok(lambda line: line.replace(COMMIT, COMMIT[:9])), {}, "OK refused: comment 987654321 is not exactly the line", "refused"),
-    ("OK: another commit", ok(lambda line: line.replace(COMMIT, OLDER)), {}, "OK refused: comment 987654321 is not exactly the line", "refused"),
-    ("OK: hashes out of order", ok(swap_two_hashes), {}, "OK refused: comment 987654321 is not exactly the line", "refused"),
-    ("OK: extra text", ok(lambda line: line + " thanks"), {}, "OK refused: comment 987654321 is not exactly the line", "refused"),
-    ("OK: comment unreadable", ok(readable=False), {}, "OK refused: comment 987654321 cannot be read from GitHub.", "refused"),
-    ("OK: comment by another account", ok(login="someone-else"), {}, "OK refused: comment 987654321 is by someone-else", "refused"),
+    ("pins: package file edited after the build", package_file_edited, {}, "tools/deploy/agent-client.ps1 differs from its pin", "refused"),
+    ("pins: commit without pins", commit_without_pins, {}, "commit 123456789 has no deploy pins", "refused"),
+    ("pins: pins in another order", pins_in_another_order, {}, "do not name the mechanism files in their order", "refused"),
+    ("changed mechanism: new pins differ from the running pins", running_pins_differ, {},
+     ["deploy mechanism changed: the pins of 123456789 differ from those of the running ccccccccc", "stop station"], "reaches stop"),
+    ("changed mechanism: running commit without pins", running_without_pins, {},
+     ["deploy mechanism changed: the running commit ccccccccc has no deploy pins", "stop station"], "reaches stop"),
+    ("changed mechanism: station launcher differs from its pin", station_launcher_differs, {},
+     ["deploy mechanism changed: the launcher in the station folder differs from its pin", "stop station"], "reaches stop"),
+    ("the removed OK parameter stops at binding", removed_parameter, {}, REMOVED_PARAMETER.lstrip("-"), "binding refused"),
     ("rollback with differing pins never asks", rollback_with_other_pins, {}, "rollback: ccccccccc -> ddddddddd", "rollback reaches stop"),
+    ("rollback with the radio closed never asks", rollback_previous, {"DRILL_RADIO": "closed"}, "rollback: ccccccccc -> ddddddddd", "rollback reaches stop"),
+    ("dry run with the radio closed does not read it", nothing, {"DRILL_RADIO": "closed"}, "dry run: nothing changed", "dry-run accepted"),
 ]
 
 # With the deploy authority on (#31), station-update.ps1 carries the amendment of
@@ -608,17 +606,21 @@ def run_case(root, script, case):
         if before != after:
             changed = sorted(set(before.items()) ^ set(after.items()))
             problems.append(f"destination changed: {[c[0] for c in changed][:5]}")
-        if outcome in ("refused", "busy", "item 5") and rc == 0:
+        failing = ("refused", "busy", "radio", "binding refused")
+        if outcome in failing and rc == 0:
             problems.append("exit 0")
+        if outcome in ("refused", "binding refused") and rc != 1:
+            problems.append(f"exit {rc}, not 1 (refused)")
         if outcome == "busy" and rc != 3:
             problems.append(f"exit {rc}, not 3 (busy)")
-        if outcome == "item 5":
-            if rc != 5:
-                problems.append(f"exit {rc}, not 5 (item 5)")
-            if s.ok_line() not in out.splitlines():
-                problems.append(f"the line {s.ok_line()!r} is not printed")
-        if outcome not in ("refused", "busy", "item 5") and rc != 0:
+        if outcome == "radio" and rc != 6:
+            problems.append(f"exit {rc}, not 6 (the radio did not answer)")
+        if outcome == "binding refused" and "verify package" in out:
+            problems.append("a step ran before the parameter was refused")
+        if outcome not in failing and rc != 0:
             problems.append(f"exit {rc}")
+    if any(line.startswith("Deploy " + "OK:") for line in out.splitlines()):
+        problems.append("a Deploy OK line is printed")
     return problems, out
 
 

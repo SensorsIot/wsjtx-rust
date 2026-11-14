@@ -295,7 +295,7 @@
       "dot": "rose",
       "title": "Gates G7-G8",
       "items": [
-        "G7 dry run OK? judgment of the operator on the dry run; this project: the standing deploy policy, with the operator's Deploy OK comment when the deploy mechanism changed (Project-Specifics, deployment authority)",
+        "G7 dry run OK? judgment of the operator on the dry run; this project: the standing deploy policy, without an operator comment (Project-Specifics, deployment authority)",
         "G8 live tests green? judgment of the coordinator on each acceptance item, recorded as Accepted live"
       ]
     },

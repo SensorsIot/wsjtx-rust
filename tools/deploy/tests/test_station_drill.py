@@ -87,6 +87,30 @@ class LostRefusalTests(unittest.TestCase):
         self.assertIn("expected message", problems[0])
 
 
+class RefusalExitTests(unittest.TestCase):
+    """A pin refusal is exit 1 exactly: the same refusal ending in another exit code fails its case."""
+    NAMES = ("pins: package file edited after the build", "pins: commit without pins", "pins: pins in another order")
+
+    def run_pin_case(self, script_text, name):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = os.path.join(tmp, "station-update.ps1")
+            with open(script, "w", encoding="utf-8") as f:
+                f.write(script_text)
+            root = os.path.join(tmp, "case")
+            os.makedirs(root)
+            return station_drill.run_case(root, script, next(c for c in station_drill.PIN_CASES if c[0] == name))
+
+    def test_pin_refusals_require_exit_1(self):
+        text = read(real_script())
+        line = "throw ('Refused: '+($refuse -join '; ')+'.')"
+        self.assertIn(line, text)
+        for name in self.NAMES:
+            with self.subTest(name):
+                self.assertEqual(self.run_pin_case(text, name)[0], [])
+                problems, out = self.run_pin_case(text.replace(line, "exit 3"), name)
+                self.assertTrue([p for p in problems if "not 1" in p], (problems, out))
+
+
 class DrillCaseTests(unittest.TestCase):
     """The drill's cases against the script in the tree, one group per test."""
 
@@ -103,11 +127,11 @@ class DrillCaseTests(unittest.TestCase):
         self.run_group(station_drill.CASES)
 
     def test_idle_refusal_and_wait(self):
-        """TC-171-01: each busy reason refuses before the stop; 290 s proceeds, 300 s gives up."""
+        """TC-171-01, TC-196-04: each busy reason and a radio that does not answer refuse before the stop; 290 s proceeds, 300 s gives up."""
         self.run_group(station_drill.IDLE_CASES)
 
-    def test_pins_and_operator_ok(self):
-        """TC-171-02 (a) to (h): item 5 refuses before any write with the line; only the exact OK proceeds."""
+    def test_pins_and_changed_mechanism(self):
+        """TC-196-01, TC-196-02: a changed mechanism reaches the stop without an OK; the pins still refuse."""
         self.run_group(station_drill.PIN_CASES)
 
 
