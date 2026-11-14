@@ -251,7 +251,3 @@ are the coder's above.
   `gh issue comment <number> --body '<text>'`: single quotes, no `'`, `$` or backticks in the
   text, no `--body-file`, and no `--repo` on this project's issues (the harness-improver's
   harness issues above are the one exception).
-- **The deploy OK is the operator's.** An agent never posts a comment that starts with
-  `Deploy OK:`. When a deploy needs that OK
-  ([deployment authority](Project-Specifics.md#deployment-authority)), the agent stops, gives
-  the operator the exact line the deploy printed, and waits for the comment's id.
